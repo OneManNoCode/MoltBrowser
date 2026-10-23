@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
-index 7b5cfa331152d18ec8ca054a89ada7e7087fec5b..ad9cebd01fa9de580d829f5d0f17fba0ca010019 100644
+index b59ea11d53922f61cb971b3c161ac6c3eac1e210..85ac15d2d98a30bdb0111845aef0de104a195763 100644
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h
-@@ -487,7 +487,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
+@@ -496,7 +496,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
        mojom::blink::ServiceWorkerObjectInfoPtr service_worker_info,
        mojom::blink::FetchHandlerExistence fetch_handler_existence,
        mojom::blink::AncestorFrameType ancestor_frame_type,

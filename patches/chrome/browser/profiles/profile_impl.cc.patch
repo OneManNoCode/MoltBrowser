@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/profiles/profile_impl.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/profiles/profile_impl.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
-index f3ca43e49dfcb80fb18d587afd3ace768c79c86a..521bc82b02630a2a55e9804ab6e3a6d577f445ff 100644
+index 81e83a88483367ffb93434cd6223a080ee42593d..ea7858c98fe0bc0b50758177ac43af53b3e5ce8c 100644
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
-@@ -61,6 +61,8 @@
+@@ -62,6 +62,8 @@
  #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
  #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
  #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
@@ -17,7 +17,7 @@ index f3ca43e49dfcb80fb18d587afd3ace768c79c86a..521bc82b02630a2a55e9804ab6e3a6d5
  #include "chrome/browser/notifications/platform_notification_service_factory.h"
  #include "chrome/browser/notifications/platform_notification_service_impl.h"
  #include "chrome/browser/origin_trials/origin_trials_factory.h"
-@@ -417,10 +419,18 @@ void ProfileImpl::RegisterProfilePrefs(
+@@ -422,10 +424,18 @@ void ProfileImpl::RegisterProfilePrefs(
  #else
    uint32_t home_page_flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
  #endif
@@ -38,7 +38,7 @@ index f3ca43e49dfcb80fb18d587afd3ace768c79c86a..521bc82b02630a2a55e9804ab6e3a6d5
  
  #if BUILDFLAG(ENABLE_PRINTING)
    registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);
-@@ -701,6 +711,10 @@ void ProfileImpl::LoadPrefsForNormalStartup(bool async_prefs) {
+@@ -705,6 +715,10 @@ void ProfileImpl::LoadPrefsForNormalStartup(bool async_prefs) {
    ::RegisterProfilePrefs(is_signin_profile,
                           g_browser_process->GetApplicationLocale(),
                           pref_registry_.get());
@@ -49,7 +49,7 @@ index f3ca43e49dfcb80fb18d587afd3ace768c79c86a..521bc82b02630a2a55e9804ab6e3a6d5
  
    mojo::PendingRemote<prefs::mojom::TrackedPreferenceValidationDelegate>
        pref_validation_delegate;
-@@ -741,6 +755,10 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
+@@ -745,6 +759,10 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
    if (!prefs->HasPrefPath(prefs::kProfileCreationTime))
      prefs->SetTime(prefs::kProfileCreationTime, path_creation_time_);
  

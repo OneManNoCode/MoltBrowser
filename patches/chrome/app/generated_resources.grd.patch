@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/generated_resources.grd
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/generated_resources.grd by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
-index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d2db72bfb 100644
+index 21e5fd0d9256fde91f8b129224c2665edcda9e56..7555c0d1de0c55ce286c0e2b3c79167108b03239 100644
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
 @@ -310,7 +310,7 @@ are declared in tools/grit/grit_args.gni.
@@ -26,17 +26,17 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <!-- Search Promotion specific strings -->
          <message name="IDS_SEARCH_PROMOTION_IPH_TITLE_ARM_A" desc="Title of the search promotion IPH bubble for Arm A.">
-@@ -1761,7 +1761,7 @@ are declared in tools/grit/grit_args.gni.
-           Name &amp;window...
+@@ -1771,7 +1771,7 @@ are declared in tools/grit/grit_args.gni.
+           T&amp;ake screenshot
          </message>
          <message name="IDS_CHROMELABS" desc="The text label of the Chrome Labs menu item">
 -          Chrome &amp;Labs...
 +          MoltBrowser &amp;Labs...
          </message>
        </if>
-       <if expr="use_titlecase">
-@@ -1817,7 +1817,7 @@ are declared in tools/grit/grit_args.gni.
-           Name &amp;Window...
+       <!-- macOS Capitalization Policy (go/chrome-capitalization):
+@@ -1827,7 +1827,7 @@ are declared in tools/grit/grit_args.gni.
+           Reopen Closed Split View
          </message>
          <message name="IDS_CHROMELABS" desc="In Title Case: The text label of the Chrome Labs menu item">
 -          Chrome &amp;Labs...
@@ -44,7 +44,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -1840,7 +1840,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -1850,7 +1850,7 @@ are declared in tools/grit/grit_args.gni.
        </if>
  
        <message name="IDS_TOS_NOTIFICATION_TITLE" desc="The title of the notification that informs the user that a term of service change is coming." formatter_data="android_java">
@@ -53,8 +53,8 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_TOS_NOTIFICATION_BODY_TEXT" desc="The body text of the notification that informs the user that a term of service change is coming." formatter_data="android_java">
          Please review the new terms
-@@ -1908,7 +1908,7 @@ are declared in tools/grit/grit_args.gni.
-           Manage Extensions
+@@ -1916,7 +1916,7 @@ are declared in tools/grit/grit_args.gni.
+           &amp;Extensions
          </message>
          <message name="IDS_EXTENSIONS_SUBMENU_CHROME_WEBSTORE_ITEM" desc="The text for the link in the extensions menu, in the app menu, to visit the Chrome Web Store to get more extensions (title case).">
 -          Visit Chrome Web Store
@@ -62,16 +62,16 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_SHOW_PERFORMANCE" desc="The text label of the Performance menu item">
            Performance
-@@ -1967,7 +1967,7 @@ are declared in tools/grit/grit_args.gni.
-           Manage Extensions
+@@ -1968,7 +1968,7 @@ are declared in tools/grit/grit_args.gni.
          </message>
+ 
          <message name="IDS_EXTENSIONS_SUBMENU_CHROME_WEBSTORE_ITEM" desc="In Title Case: The text for the link in the extensions menu, in the app menu, to visit the Chrome Web Store to get more extensions.">
 -          Visit Chrome Web Store
 +          Visit Extension Store
          </message>
          <message name="IDS_SHOW_PERFORMANCE" desc="In Title Case: The text label of the Performance menu item">
            Performance
-@@ -2626,7 +2626,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -2633,7 +2633,7 @@ are declared in tools/grit/grit_args.gni.
        </message>
        <message name="IDS_DOWNLOAD_BY_EXTENSION_URL"
                 desc="Indicates which extension downloaded this file by name and URL.">
@@ -80,7 +80,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_DOWNLOADS_PAGE_INITIATOR_LINE" desc="Line that indicates the site that initiated a file download.">
          From <ph name="DISPLAY_INITIATOR_ORIGIN">$1<ex>https://example.com</ex></ph>
-@@ -3036,7 +3036,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -3043,7 +3043,7 @@ are declared in tools/grit/grit_args.gni.
        </message>
        <message name="IDS_DOWNLOAD_BUBBLE_ESB_PROMO"
                 desc="Text for the in-product-help bubble shown for the esb promo download bubble.">
@@ -89,7 +89,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_DOWNLOAD_BUBBLE_ESB_PROMO_CUSTOM_ACTION"
                 desc="Text for the custom action within the in-product-help bubble shown for the esb promo download bubble.">
-@@ -3444,7 +3444,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -3451,7 +3451,7 @@ are declared in tools/grit/grit_args.gni.
        </message>
        <if expr="_google_chrome">
          <message name="IDS_DOWNLOAD_ROW_ESB_PROMOTION" desc="Link button text that teaches the user about Enhanced Protection.">
@@ -98,7 +98,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_DOWNLOAD_ROW_ESB_PROMO_A11Y" desc="ARIA (accessibility) label describing a link which opens in a new tab.">
            Opens security settings page in a new tab
-@@ -3554,7 +3554,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -3561,7 +3561,7 @@ are declared in tools/grit/grit_args.gni.
        </message>
        <message name="IDS_DOWNLOAD_LOCAL_DECRYPTION_PROMPT_ALERT"
                 desc="Accessible alert announced when a local decryption prompt appears on a suspicious archive">
@@ -107,7 +107,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
  
        <!-- Web App Window Title string -->
-@@ -3782,10 +3782,10 @@ are declared in tools/grit/grit_args.gni.
+@@ -3789,10 +3789,10 @@ are declared in tools/grit/grit_args.gni.
            Quit
          </message>
          <message name="IDS_QUIT_WITH_APPS_EXPLANATION" desc="Text displayed in a notification explaining that Chrome will continue running in the background as long as there are Chrome Apps open.">
@@ -120,7 +120,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_QUIT_WITH_APPS_SUPPRESSION_LABEL" desc="Button text to prevent a notification from showing in future.">
            Don't show this again
-@@ -4188,7 +4188,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -4247,7 +4247,7 @@ are declared in tools/grit/grit_args.gni.
          Notifications from this site may be disruptive
        </message>
        <message name="IDS_NOTIFICATIONS_QUIET_PERMISSION_BUBBLE_PREDICTION_SERVICE_DESCRIPTION" desc="Text used as notification message when requesting permission for Web Notifications via a notification. Used when the prediction service has decided that the user will be very unlikely to grant this permission.">
@@ -129,7 +129,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_GEOLOCATION_OFF_EXPLANATORY_TEXT" desc="Explanatory animated text that appears (and then disappears) in the address bar as part of the less-prominent UX, when a website requests the geolocation permission.">
          Location blocked
-@@ -4197,7 +4197,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -4256,7 +4256,7 @@ are declared in tools/grit/grit_args.gni.
          Location blocked
        </message>
        <message name="IDS_GEOLOCATION_QUIET_PERMISSION_BUBBLE_PREDICTION_SERVICE_DESCRIPTION" desc="Text used as notification message when requesting permission for Geolocation. Used when the prediction service has decided that the user will be very unlikely to grant this permission.">
@@ -138,7 +138,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_GEOLOCATION_QUIET_PERMISSION_BUBBLE_ALLOW_BUTTON" desc="Text displayed on the button that enables geolocation for a site. This button is part of the geolocation status bubble, which is triggered when a user clicks on the blocked geolocation icon in the omnibox.">
          Allow for this site
-@@ -4714,7 +4714,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -4773,7 +4773,7 @@ are declared in tools/grit/grit_args.gni.
          Allow remote debugging?
        </message>
        <message name="IDS_DEV_TOOLS_CONNECTION_DIALOG_MESSAGE_PART_1" desc="Message displayed in the dialog asking user to confirm allowing a debugging connection to this browser instance.">
@@ -147,7 +147,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_DEV_TOOLS_CONNECTION_DIALOG_MESSAGE_PART_2" desc="Message displayed in the dialog asking user to confirm allowing a debugging connection to this browser instance.">
          Only web developers should turn on this feature, and only use it with trusted apps.
-@@ -5101,7 +5101,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -5175,7 +5175,7 @@ are declared in tools/grit/grit_args.gni.
          Omnibox
        </message>
        <message name="IDS_UTILITY_PROCESS_FILE_UTILITY_NAME" desc="The name of the utility process used for various Chrome specific file operations.">
@@ -156,7 +156,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <if expr="not is_android">
          <message name="IDS_UTILITY_PROCESS_PROFILE_IMPORTER_NAME" desc="The name of the utility process used for importing profiles.">
-@@ -5137,7 +5137,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -5206,7 +5206,7 @@ are declared in tools/grit/grit_args.gni.
          No-op Service
        </message>
        <message name="IDS_SERVICE_PROCESS_DOCUMENT_ANALYSIS_NAME" desc="The name of the service process used for document analysis operations as part of Safe Browsing.">
@@ -165,7 +165,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <!-- Theme preview infobar -->
        <message name="IDS_THEME_INSTALL_INFOBAR_LABEL" desc="Text displayed on an infobar when a theme has been installed.">
-@@ -5669,7 +5669,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -5750,7 +5750,7 @@ are declared in tools/grit/grit_args.gni.
          </message>
        </if>
  
@@ -174,7 +174,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        <if expr="enable_extensions">
          <message name="IDS_EXTENSION_ASKS_IDENTITY_WHILE_SIGNED_IN_WEB_ONLY_BODY_PART_2" desc="This string is the second paragraph of the body of a dialog intended to inform the user that one of their installed extensions wants them to sign in to Chrome to be able to use their Google Account.">
            You’ll also get your passwords and more from your Google Account.
-@@ -6086,7 +6086,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6180,7 +6180,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          To allow this extension, enter your password.
        </message>
        <message name="IDS_SKIP_PARENT_PERMISSION_EXTENSION_INFORMATION" desc="Text informing the parent about the option to skip parent approvals in Family Link">
@@ -183,7 +183,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_PARENT_PERMISSION_PROMPT_ENTER_PASSWORD_LABEL" desc="Text for the label shown above the parent password entry field.">
          Enter password
-@@ -6137,7 +6137,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6231,7 +6231,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
        </message>
  
        <!-- External extension install alerts -->
@@ -192,7 +192,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
             PRODUCT_NAME. Leaving it as-is until we finalize
             these strings. -->
        <message name="IDS_EXTENSION_EXTERNAL_INSTALL_ALERT_EXTENSION" desc="The wrench menu item indicating that a new external extension was installed.">
-@@ -6153,17 +6153,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6247,17 +6247,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
          "<ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>" added
        </message>
        <message name="IDS_EXTENSION_EXTERNAL_INSTALL_ALERT_BUBBLE_HEADING_APP" desc="The heading text (below the title) for the bubble that alerts the user that a new external app was installed.">
@@ -214,7 +214,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_EXTENSIONS_ADDED_WITHOUT_KNOWLEDGE_LEARN_MORE" desc="Text read by screen readers for a link labeled 'Learn more' that links to a Help article about disabled extensions.">
          Learn more about disabled extensions.
-@@ -6217,22 +6217,22 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6311,22 +6311,22 @@ Keep your key file in a safe place. You will need it to create new versions of y
        <!-- Force Installed Deprecated Apps Deletion Dialog strings. -->
        <if expr="is_macosx">
          <message name="IDS_FORCE_INSTALLED_DEPRECATED_APPS_CONTENT" desc="Content of the force installed deprecated app dialog">
@@ -241,7 +241,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
        <!-- End Force Installed Deprecated Apps Deletion Dialog strings. -->
-@@ -6241,7 +6241,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6335,7 +6335,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Ask your admin to update this app
        </message>
        <message name="IDS_FORCE_INSTALLED_PREINSTALLED_DEPRECATED_APPS_CONTENT" desc="Content of the force installed preinstalled deprecated app dialog">
@@ -250,7 +250,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <if expr="use_titlecase">
          <message name="IDS_FORCE_INSTALLED_PREINSTALLED_DEPRECATED_APPS_GO_TO_SITE_BUTTON" desc="Label for the button that opens the website for the app">
-@@ -6263,29 +6263,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6357,29 +6357,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
        </message>
        <if expr="is_macosx">
          <message name="IDS_DEPRECATED_APPS_MONITOR_RENDERER" desc="Dialog content that educates users that Chrome Apps will soon no longer launch.">
@@ -285,7 +285,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_DEPRECATED_APPS_DELETION_LINK" desc="Contains link to trigger the deprecated apps deletion dialog from chrome://apps">
          {NUM_APPS, plural,
-@@ -6682,7 +6682,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -6776,7 +6776,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
        </message>
  
        <message name="IDS_APP_HOME_REMOVE_APP" desc="Menu entry label for removing an app from context menu on App Home that isn't locally installed">
@@ -294,7 +294,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
  
        <message name="IDS_APP_HOME_APP_SETTINGS" desc="Menu entry label for navigation to App Settings page for an app from context menu on App Home">
-@@ -7220,7 +7220,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -7328,7 +7328,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
            Reason: The inverted rule <ph name="REVERT_RULE">$1<ex>!example.com</ex></ph> was found in the "Force open in" list.
          </message>
          <message name="IDS_ABOUT_BROWSER_SWITCH_INTERNALS_OPEN_BROWSER_DEFAULT_REASON" desc="about:browser-switch/internals, section URL Checker, the explaination reason for check result, displayed when the entered URL did not match any listed rule and default browser will not get switched">
@@ -303,7 +303,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_ABOUT_BROWSER_SWITCH_INTERNALS_INVALID_URL" desc="about:browser-switch/internals, section URL Checker, specific error message when the url is invalid">
            Invalid URL. Make sure it is formatted properly.
-@@ -7677,7 +7677,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -7923,7 +7923,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Cards
        </message>
        <message name="IDS_NTP_CUSTOMIZE_NO_BACKGROUND_LABEL" desc="The label for the 'Default Chrome' tile in the customization menu on the New Tab Page">
@@ -312,7 +312,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_CUSTOMIZE_CHROME_CHANGE_THEME_LABEL" desc="The label for the action button for changing Chrome theme in the New Tab Page customize chrome side panel.">
          Change theme
-@@ -7698,7 +7698,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -7944,7 +7944,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          <ph name="THIRD_PARTY_NTP_MANAGER">$1<ex>ZomboCom</ex></ph> is managing your new tab page, opens in a new tab
        </message>
        <message name="IDS_NTP_CUSTOMIZE_CHROME_RESET_TO_CLASSIC_CHROME_COMPLETE" desc="Text for a screenreader to read aloud when the user's theme has finished changing to classic chrome in the Customize Chrome side panel.">
@@ -321,7 +321,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_CUSTOMIZE_CHROME_RESET_TO_UPLOADED_IMAGE_COMPLETE" desc="Text for a screenreader to read aloud when the user's theme has finished changing to an uploaded image in the Customize Chrome side panel.">
          Theme updated to uploaded image
-@@ -7892,17 +7892,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -8138,17 +8138,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
        <message name="IDS_NTP_CUSTOMIZE_CHROME_COLOR_SCHEME_MODE_GROUP_LABEL" desc="The accessibility label description read by the screen reader for color scheme mode group in customize chrome side panel.">
          Pick a color scheme mode
        </message>
@@ -342,7 +342,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_SHOW_MORE_BUTTON_LABEL" desc="Label for a button that allows the user to see more most visited tiles on the New Tab Page.">
          Show more
-@@ -7926,7 +7926,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -8172,7 +8172,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Increase your productivity
        </message>
        <message name="IDS_NTP_WEBSTORE_TOAST_MESSAGE" desc="The message displayed on the New Tab Page toast that directs users to the Chrome webstore themes.">
@@ -351,7 +351,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_WEBSTORE_TOAST_BUTTON_TEXT" desc="The text displayed in the New Tab Page webstore themes toast button">
          Find themes
-@@ -8671,16 +8671,16 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -8917,16 +8917,16 @@ Keep your key file in a safe place. You will need it to create new versions of y
        </message>
        <!-- NTP Modules -->
        <message name="IDS_NTP_MODULES_SETUP_LIST_DISABLE_TOAST_MESSAGE" desc="Text shown in the toast confirming a module has been disabled.">
@@ -372,7 +372,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_INFO_BUTTON_TITLE" desc="Text shown in tooltip of info button of an NTP module.">
          About this card
-@@ -8764,7 +8764,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9010,7 +9010,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          You’re seeing suggested files to help you easily get back to your most recent activity in Google Drive.
          <ph name="BREAK">&lt;br&gt;</ph>
          <ph name="BREAK">&lt;br&gt;</ph>
@@ -381,7 +381,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_DRIVE_SEE_MORE" desc="A label for the see more button in the Drive module.">
          See more
-@@ -8779,7 +8779,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9025,7 +9025,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          You’re seeing suggested files to help you easily get back to your most recent activity in Microsoft SharePoint and OneDrive.
          <ph name="BREAK">&lt;br&gt;</ph>
          <ph name="BREAK">&lt;br&gt;</ph>
@@ -390,7 +390,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_MICROSOFT_FILES_DISABLE_BUTTON_TEXT" desc="Text shown on the disable button of a NTP Microsoft files card.">
          Don't show SharePoint and OneDrive files
-@@ -8815,7 +8815,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9061,7 +9061,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          You’re seeing your calendar to help you easily navigate to your next event in Google Calendar.
          <ph name="BREAK">&lt;br&gt;</ph>
          <ph name="BREAK">&lt;br&gt;</ph>
@@ -399,7 +399,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_GOOGLE_CALENDAR_MORE_ACTIONS" desc="Text shown on the tooltip for the 3 dot menu on the Google Calendar card on the NTP.">
          More actions for Google Calendar
-@@ -8842,7 +8842,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9088,7 +9088,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         You’re seeing your calendar to help you easily navigate to your next event in Outlook Calendar.
         <ph name="BREAK">&lt;br&gt;</ph>
         <ph name="BREAK">&lt;br&gt;</ph>
@@ -408,7 +408,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
       </message>
        <message name="IDS_NTP_MODULES_CALENDAR_DOUBLE_BOOKED" desc="Text displaying that the calendar event is booked at the same time as another." meaning="The meeting takes place at the same time as another.">
          Double-Booked
-@@ -8911,13 +8911,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9157,13 +9157,13 @@ Keep your key file in a safe place. You will need it to create new versions of y
          You’re seeing pages you've visited and suggested searches to help you easily get back to your most recent activity.
          <ph name="BREAK">&lt;br&gt;</ph>
          <ph name="BREAK">&lt;br&gt;</ph>
@@ -424,7 +424,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_HISTORY_CLUSTERS_SENTENCE2" desc="Variant of the name of the History Clusters module in sentence case shown in various UIs.">
          Journeys
-@@ -8953,7 +8953,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9199,7 +9199,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          You’re seeing tabs from other devices to help you easily get back to your most recent activity.
          <ph name="BREAK">&lt;br&gt;</ph>
          <ph name="BREAK">&lt;br&gt;</ph>
@@ -433,7 +433,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_TAB_RESUMPTION_MULTI_DISMISS" desc="String text for module dismissal in the Tab Resumption module.">
          Tabs hidden
-@@ -8992,7 +8992,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9238,7 +9238,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          You’re seeing your recently used tab groups to help you easily pick up where you left off.
          <ph name="BREAK">&lt;br&gt;</ph>
          <ph name="BREAK">&lt;br&gt;</ph>
@@ -442,7 +442,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MODULES_TAB_GROUPS_TITLE" desc="Title for Tab Groups NTP module on the new tab page.">
          Your tab groups
-@@ -9035,10 +9035,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9281,10 +9281,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
  
        <!-- Mobile NTP Middle Slot Promo -->
        <message name="IDS_NTP_MOBILE_PROMO_HEADER" desc="Header for a promo that shows on the Desktop NTP prompting user to scan a QR code with their mobile device">
@@ -455,7 +455,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_NTP_MOBILE_PROMO_QR_CODE_LABEL" desc="Accessibility label for a QR code that shows on the Desktop NTP that prompts the user to scan it.">
          Scan QR Code
-@@ -9252,7 +9252,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -9485,7 +9485,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Please try again later
        </message>
        <message name="IDS_SHOW_CUSTOMIZE_CHROME_SIDE_PANEL" desc="The title of the menu item for showing the Customize Chrome side panel.">
@@ -464,7 +464,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <if expr="use_titlecase">
          <message name="IDS_SHOW_CUSTOMIZE_CHROME_TOOLBAR" desc="The title of the menu item for showing the toolbar section of the Customize Chrome side panel.">
-@@ -10443,7 +10443,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -10732,7 +10732,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
            Open
          </message>
          <message name="IDS_INTENT_PICKER_BUBBLE_VIEW_STAY_IN_CHROME" desc="Message contained in a button to continue the navigation within Chrome.">
@@ -473,7 +473,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_INTENT_PICKER_BUBBLE_VIEW_INITIATING_ORIGIN" desc="The label for the initiating origin of the intent picker.">
            From <ph name="ORIGIN">$1<ex>https://google.com</ex></ph>
-@@ -10496,7 +10496,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -10785,7 +10785,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
              You can access it on Google Password Manager.
            </message>
            <message name="IDS_IOS_PASSWORD_PROMO_BUBBLE_FOOTER_DESCRIPTION_GENERIC" desc="The description for the iOS promo bubble footer which lets the user know how to use their saved passwords on their phone: download Chrome for iOS and sign in to their account.">
@@ -482,7 +482,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
            </message>
          </if>
        </if>
-@@ -10592,7 +10592,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -10881,7 +10881,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
            You can find it in your Addresses and More
          </message>
          <message name="IDS_IOS_DESKTOP_ADDRESS_PROMO_BUBBLE_FOOTER_DESCRIPTION_QR" desc="The description for the iOS desktop address promo bubble footer which lets the user know how to use their saved addresses on their phone: follow the QR code, download Chrome for iOS and sign in to their account.">
@@ -491,7 +491,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -10624,7 +10624,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -10913,7 +10913,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
            You can access it in your Payment Methods
          </message>
          <message name="IDS_IOS_DESKTOP_PAYMENT_PROMO_BUBBLE_FOOTER_DESCRIPTION_QR" desc="The description for the iOS desktop payment promo bubble footer which lets the user know how to use their saved payment methods on their phone: follow the QR code, download Chrome for iOS and sign in to their account.">
@@ -500,7 +500,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -10692,10 +10692,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -10984,10 +10984,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
          <ph name="WINDOW_TITLE">$1</ph> (Guest)
        </message>
        <message name="IDS_ACCESSIBLE_WINDOW_TITLE_WITH_PROFILE_FORMAT" desc="The format for describing the accessible window title when the window is associated with a particular named profile.">
@@ -513,7 +513,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_ACCNAME_FULLSCREEN" desc="The accessible name of the fullscreen button in the new merged menu">
          Full screen
-@@ -10879,7 +10879,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -11171,7 +11171,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Get back here fast by bookmarking this tab
        </message>
        <message name="IDS_CHROME_TIP" desc="Accessible name used by a screen reader for the in-product-help or tutorial bubble icon." is_accessibility_with_no_ui="true">
@@ -522,7 +522,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_EXTENSIONS_MENU_IPH_ENTRY_POINT_TITLE" desc="">
          See what extensions can read or change a site
-@@ -10909,7 +10909,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -11201,7 +11201,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Enhance your browser with extensions
        </message>
        <message name="IDS_EXTENSIONS_ZERO_STATE_PROMO_CUSTOM_ACTION_IPH_DESCRIPTION" desc="Body text shown on the promotional UI appearing when the user has no extensions installed.">
@@ -531,7 +531,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_EXTENSIONS_ZERO_STATE_PROMO_CUSTOM_ACTION_IPH_ACCEPT" desc="Text on the custom action button that opens a new tab to the Chrome Web Store.">
           Discover extensions
-@@ -10963,7 +10963,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -11255,7 +11255,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Open App settings
        </message>
        <message name="IDS_UPDATED_CONNECTION_SECURITY_INDICATORS_PROMO" desc="Text shown on promotional UI appearing next to the new omnibox connection security icon">
@@ -540,7 +540,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_READING_LIST_IN_SIDE_PANEL_PROMO" desc="Text shown on promotional UI appearing next to the side panel button">
          Your reading list has moved to the new side panel. Try it here.
-@@ -11075,12 +11075,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -11376,12 +11376,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Try using tab groups to organize tasks, for online shopping, and more
        </message>
  
@@ -556,7 +556,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_TUTORIAL_CUSTOMIZE_CHROME_CHANGE_THEME" desc="The description of the 'change theme' step in customize chrome tutorial">
          Click “Change theme” to explore themes inspired by artists, nature and more
-@@ -11095,7 +11095,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -11396,7 +11396,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
          Click the back arrow to explore other options
        </message>
        <message name="IDS_TUTORIAL_CUSTOMIZE_CHROME_SUCCESS_BODY" desc="The description of the body text in the 'success' step in customize chrome tutorial">
@@ -565,7 +565,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
  
        <!-- Password Manager Tutorial Strings -->
-@@ -11202,12 +11202,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
+@@ -11503,12 +11503,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Show original content?
        </message>
        <message name="IDS_NEAR_OOM_REDUCTION_MESSAGE_DESCRIPTION" desc="The description of the message stating that the browser removed some content on the page using too much memory.">
@@ -580,7 +580,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_TAILORED_SECURITY_UNCONSENTED_MESSAGE_ACCEPT" desc="The text on the 'accept' button when asking if the user wants to enable Enhanced Safe Browsing">
          Turn on
-@@ -11309,10 +11309,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -11610,10 +11610,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            Use Google Password Manager to sign in faster to sites from any of your devices
          </message>
          <message name="IDS_PASSWORDS_SAVE_PRIMING_PROMO_BODY_NOT_SIGNED_IN" desc="Body of IPH prompting users to consider saving passwords">
@@ -593,7 +593,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_PASSWORDS_SAVE_RECOVERY_PROMO_BODY" desc="Body of IPH prompting users to reconsider saving passwords">
            To save your password to Google Password Manager, click the key
-@@ -11617,10 +11617,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -11929,10 +11929,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
          Delete browsing data
        </message>
        <message name="IDS_CLEAR_BROWSING_DATA_HISTORY_NOTICE" desc="A dialog informing the user that their Chrome browsing history was deleted, but other forms of history can still be found on Google My Activity.">
@@ -606,7 +606,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_CLEAR_BROWSING_DATA_HISTORY_NOTICE_OK" desc="Button in a dialog that informs the user that the deletion of Chrome's browsing data has been completed.">
          Ok, got it
-@@ -11653,7 +11653,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -11965,7 +11965,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
        </message>
  
        <message name="IDS_ZOOMLEVELS_CHROME_ERROR_PAGES_LABEL" desc="Label for zoom level list entry for Chrome error pages.">
@@ -615,7 +615,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
  
        <message name="IDS_STORAGE_ACCESS_MANAGE_TEXT" desc="The text on the button to manage the StorageAcccess settings.">
-@@ -11666,7 +11666,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -11978,7 +11978,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
        <!-- Automatic updates -->
        <if expr="is_macosx">
          <message name="IDS_PROMOTE_INFOBAR_TEXT" desc="The text to show in the automatic update setup infobar.  Mac-only.">
@@ -624,7 +624,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_PROMOTE_INFOBAR_PROMOTE_BUTTON" desc="The 'Set up automatic updates' button in the automatic update setup infobar.  Mac-only.">
            Set up automatic updates
-@@ -11675,7 +11675,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -11987,7 +11987,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            Don't ask again
          </message>
          <message name="IDS_PROMOTE_AUTHENTICATION_PROMPT" desc="The prompt displayed in the authentication dialog when setting up automatic updates for all users.  The system will add a sentence asking for an administrator's name and password.  Mac-only.">
@@ -633,7 +633,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_PROMOTE_PREFLIGHT_LAUNCH_ERROR" desc="Status label shown when an administrator user requested automatic updates for all users, but the OS failed to start the pre-flight process.  Mac-only.">
            Failed to set up automatic updates for all users (preflight launch error: <ph name="ERROR_NUMBER">$1<ex>1</ex></ph>)
-@@ -11685,7 +11685,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -11997,7 +11997,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
          </message>
        </if>
  
@@ -642,7 +642,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        <if expr="is_win or is_macosx">
          <message name="IDS_UPGRADE_ERROR" desc="Status label: Error occurred during upgrade">
            Update failed (error: <ph name="ERROR_NUMBER">$1<ex>1</ex></ph>)
-@@ -12441,7 +12441,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -12762,7 +12762,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
  
        <!-- Tab Group Deletion Dialog -->
        <message name="IDS_TAB_GROUP_DELETION_DIALOG_MISSING_EMAIL" desc="The email address used in the deletion dialog body when an email is missing.">
@@ -651,7 +651,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_TAB_GROUP_DELETION_DIALOG_BODY_SYNCED_DELETE" desc="The body text for deleting a synced group or groups. Displayed in the Tab Group Deletion Dialog.">
          {GROUP_COUNT, plural,
-@@ -13091,7 +13091,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13372,7 +13372,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            Collaborate with others
          </message>
          <message name="IDS_DATA_SHARING_NEED_SIGN_IN_AND_SYNC_HISTORY_BODY" desc="The body of dialog that prompts users to sign in and opt in to history sync.">
@@ -660,7 +660,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_DATA_SHARING_NEED_SYNC_HISTORY_BODY" desc="The body of dialog that prompts users to sign in and opt in to history sync.">
            To share tabs and collaborate with others, sync your history and tabs to <ph name="EMAIL">$1<ex>foo@gmail.com</ex></ph>
-@@ -13118,13 +13118,13 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13399,13 +13399,13 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            Make sure you trust the person that sent this invitation
          </message>
          <message name="IDS_DATA_SHARING_ORGANIZATION_DISALLOW_SIGN_IN_BODY" desc="The body text of the organization disallowing signin dialog.">
@@ -676,7 +676,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_DATA_SHARING_SETTINGS" desc="The generic text on buttons that take users to Chrome settings page.">
            Settings
-@@ -13308,7 +13308,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13581,7 +13581,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            Relaunch to update
          </message>
          <message name="IDS_APP_MENU_BUTTON_UPDATE_ALT3" desc="Alternate short label next to app-menu button when an update is available.">
@@ -685,7 +685,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
        <message name="IDS_APP_MENU_BUTTON_ERROR" desc="Short label next to app-menu button when the user needs to resolve something.">
-@@ -13350,10 +13350,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13623,10 +13623,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
          <ph name="APP_NAME">$1<ex>html5rocks.com</ex></ph> is sharing a window and audio.
        </message>
        <message name="IDS_MEDIA_TAB_CAPTURE_NOTIFICATION_TEXT" desc="label used in screen capture notification UI to show the screen sharing status when the stream is consumed by the same app initiating the window picker">
@@ -698,7 +698,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_MEDIA_SCREEN_CAPTURE_NOTIFICATION_HIDE" desc="Text shown on a link that hides the notification that the screen is being captured.">
          Hide
-@@ -13425,13 +13425,13 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13696,13 +13696,13 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
        <!-- Mac First-run dialog messages -->
        <if expr="is_macosx">
          <message name="IDS_FIRSTRUN_DLG_MAC_COMPLETE_INSTALLATION_LABEL" desc="Label at top of Dialog noting what's going to happen">
@@ -715,7 +715,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -13446,7 +13446,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13717,7 +13717,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
        <!-- Killed Tab Strings -->
        <if expr="is_chromeos">
          <message name="IDS_KILLED_TAB_BY_OOM_MESSAGE" desc="The message displayed on the killed tab page when the page was killed by an out of memory error.">
@@ -724,7 +724,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
        <message name="IDS_KILLED_TAB_FEEDBACK_MESSAGE" desc="The text to auto-populate the feedback page with. The triple single quotes are needed to preserve the line break.">
-@@ -13569,7 +13569,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13843,7 +13843,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
          </message>
          <!-- Extension install location strings -->
          <message name="IDS_EXTENSIONS_INSTALL_LOCATION_UNKNOWN" desc="The text explaining the the installation location is unknown.">
@@ -733,7 +733,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_EXTENSIONS_INSTALL_LOCATION_3RD_PARTY" desc="The text explaining the the installation came from a 3rd party app.">
            Installed by a third party.
-@@ -13589,10 +13589,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13863,10 +13863,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            This extension contains a serious security vulnerability.
          </message>
          <message name="IDS_EXTENSIONS_BLOCKLISTED_CWS_POLICY_VIOLATION" desc="The text explaining the reason for disabling extension or app. The extension in question violates Chrome Web Store policy.">
@@ -746,7 +746,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
  
          <!-- Enhanced Safe Browsing CRX allowlist warning -->
-@@ -13628,7 +13628,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13902,7 +13902,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
            <ph name="THIRD_PARTY_TOOL_NAME">$1<ex>SuperDuper PC Cleaner Pro</ex></ph> wants to reset your settings.
          </message>
          <message name="IDS_TRIGGERED_RESET_PROFILE_SETTINGS_EXPLANATION" desc="Dialog title for reset dialog triggered by a third party tool">
@@ -755,16 +755,16 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_TRIGGERED_RESET_PROFILE_SETTINGS_DEFAULT_TOOL_NAME" desc="Default tool name when a reset was triggered but a name could not be found.">
            A cleanup tool
-@@ -13720,7 +13720,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+@@ -13994,7 +13994,7 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
          Shared Tab
        </message>
        <message name="IDS_TOOLBAR_BUTTON_SEND_TAB_TO_SELF_BUTTON_HINT_TEXT" desc="The hint text shown on received tab dialog shown from the toolbar button. Where 'THERE' is the device the user selected.">
 -        Choose a device. Then, to see the page, open Chrome there.
 +        Choose a device. Then, to see the page, open MoltBrowser there.
        </message>
-       <if expr="use_titlecase">
-         <then>
-@@ -13747,10 +13747,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
+       <message name="IDS_MENU_SEND_TAB_TO_SELF" desc="The label of a menu entry to share the current tab to another device">
+         Send to your &amp;device
+@@ -14028,10 +14028,10 @@ Check your passwords anytime in <ph name="GOOGLE_PASSWORD_MANAGER">$1<ex>Google
          <ph name="BEGIN_LINK">$1</ph>Your devices<ph name="END_LINK">$2</ph> · <ph name="EMAIL">$3<ex>foo@gmail.com</ex></ph>
        </message>
        <message name="IDS_SEND_TAB_TO_SELF_SIGN_IN_PROMO_LABEL" desc = "Text when a signed out user attempts to use send-tab-to-self, then sees a sign-in promo.">
@@ -777,7 +777,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_SEND_TAB_TO_SELF_SIGN_IN_PROMO_BODY" desc="Body label text of the send-tab-to-self sign-in promo bubble.">
          To send links between devices, ensure both are signed in to the same Google account.
-@@ -14728,7 +14728,7 @@ This can include information about installed software, files, your browser, the
+@@ -15153,7 +15153,7 @@ This can include information about installed software, files, your browser, the
            </message>
          </if>
  
@@ -786,7 +786,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          <message name="IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_TITLE"  desc="This is the title of an error message dialog that appears when the user opens the Chrome Profile Menu and chooses 'Sign out of Chrome'. The error message appears when the user has saved some data (like a password or payment method) to Chrome, but Chrome wasn't able to save the data to the user's Google Account due to a sign-in error; but, the data has been saved locally to Chrome. This title is before the 'Chrome needs to verify it’s you before some data can be saved in your Google Account and used on all your devices. If you sign out, this data will stay on this device.' string. The tone should be cautionary.">
            Some data isn’t saved in your account yet
          </message>
-@@ -14891,14 +14891,14 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -15309,14 +15309,14 @@ Please help our engineers fix this problem. Tell us what happened right before y
  '''
        </message>
        <message name="IDS_REFUSE_TO_RUN_AS_ROOT" desc="Short error message displayed in an error dialog on startup if the user tries to run Chrome as root.">
@@ -804,7 +804,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -15145,7 +15145,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -15551,7 +15551,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          </message>
        </if>
        <message name="IDS_SYNC_START_SYNC_BUTTON_LABEL" desc="The label that appears on the sync button in the options dialog when sync has not been set up by the user.">
@@ -813,14 +813,16 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_SIGNED_IN_WITH_SYNC_DISABLED_BY_POLICY" desc="The message that appears in the settings page indicating that user is signed in, but sync is disabled by enterprise policy.">
          Sync is disabled by your administrator.
-@@ -15578,13 +15578,13 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -15989,7 +15989,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          </message>
          <!-- App menu -->
          <message name="IDS_ABOUT_MAC" desc="In Title Case: The Mac menu item to open the about box.">
 -          About <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
 +          About <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
          </message>
-         <message name="IDS_SERVICES_MAC" desc="In Title Case: The Mac menu item for the OS X services submenu (OS fills it in) in the app menu.">
+         <message name="IDS_CLEAR_BROWSING_DATA_MAC" desc="In Title Case: The Mac menu item for clearing browsing data.">
+           Delete Browsing Data...
+@@ -16001,7 +16001,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
            Services
          </message>
          <message name="IDS_HIDE_APP_MAC" desc="In Title Case: The Mac menu item to hide all browser windows in the app menu.">
@@ -829,7 +831,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_HIDE_OTHERS_MAC" desc="In Title Case: The Mac menu item to hide other applications' windows in the app menu.">
            Hide Others
-@@ -15593,7 +15593,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -16010,7 +16010,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
            Show All
          </message>
          <message name="IDS_EXIT_MAC" desc="In Title Case: The Mac menu item to quit the browser in the app menu.">
@@ -838,7 +840,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <!-- File menu -->
          <message name="IDS_NEW_MAC" desc="In Title Case: The Mac menu item for creating a new file in the file menu.">
-@@ -15872,7 +15872,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -16292,7 +16292,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
            Report an Issue...
          </message>
          <message name="IDS_HELP_MAC" desc="The Mac menu item to show help in the Help menu.">
@@ -847,7 +849,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if> <!-- is_macosx -->
  
-@@ -16239,15 +16239,15 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -16659,15 +16659,15 @@ Please help our engineers fix this problem. Tell us what happened right before y
        <!-- Extra Mac UI Strings -->
        <if expr="is_macosx">
          <message name="IDS_PLEASE_RELAUNCH_BROWSER" desc="Title of the alert when Chrome needs to be relaunched for a change/update to take effect.">
@@ -866,7 +868,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_INSTALL_FROM_DMG_YES" desc="Button to approve installation from the disk image.  Mac-only.">
            Install
-@@ -16256,13 +16256,13 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -16676,13 +16676,13 @@ Please help our engineers fix this problem. Tell us what happened right before y
            Don't Install
          </message>
          <message name="IDS_INSTALL_FROM_DMG_AUTHENTICATION_PROMPT" desc="The prompt to be displayed in the authentication dialog when installing from the disk image.  The system will add a sentence asking for an administrator's name and password.  Mac-only.">
@@ -882,7 +884,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -16284,7 +16284,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -16704,7 +16704,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
            Proxy Configuration Help
          </message>
          <message name="IDS_ABOUT_LINUX_PROXY_CONFIG_BODY" desc="HTML body of page shown on systems where system proxy configuration is unsupported.">
@@ -891,7 +893,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
  
            &lt;p&gt;But you can still configure via the command line.  Please see &lt;code&gt;man <ph name="PRODUCT_BINARY_NAME">$2<ex>google-chrome</ex></ph>&lt;/code&gt; for more information on flags and environment variables.&lt;/p&gt;
          </message>
-@@ -17320,7 +17320,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -17743,7 +17743,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
        </message>
      </if>
  
@@ -900,7 +902,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      <message name="IDS_IME_API_ACTIVATED_WARNING" desc="The Warning info when an IME extension is trying to activate.">
        <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> extension may collect all the text you type, including personal data like passwords and credit card numbers. Do you want to use this extension?
      </message>
-@@ -17378,19 +17378,19 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -17801,19 +17801,19 @@ Please help our engineers fix this problem. Tell us what happened right before y
  
      <!-- Automation infobar -->
      <message name="IDS_CONTROLLED_BY_AUTOMATION" desc="Message shown when the browser session is being controlled by an automated test.">
@@ -926,7 +928,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
  
      <!-- Security Key permission -->
-@@ -17548,8 +17548,8 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -17971,8 +17971,8 @@ Please help our engineers fix this problem. Tell us what happened right before y
      <message name="IDS_FILE_SYSTEM_ACCESS_USAGE_BUBBLE_FILES_TEXT" desc="Text to display a list of files in the File System Access usage bubble">
        {0, plural, offset:2
          =1 {<ph name="FILE1">{1}<ex>README.md</ex></ph>}
@@ -937,7 +939,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        }
      </message>
      <message name="IDS_FILE_SYSTEM_ACCESS_USAGE_EXPAND" desc="Tooltip for and name of a button that shows (expands) a detailed list of files and directories">
-@@ -17664,7 +17664,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -18099,7 +18099,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
        </message>
        <if expr="is_macosx">
          <message name="IDS_WEBAUTHN_YOUR_CHROME_PROFILE" desc="Menu item text. The user selects this to use a hardware-based authentication mechanism that is built in to the computer, such as a fingerprint reader. The credential itself is stored in the Chrome profile, however, and this text emphasizes that.">
@@ -946,7 +948,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
        <message name="IDS_WEBAUTHN_TRANSPORT_INTERNAL" desc="Menu item text. The user selects this to use a hardware-based authentication mechanism that is built in to the computer, such as a fingerprint reader.">
-@@ -17754,7 +17754,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -18189,7 +18189,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
  
        <if expr="is_macosx">
          <message name="IDS_WEBAUTHN_BLUETOOTH_PERMISSION" desc="Body text in a dialog that appears when the user has requested some function that depends on Bluetooth, but Chrome doesn't have permission to use Bluetooth. The action on this dialog is a button that will open the macOS System Settings so that the user can grant permission.">
@@ -955,16 +957,16 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
        </if>
  
-@@ -17930,7 +17930,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -18365,7 +18365,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          On other devices
        </message>
        <message name="IDS_WEBAUTHN_SOURCE_CHROME_PROFILE" desc="The subtitle shown in a button that lets the user select a passkey to sign in, indicating that the passkey resides in the user's Chrome Profile.">
 -        Your Chrome profile
 +        Your MoltBrowser profile
        </message>
-       <message name="IDS_WEBAUTHN_SOURCE_ICLOUD_KEYCHAIN" desc="The subtitle shown in a button that lets the user select a passkey to sign in, indicating that the passkey resides in the user's iCloud Keychain.">
-         iCloud Keychain
-@@ -18390,24 +18390,24 @@ Please help our engineers fix this problem. Tell us what happened right before y
+       <message name="IDS_WEBAUTHN_SOURCE_ICLOUD_KEYCHAIN" desc="The subtitle shown in a button that lets the user select a passkey to sign in, indicating that the passkey resides in Apple Passwords. Apple Passwords is an Apple brand and should be translated the same as it is in Apple devices. If you edit the language code in https://support.apple.com/es-es/104955 you can see how Apple translates it in several languages. ('Passwords' is usually localized.)">
+         Apple Passwords
+@@ -18850,24 +18850,24 @@ Please help our engineers fix this problem. Tell us what happened right before y
      </message>
  
      <message name="IDS_TAILORED_SECURITY_ENABLED_DIALOG_MAIN_TEXT" desc="Title shown in the tab dialog when the account tailored security setting changes for a consented primary account">
@@ -994,7 +996,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_TAILORED_SECURITY_UNCONSENTED_ACCEPT_BUTTON" desc="The text on the accept button in the tab modal dialog when the account tailored security setting changes for an unconsented primary account">
        Turn on
-@@ -18421,7 +18421,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -18881,7 +18881,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Enhanced Safe Browsing is on
      </message>
      <message name="IDS_TAILORED_SECURITY_CONSENTED_ENABLE_MESSAGE_DESCRIPTION" desc="Description shown in the Android message when the account tailored security setting changes for a consented primary account">
@@ -1003,7 +1005,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_TAILORED_SECURITY_CONSENTED_DISABLE_MESSAGE_TITLE" desc="Title shown in the Android message when the account tailored security setting changes for a consented primary account">
        Enhanced Safe Browsing is off
-@@ -18487,7 +18487,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -18947,7 +18947,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
      </message>
  
      <message name="IDS_APP_PAUSE_HEADING_FOR_WEB_APPS" desc="Tells the user the app will be paused.">
@@ -1012,7 +1014,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
  
      <!-- App block prompt -->
-@@ -19083,7 +19083,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -19570,7 +19570,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          Close
        </message>
        <message name="IDS_NON_MILESTONE_UPDATE_TOAST_BODY" desc="Text on a toast notification that is shown when a non milestone update is complete.">
@@ -1021,7 +1023,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_GLIC_SHARE_IMAGE_FAILED_TOAST_BODY" desc="Text on a toast notification that is shown when sharing an image with Gemini fails (when using the 'Create image with Gemini' context menu item)">
          Could not share image with Gemini. Try again or try another image.
-@@ -19291,7 +19291,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -19809,7 +19809,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Launch application
      </message>
      <message name="IDS_IWA_INSTALLER_VERIFICATION_TITLE" desc="Title of the verification step of the IWA installation">
@@ -1030,7 +1032,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_IWA_INSTALLER_VERIFICATION_SUBTITLE" desc="Subtitle of the verification step of the IWA installation">
        Please wait while verification is in progress
-@@ -19303,7 +19303,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -19821,7 +19821,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          other {Checking public key and integrity block... # minutes remaining}}
      </message>
      <message name="IDS_IWA_INSTALLER_VERIFICATION_ERROR_TITLE" desc="Title of an error popup during the verification step of the Isolated Web App installer">
@@ -1039,7 +1041,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_IWA_INSTALLER_VERIFICATION_ERROR_SUBTITLE" desc="Subtitle of an error popup during the verification step of the Isolated Web App installer">
        This bundle might be broken or compromised. Please close this window and download it again
-@@ -19382,8 +19382,8 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -19914,8 +19914,8 @@ Please help our engineers fix this problem. Tell us what happened right before y
          </message>
          <message name="IDS_SETTINGS_SAFETY_HUB_REVOKED_PERMISSIONS_MENU_NOTIFICATION" desc="Title for the permissions review Safety Check module on the Magic Stack. Shown when Safety Check has identified several sites that send abusive notifications.">
            {NUM_SITES, plural,
@@ -1050,7 +1052,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
          </message>
          <message name="IDS_SETTINGS_SAFETY_HUB_COMPROMISED_PASSWORDS_MENU_NOTIFICATION" desc="Summary for the compromised passwords Safety Check module on the Magic Stack. Shown when Safety Check has identified insecure credentials.">
            {NUM_SITES, plural,
-@@ -19402,7 +19402,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -19934,7 +19934,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
  
      <!-- PDF Searchify elements. -->
      <message name="IDS_PDF_SEARCHIFY_IPH_TITLE" desc="Title of in product help to introduce PDF Searchify feature.">
@@ -1059,7 +1061,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_PDF_SEARCHIFY_IPH_BODY" desc="Content of in product help to introduce PDF Searchify feature.">
      PDFs automatically get converted so you can search and select text
-@@ -19491,7 +19491,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20023,7 +20023,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
      Always allow
    </message>
    <message name="IDS_CHROME_NO_LONGER_SHOW_WARNINGS_NOTIFICATION_BODY" desc="The body for the notification sent by Chrome informing the user that their decision to never show warnings for the url has been applied.">
@@ -1068,7 +1070,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
    </message>
    <message name="IDS_CHROME_NO_LONGER_SHOW_WARNINGS_NOTIFICATION_TITLE_NEW" desc="The title for the notification sent by Chrome informing the user that their decision to never show warnings for the url has been applied.">
      Notifications allowed from <ph name="DOMAIN">$1<ex>example.com</ex></ph>
-@@ -19500,23 +19500,23 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20032,23 +20032,23 @@ Please help our engineers fix this problem. Tell us what happened right before y
      Help improve spam protection by sharing notification content and the site's URL with Google. Content may be reviewed by humans.
    </message>
  
@@ -1096,7 +1098,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      <if expr="enable_pdf">
        <message name="IDS_PDF_GLIC_SUMMARIZE" desc="Button label for the button to summarize PDFs.">
          Summarize
-@@ -19590,10 +19590,10 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20122,10 +20122,10 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Choose your account
      </message>
      <message name="IDS_ACCOUNT_CHOOSER_SUBTITLE" desc="Text description for saving files to Drive via Chrome PDF viewer.">
@@ -1110,7 +1112,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_ACCOUNT_CHOOSER_DRIVE" desc="Google Drive product name.">
        Drive
-@@ -19610,10 +19610,10 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20142,10 +20142,10 @@ Please help our engineers fix this problem. Tell us what happened right before y
  
      <!-- Tips Notifications-->
      <message name="IDS_TIPS_NOTIFICATIONS_HELPFUL_BUTTON_TEXT" desc="Text for the helpful button found on tips notifications.">
@@ -1123,7 +1125,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_TIPS_NOTIFICATIONS_ENHANCED_SAFE_BROWSING_SUBTITLE" desc="Subtitle for the enhanced safe browsing tip notification.">
        Add an extra layer of security against online threats with enhanced protection
-@@ -19643,7 +19643,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20175,7 +20175,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Create, save, and manage your passwords so you can easily sign in
      </message>
      <message name="IDS_TIPS_NOTIFICATIONS_SIGNIN_TITLE" desc="Title for the sign-in tip notification. [CHAR_LIMIT=32]">
@@ -1132,7 +1134,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
      <message name="IDS_TIPS_NOTIFICATIONS_SIGNIN_SUBTITLE" desc="Subtitle for the sign-in tip notification.">
        Sign in to easily continue on all your devices
-@@ -19664,7 +19664,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20196,7 +20196,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
        Pick up where you left off
      </message>
      <message name="IDS_TIPS_NOTIFICATIONS_RECENT_TABS_SUBTITLE" desc="Subtitle for the recent tabs tip notification.">
@@ -1141,7 +1143,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
      </message>
  
      <!-- chrome://updater -->
-@@ -19691,7 +19691,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20223,7 +20223,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          App Name or ID
        </message>
        <message name="IDS_UPDATER_APP_POLICIES" desc="Header for a section of the enterprise policy table detailing the policies in effect for a specific application.">
@@ -1150,7 +1152,7 @@ index 7e4c3abea6cc649f8785c782b8c238ec87b5cde7..da3dd73016d8ef459f348eab371bec9d
        </message>
        <message name="IDS_UPDATER_APP_STATES_QUERY_FAILED" desc="An error message indicating that the list of installed applications could not be retrieved from Chrome's updater.">
          Failed to query installed applications.
-@@ -19817,7 +19817,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
+@@ -20349,7 +20349,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
          Export History Files
        </message>
        <message name="IDS_UPDATER_FILTER_CHIP_APP" desc="Text displayed in a filter chip showing the selected application's names or identifier strings.">

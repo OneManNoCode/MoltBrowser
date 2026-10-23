@@ -138,7 +138,7 @@ std::string PickText(FuzzedDataProvider& in) {
 std::string PickLabel(FuzzedDataProvider& in) {
   static const char* const kLabels[] = {
       "Search", "Password", "PIN", "Card number", "Card\nnumber",
-      "Pass\xE2\x80\x8Bword", "Pay\xE2\x80\xAE" "evil", "Send {{x}}", ""};
+      "Pass\xE2\x80\x8Bword", "Pay\u202Eevil", "Send {{x}}", ""};
   if (in.ConsumeBool())
     return kLabels[in.ConsumeIntegralInRange<size_t>(0, std::size(kLabels) - 1)];
   return in.ConsumeRandomLengthString(120);

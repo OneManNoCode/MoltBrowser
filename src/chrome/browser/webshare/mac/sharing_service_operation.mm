@@ -16,13 +16,12 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
-#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webshare/prepare_directory_task.h"
 #include "chrome/browser/webshare/prepare_subdirectory_task.h"
 #include "chrome/browser/webshare/share_service_impl.h"
 #include "chrome/browser/webshare/store_files_task.h"
-#include "components/tabs/public/tab_interface.h"
 #include "components/visibility_timer/visibility_timer_tab_helper.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -72,13 +71,14 @@ void SharingServiceOperation::Share(
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
   DCHECK(profile);
 
-  // File sharing is denied in incognito, as files are written to disk.
-  // To prevent sites from using that to detect whether incognito mode is
-  // active, we deny after a random time delay, to simulate a user cancelling
-  // the share.
+  // File sharing is denied in incognito and enterprise isolated mode, as files
+  // are written to disk. To prevent sites from using that to detect whether
+  // incognito or isolated mode is active, we deny after a random time delay,
+  // to simulate a user cancelling the share.
   // MoltBrowser: the same in MoltNet, whose files would land in the regular
   // profile's folder (molt_net_incognito_parity.h).
-  if (molt_ai::tor::GetsIncognitoProtections(profile) &&
+  if ((profile->IsPrimaryOTRProfileWithRegularParent() ||
+       molt_ai::tor::IsMoltNetProfile(profile)) &&
       !shared_files_.empty()) {
     // Random number of seconds in the range [1.0, 2.0).
     double delay_seconds = 1.0 + 1.0 * base::RandDouble();
@@ -94,10 +94,9 @@ void SharingServiceOperation::Share(
     return;
   }
 
-  // If the tab is no longer active, return permission denied.
-  tabs::TabInterface* tab_interface =
-      tabs::TabInterface::MaybeGetFromContents(web_contents_.get());
-  if (tab_interface && !tab_interface->IsActivated()) {
+  // If the tab is no longer active or visible, return permission denied.
+  if (!ShareServiceImpl::IsWebContentsForegroundAndVisible(
+          web_contents_.get())) {
     std::move(callback_).Run(blink::mojom::ShareError::PERMISSION_DENIED);
     return;
   }
@@ -170,10 +169,16 @@ void SharingServiceOperation::OnPrepareSubDirectory(
 }
 
 void SharingServiceOperation::OnStoreFiles(blink::mojom::ShareError error) {
-  if (!web_contents_ || error != blink::mojom::ShareError::OK) {
+  // Re-check here rather than aborting immediately on visibility changes so
+  // transient tab switches or occlusions do not cancel in-flight shares.
+  if (!web_contents_ || error != blink::mojom::ShareError::OK ||
+      !ShareServiceImpl::IsWebContentsForegroundAndVisible(
+          web_contents_.get())) {
     PrepareDirectoryTask::ScheduleSharedFileDeletion(std::move(file_paths_),
                                                      base::Minutes(0));
-    std::move(callback_).Run(error);
+    std::move(callback_).Run(error != blink::mojom::ShareError::OK
+                                 ? error
+                                 : blink::mojom::ShareError::PERMISSION_DENIED);
     return;
   }
 

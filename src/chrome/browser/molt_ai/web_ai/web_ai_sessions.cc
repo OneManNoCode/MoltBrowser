@@ -23,7 +23,9 @@ using blink::mojom::ModelStreamingResponseStatus;
 constexpr size_t kMaxResponseConstraintBytes = 32 * 1024;
 
 blink::mojom::ModelExecutionContextInfoPtr ContextInfo(uint32_t usage) {
-  return blink::mojom::ModelExecutionContextInfo::New(usage);
+  // response_tokens feeds only a UMA histogram in Blink, which 0 skips.
+  return blink::mojom::ModelExecutionContextInfo::New(usage,
+                                                      /*response_tokens=*/0);
 }
 
 // The status a page gets for a generation that didn't complete. Never

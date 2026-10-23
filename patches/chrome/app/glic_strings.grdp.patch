@@ -1,15 +1,15 @@
 MoltBrowser patch for chrome/app/glic_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/glic_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/glic_strings.grdp b/chrome/app/glic_strings.grdp
-index b00ddd27667c9a50a9b00f407f06ff0d854c841a..12dd25bbaa5b0e2da3b41032d1ddaeab84e030d5 100644
+index d11ee3c5510ba98197486d462c86ed735d41aaf2..e172505341a7fad93e0c3a1f4afd2555e01b68b5 100644
 --- a/chrome/app/glic_strings.grdp
 +++ b/chrome/app/glic_strings.grdp
-@@ -340,10 +340,10 @@
-     Review the risks of Gemini Spark
+@@ -367,10 +367,10 @@
+     Review the risks of using Gemini
    </message>
    <message name="IDS_SETTINGS_GLIC_PERMISSIONS_CHROME_WEB_ACTUATION_TOGGLE" desc="Title for the Gemini feature introduction screen" formatter_data="android_java">
 -    Let Chrome browse for you
@@ -21,7 +21,7 @@ index b00ddd27667c9a50a9b00f407f06ff0d854c841a..12dd25bbaa5b0e2da3b41032d1ddaeab
    </message>
    <message name="IDS_SETTINGS_GLIC_PERMISSIONS_CHROME_WEB_ACTUATION_TOGGLE_SUBLABEL_V2" desc="Subheader explaining what the Gemini feature does (WebUI version)">
      Gemini in Chrome uses auto browse to work in your tabs and complete tasks you give it. <ph name="LINK_BEGIN">&lt;a href="#" target="_blank" aria-label="$1" aria-description="$2"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
-@@ -540,15 +540,15 @@
+@@ -564,15 +564,15 @@
      Get help with your tasks
    </message>
    <message name="IDS_GLIC_TRYIT_BODY" desc="Text for a promo pointing to the Gemini icon in Chrome, that opens Gemini in Chrome if selected.">

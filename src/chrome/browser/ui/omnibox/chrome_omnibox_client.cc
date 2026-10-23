@@ -8,14 +8,17 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
+#include "base/memory/raw_ref.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/notreached.h"
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -39,6 +42,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history_embeddings/history_embeddings_utils.h"
 #include "chrome/browser/omnibox/autocomplete_controller_emitter_factory.h"
+#include "chrome/browser/omnibox/chrome_omnibox_navigation_observer_base.h"
 #include "chrome/browser/page_load_metrics/chrome_initiator_location.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
@@ -57,10 +61,10 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ssl/typed_navigation_upgrade_throttle.h"
 #include "chrome/browser/ui/bookmarks/bookmark_stats.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
 #include "chrome/browser/ui/layout_constants.h"
@@ -68,11 +72,10 @@
 #include "chrome/browser/ui/lens/lens_searchbox_controller.h"
 #include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
-#include "chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
 #include "chrome/browser/ui/omnibox/omnibox_tab_helper.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_closer.h"
 #include "chrome/browser/ui/views/search_engines/dse_reset_dialog.h"
 #include "chrome/common/channel_info.h"
@@ -101,14 +104,17 @@
 #include "components/search_engines/template_url_service.h"
 #include "components/search_engines/template_url_starter_pack_data.h"
 #include "components/sessions/content/session_tab_helper.h"
+#include "components/sessions/core/session_id.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -154,24 +160,89 @@ LensSearchController* GetLensSearchController(
 }
 
 #if BUILDFLAG(ENABLE_EXTENSIONS) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
+// Guards a withheld navigation against a continuation that is never invoked.
+//
+// OpenMatch() abandons a pending navigation while the extension-DSE
+// confirmation is resolved, and relies on a callback to resume it. That
+// callback crosses an asynchronous boundary that includes a network image
+// fetch gated by a BarrierClosure with no timeout, so "the callback is simply
+// never run" is a reachable state, not a hypothetical one. If it happens, the
+// user clicks a suggestion and nothing occurs, forever, with no feedback.
+//
+// Holding the continuation here makes the safe outcome the default: if this
+// object is destroyed without Run() having been called, the navigation is
+// resumed as if no dialog had been shown (unless the initiating tab was
+// closed or deactivated). Only an explicit user decision can suppress it. See
+// https://crbug.com/540532980.
+class PendingNavigationGuard : public content::WebContentsObserver {
+ public:
+  using Callback =
+      base::OnceCallback<void(OmniboxClient::ExtensionControlledDialogResult)>;
+
+  PendingNavigationGuard(Callback callback,
+                         LocationBar& location_bar,
+                         content::WebContents* initiating_web_contents)
+      : content::WebContentsObserver(initiating_web_contents),
+        callback_(std::move(callback)),
+        location_bar_(location_bar) {}
+
+  PendingNavigationGuard(const PendingNavigationGuard&) = delete;
+  PendingNavigationGuard& operator=(const PendingNavigationGuard&) = delete;
+
+  ~PendingNavigationGuard() override {
+    if (callback_) {
+      std::move(callback_).Run(
+          OriginalTabStillActive()
+              ? OmniboxClient::ExtensionControlledDialogResult::kNoDialogShown
+              : OmniboxClient::ExtensionControlledDialogResult::kCancel);
+    }
+  }
+
+  void Run(OmniboxClient::ExtensionControlledDialogResult result) {
+    if (callback_) {
+      std::move(callback_).Run(
+          OriginalTabStillActive()
+              ? result
+              : OmniboxClient::ExtensionControlledDialogResult::kCancel);
+    }
+  }
+
+ private:
+  bool OriginalTabStillActive() const {
+    return web_contents() && location_bar_->GetWebContents() == web_contents();
+  }
+
+  Callback callback_;
+  const raw_ref<LocationBar> location_bar_;
+};
+
 ExtensionControlledDialogResult SettingDialogResultToExtensionDialogResult(
-    SettingsOverriddenDialogController::DialogResult result) {
+    std::optional<SettingsOverriddenDialogController::DialogResult> result) {
   using DialogResult = SettingsOverriddenDialogController::DialogResult;
-  switch (result) {
+  // No dialog was shown, so the user was never asked. Resume the navigation.
+  if (!result.has_value()) {
+    return ExtensionControlledDialogResult::kNoDialogShown;
+  }
+  // Enumerate every case explicitly: a `default:` here is what allowed
+  // "no dialog was shown" to masquerade as "the user cancelled", silently
+  // dropping the navigation (http://crbug.com/540532980).
+  switch (*result) {
     case DialogResult::kKeepNewSettings:
       return ExtensionControlledDialogResult::kAccept;
     case DialogResult::kChangeSettingsBack:
       return ExtensionControlledDialogResult::kReject;
-    default:
+    case DialogResult::kDialogDismissed:
+    case DialogResult::kDialogClosedWithoutUserAction:
       return ExtensionControlledDialogResult::kCancel;
   }
+  NOTREACHED();
 }
 #endif
 
 }  // namespace
 
 ChromeOmniboxClient::ChromeOmniboxClient(LocationBar* location_bar,
-                                         Browser* browser,
+                                         BrowserWindowInterface* browser,
                                          Profile* profile)
     : location_bar_(location_bar),
       browser_(browser),
@@ -281,16 +352,22 @@ bool ChromeOmniboxClient::
     return false;
   }
 
+  auto guarded_callback =
+      base::BindOnce(&PendingNavigationGuard::Run,
+                     std::make_unique<PendingNavigationGuard>(
+                         std::move(callback), *location_bar_, web_contents));
+
   controller->ShowConfirmationDialog(
       *web_contents,
       base::BindOnce(
           [](base::OnceCallback<void(ExtensionControlledDialogResult)>
                  client_callback,
-             SettingsOverriddenDialogController::DialogResult result) {
+             std::optional<SettingsOverriddenDialogController::DialogResult>
+                 result) {
             std::move(client_callback)
                 .Run(SettingDialogResultToExtensionDialogResult(result));
           },
-          std::move(callback)));
+          std::move(guarded_callback)));
 
   return true;
 #else
@@ -336,11 +413,7 @@ omnibox::OmniboxPopupCloser* ChromeOmniboxClient::GetOmniboxPopupCloser() {
   if (!browser_) {
     return nullptr;
   }
-  auto* bwf = browser_->browser_window_features();
-  if (!bwf) {
-    return nullptr;
-  }
-  return bwf->omnibox_popup_closer();
+  return omnibox::OmniboxPopupCloser::From(browser_);
 }
 
 bool ChromeOmniboxClient::ShouldDefaultTypedNavigationsToHttps() const {
@@ -460,7 +533,7 @@ void ChromeOmniboxClient::ProcessExtensionMatch(
   // In unscoped mode, the input is sent verbatim. In scoped (keyword) mode, the
   // keyword and input are split, and only the input after the keyword is sent.
   std::string input =
-      match.provider->type() == AutocompleteProvider::TYPE_UNSCOPED_EXTENSION
+      match.provider->type() == AutocompleteProvider::Type::kUnscopedExtension
           ? base::UTF16ToUTF8(match.fill_into_edit)
           : base::UTF16ToUTF8(remaining_input);
   extensions::ExtensionOmniboxEventRouter::OnInputEntered(
@@ -595,12 +668,10 @@ void ChromeOmniboxClient::CheckConditionsAndLaunchSurvey() {
     return;
   }
 
-  auto* location_bar_view = browser_view->GetLocationBarView();
+  auto* location_bar = browser_view->GetLocationBar();
 
   // Don't show the HaTS survey if the location bar has focus.
-  if (location_bar_view &&
-      !location_bar_view->Contains(
-          location_bar_view->GetFocusManager()->GetFocusedView())) {
+  if (location_bar && !location_bar->IsFocusWithin()) {
     hats_service->LaunchSurvey(
         survey_trigger, base::DoNothing(), base::DoNothing(), {},
         {{"page classification",
@@ -881,7 +952,7 @@ void ChromeOmniboxClient::OnAutocompleteAccept(
     TemplateURLRef::PostContent* post_content,
     WindowOpenDisposition disposition,
     ui::PageTransition transition,
-    AutocompleteMatchType::Type match_type,
+    omnibox::AutocompleteMatchType match_type,
     base::TimeTicks match_selection_timestamp,
     bool destination_url_entered_without_scheme,
     bool destination_url_entered_with_http_scheme,
@@ -914,8 +985,8 @@ void ChromeOmniboxClient::OnAutocompleteAccept(
         AttachOmniboxDefaultSearchEngineNavigationHandleUserData(*navigation);
       }
     }
-    ChromeOmniboxNavigationObserver::Create(navigation.get(), profile_, text,
-                                            match, alternative_nav_match);
+    ChromeOmniboxNavigationObserverBase::Create(
+        navigation.get(), profile_, text, match, alternative_nav_match);
     search_engines::MaybeShowSearchEngineResetNotification(browser_,
                                                            match_type);
   }

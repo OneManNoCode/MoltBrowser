@@ -96,4 +96,46 @@
   <message name="IDS_DATA_CONTROLS_BLOCKED_LABEL_WITH_DOMAIN" desc="Generic text displayed in a toast telling the user their action is blocked by their administrator.">
       Blocked by <ph name="DOMAIN">$1<ex>google.com</ex></ph>
   </message>
+
+  <!-- Enterprise Content Analysis dialog strings -->
+  <message name="IDS_ENTERPRISE_CONTENT_ANALYSIS_PASTE_BLOCKED_MESSAGE" desc="The text displayed in a dialog telling users that their paste action is blocked by their administrator.">
+    Content couldn't be pasted due to your organization's policies
+  </message>
+
+  <message name="IDS_ENTERPRISE_CONTENT_ANALYSIS_PASTE_WARN_CONTINUE_BUTTON" desc="Continue dialog button label for warning before pasting to a site.">
+    Paste anyway
+  </message>
+
+  <message name="IDS_ENTERPRISE_CONTENT_ANALYSIS_PASTE_WARN_LABEL" desc="Text displayed at the top of a dialog telling the user that pasting the content is not recommended.">
+    Based on your organization's policies, this content may contain sensitive information
+  </message>
+
+  <message name="IDS_ENTERPRISE_CONTENT_ANALYSIS_PASTE_WARN_TITLE" desc="Text displayed at the top of a dialog telling the user that pasting the content is not recommended.">
+    Pasting not recommended
+  </message>
+
+  <!-- Enterprise Proxy Error Page strings -->
+  <message name="IDS_ENTERPRISE_PROXY_OTHER_ERROR_HEADING" desc="Heading in the enterprise proxy error page when a site is unreachable.">
+    This site couldn't be reached
+  </message>
+
+  <message name="IDS_ENTERPRISE_PROXY_OTHER_ERROR_PRIMARY_PARAGRAPH" desc="Description in the enterprise proxy error page when a site is unreachable.">
+    Something went wrong with protections or policies set by your organization. Try again later or contact your administrator.
+  </message>
+
+  <message name="IDS_ENTERPRISE_PROXY_AUTHZ_ERROR_HEADING" desc="Heading in the enterprise proxy error page when a site is blocked by authorization policy.">
+    Your organization blocked you from visiting the site ahead
+  </message>
+
+  <message name="IDS_ENTERPRISE_PROXY_AUTHZ_ERROR_PRIMARY_PARAGRAPH" desc="Description in the enterprise proxy error page when a site is blocked by authorization policy.">
+    You were blocked from visiting <ph name="URL">$1<ex>https://example.com</ex></ph> because of your organization's policies. If that's unexpected, contact your administrator.
+  </message>
+
+  <message name="IDS_ENTERPRISE_PROXY_AUTHN_ERROR_HEADING" desc="Heading in the enterprise proxy error page when sign-in is required by organization policy.">
+    Your organization requires you to sign in to Chrome
+  </message>
+
+  <message name="IDS_ENTERPRISE_PROXY_AUTHN_ERROR_PRIMARY_PARAGRAPH" desc="Description in the enterprise proxy error page when sign-in is required by organization policy.">
+    To visit the site ahead, your organization requires you to sign in with your managed Google account.
+  </message>
 </grit-part>

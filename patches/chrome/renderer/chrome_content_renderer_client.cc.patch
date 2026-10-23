@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/renderer/chrome_content_renderer_client.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/renderer/chrome_content_renderer_client.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index bb16469783abb876d506da4725b2cdaa3339442f..8fdd25f45889c8472c6eb02672ec46fa350b2937 100644
+index d460c0fb699d6a3e5ebf930ff9a8c7ea073a9b5f..2bc5fc92f9e8eb62ba20ee3f7225f4214efa5591 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -62,6 +62,10 @@
+@@ -63,6 +63,10 @@
  #include "chrome/renderer/loadtimes_bindings.h"
  #include "chrome/renderer/media/flash_embed_rewrite.h"
  #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
@@ -19,7 +19,7 @@ index bb16469783abb876d506da4725b2cdaa3339442f..8fdd25f45889c8472c6eb02672ec46fa
  #include "chrome/renderer/net/net_error_helper.h"
  #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
  #include "chrome/renderer/plugins/pdf_plugin_placeholder.h"
-@@ -385,6 +389,12 @@ ChromeContentRendererClient::~ChromeContentRendererClient() = default;
+@@ -405,6 +409,12 @@ ChromeContentRendererClient::~ChromeContentRendererClient() = default;
  void ChromeContentRendererClient::RenderThreadStarted() {
    RenderThread* thread = RenderThread::Get();
  
@@ -32,7 +32,7 @@ index bb16469783abb876d506da4725b2cdaa3339442f..8fdd25f45889c8472c6eb02672ec46fa
    main_thread_profiler_->SetAuxUnwinderFactory(base::BindRepeating(
        &CreateV8Unwinder, base::Unretained(v8::Isolate::GetCurrent())));
  
-@@ -623,6 +633,12 @@ void ChromeContentRendererClient::RenderFrameCreated(
+@@ -657,6 +667,12 @@ void ChromeContentRendererClient::RenderFrameCreated(
  
    new prerender::NoStatePrefetchRenderFrameObserver(render_frame);
  

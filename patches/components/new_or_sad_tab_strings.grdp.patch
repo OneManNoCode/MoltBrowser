@@ -1,11 +1,11 @@
 MoltBrowser patch for components/new_or_sad_tab_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/new_or_sad_tab_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/new_or_sad_tab_strings.grdp b/components/new_or_sad_tab_strings.grdp
-index 16fd5f02fd86342633a1fdfb01162ca40021d1b1..e05e72013f9012b6384a5dd7eb244eea2d9d5eba 100644
+index 21a8aae55523cadf9520c5a097d226552c3abb23..234661a859a7ede9af9f580e7f41bd9ac751bf47 100644
 --- a/components/new_or_sad_tab_strings.grdp
 +++ b/components/new_or_sad_tab_strings.grdp
 @@ -83,12 +83,12 @@
@@ -23,7 +23,7 @@ index 16fd5f02fd86342633a1fdfb01162ca40021d1b1..e05e72013f9012b6384a5dd7eb244eea
          </message>
        </if>
        <if expr="is_android or is_ios">
-@@ -163,7 +163,7 @@
+@@ -167,7 +167,7 @@
        </message>
         <if expr="_google_chrome">
          <message name="IDS_NEW_TAB_OTR_NOT_SAVED" desc="Bullet points listing data that are not saved in the Incognito mode. 'Browsing history' means a history of visited websites. 'Cookies and site data' refers to data saved by websites on the user's device (e.g. sign-in state, preferences, etc.). 'Information entered in forms' refers to names, addresses, passwords etc. that users enter into forms on the web." formatter_data="android_java">
@@ -32,7 +32,7 @@ index 16fd5f02fd86342633a1fdfb01162ca40021d1b1..e05e72013f9012b6384a5dd7eb244eea
            <ph name="BEGIN_LIST">&lt;ul&gt;</ph>
              <ph name="LIST_ITEM">&lt;li&gt;</ph>Your browsing history
              <ph name="LIST_ITEM">&lt;li&gt;</ph>Cookies and site data
-@@ -173,7 +173,7 @@
+@@ -177,7 +177,7 @@
        </if>
        <if expr="not _google_chrome">
          <message name="IDS_NEW_TAB_OTR_NOT_SAVED" desc="Bullet points listing data that are not saved in the Incognito mode. 'Browsing history' means a history of visited websites. 'Cookies and site data' refers to data saved by websites on the user's device (e.g. sign-in state, preferences, etc.). 'Information entered in forms' refers to names, addresses, passwords etc. that users enter into forms on the web." formatter_data="android_java">

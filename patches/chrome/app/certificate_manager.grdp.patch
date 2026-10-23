@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/certificate_manager.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/certificate_manager.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/certificate_manager.grdp b/chrome/app/certificate_manager.grdp
-index 23a87c6542a54c860d77ee38c748c4bd1e2f1d6d..562846832c9f9084a557358902522d8d93eaeb73 100644
+index 080b180c42705f6b3fde62735c32e877f2f056e9..98beec1e950de94f1c461a7d4743985044821724 100644
 --- a/chrome/app/certificate_manager.grdp
 +++ b/chrome/app/certificate_manager.grdp
 @@ -12,7 +12,7 @@

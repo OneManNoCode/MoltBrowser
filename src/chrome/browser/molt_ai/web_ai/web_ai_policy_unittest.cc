@@ -390,8 +390,16 @@ TEST(WebAIPolicyTest, Sampling) {
   EXPECT_FLOAT_EQ(
       SamplingForMode(SamplingMode::kMostPredictable).temperature, 0.0f);
   EXPECT_EQ(SamplingForMode(SamplingMode::kBalanced).top_k, 64u);
+  EXPECT_FLOAT_EQ(SamplingForMode(SamplingMode::kBalanced).temperature, 1.0f);
   EXPECT_FLOAT_EQ(SamplingForMode(SamplingMode::kMostCreative).temperature,
                   1.2f);
+  // The two modes new at 156 sit between their neighbours.
+  EXPECT_EQ(SamplingForMode(SamplingMode::kSlightlyPredictable).top_k, 64u);
+  EXPECT_FLOAT_EQ(
+      SamplingForMode(SamplingMode::kSlightlyPredictable).temperature, 0.7f);
+  EXPECT_EQ(SamplingForMode(SamplingMode::kSlightlyCreative).top_k, 72u);
+  EXPECT_FLOAT_EQ(SamplingForMode(SamplingMode::kSlightlyCreative).temperature,
+                  1.1f);
 
   EXPECT_EQ(ClampSampling(0, -1.0f).top_k, 1u);
   EXPECT_FLOAT_EQ(ClampSampling(0, -1.0f).temperature, 0.0f);

@@ -1,11 +1,11 @@
 MoltBrowser patch for components/payments_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/payments_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/payments_strings.grdp b/components/payments_strings.grdp
-index 9ce67b1e11fb676f15a5c2adbeff2e24f7513c63..52cad308c23625a5b4d612f65de800d65255ba5d 100644
+index e68416f814dfec47a90246d4439f8881fbf531aa..d704ab53deebc9fb3262cbb08089502df49ff8c1 100644
 --- a/components/payments_strings.grdp
 +++ b/components/payments_strings.grdp
 @@ -288,16 +288,16 @@

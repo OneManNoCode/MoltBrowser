@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/core/events/mouse_event.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/events/mouse_event.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/events/mouse_event.cc b/third_party/blink/renderer/core/events/mouse_event.cc
-index 36288782130e43774994c12f60fe3ffde19a721a..5b692709969eefaba74066d7774d154bedc7d056 100644
+index 19f0f66095b4373fc111f912de9120ef167d1786..95beb57847b0a4f71347f1e3258f79a2c6c68085 100644
 --- a/third_party/blink/renderer/core/events/mouse_event.cc
 +++ b/third_party/blink/renderer/core/events/mouse_event.cc
 @@ -37,6 +37,7 @@

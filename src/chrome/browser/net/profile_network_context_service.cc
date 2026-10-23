@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "base/base64.h"
+#include "base/byte_size.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/span.h"
@@ -36,16 +37,15 @@
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/domain_reliability/service_factory.h"
-#include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
-#include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
-#include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/ssl/sct_reporting_service.h"
 #include "chrome/browser/ssl/sct_reporting_service_factory.h"
+#include "chrome/browser/ssl/ssl_config_overlay.h"
+#include "chrome/browser/ssl/ssl_config_service_manager.h"
 #include "chrome/browser/webid/federated_identity_permission_context.h"
 #include "chrome/browser/webid/federated_identity_permission_context_factory.h"
 #include "chrome/common/buildflags.h"
@@ -78,13 +78,13 @@
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/first_party_sets_handler.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/reduce_accept_language_utils.h"
 #include "content/public/browser/shared_cors_origin_access_list.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
 #include "crypto/crypto_buildflags.h"
+#include "extensions/buildflags/buildflags.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/base/features.h"
 #include "net/cert/asn1_util.h"
@@ -98,7 +98,6 @@
 #include "services/network/public/cpp/cors/origin_access_list.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/cert_verifier_service.mojom.h"
-#include "services/network/public/mojom/first_party_sets_access_delegate.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "third_party/blink/public/common/features.h"
@@ -114,9 +113,6 @@
 #include "chrome/browser/policy/networking/policy_cert_service.h"
 #include "chrome/browser/policy/networking/policy_cert_service_factory.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
-#include "chrome/browser/ssl/ssl_config_overlay.h"
-#include "chrome/browser/ssl/ssl_config_service_manager.h"
-#include "chromeos/ash/components/browser_context_helper/browser_context_types.h"
 #include "chromeos/components/certificate_provider/certificate_provider.h"
 #include "chromeos/components/kiosk/kiosk_utils.h"
 #include "chromeos/constants/chromeos_features.h"
@@ -125,10 +121,10 @@
 #include "net/cert/x509_util.h"
 #endif
 
-#if BUILDFLAG(USE_NSS_CERTS)
+#if BUILDFLAG(USE_NSS_CLIENT_CERTS)
 #include "chrome/browser/ui/crypto_module_delegate_nss.h"
 #include "net/ssl/client_cert_store_nss.h"
-#endif  // BUILDFLAG(USE_NSS_CERTS)
+#endif  // BUILDFLAG(USE_NSS_CLIENT_CERTS)
 
 #if BUILDFLAG(IS_WIN)
 #include "net/ssl/client_cert_store_win.h"
@@ -249,11 +245,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
   net::AmbientAuthAllowedProfileTypes type =
       static_cast<net::AmbientAuthAllowedProfileTypes>(local_state->GetInteger(
           prefs::kAmbientAuthenticationInPrivateModesEnabled));
-
+  // TODO(b/540249284): Temporarily Isolated mode is treated as Incognito. This
+  // should be revisited when deciding on the final integration of Isolated
+  // mode.
   if (profile->IsGuestSession()) {
     return type == net::AmbientAuthAllowedProfileTypes::kGuestAndRegular ||
            type == net::AmbientAuthAllowedProfileTypes::kAll;
-  } else if (profile->IsIncognitoProfile()) {
+  } else if (profile->IsIncognitoProfile() ||
+             profile->IsEnterpriseIsolatedModeProfile()) {
     return type == net::AmbientAuthAllowedProfileTypes::kIncognitoAndRegular ||
            type == net::AmbientAuthAllowedProfileTypes::kAll;
   }
@@ -552,7 +551,6 @@ ProfileNetworkContextService::ProfileNetworkContextService(Profile* profile)
 
   DisableQuicIfNotAllowed();
 
-#if BUILDFLAG(IS_CHROMEOS)
   base::RepeatingClosure ssl_compliance_changed_callback = base::BindRepeating(
       &ProfileNetworkContextService::UpdateSSLComplianceConfig,
       base::Unretained(this));
@@ -562,7 +560,6 @@ ProfileNetworkContextService::ProfileNetworkContextService(Profile* profile)
   profile_tls13_cipher_compliance_.Init(prefs::kPreferSlowCiphers,
                                         profile_prefs,
                                         ssl_compliance_changed_callback);
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
   // Observe content settings so they can be synced to the network service.
   HostContentSettingsMapFactory::GetForProfile(profile_)->AddObserver(this);
@@ -678,14 +675,12 @@ void ProfileNetworkContextService::RegisterProfilePrefs(
   // Include user added platform certs by default.
   registry->RegisterBooleanPref(prefs::kCAPlatformIntegrationEnabled, true);
 #endif
-#if BUILDFLAG(IS_CHROMEOS)
-  net::ServerCertificateDatabaseService::RegisterProfilePrefs(registry);
-  // The following two prefs are primarily used (elsewhere) as local_state
-  // prefs, but they are also used here as Profile prefs, for the login screen
-  // Profile on ChromeOS. Their value is only used if managed.
+  // The following two prefs are registered both as local_state prefs (see
+  // SSLConfigServiceManager) and here as Profile prefs. The Profile-scoped pref
+  // holds the value that applies to this Profile's NetworkContexts. Their value
+  // is only used if managed.
   registry->RegisterStringPref(prefs::kPreferSlowKexAlgorithms, std::string());
   registry->RegisterStringPref(prefs::kPreferSlowCiphers, std::string());
-#endif
 }
 
 // static
@@ -728,10 +723,6 @@ void ProfileNetworkContextService::OnThirdPartyCookieBlockingChanged(
 }
 
 std::string ProfileNetworkContextService::ComputeAcceptLanguage() const {
-  // TODO:(https://crbug.com/40224802) Return only single language without
-  // expanding the language list if the DisableReduceAcceptLanguage deprecation
-  // trial ends.
-
   return ComputeAcceptLanguageFromPref(
       content::ReduceAcceptLanguageUtils::GetLanguagesWithMaxCount(
           profile_->IsOffTheRecord() ? language::GetIncognitoLanguageList(
@@ -1115,7 +1106,6 @@ void ProfileNetworkContextService::
       });
 }
 
-#if BUILDFLAG(IS_CHROMEOS)
 void ProfileNetworkContextService::ConfigureSSLComplianceSettings(
     network::mojom::SSLConfig* config) const {
   SSLConfigServiceManager::ConfigureSSLComplianceSettings(
@@ -1124,16 +1114,14 @@ void ProfileNetworkContextService::ConfigureSSLComplianceSettings(
 }
 
 void ProfileNetworkContextService::UpdateSSLComplianceConfig() {
+  // Clean up null or defunct overlays.
+  std::erase_if(ssl_config_overlays_, [](const auto& overlay) {
+    return overlay == nullptr || !overlay->IsBound();
+  });
   for (auto& overlay : ssl_config_overlays_) {
-    // Clean up a bit while we're iterating.
-    if (!overlay || !overlay->IsBound()) {
-      overlay.reset();
-      continue;
-    }
     overlay->Update();
   }
 }
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
 // static
 network::mojom::CookieManagerParamsPtr
@@ -1154,8 +1142,11 @@ ProfileNetworkContextService::CreateCookieManagerParams(
   // TODO(crbug.com/483614998): Granting Lens side panel is a temporary
   // exception to use SameSite cookies while it migrates to a <webview>
   // approach. This should not be done for other untrusted WebUI.
-  out->secure_origin_cookies_allowed_origins.push_back(
-      url::Origin::Create(GURL(chrome::kChromeUILensUntrustedSidePanelURL)));
+  std::vector<net::SchemefulSite> accessed_by_lens{
+      net::SchemefulSite(GURL("https://google.com"))};
+  out->secure_origin_cookies_allowed_origins.insert_or_assign(
+      url::Origin::Create(GURL(chrome::kChromeUILensUntrustedSidePanelURL)),
+      std::move(accessed_by_lens));
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
@@ -1307,7 +1298,7 @@ ProfileNetworkContextService::CreateClientCertStore() {
       std::move(certificate_provider), kcer::KcerFactoryAsh::GetKcer(profile_),
       GetClientCertIssuerSourceFactory());
 
-#elif BUILDFLAG(USE_NSS_CERTS)
+#elif BUILDFLAG(USE_NSS_CLIENT_CERTS)
   std::unique_ptr<net::ClientCertStore> store =
       std::make_unique<net::ClientCertStoreNSS>(
           base::BindRepeating(&CreateCryptoModuleBlockingPasswordDelegate,
@@ -1424,7 +1415,10 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
     }
     const int disk_cache_size = local_state->GetInteger(prefs::kDiskCacheSize);
     network_context_params->http_cache_max_size = disk_cache_size;
-    network_context_params->shared_dictionary_cache_max_size = disk_cache_size;
+    if (disk_cache_size > 0) {
+      network_context_params->shared_dictionary_cache_max_size =
+          base::ByteSize(static_cast<uint64_t>(disk_cache_size));
+    }
 
     network_context_params->file_paths =
         ::network::mojom::NetworkContextFilePaths::New();
@@ -1608,23 +1602,6 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
           molt_ai::tor::IsMoltNetProfile(profile_),
           anti_abuse_content_setting == CONTENT_SETTING_BLOCK);
 
-  network_context_params->first_party_sets_access_delegate_params =
-      network::mojom::FirstPartySetsAccessDelegateParams::New();
-  network_context_params->first_party_sets_access_delegate_params->enabled =
-      PrivacySandboxSettingsFactory::GetForProfile(profile_)
-          ->AreRelatedWebsiteSetsEnabled();
-
-  mojo::Remote<network::mojom::FirstPartySetsAccessDelegate>
-      fps_access_delegate_remote;
-  network_context_params->first_party_sets_access_delegate_receiver =
-      fps_access_delegate_remote.BindNewPipeAndPassReceiver();
-
-  first_party_sets::FirstPartySetsPolicyService* fps_service =
-      first_party_sets::FirstPartySetsPolicyServiceFactory::
-          GetForBrowserContext(profile_);
-  DCHECK(fps_service);
-  fps_service->AddRemoteAccessDelegate(std::move(fps_access_delegate_remote));
-
   network_context_params->acam_preflight_spec_conformant =
       profile_->GetPrefs()->GetBoolean(
           prefs::kAccessControlAllowMethodsInCORSPreflightSpecConformant);
@@ -1658,18 +1635,14 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   }
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS)
-  if (ash::IsSigninBrowserContext(profile_)) {
-    // base::Unretained is safe because the overlay is owned by `this`.
-    auto& overlay = ssl_config_overlays_.emplace_back(
-        std::make_unique<SSLConfigOverlay>(base::BindRepeating(
-            &ProfileNetworkContextService::ConfigureSSLComplianceSettings,
-            base::Unretained(this))));
-    if (!overlay->Init(network_context_params)) {
-      ssl_config_overlays_.pop_back();
-    }
+  // base::Unretained is safe because the overlay is owned by `this`.
+  auto& overlay = ssl_config_overlays_.emplace_back(
+      std::make_unique<SSLConfigOverlay>(base::BindRepeating(
+          &ProfileNetworkContextService::ConfigureSSLComplianceSettings,
+          base::Unretained(this))));
+  if (!overlay->Init(network_context_params)) {
+    ssl_config_overlays_.pop_back();
   }
-#endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
 base::FilePath ProfileNetworkContextService::GetPartitionPath(
@@ -1736,6 +1709,10 @@ void ProfileNetworkContextService::Shutdown() {
   enable_referrers_.Destroy();
   pref_accept_language_.Destroy();
   quic_allowed_.Destroy();
+
+  ssl_config_overlays_.clear();
+  profile_key_exchange_compliance_.Destroy();
+  profile_tls13_cipher_compliance_.Destroy();
 
   proxy_config_monitor_ = nullptr;
 

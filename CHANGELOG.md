@@ -25,8 +25,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   click, never for an agent-run draft whose sites aren't confirmed yet.
 - **Current Chromium.** Rebased from a March 2026 trunk build (148.0.7729.0,
   which had none of the M148 security fixes) onto Extended Stable
-  **152.0.7977.169**; from now on each Chrome security release ships within
-  7 days (`docs/REBASING.md`).
+  152.0.7977.169, then onto **156.0.8078.48** when Chrome's Extended Stable
+  channel moved from M152 to M156 (October 2026); from now on each Chrome
+  security release ships within 7 days (`docs/REBASING.md`).
 - MoltBrowser's encrypted stores (API keys, password vault, form-filler
   profile, chat history, AI memory) moved from the synchronous OSCrypt,
   which Chromium 152 removed, to `os_crypt_async`. Existing files open
@@ -333,8 +334,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   sound, `navigator.storage.persist()` no longer reveals bookmarked or
   favourite sites, lookalike-domain warnings ignore the sites you use, and
   certificate warnings you clicked through in a regular window come back.
-  Third-party cookies and Shared Storage are always off in MoltNet, and it
-  never sends your Windows or Kerberos sign-in.
+  Third-party cookies are always off in MoltNet (Shared Storage no longer
+  exists in Chromium 156), and it never sends your Windows or Kerberos
+  sign-in.
 - **No WebRTC in MoltNet windows**, as in Tor Browser. A page could give
   WebRTC a relay server or a peer by name and make your own DNS resolver
   (often your ISP's) look that name up outside Tor, which could tie a
@@ -358,6 +360,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (macOS) go to a regular window, never into MoltNet; automatic
   picture-in-picture needs a site you allowed; and Windows Network
   Diagnostics isn't offered on MoltNet error pages (it logs the address).
+- **MoltNet's Incognito protections, reviewed again for Chromium 156.**
+  Every private-window check in Chromium 156 was checked for MoltNet
+  windows. MoltNet now also keeps no WebRTC logs (they would be saved in
+  your profile folder and uploaded), picks the language it asks a site
+  for from the same short list as Incognito, and doesn't take three
+  settings new in 156 from your regular windows: "Never show again" on
+  the XSLT warning, the Global Privacy Control setting and the AtMemory
+  keyboard shortcut.
 - **Nothing a MoltNet window does goes around Tor.** Some browser features
   sent what a MoltNet window gave them outside Tor, or to someone who knows
   who you are. Now the AI chat in a MoltNet window uses on-device models

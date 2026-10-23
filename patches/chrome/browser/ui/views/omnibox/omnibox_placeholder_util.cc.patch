@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/omnibox/omnibox_placeholder_util.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/omnibox/omnibox_placeholder_util.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/omnibox/omnibox_placeholder_util.cc b/chrome/browser/ui/views/omnibox/omnibox_placeholder_util.cc
-index a9a27b7c5f2dac0780cfeb6a540fd32ef0141ae0..a821b9df53f68ef2710ccd005a08c12b4ca54b2d 100644
+index 66378d0acec49b7310c315907ebdd57a00d6ad95..ed2f75236f430135f20d5b278fefac4adc4e5335 100644
 --- a/chrome/browser/ui/views/omnibox/omnibox_placeholder_util.cc
 +++ b/chrome/browser/ui/views/omnibox/omnibox_placeholder_util.cc
 @@ -61,35 +61,15 @@ void ComputePlaceholderText(

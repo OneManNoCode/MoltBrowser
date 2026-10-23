@@ -137,6 +137,9 @@ DEFINES = [
 # those, so they are fetched up front.
 MACRO_INCLUDED = [
     "skia/config/",
+    # libc++'s own headers include <__config_site> and
+    # <__assertion_handler> from here, and the scanner does not follow them.
+    "buildtools/third_party/libc++/",
 ]
 
 CFLAGS = [

@@ -8,6 +8,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.h"  // MoltBrowser
 #include "chrome/browser/ui/color/chrome_color_id.h"
+#include "chrome/browser/ui/views/frame/safe_invoke/safe_invoke.h"
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/status_bubble_views.h"
 #include "components/tabs/public/tab_interface.h"
@@ -18,7 +19,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/color/color_provider.h"
-#include "ui/compositor/layer.h"
+#include "ui/compositor/layer_solid_color.h"
 #include "ui/compositor/layer_tree_owner.h"
 #include "ui/views/view_class_properties.h"
 #include "ui/views/widget/widget.h"
@@ -76,7 +77,8 @@ void ContentsWebView::SetBackgroundRadii(const gfx::RoundedCornersF& radii) {
   background_layer->SetIsFastRoundedCorner(true);
 }
 
-void ContentsWebView::SetIsAnimatingBounds(bool is_animating) {
+void ContentsWebView::SetIsAnimatingBounds(bool is_animating,
+                                           bool is_origin_changing) {
   if (is_animating_bounds_ == is_animating) {
     return;
   }
@@ -88,14 +90,15 @@ void ContentsWebView::SetIsAnimatingBounds(bool is_animating) {
       status_bubble_->Hide();
     }
 
-    if (use_default_deadline_when_animating_ && web_contents()) {
+    if (use_default_deadline_when_animating_ && is_origin_changing) {
       // Update the render widget host view to set to use default deadline when
       // animating. This is a best effort synchronization between browser and
       // web contents.
-      if (content::RenderWidgetHostView* rwhv =
-              web_contents()->GetRenderWidgetHostView()) {
-        rwhv->SetShouldUseDefaultDeadlineOnResize(true);
-      }
+      SafeInvoke(web_contents())
+          .Then(&content::WebContents::GetRenderWidgetHostView)
+          .Then(&content::RenderWidgetHostView::
+                    SetShouldUseDefaultDeadlineOnResize,
+                /*enable=*/true);
     }
   }
 }
@@ -117,18 +120,18 @@ bool ContentsWebView::GetNeedsNotificationWhenVisibleBoundsChange() const {
 void ContentsWebView::OnVisibleBoundsChanged() {
   // If we are animating, the status bubble is hidden and avoid reposition the
   // bubble as an optimization since it's expensive on some platform.
-  if (!is_animating_bounds_ && status_bubble_) {
-    status_bubble_->Reposition();
+  if (!is_animating_bounds_) {
+    SafeInvoke(status_bubble_.get()).Then(&StatusBubbleViews::Reposition);
   }
 
   // Reset using default deadline once animation is completed after the final
   // bounds changes are made.
-  if (!is_animating_bounds_ && use_default_deadline_when_animating_ &&
-      web_contents()) {
-    if (content::RenderWidgetHostView* rwhv =
-            web_contents()->GetRenderWidgetHostView()) {
-      rwhv->SetShouldUseDefaultDeadlineOnResize(false);
-    }
+  if (!is_animating_bounds_ && use_default_deadline_when_animating_) {
+    SafeInvoke(web_contents())
+        .Then(&content::WebContents::GetRenderWidgetHostView)
+        .Then(
+            &content::RenderWidgetHostView::SetShouldUseDefaultDeadlineOnResize,
+            /*enable=*/false);
   }
 }
 
@@ -199,11 +202,9 @@ void ContentsWebView::SetWebContents(content::WebContents* web_contents) {
 
   // Ensure any dialogs already showing for the webcontents gets
   // re-centered when the active tab changes or a split tab is created.
-  web_modal::WebContentsModalDialogManager* const dialog_manager =
-      web_modal::WebContentsModalDialogManager::FromWebContents(web_contents);
-  if (dialog_manager) {
-    dialog_manager->UpdateDialogHost();
-  }
+  SafeInvoke(
+      web_modal::WebContentsModalDialogManager::FromWebContents(web_contents))
+      .Then(&web_modal::WebContentsModalDialogManager::UpdateDialogHost);
 }
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -243,14 +244,10 @@ void ContentsWebView::UpdateBackgroundColor() {
   background_layer->SetColor(SkColor4f::FromColor(
       background_visible_ ? layer_color : SK_ColorTRANSPARENT));
 
-  if (web_contents()) {
-    content::RenderWidgetHostView* rwhv =
-        web_contents()->GetRenderWidgetHostView();
-    if (rwhv) {
-      rwhv->SetBackgroundColor(background_visible_ ? color
-                                                   : SK_ColorTRANSPARENT);
-    }
-  }
+  SafeInvoke(web_contents())
+      .Then(&content::WebContents::GetRenderWidgetHostView)
+      .Then(&content::RenderWidgetHostView::SetBackgroundColor,
+            background_visible_ ? color : SK_ColorTRANSPARENT);
 }
 
 std::unique_ptr<ui::Layer> ContentsWebView::RecreateLayer() {

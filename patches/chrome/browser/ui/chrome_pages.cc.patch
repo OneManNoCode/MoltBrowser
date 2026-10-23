@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/ui/chrome_pages.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/chrome_pages.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/chrome_pages.cc b/chrome/browser/ui/chrome_pages.cc
-index a97f162b788aab74640e5e453ab58e29791d7565..74e05b3dcdb69995e0e277a97b29551118e25ee0 100644
+index e70ee6412075fd190f0591b738804623939635d2..3e2d88c07c3dd3b7c7d1b643a158d51bd68fab08 100644
 --- a/chrome/browser/ui/chrome_pages.cc
 +++ b/chrome/browser/ui/chrome_pages.cc
-@@ -489,7 +489,15 @@ void ShowSettingsSubPageInTabbedBrowser(BrowserWindowInterface* browser,
+@@ -495,7 +495,15 @@ void ShowSettingsSubPageInTabbedBrowser(BrowserWindowInterface* browser,
    // a menu, ensure the web contents (and therefore the settings page that is
    // about to be shown) is focused. (See crbug.com/41438063 for motivation.)
    FocusWebContents(browser);
@@ -25,7 +25,7 @@ index a97f162b788aab74640e5e453ab58e29791d7565..74e05b3dcdb69995e0e277a97b295511
  }
  
  void ShowPageWithPromoForProfile(Profile* profile,
-@@ -611,7 +619,17 @@ void ShowSafeBrowsingEnhancedProtectionWithIph(
+@@ -615,7 +623,17 @@ void ShowSafeBrowsingEnhancedProtectionWithIph(
  
  void ShowImportDialog(BrowserWindowInterface* browser) {
    base::RecordAction(UserMetricsAction("Import_ShowDlg"));

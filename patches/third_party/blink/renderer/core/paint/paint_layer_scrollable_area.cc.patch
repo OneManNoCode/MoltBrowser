@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc b/third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc
-index cdbe636ac962158f2434c05a2411f1442659ca64..f74c9ea9ced5652f3c8e06e6bd1431771cb4cfac 100644
+index b0104787888685b656e3f16578f900ba1d5c459d..eeb0942117c90a8740b14ce470453d6c9ff31926 100644
 --- a/third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc
 +++ b/third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc
-@@ -100,6 +100,7 @@
+@@ -101,6 +101,7 @@
  #include "third_party/blink/renderer/core/layout/layout_view.h"
  #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
  #include "third_party/blink/renderer/core/loader/document_loader.h"
@@ -16,7 +16,7 @@ index cdbe636ac962158f2434c05a2411f1442659ca64..f74c9ea9ced5652f3c8e06e6bd143177
  #include "third_party/blink/renderer/core/overscroll/overscroll_area_tracker.h"
  #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
  #include "third_party/blink/renderer/core/page/chrome_client.h"
-@@ -1637,8 +1638,10 @@ int PaintLayerScrollableArea::ComputeHypotheticalScrollbarThickness(
+@@ -1665,8 +1666,10 @@ int PaintLayerScrollableArea::ComputeHypotheticalScrollbarThickness(
    ScrollbarTheme& theme = GetPageScrollbarTheme();
    if (theme.UsesOverlayScrollbars() && !should_include_overlay_thickness)
      return 0;
@@ -29,7 +29,7 @@ index cdbe636ac962158f2434c05a2411f1442659ca64..f74c9ea9ced5652f3c8e06e6bd143177
  }
  
  bool PaintLayerScrollableArea::NeedsScrollbarReconstruction() const {
-@@ -1707,8 +1710,11 @@ gfx::Size PaintLayerScrollableArea::ComputeScrollbarWidthsForViewportUnits(
+@@ -1735,8 +1738,11 @@ gfx::Size PaintLayerScrollableArea::ComputeScrollbarWidthsForViewportUnits(
  
    const Page* page = GetDocument()->GetFrame()->GetPage();
    const ScrollbarTheme& theme = page->GetScrollbarTheme();

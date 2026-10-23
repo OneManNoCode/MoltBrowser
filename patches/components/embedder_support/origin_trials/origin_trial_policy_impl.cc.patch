@@ -1,11 +1,11 @@
 MoltBrowser patch for components/embedder_support/origin_trials/origin_trial_policy_impl.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/embedder_support/origin_trials/origin_trial_policy_impl.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/embedder_support/origin_trials/origin_trial_policy_impl.cc b/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
-index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..96ea5883f5b08f2e7e948198585a4295dccff67f 100644
+index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..a66d0429a26b3f20963c9fcb281bc41def6e7b46 100644
 --- a/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
 +++ b/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
 @@ -24,6 +24,17 @@
@@ -15,10 +15,10 @@ index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..96ea5883f5b08f2e7e948198585a4295
 +namespace {
 +
 +// MoltBrowser: origin trials that stay off whatever token a site serves.
-+// - HTMLInCanvas (drawElementImage, copyElementImageToTexture): renders page
-+//   content (text, fonts, form controls) into a WebGPU texture that script
-+//   reads back without fingerprinting protection's noise
-+//   (docs/FINGERPRINTING.md).
++// - HTMLInCanvas (drawElementImage, copyElementImageToTexture,
++//   drawElementImageToTexture): renders page content (text, fonts, form
++//   controls) into a WebGPU texture that script reads back without
++//   fingerprinting protection's noise (docs/FINGERPRINTING.md).
 +constexpr std::string_view kMoltDisabledTrials[] = {"HTMLInCanvas"};
 +
 +}  // namespace

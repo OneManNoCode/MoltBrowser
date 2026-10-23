@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 1ab234ddb6343a7280bbbb01602d02693b10f206..832e61b7ae32f82adfe51b886a8a7ba7c5c2f855 100644
+index e014baae31c870f3fbd3d22fa1de0c2085aee587..aabe4bd91e282e7d3ad40f8ec99dca5a1d31a409 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -57,6 +57,8 @@
+@@ -61,6 +61,8 @@
  #include "third_party/blink/renderer/core/html/canvas/text_metrics.h"
  #include "third_party/blink/renderer/core/html/canvas/unique_font_selector.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
@@ -17,7 +17,7 @@ index 1ab234ddb6343a7280bbbb01602d02693b10f206..832e61b7ae32f82adfe51b886a8a7ba7
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/style/computed_style.h"
  #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h"
-@@ -514,6 +516,9 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -561,6 +563,9 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
        DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
      }
@@ -27,7 +27,7 @@ index 1ab234ddb6343a7280bbbb01602d02693b10f206..832e61b7ae32f82adfe51b886a8a7ba7
    }
  
    return image_data;
-@@ -1200,9 +1205,12 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
+@@ -1256,9 +1261,12 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
    TextDirection direction =
        ToTextDirection(state.GetDirection(), host, computed_style);
  

@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/translate/translate_service.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/translate/translate_service.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/translate/translate_service.cc b/chrome/browser/translate/translate_service.cc
-index f1706d05c89ad874b582ad5e4fea86d4377656a1..51dd8db46914a1b0e2026cbaef47314a7c55ef98 100644
+index 71995f24eca3ffd6ecc9b06c4132cba87a39a83a..f628827b9ba0994e46a52f81456772a7f4126ef8 100644
 --- a/chrome/browser/translate/translate_service.cc
 +++ b/chrome/browser/translate/translate_service.cc
 @@ -13,6 +13,7 @@
@@ -16,7 +16,7 @@ index f1706d05c89ad874b582ad5e4fea86d4377656a1..51dd8db46914a1b0e2026cbaef47314a
  #include "chrome/browser/net/system_network_context_manager.h"
  #include "chrome/browser/translate/chrome_translate_client.h"
  #include "chrome/common/chrome_switches.h"
-@@ -60,6 +61,15 @@ void TranslateService::Initialize() {
+@@ -61,6 +62,15 @@ void TranslateService::Initialize() {
    if (g_translate_service)
      return;
  

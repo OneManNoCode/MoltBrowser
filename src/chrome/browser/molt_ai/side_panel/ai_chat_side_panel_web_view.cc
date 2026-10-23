@@ -17,7 +17,7 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/pdf/common/constants.h"
 #include "content/public/browser/file_select_listener.h"
@@ -140,18 +140,19 @@ class AiChatSidePanelWebView::ChatPageObserver
   const raw_ptr<AiChatSidePanelWebView> owner_;
 };
 
-AiChatSidePanelWebView::AiChatSidePanelWebView(Browser* browser)
+AiChatSidePanelWebView::AiChatSidePanelWebView(
+    BrowserWindowInterface* browser)
     : views::WebView(browser ? browser->GetProfile() : nullptr),
       profile_(browser ? browser->GetProfile() : nullptr),
       browser_(browser) {
   LoadInitialURL(GURL(kAiChatWebUIURL));
-  if (browser_ && browser_->tab_strip_model()) {
+  if (browser_ && browser_->GetTabStripModel()) {
     active_tab_observer_ = std::make_unique<ActiveTabObserver>(this);
     if (web_contents()) {
       chat_page_observer_ =
           std::make_unique<ChatPageObserver>(this, web_contents());
     }
-    browser_->tab_strip_model()->AddObserver(this);
+    browser_->GetTabStripModel()->AddObserver(this);
     PushActiveTabContext();
   }
 }
@@ -162,8 +163,8 @@ AiChatSidePanelWebView::AiChatSidePanelWebView(Profile* profile)
 }
 
 AiChatSidePanelWebView::~AiChatSidePanelWebView() {
-  if (browser_ && browser_->tab_strip_model())
-    browser_->tab_strip_model()->RemoveObserver(this);
+  if (browser_ && browser_->GetTabStripModel())
+    browser_->GetTabStripModel()->RemoveObserver(this);
   // Stop observing before the rest of the view is torn down.
   chat_page_observer_.reset();
   active_tab_observer_.reset();
@@ -225,18 +226,18 @@ void AiChatSidePanelWebView::OnTabStripModelChanged(
 }
 
 void AiChatSidePanelWebView::ObserveActiveTab() {
-  if (!active_tab_observer_ || !browser_ || !browser_->tab_strip_model())
+  if (!active_tab_observer_ || !browser_ || !browser_->GetTabStripModel())
     return;
   active_tab_observer_->SetTab(
-      browser_->tab_strip_model()->GetActiveWebContents());
+      browser_->GetTabStripModel()->GetActiveWebContents());
 }
 
 void AiChatSidePanelWebView::PushActiveTabContext() {
-  if (!browser_ || !browser_->tab_strip_model())
+  if (!browser_ || !browser_->GetTabStripModel())
     return;
   ObserveActiveTab();
   content::WebContents* active =
-      browser_->tab_strip_model()->GetActiveWebContents();
+      browser_->GetTabStripModel()->GetActiveWebContents();
   if (!active || !active->GetPrimaryMainFrame())
     return;
 

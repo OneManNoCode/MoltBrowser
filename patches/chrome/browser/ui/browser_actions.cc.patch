@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/ui/browser_actions.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/browser_actions.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
-index c27c8b8275153eb695aaa0cec6ae603e62b31b11..f7f673bbcef3eb1d92bdc6516b5a793984c48a5c 100644
+index 0f7a326019ebc61040883a103cb7ef26af1f309f..fe48f82553ced558ad14bdeae15a3a19beb81573 100644
 --- a/chrome/browser/ui/browser_actions.cc
 +++ b/chrome/browser/ui/browser_actions.cc
-@@ -505,6 +505,28 @@ void BrowserActions::InitializeSidePanelActions() {
+@@ -483,6 +483,28 @@ void BrowserActions::InitializeSidePanelActions() {
                                              : vector_icons::kStorefrontOldIcon,
            kActionSidePanelShowMerchantTrust, bwi, false)
            .Build());

@@ -1,14 +1,14 @@
 MoltBrowser patch for content/browser/websockets/websocket_connector_impl.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/content/browser/websockets/websocket_connector_impl.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
-index cbcaed4ff457263538c75c5a6f5d33646c259c36..592834818aea341290b7a6c2753608eb984b2631 100644
+index e756aaf3ee05579c495f971c3eeed547fc30944e..dc59d0537a8c34dcdf48333c3afa2f1d02821137 100644
 --- a/content/browser/websockets/websocket_connector_impl.cc
 +++ b/content/browser/websockets/websocket_connector_impl.cc
-@@ -120,6 +120,12 @@ void WebSocketConnectorImpl::Connect(
+@@ -125,6 +125,12 @@ void WebSocketConnectorImpl::Connect(
    }
  
    RenderFrameHost* frame = RenderFrameHost::FromID(frame_id_);
@@ -18,6 +18,6 @@ index cbcaed4ff457263538c75c5a6f5d33646c259c36..592834818aea341290b7a6c2753608eb
 +                    process->GetBrowserContext(), url)) {
 +    return;
 +  }
-   content::ContentBrowserClient::WebSocketOptions options =
-       GetContentClient()->browser()->GetWebSocketOptions(frame);
- 
+   net::handles::NetworkHandle target_network =
+       net::handles::kInvalidNetworkHandle;
+   if (frame) {

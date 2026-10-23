@@ -24,7 +24,6 @@ import '../performance_page/performance_page_index.js';
 import '../privacy_page/privacy_page_index.js';
 import '../reset_page/reset_profile_banner.js';
 import '../search_page/search_page_index.js';
-import '../your_saved_info_page/your_saved_info_page_index.js';
 // <if expr="not is_chromeos">
 import '../default_browser_page/default_browser_page.js';
 
@@ -33,14 +32,12 @@ import '../default_browser_page/default_browser_page.js';
 import {getInstance as getAnnouncerInstance} from 'chrome://resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer.js';
 import type {CrViewManagerElement} from 'chrome://resources/cr_elements/cr_view_manager/cr_view_manager.js';
 import {assert} from 'chrome://resources/js/assert.js';
+import {EventTracker} from 'chrome://resources/js/event_tracker.js';
 import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import {beforeNextRender, flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {ensureLazyLoaded} from '../ensure_lazy_loaded.js';
 import {loadTimeData} from '../i18n_setup.js';
-// <if expr="not is_chromeos">
-import type {LanguagesModel} from '../languages_page/languages_types.js';
-// </if>
 import {pageVisibility} from '../page_visibility.js';
 import type {PageVisibility} from '../page_visibility.js';
 import {getTopLevelRoute, routes} from '../route.js';
@@ -51,6 +48,17 @@ import {combineSearchResults} from '../search_settings.js';
 import {getTemplate} from './settings_main.html.js';
 import type {SettingsPlugin} from './settings_plugin.js';
 
+
+export interface SearchFinishedDetail {
+  query: string;
+  matchCount: number;
+}
+
+declare global {
+  interface HTMLElementEventMap {
+    'search-finished': CustomEvent<SearchFinishedDetail>;
+  }
+}
 
 export interface SettingsMainElement {
   $: {
@@ -102,6 +110,7 @@ export class SettingsMainElement extends SettingsMainElementBase {
       inSearchMode_: {
         type: Boolean,
         value: false,
+        observer: 'onInSearchModeChanged_',
       },
 
       showNoResultsFound_: {
@@ -121,10 +130,6 @@ export class SettingsMainElement extends SettingsMainElementBase {
         value: false,
         notify: true,
       },
-
-      // <if expr="not is_chromeos">
-      languages_: Object,
-      // </if>
     };
   }
 
@@ -137,10 +142,7 @@ export class SettingsMainElement extends SettingsMainElementBase {
   declare private showResetProfileBanner_: boolean;
   declare toolbarSpinnerActive: boolean;
 
-  // <if expr="not is_chromeos">
-  declare private languages_?: LanguagesModel;
-  // </if>
-
+  private eventTracker_: EventTracker = new EventTracker();
   private pendingViewSwitching_: PromiseResolver<void> = new PromiseResolver();
   private topLevelEquivalentRoute_: Route = getTopLevelRoute();
   private currentQuery_: string = '';
@@ -152,6 +154,11 @@ export class SettingsMainElement extends SettingsMainElementBase {
 
     // Request loading of the lazy loaded module within an idle callback.
     requestIdleCallback(() => ensureLazyLoaded());
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.eventTracker_.removeAll();
   }
 
   private beforeNextRenderPromise_(): Promise<void> {
@@ -267,7 +274,45 @@ export class SettingsMainElement extends SettingsMainElementBase {
                 loadTimeData.getString('searchNoResults') :
                 loadTimeData.getStringF('searchResults', query));
       }
+
+      this.dispatchEvent(new CustomEvent('search-finished', {
+        bubbles: true,
+        composed: true,
+        detail: {query, matchCount: result.matchCount},
+      }));
     });
+  }
+
+  /**
+   * Notifies about the user interacting with one of the search results, but
+   * only while search results are being displayed, so that no listener is
+   * registered during normal browsing of the Settings page.
+   *
+   * Both 'click' and 'change' are observed, because neither covers every
+   * result on its own. Results that navigate elsewhere when opened are only
+   * visible as a 'click', whereas controls that commonly show up as results,
+   * settings-toggle-button and cr-toggle for example, stop 'click' events from
+   * propagating and fire no 'click' at all when activated with the keyboard.
+   * Those do fire a composed 'change' event when their value changes.
+   *
+   * The two can both fire for a single interaction, and 'click' also fires for
+   * clicks that landed next to a result rather than on one, so this is an
+   * upper bound rather than an exact signal. Consumers are expected to be
+   * interested in the first notification only.
+   */
+  private onInSearchModeChanged_(inSearchMode: boolean) {
+    if (!inSearchMode) {
+      this.eventTracker_.remove(this.$.switcher, 'click');
+      this.eventTracker_.remove(this.$.switcher, 'change');
+      return;
+    }
+
+    const notifyInteraction = () => {
+      this.dispatchEvent(new CustomEvent(
+          'search-result-interaction', {bubbles: true, composed: true}));
+    };
+    this.eventTracker_.add(this.$.switcher, 'click', notifyInteraction);
+    this.eventTracker_.add(this.$.switcher, 'change', notifyInteraction);
   }
 
   private renderPlugin_(route: Route): boolean {
@@ -281,16 +326,6 @@ export class SettingsMainElement extends SettingsMainElementBase {
 
   private showAiPage_(visibility?: boolean): boolean {
     return loadTimeData.getBoolean('showAiPage') && this.showPage_(visibility);
-  }
-
-  private showAutofillPage_(visibility?: boolean): boolean {
-    return !loadTimeData.getBoolean('enableYourSavedInfoSettingsPage') &&
-        this.showPage_(visibility);
-  }
-
-  private showYourSavedInfoPage_(visibility?: boolean): boolean {
-    return loadTimeData.getBoolean('enableYourSavedInfoSettingsPage') &&
-        this.showPage_(visibility);
   }
 
   private showManagedHeader_(): boolean {

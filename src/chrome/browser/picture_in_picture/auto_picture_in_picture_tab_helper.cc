@@ -7,14 +7,16 @@
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/time/clock.h"
 #include "base/time/default_tick_clock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/media/media_engagement_service.h"  // nogncheck crbug.com/422038808
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
-#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/permissions/permission_decision_auto_blocker_factory.h"
+#include "chrome/browser/picture_in_picture/auto_picture_in_picture_safe_browsing_checker_client.h"
 #include "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_observer_helper_base.h"
 #include "chrome/browser/picture_in_picture/auto_picture_in_picture_window_occlusion_helper_base.h"
 #include "chrome/browser/picture_in_picture/auto_pip_setting_helper.h"
@@ -26,6 +28,7 @@
 #include "components/permissions/permission_decision_auto_blocker.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/media_session_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "media/base/media_switches.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/common/features.h"
@@ -120,6 +123,14 @@ bool AutoPictureInPictureTabHelper::HasAutoPictureInPictureBeenRegistered()
   }
 
   return has_ever_registered_for_auto_picture_in_picture_;
+}
+
+bool AutoPictureInPictureTabHelper::PrimaryMainFrameHasOpaqueOrigin() const {
+  if (!web_contents()) {
+    return false;
+  }
+  const content::RenderFrameHost* rfh = web_contents()->GetPrimaryMainFrame();
+  return rfh && rfh->GetLastCommittedOrigin().opaque();
 }
 
 void AutoPictureInPictureTabHelper::PrimaryPageChanged(content::Page& page) {
@@ -581,10 +592,11 @@ void AutoPictureInPictureTabHelper::MaybeScheduleAsyncTasks() {
   StopAndResetAsyncTasks();
 
   // Prevent scheduling asynchronous checks if we are already in picture in
-  // picture, picture in picture was blocked due to content setting/incognito,
-  // we are using camera or microphone, or a media session does not exist. Also
-  // prevent these checks if we are already eligible for auto picture in
-  // picture, since auto picture in picture requests will succeed anyways.
+  // picture, picture in picture was blocked due to content setting/incognito/
+  // isolated mode, we are using camera or microphone, or a media session does
+  // not exist. Also prevent these checks if we are already eligible for auto
+  // picture in picture, since auto picture in picture requests will succeed
+  // anyways.
   //
   // The `blocked_due_to_content_setting_` check is performed to prevent
   // recording duplicate entries for blocking metrics.
@@ -657,6 +669,10 @@ bool AutoPictureInPictureTabHelper::IsEligibleForAutoPictureInPicture(
     return false;
   }
 
+  if (PrimaryMainFrameHasOpaqueOrigin()) {
+    return false;
+  }
+
   // Only https:// or file:// may autopip.
   const GURL url = web_contents()->GetLastCommittedURL();
   if (!url.SchemeIs(url::kHttpsScheme) && !url.SchemeIsFile()) {
@@ -687,9 +703,9 @@ bool AutoPictureInPictureTabHelper::IsEligibleForAutoPictureInPicture(
   CHECK(!is_in_picture_in_picture_);
 
   // The user may block autopip via a content setting. Also, if we're in an
-  // incognito window, then we should treat "ask" as "block". This should be the
-  // final check before triggering autopip since it will record metrics about
-  // why autopip has been blocked.
+  // incognito or isolated mode window, then we should treat "ask" as "block".
+  // This should be the final check before triggering autopip since it will
+  // record metrics about why autopip has been blocked.
   ContentSetting setting = GetCurrentContentSetting();
   if (setting == CONTENT_SETTING_BLOCK) {
     blocked_due_to_content_setting_ = true;
@@ -701,10 +717,12 @@ bool AutoPictureInPictureTabHelper::IsEligibleForAutoPictureInPicture(
     }
     return false;
   } else if (setting == CONTENT_SETTING_ASK &&
-             // MoltBrowser: and in a MoltNet window
-             // (molt_net_incognito_parity.h).
-             molt_ai::tor::GetsIncognitoProtections(Profile::FromBrowserContext(
-                 web_contents()->GetBrowserContext()))) {
+             (Profile::FromBrowserContext(web_contents()->GetBrowserContext())
+                  ->IsPrimaryOTRProfileWithRegularParent() ||
+              // MoltBrowser: and in a MoltNet window
+              // (molt_net_incognito_parity.h).
+              molt_ai::tor::IsMoltNetProfile(Profile::FromBrowserContext(
+                  web_contents()->GetBrowserContext())))) {
     blocked_due_to_content_setting_ = true;
 
     if (should_record_blocking_metrics) {
@@ -958,6 +976,19 @@ bool AutoPictureInPictureTabHelper::AreAutoPictureInPicturePreconditionsMet()
   // Note that `auto_picture_in_picture_activation_time_` is not set if all of
   // the other preconditions are not set.
   return clock_->NowTicks() < auto_picture_in_picture_activation_time_;
+}
+
+void AutoPictureInPictureTabHelper::set_auto_blocker_for_testing(
+    permissions::PermissionDecisionAutoBlockerBase* auto_blocker) {
+  auto_blocker_ = auto_blocker;
+  // If we're clearing the auto blocker, then also drop any setting helper we
+  // have, since it might also know about it.  This is intended during test
+  // cleanup to prevent dangling raw ptrs.
+#if !BUILDFLAG(IS_ANDROID)
+  if (auto_pip_setting_helper_ && !auto_blocker) {
+    auto_pip_setting_helper_.reset();
+  }
+#endif  //! BUILDFLAG(IS_ANDROID)
 }
 
 #if !BUILDFLAG(IS_ANDROID)

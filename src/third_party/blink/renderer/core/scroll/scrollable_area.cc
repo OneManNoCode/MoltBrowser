@@ -54,6 +54,8 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
+#include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
+#include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/html/anchor_element_viewport_position_tracker.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
@@ -67,7 +69,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/paint/text_overflow_post_layout_snapshot.h"
-#include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
+#include "third_party/blink/renderer/core/paint/timing/paint_timing.h"
 #include "third_party/blink/renderer/core/scroll/mac_scrollbar_animator.h"
 #include "third_party/blink/renderer/core/scroll/programmatic_scroll_animator.h"
 #include "third_party/blink/renderer/core/scroll/scroll_alignment.h"
@@ -655,8 +657,7 @@ void ScrollableArea::ScrollOffsetChanged(const ScrollOffset& offset,
   }
 
   if (offset_changed && GetLayoutBox() && GetLayoutBox()->GetFrameView()) {
-    PaintTimingDetector::From(GetLayoutBox()->GetDocument())
-        .NotifyScroll(scroll_type);
+    PaintTiming::From(GetLayoutBox()->GetDocument()).NotifyScroll(scroll_type);
     GetLayoutBox()->GetFrameView()->GetLayoutShiftTracker().NotifyScroll(
         scroll_type, delta);
     // FrameSelection caches visual selection information which needs to be
@@ -940,6 +941,16 @@ bool ScrollableArea::UsesCompositedOverlayScrollbars() const {
       !UsesCompositedScrolling()) {
     return false;
   }
+  if (const auto* box = GetLayoutBox()) {
+    // Some overlay scrollbar themes (e.g. Aura) needs the non-composited code
+    // path to initially show overlay scrollbars before the actual composited
+    // scrollbar is created. Only observed a difference in browser test
+    // SitePerProcessHitTestBrowserTest.CrossProcessMouseCapture on ChromeOS,
+    // but this is a safe check to have in place.
+    if (!box->GetFrameView()->GetPaintArtifactCompositor()) {
+      return false;
+    }
+  }
   if (const auto* scrollbar = HorizontalScrollbar()) {
     if (MayCompositeScrollbar(*scrollbar)) {
       return true;
@@ -1030,6 +1041,26 @@ const Document* ScrollableArea::GetDocument() const {
   return nullptr;
 }
 
+bool ScrollableArea::IsLatchedForGestureScroll() const {
+  const Document* document = GetDocument();
+  if (!document) {
+    return false;
+  }
+  LocalFrame* frame = document->GetFrame();
+  if (!frame) {
+    return false;
+  }
+  auto* web_frame = WebLocalFrameImpl::FromFrame(frame);
+  if (!web_frame) {
+    return false;
+  }
+  WebFrameWidgetImpl* widget = web_frame->LocalRootFrameWidget();
+  if (!widget) {
+    return false;
+  }
+  return widget->ScrollLatchedElementId() == GetScrollElementId();
+}
+
 gfx::Vector2d ScrollableArea::ClampScrollOffset(
     const gfx::Vector2d& scroll_offset) const {
   gfx::Vector2d result = scroll_offset;
@@ -1089,9 +1120,10 @@ int ScrollableArea::HorizontalScrollbarHeight(
   return 0;
 }
 
-gfx::QuadF ScrollableArea::LocalToVisibleContentQuad(const gfx::QuadF& quad,
-                                                     const LayoutObject*,
-                                                     unsigned) const {
+gfx::QuadF ScrollableArea::LocalToVisibleContentQuad(
+    const gfx::QuadF& quad,
+    const LayoutObject*,
+    MapCoordinatesFlags) const {
   return quad - GetScrollOffset();
 }
 
@@ -1464,16 +1496,6 @@ void ScrollableArea::EnqueueScrollSnapChangingEvent() const {
       event_type_names::kScrollsnapchanging, cc::SnapAxis::kInline);
   target_node->GetDocument().EnqueueScrollSnapChangingEvent(
       target_node, block_target, inline_target);
-}
-
-ScrollOffset ScrollableArea::GetWebExposedScrollOffset() const {
-  ScrollOffset scroll_offset =
-      SnapScrollOffsetToPhysicalPixels(GetScrollOffset());
-
-  // Ensure that, if fractional scroll offsets are not enabled, the scroll
-  // offset is an floored value.
-  CHECK_EQ(gfx::ToRoundedVector2d(scroll_offset), scroll_offset);
-  return scroll_offset;
 }
 
 ScrollOffset ScrollableArea::GetScrollOffsetForScrollMarkerUpdate() {

@@ -11,8 +11,8 @@
 namespace molt_ai::tor {
 namespace {
 
-// The names are Chromium 152's (the constant each comes from is noted);
-// molt_net_isolation_unittest.cc checks the ones it can against the
+// The names are Chromium's (the constant each comes from is noted);
+// molt_net_pref_isolation_unittest.cc checks the ones it can against the
 // constants themselves.
 
 TEST(MoltNetPrefIsolationPolicyTest, WebPreferencesArePinned) {
@@ -83,6 +83,14 @@ TEST(MoltNetPrefIsolationPolicyTest, OtherWebVisiblePrefsArePinned) {
            "privacy_sandbox.m1.fledge_enabled",
            "privacy_sandbox.m1.ad_measurement_enabled",
            "molt_shield.remove_tracking_params",
+           // New at Chromium 156.
+           // prefs::kXSLTDeprecationBannerSuppressed (WebPreferences).
+           "profile.xslt_deprecation_banner_suppressed",
+           // universal_optout::prefs::kUniversalOptOutEnabled (Global
+           // Privacy Control, RendererPreferences).
+           "universal_optout.enabled",
+           // autofill::prefs::kAutofillAtMemoryShortcut (RendererPreferences).
+           "autofill.at_memory.shortcut",
        }) {
     EXPECT_TRUE(IsMoltNetPinnedPref(name)) << name;
   }
@@ -112,6 +120,11 @@ TEST(MoltNetPrefIsolationPolicyTest, BrowserOnlyPrefsFollowTheRegularProfile) {
            "privacy_sandbox.first_party_sets_enabled",
            // Caption styles stay inside the video's own UI.
            "accessibility.captions.text_size",
+           // AtMemory's double-Ctrl trigger only opens browser UI; unlike
+           // its shortcut, it cancels no key event a page sees.
+           "autofill.at_memory.double_ctrl_trigger_enabled",
+           // Global Privacy Control's eligibility bookkeeping.
+           "universal_optout.eligible",
        }) {
     EXPECT_FALSE(IsMoltNetPinnedPref(name)) << name;
   }

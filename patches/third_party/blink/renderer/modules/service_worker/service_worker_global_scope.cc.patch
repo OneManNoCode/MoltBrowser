@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-index 368f30305278c88745933041c0e20c053bcba22c..1edf1f710dac2019004c523f6fa109cd92c9f8ad 100644
+index 84233c2714c56d9cc0ed44d90bf124eb34e312ac..7eefef69c9d97d75d0671e7219737512be93f08a 100644
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-@@ -83,6 +83,7 @@
+@@ -85,6 +85,7 @@
  #include "third_party/blink/renderer/core/loader/worker_resource_timing_notifier_impl.h"
  #include "third_party/blink/renderer/core/messaging/blink_transferable_message.h"
  #include "third_party/blink/renderer/core/messaging/message_port.h"
@@ -16,7 +16,7 @@ index 368f30305278c88745933041c0e20c053bcba22c..1edf1f710dac2019004c523f6fa109cd
  #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/core/script/classic_script.h"
-@@ -1734,9 +1735,15 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
+@@ -1662,9 +1663,15 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
      mojom::blink::ServiceWorkerObjectInfoPtr service_worker_info,
      mojom::blink::FetchHandlerExistence fetch_hander_existence,
      mojom::blink::AncestorFrameType ancestor_frame_type,

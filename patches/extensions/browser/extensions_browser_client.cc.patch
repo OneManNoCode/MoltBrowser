@@ -1,11 +1,11 @@
 MoltBrowser patch for extensions/browser/extensions_browser_client.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/extensions/browser/extensions_browser_client.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/extensions/browser/extensions_browser_client.cc b/extensions/browser/extensions_browser_client.cc
-index 0ff0338f20744dcd092b8ce19063b4b7a10bff93..206aacc817adf537e1268d6281c7a6e9cfe9202c 100644
+index d3fae1de434207e4ea185c70b35440d8e1ba7e8c..221fecea6fa053eaa04c73d50ea58e5c1ea7d60f 100644
 --- a/extensions/browser/extensions_browser_client.cc
 +++ b/extensions/browser/extensions_browser_client.cc
 @@ -117,6 +117,13 @@ bool ExtensionsBrowserClient::IsExtensionEnabled(

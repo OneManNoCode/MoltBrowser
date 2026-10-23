@@ -1,11 +1,11 @@
 MoltBrowser patch for components/omnibox/browser/aim_eligibility_service_features.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/omnibox/browser/aim_eligibility_service_features.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox/browser/aim_eligibility_service_features.cc b/components/omnibox/browser/aim_eligibility_service_features.cc
-index 89d1205f903969a01551a92ff3b5b6661d0bf407..304bc32b9e1081e0607bc218088743235e564eda 100644
+index c23cef8903ea8fba76e17a03558a1f4580144300..254308ed840209d64fa9a13e1373bc1bab460079 100644
 --- a/components/omnibox/browser/aim_eligibility_service_features.cc
 +++ b/components/omnibox/browser/aim_eligibility_service_features.cc
 @@ -8,7 +8,7 @@

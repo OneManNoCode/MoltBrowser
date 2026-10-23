@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/core/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..64929ab50353ba999bcf44df929ad7b798a34894 100644
+index 056bd22809479eac64251cfc67f37336c4438424..785bda016ce5d7e92c61be6c6207fa686b2f7642 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -57,6 +57,8 @@ import("//third_party/blink/renderer/core/mathml/build.gni")
@@ -44,7 +44,7 @@ index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..64929ab50353ba999bcf44df929ad7b7
      "//third_party/rust/xml/v1:lib",
      "//tools/v8_context_snapshot:buildflags",
      "//ui/base/cursor/mojom:cursor_type_blink",
-@@ -1531,6 +1546,10 @@ source_set("unit_tests") {
+@@ -1545,6 +1560,10 @@ source_set("unit_tests") {
    sources += rebase_path(blink_core_tests_mathml, "", "mathml")
    sources += rebase_path(blink_core_tests_messaging, "", "messaging")
    sources += rebase_path(blink_core_tests_mobile_metrics, "", "mobile_metrics")
@@ -55,7 +55,7 @@ index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..64929ab50353ba999bcf44df929ad7b7
    sources += rebase_path(blink_core_tests_navigation_api, "", "navigation_api")
    sources += rebase_path(blink_core_tests_origin_trials, "", "origin_trials")
    sources += rebase_path(blink_core_tests_page, "", "page")
-@@ -1606,6 +1625,9 @@ source_set("unit_tests") {
+@@ -1620,6 +1639,9 @@ source_set("unit_tests") {
      "//third_party/blink/renderer/core",
      "//third_party/blink/renderer/core:testing",
      "//third_party/blink/renderer/core:unit_test_support",

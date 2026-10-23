@@ -42,12 +42,14 @@
 #include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/cross_origin_attribute.h"
 #include "third_party/blink/renderer/core/html/forms/form_associated.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/html_dimension.h"
+#include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_image_fallback_helper.h"
 #include "third_party/blink/renderer/core/html/html_picture_element.h"
 #include "third_party/blink/renderer/core/html/html_source_element.h"
@@ -404,22 +406,6 @@ void HTMLImageElement::ParseAttribute(
       // Update the current state so we can detect future state changes.
       GetImageLoader().UpdateFromElement(
           ImageLoader::kUpdateIgnorePreviousError);
-    }
-  } else if (name == html_names::kSharedstoragewritableAttr &&
-             RuntimeEnabledFeatures::SharedStorageAPIEnabled(
-                 GetExecutionContext())) {
-    auto* execution_context = GetExecutionContext();
-    if (!execution_context || !execution_context->IsSecureContext()) {
-      GetDocument().AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
-          mojom::blink::ConsoleMessageSource::kOther,
-          mojom::blink::ConsoleMessageLevel::kError,
-          "sharedStorageWritable: sharedStorage operations are only available "
-          "in secure contexts."));
-    } else if (!params.new_value.IsNull()) {
-      UseCounter::Count(GetDocument(),
-                        WebFeature::kSharedStorageAPI_Image_Attribute);
-      Deprecation::CountDeprecation(
-          execution_context, mojom::blink::WebFeature::kSharedStorageAPIAll);
     }
   } else {
     HTMLElement::ParseAttribute(params);
@@ -886,8 +872,8 @@ int HTMLImageElement::x() const {
   if (!r)
     return 0;
 
-  PhysicalOffset abs_pos =
-      r->LocalToAbsolutePoint(PhysicalOffset(), kIgnoreTransforms);
+  PhysicalOffset abs_pos = r->LocalToAbsolutePoint(
+      PhysicalOffset(), {MapCoordinatesMode::kIgnoreTransforms});
   return abs_pos.left.ToInt();
 }
 
@@ -898,8 +884,8 @@ int HTMLImageElement::y() const {
   if (!r)
     return 0;
 
-  PhysicalOffset abs_pos =
-      r->LocalToAbsolutePoint(PhysicalOffset(), kIgnoreTransforms);
+  PhysicalOffset abs_pos = r->LocalToAbsolutePoint(
+      PhysicalOffset(), {MapCoordinatesMode::kIgnoreTransforms});
   return abs_pos.top.ToInt();
 }
 
@@ -1270,6 +1256,20 @@ bool HTMLImageElement::replacedByUserAgent() const {
 
 bool HTMLImageElement::HasImageReplacement() const {
   return layout_disposition_ == LayoutDisposition::kImageReplacement;
+}
+
+std::optional<FrameToken> HTMLImageElement::ReplacementFrameToken() const {
+  if (!HasImageReplacement()) {
+    return std::nullopt;
+  }
+  if (ShadowRoot* shadow_root = UserAgentShadowRoot()) {
+    if (auto* iframe = Traversal<HTMLIFrameElement>::FirstChild(*shadow_root)) {
+      if (Frame* frame = iframe->ContentFrame()) {
+        return frame->GetFrameToken();
+      }
+    }
+  }
+  return std::nullopt;
 }
 
 void HTMLImageElement::ResetImageReplacement(Document* document) {

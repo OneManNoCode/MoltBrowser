@@ -178,9 +178,13 @@ workers their host (§10.3).
   `CreateMonitor` checks against a fixed total.
 - Streaming is a series of deltas (`OnStreaming`); aborting a request
   closes its `ModelStreamingResponder` pipe.
-- The writing APIs' `inputQuota` is the Blink constant
-  `kWritingAssistanceMaxInputTokenSize` (9216); usage is measured by the
-  browser.
+- The writing APIs' `inputQuota` is 9216 for every page and model. At 152
+  it was Blink's constant `kWritingAssistanceMaxInputTokenSize`; since 156
+  Blink takes it from the browser with the session (`OnResult`'s
+  `context_window`), and MoltBrowser sends the same fixed number
+  (`kWritingAssistanceInputQuota`), never the loaded model's window. Usage is
+  measured by the browser. Since 156 Blink also asks for availability before
+  `create()` and rejects an unsupported language there (`NotSupportedError`).
 - `responseConstraint` (`language_model.cc`, `ParseConstraint`):
   - An object is `JSON.stringify`'d and sent with `Prompt()` as
     `ResponseConstraint::NewJsonSchema`. A `RegExp` is sent as its source
@@ -512,7 +516,8 @@ MoltBrowser owns. The pref won:
 - Options: `initialPrompts` (an optional leading system message, then user
   and assistant turns), `temperature`/`topK` (clamped to the uniform
   maximum: top-K 128, temperature 2.0; defaults 40 and 0.7), the sampling
-  modes, `expectedInputs`/`expectedOutputs` with type `"text"` and
+  modes (all seven of 156, at upstream's top-K and temperature for each),
+  `expectedInputs`/`expectedOutputs` with type `"text"` and
   languages (one output language is passed to the model as an
   instruction), `expectedInputs` with type `"image"` (§5.1). Not
   supported, reported `"unavailable"` or failed: audio input, outputs

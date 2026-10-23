@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/frame/browser_widget.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/frame/browser_widget.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/frame/browser_widget.cc b/chrome/browser/ui/views/frame/browser_widget.cc
-index 22318133c1b29915317701775e207f1e672b0052..396ab4666b04fe9cf98c78dffeca2719f0d9f707 100644
+index 6a221594b09f0b8fa10e4b8bbca05a0e52e52a58..67d141379b8439ba24e15142ecd1564ca5588a63 100644
 --- a/chrome/browser/ui/views/frame/browser_widget.cc
 +++ b/chrome/browser/ui/views/frame/browser_widget.cc
 @@ -8,6 +8,7 @@
@@ -16,17 +16,17 @@ index 22318133c1b29915317701775e207f1e672b0052..396ab4666b04fe9cf98c78dffeca2719
  #include "base/functional/bind.h"
  #include "base/metrics/user_metrics.h"
  #include "build/build_config.h"
-@@ -21,6 +22,7 @@
- #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+@@ -23,6 +24,7 @@
  #include "chrome/browser/ui/browser_window_state.h"
  #include "chrome/browser/ui/immersive/immersive_mode_controller.h"
+ #include "chrome/browser/ui/sessions/session_service_browser_helper.h"
 +#include "chrome/browser/ui/ui_features.h"
  #include "chrome/browser/ui/unload_controller.h"
  #include "chrome/browser/ui/views/frame/browser_frame_view.h"
  #include "chrome/browser/ui/views/frame/browser_native_widget.h"
-@@ -453,6 +455,17 @@ ui::ColorProviderKey BrowserWidget::GetColorProviderKey() const {
- 
+@@ -494,6 +496,17 @@ ui::ColorProviderKey BrowserWidget::GetColorProviderKey() const {
    key = theme_service->GetColorProviderKey(key, profile);
+   key.custom_theme = GetCustomTheme();
  
 +  // MoltBrowser: the toolbar is designed as dark "Liquid Glass"; pin
 +  // normal-window chrome to dark so every foreground token (toolbar

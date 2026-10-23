@@ -11,7 +11,7 @@
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
 
-class Browser;
+class BrowserWindowInterface;
 class Profile;
 
 // AgentSidePanelWebView hosts the Agent-mode automation studio WebUI
@@ -23,7 +23,7 @@ class AgentSidePanelWebView : public views::WebView {
   METADATA_HEADER(AgentSidePanelWebView, views::WebView)
 
  public:
-  explicit AgentSidePanelWebView(Browser* browser);
+  explicit AgentSidePanelWebView(BrowserWindowInterface* browser);
   AgentSidePanelWebView(const AgentSidePanelWebView&) = delete;
   AgentSidePanelWebView& operator=(const AgentSidePanelWebView&) = delete;
   ~AgentSidePanelWebView() override;

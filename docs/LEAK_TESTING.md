@@ -290,8 +290,9 @@ level, and in one browser launch per device scale factor
   en-US form messages, `windows-1252` for undeclared pages, 16px default
   font size, no Do Not Track, GPC on, `window-management` denied and
   `getScreenDetails()` rejected, `persist()` false, autoplay
-  `allowed-muted`, Shared Storage off, no third-party cookie, WebRTC off,
-  the built-in AI APIs unavailable, the reduced user agent.
+  `allowed-muted`, no Shared Storage (removed upstream at 156; the kit
+  also accepts an older build's rejected `set()`), no third-party cookie,
+  WebRTC off, the built-in AI APIs unavailable, the reduced user agent.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

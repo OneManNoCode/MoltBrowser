@@ -11,6 +11,7 @@
 #include <optional>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/remote_cocoa/app_shim/immersive_mode_controller_cocoa.h"
@@ -60,6 +61,11 @@ using remote_cocoa::mojom::NativeWidgetNSWindowHost;
 using remote_cocoa::NativeWidgetNSWindowHostHelper;
 using remote_cocoa::CocoaMouseCapture;
 using remote_cocoa::CocoaMouseCaptureDelegate;
+
+// Identifier for the native opaque background view used to prevent transparency
+// when glass frame is active.
+REMOTE_COCOA_APP_SHIM_EXPORT extern NSString* const
+    kOpaqueFrameBackgroundViewIdentifier;
 
 // A bridge to an NSWindow managed by an instance of NativeWidgetMac or
 // DesktopNativeWidgetMac. Serves as a helper class to bridge requests from the
@@ -221,6 +227,11 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
 
   bool CanGoBack() const { return can_go_back_; }
   bool CanGoForward() const { return can_go_forward_; }
+  CocoaWindowMoveLoop* window_move_loop() const {
+    return window_move_loop_.get();
+  }
+  void SetWindowMoveLoopForTesting(
+      std::unique_ptr<CocoaWindowMoveLoop> move_loop);
 
   // Whether to run a custom animation for the provided |transition|.
   bool ShouldRunCustomAnimationFor(
@@ -420,6 +431,19 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // `MoveToActiveFullscreenSpace()`.
   void RestoreCollectionBehavior();
 
+  // Returns whether screenshots of this window are allowed, taking the window
+  // hierarchy into account: a window is excluded from capture if it or any of
+  // its ancestors disallows screenshots. This does not modify
+  // `allow_screenshots_` as that reflects the state requested by the
+  // host for this window.
+  bool ShouldAllowScreenshots() const;
+
+  // Applies the CoreGraphics window capture exclusion shape for this window and
+  // its child windows, which inherit this window's exclusion state. The shape
+  // is expressed in window coordinates, so this must also be called whenever
+  // the window is resized.
+  void UpdateCaptureExclusion();
+
   // CocoaMouseCaptureDelegate:
   bool PostCapturedEvent(NSEvent* event) override;
   void OnMouseCaptureLost() override;
@@ -521,9 +545,29 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // Manages immersive mode when in fullscreen.
   std::unique_ptr<ImmersiveModeControllerCocoa> immersive_mode_controller_;
 
+  // When `window_` is made visible, its `alphaValue` is forced to 0 to avoid
+  // flashing a blank window. The value to restore it to when the compositor
+  // frame is received is stored here.
+  std::optional<float> pending_alpha_value_;
+
+  // If true, window alpha will be set to 0.0 when shown after being hidden
+  // until a fresh compositor frame arrives.
+  bool prevent_stale_content_after_hide_ = false;
+
+  // Set to true initially and on hide if `prevent_stale_content_after_hide_` is
+  // enabled, and cleared once a fresh compositor frame is received.
+  bool should_reset_alpha_on_show_ = true;
+
   // This tracks whether current window can go back or go forward.
   bool can_go_back_ = false;
   bool can_go_forward_ = false;
+
+  base::RepeatingCallback<void(NSWindow*, bool)>
+      capture_exclusion_applier_for_testing_;
+  // The screenshot state requested by the host for this window, ignoring any
+  // state inherited from ancestor windows. Use `ShouldAllowScreenshots()` to
+  // get the effective state.
+  bool allow_screenshots_ = true;
 
   display::ScopedDisplayObserver display_observer_{this};
 

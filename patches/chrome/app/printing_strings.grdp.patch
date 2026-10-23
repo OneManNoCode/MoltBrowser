@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/app/printing_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/printing_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/printing_strings.grdp b/chrome/app/printing_strings.grdp
-index 7bb32f2cd786ec44f88127ef060cb832387e15b6..3c4e12f18fda0dc2629004de1da5fbb2e069976c 100644
+index ff4c6e61e0a93f2b0744e0a021462109a1d53558..79606305008f5e1860230f74ede5875ae65d1aaa 100644
 --- a/chrome/app/printing_strings.grdp
 +++ b/chrome/app/printing_strings.grdp
-@@ -224,7 +224,7 @@
+@@ -221,7 +221,7 @@
        See more destinations
      </message>
      <message name="IDS_PRINT_PREVIEW_EXTENSION_DESTINATION_ICON_TOOLTIP" desc="Tooltip for the icon shown in print destination list next to print destination provided by an extension.">
@@ -17,7 +17,7 @@ index 7bb32f2cd786ec44f88127ef060cb832387e15b6..3c4e12f18fda0dc2629004de1da5fbb2
      </message>
      <message name="IDS_MORE_OPTIONS_LABEL" desc="Label of the toggle element to switch between showing more or less printing options in the Print Preview.">
        More settings
-@@ -289,7 +289,7 @@
+@@ -286,7 +286,7 @@
        </message>
        <message name="IDS_PRINT_PREVIEW_PRINT_TO_GOOGLE_DRIVE"
                 desc="Option shown on printer drop-down list for saving previewed document to Google Drive.">

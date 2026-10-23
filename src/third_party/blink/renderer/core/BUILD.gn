@@ -662,10 +662,12 @@ if (is_ios) {
     testonly = true
     filelist_name = "testing/data/core_test_bundle_data.filelist"
   }
+
   bundle_data_from_filelist("animation_test_bundle_data") {
     testonly = true
     filelist_name = "animation/test_data/animation_test_bundle_data.filelist"
   }
+
   bundle_data_from_filelist("paint_test_bundle_data") {
     testonly = true
     filelist_name = "paint/test_data/paint_test_bundle_data.filelist"
@@ -1469,6 +1471,10 @@ action("generate_eventhandler_names") {
              "//tools/idl_parser/idl_lexer.py",
              "//tools/idl_parser/idl_node.py",
              "//tools/idl_parser/idl_parser.py",
+             "events/event_type_names.json5",
+             "html/html_attribute_names.json5",
+             "mathml/mathml_attribute_names.json5",
+             "svg/svg_attribute_names.json5",
              web_idl_database_filepath,
              real_script,
            ]
@@ -1483,6 +1489,14 @@ action("generate_eventhandler_names") {
     rebase_path(web_idl_database_filepath, root_build_dir),
     "--out",
     rebase_path(outputs[0], root_build_dir),
+    "--event-handler-names",
+    rebase_path("events/event_type_names.json5", root_build_dir),
+    "--html-attribute-names",
+    rebase_path("html/html_attribute_names.json5", root_build_dir),
+    "--svg-attribute-names",
+    rebase_path("svg/svg_attribute_names.json5", root_build_dir),
+    "--mathml-attribute-names",
+    rebase_path("mathml/mathml_attribute_names.json5", root_build_dir),
   ]
 }
 
@@ -1677,6 +1691,8 @@ source_set("unit_tests") {
 
 group("unit_tests_data") {
   data = [
+    # Used by core/loader/resource/font_resource_test.cc.
+    "//third_party/blink/renderer/platform/testing/data/roboto-ift.woff2",
     "//third_party/blink/web_tests/svg/animations/path-animation.svg",
     "//third_party/blink/web_tests/svg/stroke/zero-length-path-linecap-rendering.svg",
     "//third_party/blink/web_tests/svg/foreignObject/fixed-position.svg",
@@ -1800,6 +1816,7 @@ source_set("unit_test_support") {
     "//third_party/blink/renderer/platform/testing/data/third_party/Roboto/roboto-regular.woff2",
     "//third_party/blink/renderer/platform/testing/data/third_party/Noto/NotoNaskhArabic-regular.woff2",
     "//third_party/blink/web_tests/external/wpt/fonts/mplus-1p-regular.woff",
+    "//third_party/blink/web_tests/third_party/DroidSans/DroidSans.ttf.subset-U002E-U0041-42.ttf",
   ]
 }
 

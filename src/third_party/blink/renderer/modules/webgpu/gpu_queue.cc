@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/modules/webgpu/gpu_queue.h"
 
+#include <cmath>
+
 #include "build/build_config.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/client/webgpu_interface.h"
@@ -14,10 +16,13 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_command_buffer_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_copy_element_image_destination.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_copy_element_image_source.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_draw_element_image_destination.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_draw_element_image_source.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_image_copy_external_image.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_image_copy_image_bitmap.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_image_copy_texture_tagged.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texel_copy_texture_info.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_union_gpuextent3ddict_unsignedlongenforcerangesequence.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_htmlcanvaselement_htmlimageelement_htmlvideoelement_imagebitmap_imagedata_offscreencanvas_videoframe.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
@@ -339,6 +344,14 @@ void GPUQueue::copyExternalImageToTexture(
     return;
   }
 
+  if (std::isnan(destination->linearHDRHeadroom()) ||
+      destination->linearHDRHeadroom() < 1.0f) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kOperationError,
+        "linearHDRHeadroom must be greater or equal to 1.");
+    return;
+  }
+
   std::optional<ExternalImageSource> source =
       GetExternalSourceFromExternalImage(
           copyImage->source(), {destination->premultipliedAlpha(), color_space},
@@ -404,10 +417,15 @@ void GPUQueue::copyExternalImageToTexture(
     // Use display size which is based on natural size but considering
     // transformation metadata.
     wgpu::Extent2D video_frame_display_size = {source->width, source->height};
-    CopyFromVideoElement(
-        source->external_texture_source, video_frame_display_size,
-        origin_in_external_image, dawn_copy_size, dawn_destination,
-        destination->premultipliedAlpha(), color_space, copyImage->flipY());
+    if (!CopyFromVideoElement(
+            source->external_texture_source, video_frame_display_size,
+            origin_in_external_image, dawn_copy_size, dawn_destination,
+            destination->premultipliedAlpha(), color_space,
+            copyImage->flipY())) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kOperationError,
+          "Failed to copy content from video element.");
+    }
     return;
   }
 
@@ -415,7 +433,7 @@ void GPUQueue::copyExternalImageToTexture(
   // fingerprinting noise.
   source->image = molt_fingerprinting::FarbleForExport(
       device_->GetExecutionContext(), std::move(source->image));
-  if (!CopyStaticImagBitmapToWGPUTexture(
+  if (!CopyStaticImageBitmapToWGPUTexture(
           GetDawnControlClient(), device_->GetHandle(), source->image.get(),
           origin_in_external_image, dawn_copy_size, dawn_destination,
           destination->premultipliedAlpha(), color_space, copyImage->flipY())) {
@@ -464,57 +482,89 @@ void GPUQueue::copyElementImageToTexture(
     GPUCopyElementImageSource* source,
     GPUCopyElementImageDestination* destination,
     ExceptionState& exception_state) {
+  if (source->hasSx() != source->hasSy() ||
+      source->hasSx() != source->hasSwidth() ||
+      source->hasSx() != source->hasSheight()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kOperationError,
+        "Must specify all or none of (sx, sy, swidth, sheight).");
+    return;
+  }
+  if (destination->hasWidth() != destination->hasHeight()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kOperationError,
+        "Must specify neither or both of (width,height).");
+    return;
+  }
   std::optional<float> sx;
   std::optional<float> sy;
   std::optional<float> swidth;
   std::optional<float> sheight;
-  size_t explicit_param_count = 0;
   if (source->hasSx()) {
     sx = source->sx();
-    explicit_param_count++;
-  }
-  if (source->hasSy()) {
     sy = source->sy();
-    explicit_param_count++;
-  }
-  if (source->hasSwidth()) {
     swidth = source->swidth();
-    explicit_param_count++;
-  }
-  if (source->hasSheight()) {
     sheight = source->sheight();
-    explicit_param_count++;
-  }
-  if (explicit_param_count % 4 != 0) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kOperationError,
-        "Must specify all or none of (sx,sy,swidth,sheight).");
-    return;
   }
 
   std::optional<uint32_t> width;
   std::optional<uint32_t> height;
   if (destination->hasWidth()) {
     width = destination->width();
-    explicit_param_count++;
-  }
-  if (destination->hasHeight()) {
     height = destination->height();
-    explicit_param_count++;
-  }
-  if (explicit_param_count % 2 != 0) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kOperationError,
-        "Must specify neither or both of (width,height).");
-    return;
   }
 
-  CopyElementImageToTextureInternal(source->source(), sx, sy, swidth, sheight,
+  DrawElementImageToTextureInternal(source->source(), sx, sy, swidth, sheight,
                                     width, height, destination->destination(),
                                     exception_state);
 }
 
-void GPUQueue::CopyElementImageToTextureInternal(
+void GPUQueue::drawElementImageToTexture(
+    GPUDrawElementImageSource* source,
+    GPUDrawElementImageDestination* destination,
+    ExceptionState& exception_state) {
+  if (source->hasSourceX() != source->hasSourceY() ||
+      source->hasSourceX() != source->hasSourceWidth() ||
+      source->hasSourceX() != source->hasSourceHeight()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kOperationError,
+        "Must specify all or none of "
+        "(sourceX, sourceY, sourceWidth, sourceHeight).");
+    return;
+  }
+  std::optional<wgpu::Extent3D> dawn_copy_size;
+  if (destination->hasSize()) {
+    dawn_copy_size.emplace();
+    if (!ConvertToDawn(destination->size(), &dawn_copy_size.value(), device_,
+                       exception_state)) {
+      return;
+    }
+  }
+
+  std::optional<float> sx;
+  std::optional<float> sy;
+  std::optional<float> swidth;
+  std::optional<float> sheight;
+  if (source->hasSourceX()) {
+    sx = source->sourceX();
+    sy = source->sourceY();
+    swidth = source->sourceWidth();
+    sheight = source->sourceHeight();
+  }
+
+  std::optional<uint32_t> width;
+  std::optional<uint32_t> height;
+  if (dawn_copy_size.has_value()) {
+    width = dawn_copy_size->width;
+    height = dawn_copy_size->height;
+  }
+
+  DrawElementImageToTextureInternal(source->source(), sx, sy, swidth, sheight,
+                                    width, height, destination,
+                                    exception_state);
+}
+
+void GPUQueue::DrawElementImageToTextureInternal(
     const V8UnionElementOrElementImage* source,
     std::optional<float> sx,
     std::optional<float> sy,
@@ -530,7 +580,7 @@ void GPUQueue::CopyElementImageToTextureInternal(
   CanvasRenderingContext* context = nullptr;
   if (source->IsElement()) {
     context = CanvasRenderingContext::GetEnclosingContextForDrawElement(
-        source->GetAsElement(), "copyElementImageToTexture()", exception_state);
+        source->GetAsElement(), "drawElementImageToTexture()", exception_state);
   } else {
     const std::unique_ptr<CanvasChildPaintRecord>& record =
         source->GetAsElementImage()->PaintRecord();
@@ -581,7 +631,7 @@ void GPUQueue::CopyElementImageToTextureInternal(
   scoped_refptr<StaticBitmapImage> image =
       context->GetElementImage(source, sx, sy, swidth, sheight, width, height,
                                gpu::SHARED_IMAGE_USAGE_WEBGPU_READ,
-                               "copyElementImageToTexture()", exception_state);
+                               "drawElementImageToTexture()", exception_state);
   if (!image) {
     return;
   }
@@ -594,7 +644,7 @@ void GPUQueue::CopyElementImageToTextureInternal(
   dawn_copy_size.height = std::min(
       dawn_destination.texture.GetHeight(),
       base::ClampedNumeric(image->Size().height()).Cast<uint32_t>().RawValue());
-  if (!CopyStaticImagBitmapToWGPUTexture(
+  if (!CopyStaticImageBitmapToWGPUTexture(
           GetDawnControlClient(), device_->GetHandle(), image.get(),
           wgpu::Origin2D(), dawn_copy_size, dawn_destination,
           destination->premultipliedAlpha(), color_space,
@@ -605,7 +655,7 @@ void GPUQueue::CopyElementImageToTextureInternal(
   }
 }
 
-void GPUQueue::CopyFromVideoElement(
+bool GPUQueue::CopyFromVideoElement(
     const ExternalTextureSource source,
     const wgpu::Extent2D& video_frame_natural_size,
     const wgpu::Origin2D& origin,
@@ -618,8 +668,11 @@ void GPUQueue::CopyFromVideoElement(
 
   // Create External Texture with dst color space. No color space conversion
   // happens during copy step.
-  ExternalTexture external_texture =
+  std::optional<ExternalTexture> external_texture =
       CreateExternalTexture(device_, dst_color_space, source.media_video_frame);
+  if (!external_texture) {
+    return false;
+  }
 
   wgpu::CopyTextureForBrowserOptions options = {
       // Extracting contents from HTMLVideoElement (e.g.
@@ -635,17 +688,19 @@ void GPUQueue::CopyFromVideoElement(
   options.flipY = flipY;
 
   wgpu::ImageCopyExternalTexture src = {
-      .externalTexture = external_texture.wgpu_external_texture,
+      .externalTexture = external_texture->wgpu_external_texture,
       .origin = {origin.x, origin.y},
       .naturalSize = video_frame_natural_size,
   };
   GetHandle().CopyExternalTextureForBrowser(&src, &destination, &copy_size,
                                             &options);
 
-  if (external_texture.is_zero_copy &&
+  if (external_texture->is_zero_copy &&
       source.media_video_frame->metadata().read_lock_fences_enabled) {
-    ReferenceUntilGPUIsFinished(std::move(external_texture.mailbox_texture));
+    ReferenceUntilGPUIsFinished(std::move(external_texture->mailbox_texture));
   }
+
+  return true;
 }
 
 void GPUQueue::ReferenceUntilGPUIsFinished(

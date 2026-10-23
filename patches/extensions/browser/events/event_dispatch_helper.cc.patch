@@ -1,14 +1,14 @@
 MoltBrowser patch for extensions/browser/events/event_dispatch_helper.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/extensions/browser/events/event_dispatch_helper.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/extensions/browser/events/event_dispatch_helper.cc b/extensions/browser/events/event_dispatch_helper.cc
-index 18983d7f160ec460bfc7fa2b4684e82279e322cc..3e15d81d619c0a21d79c8e93f56b56881eb88a93 100644
+index 657f24bd8ff15385688c7c3fbb20dfa6d247de25..c82e95bb428424c9265df22953b9b5d78cba08d9 100644
 --- a/extensions/browser/events/event_dispatch_helper.cc
 +++ b/extensions/browser/events/event_dispatch_helper.cc
-@@ -51,6 +51,17 @@ bool CanDispatchEventToBrowserContext(BrowserContext& context,
+@@ -52,6 +52,17 @@ bool CanDispatchEventToBrowserContext(BrowserContext& context,
    if (!crosses_incognito) {
      return true;
    }

@@ -46,7 +46,6 @@
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -177,7 +176,8 @@ void MouseEvent::InitCoordinates(const double client_x,
     if (LocalFrame* frame = local_dom_window->GetFrame()) {
       // Adjust page_x_ and page_y_ by layout viewport scroll offset.
       if (ScrollableArea* scrollable_area = frame->View()->LayoutViewport()) {
-        gfx::Vector2d scroll_offset = scrollable_area->ScrollOffsetInt();
+        gfx::Vector2d scroll_offset =
+            scrollable_area->PixelSnappedScrollOffset();
         page_x_ += scroll_offset.x() / zoom_factor;
         page_y_ += scroll_offset.y() / zoom_factor;
       }
@@ -337,14 +337,6 @@ const AtomicString& MouseEvent::InterfaceName() const {
 
 bool MouseEvent::IsMouseEvent() const {
   return true;
-}
-
-void MouseEvent::SetRelatedTarget(EventTarget* related_target) {
-  if ((IsWheelEvent() || IsDragEvent()) &&
-      !RuntimeEnabledFeatures::DontLeakShadowTreesInDragEventsEnabled()) {
-    return;
-  }
-  related_target_ = related_target;
 }
 
 int16_t MouseEvent::button() const {
@@ -533,7 +525,7 @@ void MouseEvent::ComputeRelativePosition() {
     layer = layer->EnclosingSelfPaintingLayer();
 
     PhysicalOffset physical_offset =
-        layer->GetLayoutObject().LocalToAbsolutePoint(PhysicalOffset(), 0);
+        layer->GetLayoutObject().LocalToAbsolutePoint(PhysicalOffset());
     layer_location_ -= gfx::Vector2dF(physical_offset);
 
     layer_location_.Scale(inverse_zoom_factor);

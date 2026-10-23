@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/settings_google_chrome_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/settings_google_chrome_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/settings_google_chrome_strings.grdp b/chrome/app/settings_google_chrome_strings.grdp
-index c6b4a3c48d03481213a34e67d77913fa437e5c45..7c7a8a71d6e18daba399a05d90e2049f57a869c4 100644
+index 42cd6e38dce9d9be211ccd56af3a3b52c472df96..a6d3475bb397512bb05482b9a42abf64fd55c10f 100644
 --- a/chrome/app/settings_google_chrome_strings.grdp
 +++ b/chrome/app/settings_google_chrome_strings.grdp
 @@ -1,31 +1,31 @@
@@ -48,7 +48,7 @@ index c6b4a3c48d03481213a34e67d77913fa437e5c45..7c7a8a71d6e18daba399a05d90e2049f
      </message>
    </if>
    <if expr="is_chromeos">
-@@ -49,361 +49,361 @@
+@@ -49,357 +49,357 @@
  
    <!-- Autofill Page -->
    <message name="IDS_SETTINGS_SIGNED_OUT_USER_LABEL" desc="Label which is shown at the top of the compromised password section if user is signed out.">
@@ -206,11 +206,6 @@ index c6b4a3c48d03481213a34e67d77913fa437e5c45..7c7a8a71d6e18daba399a05d90e2049f
 +    If you also share MoltBrowser usage reports, those reports include the URLs you visit
    </message>
  
-   <!-- Privacy Sandbox -->
-   <message name="IDS_SETTINGS_PRIVACY_SANDBOX_AD_MEASUREMENT_DIALOG_DESCRIPTION" desc="A description of the Ad measurement API. * “Ad measurement” is the name of an API in this context. We don’t use “API” with the user, but they need to know that there is something called “A measurement” and what it does. * “sites you visit”: call the API to get information. The actor is the site, not Chrome. * “restricts cross-site tracking”: Today, with 3rd-party cookies, ad measurement technologies can inadvertently (and intentionally) share considerable information from one site to another). This feature restricts that sharing in order to improve the user’s privacy.">
--    Ad measurement allows sites you visit to request information from Chrome that helps the site measure the performance of their ads. Ad measurement restricts cross-site tracking by transferring as little information as possible between sites.
-+    Ad measurement allows sites you visit to request information from MoltBrowser that helps the site measure the performance of their ads. Ad measurement restricts cross-site tracking by transferring as little information as possible between sites.
-   </message>
  
    <!-- Safety check -->
    <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_SETTING_SUBLABEL" desc="By default Chrome auto-revokes (disables) permissions (e.g. Camera, Location, etc.) for websites that were not visited for a while. This sublabel is for the toggle that allows users to switch off/on this functionality.">
@@ -511,7 +506,7 @@ index c6b4a3c48d03481213a34e67d77913fa437e5c45..7c7a8a71d6e18daba399a05d90e2049f
    </message>
    <message name="IDS_SETTINGS_SECURITY_BUNDLE_ENHANCED_BULLET_ONE" desc="First bullet point under the security settings enhanced bundle section">
      Turns on additional features to provide Chrome’s strongest protections
-@@ -411,19 +411,19 @@
+@@ -407,19 +407,19 @@
  
    <!-- Secure connections -->
    <message name="IDS_SETTINGS_SECURE_CONNECTIONS_SECTION_DESCRIPTION" desc="Description for the Secure Connections section in Security settings, explaining the baseline behavior of the browser even if the 'Always use secure connections' toggle is disabled.">

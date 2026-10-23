@@ -4,7 +4,7 @@
 
 #include "chrome_media_session_client.h"
 
-#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/theme_resources.h"
@@ -22,8 +22,9 @@ bool ChromeMediaSessionClient::ShouldHideMetadata(
     content::BrowserContext* browser_context) const {
   // MoltBrowser: the operating system's media controls don't show what a
   // MoltNet page plays either (molt_net_incognito_parity.h).
-  return molt_ai::tor::GetsIncognitoProtections(
-      Profile::FromBrowserContext(browser_context));
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  return profile->IsPrimaryOTRProfileWithRegularParent() ||
+         molt_ai::tor::IsMoltNetProfile(profile);
 }
 
 std::u16string ChromeMediaSessionClient::GetTitlePlaceholder() const {

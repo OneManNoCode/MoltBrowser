@@ -27,10 +27,10 @@ namespace embedder_support {
 namespace {
 
 // MoltBrowser: origin trials that stay off whatever token a site serves.
-// - HTMLInCanvas (drawElementImage, copyElementImageToTexture): renders page
-//   content (text, fonts, form controls) into a WebGPU texture that script
-//   reads back without fingerprinting protection's noise
-//   (docs/FINGERPRINTING.md).
+// - HTMLInCanvas (drawElementImage, copyElementImageToTexture,
+//   drawElementImageToTexture): renders page content (text, fonts, form
+//   controls) into a WebGPU texture that script reads back without
+//   fingerprinting protection's noise (docs/FINGERPRINTING.md).
 constexpr std::string_view kMoltDisabledTrials[] = {"HTMLInCanvas"};
 
 }  // namespace

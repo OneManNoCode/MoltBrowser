@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/frame/browser_frame_view_mac.mm
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/frame/browser_frame_view_mac.mm by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/frame/browser_frame_view_mac.mm b/chrome/browser/ui/views/frame/browser_frame_view_mac.mm
-index 12120a00a99a160648f98ef7b928efa6b883d52b..2256a2eedfc15af0c44b0fabc165ececd3d7035e 100644
+index 8354a9179ef79627b05447f3810808ccd6a0e78a..fa9f1e8476986257e2b529f847c672fa90b72bc2 100644
 --- a/chrome/browser/ui/views/frame/browser_frame_view_mac.mm
 +++ b/chrome/browser/ui/views/frame/browser_frame_view_mac.mm
 @@ -3,11 +3,13 @@
@@ -22,13 +22,13 @@ index 12120a00a99a160648f98ef7b928efa6b883d52b..2256a2eedfc15af0c44b0fabc165ecec
  #include "base/containers/fixed_flat_map.h"
  #include "base/functional/bind.h"
  #include "base/i18n/rtl.h"
-@@ -494,6 +496,9 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
-                                     : kBrowserFrameAlphaLight;
-     canvas->DrawColor(SkColorSetA(frame_color, frame_alpha));
-   } else {
-+    // MoltBrowser: paint the frame / tab-strip band with the (now near-black)
-+    // frame color, fully opaque, so the top chrome reads as one sheet of black
-+    // glass with the toolbar. A custom user theme still paints its own frame.
-     canvas->DrawColor(frame_color);
+@@ -505,6 +507,9 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
+     return;
+   }
  
-     auto* theme_service = ThemeServiceFactory::GetForProfile(
++  // MoltBrowser: paint the frame / tab-strip band with the (now near-black)
++  // frame color, fully opaque, so the top chrome reads as one sheet of black
++  // glass with the toolbar. A custom user theme still paints its own frame.
+   const SkColor frame_color =
+       GetFrameColor(BrowserFrameActiveState::kUseCurrent);
+   canvas->DrawColor(frame_color);

@@ -32,6 +32,7 @@
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_core_service.h"
 #include "chrome/browser/download/download_core_service_factory.h"
+#include "chrome/browser/enterprise/isolated_mode/isolated_mode_settings_service_factory.h"
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
@@ -105,7 +106,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"  // nogncheck crbug.com/40147906
 #include "chrome/browser/global_features.h"
-#include "chromeos/constants/chromeos_features.h"
 #include "chromeos/constants/pref_names.h"
 #endif
 
@@ -141,6 +141,10 @@ profile_metrics::BrowserProfileType ComputeOffTheRecordProfileType(
 
   switch (profile_metrics::GetBrowserProfileType(parent_profile)) {
     case profile_metrics::BrowserProfileType::kRegular:
+      if (enterprise_isolated_mode::IsolatedModeReplacesIncognito(
+              parent_profile)) {
+        return profile_metrics::BrowserProfileType::kEnterpriseIsolated;
+      }
       return profile_metrics::BrowserProfileType::kIncognito;
 
     case profile_metrics::BrowserProfileType::kGuest:
@@ -150,6 +154,7 @@ profile_metrics::BrowserProfileType ComputeOffTheRecordProfileType(
       return profile_metrics::BrowserProfileType::kSystem;
 
     case profile_metrics::BrowserProfileType::kIncognito:
+    case profile_metrics::BrowserProfileType::kEnterpriseIsolated:
     case profile_metrics::BrowserProfileType::kOtherOffTheRecordProfile:
       NOTREACHED();
   }
@@ -206,10 +211,14 @@ void OffTheRecordProfileImpl::Init() {
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
 
+  const IncognitoModePrefs::IncognitoModeType incognito_type =
+      IncognitoModePrefs::GetIncognitoModeType(profile_);
   // Always crash when incognito is not available.
   CHECK(!IsIncognitoProfile() ||
-        IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
-            policy::IncognitoModeAvailability::kDisabled);
+        incognito_type == IncognitoModePrefs::IncognitoModeType::kStandard);
+  // Always crash when isolated mode is not available.
+  CHECK(!IsEnterpriseIsolatedModeProfile() ||
+        incognito_type == IncognitoModePrefs::IncognitoModeType::kEnterprise);
 
   // MoltBrowser: MoltNet pages start at 100% zoom, whether or not
   // fingerprinting protection is on; the parent's zoom levels would show in
@@ -617,13 +626,8 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
  public:
   explicit GuestSessionProfile(Profile* real_profile)
       : OffTheRecordProfileImpl(real_profile, OTRProfileID::PrimaryID()) {
-    if (new_guest_profile_impl_) {
-      CHECK_EQ(profile_metrics::BrowserProfileType::kGuest,
-               profile_metrics::GetBrowserProfileType(this));
-    } else {
-      profile_metrics::SetBrowserProfileType(
-          this, profile_metrics::BrowserProfileType::kGuest);
-    }
+    CHECK_EQ(profile_metrics::BrowserProfileType::kGuest,
+             profile_metrics::GetBrowserProfileType(this));
   }
 
   void InitChromeOSPreferences() override {

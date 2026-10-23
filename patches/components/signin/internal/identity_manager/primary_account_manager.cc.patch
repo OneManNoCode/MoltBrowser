@@ -1,11 +1,11 @@
 MoltBrowser patch for components/signin/internal/identity_manager/primary_account_manager.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/signin/internal/identity_manager/primary_account_manager.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/signin/internal/identity_manager/primary_account_manager.cc b/components/signin/internal/identity_manager/primary_account_manager.cc
-index 3f8997799d3139a0cdd148857589888c8bfc71c4..8ba8c68a8476f9bcb993ba75f89a16e2f377956c 100644
+index cb7399be2cc6569cd62caf24e86d6bed474daa8a..45d7942db8d6907b5a5de83aea46706bb8fd721d 100644
 --- a/components/signin/internal/identity_manager/primary_account_manager.cc
 +++ b/components/signin/internal/identity_manager/primary_account_manager.cc
 @@ -391,7 +391,11 @@ void PrimaryAccountManager::RegisterProfilePrefs(PrefRegistrySimple* registry) {

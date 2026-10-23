@@ -169,9 +169,6 @@
     <ph name="CARD_NICKNAME">$1<ex>Groceries</ex></ph>, <ph name="CARD_NETWORK_NAME">$2<ex>Visa</ex></ph>, <ph name="CARD_LAST_FOUR_DIGITS">$3<ex>4444</ex></ph>, expires <ph name="CARD_EXPIRATION">$4<ex>01/2025</ex></ph>
   </message>
   <if expr="is_android">
-    <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_BOTTOM_SHEET_CONTENT_DESCRIPTION" desc="The description of the Autofill save card prompt bottom sheet. 'Swipe down to close.' will automatically by appended." formatter_data="android_java">
-      Save card
-    </message>
     <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_BOTTOM_SHEET_FULL_HEIGHT" desc="The announcement when the Autofill save card prompt bottom sheet is opened." formatter_data="android_java">
       Save card opened at full height.
     </message>
@@ -301,9 +298,6 @@
     </message>
     <message name="IDS_AUTOFILL_SAVE_AND_FILL_DIALOG_CVC_LABEL" desc="The label text for the security code textfield.">
       Security code
-    </message>
-    <message name="IDS_AUTOFILL_SAVE_AND_FILL_DIALOG_CVC_PLACEHOLDER" desc="The placeholder text for security code textfield">
-      Optional
     </message>
     <message name="IDS_AUTOFILL_SAVE_AND_FILL_DIALOG_EXPIRATION_DATE_LABEL" desc="The label text for the expiration date textfield.">
       Expiration date
@@ -736,9 +730,6 @@
   </message>
   <!-- Autofill save IBAN bottom sheet prompt -->
   <if expr="is_android">
-    <message name="IDS_AUTOFILL_SAVE_IBAN_PROMPT_BOTTOM_SHEET_CONTENT_DESCRIPTION" desc="The description of the Autofill save IBAN bottom sheet. 'Swipe down to close.' will automatically be appended." formatter_data="android_java">
-      Save IBAN
-    </message>
     <message name="IDS_AUTOFILL_SAVE_IBAN_PROMPT_BOTTOM_SHEET_FULL_HEIGHT" desc="The announcement when the Autofill save IBAN bottom sheet is opened." formatter_data="android_java">
       Save IBAN opened at full height.
     </message>
@@ -906,9 +897,6 @@
   <if expr="is_android">
     <message name="IDS_AUTOFILL_VIRTUAL_CARD_CONTAINER_ACCESSIBILITY_DESCRIPTION" desc="The accessibility description for a UI element that contains the credit card icon, the card name and last four digits (in placeholder), and the text 'Virtual card'. This UI element is in the dialog that lets users enroll their credit card into the virtual card number feature." formatter_data="android_java">
       <ph name="IDS_AUTOFILL_VIRTUAL_CARD_NAME_AND_LAST_FOUR_DIGITS">%1$s<ex>Visa **** 1234</ex></ph>, virtual card
-    </message>
-    <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLL_CONTENT_DESCRIPTION" desc="The description of the virtual card enrollment dialog for the accessbility screen reader." formatter_data="android_java">
-      Virtual card enrollment
     </message>
     <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLL_FULL_HEIGHT_CONTENT_DESCRIPTION" desc="The description of the full height virtual card enrollment dialog for the accessbility screen reader." formatter_data="android_java">
       Virtual card enrollment opened at full height
@@ -1189,16 +1177,16 @@
   <message name="IDS_AUTOFILL_BNPL_KLARNA" desc="Name of Buy Now Pay Later provider Klarna." formatter_data="android_java">
     Klarna
   </message>
-  <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_AFFIRM_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and Affirm logo." formatter_data="android_java">
+  <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_AFFIRM_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and Affirm logo.">
     Google Pay, Affirm logo
   </message>
-  <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_ZIP_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and Zip logo." formatter_data="android_java">
+  <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_ZIP_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and Zip logo.">
     Google Pay, Zip logo
   </message>
   <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_AFTERPAY_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and AfterPay logo.">
     Google Pay, AfterPay logo
   </message>
-  <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_KLARNA_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and Klarna logo." formatter_data="android_java">
+  <message name="IDS_AUTOFILL_GOOGLE_PAY_AND_KLARNA_LOGO_ACCESSIBLE_NAME" desc="The accessible name for the Google Pay and Klarna logo.">
     Google Pay, Klarna logo
   </message>
   <message name="IDS_AUTOFILL_BNPL_FILLED_CARD_INFORMATION_BUBBLE_TITLE" desc="Title for the Autofill filled card information bubble for the Buy Now Pay Later flow.">
@@ -1230,7 +1218,7 @@
       <message name="IDS_AUTOFILL_BNPL_TOS_LINKED_TITLE" desc="The title of the Buy-Now-Pay-Later Terms of Service dialog. This dialog is shown to users after they have selected a new linked BNPL issuer to use. If the user accepts this dialog, a new window will be shown to the user to complete the transaction on the BNPL issuer's website. If the user cancels this dialog, they will return back to the BNPL issuer selection dialog." formatter_data="android_java">
         Continue to pay with <ph name="BNPL_ISSUER_NAME">%1$s</ph>?
       </message>
-      <message name="IDS_AUTOFILL_BNPL_TOS_REVIEW_TEXT" desc="The text informing the user that they will be asked to review their order in the Buy-Now-Pay-Later Terms of Service dialog." formatter_data="android_java">
+      <message name="IDS_AUTOFILL_BNPL_TOS_REVIEW_TEXT" desc="The text informing the user that they will be asked to review their order in the Buy-Now-Pay-Later Terms of Service dialog.">
         After you review your order, you must sign into or create an account with <ph name="BNPL_ISSUER_NAME">%1$s</ph>. This account will be automatically linked to Google Pay.
       </message>
       <message name="IDS_AUTOFILL_BNPL_TOS_REVIEW_TEXT_WALLET_BRANDING" desc="The text informing the user that they will be asked to review their order in the Buy-Now-Pay-Later Terms of Service dialog with Google Wallet branding." formatter_data="android_java">
@@ -1358,8 +1346,20 @@
   <message name="IDS_AUTOFILL_OFFERS_REMINDER_POSITIVE_BUTTON_LABEL" desc="Label for the positive button for the bubble/infobar shown on the merchant website when an offer is available to use.">
     Got it
   </message>
-  <message name="IDS_AUTOFILL_PROMO_CODE_SUGGESTIONS_FOOTER_TEXT" desc="Label for the footer text of the autofill suggestions popup when a user clicks on a promo code field. It redirects the user to the offer webview page for more details on the promo code offers suggested. An example of details the user can see is the terms and conditions of the promo code offers that are shown in the autofill suggestions popup.">
-    See promo code details
+  <message name="IDS_AUTOFILL_PROMO_CODE_SUGGESTION_CODE_LABEL" desc="Label for the promo code in the autofill suggestions popup.">
+    Code: <ph name="PROMO_CODE">$1<ex>WELCOME15</ex></ph>
+  </message>
+  <message name="IDS_AUTOFILL_MANAGE_OFFERS_FOOTER_TEXT" desc="Label for the footer text of the autofill suggestions popup when a user clicks on a promo code field and Wallet Direct Offers are available. It redirects the user to the Chrome settings page to manage their offers.">
+    Manage offers
+  </message>
+  <message name="IDS_AUTOFILL_OFFERS_EXPIRES_ON" desc="Text shown on the third line of the suggestion dropdown for Wallet Direct Offers indicating when the offer expires.">
+    Expires: <ph name="EXPIRATION_DATE">$1<ex>Sept 20, 2026</ex></ph>
+  </message>
+  <message name="IDS_AUTOFILL_WALLET_DIRECT_OFFERS_IPH_BUBBLE_LABEL" desc="Text shown in the IPH bubble for merchant promo code fields when direct offers from Google Wallet are available.">
+    Select the promo code field to view and fill your saved offers
+  </message>
+  <message name="IDS_AUTOFILL_WALLET_DIRECT_OFFERS_IPH_BUBBLE_LABEL_SCREENREADER" is_accessibility_with_no_ui="true" desc="Screenreader text for the IPH bubble for merchant promo code fields when direct offers from Google Wallet are available.">
+    Select the promo code field to view and fill your saved offers
   </message>
   <if expr="not is_ios and not is_android">
     <message name="IDS_AUTOFILL_OFFERS_REMINDER_ICON_TOOLTIP_TEXT" desc="The tooltip text for the offer icon in the location bar.">
@@ -1392,6 +1392,9 @@
     <message name="IDS_AUTOFILL_GPAY_PROMO_CODE_OFFERS_REMINDER_VALUE_PROP_TEXT" desc="The first line of the GPay promo code notification bubble, consisting of the value prop text and a see details link">
       <ph name="VALUE_PROP">$1<ex>5% off on shoes. Up to $50.</ex></ph> <ph name="DETAILS">$2<ex>See Details</ex></ph>
     </message>
+    <message name="IDS_AUTOFILL_WALLET_DIRECT_OFFER_REMINDER_BODY_TEXT" desc="The body text of the bubble shown on the merchant website when an offer saved in the user's Google Wallet is available to use. It explains that the offer can be filled into the promo code field at checkout. The text between BEGIN_LINK and END_LINK is a link which opens a page describing the terms and conditions of the offer.">
+      Your saved offer will be available at checkout using autofill. <ph name="BEGIN_LINK">$1</ph>View terms and conditions<ph name="END_LINK">$2</ph>
+    </message>
   </if>
 
   <!-- Autofill Payments OTP verification dialog -->
@@ -1421,6 +1424,11 @@
     </message>
   </if>
 
+  <!-- Payments Wallet Reminder Notice strings -->
+  <message name="IDS_AUTOFILL_PAYMENT_METHODS_WALLET_REMINDER_NOTICE" desc="Shown in the payments section of settings. Descriptive text to inform the user that data and privacy preferences can be accessed via link. Google Wallet should not be translated because it is the product name." formatter_data="android_java">
+    Visit Google Wallet to manage <ph name="BEGIN_LINK">&lt;link&gt;</ph>data and privacy preferences<ph name="END_LINK">&lt;/link&gt;</ph>.
+  </message>
+
   <!-- Autofill credit card preferences -->
   <if expr="is_android">
     <message name="IDS_AUTOFILL_EDIT_CREDIT_CARD" desc="Button that allows the user to edit a card that can be automatically filled into web page forms. This can be either credit, debit, or prepaid card. [CHAR_LIMIT=32]" formatter_data="android_java">
@@ -1440,6 +1448,46 @@
     </message>
     <message name="IDS_AUTOFILL_CREATE_FIRST_CREDIT_CARD_BUTTON_TEXT" desc="Button text for a call to action settings preference to add a new autofill credit card when the user does not have any cards added." formatter_data="android_java">
       Add payment method
+    </message>
+  </if>
+
+  <!-- Payments churned users strings -->
+  <message name="IDS_AUTOFILL_CHURNED_USERS_BUBBLE_ACCEPT_BUTTON_LABEL" desc="Accept button label for the payments churned users bubble. On acceptance, payments autofill is turned on for a user and a confirmation bubble is shown.">
+    Turn on
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_BUBBLE_CANCEL_BUTTON_LABEL" desc="Cancel button label for the payments churned users bubble. On cancellation, the bubble is closed.">
+    No thanks
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_BUBBLE_SECURITY_TITLE" desc="Security title for the payments churned users bubble. On acceptance, payments autofill is turned on for a user and a confirmation bubble is shown." formatter_data="android_java">
+    Check out securely with autofill
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_BUBBLE_CONVENIENCE_TITLE" desc="Convenience title for the payments churned users bubble. On acceptance, payments autofill is turned on for a user and a confirmation bubble is shown." formatter_data="android_java">
+    Check out faster with autofill
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_BUBBLE_SECURITY_DESCRIPTION" desc="Security description for the payments churned users bubble. On acceptance, payments autofill is turned on for a user and a confirmation bubble is shown.">
+    Turn on autofill to safely check out online. Your card details are encrypted in Google Wallet.
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_BUBBLE_CONVENIENCE_DESCRIPTION" desc="Convenience description for the payments churned users bubble. On acceptance, payments autofill is turned on for a user and a confirmation bubble is shown.">
+    Fill card details automatically when you check out online. Cards are saved in Google Wallet securely.
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_MESSAGE_TITLE" desc="Title for the payments churned users Android message banner. Prompts the user to turn on payment autofill.">
+    Securely check out with autofill
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_MESSAGE_DESCRIPTION" desc="Description for the payments churned users Android message banner. Prompts the user to turn on payment autofill.">
+    Turn on autofill to make shopping easier
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_CONFIRMATION_BUBBLE_TITLE" desc="Title for the churned users confirmation bubble, which comes after the user has accepted the churned users bubble, letting the user know that autofill is turned on.">
+    Autofill turned on
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_CONFIRMATION_BUBBLE_LINK_TEXT" desc="Link text in the description for the churned users confirmation bubble, which comes after the user has accepted the churned users bubble, letting the user know that autofill is turned on.">
+    View autofill settings
+  </message>
+  <message name="IDS_AUTOFILL_CHURNED_USERS_CONFIRMATION_BUBBLE_DESCRIPTION" desc="Description for the churned users confirmation bubble, which comes after the user has accepted the churned users bubble, letting the user know that autofill is turned on.">
+    Now you can save payment methods to autofill at checkout in Chrome. <ph name="LINK_TEXT">$1<ex>View autofill settings</ex></ph>
+  </message>
+  <if expr="not is_android">
+    <message name="IDS_AUTOFILL_CHURNED_USERS_CONFIRMATION_BUBBLE_LOADING_THROBBER_ACCESSIBLE_NAME" desc="Accessible name announced by the screenreader for virtual card prompt in loading state showing a throbber." is_accessibility_with_no_ui="true" formatter_data="android_java">
+      Turning on autofill
     </message>
   </if>
 
@@ -1494,9 +1542,6 @@
     <message name="IDS_AUTOFILL_LOYALTY_CARD_WALLET_SETTINGS_BUTTON" desc="The label of the button, which redirects the user to the Google Wallet loyalty card settings in Chrome." formatter_data="android_java">
       Wallet settings
     </message>
-    <message name="IDS_AUTOFILL_PAYMENT_METHOD_BOTTOM_SHEET_CONTENT_DESCRIPTION" desc="Accessibility string read when the bottom sheet is opened. It describes the bottom sheet where a user can pick a payment method to fill into a form." formatter_data="android_java">
-      Payment methods available to be filled on touch. Keyboard hidden.
-    </message>
     <message name="IDS_AUTOFILL_PAYMENT_METHOD_BOTTOM_SHEET_HALF_HEIGHT" desc="Accessibility string read when the bottom sheet showing a list of the user's payment methods is opened at half height. The sheet will occupy the bottom half the screen." formatter_data="android_java">
       Payment methods available to be filled on touch opened at half height.
     </message>
@@ -1505,9 +1550,6 @@
     </message>
     <message name="IDS_AUTOFILL_PAYMENT_METHOD_BOTTOM_SHEET_CLOSED" desc="Accessibility string read when the bottom sheet showing a list of the user's payment methods is closed." formatter_data="android_java">
       List of payment methods is closed.
-    </message>
-    <message name="IDS_AUTOFILL_LOYALTY_CARD_BOTTOM_SHEET_CONTENT_DESCRIPTION" desc="Accessibility string read when the bottom sheet is opened. It describes the bottom sheet where a user can pick a loyalty card to fill into a form." formatter_data="android_java">
-      Loyalty cards available to be filled on touch. Keyboard hidden.
     </message>
     <message name="IDS_AUTOFILL_LOYALTY_CARD_BOTTOM_SHEET_HALF_HEIGHT" desc="Accessibility string read when the bottom sheet showing a list of the user's loyalty cards is opened at half height. The sheet will occupy the bottom half the screen." formatter_data="android_java">
       Loyalty cards available to be filled on touch opened at half height.
@@ -1518,9 +1560,6 @@
     <message name="IDS_AUTOFILL_LOYALTY_CARD_BOTTOM_SHEET_CLOSED" desc="Accessibility string read when the bottom sheet showing a list of the user's loyalty cards is closed." formatter_data="android_java">
       List of loyalty cards is closed.
     </message>
-    <message name="IDS_AUTOFILL_BNPL_PROGRESS_SHEET_CONTENT_DESCRIPTION" desc="Accessibility string read when the bottom sheet is opened. It describes the bottom sheet which shows a progress spinner for a Buy-Now-Pay-Later flow." formatter_data="android_java">
-      Buy-Now-Pay-Later progress screen. Keyboard hidden.
-    </message>
     <message name="IDS_AUTOFILL_BNPL_PROGRESS_SHEET_HALF_HEIGHT" desc="Accessibility string read when the bottom sheet showing a Buy-Now-Pay-Later progress spinner is opened at half height. The sheet will occupy the bottom half the screen." formatter_data="android_java">
       Buy-Now-Pay-Later progress screen opened at half height.
     </message>
@@ -1529,9 +1568,6 @@
     </message>
     <message name="IDS_AUTOFILL_BNPL_PROGRESS_SHEET_CLOSED" desc="Accessibility string read when the bottom sheet showing a Buy-Now-Pay-Later progress spinner is closed." formatter_data="android_java">
       Buy-Now-Pay-Later progress screen is closed.
-    </message>
-    <message name="IDS_AUTOFILL_BNPL_ISSUER_BOTTOM_SHEET_CONTENT_DESCRIPTION" desc="Accessibility string read when the bottom sheet is opened. It describes the bottom sheet where a user can pick a BNPL issuer for pay over time." formatter_data="android_java">
-      Buy-Now-Pay-Later issuers available for pay over time. Keyboard hidden.
     </message>
     <message name="IDS_AUTOFILL_BNPL_ISSUER_BOTTOM_SHEET_HALF_HEIGHT" desc="Accessibility string read when the bottom sheet showing a list of the BNPL issuers is opened at half height. The sheet will occupy the bottom half the screen." formatter_data="android_java">
       Buy-Now-Pay-Later issuers available for pay over time opened at half height.
@@ -1542,9 +1578,6 @@
     <message name="IDS_AUTOFILL_BNPL_ISSUER_BOTTOM_SHEET_CLOSED" desc="Accessibility string read when the bottom sheet showing a list of BNPL issuers is closed." formatter_data="android_java">
       List of Buy-Now-Pay-Later issuers is closed.
     </message>
-    <message name="IDS_AUTOFILL_BNPL_ISSUER_TOS_BOTTOM_SHEET_CONTENT_DESCRIPTION" desc="Accessibility string read when the bottom sheet is opened. It describes the bottom sheet where a user can read and accept terms for linking a new BNPL issuer." formatter_data="android_java">
-      Buy-Now-Pay-Later terms of service screen. Keyboard hidden.
-    </message>
     <message name="IDS_AUTOFILL_BNPL_ISSUER_TOS_BOTTOM_SHEET_HALF_HEIGHT" desc="Accessibility string read when the bottom sheet showing terms for linking a new issuer is opened at half height. The sheet will occupy the bottom half the screen." formatter_data="android_java">
       Buy-Now-Pay-Later terms of service screen opened at half height.
     </message>
@@ -1553,9 +1586,6 @@
     </message>
     <message name="IDS_AUTOFILL_BNPL_ISSUER_TOS_BOTTOM_SHEET_CLOSED" desc="Accessibility string read when the bottom sheet showing terms for linking a new issuer is closed." formatter_data="android_java">
       Buy-Now-Pay-Later terms of service screen is closed.
-    </message>
-    <message name="IDS_AUTOFILL_BNPL_ERROR_SHEET_CONTENT_DESCRIPTION" desc="Accessibility string read when the bottom sheet is opened. It describes the bottom sheet which shows an error for a Buy-Now-Pay-Later flow." formatter_data="android_java">
-      Buy-Now-Pay-Later error screen. Keyboard hidden.
     </message>
     <message name="IDS_AUTOFILL_BNPL_ERROR_SHEET_HALF_HEIGHT" desc="Accessibility string read when the bottom sheet showing a Buy-Now-Pay-Later error is opened at half height. The sheet will occupy the bottom half the screen." formatter_data="android_java">
       Buy-Now-Pay-Later error screen opened at half height.
@@ -1705,7 +1735,7 @@
     Your card is saved in Google Wallet so you can autofill it for future purchases
   </message>
   <message name="IDS_AUTOFILL_SAVE_CARD_TO_WALLET_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT_V2" desc="Description text for confirmation shown after Google Wallet save card is successfully uploaded and saved to the server.">
-    This card is saved in Google Wallet so you can use it across Google services
+    This card is saved in Google Wallet so you can use it across Google products
   </message>
   <message name="IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_FAILURE_DESCRIPTION_TEXT" desc="Description text for confirmation shown after save card upload to the server was unsuccessful.">
     This card couldn't be saved in your MoltBrowser Account. It's saved to MoltBrowser on this device instead.
@@ -1717,7 +1747,7 @@
     This IBAN is saved in your MoltBrowser Account so you can use it across Google services.
   </message>
   <message name="IDS_AUTOFILL_SAVE_IBAN_TO_WALLET_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT" desc="Description text for confirmation shown after upload save IBAN attempt was successful and it was uploaded to the server. The wording specifically references Google Wallet.">
-    This IBAN is saved in Google Wallet so you can use it across Google services.
+    This IBAN is saved in Google Wallet so you can use it across Google products.
   </message>
   <message name="IDS_AUTOFILL_SAVE_IBAN_CONFIRMATION_FAILURE_DESCRIPTION_TEXT" desc="Description text for confirmation shown after upload save IBAN attempt was failed and and it was not uploaded to the server.">
     This IBAN couldn't be saved in your MoltBrowser Account. It's saved to MoltBrowser on this device instead. MoltBrowser will ask you again the next time you use this IBAN.
@@ -1748,7 +1778,7 @@
   </if>
 
   <!-- Omnibox Autofill strings -->
-  <message name="IDS_AUTOFILL_PAYMENT_TEXT" desc="Text for the 'Autofill payment' chip displayed on the omnibox.">
+  <message name="IDS_AUTOFILL_PAYMENT_TEXT" desc="Text for the 'Autofill payment' chip displayed on the omnibox. The implied action is a verb, as in 'Click here to automatically fill in your payment information'.">
     Autofill payment
   </message>
   <message name="IDS_AUTOFILL_IPH_OMNIBOX_PAYMENT_CHIP_LABEL" desc="Text shown in the IPH bubble for the Autofill payment omnibox page action chip.">

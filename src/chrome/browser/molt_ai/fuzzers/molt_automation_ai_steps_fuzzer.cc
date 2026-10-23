@@ -59,7 +59,7 @@ void CheckFreeform(const base::Value& v, size_t depth, Budget* budget) {
   ++budget->values;
   if (v.is_dict()) {
     CHECK(depth <= kMaxFreeformDepth);
-    for (const auto& [key, value] : v.GetDict()) {
+    for (const auto [key, value] : v.GetDict()) {
       ++budget->keys;
       CHECK(!key.empty() && key.size() <= kMaxFreeformKeyBytes);
       CHECK(!key.starts_with("__")) << "a reserved key was stored";

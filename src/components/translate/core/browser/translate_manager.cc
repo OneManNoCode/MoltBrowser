@@ -13,6 +13,8 @@
 #include "base/command_line.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
+#include "base/i18n/language_tag.h"
+#include "base/i18n/tag_converters.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram.h"
@@ -23,7 +25,6 @@
 #include "build/build_config.h"
 #include "components/language/core/browser/language_model.h"
 #include "components/language/core/common/language_experiments.h"
-#include "components/language/core/common/language_util.h"
 #include "components/language/core/common/locale_util.h"
 #include "components/language_detection/core/constants.h"
 #include "components/prefs/pref_service.h"
@@ -44,6 +45,9 @@
 #include "components/translate/core/browser/translate_trigger_decision.h"
 #include "components/translate/core/browser/translate_url_util.h"
 #include "components/translate/core/common/language_detection_details.h"
+#include "components/translate/core/common/translate_constants.h"
+#include "components/translate/core/common/translate_features.h"
+#include "components/translate/core/common/translate_language_matcher.h"
 #include "components/translate/core/common/translate_switches.h"
 #include "components/translate/core/common/translate_util.h"
 #include "components/variations/variations_associated_data.h"
@@ -55,8 +59,12 @@
 #include "third_party/metrics_proto/translate_event.pb.h"
 
 namespace translate {
-
 namespace {
+
+using ::base::i18n::GetKnownLanguageTag;
+using ::base::i18n::GetLanguageTagFromString;
+using ::base::i18n::LanguageTag;
+using ::base::i18n::LanguageTagConverter;
 
 // Callbacks for translate errors.
 TranslateManager::TranslateErrorCallbackList* g_error_callback_list_ = nullptr;
@@ -71,6 +79,24 @@ TranslateManager::LanguageDetectedCallbackList* g_detection_callback_list_ =
 std::string GetForcedTranslateLanguage() {
   return base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kForcedTranslateLanguage);
+}
+
+LanguageTag GetTranslateLanguage(std::string_view tag) {
+  std::optional<LanguageTag> parsed = GetLanguageTagFromString(tag);
+  if (!parsed) {
+    return GetKnownLanguageTag("und");
+  }
+  return GetTranslateLanguageMatcher().Match(*parsed).value_or(
+      GetKnownLanguageTag("und"));
+}
+
+std::optional<LanguageTag> GetTranslateLanguageIfValid(std::string_view tag) {
+  std::optional<LanguageTag> parsed_tag = GetLanguageTagFromString(tag);
+  if (!parsed_tag) {
+    return std::nullopt;
+  }
+
+  return GetTranslateLanguageMatcher().Match(*parsed_tag);
 }
 
 }  // namespace
@@ -210,6 +236,17 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
     can_translate = false;
   }
 
+  if (language_state_.pdf_translatability_status() ==
+      LanguageState::PdfTranslatabilityStatus::kUntranslatable) {
+    if (!menu_logging) {
+      return false;
+    }
+    TranslateBrowserMetrics::ReportMenuTranslationUnavailableReason(
+        TranslateBrowserMetrics::MenuTranslationUnavailableReason::
+            kURLNotTranslatable);
+    can_translate = false;
+  }
+
   const std::string source_language = language_state_.source_language();
   // The source language is empty when language detection has not finished
   // running. In this case, Android queues the translation and waits until the
@@ -301,19 +338,19 @@ void TranslateManager::ShowTranslateUI(std::optional<std::string> source_code,
       translate_client_->GetTranslatePrefs());
 
   // Get language codes.
-  std::string converted_source_code =
+  const LanguageTag translate_source_language_tag = GetTranslateLanguage(
       source_code.has_value() ? source_code.value()
                               : TranslateDownloadManager::GetLanguageCode(
-                                    language_state_.source_language());
-  language::ToTranslateLanguageSynonym(&converted_source_code);
-  const std::string converted_target_code =
-      target_code.has_value()
-          ? target_code.value()
-          : GetTargetLanguageForDisplay(translate_prefs.get(), language_model_);
+                                    language_state_.source_language()));
 
-  bool is_translated =
-      language_state_.IsPageTranslated() &&
-      converted_target_code == language_state_.current_language();
+  const LanguageTag translate_target_language_tag = GetTranslateLanguage(
+      target_code.has_value() ? target_code.value()
+                              : GetTargetLanguageForDisplay(
+                                    translate_prefs.get(), language_model_));
+
+  bool is_translated = language_state_.IsPageTranslated() &&
+                       translate_target_language_tag.tag_string() ==
+                           language_state_.current_language();
 
   language_state_.SetTranslateEnabled(true);
   const TranslateStep step = is_translated ? TRANSLATE_STEP_AFTER_TRANSLATE
@@ -322,14 +359,16 @@ void TranslateManager::ShowTranslateUI(std::optional<std::string> source_code,
   // should trigger translation automatically. Otherwise, only show the infobar.
   if (auto_translate && !is_translated) {
     TranslatePage(
-        converted_source_code, converted_target_code, triggered_from_menu,
+        translate_source_language_tag.tag_string(),
+        translate_target_language_tag.tag_string(), triggered_from_menu,
         GetActiveTranslateMetricsLogger()->GetNextManualTranslationType(
             triggered_from_menu));
     return;
   }
   translate_client_->ShowTranslateUI(
-      step, converted_source_code, converted_target_code, TranslateErrors::NONE,
-      triggered_from_menu);
+      step, std::string(translate_source_language_tag.tag_string()),
+      std::string(translate_target_language_tag.tag_string()),
+      TranslateErrors::NONE, triggered_from_menu);
 }
 
 void TranslateManager::ShowTranslateUI(bool auto_translate,
@@ -453,14 +492,37 @@ void TranslateManager::RevertTranslation() {
   language_state_.SetCurrentLanguage(language_state_.source_language());
 
   GetActiveTranslateMetricsLogger()->LogReversion();
+
+  translate_client_->RevertPdfTranslation();
 }
 
 void TranslateManager::DoTranslatePage(std::string_view translate_script,
                                        std::string_view source_lang,
                                        std::string_view target_lang) {
   language_state_.set_translation_pending(true);
-  translate_driver_->TranslatePage(page_seq_no_, translate_script, source_lang,
-                                   target_lang);
+  if (translate_driver_->GetContentsMimeType() == kPdfMimeType &&
+      base::FeatureList::IsEnabled(translate::kEnableTranslatePdf) &&
+      !translate_client_->IsReadingModeOpen()) {
+    std::optional<LanguageTag> parsed_source =
+        base::i18n::GetLanguageTagFromString(source_lang)
+            .value_or(base::i18n::GetKnownLanguageTag("und"));
+    std::optional<LanguageTag> parsed_target =
+        base::i18n::GetLanguageTagFromString(target_lang)
+            .value_or(base::i18n::GetKnownLanguageTag("und"));
+
+    TranslateBrowserMetrics::ReportPdfSourceLanguage(
+        parsed_source->tag_string());
+    TranslateBrowserMetrics::ReportPdfTargetLanguage(
+        parsed_target->tag_string());
+
+    language_state_.SetPendingTranslationLanguages(*parsed_source,
+                                                   *parsed_target);
+    translate_client_->TriggerPdfTranslation();
+
+  } else {
+    translate_driver_->TranslatePage(page_seq_no_, translate_script,
+                                     source_lang, target_lang);
+  }
 }
 
 // Notifies |g_error_callback_list_| of translate errors.
@@ -618,11 +680,15 @@ std::string TranslateManager::GetTargetLanguage(
   if (language_model) {
     std::vector<std::string> language_codes;
     for (const auto& lang : language_model->GetLanguages()) {
-      std::string lang_code =
-          TranslateDownloadManager::GetLanguageCode(lang.lang_code);
-      language::ToTranslateLanguageSynonym(&lang_code);
-      if (TranslateDownloadManager::IsSupportedLanguage(lang_code))
-        language_codes.push_back(lang_code);
+      std::optional<LanguageTag> parsed_tag = GetTranslateLanguageIfValid(
+          TranslateDownloadManager::GetLanguageCode(lang.lang_code));
+      if (!parsed_tag) {
+        continue;
+      }
+      if (TranslateDownloadManager::IsSupportedLanguage(
+              parsed_tag->tag_string())) {
+        language_codes.emplace_back(parsed_tag->tag_string());
+      }
     }
 
     // If forcing triggering on English, skip English as the target language if
@@ -643,21 +709,20 @@ std::string TranslateManager::GetTargetLanguage(
   }
 
   // Get the browser's user interface language.
-  std::string ui_language = TranslateDownloadManager::GetLanguageCode(
-      TranslateDownloadManager::GetInstance()->application_locale());
-  // Map 'he', 'nb', 'fil' back to 'iw', 'no', 'tl'
-  language::ToTranslateLanguageSynonym(&ui_language);
-  if (TranslateDownloadManager::IsSupportedLanguage(ui_language)) {
+  LanguageTag parsed_ui_language_tag =
+      GetTranslateLanguage(TranslateDownloadManager::GetLanguageCode(
+          TranslateDownloadManager::GetInstance()->application_locale()));
+  if (TranslateDownloadManager::IsSupportedLanguage(
+          parsed_ui_language_tag.tag_string())) {
     target_language_origin =
         TranslateBrowserMetrics::TargetLanguageOrigin::kApplicationUI;
-    return ui_language;
+    return std::string(parsed_ui_language_tag.tag_string());
   }
 
   // Get the first supported language on the Accept Languages list.
-  std::vector<std::string> accept_languages_list;
-  prefs->GetLanguageList(&accept_languages_list);
-  for (const auto& lang : accept_languages_list) {
-    std::string lang_code = TranslateDownloadManager::GetLanguageCode(lang);
+  for (const auto& lang : prefs->GetLanguageList()) {
+    std::string lang_code =
+        TranslateDownloadManager::GetLanguageCode(lang.tag_string());
     if (TranslateDownloadManager::IsSupportedLanguage(lang_code)) {
       target_language_origin =
           TranslateBrowserMetrics::TargetLanguageOrigin::kAcceptLanguages;
@@ -768,8 +833,7 @@ bool TranslateManager::ShouldSuppressBubbleUI(
 void TranslateManager::AddTargetLanguageToAcceptLanguages(
     std::string_view target_language_code) {
   auto prefs = translate_client_->GetTranslatePrefs();
-  std::vector<std::string> languages;
-  prefs->GetLanguageList(&languages);
+  std::vector<base::i18n::LanguageTag> languages = prefs->GetLanguageList();
 
   std::string_view target_language, tail;
   // |target_language_code| should satisfy BCP47 and consist of a language code
@@ -781,13 +845,15 @@ void TranslateManager::AddTargetLanguageToAcceptLanguages(
   // list.
   if (tail.empty()) {
     for (const auto& language : languages) {
-      if (language::ExtractBaseLanguage(language) == target_language)
+      if (language.language_subtag() == target_language) {
         return;
+      }
     }
   } else {
     for (const auto& language : languages) {
-      if (language == target_language_code)
+      if (language.tag_string() == target_language_code) {
         return;
+      }
     }
   }
 
@@ -795,7 +861,10 @@ void TranslateManager::AddTargetLanguageToAcceptLanguages(
   // translation happens because of an hrefTranslate navigation).
   if (language_state_.AutoTranslateTo() != target_language_code &&
       language_state_.href_translate() != target_language_code) {
-    prefs->AddToLanguageList(target_language_code, /*force_blocked=*/false);
+    if (std::optional<LanguageTag> parsed_tag =
+            GetLanguageTagFromString(target_language_code)) {
+      prefs->AddToLanguageList(*parsed_tag, /*force_blocked=*/false);
+    }
   }
 }
 
@@ -814,6 +883,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
   // object is then used to trigger the correct behavior, and finally record
   // corresponding metrics in InitiateTranslation.
   TranslateTriggerDecision decision;
+
+  // If translation is disabled by the command line, we can return early to
+  // prevent further filtering and potential side effects.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableTranslateTrigger)) {
+    decision.PreventAllTriggering();
+    return decision;
+  }
 
   FilterIsTranslatePossible(&decision, translate_prefs, page_language_code,
                             target_lang);
@@ -1105,7 +1182,9 @@ void TranslateManager::FilterForPredefinedTarget(
   decision->predefined_translate_target =
       language_state_.GetPredefinedTargetLanguage();
 
-  if (!language_state_.should_auto_translate_to_predefined_target_language() || decision->will_force_auto_translate()) {
+  if (!language_state_.should_auto_translate_to_predefined_target_language()
+           .has_value() ||
+      decision->will_force_auto_translate()) {
     decision->PreventPredefinedLanguageAutoTranslate();
   }
 
@@ -1284,11 +1363,9 @@ void TranslateManager::RecordDecisionRankerEvent(
   }
 }
 
-void TranslateManager::SetPredefinedTargetLanguage(
-    std::string_view language_code,
-    bool should_auto_translate) {
-  language_state_.SetPredefinedTargetLanguage(language_code,
-                                              should_auto_translate);
+void TranslateManager::SetPredefinedTargetLanguage(LanguageTag language,
+                                                   bool should_auto_translate) {
+  language_state_.SetPredefinedTargetLanguage(language, should_auto_translate);
 }
 
 void TranslateManager::SetEnableAutoTranslate(bool enable_auto_translate) {

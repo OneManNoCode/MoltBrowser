@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc b/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
-index 23d3c51c786881c3a0bdf158fc14f13c215c65f5..87688ad333bba7c6df4dbf280299f848d31c0ced 100644
+index f65b51ef5ea4c5338bd83224826dbc5eaf6174a0..923855e57d4fdb458872f72b723ff937e5f307e3 100644
 --- a/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
 +++ b/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
 @@ -11,6 +11,7 @@
@@ -15,7 +15,7 @@ index 23d3c51c786881c3a0bdf158fc14f13c215c65f5..87688ad333bba7c6df4dbf280299f848
 +#include "base/task/sequenced_task_runner.h"
  #include "base/time/time.h"
  #include "chrome/browser/profiles/profile.h"
- #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
 @@ -60,6 +61,41 @@ SidePanelCoordinator::SidePanelCoordinator(BrowserWindowInterface* browser)
    side_panel_observation_.Observe(side_panel);
    SidePanelHelper::PopulateGlobalEntries(browser,

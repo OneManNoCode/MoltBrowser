@@ -308,7 +308,7 @@ Chosen: **a provider for the text `@memory`**, like MoltBrowser's existing
 `@ai` (`AiPromptProvider`), plus **one gate**:
 
 - `MoltMemoryProvider` (`components/omnibox/browser/molt_memory_provider.*`,
-  type `TYPE_BUILTIN` like `AiPromptProvider`; a new provider type would
+  type `Type::kBuiltin` like `AiPromptProvider`; a new provider type would
   have meant the metrics proto and several switch statements). It is
   registered next to `AiPromptProvider` for controllers that have built-in
   providers (the omnibox and its classifier).
@@ -373,8 +373,8 @@ owns):
     only prefetches matches the suggest server marked
     (`BaseSearchProvider::ShouldPrefetch()` / `ShouldPrerender()`), and its
     and `SearchPreloadService`'s `OnNavigationLikely()` only search-type
-    matches of the default engine. The shortcut's matches are `NAVSUGGEST`
-    (its own rows) and `HISTORY_BODY` (pages), with no server data.
+    matches of the default engine. The shortcut's matches are `kNavsuggest`
+    (its own rows) and `kHistoryBody` (pages), with no server data.
     `AutocompleteDictionaryPreloadService` only loads compression
     dictionaries already stored.
   - *Service worker:* for a query, `AutocompleteController::Start()` asks

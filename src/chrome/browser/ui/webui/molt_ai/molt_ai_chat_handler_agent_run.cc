@@ -252,7 +252,7 @@ void MoltAIChatHandler::HandleOpenAgentStudio(const base::ListValue& args) {
   if (!browser) {
     return;
   }
-  if (SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui()) {
+  if (SidePanelUI* side_panel_ui = SidePanelUI::From(browser)) {
     side_panel_ui->Show(SidePanelEntryId::kMoltAgent);
   }
 }

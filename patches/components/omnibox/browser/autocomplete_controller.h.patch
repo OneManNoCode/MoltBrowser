@@ -1,14 +1,14 @@
 MoltBrowser patch for components/omnibox/browser/autocomplete_controller.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/omnibox/browser/autocomplete_controller.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox/browser/autocomplete_controller.h b/components/omnibox/browser/autocomplete_controller.h
-index 81fe4d3298764fb106f456ba3414d645290a73d9..b002db033b8203569903bcf0c6a1fbcb5f47bb61 100644
+index 6ab3cc10bd112686c53f4a03a8e47dfcf12fcd1a..9a5dc389bbb703b0aa5d4dc0cfdbbf6d14ca4cd2 100644
 --- a/components/omnibox/browser/autocomplete_controller.h
 +++ b/components/omnibox/browser/autocomplete_controller.h
-@@ -548,6 +548,10 @@ class AutocompleteController : public AutocompleteProviderListener,
+@@ -554,6 +554,10 @@ class AutocompleteController : public AutocompleteProviderListener,
    raw_ptr<TabGroupProvider> tab_group_provider_ = nullptr;
    raw_ptr<FeaturedSearchProvider> featured_search_provider_ = nullptr;
    raw_ptr<ContextualSearchProvider> contextual_search_provider_ = nullptr;

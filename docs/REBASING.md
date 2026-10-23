@@ -73,38 +73,45 @@ A release branch is the `MAJOR.0.BRANCH.*` series with many patch numbers;
 rebase (`148.0.7729.0`, a trunk commit from 2026-03-10) was a canary-era
 build, not a release branch: it had none of M148's branch security merges.
 
-State on 2026-10-14, from the tags and their commit dates on the mirror
-(chromiumdash was not reachable from the machine that ran this; confirm there
-before acting):
+Which line is Extended Stable right now: Google's Version History API
+answers without chromiumdash, and is the quickest check (no `extended` rows
+on Linux, which has no such channel):
+
+```bash
+for p in win mac; do
+  curl -sS "https://versionhistory.googleapis.com/v1/chrome/platforms/$p/channels/extended/versions/all/releases?order_by=starttime%20desc&pageSize=6" \
+    | python3 -c 'import json,sys; [print(r["version"], r["serving"]["startTime"][:10], r.get("fraction")) for r in json.load(sys.stdin)["releases"]]'
+done
+```
+
+State on 2026-10-23, from the Version History API and the tags on the
+mirror (chromiumdash was not reachable from the machine that ran this):
 
 | Milestone | Branch | Latest tag | Its date | Reading |
 |---|---|---|---|---|
-| 158 | trunk | 158.0.8105.1 | 2026-10-14 | canary |
-| 157 | 8103 | 157.0.8103.6 | 2026-10-14 | dev (just branched) |
-| 156 | 8078 | 156.0.8078.40 | 2026-10-13 | beta |
-| **155** | 8059 | **155.0.8059.87** | 2026-10-14 | **stable** |
-| 154 | 8037 | 154.0.8037.154 | 2026-10-13 | previous stable, still patched |
-| 153 | 8010 | 153.0.8010.57 | 2026-10-01 | dead (odd milestone) |
-| **152** | 7977 | **152.0.7977.168** | 2026-10-12 | **extended stable** |
-| 151 | 7922 | 151.0.7922.226 | 2026-09-03 | dead |
-| 150 | 7871 | 150.0.7871.256 | 2026-10-02 | previous extended stable, winding down |
+| 158 | trunk | 158.0.8120.1 | 2026-10-22 | canary |
+| 157 | 8103 | 157.0.8103.20 | 2026-10-22 | beta (157.0.8103.15 on 0.5% of Windows stable) |
+| **156** | 8078 | 156.0.8078.69 | 2026-10-22 | **stable and extended stable**: Extended Stable serves **156.0.8078.48** on Windows and macOS since 2026-10-20 (25% of the extended population on 2026-10-22, rising); Stable rolls out 156.0.8078.47-.49 |
+| 155 | 8059 | 155.0.8059.91 | 2026-10-19 | previous stable |
+| 154 | 8037 | 154.0.8037.154 | 2026-10-13 | dead |
+| 152 | 7977 | 152.0.7977.169 | 2026-10-14 | previous extended stable, being replaced by 156 |
+| 150 | 7871 | 150.0.7871.287 | 2026-10-21 | `[M150-LTS]` merges (ChromeOS LTS), not a desktop channel |
 
-Chromium is on a 2-week milestone cadence (branch points ~20-30 builds apart
-since M154, against ~50 before). Odd milestones stop receiving
-merges within weeks of their successor shipping; even ones keep getting them
-much longer. M150's latest merge is from 2026-10-02 and M152 is still being
-patched, so **M152 is the current extended stable line**, three milestones
-behind stable M155. That fits "the even milestone ~4 releases behind stable"
-(155 - 4 = 151 is odd; the live even line is 152). **Next target:
-`152.0.7977.168`.** When M152 stops receiving merges, move to the next even
-line that does (expect M154 or M156).
+So **Extended Stable moved from M152 to M156** on 2026-10-20, and
+152.0.7977.169 (our pin since 2026-10-16) was its last M152 release. The
+milestone move happened earlier than "~4 releases behind stable" suggested:
+with 2-week milestones, Google moved the extended channel to the current
+stable milestone. **Target: `156.0.8078.48`**, the Extended Stable release on
+Windows and macOS (the [156 rebase](#the-156-rebase-2026-10-23)). Same-branch
+respins of it follow (`156.0.8078.*` tags that Extended Stable ships); when the
+extended channel moves to a new milestone again, do the big rebase to it.
 
 ## The process
 
 ### On every Chrome security release (target: shipped within 7 days)
 
 1. Watch [Chrome Releases](https://chromereleases.googleblog.com/) (or the tag
-   listing above) for a new tag on our branch, e.g. `152.0.7977.170`.
+   listing above) for a new tag on our branch, e.g. `156.0.8078.49`.
 2. On a branch `rebase/<tag>`:
    `tools/chromium/rebase.py <tag>` and read `report.md`. Same-branch respins
    are normally all clean.
@@ -358,3 +365,64 @@ compiled yet.
    keys.enc / vault.enc / profile.enc / chat history still open after the
    os_crypt_async move on each platform.
 
+
+## The 156 rebase (2026-10-23)
+
+`tools/chromium/rebase.py 156.0.8078.48 --apply --allow-conflicts` from
+152.0.7977.169: 154 clean 3-way merges, 55 conflicted files, 3 files
+deleted or moved upstream, 8 identical copies refreshed, 2 patches now
+empty (the change is upstream), the search-engine definitions to check by
+hand, 3 vendored Rust paths that now exist upstream, and 12 removed
+symbols that first-party code used. The conflict state is its own commit;
+the resolution follows it.
+
+What the resolution did (each in its own commit, all in #64):
+
+- **Strings.** Each conflicted `.grd`/`.grdp` was rebuilt from 156 one
+  message at a time: our text where upstream left a message alone, 156's
+  where we never touched it, our branding re-applied where both changed it
+  or it is new (59 new messages in `chromium_strings.grd` name MoltBrowser
+  now). Messages 156 deleted go with it.
+- **Browser.** 156 replaced `IsIncognitoProfile()` with
+  `IsPrimaryOTRProfileWithRegularParent()` (Incognito and Enterprise
+  Isolated Mode) at many private-mode checks; MoltNet hooks there keep
+  upstream's check and add `IsMoltNetProfile()`. `Browser::GetNewTabURL()`
+  moved to `chrome::GetNewTabURL()` (`browser_tabstrip.cc`), which now
+  carries the `chrome://molt-home/` hook; `Browser::Create` and its
+  `CreateParams` gave way to `CreateBrowserWindow()` and
+  `BrowserWindowCreateParams` (MoltNet windows, the automation run window);
+  `side_panel_ui()` to `SidePanelUI::From()`. MoltShield's proxy and the
+  onion blocker stay last in `WillCreateURLLoaderFactory`'s chain, now
+  before 156's `MaybeSetTargetNetwork()`.
+- **Platform.** The omnibox's `AutocompleteProvider::Type` and
+  `omnibox::AutocompleteMatchType` are enum classes; WTF lost
+  `String::Format` (`StrCat`); Blink worker tests wait with
+  `WaitUntilDidEvaluateTopLevelScript()`. Every network, MoltNet and
+  fingerprinting hook that merged cleanly was read again in 156's code.
+- **Incognito parity** (MOLTNET_COMPLIANCE.md §2) was re-audited at 156 over
+  every private-mode check in `chrome/`, `components/`, `content/` and
+  `extensions/`: two converted checks gained MoltNet hooks (WebRTC text
+  logs, Reduce Accept-Language), and three new page-visible prefs are
+  pinned for MoltNet.
+- **Removed upstream:** Shared Storage (with
+  `privacy_sandbox_settings_delegate.cc`, so our hook there went too:
+  nothing is left to gate), `components/privacy_sandbox_chrome_strings.grdp`.
+  `extension_side_panel_manager.cc` moved to `chrome/browser/ui/extensions/`.
+- **Rust.** `Cargo.lock` and `gnrt_config.toml` merged by hand (156's crate
+  set plus anydoc's); our `unicode-bidi` stays (156 has only an empty
+  placeholder). `tools/shield_bench` follows 156's regex crates.
+- **API changes in first-party code** found by `tools/compile_check` against
+  156's real headers: a removed request destination, the writing APIs'
+  `OnResult(…, context_window)` (MoltBrowser sends its fixed 9216 as every
+  page's `inputQuota`), no `kUnsupportedLanguage` create error, a new
+  `ModelExecutionContextInfo` field, `PasswordString` passwords, and two
+  new Prompt API sampling modes. Result: 0 errors; 518 of 558 files checked
+  against real headers, 38 partly on grit stand-ins.
+
+Still to do on the build machine (docs/BUILD_MACHINE_CHECKLIST.md, tagged
+#64): the compile and unit tests; regenerate `prepopulated_engines.json`
+from 156's `search_engines_data` (`5dc9f1a`), which the cloud tools could
+not reach; `scripts/vendor-rust-crates.sh --check` against the hand-merged
+lock; `gn check` (new includes of `molt_net_profile_id.h` in
+`//chrome/browser/media/webrtc` and `//chrome/browser/reduce_accept_language`
+follow the existing pattern without a direct dep).

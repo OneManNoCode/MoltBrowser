@@ -1,37 +1,47 @@
 MoltBrowser patch for chrome/browser/ui/startup/infobar_utils.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/startup/infobar_utils.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/startup/infobar_utils.cc b/chrome/browser/ui/startup/infobar_utils.cc
-index 4907b9a951040624eab323061636a222315194e5..6ce8b32e1e038a61a1cb9d2c63fd1deb302487d5 100644
+index 598e361a2988674243dd6ace9cc63de2f74ed1e1..e03ec0c16b2134f453029af3b3c25825bb76fe33 100644
 --- a/chrome/browser/ui/startup/infobar_utils.cc
 +++ b/chrome/browser/ui/startup/infobar_utils.cc
-@@ -18,7 +18,7 @@
+@@ -25,7 +25,7 @@
+ #include "chrome/browser/ui/session_crashed_bubble.h"
  #include "chrome/browser/ui/startup/automation_infobar_delegate.h"
  #include "chrome/browser/ui/startup/bad_flags_prompt.h"
- #include "chrome/browser/ui/startup/bidding_and_auction_consented_debugging_infobar_delegate.h"
 -#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
 +// MoltBrowser: removed google_api_keys_infobar_delegate (not shown to users)
  #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
  #include "chrome/browser/ui/startup/oscryptasync_availability_infobar_delegate.h"
  #include "chrome/browser/ui/startup/startup_browser_creator.h"
-@@ -29,7 +29,7 @@
- #include "components/infobars/content/content_infobar_manager.h"
+@@ -40,7 +40,7 @@
  #include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_interface.h"
  #include "content/public/common/content_switches.h"
 -#include "google_apis/google_api_keys.h"
 +// MoltBrowser: removed google_api_keys.h (not used)
  
  #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
  #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt.h"
-@@ -185,9 +185,7 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
+@@ -253,19 +253,7 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
    infobars::ContentInfoBarManager* infobar_manager =
        infobars::ContentInfoBarManager::FromWebContents(web_contents);
  
 -  if (!google_apis::HasAPIKeyConfigured()) {
--    GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
+-    if (infobars::IsInfoBarMigrated(
+-            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE)) {
+-      if (auto* manager =
+-              infobars::BrowserInfoBarManager::From(g_browser_process)) {
+-        manager->Show(
+-            tabs::TabInterface::GetFromContents(web_contents),
+-            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE);
+-      }
+-    } else {
+-      GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
+-    }
 -  }
 +  // MoltBrowser: Google API keys InfoBar suppressed — not applicable.
  

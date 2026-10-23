@@ -1,14 +1,14 @@
 MoltBrowser patch for components/translate/core/browser/translate_manager.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/translate/core/browser/translate_manager.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/translate/core/browser/translate_manager.cc b/components/translate/core/browser/translate_manager.cc
-index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756ebe48bdc 100644
+index e4eb491c4dbc2ef88bb231a0f0b6868bd0d20c73..45d5a20de055ac742d5313fc64f21bbd592ec077 100644
 --- a/components/translate/core/browser/translate_manager.cc
 +++ b/components/translate/core/browser/translate_manager.cc
-@@ -162,8 +162,11 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
+@@ -188,8 +188,11 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
  
  bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
    bool can_translate = true;
@@ -21,7 +21,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
      if (!menu_logging) {
        return false;
      }
-@@ -173,7 +176,7 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+@@ -199,7 +202,7 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
      can_translate = false;
    }
  
@@ -30,7 +30,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
        !::google_apis::HasAPIKeyConfigured()) {
      if (!menu_logging) {
        return false;
-@@ -258,6 +261,11 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+@@ -295,6 +298,11 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
  }
  
  bool TranslateManager::CanPartiallyTranslateTargetLanguage() {
@@ -42,7 +42,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
    std::unique_ptr<TranslatePrefs> translate_prefs(
        translate_client_->GetTranslatePrefs());
    const std::string& source_language = language_state_.source_language();
-@@ -365,7 +373,12 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
+@@ -404,7 +412,12 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
    // their choice, they can remove it from the list, and they'll send that
    // language in the Accept-Language header, giving servers a chance to serve
    // them pages in that language.
@@ -56,7 +56,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
  
    // Translation can be kicked by context menu against unsupported languages.
    // Unsupported language strings should be replaced with
-@@ -399,6 +412,13 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
+@@ -438,6 +451,13 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
  
    GetActiveTranslateMetricsLogger()->LogTranslationStarted(translation_type);
  
@@ -70,7 +70,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
    TranslateScript* script = TranslateDownloadManager::GetInstance()->script();
    DCHECK(script != nullptr);
  
-@@ -820,6 +840,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
+@@ -897,6 +917,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
    FilterForHrefTranslate(&decision, translate_prefs, page_language_code);
    FilterForPredefinedTarget(&decision, translate_prefs, page_language_code);
  
@@ -85,7 +85,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
    return decision;
  }
  
-@@ -857,15 +885,25 @@ void TranslateManager::FilterIsTranslatePossible(
+@@ -934,15 +962,25 @@ void TranslateManager::FilterIsTranslatePossible(
          TriggerDecision::kDisabledDoesntNeedTranslation);
    }
  
@@ -113,7 +113,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756
        !::google_apis::HasAPIKeyConfigured()) {
      // Without an API key, translate won't work, so don't offer to translate in
      // the first place. Leave kOfferTranslateEnabled on, though, because that
-@@ -954,7 +992,10 @@ void TranslateManager::FilterAutoTranslate(
+@@ -1031,7 +1069,10 @@ void TranslateManager::FilterAutoTranslate(
          metrics::TranslateEventProto::AUTO_TRANSLATION_BY_PREF);
      GetActiveTranslateMetricsLogger()->LogTriggerDecision(
          TriggerDecision::kAutomaticTranslationByPref);

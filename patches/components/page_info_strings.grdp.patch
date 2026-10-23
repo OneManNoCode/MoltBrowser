@@ -1,11 +1,11 @@
 MoltBrowser patch for components/page_info_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/page_info_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/page_info_strings.grdp b/components/page_info_strings.grdp
-index 262b8510139f36ff3c91ad50082b34ee18846a3f..3e97a8e7d012b54069a72417fe8bec6f51b544ef 100644
+index 5a4e88cfdb3ac9e82599578300db42c6bab92e71..85f2b748d8a767ce0b27ce151fa5018b26034154 100644
 --- a/components/page_info_strings.grdp
 +++ b/components/page_info_strings.grdp
 @@ -44,10 +44,10 @@
@@ -36,7 +36,7 @@ index 262b8510139f36ff3c91ad50082b34ee18846a3f..3e97a8e7d012b54069a72417fe8bec6f
      </message>
    </if>
    <if expr="use_titlecase">
-@@ -211,7 +211,7 @@
+@@ -220,7 +220,7 @@
      <if expr="is_android">
      <!-- Only used in the dialog shown after tapping "Details" in page info -->
      <message name="IDS_PAGE_INFO_SECURE_IDENTITY_VERIFIED" desc="The text of the identity section when the page is secure and uses a valid certificate">
@@ -45,7 +45,7 @@ index 262b8510139f36ff3c91ad50082b34ee18846a3f..3e97a8e7d012b54069a72417fe8bec6f
      </message>
      </if>
  
-@@ -428,16 +428,16 @@
+@@ -437,16 +437,16 @@
        </message>
      </if>
      <message name="IDS_PAGE_INFO_CAMERA_SYSTEM_SETTINGS_DESCRIPTION" desc="The description for the camera permission with a link to system settings.">
@@ -66,7 +66,7 @@ index 262b8510139f36ff3c91ad50082b34ee18846a3f..3e97a8e7d012b54069a72417fe8bec6f
      </message>
      <message name="IDS_PAGE_INFO_SETTINGS_OF_A_SYSTEM_LINK" desc="This is the text of the link pointing to settings of a system. This appears under a permission in the Page Info bubble if the permission is blocked on the system level.">
          system settings
-@@ -498,36 +498,36 @@
+@@ -507,36 +507,36 @@
      <!-- Password Protection -->
      <if expr="_google_chrome">
        <message name="IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS" desc="A short paragraph explaining to the user that they has reuse their google password on current website.">
@@ -113,19 +113,3 @@ index 262b8510139f36ff3c91ad50082b34ee18846a3f..3e97a8e7d012b54069a72417fe8bec6f
        </message>
      </if>
  
-@@ -1056,13 +1056,13 @@
-     See info used to show you ads
-   </message>
-   <message name="IDS_PAGE_INFO_AD_PRIVACY_TOPICS_DESCRIPTION"  desc="1 of 3 possible descriptions a user might see when they choose 'Ad privacy' from page info for a specific site. 1) Navigate to any site. 2) Click the icon (often a lock) to the left of the URL in the address bar. Information about the page you're viewing appears. The 'Ad privacy' label will appear above the 'Site settings' button. 3) Click on Ad privacy. This string describes the case that the site being viewed uses the Ad topics setting. What's the Ad topics setting? When on, Chrome will estimate the user's topics of interest based on their recent browsing history and then show up to 3 of those topics with a site so that the site can better personalize ads (a privacy-preserving way to replicate some of the functionality of third-party cookies). In this case, we're informing the user that this site uses the Ad topics API and we're showing the user the ad topics Chrome has shared with the site. A button 'Manage ad privacy' allows the user to turn 'Ad privacy' settings on/off or to block specific ad topics.">
--    This site gets your ad topics from Chrome to show you more relevant ads
-+    This site gets your ad topics from MoltBrowser to show you more relevant ads
-   </message>
-   <message name="IDS_PAGE_INFO_AD_PRIVACY_FLEDGE_DESCRIPTION" desc="2 of 3 possible descriptions a user might see when they choose 'Ad privacy' from page info for a specific site. 1) Navigate to any site. 2) Click the icon (often a lock) to the left of the URL in the address bar. Information about the page you're viewing appears. The 'Ad privacy' label will appear above the 'Site settings' button. 3) Click on Ad privacy. This string describes the case that the site being viewed uses the Site-suggested ads setting. What's the Site-suggested ads setting? When on, a site can determine a user's interests, save info with Chrome relative to those interests. Later, as a user continues browsing, a site can ask Chrome for a user's interests and the first site can (through Chrome) suggest ads the user might like. In this case, we're informing the user that this site uses the Site-suggested ads API. A button 'Manage ad privacy' allows the user to turn 'Ad privacy' settings on/off or to block specific ad topics.">
-     This site determines things you like and then suggests ads to other sites
-   </message>
-   <message name="IDS_PAGE_INFO_AD_PRIVACY_TOPICS_AND_FLEDGE_DESCRIPTION" desc="3 of 3 possible descriptions a user might see when they choose 'Ad privacy' from page info for a specific site. 1) Navigate to any site. 2) Click the icon (often a lock) to the left of the URL in the address bar. Information about the page you're viewing appears. The 'Ad privacy' label will appear above the 'Site settings' button. 3) Click on Ad privacy. This string describes the case that the site being viewed uses both the Ad topics &amp; Site-suggested ads settings. AD TOPICS: When on, Chrome will estimate the user's topics of interest based on their recent browsing history and then show up to 3 of those topics with a site so that the site can better personalize ads (a privacy-preserving way to replicate some of the functionality of third-party cookies). SITE-SUGGESTED ADS: When on, a site can determine a user's interests, save info with Chrome relative to those interests. Later, as a user continues browsing, a site can ask Chrome for a user's interests and the first site can (through Chrome) suggest ads the user might like. In this case, we're informing the user that this site 1) has asked Chrome for the user's interests (the Ad topics setting), and 2) uses the Site-suggested ads API (this site determines the user's interests and then can suggest ads to other sites as the user continues browsing). A button 'Manage ad privacy' allows the user to turn 'Ad privacy' settings on/off or to block specific ad topics or sites.">
--    This site determines things you like and then suggests ads to other sites. This site also gets your ad topics from Chrome to show you more relevant ads.
-+    This site determines things you like and then suggests ads to other sites. This site also gets your ad topics from MoltBrowser to show you more relevant ads.
-   </message>
-   <message name="IDS_PAGE_INFO_AD_PRIVACY_SUBPAGE_MANAGE_BUTTON" desc="A button label that opens the Ad privacy page, allowing a user to turn on / off the ad privacy settings and to manage the topics and sites that influence ad personalization.">
-     Manage ad privacy

@@ -100,7 +100,7 @@ void CheckStrings(FuzzedDataProvider* p) {
   CHECK(s.top_k >= 1 && s.top_k <= kMaxSampling.top_k);
   CHECK(s.temperature >= 0.0f && s.temperature <= kMaxSampling.temperature);
   const Sampling mode = SamplingForMode(
-      static_cast<SamplingMode>(p->ConsumeIntegralInRange<int>(0, 4)));
+      static_cast<SamplingMode>(p->ConsumeIntegralInRange<int>(0, 6)));
   CHECK(mode.top_k >= 1 && mode.top_k <= kMaxSampling.top_k);
 
   const int64_t w = p->ConsumeIntegral<int64_t>();

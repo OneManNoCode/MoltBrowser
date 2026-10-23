@@ -31,6 +31,8 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "v8/include/v8-inspector.h"
 
 namespace blink::molt_fingerprinting {
 namespace {
@@ -92,7 +94,11 @@ class TestWorker {
     thread_->Start(std::move(params),
                    WorkerBackingThreadStartupData::CreateDefault(),
                    std::make_unique<WorkerDevToolsParams>());
-    thread_->WaitForInit();
+    // Once a top-level script has run, the global scope is set up.
+    thread_->EvaluateClassicScript(
+        KURL("https://a.example/worker.js"), String("// empty"),
+        /*cached_meta_data=*/nullptr, v8_inspector::V8StackTraceId());
+    reporting_proxy_.WaitUntilDidEvaluateTopLevelScript();
   }
 
   ~TestWorker() {

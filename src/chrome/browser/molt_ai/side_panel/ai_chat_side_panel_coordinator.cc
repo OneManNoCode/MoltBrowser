@@ -7,14 +7,14 @@
 
 #include "chrome/browser/molt_ai/side_panel/ai_chat_side_panel_web_view.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/side_panel/side_panel_registry.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "ui/views/view.h"
 
-AiChatSidePanelCoordinator::AiChatSidePanelCoordinator(Browser* browser)
+AiChatSidePanelCoordinator::AiChatSidePanelCoordinator(
+    BrowserWindowInterface* browser)
     : browser_(browser), profile_(browser->GetProfile()) {}
 
 AiChatSidePanelCoordinator::~AiChatSidePanelCoordinator() = default;
@@ -29,8 +29,7 @@ void AiChatSidePanelCoordinator::CreateAndRegisterEntry(
 }
 
 bool AiChatSidePanelCoordinator::Show() {
-  SidePanelUI* side_panel_ui =
-      browser_->GetFeatures().side_panel_ui();
+  SidePanelUI* side_panel_ui = SidePanelUI::From(browser_);
   if (!side_panel_ui) {
     return false;
   }

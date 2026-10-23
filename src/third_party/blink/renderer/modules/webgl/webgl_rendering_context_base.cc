@@ -61,14 +61,15 @@
 #include "gpu/config/gpu_feature_info.h"
 #include "media/base/format_utils.h"
 #include "media/base/video_frame.h"
-#include "media/renderers/paint_canvas_video_renderer.h"
-#include "media/renderers/video_frame_shared_image_cache.h"
+#include "media/gfx/paint_canvas_video_renderer.h"
+#include "media/gfx/video_frame_shared_image_cache.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
 #include "third_party/blink/public/mojom/gpu/gpu.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_canvas_tone_mapping.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlcanvaselement_offscreencanvas.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_webgl_copy_element_image_config.h"
@@ -163,6 +164,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/format.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/skia/include/core/SkColorType.h"
@@ -704,12 +706,10 @@ static String ExtractWebGLContextCreationError(
   StringBuilder builder;
   builder.Append("Could not create a WebGL context");
   FormatWebGLStatusString(
-      "VENDOR",
-      info.vendor_id ? String::Format("0x%04x", info.vendor_id) : "0xffff",
+      "VENDOR", info.vendor_id ? Format("0x{:04x}", info.vendor_id) : "0xffff",
       builder);
   FormatWebGLStatusString(
-      "DEVICE",
-      info.device_id ? String::Format("0x%04x", info.device_id) : "0xffff",
+      "DEVICE", info.device_id ? Format("0x{:04x}", info.device_id) : "0xffff",
       builder);
   FormatWebGLStatusString("GL_VENDOR", info.vendor_info, builder);
   FormatWebGLStatusString("GL_RENDERER", info.renderer_info, builder);
@@ -718,9 +718,9 @@ static String ExtractWebGLContextCreationError(
   FormatWebGLStatusString("Optimus", info.optimus ? "yes" : "no", builder);
   FormatWebGLStatusString("AMD switchable", info.amd_switchable ? "yes" : "no",
                           builder);
-  FormatWebGLStatusString(
-      "Reset notification strategy",
-      String::Format("0x%04x", info.reset_notification_strategy), builder);
+  FormatWebGLStatusString("Reset notification strategy",
+                          Format("0x{:04x}", info.reset_notification_strategy),
+                          builder);
   FormatWebGLStatusString("ErrorMessage", info.error_message, builder);
   builder.Append('.');
   return builder.ReleaseString();
@@ -963,7 +963,7 @@ scoped_refptr<StaticBitmapImage> WebGLRenderingContextBase::GetImage() {
     // Create an accelerated CRP in order to produce an accelerated snapshot.
     resource_provider = CanvasNon2DResourceProvider::Create(
         size, GetSharedImageFormat(), GetAlphaType(), GetColorSpace(),
-        GetDrawingBuffer()->GetHdrMetadata(),
+        drawing_buffer_tone_mapping_hdr_metadata_,
         SharedGpuContext::ContextProviderWrapper(), shared_image_usages);
 
     if (!resource_provider || !resource_provider->IsValid()) {
@@ -1431,7 +1431,8 @@ scoped_refptr<DrawingBuffer> WebGLRenderingContextBase::CreateDrawingBuffer(
       std::move(context_provider), context_info, this, ClampedCanvasSize(),
       premultiplied_alpha, want_alpha_channel, want_depth_buffer,
       want_stencil_buffer, want_antialiasing, desynchronized, preserve,
-      context_type_, drawing_buffer_color_space_, gpu_preference);
+      context_type_, drawing_buffer_color_space_,
+      drawing_buffer_tone_mapping_hdr_metadata_, gpu_preference);
 }
 
 void WebGLRenderingContextBase::InitializeNewContext() {
@@ -1777,9 +1778,9 @@ WebGLRenderingContextBase::ClearIfComposited(
   if (!framebuffer_binding_ ||
       (caller != kClearCallerDrawOrClear &&
        base::FeatureList::IsEnabled(features::kWebGLDiscardBackBuffer))) {
-    // EnsureBackColorBuffer() must be called before checking
-    // BufferClearNeeded() and returning early below. If the back buffer was
-    // discarded when the page was hidden, it must be recreated even if no
+    // EnsureBuffers() must be called before checking
+    // BufferClearNeeded() and returning early below. If buffers were
+    // discarded when the page was hidden, they must be recreated even if no
     // implicit clear is needed (BufferClearNeeded() is false).
     //
     // If a custom framebuffer is currently bound for a draw/clear operation,
@@ -1788,7 +1789,7 @@ WebGLRenderingContextBase::ClearIfComposited(
     //
     // Note: we don't call MarkContentsChanged(), because it hasn't (there is
     // no new content to present yet).
-    GetDrawingBuffer()->EnsureBackColorBuffer();
+    GetDrawingBuffer()->EnsureBuffers();
   }
 
   if (!GetDrawingBuffer()->BufferClearNeeded() ||
@@ -1800,7 +1801,6 @@ WebGLRenderingContextBase::ClearIfComposited(
     // Unlikely, but context was lost.
     return kSkipped;
   }
-
   ScopedPixelLocalStorageInterrupt scoped_pls_interrupt(this);
 
   // Determine if it's possible to combine the clear the user asked for and this
@@ -2198,7 +2198,8 @@ WebGLRenderingContextBase::GetSharedImageResourceProvider() {
   const SkAlphaType alpha_type = GetAlphaType();
   const viz::SharedImageFormat format = GetSharedImageFormat();
   const gfx::ColorSpace color_space = GetColorSpace();
-  const gfx::HDRMetadata hdr_metadata = GetDrawingBuffer()->GetHdrMetadata();
+  const gfx::HDRMetadata& hdr_metadata =
+      drawing_buffer_tone_mapping_hdr_metadata_;
   const gfx::Size size = GetDrawingBuffer()->Size();
   // Note: We must not initialize the CRP using Skia. The CRP can have bottom
   // left origin in which case Skia Graphite won't be able to render into it,
@@ -2507,6 +2508,19 @@ void WebGLRenderingContextBase::setDrawingBufferColorSpace(
   drawing_buffer_color_space_ = color_space;
   if (GetDrawingBuffer())
     GetDrawingBuffer()->SetColorSpace(drawing_buffer_color_space_);
+}
+
+CanvasToneMapping* WebGLRenderingContextBase::drawingBufferToneMapping(
+    const CanvasToneMapping* tone_mapping) {
+  if (tone_mapping) {
+    ParseCanvasToneMapping(tone_mapping,
+                           drawing_buffer_tone_mapping_hdr_metadata_);
+    if (!isContextLost() && GetDrawingBuffer()) {
+      GetDrawingBuffer()->SetHdrMetadata(
+          drawing_buffer_tone_mapping_hdr_metadata_);
+    }
+  }
+  return CanvasToneMappingToV8(drawing_buffer_tone_mapping_hdr_metadata_);
 }
 
 V8PredefinedColorSpace WebGLRenderingContextBase::unpackColorSpace(
@@ -3641,6 +3655,7 @@ void WebGLRenderingContextBase::frontFace(GLenum mode) {
 void WebGLRenderingContextBase::generateMipmap(GLenum target) {
   if (isContextLost())
     return;
+  MaybeEndPixelLocalStorageImplicit();
   if (!ValidateTextureBinding("generateMipmap", target))
     return;
   ContextGL()->GenerateMipmap(target);
@@ -4643,8 +4658,8 @@ ScriptValue WebGLRenderingContextBase::getUniform(
         name_builder.Append(']');
       }
       // Now need to look this up by name again to find its location
-      GLint loc = ContextGL()->GetUniformLocation(
-          ObjectOrZero(program), name_builder.ToString().Utf8().c_str());
+      GLint loc = ContextGL()->GetUniformLocation(ObjectOrZero(program),
+                                                  name_builder.Utf8().c_str());
       if (loc == location) {
         // Found it. Use the type in the ActiveInfo to determine the return
         // type.
@@ -6735,15 +6750,18 @@ void WebGLRenderingContextBase::TexImageHelperMediaVideoFrame(
   // Orient the destination rect based on the frame's transform.
   const auto& visible_rect = media_video_frame->visible_rect();
   auto dest_rect = gfx::Rect(visible_rect.size());
-  if (transform.rotation == media::VIDEO_ROTATION_90 ||
-      transform.rotation == media::VIDEO_ROTATION_270) {
+  if (transform.IsOrthogonal()) {
     dest_rect.Transpose();
   }
 
-  const bool reinterpret_video_as_srgb = !params.unpack_colorspace_conversion;
+  const auto color_space_interpretation =
+      !params.unpack_colorspace_conversion
+          ? VideoColorSpaceInterpretation::kReinterpretAsSRGB
+          : VideoColorSpaceInterpretation::kPreserve;
 
   auto info = CreateSnapshotProviderInfoForVideoFrame(
-      *media_video_frame, dest_rect.size(), reinterpret_video_as_srgb);
+      *media_video_frame, dest_rect.size(), color_space_interpretation,
+      VideoOrientationBehavior::kHardFlip);
 
   CanvasNon2DResourceProvider* provider = nullptr;
   if (can_upload_via_gpu) {
@@ -6761,17 +6779,16 @@ void WebGLRenderingContextBase::TexImageHelperMediaVideoFrame(
   }
 
   // Since TexImageStaticBitmapImage() and TexImageGPU() don't know how to
-  // handle tagged orientation, we set |prefer_tagged_orientation| to false.
-  const bool kPreferTaggedOrientation = false;
+  // handle tagged orientation, we use VideoOrientationBehavior::kHardFlip.
   scoped_refptr<StaticBitmapImage> image;
   if (!provider) {
     image = CreateUnacceleratedImageFromVideoFrame(
         std::move(media_video_frame), info, video_renderer,
-        kPreferTaggedOrientation, reinterpret_video_as_srgb);
+        VideoOrientationBehavior::kHardFlip, color_space_interpretation);
   } else {
     image = CreateAcceleratedImageFromVideoFrame(
         std::move(media_video_frame), provider, video_renderer,
-        kPreferTaggedOrientation, reinterpret_video_as_srgb);
+        VideoOrientationBehavior::kHardFlip, color_space_interpretation);
   }
 
   if (!image) {
@@ -7016,13 +7033,77 @@ void WebGLRenderingContextBase::texElementImage2D(
     }
   }
 
-  TexElementImage2DInternal(target, internalformat, sx, sy, swidth, sheight,
-                            width, height, element, exception_state);
+  TexElementImage2DInternal(target, internalformat, /*level*/ 0, /*xoffset*/ 0,
+                            /*yoffset*/ 0, sx, sy, swidth, sheight, width,
+                            height, element, exception_state);
+}
+
+void WebGLRenderingContextBase::texElementSubImage2D(
+    GLenum target,
+    GLint level,
+    GLint xoffset,
+    GLint yoffset,
+    const V8UnionElementOrElementImage* element,
+    const WebGLCopyElementImageConfig* config,
+    ExceptionState& exception_state) {
+  std::optional<GLfloat> sx;
+  std::optional<GLfloat> sy;
+  std::optional<GLfloat> swidth;
+  std::optional<GLfloat> sheight;
+  std::optional<GLsizei> width;
+  std::optional<GLsizei> height;
+
+  size_t explicit_param_count = 0;
+  if (config) {
+    if (config->hasSx()) {
+      sx = config->sx();
+      explicit_param_count++;
+    }
+    if (config->hasSy()) {
+      sy = config->sy();
+      explicit_param_count++;
+    }
+    if (config->hasSwidth()) {
+      swidth = config->swidth();
+      explicit_param_count++;
+    }
+    if (config->hasSheight()) {
+      sheight = config->sheight();
+      explicit_param_count++;
+    }
+    if (explicit_param_count % 4 != 0) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kOperationError,
+          "Must specify all or none of (sx,sy,swidth,sheight).");
+      return;
+    }
+    if (config->hasWidth()) {
+      width = config->width();
+      explicit_param_count++;
+    }
+    if (config->hasHeight()) {
+      height = config->height();
+      explicit_param_count++;
+    }
+    if (explicit_param_count % 2 != 0) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kOperationError,
+          "Must specify neither or both of (width,height).");
+      return;
+    }
+  }
+
+  TexElementImage2DInternal(target, /*internalformat*/ std::nullopt, level,
+                            xoffset, yoffset, sx, sy, swidth, sheight, width,
+                            height, element, exception_state);
 }
 
 void WebGLRenderingContextBase::TexElementImage2DInternal(
     GLenum target,
-    GLenum internalformat,
+    std::optional<GLenum> internalformat,
+    GLint level,
+    GLint xoffset,
+    GLint yoffset,
     std::optional<GLfloat> sx,
     std::optional<GLfloat> sy,
     std::optional<GLfloat> swidth,
@@ -7034,8 +7115,11 @@ void WebGLRenderingContextBase::TexElementImage2DInternal(
   CHECK(RuntimeEnabledFeatures::CanvasDrawElementEnabled(
       Host()->GetTopExecutionContext()));
 
-  if (internalformat != GL_RGBA8 && internalformat != GL_SRGB8_ALPHA8 &&
-      internalformat != GL_RGBA16F && internalformat != GL_RGBA32F) {
+  bool new_api = !internalformat.has_value();
+
+  if (!new_api && *internalformat != GL_RGBA8 &&
+      *internalformat != GL_SRGB8_ALPHA8 && *internalformat != GL_RGBA16F &&
+      *internalformat != GL_RGBA32F) {
     exception_state.ThrowTypeError(
         "Invalid internalformat. Must be one of RGBA8, SRGB8_ALPHA8, RGBA16F, "
         "or RGBA32F.");
@@ -7046,36 +7130,55 @@ void WebGLRenderingContextBase::TexElementImage2DInternal(
     return;
   }
 
-  if (!ValidateTexture2DBinding("texElementImage2D", target, true)) {
+  if (!ValidateTexture2DBinding("texElementSubImage2D", target, true)) {
+    return;
+  }
+
+  if (new_api && !ValidateSize("texElementSubImage2D", xoffset, yoffset, 0)) {
     return;
   }
 
   scoped_refptr<StaticBitmapImage> image =
       GetElementImage(element, sx, sy, swidth, sheight, width, height,
-                      gpu::SHARED_IMAGE_USAGE_GLES2_READ, "texElementImage2D()",
-                      exception_state);
+                      gpu::SHARED_IMAGE_USAGE_GLES2_READ,
+                      "texElementSubImage2D()", exception_state);
   if (!image) {
     return;
   }
 
+  TexImageParams params;
   GLenum type = GL_UNSIGNED_BYTE;
-  if (internalformat == GL_RGBA16F) {
-    type = GL_HALF_FLOAT;
-  } else if (internalformat == GL_RGBA32F) {
-    type = GL_FLOAT;
+  if (new_api) {
+    params = {.source_type = kSourceImageBitmap,
+              .function_id = kTexSubImage2D,
+              .target = target,
+              .level = 0,
+              .xoffset = xoffset,
+              .yoffset = yoffset,
+              .width = image->Size().width(),
+              .height = image->Size().height(),
+              .format = GL_RGBA,
+              .type = type};
+  } else {
+    if (*internalformat == GL_RGBA16F) {
+      type = GL_HALF_FLOAT;
+    } else if (*internalformat == GL_RGBA32F) {
+      type = GL_FLOAT;
+    }
+
+    params = {
+        .source_type = kSourceImageBitmap,
+        .function_id = kTexImage2D,
+        .target = target,
+        .level = 0,
+        .internalformat = static_cast<GLint>(*internalformat),
+        .width = image->Size().width(),
+        .height = image->Size().height(),
+        .format = GL_RGBA,
+        .type = type,
+    };
   }
 
-  TexImageParams params = {
-      .source_type = kSourceImageBitmap,
-      .function_id = kTexImage2D,
-      .target = target,
-      .level = 0,
-      .internalformat = static_cast<GLint>(internalformat),
-      .width = image->Size().width(),
-      .height = image->Size().height(),
-      .format = GL_RGBA,
-      .type = type,
-  };
   GetCurrentUnpackState(params);
   if (!ValidateTexImageBinding(params)) {
     exception_state.ThrowTypeError("ValidateTexImageBinding failure");
@@ -7726,6 +7829,7 @@ cc::Layer* WebGLRenderingContextBase::CcLayer() const {
 
 void WebGLRenderingContextBase::SetHdrMetadata(
     const gfx::HDRMetadata& hdr_metadata) {
+  drawing_buffer_tone_mapping_hdr_metadata_ = hdr_metadata;
   if (!isContextLost() && GetDrawingBuffer()) {
     GetDrawingBuffer()->SetHdrMetadata(hdr_metadata);
   }
@@ -8110,7 +8214,7 @@ bool WebGLRenderingContextBase::ValidateLocationLength(
   if (string.length() > max_web_gl_location_length) {
     StringBuilder builder;
     builder.Append("location length > ");
-    builder.Append(String::Format("%d", max_web_gl_location_length));
+    builder.AppendNumber(max_web_gl_location_length);
     SynthesizeGLError(GL_INVALID_VALUE, function_name,
                       builder.ToString().Ascii().c_str());
     return false;
@@ -9183,7 +9287,7 @@ String GetErrorString(GLenum error) {
     case GC3D_CONTEXT_LOST_WEBGL:
       return "CONTEXT_LOST_WEBGL";
     default:
-      return String::Format("WebGL ERROR(0x%04X)", error);
+      return Format("WebGL ERROR(0x{:04X})", error);
   }
 }
 
@@ -9301,7 +9405,15 @@ void WebGLRenderingContextBase::SetFramebuffer(GLenum target,
 }
 
 void WebGLRenderingContextBase::RestoreCurrentFramebuffer() {
-  bindFramebuffer(GL_FRAMEBUFFER, framebuffer_binding_.Get());
+  if (!framebuffer_binding_) {
+    if (GetDrawingBuffer()) {
+      // Not calling bindFrameBuffer() to avoid eager buffer reallocation.
+      GetDrawingBuffer()->RestoreDefaultFramebufferBinding(GL_FRAMEBUFFER);
+    }
+  } else {
+    ContextGL()->BindFramebuffer(GL_FRAMEBUFFER,
+                                 framebuffer_binding_->Object());
+  }
 }
 
 void WebGLRenderingContextBase::RestoreCurrentTexture2D() {

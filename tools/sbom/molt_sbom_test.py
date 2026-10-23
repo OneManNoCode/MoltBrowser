@@ -203,17 +203,32 @@ def by_name(doc):
     return {p['name']: p for p in doc['packages']}
 
 
+# The fixture's Chromium (testdata/repo/chromium_version.txt and
+# testdata/chromium/chrome/VERSION), frozen; this repository's own pin is
+# REPO_PIN and moves with every rebase.
+FIXTURE_CHROMIUM_VERSION = '152.0.7977.169'
+REPO_PIN = ms.read_chromium_pin(REPO_ROOT)[0]
+
+
+def write_chrome_version(chromium_src, version):
+    major, minor, build, patch = version.split('.')
+    with open(os.path.join(chromium_src, 'chrome', 'VERSION'), 'w') as f:
+        f.write('MAJOR=%s\nMINOR=%s\nBUILD=%s\nPATCH=%s\n'
+                % (major, minor, build, patch))
+
+
 class SbomTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='molt-sbom-test-')
         self.addCleanup(shutil.rmtree, self.tmp)
         self.fx = Fixture(self.tmp)
 
-    def assertValid(self, path, artifact=None):
+    def assertValid(self, path, artifact=None,
+                    chromium_version=FIXTURE_CHROMIUM_VERSION):
         doc = load(path)
         self.assertEqual(ms.validate_document(doc), [])
         self.assertEqual(ms.validate_molt(doc, path, artifact,
-                                          '152.0.7977.169'), [])
+                                          chromium_version), [])
         if SPDX_TOOLS:
             proc = subprocess.run([SPDX_TOOLS, '-i', path],
                                   stdout=subprocess.PIPE,
@@ -391,7 +406,8 @@ class GenerateTest(SbomTestCase):
         self.assertEqual({c['algorithm']: c['checksumValue']
                           for c in root['checksums']}['SHA256'],
                          hashlib.sha256(b'fake installer bytes\n').hexdigest())
-        self.assertEqual(pkgs['Chromium']['versionInfo'], '152.0.7977.169')
+        self.assertEqual(pkgs['Chromium']['versionInfo'],
+                         FIXTURE_CHROMIUM_VERSION)
         self.assertNotIn('The Chromium Project', pkgs)
         # Versions and CPEs come from README.chromium, licences from licenses.py.
         self.assertEqual(pkgs['zlib']['versionInfo'], '1.3.1')
@@ -520,7 +536,7 @@ class GenerateTest(SbomTestCase):
             f.write('MAJOR=153\nMINOR=0\nBUILD=1\nPATCH=0\n')
         code, _, err = self.fx.generate('linux', [dmg], arch='x64')
         self.assertEqual(code, 1)
-        self.assertIn('not the pinned 152.0.7977.169', err)
+        self.assertIn('not the pinned %s' % FIXTURE_CHROMIUM_VERSION, err)
 
     def test_zip_with_helpers_needs_a_payload(self):
         import zipfile
@@ -563,6 +579,8 @@ class WrapperTest(SbomTestCase):
         # wrapper reads by default, not the macOS build's out/MoltBrowser.
         os.rename(self.fx.out_dir,
                   os.path.join(self.fx.chromium, 'out', 'MoltBrowser-linux'))
+        # The wrapper reads this repository's pin; the fixture checkout is at it.
+        write_chrome_version(self.fx.chromium, REPO_PIN)
         proc = subprocess.run(
             ['bash', os.path.join(REPO_ROOT, 'scripts', 'release-sbom.sh'),
              '--platform', 'linux', '--arch', 'x64', '--version', 'v0.3.0']
@@ -576,7 +594,7 @@ class WrapperTest(SbomTestCase):
             'MoltBrowser-Linux-x64-deb.spdx.json',
             'MoltBrowser-Linux-x64-tar-gz.spdx.json'])
         for art, sbom in zip(arts, sboms):
-            self.assertValid(sbom, art)
+            self.assertValid(sbom, art, REPO_PIN)
         self.assertIn(': OK', proc.stderr)
 
 
@@ -710,7 +728,7 @@ class RepoOnlyTest(SbomTestCase):
                 code, _, err = run_main(['generate', '--repo-only', '--platform',
                                          platform, '--out', out])
             self.assertEqual(code, 0, err)
-            doc = self.assertValid(out)
+            doc = self.assertValid(out, chromium_version=REPO_PIN)
             names = {p['name']: p for p in doc['packages']}
             self.assertEqual(names['llama.cpp']['versionInfo'], llama['Version'])
             self.assertIn('adblock', names)

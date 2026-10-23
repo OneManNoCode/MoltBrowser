@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index f23c7bd89d1cfa3e30c257cfc1bb6f112564edf5..2eab594269bde0c3959360c245d16d1be4c95de9 100644
+index 2a5404e4cf7c111f20515886466bc45610d6a5b6..be7815f6c323d3e0340bde85f3bc354c0759c1de 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-@@ -98,6 +98,7 @@
+@@ -104,6 +104,7 @@
  #include "third_party/blink/renderer/core/layout/layout_replaced.h"
  #include "third_party/blink/renderer/core/layout/layout_view.h"
  #include "third_party/blink/renderer/core/layout/transform_utils.h"
@@ -16,7 +16,7 @@ index f23c7bd89d1cfa3e30c257cfc1bb6f112564edf5..2eab594269bde0c3959360c245d16d1b
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/page/page_animator.h"
-@@ -1039,8 +1040,11 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
+@@ -1213,8 +1214,11 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
      // First attempt to copy directly from the rendering context to a video
      // frame. Not all rendering contexts need to support this (for contexts
      // where GetSourceImageForCanvasInternal is zero-copy, this is superfluous).
@@ -29,7 +29,7 @@ index f23c7bd89d1cfa3e30c257cfc1bb6f112564edf5..2eab594269bde0c3959360c245d16d1b
        if (context_->CopyRenderingResultsToVideoFrame(
                copier_->GetAcceleratedVideoFramePool(
                    SharedGpuContext::ContextProviderWrapper()),
-@@ -1062,6 +1066,13 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
+@@ -1236,6 +1240,13 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
        source_image = GetSourceImageForCanvasInternal(&status);
        if (status != kNormalSourceImageStatus)
          continue;
@@ -43,9 +43,9 @@ index f23c7bd89d1cfa3e30c257cfc1bb6f112564edf5..2eab594269bde0c3959360c245d16d1b
      }
  
      // Here we need to use the SharedGpuContext as some of the images may
-@@ -1284,7 +1295,10 @@ String HTMLCanvasElement::ToDataURLInternal(
-       ImageEncoderUtils::ToEncodingMimeType(
-           mime_type, ImageEncoderUtils::kEncodeReasonToDataURL);
+@@ -1457,7 +1468,10 @@ String HTMLCanvasElement::ToDataURLInternal(
+   ImageEncodingMimeType encoding_mime_type =
+       ImageEncoderUtils::ToEncodingMimeType(mime_type);
  
 -  scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
 +  // MoltBrowser: per-site fingerprinting noise on the exported pixels.

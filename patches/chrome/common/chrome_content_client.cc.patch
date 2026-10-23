@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/common/chrome_content_client.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/common/chrome_content_client.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
-index bb390289693bd53bb6ef31f3703c0c7d5ae79c8f..1a10316209d689f41ade2105f34a655f655277c0 100644
+index 8b5f84e0858a1cd6d2902993126572059b8e614e..ef8f94a776011806d11f309f9646beeb0cd1fa37 100644
 --- a/chrome/common/chrome_content_client.cc
 +++ b/chrome/common/chrome_content_client.cc
-@@ -194,6 +194,9 @@ static const char* const kChromeStandardURLSchemes[] = {
+@@ -197,6 +197,9 @@ static const char* const kChromeStandardURLSchemes[] = {
          // BUILDFLAG(IS_CHROMEOS)
      chrome::kChromeNativeScheme,        chrome::kChromeSearchScheme,
      dom_distiller::kDomDistillerScheme,

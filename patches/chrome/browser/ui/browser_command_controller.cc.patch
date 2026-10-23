@@ -1,30 +1,30 @@
 MoltBrowser patch for chrome/browser/ui/browser_command_controller.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/browser_command_controller.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 2d86241e3519e52c3fc82ed0d8429b3a20651033..3cb84891408cbcfe9575eb65cbcc6a0dead5e676 100644
+index 921461b9e9bd0423d6d180762d0a06d0a3cd9c94..34c025c87939d0e75ec6b36f9be1e7ceb3eadb02 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1228,6 +1228,11 @@ void BrowserCommandController::HandleCommandWithDisposition(
-       browser_->GetFeatures().side_panel_ui()->Show(
-           SidePanelEntryId::kBookmarks, SidePanelOpenTrigger::kAppMenu);
+@@ -1260,6 +1260,11 @@ void BrowserCommandController::HandleCommandWithDisposition(
+       SidePanelUI::From(browser_)->Show(SidePanelEntryId::kBookmarks,
+                                         SidePanelOpenTrigger::kAppMenu);
        break;
 +    case IDC_SHOW_MOLT_AI_SIDE_PANEL:
-+      browser_->GetFeatures().side_panel_ui()->Toggle(
++      SidePanelUI::From(browser_)->Toggle(
 +          SidePanelEntryKey(SidePanelEntryId::kMoltAiChat),
 +          SidePanelOpenTrigger::kAppMenu);
 +      break;
      case IDC_SHOW_APP_MENU:
        base::RecordAction(base::UserMetricsAction("Accel_Show_App_Menu"));
        ShowAppMenu(browser_);
-@@ -1993,6 +1998,7 @@ void BrowserCommandController::InitCommandState() {
+@@ -2021,6 +2026,7 @@ void BrowserCommandController::InitCommandState() {
    }
  
    command_updater_->UpdateCommandEnabled(IDC_SHOW_BOOKMARK_SIDE_PANEL, true);
 +  command_updater_->UpdateCommandEnabled(IDC_SHOW_MOLT_AI_SIDE_PANEL, true);
  
-   if (browser_->is_type_normal()) {
+   if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
      // Reading list commands.

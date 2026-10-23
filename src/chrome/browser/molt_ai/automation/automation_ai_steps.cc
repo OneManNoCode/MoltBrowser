@@ -345,7 +345,7 @@ std::optional<base::Value> ReadFreeform(const base::Value& v,
   }
   if (v.is_dict()) {
     base::DictValue out;
-    for (const auto& [key, item] : v.GetDict()) {
+    for (const auto [key, item] : v.GetDict()) {
       if (++budget->keys > kMaxFreeformKeys) {
         *error = "the answer had too many keys";
         return std::nullopt;
@@ -504,7 +504,7 @@ ExtractSpecResult ExtractSpecFromStep(const base::Value& step_extra) {
     return result;
   }
   ExtractSpec spec;
-  for (const auto& [name, type] : dict) {
+  for (const auto [name, type] : dict) {
     if (!IsFieldName(name)) {
       result.error =
           "a field name in the step's \"schema\" isn't usable (letters, "

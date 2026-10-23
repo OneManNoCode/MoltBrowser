@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/profiles/off_the_record_profile_impl.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/profiles/off_the_record_profile_impl.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/off_the_record_profile_impl.cc b/chrome/browser/profiles/off_the_record_profile_impl.cc
-index 1de7ece73d67b577b0ce8502edef23c3916d145d..4fbf2ee76c785eaee56c9f575ef46ef66118d30b 100644
+index 21cb081cd448202654444cd4cafebfa91c68e763..7a4f8eed220ba5b26c588a614be1d2d2554e3ec2 100644
 --- a/chrome/browser/profiles/off_the_record_profile_impl.cc
 +++ b/chrome/browser/profiles/off_the_record_profile_impl.cc
-@@ -35,6 +35,9 @@
+@@ -36,6 +36,9 @@
  #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
  #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
  #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
@@ -18,7 +18,7 @@ index 1de7ece73d67b577b0ce8502edef23c3916d145d..4fbf2ee76c785eaee56c9f575ef46ef6
  #include "chrome/browser/notifications/platform_notification_service_factory.h"
  #include "chrome/browser/notifications/platform_notification_service_impl.h"
  #include "chrome/browser/origin_trials/origin_trials_factory.h"
-@@ -173,6 +176,15 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(
+@@ -178,6 +181,15 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(
      prefs_ =
          CreateAutomationPrefService(PrefServiceSyncableFromProfile(profile_),
                                      CreateExtensionPrefStore(profile_, true));
@@ -34,9 +34,9 @@ index 1de7ece73d67b577b0ce8502edef23c3916d145d..4fbf2ee76c785eaee56c9f575ef46ef6
    } else {
      prefs_ = CreateIncognitoPrefServiceSyncable(
          PrefServiceSyncableFromProfile(profile_),
-@@ -199,7 +211,12 @@ void OffTheRecordProfileImpl::Init() {
-         IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
-             policy::IncognitoModeAvailability::kDisabled);
+@@ -208,7 +220,12 @@ void OffTheRecordProfileImpl::Init() {
+   CHECK(!IsEnterpriseIsolatedModeProfile() ||
+         incognito_type == IncognitoModePrefs::IncognitoModeType::kEnterprise);
  
 -  TrackZoomLevelsFromParent();
 +  // MoltBrowser: MoltNet pages start at 100% zoom, whether or not

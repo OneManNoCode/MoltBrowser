@@ -17,7 +17,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "components/safe_browsing/core/browser/db/v4_protocol_config.h"
+#include "components/safe_browsing/core/browser/db/sb_protocol_config.h"
 #include "content/public/browser/bluetooth_chooser.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/common/child_process_id.h"
@@ -34,8 +34,10 @@
 #include "services/network/public/mojom/url_loader.mojom-forward.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/gfx/native_ui_types.h"
 #include "url/gurl.h"
 
+class ExtensionFunction;
 class ExtensionFunctionRegistry;
 
 namespace base {
@@ -506,6 +508,7 @@ class ExtensionsBrowserClient {
   // Checks whether the given `request_url` and `redirect_url` correspond to a
   // Default Search Engine redirect.
   virtual bool IsDefaultSearchEngineRedirect(content::BrowserContext* context,
+                                             const ExtensionId& extension_id,
                                              const GURL& request_url,
                                              const GURL& redirect_url) const;
 
@@ -607,7 +610,8 @@ class ExtensionsBrowserClient {
                                             const GURL& url);
 
   // Returns the ProtocolHandlerRegistry instance associated with the user
-  // profile.
+  // profile, or null if the embedder has none; extension protocol_handlers
+  // are then ignored.
   virtual custom_handlers::ProtocolHandlerRegistry* GetProtocolHandlerRegistry(
       content::BrowserContext* context);
 
@@ -620,8 +624,8 @@ class ExtensionsBrowserClient {
   virtual scoped_refptr<safe_browsing::SafeBrowsingDatabaseManager>
   GetSafeBrowsingDatabaseManager() const;
 
-  // Get the default v4 protocol config struct from the safe browsing service.
-  virtual std::optional<safe_browsing::V4ProtocolConfig> GetV4ProtocolConfig()
+  // Get the default SB protocol config struct from the safe browsing service.
+  virtual std::optional<safe_browsing::SBProtocolConfig> GetSBProtocolConfig()
       const;
 
   // Notifies the ExtensionActionRunner that an extension has been granted
@@ -715,6 +719,24 @@ class ExtensionsBrowserClient {
   virtual std::unique_ptr<ExtensionInstallPromptClient> CreateInstallPrompt(
       content::WebContents* web_contents,
       std::unique_ptr<InstallPromptData> prompt);
+
+  // Creates install prompt UI anchored to `native_window` rather than a
+  // WebContents, for use when `function`'s caller has no directly associated
+  // WebContents (e.g. an extension service worker).
+  virtual std::unique_ptr<ExtensionInstallPromptClient>
+  CreateInstallPromptForNativeWindow(gfx::NativeWindow native_window,
+                                     content::BrowserContext& browser_context,
+                                     std::unique_ptr<InstallPromptData> prompt);
+
+  // Returns a native window suitable for anchoring UI (e.g. a
+  // permission-request prompt) triggered by `function`. Returns null if none
+  // is found.
+  virtual gfx::NativeWindow GetNativeWindowForFunction(
+      ExtensionFunction& function);
+
+  // Returns true if lazy keyed service instantiation is enabled for extension
+  // services.
+  virtual bool IsLazyKeyedServiceInstantiationEnabled() const;
 
  protected:
   std::unique_ptr<ExtensionAssetsManager> assets_manager_;

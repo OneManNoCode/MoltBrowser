@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/webauthn/chrome_authenticator_request_delegate.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc b/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc
-index db3868f5dd4530e97553d376871bab5f2b70c11b..809318bd38c26dd7e4e3fdf7054d2dfde3652836 100644
+index 64cc5836faf6101cf19f4b65b72de3770638019a..aed9761f1cb60eb58a03d475161af635f23dac66 100644
 --- a/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc
 +++ b/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc
-@@ -30,6 +30,8 @@
+@@ -32,6 +32,8 @@
  #include "base/values.h"
  #include "build/build_config.h"
  #include "build/chromeos_buildflags.h"
@@ -17,7 +17,7 @@ index db3868f5dd4530e97553d376871bab5f2b70c11b..809318bd38c26dd7e4e3fdf7054d2dfd
  #include "chrome/browser/net/system_network_context_manager.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/profiles/profile_observer.h"
-@@ -506,8 +508,20 @@ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
+@@ -548,8 +550,20 @@ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
      return;
    }
  
@@ -39,7 +39,7 @@ index db3868f5dd4530e97553d376871bab5f2b70c11b..809318bd38c26dd7e4e3fdf7054d2dfd
        request_source == RequestSource::kWebAuthentication) {
      // Creating credentials in GPM can be disabled by policy, but get() is
      // always allowed.
-@@ -579,9 +593,14 @@ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
+@@ -627,9 +641,14 @@ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
    }
  #endif
  

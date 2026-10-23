@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/profiles/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/profiles/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 7261b2cc26b5f913deda86a9392462d068d39fb2..588463b0b2be6057d969f0ca847bb507465ea690 100644
+index 1c4ee4ac17e827a18dbb363f61aea886b5487bd2..34ed09ac644a3814633da06e8f6913a8099d0a06 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -104,6 +104,9 @@ source_set("misc") {
+@@ -95,6 +95,9 @@ source_set("misc") {
      "//chrome/browser/heavy_ad_intervention",
      "//chrome/browser/image_decoder",
      "//chrome/browser/lifetime",
@@ -18,7 +18,7 @@ index 7261b2cc26b5f913deda86a9392462d068d39fb2..588463b0b2be6057d969f0ca847bb507
      "//chrome/browser/net",
      "//chrome/browser/origin_trials",
      "//chrome/browser/password_manager/factories",
-@@ -674,6 +677,9 @@ source_set("profiles_extra_parts_impl") {
+@@ -777,6 +780,9 @@ source_set("profiles_extra_parts_impl") {
      "//chrome/browser/manta:impl",
      "//chrome/browser/media/router",
      "//chrome/browser/media/webrtc",

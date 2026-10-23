@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/platform/fonts/font_platform_data.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/platform/fonts/font_platform_data.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/platform/fonts/font_platform_data.cc b/third_party/blink/renderer/platform/fonts/font_platform_data.cc
-index 611c0c8a3527185e7213eaf9d90c49ebb4af81d1..b2172bdf8e617df2ddfb8661019e5f33ec770c13 100644
+index a1db0415e01f3e8939707417ad47198a03b9d9f6..11da8109cddc5e8c87fb11512c8e83154ebe2629 100644
 --- a/third_party/blink/renderer/platform/fonts/font_platform_data.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_platform_data.cc
 @@ -20,6 +20,8 @@
@@ -14,10 +14,10 @@ index 611c0c8a3527185e7213eaf9d90c49ebb4af81d1..b2172bdf8e617df2ddfb8661019e5f33
  
 +#include <atomic>  // MoltBrowser
 +
+ #include "base/bit_cast.h"
  #include "base/compiler_specific.h"
  #include "base/feature_list.h"
- #include "build/build_config.h"
-@@ -48,6 +50,42 @@
+@@ -49,6 +51,42 @@
  #endif
  
  namespace blink {
@@ -60,7 +60,7 @@ index 611c0c8a3527185e7213eaf9d90c49ebb4af81d1..b2172bdf8e617df2ddfb8661019e5f33
  FontPlatformData::FontPlatformData(HashTableDeletedValueType)
      : is_hash_table_deleted_value_(true) {}
  
-@@ -247,7 +285,13 @@ WebFontRenderStyle FontPlatformData::QuerySystemRenderStyle(
+@@ -243,7 +281,13 @@ WebFontRenderStyle FontPlatformData::QuerySystemRenderStyle(
    // TODO(crbug.com/1327530): For now, do this only for Linux/Cros to minimize
    // the impact, and because they're the only platform that adjust these
    // settings by different device scale factors. See the doc link in the crbug.

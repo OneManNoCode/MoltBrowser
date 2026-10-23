@@ -1,11 +1,11 @@
 MoltBrowser patch for components/permissions_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/permissions_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/permissions_strings.grdp b/components/permissions_strings.grdp
-index 35f801c48a142bfeef825921f405f43f00945416..b1b334212447c9fbdb1236950e748acbf1aacdd7 100644
+index a9c5c50333e3b8b8adbca8b2104e636cbf41679a..9c0057855807af7a25d5068d850cd7f8d06c5340 100644
 --- a/components/permissions_strings.grdp
 +++ b/components/permissions_strings.grdp
 @@ -55,13 +55,13 @@

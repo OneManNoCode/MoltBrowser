@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/resources/settings/settings_main/settings_main.ts
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/resources/settings/settings_main/settings_main.ts by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
-index 7ff1c061b5a6bc9dbd1868ed155214ca97508efc..3af9744371861e44c85dd775dd53ed4ba166d337 100644
+index 4b6a86f0d9cf27a459d27c1c3ca9160de8c3ac34..052386fc44016516f054d6e163fdefc505831eab 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.ts
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
 @@ -10,6 +10,10 @@ import 'chrome://resources/cr_components/managed_footnote/managed_footnote.js';
@@ -19,7 +19,7 @@ index 7ff1c061b5a6bc9dbd1868ed155214ca97508efc..3af9744371861e44c85dd775dd53ed4b
  import '../about_page/about_page.js';
  import '../ai_page/ai_page_index.js';
  import '../appearance_page/appearance_page_index.js';
-@@ -299,6 +303,16 @@ export class SettingsMainElement extends SettingsMainElementBase {
+@@ -334,6 +338,16 @@ export class SettingsMainElement extends SettingsMainElementBase {
          !this.lastRoute_.isSubpage();
    }
  

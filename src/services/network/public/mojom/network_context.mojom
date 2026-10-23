@@ -35,7 +35,6 @@ import "services/network/public/mojom/device_bound_sessions.mojom";
 import "services/network/public/mojom/devtools_observer.mojom";
 import "services/network/public/mojom/document_isolation_policy.mojom";
 import "services/network/public/mojom/fetch_api.mojom";
-import "services/network/public/mojom/first_party_sets_access_delegate.mojom";
 import "services/network/public/mojom/hash_value.mojom";
 import "services/network/public/mojom/host_resolver.mojom";
 import "services/network/public/mojom/http_cache_backend_file_operations.mojom";
@@ -98,6 +97,9 @@ import "services/network/public/mojom/p2p.mojom";
 
 [EnableIf=is_p2p_enabled]
 import "services/network/public/mojom/p2p_trusted.mojom";
+
+[EnableIf=enable_disk_cache_sql_backend]
+import "services/network/public/mojom/shared_http_cache_client.mojom";
 
 const uint32 kWebSocketOptionNone = 0;
 
@@ -599,18 +601,11 @@ struct NetworkContextParams {
   // Whether "Compression dictionary transport" feature should be enabled.
   bool shared_dictionary_enabled = false;
 
-  // Maximum size of the shared dictionary cache. If this value is 0, the max
-  // size will be propagated via SetSharedDictionaryCacheMaxSize message.
-  // Ignored if `shared_dictionary_enabled` field is false.
-  uint64 shared_dictionary_cache_max_size = 0;
-
-  // Parameters for constructing the FirstPartySetsAccessDelegate.
-  // |first_party_sets_access_delegate_params| is the initial configuration to
-  // use. If nullptr, uses the default configuration. Updated configurations
-  // can be passed in via |first_party_sets_access_delegate_receiver|.
-  FirstPartySetsAccessDelegateParams? first_party_sets_access_delegate_params;
-  pending_receiver<FirstPartySetsAccessDelegate>?
-      first_party_sets_access_delegate_receiver;
+  // Initial maximum size of the shared dictionary cache. If null,
+  // no byte limit is enforced at initialization time (an automatic limit is
+  // typically calculated and set later via SetSharedDictionaryCacheMaxSize).
+  // Ignored if `shared_dictionary_enabled` is false.
+  mojo_base.mojom.ByteSize? shared_dictionary_cache_max_size;
 
   // TODO(crbug.com/40777535): This flag is intended to be temporary and to be
   // removed (always enabled) in the future.
@@ -898,6 +893,17 @@ struct URLLoaderFactoryParams {
   // field once Chrome Platform Apps are gone.
   bool ignore_isolated_world_origin = true;
 
+  // The origin of the isolated world that is permitted to use this factory.
+  // When `ignore_isolated_world_origin` is false, requests with an
+  // `isolated_world_origin` that does not match this lock will be rejected
+  // with a bad message report.
+  // Setting this field when `ignore_isolated_world_origin` is true is invalid
+  // and will also result in a bad message report.
+  //
+  // TODO(crbug.com/40137011): Remove `isolated_world_origin_lock` once Chrome
+  // Platform Apps are gone and `ignore_isolated_world_origin` is removed.
+  url.mojom.Origin? isolated_world_origin_lock;
+
   // Indicate whether a request is not from web page ( probably from chrome
   // extension background page ).
   bool unsafe_non_webby_initiator = false;
@@ -1024,6 +1030,10 @@ struct URLLoaderFactoryParams {
   // If this is true, the request's main frame origin is recently accessed.
   bool is_main_frame_origin_recently_accessed = false;
 
+  // If this is true, responses fetched using this factory may be eligible for
+  // storage in the Renderer Accessible HTTP Cache.
+  bool renderer_accessible_http_cache_write_enabled = false;
+
   // An unguessable token used to apply network restrictions to outgoing
   // requests using this factory. The token is matched against the tokens in
   // `NetworkContext::network_restrictions_ids_`.
@@ -1040,11 +1050,29 @@ struct URLLoaderFactoryParams {
   // (e.g., a subframe whose effective top frame for storage
   // partitioning differs from the actual top frame).
   bool prefer_factory_site_for_cookies = false;
+
+  // If available, the network that URLLoaders, created out of this factory,
+  // will target. If absent, the default network is instead used. Represents a
+  //net::handles::NetworkHandle. See URLRequestContext::CreateRequest.
+  int64? target_network;
 };
 
 struct IdAndAllowlistedPatterns {
   mojo_base.mojom.UnguessableToken network_restrictions_id;
   ConnectionAllowlists allowlists;
+};
+
+// Configuration for a wildcard QUIC hint that matches hostnames by suffix.
+// Wildcard hints only match subdomains (e.g. "mail.google.com"), not apex
+// domains ("google.com"). For apex or exact domains, AddQuicHints should be
+// used instead.
+struct WildcardQuicHint {
+  // Suffix of hostnames that should match. Must start with "*." (e.g.
+  // "*.google.com") or leading "." (e.g. ".google.com"). Bare domains without
+  // a wildcard prefix are rejected.
+  string host_suffix;
+  // Port to match and use for QUIC attempts.
+  uint16 port = 443;
 };
 
 // Represents a distinct context for making network requests, with its own
@@ -1108,6 +1136,13 @@ interface NetworkContext {
   //
   // If |role| == SCRIPT, this interface can be safely handed out to a process
   // that is known to represent the given origin, such as a renderer process.
+  //
+  // If |prefer_bound_cookie_context| is true, cookie access decisions use
+  // |isolation_info|'s site_for_cookies and top_frame_origin instead of the
+  // renderer-provided per-call values. Set when the browser holds an
+  // authoritative cookie context that the renderer cannot compute (e.g., a
+  // frame whose effective top frame for storage partitioning differs from
+  // the actual top frame).
   GetRestrictedCookieManager(
       pending_receiver<RestrictedCookieManager> restricted_cookie_manager,
       RestrictedCookieManagerRole role,
@@ -1115,6 +1150,7 @@ interface NetworkContext {
       IsolationInfo isolation_info,
       CookieSettingOverrides cookie_setting_overrides,
       CookieSettingOverrides devtools_cookie_setting_overrides,
+      bool prefer_bound_cookie_context,
       pending_remote<CookieAccessObserver>? cookie_observer);
 
   // Provides a TrustTokenQueryAnswerer scoped to the given top-frame origin
@@ -1326,6 +1362,33 @@ interface NetworkContext {
   ClearSharedDictionaryCacheForIsolationKey(
       SharedDictionaryIsolationKey isolation_key) => ();
 
+  // Clears dictionaries from the shared dictionary cache for sites configured
+  // with session-only cookie policy.
+  ClearSharedDictionarySessionOnlyData() => ();
+
+  // Registers a `SharedHttpCacheClientFactory` remote for `key` to enable the
+  // Renderer-Accessible HTTP Cache. Transient `NetworkIsolationKey`s are
+  // ignored.
+  //
+  // Once the isolated SQLite shared cache database files for `key` are ready,
+  // the network service calls `SharedHttpCacheClientFactory::CreateClient` on
+  // `shared_http_cache_client` to provide read-only database file handles and
+  // bind a `SharedHttpCacheClient` receiver for subsequent URL hash
+  // notifications (`OnResourcesAdded`).
+  //
+  // Each call registers an independent client instance and receives its own set
+  // of database file descriptors.
+  //
+  // The registration lifetime is bound to `shared_http_cache_client` until
+  // `CreateClient` is invoked, after which it transfers to the resulting
+  // `SharedHttpCacheClient` connection. If the network service restarts or the
+  // Mojo pipe disconnects, `SharedHttpCacheClient` treats subsequent lookups as
+  // cache misses and transparently falls back to normal `URLLoader` requests.
+  [EnableIf=enable_disk_cache_sql_backend]
+  RegisterHttpCacheClient(
+    NetworkIsolationKey key,
+    pending_remote<SharedHttpCacheClientFactory> shared_http_cache_client);
+
   // Configures per-resource reporting endpoints set with the
   // Reporting-Endpoints header.
   // |reporting_source| is a token which identifies the document or worker with
@@ -1352,6 +1415,12 @@ interface NetworkContext {
   // that source. This is called when the reporting source (document or worker)
   // is destroyed.
   SendReportsAndRemoveSource(
+      mojo_base.mojom.UnguessableToken reporting_source);
+
+  // Queues any outstanding reports for a single `reporting_source` (which
+  // must not be empty) to be sent immediately, without removing the reporting
+  // endpoint configuration for that source.
+  SendReportsForSource(
       mojo_base.mojom.UnguessableToken reporting_source);
 
   // Queues a report via the Reporting API. `type` describes the type of report
@@ -1579,6 +1648,11 @@ interface NetworkContext {
   // emulation for this web socket connection. Emulated network conditions
   // can be set by calling SetNetworkConditions with a matching throttling
   // profile id.
+  //
+  // |target_address_space| specifies the target IP address space expected by
+  // the client (for Local Network Access checks). When set to a value other
+  // than kUnknown, connections will be validated against this target address
+  // space.
   CreateWebSocket(
       url.mojom.Url url,
       array<string> requested_protocols,
@@ -1596,7 +1670,9 @@ interface NetworkContext {
       pending_remote<WebSocketAuthenticationHandler>? auth_handler,
       pending_remote<TrustedHeaderClient>? header_client,
       mojo_base.mojom.UnguessableToken? throttling_profile_id,
-      mojo_base.mojom.UnguessableToken network_restrictions_id);
+      mojo_base.mojom.UnguessableToken network_restrictions_id,
+      IPAddressSpace target_address_space,
+      int64? target_network);
 
   // Creates a WebTransport connection to |url|. |origin| is used for the
   // client indication - see
@@ -1617,6 +1693,7 @@ interface NetworkContext {
       WebTransportCongestionControl congestion_control,
       uint16? anticipated_concurrent_incoming_unidirectional_streams,
       uint16? anticipated_concurrent_incoming_bidirectional_streams,
+      WebTransportHttpRequestHeaders additional_headers,
       pending_remote<WebTransportHandshakeClient> handshake_client,
       pending_remote<URLLoaderNetworkServiceObserver>?
           url_loader_network_observer,
@@ -1856,8 +1933,11 @@ interface NetworkContext {
       mojo_base.mojom.Time start_time, mojo_base.mojom.Time end_time)
       => (array<url.mojom.Origin> origins);
 
-  // Sets maximum size of the shared dictionary cache.
-  SetSharedDictionaryCacheMaxSize(uint64 cache_max_size);
+  // Sets or updates the maximum size of the shared dictionary cache.
+  // - If null: disables byte limits (unlimited cache size).
+  // - If 0: enforces a 0-byte limit (evicts all cached dictionaries).
+  // - If >0: enforces an explicit byte limit.
+  SetSharedDictionaryCacheMaxSize(mojo_base.mojom.ByteSize? cache_max_size);
 
   // Preloads matching dictionaries for loading documents of the `urls`.
   PreloadSharedDictionaryInfoForDocument(
@@ -1918,12 +1998,6 @@ interface NetworkContext {
            MutableNetworkTrafficAnnotationTag traffic_annotation,
            mojo_base.mojom.UnguessableToken network_restrictions_id);
 
-  // Returns whether this NetworkContext was bound to a network.
-  // `bound_network` represents a net::handles::NetworkHandle,
-  // `bound_network` == -1 means that this NetworkContext is not bound to any
-  // network. Refer to NetworkContextParams::bound_network for more info.
-  GetBoundNetworkForTesting() => (int64 bound_network);
-
   // Gets the DeviceBoundSessionManager associated with this network context.
   //
   // This must only be passed to trusted processes.
@@ -1935,6 +2009,19 @@ interface NetworkContext {
   // origins.
   AddQuicHints(array<url.mojom.SchemeHostPort> origins,
                NetworkAnonymizationKey network_anonymization_key);
+
+  // Requests that the network service prioritizes QUIC connections to hostnames
+  // matching the given wildcard suffixes (e.g. ".google.com"). Unlike
+  // AddQuicHints which is scoped to a specific NetworkAnonymizationKey,
+  // wildcard hints apply globally across all network partitions within this
+  // NetworkContext (though brokenness is tracked per partition).
+  AddWildcardQuicHints(array<WildcardQuicHint> hints);
+
+  // Configures whether to try QUIC by default for all HTTPS origins when no
+  // specific alternative service or known QUIC hint is found. Applies globally
+  // across all network partitions within this NetworkContext (though brokenness
+  // is tracked per partition).
+  SetTryQuicByDefault(bool enable);
 
   // Updates the variations headers to be used for requests.
   SetVariationsHeaders(variations.mojom.VariationsHeaders? variations_headers);

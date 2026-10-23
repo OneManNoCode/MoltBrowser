@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc b/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
-index 63ed10c6ab37948478f02e5f18b4a6ea488d1101..90206a5fd35557bb8e71ebc6ed9a07075ee5816e 100644
+index 021a1184e85f1816096f49c3da24912ae372ab91..467071ef2b0f885d8694db84ee299e322a6023fb 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
 @@ -14,6 +14,7 @@
@@ -46,7 +46,7 @@ index 63ed10c6ab37948478f02e5f18b4a6ea488d1101..90206a5fd35557bb8e71ebc6ed9a0707
      }
    }
  }
-@@ -507,7 +514,8 @@ bool AudioWorkletProcessor::Process(
+@@ -510,7 +517,8 @@ bool AudioWorkletProcessor::Process(
    DCHECK_EQ(input_array_buffers_.size(), inputs.size());
  
    // Copies `inputs` to the internal `input_array_buffers_`.

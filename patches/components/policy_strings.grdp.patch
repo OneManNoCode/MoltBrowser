@@ -1,11 +1,11 @@
 MoltBrowser patch for components/policy_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/policy_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/policy_strings.grdp b/components/policy_strings.grdp
-index cf208533ec33cf1e6ca03bbfd66c3ae1c6c83abc..b2af9347f309f9cb4ff4c13b49934b576c1c20ea 100644
+index 38cbc81e18cb8185e0ecdb51d9696bae65293580..69d0517dfa44c3e5652307ad6ee440c1a2db00f4 100644
 --- a/components/policy_strings.grdp
 +++ b/components/policy_strings.grdp
 @@ -232,7 +232,7 @@
@@ -17,7 +17,7 @@ index cf208533ec33cf1e6ca03bbfd66c3ae1c6c83abc..b2af9347f309f9cb4ff4c13b49934b57
    </message>
    <message name="IDS_POLICY_DEFAULT_SEARCH_DISABLED" desc="The text displayed in the status column when a policy value has been ignored because default search has not been enabled.">
      Ignored because default search is not enabled by policy.
-@@ -297,7 +297,7 @@
+@@ -300,7 +300,7 @@
      </message>
    </if>
    <message name="IDS_POLICY_OFF_CWS_URL_ERROR" desc="The text displayed in the status column when the update URL points to a location other than the Chrome Webstore and the machine is not enterprise managed.">
@@ -26,7 +26,7 @@ index cf208533ec33cf1e6ca03bbfd66c3ae1c6c83abc..b2af9347f309f9cb4ff4c13b49934b57
    </message>
    <message name="IDS_POLICY_HOMEPAGE_LOCATION_ERROR" desc="The text displayed in the status column when the homepage URL given by the HomepageLocation policy is invalid.">
      Invalid URL. Must be a URL with a standard scheme, e.g http://example.com or https://example.com.
-@@ -802,10 +802,10 @@ Additional details:
+@@ -805,10 +805,10 @@ Additional details:
      This policy cannot be set to "True" and be mandatory, therefore it was changed to recommended.
    </message>
    <message name="IDS_POLICY_IGNORED_CHROME_PROFILE" desc="Text explaining that the policy cannot be set at the Chrome profile level and is therefore ignored.">
@@ -39,7 +39,7 @@ index cf208533ec33cf1e6ca03bbfd66c3ae1c6c83abc..b2af9347f309f9cb4ff4c13b49934b57
    </message>
    <message name="IDS_POLICY_IGNORED_EXTENSION" desc="Text explaining that extension policies are likely ignored by the extension.">
      Likely ignored by the extension.
-@@ -885,10 +885,10 @@ Additional details:
+@@ -888,10 +888,10 @@ Additional details:
      Streamline how your organization manages policies
    </message>
    <message name="IDS_POLICY_BANNER_PROMOTION_DESC" desc="Description for Chrome Enterprise Core (CEC) promotion banner">
@@ -50,5 +50,5 @@ index cf208533ec33cf1e6ca03bbfd66c3ae1c6c83abc..b2af9347f309f9cb4ff4c13b49934b57
 -    Try Chrome Enterprise Core
 +    Try MoltBrowser Enterprise Core
    </message>
-   <message name="IDS_DEVTOOLS_BLOCKED_BY_POLICY" desc="Message shown when DevTools is blocked by policy.">
-     Your organization has blocked the use of DevTools on this page
+   <message name="IDS_POLICY_COMMAND_LINE_FLAGS_WARNING" desc="Warning shown on chrome://policy when custom command line flags are explicitly specified by the user upon launching Chrome.">
+     This instance of Chrome is running with command line flags manually set. Note that command line flags may change at any time and are not supported.

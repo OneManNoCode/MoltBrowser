@@ -1,14 +1,14 @@
 MoltBrowser patch for net/dns/host_resolver_manager.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/net/dns/host_resolver_manager.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/dns/host_resolver_manager.cc b/net/dns/host_resolver_manager.cc
-index d03f5733a32a4e23e75452b2c31218471dd58aec..7c2d9ec1bec960c38cd15b3cef36063f882ee505 100644
+index ab286b869b864d0c8f4f7c6c98374f93d686a7f7..6564e19720a76ab69fe3479cbec31ee203be3a22 100644
 --- a/net/dns/host_resolver_manager.cc
 +++ b/net/dns/host_resolver_manager.cc
-@@ -326,6 +326,23 @@ void RecordDnsClientCapabilityMetrics(const DnsClient* dns_client) {
+@@ -327,6 +327,23 @@ void RecordDnsClientCapabilityMetrics(const DnsClient* dns_client) {
    base::UmaHistogramEnumeration("Net.DNS.DnsConfig.DnsClientCapability",
                                  capability);
  }
@@ -32,7 +32,7 @@ index d03f5733a32a4e23e75452b2c31218471dd58aec..7c2d9ec1bec960c38cd15b3cef36063f
  }  // namespace
  
  //-----------------------------------------------------------------------------
-@@ -891,6 +908,17 @@ HostCache::Entry HostResolverManager::ResolveLocally(
+@@ -893,6 +910,17 @@ HostCache::Entry HostResolverManager::ResolveLocally(
        return HostCache::Entry(ERR_NAME_NOT_RESOLVED,
                                HostCache::Entry::SOURCE_UNKNOWN);
      }

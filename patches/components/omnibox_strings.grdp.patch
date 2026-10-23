@@ -1,14 +1,14 @@
 MoltBrowser patch for components/omnibox_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/omnibox_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox_strings.grdp b/components/omnibox_strings.grdp
-index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0b1d6b1b8 100644
+index 9bdd905aa760acb49b4587b16421b7c852ad5912..20df3051a901216e515f72993be806b8ca3f9a7a 100644
 --- a/components/omnibox_strings.grdp
 +++ b/components/omnibox_strings.grdp
-@@ -41,7 +41,7 @@
+@@ -45,7 +45,7 @@
      Ask Google about this page
    </message>
    <message name="IDS_ACC_CONTEXTUAL_SEARCH_OPEN_LENS_ACTION_SUFFIX" desc="Suffix for spoken suggestion description with omnibox action button, to explain keystroke used to open lens.">
@@ -17,7 +17,7 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
    </message>
    <message name="IDS_ACC_CONTEXTUAL_SEARCH_OPEN_LENS_ACTION" desc="Announcement when lens action button is focused">
      Ask Google about this page button, activate to ask Google about this page
-@@ -167,7 +167,7 @@
+@@ -183,7 +183,7 @@
    </if>
    <if expr="is_android">
      <message name="IDS_OMNIBOX_ON_CCT_EMPTY_HINT" desc="Hint text shown in the Omnibox on a Custom Tab." formatter_data="android_java">
@@ -26,7 +26,7 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
      </message>
      <message name="IDS_OMNIBOX_EMPTY_ASK_HINT_SHORT_WITH_DSE_NAME" desc="Alternative text displayed in the omnibox when it is empty, prompting the user to ask. Includes Default Search Engine name." formatter_data="android_java">
        Ask <ph name="ENGINE_NAME">$1<ex>Google</ex></ph>
-@@ -348,13 +348,13 @@
+@@ -364,13 +364,13 @@
      Resume your journey
    </message>
    <message name="IDS_OMNIBOX_ACTION_HISTORY_CLUSTERS_SEARCH_SUGGESTION_CONTENTS" desc="The button tooltip for the History Clusters omnibox action. Clicking this button takes users to a view of their browsing history related to the attached suggestion.">
@@ -43,16 +43,16 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
    </message>
  
    <!-- Omnibox Actions in Suggest. -->
-@@ -420,7 +420,7 @@
+@@ -451,7 +451,7 @@
         These are parameterized on the text being completed into the omnibox.
    -->
    <message name="IDS_ACC_AUTOCOMPLETE_HISTORY" desc="Text for screenreaders describing a URL from history.">
 -    <ph name="LOCATION_TITLE">$2<ex>The Chromium Projects</ex></ph> <ph name="SHORT_URL">$1<ex>www.chromium.org</ex> location from history</ph>
 +    <ph name="LOCATION_TITLE">$2<ex>The MoltBrowser Projects</ex></ph> <ph name="SHORT_URL">$1<ex>www.chromium.org</ex> location from history</ph>
    </message>
-   <message name="IDS_ACC_AUTOCOMPLETE_SEARCH_HISTORY" desc="Text for screenreaders describing a search from history.">
-     <ph name="TEXT">$1<ex>dogs</ex></ph> search from history
-@@ -438,7 +438,7 @@
+   <message name="IDS_ACC_AUTOCOMPLETE_HISTORY_EMBEDDINGS" desc="Text for screenreaders describing a AI match URL from history.">
+     <ph name="LOCATION_TITLE">$2<ex>The Chromium Projects</ex></ph> <ph name="SHORT_URL">$1<ex>www.chromium.org</ex>, AI best match, location from history</ph>
+@@ -472,7 +472,7 @@
      <ph name="QUERY">$1<ex>weather in los angeles</ex></ph>, answer, <ph name="ANSWER">$2<ex>sunny and 84 degrees</ex></ph>
    </message>
    <message name="IDS_ACC_AUTOCOMPLETE_BOOKMARK" desc="Text for screenreaders describing a URL from a bookmark.">
@@ -61,7 +61,7 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
    </message>
    <message name="IDS_ACC_AUTOCOMPLETE_CLIPBOARD_IMAGE" desc="Text for screenreaders describing an image from a clipboard.">
      Search for clipboard image
-@@ -454,21 +454,21 @@
+@@ -488,21 +488,21 @@
    </message>
    <!-- Supplement accessibility label with item position, e.g. "1 of 3" -->
    <message name="IDS_ACC_AUTOCOMPLETE_N_OF_M" desc="Text for screenreaders describing the current match's position in the list of suggestions.">
@@ -87,7 +87,7 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
    </message>
    <message name="IDS_ACC_KEYWORD_MODE" desc="Announcement when entering keyword search mode.">
      Search <ph name="KEYWORD_SUFFIX">$1<ex>Youtube</ex></ph>
-@@ -489,40 +489,40 @@
+@@ -523,40 +523,40 @@
  
    <!-- Accessibility labels for the omnibox thumbs up feedback button. -->
    <message name="IDS_ACC_THUMBS_UP_SUGGESTION_FOCUSED_PREFIX" desc="Announcement when thumbs up feedback button is focused.">
@@ -137,7 +137,7 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
    </message>
  
    <!-- Site Search/Keyword mode Starter Pack strings. Note: kCurrentDataVersion in template_url_starter_pack_data.cc must also be updated when changing these values. -->
-@@ -538,7 +538,7 @@
+@@ -572,7 +572,7 @@
    <message name="IDS_SEARCH_ENGINES_STARTER_PACK_HISTORY_KEYWORD" desc = "The keyword required to trigger history search in keyword mode. This will be prepended with an '@'.">
      History
    </message>
@@ -146,7 +146,7 @@ index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0
      Tabs
    </message>
    <message name="IDS_SEARCH_ENGINES_STARTER_PACK_TABS_KEYWORD" desc = "The keyword required to trigger tab search in keyword mode. This will be prepended with an '@'.">
-@@ -609,11 +609,11 @@
+@@ -643,11 +643,11 @@
      Learn more
    </message>
    <message name="IDS_ACC_OMNIBOX_IPH_LINK_SELECTED" desc="Announcement when an IPH Chrome Tip link is selected.">

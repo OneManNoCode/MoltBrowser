@@ -1,22 +1,22 @@
 MoltBrowser patch for chrome/utility/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/utility/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index 500cbc7ed8e76b552a23147279fc233af9649197..fe00bdd819be880f30621c58f54fcc147df24c3a 100644
+index 95b88e50fca92ca847662d1861db7de835a1cd37..40fc1d23522e0810904999fd1fc0f8a4610e8912 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
-@@ -37,6 +37,7 @@ static_library("utility") {
-     "//chrome:strings",
-     "//chrome/common",
+@@ -41,6 +41,7 @@ static_library("utility") {
      "//chrome/common:mojo_bindings",
+     "//chrome/common/request_header_integrity:buildflags",
+     "//chrome/services/file_util:buildflags",
 +    "//chrome/services/molt_ai/document_parser:lib",  # MoltBrowser
      "//chrome/services/speech/buildflags",
      "//components/heap_profiling/in_process",
      "//components/metrics:child_call_stack_profile_builder",
-@@ -143,6 +144,7 @@ static_library("utility") {
+@@ -147,6 +148,7 @@ static_library("utility") {
      deps += [
        "//chrome/common:mojo_bindings",
        "//chrome/common/importer:interfaces",

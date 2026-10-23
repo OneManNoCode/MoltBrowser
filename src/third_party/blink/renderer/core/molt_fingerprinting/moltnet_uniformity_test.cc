@@ -266,7 +266,7 @@ TEST_F(MoltNetUniformityTest, UniformFormLocaleIsEnUs) {
 
 TEST_F(MoltNetUniformityTest, UniformFormLocaleFormatsDates) {
   std::unique_ptr<Locale> locale = CreateUniformFormLocale();
-  unsigned end = 0;
+  wtf_size_t end = 0;
   DateComponents date;
   ASSERT_TRUE(date.ParseDate("2024-03-05", 0, end));
   EXPECT_EQ(locale->FormatDateTime(date), "03/05/2024");

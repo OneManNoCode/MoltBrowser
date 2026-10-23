@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/platform/fonts/font_platform_data.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/platform/fonts/font_platform_data.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/platform/fonts/font_platform_data.h b/third_party/blink/renderer/platform/fonts/font_platform_data.h
-index 07e92cc924311d73bb9e98fbaa8df9dd38e92803..2b24fe0248c4eab0b8a47d80713e7514974ccdaf 100644
+index f8c658e113e635fdca7aaad4bd83808f77651b2b..2d925a15e6caf2b4e7a00e936c7348aaf53998eb 100644
 --- a/third_party/blink/renderer/platform/fonts/font_platform_data.h
 +++ b/third_party/blink/renderer/platform/fonts/font_platform_data.h
-@@ -57,6 +57,7 @@ typedef const struct __CTFont* CTFontRef;
+@@ -57,6 +57,7 @@ using CTFontRef = const struct __CTFont*;
  namespace blink {
  
  class HarfBuzzFace;

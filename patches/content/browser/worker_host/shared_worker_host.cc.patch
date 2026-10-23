@@ -1,14 +1,14 @@
 MoltBrowser patch for content/browser/worker_host/shared_worker_host.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/content/browser/worker_host/shared_worker_host.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/worker_host/shared_worker_host.cc b/content/browser/worker_host/shared_worker_host.cc
-index e10a670b170edcb2583bfcff2be7eae3754234c8..19da2d961b5194697af86b51fe9e06e86e0ef8a4 100644
+index 4d2e7f749e26092e325341cfaf5d1d1c5b2630dc..0d701b064afa6fba518667ff20dc6dffb034be45 100644
 --- a/content/browser/worker_host/shared_worker_host.cc
 +++ b/content/browser/worker_host/shared_worker_host.cc
-@@ -401,6 +401,11 @@ void SharedWorkerHost::Start(
+@@ -400,6 +400,11 @@ void SharedWorkerHost::Start(
        mojo::Clone(content_security_policies_),
        std::move(outside_fetch_client_settings_object),
        instance_.same_site_cookies(), instance_.extended_lifetime()));
@@ -19,4 +19,4 @@ index e10a670b170edcb2583bfcff2be7eae3754234c8..19da2d961b5194697af86b51fe9e06e8
 +          instance_.creator_storage_key());
  
    auto renderer_preferences = blink::RendererPreferences();
-   GetContentClient()->browser()->UpdateRendererPreferencesForWorker(
+   UpdateRendererPreferencesForWorkerHelper(

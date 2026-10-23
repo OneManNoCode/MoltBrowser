@@ -5,13 +5,18 @@
 //
 // MoltNet runs in a non-primary off-the-record profile ("MoltNet::Tor-<uuid>",
 // molt_net_profile_id.h). Many of Chromium's private-mode protections test
-// Profile::IsIncognitoProfile(), Profile::IsPrimaryOTRProfile() or compare
-// with OTRProfileID::PrimaryID(), so they skip MoltNet, which then behaves
-// less privately than an Incognito window. Each of the hooks below (marked
-// "MoltBrowser:") gives MoltNet the Incognito behaviour at one such check;
-// every other profile keeps Chromium's (molt_net_incognito_parity_policy.h).
-// docs/MOLTNET_COMPLIANCE.md §2 ("Nothing from the regular profile") lists
-// every call site that was checked, including the ones left alone.
+// Profile::IsIncognitoProfile(), Profile::IsPrimaryOTRProfile(),
+// Profile::IsPrimaryOTRProfileWithRegularParent() (Incognito and Enterprise
+// Isolated Mode) or compare with OTRProfileID::PrimaryID(), so they skip
+// MoltNet, which then behaves less privately than an Incognito window. Each
+// of the hooks below (marked "MoltBrowser:") gives MoltNet the Incognito
+// behaviour at one such check; every other profile keeps Chromium's
+// (molt_net_incognito_parity_policy.h). Where Chromium's check is
+// IsPrimaryOTRProfileWithRegularParent(), the hook keeps it and adds
+// IsMoltNetProfile().
+// docs/MOLTNET_COMPLIANCE.md §2 ("Nothing from the regular profile") says
+// which call sites were checked (Chromium 152, then again at 156), and
+// lists those left alone.
 //
 // Nothing written to disk or into the regular profile:
 //   * devtools/devtools_window.cc (GetProfileForDevToolsWindow): DevTools
@@ -30,6 +35,17 @@
 //     gcm/instance_id/instance_id_profile_service_factory.cc: no GCM (push
 //     channel) client for MoltNet, whose store would be the regular
 //     profile's "GCM Store" folder.
+//   * media/webrtc/webrtc_logging_controller.cc (IsWebRtcTextLogAllowed):
+//     no WebRTC text logs for MoltNet (the extension API and the web API
+//     an administrator can allow for some origins). They would be written
+//     to the regular profile's "WebRTC Logs" folder and uploaded outside
+//     Tor.
+// Nothing about the user's settings given to pages:
+//   * reduce_accept_language/reduce_accept_language_factory.cc: Reduce
+//     Accept-Language negotiates from the generic list Incognito uses
+//     (built from the first language alone), the one MoltNet's
+//     Accept-Language header already carries, not from every language in
+//     the profile's list.
 // Nothing about MoltNet pages given to the operating system:
 //   * media/chrome_media_session_client.cc: the operating system's media
 //     controls (lock screen, MPRIS on Linux, Now Playing on macOS, the

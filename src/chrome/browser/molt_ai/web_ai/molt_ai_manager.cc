@@ -262,8 +262,12 @@ Sampling SamplingFor(
         return SamplingForMode(SamplingMode::kMostPredictable);
       case blink::mojom::AILanguageModelSamplingMode::kPredictable:
         return SamplingForMode(SamplingMode::kPredictable);
+      case blink::mojom::AILanguageModelSamplingMode::kSlightlyPredictable:
+        return SamplingForMode(SamplingMode::kSlightlyPredictable);
       case blink::mojom::AILanguageModelSamplingMode::kBalanced:
         return SamplingForMode(SamplingMode::kBalanced);
+      case blink::mojom::AILanguageModelSamplingMode::kSlightlyCreative:
+        return SamplingForMode(SamplingMode::kSlightlyCreative);
       case blink::mojom::AILanguageModelSamplingMode::kCreative:
         return SamplingForMode(SamplingMode::kCreative);
       case blink::mojom::AILanguageModelSamplingMode::kMostCreative:
@@ -425,11 +429,11 @@ class MoltAIManager::CreateRequest {
   virtual void Fail(AIManagerCreateClientError error,
                     blink::mojom::QuotaErrorInfoPtr quota) = 0;
   // The API is unavailable to the page for |reason| (DecideAvailability()).
+  // The renderer asks for availability before create() and rejects an
+  // unsupported language itself (NotSupportedError, as availability()
+  // reported it), so a create() that still gets here fails like any other.
   virtual void Reject(UnavailableReason reason) {
-    Fail(reason == UnavailableReason::kUnsupportedLanguage
-             ? AIManagerCreateClientError::kUnsupportedLanguage
-             : AIManagerCreateClientError::kUnableToCreateSession,
-         nullptr);
+    Fail(AIManagerCreateClientError::kUnableToCreateSession, nullptr);
   }
   // The user allowed the site and the model is loaded: make the session.
   // |sees_images|: the loaded model takes images.
@@ -583,7 +587,9 @@ class MoltAIManager::WritingCreate : public CreateRequest {
     manager.AdoptSession(std::make_unique<Session>(
         manager, id, std::move(shared_context_), std::move(options_),
         remote.InitWithNewPipeAndPassReceiver()));
-    client_->OnResult(std::move(remote));
+    // The page's inputQuota: the same fixed number for every model and
+    // every page, never the loaded model's context window.
+    client_->OnResult(std::move(remote), kWritingAssistanceInputQuota);
   }
 
  private:
@@ -609,9 +615,7 @@ class MoltAIManager::TranslatorCreate : public CreateRequest {
 
   void Fail(AIManagerCreateClientError error,
             blink::mojom::QuotaErrorInfoPtr quota) override {
-    FailWith(error == AIManagerCreateClientError::kUnsupportedLanguage
-                 ? CreateTranslatorError::kNotSupportedLanguage
-                 : CreateTranslatorError::kFailedToCreateTranslator);
+    FailWith(CreateTranslatorError::kFailedToCreateTranslator);
   }
 
   void Reject(UnavailableReason reason) override {
