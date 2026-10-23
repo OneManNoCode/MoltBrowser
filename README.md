@@ -119,8 +119,14 @@ cd MoltBrowser
 ### macOS (Apple Silicon)
 ```bash
 # GPU acceleration uses Metal API automatically
-./scripts/build.sh --platform=mac --arch=arm64
+./scripts/configure.sh --platform macos --arch arm64
+./scripts/build.sh
 ```
+
+Release builds, and the checks every release goes through on the build
+machine (compile, unit tests, device checks, the MoltNet leak kit, offline
+signing), are one ordered runbook:
+[docs/BUILD_MACHINE_CHECKLIST.md](docs/BUILD_MACHINE_CHECKLIST.md).
 
 ## Project Structure
 
@@ -145,16 +151,17 @@ moltbrowser/
     third_party/llama_cpp/   # Vendored llama.cpp
   docs/                      # Documentation
   scripts/                   # Build and setup scripts
-  build-system/              # Build configurations
+  configs/                   # GN build arguments per platform
 ```
 
-## Built-in AI APIs (planned)
+## Built-in AI APIs (v0.3, in release testing)
 
-Pages and extensions can't call MoltBrowser's AI yet. The plan is the web
-standards Chrome is shipping (the Prompt, Summarizer, Writer, Rewriter and
-Translator APIs), backed by the on-device model you choose and running fully
-offline. See [ROADMAP.md](ROADMAP.md). An earlier `browser.ai.*` sketch was
-never wired up and has been removed.
+Web pages can use the web standards Chrome is shipping (the Prompt,
+Summarizer, Writer, Rewriter and Translator APIs), backed by the on-device
+model you choose and running fully offline, once you allow the site. They
+are off in MoltNet windows, workers and extensions. See
+[docs/design/WEB_AI_APIS.md](docs/design/WEB_AI_APIS.md). An earlier
+`browser.ai.*` sketch was never wired up and has been removed.
 
 ## Download
 

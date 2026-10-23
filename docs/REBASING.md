@@ -69,9 +69,9 @@ git ls-remote --tags https://github.com/chromium/chromium 'refs/tags/15*' \
 ```
 
 A release branch is the `MAJOR.0.BRANCH.*` series with many patch numbers;
-`MAJOR.0.NNNN.0`–`.4` tags are trunk/canary builds. Our current pin
-(`148.0.7729.0`, a trunk commit from 2026-03-10) is a canary-era build, not a
-release branch: it has none of M148's branch security merges.
+`MAJOR.0.NNNN.0`–`.4` tags are trunk/canary builds. The pin before the 152
+rebase (`148.0.7729.0`, a trunk commit from 2026-03-10) was a canary-era
+build, not a release branch: it had none of M148's branch security merges.
 
 State on 2026-10-14, from the tags and their commit dates on the mirror
 (chromiumdash was not reachable from the machine that ran this; confirm there
@@ -344,8 +344,11 @@ compiled yet.
 
 1. `./scripts/setup.sh --resync` to move `chromium/src` to 152.0.7977.169.
 2. Refresh the search engines overlay from the synced subproject (this
-   environment can't reach it):
-   `tools/chromium/search_engines_overlay.py chromium/src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json -o src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json`
+   environment can't reach it). Step 1 has already copied our version over
+   the synced file, so read upstream's from the subproject's own git:
+   `git -C chromium/src/third_party/search_engines_data/resources show HEAD:definitions/prepopulated_engines.json > /tmp/prepopulated_engines.upstream.json`,
+   then
+   `tools/chromium/search_engines_overlay.py /tmp/prepopulated_engines.upstream.json -o src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json`
    and commit the result.
 3. `scripts/vendor-rust-crates.sh` (adblock and its crates, windows-sys 0.61
    for Windows; gnrt is the authority on Cargo.lock / BUILD.gn details).
