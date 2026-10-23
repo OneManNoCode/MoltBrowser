@@ -22,6 +22,8 @@
 #include <errno.h>
 
 #include "content/common/gpu_pre_sandbox_hook_linux.h"
+// MoltBrowser: GPU inference (docs/design/SANDBOXED_INFERENCE.md 11.4).
+#include "content/utility/on_device_model/molt_gpu_inference_sandbox_linux.h"
 #include "gpu/config/gpu_info_collector.h"  // nogncheck
 #include "sandbox/policy/linux/sandbox_linux.h"
 #endif
@@ -172,8 +174,14 @@ bool PreSandboxHook(sandbox::policy::SandboxLinux::Options options) {
       sandbox::syscall_broker::BrokerFilePermission::ReadOnly(
           "/sys/devices/system/cpu/online"));
 
+  // MoltBrowser: Mesa's DRM render nodes for MoltBrowser's inference service
+  // when launched for the GPU (--molt-inference-gpu); nothing otherwise.
+  sandbox::syscall_broker::BrokerCommandSet command_set =
+      content::CommandSetForGPU(options);
+  MaybeAddMoltGpuInferencePermissions(&file_permissions, &command_set);
+
   sandbox::policy::SandboxLinux::GetInstance()->StartBrokerProcess(
-      content::CommandSetForGPU(options), file_permissions, options);
+      command_set, file_permissions, options);
 
   if (!content::LoadLibrariesForGpu(options)) {
     return false;

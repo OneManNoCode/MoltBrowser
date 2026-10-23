@@ -19,10 +19,18 @@ source_set("on_device_model_sandbox_init") {
     deps += [ "//services/on_device_model/ml" ]
   }
   if (is_linux || is_chromeos) {
+    # MoltBrowser: GPU inference (docs/design/SANDBOXED_INFERENCE.md 11.4).
+    sources += [
+      "molt_gpu_inference_sandbox_linux.cc",
+      "molt_gpu_inference_sandbox_linux.h",
+    ]
     deps += [
       "//content/common",
       "//gpu/config",
       "//sandbox/policy",
+
+      # MoltBrowser: the broker's permission and command types.
+      "//sandbox/linux:sandbox_services",
     ]
   }
   if (!is_fuchsia) {
