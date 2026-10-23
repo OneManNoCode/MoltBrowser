@@ -77,7 +77,9 @@ items are marked *deferred*.
   - use depot_tools' `python3`, not Homebrew's:
     `export PATH="$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH"`;
   - the Metal toolchain: `xcodebuild -downloadComponent MetalToolchain`;
-  - `cmake` (for `scripts/bundle-whisper.sh`), Docker Desktop (Linux build),
+  - `cmake` (for `scripts/bundle-whisper.sh`), Homebrew's `tesseract`
+    (`scripts/bundle-tesseract.sh` copies it and its dylibs into the app;
+    without it OCR is unavailable, from #17), Docker Desktop (Linux build),
     `gh` logged in with `repo` and `workflow` scopes.
 - [ ] The builder label is set in the build account's shell profile (§2.5):
   `echo "$MOLT_BUILDER_ID"` prints e.g. `geneye-mac-1` (from #43).
@@ -300,9 +302,10 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   app, adds `default.metallib`, signs inside-out, runs a headless renderer
   gate, installs to `/Applications`). *Expected:* `signature valid,
   allow-jit intact` and `gate passed`. It copies `tor`, `ocr`, `whisper`
-  and `molt_models` from the **installed** app over the out dir's; to test
-  freshly bundled helpers (§7.1), use the release build of §10 or empty
-  those folders in `/Applications/MoltBrowser.app` first.
+  and `molt_models` from the **installed** app over the out dir's. To test
+  freshly bundled helpers (§7.1, from #16 and #17), bundle them with
+  `./scripts/build.sh` (plain `autoninja` doesn't) and use the release build
+  of §10, or empty those folders in `/Applications/MoltBrowser.app` first.
 
 ### 3.2 Linux x64
 
@@ -329,8 +332,9 @@ Paused (CLAUDE.md). Windows-only items: `tor_control_connection.cc` on
 Windows (from #49), the LPAC process start from the NSIS install (from
 #15), the helper job object and deadline (from #16), PDFium under win32k
 lockdown (from #18), the Vulkan pre-lockdown step (from #52), Windows
-signing (§11). Dispatch the self-hosted workflow with
-`--ref vX.Y.Z -f tag=vX.Y.Z` once a runner exists again (from #43).
+signing (§11). Once a runner exists again: give it `MOLT_BUILDER_ID` in its
+`.env`, wipe its workspace once (the workflow's steps were reordered), and
+dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
 
 ## 4. Compile-risk hot spots
 
@@ -520,7 +524,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltLetterboxTest` | #27, #33 |
   | `EmbeddingProcessHostTest`, `MemoryBackendTest`, `MoltMemoryProviderTest`, `MoltMemoryControllerGateTest`, `MoltLocalInputTest` | #28, #44, #47 |
   | `JsonSchemaGrammarTest`, `BoundedJsonTest`, `GrammarTokensTest` | #30 |
-  | `AgentActionsTest`, `AutomationAiStepsTest`, `ChatActionsTest` | #35, #36 |
+  | `AgentActionsTest`, `AutomationAiStepsTest`, `ChatActionsTest` (with the real Rust JSON reader: a FILL_FORM reply 3 levels deep under depth limit 4 must parse) | #35, #36 |
   | `ImageInputTest`, `ModelImagePrepTest` (real Skia, data decoder), `ModelImageTest` | #38 |
   | `AgentVision*Test` | #39, #46, #50 |
   | `ModelDownloadPlanTest`, `DownloadPolicyTest`, `ChatFormFillTest`, `ChatWindowTest` | #40 |
@@ -645,21 +649,25 @@ item says otherwise.
   `molt://ai` and chat.
   *Expected:* Metal initialises with `default.metallib` from the framework's
   `Resources/`; no sandbox denial except `machdep.cpu.brand_string`; it
-  works in the notarized build too.
+  works in the notarized build too. Note first-token latency and tokens/s
+  against v0.2.5's in-process engine. Once the vision model is pinned:
+  image input on Metal, with mtmd warming up inside the sandbox, and its
+  real RAM use (from #38).
 - [ ] Inference process recovery (from #15, #53): `kill -9` the
   inference utility mid-answer. *Expected:* the chat says the answer
   stopped and the next message reloads the model; three crashes within ten
   minutes refuse the model for a while. After 10 minutes idle the process
   exits; under `sudo memory_pressure -S -l critical` the model unloads
-  (verify the command); deleting a loaded model works; Activity Monitor
-  shows the process with its label.
+  (verify the command); deleting a loaded model works; the browser's Task
+  Manager shows the process with its label.
+- [ ] The tesseract bundle (from #17):
+  `./scripts/bundle-tesseract.sh --app chromium/src/out/MoltBrowser/MoltBrowser.app`.
+  *Expected:* it ends with its load check (only `Resources/ocr/lib/` and
+  the OS's libraries) and a `tesseract --version` run from the bundle.
 - [ ] OCR in its sandbox (from #16, #17, #18): `/pdf` on a scanned PDF with
   no text layer, and an image attached in the AI chat.
   *Expected:* text with `--- Page N ---` headers (at most 20 pages, a note
-  when pages were left out); no tesseract denial in the sandbox log; the
-  bundled tesseract loads only its own `lib/` and the OS's
-  (`scripts/bundle-tesseract.sh` ends with that check and a
-  `tesseract --version` from the bundle).
+  when pages were left out); no tesseract denial in the sandbox log.
 - [ ] Voice in its sandbox (from #16, #17): the mic button transcribes;
   `whisper-cli` loads only OS code; an over-long recording hits the
   deadline cleanly.
@@ -683,9 +691,9 @@ item says otherwise.
   (`release.sh` signs these with `|| true`, so a failure there is silent),
   `default.metallib` present, `accepted` / `source=Notarized Developer ID`,
   `The validate action worked!`.
-- [ ] Upgrade over a v0.2.5 profile (from #11): existing `keys.enc`,
-  `vault.enc`, `profile.enc` and chat history still open after the move to
-  `os_crypt_async`.
+- [ ] Upgrade over a v0.2.5 profile, here and on Linux (from #11): existing
+  `keys.enc`, `vault.enc`, `profile.enc` and chat history still open after
+  the move to `os_crypt_async`.
 - [ ] Close the last MoltNet window: the profile is destroyed, no crash
   (from #11).
 - [ ] Toolbar look in horizontal and vertical tabs (from #11).
@@ -744,7 +752,11 @@ WEB_AI_APIS.md §12):
   restart; `molt://ai-settings` → "Sites using on-device AI" lists them and
   *Remove* ends a live session; Clear browsing data ("Site settings", "last
   hour"; history) and a profile reset clear them; *Save Settings* keeps
-  `"web_ai_apis"` (from #32).
+  `"web_ai_apis"`; the settings page works in a regular, Incognito, Guest
+  and MoltNet window (from #32).
+- [ ] Turning the APIs off (the switch, a policy, the site's answer) ends
+  that site's live sessions and later calls fail with a generic error
+  (from #50).
 - [ ] `LanguageDetector` is unavailable in every window, and Translate still
   detects page languages (from #32).
 - [ ] Translator: as a page's first AI call; in an iframe with and without
@@ -754,7 +766,8 @@ WEB_AI_APIS.md §12):
   with no TranslateKit or component-update request (from #34).
 - [ ] `prompt()` with a `responseConstraint` on each catalog model: the
   answer parses and matches; `format` or `pattern` rejects with
-  `NotSupportedError` (from #30).
+  `NotSupportedError`; the gpt-oss and Gemma 4 prefills work; note the
+  speed on 262k-token vocabularies (from #30).
 - [ ] The chat and a page generating at the same time; abort during a
   generation (from #26).
 - [ ] Once the vision model is pinned: `prompt()` with an image element, a
@@ -782,8 +795,10 @@ WEB_AI_APIS.md §12):
     asks; `toolautosubmit` submits, and without it the form stays filled and
     the step fails after 20 s.
 - [ ] Screenshots, once the vision model is pinned: password and card fields
-  masked; a page with a cross-origin iframe stays text-only; high-DPI, page
-  and pinch zoom (from #39, #46, #50).
+  and `:autofill` previews masked; same-origin frames masked; a page with a
+  frame of another origin (check a PDF `<embed>` too) stays text-only;
+  high-DPI, page and pinch zoom; swapping the model mid-run falls back to
+  text (from #39, #46, #50).
 
 **The AI chat** (from #36, #40):
 
@@ -807,21 +822,38 @@ WEB_AI_APIS.md §12):
   *Search by meaning* works; note RAM, speed, and the re-index time of a
   large index on low-end hardware (from #28).
 
-**MoltNet fingerprinting** (from #19, #20, #24, #27, #33, #37). The leak kit
+**Earlier fixes that need a real browser** (from #7):
+
+- [ ] MoltShield strips tracking parameters on every leg of a real redirect
+  chain; a Gemma 4 model's thinking never shows in the chat (from #7).
+
+**MoltNet fingerprinting** (from #10, #19, #20, #24, #27, #33, #37). The leak kit
 checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
 (docs/FINGERPRINTING.md, each section's "Needs the build machine"):
 
 - [ ] Every zoom level: `innerWidth`, `screen.width` and
-  `matchMedia('(width: ...)')` stay on the 200×100 steps; background tabs
+  `matchMedia('(width: ...)')` stay on the 200×100 steps; background tabs,
+  cross-site navigation between differently zoomed sites, the PDF viewer,
   and moving between monitors of different scale factors (from #27).
 - [ ] Classic scrollbars (scrollbars always shown) measure 16 CSS px; thin
   12; at 25 % and 500 % zoom; `textarea`, `scrollbar-gutter`,
-  `overflow: scroll` with `vw` (from #33).
+  `overflow: scroll` with `vw`; regular windows unchanged (from #33).
 - [ ] `measureText` and emoji widths match between two Linux machines (1×
-  full hinting and 2×) (from #37, #50).
+  full hinting and 2×), and between two Macs on the same macOS release
+  (13, 14 or 15); canvas apps (charts,
+  editors) and an ExtendedTextMetrics page still work; with the desktop's
+  anti-aliasing off, MoltNet text is still anti-aliased (from #37, #50).
 - [ ] Font-probing pages, webglreport-style pages and a WebGPU sample, Shields
-  on and off (from #19); Japanese, German and Russian UIs give en-US
-  validation messages and date inputs (from #24).
+  on and off; the macOS font allow-list against a fresh macOS install
+  (from #19).
+- [ ] A Shields-off site: the decision is in place before page script runs
+  (canvas, `hardwareConcurrency`, an about:blank and a cross-site iframe, a
+  dedicated worker) (from #10, #24).
+- [ ] Japanese, German and Russian UIs give en-US validation messages and
+  date inputs; a touchscreen laptop and a multi-monitor setup show the
+  uniform values (from #20, #24).
+- [ ] Farbled video exports (`captureStream`) in MoltNet: measure the
+  readback cost at 720p30 and 1080p30/60 on real hardware (from #10, #20).
 
 ### 7.4 MoltNet
 
@@ -838,6 +870,8 @@ macOS, and for the manual steps everywhere:
   the kit's `identity.session_circuits` passes.
 - [ ] External applications always ask first; MoltNet zoom starts at 100 %
   (from #49).
+- [ ] Regular windows: the onion request blocker (one extra in-process hop
+  per request) costs no measurable page-load time (from #6).
 - [ ] Captive portals and authentication (from #51; §4 step 20): no
   `generate_204` request and no sign-in tab after a certificate error; a
   `401` offering only `Negotiate` and `NTLM` shows its page, one also
@@ -1030,8 +1064,10 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
     dist/SHA256SUMS-macos-arm64 dist/molt-provenance-macos-arm64.json --clobber
   ```
   *Expected:* the SBOM step accepts the build in release mode (it runs
-  `licenses.py` on the 152 checkout for the first time, from #25), and the
-  draft holds those four files.
+  `licenses.py` on the 152 checkout for the first time, from #25); the
+  provenance statement has the toolchain versions (clang, rustc, Xcode and
+  the macOS SDK) and the depot_tools commit, which no real host has
+  produced yet (from #43); and the draft holds those four files.
 
 ### 10.3 Linux
 
