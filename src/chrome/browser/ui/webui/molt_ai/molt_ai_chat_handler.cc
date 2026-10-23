@@ -411,6 +411,16 @@ void MoltAIChatHandler::RegisterMessages() {
       "webAgentConfirm",
       base::BindRepeating(&MoltAIChatHandler::HandleWebAgentConfirm,
                           base::Unretained(this)));
+  // A successful run saved as a draft workflow
+  // (molt_ai_chat_handler_agent_run.cc).
+  web_ui()->RegisterMessageCallback(
+      "saveAgentRun",
+      base::BindRepeating(&MoltAIChatHandler::HandleSaveAgentRun,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "openAgentStudio",
+      base::BindRepeating(&MoltAIChatHandler::HandleOpenAgentStudio,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -5882,14 +5892,18 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
 
   molt_ai::BrowserAIRuntime* runtime = GetOrCreateRuntime();
   web_agent_ = std::make_unique<molt_ai::WebAgent>(target_wc, runtime);
+  // Recorded for "Save as automation" (molt_ai_chat_handler_agent_run.cc).
+  const int run_id = BeginAgentRunRecord(goal, target_wc);
 
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
 
   // Step callback: stream each completed step to the UI in real time.
   auto on_step = base::BindRepeating(
-      [](base::WeakPtr<MoltAIChatHandler> self,
+      [](base::WeakPtr<MoltAIChatHandler> self, int run_id,
          const molt_ai::WebAgent::Step& step) {
-        if (!self || !self->IsJavascriptAllowed()) return;
+        if (!self) return;
+        self->RecordAgentRunStep(run_id, step);
+        if (!self->IsJavascriptAllowed()) return;
         base::DictValue d;
         d.Set("number",      step.number);
         d.Set("action",      step.action);
@@ -5904,7 +5918,7 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
         d.Set("plan_step",   step.plan_step);
         self->FireWebUIListener("agent-step", base::Value(std::move(d)));
       },
-      weak_this);
+      weak_this, run_id);
 
   // Confirm callback: the run stays paused until the user answers the
   // Allow / Deny chip (HandleWebAgentConfirm). If the panel goes away the
@@ -5962,16 +5976,18 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
   // Done callback: resolve the JS promise with the final result.
   auto on_done = base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-         bool success, std::string result) {
+         int run_id, bool success, std::string result) {
         if (!self || !self->IsJavascriptAllowed()) return;
         self->web_agent_.reset();
         base::DictValue d;
         d.Set("success", success);
         d.Set("result",  result);
+        // save_run / save_note: whether the run can be saved as a draft.
+        self->FinishAgentRunRecord(run_id, success, &d);
         self->ResolveJavascriptCallback(base::Value(cb_id),
                                         base::Value(std::move(d)));
       },
-      weak_this, callback_id);
+      weak_this, callback_id, run_id);
 
   web_agent_->Start(goal, std::move(on_step), std::move(on_done),
                     std::move(on_confirm), std::move(on_plan));
@@ -5990,6 +6006,8 @@ void MoltAIChatHandler::HandleCancelWebAgent(const base::ListValue& args) {
     web_agent_.reset();
     LOG(INFO) << "[MoltAI] Web agent cancelled by user";
   }
+  // A cancelled run is never saved.
+  ForgetAgentRun();
 }
 
 // ------------------------------------------------------------------

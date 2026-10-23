@@ -28,7 +28,9 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -44,6 +46,10 @@ using molt_ai::automation::Step;
 using molt_ai::automation::StepType;
 using molt_ai::automation::TrustLevel;
 using molt_ai::automation::TrustLevelToString;
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
+
+// The most audit-log lines a page may ask for at once.
+constexpr int kMaxAuditLines = 2000;
 
 // ---- Message Handler ----
 class MoltAIAutomationHandler : public content::WebUIMessageHandler {
@@ -137,7 +143,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   void HandleListScripts(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
 
     base::ListValue list;
@@ -152,7 +160,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   void HandleGetScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
@@ -171,7 +181,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   void HandleSaveScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
 
     base::DictValue result;
@@ -199,7 +211,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   void HandleDeleteScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
@@ -214,7 +228,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   // {variable:value} dict that overrides default_variables for this run.
   void HandleRunScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
@@ -239,8 +255,10 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
     // Day 6: optional 4th arg is a 0-based step index to resume from.
     size_t start_index = 0;
-    if (args.size() > 3 && args[3].is_int())
-      start_index = static_cast<size_t>(std::max(0, args[3].GetInt()));
+    if (args.size() > 3 && args[3].is_int()) {
+      start_index = std::min(static_cast<size_t>(std::max(0, args[3].GetInt())),
+                             script->steps.size());
+    }
 
     storage_.AppendAudit(id, "manual_run_requested",
                           start_index > 0
@@ -264,11 +282,13 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   void HandleAuditTail(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     int max_lines = 200;
     if (args.size() > 1 && args[1].is_int())
-      max_lines = args[1].GetInt();
+      max_lines = std::clamp(args[1].GetInt(), 1, kMaxAuditLines);
 
     base::ListValue lines;
     for (const auto& l : storage_.ReadAuditTail(max_lines))
@@ -284,7 +304,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   // populated and try Run on a freshly installed browser.
   void HandleCreateSampleScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
 
     Script s;
@@ -331,7 +353,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   // Day 4: create a brand-new empty script the user can edit step-by-step.
   void HandleCreateBlankScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
 
     Script s;
@@ -355,7 +379,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   // user doesn't accidentally overwrite a script with the same name.
   void HandleImportScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     base::DictValue result;
 
@@ -398,13 +424,15 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   // without reimplementing the parser in JS.
   void HandleGetAuditForScript(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
     int max_lines = 500;
     if (args.size() > 2 && args[2].is_int())
-      max_lines = args[2].GetInt();
+      max_lines = std::clamp(args[2].GetInt(), 1, kMaxAuditLines);
 
     base::ListValue out;
     for (const auto& line : storage_.ReadAuditTail(max_lines)) {
@@ -429,14 +457,17 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   // Day 5: explicit trust-level change. The UI sends the new level as a
   // string ("casual"/"approved"/"trusted"/"admin"). We accept any value
-  // here since the user is the source of truth on their own machine; the
-  // security policy just gates what the runner is willing to do. This is
+  // here since the user is the source of truth on their own machine (only
+  // with a fresh click, never for an unconfirmed draft); the security
+  // policy just gates what the runner is willing to do. This is
   // the ONLY path that changes a stored script's trust: it is sent from the
   // trust panel's Save / "Yes, promote" buttons, while saveScript and
   // importScript clamp trust (AutomationSecurity::ClampTrustForSave).
   void HandlePromoteTrust(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 3u);
+    if (!HasCallbackArgs(args, 3u, __func__)) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     const std::string id =
         args[1].is_string() ? args[1].GetString() : "";
@@ -444,9 +475,30 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
         args[2].is_string() ? args[2].GetString() : "casual";
 
     base::DictValue result;
-    if (!storage_.Load(id)) {
+    // Trust changes need a real click on the trust panel (the WebUI message
+    // pipe is frame-associated, so the click's activation reaches the
+    // browser first), as in the agent studio.
+    content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
+    if (!rfh || !rfh->HasTransientUserActivation()) {
+      result.Set("success", false);
+      result.Set("error", "Click the button to change trust");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    std::optional<Script> existing = storage_.Load(id);
+    if (!existing) {
       result.Set("success", false);
       result.Set("error", "script not found");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    // A draft from a web agent run is trusted only after its sites are
+    // confirmed in the agent studio.
+    if (existing->security.sites_unconfirmed) {
+      result.Set("success", false);
+      result.Set("error", "Confirm this draft's sites in Agent mode first.");
       ResolveJavascriptCallback(base::Value(callback_id),
                                 base::Value(std::move(result)));
       return;
@@ -1253,7 +1305,7 @@ function onImport(ev) {
 function promoteTrust(id, level) {
   sendWithPromise('promoteTrust', id, level).then(function(r){
     if (r.success) { showToast('Trust set to ' + r.trust); refresh(); }
-    else           { showToast('Trust update failed', true); }
+    else           { showToast(String(r.error || 'Trust update failed'), true); }
   });
 }
 

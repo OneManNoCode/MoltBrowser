@@ -433,6 +433,16 @@ void AutomationRunner::Run(Script script,
   on_step_ = std::move(on_step);
   on_complete_ = std::move(on_complete);
 
+  // A draft made from a web agent run runs only once the user has reviewed
+  // it and confirmed its sites in the Agent studio
+  // (AutomationSecurity::ConfirmDraftSites): its steps are the model's.
+  if (script_.security.sites_unconfirmed) {
+    if (storage_)
+      storage_->AppendAudit(script_.id, "run_refused", "draft_unconfirmed");
+    Finish(false, kDraftNeedsReviewMessage);
+    return;
+  }
+
   if (storage_) {
     std::string extra =
         (current_index_ > 0)
@@ -940,7 +950,17 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   if (script_.stats.run_history.size() > kRunHistoryCap)
     script_.stats.run_history.resize(kRunHistoryCap);
   if (storage_) {
-    storage_->Save(script_);
+    // Only the run's stats go back to disk, onto the workflow as stored
+    // now. script_ also holds this run's variable values, which the user
+    // may have typed at the start of the run because they are private (a
+    // draft's withheld values, agent_run_draft.h): they must never be
+    // saved as the workflow's defaults. (And RUN_SCRIPT inlined another
+    // workflow's steps into script_.steps.) A workflow deleted meanwhile
+    // stays deleted.
+    if (std::optional<Script> stored = storage_->Load(script_.id)) {
+      stored->stats = script_.stats;
+      storage_->Save(*stored);
+    }
     storage_->AppendAudit(script_.id, success ? "run_succeeded" : "run_failed",
                           message);
   }
@@ -1514,9 +1534,13 @@ void AutomationRunner::OnVaultPassword(const std::string& sel,
 
 void AutomationRunner::DoScroll(const Step& s) {
   std::string js;
-  if (s.value.empty()) {
-    // Free-form "scroll down" (e.g. LLM step): one screenful, viewport-based.
+  if (s.value.empty() || s.value == "down") {
+    // Free-form "scroll down" (e.g. LLM step, or a web agent run saved as a
+    // draft): one screenful, viewport-based.
     js = "(() => { window.scrollBy(0, Math.round(window.innerHeight * 0.85));"
+         " return true; })()";
+  } else if (s.value == "up") {
+    js = "(() => { window.scrollBy(0, -Math.round(window.innerHeight * 0.85));"
          " return true; })()";
   } else {
     // Recorded position: a fraction in [0,1] (resolution-independent) or a

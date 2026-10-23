@@ -138,6 +138,11 @@ base::DictValue WorkflowSummary(const Script& s) {
   d.Set("stepCount", static_cast<int>(s.steps.size()));
   d.Set("enabled", s.enabled);
   d.Set("trust", TrustLevelToString(s.security.trust));
+  // A draft from a web agent run whose sites the user hasn't confirmed:
+  // the card offers "Review" instead of Run, trust and schedule.
+  if (s.security.sites_unconfirmed) {
+    d.Set("draft", true);
+  }
   // The site this workflow targets (first NAVIGATE step) → favicon + hostname
   // on the card so it's obvious at a glance which website it's for.
   for (const auto& st : s.steps) {
@@ -177,6 +182,16 @@ std::string NewWorkflowId() {
          base::NumberToString(static_cast<int64_t>(std::time(nullptr)));
 }
 
+// The sites an unconfirmed draft (agent_run_draft.h) asks the user to
+// confirm: the hosts its steps target, as the browser computes them.
+base::ListValue DraftSites(const Script& s) {
+  base::ListValue sites;
+  for (std::string& host : AutomationSecurity::HostsReferencedBy(s.steps)) {
+    sites.Append(std::move(host));
+  }
+  return sites;
+}
+
 // ---------------------------------------------------------------------------
 // AgentStudioHandler — the JS <-> C++ bridge for the studio.
 // ---------------------------------------------------------------------------
@@ -204,6 +219,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     bind("saveSchedule", &AgentStudioHandler::HandleSaveSchedule);
     bind("cancelRun", &AgentStudioHandler::HandleCancelRun);
     bind("promoteTrust", &AgentStudioHandler::HandlePromoteTrust);
+    bind("confirmDraftSites", &AgentStudioHandler::HandleConfirmDraftSites);
   }
 
  private:
@@ -282,6 +298,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           if (const base::DictValue* dv = out.FindDict("default_variables")) {
             out.Set("variables", dv->Clone());
           }
+          if (s->security.sites_unconfirmed) {
+            out.Set("draftSites", DraftSites(*s));
+          }
         }
       }
     }
@@ -345,6 +364,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
             }
             out.Set("id", s->id);
             out.Set("trust", TrustLevelToString(s->security.trust));
+            // Still a draft (saving never confirms one): the sites its
+            // steps now target, for the review panel.
+            if (s->security.sites_unconfirmed) {
+              out.Set("draftSites", DraftSites(*s));
+            }
           }
         }
       }
@@ -393,7 +417,15 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     if (args.size() >= 2 && args[1].is_string()) {
       const std::string id = args[1].GetString();
       if (auto* st = storage()) {
-        if (auto s = st->Load(id)) {
+        std::optional<Script> loaded = st->Load(id);
+        // An unconfirmed draft doesn't run (the runner refuses it too).
+        if (loaded && loaded->security.sites_unconfirmed) {
+          out.Set("ok", false);
+          out.Set("error", molt_ai::automation::kDraftNeedsReviewMessage);
+          ResolveDict(args, std::move(out));
+          return;
+        }
+        if (auto s = std::move(loaded)) {
           std::map<std::string, std::string> overrides;
           if (args.size() >= 3 && args[2].is_dict()) {
             for (const auto kv : args[2].GetDict()) {
@@ -565,7 +597,14 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     out.Set("ok", false);
     if (args.size() >= 3 && args[1].is_string() && args[2].is_dict()) {
       if (auto* st = storage()) {
-        if (auto s = st->Load(args[1].GetString())) {
+        std::optional<Script> loaded = st->Load(args[1].GetString());
+        // An unconfirmed draft is never scheduled.
+        if (loaded && loaded->security.sites_unconfirmed) {
+          out.Set("error", molt_ai::automation::kDraftNeedsReviewMessage);
+          ResolveDict(args, std::move(out));
+          return;
+        }
+        if (auto s = std::move(loaded)) {
           const base::DictValue& t = args[2].GetDict();
           const std::string* type = t.FindString("type");
           const std::string* expr = t.FindString("expression");
@@ -645,6 +684,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       std::optional<Script> s = st->Load(id);
       if (!s) {
         out.Set("error", "Workflow not found");
+      } else if (s->security.sites_unconfirmed) {
+        // A draft from a web agent run is trusted only after its sites are
+        // confirmed (HandleConfirmDraftSites).
+        out.Set("error", "Confirm this draft's sites first.");
       } else if ((level_str != "approved" && level_str != "casual") ||
                  s->security.trust > TrustLevel::APPROVED) {
         out.Set("error", "Manage this workflow's trust in molt://ai-automation");
@@ -652,6 +695,55 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         out.Set("ok", true);
         out.Set("trust", level_str);
       }
+    }
+    ResolveDict(args, std::move(out));
+  }
+
+  // The draft review's "Confirm sites": [callback_id, id, [site, ...]], the
+  // sites the panel showed (from getWorkflow / saveWorkflow's draftSites).
+  // Like promoteTrust, honoured only with a fresh user activation (a real
+  // click), and only when the sites are exactly the ones the draft's steps
+  // target now (AutomationSecurity::ConfirmDraftSites). The draft then
+  // becomes an ordinary CASUAL workflow on those sites; trusting it is a
+  // separate click.
+  void HandleConfirmDraftSites(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    out.Set("ok", false);
+    content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
+    if (!rfh || !rfh->HasTransientUserActivation()) {
+      out.Set("error", "Click the button to confirm the sites");
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    AutomationStorage* st = storage();
+    if (!st || args.size() < 3 || !args[1].is_string() || !args[2].is_list()) {
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    std::vector<std::string> shown;
+    for (const base::Value& v : args[2].GetList()) {
+      if (!v.is_string() || shown.size() >= 64) {
+        ResolveDict(args, std::move(out));
+        return;
+      }
+      shown.push_back(v.GetString());
+    }
+    const std::string& id = args[1].GetString();
+    std::optional<Script> s = st->Load(id);
+    if (!s) {
+      out.Set("error", "Workflow not found");
+    } else if (!AutomationSecurity::ConfirmDraftSites(*s, shown)) {
+      out.Set("error",
+              "The draft's steps changed. Save them, then confirm again.");
+    } else if (st->Save(*s)) {
+      std::string sites;
+      for (const std::string& host : s->security.domain_whitelist) {
+        sites += (sites.empty() ? "" : " ") + host;
+      }
+      st->AppendAudit(id, "draft_sites_confirmed", sites);
+      out.Set("ok", true);
+      out.Set("trust", TrustLevelToString(s->security.trust));
     }
     ResolveDict(args, std::move(out));
   }
@@ -781,6 +873,16 @@ function clear(el){while(el.firstChild)el.removeChild(el.firstChild);}
    'promoteTrust', which the browser only honours on a real click, so call
    setTrust() straight from click handlers. */
 var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your saved password — only on the sites its steps use. Imported workflows always start untrusted.';
+/* ---- drafts saved from an AI agent run ("Save as automation" in the chat)
+   The model chose these steps, so the draft can't run until the user has
+   reviewed it and confirmed the sites it may use ('confirmDraftSites',
+   honoured only on a real click, for exactly the sites shown). It is then
+   an ordinary untrusted workflow. */
+var DRAFT_EXPLAIN='Made by the AI agent from one of your runs. Check its steps and confirm its sites before it can run.';
+var REVIEW_NOTES={
+  value_withheld:'The agent typed something here that looked private (a password, code, key or card number). It wasn’t saved: you’re asked for it at each run.',
+  secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.'
+};
 function isTrusted(level){return !!level&&level!=='casual';}
 function siteOfSteps(steps){
   for(var i=0;i<(steps||[]).length;i++){
@@ -983,7 +1085,9 @@ function buildCard(wf){
   var sub=h('div',{'class':'csub'});
   sub.appendChild(h('span',{},(wf.stepCount||0)+' step'+((wf.stepCount===1)?'':'s')));
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
-  sub.appendChild(isTrusted(wf.trust)
+  sub.appendChild(wf.draft
+    ? h('span',{'class':'tbadge draft',title:DRAFT_EXPLAIN},'draft · review it')
+    : isTrusted(wf.trust)
     ? h('span',{'class':'tbadge on',title:TRUST_EXPLAIN},'✓ trusted')
     : h('span',{'class':'tbadge',title:'Can’t submit forms until you trust it'},'not trusted'));
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
@@ -1015,9 +1119,15 @@ function buildCard(wf){
   card.appendChild(runReg);
 
   var actions=h('div',{'class':'card-actions'});
-  actions.appendChild(h('button',{'class':'mini run grow',onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
-  actions.appendChild(h('button',{'class':'mini',onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
-  actions.appendChild(h('button',{'class':'mini',onClick:function(){openScheduleSheet(wf.id,wf.name);}},['⏰',' Schedule']));
+  if(wf.draft){
+    // A draft from an AI agent run: reviewed (and its sites confirmed)
+    // before it can run or be scheduled.
+    actions.appendChild(h('button',{'class':'mini run grow',onClick:function(){openEditor(wf.id);}},['\u{1F50D}',' Review']));
+  }else{
+    actions.appendChild(h('button',{'class':'mini run grow',onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
+    actions.appendChild(h('button',{'class':'mini',onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
+    actions.appendChild(h('button',{'class':'mini',onClick:function(){openScheduleSheet(wf.id,wf.name);}},['⏰',' Schedule']));
+  }
   actions.appendChild(h('button',{'class':'mini kebab',title:'More',onClick:function(e){e.stopPropagation();toggleCardMenu(card,wf);}},'⋯'));
   card.appendChild(actions);
 
@@ -1028,7 +1138,9 @@ function toggleCardMenu(card,wf){
   if(openCardMenu&&openCardMenu.card===card){closeCardMenu();return;}
   closeCardMenu();
   var trustItem=null;
-  if(!isTrusted(wf.trust)){
+  if(wf.draft){
+    // Trusted only once its sites are confirmed, in the editor.
+  }else if(!isTrusted(wf.trust)){
     trustItem=h('div',{'class':'menu-item',title:TRUST_EXPLAIN,onClick:function(){
       closeCardMenu();setTrust(wf.id,'approved').then(function(ok){if(ok)loadLibrary();});
     }},['\u{1F6E1}️',' '+trustLabel(wf.host)]);
@@ -1231,9 +1343,16 @@ function openEditor(id){
       steps:wf.steps||[],variables:wf.variables||{},
       trigger:wf.trigger||{type:'manual',expression:''},
       stats:wf.stats||null,
-      trust:(wf.security&&wf.security.trust)||'casual'
+      trust:(wf.security&&wf.security.trust)||'casual',
+      draft:!!(wf.security&&wf.security.sites_unconfirmed===true),
+      draftSites:wf.draftSites
     });
   }).catch(function(){toast('Couldn’t open workflow','err');});
+}
+/* The sites a draft asks to confirm: strings from the browser, at most 20. */
+function cleanSites(list){
+  if(!Array.isArray(list))return [];
+  return list.filter(function(s){return typeof s==='string'&&s.length>0&&s.length<=253;}).slice(0,20);
 }
 function openEditorDraft(wf){
   editorState={
@@ -1243,7 +1362,9 @@ function openEditorDraft(wf){
     trigger:wf.trigger||{type:'manual',expression:''},
     stats:wf.stats||null,
     trust:wf.trust||null,
-    recordedId:wf.recordedId||null
+    recordedId:wf.recordedId||null,
+    draft:!!wf.draft,
+    draftSites:cleanSites(wf.draftSites)
   };
   $('edName').value=editorState.name;
   renderEditorMeta();renderEditorSteps();
@@ -1269,6 +1390,10 @@ function renderEditorMeta(){
 function renderTrustPanel(){
   var box=$('edTrust');clear(box);
   var es=editorState, host=siteOfSteps(es.steps);
+  if(es.id!=null&&es.draft){
+    renderDraftPanel(box);
+    return;
+  }
   if(es.id==null){
     // Unsaved: say what the first save will do.
     box.appendChild(h('div',{'class':'trust-panel'},[
@@ -1298,6 +1423,46 @@ function renderTrustPanel(){
       setTrust(es.id,'approved').then(function(ok){if(ok){es.trust='approved';renderTrustPanel();}});
     }},trustLabel(host))
   ]));
+}
+
+/* A draft from an AI agent run: what to check, and "Confirm sites" for
+   exactly the sites the browser listed (call it straight from the click:
+   the browser checks for the gesture). */
+function renderDraftPanel(box){
+  var es=editorState, sites=es.draftSites||[];
+  var withheld=0, secret=0;
+  es.steps.forEach(function(s){
+    var r=s&&s.extra&&s.extra.review;
+    if(r==='value_withheld')withheld++;
+    if(r==='secret_field')secret++;
+  });
+  var kids=[
+    h('div',{'class':'tp-h'},['\u{1F50D} ','Draft from an AI agent run — review it']),
+    h('div',{'class':'tp-s'},'The agent chose these steps from what the pages showed it. Check each one, edit or delete what you don’t want, and save. It can’t run until you confirm the sites it may use.')
+  ];
+  if(withheld||secret){
+    kids.push(h('div',{'class':'tp-s'},'Steps marked ⚠ need you'+
+      (withheld?(': '+withheld+' value'+(withheld===1?'':'s')+' asked at each run'):'')+
+      (secret?((withheld?', ':': ')+secret+' card or code field'+(secret===1?'':'s')+' you enter yourself'):'')+'.'));
+  }
+  if(!sites.length){
+    kids.push(h('div',{'class':'tp-s'},'It has no site to confirm. Add a “Go to page” step and save.'));
+  }else{
+    var list=h('div',{'class':'draft-sites'});
+    sites.forEach(function(site){list.appendChild(h('span',{'class':'draft-site'},site));});
+    kids.push(list);
+    kids.push(h('button',{'class':'btn violet',id:'draftConfirmBtn',onClick:function(){
+      var shown=sites.slice();
+      sendWithPromise('confirmDraftSites',es.id,shown).then(function(r){
+        if(!r||!r.ok){toast((r&&r.error)||'Couldn’t confirm the sites','err');return;}
+        es.draft=false;es.draftSites=[];
+        if(r.trust)es.trust=r.trust;
+        toast('Sites confirmed — it can run now','ok');
+        renderEditorMeta();renderEditorSteps();
+      }).catch(function(){toast('Couldn’t confirm the sites','err');});
+    }},'Confirm '+(sites.length===1?'this site':'these '+sites.length+' sites')));
+  }
+  box.appendChild(h('div',{'class':'trust-panel draft-panel'},kids));
 }
 
 function renderEditorSteps(){
@@ -1332,6 +1497,13 @@ function buildEditorStep(s,i){
     h('div',{'class':'etype'},[labelFor(s.type),h('small',{},stepTitle(s))]),
     ctrls
   ]));
+
+  // A step of a draft from an agent run that needs the user (fixed text).
+  var review=s.extra&&typeof s.extra.review==='string'&&REVIEW_NOTES.hasOwnProperty(s.extra.review)
+    ? REVIEW_NOTES[s.extra.review] : null;
+  if(review){
+    card.appendChild(h('div',{'class':'review-note'},['⚠ ',review]));
+  }
 
   // Record-time reference: a thumbnail of exactly what was clicked when this
   // step was recorded, so it's obvious which element the step targets.
@@ -1503,6 +1675,7 @@ $('edRunBtn').addEventListener('click',function(){
   saveEditor(true).then(function(id){if(id!=null)runWorkflowFlow(id);});
 });
 $('edSchedBtn').addEventListener('click',function(){
+  if(editorState&&editorState.draft){toast('Confirm this draft’s sites first','err');return;}
   saveEditor(true).then(function(id){if(id!=null)openScheduleSheet(id,editorState.name,editorState.trigger);});
 });
 function collectWorkflow(){
@@ -1519,6 +1692,8 @@ function saveEditor(quiet){
     if(r&&r.id!=null){
       editorState.id=r.id;
       if(r.trust)editorState.trust=r.trust;
+      // Still a draft: the sites its saved steps target now.
+      if(editorState.draft)editorState.draftSites=cleanSites(r.draftSites);
       renderEditorMeta();
     }
     if(!quiet)toast('Saved','ok');
@@ -1529,6 +1704,12 @@ function saveEditor(quiet){
 /* ============================== RUN ============================== */
 function runWorkflowFlow(id){
   sendWithPromise('getWorkflow',id).then(function(wf){
+    if(wf&&wf.security&&wf.security.sites_unconfirmed===true){
+      // A draft from an AI agent run: review it first.
+      toast('Confirm this draft’s sites first','err');
+      if(view!=='editor'||!editorState||editorState.id!==id)openEditor(id);
+      return;
+    }
     openRunSheet(id,wf.name,wf.variables||{});
   }).catch(function(){toast('Couldn’t start run','err');});
 }
@@ -1537,7 +1718,13 @@ function doRun(id,values,mode){
   lastRunArgs[id]={values:values||{},mode:mode||'watch'};
   activeRun={id:id,stepIndex:0,total:0,message:'Starting…',done:false,ok:null};
   paintRun();
-  sendWithPromise('runWorkflow',id,values,mode||'watch').catch(function(){
+  sendWithPromise('runWorkflow',id,values,mode||'watch').then(function(r){
+    if(r&&r.ok===false){
+      activeRun={id:id,done:true,ok:false,
+        message:(typeof r.error==='string'&&r.error)?r.error:'Failed to start'};
+      paintRun();
+    }
+  }).catch(function(){
     activeRun={id:id,done:true,ok:false,message:'Failed to start'};paintRun();
   });
 }
@@ -1781,6 +1968,7 @@ $('schedCancel').addEventListener('click',function(){closeScrim('schedScrim');})
 $('schedSave').addEventListener('click',function(){
   var tr=currentTrigger();var btn=$('schedSave');btn.disabled=true;btn.textContent='Saving…';
   sendWithPromise('saveSchedule',scheduleCtx.id,tr).then(function(r){
+    if(r&&r.ok===false&&typeof r.error==='string'&&r.error){toast(r.error,'err');return;}
     if(editorState&&editorState.id===scheduleCtx.id)editorState.trigger=tr;
     closeScrim('schedScrim');
     toast(tr.type==='manual'?'Schedule cleared':('Scheduled — next '+(r&&r.nextFire?formatNext(r.nextFire):'soon')),'ok');
@@ -2096,6 +2284,13 @@ button,input,textarea,select{font-family:inherit}
 .trust-panel .btn{margin-top:9px;width:100%;font-size:12px;padding:8px 10px}
 .trust-act{display:flex;gap:7px;margin-top:9px}
 .trust-act .btn{flex:1;font-size:12px;padding:8px 10px}
+/* drafts saved from an AI agent run: badge, review panel, step notes */
+.tbadge.draft{color:var(--warn)}
+.draft-sites{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.draft-site{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--bg);
+  border:1px solid var(--border);color:var(--text);word-break:break-all}
+.review-note{margin:6px 2px 2px;padding:6px 9px;border-radius:9px;font-size:11.5px;
+  color:var(--text);background:var(--surface);border-left:2px solid var(--warn)}
 
 /* empty state */
 .empty{text-align:center;padding:40px 22px;animation:rise .3s ease both}

@@ -67,6 +67,25 @@ function trustedTypesMode(src) {
 // promoteTrust calls the Agent studio makes ([id, level] each).
 const agentTrustCalls = [];
 
+// A draft saved from an AI agent run (docs/design/AGENT_ACTIONS.md §2.9), as
+// getWorkflow returns it, and the confirmDraftSites calls (JSON of [id,
+// sites]).
+const DRAFT_WORKFLOW = {
+  id: 'd1', name: 'Buy socks', variables: {pin: ''},
+  security: {trust: 'casual', sites_unconfirmed: true},
+  draftSites: ['shop.example', '<b>evil</b>.example', 7, ''],
+  steps: [
+    {type: 'navigate', target: 'https://shop.example/', description: 'Open shop.example'},
+    {type: 'type', target: '#pin', value: '{{pin}}', description: 'Type your “PIN” (asked at each run)',
+     extra: {review: 'value_withheld', text: 'PIN', host: 'shop.example'}},
+    {type: 'type', target: '#cc', description: 'Enter the payment card yourself (not saved)',
+     extra: {review: 'secret_field', secret: 'vault', secret_kind: 'payment_card'}},
+    {type: 'click', target: '#x', description: 'Click “<img src=x onerror=alert(1)>”',
+     extra: {review: '__proto__', text: '<img src=x onerror=alert(1)>'}},
+  ],
+};
+const draftConfirmCalls = [];
+
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
 
@@ -445,6 +464,90 @@ async function checkChatAgentPlan(window) {
   assert.strictEqual(items().length, 0);
   doc.getElementById('agentStopBtn').click();
   await tick();
+}
+
+// molt://ai-chat's "Save as automation" (docs/design/AGENT_ACTIONS.md §2.9):
+// offered only after a run that ended with DONE and that the browser says
+// can be saved (save_run); otherwise the browser's note, as text; saving is
+// sent from the click; the outcome is text, with "Review in Agent mode"
+// only after a save; junk offers nothing; a new run clears the old offer.
+// Queued answers to startWebAgent (empty: it never answers), the
+// saveAgentRun calls ([run_id] each) and the next answer to one.
+const agentRunReplies = [];
+const agentSaveCalls = [];
+let nextAgentSave = {success: false, error: 'not set'};
+async function checkChatAgentSave(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const box = () => doc.getElementById('agentSave');
+  const labels = () => Array.from(box().querySelectorAll('button')).map((b) => b.textContent);
+  const button = (label) => Array.from(box().querySelectorAll('button')).find(
+      (b) => b.textContent === label);
+  const run = async (reply) => {
+    agentRunReplies.push(reply);
+    window.startWebAgent('Buy blue socks');
+    await tick();
+    await tick();
+  };
+
+  // A run that can be saved: the offer, sent only from the click.
+  await run({success: true, result: 'Bought', save_run: 7});
+  assert(box().classList.contains('shown'), 'save offered');
+  assert.deepStrictEqual(labels(), ['Save as automation', 'Not now']);
+  assert.strictEqual(agentSaveCalls.length, 0, 'nothing saved before the click');
+  nextAgentSave = {success: true, id: 'agent_1', name: 'n',
+                   message: 'Saved as a draft <img src=x onerror=alert(1)>'};
+  button('Save as automation').click();
+  assert.deepStrictEqual(agentSaveCalls.pop(), [7], 'sent from the click');
+  await tick();
+  assert(/Saved as a draft <img/.test(box().textContent), 'the browser\'s words, as text');
+  assert.strictEqual(doc.querySelectorAll('#agentBar img').length, 0);
+  assert.deepStrictEqual(labels(), ['Review in Agent mode', 'Close']);
+  button('Review in Agent mode').click();
+  assert(window.__sent.includes('openAgentStudio'), 'opens Agent mode');
+  button('Close').click();
+  assert(!box().classList.contains('shown'));
+  assert(!doc.getElementById('agentBar').classList.contains('active'), 'bar closed');
+
+  // A save the browser refuses: its error as text, nothing to review.
+  await run({success: true, result: 'Done', save_run: 8});
+  nextAgentSave = {success: false, error: 'This run can no longer be <b>saved</b>.'};
+  button('Save as automation').click();
+  assert.deepStrictEqual(agentSaveCalls.pop(), [8]);
+  await tick();
+  assert(/can no longer be <b>saved<\/b>/.test(box().textContent));
+  assert.strictEqual(doc.querySelectorAll('#agentBar b').length, 0);
+  assert.deepStrictEqual(labels(), ['Close']);
+
+  // Not saveable: the note only. Stopped or failed runs, and junk ids:
+  // nothing, whatever the reply claims.
+  await run({success: true, result: 'Done', save_note: 'It used a site\'s <i>tool</i>'});
+  assert.deepStrictEqual(labels(), []);
+  assert.strictEqual(box().textContent, 'It used a site\'s <i>tool</i>');
+  assert.strictEqual(doc.querySelectorAll('#agentBar i').length, 0);
+  for (const reply of [{success: false, result: 'Stopped', save_run: 9},
+                       {success: true, result: 'Done', save_run: 'x'},
+                       {success: true, result: 'Done', save_run: -1},
+                       {success: true, result: 'Done', save_run: 1.5},
+                       {success: true, result: 'Done', save_run: {}},
+                       {success: true, result: 'Done', save_note: 42},
+                       null]) {
+    await run(reply);
+    assert(!box().classList.contains('shown'), 'no offer for ' + JSON.stringify(reply));
+  }
+  // "Not now" closes the offer; a new run starts without one.
+  await run({success: true, result: 'Done', save_run: 10});
+  button('Not now').click();
+  assert(!box().classList.contains('shown'));
+  await run({success: true, result: 'Done', save_run: 11});
+  agentRunReplies.length = 0;
+  window.startWebAgent('Again');
+  await tick();
+  assert(!box().classList.contains('shown'), 'a new run clears the offer');
+  doc.getElementById('agentStopBtn').click();
+  await tick();
+  assert(!box().classList.contains('shown'), 'a stopped run offers nothing');
+  assert.strictEqual(agentSaveCalls.length, 0);
 }
 
 // shieldSetGlobal calls from molt://ai-settings ([key, value] each). The
@@ -972,12 +1075,19 @@ const PAGES = [
    responses: {
      listWorkflows: {workflows: [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
-        host: 'example.com', trigger: {type: 'manual'}}]},
+        host: 'example.com', trigger: {type: 'manual'}},
+       {id: 'd1', name: 'Buy socks', stepCount: 4, trust: 'casual', draft: true,
+        host: 'shop.example', trigger: {type: 'manual'}}]},
      getRuns: {runs: []},
-     getWorkflow: {id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
-                   steps: [{type: 'navigate', target: 'https://www.example.com/'},
-                           {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
+     getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
+       id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
+       steps: [{type: 'navigate', target: 'https://www.example.com/'},
+               {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
+     confirmDraftSites: (args) => {
+       draftConfirmCalls.push(JSON.stringify(args.slice(1)));
+       return {ok: true, trust: 'casual'};
+     },
    },
    async after(window) {
      const doc = window.document;
@@ -1022,6 +1132,51 @@ const PAGES = [
      await tick();
      assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length, before + 1,
                         're-run after trusting');
+     // A draft from an AI agent run: "Review" instead of Run / Edit /
+     // Schedule and no trust item; the editor's review panel lists the
+     // browser's sites as text, points at the steps that need the user,
+     // won't run, and "Confirm" sends exactly the sites shown, from the
+     // click; afterwards it is an ordinary untrusted workflow.
+     window.showView('library');
+     await window.loadLibrary();
+     await tick();
+     const draftCard = doc.querySelectorAll('#libList .card')[1];
+     assert(/draft · review it/.test(draftCard.querySelector('.csub').textContent),
+            'draft badge');
+     assert.deepStrictEqual(
+         Array.from(draftCard.querySelectorAll('.card-actions button')).map((b) => b.textContent),
+         ['\u{1F50D} Review', '⋯'], 'a draft is reviewed, not run');
+     draftCard.querySelector('.kebab').click();
+     assert(!Array.from(draftCard.querySelectorAll('.menu-item')).some(
+         (m) => /[Tt]rust/.test(m.textContent)), 'no trust item for a draft');
+     draftCard.querySelector('.kebab').click();
+     draftCard.querySelector('.card-actions .run').click();
+     await tick();
+     const draftPanel = doc.getElementById('edTrust');
+     assert(/Draft from an AI agent run/.test(draftPanel.textContent), 'review panel');
+     assert(/1 value asked at each run, 1 card or code field you enter yourself/.test(
+         draftPanel.textContent), 'counts what needs the user');
+     assert.deepStrictEqual(
+         Array.from(draftPanel.querySelectorAll('.draft-site')).map((s) => s.textContent),
+         ['shop.example', '<b>evil</b>.example'], 'sites as text, junk dropped');
+     assert.strictEqual(draftPanel.querySelectorAll('b').length, 0);
+     const notes = doc.querySelectorAll('#edSteps .review-note');
+     assert.strictEqual(notes.length, 2, 'two steps need the user (junk codes ignored)');
+     assert(/asked for it at each run/.test(notes[0].textContent));
+     assert(/never saves those/.test(notes[1].textContent));
+     assert.strictEqual(doc.querySelectorAll('#edSteps img[onerror]').length, 0);
+     const runsBefore = window.__sent.filter((m) => m === 'runWorkflow').length;
+     window.runWorkflowFlow('d1');
+     await tick();
+     assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length, runsBefore,
+                        'a draft never runs');
+     assert(!window.__sent.includes('saveSchedule'));
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        '["d1",["shop.example","<b>evil</b>.example"]]', 'sent from the click');
+     await tick();
+     assert(!/Draft from an AI agent run/.test(draftPanel.textContent), 'confirmed');
+     assert(/Not trusted/.test(draftPanel.textContent), 'now an untrusted workflow');
      // Leave an empty editor for the click-everything pass below: it clicks
      // controls in DOM order, so a populated step list would see its later
      // buttons clicked after "Delete step" had already detached them.
@@ -1151,7 +1306,11 @@ const PAGES = [
        chatActionCalls.push(['runFormFill'].concat(args.slice(1)));
        return {success: true, filled: 1, total: 1};
      },
-     startWebAgent: (args) => { agentGoals.push(args[1]); return NO_REPLY; },
+     startWebAgent: (args) => {
+       agentGoals.push(args[1]);
+       return agentRunReplies.length ? agentRunReplies.shift() : NO_REPLY;
+     },
+     saveAgentRun: (args) => { agentSaveCalls.push([args[1]]); return nextAgentSave; },
      getPageContext: ACTIVE_PAGE,
      setJsForDomain: (args) => { jsToggles.push(args.slice(1)); return {success: true}; },
      openSandboxTab: (args) => { sandboxOpens.push(args[1]); return {success: true, url: args[1]}; },
@@ -1301,6 +1460,7 @@ const PAGES = [
      await checkChatPageActions(window);
      await checkChatFormFill(window);
      await checkChatAgentPlan(window);
+     await checkChatAgentSave(window);
    }},
 ];
 

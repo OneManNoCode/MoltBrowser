@@ -38,6 +38,7 @@
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
+#include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
@@ -337,6 +338,27 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: [request_id, allowed]
   void HandleWebAgentConfirm(const base::ListValue& args);
 
+  // ---- Saving a successful agent run as a draft workflow ------------
+  // (automation/agent_run_draft.h; molt_ai_chat_handler_agent_run.cc.)
+  // The run is recorded as the agent reports its steps; when it ends with
+  // DONE, its result carries `save_run` (the run's id) if it can be saved,
+  // or `save_note` (why not). "Save as automation" in the agent bar sends
+  // saveAgentRun: honoured only on the user's click, for the last run,
+  // never in MoltNet; the draft starts CASUAL with unconfirmed sites.
+  // Args: [callback_id, run_id]. Returns {success, id, name, message} or
+  // {success: false, error}.
+  void HandleSaveAgentRun(const base::ListValue& args);
+  // Opens Agent mode (the studio's side panel) in the chat's window, to
+  // review a saved draft. Args: []
+  void HandleOpenAgentStudio(const base::ListValue& args);
+  // A new run starts recording (its id), a step is recorded, the run ends
+  // (adds `save_run` / `save_note` to its |result|), or it is forgotten.
+  int BeginAgentRunRecord(const std::string& goal,
+                          content::WebContents* target);
+  void RecordAgentRunStep(int run_id, const molt_ai::WebAgent::Step& step);
+  void FinishAgentRunRecord(int run_id, bool success, base::DictValue* result);
+  void ForgetAgentRun();
+
   // ---- Page-action proposals: state and steps -----------------------
   // One proposal being decided, carried through the asynchronous steps
   // below (defined in molt_ai_chat_handler_actions.cc).
@@ -600,6 +622,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
 
   // Active WebAgent (null when no agent task is running).
   std::unique_ptr<molt_ai::WebAgent> web_agent_;
+  // The last agent run as the browser saw it, for "Save as automation",
+  // until it is saved, cancelled, refused or replaced by the next run; and
+  // its id (bumped when it is forgotten, so stale events miss).
+  int agent_run_id_ = 0;
+  molt_ai::automation::agent_draft::Run agent_run_;
 
   // Page-action proposals (molt_ai_chat_handler_actions.cc). The typed
   // message that asked to act on the page waits here for its text reply:

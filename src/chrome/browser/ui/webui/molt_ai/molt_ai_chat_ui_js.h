@@ -5372,6 +5372,14 @@ function _stopRecording() {
 .agent-confirm-btns button{font-size:10px;padding:3px 10px;border-radius:6px;cursor:pointer;
   border:1px solid var(--border);background:transparent;color:var(--text)}
 .agent-confirm-btns .agent-allow{background:var(--accent);border-color:var(--accent);color:#fff}
+.agent-save{display:none;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+.agent-save.shown{display:flex}
+.agent-save button{font-size:10px;padding:3px 10px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:var(--text)}
+.agent-save .agent-save-btn{background:var(--accent);border-color:var(--accent);color:#fff}
+.agent-save button:disabled{opacity:0.6;cursor:default}
+.agent-save-note{flex-basis:100%;font-size:10px;color:var(--muted);word-break:break-word}
+.agent-save-note.ok{color:var(--text)}
   `;
   var s = document.createElement('style');
   s.textContent = css;
@@ -5390,7 +5398,8 @@ function _stopRecording() {
       '</div>' +
       '<div class="agent-plan" id="agentPlan"></div>' +
       '<div class="agent-steps" id="agentSteps"></div>' +
-      '<div id="agentResult" style="display:none"></div>');
+      '<div id="agentResult" style="display:none"></div>' +
+      '<div class="agent-save" id="agentSave"></div>');
     var inputArea = document.getElementById('inputArea') ||
                     document.querySelector('.input-area');
     if (inputArea && inputArea.parentNode)
@@ -5427,6 +5436,90 @@ function _stopRecording() {
     if (hdr) hdr.textContent = '\u{1F916} AGENT RUNNING';
     var stopBtn = document.getElementById('agentStopBtn');
     if (stopBtn) stopBtn.style.display = '';
+    // A new run: the last one's save offer is gone.
+    clearSave();
+  }
+
+  // ---- "Save as automation" (docs/design/AGENT_ACTIONS.md §2.9) ----
+  // After a run that ended with DONE the browser says whether it can be
+  // saved as a draft workflow (save_run, the run's id) or why not
+  // (save_note, its own fixed words). Saving happens only on the button's
+  // click (the browser checks for the gesture); the draft is reviewed in
+  // Agent mode before it can run. Text only, DOM nodes only.
+  var saveOffered = false;
+  function saveBox() { return document.getElementById('agentSave'); }
+  function clearSave() {
+    saveOffered = false;
+    var box = saveBox();
+    if (!box) return;
+    while (box.firstChild) box.removeChild(box.firstChild);
+    box.classList.remove('shown');
+  }
+  function saveNote(text, ok) {
+    var note = document.createElement('div');
+    note.className = 'agent-save-note' + (ok ? ' ok' : '');
+    note.textContent = String(text || '').substring(0, 400);
+    return note;
+  }
+  function saveButton(label, primary, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    if (primary) b.className = 'agent-save-btn';
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  function collapseBar() {
+    var bar = document.getElementById('agentBar');
+    if (bar) bar.classList.remove('active');
+  }
+  function offerSave(r) {
+    clearSave();
+    var box = saveBox();
+    if (!box || !r || typeof r !== 'object') return;
+    var runId = Number(r.save_run);
+    if (Number.isInteger(runId) && runId > 0) {
+      saveOffered = true;
+      var save = saveButton('Save as automation', true, function() {
+        saveRun(runId, save);
+      });
+      box.appendChild(save);
+      box.appendChild(saveButton('Not now', false, function() {
+        clearSave();
+        collapseBar();
+      }));
+      box.classList.add('shown');
+    } else if (typeof r.save_note === 'string' && r.save_note) {
+      box.appendChild(saveNote(r.save_note, false));
+      box.classList.add('shown');
+    }
+  }
+  function showSaved(res) {
+    var box = saveBox();
+    if (!box) return;
+    while (box.firstChild) box.removeChild(box.firstChild);
+    var ok = !!(res && typeof res === 'object' && res.success === true);
+    var text = ok ? res.message
+                  : ((res && typeof res === 'object' && res.error) ||
+                     'Couldn’t save the run.');
+    box.appendChild(saveNote(text, ok));
+    if (ok) {
+      box.appendChild(saveButton('Review in Agent mode', true, function() {
+        chrome.send('openAgentStudio', []);
+      }));
+    }
+    box.appendChild(saveButton('Close', false, function() {
+      clearSave();
+      collapseBar();
+    }));
+    box.classList.add('shown');
+  }
+  function saveRun(runId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    sendWithPromise('saveAgentRun', runId)
+      .then(showSaved)
+      .catch(function() { showSaved(null); });
   }
 
   // Append one step row.
@@ -5597,8 +5690,9 @@ function _stopRecording() {
     }
   }
 
-  // Finish the bar (success or failure).
-  function finishBar(success, result) {
+  // Finish the bar (success or failure). |r| is the browser's answer to
+  // startWebAgent (absent when the user stopped the run).
+  function finishBar(success, result, r) {
     agentRunning = false;
     // An unanswered approval chip is moot once the run is over.
     document.querySelectorAll('#agentSteps .agent-confirm').forEach(
@@ -5614,10 +5708,12 @@ function _stopRecording() {
       resultEl.style.display = 'block';
     }
     appendAgentOutcome(success, result);
-    // Auto-collapse the bar after 10 s.
+    offerSave(success ? r : null);
+    // Auto-collapse the bar after 10 s, unless it offers to save the run
+    // (then "Not now" closes it).
     setTimeout(function() {
-      var bar = document.getElementById('agentBar');
-      if (bar) bar.classList.remove('active');
+      if (saveOffered || agentRunning) return;
+      collapseBar();
     }, 10000);
   }
 
@@ -5631,7 +5727,7 @@ function _stopRecording() {
     }
     startBar(goal);
     sendWithPromise('startWebAgent', goal)
-      .then(function(r) { finishBar(r && r.success, r && r.result); })
+      .then(function(r) { finishBar(r && r.success, r && r.result, r); })
       .catch(function(e) { finishBar(false, String(e)); });
   };
 

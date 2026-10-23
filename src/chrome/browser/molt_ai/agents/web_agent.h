@@ -124,6 +124,24 @@ class WebAgent : public content::WebContentsObserver {
     std::string note;        // Short result note (e.g., "Navigated to …")
     int plan_step = 0;       // The plan step it worked on (1-based); 0
                              // without a plan
+
+    // What the step acted on, so a successful run can be saved as a draft
+    // workflow (automation/agent_run_draft.h). The browser's own record,
+    // never shown to the model.
+    struct Element {
+      std::string selector;    // the observation's selector
+      std::string kind;        // ObservedElement::kind
+      std::string input_type;  // ObservedElement::input_type
+      std::string label;       // ObservedElement::label (page text)
+      // What the probe found right before the action.
+      agent_safety::FieldKind field_kind = agent_safety::FieldKind::kOrdinary;
+      std::string text;        // TYPE / FILL_FORM: what was typed
+    };
+    std::string url;     // NAVIGATE / SEARCH: the URL loaded
+    std::string origin;  // CLICK / TYPE / FILL_FORM: the page acted on
+    // CLICK / TYPE: the element. FILL_FORM: the fields filled, or none when
+    // only some of them were.
+    std::vector<Element> elements;
   };
 
   // Called on the UI thread once per completed step.

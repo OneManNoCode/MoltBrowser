@@ -318,6 +318,16 @@ FUZZERS = {
         dict="dicts/agent.dict",
         max_len=16384,
     ),
+    "molt_agent_run_draft_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/automation/agent_run_draft.cc",
+                 f"{MOLT_AI}/automation/automation_script.cc",
+                 f"{MOLT_AI}/automation/automation_security.cc",
+                 f"{MOLT_AI}/security/agent_safety.cc"],
+        tier="stand_ins",
+        dict="dicts/agent_run_draft.dict",
+        max_len=16384,
+    ),
     "molt_automation_ai_steps_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/automation/automation_ai_steps.cc",

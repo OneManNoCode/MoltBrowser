@@ -138,6 +138,99 @@ TEST(AutomationSecurityTest, SavingNeverRaisesTrust) {
   EXPECT_EQ(incoming.security.trust, TrustLevel::CASUAL);
 }
 
+// ---- Drafts from web agent runs (agent_run_draft.h) --------------------------
+
+Script UnconfirmedDraft() {
+  Script draft;
+  draft.id = "agent_1";
+  draft.security.sites_unconfirmed = true;
+  draft.steps.push_back(
+      MakeStep(StepType::NAVIGATE, "https://shop.example/home"));
+  Step click = MakeStep(StepType::CLICK, "#buy");
+  base::DictValue extra;
+  extra.Set("host", "pay.example");
+  click.extra = base::Value(std::move(extra));
+  draft.steps.push_back(std::move(click));
+  return draft;
+}
+
+TEST(AutomationSecurityTest, AnUnconfirmedDraftMayDoNothing) {
+  Script draft = UnconfirmedDraft();
+  // Trust set on it meanwhile (molt://ai-automation) doesn't count.
+  draft.security.trust = TrustLevel::TRUSTED;
+  SecurityPolicy p = AutomationSecurity::EffectivePolicy(draft);
+  EXPECT_EQ(p.trust, TrustLevel::CASUAL);
+  EXPECT_TRUE(p.domain_whitelist.empty());
+  EXPECT_TRUE(p.sites_unconfirmed);
+  AutomationSecurity sec;
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://shop.example/home"));
+  EXPECT_FALSE(sec.AllowClick(p, "https://pay.example/", "#buy"));
+  EXPECT_FALSE(sec.AllowType(p, "https://shop.example/", "#q", "x"));
+  EXPECT_FALSE(sec.AllowSubmit(p));
+  EXPECT_FALSE(sec.AllowHeadless(p));
+}
+
+TEST(AutomationSecurityTest, SavingNeverConfirmsADraft) {
+  Script existing = UnconfirmedDraft();
+  Script incoming = UnconfirmedDraft();
+  incoming.security.sites_unconfirmed = false;  // claimed by UI JSON
+  incoming.security.domain_whitelist = {"evil.example"};
+  AutomationSecurity::ClampTrustForSave(incoming, &existing);
+  EXPECT_TRUE(incoming.security.sites_unconfirmed);
+  EXPECT_EQ(incoming.security.trust, TrustLevel::CASUAL);
+  // A confirmed workflow stays confirmed; a new one is what it says.
+  existing.security.sites_unconfirmed = false;
+  incoming.security.sites_unconfirmed = false;
+  AutomationSecurity::ClampTrustForSave(incoming, &existing);
+  EXPECT_FALSE(incoming.security.sites_unconfirmed);
+  Script fresh;
+  AutomationSecurity::ClampTrustForSave(fresh, nullptr);
+  EXPECT_FALSE(fresh.security.sites_unconfirmed);
+}
+
+TEST(AutomationSecurityTest, ConfirmDraftSitesNeedsWhatTheUserSaw) {
+  Script draft = UnconfirmedDraft();
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(draft, {}));
+  EXPECT_FALSE(
+      AutomationSecurity::ConfirmDraftSites(draft, {"shop.example"}));
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(
+      draft, {"shop.example", "pay.example", "evil.example"}));
+  EXPECT_TRUE(draft.security.sites_unconfirmed);
+  EXPECT_TRUE(draft.security.domain_whitelist.empty());
+  // Any order.
+  EXPECT_TRUE(AutomationSecurity::ConfirmDraftSites(
+      draft, {"pay.example", "shop.example"}));
+  EXPECT_FALSE(draft.security.sites_unconfirmed);
+  EXPECT_EQ(draft.security.domain_whitelist,
+            (std::vector<std::string>{"shop.example", "pay.example"}));
+  EXPECT_EQ(draft.security.trust, TrustLevel::CASUAL);
+  // Only once, and only for a draft.
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(
+      draft, {"pay.example", "shop.example"}));
+  // A draft with no site at all can't be confirmed.
+  Script empty;
+  empty.security.sites_unconfirmed = true;
+  EXPECT_FALSE(AutomationSecurity::ConfirmDraftSites(empty, {}));
+  // Once confirmed it is an ordinary CASUAL workflow on its sites.
+  SecurityPolicy p = AutomationSecurity::EffectivePolicy(draft);
+  AutomationSecurity sec;
+  EXPECT_TRUE(sec.AllowNavigation(p, "https://shop.example/home"));
+  EXPECT_FALSE(sec.AllowNavigation(p, "https://evil.example/"));
+  EXPECT_FALSE(sec.AllowSubmit(p));
+}
+
+TEST(AutomationSecurityTest, TheDraftMarkIsStoredOnlyWhenSet) {
+  Script draft = UnconfirmedDraft();
+  const std::string json = draft.ToJSONString();
+  EXPECT_NE(json.find("\"sites_unconfirmed\": true"), std::string::npos);
+  std::optional<Script> loaded = Script::FromJSONString(json);
+  ASSERT_TRUE(loaded);
+  EXPECT_TRUE(loaded->security.sites_unconfirmed);
+  draft.security.sites_unconfirmed = false;
+  EXPECT_EQ(draft.ToJSONString().find("sites_unconfirmed"),
+            std::string::npos);
+}
+
 // ---- Secret steps (S7) ----------------------------------------------------
 
 TEST(AutomationSecurityTest, MarkStepSecretDropsValueKeepsExtra) {

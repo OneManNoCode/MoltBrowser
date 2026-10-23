@@ -206,6 +206,9 @@ void AutomationScheduler::ArmNext(base::Time now) {
 
   for (const auto& s : scripts) {
     if (!s.enabled) continue;
+    // A draft from a web agent run nobody has reviewed is never fired (the
+    // runner would refuse it anyway).
+    if (s.security.sites_unconfirmed) continue;
 
     // Catch-up: cron triggers that should have fired during shutdown.
     base::Time next = NextFireTime(s.trigger, now);
