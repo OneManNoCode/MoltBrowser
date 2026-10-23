@@ -164,6 +164,15 @@ bool IsValidModelDescription(std::string_view architecture,
                              uint32_t min_context_tokens,
                              uint32_t max_context_tokens);
 
+// The GPU fields of a ModelDescription (design section 11): backend
+// "vulkan" exactly when the GPU is on, which needs a request for it and
+// 1..max_gpu_layers layers on it; otherwise no layers on it.
+bool IsValidGpuDescription(bool gpu_requested,
+                           std::string_view backend,
+                           bool gpu_on,
+                           uint32_t gpu_layers,
+                           uint32_t max_gpu_layers);
+
 // Tokenize results: at most text_bytes + 16 ids, each in [0, vocab_size).
 bool IsValidTokenization(const std::vector<int32_t>& tokens,
                          size_t text_bytes,
@@ -209,6 +218,35 @@ class CrashLoopGuard {
 
   // A handful of model files at most; old entries are dropped beyond this.
   std::vector<Entry> entries_;
+};
+
+// GPU inference on Linux and Windows (design section 11.5). A process that
+// was loading with the GPU requested, or running on it, and then crashed,
+// hung, ran over its memory or reported kBackendFailed had a GPU failure: a
+// driver crash or a lost device is no reason to lock the model out of the
+// CPU, so CrashLoopGuard doesn't count it. Instead the GPU is off for that
+// model file for the rest of the session (it loads on the CPU), and off for
+// every model after kMaxGpuFailures failures. A model that crashes the
+// process for its own reasons therefore gets one more crash than on the CPU,
+// once per session.
+class GpuFallbackGuard {
+ public:
+  // GPU failures (any model) after which the GPU isn't used at all.
+  static constexpr size_t kMaxGpuFailures = 2;
+
+  GpuFallbackGuard();
+  ~GpuFallbackGuard();
+
+  // Whether to ask the inference service for the GPU for this model file
+  // (CrashLoopGuard's key: id + size + mtime).
+  bool AllowGpu(const std::string& key) const;
+  void RecordGpuFailure(const std::string& key);
+  bool gpu_disabled() const { return failures_ >= kMaxGpuFailures; }
+
+ private:
+  // Model files whose GPU attempt failed (at most kMaxGpuFailures).
+  std::vector<std::string> failed_keys_;
+  size_t failures_ = 0;
 };
 
 }  // namespace molt_ai

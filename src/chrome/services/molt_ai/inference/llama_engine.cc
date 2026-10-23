@@ -64,11 +64,24 @@
 //      attention the whole batch in one ubatch (checked before the call).
 //    - llama_set_causal_attn, llama_n_ubatch, llama_model_n_embd_inp:
 //      setters and getters.
+//  - The GPU (llama.cpp's Vulkan backend, GN switch molt_llama_vulkan;
+//    design section 11.6): ggml-vulkan throws vk::DeviceLostError and
+//    vk::SystemError from graph compute, synchronization and buffer clears.
+//    Model loading and context creation catch them (std::exception, above);
+//    llama_decode, llama_process, llama_get_logits_ith,
+//    llama_sampler_sample and llama_memory_clear don't, so this file calls
+//    those through third_party/llama_cpp/chromium/llama_guard.h, which
+//    catches everything (on the CPU too, where nothing throws). After a
+//    caught exception the context is never used or freed again
+//    (EngineStatus::kBackendFailed; ~Model leaks it). mtmd_encode_chunk
+//    catches on its own. The Vulkan backend is brought up and its devices
+//    listed only through the guard (ListVulkanDevices).
 // Re-check these when updating the vendored llama.cpp.
 
 #include "chrome/services/molt_ai/inference/llama_engine.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <climits>
 #include <cstring>
@@ -76,10 +89,12 @@
 #include <utility>
 
 #include "chrome/services/molt_ai/inference/engine/context_budget.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_offload.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "chrome/services/molt_ai/inference/grammar_sampler.h"
+#include "third_party/llama_cpp/chromium/llama_guard.h"
 #include "third_party/llama_cpp/include/llama.h"
 #include "third_party/llama_cpp/tools/mtmd/mtmd.h"
 
@@ -468,12 +483,22 @@ EngineCallbacks& EngineCallbacks::operator=(EngineCallbacks&&) = default;
 
 struct LlamaEngine::Model {
   ~Model() {
+    // After a GPU failure nothing is freed: freeing on a lost device can
+    // throw from a destructor, which terminates even with exceptions on.
+    // The browser ends the process anyway.
+    if (!backend_failed) FreeLlama();
+    // Only now: lazily read tensors go through this stream.
+    file.reset();
+  }
+
+  void FreeLlama() {
     // Before the model: it holds the model's vocab.
     if (mtmd) mtmd_free(mtmd);
     if (ctx) llama_free(ctx);
     if (model) llama_model_free(model);
-    // Only now: lazily read tensors go through this stream.
-    file.reset();
+    mtmd = nullptr;
+    ctx = nullptr;
+    model = nullptr;
   }
 
   ScopedStdioFile file;
@@ -495,6 +520,9 @@ struct LlamaEngine::Model {
   std::unique_ptr<GrammarVocab> grammar_vocab;
   // The vision projector's context (image input); null without one.
   mtmd_context* mtmd = nullptr;
+  // A guarded llama.cpp call threw (the GPU failed): the context's state is
+  // unknown. Every later request fails with kBackendFailed.
+  bool backend_failed = false;
 };
 
 // A prompt with images: llama.cpp's chunks (text and images, in order), then
@@ -525,6 +553,15 @@ struct LlamaEngine::DecodeParams {
 void LlamaEngine::InitBackendOnce() {
   static std::once_flag once;
   std::call_once(once, []() { llama_backend_init(); });
+}
+
+namespace {
+std::atomic<bool> g_allow_software_gpu_for_testing{false};
+}  // namespace
+
+// static
+void LlamaEngine::SetAllowSoftwareGpuForTesting(bool allow) {
+  g_allow_software_gpu_for_testing.store(allow);
 }
 
 LlamaEngine::LlamaEngine() = default;
@@ -561,6 +598,19 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
     return result;
   }
 
+  // The vision projector (image input): the size the browser saw. It is read
+  // in each load attempt below (clip copies the weights out of the file).
+  FILE* const proj = vision_projector.get();
+  if (proj) {
+    int64_t proj_size = -1;
+    if (SeekFile(proj, 0, SEEK_END)) proj_size = TellFile(proj);
+    if (proj_size < 0 ||
+        static_cast<uint64_t>(proj_size) != params.vision_projector_size) {
+      result.status = EngineLoadStatus::kInvalidVisionProjector;
+      return result;
+    }
+  }
+
   // Memory budget under the sandbox limit (design section 2.5). CPU weight
   // repacking copies the weights into anonymous memory, which the limit
   // counts (the read-only file mapping doesn't).
@@ -569,9 +619,7 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   // The vision projector is copied into memory, wherever the model's
   // weights live.
   const uint64_t vision_bytes =
-      vision_projector
-          ? params.vision_projector_size + kVisionComputeReserveBytes
-          : 0;
+      proj ? params.vision_projector_size + kVisionComputeReserveBytes : 0;
   bool repack = params.allow_cpu_repack;
   if (limit > 0 && params.file_size + kMinKvReserveBytes +
                            kComputeReserveBytes + vision_bytes >
@@ -579,99 +627,195 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
     repack = false;
   }
 
-  llama_model_params model_params = llama_model_default_params();
-  model_params.n_gpu_layers = -1;  // all layers on the GPU (Metal on macOS)
-  model_params.use_extra_bufts = repack;
-  m->model = llama_model_load_from_file_ptr(file, model_params);
-  if (!m->model) return result;  // kInvalidModelFile
-
-  const bool gpu = llama_supports_gpu_offload();
-  const int threads =
-      static_cast<int>(std::clamp<uint32_t>(params.cpu_threads, 1, 256));
-
-  // ---- Vision projector (image input) ----
-  // Before the context, so the KV cache is sized with the projector already
-  // in memory. clip copies the weights out of the file, which isn't needed
-  // afterwards.
-  if (vision_projector) {
-    FILE* const proj = vision_projector.get();
-    int64_t proj_size = -1;
-    if (SeekFile(proj, 0, SEEK_END)) proj_size = TellFile(proj);
-    if (proj_size < 0 ||
-        static_cast<uint64_t>(proj_size) != params.vision_projector_size ||
-        !SeekFile(proj, 0, SEEK_SET)) {
-      result.status = EngineLoadStatus::kInvalidVisionProjector;
-      return result;
+  // ---- The GPU through llama.cpp's Vulkan backend (design section 11.5) ----
+  // Only in builds with it (Linux and Windows, molt_llama_vulkan) and only
+  // when the browser asks; the CPU is the fallback. macOS uses Metal as
+  // before, whatever |use_gpu| says.
+  const bool vulkan = molt_llama::VulkanBuilt();
+  EngineGpuStatus gpu_status = EngineGpuStatus::kNotRequested;
+  ggml_backend_dev_t gpu_device = nullptr;
+  GpuOffloadInput gpu_input;
+  GpuOffloadPlan gpu_plan;
+  if (params.use_gpu && !vulkan) {
+    gpu_status = EngineGpuStatus::kNotBuilt;
+  } else if (params.use_gpu) {
+    std::vector<molt_llama::GpuDevice> devices;
+    if (!molt_llama::ListVulkanDevices(&devices)) {
+      gpu_status = EngineGpuStatus::kNoDevice;
+    } else {
+      std::vector<GpuDeviceInfo> infos;
+      infos.reserve(devices.size());
+      for (const molt_llama::GpuDevice& d : devices) {
+        GpuDeviceInfo info;
+        info.vendor_id = d.vendor_id;
+        info.device_id = d.device_id;
+        info.device_type = d.device_type;
+        info.driver_id = d.driver_id;
+        info.driver_version = d.driver_version;
+        info.api_version = d.api_version;
+        info.memory_total = d.memory_total;
+        info.memory_free = d.memory_free;
+        if (g_allow_software_gpu_for_testing.load() &&
+            CheckGpuDevice(info, {}) == GpuDeviceVerdict::kSoftware) {
+          // Tests only (SetAllowSoftwareGpuForTesting): judge it as an
+          // integrated GPU.
+          info.device_type = static_cast<uint32_t>(GpuDeviceType::kIntegrated);
+          info.driver_id = 0;
+        }
+        infos.push_back(info);
+      }
+      const std::optional<size_t> chosen =
+          ChooseGpuDevice(infos, DefaultGpuDriverBlocklist());
+      if (!chosen) {
+        gpu_status = EngineGpuStatus::kNoUsableDevice;
+      } else {
+        gpu_input.model_file_bytes = params.file_size;
+        // From the GGUF header (llama.cpp parses it again right after); it
+        // leaves |file| at its start.
+        gpu_input.layer_count = molt_llama::ReadLayerCount(file);
+        gpu_input.memory_total = infos[*chosen].memory_total;
+        gpu_input.memory_free = infos[*chosen].memory_free;
+        gpu_plan = PlanGpuOffload(gpu_input);
+        if (gpu_plan.gpu_layers == 0) {
+          gpu_status = EngineGpuStatus::kTooLittleMemory;
+        } else {
+          gpu_device = devices[*chosen].device;
+          gpu_status = EngineGpuStatus::kOn;
+        }
+      }
     }
-    mtmd_context_params mparams = mtmd_context_params_default();
-    mparams.use_gpu = gpu;
-    mparams.print_timings = false;
-    mparams.n_threads = threads;
-    // Size the encoder's buffers for the largest image now (warmup), so an
-    // image never fails for memory later.
-    mparams.warmup = true;
-    mparams.image_max_tokens = kMaxImageTokens;
-    m->mtmd = mtmd_init_from_file_ptr(proj, m->model, mparams);
-    vision_projector.reset();
-    if (!m->mtmd || !mtmd_support_vision(m->mtmd)) {
-      result.status = EngineLoadStatus::kInvalidVisionProjector;
-      return result;  // ~Model frees it
-    }
+    if (!SeekFile(file, 0, SEEK_SET)) return result;
   }
 
-  // Size the context from the model's training window, RAM and a KV-cache
-  // estimate, then cap it by the browser's limit and the sandbox budget.
   ContextSizingInput sizing_in;
-  sizing_in.total_ram_bytes = params.total_ram_bytes;
-  sizing_in.model_file_bytes = params.file_size;
-  sizing_in.n_ctx_train = llama_model_n_ctx_train(m->model);
-  sizing_in.kv_bytes_per_token = EstimateKvBytesPerToken(
-      llama_model_n_layer(m->model), llama_model_n_embd(m->model),
-      llama_model_n_head(m->model), llama_model_n_head_kv(m->model));
-  const ContextSizing sizing = ComputeContextSizing(sizing_in);
-  // ComputeContextSizing never goes below this.
-  const int floor = sizing_in.n_ctx_train > 0
-                        ? std::min(kMinContextTokens, sizing_in.n_ctx_train)
-                        : kMinContextTokens;
-  int n_ctx = sizing.n_ctx;
-  if (limit > 0 && sizing_in.kv_bytes_per_token > 0) {
-    // What the KV cache may use under the sandbox limit. Below the floor
-    // the context is tried anyway; if it can't be allocated the load fails
-    // with kOutOfMemory.
-    const uint64_t used = (repack && !gpu ? params.file_size : 0) +
-                          kComputeReserveBytes + vision_bytes;
-    const uint64_t kv_room = budget > used ? budget - used : 0;
-    const uint64_t by_limit = kv_room / sizing_in.kv_bytes_per_token;
-    if (by_limit < static_cast<uint64_t>(n_ctx)) {
-      n_ctx = std::max(floor, static_cast<int>(by_limit - by_limit % 256));
+  bool on_gpu = false;
+  bool all_on_gpu = false;
+  // One attempt at the model, its projector and its context on |device|
+  // (nullptr: the CPU alone in a Vulkan build, Metal or the CPU otherwise).
+  // On failure the caller frees what was loaded.
+  auto attempt = [&](ggml_backend_dev_t device) -> EngineLoadStatus {
+    llama_model_params model_params = llama_model_default_params();
+    ggml_backend_dev_t devices[2] = {device, nullptr};
+    if (vulkan) {
+      // Never "every registered device": the chosen GPU, or none.
+      model_params.devices = devices;
+      model_params.n_gpu_layers = device ? gpu_plan.gpu_layers : 0;
+    } else {
+      model_params.n_gpu_layers = -1;  // all layers on the GPU (Metal)
     }
-  }
-  // The browser's cap wins (it accepts nothing above it).
-  const int cap = params.max_context_tokens > 0
-                      ? static_cast<int>(std::min<uint32_t>(
-                            params.max_context_tokens, INT32_MAX))
-                      : INT32_MAX;
-  n_ctx = std::max(1, std::min(n_ctx, cap));
+    model_params.use_extra_bufts = repack;
+    m->model = llama_model_load_from_file_ptr(file, model_params);
+    if (!m->model) return EngineLoadStatus::kInvalidModelFile;
 
-  llama_context_params ctx_params = llama_context_default_params();
-  ctx_params.n_ctx = static_cast<uint32_t>(n_ctx);
-  // Prompts longer than n_batch are decoded in n_batch-sized chunks.
-  ctx_params.n_batch = static_cast<uint32_t>(std::min(n_ctx, sizing.n_batch));
-  ctx_params.n_threads = threads;
-  ctx_params.n_threads_batch = threads;
+    on_gpu = vulkan ? device != nullptr : llama_supports_gpu_offload();
+    all_on_gpu = on_gpu && (!vulkan || gpu_plan.gpu_layers < 0);
+    const int threads =
+        static_cast<int>(std::clamp<uint32_t>(params.cpu_threads, 1, 256));
 
-  m->ctx = llama_init_from_model(m->model, ctx_params);
-  const int retry_ctx = std::min(kMinContextTokens, cap);
-  if (!m->ctx && n_ctx > retry_ctx) {
-    // The KV estimate is approximate (and GPU buffers can fail to
-    // allocate); retry with the old fixed size before giving up.
-    ctx_params.n_ctx = static_cast<uint32_t>(retry_ctx);
-    ctx_params.n_batch = static_cast<uint32_t>(retry_ctx);
+    // ---- Vision projector (image input) ----
+    // Before the context, so the KV cache is sized with the projector
+    // already in memory. clip copies the weights out of the file.
+    if (proj) {
+      if (!SeekFile(proj, 0, SEEK_SET)) {
+        return EngineLoadStatus::kInvalidVisionProjector;
+      }
+      mtmd_context_params mparams = mtmd_context_params_default();
+      mparams.use_gpu = on_gpu;
+      // The model's GPU, not the first one ggml would pick.
+      mparams.device = vulkan ? device : nullptr;
+      mparams.print_timings = false;
+      mparams.n_threads = threads;
+      // Size the encoder's buffers for the largest image now (warmup), so an
+      // image never fails for memory later.
+      mparams.warmup = true;
+      mparams.image_max_tokens = kMaxImageTokens;
+      m->mtmd = mtmd_init_from_file_ptr(proj, m->model, mparams);
+      if (!m->mtmd || !mtmd_support_vision(m->mtmd)) {
+        return EngineLoadStatus::kInvalidVisionProjector;
+      }
+    }
+
+    // Size the context from the model's training window, RAM and a KV-cache
+    // estimate, then cap it by the browser's limit, the sandbox budget and
+    // the GPU's memory.
+    sizing_in = ContextSizingInput();
+    sizing_in.total_ram_bytes = params.total_ram_bytes;
+    sizing_in.model_file_bytes = params.file_size;
+    sizing_in.n_ctx_train = llama_model_n_ctx_train(m->model);
+    sizing_in.kv_bytes_per_token = EstimateKvBytesPerToken(
+        llama_model_n_layer(m->model), llama_model_n_embd(m->model),
+        llama_model_n_head(m->model), llama_model_n_head_kv(m->model));
+    const ContextSizing sizing = ComputeContextSizing(sizing_in);
+    // ComputeContextSizing never goes below this.
+    const int floor = sizing_in.n_ctx_train > 0
+                          ? std::min(kMinContextTokens, sizing_in.n_ctx_train)
+                          : kMinContextTokens;
+    int n_ctx = sizing.n_ctx;
+    if (limit > 0 && sizing_in.kv_bytes_per_token > 0) {
+      // What the KV cache may use under the sandbox limit. Below the floor
+      // the context is tried anyway; if it can't be allocated the load
+      // fails with kOutOfMemory.
+      const uint64_t used = (repack && !all_on_gpu ? params.file_size : 0) +
+                            kComputeReserveBytes + vision_bytes;
+      const uint64_t kv_room = budget > used ? budget - used : 0;
+      const uint64_t by_limit = kv_room / sizing_in.kv_bytes_per_token;
+      if (by_limit < static_cast<uint64_t>(n_ctx)) {
+        n_ctx = std::max(floor, static_cast<int>(by_limit - by_limit % 256));
+      }
+    }
+    if (device) {
+      // The offloaded layers' KV cache lives on the GPU, next to their
+      // weights.
+      if (const std::optional<uint32_t> by_gpu = GpuContextLimit(
+              gpu_input, gpu_plan, sizing_in.kv_bytes_per_token)) {
+        const int cap = static_cast<int>(
+            std::min<uint32_t>(*by_gpu, static_cast<uint32_t>(INT32_MAX)));
+        n_ctx = std::min(n_ctx, std::max(floor, cap - cap % 256));
+      }
+    }
+    // The browser's cap wins (it accepts nothing above it).
+    const int cap = params.max_context_tokens > 0
+                        ? static_cast<int>(std::min<uint32_t>(
+                              params.max_context_tokens, INT32_MAX))
+                        : INT32_MAX;
+    n_ctx = std::max(1, std::min(n_ctx, cap));
+
+    llama_context_params ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = static_cast<uint32_t>(n_ctx);
+    // Prompts longer than n_batch are decoded in n_batch-sized chunks.
+    ctx_params.n_batch =
+        static_cast<uint32_t>(std::min(n_ctx, sizing.n_batch));
+    ctx_params.n_threads = threads;
+    ctx_params.n_threads_batch = threads;
+
     m->ctx = llama_init_from_model(m->model, ctx_params);
+    const int retry_ctx = std::min(kMinContextTokens, cap);
+    if (!m->ctx && n_ctx > retry_ctx) {
+      // The KV estimate is approximate (and GPU buffers can fail to
+      // allocate); retry with the old fixed size before giving up.
+      ctx_params.n_ctx = static_cast<uint32_t>(retry_ctx);
+      ctx_params.n_batch = static_cast<uint32_t>(retry_ctx);
+      m->ctx = llama_init_from_model(m->model, ctx_params);
+    }
+    if (!m->ctx) return EngineLoadStatus::kOutOfMemory;
+    return EngineLoadStatus::kOk;
+  };
+
+  EngineLoadStatus status = attempt(gpu_device);
+  if (status != EngineLoadStatus::kOk && gpu_device) {
+    // The GPU couldn't take the model, its projector or its context (out of
+    // device memory, a driver error llama.cpp caught): the CPU alone. Those
+    // failures were reported, not thrown at us, so the device is fine to
+    // free on.
+    m->FreeLlama();
+    gpu_device = nullptr;
+    gpu_status = EngineGpuStatus::kLoadFailed;
+    if (!SeekFile(file, 0, SEEK_SET)) return result;
+    status = attempt(nullptr);
   }
-  if (!m->ctx) {
-    result.status = EngineLoadStatus::kOutOfMemory;
-    return result;
+  if (status != EngineLoadStatus::kOk) {
+    result.status = status;
+    return result;  // ~Model frees whatever was loaded
   }
 
   m->vocab = llama_model_get_vocab(m->model);
@@ -686,15 +830,24 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   result.status = EngineLoadStatus::kOk;
   result.description.architecture = m->arch;
 #if defined(GGML_USE_METAL)
-  result.description.backend = gpu ? "metal" : "cpu";
+  result.description.backend = on_gpu ? "metal" : "cpu";
 #else
-  result.description.backend = "cpu";
+  result.description.backend = on_gpu ? "vulkan" : "cpu";
 #endif
   result.description.context_tokens = ToU32(m->n_ctx);
   result.description.train_context_tokens = ToU32(sizing_in.n_ctx_train);
   result.description.vocab_size = ToU32(llama_vocab_n_tokens(m->vocab));
-  result.description.cpu_repack_used = repack && !gpu;
+  result.description.cpu_repack_used = repack && !all_on_gpu;
   result.description.vision = m->mtmd != nullptr;
+  result.description.gpu_status = gpu_status;
+  if (gpu_device) {
+    // The repeating layers plus the output layer when all of them are on it.
+    const int32_t n_layer = std::max(0, llama_model_n_layer(m->model));
+    result.description.gpu_layers =
+        gpu_plan.gpu_layers < 0
+            ? ToU32(n_layer + 1)
+            : ToU32(std::min(gpu_plan.gpu_layers, n_layer + 1));
+  }
   model_ = std::move(m);
   return result;
 }
@@ -712,8 +865,11 @@ void LlamaEngine::ForgetConversation(const std::string& conversation_key) {
       model_->kv_key != conversation_key) {
     return;
   }
+  if (model_->backend_failed) return;
   llama_memory_t mem = llama_get_memory(model_->ctx);
-  if (mem) llama_memory_clear(mem, true);
+  if (mem && !molt_llama::MemoryClear(mem, true)) {
+    model_->backend_failed = true;
+  }
   model_->kv_tokens.clear();
   model_->kv_key.clear();
 }
@@ -725,6 +881,10 @@ EngineSummary LlamaEngine::Raw(const EngineRawRequest& request,
   // template).
   EngineSummary summary;
   if (!loaded()) return summary;  // kDecodeFailed
+  if (model_->backend_failed) {
+    summary.status = EngineStatus::kBackendFailed;
+    return summary;
+  }
   Model& m = *model_;
   const int n_ctx = m.n_ctx;
   const int visible = params.max_visible_tokens > 0
@@ -807,6 +967,10 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
                                 const EngineCallbacks& callbacks) {
   EngineSummary summary;
   if (!loaded()) return summary;  // kDecodeFailed
+  if (model_->backend_failed) {
+    summary.status = EngineStatus::kBackendFailed;
+    return summary;
+  }
   Model& m = *model_;
   const llama_vocab* vocab = m.vocab;
   const int n_ctx = m.n_ctx;
@@ -1194,14 +1358,22 @@ std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
     return callbacks.is_cancelled && callbacks.is_cancelled();
   };
   // A failed decode leaves the cache in an unknown state: start clean next
-  // time (the prompt is never reused anyway).
+  // time (the prompt is never reused anyway). After a GPU failure nothing
+  // more is done with the context.
   auto fail = [&](EngineStatus status) -> std::optional<EngineStatus> {
-    llama_set_causal_attn(m.ctx, true);
-    if (llama_memory_t mem = llama_get_memory(m.ctx)) {
-      llama_memory_clear(mem, true);
-    }
     m.kv_tokens.clear();
     m.kv_key.clear();
+    if (molt_llama::BackendFailed()) {
+      m.backend_failed = true;
+      return EngineStatus::kBackendFailed;
+    }
+    llama_set_causal_attn(m.ctx, true);
+    if (llama_memory_t mem = llama_get_memory(m.ctx)) {
+      if (!molt_llama::MemoryClear(mem, true)) {
+        m.backend_failed = true;
+        return EngineStatus::kBackendFailed;
+      }
+    }
     return status;
   };
   struct BatchFree {
@@ -1248,7 +1420,8 @@ std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
           !llama_batch_ext_set_output_logits(batch.get(), idx, true)) {
         return Step::kFailed;
       }
-      if (llama_process(m.ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+      if (molt_llama::Process(m.ctx, LLAMA_PROCESS_TYPE_DECODE,
+                              batch.get()) != 0) {
         return Step::kFailed;
       }
       m.kv_tokens.insert(m.kv_tokens.end(), toks + j, toks + j + take);
@@ -1328,7 +1501,8 @@ std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
           return fail(EngineStatus::kDecodeFailed);
         }
       }
-      if (llama_process(m.ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+      if (molt_llama::Process(m.ctx, LLAMA_PROCESS_TYPE_DECODE,
+                              batch.get()) != 0) {
         return fail(EngineStatus::kDecodeFailed);
       }
       // No token ids for image cells; the count is what matters (the
@@ -1395,8 +1569,11 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
       n_keep = 0;
     }
   }
-  if (n_keep == 0) {
-    llama_memory_clear(mem, true);
+  if (n_keep == 0 && !molt_llama::MemoryClear(mem, true)) {
+    m.backend_failed = true;
+    m.kv_tokens.clear();
+    m.kv_key.clear();
+    return EngineStatus::kBackendFailed;
   }
   m.kv_tokens.assign(prompt.begin(),
                      prompt.begin() + static_cast<std::ptrdiff_t>(n_keep));
@@ -1406,10 +1583,13 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
 
   auto fail_decode = [&]() {
     // The cache state is unknown after a failed decode: start clean next
-    // time.
-    llama_memory_clear(mem, true);
+    // time. After a GPU failure nothing more is done with the context.
     m.kv_tokens.clear();
     m.kv_key.clear();
+    if (molt_llama::BackendFailed() || !molt_llama::MemoryClear(mem, true)) {
+      m.backend_failed = true;
+      return EngineStatus::kBackendFailed;
+    }
     return EngineStatus::kDecodeFailed;
   };
 
@@ -1439,7 +1619,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
         std::min<size_t>(static_cast<size_t>(m.n_batch), work.size() - i);
     llama_batch batch =
         llama_batch_get_one(work.data() + i, static_cast<int32_t>(n));
-    if (llama_decode(m.ctx, batch) != 0) return fail_decode();
+    if (molt_llama::Decode(m.ctx, batch) != 0) return fail_decode();
     m.kv_tokens.insert(m.kv_tokens.end(),
                        work.begin() + static_cast<std::ptrdiff_t>(i),
                        work.begin() + static_cast<std::ptrdiff_t>(i + n));
@@ -1513,7 +1693,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
 
     llama_token tok;
     if (grammar) {
-      const float* logits = llama_get_logits_ith(m.ctx, -1);
+      const float* logits = molt_llama::GetLogitsIth(m.ctx, -1);
       if (!logits) {
         status = fail_decode();
         break;
@@ -1530,7 +1710,11 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
         break;
       }
     } else {
-      tok = llama_sampler_sample(sampler, m.ctx, -1);
+      tok = molt_llama::SamplerSample(sampler, m.ctx, -1);
+      if (molt_llama::BackendFailed()) {
+        status = fail_decode();
+        break;
+      }
     }
     llama_sampler_accept(sampler, tok);
 
@@ -1579,7 +1763,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
       break;
     }
 
-    if (llama_decode(m.ctx, llama_batch_get_one(&tok, 1)) != 0) {
+    if (molt_llama::Decode(m.ctx, llama_batch_get_one(&tok, 1)) != 0) {
       status = fail_decode();
       break;
     }
@@ -1609,7 +1793,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
       }
       llama_batch force_batch =
           llama_batch_get_one(ft.data(), static_cast<int32_t>(ft.size()));
-      if (llama_decode(m.ctx, force_batch) != 0) {
+      if (molt_llama::Decode(m.ctx, force_batch) != 0) {
         status = fail_decode();
         break;
       }
@@ -1644,6 +1828,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   send();
   if (stop.stopped() && status != EngineStatus::kCancelled &&
       status != EngineStatus::kDecodeFailed &&
+      status != EngineStatus::kBackendFailed &&
       status != EngineStatus::kConstraintFailed) {
     status = EngineStatus::kStopSequence;
   }

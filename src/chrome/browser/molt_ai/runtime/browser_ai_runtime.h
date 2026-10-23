@@ -378,7 +378,8 @@ class BrowserAIRuntime {
   void OnAppTerminating();
   void OnModelProcessLost(const std::string& model_id,
                           const std::string& crash_key,
-                          int phase);
+                          int phase,
+                          bool gpu_failure);
   // The streaming facade shared by StreamPrompt and StreamChat.
   GenerationResult Generate(bool is_chat,
                             const ChatPrompt* chat,

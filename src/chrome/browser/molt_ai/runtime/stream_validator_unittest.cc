@@ -305,5 +305,54 @@ TEST(CrashLoopGuardTest, IdleDeathsDontCount) {
   EXPECT_EQ(g.Check("m", 11), CrashLoopGuard::Verdict::kAllowed);
 }
 
+TEST(GpuDescriptionTest, Validation) {
+  // On the GPU: requested, "vulkan", kOn, 1..max layers.
+  EXPECT_TRUE(IsValidGpuDescription(true, "vulkan", true, 1, 4097));
+  EXPECT_TRUE(IsValidGpuDescription(true, "vulkan", true, 4097, 4097));
+  EXPECT_FALSE(IsValidGpuDescription(true, "vulkan", true, 0, 4097));
+  EXPECT_FALSE(IsValidGpuDescription(true, "vulkan", true, 4098, 4097));
+  // Not asked for the GPU, yet on it: a lie.
+  EXPECT_FALSE(IsValidGpuDescription(false, "vulkan", true, 33, 4097));
+  // "vulkan" without the GPU on, or the GPU on without "vulkan".
+  EXPECT_FALSE(IsValidGpuDescription(true, "vulkan", false, 33, 4097));
+  EXPECT_FALSE(IsValidGpuDescription(true, "cpu", true, 33, 4097));
+  // On the CPU (a fallback included): no layers on the GPU.
+  EXPECT_TRUE(IsValidGpuDescription(true, "cpu", false, 0, 4097));
+  EXPECT_TRUE(IsValidGpuDescription(false, "cpu", false, 0, 4097));
+  EXPECT_FALSE(IsValidGpuDescription(true, "cpu", false, 1, 4097));
+  // Metal (macOS) never reports Vulkan layers.
+  EXPECT_TRUE(IsValidGpuDescription(false, "metal", false, 0, 4097));
+  EXPECT_FALSE(IsValidGpuDescription(false, "metal", false, 5, 4097));
+}
+
+TEST(GpuFallbackGuardTest, OneFailureTurnsTheGpuOffForThatModel) {
+  GpuFallbackGuard g;
+  EXPECT_TRUE(g.AllowGpu("a"));
+  EXPECT_TRUE(g.AllowGpu("b"));
+  g.RecordGpuFailure("a");
+  EXPECT_FALSE(g.AllowGpu("a"));
+  EXPECT_TRUE(g.AllowGpu("b"));
+  EXPECT_FALSE(g.gpu_disabled());
+  // A second failure, of the same model or another, turns it off for all.
+  g.RecordGpuFailure("a");
+  EXPECT_TRUE(g.gpu_disabled());
+  EXPECT_FALSE(g.AllowGpu("b"));
+}
+
+TEST(GpuFallbackGuardTest, TwoFailuresTurnTheGpuOffForEveryModel) {
+  GpuFallbackGuard g;
+  g.RecordGpuFailure("a");
+  g.RecordGpuFailure("b");
+  EXPECT_TRUE(g.gpu_disabled());
+  EXPECT_FALSE(g.AllowGpu("a"));
+  EXPECT_FALSE(g.AllowGpu("b"));
+  EXPECT_FALSE(g.AllowGpu("c"));
+  // Bounded: further failures change nothing.
+  for (int i = 0; i < 100; ++i) {
+    g.RecordGpuFailure("x" + std::to_string(i));
+  }
+  EXPECT_FALSE(g.AllowGpu("c"));
+}
+
 }  // namespace
 }  // namespace molt_ai

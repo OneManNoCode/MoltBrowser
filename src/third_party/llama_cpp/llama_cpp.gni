@@ -1,0 +1,11 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+declare_args() {
+  # MoltBrowser: GPU inference on Linux and Windows with llama.cpp's Vulkan
+  # backend (ggml-vulkan), the CPU staying the fallback. Off until it has been
+  # tested on real GPUs; costs about 40 MB of SPIR-V in the binary and a host
+  # build of glslang and SPIRV-Tools. macOS uses Metal and refuses it.
+  # Design, sandbox and status: docs/design/SANDBOXED_INFERENCE.md section 11.
+  molt_llama_vulkan = false
+}

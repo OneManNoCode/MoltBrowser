@@ -38,7 +38,15 @@ using Kind = InferenceOutcome::Kind;
 // the test.
 class FakeService : public mojom::MoltInferenceService, public mojom::Model {
  public:
-  enum class LoadBehavior { kOk, kFail, kHang, kBadDescription, kVision };
+  enum class LoadBehavior {
+    kOk,
+    kFail,
+    kHang,
+    kBadDescription,
+    kVision,
+    // On the GPU (Vulkan), 33 layers.
+    kGpu,
+  };
 
   void Bind(mojo::PendingReceiver<mojom::MoltInferenceService> receiver) {
     service_receiver_.Bind(std::move(receiver));
@@ -60,6 +68,18 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
         d->train_context_tokens = 4096;
         d->vocab_size = 32000;
         d->vision = load_behavior == LoadBehavior::kVision;
+        std::move(callback).Run(mojom::LoadModelStatus::kOk, std::move(d));
+        break;
+      }
+      case LoadBehavior::kGpu: {
+        auto d = mojom::ModelDescription::New();
+        d->architecture = "llama";
+        d->backend = "vulkan";
+        d->context_tokens = 4096;
+        d->train_context_tokens = 4096;
+        d->vocab_size = 32000;
+        d->gpu_status = mojom::GpuStatus::kOn;
+        d->gpu_layers = 33;
         std::move(callback).Run(mojom::LoadModelStatus::kOk, std::move(d));
         break;
       }
@@ -136,10 +156,13 @@ class RecordingDelegate : public InferenceProcessHost::Delegate {
  public:
   void OnModelProcessLost(const std::string& model_id,
                           const std::string& crash_key,
-                          CrashLoopGuard::Phase phase) override {
+                          CrashLoopGuard::Phase phase,
+                          bool gpu_failure) override {
     lost.push_back(phase);
+    gpu_failures.push_back(gpu_failure);
   }
   std::vector<CrashLoopGuard::Phase> lost;
+  std::vector<bool> gpu_failures;
 };
 
 class InferenceProcessHostTest : public testing::Test {
@@ -165,7 +188,9 @@ class InferenceProcessHostTest : public testing::Test {
         [](InferenceProcessHostTest* self,
            mojo::PendingReceiver<mojom::MoltInferenceService> receiver,
            base::WeakPtr<content::ServiceProcessHost::Observer> observer,
-           base::OnceCallback<void(const base::Process&)> on_process) {
+           base::OnceCallback<void(const base::Process&)> on_process,
+           bool use_gpu) {
+          self->launched_for_gpu_.push_back(use_gpu);
           self->services_.push_back(std::make_unique<FakeService>());
           self->services_.back()->load_behavior = self->next_load_behavior_;
           self->services_.back()->Bind(std::move(receiver));
@@ -178,12 +203,14 @@ class InferenceProcessHostTest : public testing::Test {
     mojo::SetDefaultProcessErrorHandler(base::NullCallback());
   }
 
-  scoped_refptr<InferenceMailbox> Load(bool with_projector = false) {
+  scoped_refptr<InferenceMailbox> Load(bool with_projector = false,
+                                       bool use_gpu = false) {
     InferenceProcessHost::LoadRequest r;
     r.model_id = "m";
     r.crash_key = "m:1:2";
     r.file_size = 1;
     r.max_context_tokens = 32768;
+    r.use_gpu = use_gpu;
     if (with_projector) {
       EXPECT_TRUE(temp_dir_.IsValid() || temp_dir_.CreateUniqueTempDir());
       const base::FilePath path =
@@ -243,6 +270,7 @@ class InferenceProcessHostTest : public testing::Test {
   base::ScopedTempDir temp_dir_;
   std::vector<std::string> bad_messages_;
   FakeService::LoadBehavior next_load_behavior_ = FakeService::LoadBehavior::kOk;
+  std::vector<bool> launched_for_gpu_;
   std::vector<std::unique_ptr<FakeService>> services_;
   std::unique_ptr<InferenceProcessHost> host_;
 };
@@ -475,6 +503,88 @@ TEST_F(InferenceProcessHostTest, LoadFailureAndLoadHang) {
   ASSERT_TRUE(Finished(hung.get()));
   EXPECT_EQ(hung->outcome().kind, Kind::kTimedOut);
   ASSERT_EQ(delegate_.lost.size(), 1u);
+  EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kLoading);
+  EXPECT_FALSE(delegate_.gpu_failures[0]);  // the GPU wasn't asked for
+}
+
+// GPU inference (docs/design/SANDBOXED_INFERENCE.md section 11).
+
+TEST_F(InferenceProcessHostTest, GpuLoadIsLaunchedAndDescribedAsSuch) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  scoped_refptr<InferenceMailbox> load = Load(/*with_projector=*/false,
+                                              /*use_gpu=*/true);
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_EQ(load->outcome().backend, "vulkan");
+  EXPECT_EQ(load->outcome().gpu_status, mojom::GpuStatus::kOn);
+  EXPECT_EQ(load->outcome().gpu_layers, 33u);
+  // Launched with the GPU switch, and asked for the GPU.
+  ASSERT_EQ(launched_for_gpu_.size(), 1u);
+  EXPECT_TRUE(launched_for_gpu_[0]);
+  EXPECT_TRUE(service().load_params()->use_gpu);
+  // A CPU load is launched without it.
+  next_load_behavior_ = FakeService::LoadBehavior::kOk;
+  Load();
+  ASSERT_EQ(launched_for_gpu_.size(), 2u);
+  EXPECT_FALSE(launched_for_gpu_[1]);
+  EXPECT_FALSE(service().load_params()->use_gpu);
+  EXPECT_TRUE(bad_messages_.empty());
+}
+
+TEST_F(InferenceProcessHostTest, GpuDescriptionWithoutTheRequestIsAViolation) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  scoped_refptr<InferenceMailbox> load = Load();  // not asked for the GPU
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+  EXPECT_EQ(bad_messages_.size(), 1u);
+  EXPECT_FALSE(host_->HasCurrentModelForTesting());
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_FALSE(delegate_.gpu_failures[0]);  // a lie isn't a GPU failure
+}
+
+TEST_F(InferenceProcessHostTest, CrashOnTheGpuIsAGpuFailure) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  scoped_refptr<InferenceMailbox> gen = Chat(1);
+  service().Crash();
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(gen.get()));
+  EXPECT_EQ(gen->outcome().kind, Kind::kProcessGone);
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_TRUE(delegate_.gpu_failures[0]);
+  EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kGenerating);
+}
+
+TEST_F(InferenceProcessHostTest, IdleDeathOnTheGpuIsNotAGpuFailure) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  service().Crash();  // nothing running
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_FALSE(delegate_.gpu_failures[0]);
+  EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kIdle);
+}
+
+TEST_F(InferenceProcessHostTest, CrashAfterTheCpuFallbackIsAModelCrash) {
+  // Asked for the GPU, but the service loaded the model on the CPU.
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  scoped_refptr<InferenceMailbox> gen = Chat(1);
+  service().Crash();
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(gen.get()));
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_FALSE(delegate_.gpu_failures[0]);
+}
+
+TEST_F(InferenceProcessHostTest, HangLoadingForTheGpuIsAGpuFailure) {
+  next_load_behavior_ = FakeService::LoadBehavior::kHang;
+  scoped_refptr<InferenceMailbox> hung =
+      Load(/*with_projector=*/false, /*use_gpu=*/true);
+  task_environment_.FastForwardBy(base::Minutes(11));
+  ASSERT_TRUE(Finished(hung.get()));
+  EXPECT_EQ(hung->outcome().kind, Kind::kTimedOut);
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_TRUE(delegate_.gpu_failures[0]);
   EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kLoading);
 }
 
