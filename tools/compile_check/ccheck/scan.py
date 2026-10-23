@@ -334,12 +334,16 @@ class Scanner:
                 for kind, name, angle in extract_includes(data):
                     if angle and "/" not in name and "." not in name:
                         continue  # <vector> and friends
-                    if angle and (name.startswith(SYSTEM_PREFIXES) or
-                                  STD_NAMES.match(name)):
-                        continue
                     if kind == "include_next":
                         continue
+                    system = angle and (name.startswith(SYSTEM_PREFIXES) or
+                                        STD_NAMES.match(name))
                     r = self.resolve(name, key, angle)
+                    if r is None and system:
+                        # The sysroot's. (One the tree has, such as
+                        # <GLES2/gl2chromium.h> or <KHR/khrplatform.h>, is
+                        # followed.)
+                        continue
                     if r is None:
                         # Includers in gen/ are marked, so a bare name can
                         # be looked for next to its (generated) includer.

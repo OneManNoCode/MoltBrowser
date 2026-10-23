@@ -281,6 +281,9 @@ class Interp:
         self.declared = {}
         self.warnings = []
         self._exec_cache = {}
+        # write_file() calls: {"//out/cc/...": text}, written by whoever
+        # runs an action that reads them (gn writes them at gen time).
+        self.written_files = {}
 
     # -- files -----------------------------------------------------------
     def parse(self, path):
@@ -386,6 +389,17 @@ class Interp:
         # index assignment: ignored
 
     def call_stmt(self, name, args, block, scope, ctx):
+        if name == "write_file":
+            p = self.eval(args[0], scope, ctx)
+            v = self.eval(args[1], scope, ctx) if len(args) > 1 else UNKNOWN
+            if isinstance(p, str) and isinstance(v, (str, list)) and \
+                    all(isinstance(x, str) for x in
+                        (v if isinstance(v, list) else [v])):
+                # io_conversion "": a list is written one item per line.
+                self.written_files[self.abspath(p, ctx)] = \
+                    "".join(x + "\n" for x in v) if isinstance(v, list) \
+                    else v
+            return
         if name == "import":
             p = self.eval(args[0], scope, ctx)
             if isinstance(p, str):
@@ -798,7 +812,13 @@ class Interp:
         if what == "dir":
             return v.rsplit("/", 1)[0] if "/" in v else "."
         if what == "abspath":
-            return self.abspath(v, ctx)
+            # As gn: a directory ("..", "foo/") keeps its trailing slash
+            # (Dawn's dawn_root, then get_path_info(dawn_root, "gen_dir")).
+            a = self.abspath(v, ctx)
+            if (v in (".", "..") or v.endswith(("/", "/.", "/.."))) \
+                    and a != "//":
+                a += "/"
+            return a
         if what in ("gen_dir", "out_dir"):
             # A directory ("." , "..", "foo/") is its own dir.
             is_dir = v in (".", "..") or v.endswith(("/", "/.", "/.."))
@@ -849,7 +869,19 @@ declare_args() {
   rtc_use_h265 = false
   rtc_use_h264 = false
   rtc_enable_protobuf = true
+  rtc_use_pipewire = true
+  rtc_objc_prefix = ""
+  rtc_dlog_always_on = false
+  rtc_enable_symbol_export = false
+  rtc_enable_objc_symbol_export = false
+  rtc_builtin_ssl_root_certificates = true
+  rtc_disable_check_msg = false
+  rtc_enable_avx2 = true
+  rtc_enable_win_wgc = false
+  rtc_include_tests = false
+  rtc_sanitize_coverage = ""
 }
+rtc_use_perfetto = true
 """,
     "//third_party/dawn/scripts/dawn_features.gni": """
 declare_args() {

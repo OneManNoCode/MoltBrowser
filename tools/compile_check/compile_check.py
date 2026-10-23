@@ -63,7 +63,7 @@ def ensure_inputs(tree):
     paths += tree.chromium_files(
         lambda p: p.endswith(("/BUILD.gn", ".gni", ".mojom", ".proto",
                               "/.gn")) or p in ("BUILD.gn", ".gn"))
-    for p in GEN_TOOLS:
+    for p in GEN_TOOLS + config.MACRO_INCLUDED:
         paths += tree.glob_upstream(p) if p.endswith("/") else [p]
     tree.materialize(paths)
     write_hook_outputs(tree)
@@ -82,6 +82,13 @@ def write_hook_outputs(tree):
     if not (util / "LASTCHANGE.dummy").exists():
         (util / "LASTCHANGE.dummy").write_text(
             "LASTCHANGE=0000000000000000000000000000000000000000-0000000000000000000000000000000000000000\n")
+    # lastchange.py -s third_party/dawn --revision gpu/webgpu/DAWN_VERSION
+    e = tree.chromium.entries.get("third_party/dawn")
+    dv = tree.tree_dir / "gpu" / "webgpu" / "DAWN_VERSION"
+    text = (e.oid if e is not None else "") + "\n"
+    if not dv.exists() or dv.read_text() != text:
+        dv.parent.mkdir(parents=True, exist_ok=True)
+        dv.write_text(text)
 
 
 def cmd_setup(args, tree=None):
@@ -191,10 +198,15 @@ def do_gen(args, tree, missing):
         if gen_misc.handles_exclusively(name):
             continue
         cands = _gen_candidates(name)
-        # A generated file including a bare name: next to it.
+        # Relative to the including file's directory, in gen/ (a generated
+        # file including a bare name; v8-inspector-protocol.h including
+        # "inspector/Debugger.h").
         for inc in includers.get(name, []):
-            if inc.startswith("gen:") and "/" in inc and "/" not in name:
-                cands.append(inc[4:].rsplit("/", 1)[0] + "/" + name)
+            inc = inc[4:] if inc.startswith("gen:") else inc
+            if "/" in inc:
+                c = inc.rsplit("/", 1)[0] + "/" + name
+                if c not in cands:
+                    cands.append(c)
         for rel in cands:
             if produce([rel]):
                 done.add(name)

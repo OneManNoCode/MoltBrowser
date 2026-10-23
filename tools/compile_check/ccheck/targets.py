@@ -14,9 +14,13 @@ FIRST_PARTY_DIRS = [
     "chrome/services/molt_ai",
     "chrome/common/molt_ai",
     "chrome/renderer/molt_ai",
+    "third_party/blink/renderer/core/molt_fingerprinting",
+    "third_party/blink/renderer/core/molt_net",
 ]
 FIRST_PARTY_GLOBS = [
     ("components/omnibox/browser", "molt_"),
+    ("chrome/browser/ui/views/toolbar", "molt_"),
+    ("content/utility/on_device_model", "molt_"),
 ]
 
 # Priority 2: patched upstream files with MoltBrowser hooks

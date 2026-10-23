@@ -35,7 +35,9 @@ keeps in `.molt-chromium-cache/` (`--chromium-cache` to point elsewhere).
 
 Targets (`ccheck/targets.py`): by default every `.cc` in
 `chrome/{browser,services,common,renderer}/molt_ai/`,
-`chrome/browser/ui/webui/molt_ai/` and `components/omnibox/browser/molt_*`
+`chrome/browser/ui/webui/molt_ai/`, Blink's `core/molt_fingerprinting/` and
+`core/molt_net/`, and the `molt_*` files in `components/omnibox/browser/`,
+`chrome/browser/ui/views/toolbar/` and `content/utility/on_device_model/`
 (other platforms' files skipped), plus the upstream files with MoltBrowser
 hooks named in section 4 of the build checklist. Also: a path or directory
 under `src/`, `@first-party`, `@hooks`, `@patched` (every modified upstream
@@ -62,8 +64,8 @@ checked** (a header it needs can't be had here; named). Details:
   unless certainly false on Linux, so it over-fetches a little.
 * `ccheck/gn.py`: a small GN interpreter (BUILDCONFIG, imports,
   `declare_args`, templates, `foreach`, `get_target_outputs`,
-  `process_file_template`, `exec_script` for `version.py`) run with
-  `configs/linux-x64.gn`.
+  `process_file_template`, `write_file`, `exec_script` for `version.py`)
+  run with `configs/linux-x64.gn`.
 * Generated headers, made the way the build makes them:
   - buildflag headers: the `buildflag_header()` target's flags, evaluated,
     written by `build/write_buildflag_header.py` (`gen_buildflags.py`);
@@ -77,6 +79,12 @@ checked** (a header it needs can't be had here; named). Details:
     release matching `third_party/protobuf` (33.0); perfetto's protozero and
     cppgen plugins, flatc and cxxbridge are built here from the pinned
     sources (`host_tools.py`).
+* `ccheck/gnconfigs.py`: the defines, include dirs and cflags of the GN
+  `config()`s a file gets from its dependencies (`//ui/views:flags` for
+  `TOOLKIT_VIEWS`, skia, perfetto, boringssl, webrtc, v8) and, by
+  directory, from its own target (`content_implementation`, Blink's
+  `inside_blink`, `features` and its plugin config), read from the real
+  BUILD.gn files.
 * `ccheck/check.py`: Chromium's own clang (the `tools/clang` pin) with its
   Debian sysroot, C++23, `-fno-exceptions -fno-rtti`, the Linux
   official-build defines, the chromium-style and raw_ptr plugins as an
@@ -96,8 +104,8 @@ bug. `gen_misc.py` marks each generated stand-in in its first line.
 | WebUI resource headers (`chrome/grit/*_resources{,_map}.h`, generated `.grd`) | the map declaration; the `IDR_<STEM>_*` names its includers use | grit on the `.grd` the WebUI build generates |
 | `base/generated_build_date.h` | fixed timestamp | the build's timestamp |
 | `build/util/LASTCHANGE*`, `build/config/gclient_args.gni` | fixed values | written by gclient hooks |
-| `.gni` files of DEPS repos without a mirror (`icu/config.gni`, `webrtc.gni`, `dawn_features.gni`) | the few `declare_args` the Linux build reads (`gn.py`) | the real files |
-| pdfium, webrtc, libyuv, openscreen | the GitHub mirror's HEAD (the pinned commit is not mirrored) | the pinned commit |
+| `icu/config.gni`, `webrtc.gni`, `dawn_features.gni` | the `declare_args` the Linux Chromium build reads, with their Linux values (`gn.py`) | the real files |
+| pdfium, webrtc, libyuv, openscreen, dawn | the GitHub mirror's HEAD (the pinned commit is not mirrored) | the pinned commit |
 | `third_party/dom_distiller_js/dist` (a CIPD package) | `proto/` of the dom-distiller repository's HEAD | the CIPD package |
 | libc++ / libc++abi headers | llvm-project at the commit Chromium's clang was built from | Chromium's libc++ mirror at its own pin (googlesource only) |
 | ICU headers | upstream ICU `release-78.3` | Chromium's ICU fork |
@@ -112,10 +120,12 @@ The first two kinds and the mirror-HEAD repositories are named per file by
 * Linking, ODR and anything past the front end (no object files).
 * Other platforms: macOS (`.mm`, Metal), Windows, Android code is not
   compiled.
-* Files whose headers can't be had here, reported as "not checked": dawn
-  (no mirror of the pinned commit; `content/utility/on_device_model/` and
-  `services/on_device_model/ml` need it). `gen_report.json` lists every
-  header that stayed missing.
+* Files whose headers can't be had here are reported as "not checked",
+  with the header; `gen_report.json` lists every header that stayed
+  missing and why.
+* Code built only under other GN args, or only by a target whose own
+  configs are not in `gnconfigs.py`: the file is compiled with the configs
+  listed there, not with its target's exact set.
 * GN itself: `gn check`, DEPS rules (checkdeps), visibility and target
   dependencies are not checked; a file compiles here if its includes resolve
   anywhere in the tree (with the union of every target's include dirs).

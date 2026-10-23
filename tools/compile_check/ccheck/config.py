@@ -132,6 +132,13 @@ DEFINES = [
     "WEBRTC_CHROMIUM_BUILD", "WEBRTC_POSIX", "WEBRTC_LINUX",
 ]
 
+# Headers only ever included through a macro the GN configs define
+# (#include SK_REF_CNT_MIXIN_INCLUDE): the include scanner can't follow
+# those, so they are fetched up front.
+MACRO_INCLUDED = [
+    "skia/config/",
+]
+
 CFLAGS = [
     "-std=c++23", "-fno-exceptions", "-fno-rtti", "-fsyntax-only",
     "-nostdinc++", "-fno-strict-aliasing", "-fno-delete-null-pointer-checks",

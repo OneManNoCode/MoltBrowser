@@ -19,6 +19,8 @@ GLOBAL_CONFIGS = [
 ]
 
 DIR_CONFIGS = {
+    # GetContentClient() and friends are declared for content's own files.
+    "content/": ["//content:content_implementation"],
     "third_party/blink/renderer/": [
         "//third_party/blink/renderer:inside_blink",
         "//third_party/blink/renderer:features",
@@ -51,7 +53,8 @@ def _flags_of(interp, tree, label, seen, out, cache):
             a = interp.abspath(d, {"dir": t.path})
             out.append("-I" + str(tree.tree_dir / a[2:]))
         for c in t.get("cflags") or []:
-            if isinstance(c, str) and not c.startswith("/"):
+            if isinstance(c, str) and not c.startswith("/") \
+                    and "<UNKNOWN>" not in c:
                 out.append(c)
         for sub in t.get("configs") or []:
             if isinstance(sub, str):

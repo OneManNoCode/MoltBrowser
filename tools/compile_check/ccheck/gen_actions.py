@@ -76,20 +76,25 @@ def _build_files_mentioning(tree, word, limit=40):
 EXTRA_BUILD_FILES = {
     "third_party/perfetto/build_config/": "third_party/perfetto/gn/BUILD.gn",
     "v8/include/inspector/": "v8/src/inspector/BUILD.gn",
+    "third_party/dawn/include/dawn/dawn_version": "third_party/dawn/src/dawn/BUILD.gn",
     "third_party/dawn/include/dawn/": "third_party/dawn/include/dawn/BUILD.gn",
     "third_party/dawn/src/dawn/": "third_party/dawn/src/dawn/BUILD.gn",
 }
 
 
-def find_action(tree, interp, gen_rel):
-    """The target writing gen/<gen_rel>, or None."""
+def find_action(tree, interp, gen_rel, hint=None):
+    """The target writing gen/<gen_rel>, or None. hint: a BUILD.gn to look
+    in first (that of the action needing it as an input)."""
     want = gn.OUT + "/gen/" + gen_rel
     parts = gen_rel.split("/")
-    cands = [bf for pre, bf in EXTRA_BUILD_FILES.items()
-             if gen_rel.startswith(pre)]
+    cands = [hint] if hint else []
+    cands += [bf for pre, bf in EXTRA_BUILD_FILES.items()
+              if gen_rel.startswith(pre) and bf != hint]
     for i in range(len(parts) - 1, -1, -1):
         d = "/".join(parts[:i])
-        cands.append((d + "/BUILD.gn") if d else "BUILD.gn")
+        bf = (d + "/BUILD.gn") if d else "BUILD.gn"
+        if bf not in cands:
+            cands.append(bf)
     stem = parts[-1].split(".")[0]
     if len(stem) >= 6:
         cands += [p for p in _build_files_mentioning(tree, stem)
@@ -187,10 +192,18 @@ def _perfetto_plugin_target(t):
 
 def run_action(tree, interp, t, depth=0):
     """Returns None on success, else a reason."""
+    # Files gn's write_file() would have written while generating.
+    for path, text in interp.written_files.items():
+        if path.startswith(gn.OUT + "/"):
+            f = tree.tree_dir / path[2:]
+            if not f.exists() or f.read_text() != text:
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text(text)
     if depth < 4:
         for rel in _gen_inputs(interp, t):
             if not (tree.gen_dir / rel).exists():
-                _, failed = produce(tree, interp, [rel], depth + 1)
+                _, failed = produce(tree, interp, [rel], depth + 1,
+                                    hint=t.path[2:].rstrip("/") + "/BUILD.gn")
                 if failed:
                     return "%s: input %s: %s" % (t, rel, failed[rel][:300])
     script = t.get("script")
@@ -231,8 +244,11 @@ def run_action(tree, interp, t, depth=0):
     _ensure_py_deps(tree)
     script_path = interp.abspath(script, {"dir": t.path})[2:]
     sd = script_path.rsplit("/", 1)[0] + "/"
+    # The script's package, with the templates it renders (jinja2:
+    # inspector_protocol's lib/*.template, ...).
     need = [script_path] + [p for p in tree.glob_upstream(sd)
-                            if p.endswith(".py")]
+                            if p.endswith((".py", ".template", ".tmpl",
+                                           ".jinja", ".jinja2"))]
     need += _src_paths(interp, t, "inputs") + _src_paths(interp, t, "sources")
     if script_path.endswith("protoc_wrapper.py"):
         # protoc reads the imports of the listed .proto files too.
@@ -278,7 +294,7 @@ def run_action(tree, interp, t, depth=0):
     return None
 
 
-def produce(tree, interp, gen_rels, depth=0):
+def produce(tree, interp, gen_rels, depth=0, hint=None):
     """Generates each gen/<rel> it can. Returns (written, {rel: reason})."""
     written, failed = [], {}
     done_targets = set()
@@ -286,7 +302,7 @@ def produce(tree, interp, gen_rels, depth=0):
         if (tree.gen_dir / rel).exists():
             written.append(rel)
             continue
-        t = find_action(tree, interp, rel)
+        t = find_action(tree, interp, rel, hint)
         if t is None:
             failed[rel] = "no action found"
             continue

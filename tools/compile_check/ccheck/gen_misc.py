@@ -155,6 +155,7 @@ def webui_grit_header(tree, name, includers):
             "by a WebUI build)." % name, "#pragma once", ""]
     if stem.endswith("_map"):
         return "\n".join(head + [
+            '#include "ui/base/webui/resource_path.h"', "",
             "extern const webui::ResourcePath %s[1];" % _camel(stem[:-4]),
             ""])
     prefix = "IDR_" + stem[:-len("_resources")].upper() + "_" \
