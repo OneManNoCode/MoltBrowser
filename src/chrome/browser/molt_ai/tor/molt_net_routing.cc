@@ -37,6 +37,7 @@
 #include "net/base/proxy_server.h"
 #include "net/base/schemeful_site.h"
 #include "net/proxy_resolution/proxy_info.h"
+#include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/proxy_lookup_client.mojom.h"
 #include "url/gurl.h"
