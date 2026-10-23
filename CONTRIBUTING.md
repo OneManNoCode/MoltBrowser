@@ -40,7 +40,11 @@ tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py
 ```
 
 Moving MoltBrowser to a newer Chromium is described in
-[docs/REBASING.md](docs/REBASING.md).
+[docs/REBASING.md](docs/REBASING.md). What a release needs on the build
+machine, in order (compile, tests, device checks, the MoltNet leak kit,
+signing), is [docs/BUILD_MACHINE_CHECKLIST.md](docs/BUILD_MACHINE_CHECKLIST.md);
+if your change needs a compile or a device check you couldn't do, add it
+there.
 
 ## Code Style
 

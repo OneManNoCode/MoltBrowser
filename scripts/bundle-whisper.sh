@@ -12,7 +12,7 @@
 #      copy its binary + a tiny model from a cache.
 #   2. Otherwise clone whisper.cpp at a pinned tag, build, copy.
 #
-# Cache: ~/.molt-whisper-cache/
+# Cache: <repo>/.molt-whisper-cache/ (gitignored)
 # Bundle layout:
 #   MoltBrowser.app/Contents/Resources/whisper/whisper-cli
 #   MoltBrowser.app/Contents/Resources/whisper/ggml-tiny.en.bin

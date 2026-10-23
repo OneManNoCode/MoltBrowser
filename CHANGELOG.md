@@ -589,6 +589,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   MOLTNET_COMPLIANCE.md §4. The kit's own tests run in CI.
 - Chromium is pinned in one place (`chromium_version.txt`); copied upstream
   files are tracked as a patch series with rebase tooling (`docs/REBASING.md`).
+- One ordered build-machine runbook from a fresh sync to a signed release
+  draft (`docs/BUILD_MACHINE_CHECKLIST.md`): what each merged pull request
+  still needs (compile hot spots, unit tests and their known failures,
+  fuzzers, device checks, the leak kit, offline signing), tagged with the
+  pull request it came from, and the owner's open decisions.
 - CI: actions pinned to commits, least-privilege tokens, new WebUI checks
   (fuzzed markdown renderer, jsdom smoke test of every page) and linting;
   releases are drafts until signed and publish checksums + build provenance.
@@ -612,7 +617,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the never-wired `browser.ai.*` stub (whose permission check allowed every
   caller), the prompt router, personas, the old agent engine and the model
   manager.
-- **Fuzzing** (`docs/FUZZING.md`): 28 libFuzzer targets cover MoltBrowser's
+- **Fuzzing** (`docs/FUZZING.md`): 34 libFuzzer targets cover MoltBrowser's
   own parsers and validators of untrusted input: page HTML and text, the
   built-in AI APIs' arguments, everything the sandboxed inference service
   sends back, model-file metadata, JSON Schemas (each grammar also checked

@@ -4,6 +4,19 @@
 
 ---
 
+## Next: v0.3.0 (October 2026)
+
+v0.2.5 shipped on 2026-07-13 for macOS arm64 and Linux x64 (Windows stays at
+v0.2.1). Everything merged since, including the rebase onto Chromium
+152.0.7977.169 (PR #11) and PRs up to #55, has not been compiled in a
+Chromium tree yet. The ordered build-machine work from a fresh sync to a
+signed v0.3.0 draft (sync, pins, build, compile hot spots by PR, unit tests,
+fuzzers, device checks, the MoltNet leak kit, packaging and offline signing)
+is one runbook: **[BUILD_MACHINE_CHECKLIST.md](BUILD_MACHINE_CHECKLIST.md)**.
+Record progress here as you work through it.
+
+---
+
 ## Session State
 
 **Last Updated**: 2026-07-12
