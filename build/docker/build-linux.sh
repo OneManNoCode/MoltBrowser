@@ -107,10 +107,12 @@ fi
 # ~28000 — silently, because Docker kills the container without writing
 # to our build log. 4 jobs caps peak memory at ~12 GB and still keeps
 # Rosetta CPUs busy.
+# Linux builds in its own out dir, chromium/src/out/MoltBrowser-linux, so the
+# Mac's macOS build in out/MoltBrowser survives (scripts/configure.sh).
 docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" bash -c \
-  "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --jobs 4"
+  "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux --jobs 4"
 
-echo "Build complete."
+echo "Build complete: $ROOT_DIR/chromium/src/out/MoltBrowser-linux/chrome"
 
 # Package
 if [ "$DO_PACKAGE" = true ] || [ "$DO_RELEASE" = true ]; then

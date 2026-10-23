@@ -10,7 +10,8 @@
 #   5. Flatpak (sandboxed)
 #
 # Prerequisites:
-#   - Built MoltBrowser in out/MoltBrowser
+#   - Built MoltBrowser in out/MoltBrowser-linux (Linux's own out dir:
+#     scripts/configure.sh --platform linux, scripts/build.sh --platform linux)
 #   - dpkg-deb for .deb (apt install dpkg)
 #   - rpmbuild for .rpm (dnf install rpm-build)
 #   - appimagetool for AppImage
@@ -38,7 +39,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CHROMIUM_SRC="$ROOT_DIR/chromium/src"
-BUILD_DIR="$CHROMIUM_SRC/out/MoltBrowser"
+BUILD_DIR="$CHROMIUM_SRC/out/MoltBrowser-linux"
 DIST_DIR="$ROOT_DIR/dist"
 # shellcheck source=scripts/lib-release-names.sh disable=SC1091
 source "$SCRIPT_DIR/lib-release-names.sh"
@@ -71,7 +72,7 @@ echo "Format: $FORMAT"
 CHROME_BIN="$BUILD_DIR/chrome"
 if [ ! -f "$CHROME_BIN" ]; then
   echo "ERROR: Build not found at $CHROME_BIN"
-  echo "Run ./scripts/build.sh first."
+  echo "Run ./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux first."
   exit 1
 fi
 

@@ -140,7 +140,7 @@ jobs:
         run: ./scripts/configure.sh --platform linux --arch x64
 
       - name: Build
-        run: ./scripts/build.sh
+        run: ./scripts/build.sh --platform linux
 
       - name: Package
         run: ./scripts/package-linux.sh --version "$PKG_VERSION" --format tar

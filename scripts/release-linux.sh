@@ -106,7 +106,7 @@ if [ "$USE_DOCKER" = true ]; then
 
   if [ "$SKIP_BUILD" = false ]; then
     docker run "${DOCKER_ARGS[@]}" "$DOCKER_IMG" bash -c \
-      "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh"
+      "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux"
   fi
 
   echo ""
@@ -124,7 +124,7 @@ else
   if [ "$SKIP_BUILD" = false ]; then
     echo "[1/4] Building..."
     "$SCRIPT_DIR/configure.sh" --platform linux --arch x64
-    "$SCRIPT_DIR/build.sh"
+    "$SCRIPT_DIR/build.sh" --platform linux
   else
     echo "[1/4] Skipping build"
   fi

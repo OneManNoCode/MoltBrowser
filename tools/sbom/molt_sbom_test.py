@@ -559,6 +559,10 @@ class WrapperTest(SbomTestCase):
         on stdout (this repository's pins, the fixture checkout)."""
         arts = [self.fx.artifact('MoltBrowser-Linux-x64.deb', b'deb'),
                 self.fx.artifact('MoltBrowser-Linux-x64.tar.gz', b'tgz')]
+        # A Linux build has its own out dir (scripts/configure.sh), which the
+        # wrapper reads by default, not the macOS build's out/MoltBrowser.
+        os.rename(self.fx.out_dir,
+                  os.path.join(self.fx.chromium, 'out', 'MoltBrowser-linux'))
         proc = subprocess.run(
             ['bash', os.path.join(REPO_ROOT, 'scripts', 'release-sbom.sh'),
              '--platform', 'linux', '--arch', 'x64', '--version', 'v0.3.0']

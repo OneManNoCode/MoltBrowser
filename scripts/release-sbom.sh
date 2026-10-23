@@ -27,7 +27,8 @@
 #
 #   --payload   the shipped tree, for listing bundled helpers:
 #               MoltBrowser.app on macOS, the staging folder on Windows
-#   CHROMIUM_SRC / GN_OUT_DIR override chromium/src and its out/MoltBrowser.
+#   CHROMIUM_SRC / GN_OUT_DIR override chromium/src and its out dir
+#   (out/MoltBrowser, or out/MoltBrowser-linux for --platform linux).
 
 set -euo pipefail
 
@@ -60,7 +61,12 @@ if [ -z "$PLATFORM" ] || [ -z "$ARCH" ] || [ -z "$VERSION" ] || [ ${#ARTIFACTS[@
 fi
 
 CHROMIUM_SRC="${CHROMIUM_SRC:-$ROOT_DIR/chromium/src}"
-GN_OUT_DIR="${GN_OUT_DIR:-$CHROMIUM_SRC/out/MoltBrowser}"
+# Linux builds have their own out dir (scripts/configure.sh).
+if [ "$PLATFORM" = "linux" ]; then
+  GN_OUT_DIR="${GN_OUT_DIR:-$CHROMIUM_SRC/out/MoltBrowser-linux}"
+else
+  GN_OUT_DIR="${GN_OUT_DIR:-$CHROMIUM_SRC/out/MoltBrowser}"
+fi
 # licenses.py imports depot_tools modules; depot_tools' python3 (first on
 # PATH in the release jobs) is the one Chromium's tools expect.
 PYTHON="$(command -v python3)"

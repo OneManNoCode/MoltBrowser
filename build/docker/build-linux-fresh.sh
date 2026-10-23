@@ -154,7 +154,7 @@ echo "  OK: overlay present (chrome/browser/molt_ai and friends)"
 
 # --- [6] Configure + build (+ package) ---
 echo "=== [5/6] Configure (GN) + build (autoninja, -j $JOBS) — SEVERAL HOURS on first run ==="
-run_in_docker "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --jobs $JOBS"
+run_in_docker "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux --jobs $JOBS"
 
 if [ "$DO_PACKAGE" = true ]; then
   echo "=== [6/6] Packaging (.deb / .rpm / .tar.gz) ==="
@@ -163,7 +163,7 @@ fi
 
 echo ""
 echo "=== Linux build complete ==="
-BIN="$ROOT_DIR/chromium/src/out/MoltBrowser/chrome"
+BIN="$ROOT_DIR/chromium/src/out/MoltBrowser-linux/chrome"
 [ -f "$BIN" ] && echo "  Binary:   $BIN"
 if [ "$DO_PACKAGE" = true ]; then
   echo "  Packages: $ROOT_DIR/dist/"

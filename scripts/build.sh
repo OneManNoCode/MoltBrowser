@@ -8,13 +8,17 @@
 #   ./scripts/build.sh                        # Build default target
 #   ./scripts/build.sh --target chrome_public_apk  # Android APK
 #   ./scripts/build.sh --platform android     # Auto-detect Android target
+#   ./scripts/build.sh --platform linux       # Linux, in out/MoltBrowser-linux
+#
+# Build dir: out/MoltBrowser, or out/MoltBrowser-linux with --platform linux
+# (Linux has its own, see scripts/configure.sh); --build-dir overrides it.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CHROMIUM_SRC="$ROOT_DIR/chromium/src"
-BUILD_DIR="out/MoltBrowser"
+BUILD_DIR=""
 
 # Prefer /opt/depot_tools when present (Docker container case): the
 # host's depot_tools/ directory is mounted into the container but its
@@ -61,7 +65,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --jobs, -j N       Parallel jobs"
       echo "  --target TARGET    Build target (default: auto-detect)"
       echo "  --platform, -p P   Platform hint: macos, linux, windows, android, ios"
-      echo "  --build-dir DIR    Build output directory"
+      echo "  --build-dir DIR    Build output directory (default: out/MoltBrowser,"
+      echo "                     out/MoltBrowser-linux with --platform linux)"
       echo "  --verbose, -v      Verbose build output"
       echo ""
       echo "Default targets by platform:"
@@ -76,6 +81,15 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Linux builds have their own out dir (scripts/configure.sh).
+if [ -z "$BUILD_DIR" ]; then
+  if [ "$PLATFORM" = "linux" ]; then
+    BUILD_DIR="out/MoltBrowser-linux"
+  else
+    BUILD_DIR="out/MoltBrowser"
+  fi
+fi
 
 # Auto-detect platform from args.gn if not specified
 if [ -z "$PLATFORM" ] && [ -f "$CHROMIUM_SRC/$BUILD_DIR/args.gn" ]; then
@@ -113,6 +127,9 @@ cd "$CHROMIUM_SRC"
 # Check if configured
 if [ ! -d "$BUILD_DIR" ]; then
   echo "ERROR: Build not configured. Run ./scripts/configure.sh first."
+  if [ -z "$PLATFORM" ] && [ -f "out/MoltBrowser-linux/args.gn" ]; then
+    echo "  (out/MoltBrowser-linux is configured: for Linux, pass --platform linux.)"
+  fi
   exit 1
 fi
 

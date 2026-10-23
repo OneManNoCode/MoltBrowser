@@ -35,7 +35,7 @@ sudo tools/leak_test/leaktest.sh run --browser /path/to/moltbrowser
 #   report: ./moltleak-runs/20261022-153000-a1b2c3/report.md
 ```
 
-`--browser` is the executable: `out/MoltBrowser/chrome` in a build tree, or
+`--browser` is the executable: `chromium/src/out/MoltBrowser-linux/chrome` in a build tree, or
 `/opt/moltbrowser/moltbrowser` from the `.deb`. Run it with `sudo` from your
 own account: the kit needs root for the network namespace, the firewall and
 the capture, but the browser, Tor and every server it starts run as you

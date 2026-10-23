@@ -9,7 +9,7 @@
 #
 # Run (mount repo as volume):
 #   docker run --rm -v $(pwd):/moltbrowser -w /moltbrowser moltbrowser-linux \
-#     ./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh
+#     ./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux
 #
 # Full release:
 #   docker run --rm -v $(pwd):/moltbrowser -w /moltbrowser moltbrowser-linux \
@@ -133,4 +133,4 @@ USER builder
 WORKDIR /moltbrowser
 
 # Default: run the build
-CMD ["bash", "-c", "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh"]
+CMD ["bash", "-c", "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux"]

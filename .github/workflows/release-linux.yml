@@ -208,15 +208,16 @@ jobs:
           fi
           echo "Building with --jobs $JOBS (nproc=$(nproc))"
           ./scripts/configure.sh --platform linux --arch x64
-          ./scripts/build.sh --jobs "$JOBS"
+          ./scripts/build.sh --platform linux --jobs "$JOBS"
 
       - name: Reuse existing build (skip_build=true — packaging-only fast path)
         if: ${{ inputs.skip_build == 'true' }}
         run: |
           # Package the binary already sitting in the warm out/ dir instead of
           # re-compiling. The overlay is already compiled INTO chrome, so we skip
-          # sync/overlay/build entirely; package-linux.sh only reads out/MoltBrowser.
-          BIN="chromium/src/out/MoltBrowser/chrome"
+          # sync/overlay/build entirely; package-linux.sh only reads
+          # out/MoltBrowser-linux (Linux's own out dir, scripts/configure.sh).
+          BIN="chromium/src/out/MoltBrowser-linux/chrome"
           if [ ! -f "$BIN" ]; then
             echo "::error::skip_build=true but $BIN is missing — no prior build to package."
             echo "Run the workflow once with skip_build=false (a full build) first."
