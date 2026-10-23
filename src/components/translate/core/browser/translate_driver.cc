@@ -24,4 +24,14 @@ void TranslateDriver::RemoveLanguageDetectionObserver(
   language_detection_observers_.RemoveObserver(observer);
 }
 
+// MoltBrowser: the defaults of the two hooks in translate_driver.h, out of
+// line (chromium-style: no inline virtual bodies).
+bool TranslateDriver::TranslatesOnDevice() const {
+  return false;
+}
+
+bool TranslateDriver::TranslationOff() const {
+  return false;
+}
+
 }  // namespace translate
