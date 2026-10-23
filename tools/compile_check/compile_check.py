@@ -136,6 +136,25 @@ def _gen_candidates(name):
     return out
 
 
+def refresh_mojom(args, tree, interp, produce=None):
+    """Regenerates the mojom bindings whose inputs changed since they were
+    made (gen_mojom.refresh). Returns (regenerated, removed, failed)."""
+    if not (args.work / "mojom_stamps.json").exists():
+        return [], [], {}
+    index = gen_mojom.build_index(tree, interp, args.work / "mojom_index.json")
+    try:
+        ok, gone, failed = gen_mojom.refresh(tree, index, args.work,
+                                             tree.gen_dir, produce=produce)
+    except RuntimeError as e:
+        print("mojom: refresh failed (%s); the stale outputs were removed" %
+              e)
+        return [], [], {"*": str(e)}
+    if ok or gone or failed:
+        print("mojom: %d regenerated, %d removed, %d failed (stale inputs)" %
+              (len(ok), len(gone), len(failed)))
+    return ok, gone, failed
+
+
 def do_gen(args, tree, missing):
     """One generation round. Returns how many files it wrote."""
     gen_dir = tree.gen_dir
@@ -175,6 +194,11 @@ def do_gen(args, tree, missing):
             missing.setdefault("other", {})[n] = \
                 missing["buildflags"][n]
         print("buildflags: %d written, %d failed" % (len(w), len(f)))
+    ok, gone, f = refresh_mojom(args, tree, interp, produce)
+    if ok or gone or f:
+        report["mojom_refresh"] = {"regenerated": ok, "removed": gone,
+                                   "failed": f}
+        written += len(ok)
     names = sorted(missing.get("mojom", {}))
     if names:
         index = gen_mojom.build_index(tree, interp,
@@ -248,6 +272,11 @@ def cmd_gen(args):
 def do_check(args, tree):
     tgts = targets.expand(args.targets, tree)
     interp = make_interp(tree)
+    # Never compile against bindings of a .mojom edited since (or of one
+    # whose imports or typemaps changed).
+    refresh_mojom(args, tree, interp,
+                  produce=lambda rels: gen_actions.produce(tree, interp,
+                                                           rels)[0])
     gn_flags = gnconfigs.resolve(tree, interp)
     # Each file's exception/RTTI setting, from its own GN target.
     tflags = gnconfigs.target_flags(tree, interp, tgts)
