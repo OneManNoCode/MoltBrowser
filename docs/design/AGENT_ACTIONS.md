@@ -228,6 +228,8 @@ AskLLM: StreamChat {system: rules, user: turn + screenshot}
 | the observed document (`WeakDocumentPtr`), still active and the primary main frame | the screenshot belongs to the observation |
 | an http(s) URL and an http(s) committed origin, not an error page | never `molt://`, `chrome://`, extensions, `file:`, `data:`, `about:`, opaque origins |
 | the committed origin is the one the snapshot read, and in the run's scope | as for the element list (§2.1) |
+| no frame of another origin anywhere in the document: iframes, frames, fenced frames, `<object>` and `<embed>` frames and guests, at any depth, counted by the browser (`CrossOriginFrameCount()` in `agent_screenshot.cc`) | a mask covers only a frame's box, and the page decides how the frame is painted |
+| no frame of the tab committed a navigation or went away within the second before the capture, or during it (`kFrameSettleMs`; the screenshotter watches the tab's navigations) | the compositor can still draw what a frame showed before, for a frame or two |
 
 It is checked before the geometry script, before the copy and after it.
 The geometry script also reports `location.origin`, which must match.
@@ -272,8 +274,9 @@ masked pixel survives (tested with a 4-pixel fringe). Masked:
   toggle that makes the field `type=text` is still masked), autofilled
   fields (`:autofill`, which includes autofill *previews*: values the page
   itself can't read yet), and every frame (`iframe`, `frame`, `embed`,
-  `object`, `fencedframe`): another site's content, such as a payment
-  form, that the page can't read either. The agent can't act inside frames
+  `object`, `fencedframe`). Only frames of the page's own origin can be
+  left by then (a frame of another origin means no screenshot at all,
+  above); they are masked all the same. The agent can't act inside frames
   anyway (§6).
 
 More than 32 regions in view, or more than 50,000 elements to walk, and the
@@ -1543,9 +1546,12 @@ about it:
   them, and the model can't be talked into typing them into a field the
   page reads.
 - *Other sites' content in frames* (a payment provider's card form, a
-  signed-in widget): every frame is masked, for the same reason; a page
-  with a frame the script can't find (in a closed shadow root) gets no
-  screenshot.
+  signed-in widget): a page with a frame of another origin anywhere in it
+  gets no screenshot. Masking such a frame's box isn't enough, since the
+  page decides how the frame is painted. The browser counts these frames
+  itself, so neither the page nor the geometry script can hide one.
+  Frames of the page's own origin are masked; a page with a frame the
+  script can't find (in a closed shadow root) gets no screenshot.
 - *Not masked*: images, videos, canvases and CSS backgrounds from other
   sites that the page displays without being able to read them. A page
   could show such a resource and ask the model to transcribe it. With
@@ -1560,7 +1566,10 @@ about it:
 match. A page that moves a masked element away and back between the two
 measurements, exactly while the compositor copies, could leave it unmasked
 in that one image; it can't see when the copy happens, and what it would
-gain is a frame's or field's pixels in front of the model, not an action.
+gain is a field's pixels in front of the model, not an action. Frames
+can't play that game with their origin: one that commits a navigation or
+goes away within a second before the capture, or during it, means no
+screenshot.
 
 **The service.** It gets raw pixels within the bounds of
 SANDBOXED_INFERENCE.md §10 and treats them as untrusted; masking is done
@@ -1846,9 +1855,10 @@ For the chat (§4), also run here:
 
 For screenshots (§2.6):
 
-- **In `molt_ai_unittests`:** `agents/agent_vision_unittest.cc` (24 tests):
-  the capture decision (each condition refusing on its own; 18 schemes and
-  10 origins that aren't http(s) pages; MoltNet only with the on-device
+- **In `molt_ai_unittests`:** `agents/agent_vision_unittest.cc` (26 tests):
+  the capture decision (each condition refusing on its own, a frame of
+  another origin and frames changing included; 18 schemes and 10 origins
+  that aren't http(s) pages; MoltNet only with the on-device
   model and loosening nothing else); the geometry script quoting hostile
   selectors as JSON; the parser (a result, whole doubles, the caps at their
   limits, 36 malformed results refused: the script's overflow flag, pinch

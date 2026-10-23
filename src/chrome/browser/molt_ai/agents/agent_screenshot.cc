@@ -19,6 +19,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/visibility.h"
@@ -53,6 +54,23 @@ size_t ChildFrameCount(content::RenderFrameHost* document) {
           ++count;
         }
         return content::RenderFrameHost::FrameIterationAction::kSkipChildren;
+      });
+  return count;
+}
+
+// The frames in |document|'s tree, at any depth (iframes, frames, fenced
+// frames, <object> and <embed> frames, and guests it embeds), whose
+// committed origin isn't |document|'s. A frame not yet navigated has its
+// creator's origin.
+size_t CrossOriginFrameCount(content::RenderFrameHost* document) {
+  const url::Origin& origin = document->GetLastCommittedOrigin();
+  size_t count = 0;
+  document->ForEachRenderFrameHost(
+      [document, &origin, &count](content::RenderFrameHost* rfh) {
+        if (rfh != document &&
+            !rfh->GetLastCommittedOrigin().IsSameOriginWith(origin)) {
+          ++count;
+        }
       });
   return count;
 }
@@ -96,6 +114,8 @@ std::optional<ModelImage> PrepareScreenshot(
 struct AgentScreenshotter::Pending {
   Request request;
   Callback callback;
+  // When Capture() was called.
+  base::TimeTicks started;
   // The geometry measured before the copy.
   agent_vision::ScreenshotGeometry before;
   // The copy.
@@ -117,7 +137,28 @@ void AgentScreenshotter::Cancel() {
   weak_factory_.InvalidateWeakPtrs();
 }
 
-CaptureDecision AgentScreenshotter::Decide(const Request& request) const {
+void AgentScreenshotter::DidFinishNavigation(
+    content::NavigationHandle* handle) {
+  // A same-document navigation (a fragment, history.pushState()) keeps the
+  // frame's document and origin.
+  if (handle->HasCommitted() && !handle->IsSameDocument()) {
+    last_frame_change_ = base::TimeTicks::Now();
+  }
+}
+
+void AgentScreenshotter::FrameDeleted(
+    content::FrameTreeNodeId frame_tree_node_id) {
+  last_frame_change_ = base::TimeTicks::Now();
+}
+
+void AgentScreenshotter::RenderFrameHostChanged(
+    content::RenderFrameHost* old_host,
+    content::RenderFrameHost* new_host) {
+  last_frame_change_ = base::TimeTicks::Now();
+}
+
+CaptureDecision AgentScreenshotter::Decide(const Pending& pending) const {
+  const Request& request = pending.request;
   agent_vision::CaptureFacts facts;
   facts.switched_on = agent_features::AgentScreenshotsEnabled();
   facts.run_allows_images = request.run_allows_images;
@@ -142,7 +183,17 @@ CaptureDecision AgentScreenshotter::Decide(const Request& request) const {
     facts.error_document = main->IsErrorDocument();
     facts.url_scheme = std::string(main->GetLastCommittedURL().scheme());
     facts.committed_origin = main->GetLastCommittedOrigin().Serialize();
+    if (observed) {
+      facts.cross_origin_frames = CrossOriginFrameCount(observed);
+    }
   }
+  // Every frame must have stood still since shortly before the capture
+  // began: its old pixels can outlive a navigation or removal by a frame
+  // or two.
+  facts.frames_settled =
+      last_frame_change_.is_null() ||
+      last_frame_change_ <
+          pending.started - base::Milliseconds(agent_vision::kFrameSettleMs);
   return agent_vision::DecideCapture(facts);
 }
 
@@ -152,7 +203,8 @@ void AgentScreenshotter::Capture(Request request, Callback callback) {
   auto pending = std::make_unique<Pending>();
   pending->request = std::move(request);
   pending->callback = std::move(callback);
-  const CaptureDecision decision = Decide(pending->request);
+  pending->started = base::TimeTicks::Now();
+  const CaptureDecision decision = Decide(*pending);
   if (decision != CaptureDecision::kCapture) {
     DVLOG(1) << "[WebAgent] No screenshot: "
              << agent_vision::CaptureDecisionName(decision);
@@ -194,7 +246,7 @@ void AgentScreenshotter::OnGeometryBefore(std::unique_ptr<Pending> pending,
                                   pending->request.observation.elements.size());
   // Measured in the observed document, which hasn't navigated since.
   if (!geometry || geometry->origin != pending->request.observed_origin ||
-      Decide(pending->request) != CaptureDecision::kCapture ||
+      Decide(*pending) != CaptureDecision::kCapture ||
       !FramesAllFound(*geometry, pending->request.document)) {
     DVLOG(1) << "[WebAgent] No screenshot: no usable geometry";
     Finish(std::move(pending), std::nullopt);
@@ -241,8 +293,7 @@ void AgentScreenshotter::OnGeometryBefore(std::unique_ptr<Pending> pending,
 
 void AgentScreenshotter::OnCopied(std::unique_ptr<Pending> pending,
                                   SkBitmap bitmap) {
-  if (bitmap.drawsNothing() ||
-      Decide(pending->request) != CaptureDecision::kCapture) {
+  if (bitmap.drawsNothing() || Decide(*pending) != CaptureDecision::kCapture) {
     DVLOG(1) << "[WebAgent] No screenshot: the copy failed or the page "
                 "changed";
     Finish(std::move(pending), std::nullopt);
@@ -258,7 +309,7 @@ void AgentScreenshotter::OnGeometryAfter(std::unique_ptr<Pending> pending,
       agent_vision::ParseGeometry(result,
                                   pending->request.observation.elements.size());
   if (!after || !agent_vision::SameGeometry(pending->before, *after) ||
-      Decide(pending->request) != CaptureDecision::kCapture ||
+      Decide(*pending) != CaptureDecision::kCapture ||
       !FramesAllFound(*after, pending->request.document)) {
     DVLOG(1) << "[WebAgent] No screenshot: the page moved during the copy";
     Finish(std::move(pending), std::nullopt);

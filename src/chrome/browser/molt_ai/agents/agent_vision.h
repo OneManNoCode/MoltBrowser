@@ -12,8 +12,8 @@
 // (e1, e2, ...) at each listed element in view ("set of marks"), on its own
 // copy of the screenshot, after masking what the model must not read:
 // password, payment and one-time-code fields, autofilled fields (their
-// previews aren't visible to the page) and embedded frames (other sites'
-// content the page itself can't read).
+// previews aren't visible to the page) and embedded frames. A page with a
+// frame of another origin anywhere in it gets no screenshot at all.
 //
 // This file is the pure part, unit-tested in molt_ai_unittests:
 //  - DecideCapture(): whether a capture may happen at all;
@@ -75,6 +75,10 @@ inline constexpr int kMaxViewportSide = 16384;
 inline constexpr int kMaxCoordinate = 1000000;
 // Elements the geometry script walks at most (more: no screenshot).
 inline constexpr int kMaxGeometryWalk = 50000;
+// A frame of the tab that committed a navigation or went away less than
+// this long before a capture began, or while it ran, means no screenshot:
+// the compositor can still be drawing what the frame showed before.
+inline constexpr int kFrameSettleMs = 1000;
 
 // ---------------------------------------------------------------------------
 // Whether to capture
@@ -113,6 +117,13 @@ struct CaptureFacts {
   std::string observed_origin;
   // The committed origin is in the run's allowed set (WebAgent's scope).
   bool origin_allowed = false;
+  // The frames in the observed document's tree, at any depth (iframes,
+  // frames, fenced frames, <object> and <embed> frames, guests), whose
+  // committed origin isn't the document's (counted by the browser).
+  size_t cross_origin_frames = 0;
+  // No frame of the tab committed a cross-document navigation or went away
+  // from kFrameSettleMs before the capture began until now.
+  bool frames_settled = false;
 };
 
 enum class CaptureDecision {
@@ -127,11 +138,16 @@ enum class CaptureDecision {
   kErrorPage,
   kOriginChanged,  // the committed origin isn't the one observed
   kOriginNotAllowed,
+  kCrossOriginFrame,  // a frame of another origin in the document
+  kFramesChanging,    // a frame navigated or went away just now
 };
 
 // Captures only the agent's own tab, shown, on the document it observed,
 // an http(s) page (never molt://, chrome://, file:, data:, about: or an
-// error page) whose origin is the observed one and in the run's scope.
+// error page) whose origin is the observed one and in the run's scope,
+// with no frame of another origin anywhere in it (a mask covers only a
+// frame's box, and the page decides how the frame is painted), and no
+// frame that navigated or went away just before or during the capture.
 // MoltNet lets the agent run with the on-device model (cloud AI is off
 // there, molt_net_requests_policy.h), so a MoltNet page is captured only
 // for the on-device model, which keeps the pixels on the device.
