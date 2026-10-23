@@ -4,21 +4,28 @@
 // The built-in AI APIs' policy (web_ai/web_ai_policy.h) on what web pages
 // control: language tags, text sizes, sampling parameters (any float, NaN
 // included), image sizes, and the order and number of their requests
-// (GenerationScheduler, checked against a reference model).
+// (GenerationScheduler, checked against a reference model), and the device
+// facts kept per site (SiteDeviceFacts, against a reference model).
 //
 // Checks: no memory or UB error; token estimates saturate rather than wrap
 // and agree with the size shortcut; sampling stays within the documented
 // range; IsValidLanguageTag() accepts exactly 2-8 letters then 1-8
 // alphanumerics per subtag, at most 35 bytes; the scheduler never admits
 // more than its caps, runs one request at a time, and agrees with the model
-// on what is queued and running; held images never exceed the caps.
+// on what is queued and running; held images never exceed the caps; a site
+// is only ever answered from its own facts or told to wait for its own
+// read; a session serves only where the context, the switch and the site's
+// answer all allow it.
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <iterator>
 #include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -158,6 +165,108 @@ void CheckStrings(FuzzedDataProvider* p) {
   }
   if (action == CreateAction::kCreate) {
     CHECK(in.consent == SiteConsent::kAllowed && in.device.model_installed);
+  }
+  if (MaySessionServe(in.context, in.device.web_apis_enabled, in.consent)) {
+    CHECK(IsContextEligible(in.context) && in.device.web_apis_enabled &&
+          in.consent == SiteConsent::kAllowed);
+    CHECK(decision.availability != Availability::kUnavailable ||
+          !in.options_supported || !in.languages_supported ||
+          !in.device.inference_supported ||
+          (!in.device.model_installed && !in.device.some_model_fits));
+  }
+}
+
+// SiteDeviceFacts against a reference: each site's own facts, read time
+// and read in flight, over sites, times, stale tickets and clears.
+void CheckSiteDeviceFacts(FuzzedDataProvider* p) {
+  const int64_t lifetime = p->ConsumeIntegralInRange<int64_t>(1, 1 << 20);
+  SiteDeviceFacts cache(lifetime);
+  struct Entry {
+    std::optional<DeviceFacts> facts;
+    int64_t read_at = 0;
+    uint64_t pending = 0;
+  };
+  std::map<std::string, Entry> ref;
+  std::map<uint64_t, std::string> ticket_site;
+  std::set<uint64_t> tickets;
+  int64_t now = p->ConsumeIntegralInRange<int64_t>(0, int64_t{1} << 40);
+  auto fresh = [&](const Entry& e) {
+    return e.facts && now - e.read_at < lifetime;
+  };
+  auto site_of = [](FuzzedDataProvider* fp) {
+    return std::string(
+        1, static_cast<char>('a' + fp->ConsumeIntegralInRange<int>(0, 5)));
+  };
+  for (int step = 0; step < 2048 && p->remaining_bytes() > 0; ++step) {
+    now += p->ConsumeIntegralInRange<int64_t>(0, 2 * lifetime);
+    switch (p->ConsumeIntegralInRange<int>(0, 3)) {
+      case 0:
+      case 1: {
+        const std::string site = site_of(p);
+        const SiteDeviceFacts::Lookup lookup = cache.Find(site, now);
+        Entry& e = ref[site];
+        if (e.pending != 0) {
+          CHECK(lookup.kind == SiteDeviceFacts::Lookup::Kind::kJoin);
+          CHECK(lookup.ticket == e.pending);
+        } else if (fresh(e)) {
+          CHECK(lookup.kind == SiteDeviceFacts::Lookup::Kind::kCached);
+          CHECK(lookup.facts.web_apis_enabled == e.facts->web_apis_enabled &&
+                lookup.facts.model_installed == e.facts->model_installed);
+        } else {
+          CHECK(lookup.kind == SiteDeviceFacts::Lookup::Kind::kRead);
+          CHECK(lookup.ticket != 0 && tickets.insert(lookup.ticket).second);
+          e.pending = lookup.ticket;
+          ticket_site[lookup.ticket] = site;
+        }
+        // A join is always for the site's own read.
+        if (lookup.kind != SiteDeviceFacts::Lookup::Kind::kCached) {
+          CHECK(ticket_site[lookup.ticket] == site);
+        }
+        // Find() forgets the sites no call would use.
+        size_t in_use = 0;
+        for (const auto& [s, entry] : ref) {
+          in_use += entry.pending != 0 || fresh(entry);
+        }
+        CHECK(cache.site_count() == in_use);
+        break;
+      }
+      case 2: {
+        // A read ends: a site's own, or any ticket (stale, unknown, 0).
+        const std::string site = site_of(p);
+        uint64_t ticket = p->ConsumeIntegralInRange<uint64_t>(0, 4);
+        if (!tickets.empty() && p->ConsumeBool()) {
+          auto it = tickets.begin();
+          std::advance(
+              it, p->ConsumeIntegralInRange<size_t>(0, tickets.size() - 1));
+          ticket = *it;
+        }
+        DeviceFacts facts;
+        facts.web_apis_enabled = p->ConsumeBool();
+        facts.model_installed = p->ConsumeBool();
+        const bool kept = cache.Finish(site, ticket, facts, now);
+        auto it = ref.find(site);
+        const bool expected =
+            ticket != 0 && it != ref.end() && it->second.pending == ticket;
+        CHECK(kept == expected);
+        if (kept) {
+          it->second.pending = 0;
+          it->second.facts = facts;
+          it->second.read_at = now;
+        }
+        break;
+      }
+      default:
+        if (p->ConsumeIntegralInRange<int>(0, 7) == 0) {
+          cache.Clear();
+          ref.clear();
+        }
+        break;
+    }
+    // Drop the reference's entries the cache forgot (not in use).
+    for (auto it = ref.begin(); it != ref.end();) {
+      it = it->second.pending == 0 && !fresh(it->second) ? ref.erase(it)
+                                                         : std::next(it);
+    }
   }
 }
 
@@ -323,10 +432,16 @@ void CheckScheduler(FuzzedDataProvider* p) {
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   FuzzedDataProvider p(data, size);
-  if (p.ConsumeBool()) {
-    molt_ai::web_ai::CheckStrings(&p);
-  } else {
-    molt_ai::web_ai::CheckScheduler(&p);
+  switch (p.ConsumeIntegralInRange<int>(0, 2)) {
+    case 0:
+      molt_ai::web_ai::CheckStrings(&p);
+      break;
+    case 1:
+      molt_ai::web_ai::CheckScheduler(&p);
+      break;
+    default:
+      molt_ai::web_ai::CheckSiteDeviceFacts(&p);
+      break;
   }
   return 0;
 }

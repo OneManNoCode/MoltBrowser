@@ -12,7 +12,10 @@
 // with 1..kMaxStoredDismissals closes) and survives a store/load round
 // trip; the table never holds more than kMaxSites sites, only plausible
 // keys, and a site the user answered keeps its answer until removed; a
-// paused site reads as blocked; List() orders allowed, blocked, paused.
+// paused site reads as blocked; List() orders allowed, blocked, paused;
+// the prompt's input protection agrees with a reference (a press counts
+// only kPromptInputProtectionMs after the prompt was shown and after the
+// previous press), whatever the clock does.
 
 #include <algorithm>
 #include <cmath>
@@ -119,11 +122,35 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(table.Insert(key, *record) == IsPlausibleSiteKey(key));
   }
 
+  // The prompt's input protection and its reference.
+  PromptInputProtection guard;
+  std::optional<int64_t> shown;
+  std::optional<int64_t> last_press;
+
   // The user and pages, over time.
   for (int step = 0; step < 2048 && p.remaining_bytes() > 0; ++step) {
     now += p.ConsumeIntegralInRange<int64_t>(-1000, kEmbargoMs);
     const std::string key = SiteKey(&p);
-    switch (p.ConsumeIntegralInRange<int>(0, 5)) {
+    switch (p.ConsumeIntegralInRange<int>(0, 6)) {
+      case 6: {
+        // Small steps too: presses come milliseconds apart.
+        now += p.ConsumeIntegralInRange<int64_t>(-kEmbargoMs, 0) +
+               p.ConsumeIntegralInRange<int64_t>(0, 2000);
+        if (p.ConsumeBool()) {
+          guard.Shown(now);
+          shown = now;
+          break;
+        }
+        const bool counts = guard.Press(now);
+        const bool after_last =
+            !last_press || (now >= *last_press &&
+                            now - *last_press >= kPromptInputProtectionMs);
+        const bool after_shown =
+            shown && now >= *shown && now - *shown >= kPromptInputProtectionMs;
+        CHECK(counts == (after_last && after_shown));
+        last_press = now;
+        break;
+      }
       case 0: {
         const auto answer =
             static_cast<SiteConsent>(p.ConsumeIntegralInRange<int>(0, 2));
