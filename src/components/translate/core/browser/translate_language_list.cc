@@ -320,8 +320,7 @@ void TranslateLanguageList::SetLocalLanguages(
     const std::vector<std::string>& languages) {
   std::vector<LanguageTag> tags;
   for (const std::string& language : languages) {
-    if (std::optional<LanguageTag> tag =
-            LanguageTagConverter::GetInstance().FromString(language);
+    if (std::optional<LanguageTag> tag = GetLanguageTagFromString(language);
         tag) {
       tags.emplace_back(*tag);
     }
