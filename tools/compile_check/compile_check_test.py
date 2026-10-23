@@ -453,6 +453,22 @@ class SourcesStateTest(unittest.TestCase):
         self.assertFalse(made.exists())
         self.assertTrue(kept.exists())
 
+    def test_mirror_names_and_known_misses(self):
+        self.assertEqual(sources.cache_name(
+            "https://github.com/chromium/pdfium"), "pdfium")
+        self.assertEqual(sources.cache_name(
+            "https://gitlab.com/kkowalczyk/pdfium.git"),
+            "gitlab.com-kkowalczyk-pdfium")
+        marker = self.tree.work / "repos" / "unavailable.json"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        # The format before several mirrors per mount (one string), and
+        # the list: a known miss is not fetched again.
+        marker.write_text(json.dumps({"a": "https://x/a @ c1",
+                                      "b": ["https://x/b @ c2"]}))
+        self.assertIsNone(self.tree._mirror("a", "https://x/a", "c1"))
+        self.assertIsNone(self.tree._mirror("b", "https://x/b", "c2"))
+        self.assertFalse((self.tree.work / "repos" / "a").exists())
+
     def test_legacy_work_dir(self):
         # Files from before sources.json: kept for a mirror at the pin,
         # dropped for anything else.

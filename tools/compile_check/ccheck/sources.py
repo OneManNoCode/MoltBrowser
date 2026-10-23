@@ -40,9 +40,10 @@ from . import tarball  # noqa: E402
 
 LLVM = "https://github.com/llvm/llvm-project"
 
-# mount (Chromium path) -> (GitHub mirror or None if there is none, prefix
-# inside that repo, commit override or None to use the gitlink commit in
-# Chromium's tree).
+# mount (Chromium path) -> (git mirror, or a tuple of mirrors tried in
+# order, or None if there is none; prefix inside that repo; commit override
+# or None to use the gitlink commit in Chromium's tree). A mirror serves the
+# exact tree when it has the commit (git checks the ids), whoever runs it.
 SUBPROJECTS = {
     "third_party/perfetto": ("https://github.com/google/perfetto", "", None),
     "third_party/boringssl/src": ("https://github.com/google/boringssl", "",
@@ -75,7 +76,11 @@ SUBPROJECTS = {
     "third_party/wuffs/src": ("https://github.com/google/wuffs", "", None),
     "third_party/libwebp/src": ("https://github.com/webmproject/libwebp", "",
                                 None),
-    "third_party/pdfium": ("https://github.com/chromium/pdfium", "", None),
+    # GitHub's mirror stops at older release branches; this GitLab mirror
+    # carries chromium/<branch> (the pinned M152 commit among them).
+    "third_party/pdfium": (("https://github.com/chromium/pdfium",
+                            "https://gitlab.com/kkowalczyk/pdfium"), "",
+                           None),
     "third_party/leveldatabase/src": ("https://github.com/google/leveldb",
                                       "", None),
     "third_party/tflite/src": ("https://github.com/tensorflow/tensorflow",
@@ -116,6 +121,15 @@ HEAD_FALLBACK = {"third_party/pdfium", "third_party/webrtc",
                  "third_party/dawn"}
 
 SOURCES_STATE = "sources.json"
+
+
+def cache_name(remote):
+    """The clone's directory under <work>/repos: the repository name for a
+    GitHub mirror, host-owner-name for any other."""
+    parts = remote.rstrip("/").split("/")
+    if "github.com" in parts:
+        return parts[-1]
+    return "-".join(parts[2:]).removesuffix(".git")
 
 
 def load_sources_state(work):
@@ -232,11 +246,13 @@ class SourceTree:
         gitlink = e.oid if e is not None and e.type == "commit" else None
         if rev is None and gitlink is None:
             raise RuntimeError("%s is not a gitlink at the pin" % mount)
-        if remote:
-            repo = self._mirror(mount, remote, rev or gitlink)
+        remotes = list(remote) if isinstance(remote, tuple) else \
+            [remote] if remote else []
+        for r in remotes:
+            repo = self._mirror(mount, r, rev or gitlink)
             if repo is not None:
-                self._record(mount, "git %s %s" % (remote, repo.commit),
-                             True, None)
+                self._record(mount, "git %s %s" % (r, repo.commit), True,
+                             None)
                 return repo, prefix
         if gitlink:
             got = self._from_tarball(mount, gitlink)
@@ -246,9 +262,9 @@ class SourceTree:
                 return repo, ""
         if mount in SUBSTITUTES:
             sremote, sprefix, srev = SUBSTITUTES[mount]
-            name = sremote.rstrip("/").split("/")[-1]
             if srev == "@head":
-                repo = self._head_fallback(mount, name, sremote)
+                repo = self._head_fallback(mount, cache_name(sremote),
+                                           sremote)
             else:
                 if srev == "@clang":
                     if not self.clang_llvm_commit:
@@ -266,11 +282,12 @@ class SourceTree:
                                        "HEAD" if srev == "@head" else
                                        srev[:12]))
                 return repo, sprefix
-        if remote and mount in HEAD_FALLBACK:
-            name = remote.rstrip("/").split("/")[-1]
-            repo = self._head_fallback(mount, name, remote)
+        if remotes and mount in HEAD_FALLBACK:
+            repo = self._head_fallback(mount, cache_name(remotes[0]),
+                                       remotes[0])
             if repo is not None:
-                self._record(mount, "head %s %s" % (remote, repo.commit),
+                self._record(mount, "head %s %s" % (remotes[0],
+                                                    repo.commit),
                              False, "%s (mirror HEAD)" % mount)
                 return repo, prefix
         return None, prefix
@@ -278,22 +295,23 @@ class SourceTree:
     def _mirror(self, mount, remote, rev):
         """A blob-less clone of `remote` at `rev`, or None if the mirror
         doesn't have it (remembered in repos/unavailable.json)."""
-        name = remote.rstrip("/").split("/")[-1]
         key = "%s @ %s" % (remote, rev)
         marker = self.work / "repos" / "unavailable.json"
         known_bad = json.loads(marker.read_text()) if marker.exists() \
             else {}
-        if known_bad.get(mount) == key:
+        bad = known_bad.get(mount, [])
+        bad = [bad] if isinstance(bad, str) else bad
+        if key in bad:
             self.unavailable[mount] = key
             return None
-        repo = Repo(self.work / "repos" / name, remote, rev)
+        repo = Repo(self.work / "repos" / cache_name(remote), remote, rev)
         try:
             repo.entries
         except RuntimeError as e:
             log("subproject %s unavailable (%s): %s" % (
                 mount, key, str(e).splitlines()[-1][-200:]))
             self.unavailable[mount] = key
-            known_bad[mount] = key
+            known_bad[mount] = sorted(set(bad) | {key})
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(json.dumps(known_bad, indent=1))
             return None
@@ -349,7 +367,7 @@ class SourceTree:
         marker = self.work / "repos" / "unavailable.json"
         bad = json.loads(marker.read_text()) if marker.exists() else {}
         return {mount} | {m for m, (r, _, _) in SUBPROJECTS.items()
-                          if r is None} | (set(bad) & set(SUBPROJECTS))
+                          if not r} | (set(bad) & set(SUBPROJECTS))
 
     def _from_tarball(self, mount, gitlink):
         """(DirRepo, exact, source key, stand-in label) from the official
