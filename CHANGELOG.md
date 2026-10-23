@@ -224,10 +224,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   translates only when you click (or for a language you set to "always
   translate"), visible text first, with progress and Stop in the bubble,
   and "Show original" restores the page exactly. Without a model it says
-  so and links to `molt://ai`; nothing is downloaded. MoltNet windows
-  translate on click only, and the bubble notes that the site sees the
-  translation. (Before, Translate couldn't run without a Google API key,
-  and with one it sent the page to Google.) `docs/design/PAGE_TRANSLATION.md`.
+  so and links to `molt://ai`; nothing is downloaded. Page translation is
+  off in MoltNet windows, as in Tor Browser: a translated page can see the
+  language you read, which MoltNet hides. There, Translate offers nothing
+  and, opened from the menu, says why. (Before, Translate couldn't run
+  without a Google API key, and with one it sent the page to Google.)
+  `docs/design/PAGE_TRANSLATION.md`.
 - **MoltNet windows describe the same GPU for everyone.** WebGL there
   reports fixed limits (8192-pixel textures, for example), a fixed list of
   23 common extensions and fixed shader precision, never more than the GPU

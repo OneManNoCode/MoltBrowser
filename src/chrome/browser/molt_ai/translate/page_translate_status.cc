@@ -107,6 +107,9 @@ void PageTranslateStatus::Stop() {
 }
 
 void PageTranslateStatus::RefreshDeviceFacts() {
+  if (PageTranslationOff(snapshot_.moltnet)) {
+    return;  // Nothing to offer, so nothing to look up.
+  }
   web_ai::RuntimeWebAIBackend::GetInstance()->GetDeviceFacts(base::BindOnce(
       [](base::WeakPtr<PageTranslateStatus> status,
          web_ai::DeviceFacts facts) {

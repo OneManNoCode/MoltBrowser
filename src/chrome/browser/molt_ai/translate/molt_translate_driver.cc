@@ -11,10 +11,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/translate/page_translate_io.h"
 #include "chrome/browser/molt_ai/translate/page_translate_status.h"
 #include "chrome/browser/molt_ai/translate/page_translation_job.h"
 #include "chrome/browser/molt_ai/web_ai/runtime_web_ai_backend.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_isolated_world_ids.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "content/public/browser/navigation_handle.h"
@@ -110,11 +112,17 @@ MoltTranslateDriver::MoltTranslateDriver(
     content::WebContents& web_contents,
     language::UrlLanguageHistogram* url_language_histogram)
     : ContentTranslateDriver(web_contents, url_language_histogram),
+      moltnet_(molt_ai::tor::IsMoltNetProfile(
+          Profile::FromBrowserContext(web_contents.GetBrowserContext()))),
       schedule_key_(NextScheduleKey()) {
   PageTranslateStatus::CreateForWebContents(&web_contents);
 }
 
 MoltTranslateDriver::~MoltTranslateDriver() = default;
+
+bool MoltTranslateDriver::TranslationOff() const {
+  return PageTranslationOff(moltnet_);
+}
 
 PageTranslateStatus* MoltTranslateDriver::Status() {
   return web_contents() ? PageTranslateStatus::FromWebContents(web_contents())
@@ -150,32 +158,37 @@ void MoltTranslateDriver::TranslatePage(int page_seq_no,
                                  : std::move(prepared_source_);
   prepared_source_.clear();
   const std::string target(target_lang);
-  const PagePair pair = ResolvePagePair(source, target);
-  if (pair.problem != PairProblem::kNone) {
-    const Report report = ReportForPair(pair.problem);
+  // Never in a MoltNet window, whatever the manager asked (it offers nothing
+  // there, but the menus can still ask): an error step, not a crash.
+  PageTranslationStart started = StartPageTranslation(
+      moltnet_, ResolvePagePair(source, target),
+      [&](const web_ai::TranslatorPair& pair) {
+        return std::make_unique<PageTranslationJob>(
+            std::make_unique<DocumentScriptRunner>(
+                *web_contents()->GetPrimaryMainFrame()),
+            pair, *web_ai::RuntimeWebAIBackend::GetInstance(), schedule_key_,
+            base::BindRepeating(&MoltTranslateDriver::OnProgress,
+                                weak_factory_.GetWeakPtr()),
+            // The page's language in Translate's list, so TranslateManager
+            // takes it as supported ("pt" for "pt-BR").
+            base::BindOnce(&MoltTranslateDriver::OnJobDone,
+                           weak_factory_.GetWeakPtr(),
+                           PageTranslateCode(*pair.source), target));
+      });
+  if (!started.job) {
     if (PageTranslateStatus* status = Status()) {
-      status->SetResult(report, /*failed_units=*/0, /*truncated=*/false);
+      status->SetResult(started.decision.report, /*failed_units=*/0,
+                        /*truncated=*/false);
     }
-    PostReport(source, target, report.error);
+    PostReport(source, target, started.decision.report.error);
     return;
   }
+  // The job calls back only later, so it's in place before it reports.
+  job_ = std::move(started.job);
   if (PageTranslateStatus* status = Status()) {
     status->SetPreparing(base::BindRepeating(&MoltTranslateDriver::StopJob,
                                              weak_factory_.GetWeakPtr()));
   }
-  job_ = std::make_unique<PageTranslationJob>(
-      std::make_unique<DocumentScriptRunner>(
-          *web_contents()->GetPrimaryMainFrame()),
-      pair.pair,
-      *web_ai::RuntimeWebAIBackend::GetInstance(), schedule_key_,
-      base::BindRepeating(&MoltTranslateDriver::OnProgress,
-                          weak_factory_.GetWeakPtr()),
-      // The page's language in Translate's list, so TranslateManager takes
-      // it as supported ("pt" for "pt-BR").
-      base::BindOnce(&MoltTranslateDriver::OnJobDone,
-                     weak_factory_.GetWeakPtr(),
-                     PageTranslateCode(*pair.pair.source), target));
-  job_->Start();
 }
 
 void MoltTranslateDriver::RevertTranslation(int page_seq_no) {

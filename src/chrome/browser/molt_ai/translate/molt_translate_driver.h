@@ -11,8 +11,13 @@
 // TranslatesOnDevice() makes TranslateManager skip Google's script, the
 // API-key and offline checks, partial translate and every automatic
 // trigger but "always translate" (translate_manager.cc's MoltBrowser
-// hooks). The page's text never leaves the device, in every window,
-// MoltNet's included.
+// hooks). The page's text never leaves the device, in every window.
+//
+// In MoltNet windows page translation is off: TranslationOff() makes
+// TranslateManager offer nothing by itself (no bubble, no icon, no
+// automatic translation), and TranslatePage() refuses anything the menus
+// still ask for, with an error the bubble's footnote explains. Google's
+// script stays unreachable there too (TranslatesOnDevice() is true).
 
 #ifndef CHROME_BROWSER_MOLT_AI_TRANSLATE_MOLT_TRANSLATE_DRIVER_H_
 #define CHROME_BROWSER_MOLT_AI_TRANSLATE_MOLT_TRANSLATE_DRIVER_H_
@@ -50,6 +55,9 @@ class MoltTranslateDriver : public ::translate::ContentTranslateDriver {
 
   // translate::TranslateDriver:
   bool TranslatesOnDevice() const override;
+  // True in MoltNet windows (PageTranslationOff()): Translate offers
+  // nothing there, and TranslatePage() refuses with an error.
+  bool TranslationOff() const override;
   void PrepareToTranslatePage(int page_seq_no,
                               std::string_view original_source_lang,
                               std::string_view target_lang,
@@ -76,6 +84,8 @@ class MoltTranslateDriver : public ::translate::ContentTranslateDriver {
                        std::string target,
                        TranslateError error);
 
+  // A MoltNet window (decided once: a tab never changes profile).
+  const bool moltnet_;
   // The page's language as TranslatePage()'s caller had it, before it
   // turned an unsupported one into "und".
   std::string prepared_source_;

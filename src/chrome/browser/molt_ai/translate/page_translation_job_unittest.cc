@@ -48,6 +48,7 @@ class FakeBackend : public web_ai::WebAIBackend {
 
   // web_ai::WebAIBackend:
   void GetDeviceFacts(DeviceCallback callback) override {
+    ++facts_calls;
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), facts));
   }
@@ -119,6 +120,7 @@ class FakeBackend : public web_ai::WebAIBackend {
   web_ai::DeviceFacts facts;
   bool prepare_ok = true;
   int throttle = 0;
+  int facts_calls = 0;
   int prepare_calls = 0;
   int generations = 0;
   std::map<uint64_t, Pending> jobs;
@@ -486,6 +488,57 @@ TEST_F(PageTranslationJobTest, ADestroyedJobCancelsAndNeverReports) {
   job_.reset();
   task_environment_.RunUntilIdle();
   EXPECT_FALSE(result_);
+}
+
+// The driver's way in (StartPageTranslation()): in a MoltNet window no job
+// is made, whatever TranslateManager asked, so the page isn't read and the
+// backend isn't asked anything; the decision says why.
+TEST_F(PageTranslationJobTest, AMoltNetPageNeverStarts) {
+  page_.values = {"guten Tag", "Mehr lesen"};
+  int made = 0;
+  auto make_job = [&](const web_ai::TranslatorPair& pair) {
+    ++made;
+    return std::make_unique<PageTranslationJob>(
+        std::make_unique<FakePage>(&page_), pair, backend_, "key",
+        base::DoNothing(),
+        base::BindOnce([](std::optional<JobResult>* out,
+                          JobResult result) { *out = result; },
+                       &result_));
+  };
+
+  PageTranslationStart started = StartPageTranslation(
+      /*moltnet=*/true, ResolvePagePair("de", "en"), make_job);
+  task_environment_.FastForwardBy(base::Minutes(kMaxTranslateMinutes + 1));
+  EXPECT_FALSE(started.job);
+  EXPECT_FALSE(started.decision.start);
+  EXPECT_EQ(started.decision.report.error, TranslateError::kInitialization);
+  EXPECT_EQ(started.decision.report.problem, Problem::kOffInMoltNet);
+  EXPECT_EQ(made, 0);
+  EXPECT_EQ(page_.extracts, 0);
+  EXPECT_EQ(page_.applies, 0);
+  EXPECT_EQ(backend_.facts_calls, 0);
+  EXPECT_EQ(backend_.prepare_calls, 0);
+  EXPECT_EQ(backend_.generations, 0);
+  EXPECT_FALSE(result_);
+  EXPECT_EQ(page_.values[0], "guten Tag");
+
+  // Not for a pair the table doesn't cover either, in any window.
+  started = StartPageTranslation(/*moltnet=*/false,
+                                 ResolvePagePair("de", "de"), make_job);
+  EXPECT_FALSE(started.job);
+  EXPECT_EQ(started.decision.report.problem, Problem::kIdentical);
+  EXPECT_EQ(made, 0);
+
+  // The same page in a regular window starts, and reads the page.
+  started = StartPageTranslation(/*moltnet=*/false,
+                                 ResolvePagePair("de", "en"), make_job);
+  ASSERT_TRUE(started.job);
+  EXPECT_TRUE(started.decision.start);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(made, 1);
+  EXPECT_EQ(backend_.facts_calls, 1);
+  EXPECT_EQ(page_.extracts, 1);
+  EXPECT_EQ(backend_.generations, 1);
 }
 
 }  // namespace

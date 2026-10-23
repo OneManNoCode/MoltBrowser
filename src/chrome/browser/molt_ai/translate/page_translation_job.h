@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/functional/function_ref.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
@@ -121,6 +122,27 @@ class PageTranslationJob {
 
   base::WeakPtrFactory<PageTranslationJob> weak_factory_{this};
 };
+
+// How the driver starts a translation TranslateManager asked for:
+// DecideStart() first, so nothing starts in a MoltNet window (whatever the
+// manager asked) or for a pair the table doesn't cover. Then |make_job|
+// isn't called (the page isn't read, the backend isn't asked anything),
+// |job| is null and |decision.report| says why. Otherwise |job| is the one
+// |make_job| made for the pair, started.
+struct PageTranslationStart {
+  PageTranslationStart();
+  PageTranslationStart(PageTranslationStart&&);
+  PageTranslationStart& operator=(PageTranslationStart&&);
+  ~PageTranslationStart();
+
+  StartDecision decision;
+  std::unique_ptr<PageTranslationJob> job;
+};
+PageTranslationStart StartPageTranslation(
+    bool moltnet,
+    const PagePair& pair,
+    base::FunctionRef<std::unique_ptr<PageTranslationJob>(
+        const web_ai::TranslatorPair&)> make_job);
 
 }  // namespace molt_ai::page_translate
 

@@ -13,8 +13,9 @@ namespace {
 
 constexpr char kOnDevice[] =
     "Translation runs on this device: the page's text isn't sent anywhere.";
-constexpr char kMoltNetNote[] =
-    " The site can see the translation, and so the language you read.";
+constexpr char kOffInMoltNet[] =
+    "Translation is off in MoltNet windows: a translated page can see your "
+    "language.";
 constexpr char kNeedsModel[] =
     "Translation runs on this device and needs an AI model. Nothing is "
     "downloaded until you choose one.";
@@ -43,7 +44,7 @@ Footnote Idle(const StatusSnapshot& status) {
   if (status.model_installed == false) {
     return WithLink(kNeedsModel, FootnoteLink::kChooseModel);
   }
-  return Text(std::string(kOnDevice) + (status.moltnet ? kMoltNetNote : ""));
+  return Text(kOnDevice);
 }
 
 Footnote Done(const StatusSnapshot& status) {
@@ -111,6 +112,8 @@ Footnote Failed(const StatusSnapshot& status) {
       return Text("Stopped before anything was translated.");
     case Problem::kTimedOut:
       return Text("Translation took too long and stopped.");
+    case Problem::kOffInMoltNet:
+      return Text(kOffInMoltNet);
     case Problem::kNone:
     case Problem::kNothingToTranslate:
       break;
@@ -121,6 +124,10 @@ Footnote Failed(const StatusSnapshot& status) {
 }  // namespace
 
 Footnote FootnoteFor(const StatusSnapshot& status) {
+  // In a MoltNet window nothing starts, whatever the state says.
+  if (PageTranslationOff(status.moltnet)) {
+    return Text(kOffInMoltNet);
+  }
   switch (status.phase) {
     case Phase::kIdle:
       return Idle(status);

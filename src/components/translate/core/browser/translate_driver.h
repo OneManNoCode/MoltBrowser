@@ -96,6 +96,11 @@ class TranslateDriver {
   // itself only for "always translate" (docs/design/PAGE_TRANSLATION.md).
   virtual bool TranslatesOnDevice() const { return false; }
 
+  // MoltBrowser: true when page translation is off for this tab (MoltNet
+  // windows). TranslateManager then triggers nothing by itself: no bubble,
+  // no address bar icon, no automatic translation.
+  virtual bool TranslationOff() const { return false; }
+
  protected:
   const base::ObserverList<LanguageDetectionObserver, true>&
   language_detection_observers() const {

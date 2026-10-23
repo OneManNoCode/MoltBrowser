@@ -357,5 +357,33 @@ TEST(PageTranslatePlanTest, Reports) {
             TranslateError::kIdenticalLanguages);
 }
 
+TEST(PageTranslatePlanTest, NothingStartsInAMoltNetWindow) {
+  EXPECT_TRUE(PageTranslationOff(/*moltnet=*/true));
+  EXPECT_FALSE(PageTranslationOff(/*moltnet=*/false));
+
+  // Whatever the manager asked, and whatever the languages: an error step.
+  for (PairProblem problem :
+       {PairProblem::kNone, PairProblem::kUnknownSource,
+        PairProblem::kUnsupportedSource, PairProblem::kUnsupportedTarget,
+        PairProblem::kIdentical}) {
+    const StartDecision d = DecideStart(/*moltnet=*/true, problem);
+    EXPECT_FALSE(d.start);
+    EXPECT_EQ(d.report.error, TranslateError::kInitialization);
+    EXPECT_EQ(d.report.problem, Problem::kOffInMoltNet);
+  }
+
+  // Elsewhere, only a pair the table covers starts.
+  StartDecision d = DecideStart(/*moltnet=*/false, PairProblem::kNone);
+  EXPECT_TRUE(d.start);
+  EXPECT_EQ(d.report.error, TranslateError::kNone);
+  d = DecideStart(/*moltnet=*/false, PairProblem::kIdentical);
+  EXPECT_FALSE(d.start);
+  EXPECT_EQ(d.report.error, TranslateError::kIdenticalLanguages);
+  EXPECT_EQ(d.report.problem, Problem::kIdentical);
+  d = DecideStart(/*moltnet=*/false, PairProblem::kUnsupportedTarget);
+  EXPECT_FALSE(d.start);
+  EXPECT_EQ(d.report.problem, Problem::kUnsupportedPair);
+}
+
 }  // namespace
 }  // namespace molt_ai::page_translate

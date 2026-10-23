@@ -42,7 +42,8 @@ struct StatusSnapshot {
   // kIdle: what this device can do, once known.
   std::optional<bool> model_installed;
   bool device_supported = true;
-  // A MoltNet window.
+  // A MoltNet window: page translation is off there, whatever the rest
+  // says (PageTranslationOff()).
   bool moltnet = false;
 };
 

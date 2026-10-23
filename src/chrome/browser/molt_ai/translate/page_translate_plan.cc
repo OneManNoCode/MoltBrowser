@@ -345,4 +345,22 @@ Report ReportForPair(PairProblem problem) {
   return report;
 }
 
+// ---------------------------------------------------------------------------
+// Where page translation is on
+// ---------------------------------------------------------------------------
+
+StartDecision DecideStart(bool moltnet, PairProblem problem) {
+  StartDecision decision;
+  if (PageTranslationOff(moltnet)) {
+    // An error, not a crash: Translate shows the bubble's error step, and
+    // the footnote says why.
+    decision.report.error = TranslateError::kInitialization;
+    decision.report.problem = Problem::kOffInMoltNet;
+    return decision;
+  }
+  decision.report = ReportForPair(problem);
+  decision.start = problem == PairProblem::kNone;
+  return decision;
+}
+
 }  // namespace molt_ai::page_translate

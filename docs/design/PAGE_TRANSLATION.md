@@ -31,8 +31,11 @@ that revision; line numbers below are 152's.
    model exists (§4.6).
 6. **The language list is local.** Translate offers the Translator's 20
    languages; `translate_a/l` is never requested (§4.5).
-7. **On in MoltNet, by click only** (no "always translate"), with a note in
-   the bubble that the site sees the translation (§5).
+7. **Off in MoltNet.** A translated page sees the user's language, which
+   breaks MoltNet's uniform en-US. In MoltNet windows Translate offers
+   nothing (no bubble, no address-bar icon). If the user opens it from a
+   menu, the bubble says why. The driver also refuses to start a
+   translation there (§5).
 8. **No Google fallback.** MoltBrowser ships no Google API key, so
    upstream's path already refused to run in a stock build; it is gone, not
    hidden behind a setting (§6).
@@ -227,8 +230,9 @@ every hook is marked `// MoltBrowser:`):
 
 | File | Hook | 152 code it sits in |
 |---|---|---|
-| `components/translate/core/browser/translate_driver.h` | `virtual bool TranslatesOnDevice() const { return false; }` | `class TranslateDriver`, after `HasCurrentPage()` |
+| `components/translate/core/browser/translate_driver.h` | `virtual bool TranslatesOnDevice() const { return false; }`, `virtual bool TranslationOff() const { return false; }` | `class TranslateDriver`, after `HasCurrentPage()` |
 | `components/translate/core/browser/translate_manager.cc` | `on_device` skips the offline and API-key checks | `CanManuallyTranslate()` (:163-185), `FilterIsTranslatePossible()` (:862-875) |
+| same | `TranslationOff()` (MoltNet): `PreventAllTriggering()`, so there's no bubble, no icon and no automatic translation | `FilterIsTranslatePossible()`, after the first short-circuit |
 | same | returns false on the device | `CanPartiallyTranslateTargetLanguage()` (:260) |
 | same | `DoTranslatePage("", source, target)` instead of the script fetch | `TranslatePage()`, before `TranslateDownloadManager::GetInstance()->script()` (:402) |
 | same | `PreventAutoHrefTranslate()`, `PreventPredefinedLanguageAutoTranslate()` | end of `ComputePossibleOutcomes()` (:821) |
@@ -404,7 +408,8 @@ builds leave empty, with a status line that follows the tab:
 
 | State | Footnote | Link |
 |---|---|---|
-| Before | "Translation runs on this device: the page's text isn't sent anywhere." In MoltNet also: "The site can see the translation, and so the language you read." | |
+| Before | "Translation runs on this device: the page's text isn't sent anywhere." | |
+| MoltNet window (every state) | "Translation is off in MoltNet windows: a translated page can see your language." | |
 | No model (before, or failed) | "Translation runs on this device and needs an AI model. Nothing is downloaded until you choose one." | *Choose a model* (opens `molt://ai` in a new tab) |
 | Device can't run models | "This device can't run on-device AI, so pages can't be translated here." | |
 | Working | "Translating on this device... 12 of 80" | *Stop* |
@@ -426,6 +431,7 @@ error with nothing to undo.
 | Same, nothing written | `TRANSLATION_ERROR` | original |
 | Timed out, nothing written | `TRANSLATION_TIMEOUT` | original |
 | No model, device can't, model didn't load | `INITIALIZATION_ERROR` | original |
+| MoltNet window (a menu asked anyway; nothing is read) | `INITIALIZATION_ERROR` | original |
 | Language unknown / unsupported / identical | `UNKNOWN_LANGUAGE` / `UNSUPPORTED_LANGUAGE` / `IDENTICAL_LANGUAGES` | original |
 
 ## 5. MoltNet and Incognito
@@ -434,44 +440,47 @@ error with nothing to undo.
 translation on the user's click, no "always translate", nothing about the
 page kept anywhere (the model holds no conversation for it).
 
-**MoltNet: on, by click only.** The two features MoltNet already treats
-differently pull in different directions:
+**MoltNet: off.** A translated page sees the language it was translated
+into: the page's script reads its own DOM after the change. That language
+is the one the user reads. MoltNet otherwise hides it, because every
+MoltNet window reports a uniform en-US. The target language is a strong,
+stable identifier across sites, since the user picks the same one
+everywhere. Tor Browser keeps translations off for the same reason. On
+the device the page also sees the model's exact output and its timing,
+which hint at the model and the machine. A warning in the bubble doesn't
+fix this, because the page learns the language whether or not the user
+read the warning.
 
-- The **web `Translator` API is off** in MoltNet windows: a site calls it
-  itself, as often as it likes, with text it picks, and times the answers
-  with `performance.now()`. That fingerprints the model and the machine on
-  every visit without the user doing anything, and Tor Browser has no such
-  API.
-- The **agent is on** (on-device models only): the user starts it, and
-  what it does in a page (what it types, how fast) is visible to that page
-  too, once per request.
+The workaround stays private. A user who needs a translation can copy the
+text into a regular window and translate it there. That translation runs on
+the device too, so nothing is sent anywhere and nothing links the two
+windows. For a Tor-grade window the safe default is off. The decision is
+simple to revisit later.
 
-Page translation is the agent's case: nothing runs unless the user clicks
-*Translate* in that tab, once per page. Nothing leaves the device, so
-MoltNet's rule that whatever a MoltNet window causes goes through Tor or
-doesn't happen holds trivially (upstream's script fetch, through the
-browser-wide context, was the one Translate request that went around
-Tor). And the alternative is worse: a MoltNet user who can't translate a
-page in the exit country's language copies its text into a regular
-window's translator or chat, which links the two contexts.
+How it is enforced, in two layers:
 
-What a page can learn when the user translates it in MoltNet, and what is
-done about it:
+- **Translate offers nothing.** `MoltTranslateDriver::TranslationOff()`
+  is true in MoltNet profiles (`molt_ai::tor::IsMoltNetProfile()`).
+  `TranslateManager::FilterIsTranslatePossible()` then calls
+  `PreventAllTriggering()`, so there's no automatic bubble, no address-bar
+  icon and no automatic translation of any kind. Upstream's
+  `CanManuallyTranslate()` is unchanged, so the menus (*Translate…* in
+  the app menu) still open the bubble. In a
+  MoltNet window its footnote says, in every state: "Translation is off
+  in MoltNet windows: a translated page can see your language."
+- **The driver refuses.** If the manager asks anyway, for example after
+  *Translate* in that bubble, `MoltTranslateDriver::TranslatePage()` goes
+  through `StartPageTranslation()`. `DecideStart()` returns
+  `kOffInMoltNet`, so no job is made, the page isn't read and the model
+  isn't asked anything. Translate gets `INITIALIZATION_ERROR` (the
+  bubble's error step, page left as it was), never a crash. The footnote
+  doesn't look up the device's model state in a MoltNet tab either.
 
-- **That it was translated, into which language, and the translation
-  itself.** The page sees its DOM change (as with any translator). The
-  language is the one the user reads, which MoltNet otherwise hides (every
-  MoltNet window reports en-US). The bubble says so before the click, in
-  MoltNet windows only.
-- **Which model, roughly.** The page chose the text and sees the model's
-  exact output. One click gives one sample; a page can't trigger more
-  without the user.
-- **Timing.** The page sees when texts change, which says something about
-  the machine's speed.
-- **No automatic translation:** "always translate" doesn't apply off the
-  record (upstream's rule; MoltNet's profile is off the record), and links,
-  `hrefTranslate` and predefined targets never translate by themselves
-  (§4.2), so a site can't make a MoltNet tab translate page after page.
+Google's script stays unreachable there as well
+(`TranslatesOnDevice()` is true in every window).
+
+The web `Translator` API is off in MoltNet windows too
+(`docs/design/WEB_AI_APIS.md`).
 
 `docs/MOLTNET_COMPLIANCE.md` §1.14, §2 and §5.7 say this for users.
 
@@ -499,8 +508,9 @@ is still compiled (the hooks only bypass it).
 | Other sites | Nothing | Only the tab's own main frame is read or written; iframes aren't touched |
 | The network | Nothing | Nothing is sent: no script, no language list, no translation call |
 
-Fingerprinting: the language list is fixed (the same 20 for everyone);
-what a translated page can learn is in §5.
+Fingerprinting: the language list is fixed (the same 20 for everyone).
+What a translated page can learn, and why MoltNet windows don't translate,
+is in §5.
 
 ## 8. Network traffic
 
@@ -522,15 +532,18 @@ Run here (no Chromium checkout):
   shims (clang ASan+UBSan, g++ -O2 -Werror, Chromium's warnings with
   `-fno-exceptions -fno-rtti`): `page_translate_plan_unittest.cc`
   (languages, pairs, checks, batches and caps, visible first, whitespace
-  kept, retries and splitting, double answers, forged batches, reports),
-  `page_translate_messages_unittest.cc`, `page_translate_io_unittest.cc`
+  kept, retries and splitting, double answers, forged batches, reports,
+  nothing starts in MoltNet), `page_translate_messages_unittest.cc` (each
+  state's footnote, MoltNet's in every state), `page_translate_io_unittest.cc`
   (script arguments as JSON, hostile model text, extraction shapes and
   caps, apply results, batch replies), `page_translation_job_unittest.cc` (a
   whole job against a fake page and backend: order and schema of the first
   batch, no model / no device / no text / model fails / unreadable page,
   halving, too many failures, throttling, Stop during a generation and
   during a write, the deadline, a page that loses the job, a gone page, a
-  destroyed job), and the new `web_ai_translation_unittest.cc` cases (every
+  destroyed job, and `StartPageTranslation()` making no job in MoltNet, so
+  the page isn't read and the backend isn't asked anything), and the new
+  `web_ai_translation_unittest.cc` cases (every
   batch schema through the service's converter, the batch prompt).
 - A syntax pass over `molt_translate_driver.cc`, `page_translate_status.cc`,
   `page_translate_footnote_view.cc` and the modified `translate_driver.h`
@@ -551,7 +564,8 @@ Needs the build machine:
   (script fetch, language-list fetch, API key) and are not expected to pass
   unchanged; they aren't part of MoltBrowser's test targets.
 
-In the browser (each in a regular, an Incognito and a MoltNet window):
+In the browser (1 to 4 in a regular and an Incognito window, 5 in a
+MoltNet window, 6 once):
 
 1. Without a model: no bubble pops up on a German page; the icon's bubble
    says a model is needed; *Choose a model* opens `molt://ai`; *Translate*
@@ -566,8 +580,11 @@ In the browser (each in a regular, an Incognito and a MoltNet window):
    `translate.googleapis.com` or `translate-pa.googleapis.com` while the
    bubble shows, the language settings open, and a page is translated;
    none at startup.
-5. MoltNet: the footnote's note shows; "Always translate" isn't offered;
-   a link from a translated page doesn't translate the next page.
+5. MoltNet: a German page shows no bubble and no address-bar icon.
+   *Translate…* from the app menu opens the bubble, whose footnote says
+   translation is off in MoltNet windows. Clicking *Translate* there shows
+   the error step and leaves the page unchanged; nothing is read (no model
+   load in `molt://ai` or the inference service's log).
 6. `chrome://translate-internals`: the language list is the 20 languages.
 
 ## 10. Not done, and follow-ups

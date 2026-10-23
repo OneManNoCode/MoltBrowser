@@ -136,9 +136,10 @@ claims below as the design intent, not as measured results.
     (`LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator`,
     `LanguageDetector`): they report "unavailable" in MoltNet windows
     ([design](design/WEB_AI_APIS.md)). Translating a page ("Translate this
-    page") runs on the on-device model too, only when you click Translate
-    (never "always translate"): nothing is sent anywhere, but the site sees
-    its translated text, and so the language you read
+    page") is off in MoltNet windows. A translated page can see the
+    language you read, which MoltNet hides behind its uniform en-US, so
+    Translate offers nothing there. If you open it from the menu, it says
+    why, and it won't translate the page
     ([design](design/PAGE_TRANSLATION.md) §5). The chat's sandbox tab opens in a
     MoltNet window, its actions and links stay in its own window, and it
     can't set up page
@@ -414,8 +415,9 @@ from your own IP address. We went through the candidates in the Chromium
 - *On the device, no request at all:* translating a page. Translate runs
   on MoltBrowser's on-device model and its language list is built in, so
   Google's translate script (which came through the browser-wide context)
-  and language list are never requested, with or without an API key
-  (docs/design/PAGE_TRANSLATION.md).
+  and language list are never requested, with or without an API key. In
+  MoltNet windows page translation is off altogether, because a translated
+  page can see your language (docs/design/PAGE_TRANSLATION.md §5).
 - *Fixed for MoltNet*, decided by the window being a MoltNet window
   and nothing else (`chrome/browser/molt_ai/tor/molt_net_requests_policy.h`):
   - **Cloud AI.** MoltBrowser's AI chat (side panel and molt://ai) in a
@@ -855,13 +857,8 @@ help. The last column names the report's checks.
 
      (Translating a page used to download Google's translate script
      outside Tor if you gave MoltBrowser your own `GOOGLE_API_KEY`. It
-     now runs on your device and sends nothing.)
-   - Translating a page in a MoltNet window shows the site its
-     translation: the site learns that you translated it, into which
-     language (MoltNet otherwise reports en-US for everyone), and roughly
-     how fast your model is. It only happens when you click Translate, and
-     the Translate bubble says so first
-     ([design](design/PAGE_TRANSLATION.md) §5).
+     now runs on your device and sends nothing, and it is off in MoltNet
+     windows.)
    - Context-menu items that a split-mode extension's Incognito copy adds
      can still appear in a MoltNet page's menu; choosing one does nothing
      (the extension gets no event). Likewise an extension's keyboard

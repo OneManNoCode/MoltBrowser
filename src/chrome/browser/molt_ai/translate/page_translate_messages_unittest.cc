@@ -21,10 +21,6 @@ TEST(PageTranslateMessagesTest, BeforeTranslating) {
   EXPECT_TRUE(Contains(f.text, "isn't sent anywhere"));
   EXPECT_EQ(f.link, FootnoteLink::kNone);
 
-  // A MoltNet window also says what the site can see.
-  status.moltnet = true;
-  EXPECT_TRUE(Contains(FootnoteFor(status).text, "the language you read"));
-
   // No model: say so, and offer the picker; nothing is downloaded here.
   status.model_installed = false;
   f = FootnoteFor(status);
@@ -88,6 +84,49 @@ TEST(PageTranslateMessagesTest, FailuresSayWhy) {
     EXPECT_FALSE(f.text.empty());
     EXPECT_NE(f.link, FootnoteLink::kStop);
   }
+}
+
+// Page translation is off in MoltNet windows: whatever opened the bubble
+// (the menus can), it says why in one sentence, offers no model and no
+// Stop.
+TEST(PageTranslateMessagesTest, MoltNetSaysTranslationIsOff) {
+  auto expect_off = [](const StatusSnapshot& snapshot) {
+    const Footnote f = FootnoteFor(snapshot);
+    EXPECT_TRUE(Contains(f.text, "off in MoltNet windows"));
+    EXPECT_TRUE(Contains(f.text, "can see your language"));
+    EXPECT_EQ(f.link, FootnoteLink::kNone);
+    EXPECT_TRUE(f.link_text.empty());
+  };
+  StatusSnapshot status;
+  status.moltnet = true;
+  expect_off(status);
+  status.model_installed = false;
+  expect_off(status);
+  status.device_supported = false;
+  expect_off(status);
+
+  // What the driver reports when the menus ask anyway.
+  status = StatusSnapshot();
+  status.moltnet = true;
+  status.phase = Phase::kFailed;
+  status.report.error = TranslateError::kInitialization;
+  status.report.problem = Problem::kOffInMoltNet;
+  expect_off(status);
+  // Even the off report alone (outside MoltNet it can't happen) explains.
+  status.moltnet = false;
+  expect_off(status);
+
+  // Other phases never show in a MoltNet window, but say the same if
+  // they did.
+  status.moltnet = true;
+  for (Phase phase : {Phase::kPreparing, Phase::kTranslating, Phase::kDone}) {
+    status.phase = phase;
+    expect_off(status);
+  }
+
+  // Outside MoltNet the usual note is back, and it says nothing of MoltNet.
+  status = StatusSnapshot();
+  EXPECT_FALSE(Contains(FootnoteFor(status).text, "MoltNet"));
 }
 
 }  // namespace

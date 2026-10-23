@@ -256,6 +256,8 @@ enum class Problem {
   kModelErrors,
   kStopped,
   kTimedOut,
+  // A MoltNet window: page translation is off there (PageTranslationOff()).
+  kOffInMoltNet,
 };
 
 // translate::TranslateErrors, without depending on //components/translate.
@@ -281,6 +283,30 @@ struct Report {
 // it; a failure is reported only when the page is unchanged.
 Report ReportForJob(const JobResult& result);
 Report ReportForPair(PairProblem problem);
+
+// ---------------------------------------------------------------------------
+// Where page translation is on
+// ---------------------------------------------------------------------------
+
+// Page translation is off in MoltNet windows: a translated page sees the
+// language it was translated into, which breaks MoltNet's uniform en-US and
+// is a strong, stable identifier across sites (Tor Browser keeps
+// translations off too). Translate then offers nothing by itself (no
+// bubble, no address bar icon, no automatic translation); its menus still
+// open the bubble, which says why. Decided by the window alone.
+// docs/design/PAGE_TRANSLATION.md §5.
+constexpr bool PageTranslationOff(bool moltnet) {
+  return moltnet;
+}
+
+// Whether a translation the manager asked for may start: never where page
+// translation is off (whatever the manager asked), nor for a pair the
+// table doesn't cover. |report| says why not.
+struct StartDecision {
+  bool start = false;
+  Report report;
+};
+StartDecision DecideStart(bool moltnet, PairProblem problem);
 
 }  // namespace molt_ai::page_translate
 

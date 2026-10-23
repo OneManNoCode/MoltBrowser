@@ -287,4 +287,25 @@ void PageTranslationJob::ReportDone(JobResult result) {
   std::move(on_done_).Run(result);
 }
 
+PageTranslationStart::PageTranslationStart() = default;
+PageTranslationStart::PageTranslationStart(PageTranslationStart&&) = default;
+PageTranslationStart& PageTranslationStart::operator=(PageTranslationStart&&) =
+    default;
+PageTranslationStart::~PageTranslationStart() = default;
+
+PageTranslationStart StartPageTranslation(
+    bool moltnet,
+    const PagePair& pair,
+    base::FunctionRef<std::unique_ptr<PageTranslationJob>(
+        const web_ai::TranslatorPair&)> make_job) {
+  PageTranslationStart started;
+  started.decision = DecideStart(moltnet, pair.problem);
+  if (!started.decision.start) {
+    return started;
+  }
+  started.job = make_job(pair.pair);
+  started.job->Start();
+  return started;
+}
+
 }  // namespace molt_ai::page_translate

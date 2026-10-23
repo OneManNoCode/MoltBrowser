@@ -884,6 +884,12 @@ void TranslateManager::FilterIsTranslatePossible(
   // Google API key.
   const bool on_device = translate_driver_->TranslatesOnDevice();
 
+  // MoltBrowser: page translation is off in this tab (MoltNet windows):
+  // nothing is offered or translated by itself.
+  if (translate_driver_->TranslationOff()) {
+    decision->PreventAllTriggering();
+  }
+
   // Also, skip if the connection is currently offline - initiation doesn't make
   // sense there, either.
   if (!on_device && net::NetworkChangeNotifier::IsOffline()) {
