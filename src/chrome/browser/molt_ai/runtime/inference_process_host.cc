@@ -712,21 +712,34 @@ void InferenceProcessHost::OnPipelineCache(
     if (delegate_) delegate_->OnPipelineCacheDropped(device);
     return;
   }
+  // Over the cap, nothing is copied (a BigBuffer's size can't change).
+  if (cache->size() > kMaxPipelineCacheBytes) {
+    LOG(WARNING) << "[MoltAI] inference process: pipeline cache refused "
+                    "(too large, "
+                 << cache->size() << " bytes)";
+    process->pipeline_cache_requests_left = 0;
+    if (delegate_) delegate_->OnPipelineCacheDropped(device);
+    return;
+  }
+  // Then a copy: over 64 KiB the reply is shared memory the service can
+  // still write to (mojo_base::BigBuffer's security note), so what is
+  // checked here must be what gets stored.
+  mojo_base::BigBuffer data = cache->Clone();
   // Checked here, before anything is stored: the size, then the header
   // against the device this process reported. Nothing past the header is
   // read. A failure isn't a protocol violation (a driver may write an odd
   // cache), but nothing more is asked of this process.
   const PipelineCacheCheck check = CheckPipelineCacheHeader(
-      base::as_string_view(base::span(*cache)), device.cache_device);
+      base::as_string_view(base::span(data)), device.cache_device);
   if (check != PipelineCacheCheck::kOk) {
     LOG(WARNING) << "[MoltAI] inference process: pipeline cache refused ("
-                 << PipelineCacheCheckName(check) << ", " << cache->size()
+                 << PipelineCacheCheckName(check) << ", " << data.size()
                  << " bytes)";
     process->pipeline_cache_requests_left = 0;
     if (delegate_) delegate_->OnPipelineCacheDropped(device);
     return;
   }
-  if (delegate_) delegate_->OnPipelineCacheData(device, std::move(*cache));
+  if (delegate_) delegate_->OnPipelineCacheData(device, std::move(data));
 }
 
 void InferenceProcessHost::OnLoadTimeout(base::WeakPtr<ModelProcess> process) {
