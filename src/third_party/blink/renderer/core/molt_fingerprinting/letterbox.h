@@ -135,8 +135,10 @@ CORE_EXPORT int ScrollbarThicknessForViewportUnits(const ScrollbarTheme& theme,
 // `scale_from_dip`, the device scale factor, upstream). In MoltNet, for web
 // content with classic scrollbars, the layout zoom of `area`'s frame (device
 // scale factor x page zoom), so their arrows, thumb and insets follow the
-// page zoom as their thickness above does.
+// page zoom as their thickness above does. `document` is `area`'s
+// (ScrollableArea::GetDocument(), which only the area itself can call).
 CORE_EXPORT float ScrollbarScaleFromDIP(const ScrollableArea& area,
+                                        const Document& document,
                                         float scale_from_dip);
 
 // A viewport size or length in CSS pixels of `frame` as the page reads it:
