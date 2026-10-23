@@ -11,7 +11,7 @@
 
 #include "base/memory/raw_ptr.h"
 
-class Browser;
+class BrowserWindowInterface;
 class Profile;
 class SidePanelRegistry;
 class SidePanelEntryScope;
@@ -26,7 +26,7 @@ class View;
 // dropdown alongside Bookmarks, History, etc.
 class AiChatSidePanelCoordinator {
  public:
-  explicit AiChatSidePanelCoordinator(Browser* browser);
+  explicit AiChatSidePanelCoordinator(BrowserWindowInterface* browser);
   AiChatSidePanelCoordinator(const AiChatSidePanelCoordinator&) = delete;
   AiChatSidePanelCoordinator& operator=(const AiChatSidePanelCoordinator&) =
       delete;
@@ -43,7 +43,7 @@ class AiChatSidePanelCoordinator {
   std::unique_ptr<views::View> CreateAiChatWebView(
       SidePanelEntryScope& scope);
 
-  const raw_ptr<Browser> browser_;
+  const raw_ptr<BrowserWindowInterface> browser_;
   const raw_ptr<Profile> profile_;
 };
 

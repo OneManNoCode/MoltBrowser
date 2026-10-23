@@ -7,7 +7,7 @@
 
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -21,7 +21,7 @@ namespace {
 constexpr char kAgentWebUIURL[] = "chrome://molt-ai-agent/";
 }  // namespace
 
-AgentSidePanelWebView::AgentSidePanelWebView(Browser* browser)
+AgentSidePanelWebView::AgentSidePanelWebView(BrowserWindowInterface* browser)
     : views::WebView(browser ? browser->GetProfile() : nullptr),
       profile_(browser ? browser->GetProfile() : nullptr) {
   LoadInitialURL(GURL(kAgentWebUIURL));

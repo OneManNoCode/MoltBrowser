@@ -17,7 +17,7 @@
 #include "url/gurl.h"
 
 AiPromptProvider::AiPromptProvider()
-    : AutocompleteProvider(AutocompleteProvider::TYPE_BUILTIN) {}
+    : AutocompleteProvider(AutocompleteProvider::Type::kBuiltin) {}
 
 AiPromptProvider::~AiPromptProvider() = default;
 
@@ -72,7 +72,7 @@ void AiPromptProvider::AddAiMatch(const std::u16string& prompt) {
       std::string("chrome://molt-ai/?q=") + escaped_prompt;
 
   AutocompleteMatch match(this, kRelevance, /*deletable=*/false,
-                          AutocompleteMatchType::NAVSUGGEST);
+                          omnibox::AutocompleteMatchType::kNavsuggest);
   match.destination_url = GURL(destination);
   match.contents =
       u"Ask MoltBrowser AI: " + prompt;

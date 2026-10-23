@@ -19,8 +19,8 @@
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -154,9 +154,9 @@ void RunScriptInBackgroundBrowser(
     }
   }
 
-  Browser::CreateParams params(Browser::TYPE_POPUP, profile,
-                               /*user_gesture=*/true);
-  params.trusted_source = true;
+  BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_POPUP, profile,
+                                   /*from_user_gesture=*/true);
+  params.is_trusted_source = true;
   // Replay at a desktop size — recordings are made on the desktop layout, and a
   // small/odd run window can trip a site's responsive layout so the recorded
   // (desktop) elements render hidden and won't match on replay.
@@ -165,7 +165,7 @@ void RunScriptInBackgroundBrowser(
   // screen. Watch mode leaves the default show state (visible).
   if (minimize)
     params.initial_show_state = ui::mojom::WindowShowState::kMinimized;
-  Browser* browser = Browser::Create(params);
+  BrowserWindowInterface* browser = CreateBrowserWindow(std::move(params));
   if (!browser) {
     LOG(WARNING) << "[MoltAutomation] failed to create background browser";
     return;
