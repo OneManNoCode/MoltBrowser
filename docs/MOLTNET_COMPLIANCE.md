@@ -135,7 +135,12 @@ claims below as the design intent, not as measured results.
     page you ask about. Pages can't use the built-in AI APIs
     (`LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator`,
     `LanguageDetector`): they report "unavailable" in MoltNet windows
-    ([design](design/WEB_AI_APIS.md)). The chat's sandbox tab opens in a
+    ([design](design/WEB_AI_APIS.md)). Translating a page ("Translate this
+    page") is off in MoltNet windows. A translated page can see the
+    language you read, which MoltNet hides behind its uniform en-US, so
+    Translate offers nothing there. If you open it from the menu, it says
+    why, and it won't translate the page
+    ([design](design/PAGE_TRANSLATION.md) §5). The chat's sandbox tab opens in a
     MoltNet window, its actions and links stay in its own window, and it
     can't set up page
     watchers or saved plans (they would run later outside Tor). Safe
@@ -405,9 +410,14 @@ from your own IP address. We went through the candidates in the Chromium
   prerendered either.
 - *Not in MoltBrowser builds:* they need a Google API key or a Google
   sign-in, which MoltBrowser doesn't ship (docs/NETWORK_TRAFFIC.md):
-  Translate (its script would come through the browser-wide context),
   password affiliations, Google's speech recognition, and the
   on-device model of Chrome's built-in AI (Chrome builds only).
+- *On the device, no request at all:* translating a page. Translate runs
+  on MoltBrowser's on-device model and its language list is built in, so
+  Google's translate script (which came through the browser-wide context)
+  and language list are never requested, with or without an API key. In
+  MoltNet windows page translation is off altogether, because a translated
+  page can see your language (docs/design/PAGE_TRANSLATION.md §5).
 - *Fixed for MoltNet*, decided by the window being a MoltNet window
   and nothing else (`chrome/browser/molt_ai/tor/molt_net_requests_policy.h`):
   - **Cloud AI.** MoltBrowser's AI chat (side panel and molt://ai) in a
@@ -839,16 +849,16 @@ help. The last column names the report's checks.
        may ask Google's time server (`clients2.google.com`) for the time.
        The request carries no address or page data, but its timing could
        tell a watcher that you just met a certificate error.
-     - If you give MoltBrowser your own Google API key (`GOOGLE_API_KEY`),
-       translating a page in a MoltNet window can download Google's
-       translate script outside Tor (the translation itself goes through
-       Tor). The other services that need a key go through Tor, are off
-       the record, or are off in MoltNet windows (§2).
      - On Windows 11 the system's own passkey dialog can offer your phone;
        Windows makes that connection itself.
      - The AI settings page, opened in a MoltNet window, checks a cloud
        provider's API key through Tor, but the key still names your
        account. Use a regular window for settings.
+
+     (Translating a page used to download Google's translate script
+     outside Tor if you gave MoltBrowser your own `GOOGLE_API_KEY`. It
+     now runs on your device and sends nothing, and it is off in MoltNet
+     windows.)
    - Context-menu items that a split-mode extension's Incognito copy adds
      can still appear in a MoltNet page's menu; choosing one does nothing
      (the extension gets no event). Likewise an extension's keyboard

@@ -34,7 +34,11 @@ source_set("logic") {
 
   # Images in a session's context (std-only).
   public_deps = [ "//chrome/browser/molt_ai/runtime:model_image" ]
-  deps = [ "//chrome/services/molt_ai/inference/engine:image_input" ]
+  deps = [
+    # JsonQuote() for the texts of a page-translation batch (std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//chrome/services/molt_ai/inference/engine:image_input",
+  ]
 }
 
 # blink.mojom.AIManager, blink.mojom.TranslationManager and the session
