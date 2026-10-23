@@ -686,6 +686,25 @@ struct NetworkContextParams {
   // molt_net_network_context_policy.h); if null, the fixed password every
   // other context sends there.
   [MinVersion=1] string? molt_socks_isolation_password;
+
+  // MoltBrowser: per-site network state for MoltNet's network contexts
+  // (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h); every
+  // other context leaves them false and keeps Chromium's behaviour.
+  //
+  // If true, the context verifies each server certificate itself: its
+  // certificate verifier gets neither net::CachingCertVerifier (results
+  // kept by certificate, hostname and flags, whichever site caused them)
+  // nor net::CoalescingCertVerifier (identical verifications in flight at
+  // the same time merged into one).
+  [MinVersion=1] bool molt_uncached_cert_verification = false;
+  // If true, the context never files a request under the HTTP cache's
+  // shared, single-keyed entries for well-known scripts and styles
+  // (network::features::kCacheSharingForPervasiveResources): every entry
+  // stays keyed by top-level site.
+  [MinVersion=1] bool molt_no_shared_cache_entries = false;
+  // If true, dynamic HSTS upgrades top-level navigations only, as
+  // net::features::kHstsTopLevelNavigationsOnly does for every context.
+  [MinVersion=1] bool molt_hsts_top_level_navigations_only = false;
 };
 
 struct NetworkConditions {

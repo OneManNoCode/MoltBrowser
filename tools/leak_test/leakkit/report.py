@@ -406,6 +406,25 @@ def _judge_override(data):
     return (PASS if ok else FAIL), ev
 
 
+def _judge_partitioning_override(data):
+    runs = data.get('runs') or []
+    if not runs:
+        return SKIP, ['no data']
+    ev, ok = [], True
+    for run in runs:
+        res = run.get('result') or {}
+        err = str(res.get('error') or '')
+        pages = run.get('moltnet_pages')
+        # Refused because of this switch (the error names it), not for some
+        # other reason, and no MoltNet page opened.
+        good = (bool(err) and run.get('feature', '') in err and
+                not err.startswith('harness:') and not pages)
+        ok = ok and good
+        ev.append('%s: openWindow -> %s; MoltNet pages: %s' % (
+            run.get('flag'), json.dumps(res, sort_keys=True)[:200], pages))
+    return (PASS if ok else FAIL), ev
+
+
 def _judge_extension(data):
     if not data.get('loaded'):
         return SKIP, ['the test extension could not be loaded: %s' %
@@ -697,6 +716,12 @@ def _phase_checks(manifest):
         _phase_check(manifest, 'override', 'identity.override_refused',
                      'identity', 'A --proxy-server override blocks MoltNet',
                      'MOLTNET_COMPLIANCE.md §4 step 9', _judge_override),
+        _phase_check(manifest, 'partitioning_override',
+                     'identity.partitioning_override_refused', 'identity',
+                     'Turning off per-site partitioning (connections, HTTP '
+                     'cache, third-party storage) blocks MoltNet',
+                     'MOLTNET_COMPLIANCE.md §4 step 9',
+                     _judge_partitioning_override),
         _phase_check(manifest, 'extension', 'identity.extension_loaded',
                      'harness', 'The test extension loaded and ran in a '
                      'regular window (control for the extension test)',

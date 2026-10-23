@@ -28,7 +28,12 @@
 #   molt_net_network_context_policy — MoltNet's per-context network
 #                              settings: one-off keys for certificate
 #                              fetches, no NTLM or Negotiate, a random
-#                              SOCKS password for Tor
+#                              SOCKS password for Tor, per-site network
+#                              state (certificate verification, HTTP cache,
+#                              HSTS, HTTP auth, Private State Tokens)
+#   molt_net_partitioning_policy — the process-wide switches MoltNet needs
+#                              on (connections, HTTP cache, third-party
+#                              storage partitioned by site)
 
 import("//extensions/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
@@ -119,6 +124,13 @@ source_set("network_context_policy") {
   deps = [ "//base" ]
 }
 
+# The process-wide switches MoltNet's per-site isolation needs on
+# (molt_net_partitioning_policy.h); molt_net_routing.cc reads them.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("partitioning_policy") {
+  sources = [ "molt_net_partitioning_policy.h" ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -142,6 +154,7 @@ source_set("tor") {
   public_deps = [
     ":incognito_parity_policy",
     ":network_context_policy",
+    ":partitioning_policy",
     ":pref_isolation",
     ":protocol",
     ":requests_policy",
@@ -386,6 +399,7 @@ source_set("unit_tests") {
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
+    "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
     "molt_net_request_binders_unittest.cc",
@@ -403,6 +417,7 @@ source_set("unit_tests") {
     ":locale_prefs",
     ":network_context_policy",
     ":onion_location",
+    ":partitioning_policy",
     ":pref_isolation",
     ":pref_isolation_policy",
     ":protocol",

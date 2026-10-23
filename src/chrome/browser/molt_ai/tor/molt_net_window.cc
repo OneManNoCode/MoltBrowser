@@ -363,6 +363,13 @@ void OpenImpl(Profile* from,
                         "in a moment.");
     return;
   }
+  // Before Tor starts: there is nothing to wait for if sites can't be kept
+  // apart (GetOrCreateMoltNetProfile() checks again).
+  if (std::string error = MoltNetRouting::ProcessWidePartitioningError();
+      !error.empty()) {
+    std::move(done).Run(false, std::move(error));
+    return;
+  }
   TorManager::Get()->Launch(base::BindOnce(&OnTorReady, path, url,
                                            for_new_identity, std::move(done)));
 }

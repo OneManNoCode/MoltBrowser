@@ -255,6 +255,7 @@ the report. Anything else is a leak.
 | Fail-closed | the `tor` cgroup is killed; the next MoltNet navigation fails with a proxy/SOCKS error and nothing leaves directly | 5 |
 | No restore | a relaunch with the same profile shows no MoltNet page | 5 |
 | Overrides refused | a relaunch with `--proxy-server=` (the kit's logging proxy): `openWindow` returns an error and no MoltNet window opens; the same launch runs step 13 | 9, 13 |
+| Partitioning switches refused | one relaunch per switch MoltNet needs on, each with `--disable-features=` for it (`PartitionConnectionsByNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `ThirdPartyStoragePartitioning`): `openWindow` returns an error that names the switch, and no MoltNet window opens (`identity.partitioning_override_refused`, phase `partitioning_override`) | 9 |
 
 ### Uniformity (FINGERPRINTING.md)
 
