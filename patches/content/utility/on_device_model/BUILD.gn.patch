@@ -1,0 +1,29 @@
+MoltBrowser patch for content/utility/on_device_model/BUILD.gn
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/utility/on_device_model/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/utility/on_device_model/BUILD.gn b/content/utility/on_device_model/BUILD.gn
+index 717631385e4d35f04fcd5c2b6528b2508be73242..35a8e6c50d3c091d74f4242118c1710fbce3c57f 100644
+--- a/content/utility/on_device_model/BUILD.gn
++++ b/content/utility/on_device_model/BUILD.gn
+@@ -19,10 +19,18 @@ source_set("on_device_model_sandbox_init") {
+     deps += [ "//services/on_device_model/ml" ]
+   }
+   if (is_linux || is_chromeos) {
++    # MoltBrowser: GPU inference (docs/design/SANDBOXED_INFERENCE.md 11.4).
++    sources += [
++      "molt_gpu_inference_sandbox_linux.cc",
++      "molt_gpu_inference_sandbox_linux.h",
++    ]
+     deps += [
+       "//content/common",
+       "//gpu/config",
+       "//sandbox/policy",
++
++      # MoltBrowser: the broker's permission and command types.
++      "//sandbox/linux:sandbox_services",
+     ]
+   }
+   if (!is_fuchsia) {
