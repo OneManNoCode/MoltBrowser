@@ -104,8 +104,8 @@ class FakeBackend : public web_ai::WebAIBackend {
   // Answers with |fn| applied to each text of the running batch.
   template <typename Fn>
   void Translate(Fn fn) {
-    std::optional<base::Value> texts =
-        base::JSONReader::Read(Running().job.user_message);
+    std::optional<base::Value> texts = base::JSONReader::Read(
+        Running().job.user_message, base::JSON_PARSE_RFC);
     base::ListValue out;
     for (const base::Value& text : texts->GetList()) {
       out.Append(fn(text.GetString()));
@@ -158,7 +158,8 @@ class FakePage : public PageScriptRunner {
     EXPECT_EQ(script.substr(0, prefix.size()), prefix);
     std::optional<base::Value> args = base::JSONReader::Read(
         std::string_view(script).substr(prefix.size(),
-                                        script.size() - prefix.size() - 1));
+                                        script.size() - prefix.size() - 1),
+        base::JSON_PARSE_RFC);
     ASSERT_TRUE(args && args->is_dict());
     const base::DictValue& dict = args->GetDict();
     const std::string op = *dict.FindString("op");
