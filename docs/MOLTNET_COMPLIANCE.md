@@ -48,7 +48,11 @@ claims below as the design intent, not as measured results.
    site it belongs to (as the SOCKS username), so Tor puts different sites on
    different circuits and exits (`IsolateSOCKSAuth`). A site's embedded
    third-party content shares that site's circuit, as in Tor Browser. A page
-   its server sandboxes (an opaque origin) gets a circuit of its own.
+   its server sandboxes (an opaque origin) gets a circuit of its own, and so
+   does each download the browser makes while it checks a site's
+   certificate (a missing intermediate certificate, a revocation check):
+   such a fetch is never cached, never shared with another site's, and
+   never put on a site's circuit.
 5. **A visible route.** The MoltNet panel shows the guard, middle and exit relay
    of the current circuit (nickname, country, IP, fingerprint), read from Tor's
    own control port. It never looks up or shows your real IP. In a MoltNet
@@ -114,8 +118,11 @@ claims below as the design intent, not as measured results.
     sites you use most, lookalike-domain warnings don't depend on the sites
     you use, and certificate warnings you clicked through in a regular
     window are shown again. Third-party cookies and Shared Storage are
-    always off in MoltNet windows, and MoltNet never sends your Windows or
-    Kerberos sign-in to a site.
+    always off in MoltNet windows. MoltNet never sends your Windows or
+    Kerberos sign-in to a site, and a site that asks for a password gets
+    the Basic or Digest kind of sign-in only, never Windows (NTLM) or
+    Kerberos (Negotiate) sign-in, also with a name and password you type
+    in.
 12. **No WebRTC.** As in Tor Browser, pages in a MoltNet window can't open
     WebRTC connections: `RTCPeerConnection` reports that WebRTC is
     unavailable, and the browser gives those pages none of WebRTC's network
@@ -156,8 +163,11 @@ claims below as the design intent, not as measured results.
     Browsing, Google's image descriptions, location, Cast, signing in with
     a passkey on your phone and shopping features (price insights,
     discounts) are off in MoltNet windows, and bookmarks you open there
-    with "Open all" stay there. What still happens outside Tor is listed
-    in §5.7.
+    with "Open all" stay there. MoltNet doesn't check whether your network
+    wants you to sign in first (a captive portal, as on hotel or airport
+    Wi-Fi) and never opens such a sign-in page: Tor can't reach it, so sign
+    in to the network in a regular window. What still happens outside Tor
+    is listed in §5.7.
 
 ## 2. How it is built
 
@@ -181,7 +191,8 @@ exceptions and defaults of every type, including permission embargo and
 MoltShield's per-site switch; fonts and font sizes; default encoding; Do
 Not Track; third-party cookie mode; languages; Privacy Sandbox switches;
 the accessibility settings pages can detect; the sites allowed to open an
-application without asking) is set to MoltBrowser's
+application without asking; "Use a web service to help resolve navigation
+errors", which switches on captive-portal checks) is set to MoltBrowser's
 default in the profile's own in-memory store, so the regular profile's
 value is never read, and changing it later has no effect on MoltNet.
 MoltNet's own settings (the proxy and leak controls below, en-US) are
@@ -305,7 +316,15 @@ would link MoltNet to your regular browsing. So:
   windows don't apply; third-party cookies are blocked and the Privacy
   Sandbox's Shared Storage is off whatever your regular settings, as in
   Incognito; and the browser never answers a server's authentication
-  challenge with your Windows (NTLM) or Kerberos credentials.
+  challenge with your Windows (NTLM) or Kerberos credentials. MoltNet's
+  network context goes further: it offers servers the Basic and Digest
+  authentication schemes only, never NTLM or Negotiate (Kerberos), even
+  with credentials you type in, whatever the browser-wide settings and
+  policies allow (Tor Browser doesn't offer them either). So Negotiate
+  never looks a server's name up with your system's resolver, and
+  nothing about your computer goes into an authentication answer
+  (`molt_net_network_context_policy.h`; the network service applies it
+  in `network_context.cc`).
 - *Checked and not inherited* (Chromium already keeps these per profile):
   HTTPS-First "Continue to site" exceptions, client hints, Storage Access
   and top-level storage access grants, FedCM grants and sign-in status,
@@ -402,7 +421,9 @@ from your own IP address. We went through the candidates in the Chromium
   renderer downloads them); certificate fetches (each network context
   gives its certificate verifier its own loader, so missing intermediate
   certificates are fetched through Tor, and so would online revocation
-  checks, which are off by default); downloads and "Save page as"; the
+  checks, which are off by default; in MoltNet each such fetch also gets
+  a one-off network key, see *Certificate fetches* below); downloads and
+  "Save page as"; the
   check for a `www.` address after a certificate name error; payment
   method manifests; FedCM; Lens and "Search image with ..." (they open
   in the MoltNet window); the AI chat's `/pdf` download, its model
@@ -498,6 +519,33 @@ from your own IP address. We went through the candidates in the Chromium
   DNS (off by default), and Tor failures are proxy errors, not DNS errors.
 - *Still outside Tor:* see §5.7.
 
+**Certificate fetches.** To check a site's certificate the browser may
+download a missing intermediate certificate (AIA) and, with online
+revocation checks on, an OCSP response or a CRL, from addresses the
+certificate names. Chromium files each such download under the address's
+own site, whichever site's certificate needed it, and MoltNet's per-site
+circuits follow that key. In MoltNet each one gets a one-off key instead
+(`net::IsolationInfo::CreateTransient()`): nothing is kept in the HTTP
+cache for it, it opens its own connection on its own Tor circuit, and two
+identical downloads in flight at the same time are made separately. The
+switch is set per network context, for MoltNet's only
+(`molt_net_network_context_policy.h`, read by the certificate verifier's
+fetcher in `services/cert_verifier/`); every other profile keeps
+Chromium's behaviour.
+
+**Captive portals.** Chromium checks for a captive portal (a network that
+wants you to sign in first) after certificate errors and slow loads, if
+"Use a web service to help resolve navigation errors" is on, and opens the
+portal's sign-in page in a tab or a small window of the same profile. In
+MoltNet that check would go through Tor, where no network sign-in page can
+be reached. The setting is pinned off for MoltNet (MoltBrowser's default;
+your regular profile's choice isn't read), so MoltNet never checks, and
+whatever asks for a sign-in page in a MoltNet window (a check a policy
+switched on, or the "Connect" button of the page Chromium shows on
+Windows when Windows itself reports a captive portal) opens nothing
+(`chrome_security_blocking_page_factory.cc`). Sign in to the network in a
+regular window.
+
 **Onion addresses.** RFC 7686 reserves `.onion` for Tor, and the Chromium
 version MoltBrowser is built on doesn't special-case it, so MoltBrowser does,
 in four places outside MoltNet's Tor connection: a navigation check that runs
@@ -573,6 +621,9 @@ gpg-verified steps documented in that script.
 | New Identity reports success only once Tor has applied `NEWNYM` (Tor answers `250 OK` at once and, within ten seconds of the previous one, applies it later); replies and events read correctly from one connection | Unit tests of the control-protocol framing (`molt_ai_unittests`); standalone harness around the shipped control-connection code and the New Identity signal, Tor 0.4.9.11: an immediate and a rate-limited `NEWNYM`, an event arriving with a reply; 2 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
 | New Identity's order: the old windows close although a page asks "Leave site?", `NEWNYM` only once the old profile is destroyed, the new window only once Tor has switched, no other MoltNet window meanwhile, nothing changed if an old window stays open | Standalone simulation: the New Identity code of `molt_net_window.cc`, verbatim, against stand-ins (profiles, windows, the profile destroyer, Tor) on a simulated clock, g++ ASan/UBSan; 8 tests, 5 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
 | Sandboxed pages (opaque top-level origins) get per-site SOCKS usernames | The username code of `socks_connect_job.cc`, verbatim, against stand-ins with the 152 shapes; 3 tests, a mutant caught | Pass (built standalone; not yet built in the Chromium tree) |
+| Certificate fetches in MoltNet (§2 *Certificate fetches*): the switch is set for MoltNet's network contexts only; with it, the certificate fetcher gives every fetch a fresh one-off key and never merges two fetches (the URL rules unchanged), without it Chromium's behaviour; each one-off key gets a SOCKS username of its own | Unit tests (`molt_ai_unittests`, with the real parameter structs); standalone harness: the shipped `cert_net_fetcher_url_loader.cc` compiled unchanged against stand-ins with the 152 shapes (g++ ASan/UBSan, clang `-fno-exceptions`), 6 tests, 5 mutants caught; the `ProfileNetworkContextService` hook, verbatim, against the 152 profile kinds; the SOCKS username code, verbatim | Pass (built standalone; not yet built in the Chromium tree) |
+| HTTP authentication in MoltNet (§2): Basic and Digest only, also before the network service has its browser-wide values and after they change, whatever policies allow; other contexts unchanged | Standalone harness: Chromium 152's `HttpAuthPreferences`, the network context's code verbatim and the scheme check of `HttpAuthHandlerRegistryFactory` verbatim (g++ ASan/UBSan, clang `-fno-exceptions`); 5 tests, 7 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
+| No captive-portal check or sign-in page in MoltNet (§2 *Captive portals*): the setting is pinned and the regular profile's value isn't read; `OpenLoginTab()` opens nothing for MoltNet and stays Chromium's for regular, Incognito, DevTools, guest and look-alike profiles | Unit tests (`molt_ai_unittests`); standalone: the real pinning code against a settings stand-in (a mutant caught), the hook verbatim against stand-ins with the 152 signatures | Pass (built standalone; not yet built in the Chromium tree) |
 | `.onion` detection, v3 address and `Onion-Location` validation | 6 unit tests (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
 | Helper-binary checks (bundled copy; root-owned system Tor on Linux; rejects user-owned, group/world-writable, setuid, symlink escapes) | 13 unit tests incl. real-filesystem cases (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
 | Bridges with system transports: which `/usr/bin` paths are tried, the `ClientTransportPlugin` lines (absolute path for a system transport), exec-path validation (no blanks, `..`, bare names or torrc injection), which transports a set of bridges needs, the install messages | 7 unit tests (`molt_ai_unittests`), with ASan/UBSan | Pass (built standalone; not yet built in the Chromium tree) |
@@ -595,6 +646,7 @@ gpg-verified steps documented in that script.
 | What MoltNet windows may cause outside Tor (§1.14): the per-feature decision (MoltNet profiles only), the chat's window rule and sandbox target, cloud AI and saved workflows refused in the chat, Safe Browsing among the leak controls, the image-description and location stand-ins, and the hooks in `MediaRouterEnabled()`, WebAuthn's `ConfigureDiscoveries()`, the tab's commerce helpers and bookmarks' "Open all" | 6 unit tests (`molt_ai_unittests`); standalone harness with clang `-fno-exceptions` and g++ ASan/UBSan: the same tests, the chat handler's helpers, the Safe Browsing leak-control check and every upstream hook (taken verbatim from the changed files) against stand-ins with the 152 signatures, 26 mutants all caught | Pass (built standalone; not yet built in the Chromium tree) |
 | The image-description and location stand-ins over real mojo pipes | 5 unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
 | Nothing outside Tor from the chat, downloads, location, Cast, passkeys or bookmarks in a running browser (§4 step 20) | Needs a Chromium build | **Not yet done** |
+| Certificate fetches on circuits of their own, no captive-portal check, no NTLM or Negotiate, in a running browser (§4 steps 8 and 20) | Needs a Chromium build | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | An automated leak and uniformity test of a built browser (§4, FINGERPRINTING.md) | `tools/leak_test/` ([LEAK_TESTING.md](LEAK_TESTING.md)): its analysis checked against a recorded sample run; the harness run against stock Chromium, where it finds the WebRTC, DNS-prefetch, mDNS, onion and LAN leaks that MoltNet closes | Kit ready; **not yet run on a MoltBrowser build** |
 | Independent third-party audit | — | **Not done** |
@@ -664,7 +716,12 @@ help. The last column names the report's checks.
    the exit IP each one sees (e.g. two different IP-echo sites): they should
    normally differ. In Tor's log with `SafeLogging 0` + `Log info`, streams for
    different sites carry different SOCKS usernames, also for pages served
-   with `Content-Security-Policy: sandbox` (opaque origins).
+   with `Content-Security-Policy: sandbox` (opaque origins). Certificate
+   fetches too: open two sites whose servers leave out the intermediate
+   certificate and whose certificates name the same AIA URL. The two
+   fetches of that URL carry two different usernames, neither of them a
+   site's, and the server that holds the intermediate gets two full
+   requests.
 9. **Overrides are refused.** (Kit: the `--proxy-server` half; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
@@ -836,6 +893,16 @@ help. The last column names the report's checks.
     - Make a bookmark folder with `chrome://settings` first and two sites
       after it, then *Open all* from the MoltNet window: Settings opens in
       a regular window, both sites in the MoltNet window.
+    - With "Use a web service to help resolve navigation errors" on in a
+      regular window, open `https://expired.badssl.com`: the certificate
+      warning, no request to `www.gstatic.com/generate_204` or
+      `connectivitycheck.gstatic.com` (in Tor's log either), and no
+      sign-in tab or window. On Windows behind a real captive portal the
+      page may offer *Connect*; it opens nothing.
+    - A test server that answers `401` with `WWW-Authenticate: Negotiate`,
+      `NTLM` and `Basic` gets a Basic sign-in prompt; one that offers only
+      `Negotiate` and `NTLM` gets no prompt (its 401 page shows), and on
+      Windows the DNS log shows no lookup of its name.
     tcpdump must show nothing caused by these steps (the browser's own
     background traffic, §5.6, can appear), and the DNS log no lookup of
     any site you used. In a regular window the same download shows the

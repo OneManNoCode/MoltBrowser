@@ -143,6 +143,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pages always ask before opening an external application, sandboxed
   pages get their own Tor circuits, and MoltNet never takes the regular
   profile's zoom levels.
+- More MoltNet hardening from the same review: each certificate fetch
+  (missing intermediate certificates, revocation checks) gets its own
+  one-off network key, so it is never cached or shared with another site's
+  and has its own Tor circuit; MoltNet windows don't check for captive
+  portals or open a network sign-in page; and they offer sites Basic and
+  Digest authentication only, never NTLM or Negotiate (Kerberos).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
