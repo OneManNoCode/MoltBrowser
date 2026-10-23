@@ -173,6 +173,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   elements, and asking for one in a MoltNet window leaves that window's
   languages alone; the agent's plan shows more invisible characters
   (soft hyphen, Hangul fillers, variation selectors, tag characters).
+- More MoltNet hardening: within one identity, MoltNet's network state
+  stays with the site that caused it. Each connection's certificate is
+  verified on its own instead of from a cache shared by every site, no
+  HTTP cache entry is shared between sites, HSTS applies to navigations
+  only, sign-in credentials are cached per site, and Private State Tokens
+  are off. MoltNet doesn't open while a command-line flag or field trial
+  turns off the browser-wide partitioning of connections, the HTTP cache
+  or third-party storage, and says which (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
