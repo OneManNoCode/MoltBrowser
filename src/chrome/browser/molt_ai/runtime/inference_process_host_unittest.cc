@@ -9,6 +9,7 @@
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,7 +23,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "mojo/core/embedder/embedder.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -58,6 +61,50 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
                  LoadModelCallback callback) override {
     load_params_ = std::move(params);
     model_receiver_.Bind(std::move(model));
+    pending_load_ = std::move(callback);
+    // A GPU load asks the browser about the device first, as the real
+    // service does (design section 11.10).
+    if (load_params_->use_gpu && load_params_->gpu_client && report_device) {
+      gpu_client_.Bind(std::move(load_params_->gpu_client));
+      gpu_client_->OnGpuChosen(
+          identity.Clone(),
+          base::BindOnce(&FakeService::OnGpuAnswer, base::Unretained(this)));
+      return;
+    }
+    FinishLoad();
+  }
+
+  // The GPU device a GPU load reports.
+  static mojom::GpuDeviceIdentityPtr Identity() {
+    auto key = mojom::GpuDriverKey::New(0x1002, 0x73ff, 3, 0x01802000,
+                                        std::vector<uint8_t>(16, 0x11));
+    return mojom::GpuDeviceIdentity::New(
+        std::move(key), (1u << 22) | (3u << 12),
+        std::vector<uint8_t>(16, 0xab), "AMD Radeon <b>RX</b> 6600");
+  }
+
+  void OnGpuAnswer(bool use_gpu, base::File cache) {
+    gpu_answered = true;
+    gpu_allowed = use_gpu;
+    gpu_cache = std::move(cache);
+    if (answer_twice) {
+      gpu_client_->OnGpuChosen(identity.Clone(), base::DoNothing());
+      return;
+    }
+    if (load_behavior != LoadBehavior::kHang) FinishLoad();
+  }
+
+  // The status a well-behaved service reports for a load on the CPU.
+  mojom::GpuStatus HonestCpuStatus() const {
+    if (!load_params_->use_gpu) return mojom::GpuStatus::kNotRequested;
+    if (!gpu_answered) return mojom::GpuStatus::kNoDevice;
+    return gpu_allowed ? mojom::GpuStatus::kLoadFailed
+                       : mojom::GpuStatus::kTurnedOff;
+  }
+
+  void FinishLoad() {
+    if (load_behavior == LoadBehavior::kHang) return;
+    LoadModelCallback callback = std::move(pending_load_);
     switch (load_behavior) {
       case LoadBehavior::kOk:
       case LoadBehavior::kVision: {
@@ -68,18 +115,24 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
         d->train_context_tokens = 4096;
         d->vocab_size = 32000;
         d->vision = load_behavior == LoadBehavior::kVision;
+        d->gpu_status = status_override.value_or(HonestCpuStatus());
         std::move(callback).Run(mojom::LoadModelStatus::kOk, std::move(d));
         break;
       }
       case LoadBehavior::kGpu: {
+        // On the GPU when the browser allowed it (or, lying, when it
+        // wasn't asked); the CPU otherwise.
+        const bool on_gpu =
+            gpu_allowed || !load_params_->use_gpu || !report_device;
         auto d = mojom::ModelDescription::New();
         d->architecture = "llama";
-        d->backend = "vulkan";
+        d->backend = on_gpu ? "vulkan" : "cpu";
         d->context_tokens = 4096;
         d->train_context_tokens = 4096;
         d->vocab_size = 32000;
-        d->gpu_status = mojom::GpuStatus::kOn;
-        d->gpu_layers = 33;
+        d->gpu_status = status_override.value_or(
+            on_gpu ? mojom::GpuStatus::kOn : HonestCpuStatus());
+        d->gpu_layers = on_gpu ? 33 : 0;
         std::move(callback).Run(mojom::LoadModelStatus::kOk, std::move(d));
         break;
       }
@@ -88,7 +141,6 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
                                 nullptr);
         break;
       case LoadBehavior::kHang:
-        pending_load_ = std::move(callback);
         break;
       case LoadBehavior::kBadDescription: {
         auto d = mojom::ModelDescription::New();
@@ -127,12 +179,25 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
     std::move(callback).Run(std::nullopt);
   }
   void ForgetConversation(const std::string& conversation_key) override {}
+  // Answers from |pipeline_caches| (front first), null when it is empty.
+  void GetPipelineCache(GetPipelineCacheCallback callback) override {
+    ++pipeline_cache_requests;
+    if (pipeline_caches.empty()) {
+      std::move(callback).Run(std::nullopt);
+      return;
+    }
+    std::optional<mojo_base::BigBuffer> cache =
+        std::move(pipeline_caches.front());
+    pipeline_caches.erase(pipeline_caches.begin());
+    std::move(callback).Run(std::move(cache));
+  }
 
   // Simulates the process dying: every pipe closes.
   void Crash() {
     streamers_.clear();
     model_receiver_.reset();
     service_receiver_.reset();
+    gpu_client_.reset();
   }
 
   mojo::Remote<mojom::GenerationStreamer>& streamer(size_t i) {
@@ -143,8 +208,23 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
   const mojom::ModelLoadParamsPtr& load_params() const { return load_params_; }
 
   LoadBehavior load_behavior = LoadBehavior::kOk;
+  // GPU loads: report |identity| before loading (a well-behaved service).
+  bool report_device = true;
+  mojom::GpuDeviceIdentityPtr identity = Identity();
+  // Call OnGpuChosen again after the answer (a protocol violation).
+  bool answer_twice = false;
+  // Report this GpuStatus instead of the honest one.
+  std::optional<mojom::GpuStatus> status_override;
+  // The browser's answer.
+  bool gpu_answered = false;
+  bool gpu_allowed = false;
+  base::File gpu_cache;
+  // GetPipelineCache() answers, and how often it was asked.
+  std::vector<std::optional<mojo_base::BigBuffer>> pipeline_caches;
+  int pipeline_cache_requests = 0;
 
  private:
+  mojo::Remote<mojom::GpuLoadClient> gpu_client_;
   mojo::Receiver<mojom::MoltInferenceService> service_receiver_{this};
   mojo::Receiver<mojom::Model> model_receiver_{this};
   mojom::ModelLoadParamsPtr load_params_;
@@ -154,15 +234,44 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
 
 class RecordingDelegate : public InferenceProcessHost::Delegate {
  public:
-  void OnModelProcessLost(const std::string& model_id,
-                          const std::string& crash_key,
-                          CrashLoopGuard::Phase phase,
-                          bool gpu_failure) override {
+  void OnModelProcessLost(
+      const std::string& model_id,
+      const std::string& crash_key,
+      CrashLoopGuard::Phase phase,
+      bool gpu_failure,
+      const std::optional<GpuDeviceReport>& gpu_device) override {
     lost.push_back(phase);
     gpu_failures.push_back(gpu_failure);
+    lost_devices.push_back(gpu_device);
   }
+  void OnGpuDeviceChosen(
+      const GpuDeviceReport& device,
+      base::OnceCallback<void(bool, base::File)> reply) override {
+    chosen.push_back(device);
+    base::File file;
+    if (cache_path) {
+      file = base::File(*cache_path,
+                        base::File::FLAG_OPEN | base::File::FLAG_READ);
+    }
+    std::move(reply).Run(allow_gpu, std::move(file));
+  }
+  void OnPipelineCacheData(const GpuDeviceReport& device,
+                           mojo_base::BigBuffer cache) override {
+    stored_caches.push_back(cache.size());
+  }
+  void OnPipelineCacheDropped(const GpuDeviceReport& device) override {
+    ++dropped_caches;
+  }
+
   std::vector<CrashLoopGuard::Phase> lost;
   std::vector<bool> gpu_failures;
+  std::vector<std::optional<GpuDeviceReport>> lost_devices;
+  // OnGpuDeviceChosen: what was reported, and the answer.
+  std::vector<GpuDeviceReport> chosen;
+  bool allow_gpu = true;
+  std::optional<base::FilePath> cache_path;
+  std::vector<size_t> stored_caches;
+  int dropped_caches = 0;
 };
 
 class InferenceProcessHostTest : public testing::Test {
@@ -224,6 +333,20 @@ class InferenceProcessHostTest : public testing::Test {
     auto mailbox = base::MakeRefCounted<InferenceMailbox>();
     host_->Load(std::move(r), mailbox);
     task_environment_.RunUntilIdle();
+    return mailbox;
+  }
+
+  // Starts a GPU load: the fake service exists (service()) but hasn't seen
+  // LoadModel yet, so a test can script it before RunUntilIdle().
+  scoped_refptr<InferenceMailbox> StartGpuLoad() {
+    InferenceProcessHost::LoadRequest r;
+    r.model_id = "m";
+    r.crash_key = "m:1:2";
+    r.file_size = 1;
+    r.max_context_tokens = 32768;
+    r.use_gpu = true;
+    auto mailbox = base::MakeRefCounted<InferenceMailbox>();
+    host_->Load(std::move(r), mailbox);
     return mailbox;
   }
 
@@ -622,6 +745,244 @@ TEST_F(InferenceProcessHostTest, HangLoadingForTheGpuIsAGpuFailure) {
   ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
   EXPECT_TRUE(delegate_.gpu_failures[0]);
   EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kLoading);
+}
+
+// The lasting GPU record (section 11.10): the service reports the device
+// before it loads anything on it, and the browser answers.
+
+TEST_F(InferenceProcessHostTest, GpuDeviceIsReportedBeforeTheLoad) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  InferenceProcessHost::LoadRequest r;
+  r.model_id = "m";
+  r.crash_key = "m:1:2";
+  r.file_size = 1;
+  r.max_context_tokens = 32768;
+  r.use_gpu = true;
+  GpuDriverKey off;
+  off.identified = true;
+  off.vendor_id = 0x10de;
+  r.skip_gpu_drivers = {off, UnidentifiedGpuDriverKey()};
+  auto load = base::MakeRefCounted<InferenceMailbox>();
+  host_->Load(std::move(r), load);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  // The skip list went with the load (identified keys only).
+  ASSERT_EQ(service().load_params()->skip_gpu_drivers.size(), 1u);
+  EXPECT_EQ(service().load_params()->skip_gpu_drivers[0]->vendor_id, 0x10deu);
+  // The delegate saw the device, its name sanitized.
+  ASSERT_EQ(delegate_.chosen.size(), 1u);
+  const GpuDeviceReport& device = delegate_.chosen[0];
+  EXPECT_TRUE(device.key.identified);
+  EXPECT_EQ(device.key.vendor_id, 0x1002u);
+  EXPECT_EQ(device.key.driver_version, 0x01802000u);
+  EXPECT_EQ(device.key.driver_uuid[15], 0x11);
+  EXPECT_EQ(device.cache_device.uuid[0], 0xab);
+  EXPECT_EQ(device.name, "AMD Radeon bRX/b 6600");
+  // ... and the load's outcome carries it.
+  ASSERT_TRUE(load->outcome().gpu_device);
+  EXPECT_EQ(load->outcome().gpu_device->key, device.key);
+  EXPECT_TRUE(service().gpu_allowed);
+  EXPECT_TRUE(bad_messages_.empty());
+}
+
+TEST_F(InferenceProcessHostTest, RefusedGpuLoadsOnTheCpu) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  delegate_.allow_gpu = false;
+  scoped_refptr<InferenceMailbox> load =
+      Load(/*with_projector=*/false, /*use_gpu=*/true);
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_EQ(load->outcome().gpu_status, mojom::GpuStatus::kTurnedOff);
+  EXPECT_EQ(load->outcome().backend, "cpu");
+  EXPECT_FALSE(service().gpu_allowed);
+  EXPECT_FALSE(service().gpu_cache.IsValid());
+  EXPECT_TRUE(bad_messages_.empty());
+}
+
+TEST_F(InferenceProcessHostTest, CrashLoadingAfterARefusalIsAModelCrash) {
+  next_load_behavior_ = FakeService::LoadBehavior::kHang;
+  delegate_.allow_gpu = false;
+  scoped_refptr<InferenceMailbox> load =
+      Load(/*with_projector=*/false, /*use_gpu=*/true);
+  service().Crash();
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  // The CPU was loading: CrashLoopGuard counts it.
+  EXPECT_FALSE(delegate_.gpu_failures[0]);
+}
+
+TEST_F(InferenceProcessHostTest, GpuFailureCarriesTheReportedDevice) {
+  // Crashes while loading on the reported device: a GPU failure on it.
+  next_load_behavior_ = FakeService::LoadBehavior::kHang;
+  StartGpuLoad();
+  task_environment_.RunUntilIdle();
+  service().Crash();
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_TRUE(delegate_.gpu_failures[0]);
+  ASSERT_TRUE(delegate_.lost_devices[0]);
+  EXPECT_EQ(delegate_.lost_devices[0]->key.vendor_id, 0x1002u);
+  // Crashes before it reported one (while listing devices): a GPU failure
+  // the runtime records against an unidentified driver.
+  StartGpuLoad();
+  service().report_device = false;
+  task_environment_.RunUntilIdle();
+  service().Crash();
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(delegate_.gpu_failures.size(), 2u);
+  EXPECT_TRUE(delegate_.gpu_failures[1]);
+  EXPECT_FALSE(delegate_.lost_devices[1]);
+}
+
+TEST_F(InferenceProcessHostTest, GpuStatusMustFitWhatTheBrowserSaw) {
+  // On the GPU without having reported a device.
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  scoped_refptr<InferenceMailbox> load = StartGpuLoad();
+  service().report_device = false;
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+
+  // After the browser said no, a device lost "on it" is a lie.
+  next_load_behavior_ = FakeService::LoadBehavior::kOk;
+  delegate_.allow_gpu = false;
+  load = StartGpuLoad();
+  service().status_override = mojom::GpuStatus::kDeviceLost;
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+
+  // So is "turned off" after it said yes.
+  delegate_.allow_gpu = true;
+  load = StartGpuLoad();
+  service().status_override = mojom::GpuStatus::kTurnedOff;
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+  EXPECT_EQ(bad_messages_.size(), 3u);
+
+  // A device lost while loading on an allowed device is a fine outcome,
+  // and it says which device.
+  load = StartGpuLoad();
+  service().status_override = mojom::GpuStatus::kDeviceLost;
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_EQ(load->outcome().gpu_status, mojom::GpuStatus::kDeviceLost);
+  ASSERT_TRUE(load->outcome().gpu_device);
+  EXPECT_EQ(load->outcome().gpu_device->key.device_id, 0x73ffu);
+  EXPECT_EQ(bad_messages_.size(), 3u);
+}
+
+TEST_F(InferenceProcessHostTest, SecondDeviceReportIsAViolation) {
+  next_load_behavior_ = FakeService::LoadBehavior::kHang;
+  scoped_refptr<InferenceMailbox> load = StartGpuLoad();
+  service().answer_twice = true;
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+  EXPECT_EQ(bad_messages_.size(), 1u);
+  EXPECT_EQ(delegate_.chosen.size(), 1u);
+}
+
+TEST_F(InferenceProcessHostTest, OverlongGpuNameIsAViolation) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  scoped_refptr<InferenceMailbox> load = StartGpuLoad();
+  service().identity->name = std::string(256, 'x');
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+  EXPECT_TRUE(delegate_.chosen.empty());
+}
+
+// The pipeline cache (section 11.12).
+
+// A version-one cache for FakeService::Identity()'s device.
+mojo_base::BigBuffer CacheFor(uint32_t vendor, size_t size = 64) {
+  std::vector<uint8_t> bytes(size, 0x5a);
+  auto put = [&](size_t at, uint32_t v) {
+    for (int i = 0; i < 4; ++i) bytes[at + i] = (v >> (8 * i)) & 0xff;
+  };
+  put(0, 32);
+  put(4, 1);
+  put(8, vendor);
+  put(12, 0x73ff);
+  for (size_t i = 16; i < 32; ++i) bytes[i] = 0xab;
+  return mojo_base::BigBuffer(bytes);
+}
+
+TEST_F(InferenceProcessHostTest, PipelineCacheAskedAfterAGpuGeneration) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  FakeService& s = service();
+  s.pipeline_caches.push_back(CacheFor(0x1002));
+  s.pipeline_caches.push_back(std::nullopt);  // nothing new
+  for (uint64_t token = 1; token <= 6; ++token) {
+    scoped_refptr<InferenceMailbox> gen = Chat(token);
+    s.streamer(token - 1)->OnComplete(Summary());
+    task_environment_.RunUntilIdle();
+    ASSERT_TRUE(Finished(gen.get()));
+  }
+  // At most kMaxPipelineCacheRequests asks; the valid one was stored.
+  EXPECT_EQ(s.pipeline_cache_requests, kMaxPipelineCacheRequests);
+  EXPECT_EQ(delegate_.stored_caches, (std::vector<size_t>{64}));
+  EXPECT_EQ(delegate_.dropped_caches, 0);
+  EXPECT_TRUE(bad_messages_.empty());
+}
+
+TEST_F(InferenceProcessHostTest, BadPipelineCachesAreRefused) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  // Another device's header: refused, the stored copy dropped, no more
+  // asks.
+  service().pipeline_caches.push_back(CacheFor(0x10de));
+  scoped_refptr<InferenceMailbox> gen = Chat(1);
+  service().streamer(0)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  gen = Chat(2);
+  service().streamer(1)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(service().pipeline_cache_requests, 1);
+  EXPECT_TRUE(delegate_.stored_caches.empty());
+  EXPECT_EQ(delegate_.dropped_caches, 1);
+
+  // Over the cap.
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  service().pipeline_caches.push_back(
+      CacheFor(0x1002, kMaxPipelineCacheBytes + 1));
+  gen = Chat(3);
+  service().streamer(0)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(delegate_.stored_caches.empty());
+  EXPECT_EQ(delegate_.dropped_caches, 2);
+
+  // Empty: the service's grew over the cap; dropped, asked again later.
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  service().pipeline_caches.push_back(mojo_base::BigBuffer());
+  gen = Chat(4);
+  service().streamer(0)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(delegate_.dropped_caches, 3);
+  EXPECT_TRUE(bad_messages_.empty());  // not protocol violations
+}
+
+TEST_F(InferenceProcessHostTest, NoPipelineCacheOffTheGpu) {
+  // On the CPU (a GPU load that fell back), and after a GPU failure.
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  scoped_refptr<InferenceMailbox> gen = Chat(1);
+  service().streamer(0)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(service().pipeline_cache_requests, 0);
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  gen = Chat(2);
+  mojom::GenerationSummaryPtr failed = Summary();
+  failed->status = mojom::GenerationStatus::kBackendFailed;
+  service().streamer(0)->OnComplete(std::move(failed));
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(service().pipeline_cache_requests, 0);
 }
 
 TEST_F(InferenceProcessHostTest, BadDescriptionIsAViolation) {

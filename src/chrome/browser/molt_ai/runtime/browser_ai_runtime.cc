@@ -21,7 +21,10 @@
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/files/file.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/files/important_file_writer.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/location.h"
@@ -29,23 +32,35 @@
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
+#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/molt_ai/models/download_policy.h"
+#include "chrome/browser/molt_ai/runtime/gpu_driver_record.h"
+#include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
+#include "chrome/browser/molt_ai/runtime/gpu_pipeline_cache_files.h"
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 #include "chrome/browser/molt_ai/runtime/stream_validator.h"
+#include "chrome/common/chrome_paths.h"
+#include "chrome/common/webui_url_constants.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "chrome/services/molt_ai/inference/public/buildflags.h"
 #include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
+#include "components/prefs/pref_service.h"
+#include "components/version_info/version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
+#include "crypto/hash.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
 // No llama.cpp here: the model runs in the sandboxed inference service
@@ -700,7 +715,99 @@ std::string GenerationError(const InferenceOutcome& outcome,
   return "The model stopped unexpectedly while answering.";
 }
 
+// ---- GPU record and pipeline cache (design sections 11.10-11.12) ----------
+
+int64_t WallNowMs() {
+  return base::Time::Now().InMillisecondsSinceUnixEpoch();
+}
+
+// The version the GPU record compares for its retry after an update: a
+// MoltBrowser update is when llama.cpp and its Vulkan backend change.
+std::string_view RecordVersion() {
+  return chrome::kMoltBrowserVersion;
+}
+
+// The ggml shader set a pipeline cache is for: MoltBrowser's version (its
+// llama.cpp) and Chromium's (the glslang that compiled the shaders).
+std::string ShaderSetName() {
+  return std::string(chrome::kMoltBrowserVersion) + "/" +
+         std::string(version_info::GetVersionNumber());
+}
+
+// The cache file for |device| in |dir|; empty for none. Its name is a
+// digest (gpu_pipeline_cache_files.h): nothing the service sent is in it.
+base::FilePath PipelineCachePath(const base::FilePath& dir,
+                                 const GpuDeviceReport& device) {
+  if (dir.empty()) return base::FilePath();
+  const std::string text = PipelineCacheKeyText(
+      device.key, device.cache_device.uuid, ShaderSetName());
+  if (text.empty()) return base::FilePath();
+  const std::string name = PipelineCacheFileName(
+      base::ToLowerASCII(base::HexEncode(crypto::hash::Sha256(text))));
+  return name.empty() ? base::FilePath() : dir.AppendASCII(name);
+}
+
+// On the cache sequence. The cache at |path| for the service, if its size
+// and header are |device|'s; a file that is empty, too short, too large,
+// unreadable or another device's (or driver build's) is deleted instead,
+// so the next cache the service sends replaces it.
+base::File OpenPipelineCache(const base::FilePath& path,
+                             const PipelineCacheDevice& device) {
+  base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
+  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
+                            base::File::FLAG_WIN_SHARE_DELETE);
+  if (!file.IsValid()) return base::File();
+  base::File::Info info;
+  bool ok = file.GetInfo(&info) && !info.is_directory && info.size > 0 &&
+            static_cast<uint64_t>(info.size) <= kMaxPipelineCacheBytes;
+  if (ok) {
+    std::string data(static_cast<size_t>(info.size), '\0');
+    ok = file.ReadAndCheck(0, base::as_writable_byte_span(data)) &&
+         CheckPipelineCacheHeader(data, device) == PipelineCacheCheck::kOk;
+  }
+  if (!ok) {
+    file.Close();
+    base::DeleteFile(path);
+    return base::File();
+  }
+  return file;
+}
+
+// On the cache sequence: stores |cache| at |path| atomically (a crash
+// mid-write leaves the old file), then keeps at most
+// kMaxPipelineCacheFiles caches in the directory.
+void WritePipelineCache(const base::FilePath& path,
+                        mojo_base::BigBuffer cache) {
+  base::ScopedBlockingCall blocking(FROM_HERE, base::BlockingType::MAY_BLOCK);
+  const base::FilePath dir = path.DirName();
+  if (!base::CreateDirectory(dir) ||
+      !base::ImportantFileWriter::WriteFileAtomically(
+          path, base::as_string_view(base::span(cache)))) {
+    return;
+  }
+  std::vector<PipelineCacheFileInfo> files;
+  base::FileEnumerator listing(dir, /*recursive=*/false,
+                               base::FileEnumerator::FILES);
+  for (base::FilePath p = listing.Next(); !p.empty(); p = listing.Next()) {
+    files.push_back({p.BaseName().MaybeAsASCII(),
+                     listing.GetInfo()
+                         .GetLastModifiedTime()
+                         .ToDeltaSinceWindowsEpoch()
+                         .InMicroseconds()});
+  }
+  for (const std::string& name : PipelineCacheFilesToDelete(
+           std::move(files), path.BaseName().MaybeAsASCII())) {
+    base::DeleteFile(dir.AppendASCII(name));
+  }
+}
+
 }  // namespace
+
+GpuInferenceState::GpuInferenceState() = default;
+GpuInferenceState::~GpuInferenceState() = default;
+GpuInferenceState::GpuInferenceState(const GpuInferenceState&) = default;
+GpuInferenceState& GpuInferenceState::operator=(const GpuInferenceState&) =
+    default;
 
 // ============================================================
 // Implementation (PIMPL pattern)
@@ -754,6 +861,46 @@ struct BrowserAIRuntime::Impl {
   CrashLoopGuard crash_guard;
   // GPU failures (design section 11.5). Guarded by guard_mutex.
   GpuFallbackGuard gpu_guard;
+  // The lasting record (section 11.10) and the user's setting (11.11),
+  // read from Local State at Initialize() and saved there on every change.
+  // Guarded by guard_mutex.
+  GpuDriverRecords gpu_records;
+  bool gpu_automatic = true;
+  // Local State (UI thread only); null before Initialize() or in tests.
+  raw_ptr<PrefService> local_state = nullptr;
+
+  // Pipeline caches (section 11.12): <user data>/MoltAI/GpuCache, read and
+  // written in order on one sequence. Set by Initialize().
+  base::FilePath gpu_cache_dir;
+  scoped_refptr<base::SequencedTaskRunner> gpu_cache_runner;
+  // The GPU the loaded model runs on, for a later GPU failure. Guarded by
+  // state_mutex.
+  std::optional<GpuDeviceReport> loaded_gpu_device;
+
+  // Saves the record to Local State (posted to the UI thread). Any thread;
+  // the caller doesn't hold guard_mutex.
+  void SaveGpuRecords() {
+    std::vector<GpuDriverEntry> entries;
+    {
+      std::lock_guard<std::mutex> lock(guard_mutex);
+      entries = gpu_records.entries();
+    }
+    auto save = [](Impl* impl, std::vector<GpuDriverEntry> entries) {
+      DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+      if (impl->local_state) {
+        impl->local_state->SetList(kGpuDriverRecordsPref,
+                                   GpuDriverEntriesToPref(entries));
+      }
+    };
+    if (ui_task_runner && ui_task_runner->RunsTasksInCurrentSequence()) {
+      save(this, std::move(entries));
+    } else if (ui_task_runner) {
+      // The runtime is never destroyed.
+      ui_task_runner->PostTask(
+          FROM_HERE,
+          base::BindOnce(save, base::Unretained(this), std::move(entries)));
+    }
+  }
 
   // Idle unload.
   std::atomic<uint64_t> activity_epoch{0};
@@ -880,6 +1027,7 @@ struct BrowserAIRuntime::Impl {
     loaded_crash_key = crash_key;
     loaded_context_tokens = 0;
     loaded_vision = false;
+    loaded_gpu_device.reset();
   }
 
   // Posts |task| to the host on the UI thread. False if there is no host or
@@ -1010,12 +1158,61 @@ class BrowserAIRuntime::HostDelegate : public InferenceProcessHost::Delegate {
  public:
   explicit HostDelegate(BrowserAIRuntime* runtime) : runtime_(runtime) {}
 
-  void OnModelProcessLost(const std::string& model_id,
-                          const std::string& crash_key,
-                          CrashLoopGuard::Phase phase,
-                          bool gpu_failure) override {
+  void OnModelProcessLost(
+      const std::string& model_id,
+      const std::string& crash_key,
+      CrashLoopGuard::Phase phase,
+      bool gpu_failure,
+      const std::optional<GpuDeviceReport>& gpu_device) override {
     runtime_->OnModelProcessLost(model_id, crash_key, static_cast<int>(phase),
-                                 gpu_failure);
+                                 gpu_failure, gpu_device);
+  }
+
+  // Design section 11.10: the GPU record (and the setting) decide, then the
+  // pipeline cache is opened on the cache sequence.
+  void OnGpuDeviceChosen(
+      const GpuDeviceReport& device,
+      base::OnceCallback<void(bool, base::File)> reply) override {
+    Impl* impl = runtime_->impl_.get();
+    bool allow = false;
+    bool changed = false;
+    {
+      std::lock_guard<std::mutex> lock(impl->guard_mutex);
+      allow = impl->gpu_automatic &&
+              impl->gpu_records.AllowGpu(device.key, WallNowMs(),
+                                         RecordVersion(), &changed);
+    }
+    if (changed) impl->SaveGpuRecords();
+    // The key is hex digits and the name a sanitized subset: safe to log.
+    LOG(INFO) << "[MoltAI] GPU for on-device AI: \"" << device.name << "\" ("
+              << GpuDriverKeyToString(device.key) << ") "
+              << (allow ? "used" : "turned off: the CPU instead");
+    const base::FilePath path = PipelineCachePath(impl->gpu_cache_dir, device);
+    if (!allow || path.empty() || !impl->gpu_cache_runner) {
+      std::move(reply).Run(allow, base::File());
+      return;
+    }
+    impl->gpu_cache_runner->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&OpenPipelineCache, path, device.cache_device),
+        base::BindOnce(std::move(reply), true));
+  }
+
+  void OnPipelineCacheData(const GpuDeviceReport& device,
+                           mojo_base::BigBuffer cache) override {
+    Impl* impl = runtime_->impl_.get();
+    const base::FilePath path = PipelineCachePath(impl->gpu_cache_dir, device);
+    if (path.empty() || !impl->gpu_cache_runner) return;
+    impl->gpu_cache_runner->PostTask(
+        FROM_HERE,
+        base::BindOnce(&WritePipelineCache, path, std::move(cache)));
+  }
+
+  void OnPipelineCacheDropped(const GpuDeviceReport& device) override {
+    Impl* impl = runtime_->impl_.get();
+    const base::FilePath path = PipelineCachePath(impl->gpu_cache_dir, device);
+    if (path.empty() || !impl->gpu_cache_runner) return;
+    impl->gpu_cache_runner->PostTask(
+        FROM_HERE, base::BindOnce(base::IgnoreResult(&base::DeleteFile), path));
   }
 
  private:
@@ -1088,6 +1285,31 @@ bool BrowserAIRuntime::Initialize() {
     impl_->app_terminating_subscription =
         browser_shutdown::AddAppTerminatingCallback(base::BindOnce(
             &BrowserAIRuntime::OnAppTerminating, base::Unretained(this)));
+
+    // GPU inference (design sections 11.10-11.12): the setting and the
+    // lasting record from Local State; the pipeline caches' directory.
+    PrefService* local_state =
+        g_browser_process ? g_browser_process->local_state() : nullptr;
+    if (local_state && local_state->FindPreference(kGpuDriverRecordsPref) &&
+        local_state->FindPreference(kGpuInferenceModePref)) {
+      impl_->local_state = local_state;
+      std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+      impl_->gpu_records.Restore(
+          GpuDriverEntriesFromPref(local_state->GetList(kGpuDriverRecordsPref)),
+          WallNowMs());
+      impl_->gpu_automatic =
+          GpuInferenceModeFromPref(
+              local_state->GetInteger(kGpuInferenceModePref)) ==
+          GpuInferenceMode::kAutomatic;
+    }
+    base::FilePath user_data;
+    if (base::PathService::Get(chrome::DIR_USER_DATA, &user_data)) {
+      impl_->gpu_cache_dir =
+          user_data.AppendASCII(kMoltAiDirName).AppendASCII(kGpuCacheDirName);
+    }
+    impl_->gpu_cache_runner = base::ThreadPool::CreateSequencedTaskRunner(
+        {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+         base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
   }
 
   impl_->initialized = true;
@@ -1192,10 +1414,34 @@ void BrowserAIRuntime::UnloadIfIdle(const char* reason) {
   }));
 }
 
-void BrowserAIRuntime::OnModelProcessLost(const std::string& model_id,
-                                          const std::string& crash_key,
-                                          int phase,
-                                          bool gpu_failure) {
+void BrowserAIRuntime::RecordGpuDriverFailure(
+    const std::optional<GpuDeviceReport>& gpu_device) {
+  bool turned_off = false;
+  {
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    turned_off = impl_->gpu_records.RecordFailure(
+        gpu_device ? gpu_device->key : UnidentifiedGpuDriverKey(),
+        gpu_device ? gpu_device->name : std::string(), WallNowMs(),
+        RecordVersion());
+  }
+  impl_->SaveGpuRecords();
+  if (turned_off) {
+    // The key is hex digits and the name a sanitized subset.
+    LOG(WARNING) << "[MoltAI] the GPU driver "
+                 << (gpu_device ? GpuDriverKeyToString(gpu_device->key)
+                                : std::string("(unidentified)"))
+                 << " failed " << GpuDriverRecords::kFailuresToTurnOff
+                 << " times: on-device AI runs on the CPU with it until it "
+                    "changes (molt://ai-settings can try it again)";
+  }
+}
+
+void BrowserAIRuntime::OnModelProcessLost(
+    const std::string& model_id,
+    const std::string& crash_key,
+    int phase,
+    bool gpu_failure,
+    const std::optional<GpuDeviceReport>& gpu_device) {
   {
     std::lock_guard<std::mutex> lock(impl_->guard_mutex);
     if (gpu_failure) {
@@ -1208,6 +1454,8 @@ void BrowserAIRuntime::OnModelProcessLost(const std::string& model_id,
           (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds());
     }
   }
+  // And against the driver, across sessions (section 11.10).
+  if (gpu_failure) RecordGpuDriverFailure(gpu_device);
   bool was_loaded = false;
   {
     std::lock_guard<std::mutex> lock(impl_->state_mutex);
@@ -1429,12 +1677,30 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
   // whole) already failed on the GPU this session, or --disable-gpu is set.
   // The service falls back to the CPU on its own when the GPU can't take
   // the model.
+  // The user's setting and the lasting record (sections 11.10, 11.11)
+  // too: drivers the record turned off are skipped by the service, and a
+  // failure before any device was reported, repeated, keeps the GPU off.
   bool use_gpu = false;
+  std::vector<GpuDriverKey> skip_gpu_drivers;
 #if BUILDFLAG(MOLT_LLAMA_VULKAN)
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpu)) {
-    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
-    use_gpu = impl_->gpu_guard.AllowGpu(crash_key);
+    bool changed = false;
+    {
+      std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+      use_gpu = impl_->gpu_automatic && impl_->gpu_guard.AllowGpu(crash_key);
+      if (use_gpu) {
+        for (const GpuDriverEntry& off : impl_->gpu_records.TurnedOff(
+                 WallNowMs(), RecordVersion(), &changed)) {
+          if (!off.key.identified) {
+            use_gpu = false;
+          } else {
+            skip_gpu_drivers.push_back(off.key);
+          }
+        }
+      }
+    }
+    if (changed) impl_->SaveGpuRecords();
   }
 #endif
 
@@ -1455,6 +1721,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     request.max_context_tokens = kMaxContextTokens;
     request.allow_cpu_repack = true;
     request.use_gpu = gpu;
+    if (gpu) request.skip_gpu_drivers = skip_gpu_drivers;
     // Footprint watchdog: weights (repacked copies count on CPU) + the KV
     // cache the RAM tiers allow + 2 GB, and 50% on top of that.
     const uint64_t ram = impl_->hardware.total_ram_bytes;
@@ -1510,12 +1777,25 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     return false;
   }
 
+  if (outcome.gpu_status == mojom::GpuStatus::kDeviceLost) {
+    // The GPU went away while the model was being loaded on it; the service
+    // loaded it on the CPU (section 11.10). A GPU failure, for this session
+    // and for the record.
+    {
+      std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+      impl_->gpu_guard.RecordGpuFailure(crash_key);
+    }
+    RecordGpuDriverFailure(outcome.gpu_device);
+  }
   impl_->SetLoaded(model_id, outcome.architecture, crash_key);
   {
     std::lock_guard<std::mutex> lock(impl_->state_mutex);
     if (impl_->loaded_model_id == model_id) {
       impl_->loaded_context_tokens = outcome.context_tokens;
       impl_->loaded_vision = outcome.vision;
+      if (outcome.gpu_status == mojom::GpuStatus::kOn) {
+        impl_->loaded_gpu_device = outcome.gpu_device;
+      }
     }
   }
   LOG(INFO) << "[MoltAI] model loaded in the inference process: " << model_id
@@ -1525,7 +1805,9 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
             << " repack=" << outcome.cpu_repack_used
             << " vision=" << outcome.vision
             << " gpu_status=" << static_cast<int>(outcome.gpu_status)
-            << " gpu_layers=" << outcome.gpu_layers << ")";
+            << " gpu_layers=" << outcome.gpu_layers << " gpu=\""
+            << (outcome.gpu_device ? outcome.gpu_device->name : std::string())
+            << "\")";
   TouchActivity();
   return true;
 }
@@ -1610,6 +1892,15 @@ bool BrowserAIRuntime::DeleteModel(const std::string& model_id) {
   std::filesystem::remove(info.file_path, ec);
   if (info.has_vision()) {
     std::filesystem::remove(info.vision_projector_path, ec);
+  }
+  // The GPU's pipeline caches (design section 11.12) go with any model's
+  // data: they hold compiled shaders for the models that ran, nothing a
+  // user wrote, but they say which kinds of model ran. In order with the
+  // cache sequence's writes.
+  if (!impl_->gpu_cache_dir.empty() && impl_->gpu_cache_runner) {
+    impl_->gpu_cache_runner->PostTask(
+        FROM_HERE, base::BindOnce(base::IgnoreResult(&base::DeletePathRecursively),
+                                  impl_->gpu_cache_dir));
   }
   std::lock_guard<std::mutex> lock(impl_->models_mutex);
   impl_->models[model_id].is_downloaded = false;
@@ -1870,10 +2161,12 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
     // this model file for the rest of the session; end the process so the
     // next request loads the model on the CPU.
     std::string crash_key;
+    std::optional<GpuDeviceReport> gpu_device;
     {
       std::lock_guard<std::mutex> lock(impl_->state_mutex);
       if (impl_->loaded_model_id == model_id) {
         crash_key = impl_->loaded_crash_key;
+        gpu_device = impl_->loaded_gpu_device;
       }
     }
     if (!crash_key.empty()) {
@@ -1881,6 +2174,7 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
         std::lock_guard<std::mutex> lock(impl_->guard_mutex);
         impl_->gpu_guard.RecordGpuFailure(crash_key);
       }
+      RecordGpuDriverFailure(gpu_device);
       LOG(WARNING) << "[MoltAI] the GPU failed under " << model_id
                    << "; it runs on the CPU from now on";
       impl_->SetLoaded(std::string(), std::string(), std::string());
@@ -1972,6 +2266,62 @@ void BrowserAIRuntime::RefreshModelStatus() {
   for (const auto& [id, exists] : present) {
     impl_->models[id].is_downloaded = exists;
   }
+}
+
+// ---- GPU setting (design section 11.11) -------------------------------------
+
+GpuInferenceState BrowserAIRuntime::GetGpuInferenceState() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  GpuInferenceState state;
+  state.available = BUILDFLAG(MOLT_LLAMA_VULKAN);
+  state.disabled_by_switch =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpu);
+  bool changed = false;
+  std::vector<GpuDriverEntry> off;
+  {
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    state.automatic = impl_->gpu_automatic;
+    state.off_for_session = impl_->gpu_guard.gpu_disabled();
+    off = impl_->gpu_records.TurnedOff(WallNowMs(), RecordVersion(), &changed);
+  }
+  if (changed) impl_->SaveGpuRecords();
+  for (const GpuDriverEntry& entry : off) {
+    GpuInferenceState::Driver driver;
+    driver.unidentified = !entry.key.identified;
+    driver.name = entry.name;
+    if (entry.key.identified) {
+      driver.driver_version =
+          FormatGpuDriverVersion(entry.key.vendor_id, entry.key.driver_id,
+                                 entry.key.driver_version);
+    }
+    driver.since_ms = entry.turned_off_ms;
+    state.turned_off.push_back(std::move(driver));
+  }
+  return state;
+}
+
+void BrowserAIRuntime::SetGpuInferenceAutomatic(bool automatic) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  {
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    impl_->gpu_automatic = automatic;
+  }
+  if (impl_->local_state) {
+    impl_->local_state->SetInteger(
+        kGpuInferenceModePref,
+        static_cast<int>(automatic ? GpuInferenceMode::kAutomatic
+                                   : GpuInferenceMode::kOff));
+  }
+}
+
+void BrowserAIRuntime::RetryGpuInference() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  {
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    impl_->gpu_records.RetryAll(WallNowMs());
+    impl_->gpu_guard.Reset();
+  }
+  impl_->SaveGpuRecords();
 }
 
 }  // namespace molt_ai

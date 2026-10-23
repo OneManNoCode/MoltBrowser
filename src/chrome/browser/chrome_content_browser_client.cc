@@ -119,6 +119,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
+#include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
 #include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
@@ -1682,6 +1683,9 @@ void ChromeContentBrowserClient::RegisterLocalStatePrefs(
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
 #if !BUILDFLAG(IS_ANDROID)
   registry->RegisterBooleanPref(prefs::kOriginKeyedProcessesEnabled, false);
+  // MoltBrowser: the GPU setting and failure record of on-device AI
+  // (browser-wide; docs/design/SANDBOXED_INFERENCE.md section 11.10).
+  molt_ai::RegisterGpuInferenceLocalStatePrefs(registry);
 #endif  // !BUILDFLAG(IS_ANDROID)
 }
 

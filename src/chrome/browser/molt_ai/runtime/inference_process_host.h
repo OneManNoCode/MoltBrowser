@@ -31,9 +31,12 @@
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/runtime/gpu_driver_record.h"
 #include "chrome/browser/molt_ai/runtime/stream_validator.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
 #include "content/public/browser/service_process_host.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 
 namespace molt_ai {
@@ -45,6 +48,28 @@ namespace molt_ai {
 // content/utility/on_device_model/molt_gpu_inference_sandbox_linux.h
 // (content can't include chrome/).
 inline constexpr char kMoltInferenceGpuSwitch[] = "molt-inference-gpu";
+
+// Pipeline caches asked of one process (after its first generations on the
+// GPU; design section 11.12). Pipelines compile on first use, so the first
+// answers compile nearly all a model needs.
+inline constexpr int kMaxPipelineCacheRequests = 4;
+
+// The GPU a process reported for its load (GpuLoadClient.OnGpuChosen),
+// checked and sanitized (design section 11.10). Everything in it came from
+// the hostile service: the key is numbers, the name SanitizeGpuName()'s
+// subset, and none of it is ever made into a path.
+struct GpuDeviceReport {
+  GpuDeviceReport();
+  ~GpuDeviceReport();
+  GpuDeviceReport(const GpuDeviceReport&);
+  GpuDeviceReport& operator=(const GpuDeviceReport&);
+
+  GpuDriverKey key;
+  // What its pipeline caches must match.
+  PipelineCacheDevice cache_device;
+  uint32_t api_version = 0;
+  std::string name;
+};
 
 // How a load or a generation ended, for the caller blocked on it. Never
 // carries prompt or response text.
@@ -93,6 +118,8 @@ struct InferenceOutcome {
   // on it (backend "vulkan" only).
   mojom::GpuStatus gpu_status = mojom::GpuStatus::kNotRequested;
   uint32_t gpu_layers = 0;
+  // The GPU the service reported for the load, if it reported one.
+  std::optional<GpuDeviceReport> gpu_device;
   // Generation: set when OnComplete arrived (counts clamped).
   bool has_summary = false;
   StreamSummary summary;
@@ -171,6 +198,9 @@ class InferenceProcessHost {
     // process is then launched with kMoltInferenceGpuSwitch, which on Linux
     // lets its sandbox reach the DRM render nodes Mesa's drivers use.
     bool use_gpu = false;
+    // Drivers the GPU record turned off (sent as the service's skip list;
+    // at most mojom::kMaxSkippedGpuDrivers).
+    std::vector<GpuDriverKey> skip_gpu_drivers;
   };
 
   struct Timeouts {
@@ -195,12 +225,33 @@ class InferenceProcessHost {
     virtual ~Delegate() = default;
     // The model process ended unexpectedly or was killed for misbehaving
     // (not an unload the runtime asked for). |gpu_failure|: it was loading
-    // with the GPU requested, or running on the GPU, and crashed, hung or
-    // ran over its memory (GpuFallbackGuard counts it, not CrashLoopGuard).
-    virtual void OnModelProcessLost(const std::string& model_id,
-                                    const std::string& crash_key,
-                                    CrashLoopGuard::Phase phase,
-                                    bool gpu_failure) = 0;
+    // with the GPU requested (and not refused by the runtime), or running
+    // on the GPU, and crashed, hung or ran over its memory (GpuFallbackGuard
+    // and the GPU record count it, not CrashLoopGuard). |gpu_device|: the
+    // GPU it reported, if it got that far.
+    virtual void OnModelProcessLost(
+        const std::string& model_id,
+        const std::string& crash_key,
+        CrashLoopGuard::Phase phase,
+        bool gpu_failure,
+        const std::optional<GpuDeviceReport>& gpu_device) = 0;
+
+    // GPU loads (design sections 11.10 and 11.12): the service chose
+    // |device| and waits. |reply| says whether to use it and, if so, gives
+    // its pipeline cache (read-only, not async; invalid for none). May be
+    // answered later, from another task; dropping it is fine when the
+    // process is gone.
+    virtual void OnGpuDeviceChosen(
+        const GpuDeviceReport& device,
+        base::OnceCallback<void(bool use_gpu, base::File pipeline_cache)>
+            reply) = 0;
+    // A pipeline cache for |device| that passed the size cap and the header
+    // check: store it.
+    virtual void OnPipelineCacheData(const GpuDeviceReport& device,
+                                     mojo_base::BigBuffer cache) = 0;
+    // Drop the stored cache for |device|: the service's grew over the cap,
+    // or it sent one that failed the checks.
+    virtual void OnPipelineCacheDropped(const GpuDeviceReport& device) = 0;
   };
 
   // Tests replace the launch of a real utility process.
@@ -264,6 +315,19 @@ class InferenceProcessHost {
   void OnLoadReply(base::WeakPtr<ModelProcess> process,
                    mojom::LoadModelStatus status,
                    mojom::ModelDescriptionPtr description);
+  // GpuLoadClient.OnGpuChosen from |process| (design section 11.10).
+  void OnGpuChosen(ModelProcess* process,
+                   mojom::GpuDeviceIdentityPtr device,
+                   mojom::GpuLoadClient::OnGpuChosenCallback callback);
+  void OnGpuAnswer(base::WeakPtr<ModelProcess> process,
+                   mojom::GpuLoadClient::OnGpuChosenCallback callback,
+                   bool use_gpu,
+                   base::File pipeline_cache);
+  // After a generation on the GPU: asks for the pipeline cache (section
+  // 11.12), at most kMaxPipelineCacheRequests times per process.
+  void MaybeRequestPipelineCache(ModelProcess* process);
+  void OnPipelineCache(base::WeakPtr<ModelProcess> process,
+                       std::optional<mojo_base::BigBuffer> cache);
   void OnLoadTimeout(base::WeakPtr<ModelProcess> process);
   void OnProcessLaunched(base::WeakPtr<ModelProcess> process,
                          const base::Process& handle);

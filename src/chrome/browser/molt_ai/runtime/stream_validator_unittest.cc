@@ -382,5 +382,56 @@ TEST(GpuFallbackGuardTest, TwoFailuresTurnTheGpuOffForEveryModel) {
   EXPECT_FALSE(g.AllowGpu("c"));
 }
 
+TEST(GpuFallbackGuardTest, ResetForgetsTheSession) {
+  GpuFallbackGuard g;
+  g.RecordGpuFailure("a");
+  g.RecordGpuFailure("b");
+  g.Reset();
+  EXPECT_FALSE(g.gpu_disabled());
+  EXPECT_TRUE(g.AllowGpu("a"));
+  // Counting starts again.
+  g.RecordGpuFailure("a");
+  EXPECT_FALSE(g.AllowGpu("a"));
+  EXPECT_TRUE(g.AllowGpu("b"));
+}
+
+// Section 11.10: what a GPU load may report, given what the browser saw.
+TEST(GpuDescriptionTest, StatusFitsTheLoad) {
+  using S = ReportedGpuStatus;
+  const S all[] = {S::kNotRequested, S::kNotBuilt,        S::kNoDevice,
+                   S::kNoUsableDevice, S::kTooLittleMemory, S::kLoadFailed,
+                   S::kOn,           S::kTurnedOff,       S::kDeviceLost};
+  auto valid = [](bool requested, bool reported, bool allowed, S status) {
+    return IsConsistentGpuStatus({requested, reported, allowed}, status);
+  };
+  // Not asked: only kNotRequested, whatever else happened.
+  for (S status : all) {
+    EXPECT_EQ(status == S::kNotRequested, valid(false, false, false, status));
+    EXPECT_EQ(status == S::kNotRequested, valid(false, true, true, status));
+  }
+  // Asked, no device reported: why there was none, never a result on one.
+  for (S status : {S::kNotBuilt, S::kNoDevice, S::kNoUsableDevice,
+                   S::kTurnedOff}) {
+    EXPECT_TRUE(valid(true, false, false, status));
+  }
+  for (S status : {S::kNotRequested, S::kOn, S::kDeviceLost, S::kLoadFailed,
+                   S::kTooLittleMemory}) {
+    EXPECT_FALSE(valid(true, false, false, status));
+  }
+  // Reported, and the browser said no: the CPU (kTurnedOff) only.
+  for (S status : all) {
+    EXPECT_EQ(status == S::kTurnedOff, valid(true, true, false, status));
+  }
+  // Reported and allowed: what happened on it.
+  for (S status : {S::kOn, S::kDeviceLost, S::kLoadFailed,
+                   S::kTooLittleMemory}) {
+    EXPECT_TRUE(valid(true, true, true, status));
+  }
+  for (S status : {S::kNotRequested, S::kNotBuilt, S::kNoDevice,
+                   S::kNoUsableDevice, S::kTurnedOff}) {
+    EXPECT_FALSE(valid(true, true, true, status));
+  }
+}
+
 }  // namespace
 }  // namespace molt_ai

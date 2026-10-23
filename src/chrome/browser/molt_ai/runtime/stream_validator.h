@@ -186,6 +186,37 @@ bool IsValidGpuDescription(bool gpu_requested,
                            uint32_t gpu_layers,
                            uint32_t max_gpu_layers);
 
+// mojom::GpuStatus, mirrored (the validator is std-only).
+enum class ReportedGpuStatus {
+  kNotRequested,
+  kNotBuilt,
+  kNoDevice,
+  kNoUsableDevice,
+  kTooLittleMemory,
+  kLoadFailed,
+  kOn,
+  kTurnedOff,
+  kDeviceLost,
+};
+
+// What the browser saw of a GPU load (design section 11.10): it asked for
+// the GPU; the service reported a device (GpuLoadClient.OnGpuChosen); the
+// browser allowed it.
+struct GpuLoadFacts {
+  bool requested = false;
+  bool device_reported = false;
+  bool device_allowed = false;
+};
+
+// Whether a load's GpuStatus fits those facts: kNotRequested exactly when
+// the GPU wasn't asked for; kOn, kDeviceLost, kLoadFailed and
+// kTooLittleMemory only on a device the service reported and the browser
+// allowed (the service decides those after the browser's answer);
+// kTurnedOff only when it reported none or the browser said no; kNotBuilt,
+// kNoDevice and kNoUsableDevice only when it reported none.
+bool IsConsistentGpuStatus(const GpuLoadFacts& facts,
+                           ReportedGpuStatus status);
+
 // Tokenize results: at most text_bytes + 16 ids, each in [0, vocab_size).
 bool IsValidTokenization(const std::vector<int32_t>& tokens,
                          size_t text_bytes,
@@ -255,6 +286,9 @@ class GpuFallbackGuard {
   bool AllowGpu(const std::string& key) const;
   void RecordGpuFailure(const std::string& key);
   bool gpu_disabled() const { return failures_ >= kMaxGpuFailures; }
+  // The user asked to try the GPU again (molt://ai-settings; section
+  // 11.11): this session's failures are forgotten.
+  void Reset();
 
  private:
   // Model files whose GPU attempt failed (at most kMaxGpuFailures).
