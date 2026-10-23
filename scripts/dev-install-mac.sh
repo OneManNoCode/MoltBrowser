@@ -17,7 +17,11 @@
 #    build/cache/ggml-metal-<hash of the Metal sources>.metallib, so a
 #    llama.cpp update never reuses a metallib built from other kernels.
 #  - tor/ocr/whisper/molt_models are packaging-time payloads, not build
-#    outputs; carried over from the previously installed app.
+#    outputs. A payload the out-dir app already has (scripts/build.sh bundles
+#    tor, whisper and tesseract) is the fresh one and is kept; only a missing
+#    one is carried over from the previously installed app.
+#  - The Resources/ helpers and the framework's Libraries/ dylibs are signed
+#    one by one, like scripts/release.sh does: --deep reaches neither.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,10 +34,18 @@ METALLIB_CACHE="$REPO_DIR/build/cache/ggml-metal-$("$REPO_DIR/scripts/build-ggml
 echo "[1/7] Stage out-dir app"
 ditto "$OUT_APP" "$STAGE"
 
-echo "[2/7] Carry bundled payloads from installed app"
+echo "[2/7] Bundled payloads (fresh ones win; missing ones from the installed app)"
 for d in tor ocr whisper molt_models; do
+  if [ -n "$(ls -A "$STAGE/Contents/Resources/$d" 2>/dev/null)" ]; then
+    echo "  = $d (fresh, from the out dir)"
+    continue
+  fi
   SRC="/Applications/MoltBrowser.app/Contents/Resources/$d"
-  [ -d "$SRC" ] && ditto "$SRC" "$STAGE/Contents/Resources/$d" && echo "  + $d"
+  if [ -d "$SRC" ]; then
+    rm -rf "$STAGE/Contents/Resources/$d"
+    ditto "$SRC" "$STAGE/Contents/Resources/$d"
+    echo "  + $d (from the installed app)"
+  fi
 done
 
 echo "[3/7] Ensure default.metallib (llama.cpp Metal)"
@@ -52,10 +64,17 @@ fi
 echo "[4/7] Sign (inside-out, per-helper entitlements)"
 codesign --force --deep --sign "$SIGN_IDENTITY" --options runtime --timestamp "$STAGE" 2>/dev/null
 for d in tor ocr whisper; do
-  [ -d "$STAGE/Contents/Resources/$d" ] && find "$STAGE/Contents/Resources/$d" -type f | while read -r f; do
-    file "$f" | grep -q "Mach-O" && codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f" 2>/dev/null || true
-  done
+  [ -d "$STAGE/Contents/Resources/$d" ] || continue
+  while IFS= read -r -d '' f; do
+    if file -b "$f" | grep -q "Mach-O"; then
+      codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f"
+    fi
+  done < <(find "$STAGE/Contents/Resources/$d" -type f -print0)
 done
+while IFS= read -r -d '' f; do
+  codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f"
+done < <(find "$STAGE/Contents/Frameworks/MoltBrowser Framework.framework/Versions" \
+           -type f -name "*.dylib" -path "*/Libraries/*" -print0)
 REN=$(find "$STAGE/Contents/Frameworks" -type d -name "*Helper (Renderer).app" | head -1)
 for helper in "$(dirname "$REN")/"*.app; do
   case "$(basename "$helper")" in
