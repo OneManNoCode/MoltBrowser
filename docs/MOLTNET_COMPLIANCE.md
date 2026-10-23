@@ -32,8 +32,10 @@ claims below as the design intent, not as measured results.
 2. **A separate identity.** MoltNet windows use their own off-the-record
    profile: cookies, cache and site storage are kept in memory, separate from
    your regular and incognito windows, and discarded when the last MoltNet
-   window closes. Pages visited in MoltNet windows are not added to MoltBrowser's
-   on-device memory index.
+   window closes. Its connections use Tor circuits of its own: the next
+   MoltNet windows never reuse them, also for a site both visit (§2
+   *Circuits*). Pages visited in MoltNet windows are not added to
+   MoltBrowser's on-device memory index.
 3. **New Identity.** Closes the MoltNet windows (a page's "Leave site?"
    prompt can't keep one open), drops their connections and DNS cache, and
    waits until the MoltNet profile is discarded (fresh cookies, cache and
@@ -44,9 +46,13 @@ claims below as the design intent, not as measured results.
    another one (or after changing the exit country) takes up to ten seconds.
    If Tor rejects the request or doesn't confirm it, or a window of the old
    identity doesn't close, you see an error and no new window opens.
+   Whatever happens with that request, the next MoltNet window doesn't use
+   the old identity's circuits (§2 *Circuits*).
 4. **One circuit per site.** Each MoltNet connection tells Tor which top-level
    site it belongs to (as the SOCKS username), so Tor puts different sites on
-   different circuits and exits (`IsolateSOCKSAuth`). A site's embedded
+   different circuits and exits (`IsolateSOCKSAuth`). The SOCKS password
+   is random and new for each MoltNet identity, so a site gets new circuits
+   with each one. A site's embedded
    third-party content shares that site's circuit, as in Tor Browser. A page
    its server sandboxes (an opaque origin) gets a circuit of its own, and so
    does each download the browser makes while it checks a site's
@@ -519,6 +525,26 @@ from your own IP address. We went through the candidates in the Chromium
   DNS (off by default), and Tor failures are proxy errors, not DNS errors.
 - *Still outside Tor:* see §5.7.
 
+**Circuits.** Tor keeps connections with different SOCKS5 credentials on
+different circuits (`IsolateSOCKSAuth`, on by default). MoltNet's
+connections carry two: the username is the connection's top-level site
+(per-site circuits, §1.4), and the password is a random 128-bit value made
+for the MoltNet profile's network context when that context is created
+(`molt_net_network_context_policy.h`, read by the SOCKS connection code in
+`net/socket/socks_connect_job.cc`). Every MoltNet identity has a profile
+and so a network context of its own: a new one after New Identity, and a
+new one when MoltNet windows open again after the last one closed. So a
+new identity never shares a circuit, and so an exit, with an earlier one,
+also for a site both visit, even within the ten minutes or so for which
+Tor would otherwise keep using a circuit for that site, and whether or not
+Tor has applied New Identity's request yet. New Identity still asks Tor
+for new circuits (`SIGNAL NEWNYM`): Tor then stops putting new
+connections on any circuit built before, which covers a connection of the
+old identity that is still being set up inside Tor, and clears its own
+caches (resolved names, onion-service descriptors). Regular and Incognito
+windows don't use Tor; a SOCKS5 proxy you set up for them on your own
+computer gets the per-site username and a fixed password, as before.
+
 **Certificate fetches.** To check a site's certificate the browser may
 download a missing intermediate certificate (AIA) and, with online
 revocation checks on, an OCSP response or a CRL, from addresses the
@@ -621,6 +647,7 @@ gpg-verified steps documented in that script.
 | New Identity reports success only once Tor has applied `NEWNYM` (Tor answers `250 OK` at once and, within ten seconds of the previous one, applies it later); replies and events read correctly from one connection | Unit tests of the control-protocol framing (`molt_ai_unittests`); standalone harness around the shipped control-connection code and the New Identity signal, Tor 0.4.9.11: an immediate and a rate-limited `NEWNYM`, an event arriving with a reply; 2 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
 | New Identity's order: the old windows close although a page asks "Leave site?", `NEWNYM` only once the old profile is destroyed, the new window only once Tor has switched, no other MoltNet window meanwhile, nothing changed if an old window stays open | Standalone simulation: the New Identity code of `molt_net_window.cc`, verbatim, against stand-ins (profiles, windows, the profile destroyer, Tor) on a simulated clock, g++ ASan/UBSan; 8 tests, 5 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
 | Sandboxed pages (opaque top-level origins) get per-site SOCKS usernames | The username code of `socks_connect_job.cc`, verbatim, against stand-ins with the 152 shapes; 3 tests, a mutant caught | Pass (built standalone; not yet built in the Chromium tree) |
+| Each MoltNet network context gets a random SOCKS password (§2 *Circuits*): the same for all of its connections, a new one for every context, the username still per site; other profiles get none (the fixed password, as before) | Unit tests (`molt_ai_unittests`, with the real parameter structs); standalone harness: the shipped code of the whole path (the `ProfileNetworkContextService` policy, the network service hook, `HttpNetworkSession::CreateCommonConnectJobParams()`, `CommonConnectJobParams`, the SOCKS connect job and the SOCKS5 socket's credential check) verbatim against stand-ins with the 152 shapes (g++ ASan/UBSan, clang `-fno-exceptions`), 7 tests, 8 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
 | Certificate fetches in MoltNet (§2 *Certificate fetches*): the switch is set for MoltNet's network contexts only; with it, the certificate fetcher gives every fetch a fresh one-off key and never merges two fetches (the URL rules unchanged), without it Chromium's behaviour; each one-off key gets a SOCKS username of its own | Unit tests (`molt_ai_unittests`, with the real parameter structs); standalone harness: the shipped `cert_net_fetcher_url_loader.cc` compiled unchanged against stand-ins with the 152 shapes (g++ ASan/UBSan, clang `-fno-exceptions`), 6 tests, 5 mutants caught; the `ProfileNetworkContextService` hook, verbatim, against the 152 profile kinds; the SOCKS username code, verbatim | Pass (built standalone; not yet built in the Chromium tree) |
 | HTTP authentication in MoltNet (§2): Basic and Digest only, also before the network service has its browser-wide values and after they change, whatever policies allow; other contexts unchanged | Standalone harness: Chromium 152's `HttpAuthPreferences`, the network context's code verbatim and the scheme check of `HttpAuthHandlerRegistryFactory` verbatim (g++ ASan/UBSan, clang `-fno-exceptions`); 5 tests, 7 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
 | No captive-portal check or sign-in page in MoltNet (§2 *Captive portals*): the setting is pinned and the regular profile's value isn't read; `OpenLoginTab()` opens nothing for MoltNet and stays Chromium's for regular, Incognito, DevTools, guest and look-alike profiles | Unit tests (`molt_ai_unittests`); standalone: the real pinning code against a settings stand-in (a mutant caught), the hook verbatim against stand-ins with the 152 signatures | Pass (built standalone; not yet built in the Chromium tree) |
@@ -671,8 +698,8 @@ help. The last column names the report's checks.
 | 3 | replaced | the network tests below exercise the same mechanisms locally |
 | 4 | automated | `harness.firewall`, every `net.*` check |
 | 5 | automated | `identity.fail_closed`, `identity.no_restore` |
-| 6 | automated | `identity.separate` |
-| 7 | automated (exit IP only online) | `identity.new_identity` |
+| 6 | automated | `identity.separate`, `identity.session_circuits` |
+| 7 | automated (exit IP only online) | `identity.new_identity`, `identity.session_circuits` |
 | 8 | automated | `identity.per_site_circuits`, `identity.sandboxed_circuits`, `identity.cert_fetch_circuits` |
 | 9 | partial | `identity.override_refused` |
 | 10 | automated (offline, against Tor's consensus) | `identity.relays_real` |
@@ -705,9 +732,14 @@ help. The last column names the report's checks.
    never load directly. Restart MoltBrowser: no MoltNet window comes back.
 6. **Separate identity.** (Kit: automated.) Log in to a site in a regular window; open it in a
    MoltNet window: you must not be logged in. Set a cookie in a MoltNet window,
-   close all MoltNet windows, open a new one: the cookie must be gone.
+   close all MoltNet windows, open a new one: the cookie must be gone. Open
+   the same site again in it: its connections must carry a SOCKS password
+   that the closed windows didn't use (new circuits; the kit compares a
+   digest of the passwords in its capture), and an IP-echo site normally
+   shows a different exit IP than before.
 7. **New Identity.** (Kit: automated.) Note the exit IP, press *New Identity*: the MoltNet windows
    close, a new one opens, cookies are gone, and the exit IP normally changes.
+   As in step 6, the same site's connections carry a new SOCKS password.
    Click into a page that asks "Leave site?" (e.g. one with an unsent form)
    and press *New Identity*: its window closes without asking. Press *New
    Identity* twice in a row: the second new window opens only about ten
