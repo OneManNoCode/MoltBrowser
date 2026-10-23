@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index abddef1d201fccb59e4049eed5304bf073838f1b..34f0e87c1f867e3b4e0c8dd159b5ecbd257a7ea6 100644
+index abddef1d201fccb59e4049eed5304bf073838f1b..5c60f2746bae3e8c9c1a6104087eada1d666e66b 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -227,6 +227,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,3 +24,21 @@ index abddef1d201fccb59e4049eed5304bf073838f1b..34f0e87c1f867e3b4e0c8dd159b5ecbd
  };
  
  struct NetworkContextFilePaths {
+@@ -666,6 +675,17 @@ struct NetworkContextParams {
+   // do not have an associated `URLLoaderFactory`.
+   pending_remote<URLLoaderNetworkServiceObserver>?
+       device_bound_sessions_network_observer;
++
++  // MoltBrowser: if set, the RFC 1929 password this context sends to a
++  // SOCKS5 proxy on a loopback address (MoltNet's Tor), with the top-level
++  // site as the username (net/socket/socks_connect_job.cc). Tor keeps
++  // streams with different credentials on different circuits, so a new
++  // random value for each MoltNet network context means a new identity
++  // never shares a circuit with an earlier one. Set for MoltNet's network
++  // contexts only (chrome/browser/molt_ai/tor/
++  // molt_net_network_context_policy.h); if null, the fixed password every
++  // other context sends there.
++  [MinVersion=1] string? molt_socks_isolation_password;
+ };
+ 
+ struct NetworkConditions {

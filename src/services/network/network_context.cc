@@ -3240,6 +3240,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
   session_params.key_auth_cache_server_entries_by_network_anonymization_key =
       params_->split_auth_cache_by_network_anonymization_key;
 
+  // MoltBrowser: this context's SOCKS5 password for MoltNet's Tor (set for
+  // MoltNet's contexts only), read by SOCKSConnectJob.
+  session_params.molt_socks_isolation_password =
+      params_->molt_socks_isolation_password.value_or(std::string());
+
   builder.set_http_network_session_params(session_params);
   builder.set_quic_context(std::move(quic_context));
 

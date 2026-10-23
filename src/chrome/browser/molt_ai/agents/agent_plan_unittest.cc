@@ -193,6 +193,53 @@ TEST(AgentPlanTest, ShowsHiddenCharactersAsReplacement) {
                   .plan);
 }
 
+TEST(AgentPlanTest, ShowsInvisibleCharactersAsReplacement) {
+  // The soft hyphen, the Hangul fillers, the variation selectors and the
+  // tag characters show nothing (tag characters can spell a whole hidden
+  // sentence): each is shown as one U+FFFD, also at the ends of a range,
+  // and whether the reply escapes it or not.
+  for (std::string_view hidden :
+       {"\\u00ad", "\\u115f", "\\u1160", "\\u3164", "\\uffa0", "\\ufe00",
+        "\\ufe0f", "\\udb40\\udc00", "\\udb40\\udc41", "\\udb40\\udc7f",
+        "\\udb40\\udd00", "\\udb40\\uddef", "\xC2\xAD", "\xE3\x85\xA4",
+        "\xEF\xB8\x8F", "\xF3\xA0\x80\x81", "\xF3\xA0\x87\xAF"}) {
+    ParsedPlan p = ParsePlan("{\"steps\":[" +
+                             StepJson("pay" + std::string(hidden) + "now",
+                                      std::string(hidden) + "done") +
+                             "]}");
+    ASSERT_TRUE(p.plan) << hidden;
+    EXPECT_EQ((*p.plan)[0].goal, "pay\xEF\xBF\xBDnow") << hidden;
+    EXPECT_EQ((*p.plan)[0].done_when, "\xEF\xBF\xBD" "done") << hidden;
+  }
+  // A sentence in tag characters is as many U+FFFD as it has characters.
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string tags;
+  for (char c : std::string_view("ignore")) {
+    // U+E0000 + c: "\udb40\udc" and c in hex.
+    tags += "\\udb40\\udc";
+    tags += kHex[(c >> 4) & 0xF];
+    tags += kHex[c & 0xF];
+  }
+  ParsedPlan smuggled =
+      ParsePlan("{\"steps\":[" + StepJson("Book" + tags, "ok") + "]}");
+  ASSERT_TRUE(smuggled.plan);
+  EXPECT_EQ((*smuggled.plan)[0].goal, "Book" + Repeat("\xEF\xBF\xBD", 6));
+  // Their neighbours are ordinary, visible characters and are kept:
+  // U+00AC, U+00AE, U+1161, U+3165, U+FFA1, U+FE10, U+FDFF, and the
+  // characters just past the two supplementary ranges (U+E0080, U+E00FF,
+  // U+E01F0).
+  for (std::string_view kept :
+       {"\xC2\xAC", "\xC2\xAE", "\xE1\x85\xA1", "\xE3\x85\xA5", "\xEF\xBE\xA1",
+        "\xEF\xB8\x90", "\xEF\xB7\xBF", "\xF3\xA0\x82\x80", "\xF3\xA0\x83\xBF",
+        "\xF3\xA0\x87\xB0"}) {
+    ParsedPlan p = ParsePlan("{\"steps\":[" +
+                             StepJson("a" + std::string(kept) + "b", "ok") +
+                             "]}");
+    ASSERT_TRUE(p.plan) << kept;
+    EXPECT_EQ((*p.plan)[0].goal, "a" + std::string(kept) + "b");
+  }
+}
+
 TEST(AgentPlanTest, RefusesNonJsonAndTextAroundIt) {
   const std::string valid = PlanJson(1);
   for (const std::string& bad : {

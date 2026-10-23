@@ -373,7 +373,12 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
   // their choice, they can remove it from the list, and they'll send that
   // language in the Accept-Language header, giving servers a chance to serve
   // them pages in that language.
-  AddTargetLanguageToAcceptLanguages(target_lang);
+  // MoltBrowser: not where page translation is off (MoltNet windows): the
+  // driver translates nothing there, and that profile's languages stay
+  // MoltNet's own.
+  if (!translate_driver_->TranslationOff()) {
+    AddTargetLanguageToAcceptLanguages(target_lang);
+  }
 
   // Translation can be kicked by context menu against unsupported languages.
   // Unsupported language strings should be replaced with

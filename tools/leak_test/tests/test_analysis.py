@@ -8,6 +8,7 @@ diff and the report, against the recorded sample run in testdata/.
 """
 
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -96,11 +97,16 @@ class SampleRun(unittest.TestCase):
         self.assertEqual([(e['dst'], e['dport']) for e in
                           self.traffic['escaped']], [('203.0.113.99', 80)])
         socks = self.traffic['socks']
-        self.assertEqual(len(socks), 11)
+        self.assertEqual(len(socks), 17)
         self.assertEqual(socks[8]['host'], 'anchor-cccccc3333.moltleak.test')
         self.assertEqual(socks[8]['test'], 'dns_prefetch')
-        self.assertEqual([s['test'] for s in socks[9:]],
+        self.assertEqual([s['test'] for s in socks[9:11]],
                          ['sandboxed_a', 'sandboxed_b'])
+        # The SOCKS password is recorded as a digest only.
+        self.assertEqual(socks[0]['password_tag'],
+                         hashlib.sha256(b'x').hexdigest()[:16])
+        self.assertNotIn('password', socks[0])
+        self.assertEqual(len({s['password_tag'] for s in socks[11:]}), 4)
         # The certificate tests: by window, or by the nonce in the AIA host
         # (the second site's certificate names the first test's nonce).
         self.assertEqual([(s['test'], s['port']) for s in socks[2:8]],
@@ -109,7 +115,7 @@ class SampleRun(unittest.TestCase):
                           ('cert_fetch_b', 80), ('cert_fetch', 80)])
         # Loopback packets appear twice in `any` captures; counted once.
         self.assertEqual(self.traffic['capture_stats']['loopback_packets'],
-                         22)
+                         34)
 
     def test_verdicts(self):
         rep = report.build(sample.OUT)
@@ -129,6 +135,7 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['identity.per_site_circuits'], 'PASS')
         self.assertEqual(status['identity.sandboxed_circuits'], 'PASS')
         self.assertEqual(status['identity.cert_fetch_circuits'], 'PASS')
+        self.assertEqual(status['identity.session_circuits'], 'PASS')
         self.assertEqual(status['identity.new_identity'], 'PASS')
         self.assertEqual(status['identity.fail_closed'], 'PASS')
         self.assertEqual(status['uniform.nav.hardwareConcurrency'], 'FAIL')
@@ -203,6 +210,46 @@ class IdentityChecks(unittest.TestCase):
         one = report._sandboxed_circuit_check(self.socks(
             ('sandboxed_a', a, 'opaque')))
         self.assertEqual(one['status'], report.SKIP)
+
+    def session_run(self, *streams, marks=(5.0,)):
+        """`streams`: (seconds, host, username, password tag)."""
+        manifest = {'phases': [
+            {'name': 'identity', 'start': 0.0, 'end': 10.0,
+             'data': {'session_marks': list(marks)}},
+            {'name': 'fail_closed', 'start': 10.0, 'end': 20.0, 'data': {}}]}
+        tr = {'socks': [{'ts': ts, 'host': h, 'username': u,
+                         'password_tag': p} for ts, h, u, p in streams]}
+        return report._session_circuit_check(manifest, tr)
+
+    def test_session_circuits(self):
+        a, b = 'a' * 55 + 'd.onion', 'b' * 55 + 'd.onion'
+        ua, ub = 'http://' + a, 'https://' + b
+        ok = self.session_run((1, a, ua, 'p1'), (2, b, ub, 'p1'),
+                              (6, a, ua, 'p2'))
+        self.assertEqual(ok['status'], report.PASS)
+        # The new session reused the old credentials: the old circuits.
+        same = self.session_run((1, a, ua, 'p1'), (6, a, ua, 'p1'))
+        self.assertEqual(same['status'], report.FAIL)
+        self.assertIn('reused', ' '.join(same['evidence']))
+        # Any overlap fails, also next to new credentials.
+        mixed = self.session_run((1, a, ua, 'p1'), (6, a, ua, 'p2'),
+                                 (7, a, ua, 'p1'))
+        self.assertEqual(mixed['status'], report.FAIL)
+        no_password = self.session_run((1, a, ua, None), (6, a, ua, None))
+        self.assertEqual(no_password['status'], report.FAIL)
+        # Several marks: each session against the one before it.
+        chain = self.session_run((1, a, ua, 'p1'), (4, a, ua, 'p2'),
+                                 (7, a, ua, 'p2'), marks=(3.0, 6.0))
+        self.assertEqual(chain['status'], report.FAIL)
+        # Nothing to compare: another site after the mark, a connection
+        # outside the phase, or no marks.
+        self.assertEqual(self.session_run(
+            (1, a, ua, 'p1'), (6, b, ub, 'p2'))['status'], report.SKIP)
+        self.assertEqual(self.session_run(
+            (1, a, ua, 'p1'), (12, a, ua, 'p1'))['status'], report.SKIP)
+        self.assertEqual(self.session_run(
+            (1, a, ua, 'p1'), (6, a, ua, 'p1'), marks=())['status'],
+            report.SKIP)
 
     def cert_run(self, *streams):
         """`streams`: (seconds, host, port, username)."""

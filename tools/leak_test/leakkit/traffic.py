@@ -388,6 +388,7 @@ def _socks_requests(ctx, packets):
             continue
         out.append({'ts': round(stream['ts'], 6), 'client_port': sport,
                     'server_port': dport, 'username': req.username,
+                    'password_tag': req.password_tag,
                     'host': req.host, 'port': req.port,
                     'command': req.command,
                     'test': ctx.nonce_in(req.host) or

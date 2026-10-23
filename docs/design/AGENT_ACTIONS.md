@@ -798,10 +798,13 @@ object, list, step, string) and refuses anything else: text around it, a
 second object, other or missing keys, other types, no step or more than 6,
 a string over its cap in characters, a blank one, and control characters,
 line breaks and tabs included (a step is one line, so it can't put lines of
-its own into a prompt). Characters that reorder, hide or break text (C1
-controls, bidi controls, zero-width characters, U+2028 / U+2029, U+FEFF)
-become U+FFFD, one each, and spaces are trimmed from the ends, so the user
-and the model read the same visible text. The grammar refuses an empty
+its own into a prompt). Characters that reorder, hide or break text, or
+show nothing (C1 controls, bidi controls, zero-width characters, U+2028 /
+U+2029, U+FEFF, the soft hyphen U+00AD, the Hangul fillers U+115F, U+1160,
+U+3164 and U+FFA0, the variation selectors U+FE00-U+FE0F and
+U+E0100-U+E01EF, and the tag characters U+E0000-U+E007F, which can spell a
+sentence nobody sees) become U+FFFD, one each, and spaces are trimmed from
+the ends, so the user and the model read the same visible text. The grammar refuses an empty
 string but not one of spaces, nor control characters written as `\u`
 escapes; the parser refuses both.
 
@@ -975,12 +978,15 @@ request, nothing leaves the device, nothing is stored (MOLTNET_COMPLIANCE.md,
 
 #### 2.8.7 Tests
 
-- **In `molt_ai_unittests`:** `agents/agent_plan_unittest.cc` (23 tests):
+- **In `molt_ai_unittests`:** `agents/agent_plan_unittest.cc` (24 tests):
   the exact schema, accepted by the service's converter; plans of 1 to 6
   steps, 0, 7 and 1,000 refused; caps at and over the limit in characters
   (ASCII, 2-, 3- and 4-byte, `\u` escapes) on every step; blank text;
-  control characters and line breaks; 14 hidden characters shown as U+FFFD
-  and counted as one; text around the object, two objects, code fences,
+  control characters and line breaks; 14 hidden characters, and the
+  invisible ones (soft hyphen, Hangul fillers, variation selectors, tag
+  characters, at both ends of each range, escaped and raw, and a sentence
+  in tag characters), shown as U+FFFD and counted as one, their visible
+  neighbours kept; text around the object, two objects, code fences,
   comments, trailing commas, the old `STEP:` lines, invalid UTF-8, nesting
   10,000 deep; 16 wrong shapes (extra keys such as `url` or `action`,
   missing keys, wrong types); the reply table, notes never repeating the

@@ -1390,8 +1390,9 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
 
   // MoltBrowser: MoltNet's per-context network settings
   // (molt_net_network_context_policy.h): a one-off network key for each
-  // certificate fetch, and Basic and Digest authentication only. Other
-  // profiles get Chromium's (the fields' defaults).
+  // certificate fetch, Basic and Digest authentication only, and a new
+  // random SOCKS password for Tor. Other profiles get Chromium's (the
+  // fields' defaults).
   molt_ai::tor::ApplyMoltNetNetworkContextSettings(
       molt_ai::tor::IsMoltNetProfile(profile_), *network_context_params,
       *cert_verifier_creation_params);

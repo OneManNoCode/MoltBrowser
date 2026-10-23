@@ -256,6 +256,15 @@ class Dissectors(unittest.TestCase):
                          ('https://site.example', 'abc.onion', 80))
         plain = dissect.parse_socks5_client(g.socks5_client('a.test', 443))
         self.assertEqual((plain.username, plain.host), (None, 'a.test'))
+        self.assertIsNone(plain.password_tag)
+        # The password itself is never kept; a digest tells two apart.
+        tags = [dissect.parse_socks5_client(g.socks5_client(
+            'abc.onion', 80, username='u', password=pw)).password_tag
+                for pw in (b'one', b'two', b'one')]
+        self.assertEqual(tags[0], tags[2])
+        self.assertNotEqual(tags[0], tags[1])
+        self.assertEqual(len(tags[0]), 16)
+        self.assertNotIn('one', tags[0])
         self.assertIsNone(dissect.parse_socks5_client(b'GET /'))
         data = g.socks5_client('a.test', 443, username='u')
         for cut in range(len(data)):

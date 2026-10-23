@@ -255,14 +255,22 @@ given that origin, and nothing in it loads or fetches anything). It is
 apart from world 1, where MoltBrowser's agent and other features run their
 scripts. The page's scripts can't see the isolated world's variables or
 patch the DOM methods it calls; they do see the DOM changes, as they see
-Google Translate's.
+Google Translate's. What a page's markup names does reach every world: a
+form's controls (by `name` or `id`) take precedence over the form's own
+members, and a document's named images, forms and embeds over the
+document's (`[LegacyOverrideBuiltIns]`), so `form.closest` or
+`document.body` can be an element the page chose. The script therefore
+reaches every DOM member through its prototype
+(`Element.prototype.closest`, `Node.prototype`'s `firstChild`, ...), never
+through the object, and keeps its state only in a property it set on its
+own global.
 
 What is read, in page order (depth first; an open shadow root's content
 where it is shown, before the host's light children):
 
 | Read | Why |
 |---|---|
-| Visible text nodes under `<body>` with at least one letter | What the user reads. "Visible": not under `display:none`/`hidden`/`content-visibility:hidden` (`checkVisibility()`), and not `visibility:hidden` itself. `display:contents` elements are looked into |
+| Visible text nodes under `<body>` with at least one letter | What the user reads. "Visible": not under `display:none`/`hidden`/`content-visibility:hidden` (`checkVisibility()`), and not `visibility:hidden` itself. `display:contents` elements are looked into, and the text directly in one (which has no box, so `checkVisibility()` is false for it) is visible where it is shown: in the box of its nearest ancestor that has one, with the element's own `visibility` |
 | The `<title>`'s text node | Shown in the tab and history. Treated as on screen |
 | `alt` of visible `<img>` | What screen readers and broken images show |
 | `placeholder` of visible text fields and textareas | Visible text, not a value |
@@ -357,7 +365,11 @@ doesn't pop up either.
    times at most.
 9. **Ends** when every piece is settled, on *Stop*, after 15 minutes (the
    backend also cancels any one generation after 5), or when the page is
-   gone. A new translation (another target) replaces a running one; a
+   gone. *Stop* waits for a write already sent to the page, so the count
+   of what was written is exact; the 15 minutes don't: a page that doesn't
+   answer a write (its renderer is busy or hung) ends the job then, with
+   that write counted as written, since it may still land, so *Show
+   original* is offered. A new translation (another target) replaces a running one; a
    navigation drops it without a report, as upstream's does when the
    page's agent goes away.
 
@@ -370,7 +382,12 @@ arguments (`base::JSONWriter`), so it can't become code there either. A
 slot is written only if it still holds what was read, is still in the
 document, and isn't (by now) inside `script`, `style`, `noscript`,
 `template`, `textarea`, `iframe`, `object`, `embed` or editable content,
-whatever the page did since. Each slot is written once per job.
+whatever the page did since: a text node's parent element is checked, and
+for an attribute its element's parent, since the element itself may be a
+`textarea`, whose placeholder is written (its text never is). Each slot is
+written once per job. A slot whose checks run into anything unexpected is
+skipped and the others still go, so the count of what was written stays
+exact.
 
 *Show original* (`RevertTranslation()`) cancels a running job and runs
 `{op: "revert"}`: every slot that still holds the translation gets back the
@@ -475,6 +492,10 @@ How it is enforced, in two layers:
   isn't asked anything. Translate gets `INITIALIZATION_ERROR` (the
   bubble's error step, page left as it was), never a crash. The footnote
   doesn't look up the device's model state in a MoltNet tab either.
+  Before it asks the driver, `TranslateManager::TranslatePage()` would add
+  the target language to the profile's language list (upstream does, so
+  the user sends it in Accept-Language); where translation is off it
+  doesn't, so MoltNet's list stays its own (a hook marked `MoltBrowser:`).
 
 Google's script stays unreachable there as well
 (`TranslatesOnDevice()` is true in every window).
@@ -540,7 +561,9 @@ Run here (no Chromium checkout):
   whole job against a fake page and backend: order and schema of the first
   batch, no model / no device / no text / model fails / unreadable page,
   halving, too many failures, throttling, Stop during a generation and
-  during a write, the deadline, a page that loses the job, a gone page, a
+  during a write, the deadline (also while a write waits for a page that
+  doesn't answer, and after a Stop that waits for one), a page that loses
+  the job, a gone page, a
   destroyed job, and `StartPageTranslation()` making no job in MoltNet, so
   the page isn't read and the backend isn't asked anything), and the new
   `web_ai_translation_unittest.cc` cases (every
@@ -550,8 +573,13 @@ Run here (no Chromium checkout):
   against declaration stand-ins with the 152 signatures.
 - `molt_page_translate_fuzzer` (stand_ins tier), 4 minutes, about 340,000
   runs, no finding; `molt_web_ai_translation_fuzzer` smoke and 1 minute.
-- `tools/webui_checks/page_translate_test.js` in jsdom (§4.1, §4.4), with
-  `npm test`, `check_embedded_js.py` and `check_no_inline_handlers.py`.
+- `tools/webui_checks/page_translate_test.js` in jsdom (§4.1, §4.4): also
+  text directly in `display:contents` elements (visible, hidden, in a shadow
+  root), a textarea's placeholder written back and restored, and a form
+  whose controls are named after every member the script uses and a
+  document whose named elements cover `body`, `head`, `documentElement` and
+  `designMode` (read and written as without them); with `npm test`,
+  `check_embedded_js.py` and `check_no_inline_handlers.py`.
 
 Needs the build machine:
 

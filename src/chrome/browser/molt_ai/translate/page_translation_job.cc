@@ -51,9 +51,8 @@ PageTranslationJob::~PageTranslationJob() {
 
 void PageTranslationJob::Start() {
   deadline_.Start(FROM_HERE, base::Minutes(kMaxTranslateMinutes),
-                  base::BindOnce(&PageTranslationJob::RequestEnd,
-                                 weak_factory_.GetWeakPtr(),
-                                 JobEnd::kTimedOut));
+                  base::BindOnce(&PageTranslationJob::OnDeadline,
+                                 weak_factory_.GetWeakPtr()));
   // First whether there is a model at all: nothing is read from the page
   // and nothing is downloaded if there isn't.
   backend_->GetDeviceFacts(base::BindOnce(&PageTranslationJob::OnDeviceFacts,
@@ -218,6 +217,7 @@ void PageTranslationJob::OnGenerationDone(web_ai::GenerationStatus status) {
 void PageTranslationJob::Write(std::vector<SlotWrite> writes) {
   writing_ = true;
   const size_t asked = writes.size();
+  writing_asked_ = asked;
   page_->Run(BuildApplyScript(request_id_, writes),
              base::BindOnce(&PageTranslationJob::OnWritten,
                             weak_factory_.GetWeakPtr(), asked));
@@ -225,6 +225,7 @@ void PageTranslationJob::Write(std::vector<SlotWrite> writes) {
 
 void PageTranslationJob::OnWritten(size_t asked, base::Value result) {
   writing_ = false;
+  writing_asked_ = 0;
   const std::optional<size_t> written =
       ParseApplyResult(result, request_id_, asked);
   if (!written) {
@@ -255,6 +256,25 @@ void PageTranslationJob::RequestEnd(JobEnd end) {
     generation_ = 0;
   }
   Finish(end);
+}
+
+void PageTranslationJob::OnDeadline() {
+  if (finished_) {
+    return;
+  }
+  if (!writing_) {
+    RequestEnd(JobEnd::kTimedOut);
+    return;
+  }
+  // A write the page hasn't answered (its renderer is busy or hung) doesn't
+  // hold the job past its deadline: it ends now, as stopped if Stop() was
+  // waiting for that write. The write may still land, so its slots count as
+  // written: the report then offers "Show original", which puts back only
+  // what was written.
+  writing_ = false;
+  written_slots_ += writing_asked_;
+  writing_asked_ = 0;
+  Finish(pending_end_.value_or(JobEnd::kTimedOut));
 }
 
 void PageTranslationJob::Finish(JobEnd end) {

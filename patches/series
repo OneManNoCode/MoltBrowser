@@ -211,6 +211,9 @@ extensions/browser/extensions_browser_client.h.patch
 extensions/browser/permissions/active_tab_permission_granter.cc.patch
 net/base/features.cc.patch
 net/dns/host_resolver_manager.cc.patch
+net/http/http_network_session.cc.patch
+net/http/http_network_session.h.patch
+net/socket/connect_job.h.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch

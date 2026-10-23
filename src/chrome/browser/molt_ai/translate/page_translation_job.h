@@ -74,7 +74,8 @@ class PageTranslationJob {
   void Start();
   // Ends the job as soon as what is in flight lands: the running
   // generation is cancelled, a write already sent to the page is waited
-  // for (so the count of what was written is exact).
+  // for (so the count of what was written is exact), up to the job's
+  // deadline.
   void Stop();
 
   // The id the job's state has in the page's isolated world.
@@ -92,6 +93,8 @@ class PageTranslationJob {
   void Progress();
   // Ends now, or once the write in flight lands.
   void RequestEnd(JobEnd end);
+  // kMaxTranslateMinutes are up: ends now, also while a write is in flight.
+  void OnDeadline();
   void Finish(JobEnd end);
   void ReportDone(JobResult result);
 
@@ -112,6 +115,8 @@ class PageTranslationJob {
   // The backend's id of the running generation (0: none).
   uint64_t generation_ = 0;
   bool writing_ = false;
+  // The slots the write in flight asked for.
+  size_t writing_asked_ = 0;
   std::optional<JobEnd> pending_end_;
   int failed_in_a_row_ = 0;
   int throttled_ = 0;

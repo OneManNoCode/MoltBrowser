@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/translate/core/browser/translate_manager.cc b/components/translate/core/browser/translate_manager.cc
-index 0b6955177ae25341c42a182c0efd9af8896ab4c0..f8d89b81bab5752158db1fa82d3c88d82f8c43fd 100644
+index 0b6955177ae25341c42a182c0efd9af8896ab4c0..660df41f0cd4044fe37f6fbf50643756ebe48bdc 100644
 --- a/components/translate/core/browser/translate_manager.cc
 +++ b/components/translate/core/browser/translate_manager.cc
 @@ -162,8 +162,11 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
@@ -42,7 +42,21 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..f8d89b81bab5752158db1fa82d3c88d8
    std::unique_ptr<TranslatePrefs> translate_prefs(
        translate_client_->GetTranslatePrefs());
    const std::string& source_language = language_state_.source_language();
-@@ -399,6 +407,13 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
+@@ -365,7 +373,12 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
+   // their choice, they can remove it from the list, and they'll send that
+   // language in the Accept-Language header, giving servers a chance to serve
+   // them pages in that language.
+-  AddTargetLanguageToAcceptLanguages(target_lang);
++  // MoltBrowser: not where page translation is off (MoltNet windows): the
++  // driver translates nothing there, and that profile's languages stay
++  // MoltNet's own.
++  if (!translate_driver_->TranslationOff()) {
++    AddTargetLanguageToAcceptLanguages(target_lang);
++  }
+ 
+   // Translation can be kicked by context menu against unsupported languages.
+   // Unsupported language strings should be replaced with
+@@ -399,6 +412,13 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
  
    GetActiveTranslateMetricsLogger()->LogTranslationStarted(translation_type);
  
@@ -56,7 +70,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..f8d89b81bab5752158db1fa82d3c88d8
    TranslateScript* script = TranslateDownloadManager::GetInstance()->script();
    DCHECK(script != nullptr);
  
-@@ -820,6 +835,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
+@@ -820,6 +840,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
    FilterForHrefTranslate(&decision, translate_prefs, page_language_code);
    FilterForPredefinedTarget(&decision, translate_prefs, page_language_code);
  
@@ -71,7 +85,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..f8d89b81bab5752158db1fa82d3c88d8
    return decision;
  }
  
-@@ -857,15 +880,25 @@ void TranslateManager::FilterIsTranslatePossible(
+@@ -857,15 +885,25 @@ void TranslateManager::FilterIsTranslatePossible(
          TriggerDecision::kDisabledDoesntNeedTranslation);
    }
  
@@ -99,7 +113,7 @@ index 0b6955177ae25341c42a182c0efd9af8896ab4c0..f8d89b81bab5752158db1fa82d3c88d8
        !::google_apis::HasAPIKeyConfigured()) {
      // Without an API key, translate won't work, so don't offer to translate in
      // the first place. Leave kOfferTranslateEnabled on, though, because that
-@@ -954,7 +987,10 @@ void TranslateManager::FilterAutoTranslate(
+@@ -954,7 +992,10 @@ void TranslateManager::FilterAutoTranslate(
          metrics::TranslateEventProto::AUTO_TRANSLATION_BY_PREF);
      GetActiveTranslateMetricsLogger()->LogTriggerDecision(
          TriggerDecision::kAutomaticTranslationByPref);

@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/utility/on_device_model/BUILD.gn b/content/utility/on_device_model/BUILD.gn
-index 717631385e4d35f04fcd5c2b6528b2508be73242..35a8e6c50d3c091d74f4242118c1710fbce3c57f 100644
+index 717631385e4d35f04fcd5c2b6528b2508be73242..aae86cbc4e6fdbcbdd9b6f58210ee6fc10444d9e 100644
 --- a/content/utility/on_device_model/BUILD.gn
 +++ b/content/utility/on_device_model/BUILD.gn
-@@ -19,10 +19,18 @@ source_set("on_device_model_sandbox_init") {
+@@ -19,10 +19,19 @@ source_set("on_device_model_sandbox_init") {
      deps += [ "//services/on_device_model/ml" ]
    }
    if (is_linux || is_chromeos) {
@@ -18,6 +18,7 @@ index 717631385e4d35f04fcd5c2b6528b2508be73242..35a8e6c50d3c091d74f4242118c1710f
 +      "molt_gpu_inference_sandbox_linux.h",
 +    ]
      deps += [
++      ":molt_gpu_inference_sandbox_policy",
        "//content/common",
        "//gpu/config",
        "//sandbox/policy",
@@ -27,3 +28,28 @@ index 717631385e4d35f04fcd5c2b6528b2508be73242..35a8e6c50d3c091d74f4242118c1710f
      ]
    }
    if (!is_fuchsia) {
+@@ -33,3 +42,24 @@ source_set("on_device_model_sandbox_init") {
+     ]
+   }
+ }
++
++if (is_linux || is_chromeos) {
++  # MoltBrowser: what the GPU broker of the inference service may open
++  # (docs/design/SANDBOXED_INFERENCE.md 11.4). Standard library only.
++  source_set("molt_gpu_inference_sandbox_policy") {
++    sources = [
++      "molt_gpu_inference_sandbox_policy_linux.cc",
++      "molt_gpu_inference_sandbox_policy_linux.h",
++    ]
++  }
++
++  # MoltBrowser: part of //chrome/browser/molt_ai/test:molt_ai_unittests.
++  source_set("molt_unit_tests") {
++    testonly = true
++    sources = [ "molt_gpu_inference_sandbox_policy_linux_unittest.cc" ]
++    deps = [
++      ":molt_gpu_inference_sandbox_policy",
++      "//testing/gtest",
++    ]
++  }
++}

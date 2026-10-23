@@ -142,10 +142,10 @@
    "details": null,
    "doc": "",
    "evidence": [
-    "all: 50 frames, 50 IP, 0 malformed",
+    "all: 74 frames, 74 IP, 0 malformed",
     "firewall log: 12 frames",
     "Tor connections: 2 frames",
-    "loopback packets: 22"
+    "loopback packets: 34"
    ],
    "group": "harness",
    "id": "harness.capture",
@@ -299,6 +299,19 @@
    "id": "identity.separate",
    "status": "PASS",
    "title": "Separate identity: cookies don't cross, and go with the last window"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.2-\u00a71.4, \u00a74 steps 6 and 7",
+   "evidence": [
+    "identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared",
+    "new_identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared",
+    "new_identity, session 1 -> 2: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared"
+   ],
+   "group": "identity",
+   "id": "identity.session_circuits",
+   "status": "PASS",
+   "title": "A site visited again in a new MoltNet session (after the last window closed, after New Identity) uses new SOCKS credentials, so new circuits"
   },
   {
    "details": null,
@@ -2361,7 +2374,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 108,
+  "PASS": 109,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2931,8 +2944,8 @@
  "traffic": {
   "capture_stats": {
    "all": {
-    "decoded": 50,
-    "frames": 50,
+    "decoded": 74,
+    "frames": 74,
     "linktypes": [
      276
     ],
@@ -2950,7 +2963,7 @@
     "non_ip": 0,
     "truncated_file": false
    },
-   "loopback_packets": 22,
+   "loopback_packets": 34,
    "tor": {
     "decoded": 2,
     "frames": 2,
@@ -3222,6 +3235,7 @@
     "client_port": 52000,
     "command": 1,
     "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "2d711642b726b044",
     "port": 80,
     "server_port": 9150,
     "test": "onion_http",
@@ -3232,6 +3246,7 @@
     "client_port": 52001,
     "command": 1,
     "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "password_tag": "2d711642b726b044",
     "port": 443,
     "server_port": 9150,
     "test": "onion_http",
@@ -3242,6 +3257,7 @@
     "client_port": 52005,
     "command": 1,
     "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "2d711642b726b044",
     "port": 8443,
     "server_port": 9150,
     "test": "cert_fetch",
@@ -3252,6 +3268,7 @@
     "client_port": 52006,
     "command": 1,
     "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "2d711642b726b044",
     "port": 80,
     "server_port": 9150,
     "test": "cert_fetch",
@@ -3262,6 +3279,7 @@
     "client_port": 52007,
     "command": 1,
     "host": "aia-kkkkkk1212.moltleak.test",
+    "password_tag": "2d711642b726b044",
     "port": 80,
     "server_port": 9150,
     "test": "cert_fetch",
@@ -3272,6 +3290,7 @@
     "client_port": 52008,
     "command": 1,
     "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "password_tag": "2d711642b726b044",
     "port": 8443,
     "server_port": 9150,
     "test": "cert_fetch_b",
@@ -3282,6 +3301,7 @@
     "client_port": 52009,
     "command": 1,
     "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "2d711642b726b044",
     "port": 80,
     "server_port": 9150,
     "test": "cert_fetch_b",
@@ -3292,6 +3312,7 @@
     "client_port": 52010,
     "command": 1,
     "host": "aia-kkkkkk1212.moltleak.test",
+    "password_tag": "2d711642b726b044",
     "port": 80,
     "server_port": 9150,
     "test": "cert_fetch",
@@ -3302,6 +3323,7 @@
     "client_port": 52002,
     "command": 1,
     "host": "anchor-cccccc3333.moltleak.test",
+    "password_tag": "2d711642b726b044",
     "port": 443,
     "server_port": 9150,
     "test": "dns_prefetch",
@@ -3312,6 +3334,7 @@
     "client_port": 52003,
     "command": 1,
     "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "2d711642b726b044",
     "port": 80,
     "server_port": 9150,
     "test": "sandboxed_a",
@@ -3322,11 +3345,78 @@
     "client_port": 52004,
     "command": 1,
     "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "password_tag": "2d711642b726b044",
     "port": 443,
     "server_port": 9150,
     "test": "sandboxed_b",
     "ts": 1760000079.3,
     "username": "opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]"
+   },
+   {
+    "client_port": 52011,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "2d711642b726b044",
+    "port": 80,
+    "server_port": 9150,
+    "test": "phase:identity",
+    "ts": 1760000082.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52012,
+    "command": 1,
+    "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "password_tag": "2d711642b726b044",
+    "port": 443,
+    "server_port": 9150,
+    "test": "phase:identity",
+    "ts": 1760000083.0,
+    "username": "https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion"
+   },
+   {
+    "client_port": 52013,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "adfa2b24c2d924fe",
+    "port": 80,
+    "server_port": 9150,
+    "test": "phase:identity",
+    "ts": 1760000086.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52014,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "adfa2b24c2d924fe",
+    "port": 80,
+    "server_port": 9150,
+    "test": "phase:new_identity",
+    "ts": 1760000091.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52015,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "44d6a8a73eddb284",
+    "port": 80,
+    "server_port": 9150,
+    "test": "phase:new_identity",
+    "ts": 1760000093.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52016,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "password_tag": "b1d3eb8f32936fa9",
+    "port": 80,
+    "server_port": 9150,
+    "test": "phase:new_identity",
+    "ts": 1760000097.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
    }
   ],
   "tor_connections": 2,
