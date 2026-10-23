@@ -84,10 +84,16 @@ if [ "$USE_DOCKER" = true ]; then
   # --- Docker-based build ---
   echo "[1/4] Building via Docker..."
   DOCKER_IMG="moltbrowser-linux"
+  # Always build and run the image as linux/amd64, like
+  # build/docker/build-linux.sh: depot_tools' prebuilt binaries are x86_64
+  # (Rosetta on Apple Silicon), and the container must be the one that
+  # script builds in.
+  PLATFORM_FLAG="--platform=linux/amd64"
 
   # Build Docker image if needed
-  if [ "$(docker images -q $DOCKER_IMG 2>/dev/null)" = "" ]; then
+  if [ "$(docker images -q "$DOCKER_IMG" 2>/dev/null)" = "" ]; then
     docker build \
+      "$PLATFORM_FLAG" \
       --build-arg BUILD_UID="$(id -u)" \
       --build-arg BUILD_GID="$(id -g)" \
       -t "$DOCKER_IMG" \
@@ -95,7 +101,8 @@ if [ "$USE_DOCKER" = true ]; then
       "$ROOT_DIR"
   fi
 
-  DOCKER_ARGS=(--rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser)
+  DOCKER_ARGS=("$PLATFORM_FLAG" --rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser
+               -e HOME=/tmp/builder)
 
   if [ "$SKIP_BUILD" = false ]; then
     docker run "${DOCKER_ARGS[@]}" "$DOCKER_IMG" bash -c \
