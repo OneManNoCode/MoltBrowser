@@ -233,7 +233,9 @@ struct HttpAuthStaticNetworkContextParams {
   // service's (browser-wide) HttpAuthDynamicParams allow, and Negotiate's
   // canonical-name lookup is off. Set for MoltNet's network contexts only
   // (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h).
-  bool molt_basic_and_digest_auth_only = false;
+  // [MinVersion] keeps the generated one-argument constructor, so callers
+  // that pass allow_default_credentials positionally still compile.
+  [MinVersion=1] bool molt_basic_and_digest_auth_only = false;
 };
 
 struct NetworkContextFilePaths {
