@@ -128,6 +128,8 @@ DEFINES = [
     "CPPGC_ENABLE_LARGER_CAGE", "CPPGC_SLIM_WRITE_BARRIER",
     # llama.cpp public config
     "GGML_USE_CPU",
+    # third_party/webrtc:common_inherited_config (Linux, in Chromium)
+    "WEBRTC_CHROMIUM_BUILD", "WEBRTC_POSIX", "WEBRTC_LINUX",
 ]
 
 CFLAGS = [
