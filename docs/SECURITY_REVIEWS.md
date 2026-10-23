@@ -30,7 +30,7 @@ tested with the standalone stand-in harnesses (gtest, ASan/UBSan,
 `-fno-exceptions`) and mutants, and with new leak-kit cases checked against
 its recorded sample run.
 
-**Findings.** 8: 4 medium, 4 low. Fixed: 3 of the medium and 2 of the low.
+**Findings.** 9: 4 medium, 5 low. Fixed: 3 of the medium and 3 of the low.
 
 **Fixed.**
 
@@ -43,6 +43,8 @@ its recorded sample run.
   opens: the regular profile's "Always allow" exemptions are no longer read.
 - Pages served sandboxed (opaque top-level origins) get per-site Tor
   circuits.
+- MoltNet pages start at 100% zoom and never take the regular profile's
+  zoom levels, also with fingerprinting protection switched off.
 - The Tor control connection waits with `poll()` instead of `select()` on
   POSIX, and frames replies and asynchronous events separately.
 

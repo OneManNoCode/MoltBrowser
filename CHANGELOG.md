@@ -140,8 +140,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - MoltNet hardening after an adversarial review of its isolation
   (`docs/SECURITY_REVIEWS.md`): New Identity finishes the old identity and
   waits for Tor to confirm new circuits before opening its window, MoltNet
-  pages always ask before opening an external application, and sandboxed
-  pages get their own Tor circuits.
+  pages always ask before opening an external application, sandboxed
+  pages get their own Tor circuits, and MoltNet never takes the regular
+  profile's zoom levels.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
