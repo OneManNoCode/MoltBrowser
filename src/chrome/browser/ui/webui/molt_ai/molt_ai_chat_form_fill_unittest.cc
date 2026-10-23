@@ -498,6 +498,18 @@ TEST(ChatFormFillTest, TheSummaryCantHideOrReorderText) {
   ASSERT_EQ(out.decision, ReplyDecision::kAct);
   EXPECT_EQ(DescribeFormFill(out.action, obs),
             "Fill 1 field: input[email] \"Em\xEF\xBF\xBD" "ail\" = \"a\"");
+  // The planner's wider set (agents/hidden_chars.h), the same everywhere:
+  // a soft hyphen, a line separator, a variation selector and a tag
+  // character are shown too.
+  const AgentAction wide = FillOk(
+      R"({"reason":"r","action":"FILL_FORM","fields":[)"
+      R"({"target":"e2","text":"a­b c️d󠁁e"}]})");
+  EXPECT_EQ(DescribeFormFill(wide, FormObservation()),
+            "Fill 1 field: input[email] \"Email\" = \"a\xEF\xBF\xBD"
+            "b\xEF\xBF\xBD"
+            "c\xEF\xBF\xBD"
+            "d\xEF\xBF\xBD"
+            "e\"");
 }
 
 TEST(ChatFormFillTest, EveryFillAsksFirst) {

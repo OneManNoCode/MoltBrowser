@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -83,8 +84,15 @@ std::string OneLine(std::string_view s, size_t max_chars) {
   return out;
 }
 
+// What the user reads in a proposal: one line, and the characters that
+// reorder or hide text shown as U+FFFD (hidden_chars.h), as in a form
+// fill's or a site tool's card.
+std::string Shown(std::string_view s, size_t max_chars) {
+  return hidden_chars::ShowHidden(OneLine(s, max_chars));
+}
+
 std::string Quoted(std::string_view s, size_t max_chars) {
-  return "\"" + OneLine(s, max_chars) + "\"";
+  return "\"" + Shown(s, max_chars) + "\"";
 }
 
 // `button "Log in"`, `input[search] "Search"`: the observation's own words.
@@ -93,7 +101,7 @@ std::string ElementName(const ObservedElement& e) {
   if (!e.input_type.empty())
     s += "[" + e.input_type + "]";
   if (!e.label.empty())
-    s += " \"" + e.label + "\"";
+    s += " \"" + hidden_chars::ShowHidden(e.label) + "\"";
   return s;
 }
 
@@ -367,7 +375,7 @@ std::string DescribeProposal(const AgentAction& action,
                              const Observation& observation) {
   switch (action.type) {
     case ActionType::kNavigate:
-      return "Open " + OneLine(action.url, kMaxShownUrlChars);
+      return "Open " + Shown(action.url, kMaxShownUrlChars);
     case ActionType::kSearch:
       return "Search the web for " +
              Quoted(action.query, kMaxShownTextChars);

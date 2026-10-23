@@ -103,8 +103,9 @@ struct ParsedPlan {
 // "goal" and "done_when"; each a string within its cap in characters, not
 // blank, without control characters (\n and \t included: one line each).
 // Characters that reorder or hide text (C1 controls, bidi controls,
-// zero-width characters, U+2028 / U+2029, U+FEFF) become U+FFFD, and the
-// ends are trimmed, so the user and the model read the same visible text.
+// zero-width characters, U+2028 / U+2029, U+FEFF, ...: hidden_chars.h)
+// become U+FFFD, and the ends are trimmed, so the user and the model read
+// the same visible text.
 ParsedPlan ParsePlan(std::string_view json);
 
 enum class PlanDecision {

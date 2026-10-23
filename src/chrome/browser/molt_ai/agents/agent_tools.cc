@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 
 namespace molt_ai {
 namespace agent_tools {
@@ -121,37 +122,11 @@ std::string OneLine(std::string_view raw, size_t max_chars) {
   return cut + kEllipsis;
 }
 
-// Length in bytes of a character that reorders or hides text at |s|[i],
-// or 0: U+061C, U+180E, U+200B-U+200F, U+202A-U+202E, U+2060-U+2064,
-// U+2066-U+2069, U+FEFF (as the chat's form fill shows them).
-size_t HiddenCharAt(std::string_view s, size_t i) {
-  auto byte = [&](size_t k) {
-    return i + k < s.size() ? static_cast<unsigned char>(s[i + k]) : 0;
-  };
-  const unsigned char b0 = byte(0);
-  const unsigned char b1 = byte(1);
-  const unsigned char b2 = byte(2);
-  if (b0 == 0xD8 && b1 == 0x9C)
-    return 2;
-  if (b0 == 0xE1 && b1 == 0xA0 && b2 == 0x8E)
-    return 3;
-  if (b0 == 0xE2 && b1 == 0x80 &&
-      ((b2 >= 0x8B && b2 <= 0x8F) || (b2 >= 0xAA && b2 <= 0xAE))) {
-    return 3;
-  }
-  if (b0 == 0xE2 && b1 == 0x81 &&
-      ((b2 >= 0xA0 && b2 <= 0xA4) || (b2 >= 0xA6 && b2 <= 0xA9))) {
-    return 3;
-  }
-  if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF)
-    return 3;
-  return 0;
-}
-
 // A model-written string as the user reads it in the step trace and the
 // approval prompt: on one line (C0 and C1 controls and DEL become spaces),
-// characters that reorder or hide text shown as U+FFFD, and '"' and '\'
-// escaped, so the quotes around it can't be closed early.
+// the other characters that reorder or hide text (hidden_chars.h) shown as
+// U+FFFD, and '"' and '\' escaped, so the quotes around it can't be closed
+// early.
 std::string Visible(std::string_view s) {
   std::string out;
   out.reserve(s.size() + 2);
@@ -165,7 +140,7 @@ std::string Visible(std::string_view s) {
                static_cast<unsigned char>(s[i + 1]) <= 0x9F) {
       out += ' ';  // U+0080-U+009F
       i += 2;
-    } else if (const size_t n = HiddenCharAt(s, i)) {
+    } else if (const size_t n = hidden_chars::HiddenCharAt(s, i)) {
       out += kReplacement;
       i += n;
     } else {

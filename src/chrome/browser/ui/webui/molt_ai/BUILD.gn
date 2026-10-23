@@ -107,6 +107,9 @@ source_set("chat_form_fill") {
   ]
   deps = [
     "//base",
+
+    # Characters that reorder or hide text, shown in the summary.
+    "//chrome/browser/molt_ai/agents:hidden_chars",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//url",
   ]

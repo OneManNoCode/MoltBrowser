@@ -831,6 +831,34 @@ TEST(ChatActionsTest, DescribesProposalsInTheBrowsersWords) {
             "No page action");
 }
 
+TEST(ChatActionsTest, ProposalsShowHiddenCharacters) {
+  // Typed text, a page label and a URL: characters that reorder or hide
+  // text are shown as U+FFFD (agents/hidden_chars.h), as in a form fill's
+  // or a site tool's card, so what the user approves is what runs.
+  base::ListValue l;
+  l.Append(Entry("#q", "input", "search", "Se\xE2\x80\xAE" "arch"));
+  const Observation o = ObservationOf(std::move(l));
+  ParsedAction type = agent_actions::ParseAction(
+      R"({"reason":"r","action":"TYPE","target":"e1",)"
+      R"("text":"moc.live‮@ada\u0085x y"})",
+      o, kChatActions);
+  ASSERT_TRUE(type.action);
+  EXPECT_EQ(DescribeProposal(*type.action, o),
+            "Type \"moc.live\xEF\xBF\xBD@ada\xEF\xBF\xBDx\xEF\xBF\xBDy\" into "
+            "input[search] \"Se\xEF\xBF\xBD" "arch\"");
+  ParsedAction click = agent_actions::ParseAction(
+      R"({"reason":"r","action":"CLICK","target":"e1"})", o, kChatActions);
+  ASSERT_TRUE(click.action);
+  EXPECT_EQ(DescribeProposal(*click.action, o),
+            "Click input[search] \"Se\xEF\xBF\xBD" "arch\"");
+  ParsedAction open = agent_actions::ParseAction(
+      R"({"reason":"r","action":"NAVIGATE","url":"https://a.example/⁦x"})",
+      o, kChatActions);
+  ASSERT_TRUE(open.action);
+  EXPECT_EQ(DescribeProposal(*open.action, o),
+            "Open https://a.example/\xEF\xBF\xBDx");
+}
+
 TEST(ChatActionsTest, DescriptionsAreOneShortLine) {
   const Observation o = SampleObservation();
   AgentAction a = ParseOk(R"({"reason":"r","action":"TYPE","target":"e2",)"

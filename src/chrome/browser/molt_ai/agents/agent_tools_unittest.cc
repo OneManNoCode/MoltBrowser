@@ -1018,6 +1018,21 @@ TEST(AgentToolsTest, ShownValuesCannotHideOrCloseTheirQuotes) {
             "c\xEF\xBF\xBD"
             "d\xEF\xBF\xBD"
             "e\"");
+  // The planner's wider set (hidden_chars.h), as everywhere else: a soft
+  // hyphen, a line separator, a Hangul filler, a variation selector and a
+  // tag character.
+  ASSERT_EQ(Read(tool,
+                 "{\"m\":\"a\\u00adb\\u2028c\\u3164d\\ufe0fe\\udb40\\udc41f\"}",
+                 &out),
+            ArgumentsError::kNone);
+  EXPECT_EQ(out.text,
+            "m = \"a\xEF\xBF\xBD"
+            "b\xEF\xBF\xBD"
+            "c\xEF\xBF\xBD"
+            "d\xEF\xBF\xBD"
+            "e\xEF\xBF\xBD"
+            "f\"");
+  EXPECT_EQ(VisibleText("x\xE2\x80\xA9y\"z"), "x\xEF\xBF\xBDy\\\"z");
 }
 
 // ---------------------------------------------------------------------------

@@ -42,7 +42,20 @@ source_set("agent_tools") {
 
   public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
 
-  deps = [ "//base" ]
+  deps = [
+    ":hidden_chars",
+    "//base",
+  ]
+}
+
+# The characters that reorder, hide or break text, shown the same way in
+# everything the agents put before the user: site-tool approvals, the
+# plan, the chat's proposals and form fills. Std-only.
+source_set("hidden_chars") {
+  sources = [
+    "hidden_chars.cc",
+    "hidden_chars.h",
+  ]
 }
 
 # The AI chat's page actions: when to ask, the decision prompt, the
@@ -62,7 +75,10 @@ source_set("chat_actions") {
     "//url",
   ]
 
-  deps = [ "//base" ]
+  deps = [
+    ":hidden_chars",
+    "//base",
+  ]
 }
 
 # The web agent's planner: the plan's schema and strict parser, what to do
@@ -78,7 +94,10 @@ source_set("agent_plan") {
   # PlanSteps and ModelReply.
   public_deps = [ ":agent_actions" ]
 
-  deps = [ "//base" ]
+  deps = [
+    ":hidden_chars",
+    "//base",
+  ]
 }
 
 # The web agent's prompt: the rules and the turn, as one raw prompt or as
@@ -143,6 +162,7 @@ source_set("unit_tests") {
     "agent_tools_unittest.cc",
     "agent_vision_unittest.cc",
     "chat_actions_unittest.cc",
+    "hidden_chars_unittest.cc",
   ]
   deps = [
     ":agent_actions",
@@ -151,6 +171,7 @@ source_set("unit_tests") {
     ":agent_tools",
     ":agent_vision",
     ":chat_actions",
+    ":hidden_chars",
     "//base",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",

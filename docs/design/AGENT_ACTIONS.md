@@ -692,7 +692,8 @@ prompt is byte for byte what it was.
   annotated the tool `readOnlyHint: true`, it isn't a `<form>` tool, and it
   takes no payment card or one-time code. The chip is the agent's own
   (`agent-confirm`), with the browser's text and every argument whole
-  (characters that hide or reorder text shown as U+FFFD, quotes escaped):
+  (characters that hide or reorder text shown as U+FFFD, the set of
+  §2.8.2 in `agents/hidden_chars.h`; quotes escaped):
   `Run the site's tool "add_to_cart" on https://shop.example — it may
   change something there, with id = "A1"; qty = 2`; a frame's tool names
   its frame: `Run the site's tool "add_to_cart" in the frame
@@ -987,7 +988,9 @@ U+2029, U+FEFF, the soft hyphen U+00AD, the Hangul fillers U+115F, U+1160,
 U+3164 and U+FFA0, the variation selectors U+FE00-U+FE0F and
 U+E0100-U+E01EF, and the tag characters U+E0000-U+E007F, which can spell a
 sentence nobody sees) become U+FFFD, one each, and spaces are trimmed from
-the ends, so the user and the model read the same visible text. The grammar refuses an empty
+the ends, so the user and the model read the same visible text. The set is
+`agents/hidden_chars.h`, which the site tools' approvals (§2.7.9) and the
+chat's cards (§4.2, §4.7, §4.9) share. The grammar refuses an empty
 string but not one of spaces, nor control characters written as `\u`
 escapes; the parser refuses both.
 
@@ -1721,8 +1724,10 @@ short extra request, and that request reuses §2 rather than a new format.
    (`CheckProposal`, §4.4). A refused one ends with its reason. Otherwise
    the page gets `{id, verb, summary, reason}`: `summary` is the
    browser's own description (`Click button "Log in"`,
-   `Type "cats" into input[search] "Search"`, `Open https://...`), and
-   `reason` what must be approved first, if anything.
+   `Type "cats" into input[search] "Search"`, `Open https://...`; typed
+   text, labels and URLs with characters that reorder or hide text shown
+   as U+FFFD, `agents/hidden_chars.h`), and `reason` what must be
+   approved first, if anything.
 5. **Asking.** Ask first (the default, and every new chat): a chip with
    the summary and Allow / Deny for every proposal except SCROLL. Auto: it
    runs at once, unless there is a reason, which shows a chip in both
@@ -1865,8 +1870,9 @@ and `HandleProposeFormFill`:
    (`MayRun` needs the user's Allow for that reason). The summary is
    `DescribeFormFill`: every field and its whole value on one line, with
    characters that reorder or hide text (bidi controls, zero-width
-   characters, U+FEFF) shown as U+FFFD, so what the user approves is what
-   is typed (`DescribeProposal` shortens values to 80 characters).
+   characters, U+FEFF and the rest of `agents/hidden_chars.h`, §2.8.2)
+   shown as U+FFFD, so what the user approves is what is typed
+   (`DescribeProposal` shortens values to 80 characters).
 6. **Running.** Allow sends `runChatProposal(id, true)`, as for any
    proposal (§4.2, 6): the same document in the same window, probed and
    checked again, then agent_actions' fill script in an isolated world,
@@ -1919,6 +1925,15 @@ All of them now use the helpers the page actions use:
 
 `HandleOpenMoltSettings` keeps `FindBrowserWithTab` on purpose: it tells a
 chat in a tab from the side panel.
+
+**One set of hidden characters.** The site tools' approvals
+(`agent_tools.cc`), the plan (`agent_plan.cc`) and the form fill's summary
+(`molt_ai_chat_form_fill.cc`) each had their own copy of the characters
+they show as U+FFFD, and the plan's covered more. As consistency
+hardening, all three, and the chat's proposal summaries, now use one
+helper, `agents/hidden_chars.{h,cc}`, with the plan's set and one test
+table (`hidden_chars_unittest.cc`: every range at both ends and its
+neighbours). C1 controls stay spaces in the one-line forms, as before.
 
 ### 4.9 Site tools in the chat's proposals
 
