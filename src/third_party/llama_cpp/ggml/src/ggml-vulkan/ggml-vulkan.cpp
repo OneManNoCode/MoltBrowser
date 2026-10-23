@@ -769,7 +769,12 @@ static void ggml_vk_create_pipeline_func(vk_device& device, vk_pipeline& pipelin
 #endif
 
     try {
+#if defined(GGML_VULKAN_MOLTBROWSER)
+        // MoltBrowser: the device's pipeline cache (null when it has none).
+        pipeline->pipeline = device->device.createComputePipeline(device->pipeline_cache, compute_pipeline_create_info).value;
+#else
         pipeline->pipeline = device->device.createComputePipeline(VK_NULL_HANDLE, compute_pipeline_create_info).value;
+#endif
     } catch (const vk::SystemError& e) {
         std::cerr << "ggml_vulkan: compute pipeline creation failed for " << pipeline->name << ": " << e.what() << std::endl;
         throw;
@@ -3987,6 +3992,13 @@ void ggml_vk_load_shaders(vk_device& device, vk_pipeline requested) {
     }
 }
 
+#if defined(GGML_VULKAN_MOLTBROWSER)
+// MoltBrowser: the pipeline cache for a new device, seeded with what the
+// inference service set for ggml device |idx| (chromium/ggml-vulkan-moltbrowser.cpp).
+// Null if none could be created. Never throws.
+vk::PipelineCache ggml_vk_moltbrowser_create_pipeline_cache(vk::Device device, size_t idx);
+#endif
+
 vk_device ggml_vk_get_device(size_t idx) {
     VK_LOG_DEBUG("ggml_vk_get_device(" << idx << ")");
 
@@ -4767,6 +4779,9 @@ vk_device ggml_vk_get_device(size_t idx) {
             .setPEnabledExtensionNames(device_extensions);
         device_create_info.setPNext(&device_features2);
         device->device = device->physical_device.createDevice(device_create_info);
+#if defined(GGML_VULKAN_MOLTBROWSER)
+        device->pipeline_cache = ggml_vk_moltbrowser_create_pipeline_cache(device->device, idx);
+#endif
 
         if (device->device_fault) {
             // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
@@ -16479,6 +16494,12 @@ vk_device_struct::~vk_device_struct() {
         ggml_vk_destroy_pipeline(device, pl);
     }
     all_pipelines.clear();
+
+#if defined(GGML_VULKAN_MOLTBROWSER)
+    if (pipeline_cache) {
+        device.destroyPipelineCache(pipeline_cache);
+    }
+#endif
 
     device.destroyDescriptorSetLayout(dsl);
 

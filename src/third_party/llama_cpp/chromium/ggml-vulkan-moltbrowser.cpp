@@ -13,6 +13,8 @@
 #endif
 
 #include <cstdio>
+#include <cstring>
+#include <mutex>
 #include <vector>
 
 #include "third_party/llama_cpp/chromium/ggml-vulkan-moltbrowser.h"
@@ -69,9 +71,11 @@ extern "C" bool ggml_vk_moltbrowser_get_device_info(
 
     vk::PhysicalDeviceProperties2 props;
     vk::PhysicalDeviceDriverProperties driver;
+    vk::PhysicalDeviceIDProperties ids;
     // Stays 0 (unknown) if the driver doesn't fill it in.
     driver.driverID = static_cast<vk::DriverId>(0);
     props.pNext = &driver;
+    driver.pNext = &ids;
     devices[index].getProperties2(&props);
 
     size_t free_bytes = 0;
@@ -89,7 +93,110 @@ extern "C" bool ggml_vk_moltbrowser_get_device_info(
     info->memory_free = free_bytes;
     std::snprintf(info->name, sizeof(info->name), "%s",
                   props.properties.deviceName.data());
+    static_assert(sizeof(info->driver_uuid) == VK_UUID_SIZE);
+    static_assert(sizeof(info->pipeline_cache_uuid) == VK_UUID_SIZE);
+    std::memcpy(info->driver_uuid, ids.driverUUID.data(), VK_UUID_SIZE);
+    std::memcpy(info->pipeline_cache_uuid,
+                props.properties.pipelineCacheUUID.data(), VK_UUID_SIZE);
     return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+namespace {
+
+// What ggml_vk_moltbrowser_set_pipeline_cache_data() set, per ggml device,
+// until the device is created.
+std::mutex g_pipeline_cache_mutex;
+std::vector<uint8_t> g_pipeline_cache_data[GGML_VK_MAX_DEVICES];
+
+}  // namespace
+
+// Declared in the MoltBrowser block of ggml-vulkan.cpp; called by
+// ggml_vk_get_device() right after it created the device. Uses vulkan.hpp's
+// result-returning overloads only (they don't throw).
+vk::PipelineCache ggml_vk_moltbrowser_create_pipeline_cache(vk::Device device,
+                                                            size_t idx) {
+  std::vector<uint8_t> data;
+  {
+    std::lock_guard<std::mutex> lock(g_pipeline_cache_mutex);
+    if (idx < GGML_VK_MAX_DEVICES) {
+      data.swap(g_pipeline_cache_data[idx]);
+    }
+  }
+  vk::PipelineCacheCreateInfo info;
+  info.initialDataSize = data.size();
+  info.pInitialData = data.empty() ? nullptr : data.data();
+  vk::PipelineCache cache;
+  if (device.createPipelineCache(&info, nullptr, &cache) ==
+      vk::Result::eSuccess) {
+    return cache;
+  }
+  // Drivers create an empty cache from data they can't use; one that fails
+  // instead gets no data.
+  info.initialDataSize = 0;
+  info.pInitialData = nullptr;
+  if (!data.empty() && device.createPipelineCache(&info, nullptr, &cache) ==
+                           vk::Result::eSuccess) {
+    return cache;
+  }
+  return VK_NULL_HANDLE;
+}
+
+extern "C" bool ggml_vk_moltbrowser_set_pipeline_cache_data(int device,
+                                                            const void* data,
+                                                            size_t size) {
+  if (device < 0 || device >= GGML_VK_MAX_DEVICES || (size && !data)) {
+    return false;
+  }
+  try {
+    if (vk_instance.devices[device]) {
+      return false;  // created already: its cache is fixed
+    }
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    std::vector<uint8_t> copy(bytes, bytes + size);
+    std::lock_guard<std::mutex> lock(g_pipeline_cache_mutex);
+    g_pipeline_cache_data[device].swap(copy);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+extern "C" bool ggml_vk_moltbrowser_get_pipeline_cache_data(int device,
+                                                            void* data,
+                                                            size_t* size) {
+  if (!size || device < 0 || device >= GGML_VK_MAX_DEVICES) {
+    return false;
+  }
+  try {
+    const vk_device& dev = vk_instance.devices[device];
+    if (!dev || !dev->pipeline_cache) {
+      return false;
+    }
+    // vkGetPipelineCacheData: VK_INCOMPLETE when |data| is too small.
+    return dev->device.getPipelineCacheData(dev->pipeline_cache, size, data) ==
+           vk::Result::eSuccess;
+  } catch (...) {
+    return false;
+  }
+}
+
+extern "C" bool ggml_vk_moltbrowser_device_lost(int device) {
+  if (device < 0 || device >= GGML_VK_MAX_DEVICES) {
+    return false;
+  }
+  try {
+    const vk_device& dev = vk_instance.devices[device];
+    if (!dev || !dev->fence) {
+      return false;
+    }
+    // The C entry point: vulkan.hpp's getFenceStatus() throws on a lost
+    // device.
+    return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetFenceStatus(
+               static_cast<VkDevice>(dev->device),
+               static_cast<VkFence>(dev->fence)) == VK_ERROR_DEVICE_LOST;
   } catch (...) {
     return false;
   }

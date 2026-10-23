@@ -22,8 +22,10 @@
 #ifndef THIRD_PARTY_LLAMA_CPP_CHROMIUM_LLAMA_GUARD_H_
 #define THIRD_PARTY_LLAMA_CPP_CHROMIUM_LLAMA_GUARD_H_
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -68,6 +70,8 @@ struct GpuDevice {
   GpuDevice& operator=(const GpuDevice&);
 
   ggml_backend_dev_t device = nullptr;
+  // Its index among ggml-vulkan's devices.
+  int index = -1;
   uint32_t vendor_id = 0;
   uint32_t device_id = 0;
   // VkPhysicalDeviceType and VkDriverId values (driver_id 0 = unknown).
@@ -78,6 +82,10 @@ struct GpuDevice {
   uint64_t memory_total = 0;
   uint64_t memory_free = 0;
   std::string name;
+  // VkPhysicalDeviceIDProperties::driverUUID and
+  // VkPhysicalDeviceProperties::pipelineCacheUUID.
+  std::array<uint8_t, 16> driver_uuid{};
+  std::array<uint8_t, 16> pipeline_cache_uuid{};
 };
 
 // True when this build has llama.cpp's Vulkan backend (GN switch
@@ -91,6 +99,24 @@ bool VulkanBuilt() noexcept;
 // (llama_model_params::devices, mtmd_context_params::device). Returns false
 // without Vulkan in this build, without a loader, or without a device.
 bool ListVulkanDevices(std::vector<GpuDevice>* devices) noexcept;
+
+// The Vulkan pipeline cache of a device from ListVulkanDevices
+// (GpuDevice::index; docs/design/SANDBOXED_INFERENCE.md section 11.12).
+// SetPipelineCacheData seeds it: call before the model is loaded on the
+// device (its pipelines are created with that cache, compiled on first use);
+// false without Vulkan, for a bad index, or once the device exists.
+bool SetPipelineCacheData(int device, const std::vector<uint8_t>& data) noexcept;
+// The cache's size (vkGetPipelineCacheData); nullopt without one.
+std::optional<size_t> PipelineCacheSize(int device) noexcept;
+// Its data, if at most |max_bytes|; false otherwise or on an error.
+bool GetPipelineCacheData(int device,
+                          size_t max_bytes,
+                          std::vector<uint8_t>* data) noexcept;
+
+// Whether the device exists and was lost (a GPU reset, a driver fault):
+// tells a load that failed because the GPU went away from one that ran out
+// of device memory.
+bool DeviceLost(int device) noexcept;
 
 }  // namespace molt_llama
 
