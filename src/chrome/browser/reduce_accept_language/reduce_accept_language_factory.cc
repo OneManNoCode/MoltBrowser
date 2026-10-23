@@ -5,6 +5,7 @@
 #include "chrome/browser/reduce_accept_language/reduce_accept_language_factory.h"
 
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 #include "components/reduce_accept_language/browser/reduce_accept_language_service.h"
@@ -45,7 +46,11 @@ ReduceAcceptLanguageFactory::BuildServiceInstanceForBrowserContext(
     content::BrowserContext* context) const {
   Profile* profile = Profile::FromBrowserContext(context);
   PrefService* prefs = profile->GetPrefs();
+  // MoltBrowser: MoltNet negotiates from the same generic language list as
+  // Incognito, the one its Accept-Language header already carries
+  // (molt_net_incognito_parity.h).
   return std::make_unique<reduce_accept_language::ReduceAcceptLanguageService>(
       HostContentSettingsMapFactory::GetForProfile(context), prefs,
-      profile->IsPrimaryOTRProfileWithRegularParent());
+      profile->IsPrimaryOTRProfileWithRegularParent() ||
+          molt_ai::tor::IsMoltNetProfile(profile));
 }

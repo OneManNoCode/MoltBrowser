@@ -20,6 +20,7 @@
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
 #include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
 #include "chrome/browser/media/webrtc/webrtc_rtp_dump_handler.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
@@ -863,7 +864,11 @@ bool WebRtcLoggingController::IsWebRtcTextLogAllowed(
 
   const Profile* profile = Profile::FromBrowserContext(browser_context);
   DCHECK(profile);
-  if (profile->IsPrimaryOTRProfileWithRegularParent()) {
+  // MoltBrowser: no text logs in MoltNet either, as in Incognito. The log
+  // would be written to the regular profile's folder and uploaded outside
+  // Tor (molt_net_incognito_parity.h).
+  if (profile->IsPrimaryOTRProfileWithRegularParent() ||
+      molt_ai::tor::IsMoltNetProfile(profile)) {
     return false;
   }
   const PrefService* prefs = profile->GetPrefs();

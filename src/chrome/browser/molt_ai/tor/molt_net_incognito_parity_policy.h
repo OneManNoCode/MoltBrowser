@@ -47,7 +47,10 @@ enum class PrivateModeProfile {
   // A MoltNet (Tor) profile.
   kMoltNet,
   // Every other off-the-record profile: the guest session's, DevTools
-  // browser contexts, captive-portal, media-router and test profiles.
+  // browser contexts, captive-portal, media-router and test profiles, and
+  // (from Chromium 156) an Enterprise Isolated Mode session, the primary
+  // off-the-record profile when a policy turns that mode on instead of
+  // Incognito (Profile::IsEnterpriseIsolatedModeProfile()).
   kOtherOffTheRecord,
 };
 
