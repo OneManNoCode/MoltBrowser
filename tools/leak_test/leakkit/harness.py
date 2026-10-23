@@ -1100,6 +1100,9 @@ class Run(object):
             res_b = self.read_identity(sid, bases['BASE_B_HTTPS'], 'read=1')
             data['canvas_b'] = res_b.get('canvas')
             old_ctx = self.moltnet[2]
+            # From here on, connections belong to the next MoltNet session
+            # (identity.session_circuits).
+            data['session_marks'] = [_now()]
             self.cdp.call('Target.closeTarget', {'targetId': self.moltnet[0]})
             time.sleep(4)
             self.moltnet = None
@@ -1197,6 +1200,7 @@ class Run(object):
             old = self.moltnet
             data['old_context'] = old[2]
             before = set(t['targetId'] for t in self.moltnet_pages())
+            data['session_marks'] = [_now()]
             data['result'] = self.molt_net_call('moltnet.newIdentity',
                                                 timeout=self.opts.open_timeout)
             first_done = _now()
@@ -1221,6 +1225,7 @@ class Run(object):
                 # most every 10 s, so its window may only open once Tor has
                 # switched, about 10 s after the first one.
                 before = set(t['targetId'] for t in self.moltnet_pages())
+                data['session_marks'].append(_now())
                 data['second_result'] = self.molt_net_call(
                     'moltnet.newIdentity', timeout=self.opts.open_timeout)
                 data['second_after_first_s'] = round(_now() - first_done, 1)
