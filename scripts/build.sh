@@ -143,12 +143,23 @@ echo ""
 # bundle Linux tor through the .deb in package-linux.sh and Windows
 # tor through the NSIS script in package-win.sh (those are wired in
 # separately to keep this build script platform-clean).
+#
+# A development build only warns when a helper can't be bundled. A release
+# build (MOLT_RELEASE_BUILD=1, set by the release scripts and workflows)
+# fails instead: the app would ship without that helper.
+bundling_failed() {
+  if [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+    echo "[build] ERROR: $1 bundling failed; a release can't ship without it."
+    exit 1
+  fi
+}
 if [ "${PLATFORM:-auto}" = "macos" ] || \
    { [ "${PLATFORM:-auto}" = "auto" ] && [ "$(uname)" = "Darwin" ]; }; then
   APP="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
   if [ -d "$APP" ]; then
     echo "=== Bundling Tor ==="
     "$SCRIPT_DIR/bundle-tor.sh" --app "$APP" || {
+      bundling_failed tor
       echo "[build] WARNING: tor bundling failed. The app builds fine"
       echo "[build] but MoltNet won't work (no system-tor fallback)."
     }
@@ -156,6 +167,7 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
     # Phase Tier-5: bundle whisper.cpp for the voice-mode mic button.
     echo "=== Bundling Whisper ==="
     "$SCRIPT_DIR/bundle-whisper.sh" --app "$APP" || {
+      bundling_failed whisper
       echo "[build] WARNING: whisper bundling failed. /transcribeAudio"
       echo "[build] will fall back to a system-installed whisper-cli."
     }
@@ -163,10 +175,14 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
     # Tier-3 polish: bundle tesseract for image-only-PDF OCR fallback.
     echo "=== Bundling Tesseract ==="
     "$SCRIPT_DIR/bundle-tesseract.sh" --app "$APP" || {
+      bundling_failed tesseract
       echo "[build] WARNING: tesseract bundling failed. /pdf OCR"
       echo "[build] fallback will use system tesseract or be unavailable."
     }
     echo ""
+  elif [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+    echo "[build] ERROR: no $APP to bundle the helpers into."
+    exit 1
   fi
 fi
 

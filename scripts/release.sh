@@ -18,7 +18,12 @@
 #
 #   # Universal binary (arm64 + x64)
 #   ./scripts/release.sh --version 0.1.0 --build 1 --universal \
-#     --identity "..." --notarize --upload
+#     --identity "..." --team-id TEAM_ID --notarize --upload
+#
+# The app must have its helpers bundled (Tor, whisper, tesseract): the build
+# step runs scripts/build.sh, which bundles them; with --skip-build, build
+# with scripts/build.sh first. The DMG is dist/MoltBrowser-macOS-arm64.dmg
+# (scripts/lib-release-names.sh), the name the in-app updater downloads.
 #
 # Copyright 2025 GenEye AI Labs Inc. Licensed under GPLv3.
 
@@ -72,6 +77,11 @@ done
 if [ -z "$VERSION" ] || [ -z "$BUILD_NUM" ]; then
   echo "ERROR: --version and --build are required"
   echo "Run: $0 --help"
+  exit 1
+fi
+# Notarization needs both; say so now rather than ship an un-notarized DMG.
+if [ "$DO_NOTARIZE" = true ] && { [ -z "$SIGN_IDENTITY" ] || [ -z "$TEAM_ID" ]; }; then
+  echo "ERROR: --notarize needs --identity and --team-id"
   exit 1
 fi
 
@@ -146,7 +156,9 @@ if [ "$SKIP_BUILD" = false ]; then
          "$REPO_DIR/chromium/src/chrome/app/theme/chromium/mac/app.icns"
     fi
 
-    autoninja -C "$BUILD_DIR" chrome
+    # Compiles chrome and bundles Tor, whisper and tesseract into the app
+    # (a bundling failure fails a release build).
+    bash "$SCRIPT_DIR/build.sh" --platform macos
   fi
   echo "  Build complete"
 else
@@ -204,6 +216,20 @@ else
     exit 1
   fi
 fi
+
+# The bundled helpers (scripts/build.sh bundles them after the compile).
+# Without them MoltNet, voice input and OCR don't work: macOS has no system
+# fallback for tor. Never ship an app that lacks one.
+for h in tor/tor whisper/whisper-cli ocr/tesseract; do
+  if [ ! -x "$APP_PATH/Contents/Resources/$h" ]; then
+    echo ""
+    echo "  ❌ FATAL: $APP_PATH/Contents/Resources/$h is missing."
+    echo "     Build with ./scripts/build.sh, which bundles the helpers, or run"
+    echo "     scripts/bundle-tor.sh, bundle-whisper.sh and bundle-tesseract.sh"
+    echo "     with --app \"$APP_PATH\". DO NOT SHIP THIS BUILD."
+    exit 1
+  fi
+done
 
 # The Mach-O files of the helpers bundled in Resources/ (tor, tesseract,
 # whisper), NUL-separated.
