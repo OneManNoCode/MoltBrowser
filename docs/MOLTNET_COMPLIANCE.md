@@ -673,7 +673,7 @@ help. The last column names the report's checks.
 | 5 | automated | `identity.fail_closed`, `identity.no_restore` |
 | 6 | automated | `identity.separate` |
 | 7 | automated (exit IP only online) | `identity.new_identity` |
-| 8 | automated | `identity.per_site_circuits` |
+| 8 | automated | `identity.per_site_circuits`, `identity.sandboxed_circuits`, `identity.cert_fetch_circuits` |
 | 9 | partial | `identity.override_refused` |
 | 10 | automated (offline, against Tor's consensus) | `identity.relays_real` |
 | 11 | partial | `net.onion_http.*`, `net.onion_https.*` |

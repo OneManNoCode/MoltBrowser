@@ -96,14 +96,20 @@ class SampleRun(unittest.TestCase):
         self.assertEqual([(e['dst'], e['dport']) for e in
                           self.traffic['escaped']], [('203.0.113.99', 80)])
         socks = self.traffic['socks']
-        self.assertEqual(len(socks), 5)
-        self.assertEqual(socks[2]['host'], 'anchor-cccccc3333.moltleak.test')
-        self.assertEqual(socks[2]['test'], 'dns_prefetch')
-        self.assertEqual([s['test'] for s in socks[3:]],
+        self.assertEqual(len(socks), 11)
+        self.assertEqual(socks[8]['host'], 'anchor-cccccc3333.moltleak.test')
+        self.assertEqual(socks[8]['test'], 'dns_prefetch')
+        self.assertEqual([s['test'] for s in socks[9:]],
                          ['sandboxed_a', 'sandboxed_b'])
+        # The certificate tests: by window, or by the nonce in the AIA host
+        # (the second site's certificate names the first test's nonce).
+        self.assertEqual([(s['test'], s['port']) for s in socks[2:8]],
+                         [('cert_fetch', 8443), ('cert_fetch', 80),
+                          ('cert_fetch', 80), ('cert_fetch_b', 8443),
+                          ('cert_fetch_b', 80), ('cert_fetch', 80)])
         # Loopback packets appear twice in `any` captures; counted once.
         self.assertEqual(self.traffic['capture_stats']['loopback_packets'],
-                         10)
+                         22)
 
     def test_verdicts(self):
         rep = report.build(sample.OUT)
@@ -122,6 +128,7 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['regular.onion_interstitial'], 'PASS')
         self.assertEqual(status['identity.per_site_circuits'], 'PASS')
         self.assertEqual(status['identity.sandboxed_circuits'], 'PASS')
+        self.assertEqual(status['identity.cert_fetch_circuits'], 'PASS')
         self.assertEqual(status['identity.new_identity'], 'PASS')
         self.assertEqual(status['identity.fail_closed'], 'PASS')
         self.assertEqual(status['uniform.nav.hardwareConcurrency'], 'FAIL')
@@ -196,6 +203,46 @@ class IdentityChecks(unittest.TestCase):
         one = report._sandboxed_circuit_check(self.socks(
             ('sandboxed_a', a, 'opaque')))
         self.assertEqual(one['status'], report.SKIP)
+
+    def cert_run(self, *streams):
+        """`streams`: (seconds, host, port, username)."""
+        manifest = {'tests': [
+            {'id': 'cert_fetch', 'start': 10.0, 'settle_end': 18.0},
+            {'id': 'cert_fetch_b', 'start': 18.0, 'settle_end': 26.0},
+            {'id': 'onion_http', 'start': 2.0, 'settle_end': 8.0}]}
+        tr = {'socks': [{'ts': ts, 'host': h, 'port': p, 'username': u}
+                        for ts, h, p, u in streams]}
+        return report._cert_fetch_circuit_check(manifest, tr)
+
+    def test_cert_fetch_circuits(self):
+        a, b = 'a' * 55 + 'd.onion', 'b' * 55 + 'd.onion'
+        pages = ((3, a, 80, 'http://' + a), (11, a, 8443, 'https://' + a),
+                 (19, b, 8443, 'https://' + b))
+        ok = self.cert_run(*pages + (
+            (12, a, 80, 'opaque (1)'), (12.1, 'aia-x.test', 80, 'opaque (2)'),
+            (20, a, 80, 'opaque (3)'), (20.1, 'aia-x.test', 80, 'opaque (4)')))
+        self.assertEqual(ok['status'], report.PASS)
+        # Keyed by the AIA URL's site: the page's username, shared by both.
+        by_site = self.cert_run(*pages + (
+            (12, a, 80, 'http://' + a), (20, a, 80, 'http://' + a)))
+        self.assertEqual(by_site['status'], report.FAIL)
+        self.assertIn('shared', ' '.join(by_site['evidence']))
+        self.assertIn('pages use', ' '.join(by_site['evidence']))
+        # One key for all certificate fetches.
+        one_key = self.cert_run(*pages + (
+            (12, a, 80, 'opaque (1)'), (20, a, 80, 'opaque (1)')))
+        self.assertEqual(one_key['status'], report.FAIL)
+        # The second site's check made no request of its own.
+        cached = self.cert_run(*pages + ((12, a, 80, 'opaque (1)'),))
+        self.assertEqual(cached['status'], report.FAIL)
+        no_user = self.cert_run(*pages + ((12, a, 80, None),
+                                          (20, a, 80, 'opaque (2)')))
+        self.assertEqual(no_user['status'], report.FAIL)
+        # Not enough to judge.
+        self.assertEqual(self.cert_run(*pages)['status'], report.SKIP)
+        self.assertEqual(self.cert_run(
+            (11, a, 8443, 'https://' + a), (12, a, 80, 'opaque (1)'))[
+                'status'], report.SKIP)
 
 
 class Classification(unittest.TestCase):
@@ -399,7 +446,7 @@ class Catalog(unittest.TestCase):
                 self.assertIn(a[1], ('eq', 'in', 'lt', 'truthy', 'falsy',
                                      'all_fail'), a)
             self.assertIn(t.origin, ('http', 'https', 'https_b', 'aia',
-                                     'local'))
+                                     'aia_b', 'local'))
         self.assertEqual([s[0] for s in catalog.COMPLIANCE_STEPS],
                          list(range(1, 21)))
 

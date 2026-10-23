@@ -35,7 +35,7 @@ class LeakTest(object):
         self.id = test_id
         self.title = title
         self.page = page          # file under pages/, served at /t/<nonce>/
-        self.origin = origin      # 'http', 'https', 'https_b', 'aia'
+        self.origin = origin      # 'http', 'https', 'https_b', 'aia', 'aia_b'
         self.target = target      # 'moltnet' or 'regular'
         self.doc = doc
         self.wait = wait          # seconds to keep watching after the page
@@ -169,6 +169,14 @@ TESTS = (
         'basic.html', origin='aia', wait=8.0, expect_load=False,
         doc='MOLTNET_COMPLIANCE.md §2 (certificate fetches through Tor)',
         via_tor_paths=['/canary/aia-{nonce}.crt']),
+    # The same certificate on a second site, so the browser fetches the
+    # same AIA URL for it; read with cert_fetch by report.py's
+    # identity.cert_fetch_circuits check.
+    LeakTest(
+        'cert_fetch_b', 'Certificate fetches for a second site (the same '
+                        'AIA URL)',
+        'basic.html', origin='aia_b', wait=8.0, expect_load=False,
+        doc='MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8'),
     # Two pages their servers sandbox (opaque origins) on two sites; read
     # by report.py's identity.sandboxed_circuits check.
     LeakTest(
@@ -281,8 +289,9 @@ COMPLIANCE_STEPS = (
      'second New Identity waits for Tor to switch circuits; the exit IP '
      'check needs the public internet'),
     (8, 'Per-site circuits', 'automated',
-     'different SOCKS usernames per site (sandboxed pages included), read '
-     'from the loopback capture and Tor\'s circuit list'),
+     'different SOCKS usernames per site (sandboxed pages included), a '
+     'SOCKS username of its own for each certificate fetch, read from the '
+     'loopback capture and Tor\'s circuit list'),
     (9, 'Overrides are refused', 'partial',
      '--proxy-server blocks MoltNet; the extension-set proxy case is manual'),
     (10, 'The relays are real', 'automated',

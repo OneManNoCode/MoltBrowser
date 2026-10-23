@@ -138,6 +138,9 @@ def manifest():
         'tests': [
             test('onion_http', 'aaaaaa1111', 10, 15, 0,
                  results={'loaded': True, 'secure_context': False}),
+            # The certificate without its intermediate, on two sites.
+            test('cert_fetch', 'kkkkkk1212', 15, 17.5, 21),
+            test('cert_fetch_b', 'llllll3434', 17.5, 20, 22),
             test('webrtc', 'bbbbbb2222', 20, 30, 2, results={
                 'pc': {'error': 'NotSupportedError', 'message':
                        'No PeerConnection handler can be created, perhaps '
@@ -294,7 +297,20 @@ def captures():
                 (77, 52003, 'opaque null [internally: (11AA) derived from '
                  'http://' + ONION_A + ']', ONION_A, 80),
                 (79.3, 52004, 'opaque null [internally: (22BB) derived from '
-                 'https://' + ONION_B + ']', ONION_B, 443))
+                 'https://' + ONION_B + ']', ONION_B, 443),
+                # Certificate tests: each page on its site (port 8443), and
+                # each site's fetches of the same two AIA URLs, every fetch
+                # with a one-off (anonymous opaque) key of its own.
+                (15.2, 52005, 'https://' + ONION_A, ONION_A, 8443),
+                (15.8, 52006, 'opaque null [internally: (33CC) anonymous]',
+                 ONION_A, 80),
+                (15.9, 52007, 'opaque null [internally: (44DD) anonymous]',
+                 'aia-kkkkkk1212.' + CANARY, 80),
+                (17.7, 52008, 'https://' + ONION_B, ONION_B, 8443),
+                (18.3, 52009, 'opaque null [internally: (55EE) anonymous]',
+                 ONION_A, 80),
+                (18.4, 52010, 'opaque null [internally: (66FF) anonymous]',
+                 'aia-kkkkkk1212.' + CANARY, 80))
     for sec, sport, user, host, port in sessions:
         syn = g.ip('127.0.0.1', '127.0.0.1', 6, g.tcp(sport, 9150, seq=5000,
                                                       flags=0x02))
@@ -330,7 +346,13 @@ def logs():
              'port': 47321, 'first_line': 'GET / HTTP/1.1'}]),
         'logs/server.jsonl': jl([
             {'ts': t(11), 'path': '/t/aaaaaa1111/basic.html', 'status': 200,
-             'host': ONION_A, 'method': 'GET', 'scheme': 'http'}]),
+             'host': ONION_A, 'method': 'GET', 'scheme': 'http'},
+            {'ts': t(15.81), 'path': '/canary/aia-kkkkkk1212.crt',
+             'status': 204, 'host': ONION_A, 'method': 'GET',
+             'scheme': 'http'},
+            {'ts': t(18.31), 'path': '/canary/aia-kkkkkk1212.crt',
+             'status': 204, 'host': ONION_A, 'method': 'GET',
+             'scheme': 'http'}]),
         'logs/proxy.jsonl': jl([
             {'ts': t(125), 'method': 'GET', 'target': 'http://%s/x' % ONION_A,
              'host': ONION_A, 'peer': '127.0.0.1'}]),

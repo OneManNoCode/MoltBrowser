@@ -364,7 +364,8 @@ class Run(object):
         socks = support.free_port()
         services = [(os.path.join(data, 'a'), [(80, 28080), (443, 28443),
                                                (8443, 28444)]),
-                    (os.path.join(data, 'b'), [(80, 28080), (443, 28443)])]
+                    (os.path.join(data, 'b'), [(80, 28080), (443, 28443),
+                                               (8443, 28444)])]
         self.user_write('onion/torrc', support.onion_torrc(data, socks,
                                                            services))
         self.start('onion-tor', [tor, '-f', self.path('onion', 'torrc')],
@@ -393,12 +394,14 @@ class Run(object):
             return {'BASE_HTTP': 'http://' + a, 'BASE_HTTPS': 'https://' + a,
                     'BASE_B_HTTPS': 'https://' + b,
                     'BASE_AIA': 'https://%s:8443' % a,
+                    'BASE_B_AIA': 'https://%s:8443' % b,
                     'BASE_LOCAL': 'http://127.0.0.1:%d' % LOCAL_HTTP,
                     'ONION_A': a, 'ONION_B': b}
         return {'BASE_HTTP': 'http://127.0.0.1:%d' % LOCAL_HTTP,
                 'BASE_HTTPS': 'https://127.0.0.1:%d' % LOCAL_HTTPS,
                 'BASE_B_HTTPS': 'https://localhost:%d' % LOCAL_HTTPS,
                 'BASE_AIA': 'https://127.0.0.1:%d' % LOCAL_AIA,
+                'BASE_B_AIA': 'https://localhost:%d' % LOCAL_AIA,
                 'BASE_LOCAL': 'http://127.0.0.1:%d' % LOCAL_HTTP,
                 'ONION_A': self.onion['a'], 'ONION_B': self.onion['a']}
 
@@ -730,6 +733,7 @@ class Run(object):
         bases = self.bases()
         base = {'http': bases['BASE_HTTP'], 'https': bases['BASE_HTTPS'],
                 'https_b': bases['BASE_B_HTTPS'], 'aia': bases['BASE_AIA'],
+                'aia_b': bases['BASE_B_AIA'],
                 'local': bases['BASE_LOCAL']}[test.origin]
         return '%s/t/%s/%s%s' % (base, entry['nonce'], test.page, query)
 
