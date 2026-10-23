@@ -110,14 +110,8 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
-<<<<<<< src/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc (MoltBrowser)
 #include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"  // MoltBrowser
-#include "third_party/blink/renderer/modules/crypto/crypto_result_impl.h"
-||||||| upstream@pin
-#include "third_party/blink/renderer/modules/crypto/crypto_result_impl.h"
-=======
 #include "third_party/blink/renderer/modules/crypto/normalize_algorithm.h"
->>>>>>> upstream@new
 #include "third_party/blink/renderer/modules/mediastream/media_constraints_impl.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_event.h"

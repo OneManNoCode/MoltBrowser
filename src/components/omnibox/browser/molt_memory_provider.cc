@@ -30,7 +30,7 @@ constexpr int kHintRelevance = 900;
 
 MoltMemoryProvider::MoltMemoryProvider(AutocompleteProviderClient* client,
                                        AutocompleteProviderListener* listener)
-    : AutocompleteProvider(AutocompleteProvider::TYPE_BUILTIN),
+    : AutocompleteProvider(AutocompleteProvider::Type::kBuiltin),
       client_(client) {
   AddListener(listener);
 }
@@ -142,7 +142,7 @@ void MoltMemoryProvider::OnResults(MoltMemorySearch::Results results) {
 AutocompleteMatch MoltMemoryProvider::SearchRow() {
   AutocompleteMatch match(this, molt_memory::kSearchRowRelevance,
                           /*deletable=*/false,
-                          AutocompleteMatchType::NAVSUGGEST);
+                          omnibox::AutocompleteMatchType::kNavsuggest);
   match.destination_url = GURL(molt_memory::MemorySearchUrl(query_));
   match.fill_into_edit = input_.text();
   match.contents = u"Search memory for \u201C" + base::UTF8ToUTF16(query_) +
@@ -158,7 +158,7 @@ AutocompleteMatch MoltMemoryProvider::HintRow(
       this,
       allowed_to_be_default ? molt_memory::kSearchRowRelevance
                             : kHintRelevance,
-      /*deletable=*/false, AutocompleteMatchType::NAVSUGGEST);
+      /*deletable=*/false, omnibox::AutocompleteMatchType::kNavsuggest);
   match.destination_url = GURL(molt_memory::kMemoryPageUrl);
   match.fill_into_edit = std::u16string(molt_memory::kShortcutKeyword) + u" ";
   match.contents = std::u16string(molt_memory::kShortcutKeyword) +
@@ -171,7 +171,7 @@ AutocompleteMatch MoltMemoryProvider::HintRow(
 AutocompleteMatch MoltMemoryProvider::StateRow(ShortcutState state) {
   AutocompleteMatch match(this, molt_memory::kSearchRowRelevance,
                           /*deletable=*/false,
-                          AutocompleteMatchType::NAVSUGGEST);
+                          omnibox::AutocompleteMatchType::kNavsuggest);
   match.destination_url = GURL(molt_memory::kMemoryPageUrl);
   match.fill_into_edit = input_.text();
   match.contents = state == ShortcutState::kPaused
@@ -194,10 +194,10 @@ void MoltMemoryProvider::AddHitRows(const MoltMemorySearch::Results& results) {
     if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
       continue;
     }
-    // A page found in memory. HISTORY_BODY ("a past page whose contents
+    // A page found in memory. kHistoryBody ("a past page whose contents
     // match") has a page icon and no special handling.
     AutocompleteMatch match(this, row.relevance, /*deletable=*/false,
-                            AutocompleteMatchType::HISTORY_BODY);
+                            omnibox::AutocompleteMatchType::kHistoryBody);
     match.destination_url = url;
     match.allowed_to_be_default_match = false;
 

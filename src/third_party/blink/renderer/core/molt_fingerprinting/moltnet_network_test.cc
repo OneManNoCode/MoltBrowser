@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_network_values.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_task_runner.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink::molt_fingerprinting {
@@ -128,7 +129,7 @@ TEST_F(MoltNetNetworkTest, EverySiteReadsTheSameRoundedValues) {
   std::set<double> regular_downlinks;
   Pin();
   for (int i = 0; i < 40; ++i) {
-    const String host = String::Format("site%d.example", i);
+    const String host = StrCat({"site", String::Number(i), ".example"});
     EXPECT_EQ(notifier_->RoundRtt(host, notifier_->HttpRtt()), 200u) << i;
     EXPECT_EQ(notifier_->RoundMbps(host, notifier_->DownlinkThroughputMbps()),
               1.6)

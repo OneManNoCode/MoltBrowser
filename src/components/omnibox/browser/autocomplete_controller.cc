@@ -705,16 +705,10 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
     // Starter Pack engines in keyword mode only run a subset of the providers,
     // so call `ShouldRunProvider()` to determine which ones should run.
     if (!ShouldRunProvider(provider.get())) {
-<<<<<<< src/components/omnibox/browser/autocomplete_controller.cc (MoltBrowser)
-      // MoltBrowser: local-only input also ends what the others still do
-      // for earlier text, so none of them updates later (molt_local_input.h).
-      if (molt_omnibox::IsLocalOnlyInput(input_.text())) {
-        provider->Stop(AutocompleteStopReason::kInteraction);
-      }
-||||||| upstream@pin
-=======
+      // MoltBrowser: for local-only input (molt_local_input.h) this also ends
+      // what the others still do for earlier text, so none of them updates
+      // later.
       provider->Stop(AutocompleteStopReason::kClobbered);
->>>>>>> upstream@new
       continue;
     }
 
@@ -1456,27 +1450,21 @@ void AutocompleteController::InitializeSyncProviders(int provider_types) {
     providers_.push_back(
         base::MakeRefCounted<BuiltinProvider>(provider_client_.get()));
   }
-<<<<<<< src/components/omnibox/browser/autocomplete_controller.cc (MoltBrowser)
   // MoltBrowser: Add AI prompt provider for "@ai " prefix detection.
-  if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {
+  if (provider_types & static_cast<int>(AutocompleteProvider::Type::kBuiltin)) {
     auto ai_prompt_provider = base::MakeRefCounted<AiPromptProvider>();
     ai_prompt_provider_ = ai_prompt_provider.get();
     providers_.push_back(std::move(ai_prompt_provider));
   }
   // MoltBrowser: the @memory shortcut (molt_memory_provider.h).
-  if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {
+  if (provider_types & static_cast<int>(AutocompleteProvider::Type::kBuiltin)) {
     auto molt_memory_provider =
         base::MakeRefCounted<MoltMemoryProvider>(provider_client_.get(), this);
     molt_memory_provider_ = molt_memory_provider.get();
     providers_.push_back(std::move(molt_memory_provider));
   }
-  if (provider_types & AutocompleteProvider::TYPE_HISTORY_QUICK) {
-||||||| upstream@pin
-  if (provider_types & AutocompleteProvider::TYPE_HISTORY_QUICK) {
-=======
   if (provider_types &
       static_cast<int>(AutocompleteProvider::Type::kHistoryQuick)) {
->>>>>>> upstream@new
     auto history_quick_provider =
         base::MakeRefCounted<HistoryQuickProvider>(provider_client_.get());
     history_quick_provider_ = history_quick_provider.get();
