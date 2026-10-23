@@ -13,7 +13,11 @@
 // reply's status is 250, PROTOCOLINFO needs an OK reply, AUTHCHALLENGE
 // fields have their fixed sizes, ports are 1..65535 on 127.0.0.1, a GETINFO
 // value is one line); hex round-trips; SAFECOOKIE accepts exactly the
-// server hash for these inputs and nothing a byte off.
+// server hash for these inputs and nothing a byte off. Framing of a stream
+// of replies and events (CompleteReplyLength): it agrees with
+// IsCompleteReply(), a reply taken off the front is complete on its own and
+// gives the verdict the whole buffer gives, splitting always progresses,
+// and an event (IsAsyncEvent, IsNewnymAppliedEvent) is a complete reply.
 
 #include <cstddef>
 #include <cstdint>
@@ -155,6 +159,37 @@ void CheckReply(std::string_view reply) {
   }
 }
 
+void CheckFraming(std::string_view input) {
+  const size_t length = control::CompleteReplyLength(input);
+  CHECK(length <= input.size());
+  CHECK((length > 0) == control::IsCompleteReply(input))
+      << "framing and IsCompleteReply() disagree";
+  if (length > 0) {
+    CHECK(input[length - 1] == '\n') << "a reply that doesn't end a line";
+    const std::string_view first = input.substr(0, length);
+    CHECK(control::CompleteReplyLength(first) == length);
+    CHECK(control::GetReplyStatus(first) == control::GetReplyStatus(input));
+    CHECK(control::IsOkReply(first) == control::IsOkReply(input));
+    CHECK(control::IsAsyncEvent(first) == control::IsAsyncEvent(input));
+  }
+  if (control::IsAsyncEvent(input)) {
+    CHECK(length > 0);
+  }
+  if (control::IsNewnymAppliedEvent(input)) {
+    CHECK(control::IsAsyncEvent(input));
+    CHECK(length == input.size());
+  }
+  // Taking replies off the front of a stream ends.
+  std::string_view rest = input;
+  size_t pieces = 0;
+  while (const size_t n = control::CompleteReplyLength(rest)) {
+    CHECK(n <= rest.size());
+    rest.remove_prefix(n);
+    CHECK(++pieces <= input.size());
+  }
+  CHECK(!control::IsCompleteReply(rest));
+}
+
 void CheckHex(std::string_view input) {
   const std::string hex = control::HexEncode(input);
   CHECK(hex.size() == 2 * input.size());
@@ -271,6 +306,7 @@ void CheckControlPortFile(std::string_view contents) {
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const std::string_view input(reinterpret_cast<const char*>(data), size);
   CheckReply(input);
+  CheckFraming(input);
   CheckControlPortFile(input);
   CheckHex(input.substr(0, 256));
   CheckSafeCookie(input);
