@@ -57,64 +57,14 @@ export function getHtml(this: PowerBookmarksListHeaderElement) {
         ?aria-pressed="${this.editing}"
         @click="${this.onBulkEditClick_}">
     </cr-icon-button>
+    <cr-icon-button id="importButton"
+        iron-icon="cr:file-download"
+        title="$i18n{tooltipImportBookmarks}"
+        aria-label="$i18n{tooltipImportBookmarks}"
+        @click="${this.onImportClick_}">
+    </cr-icon-button>
   </div>
-<<<<<<< src/chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list_header.html.ts (MoltBrowser)
-  <cr-icon-button slot="buttons" class="sort-menu-button"
-      iron-icon="${this.webuiRoundedIconsEnabled_
-          ? 'sp:filter-list'
-          : 'sp:filter-list-old'}"
-      title="$i18n{tooltipOrganize}"
-      aria-label="$i18n{sortMenuA11yLabel}"
-      aria-description="${this.activeSortType_.label}"
-      @click="${this.onShowSortMenuClick_}">
-  </cr-icon-button>
-  <cr-icon-button id="viewButton" slot="buttons"
-      iron-icon="${this.getViewButtonIcon_()}"
-      title="${this.getViewButtonTooltip_()}"
-      aria-label="${this.getViewButtonA11yLabel_()}"
-      @click="${this.onViewToggleClick_}">
-  </cr-icon-button>
-  <cr-icon-button id="editButton" slot="buttons" class="icon-edit"
-      ?disabled="${this.disableEdit}"
-      title="$i18n{tooltipEdit}"
-      aria-label="$i18n{editBookmarkListA11yLabel}"
-      ?aria-pressed="${this.editing}"
-      @click="${this.onBulkEditClick_}">
-  </cr-icon-button>
-  <cr-icon-button id="importButton" slot="buttons"
-      iron-icon="cr:file-download"
-      title="$i18n{tooltipImportBookmarks}"
-      aria-label="$i18n{tooltipImportBookmarks}"
-      @click="${this.onImportClick_}">
-  </cr-icon-button>
-</sp-heading>
-||||||| upstream@pin
-  <cr-icon-button slot="buttons" class="sort-menu-button"
-      iron-icon="${this.webuiRoundedIconsEnabled_
-          ? 'sp:filter-list'
-          : 'sp:filter-list-old'}"
-      title="$i18n{tooltipOrganize}"
-      aria-label="$i18n{sortMenuA11yLabel}"
-      aria-description="${this.activeSortType_.label}"
-      @click="${this.onShowSortMenuClick_}">
-  </cr-icon-button>
-  <cr-icon-button id="viewButton" slot="buttons"
-      iron-icon="${this.getViewButtonIcon_()}"
-      title="${this.getViewButtonTooltip_()}"
-      aria-label="${this.getViewButtonA11yLabel_()}"
-      @click="${this.onViewToggleClick_}">
-  </cr-icon-button>
-  <cr-icon-button id="editButton" slot="buttons" class="icon-edit"
-      ?disabled="${this.disableEdit}"
-      title="$i18n{tooltipEdit}"
-      aria-label="$i18n{editBookmarkListA11yLabel}"
-      ?aria-pressed="${this.editing}"
-      @click="${this.onBulkEditClick_}">
-  </cr-icon-button>
-</sp-heading>
-=======
 </div>
->>>>>>> upstream@new
 
 <cr-action-menu id="sortMenu" auto-close-on-focusout>
   ${this.sortTypes_.map((item, index) => html`
