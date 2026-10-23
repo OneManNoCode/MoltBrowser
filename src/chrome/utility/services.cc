@@ -8,7 +8,13 @@
 #include <utility>
 
 #include "build/build_config.h"
+<<<<<<< src/chrome/utility/services.cc (MoltBrowser)
 #include "chrome/services/molt_ai/document_parser/document_parser_impl.h"
+||||||| upstream@pin
+=======
+#include "chrome/common/request_header_integrity/buildflags.h"
+#include "chrome/services/file_util/buildflags.h"
+>>>>>>> upstream@new
 #include "chrome/services/speech/buildflags/buildflags.h"
 #include "components/on_device_translation/buildflags/buildflags.h"
 #include "components/paint_preview/buildflags/buildflags.h"
@@ -34,7 +40,7 @@
 #include "ui/accessibility/accessibility_features.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "chrome/services/readaloud/read_aloud_playback_controller.h"
+#include "chrome/services/readaloud/read_aloud_playback_controller.h"  // nogncheck
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_WIN)
@@ -85,7 +91,7 @@
 
 #if (BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && \
      !BUILDFLAG(IS_ANDROID)) ||                      \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(ENABLE_EXTRACTORS)
 #include "chrome/services/file_util/file_util_service.h"  // nogncheck
 #endif
 
@@ -96,7 +102,12 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS) || BUILDFLAG(IS_ANDROID)
 #include "chrome/services/media_gallery_util/media_parser_factory.h"
-#include "chrome/services/media_gallery_util/public/mojom/media_parser.mojom.h"
+#include "components/media_gallery_util/public/mojom/media_parser.mojom.h"
+#endif
+
+#if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+#include "chrome/common/request_header_integrity/platform_runtime.mojom.h"  // nogncheck
+#include "chrome/services/platform_runtime/platform_runtime_service_impl.h"  // nogncheck
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) || \
@@ -311,7 +322,7 @@ auto RunScreenAIServiceFactory(
 
 #if (BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && \
      !BUILDFLAG(IS_ANDROID)) ||                      \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(ENABLE_EXTRACTORS)
 auto RunFileUtil(
     mojo::PendingReceiver<chrome::mojom::FileUtilService> receiver) {
   return std::make_unique<FileUtilService>(std::move(receiver));
@@ -335,6 +346,15 @@ auto RunMediaParserFactory(
 #if BUILDFLAG(IS_CHROMEOS)
 auto RunPdfService(mojo::PendingReceiver<pdf::mojom::PdfService> receiver) {
   return std::make_unique<pdf::PdfService>(std::move(receiver));
+}
+#endif
+
+#if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+auto RunPlatformRuntimeService(
+    mojo::PendingReceiver<
+        request_header_integrity::mojom::PlatformRuntimeService> receiver) {
+  return std::make_unique<platform_runtime::PlatformRuntimeServiceImpl>(
+      std::move(receiver));
 }
 #endif
 
@@ -466,9 +486,13 @@ auto RunBabelOrcaTachyonParsingService(
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_ANDROID)
-auto RunReadAloudPlaybackControllerFactory(
-    mojo::PendingReceiver<read_aloud::mojom::ReadAloudPlaybackControllerFactory>
-        receiver) {
+std::unique_ptr<readaloud::ReadAloudPlaybackController>
+RunReadAloudPlaybackControllerFactory(
+    mojo::PendingReceiver<
+        read_aloud::mojom::ReadAloudPlaybackControllerFactory> receiver) {
+  if (!features::IsReadAloudNativeEnabled()) {
+    return nullptr;
+  }
   return std::make_unique<readaloud::ReadAloudPlaybackController>(
       std::move(receiver));
 }
@@ -531,7 +555,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
 
 #if (BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && \
      !BUILDFLAG(IS_ANDROID)) ||                      \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(ENABLE_EXTRACTORS)
   services.Add(RunFileUtil);
 #endif
 
@@ -546,6 +570,10 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
 
 #if BUILDFLAG(IS_CHROMEOS)
   services.Add(RunPdfService);
+#endif
+
+#if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+  services.Add(RunPlatformRuntimeService);
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) || \

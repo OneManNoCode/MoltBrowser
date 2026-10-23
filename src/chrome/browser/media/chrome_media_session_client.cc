@@ -20,10 +20,17 @@ ChromeMediaSessionClient* ChromeMediaSessionClient::GetInstance() {
 
 bool ChromeMediaSessionClient::ShouldHideMetadata(
     content::BrowserContext* browser_context) const {
+<<<<<<< src/chrome/browser/media/chrome_media_session_client.cc (MoltBrowser)
   // MoltBrowser: the operating system's media controls don't show what a
   // MoltNet page plays either (molt_net_incognito_parity.h).
   return molt_ai::tor::GetsIncognitoProtections(
       Profile::FromBrowserContext(browser_context));
+||||||| upstream@pin
+  return Profile::FromBrowserContext(browser_context)->IsIncognitoProfile();
+=======
+  return Profile::FromBrowserContext(browser_context)
+      ->IsPrimaryOTRProfileWithRegularParent();
+>>>>>>> upstream@new
 }
 
 std::u16string ChromeMediaSessionClient::GetTitlePlaceholder() const {

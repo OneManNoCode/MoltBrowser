@@ -4,6 +4,10 @@
        referencing .grdp file or translation console pipeline breaks. -->
   <part file="omnibox_pedal_ui_strings.grdp" />
 
+  <message name="IDS_ACC_OMNIBOX_AUTOCOMPLETE_PLACEHOLDER" desc="Accessibility announcement to inform users that there are suggestions to arrow through.">
+    Press up or down arrow for auto completions. Type to autocomplete.
+  </message>
+
   <!-- Omnibox popup match descriptions. -->
   <message name="IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION" desc="Description for the default search match.">
     <ph name="ENGINE">$1<ex>Google</ex></ph> Search
@@ -70,8 +74,11 @@
       Always show <ph name="AI_ENGINE_NAME">$1<ex>AI Mode</ex></ph>
     </message>
   </if>
-  <message name="IDS_AI_MODE_OMNIBOX_PLACEHOLDER" desc="The text shown and announced, prompting the user to use the omnibox AI mode entrypoint. conditionally displayed in the Omnibox when it is focused with no input and AI Mode is enabled." formatter_data="android_java">
+  <message name="IDS_AI_MODE_OMNIBOX_PLACEHOLDER" desc="The text shown and announced, prompting the user to use the omnibox AI mode entrypoint. conditionally displayed in the Omnibox when it is focused with no input and AI Mode is enabled.">
     Press tab then enter to ask <ph name="AI_ENGINE_NAME">$1<ex>AI Mode</ex></ph>
+  </message>
+  <message name="IDS_AI_MODE_OMNIBOX_PLACEHOLDER_ANDROID" desc="The text shown and announced, prompting the user to use the omnibox AI mode entrypoint. conditionally displayed in the Omnibox when it is focused with no input and AI Mode is enabled." formatter_data="android_java">
+    <ph name="TAB_KEY">&lt;tab_key&gt; &lt;/tab_key&gt;</ph> Press tab then enter to ask <ph name="AI_ENGINE_NAME">$1<ex>AI Mode</ex></ph>
   </message>
 
   <message name="IDS_EMPTY_KEYWORD_VALUE" desc="Shown in the location bar drop down when the user enters a string that matches a chrome keyword, but they haven't entered any text following the chrome keyword">
@@ -122,6 +129,9 @@
   <message name="IDS_DANGEROUS_VERBOSE_STATE" desc="Text for the Dangerous Omnibox Verbose State. Displayed when the current page fails the malware check.">
     Dangerous
   </message>
+  <message name="IDS_SUSPICIOUS_VERBOSE_STATE" desc="Text for the Suspicious Omnibox Verbose State. Displayed when the current page is marked as a suspicious site.">
+    Suspicious
+  </message>
   <message name="IDS_OFFLINE_VERBOSE_STATE" desc="Text for the Offline Omnibox Verbose state. Displayed when the current page is loaded from a previously-downloaded cache.">
     Offline
   </message>
@@ -142,8 +152,17 @@
       <message name="IDS_OMNIBOX_NAVATTACH_FILES" desc="The text displayed in the omnibox attachments popup. When clicked - opens file picker." formatter_data="android_java">
         Files
       </message>
+      <message name="IDS_OMNIBOX_NAVATTACH_ADD_IMAGES" desc="The text displayed in the omnibox attachments popup. When clicked - opens image gallery." formatter_data="android_java">
+        Add images
+      </message>
+      <message name="IDS_OMNIBOX_NAVATTACH_ADD_FILES" desc="The text displayed in the omnibox attachments popup. When clicked - opens file picker." formatter_data="android_java">
+        Add files
+      </message>
       <message name="IDS_OMNIBOX_NAVATTACH_TABS" desc="The text displayed in the omnibox attachments popup. When clicked - opens tabs picker." formatter_data="android_java">
         Tabs
+      </message>
+      <message name="IDS_OMNIBOX_NAVATTACH_DRIVE" desc="The text displayed in the omnibox attachments popup. When clicked - opens drive file picker." formatter_data="android_java">
+        Drive
       </message>
       <message name="IDS_FUSEBOX_ADD_CURRENT_TAB" desc="The text displayed in the omnibox attachments popup. When clicked - adds the curernt tab as context." formatter_data="android_java">
         Add current tab
@@ -153,9 +172,6 @@
       </message>
       <message name="IDS_FUSEBOX_UPLOAD_FAILED" desc="The text displayed in a snackbar when an attachment fails to upload" formatter_data="android_java">
         Unable to add attachments
-      </message>
-      <message name="IDS_OMNIBOX_CREATE_IMAGE" desc="The text displayed in the omnibox attachments popup. When clicked - enables image creation." formatter_data="android_java">
-        Create image
       </message>
       <message name="IDS_OMNIBOX_EMPTY_HINT_FOR_IMAGE_GENERATION" desc="The text displayed in the omnibox when it is empty and image generation is selected." formatter_data="android_java">
         Describe your image
@@ -401,10 +417,7 @@
     Submit
   </message>
   <message name="IDS_ACC_SEND_BUTTON_SEND_TO_AI" desc="Accessibility text for the Omnibox `Send` button, announced when the user is in the AI Mode context" formatter_data="android_java">
-    Send to assistant
-  </message>
-  <message name="IDS_ACC_SEND_BUTTON_CREATE_IMAGE" desc="Accessibility text for the Omnibox `Send` button, announced when the user is in the Create Image context" formatter_data="android_java">
-    Create image
+    Send
   </message>
   <message name="IDS_ACC_REMOVE_IMAGE_ATTACHMENT" desc="Accessibility text for the remove button of image attachment, announced when the user selects an image as an attachment" formatter_data="android_java">
     Remove image attachment
@@ -415,12 +428,33 @@
   <message name="IDS_ACC_FUSEBOX_POPUP_BUTTON_SELECTED" desc="Accessibility announcement when an option in the Omnibox `Add context` popup is selected." formatter_data="android_java">
     <ph name="BUTTON_TEXT">%s<ex>AI Mode</ex></ph>, selected
   </message>
+  <message name="IDS_ACC_FUSEBOX_POPUP_TEXT_WITH_SUBTEXT" desc="Accessibility text for a button in the Omnibox `Add context` popup that has both a primary label and secondary subtext." formatter_data="android_java">
+    <ph name="TEXT">%1$s<ex>Create images</ex></ph>, <ph name="SUBTEXT">%2$s<ex>Visualize and edit</ex></ph>
+  </message>
+  <message name="IDS_FUSEBOX_MORE_OPTIONS" desc="The label and accessibility text for the More Options button in the Fusebox popup." formatter_data="android_java">
+    More options
+  </message>
+  <message name="IDS_FUSEBOX_ADD_TO_YOUR_SEARCH_HEADER" desc="Header text above the attachment options in the Fusebox popup." formatter_data="android_java">
+    Add to your search
+  </message>
+  <message name="IDS_FUSEBOX_AI_MODE_SUBTEXT" desc="Subtext displayed under the AI Mode button in the Fusebox popup." formatter_data="android_java">
+    Smarter, faster answers
+  </message>
+  <message name="IDS_FUSEBOX_CREATE_IMAGE_SUBTEXT" desc="Subtext displayed under the Create images button in the Fusebox popup." formatter_data="android_java">
+    Visualize and edit
+  </message>
+  <message name="IDS_FUSEBOX_CANVAS_SUBTEXT" desc="Subtext displayed under the Canvas button in the Fusebox popup." formatter_data="android_java">
+    Code, write, or make slides
+  </message>
 
   <!-- Accessibility labels for autocomplete match types.
        These are parameterized on the text being completed into the omnibox.
   -->
   <message name="IDS_ACC_AUTOCOMPLETE_HISTORY" desc="Text for screenreaders describing a URL from history.">
     <ph name="LOCATION_TITLE">$2<ex>The MoltBrowser Projects</ex></ph> <ph name="SHORT_URL">$1<ex>www.chromium.org</ex> location from history</ph>
+  </message>
+  <message name="IDS_ACC_AUTOCOMPLETE_HISTORY_EMBEDDINGS" desc="Text for screenreaders describing a AI match URL from history.">
+    <ph name="LOCATION_TITLE">$2<ex>The Chromium Projects</ex></ph> <ph name="SHORT_URL">$1<ex>www.chromium.org</ex>, AI best match, location from history</ph>
   </message>
   <message name="IDS_ACC_AUTOCOMPLETE_SEARCH_HISTORY" desc="Text for screenreaders describing a search from history.">
     <ph name="TEXT">$1<ex>dogs</ex></ph> search from history

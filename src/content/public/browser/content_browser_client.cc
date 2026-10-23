@@ -51,6 +51,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/responsiveness_calculator_delegate.h"
 #include "content/public/browser/security_principal.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/sms_fetcher.h"
 #include "content/public/browser/tracing_delegate.h"
 #include "content/public/browser/url_loader_request_interceptor.h"
@@ -58,6 +59,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view_delegate.h"
 #include "content/public/browser/webid/identity_request_dialog_controller.h"
+#include "content/public/browser/webid/native_idp_fetcher.h"
 #include "content/public/common/alternative_error_page_override_info.mojom.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/url_utils.h"
@@ -238,7 +240,7 @@ bool ContentBrowserClient::ShouldTreatAsFirstPartyWhenTopLevel(
 
 bool ContentBrowserClient::ShouldIgnoreSameSiteCookieRestrictionsWhenTopLevel(
     const url::Origin& top_frame_origin,
-    bool is_embedded_origin_secure) {
+    const GURL& current_url_chain_entry) {
   return false;
 }
 
@@ -430,9 +432,8 @@ bool ContentBrowserClient::IsTopChromeWebUIURL(const GURL& url) {
   return false;
 }
 
-bool ContentBrowserClient::ShouldAllowMojoJsBindingsForSite(
-    BrowserContext* browser_context,
-    const GURL& site_url) {
+bool ContentBrowserClient::ShouldAllowMojoJsBindingsForFrame(
+    RenderFrameHost& render_frame_host) {
   return false;
 }
 
@@ -647,6 +648,12 @@ bool ContentBrowserClient::AllowWorkerWebLocks(
   return true;
 }
 
+bool ContentBrowserClient::AllowWorkerWriteToClipboard(
+    const url::Origin& origin,
+    BrowserContext* browser_context) {
+  return false;
+}
+
 bool ContentBrowserClient::IsPrivacySandboxReportingDestinationAttested(
     content::BrowserContext* browser_context,
     const url::Origin& destination_origin,
@@ -655,24 +662,6 @@ bool ContentBrowserClient::IsPrivacySandboxReportingDestinationAttested(
 }
 
 
-bool ContentBrowserClient::IsSharedStorageAllowed(
-    content::BrowserContext* browser_context,
-    content::RenderFrameHost* rfh,
-    const url::Origin& top_frame_origin,
-    const url::Origin& accessing_origin,
-    std::string* out_debug_message,
-    bool* out_block_is_site_setting_specific) {
-  return false;
-}
-
-bool ContentBrowserClient::IsSharedStorageSelectURLAllowed(
-    content::BrowserContext* browser_context,
-    const url::Origin& top_frame_origin,
-    const url::Origin& accessing_origin,
-    std::string* out_debug_message,
-    bool* out_block_is_site_setting_specific) {
-  return false;
-}
 
 bool ContentBrowserClient::IsFullCookieAccessAllowed(
     content::BrowserContext* browser_context,
@@ -703,6 +692,12 @@ bool ContentBrowserClient::AreThirdPartyCookiesGenerallyAllowed(
 void ContentBrowserClient::PrewarmServiceWorkerRegistrationForDSE(
     BrowserContext* browser_context,
     ServiceWorkerContext& service_worker_context) {}
+
+blink::mojom::ScriptInjectionPolicy
+ContentBrowserClient::GetScriptInjectionPolicy(BrowserContext* browser_context,
+                                               const GURL& url) {
+  return blink::mojom::ScriptInjectionPolicy::kNone;
+}
 
 bool ContentBrowserClient::CanSendSCTAuditingReport(
     BrowserContext* browser_context) {
@@ -805,6 +800,11 @@ FeatureObserverClient* ContentBrowserClient::GetFeatureObserverClient() {
 }
 
 bool ContentBrowserClient::IsPopupBypassAllowed(
+    RenderFrameHost* render_frame_host) {
+  return false;
+}
+
+bool ContentBrowserClient::IsUnboundedElementAllowed(
     RenderFrameHost* render_frame_host) {
   return false;
 }
@@ -966,6 +966,9 @@ void ContentBrowserClient::OpenURL(
 void ContentBrowserClient::CreateThrottlesForNavigation(
     NavigationThrottleRegistry& registry) {}
 
+void ContentBrowserClient::CreateThrottlesForCommitWithoutUrlLoader(
+    NavigationThrottleRegistry& registry) {}
+
 std::vector<std::unique_ptr<CommitDeferringCondition>>
 ContentBrowserClient::CreateCommitDeferringConditionsForNavigation(
     NavigationHandle* navigation_handle,
@@ -1098,7 +1101,8 @@ void ContentBrowserClient::WillCreateURLLoaderFactory(
     bool* bypass_redirect_checks,
     bool* disable_secure_dns,
     network::mojom::URLLoaderFactoryOverridePtr* factory_override,
-    scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
+    bool is_for_network_service) {
   DCHECK(browser_context);
 }
 
@@ -1161,6 +1165,7 @@ bool ContentBrowserClient::WillCreateRestrictedCookieManager(
     bool is_service_worker,
     int process_id,
     int frame_id,
+    bool prefer_bound_cookie_context,
     mojo::PendingReceiver<network::mojom::RestrictedCookieManager>* receiver) {
   return false;
 }
@@ -1178,7 +1183,10 @@ ContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
 ContentBrowserClient::URLLoaderRequestHandler ContentBrowserClient::
     CreateURLLoaderHandlerForServiceWorkerInitiatedNavigationRequest(
         FrameTreeNodeId frame_tree_node_id,
-        const network::ResourceRequest& resource_request) {
+        const network::ResourceRequest& resource_request,
+        int64_t navigation_id,
+        scoped_refptr<base::SequencedTaskRunner>
+            navigation_response_task_runner) {
   return ContentBrowserClient::URLLoaderRequestHandler();
 }
 
@@ -1440,10 +1448,11 @@ bool ContentBrowserClient::IsBuiltinComponent(BrowserContext* browser_context,
 
 void ContentBrowserClient::StartRtcDiagnosticLogging(
     RenderFrameHost& frame_host,
+    const base::Uuid& session_id,
     bool should_upload_on_stop,
     const base::flat_map<std::string, std::string>& metadata,
-    base::OnceCallback<void(const std::string&)> callback) {
-  std::move(callback).Run(base::Uuid::GenerateRandomV4().AsLowercaseString());
+    base::OnceClosure callback) {
+  std::move(callback).Run();
 }
 
 void ContentBrowserClient::FinishRtcDiagnosticLogging(
@@ -1634,6 +1643,12 @@ void ContentBrowserClient::OnKeepaliveRequestStarted(BrowserContext*) {}
 
 void ContentBrowserClient::OnKeepaliveRequestFinished() {}
 
+void ContentBrowserClient::OnFetchKeepAliveRequestCreated(BrowserContext&) {}
+
+void ContentBrowserClient::OnFetchKeepAliveRequestDestroyed(BrowserContext&) {}
+
+void ContentBrowserClient::SuppressXSLTDeprecationBanner(RenderFrameHost*) {}
+
 #if BUILDFLAG(IS_MAC)
 bool ContentBrowserClient::SetupEmbedderSandboxParameters(
     sandbox::mojom::Sandbox sandbox_type,
@@ -1657,6 +1672,11 @@ ContentBrowserClient::CreateIdentityRequestDialogController(
 
 std::unique_ptr<DigitalIdentityProvider>
 ContentBrowserClient::CreateDigitalIdentityProvider() {
+  return nullptr;
+}
+
+std::unique_ptr<NativeIdpFetcher> ContentBrowserClient::CreateNativeIdpFetcher(
+    const url::Origin& idp_origin) {
   return nullptr;
 }
 
@@ -1710,7 +1730,7 @@ bool ContentBrowserClient::WillProvidePublicFirstPartySets() {
 
 mojom::AlternativeErrorPageOverrideInfoPtr
 ContentBrowserClient::GetAlternativeErrorPageOverrideInfo(
-    const GURL& url,
+    content::NavigationHandle& navigation_handle,
     content::RenderFrameHost* render_frame_host,
     content::BrowserContext* browser_context,
     int32_t error_code) {
@@ -1728,12 +1748,9 @@ bool ContentBrowserClient::IsFileSystemURLNavigationAllowed(
   return false;
 }
 
-#if BUILDFLAG(IS_MAC)
-std::string ContentBrowserClient::GetChildProcessSuffix(int child_flags) {
-  NOTIMPLEMENTED();
-  return std::string();
+base::FilePath ContentBrowserClient::GetChildProcessPath(int flags) {
+  return base::FilePath();
 }
-#endif
 
 bool ContentBrowserClient::AreIsolatedWebAppsEnabled(
     BrowserContext* browser_context) {
@@ -1882,6 +1899,8 @@ bool ContentBrowserClient::ShouldSuppressAXLoadComplete(RenderFrameHost* rfh) {
   return false;
 }
 
+void ContentBrowserClient::ShowCaptionSettings(RenderFrameHost* rfh) {}
+
 void ContentBrowserClient::BindAIManager(
     BrowserContext* browser_context,
     base::SupportsUserData* context_user_data,
@@ -1957,12 +1976,6 @@ void ContentBrowserClient::QueryInstalledWebAppsByManifestId(
 
 bool ContentBrowserClient::AllowNonActivatedCrossOriginPaintHolding() {
   return false;
-}
-
-bool ContentBrowserClient::ShouldDispatchPagehideDuringCommit(
-    BrowserContext* browser_context,
-    const GURL& destination_url) {
-  return true;
 }
 
 std::optional<network::CrossOriginEmbedderPolicy>

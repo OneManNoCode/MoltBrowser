@@ -96,9 +96,9 @@ Scrollbar::Scrollbar(ScrollableArea* scrollable_area,
       injected_gesture_scroll_begin_(false),
       scrollbar_manipulation_in_progress_on_cc_thread_(false),
       style_source_(style_source) {
-  theme_.RegisterScrollbar(*this);
+  theme_->RegisterScrollbar(*this);
   int thickness =
-      theme_.ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
+      theme_->ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
   frame_rect_ = gfx::Rect(0, 0, thickness, thickness);
   current_pos_ = ScrollableAreaCurrentPos();
 }
@@ -187,9 +187,8 @@ void Scrollbar::OffsetDidChange(mojom::blink::ScrollType scroll_type) {
   int old_thumb_position = GetTheme().ThumbPosition(*this);
   current_pos_ = position;
 
-  ScrollbarPart invalid_parts =
-      GetTheme().PartsToInvalidateOnThumbPositionChange(*this, old_position,
-                                                        position);
+  int invalid_parts = GetTheme().PartsToInvalidateOnThumbPositionChange(
+      *this, old_position, position);
   SetNeedsPaintInvalidation(invalid_parts);
 
   // Don't update the pressed position if scroll anchoring takes place as
@@ -360,28 +359,31 @@ void Scrollbar::SetHoveredPart(ScrollbarPart part) {
   if (part == hovered_part_)
     return;
 
+  int invalid_parts = hovered_part_ | part;
+  hovered_part_ = part;
   // When there's a pressed part, we don't draw a hovered state, so there's no
   // reason to invalidate.
   if (pressed_part_ == kNoPart) {
-    SetNeedsPaintInvalidation(static_cast<ScrollbarPart>(hovered_part_ | part));
+    SetNeedsPaintInvalidation(invalid_parts);
   }
-
-  hovered_part_ = part;
 }
 
 void Scrollbar::SetPressedPart(ScrollbarPart part, WebInputEvent::Type type) {
-  if (pressed_part_ != kNoPart
+  if (part == pressed_part_) {
+    return;
+  }
+
+  ScrollbarPart old_pressed_part = pressed_part_;
+  pressed_part_ = part;
+  SetNeedsPaintInvalidation(
+      old_pressed_part |
       // When we no longer have a pressed part, we can start drawing a hovered
       // state on the hovered part.
-      || hovered_part_ != kNoPart)
-    SetNeedsPaintInvalidation(
-        static_cast<ScrollbarPart>(pressed_part_ | hovered_part_ | part));
+      hovered_part_ | pressed_part_);
 
   if (scrollable_area_ && part != kNoPart) {
     scrollable_area_->DidScrollWithScrollbar(part, Orientation(), type);
   }
-
-  pressed_part_ = part;
 }
 
 bool Scrollbar::HandlePointerEvent(const WebPointerEvent& event) {
@@ -541,7 +543,7 @@ void Scrollbar::MouseMoved(const WebMouseEvent& evt) {
 void Scrollbar::MouseEntered() {
   if (scrollable_area_)
     scrollable_area_->MouseEnteredScrollbar(*this);
-  if (theme_.UsesFluentOverlayScrollbars() && scrollable_area_) {
+  if (theme_->UsesFluentOverlayScrollbars() && scrollable_area_) {
     scrollable_area_->GetLayoutBox()
         ->GetFrameView()
         ->SetPaintArtifactCompositorNeedsUpdate();
@@ -552,7 +554,7 @@ void Scrollbar::MouseExited() {
   if (scrollable_area_)
     scrollable_area_->MouseExitedScrollbar(*this);
   SetHoveredPart(kNoPart);
-  if (theme_.UsesFluentOverlayScrollbars() && scrollable_area_) {
+  if (theme_->UsesFluentOverlayScrollbars() && scrollable_area_) {
     // If the mouse was hovering over the track and leaves the scrollbar, the
     // call to `SetHoveredPart(kNoPart)` will only invalidate the paint for the
     // track. Overlay Fluent scrollbars always need to invalidate the thumb to
@@ -759,6 +761,7 @@ int Scrollbar::ScrollbarThickness() const {
   int thickness = Orientation() == kHorizontalScrollbar ? Height() : Width();
   if (!thickness || IsCustomScrollbar())
     return thickness;
+<<<<<<< src/third_party/blink/renderer/core/scroll/scrollbar.cc (MoltBrowser)
   // MoltBrowser: MoltNet's classic scrollbars are as thick in CSS pixels at
   // every zoom and on every OS (molt_fingerprinting/letterbox.h). The
   // document is the box's (ScrollableArea::GetDocument() is protected).
@@ -766,24 +769,29 @@ int Scrollbar::ScrollbarThickness() const {
   return molt_fingerprinting::ScrollbarThicknessFor(
       theme_, ScaleFromDIP(), CSSScrollbarWidth(),
       box ? &box->GetDocument() : nullptr);
+||||||| upstream@pin
+  return theme_.ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
+=======
+  return theme_->ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
+>>>>>>> upstream@new
 }
 
 bool Scrollbar::IsSolidColor() const {
-  return theme_.IsSolidColor();
+  return theme_->IsSolidColor();
 }
 
 bool Scrollbar::IsOverlayScrollbar() const {
-  return theme_.UsesOverlayScrollbars();
+  return theme_->UsesOverlayScrollbars();
 }
 
 bool Scrollbar::IsFluentOverlayScrollbarMinimalMode() const {
-  return theme_.UsesFluentOverlayScrollbars() && hovered_part_ == kNoPart &&
+  return theme_->UsesFluentOverlayScrollbars() && hovered_part_ == kNoPart &&
          pressed_part_ != kThumbPart;
 }
 
 bool Scrollbar::UsesNinePatchTrackAndCanSkipRepaint(
     const gfx::Rect& new_frame_rect) const {
-  if (!theme_.UsesNinePatchTrackAndButtonsResource()) {
+  if (!theme_->UsesNinePatchTrackAndButtonsResource()) {
     return false;
   }
   // If the scrollbar's thickness is being changed, then a new bitmap needs to
@@ -836,28 +844,6 @@ gfx::Point Scrollbar::ConvertFromRootFrame(
   return point_in_root_frame;
 }
 
-gfx::Rect Scrollbar::ConvertToContainingEmbeddedContentView(
-    const gfx::Rect& local_rect) const {
-  if (scrollable_area_) {
-    return scrollable_area_
-        ->ConvertFromScrollbarToContainingEmbeddedContentView(*this,
-                                                              local_rect);
-  }
-
-  return local_rect;
-}
-
-gfx::Point Scrollbar::ConvertFromContainingEmbeddedContentView(
-    const gfx::Point& parent_point) const {
-  if (scrollable_area_) {
-    return scrollable_area_
-        ->ConvertFromContainingEmbeddedContentViewToScrollbar(*this,
-                                                              parent_point);
-  }
-
-  return parent_point;
-}
-
 float Scrollbar::ScrollableAreaCurrentPos() const {
   if (!scrollable_area_)
     return 0;
@@ -884,9 +870,9 @@ float Scrollbar::ScrollableAreaTargetPos() const {
          scrollable_area_->MinimumScrollOffset().y();
 }
 
-void Scrollbar::SetNeedsPaintInvalidation(ScrollbarPart invalid_parts) {
+void Scrollbar::SetNeedsPaintInvalidation(int invalid_parts) {
   needs_update_display_ = true;
-  if (theme_.ShouldRepaintAllPartsOnInvalidation()) {
+  if (theme_->ShouldRepaintAllPartsOnInvalidation()) {
     invalid_parts = kAllParts;
   }
   if (invalid_parts & ~kThumbPart) {
@@ -960,7 +946,7 @@ std::optional<blink::Color> Scrollbar::ScrollbarThumbColor() const {
       style_source_->StyleRef().ScrollbarThumbColorResolved()) {
     return style_source_->StyleRef().ScrollbarThumbColorResolved();
   }
-  if (theme_.UsesFluentScrollbars() && !InForcedColorsMode() &&
+  if (theme_->UsesFluentScrollbars() && !InForcedColorsMode() &&
       !ScrollbarTrackColor().has_value()) {
     return RootScrollbarThemeColor();
   }

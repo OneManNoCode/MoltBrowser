@@ -22,6 +22,18 @@ assert(enable_supervised_users)
 
 grit("resources") {
   source = "resources/renderer_resources.grd"
+  inputs = [
+    "//components/security_interstitials/core/browser/resources/images/blocked.svg",
+    "//components/security_interstitials/core/browser/resources/images/heavy_ad.svg",
+    "//components/security_interstitials/core/browser/resources/interstitial_webview_quiet.css",
+    "//components/security_interstitials/core/common/resources/interstitial_common.css",
+    "//components/security_interstitials/core/common/resources/interstitial_core.css",
+    "//ui/webui/resources/images/extension.svg",
+    "resources/plugins/blocked_plugin.html",
+    "resources/plugins/disabled_plugin.html",
+    "resources/plugins/pdf_plugin.html",
+    "resources/plugins/plugin_placeholders.css",
+  ]
   defines = chrome_grit_defines
   output_dir = "$root_gen_dir/chrome"
   output_name = "renderer_resources"
@@ -92,6 +104,8 @@ static_library("renderer") {
     "supervised_user/supervised_user_error_page_controller_delegate.h",
     "supervised_user/supervised_user_error_page_controller_delegate_impl.cc",
     "supervised_user/supervised_user_error_page_controller_delegate_impl.h",
+    "tab_context_decryption_token_extension.cc",
+    "tab_context_decryption_token_extension.h",
     "trusted_vault_encryption_keys_extension.cc",
     "trusted_vault_encryption_keys_extension.h",
     "url_loader_throttle_provider_impl.cc",
@@ -133,6 +147,7 @@ static_library("renderer") {
     # MoltBrowser: no RTCPeerConnection in MoltNet renderers.
     "//chrome/renderer/molt_ai/tor",
     "//chrome/services/speech/buildflags",
+    "//components/actor/core:features",
     "//components/actor/core:task_id",
     "//components/autofill/content/renderer",
     "//components/autofill/core/common:features",
@@ -146,6 +161,8 @@ static_library("renderer") {
     "//components/continuous_search/renderer",
     "//components/country_codes",
     "//components/dom_distiller/content/renderer",
+    "//components/facilitated_payments/content/renderer",
+    "//components/facilitated_payments/core/features",
     "//components/feed:feature_list",
     "//components/google/core/common",
     "//components/guest_view/buildflags",
@@ -164,7 +181,6 @@ static_library("renderer") {
     "//components/page_content_annotations/content/mojom",
     "//components/page_content_annotations/content/renderer",
     "//components/page_content_annotations/core:features",
-    "//components/page_image_annotation/content/renderer",
     "//components/page_load_metrics/renderer",
     "//components/paint_preview/buildflags",
     "//components/password_manager/core/common",
@@ -191,6 +207,7 @@ static_library("renderer") {
     "//components/supervised_user/core/common:buildflags",
     "//components/surface_embed/common",
     "//components/surface_embed/renderer",
+    "//components/sync_tab_context:constants",
     "//components/translate/content/renderer",
     "//components/translate/core/common",
     "//components/translate/core/language_detection",
@@ -364,8 +381,15 @@ static_library("renderer") {
       "accessibility/read_anything/read_anything_app_controller.h",
       "accessibility/read_anything/read_anything_app_model.cc",
       "accessibility/read_anything/read_anything_app_model.h",
+      "accessibility/read_anything/read_anything_distiller.h",
+      "accessibility/read_anything/read_anything_distiller_factory.cc",
+      "accessibility/read_anything/read_anything_distiller_factory.h",
       "accessibility/read_anything/read_anything_node_utils.cc",
       "accessibility/read_anything/read_anything_node_utils.h",
+      "accessibility/read_anything/read_anything_readability_distiller.cc",
+      "accessibility/read_anything/read_anything_readability_distiller.h",
+      "accessibility/read_anything/read_anything_screen2x_distiller.cc",
+      "accessibility/read_anything/read_anything_screen2x_distiller.h",
       "media/chrome_speech_recognition_client.cc",
       "media/chrome_speech_recognition_client.h",
       "password_manager/remote_actor_credential_sharing_extension.cc",

@@ -4,30 +4,49 @@
 
 #include "chrome/browser/ui/startup/infobar_utils.h"
 
+#include <memory>
+#include <utility>
+
 #include "base/command_line.h"
+#include "base/feature_list.h"
+#include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/rand_util.h"
 #include "build/branding_buildflags.h"
 #include "build/buildflag.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/infobars/browser_infobar_manager.h"
+#include "chrome/browser/infobars/infobar_features.h"
 #include "chrome/browser/obsolete_system/obsolete_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/automation_infobar_delegate.h"
 #include "chrome/browser/ui/startup/bad_flags_prompt.h"
+<<<<<<< src/chrome/browser/ui/startup/infobar_utils.cc (MoltBrowser)
 #include "chrome/browser/ui/startup/bidding_and_auction_consented_debugging_infobar_delegate.h"
 // MoltBrowser: removed google_api_keys_infobar_delegate (not shown to users)
+||||||| upstream@pin
+#include "chrome/browser/ui/startup/bidding_and_auction_consented_debugging_infobar_delegate.h"
+#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
+=======
+#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
+>>>>>>> upstream@new
 #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
 #include "chrome/browser/ui/startup/oscryptasync_availability_infobar_delegate.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/startup/startup_types.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/infobars/content/content_infobar_manager.h"
+#include "components/os_crypt/async/browser/os_crypt_async.h"
+#include "components/os_crypt/async/common/encryptor.h"
 #include "components/prefs/pref_service.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/common/content_switches.h"
 // MoltBrowser: removed google_api_keys.h (not used)
 
@@ -40,7 +59,6 @@
 #endif
 
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-#include "base/feature_list.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/pdf/infobar/pdf_infobar_controller.h"
 #include "chrome/browser/ui/startup/default_browser_prompt/pin_infobar/pin_infobar_controller.h"
@@ -102,6 +120,48 @@ bool IsGpuTest() {
 }
 #endif
 
+// Shows the "relaunch to restore encryption" infobar on the browser's
+// active tab if OSCryptAsync reports encryption unavailable. The encryptor
+// arrives asynchronously, so the browser may be gone by then.
+void MaybeShowOSCryptAsyncAvailabilityInfoBar(BrowserWindowInterface* browser) {
+  if (!base::FeatureList::IsEnabled(
+          features::kOSCryptAsyncAvailabilityInfoBar)) {
+    return;
+  }
+  g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
+      [](base::WeakPtr<BrowserWindowInterface> browser,
+         scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+        if (encryptor->IsEncryptionAvailable() || !browser ||
+            browser->GetTabStripModel()->empty()) {
+          return;
+        }
+        content::WebContents* web_contents =
+            browser->GetTabStripModel()->GetActiveWebContents();
+        if (!web_contents) {
+          return;
+        }
+        if (infobars::IsInfoBarMigrated(
+                infobars::InfoBarDelegate::
+                    OSCRYPTASYNC_AVAILABILITY_INFOBAR_DELEGATE)) {
+          auto* browser_infobar_manager =
+              infobars::BrowserInfoBarManager::From(g_browser_process);
+          tabs::TabInterface* tab =
+              tabs::TabInterface::GetFromContents(web_contents);
+          if (browser_infobar_manager && tab) {
+            browser_infobar_manager->Show(
+                tab, infobars::InfoBarDelegate::
+                         OSCRYPTASYNC_AVAILABILITY_INFOBAR_DELEGATE);
+          }
+          return;
+        }
+        auto* infobar_manager =
+            infobars::ContentInfoBarManager::FromWebContents(web_contents);
+        if (infobar_manager) {
+          OSCryptAsyncAvailabilityInfoBarDelegate::Create(infobar_manager);
+        }
+      },
+      browser->GetWeakPtr()));
+}
 }  // namespace
 
 void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
@@ -114,7 +174,11 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
   if (!browser || !profile) {
     return;
   }
-  auto* web_contents = browser->GetTabStripModel()->GetActiveWebContents();
+  tabs::TabInterface* active_tab = browser->GetActiveTabInterface();
+  if (!active_tab) {
+    return;
+  }
+  auto* web_contents = active_tab->GetContents();
   if (!web_contents) {
     return;
   }
@@ -125,17 +189,29 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
   if (show_bad_flags_security_warnings) {
 #if BUILDFLAG(CHROME_FOR_TESTING)
     if (!IsGpuTest()) {
-      ChromeForTestingInfoBarDelegate::Create();
+      if (infobars::IsInfoBarMigrated(
+              infobars::InfoBarDelegate::CHROME_FOR_TESTING_INFOBAR_DELEGATE)) {
+        auto* browser_infobar_manager =
+            infobars::BrowserInfoBarManager::From(g_browser_process);
+        if (browser_infobar_manager) {
+          browser_infobar_manager->ShowGlobally(
+              infobars::InfoBarDelegate::CHROME_FOR_TESTING_INFOBAR_DELEGATE);
+        }
+      } else {
+        ChromeForTestingInfoBarDelegate::Create();
+      }
     }
 #endif
 
     if (IsAutomationEnabled()) {
-      AutomationInfoBarDelegate::Create();
-    }
-
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kProtectedAudiencesConsentedDebugToken)) {
-      BiddingAndAuctionConsentedDebuggingDelegate::Create(web_contents);
+      if (infobars::IsInfoBarMigrated(
+              infobars::InfoBarDelegate::AUTOMATION_INFOBAR_DELEGATE)) {
+        infobars::BrowserInfoBarManager::From(g_browser_process)
+            ->ShowGlobally(
+                infobars::InfoBarDelegate::AUTOMATION_INFOBAR_DELEGATE);
+      } else {
+        AutomationInfoBarDelegate::Create();
+      }
     }
   }
 
@@ -185,17 +261,47 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
   infobars::ContentInfoBarManager* infobar_manager =
       infobars::ContentInfoBarManager::FromWebContents(web_contents);
 
+<<<<<<< src/chrome/browser/ui/startup/infobar_utils.cc (MoltBrowser)
   // MoltBrowser: Google API keys InfoBar suppressed — not applicable.
+||||||| upstream@pin
+  if (!google_apis::HasAPIKeyConfigured()) {
+    GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
+  }
+=======
+  if (!google_apis::HasAPIKeyConfigured()) {
+    if (infobars::IsInfoBarMigrated(
+            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE)) {
+      if (auto* manager =
+              infobars::BrowserInfoBarManager::From(g_browser_process)) {
+        manager->Show(
+            tabs::TabInterface::GetFromContents(web_contents),
+            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE);
+      }
+    } else {
+      GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
+    }
+  }
+>>>>>>> upstream@new
 
   if (ObsoleteSystem::IsObsoleteNowOrSoon()) {
     PrefService* local_state = g_browser_process->local_state();
     if (!local_state ||
         !local_state->GetBoolean(prefs::kSuppressUnsupportedOSWarning)) {
-      ObsoleteSystemInfoBarDelegate::Create(infobar_manager);
+      if (infobars::IsInfoBarMigrated(
+              infobars::InfoBarDelegate::OBSOLETE_SYSTEM_INFOBAR_DELEGATE)) {
+        if (auto* manager =
+                infobars::BrowserInfoBarManager::From(g_browser_process)) {
+          manager->Show(
+              tabs::TabInterface::GetFromContents(web_contents),
+              infobars::InfoBarDelegate::OBSOLETE_SYSTEM_INFOBAR_DELEGATE);
+        }
+      } else {
+        ObsoleteSystemInfoBarDelegate::Create(infobar_manager);
+      }
     }
   }
 
-  OSCryptAsyncAvailabilityInfoBarDelegate::MaybeCreate(browser);
+  MaybeShowOSCryptAsyncAvailabilityInfoBar(browser);
 
 #if BUILDFLAG(IS_WIN)
   if (auto* startup_launch_manager =

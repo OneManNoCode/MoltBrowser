@@ -18,6 +18,7 @@
 #include "base/time/time.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
+#include "gpu/command_buffer/client/raster_interface.h"
 #include "media/base/format_utils.h"
 #include "media/base/limits.h"
 #include "media/base/timestamp_constants.h"
@@ -26,7 +27,7 @@
 #include "media/base/video_frame_pool.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
-#include "media/renderers/paint_canvas_video_renderer.h"
+#include "media/gfx/paint_canvas_video_renderer.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -56,6 +57,7 @@
 #include "third_party/blink/renderer/modules/webcodecs/background_readback.h"
 #include "third_party/blink/renderer/modules/webcodecs/video_color_space.h"
 #include "third_party/blink/renderer/modules/webcodecs/video_frame_init_util.h"
+#include "third_party/blink/renderer/modules/webcodecs/video_frame_layout.h"
 #include "third_party/blink/renderer/modules/webcodecs/video_frame_rect_util.h"
 #include "third_party/blink/renderer/platform/geometry/geometry_hash_traits.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_non_2d_resource_provider.h"
@@ -70,6 +72,7 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/blink/renderer/platform/wtf/text/format.h"
 #include "third_party/libyuv/include/libyuv/planar_functions.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "v8/include/v8.h"
@@ -222,7 +225,6 @@ bool IsFormatEnabled(media::VideoPixelFormat fmt) {
     case media::PIXEL_FORMAT_YUV444P12:
     case media::PIXEL_FORMAT_I444A:
     case media::PIXEL_FORMAT_YUV444AP10:
-    case media::PIXEL_FORMAT_RGBAF16:
       return true;
     default:
       return false;
@@ -463,10 +465,14 @@ std::optional<media::VideoPixelFormat> CopyToFormat(
   bool si_prefers_external_sampler =
       frame.HasSharedImage() &&
       frame.shared_image()->format().PrefersExternalSampler();
-  // Externally-sampled frames read back as RGB, regardless of the format.
+  // Externally-sampled frames can be read back as YUV (NV12/I420) or RGB.
   // TODO(crbug.com/40215121): Enable alpha readback for supported formats.
   if (!mappable && si_prefers_external_sampler) {
     DCHECK(frame.HasSharedImage());
+    if (frame.format() == media::PIXEL_FORMAT_NV12 ||
+        frame.format() == media::PIXEL_FORMAT_I420) {
+      return frame.format();
+    }
     return media::PIXEL_FORMAT_XRGB;
   }
 
@@ -474,66 +480,9 @@ std::optional<media::VideoPixelFormat> CopyToFormat(
     return std::nullopt;
   }
 
-  if (mappable) {
-    DCHECK_EQ(frame.layout().num_planes(),
-              media::VideoFrame::NumPlanes(frame.format()));
-    return frame.format();
-  }
-
+  DCHECK(!mappable || frame.layout().num_planes() ==
+                          media::VideoFrame::NumPlanes(frame.format()));
   return frame.format();
-}
-
-void CopyMappablePlanes(const media::VideoFrame& src_frame,
-                        const gfx::Rect& src_rect,
-                        const VideoFrameLayout& dest_layout,
-                        base::span<uint8_t> dest_buffer) {
-  for (wtf_size_t i = 0; i < dest_layout.NumPlanes(); i++) {
-    const gfx::Size sample_size =
-        media::VideoFrame::SampleSize(dest_layout.Format(), i);
-    const int sample_bytes =
-        media::VideoFrame::BytesPerElement(dest_layout.Format(), i);
-    UNSAFE_TODO({
-      const uint8_t* src =
-          src_frame.data(i) +
-          src_rect.y() / sample_size.height() * src_frame.stride(i) +
-          src_rect.x() / sample_size.width() * sample_bytes;
-      libyuv::CopyPlane(
-          src, static_cast<int>(src_frame.stride(i)),
-          dest_buffer.data() + dest_layout.Offset(i),
-          static_cast<int>(dest_layout.Stride(i)),
-          PlaneSize(src_rect.width(), sample_size.width()) * sample_bytes,
-          PlaneSize(src_rect.height(), sample_size.height()));
-    });
-  }
-}
-
-bool CopyTexturablePlanes(media::VideoFrame& src_frame,
-                          const gfx::Rect& src_rect,
-                          const VideoFrameLayout& dest_layout,
-                          base::span<uint8_t> dest_buffer) {
-  auto wrapper = SharedGpuContext::ContextProviderWrapper();
-  if (!wrapper)
-    return false;
-
-  auto* ri = wrapper->ContextProvider().RasterInterface();
-  if (!ri)
-    return false;
-
-  for (wtf_size_t i = 0; i < dest_layout.NumPlanes(); i++) {
-    const gfx::Size sample_size =
-        media::VideoFrame::SampleSize(dest_layout.Format(), i);
-    gfx::Rect plane_src_rect = PlaneRect(src_rect, sample_size);
-    uint8_t* dest_pixels = dest_buffer.subspan(dest_layout.Offset(i)).data();
-    if (!media::ReadbackTexturePlaneToMemorySync(src_frame, i, plane_src_rect,
-                                                 dest_pixels,
-                                                 dest_layout.Stride(i), ri)) {
-      // It's possible to fail after copying some but not all planes, leaving
-      // the output buffer in a corrupt state D:
-      return false;
-    }
-  }
-
-  return true;
 }
 
 bool ParseCopyToOptions(const media::VideoFrame& frame,
@@ -543,21 +492,39 @@ bool ParseCopyToOptions(const media::VideoFrame& frame,
                         gfx::Rect* src_rect_out = nullptr) {
   DCHECK(dest_layout_out);
 
-  auto frame_format = CopyToFormat(frame);
-  if (!frame_format.has_value()) {
+  const bool mappable =
+      frame.HasDirectCpuAccess() || frame.HasMappableSharedImage();
+  const bool texturable = frame.HasSharedImage();
+  if (!mappable && !texturable) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
         "Operation is not supported when format is null.");
     return false;
   }
 
-  media::VideoPixelFormat copy_to_format = frame_format.value();
+  auto frame_format = CopyToFormat(frame);
+  media::VideoPixelFormat copy_to_format;
+
   if (options->hasFormat()) {
     copy_to_format = ToMediaPixelFormat(options->format().AsEnum());
     if (!IsFormatEnabled(copy_to_format)) {
       exception_state.ThrowTypeError("Unsupported format.");
       return false;
     }
+    if (!media::IsRGB(copy_to_format)) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kNotSupportedError,
+          "copyTo() doesn't support explicit copy to non-RGB formats. Remove "
+          "format parameter to use VideoFrame's pixel format.");
+      return false;
+    }
+  } else if (frame_format.has_value()) {
+    copy_to_format = frame_format.value();
+  } else {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "Operation is not supported when format is null.");
+    return false;
   }
 
   if (options->hasColorSpace() &&
@@ -566,12 +533,6 @@ bool ParseCopyToOptions(const media::VideoFrame& frame,
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
         "This pixel conversion to this color space is not supported.");
-  }
-
-  if (copy_to_format != frame.format() && !media::IsRGB(copy_to_format)) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kNotSupportedError,
-        "This pixel format conversion is not supported.");
     return false;
   }
 
@@ -724,13 +685,15 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
       if (!wrapped_frame) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kOperationError,
-            String::Format("Failed to create a VideoFrame from "
-                           "CanvasImageSource with format: %s, "
-                           "coded size: %s, visibleRect: %s, display size: %s.",
-                           VideoPixelFormatToString(wrapped_format).c_str(),
-                           source_frame->coded_size().ToString().c_str(),
-                           parsed_init.visible_rect.ToString().c_str(),
-                           parsed_init.display_size.ToString().c_str()));
+            StrCat(
+                {"Failed to create a VideoFrame from "
+                 "CanvasImageSource with format: ",
+                 VideoPixelFormatToString(wrapped_format).c_str(),
+                 ", coded size: ",
+                 source_frame->coded_size().ToString().c_str(),
+                 ", visibleRect: ", parsed_init.visible_rect.ToString().c_str(),
+                 ", display size: ",
+                 parsed_init.display_size.ToString().c_str(), "."}));
         return nullptr;
       }
 
@@ -1003,8 +966,8 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
       coded_height > media::limits::kMaxDimension ||
       coded_width * coded_height > media::limits::kMaxCanvas) {
     exception_state.ThrowTypeError(
-        String::Format("Coded size %u x %u exceeds implementation limit.",
-                       coded_width, coded_height));
+        Format("Coded size {} x {} exceeds implementation limit.", coded_width,
+               coded_height));
     return nullptr;
   }
   const gfx::Size src_coded_size(static_cast<int>(coded_width),
@@ -1096,12 +1059,11 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
     if (!frame) {
       exception_state.ThrowDOMException(
           DOMExceptionCode::kOperationError,
-          String::Format("Failed to create a VideoFrame with format: %s, "
-                         "coded size: %s, visibleRect: %s, display size: %s.",
-                         VideoPixelFormatToString(media_fmt).c_str(),
-                         crop.size().ToString().c_str(),
-                         dest_visible_rect.ToString().c_str(),
-                         display_size.ToString().c_str()));
+          StrCat({"Failed to create a VideoFrame with format: ",
+                  VideoPixelFormatToString(media_fmt).c_str(),
+                  ", coded size: ", crop.size().ToString().c_str(),
+                  ", visibleRect: ", dest_visible_rect.ToString().c_str(),
+                  ", display size: ", display_size.ToString().c_str(), "."}));
       return nullptr;
     }
 
@@ -1169,9 +1131,8 @@ DOMRectReadOnly* VideoFrame::codedRect() {
     return nullptr;
 
   if (!coded_rect_) {
-    coded_rect_ = MakeGarbageCollected<DOMRectReadOnly>(
-        0, 0, local_frame->coded_size().width(),
-        local_frame->coded_size().height());
+    coded_rect_ =
+        DOMRectReadOnly::FromRect(gfx::Rect(local_frame->coded_size()));
   }
   return coded_rect_.Get();
 }
@@ -1182,10 +1143,7 @@ DOMRectReadOnly* VideoFrame::visibleRect() {
     return nullptr;
 
   if (!visible_rect_) {
-    visible_rect_ = MakeGarbageCollected<DOMRectReadOnly>(
-        local_frame->visible_rect().x(), local_frame->visible_rect().y(),
-        local_frame->visible_rect().width(),
-        local_frame->visible_rect().height());
+    visible_rect_ = DOMRectReadOnly::FromRect(local_frame->visible_rect());
   }
   return visible_rect_.Get();
 }
@@ -1322,7 +1280,7 @@ uint32_t VideoFrame::allocationSize(VideoFrameCopyToOptions* options,
   return dest_layout.Size();
 }
 
-void VideoFrame::ConvertAndCopyToRGB(scoped_refptr<media::VideoFrame> frame,
+bool VideoFrame::ConvertAndCopyToRGB(scoped_refptr<media::VideoFrame> frame,
                                      const gfx::Rect& src_rect,
                                      const VideoFrameLayout& dest_layout,
                                      base::span<uint8_t> buffer,
@@ -1332,6 +1290,10 @@ void VideoFrame::ConvertAndCopyToRGB(scoped_refptr<media::VideoFrame> frame,
   if (frame->visible_rect() != src_rect) {
     frame = media::VideoFrame::WrapVideoFrame(frame, frame->format(), src_rect,
                                               src_rect.size());
+    if (!frame) {
+      DLOG(ERROR) << "Failed to wrap cropped VideoFrame.";
+      return false;
+    }
   }
 
   auto sk_color_space = PredefinedColorSpaceToSkColorSpace(target_color_space);
@@ -1340,9 +1302,19 @@ void VideoFrame::ConvertAndCopyToRGB(scoped_refptr<media::VideoFrame> frame,
                            frame->CompatRGBColorSpace().ToSkColorSpace().get());
   bool same_format = frame->format() == dest_layout.Format();
 
-  if (frame->HasDirectCpuAccess() && same_color_space && same_format) {
-    CopyMappablePlanes(*frame, src_rect, dest_layout, buffer);
-    return;
+  if (same_color_space && same_format && frame->HasDirectCpuAccess()) {
+    auto dest_frame = media::VideoFrame::WrapExternalDataWithLayout(
+        dest_layout.ToMediaLayout(), gfx::Rect(src_rect.size()),
+        src_rect.size(), buffer, frame->timestamp());
+    if (!dest_frame) {
+      DLOG(ERROR) << "Failed to wrap destination buffer.";
+      return false;
+    }
+    if (!BackgroundReadback::CopyMappablePlanes(*frame, *dest_frame)) {
+      DLOG(ERROR) << "Failed to copy mappable planes.";
+      return false;
+    }
+    return true;
   }
 
   SkImageInfo dst_image_info = SkImageInfo::Make(
@@ -1353,9 +1325,17 @@ void VideoFrame::ConvertAndCopyToRGB(scoped_refptr<media::VideoFrame> frame,
 
   const wtf_size_t plane = 0;
   DCHECK_EQ(dest_layout.NumPlanes(), 1u);
+  if (dest_layout.Offset(plane) > buffer.size()) {
+    DLOG(ERROR) << "Destination buffer is too small for plane offset.";
+    return false;
+  }
   uint8_t* dst = buffer.subspan(dest_layout.Offset(plane)).data();
   auto sk_canvas = SkCanvas::MakeRasterDirect(dst_image_info, dst,
                                               dest_layout.Stride(plane));
+  if (!sk_canvas) {
+    DLOG(ERROR) << "Failed to create raster direct SkCanvas.";
+    return false;
+  }
 
   cc::PaintFlags flags;
   flags.setBlendMode(SkBlendMode::kSrc);
@@ -1367,21 +1347,30 @@ void VideoFrame::ConvertAndCopyToRGB(scoped_refptr<media::VideoFrame> frame,
   media::PaintCanvasVideoRenderer::PaintParams paint_params;
   paint_params.dest_rect = gfx::RectF(src_rect.size());
   auto context_provider = GetRasterContextProvider();
+  if (frame->HasSharedImage() && !context_provider) {
+    DLOG(ERROR)
+        << "Missing or lost raster context provider for texture-backed frame.";
+    return false;
+  }
 
   // GetRasterContextProvider() returns the SharedGPUContext's provider, which
   // always supports `gpu_rasterization`.
   renderer.Paint(std::move(frame), &canvas, flags, paint_params,
                  context_provider.get());
+  return true;
 }
 
 VideoFrame::CopyToPromise VideoFrame::CopyToAsync(
     ScriptState* script_state,
     scoped_refptr<media::VideoFrame> frame,
-    gfx::Rect src_rect,
+    scoped_refptr<media::VideoFrame> dest_frame,
     const AllowSharedBufferSource* destination,
     const VideoFrameLayout& dest_layout) {
-  auto* background_readback =
-      BackgroundReadback::From(*ExecutionContext::From(script_state));
+  auto* context = ExecutionContext::From(script_state);
+  if (!context) {
+    return CopyToPromise();
+  }
+  auto* background_readback = BackgroundReadback::From(*context);
   if (!background_readback) {
     return CopyToPromise();
   }
@@ -1405,16 +1394,16 @@ VideoFrame::CopyToPromise VideoFrame::CopyToAsync(
         if (success) {
           resolver->Resolve(ConvertLayout(dest_layout));
         } else {
-          resolver->Reject();
+          resolver->RejectWithDOMException(DOMExceptionCode::kInvalidStateError,
+                                           "Failed to read VideoFrame data.");
         }
       };
   auto done_cb =
       BindOnce(readback_done_handler, std::move(contents),
                MakeUnwrappingCrossThreadHandle(resolver), dest_layout);
 
-  auto buffer = AsSpan<uint8_t>(destination);
-  background_readback->ReadbackTextureBackedFrameToBuffer(
-      std::move(frame), src_rect, dest_layout, buffer, std::move(done_cb));
+  background_readback->ReadbackTextureBackedFrame(
+      std::move(frame), std::move(dest_frame), std::move(done_cb));
   return promise;
 }
 
@@ -1463,33 +1452,77 @@ VideoFrame::CopyToPromise VideoFrame::copyTo(
         return CopyToPromise();
       }
     }
-    ConvertAndCopyToRGB(local_frame, src_rect, dest_layout, buffer,
-                        target_color_space);
-  } else if (local_frame->HasDirectCpuAccess()) {
-    CopyMappablePlanes(*local_frame, src_rect, dest_layout, buffer);
-  } else if (local_frame->HasMappableSharedImage()) {
-    auto mapped_frame = media::ConvertToMemoryMappedFrame(local_frame);
-    if (!mapped_frame) {
+    if (!ConvertAndCopyToRGB(local_frame, src_rect, dest_layout, buffer,
+                             target_color_space)) {
       exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                         "Failed to read VideoFrame data.");
       return CopyToPromise();
     }
-    CopyMappablePlanes(*mapped_frame, src_rect, dest_layout, buffer);
   } else {
-    DCHECK(local_frame->HasSharedImage());
-
-    // Check if we can run copyTo() asynchronously.
-    auto async_promise = CopyToAsync(script_state, local_frame, src_rect,
-                                     destination, dest_layout);
-    if (!async_promise.IsEmpty()) {
-      return async_promise;
-    }
-
-    // Async version didn't work, let's copy planes synchronously.
-    if (!CopyTexturablePlanes(*local_frame, src_rect, dest_layout, buffer)) {
+    auto cropped_frame = media::VideoFrame::WrapVideoFrame(
+        local_frame, local_frame->format(), src_rect, src_rect.size());
+    auto dest_frame = media::VideoFrame::WrapExternalDataWithLayout(
+        dest_layout.ToMediaLayout(), gfx::Rect(src_rect.size()),
+        src_rect.size(), buffer, local_frame->timestamp());
+    if (!cropped_frame || !dest_frame) {
       exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                        "Failed to read VideoFrame data.");
+                                        "Failed to prepare VideoFrame data.");
       return CopyToPromise();
+    }
+    dest_frame->set_color_space(local_frame->ColorSpace());
+
+    if (local_frame->HasDirectCpuAccess()) {
+      if (!BackgroundReadback::CopyMappablePlanes(*cropped_frame,
+                                                  *dest_frame)) {
+        exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                          "Failed to read VideoFrame data.");
+        return CopyToPromise();
+      }
+    } else if (local_frame->HasMappableSharedImage()) {
+      auto mapped_frame = media::ConvertToMemoryMappedFrame(local_frame);
+      if (!mapped_frame) {
+        exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                          "Failed to read VideoFrame data.");
+        return CopyToPromise();
+      }
+      auto cropped_mapped_frame = media::VideoFrame::WrapVideoFrame(
+          mapped_frame, mapped_frame->format(), src_rect, src_rect.size());
+      if (!cropped_mapped_frame || !BackgroundReadback::CopyMappablePlanes(
+                                       *cropped_mapped_frame, *dest_frame)) {
+        exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                          "Failed to read VideoFrame data.");
+        return CopyToPromise();
+      }
+    } else {
+      DCHECK(local_frame->HasSharedImage());
+
+      auto* context = ExecutionContext::From(script_state);
+      if (!context) {
+        exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                          "Execution context is detached.");
+        return CopyToPromise();
+      }
+      auto* background_readback = BackgroundReadback::From(*context);
+      if (!background_readback) {
+        exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                          "Failed to read VideoFrame data.");
+        return CopyToPromise();
+      }
+
+      // Check if we can run copyTo() asynchronously.
+      auto async_promise = CopyToAsync(script_state, cropped_frame, dest_frame,
+                                       destination, dest_layout);
+      if (!async_promise.IsEmpty()) {
+        return async_promise;
+      }
+
+      // Async version didn't work, let's copy planes synchronously.
+      if (!background_readback->ReadbackTextureBackedFrameSync(*cropped_frame,
+                                                               *dest_frame)) {
+        exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                          "Failed to read VideoFrame data.");
+        return CopyToPromise();
+      }
     }
   }
 

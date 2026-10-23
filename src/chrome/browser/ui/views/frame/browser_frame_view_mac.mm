@@ -17,6 +17,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/headless/headless_mode_util.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -34,6 +35,7 @@
 #include "chrome/browser/ui/tabs/tab_style.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/frame/browser_native_widget.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/browser_widget.h"
 #include "chrome/browser/ui/views/frame/caption_button_placeholder_container.h"
@@ -90,9 +92,9 @@ BrowserFrameViewMac::BrowserFrameViewMac(BrowserWidget* frame,
   // GlassFrameService is only available if glass frame is enabled.
   if (auto* const glass_service = GlassFrameService::GetInstance()) {
     SetPaintToLayer();
-    layer()->SetFillsBoundsOpaquely(false);
     is_glass_frame_eligible_ =
         glass_service->IsBrowserWindowEligible(browser_view->browser());
+    layer()->SetFillsBoundsOpaquely(!is_glass_frame_eligible_);
     glass_frame_service_subscription_ =
         glass_service->RegisterGlassFrameEligibilityChangedCallback(
             browser_view->browser(),
@@ -246,7 +248,7 @@ int BrowserFrameViewMac::GetTopInset(bool restored) const {
 }
 
 void BrowserFrameViewMac::UpdateFullscreenTopUI() {
-  Browser* browser = GetBrowserView()->browser();
+  BrowserWindowInterface* browser = GetBrowserView()->browser();
   // Update to the new toolbar style if needed.
   FullscreenToolbarStyle new_style;
   if (fullscreen_utils::IsInContentFullscreen(browser)) {
@@ -305,7 +307,9 @@ void BrowserFrameViewMac::UpdateFullscreenTopUI() {
 
   // Notify browser that top ui state has been changed so that we can update
   // the bookmark bar state as well.
-  browser->FullscreenTopUIStateChanged();
+  ExclusiveAccessManager::From(browser)
+      ->fullscreen_controller()
+      ->FullscreenTopUIStateChanged();
 
   // Re-layout if toolbar style changes in fullscreen mode.
   if (browser_widget()->IsFullscreen()) {
@@ -418,6 +422,12 @@ void BrowserFrameViewMac::WindowControlsOverlayEnabledChanged() {
 gfx::Size BrowserFrameViewMac::GetMinimumSize() const {
   gfx::Size client_size = browser_widget()->client_view()->GetMinimumSize();
 
+  // Headless mode does not enforce macOS desktop window aspect ratio
+  // constraints.
+  if (headless::IsHeadlessMode()) {
+    return client_size;
+  }
+
   // macOS apps generally don't allow their windows to get shorter than a
   // certain height, which empirically seems to be related to their *minimum*
   // width rather than their current width. This 4:3 ratio was chosen
@@ -453,8 +463,10 @@ BrowserFrameViewMac::GetCaptionButtonBounds() const {
 
   // In popups, the titlebar is system-drawn and the caption buttons aren't part
   // of the client area.
-  if (GetBrowserView()->browser()->is_type_popup() ||
-      GetBrowserView()->browser()->is_type_devtools()) {
+  if (GetBrowserView()->browser()->GetType() ==
+          BrowserWindowInterface::Type::TYPE_POPUP ||
+      GetBrowserView()->browser()->GetType() ==
+          BrowserWindowInterface::Type::TYPE_DEVTOOLS) {
     return result;
   }
 
@@ -489,8 +501,8 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
     return;
   }
 
-  SkColor frame_color = GetFrameColor(BrowserFrameActiveState::kUseCurrent);
   if (is_glass_frame_eligible_) {
+<<<<<<< src/chrome/browser/ui/views/frame/browser_frame_view_mac.mm (MoltBrowser)
     const SkAlpha frame_alpha = color_utils::IsDark(frame_color)
                                     ? kBrowserFrameAlphaDark
                                     : kBrowserFrameAlphaLight;
@@ -500,12 +512,28 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
     // frame color, fully opaque, so the top chrome reads as one sheet of black
     // glass with the toolbar. A custom user theme still paints its own frame.
     canvas->DrawColor(frame_color);
+||||||| upstream@pin
+    const SkAlpha frame_alpha = color_utils::IsDark(frame_color)
+                                    ? kBrowserFrameAlphaDark
+                                    : kBrowserFrameAlphaLight;
+    canvas->DrawColor(SkColorSetA(frame_color, frame_alpha));
+  } else {
+    canvas->DrawColor(frame_color);
+=======
+    // In glass mode, painting to frame color happens in the opaque background
+    // view instead.
+    return;
+  }
+>>>>>>> upstream@new
 
-    auto* theme_service = ThemeServiceFactory::GetForProfile(
-        GetBrowserView()->browser()->GetProfile());
-    if (!theme_service->UsingSystemTheme()) {
-      PaintThemedFrame(canvas);
-    }
+  const SkColor frame_color =
+      GetFrameColor(BrowserFrameActiveState::kUseCurrent);
+  canvas->DrawColor(frame_color);
+
+  auto* theme_service = ThemeServiceFactory::GetForProfile(
+      GetBrowserView()->browser()->GetProfile());
+  if (!theme_service->UsingSystemTheme()) {
+    PaintThemedFrame(canvas);
   }
 }
 
@@ -600,5 +628,6 @@ void BrowserFrameViewMac::OnGlassFrameEligibilityChanged(bool is_eligible) {
     return;
   }
   is_glass_frame_eligible_ = is_eligible;
+  layer()->SetFillsBoundsOpaquely(!is_glass_frame_eligible_);
   SchedulePaint();
 }

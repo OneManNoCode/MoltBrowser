@@ -48,6 +48,7 @@
 #include "ui/base/cocoa/animation_utils.h"
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #include "ui/base/cocoa/cursor_utils.h"
+#include "ui/base/cocoa/drag_permission.h"
 #include "ui/base/cocoa/remote_accessibility_api.h"
 #import "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/emoji/emoji_panel_helper.h"
@@ -82,8 +83,27 @@ CG_EXTERN CGError CGSSetWindowCaptureExcludeShape(CGSConnectionID cid,
                                                   CGRegionRef region);
 CG_EXTERN CGRegionRef CGRegionCreateWithRect(CGRect rect);
 
+namespace remote_cocoa {
+
+NSString* const kOpaqueFrameBackgroundViewIdentifier =
+    @"OpaqueFrameBackgroundView";
+
+}  // namespace remote_cocoa
+
 namespace {
 constexpr auto kUIPaintTimeout = base::Milliseconds(500);
+
+void ApplyCaptureExclusion(NSWindow* window, bool allow) {
+  CGSConnectionID connection_id = CGSMainConnectionID();
+  CGSWindowID window_id = window.windowNumber;
+  CGRect frame = window.frame;
+  frame.origin = CGPointZero;
+  base::apple::ScopedCFTypeRef<CGRegionRef> region;
+  if (!allow) {
+    region.reset(CGRegionCreateWithRect(frame));
+  }
+  CGSSetWindowCaptureExcludeShape(connection_id, window_id, region.get());
+}
 
 // Returns the display that the specified window is on.
 display::Display GetDisplayForWindow(NSWindow* window) {
@@ -97,7 +117,14 @@ bool IsBackgroundEffectView(NSView* view) {
   }
 
   if (@available(macOS 26, *)) {
-    return [view isKindOfClass:[NSGlassEffectView class]];
+    if ([view isKindOfClass:[NSGlassEffectView class]]) {
+      return true;
+    }
+  }
+
+  if ([view.identifier
+          isEqualToString:remote_cocoa::kOpaqueFrameBackgroundViewIdentifier]) {
+    return true;
   }
 
   return false;
@@ -457,6 +484,8 @@ void NativeWidgetNSWindowBridge::SetCommandDispatcher(
 }
 
 void NativeWidgetNSWindowBridge::SetParent(uint64_t new_parent_id) {
+  const bool was_allowing_screenshots = ShouldAllowScreenshots();
+
   // Remove from the old parent.
   if (parent_) {
     parent_->RemoveChildWindow(this);
@@ -484,6 +513,9 @@ void NativeWidgetNSWindowBridge::SetParent(uint64_t new_parent_id) {
     // collection behavior.
     window_.collectionBehavior =
         collectionBehavior | NSWindowCollectionBehaviorManaged;
+    if (!was_allowing_screenshots || !ShouldAllowScreenshots()) {
+      UpdateCaptureExclusion();
+    }
     return;
   }
 
@@ -496,6 +528,10 @@ void NativeWidgetNSWindowBridge::SetParent(uint64_t new_parent_id) {
   // transient collection behavior. See https://crbug.com/41305285.
   window_.collectionBehavior =
       collectionBehavior | NSWindowCollectionBehaviorTransient;
+
+  if (!was_allowing_screenshots || !ShouldAllowScreenshots()) {
+    UpdateCaptureExclusion();
+  }
 
   if (wants_to_be_visible_) {
     parent_->OrderChildren();
@@ -568,6 +604,7 @@ void NativeWidgetNSWindowBridge::InitWindow(
     mojom::NativeWidgetNSWindowInitParamsPtr params) {
   modal_type_ = params->modal_type;
   is_translucent_window_ = params->is_translucent;
+  prevent_stale_content_after_hide_ = params->prevent_stale_content_after_hide;
   pending_restoration_data_ = params->state_restoration_data.Clone();
 
   if (display::Screen::Get()->IsHeadless()) {
@@ -586,6 +623,10 @@ void NativeWidgetNSWindowBridge::InitWindow(
              name:NSApplicationDidHideNotification
            object:nil];
 
+  // TODO(crbug.com/448692747): Remove this observer once
+  // `kThemeChangeOptimization` is enabled by default, as
+  // `NSSystemColorsDidChangeNotification` is handled centrally by
+  // `OsSettingsProviderMac`.
   [[NSNotificationCenter defaultCenter]
       addObserver:window_delegate_
          selector:@selector(onSystemColorsChanged:)
@@ -695,6 +736,14 @@ void NativeWidgetNSWindowBridge::SetBounds(
   [window_ setFrame:gfx::ScreenRectToNSRect(actual_new_bounds)
             display:YES
             animate:NO];
+
+  if (window_move_loop_) {
+    // If the window bounds are updated programmatically during an active move
+    // loop (e.g. by TabDragController when crossing display boundaries),
+    // update the move loop baseline so subsequent mouse drag events calculate
+    // deltas against the new frame rather than the stale initial frame.
+    window_move_loop_->SetBaseFrame([window_ frame], [NSEvent mouseLocation]);
+  }
 
   // If the window has focus but is not on the active space and the window was
   // moved to a different display, re-activate it to switch the space to the
@@ -990,6 +1039,11 @@ void NativeWidgetNSWindowBridge::SetVisibilityState(
     // DCHECK(![window_ attachedSheet]);
 
     [window_ orderOut:nil];
+
+    if (prevent_stale_content_after_hide_) {
+      should_reset_alpha_on_show_ = true;
+    }
+
     DCHECK(!window_visible_);
     return;
   } else if (new_state == WindowVisibilityState::kMiniaturizeWindow) {
@@ -999,8 +1053,22 @@ void NativeWidgetNSWindowBridge::SetVisibilityState(
 
   DCHECK(wants_to_be_visible_);
 
-  if (!ca_transaction_sync_suppressed_)
-    ui::CATransactionCoordinator::Get().Synchronize();
+  if (!ca_transaction_sync_suppressed_) {
+    if (base::FeatureList::IsEnabled(features::kAlphaInsteadOfCATransaction)) {
+      // If the window isn't visible and is marked as needing a fresh compositor
+      // frame (e.g. on initial show or after hide), keep the window
+      // effectively invisible via `alphaValue`. It will be made visible when a
+      // correctly sized compositor frame arrives.
+      if (!window_.visible && should_reset_alpha_on_show_) {
+        if (!pending_alpha_value_.has_value()) {
+          pending_alpha_value_ = window_.alphaValue;
+        }
+        window_.alphaValue = 0.0;
+      }
+    } else {
+      ui::CATransactionCoordinator::Get().Synchronize();
+    }
+  }
 
   // If the parent (or an ancestor) is hidden, return and wait for it to become
   // visible.
@@ -1025,10 +1093,14 @@ void NativeWidgetNSWindowBridge::SetVisibilityState(
     parent_->OrderChildren();
 
   if (new_state == WindowVisibilityState::kShowAndActivateWindow) {
-    [window_ makeKeyAndOrderFront:nil];
+    // Activate the app before `makeKeyAndOrderFront:`. If the order is
+    // reversed while the app is inactive, AppKit will not send
+    // NSWindowDidBecomeKeyNotification, causing Widget::IsActive() to
+    // incorrectly return false.
     if (![window_ activationIndependence]) {
       [NSApp activateIgnoringOtherApps:YES];
     }
+    [window_ makeKeyAndOrderFront:nil];
   } else if (new_state == WindowVisibilityState::kShowInactive && !parent_ &&
              ![window_ isMiniaturized]) {
     if ([[NSApp mainWindow] screen] == [window_ screen] ||
@@ -1184,6 +1256,11 @@ void NativeWidgetNSWindowBridge::EndMoveLoop() {
   window_move_loop_.reset();
 }
 
+void NativeWidgetNSWindowBridge::SetWindowMoveLoopForTesting(
+    std::unique_ptr<CocoaWindowMoveLoop> move_loop) {
+  window_move_loop_ = std::move(move_loop);
+}
+
 void NativeWidgetNSWindowBridge::SetCursor(NSCursor* cursor) {
   [window_delegate_ setCursor:cursor];
 }
@@ -1302,15 +1379,36 @@ void NativeWidgetNSWindowBridge::DisplayContextMenu(
 }
 
 void NativeWidgetNSWindowBridge::SetAllowScreenshots(bool allow) {
-  CGSConnectionID connection_id = CGSMainConnectionID();
-  CGSWindowID window_id = ns_window().windowNumber;
-  CGRect frame = ns_window().frame;
-  frame.origin = CGPointZero;
-  base::apple::ScopedCFTypeRef<CGRegionRef> region;
-  if (!allow) {
-    region.reset(CGRegionCreateWithRect(frame));
+  if (allow_screenshots_ == allow) {
+    return;
   }
-  CGSSetWindowCaptureExcludeShape(connection_id, window_id, region.get());
+  allow_screenshots_ = allow;
+  UpdateCaptureExclusion();
+}
+
+bool NativeWidgetNSWindowBridge::ShouldAllowScreenshots() const {
+  // A window inherits the capture exclusion of its ancestors: if this window or
+  // any of its ancestors disallows screenshots, this window is excluded from
+  // capture. This mirrors the Windows implementation, where an owned window
+  // inherits the display affinity of its owner. See
+  // `DesktopWindowTreeHostWin::UpdateDisplayAffinity()`.
+  if (!allow_screenshots_) {
+    return false;
+  }
+  return !parent_ || parent_->ShouldAllowScreenshots();
+}
+
+void NativeWidgetNSWindowBridge::UpdateCaptureExclusion() {
+  const bool allow = ShouldAllowScreenshots();
+  if (capture_exclusion_applier_for_testing_) {
+    capture_exclusion_applier_for_testing_.Run(ns_window(), allow);
+  } else {
+    ApplyCaptureExclusion(ns_window(), allow);
+  }
+
+  for (NativeWidgetNSWindowBridge* child : child_windows_) {
+    child->UpdateCaptureExclusion();
+  }
 }
 
 void NativeWidgetNSWindowBridge::SetColorMode(
@@ -1327,6 +1425,10 @@ void NativeWidgetNSWindowBridge::BeginFileDrag(
     const gfx::PointF& mouse_location) {
   if (!window_ || !bridged_view_) {
     DLOG(WARNING) << "BeginFileDrag failed: window or bridged_view is null";
+    return;
+  }
+  if (!ui::IsDragSessionInitiationAllowed()) {
+    DLOG(WARNING) << "BeginFileDrag failed: drag session not allowed";
     return;
   }
 
@@ -1429,6 +1531,11 @@ void NativeWidgetNSWindowBridge::OnWindowWillClose() {
 
 void NativeWidgetNSWindowBridge::OnSizeChanged() {
   UpdateWindowGeometry();
+  // The capture exclusion shape is expressed in window coordinates, so it has
+  // to be re-applied to match the new window size.
+  if (!ShouldAllowScreenshots()) {
+    UpdateCaptureExclusion();
+  }
 }
 
 void NativeWidgetNSWindowBridge::OnPositionChanged() {
@@ -1468,6 +1575,10 @@ void NativeWidgetNSWindowBridge::OnVisibilityChanged() {
       parent_->OrderChildren();
   } else {
     ReleaseCapture();  // Capture on hidden windows is not permitted.
+
+    if (prevent_stale_content_after_hide_) {
+      should_reset_alpha_on_show_ = true;
+    }
 
     // When becoming invisible, remove the entry in any parent's childWindow
     // list. Cocoa's childWindow management breaks down when child windows are
@@ -1903,7 +2014,13 @@ void NativeWidgetNSWindowBridge::SetMiniaturized(bool miniaturized) {
 }
 
 void NativeWidgetNSWindowBridge::SetOpacity(float opacity) {
-  [window_ setAlphaValue:opacity];
+  // If the window is currently invisible waiting for a compositor frame to
+  // arrive, update the value to set once that frame arrives.
+  if (pending_alpha_value_.has_value()) {
+    pending_alpha_value_ = opacity;
+  } else {
+    window_.alphaValue = opacity;
+  }
 }
 
 void NativeWidgetNSWindowBridge::SetWindowLevel(int32_t level) {
@@ -1946,6 +2063,7 @@ void NativeWidgetNSWindowBridge::SetCALayerParams(
   if (content_dip_size_ != frame_dip_size)
     return;
   compositor_frame_dip_size_ = frame_dip_size;
+  should_reset_alpha_on_show_ = false;
 
   // Update the contents atomically with the NSWindow frame resize.
   std::optional<ScopedCAActionDisabler> disabler;
@@ -1959,6 +2077,23 @@ void NativeWidgetNSWindowBridge::SetCALayerParams(
 
   if (ca_transaction_sync_suppressed_)
     ca_transaction_sync_suppressed_ = false;
+
+  // If the window is being kept invisible by its `alphaValue` waiting for
+  // a compositor frame, show it now.
+  if (pending_alpha_value_.has_value()) {
+    window_.alphaValue = pending_alpha_value_.value();
+    pending_alpha_value_ = std::nullopt;
+
+    // Now that the window has visually transitioned from invisible to visible,
+    // inform observers that the window's occlusion state has changed. AppKit
+    // does not post notifications when `alphaValue` changes, so without this
+    // notification, manual occlusion detection (e.g.
+    // WebContentsOcclusionCheckerMac) could miss that this window can now
+    // occlude other windows beneath it which is needed for glass frame.
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:NSWindowDidChangeOcclusionStateNotification
+                      object:window_];
+  }
 
   if (invalidate_shadow_on_frame_swap_) {
     invalidate_shadow_on_frame_swap_ = false;
@@ -2187,9 +2322,10 @@ void NativeWidgetNSWindowBridge::UpdateWindowGeometry() {
   CheckAndNotifyZoomedStateChanged();
   CheckAndNotifyAllWorkspacesStateChanged();
 
-  if (content_resized && !ca_transaction_sync_suppressed_ &&
-      !base::FeatureList::IsEnabled(features::kAsyncLiveResize)) {
-    ui::CATransactionCoordinator::Get().Synchronize();
+  if (content_resized && window_.visible && !ca_transaction_sync_suppressed_) {
+    if (!base::FeatureList::IsEnabled(features::kAsyncLiveResize)) {
+      ui::CATransactionCoordinator::Get().Synchronize();
+    }
   }
 
   // For a translucent window, the shadow calculation needs to be carried out

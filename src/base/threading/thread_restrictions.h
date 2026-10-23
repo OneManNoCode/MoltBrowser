@@ -162,7 +162,7 @@ StartupProfilePathInfo GetStartupProfilePath(
     bool ignore_profile_picker);
 
 #if BUILDFLAG(IS_IOS)
-class BrowserStateDirectoryBuilder;
+class ProfileIOSDirectoryBuilder;
 #endif
 
 Profile* GetLastProfileMac();
@@ -228,9 +228,9 @@ bool IsCoreSchedulingAvailable();
 int NumberOfPhysicalCores();
 }  // namespace system
 }  // namespace chromeos
-namespace client_certificates {
-class KcerPrivateKey;
-}  // namespace client_certificates
+namespace component_updater {
+class PlatformRuntimeComponentInstallerPolicy;
+}  // namespace component_updater
 namespace content {
 class BrowserGpuChannelHostFactory;
 class BrowserMainLoop;
@@ -678,7 +678,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class gfx::WUCBackdrop;
 #endif
 #if BUILDFLAG(IS_IOS)
-  friend class ::BrowserStateDirectoryBuilder;
+  friend class ::ProfileIOSDirectoryBuilder;
 #endif
 
   // Sorted by function name (with namespace), ignoring the return type.
@@ -778,7 +778,7 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   friend class blink::WorkerThread;
   friend class blink::scheduler::NonMainThreadImpl;
   friend class cc::CategorizedWorkerPoolJob;
-  friend class client_certificates::KcerPrivateKey;
+  friend class component_updater::PlatformRuntimeComponentInstallerPolicy;
   friend class content::BrowserMainLoop;
   friend class content::BrowserProcessIOThread;
   friend class content::DWriteFontCollectionProxy;

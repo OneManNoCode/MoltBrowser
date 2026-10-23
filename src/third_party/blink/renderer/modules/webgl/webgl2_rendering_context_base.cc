@@ -4510,14 +4510,12 @@ ScriptValue WebGL2RenderingContextBase::getIndexedParameter(
 std::optional<Vector<GLuint>> WebGL2RenderingContextBase::getUniformIndices(
     WebGLProgram* program,
     const Vector<String>& uniform_names) {
-  // TODO(https://crbug.com/1465002): This should return std::nullopt
-  // if there is an error.
-  Vector<GLuint> result;
   if (!ValidateWebGLProgramOrShader("getUniformIndices", program))
-    return result;
+    return std::nullopt;
 
   PointableStringArray uniform_strings(uniform_names);
 
+  Vector<GLuint> result;
   result.resize(uniform_names.size());
   ContextGL()->GetUniformIndices(ObjectOrZero(program), uniform_strings.size(),
                                  uniform_strings.data(), result.data());
@@ -5880,8 +5878,23 @@ void WebGL2RenderingContextBase::RemoveBoundBuffer(WebGLBuffer* buffer) {
 }
 
 void WebGL2RenderingContextBase::RestoreCurrentFramebuffer() {
-  bindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer_binding_.Get());
-  bindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer_binding_.Get());
+  if (!framebuffer_binding_) {
+    if (GetDrawingBuffer()) {
+      // Not calling bindFrameBuffer() to avoid eager buffer reallocation.
+      GetDrawingBuffer()->RestoreDefaultFramebufferBinding(GL_DRAW_FRAMEBUFFER);
+    }
+  } else {
+    ContextGL()->BindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                                 framebuffer_binding_->Object());
+  }
+  if (!read_framebuffer_binding_) {
+    if (GetDrawingBuffer()) {
+      GetDrawingBuffer()->RestoreDefaultFramebufferBinding(GL_READ_FRAMEBUFFER);
+    }
+  } else {
+    ContextGL()->BindFramebuffer(GL_READ_FRAMEBUFFER,
+                                 read_framebuffer_binding_->Object());
+  }
 }
 
 void WebGL2RenderingContextBase::useProgram(WebGLProgram* program) {

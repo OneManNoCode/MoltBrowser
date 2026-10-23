@@ -199,6 +199,12 @@ const ComputedStyle* StyleResolverState::CloneStyle() const {
 }
 
 void StyleResolverState::UpdateLengthConversionData() const {
+  if (!style_builder_) [[unlikely]] {
+    css_to_length_conversion_data_dirty_ = false;
+    element_style_resources_.UpdateLengthConversionData(
+        &css_to_length_conversion_data_);
+    return;
+  }
   css_to_length_conversion_data_ = CSSToLengthConversionData(
       *style_builder_, ParentStyle(), RootElementStyle(),
       GetDocument().GetStyleEngine().GetViewportSize(),
@@ -261,8 +267,8 @@ AnchorEvaluator* StyleResolverState::GetAnchorEvaluator() const {
                                : nullptr;
 }
 
-void StyleResolverState::SetParentStyle(const ComputedStyle* parent_style) {
-  parent_style_ = std::move(parent_style);
+void StyleResolverState::SetParentStyle(const ComputedStyle& parent_style) {
+  parent_style_ = &parent_style;
   if (style_builder_) {
     // Need to update conversion data for 'lh' units.
     InvalidateLengthConversionData();
@@ -282,9 +288,11 @@ void StyleResolverState::SetLayoutParentStyle(
 }
 
 void StyleResolverState::LoadPendingResources() {
+  if (!element_style_resources_.HasPendingResources()) {
+    return;
+  }
   if (pseudo_request_type_ == StyleRequest::kForComputedStyle ||
-      (ParentStyle() && ParentStyle()->IsEnsuredInDisplayNone()) ||
-      StyleBuilder().IsEnsuredOutsideFlatTree()) {
+      (ParentStyle() && ParentStyle()->IsEnsuredInDisplayNone())) {
     return;
   }
   if (StyleBuilder().Display() == EDisplay::kNone && GetStyledElement() &&

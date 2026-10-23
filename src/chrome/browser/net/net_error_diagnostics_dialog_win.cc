@@ -97,10 +97,20 @@ bool CanShowNetworkDiagnosticsDialog(content::WebContents* web_contents) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   // The Windows diagnostic tool logs URLs it's run with, so it shouldn't be
+<<<<<<< src/chrome/browser/net/net_error_diagnostics_dialog_win.cc (MoltBrowser)
   // used with incognito or guest profiles.  See https://crbug.com/40612751
   // MoltBrowser: nor with MoltNet (molt_net_incognito_parity.h).
   return !molt_ai::tor::GetsIncognitoProtections(profile) &&
          !profile->IsGuestSession();
+||||||| upstream@pin
+  // used with incognito or guest profiles.  See https://crbug.com/40612751
+  return !profile->IsIncognitoProfile() && !profile->IsGuestSession();
+=======
+  // used with incognito, Enterprise Isolated Mode or guest profiles.
+  // See https://crbug.com/40612751
+  return !profile->IsPrimaryOTRProfileWithRegularParent() &&
+         !profile->IsGuestSession();
+>>>>>>> upstream@new
 }
 
 void ShowNetworkDiagnosticsDialog(content::WebContents* web_contents,

@@ -15,6 +15,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
 #include "base/path_service.h"
+#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -52,13 +53,14 @@
 #include "ash/constants/ash_switches.h"
 #include "base/command_line.h"
 #include "chromeos/ash/components/browser_context_helper/browser_context_types.h"
-#include "chromeos/constants/chromeos_features.h"
 #include "chromeos/constants/pref_names.h"
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/jni_string.h"
 #include "base/strings/utf_string_conversions.h"
+
+// Must come after headers that provide symbols used by @JniType.
 #include "chrome/browser/profiles/android/jni_headers/OtrProfileId_jni.h"
 #endif
 
@@ -206,25 +208,23 @@ std::ostream& operator<<(std::ostream& out,
 #if BUILDFLAG(IS_ANDROID)
 base::android::ScopedJavaLocalRef<jobject>
 Profile::OTRProfileID::ConvertToJavaOTRProfileID(JNIEnv* env) const {
-  return Java_OtrProfileId_Constructor(
-      env, base::android::ConvertUTF8ToJavaString(env, profile_id_));
+  return Java_OtrProfileId_Constructor(env, profile_id_);
 }
 
 // static
 Profile::OTRProfileID Profile::OTRProfileID::ConvertFromJavaOTRProfileID(
     JNIEnv* env,
     const base::android::JavaRef<jobject>& j_otr_profile_id) {
-  return OTRProfileID(base::android::ConvertJavaStringToUTF8(
-      env, Java_OtrProfileId_getProfileId(env, j_otr_profile_id)));
+  return OTRProfileID(Java_OtrProfileId_getProfileId(env, j_otr_profile_id));
 }
 
 // static
 static base::android::ScopedJavaLocalRef<jobject>
 JNI_OtrProfileId_CreateUniqueOtrProfileId(
     JNIEnv* env,
-    const base::android::JavaRef<jstring>& j_profile_id_prefix) {
-  Profile::OTRProfileID profile_id = Profile::OTRProfileID::CreateUnique(
-      base::android::ConvertJavaStringToUTF8(env, j_profile_id_prefix));
+    const std::string& profile_id_prefix) {
+  Profile::OTRProfileID profile_id =
+      Profile::OTRProfileID::CreateUnique(profile_id_prefix);
   return profile_id.ConvertToJavaOTRProfileID(env);
 }
 
@@ -238,28 +238,20 @@ static base::android::ScopedJavaLocalRef<jobject> JNI_OtrProfileId_GetPrimaryId(
 Profile::OTRProfileID Profile::OTRProfileID::Deserialize(
     const std::string& value) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jstring> j_value =
-      base::android::ConvertUTF8ToJavaString(env, value);
   base::android::ScopedJavaLocalRef<jobject> j_otr_profile_id =
-      Java_OtrProfileId_deserializeWithoutVerify(env, j_value);
+      Java_OtrProfileId_deserializeWithoutVerify(env, value);
   return ConvertFromJavaOTRProfileID(env, j_otr_profile_id);
 }
 
 std::string Profile::OTRProfileID::Serialize() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  return base::android::ConvertJavaStringToUTF8(
-      env, Java_OtrProfileId_serialize(env, ConvertToJavaOTRProfileID(env)));
+  return Java_OtrProfileId_serialize(env, ConvertToJavaOTRProfileID(env));
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 
 Profile::Profile(const OTRProfileID* otr_profile_id)
     : otr_profile_id_(otr_profile_id ? std::make_optional(*otr_profile_id)
                                      : std::nullopt) {
-#if BUILDFLAG(IS_CHROMEOS)
-  new_guest_profile_impl_ =
-      base::FeatureList::IsEnabled(chromeos::features::kNewGuestProfile);
-#endif
-
 #if DCHECK_IS_ON()
   base::AutoLock lock(GetProfileInstancesLock());
   GetProfileInstances().insert(this);
@@ -440,13 +432,16 @@ bool Profile::IsIncognitoProfile() const {
          profile_metrics::BrowserProfileType::kIncognito;
 }
 
+bool Profile::IsEnterpriseIsolatedModeProfile() const {
+  return profile_metrics::GetBrowserProfileType(this) ==
+         profile_metrics::BrowserProfileType::kEnterpriseIsolated;
+}
+
+bool Profile::IsPrimaryOTRProfileWithRegularParent() const {
+  return IsIncognitoProfile() || IsEnterpriseIsolatedModeProfile();
+}
+
 bool Profile::IsGuestSession() const {
-#if BUILDFLAG(IS_CHROMEOS)
-  if (!new_guest_profile_impl_) {
-    return base::CommandLine::ForCurrentProcess()->HasSwitch(
-        ash::switches::kGuestSession);
-  }
-#endif  // BUILDFLAG(IS_CHROMEOS)
   return profile_metrics::GetBrowserProfileType(this) ==
          profile_metrics::BrowserProfileType::kGuest;
 }
@@ -579,8 +574,8 @@ bool Profile::AllowsBrowserWindows() const {
   }
 
 #if BUILDFLAG(IS_CHROMEOS)
-  // Do not allow Browsers on signin-derived profiles.
-  if (ash::IsSigninBrowserContext(GetOriginalProfile())) {
+  // Do not allow Browsers on non-user profiles.
+  if (!ash::IsUserBrowserContext(GetOriginalProfile())) {
     return false;
   }
 #endif
@@ -627,6 +622,19 @@ variations::VariationsClient* Profile::GetVariationsClient() {
 
 base::WeakPtr<Profile> Profile::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
+}
+
+uint64_t Profile::GetLomProfileId() {
+  PrefService* prefs = GetPrefs();
+  CHECK(prefs);
+  uint64_t id = prefs->GetUint64(prefs::kLomProfileId);
+  if (id == 0u) {
+    while (id == 0u) {
+      id = base::RandUint64();
+    }
+    prefs->SetUint64(prefs::kLomProfileId, id);
+  }
+  return id;
 }
 
 std::string Profile::ToDebugString() const {

@@ -261,6 +261,9 @@
   <message name="IDS_POLICY_URL_NOT_HTTPS_ERROR" desc="The text displayed in the status column when the URL given isn't using the https scheme, but needs to be.">
     URL must be https.
   </message>
+  <message name="IDS_POLICY_GEMINI_ENTERPRISE_URL_HOST_NOT_ALLOWED_ERROR" desc="The text displayed in the status column of the GeminiEnterpriseSettings policy when the configured URL doesn't point to a Gemini Enterprise domain.">
+    URL must point to a <ph name="GEMINI_ENTERPRISE_PRODUCT_NAME">Gemini Enterprise<ex>Gemini Enterprise</ex></ph> domain.
+  </message>
   <message name="IDS_POLICY_INVALID_SEARCH_URL_ERROR" desc="The text displayed in the status column when a the URL given for DefaultSearchProviderSearchURL is invalid.">
     Invalid search URL.
   </message>
@@ -889,6 +892,9 @@ Additional details:
   </message>
   <message name="IDS_POLICY_BANNER_PROMOTION_BTN" desc="Button for Chrome Enterprise Core (CEC) promotion banner">
     Try MoltBrowser Enterprise Core
+  </message>
+  <message name="IDS_POLICY_COMMAND_LINE_FLAGS_WARNING" desc="Warning shown on chrome://policy when custom command line flags are explicitly specified by the user upon launching Chrome.">
+    This instance of Chrome is running with command line flags manually set. Note that command line flags may change at any time and are not supported.
   </message>
   <message name="IDS_DEVTOOLS_BLOCKED_BY_POLICY" desc="Message shown when DevTools is blocked by policy.">
     Your organization has blocked the use of DevTools on this page

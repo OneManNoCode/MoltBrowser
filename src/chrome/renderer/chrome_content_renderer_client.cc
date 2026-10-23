@@ -45,6 +45,7 @@
 #include "chrome/common/profiler/chrome_thread_profiler_client.h"
 #include "chrome/common/profiler/core_unwinders.h"
 #include "chrome/common/profiler/thread_profiler_configuration.h"
+#include "chrome/common/request_header_integrity/buildflags.h"
 #include "chrome/common/secure_origin_allowlist.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/webui_url_constants.h"
@@ -71,6 +72,7 @@
 #include "chrome/renderer/plugins/pdf_plugin_placeholder.h"
 #include "chrome/renderer/process_state.h"
 #include "chrome/renderer/supervised_user/supervised_user_error_page_controller_delegate_impl.h"
+#include "chrome/renderer/tab_context_decryption_token_extension.h"
 #include "chrome/renderer/trusted_vault_encryption_keys_extension.h"
 #include "chrome/renderer/url_loader_throttle_provider_impl.h"
 #include "chrome/renderer/v8_unwinder.h"
@@ -95,6 +97,8 @@
 #include "components/dom_distiller/core/url_constants.h"
 #include "components/error_page/common/error.h"
 #include "components/error_page/common/localized_error.h"
+#include "components/facilitated_payments/content/renderer/facilitated_payments_agent.h"
+#include "components/facilitated_payments/core/features/features.h"
 #include "components/feed/feed_feature_list.h"
 #include "components/grit/components_scaled_resources.h"
 #include "components/guest_view/buildflags/buildflags.h"
@@ -182,10 +186,10 @@
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_plugin_container.h"
 #include "third_party/blink/public/web/web_plugin_params.h"
-#include "third_party/blink/public/web/web_script_controller.h"
 #include "third_party/blink/public/web/web_security_policy.h"
 #include "third_party/blink/public/web/web_view.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
 #include "url/origin.h"
@@ -221,7 +225,7 @@
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-#include "chrome/common/initialize_extensions_client.h"
+#include "chrome/common/scoped_chrome_extensions_client.h"
 #include "chrome/renderer/extensions/api/chrome_extensions_renderer_api_provider.h"
 #include "chrome/renderer/extensions/chrome_extensions_renderer_client.h"
 #include "extensions/common/constants.h"
@@ -267,6 +271,12 @@
 #include "components/spellcheck/renderer/spellcheck_panel.h"
 #endif  // BUILDFLAG(HAS_SPELLCHECK_PANEL)
 #endif  // BUILDFLAG(ENABLE_SPELLCHECK)
+
+#if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY)
+#include "chrome/common/request_header_integrity/chrome_companero.mojom.h"  // nogncheck
+#include "chrome/common/request_header_integrity/chrome_companero_loader.h"  // nogncheck
+#include "chrome/common/request_header_integrity/request_header_integrity_url_loader_throttle.h"  // nogncheck
+#endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 #include "chrome/renderer/media/chrome_key_systems.h"
@@ -362,6 +372,13 @@ std::unique_ptr<base::Unwinder> CreateV8Unwinder(v8::Isolate* isolate) {
 }  // namespace
 
 ChromeContentRendererClient::ChromeContentRendererClient()
+    : ChromeContentRendererClient(
+          /*create_extensions_client=*/
+          !base::CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kSingleProcess)) {}
+
+ChromeContentRendererClient::ChromeContentRendererClient(
+    bool create_extensions_client)
 #if BUILDFLAG(IS_WIN)
     : remote_module_watcher_(nullptr, base::OnTaskRunnerDeleter(nullptr))
 #endif
@@ -379,7 +396,10 @@ ChromeContentRendererClient::ChromeContentRendererClient()
       sampling_profiler::ThreadProfiler::CreateAndStartOnMainThread();
 #endif
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-  EnsureExtensionsClientInitialized();
+  if (create_extensions_client) {
+    extensions_client_ =
+        std::make_unique<extensions::ScopedChromeExtensionsClient>();
+  }
   ChromeExtensionsRendererClient::Create();
 #endif
 }
@@ -422,6 +442,17 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   thread->BindHostReceiver(module_event_sink.InitWithNewPipeAndPassReceiver());
   remote_module_watcher_ = RemoteModuleWatcher::Create(
       thread->GetIOTaskRunner(), std::move(module_event_sink));
+#endif
+
+#if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY)
+  if (request_header_integrity::RequestHeaderIntegrityURLLoaderThrottle::
+          IsFeatureEnabled()) {
+    mojo::PendingRemote<request_header_integrity::mojom::ChromeCompanero>
+        remote;
+    thread->BindHostReceiver(remote.InitWithNewPipeAndPassReceiver());
+    request_header_integrity::ChromeCompaneroLoader::GetInstance()
+        .SetMojoRemote(std::move(remote));
+  }
 #endif
 
   browser_interface_broker_ =
@@ -596,6 +627,9 @@ void ChromeContentRendererClient::RenderThreadStarted() {
         WebString::FromAscii(scheme));
   }
 
+  WebSecurityPolicy::RegisterURLSchemeAsSupportingFetchAPI(
+      WebString::FromAscii(chrome::kChromeExperimentalSiteTokenProviderScheme));
+
   // This doesn't work in single-process mode.
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kSingleProcess)) {
@@ -679,6 +713,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
   SandboxStatusExtension::Create(render_frame);
 #endif
 
+  TabContextDecryptionTokenExtension::Create(render_frame);
   TrustedVaultEncryptionKeysExtension::Create(render_frame);
 #if !BUILDFLAG(IS_ANDROID)
   if (features::RemoteActorCredentialSharingEnabled() &&
@@ -815,6 +850,16 @@ void ChromeContentRendererClient::RenderFrameCreated(
     wallet::ImageExtractor::Create(render_frame, registry);
   }
 
+  // Scans the DOM for payment QR codes. The main frame check precedes the
+  // feature flag check so that subframes never enroll into the experiment and
+  // dilute its metrics.
+  if (render_frame->IsMainFrame() &&
+      base::FeatureList::IsEnabled(
+          payments::facilitated::kEnableDesktopQrCodeDetection)) {
+    new payments::facilitated::FacilitatedPaymentsAgent(render_frame,
+                                                        associated_interfaces);
+  }
+
 #if !BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(features::kWebium)) {
     WebUIBrowserRendererExtension::Create(render_frame);
@@ -909,6 +954,20 @@ bool ChromeContentRendererClient::IsDomStorageDisabled() const {
   // opaque origins). This avoids a renderer kill by the browser process which
   // isn't expecting PDF renderer processes to ever use DOM storage
   // interfaces. See https://crbug.com/357014503.
+  return pdf::IsPdfRenderer();
+#else
+  return false;
+#endif
+}
+
+bool ChromeContentRendererClient::AreDedicatedWorkersDisabled() const {
+#if BUILDFLAG(ENABLE_PDF) && BUILDFLAG(ENABLE_EXTENSIONS)
+  // PDF renderers shouldn't need to create dedicated workers. Note that it's
+  // still possible to attempt to instantiate a Worker in a PDF document's
+  // context via DevTools; returning true here ensures that the constructor
+  // throws a SecurityError DOMException. This avoids a renderer kill by the
+  // browser process which isn't expecting PDF renderer processes to ever create
+  // dedicated workers. See https://crbug.com/553118313.
   return pdf::IsPdfRenderer();
 #else
   return false;
@@ -1253,6 +1312,22 @@ bool ChromeContentRendererClient::AllowPopup() {
 #endif
 }
 
+bool ChromeContentRendererClient::IsUnboundedElementAllowed(
+    content::RenderFrame* render_frame) {
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+  if (render_frame && render_frame->GetWebFrame()) {
+    const blink::WebSecurityOrigin origin =
+        render_frame->GetWebFrame()->GetSecurityOrigin();
+    if (!origin.IsNull() &&
+        origin.Protocol().Equals(extensions::kExtensionScheme) &&
+        origin.Host().Equals(extension_misc::kContextualTasksExtensionId)) {
+      return true;
+    }
+  }
+#endif
+  return false;
+}
+
 bool ChromeContentRendererClient::ShouldNotifyServiceWorkerOnWebSocketActivity(
     v8::Local<v8::Context> context) {
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
@@ -1501,14 +1576,6 @@ void ChromeContentRendererClient::
   }
 }
 
-bool ChromeContentRendererClient::AllowScriptExtensionForServiceWorker(
-    const url::Origin& script_origin) {
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-  return script_origin.scheme() == extensions::kExtensionScheme;
-#else
-  return false;
-#endif
-}
 
 void ChromeContentRendererClient::
     WillInitializeServiceWorkerContextOnWorkerThread() {
@@ -1543,11 +1610,12 @@ void ChromeContentRendererClient::WillEvaluateServiceWorkerOnWorkerThread(
       ->WillEvaluateServiceWorkerOnWorkerThread(
           context_proxy, v8_context, service_worker_version_id,
           service_worker_scope, script_url, service_worker_token);
-#endif
-  if (AllowScriptExtensionForServiceWorker(url::Origin::Create(script_url))) {
+  if (url::Origin::Create(script_url).scheme() ==
+      extensions::kExtensionScheme) {
     BenchmarkingBindings::InstallConditionally(v8_context);
     LoadTimesBindings::Install(v8_context);
   }
+#endif
 }
 
 void ChromeContentRendererClient::DidStartServiceWorkerContextOnWorkerThread(
@@ -1680,4 +1748,3 @@ void ChromeContentRendererClient::AppendContentSecurityPolicy(
                   network::mojom::ContentSecurityPolicySource::kHTTP});
 #endif
 }
-

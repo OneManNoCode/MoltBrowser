@@ -20,8 +20,13 @@
 
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 
+<<<<<<< src/third_party/blink/renderer/platform/fonts/font_platform_data.cc (MoltBrowser)
 #include <atomic>  // MoltBrowser
 
+||||||| upstream@pin
+=======
+#include "base/bit_cast.h"
+>>>>>>> upstream@new
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "build/build_config.h"
@@ -236,19 +241,14 @@ bool FontPlatformData::HasSpaceInLigaturesOrKerning(
   return hb_face->HasSpaceInLigaturesOrKerning(features);
 }
 
-unsigned FontPlatformData::GetHash() const {
-  unsigned h = UniqueID();
+uint32_t FontPlatformData::GetHash() const {
+  uint32_t h = UniqueID();
   h ^= 0x01010101 * ((static_cast<int>(is_hash_table_deleted_value_) << 3) |
                      (static_cast<int>(orientation_) << 2) |
                      (static_cast<int>(synthetic_bold_) << 1) |
                      static_cast<int>(synthetic_italic_));
 
-  // This memcpy is to avoid a reinterpret_cast that breaks strict-aliasing
-  // rules. Memcpy is generally optimized enough so that performance doesn't
-  // matter here.
-  uint32_t text_size_bytes;
-  UNSAFE_TODO(memcpy(&text_size_bytes, &text_size_, sizeof(uint32_t)));
-  h ^= text_size_bytes;
+  h ^= base::bit_cast<uint32_t>(text_size_);
 
   return h;
 }
@@ -332,7 +332,7 @@ String FontPlatformData::GetPostScriptName() const {
 
   SkString postscript_name;
   bool success = typeface_->getPostScriptName(&postscript_name);
-  return success ? postscript_name.c_str() : String();
+  return success ? String(base::as_byte_span(postscript_name)) : String();
 }
 
 }  // namespace blink
