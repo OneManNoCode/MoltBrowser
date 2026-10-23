@@ -422,7 +422,7 @@ ServiceProcessHost::Launch<molt_ai::mojom::MoltInferenceService>(
 
 | `BrowserAIRuntime` method | New behaviour |
 |---|---|
-| `GetInstance`, `Initialize` | Unchanged, but no `llama_backend_init` in the browser. The AVX2/FMA check stays (`base::CPU`) and runs before any launch. |
+| `GetInstance`, `Initialize` | Unchanged, but no `llama_backend_init` in the browser. The CPU check stays (`base::CPU`) and runs before any launch; since §12 it asks for x86-64-v2 (SSE4.2, POPCNT), not AVX2. |
 | `GetLocalInferenceUnsupportedReason`, `GetHardwareCapability`, `CheckRamForModel`, `CanRunModel`, `GetModelMemoryUsage`, `RefreshModelStatus`, `GetAvailableModels`, `GetModelInfo`, `DownloadModel` | Unchanged (registry stays in the browser). |
 | `LoadModel(id, &error)` | Blocking facade: opens the file, launches, loads, swaps; maps `LoadModelStatus` to today's user-facing strings. |
 | `UnloadModel`, `DeleteModel`, `Shutdown` | Drop remotes (kill); `DeleteModel` waits for exit before removing the file. |
@@ -1165,4 +1165,177 @@ The machine this was built on has no Chromium checkout and no GPU: 4 cores, and 
 - **Image encoding.** A device lost while the projector encodes an image is caught by mtmd (§11.6), so that request ends with `kDecodeFailed`; the next decode reports `kBackendFailed`.
 - **Not planned:** embeddings on the GPU (the embedding model's process never asks); one model split across GPUs.
 - **Sanitizers over the Vulkan path.** ASan and UBSan ran over the std-only code, not over ggml-vulkan with a driver.
-- **CPUs without AVX2.** The CPU path, the fallback for every GPU failure, still requires AVX2 (`kUnsupportedCpu`). Choosing a CPU backend at run time (llama.cpp builds one per instruction set) is a separate follow-up.
+- **CPUs without AVX2.** The CPU path, the fallback for every GPU failure, required AVX2 (`kUnsupportedCpu`) when this was written. Section 12 chooses the CPU kernels at run time instead.
+
+## 12. CPU kernels for x86-64 CPUs without AVX2 (run-time choice)
+
+Status: implemented (October 2026), pending a compile on the build machine and a run on real pre-AVX2 hardware (§12.10). §12.1–12.7 are the research and the decision, §12.8 what was built, §12.9 how it was tested, §12.10 what is left. On x64, `//third_party/llama_cpp` built ggml's x86 kernels with `-mavx2 -mfma -mf16c`, so on a CPU without AVX2 or FMA (Intel Core before Haswell, 2013; AMD before Excavator, 2015; Atom, Celeron and Pentium parts sold until about 2021; VMs that hide AVX) the browser refused on-device AI before launching the service, and the service checked again. The goal: those CPUs run models on the CPU with the best kernels each supports; AVX2 machines run exactly what they ran before. macOS is arm64 with Metal and isn't affected; this is x64 Linux and Windows. llama.cpp is the vendored b11641; Chromium files were read at 152.0.7977.169.
+
+### 12.1 Findings in one page
+
+1. **Only two translation units need AVX2.** BUILD.gn gives the AVX2 flags to `arch/x86/quants.c` and `arch/x86/repack.cpp` (and `arch/x86/cpu-feats.cpp`, which compiles to nothing here). Every other ggml-cpu file is built for Chromium's x64 baseline, `-msse3` (`build/config/compiler_cpu_abi.gn:58`, `build/config/win/BUILD.gn:123`). The two files define 40 functions: 28 quantized dot products and activation quantizers, and 12 repacked-matmul kernels.
+2. **Side effect found on the way: no weight repacking on x64.** `ggml_cpu_has_avx2()` is a compile-time answer (`ggml-cpu.c:3657`, `#if defined(__AVX2__)`), and `ggml-cpu.c` is built without `-mavx2`, so it returns 0. Repacking (`ggml_repack_get_optimal_repack_type`, `repack.cpp:4975`) therefore never picks a layout on x64: the 12 repack kernels are dead code there, and the `cpu_repack_used` the service reports means "allowed", not "used". F32 and F16 operations (`vec.cpp`, `ops.cpp`: norms, softmax, RoPE, the F16 KV cache) run their SSE3 paths. §2.5's memory figures for repacking describe upstream's x64 behaviour, not this build's. Changing any of this would change what AVX2 machines run, so it is left as it is (§12.10).
+3. **Upstream's answer is one shared library per variant.** `GGML_CPU_ALL_VARIANTS` with `GGML_BACKEND_DL` (§12.3) builds the whole CPU backend 14 times on x86 and loads the best one with `dlopen`. In our sandbox that needs ggml itself as a shared library, loading before the sandbox on Linux and before lockdown on Windows (two upstream hooks, the Windows one untestable without a Windows build), and more signed files to ship (§12.4).
+4. **Linking whole backends side by side is unsafe.** One CPU backend defines about 400 external symbols plus 209 weak (COMDAT) ones, C++ template code and vtables that the linker merges across variants silently, which can hand a non-AVX caller AVX2 code (§12.5).
+5. **Linking only the two ISA-specific files per variant is small and safe.** Their 40 symbols are plain C functions (no data, no weak symbols, at `-O0` and `-O2`, libstdc++ and libc++). A force-included header renames them per variant; a dispatch file keeps the original names as thunks that jump through the chosen variant's table, so nothing in ggml or llama.cpp changes (§12.5).
+6. **Three variants:** `x86-64-v2` (SSE4.2 and POPCNT, no AVX), `avx` (Sandy Bridge and Ivy Bridge; AMD Bulldozer to Steamroller, Jaguar) and `avx2` (AVX2, FMA, F16C: today's flags). They cost about 5, 58 and 105 KB of code. No AVX-512 variant: in these files it only replaces two instructions of an int8 helper with one VNNI instruction and packs nibbles, and the AVX-512 repack paths are never chosen (point 2) (§12.6).
+7. **The choice is a pure function** of the CPUID and XCR0 bits, scored like upstream's `cpu-feats.cpp` but also checking that the OS saves the AVX registers (upstream's "FIXME"). The service applies it before `llama_backend_init()` and before anything computes. Only CPUs below x86-64-v2 are still refused: Intel Core 2 and older, AMD before Bulldozer (Phenom, Athlon II), Atom before Silvermont (§12.7).
+
+### 12.2 What needs AVX2 today
+
+| File (BUILD.gn target) | Flags | What it defines |
+|---|---|---|
+| `ggml-cpu/arch/x86/quants.c` (`:ggml_cpu_arch_x86_c`) | `-mavx2 -mfma -mf16c -msse4.2` | `quantize_row_q8_0`, `_q8_1`, `_q8_K` (activations, the `from_float` of the quantized types) and 25 `ggml_vec_dot_*` kernels (Q1_0 to Q8_0, the K-quants, the IQ types, MXFP4, NVFP4, TQ1_0, TQ2_0). Each has an `__AVX2__` path; most also have an `__AVX__` path, two have an `__SSSE3__` path, and the rest fall back to the `_generic` C versions in `ggml-cpu/quants.c`. |
+| `ggml-cpu/arch/x86/repack.cpp` (`:ggml_cpu_arch_x86`) | same | 12 kernels for repacked weights: `ggml_quantize_mat_q8_0_4x8`, `_q8_K_4x8`, and `ggml_gemv_*`/`ggml_gemm_*` for Q4_0, Q4_K, Q2_K, IQ4_NL and MXFP4 at 8x8. |
+| `ggml-cpu/arch/x86/cpu-feats.cpp` (`:ggml_cpu_arch_x86`) | same | Nothing: its score function is exported only with `GGML_BACKEND_DL`. |
+| everything else in `ggml-cpu/` | Chromium's `-msse3` | the backend, graph compute, operators, F32/F16 vector code, the generic quantized kernels. |
+
+Who calls the 40: `ggml-cpu.c`'s `type_traits_cpu` table (31 entries: `from_float` and `vec_dot` per type), `ggml-cpu/repack.cpp` (12 calls in its kernel templates), and `amx/mmq.cpp` (2 calls, compiled out: AMX needs `__AMX_INT8__` and `__AVX512VNNI__` at compile time). `src/` and `tools/mtmd` call none of them.
+
+### 12.3 Upstream: one shared library per variant
+
+- `GGML_CPU_ALL_VARIANTS` (`ggml/src/CMakeLists.txt:489`) calls `ggml_add_cpu_backend_variant` for 14 x86 levels: x64, sse42, sandybridge, ivybridge, piledriver, haswell, skylakex, cannonlake, cascadelake, icelake, cooperlake, zen4, alderlake, sapphirerapids (five of them not with MSVC). Each is a complete CPU backend, all 17 ggml-cpu files compiled with that level's flags (`ggml-cpu/CMakeLists.txt:20-60, 345-417`), as `libggml-cpu-<name>.so` / `ggml-cpu-<name>.dll`.
+- It requires `GGML_BACKEND_DL`, which requires `BUILD_SHARED_LIBS`: ggml's core (`ggml-base`) is a shared library the variants link against.
+- The feature check, `arch/x86/cpu-feats.cpp`, is compiled separately without the level's flags and without LTO (so no AVX code can be inlined into it) and exports `ggml_backend_score()`: 0 if a required feature is missing, otherwise a sum of feature weights (FMA 1, F16C 2, SSE4.2 4, BMI2 8, AVX 16, AVX2 32, AVX-VNNI 64, AVX-512 128, ...). It reads CPUID only; "FIXME: this does not check for OS support".
+- `ggml_backend_load_best("cpu")` (`ggml-backend-reg.cpp:481`) lists the executable's directory and the current directory, `dlopen`s every `ggml-cpu-*` library, calls its score, and registers the best.
+- MoltBrowser already ships this layout once: the Windows Whisper helper (`release-windows-selfhosted.yml`) bundles upstream's `ggml.dll`, `ggml-base.dll` and `ggml-cpu-*.dll`. That is a separate, unsandboxed helper process with its own copy of ggml, which is why the layout works there.
+
+### 12.4 Loading a variant library in the sandbox
+
+- **One copy of ggml.** The chrome binary links ggml statically with hidden visibility, so a variant library can't resolve ggml's symbols from it. Either ggml (and llama.cpp, which calls it) becomes a shared library the browser binary depends on, or every variant carries its own ggml core: two sets of ggml globals in one process (the log callback, the FP16 tables, the backend registry), which upstream doesn't support.
+- **Linux:** the broker (`FilePermissionsForGpu`) doesn't let the sandboxed process open or list the install directory, so the library must be opened in the pre-sandbox hook, by an explicit path chosen there (not `ggml_backend_load_best`'s directory scan), with `RTLD_NODELETE`, as `LoadLibrariesForGpu` does for Vulkan. That is a second MoltBrowser hook in `on_device_model_sandbox_init.cc` (§11.7 added the first).
+- **Windows:** this sandbox type applies `MITIGATION_FORCE_MS_SIGNED_BINS` at `LowerToken()` (§11.4), and our DLL isn't Microsoft-signed, so it must be loaded before lockdown: `ServiceProcessHost::Options::WithPreloadedLibraries` is PassKey-gated, so an upstream content patch, the same open problem as Vulkan on Windows (§11.4). Windows builds are paused, so it can't be tested.
+- **Packaging and signing:** every variant is another file per platform in the installer, the portable ZIP, the Linux packages and the update payload, and on Windows another Authenticode signature (`release-win.sh` signs the executables). A missing or stale variant file means a failed or slow load at run time, not a build error.
+- **CFI:** the official Linux build's indirect-call checks don't cross library boundaries; ggml's own calls are exempt already (`cfi_icall_disable`), so this alone isn't a blocker.
+
+### 12.5 Linking every variant into one binary
+
+Measured here with clang 18 at `-O2` (whole backend with upstream's haswell flags):
+
+| What is duplicated | External symbols | Weak (COMDAT) symbols | Code per variant |
+|---|---|---|---|
+| The whole CPU backend (17 files) | 400 (327 C, 73 C++), including 5 global tables | 209: C++ typeinfo and vtables of `ggml::cpu::repack` templates, template code | about 1.16 MB |
+| Only `arch/x86/quants.c` and `arch/x86/repack.cpp` | 40 C functions, no data | none (also at `-O0`, with libstdc++ and libc++) | x86-64-v2 5 KB, avx 58 KB, avx2 105 KB |
+
+Ways to rename the duplicated symbols:
+
+- **A prefix macro per variant:** a header of `#define name prefix_name` lines, force-included into the variant's files. Works for C function names; it can't rename C++ template instances, vtables or the `std::` code a C++ file instantiates.
+- **`objcopy --prefix-symbols`:** Chromium's official Linux and Windows builds use ThinLTO, so object files are LLVM bitcode, which objcopy can't rewrite; it would also need a post-compile step GN has no hook for (a `source_set`'s object paths aren't visible to GN).
+- **A namespace per variant via `-D`:** `ggml-cpu.c` and `quants.c` are C.
+- **The hazard of weak symbols:** a function the linker sees in several objects as COMDAT (an inline function, a template, a vtable) is kept once, from whichever object it picks. If that copy came from a file built with `-mavx2`, every caller gets AVX2 code, including the x86-64-v2 variant, and a CPU without AVX2 dies with SIGILL. Nothing warns about it.
+
+So the whole-backend variants would need a rename scheme the C++ half doesn't allow, and would be unsafe without one. The two ISA-specific files have none of these problems: 40 C names, no weak symbols, a prefix macro covers them. A mismatch between the rename list and the dispatch list is a link error: a function missing from the rename list is defined three times (duplicate symbol), one missing from the dispatch list leaves its callers unresolved. The hazard of weak symbols is checked by listing the variant objects' symbols (§12.9).
+
+### 12.6 The variants and their cost
+
+| Variant | Flags (`quants.c`, `repack.cpp`) | Required at run time | CPUs | Kernels |
+|---|---|---|---|---|
+| `x86-64-v2` | `-msse4.2 -mpopcnt` | SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT | Intel Nehalem and Westmere (2008-2010); Atom from Silvermont to Tremont (2013-2021) and the Celeron and Pentium parts built on them or sold without AVX; VMs that hide AVX | SSSE3 for Q4_0 and Q1_0; the generic C code for the rest (no SSE paths upstream) |
+| `avx` | `-mavx -msse4.2 -mpopcnt` | the above and AVX with OS support (XCR0 bits 1-2) | Intel Sandy Bridge and Ivy Bridge (2011-2012); AMD Bulldozer to Steamroller, Jaguar and Puma | the `__AVX__` paths of most kernels, every K-quant, Q4_0, Q8_0 and MXFP4 among them |
+| `avx2` | `-mavx2 -mfma -mf16c -msse4.2` (unchanged) | the above and AVX2, FMA, F16C | Intel Haswell (2013) and later, AMD Excavator (2015) and later, Zen | unchanged |
+
+- **Why an `avx` level:** most quantized kernels upstream have AVX2, AVX and generic paths and no SSE path, and the catalog's models are Q4_K_M (Q4_K and Q6_K), Q8_0 and MXFP4. Sandy and Ivy Bridge are the most common CPUs without AVX2 still in use, and without this level they would run the generic C code. It costs one more copy of two files.
+- **Why no F16C in `avx`:** Sandy Bridge and Bulldozer lack it, and in these two files it only speeds up the scalar FP16 conversions of block scales.
+- **Why no AVX-512 level:** in `quants.c` it only turns the int8 helper of the Q4_0, Q5 and Q8_0 kernels (`mul_sum_us8_pairs_float`: two instructions) into one VNNI instruction, and packs nibbles with a 512-bit-only instruction; the AVX-512 repack kernels are never chosen in this build (§12.1, point 2). The gain is small, the frequency drop of 512-bit code on older Xeons is not. A `vnni` level (AVX-512-VNNI or AVX-VNNI on top of `avx2`) can be added later as one more row here.
+- **Why not upstream's finer levels (ivybridge, piledriver):** the extra F16C/FMA paths in these two files are minor; three levels cover every x86-64-v2 CPU with the best large kernel family it has.
+
+### 12.7 Choosing at run time
+
+- **Where:** in the inference service, in `LlamaEngine::InitBackendOnce()` (the chat and the embedding engine both call it), before `llama_backend_init()` and before any ggml computation. No other process runs ggml.
+- **How ggml sees it:** it doesn't. ggml keeps one statically registered CPU backend (`GGML_USE_CPU`), which llama.cpp finds by type (`ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU)`, `llama-model.cpp:1154`, `llama-context.cpp:442`), and the Vulkan path's explicit device list (§11.5) holds only the GPU. The choice is made below the backend, at the level of the 40 kernels.
+- **The function:** pure, std-only, unit-tested: CPUID leaf 1 ECX (SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, FMA, XSAVE, OSXSAVE, AVX, F16C), leaf 7 EBX (AVX2) and XCR0 in, the best variant whose requirements all hold out, scored like `cpu-feats.cpp`. AVX, AVX2, FMA and F16C count only when the OS saves the YMM registers (OSXSAVE set and XCR0 bits 1 and 2), as `base::CPU` checks: a VM or a kernel that leaves AVX state off would otherwise crash on the first AVX instruction. Below x86-64-v2 it returns nothing, and the service answers `kUnsupportedCpu`.
+- **The browser** refuses only CPUs below x86-64-v2 (`base::CPU`: SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT), with the same kind of message as before, naming SSE4.2.
+- **Default:** before the choice is applied, the thunks use the `x86-64-v2` table, so a forgotten call costs speed, never a crash.
+- **Cost on AVX2 machines:** the same kernels, compiled from the same source with the same flags; each kernel call goes through one more indirect jump. A call computes a whole row (thousands of multiply-adds), so the jump is noise; measured in §12.9.
+
+### 12.8 What was built
+
+```
+browser                                        inference service (kOnDeviceModelExecution)
+-------                                        -------------------------------------------
+BrowserAIRuntime, EmbeddingModelManager:       LoadModel / LoadEmbeddingModel
+  base::CPU: SSE3 SSSE3 SSE4.1 SSE4.2 POPCNT?    LlamaEngine::CpuSupported()? else kUnsupportedCpu
+  no: "This CPU doesn't support SSE4.2, ..."     LlamaEngine::InitBackendOnce():
+      (nothing is launched)                        level = ChooseX86CpuKernels(ReadX86CpuInfo())
+                                                   molt_llama::UseX86CpuKernels(level)
+                                                   llama_backend_init() (once)
+                                                 ggml-cpu.c's type traits, e.g. Q4_K's vec_dot:
+                                                   ggml_vec_dot_q4_K_q8_K (thunk)
+                                                     -> molt_x86_<level>_ggml_vec_dot_q4_K_q8_K
+```
+
+**GN** (`src/third_party/llama_cpp/BUILD.gn`, x64 only: Linux, Windows, and the x64 half of a universal macOS build):
+
+- `_ggml_x86_levels`: `v2` (`-msse4.2 -mpopcnt`), `avx` (`-mavx -msse4.2 -mpopcnt`), `avx2` (`-mavx2 -mfma -mf16c -msse4.2`, unchanged).
+- `:ggml_cpu_x86_<level>`: `arch/x86/quants.c` and `arch/x86/repack.cpp`, unmodified, with the level's flags, `GGML_CPU_X86_VARIANT_PREFIX=molt_x86_<level>_`, and `chromium/ggml-cpu-x86-variants.h` force-included (`-include`; `/FI` with clang-cl). Visible only to the dispatch.
+- `:ggml_cpu_x86_dispatch`: the thunks and `molt_llama::UseX86CpuKernels()`, with Chromium's baseline flags; its public config defines `GGML_MOLTBROWSER_X86_CPU_KERNELS` for the service. It replaces `:ggml_cpu_arch_x86` and `:ggml_cpu_arch_x86_c` in `:ggml`.
+- `arch/x86/cpu-feats.cpp` is no longer built (it compiled to nothing).
+
+**llama.cpp:** no vendored file changed. New MoltBrowser files in `chromium/` (README.chromium):
+
+- `ggml-cpu-x86-variants.h`: the 40 names twice, as an X-macro list with each function's kind of signature (for the dispatch) and as `#define name prefix##name` renames (for the level builds). How a mismatch fails: §12.5.
+- `ggml-cpu-x86-dispatch.{h,cpp}`: the level enum; one constant table of 40 function pointers per level, their element types taken with `decltype` from upstream's own declarations (`ggml-cpu/quants.h`, `ggml-cpu/repack.h`), so a changed upstream signature doesn't compile; a `constinit std::atomic` pointer to the table in use, the x86-64-v2 one until the service chooses; and the 40 thunks under ggml's names, each one load and an indirect jump.
+
+**Service** (`src/chrome/services/molt_ai/inference/`):
+
+- `engine/cpu_kernels.{h,cc}` (std-only, `:cpu_kernels`): `ChooseX86CpuKernels()` (pure), `ReadX86CpuInfo()` (CPUID leaves 0, 1 and 7, and XGETBV only with XSAVE and OSXSAVE, as `base::CPU` does), `HostX86CpuKernels()` (read once per process), `X86CpuKernelsName()`.
+- `LlamaEngine`: `CpuSupported()`; `InitBackendOnce()` now returns false below x86-64-v2 and otherwise selects the level before `llama_backend_init()`, at every load (one store; a test can change the level between loads); `CpuKernelsName()`; `SetCpuKernelsForTesting()`. Both engines' `Load()` report a refused CPU as the new `EngineLoadStatus::kUnsupportedCpu`; the chat engine's description carries the level (`cpu_kernels`).
+- `MoltInferenceService`: `CpuSupported()` asks the engine instead of `base::CPU` (no `base/cpu.h` any more), `kUnsupportedCpu` maps to the mojom status of the same name, and the level is logged at `--v=1`.
+
+**Browser:** `BrowserAIRuntime::ComputeUnsupportedReason()` and `EmbeddingModelManager::NotOfferedReason()` ask `base::CPU` for SSE3, SSSE3, SSE4.1, SSE4.2 and POPCNT instead of AVX2 and FMA; the message there and for a `kUnsupportedCpu` load says "This CPU doesn't support SSE4.2, which on-device AI in MoltBrowser needs. Use a cloud model instead (AI Settings > Connect AI Providers)." The mojom changed only in a comment; the level isn't sent to the browser (§12.10).
+
+### 12.9 How it was tested
+
+This machine has no Chromium checkout. Its CPU has AVX2 and AVX-512, so every level runs natively, and qemu-user 8.2 emulates older CPUs: it raises SIGILL for any instruction the emulated model lacks, VEX-encoded scalar SSE included (checked first with a probe of each instruction family on Nehalem, Sandy Bridge, Ivy Bridge and Haswell).
+
+**In the repository:**
+
+- `engine/cpu_kernels_unittest.cc` (7 tests, in `molt_ai_unittests`): no CPUID, Core 2, AMD K10 and each missing x86-64-v2 feature are refused, also with AVX2 present; Nehalem gets x86-64-v2, Sandy Bridge, Ivy Bridge and Piledriver `avx`, Haswell and Skylake-X `avx2`; AVX without OS support (no YMM or no SSE state in XCR0, no OSXSAVE, no XSAVE) falls back to x86-64-v2; the AVX2 level needs FMA, F16C and leaf 7; the host's reading is consistent.
+- `x86_cpu_kernels_unittest.cc` (2 tests, in `molt_ai_unittests` on x64): for the 25 quantized types the levels implement a dot product for, each level this CPU runs gives the x86-64-v2 level's result on the same inputs within 1e-6 of the sum of the products' magnitudes (measured: at most 1.4e-8; 5 of the 50 results bit-identical, so the levels do run different code), and with its own activation quantizer stays within 1e-2 of the float result (measured: 5e-4). The IQ types get random blocks instead of ggml's quantizer, whose search tables take seconds to build. 9 ms.
+
+**Run here:**
+
+- *GN.* The stub source root of §11.8, holding this worktree's `//third_party/llama_cpp` and the engine: `gn gen --check` passes with Vulkan off and on, and the test programs build with ninja at `-O1` and `-O2`.
+- *Objects* (each level, at `-O1` and `-O2`): exactly the 40 functions, all with the level's prefix; no weak symbol, no data, no initializer section. `x86-64-v2` contains no VEX- or EVEX-encoded instruction and no YMM or ZMM register; `avx` no FMA, F16C or 256-bit integer instruction. The `avx2` level's code is instruction for instruction the old single build's (the same command line without the rename, disassembled and compared). A linked program defines each of the 40 names once (the thunk) and the 120 level functions.
+- *Unit tests:* the engine directory's std-only suite (160 tests) and the two above pass; `cpu_kernels` also with GCC `-Werror`, clang ASan + UBSan, and libc++ `-fno-exceptions -fno-rtti -Wunsafe-buffer-usage`.
+- *End to end:* `LlamaEngine` built as the service builds it, three greedy chat turns of 24 tokens with KV reuse, and one prompt's last-token logits, with each level forced (`SetCpuKernelsForTesting`) and with the CPU's own choice. 22 models: random llama models (n_embd 1024, n_ff 2816, 4 layers) quantized to Q4_K_M, Q4_0, Q8_0, Q6_K, Q2_K, IQ4_NL, Q5_K_M and Q3_K_M, flat ("random") and confident ("peaked": the output matrix is the token embeddings permuted, so each token has a clear successor, as in a real model, while every layer still runs); and llama.cpp's tiny llama, Qwen3 and a ChatML model at Q8_0 and Q4_0. No real model could be downloaded here.
+
+  | Models | Text, every level vs `avx2` | Logits vs `avx2` |
+  |---|---|---|
+  | peaked, 8 types | identical, all three turns | at most 0.0032 apart on a range of 17 (1.9e-4); cosine ≥ 0.9999997; same top token, by a margin of about 14 |
+  | random, 8 types | identical for 2; the others part at a near-tie, mostly in the second or third turn | at most 0.058 apart on a range of about 5.5 (1.1%); cosine ≥ 0.99979; same top token |
+  | tiny, 6 | identical, except tiny-chatml Q4_0 on x86-64-v2 | within 1e-7, except that one: 0.016 on 2.1 |
+
+  The CPU's own choice was `avx2` here and gave the `avx2` texts. Why the levels differ at all: before every matrix product ggml quantizes the activations to 8 bits, and upstream's AVX quantizer (shared by `avx` and `avx2`) rounds half to even and multiplies by 127/max, where the C one used by x86-64-v2 rounds half away from zero and multiplies by 1/(max/127); AVX2 also fuses multiply-adds. A value that rounds the other way moves one activation by one step, and in a random network such steps grow layer by layer. A confident model absorbs them; a flat one, where the two best tokens are 0.02 apart, picks the other one now and then. Upstream's CPU variants differ the same way; AVX2 machines don't, as they run the same code as before.
+- *Old CPUs under qemu* (the engine as above, the CPU's own choice; six models):
+
+  | Emulated CPU | Result |
+  |---|---|
+  | Penryn (Core 2: no SSE4.2) | load refused with `kUnsupportedCpu`, before any llama.cpp call; no fault |
+  | Nehalem (x86-64-v2, no AVX) | `x86-64-v2` chosen, every run completes: no AVX instruction executed. Texts and logits bit-identical to the native run with `x86-64-v2` forced |
+  | Sandy Bridge (AVX, no AVX2, FMA, F16C) | `avx` chosen, runs complete, bit-identical to the native `avx` runs |
+
+  Negative controls: forcing `avx` on Nehalem, or `avx2` on Nehalem or Sandy Bridge, dies with SIGILL at the first product. The emulated CPUID results also check the choice on Westmere, Ivy Bridge, Opteron G4 (Bulldozer) and G5 (Piledriver), Haswell, Skylake-Server and EPYC, and on Haswell with XSAVE, FMA or F16C removed (x86-64-v2, `avx`, `avx`).
+- *Speed* (`-O2`, on this machine's CPU):
+
+  | Model | Old build | `avx2` | `avx` | `x86-64-v2` |
+  |---|---|---|---|---|
+  | Q4_K_M | 437 / 194 | 421 / 193 | 325 / 125 | 67 / 50 |
+  | Q8_0 | 405 / 94 | 400 / 97 | 319 / 86 | 111 / 63 |
+  | Q4_0 | 359 / 190 | 342 / 166 | 288 / 147 | 233 / 152 |
+  | IQ4_NL | 364 / 189 | 362 / 179 | 282 / 137 | 42 / 28 |
+
+  Prompt / generation tokens per second, one pinned thread, a 64-token prompt and 32 generated tokens, the median of three rounds (each the median of seven runs) of the peaked models. The old build (the base commit's llama.cpp, built the same way) and `avx2` run the same kernels; their differences are this shared machine's noise (rounds of one configuration differ by up to 30% in generation). The thunks' cost, measured without that noise: 6 instructions per kernel call with frame pointers, +0.75% to +0.87% of all instructions executed (callgrind) for these models, whose rows are 1024 wide (real models' rows are 3 to 5 times longer, so less); and in a loop of 2 million calls of one kernel, the thunk and a direct call took the same time within ±1.2%, either sign. Against `avx2` on this CPU, `avx` keeps 0.77 to 0.84 of the prompt speed and 0.65 to 0.89 of the generation speed. `x86-64-v2` keeps 0.68 and 0.92 for Q4_0 (it has SSSE3 kernels), but only 0.12 to 0.28 of the prompt speed and 0.16 to 0.65 of the generation speed for the K-quants, Q8_0 and IQ4_NL, which run ggml's generic C code there.
+
+- *Size:* the two new levels and the dispatch add 69.7 KB to a program that links llama.cpp at `-O2` (68.7 KB of code and constants, 1 KB of tables: `x86-64-v2` 5.3 KB, `avx` 58.2 KB, the dispatch 3.7 KB); the `avx2` level is the old code. Upstream's way ships 14 libraries of about 1.4 MB each.
+- *Static checks:* the service, the two model implementations, both engines, `browser_ai_runtime.cc` and `embedding_model_manager.cc`, with clang and Chromium's flags against the stand-ins of §11.8 (with the `base::CPU` methods used, as declared at 152), with and without `GGML_MOLTBROWSER_X86_CPU_KERNELS`; `cpuid` and `xgetbv` in the MSVC form compile for an `x86_64-pc-windows-msvc` target without `-mxsave`, as `base::CPU` relies on. `python3 tools/fuzz/molt_fuzz.py check` passes; CPUID isn't untrusted input, so no fuzzer was added.
+
+**Needs a Chromium build:** all of the above with Chromium's toolchains: `gn check` on the real tree (new edges: the service on `engine:cpu_kernels` and the dispatch header, `molt_ai_unittests` on `inference:x86_cpu_kernels_unittests` and so on `//third_party/llama_cpp:ggml`), clang-cl's `/FI` and `-mpopcnt` on Windows, and the object checks above on an official (ThinLTO) build: `llvm-nm` on the level objects, which are bitcode there, must show only the 40 prefixed functions.
+
+### 12.10 What is left
+
+- **Real pre-AVX2 hardware.** Nothing ran on a real Sandy Bridge, Nehalem or Atom. To check there: the level chosen (`--v=1` logs it), a catalog model's speed, and no illegal-instruction crash. Expect the x86-64-v2 level to be slow on K-quant models (Q4_K_M runs ggml's generic C code there, about a quarter of the `avx2` level's generation speed and a sixth of its prompt speed on this CPU (§12.9); Q4_0, which has SSSE3 kernels, keeps 0.7 to 0.9, so Q4_0 builds of the catalog models would serve such CPUs much better); a model picker that warns on slow CPUs would need the level in the browser (below).
+- **The level isn't in the browser's load log.** It is in `EngineModelDescription` and the service's `--v=1` log. Sending it in `ModelDescription` (an enum, which mojo validates) would put it in the browser's log line next to `gpu_status`, for bug reports about slow answers.
+- **AVX2 machines leave speed on the table (found, not changed).** Everything in ggml-cpu except the two files is built for SSE3, so on AVX2 machines the F32/F16 operations run their SSE3 paths and `ggml_cpu_has_avx2()` is 0, which turns weight repacking off on x64 (§12.1, point 2), and `cpu_repack_used` reports what was allowed, not what happened. Building more of ggml-cpu per level (upstream builds all of it) would change what AVX2 machines run and how much memory a model takes (repacked weights are anonymous memory, §2.5), so it needs its own measurements; it also raises the hazard of §12.5, since the other files are C++ with weak symbols.
+- **A `vnni` level** (AVX-512-VNNI or AVX-VNNI on top of `avx2`) is one more row in `_ggml_x86_levels` and `kLevels`; worth it only with repacking on. AMX stays out: its kernels live in `amx/`, not in the two files, they are compiled only with `__AMX_INT8__` and `__AVX512VNNI__`, and Linux must grant the AMX state (`arch_prctl(ARCH_REQ_XCOMP_PERM)`) before the sandbox (§2.3).
+- **When updating llama.cpp:** compare the two lists in `ggml-cpu-x86-variants.h` with what `arch/x86/quants.c` and `repack.cpp` define, check the level objects for weak symbols and data, and run `X86CpuKernelsTest` (README.chromium).

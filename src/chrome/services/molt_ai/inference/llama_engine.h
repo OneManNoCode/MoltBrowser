@@ -34,6 +34,8 @@
 #include <string>
 #include <vector>
 
+#include "chrome/services/molt_ai/inference/engine/cpu_kernels.h"
+
 namespace molt_ai {
 
 // Owns a stdio stream (fclose on destruction).
@@ -88,6 +90,9 @@ enum class EngineLoadStatus {
   kInvalidModelFile,
   kOutOfMemory,
   kBackendUnavailable,
+  // An x86-64 CPU below every kernel level llama.cpp is built for
+  // (x86-64-v2: SSE4.2, POPCNT; design section 12).
+  kUnsupportedCpu,
   // The vision projector isn't one llama.cpp's multimodal library can load
   // for this model (wrong size, not a projector, made for another model).
   kInvalidVisionProjector,
@@ -100,6 +105,9 @@ struct EngineModelDescription {
   uint32_t train_context_tokens = 0;
   uint32_t vocab_size = 0;
   bool cpu_repack_used = false;
+  // ggml's x86-64 CPU kernel level ("x86-64-v2", "avx", "avx2"); "" on other
+  // CPUs (design section 12).
+  std::string cpu_kernels;
   // A vision projector is loaded: user turns may carry images.
   bool vision = false;
   EngineGpuStatus gpu_status = EngineGpuStatus::kNotRequested;
@@ -245,8 +253,24 @@ class LlamaEngine {
   static constexpr size_t kMaxChunkBytes = 4096;
   static constexpr int kProgressIntervalMs = 500;
 
-  // llama_backend_init(), once per process. Load() calls it.
-  static void InitBackendOnce();
+  // Whether this CPU can run llama.cpp's CPU kernels: on x86-64, at least
+  // the x86-64-v2 level (SSE4.2, POPCNT; design section 12). True
+  // elsewhere.
+  static bool CpuSupported();
+
+  // Selects ggml's x86-64 CPU kernels for this CPU (the best level it and
+  // its OS support), then calls llama_backend_init() once per process.
+  // False, with nothing initialized, if CpuSupported() is false. Load() and
+  // LlamaEmbeddingEngine::Load() call it before anything else of llama.cpp.
+  static bool InitBackendOnce();
+
+  // The level InitBackendOnce() selected ("x86-64-v2", "avx", "avx2"); ""
+  // when not built for x86-64.
+  static std::string CpuKernelsName();
+
+  // Tests only: from the next load on, run |kernels| instead of the best
+  // level for this CPU (nullopt: back to that). The CPU must support it.
+  static void SetCpuKernelsForTesting(std::optional<X86CpuKernels> kernels);
 
   // Tests only: lets the GPU device policy take software Vulkan drivers
   // (lavapipe, SwiftShader), which it always refuses otherwise, so the GPU

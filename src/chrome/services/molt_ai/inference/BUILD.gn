@@ -34,6 +34,7 @@ source_set("inference") {
 
   deps = [
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//chrome/services/molt_ai/inference/engine:cpu_kernels",
     "//chrome/services/molt_ai/inference/engine:embedding_utils",
     "//chrome/services/molt_ai/inference/engine:gpu_offload",
     "//chrome/services/molt_ai/inference/engine:image_input",
@@ -49,4 +50,19 @@ source_set("inference") {
     # Image input (docs/design/SANDBOXED_INFERENCE.md section 10).
     "//third_party/llama_cpp:mtmd",
   ]
+}
+
+# llama.cpp's x86-64 CPU kernel levels agree with each other
+# (docs/design/SANDBOXED_INFERENCE.md section 12). Picked up by
+# //chrome/browser/molt_ai/test:molt_ai_unittests on x64.
+if (current_cpu == "x64") {
+  source_set("x86_cpu_kernels_unittests") {
+    testonly = true
+    sources = [ "x86_cpu_kernels_unittest.cc" ]
+    deps = [
+      "//chrome/services/molt_ai/inference/engine:cpu_kernels",
+      "//testing/gtest",
+      "//third_party/llama_cpp:ggml",
+    ]
+  }
 }

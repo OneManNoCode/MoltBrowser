@@ -741,9 +741,16 @@ item says otherwise.
 - [ ] Packages (from #25): `dpkg-deb -c dist/MoltBrowser-Linux-x64.deb | awk '{print $2}' | sort -u`
   prints only `root/root`; the `.deb` (xz) installs on Debian 11 and
   Ubuntu; the `.rpm` installs on Fedora.
-- [ ] A CPU without AVX2: on-device AI reports an unsupported CPU rather
-  than crashing (from #52, SANDBOXED_INFERENCE.md §11.9; re-check after the
-  runtime CPU-dispatch work lands, which changes this).
+- [ ] CPUs without AVX2 (from the CPU-dispatch PR; SANDBOXED_INFERENCE.md
+  §12): on an x86-64-v2 machine without AVX (e.g. a Nehalem/Westmere VM, or
+  QEMU `-cpu Nehalem`) and on an AVX-only one (Sandy/Ivy Bridge), a model
+  loads and answers, and `--v=1` logs the kernel level (`x86-64-v2` /
+  `avx`); on an AVX2 machine it logs `avx2`. A CPU below x86-64-v2 (no
+  SSE4.2/POPCNT) gets the "doesn't support SSE4.2" message, not a crash.
+- [ ] On the official (ThinLTO) build: `llvm-nm` on the
+  `ggml_cpu_x86_{v2,avx,avx2}` objects shows only the `molt_x86_<level>_*`
+  functions and no weak symbols (from the CPU-dispatch PR;
+  `src/third_party/llama_cpp/README.chromium`) (verify the command).
 
 ### 7.3 Features
 

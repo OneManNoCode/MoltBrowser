@@ -159,8 +159,9 @@ hostile, like `InferenceProcessHost`:
   the session and switches back to hashing.
 - `EmbeddingModelManager` (UI, one per browser) owns the file
   (`~/.moltbrowser/models/`, shared with the chat models): offered only
-  when pinned, on desktop, with AVX2/FMA on x86-64, and when the model needs
-  at most 90% of total RAM; downloads from
+  when pinned, on desktop, with SSE4.2 and POPCNT on x86-64 (x86-64-v2,
+  the lowest CPU kernel level; SANDBOXED_INFERENCE.md §12), and when the
+  model needs at most 90% of total RAM; downloads from
   `huggingface.co/<repo>/resolve/<revision>/<file>` through
   `ModelDownloadJob` with the size and SHA-256 required (checked before the
   rename), after a free-disk check; a file of any other size on disk is
