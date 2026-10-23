@@ -10,7 +10,9 @@
 // never starts a download). Blink only lets create() reach the browser in
 // that state with a user gesture (availability() says "downloadable"), so a
 // page can't raise the prompt by itself. Requests from the same tab and
-// origin while it is showing wait for the same answer.
+// origin while it is showing wait for the same answer. Allow and Block
+// count only a moment after the bar was shown (again) and after the
+// previous press (PromptInputProtection, web_ai_site_permissions.h).
 //
 // Allow and Block are remembered per profile and top-level origin
 // (WebAISitePermissions, web_ai_site_permissions_service.h): on disk for a

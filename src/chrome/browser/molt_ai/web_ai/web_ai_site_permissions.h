@@ -61,6 +61,32 @@ inline constexpr int64_t kPromptInputProtectionMs = 500;
 // and the prompt stays.
 bool IsTimelyPromptAnswer(int64_t elapsed_ms);
 
+// The prompt's guard on Allow and Block, as Chromium guards its dialogs'
+// buttons (views::DefaultInputProtectionPolicy at 152): a press counts only
+// if it comes at least kPromptInputProtectionMs after the prompt was last
+// shown and after the previous press. A press that doesn't count still
+// restarts the interval, so pressing again and again never answers the
+// prompt, however long it goes on: the user has to pause first. Times are
+// milliseconds on a monotonic clock.
+class PromptInputProtection {
+ public:
+  PromptInputProtection();
+  ~PromptInputProtection();
+  PromptInputProtection(const PromptInputProtection&) = delete;
+  PromptInputProtection& operator=(const PromptInputProtection&) = delete;
+
+  // The prompt is shown at |now_ms|: when it appears, and again whenever
+  // its tab is shown again.
+  void Shown(int64_t now_ms);
+  // Allow or Block was pressed at |now_ms|: whether the press counts. Every
+  // press is remembered, counted or not. False before Shown().
+  bool Press(int64_t now_ms);
+
+ private:
+  std::optional<int64_t> shown_ms_;
+  std::optional<int64_t> last_press_ms_;
+};
+
 // Close counts are stored up to this; only ">= kDismissalsBeforeEmbargo"
 // matters.
 inline constexpr uint32_t kMaxStoredDismissals = 100;

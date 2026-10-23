@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <utility>
 
@@ -68,6 +69,39 @@ bool IsPlausibleSiteKey(std::string_view site) {
 
 bool IsTimelyPromptAnswer(int64_t elapsed_ms) {
   return elapsed_ms >= kPromptInputProtectionMs;
+}
+
+namespace {
+
+// |to_ms| - |from_ms| without overflow: -1 if |to_ms| is earlier, at most
+// INT64_MAX.
+int64_t ElapsedMs(int64_t from_ms, int64_t to_ms) {
+  if (to_ms < from_ms) {
+    return -1;
+  }
+  const uint64_t elapsed =
+      static_cast<uint64_t>(to_ms) - static_cast<uint64_t>(from_ms);
+  return elapsed > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
+             ? std::numeric_limits<int64_t>::max()
+             : static_cast<int64_t>(elapsed);
+}
+
+}  // namespace
+
+PromptInputProtection::PromptInputProtection() = default;
+PromptInputProtection::~PromptInputProtection() = default;
+
+void PromptInputProtection::Shown(int64_t now_ms) {
+  shown_ms_ = now_ms;
+}
+
+bool PromptInputProtection::Press(int64_t now_ms) {
+  const bool soon_after_last_press =
+      last_press_ms_ &&
+      !IsTimelyPromptAnswer(ElapsedMs(*last_press_ms_, now_ms));
+  last_press_ms_ = now_ms;
+  return shown_ms_ && !soon_after_last_press &&
+         IsTimelyPromptAnswer(ElapsedMs(*shown_ms_, now_ms));
 }
 
 bool IsUnderEmbargo(const SiteRecord& record, int64_t now_ms) {

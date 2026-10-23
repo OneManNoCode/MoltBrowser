@@ -668,8 +668,8 @@ class MoltAIManager::TranslatorCreate : public CreateRequest {
 MoltAIManager::MoltAIManager(std::unique_ptr<WebAIEnvironment> environment,
                              WebAIBackend* backend)
     : environment_(std::move(environment)), backend_(backend) {
-  environment_->ObserveConsent(base::BindRepeating(
-      &MoltAIManager::OnConsentChanged, weak_factory_.GetWeakPtr()));
+  environment_->ObserveChanges(base::BindRepeating(
+      &MoltAIManager::OnAccessChanged, weak_factory_.GetWeakPtr()));
 }
 
 MoltAIManager::~MoltAIManager() {
@@ -689,23 +689,28 @@ void MoltAIManager::AddTranslationReceiver(
   translation_receivers_.Add(this, std::move(receiver));
 }
 
-void MoltAIManager::OnConsentChanged() {
+void MoltAIManager::OnAccessChanged() {
   if (sessions_.empty()) {
     return;
   }
   // Not now: the change may come from code a session is called from.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE, base::BindOnce(&MoltAIManager::CloseSessionsIfNotAllowed,
+      FROM_HERE, base::BindOnce(&MoltAIManager::CloseSessionsNoLongerServing,
                                 weak_factory_.GetWeakPtr()));
 }
 
-void MoltAIManager::CloseSessionsIfNotAllowed() {
-  if (environment_->GetConsent() == SiteConsent::kAllowed) {
-    return;
+void MoltAIManager::CloseSessionsNoLongerServing() {
+  // Turned off (the answer taken back, a switch, a policy; the Translator's
+  // own policy ends only Translators): each such session cancels its
+  // generation and closes its pipe, so the page's calls fail; create() is
+  // decided again.
+  for (auto it = sessions_.begin(); it != sessions_.end();) {
+    if (MayServe(it->second->api())) {
+      ++it;
+    } else {
+      it = sessions_.erase(it);
+    }
   }
-  // Revoked: each session cancels its generation and closes its pipe, so
-  // the page's calls fail; create() asks again.
-  sessions_.clear();
 }
 
 const std::string& MoltAIManager::site_key() {
@@ -719,8 +724,10 @@ bool MoltAIManager::IsForeground() {
   return environment_->IsForeground();
 }
 
-bool MoltAIManager::IsContextStillEligible(WebAIApi api) {
-  return IsContextEligible(environment_->GetContextFacts(api));
+bool MoltAIManager::MayServe(WebAIApi api) {
+  return MaySessionServe(environment_->GetContextFacts(api),
+                         backend_->WebApisSwitchOn(),
+                         environment_->GetConsent());
 }
 
 // ---- availability() ----
@@ -737,9 +744,13 @@ void MoltAIManager::CheckAvailability(WebAIApi api,
     std::move(callback).Run(DecideAvailability(input));
     return;
   }
-  backend_->GetDeviceFacts(base::BindOnce(
-      &MoltAIManager::OnAvailabilityDeviceFacts, weak_factory_.GetWeakPtr(),
-      api, options_supported, languages_supported, std::move(callback)));
+  // The site's own device facts: how long this takes doesn't depend on
+  // other sites' calls.
+  backend_->GetDeviceFactsForSite(
+      site_key(),
+      base::BindOnce(&MoltAIManager::OnAvailabilityDeviceFacts,
+                     weak_factory_.GetWeakPtr(), api, options_supported,
+                     languages_supported, std::move(callback)));
 }
 
 void MoltAIManager::OnAvailabilityDeviceFacts(WebAIApi api,
@@ -1074,8 +1085,9 @@ void MoltAIManager::StartCreate(std::unique_ptr<CreateRequest> request) {
   }
   const uint64_t id = next_create_id_++;
   creates_[id] = std::move(request);
-  backend_->GetDeviceFacts(base::BindOnce(&MoltAIManager::OnCreateDeviceFacts,
-                                          weak_factory_.GetWeakPtr(), id));
+  backend_->GetDeviceFactsForSite(
+      site_key(), base::BindOnce(&MoltAIManager::OnCreateDeviceFacts,
+                                 weak_factory_.GetWeakPtr(), id));
 }
 
 MoltAIManager::CreateRequest* MoltAIManager::FindCreate(uint64_t id) {
@@ -1167,8 +1179,9 @@ void MoltAIManager::OnCreateModelReady(uint64_t id,
     return;
   }
   std::unique_ptr<CreateRequest> request = TakeCreate(id);
-  // The answer may have been taken back while the model loaded.
-  if (environment_->GetConsent() != SiteConsent::kAllowed) {
+  // The answer may have been taken back, or the APIs turned off, while the
+  // model loaded.
+  if (!MayServe(request->api())) {
     request->Fail(AIManagerCreateClientError::kUnableToCreateSession,
                   nullptr);
     return;

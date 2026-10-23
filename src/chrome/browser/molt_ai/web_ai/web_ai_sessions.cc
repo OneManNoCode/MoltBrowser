@@ -139,9 +139,10 @@ WebAISession::Request::Request(Request&&) = default;
 WebAISession::Request& WebAISession::Request::operator=(Request&&) = default;
 WebAISession::Request::~Request() = default;
 
-WebAISession::WebAISession(MoltAIManager& manager, uint64_t id)
+WebAISession::WebAISession(MoltAIManager& manager, uint64_t id, WebAIApi api)
     : manager_(manager),
       id_(id),
+      api_(api),
       site_key_(manager.site_key()),
       stream_interval_(manager.stream_interval()) {}
 
@@ -168,8 +169,20 @@ WebAISession::~WebAISession() {
   manager_->backend()->RemoveSession(site_key_);
 }
 
+bool WebAISession::MayServe() {
+  return manager_->MayServe(api_);
+}
+
 void WebAISession::Enqueue(Request request, std::vector<SkBitmap> bitmaps) {
   if (closed_ || !request.responder) {
+    return;
+  }
+  // Turned off for the page since create(): the same failure whatever did
+  // it (a switch, a policy, the answer taken back), as create() answers
+  // them alike.
+  if (!MayServe()) {
+    request.responder->OnError(
+        ModelStreamingResponseStatus::kErrorGenericFailure, nullptr);
     return;
   }
   if (queue_.size() >= kMaxQueuedPerSession) {
@@ -301,6 +314,15 @@ void WebAISession::MaybeStartNext() {
          !queue_.front().images_pending) {
     running_.emplace(std::move(queue_.front()));
     queue_.pop_front();
+    if (!MayServe()) {
+      // Turned off while it waited.
+      if (running_->responder) {
+        running_->responder->OnError(
+            ModelStreamingResponseStatus::kErrorGenericFailure, nullptr);
+      }
+      running_.reset();
+      continue;
+    }
     std::optional<GenerationJob> job = Begin(*running_);
     if (!job) {
       // Answered without the model.
@@ -380,11 +402,15 @@ void WebAISession::OnDone(uint64_t request_id, GenerationStatus status) {
   // the page's calls) starts no further generation.
   if (status == GenerationStatus::kOk && !closed_) {
     if (std::optional<GenerationJob> next = NextJob(*running_)) {
-      // One part of the request is done: its text goes out now, and the
-      // request keeps running with the next generation.
-      Flush();
-      StartJob(std::move(*next));
-      return;
+      if (MayServe()) {
+        // One part of the request is done: its text goes out now, and the
+        // request keeps running with the next generation.
+        Flush();
+        StartJob(std::move(*next));
+        return;
+      }
+      // Turned off between two parts: the next one doesn't start.
+      status = GenerationStatus::kFailed;
     }
   }
   Request request = std::move(*running_);
@@ -447,7 +473,7 @@ LanguageModelSession::LanguageModelSession(
     Config config,
     Conversation conversation,
     mojo::PendingReceiver<blink::mojom::AILanguageModel> receiver)
-    : WebAISession(manager, id),
+    : WebAISession(manager, id, WebAIApi::kLanguageModel),
       config_(std::move(config)),
       conversation_(std::move(conversation)),
       conversation_key_(NewConversationKey()),
@@ -673,8 +699,10 @@ void LanguageModelSession::MeasureInputUsage(
 
 WritingSession::WritingSession(MoltAIManager& manager,
                                uint64_t id,
+                               WebAIApi api,
                                std::string shared_context)
-    : WebAISession(manager, id), shared_context_(std::move(shared_context)) {}
+    : WebAISession(manager, id, api),
+      shared_context_(std::move(shared_context)) {}
 
 WritingSession::~WritingSession() = default;
 
@@ -744,7 +772,10 @@ SummarizerSession::SummarizerSession(
     std::string shared_context,
     SummarizerOptions options,
     mojo::PendingReceiver<blink::mojom::AISummarizer> receiver)
-    : WritingSession(manager, id, std::move(shared_context)),
+    : WritingSession(manager,
+                     id,
+                     WebAIApi::kSummarizer,
+                     std::move(shared_context)),
       options_(std::move(options)),
       receiver_(this, std::move(receiver)) {
   receiver_.set_disconnect_handler(
@@ -779,7 +810,7 @@ WriterSession::WriterSession(
     std::string shared_context,
     WriterOptions options,
     mojo::PendingReceiver<blink::mojom::AIWriter> receiver)
-    : WritingSession(manager, id, std::move(shared_context)),
+    : WritingSession(manager, id, WebAIApi::kWriter, std::move(shared_context)),
       options_(std::move(options)),
       receiver_(this, std::move(receiver)) {
   receiver_.set_disconnect_handler(
@@ -815,7 +846,10 @@ RewriterSession::RewriterSession(
     std::string shared_context,
     RewriterOptions options,
     mojo::PendingReceiver<blink::mojom::AIRewriter> receiver)
-    : WritingSession(manager, id, std::move(shared_context)),
+    : WritingSession(manager,
+                     id,
+                     WebAIApi::kRewriter,
+                     std::move(shared_context)),
       options_(std::move(options)),
       receiver_(this, std::move(receiver)) {
   receiver_.set_disconnect_handler(

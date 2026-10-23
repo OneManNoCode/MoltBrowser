@@ -8,13 +8,15 @@
 //   1. DecideCapture() (agent_vision.h): the switch, a model with vision,
 //      the agent's own tab shown, the observed document still its primary
 //      main document, an http(s) page with the observed origin in the
-//      run's scope;
+//      run's scope, no frame of another origin in it, no frame of the tab
+//      that navigated or went away just before;
 //   2. the geometry script in the agent's isolated world, in that
 //      document: the viewport, the listed elements' boxes, what to mask;
 //   3. the compositor's copy of the tab's view (RenderWidgetHostView::
 //      CopyFromSurface), scaled to at most kCaptureMaxSide;
 //   4. the decision again, and the geometry again: the page must not have
-//      moved, scrolled or navigated during the copy;
+//      moved, scrolled or navigated, nor any of its frames, during the
+//      copy;
 //   5. on a worker: PrepareImageForModel() (Skia, at most
 //      kScreenshotMaxSide), then the masks and the tags.
 // Any refusal or failure gives no image, and the step goes on text-only.
@@ -30,6 +32,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
@@ -43,6 +46,8 @@ class Value;
 }  // namespace base
 
 namespace content {
+class NavigationHandle;
+class RenderFrameHost;
 class WebContents;
 }  // namespace content
 
@@ -88,10 +93,17 @@ class AgentScreenshotter : public content::WebContentsObserver {
   // Abandons the capture in progress, if any.
   void Cancel();
 
+  // content::WebContentsObserver: a frame of the tab committed a
+  // navigation, went away or was swapped.
+  void DidFinishNavigation(content::NavigationHandle* handle) override;
+  void FrameDeleted(content::FrameTreeNodeId frame_tree_node_id) override;
+  void RenderFrameHostChanged(content::RenderFrameHost* old_host,
+                              content::RenderFrameHost* new_host) override;
+
  private:
   struct Pending;
 
-  agent_vision::CaptureDecision Decide(const Request& request) const;
+  agent_vision::CaptureDecision Decide(const Pending& pending) const;
   void OnGeometryBefore(std::unique_ptr<Pending> pending, base::Value result);
   void OnCopied(std::unique_ptr<Pending> pending, SkBitmap bitmap);
   void OnGeometryAfter(std::unique_ptr<Pending> pending, base::Value result);
@@ -102,6 +114,10 @@ class AgentScreenshotter : public content::WebContentsObserver {
   void MeasureGeometry(
       std::unique_ptr<Pending> pending,
       void (AgentScreenshotter::*next)(std::unique_ptr<Pending>, base::Value));
+
+  // When a frame of the tab last changed (DidFinishNavigation() and the
+  // others above); null if none did since this was made.
+  base::TimeTicks last_frame_change_;
 
   base::WeakPtrFactory<AgentScreenshotter> weak_factory_{this};
 };

@@ -249,7 +249,7 @@ All new code is under `src/chrome/browser/molt_ai/web_ai/`:
 | `web_ai_site_permissions_service.{h,cc}` | `WebAISitePermissions`: a profile's table, kept in the `molt_ai.web_ai.sites` pref (or in memory), with observers and the Clear browsing data operations. |
 | `web_ai_site_permissions_factory.{h,cc}` | Its keyed-service factory (pref registration, which profiles get one) and the hooks Clear browsing data and profile reset call. |
 | `web_ai_settings_switch.{h,cc}` | Reads and writes `"web_ai_apis"` in `settings.json`, keeping every other key. |
-| `runtime_web_ai_backend.{h,cc}` | `RuntimeWebAIBackend` over `BrowserAIRuntime`: device facts, model load, the scheduler, deadlines, images scaled on a worker. |
+| `runtime_web_ai_backend.{h,cc}` | `RuntimeWebAIBackend` over `BrowserAIRuntime`: device facts (kept per site, §8.1), the `"web_ai_apis"` switch, model load, the scheduler, deadlines, images scaled on a worker. |
 
 `BrowserAIRuntime` gained `GetLoadedContextTokens()` (the loaded model's
 context size, for the quota bucket) and, for image input (§5.1),
@@ -296,10 +296,14 @@ answer is needed and no model is loaded.
 iframe asks on behalf of the page the user sees. Only the tab's current
 page can raise it (not a prerendered page or one in the back/forward
 cache). Requests from the same tab and origin share one infobar. *Allow*
-and *Block* are remembered (§4.1). A click on either within half a second
-of the bar appearing does nothing and leaves the bar up
-(`kPromptInputProtectionMs`), as Chromium's permission prompts ignore
-early clicks, so a click meant for the page can't answer the bar. Closing the infobar with its close
+and *Block* are remembered (§4.1). A press of either counts only half a
+second or more after the bar appeared (or its tab was shown again) and
+after the previous press; a sooner one does nothing, leaves the bar up and
+starts the half second again, so pressing again and again never answers
+the bar, and the user has to pause first (`PromptInputProtection`,
+`kPromptInputProtectionMs`). That is how Chromium guards its dialogs'
+buttons (`views::DefaultInputProtectionPolicy` at 152), so clicks meant
+for the page can't answer the bar. Closing the infobar with its close
 button answers nothing and counts towards a pause (§4.2); an infobar that
 goes away by itself (the page navigates, the tab closes, a newer infobar
 replaces it) answers nothing and doesn't count. With no model downloaded,
@@ -460,8 +464,9 @@ MoltBrowser owns. The pref won:
 `molt_web_ai_sites_handler.{h,cc}`):
 
 - **"Let sites ask to use on-device AI"** is `"web_ai_apis"` in
-  `settings.json` (all profiles). It applies to the next page request (the
-  runtime's cached device facts are dropped). It is written by
+  `settings.json` (all profiles). It applies to the next page request
+  (every site's cached device facts are dropped) and to the sessions pages
+  already have (§11). It is written by
   read-modify-write, keeping every other key; a `settings.json` that isn't
   a JSON object is left alone and the section says so. The page's *Save
   Settings* used to rewrite `settings.json` with only the form's keys,
@@ -762,6 +767,43 @@ What a page can learn, per call:
   site), and the first call's latency (whether a model was already loaded,
   that is, whether the user just used the chat). These are visible only to
   sites the user allowed.
+- **Not visible:** whether another site used the APIs recently, from how
+  long `availability()` or `create()` takes (§8.1).
+
+### 8.1 How long availability() and create() take
+
+Both need the device facts (inference support, downloaded models, whether
+a model fits the RAM, the `"web_ai_apis"` switch), which take a disk check
+to read, so they are reused for 30 s. They are kept **per top-level site**
+(`SiteDeviceFacts` in `web_ai_policy.h`, used by `RuntimeWebAIBackend`): a
+site's call is answered from that site's own facts, or waits for a read
+started for that site; never for a read another site started, and never
+from another site's facts. How long the calls take then depends on the
+site's own calls in the last 30 s, not on whether another site used the
+APIs. Frames of the page share its site's facts, as they share its answer
+(§4.3); the browser's own callers (page translation) have an entry of
+their own. Loading a model no longer drops the facts: it changes none of
+them, and dropping them would make every other site's next call slower.
+
+Three ways were weighed:
+
+- **A fixed minimum delay** would have to exceed the slowest read, which
+  has no bound (a busy or sleeping disk), so a slow read would still show.
+- **Every answer from memory, the facts refreshed in the background**
+  needs the first read done before any site asks, that is from upstream
+  browser-startup code. Started by the first call instead, the first answer
+  after a start is slow and every later one fast, which tells a site
+  whether another used the APIs since the browser started.
+- **Per-site facts** (chosen) need neither: no startup hook, no padding.
+  They cost one small read per active site per 30 s, and memory for the
+  sites active in the last 30 s (older ones are forgotten).
+
+What can still differ: the first read after the browser starts can take
+longer than later ones (a cold file cache, the runtime's one-time setup),
+whichever site makes it, so a site that happens to be first could tell
+that no site read the device facts before it since the start; closing
+that too needs the startup read above. After the user changes
+`"web_ai_apis"`, every site reads again.
 
 **MoltNet:** off. Every API reports `"unavailable"` in MoltNet windows, for
 every MoltNet user alike; no device facts are read, nothing is loaded and
@@ -1022,9 +1064,9 @@ and only that page.
 - **Limits:** a call holds at most 9216 estimated tokens (the writing APIs'
   number), else `kErrorInputTooLarge` with the requested and allowed
   counts (Blink's `QuotaExceededError`). Calls queue
-  per Translator (32), generations per site and in total (§6). Each call
-  re-reads the policies and the On-device AI switch, as upstream's
-  Translator re-reads `TranslatorAPIAllowed`.
+  per Translator (32), generations per site and in total (§6). Each call,
+  and each piece, re-reads the policies, the switches and the site's
+  answer, as upstream's Translator re-reads `TranslatorAPIAllowed` (§11).
 
 ### 10.8 No component-updater request from a page
 
@@ -1065,7 +1107,7 @@ Google. It now keeps upstream's default, on:
   still needs the user's yes;
 - it stays the enterprise kill switch: `TranslatorAPIAllowed` = false
   makes the Translator `"unavailable"`, `create()` fail with "disallowed by
-  policy" and running Translators refuse new calls. Because the Translator
+  policy" and running Translators end (§11). Because the Translator
   now runs on the same local model, `BuiltInAIAPIsEnabled` = false and
   `GenAILocalFoundationalModelSettings` = 1 turn it off too.
 
@@ -1124,22 +1166,43 @@ Google. It now keeps upstream's default, on:
 | Policies `BuiltInAIAPIsEnabled` = false, `GenAILocalFoundationalModelSettings` = 1 | same |
 | `chrome://flags` `#prompt-api` (with `#prompt-api-multimodal-input`, which also enables it), `#summarizer-api`, `#writer-api`, `#rewriter-api` set to Disabled; `--disable-features=TranslationAPI` | the interface disappears |
 | Permissions policy (`allow="language-model"`, `allow="translator"` etc.) | as upstream: cross-origin iframes need it |
-| Policy `TranslatorAPIAllowed` = false | the Translator alone is `"unavailable"`; running Translators refuse new calls |
+| Policy `TranslatorAPIAllowed` = false | the Translator alone is `"unavailable"`; running Translators end |
+
+**Sessions a page already has.** Every switch above that turns the APIs
+off for a site (its answer, `"web_ai_apis"`, the On-device AI switch, the
+policies) also applies to the sessions it already has, as it does to a
+new `create()`:
+
+- **Every call is checked again** (`MaySessionServe()`), when it arrives,
+  when it starts after waiting behind another, and between the pieces of
+  a long translation. Off, it fails with Blink's generic `UnknownError`,
+  the same whatever turned it off, as `create()` answers them alike, and
+  no generation starts. A `create()` whose model was loading fails too.
+- **The change ends the sessions** it turns off, cancelling a running
+  generation (the page keeps the text it already received). The manager
+  hears of the site's answer, of the prefs behind the policies and the
+  On-device AI switch, and of `"web_ai_apis"` set from `molt://ai-settings`
+  (a hand edit of `settings.json` is noticed at the next device-facts
+  read).
 
 ## 12. Tests and verification
 
 In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
 
-- `web_ai_policy_unittest.cc` (22): the availability table, including an
+- `web_ai_policy_unittest.cc` (27): the availability table, including an
   exhaustive check of invariants over every input combination (an
   unallowed site never sees "available", MoltNet and workers always see
-  "unavailable", ...), create actions, buckets, the estimator and its
-  size shortcut, saturation, sampling clamps, language tags, model pick
-  (with the preference for a model that sees images), image sources (the
-  64-megapixel cap at its edges, hostile sizes), and the scheduler (one at
-  a time, foreground first, sites in turn, caps, cancel, image holds per
-  site and in total).
-- `web_ai_site_permissions_unittest.cc` (19): key shapes, answers, the
+  "unavailable", ...), create actions, what keeps a session serving, the
+  device facts per site (a site never answered from or waiting for another
+  site's read, ageing by its own reads, cleared for all, forgotten when
+  old), buckets, the estimator and its size shortcut, saturation, sampling
+  clamps, language tags, model pick (with the preference for a model that
+  sees images), image sources (the 64-megapixel cap at its edges, hostile
+  sizes), and the scheduler (one at a time, foreground first, sites in
+  turn, caps, cancel, image holds per site and in total).
+- `web_ai_site_permissions_unittest.cc` (23): key shapes, answers, the
+  prompt's input protection (presses every 1 to 499 ms for a minute never
+  counting, a pause then counting, the tab shown again, odd clocks), the
   pause (third close, its end to the millisecond, the count kept, an
   answer clearing it, clock changes either way), the settings list, exact
   removal, the Clear browsing data range (half-open) and filters, the
@@ -1168,11 +1231,16 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   instruction (names the languages, never holds page text), the response
   schema accepted by the inference service's converter, and the cleanup
   (whitespace, quotation marks added or kept, empty replies).
-- `molt_ai_manager_unittest.cc` (84): the mojo surface over real pipes with
-  a fake runtime and a fake environment: availability per state, MoltNet
-  never calling the runtime, policies, permissions policy as a bad message,
+- `molt_ai_manager_unittest.cc` (90): the mojo surface over real pipes with
+  a fake runtime and a fake environment: availability per state, device
+  facts asked for the page's own site, MoltNet never calling the runtime,
+  policies, permissions policy as a bad message,
   consent (allow, block, dismiss, needs-model), an answer taken back
-  (sessions end; a `create()` whose model is loading fails), aborted
+  (sessions end; a `create()` whose model is loading fails), the APIs
+  turned off after `create()` in each of five ways (every call of all five
+  APIs refused alike, a waiting request and the next translation piece
+  never started, the sessions ended, the Translator's policy ending only
+  Translators), aborted
   `create()`, quotas, overflow, append, abort and destroy cancelling the
   generation, the document going away, clone, measure, unsupported
   prompts, throttling and failures, queue limits, and all three writing
@@ -1313,9 +1381,10 @@ in every window, with Translate still detecting page languages.
 - Incognito's answers aren't listed on the settings page (they go when the
   window closes).
 - The switch is browser-wide (`settings.json`), the answers per profile.
-- Removing an allowed site ends its sessions; an answer changed while a
-  generation is running cancels it, but the page still holds the text it
-  already received.
+- Turning the APIs off for a site (its answer, a switch, a policy) ends
+  its sessions and cancels a running generation, but the page still holds
+  the text it already received. A hand edit of `settings.json` reaches
+  sessions only at the next device-facts read.
 - Regex `responseConstraint`, `prefix`, audio and tools are
   unsupported; so are images in `initialPrompts`. Image input needs a
   model with a vision projector: the registry's (§5.1) is offered only

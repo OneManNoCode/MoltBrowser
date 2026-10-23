@@ -8,6 +8,7 @@
 #include "chrome/browser/molt_ai/web_ai/molt_ai_manager.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -74,8 +75,9 @@ struct EnvironmentState {
   bool last_needs_model = false;
   bool foreground = true;
   std::string site_key = "1|https://a.test";
-  // What the manager registered to hear about changed answers.
-  base::RepeatingClosure consent_changed;
+  // What the manager registered to hear about changed answers, switches
+  // and policies.
+  base::RepeatingClosure access_changed;
 };
 
 class FakeEnvironment : public WebAIEnvironment {
@@ -105,8 +107,8 @@ class FakeEnvironment : public WebAIEnvironment {
   }
   std::string GetSiteKey() override { return state_->site_key; }
   bool IsForeground() override { return state_->foreground; }
-  void ObserveConsent(base::RepeatingClosure on_change) override {
-    state_->consent_changed = std::move(on_change);
+  void ObserveChanges(base::RepeatingClosure on_change) override {
+    state_->access_changed = std::move(on_change);
   }
 
  private:
@@ -138,6 +140,12 @@ class FakeBackend : public WebAIBackend {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), facts));
   }
+  void GetDeviceFactsForSite(const std::string& site_key,
+                             DeviceCallback callback) override {
+    device_sites.push_back(site_key);
+    GetDeviceFacts(std::move(callback));
+  }
+  bool WebApisSwitchOn() override { return switch_on; }
   void ReleaseDeviceFacts() {
     hold_device_facts = false;
     std::vector<DeviceCallback> held;
@@ -255,6 +263,8 @@ class FakeBackend : public WebAIBackend {
   }
 
   DeviceFacts facts;
+  // The "web_ai_apis" switch as the backend last knew it.
+  bool switch_on = true;
   bool prepare_ok = true;
   uint32_t context_tokens = 8192;
   // The loaded model has a vision projector.
@@ -273,6 +283,8 @@ class FakeBackend : public WebAIBackend {
   std::vector<PrepareCallback> held_prepare;
   size_t session_cap = kMaxSessionsPerSite;
   int device_calls = 0;
+  // The site each GetDeviceFactsForSite() call was for.
+  std::vector<std::string> device_sites;
   int prepare_calls = 0;
   bool last_prepare_wants_images = false;
   std::map<uint64_t, Pending> jobs;
@@ -783,6 +795,25 @@ TEST_F(MoltAIManagerTest, PolicyDeviceSwitchAndBlockLookTheSame) {
   EXPECT_EQ(LanguageModelAvailability(),
             ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
   EXPECT_EQ(writing_answers(), unavailable);
+}
+
+// availability() and create() read the device facts of the page's own site
+// (the backend keeps them per site, so another site's calls never change
+// how long they take).
+TEST_F(MoltAIManagerTest, DeviceFactsAreTheSitesOwn) {
+  env_.site_key = "7|https://b.test";
+  NewManager();
+  LanguageModelAvailability();
+  base::test::TestFuture<ModelAvailabilityCheckResult> writer;
+  remote_->CanCreateWriter(MakeWriterOptions(), writer.GetCallback());
+  EXPECT_EQ(writer.Get(), ModelAvailabilityCheckResult::kDownloadable);
+  TranslatorAvailability("en", "de");
+  env_.consent = SiteConsent::kAllowed;
+  CreateLanguageModel();
+  CreateTranslator("en", "de");
+  EXPECT_EQ(backend_.device_calls, 5);
+  EXPECT_EQ(backend_.device_sites,
+            std::vector<std::string>(5, "7|https://b.test"));
 }
 
 TEST_F(MoltAIManagerTest, OnlyTextAndImageOptionsAreAvailable) {
@@ -1579,16 +1610,16 @@ TEST_F(MoltAIManagerTest, TakingBackTheAnswerEndsTheSitesSessions) {
   TestResponder running;
   Prompt(*client, "one", running);
   const uint64_t id = backend_.OnlyJob();
-  ASSERT_TRUE(env_.consent_changed);
+  ASSERT_TRUE(env_.access_changed);
   // A change that leaves this site allowed (another site's) changes nothing.
-  env_.consent_changed.Run();
+  env_.access_changed.Run();
   RunUntilIdle();
   EXPECT_EQ(manager_->session_count_for_testing(), 2u);
   EXPECT_TRUE(backend_.cancelled.empty());
 
   for (SiteConsent now : {SiteConsent::kAsk, SiteConsent::kBlocked}) {
     env_.consent = now;
-    env_.consent_changed.Run();
+    env_.access_changed.Run();
     RunUntilIdle();
   }
   EXPECT_EQ(backend_.cancelled, std::vector<uint64_t>{id});
@@ -1616,6 +1647,201 @@ TEST_F(MoltAIManagerTest, TakenBackWhileTheModelLoadsFailsCreate) {
   EXPECT_EQ(client->error, AIManagerCreateClientError::kUnableToCreateSession);
   EXPECT_FALSE(client->session.is_bound());
   EXPECT_EQ(manager_->session_count_for_testing(), 0u);
+}
+
+// Each way the APIs can be turned off for a page after create().
+enum class TurnedOff {
+  kOnDeviceAiSwitch,  // Chromium's On-device AI switch
+  kPolicy,            // BuiltInAIAPIsEnabled, GenAILocalFoundationalModel...
+  kWebApisSwitch,     // "web_ai_apis" (molt://ai-settings)
+  kSiteBlocked,       // the user blocked the site
+  kAnswerRemoved,     // the site's Allow removed or cleared
+};
+constexpr TurnedOff kTurnedOff[] = {
+    TurnedOff::kOnDeviceAiSwitch, TurnedOff::kPolicy, TurnedOff::kWebApisSwitch,
+    TurnedOff::kSiteBlocked, TurnedOff::kAnswerRemoved};
+
+class MoltAIManagerTurnedOffTest : public MoltAIManagerTest {
+ protected:
+  void Set(TurnedOff how, bool off) {
+    switch (how) {
+      case TurnedOff::kOnDeviceAiSwitch:
+        env_.facts.user_enabled = !off;
+        return;
+      case TurnedOff::kPolicy:
+        env_.facts.enterprise_allowed = !off;
+        return;
+      case TurnedOff::kWebApisSwitch:
+        backend_.switch_on = !off;
+        return;
+      case TurnedOff::kSiteBlocked:
+        env_.consent = off ? SiteConsent::kBlocked : SiteConsent::kAllowed;
+        return;
+      case TurnedOff::kAnswerRemoved:
+        env_.consent = off ? SiteConsent::kAsk : SiteConsent::kAllowed;
+        return;
+    }
+  }
+};
+
+// Turned off after create(), a session of every API refuses its next call,
+// with the same failure whatever turned it off and without starting a
+// generation; turned on again, it serves again.
+TEST_F(MoltAIManagerTurnedOffTest, EveryCallIsRefusedOnceTheAPIsAreOff) {
+  auto model = AllowedLanguageModel();
+  SummarizerClient summarizer;
+  remote_->CreateSummarizer(summarizer.Remote(), MakeSummarizerOptions(),
+                            mojo::NullRemote());
+  WriterClient writer;
+  remote_->CreateWriter(writer.Remote(), MakeWriterOptions(),
+                        mojo::NullRemote());
+  RewriterClient rewriter;
+  remote_->CreateRewriter(rewriter.Remote(), MakeRewriterOptions(),
+                          mojo::NullRemote());
+  RunUntilIdle();
+  auto translator = AllowedTranslator();
+  ASSERT_TRUE(summarizer.session.is_bound());
+  ASSERT_TRUE(writer.session.is_bound());
+  ASSERT_TRUE(rewriter.session.is_bound());
+
+  const auto call_all = [&](std::array<TestResponder, 6>& r) {
+    model->session->Prompt(User("Hi"), nullptr, r[0].Remote());
+    model->session->Append(User("A note"), r[1].Remote());
+    summarizer.session->Summarize("Boats float.", "", r[2].Remote());
+    writer.session->Write("A thank-you note", std::nullopt, r[3].Remote());
+    rewriter.session->Rewrite("Dear Sir", std::nullopt, r[4].Remote());
+    translator->session->Translate("Hello", r[5].Remote());
+    RunUntilIdle();
+  };
+  for (TurnedOff how : kTurnedOff) {
+    SCOPED_TRACE(static_cast<int>(how));
+    Set(how, true);
+    std::array<TestResponder, 6> off;
+    call_all(off);
+    for (const TestResponder& r : off) {
+      EXPECT_EQ(r.error, ModelStreamingResponseStatus::kErrorGenericFailure);
+    }
+    EXPECT_TRUE(backend_.jobs.empty());
+
+    Set(how, false);
+    std::array<TestResponder, 6> on;
+    call_all(on);
+    // Prompt, Summarize, Write, Rewrite and Translate each run; the append
+    // waits behind the prompt.
+    EXPECT_EQ(backend_.jobs.size(), 5u);
+    while (!backend_.jobs.empty()) {
+      backend_.Reply(backend_.jobs.begin()->first, {},
+                     GenerationStatus::kFailed);
+      RunUntilIdle();
+    }
+    EXPECT_TRUE(on[1].completed);
+    EXPECT_EQ(manager_->session_count_for_testing(), 5u);
+  }
+}
+
+// A request waiting behind another doesn't start once the APIs are off.
+TEST_F(MoltAIManagerTurnedOffTest, AWaitingRequestNeverStartsOnceOff) {
+  for (TurnedOff how : kTurnedOff) {
+    SCOPED_TRACE(static_cast<int>(how));
+    auto client = AllowedLanguageModel();
+    TestResponder first;
+    TestResponder second;
+    Prompt(*client, "one", first);
+    Prompt(*client, "two", second);
+    const uint64_t id = backend_.OnlyJob();
+    Set(how, true);
+    // A call made now fails at once, not when its turn comes.
+    TestResponder third;
+    Prompt(*client, "three", third);
+    EXPECT_EQ(third.error, ModelStreamingResponseStatus::kErrorGenericFailure);
+    EXPECT_FALSE(second.done());
+    backend_.Reply(id, {"One."});
+    RunUntilIdle();
+    EXPECT_TRUE(first.completed);
+    EXPECT_EQ(second.error, ModelStreamingResponseStatus::kErrorGenericFailure);
+    EXPECT_TRUE(backend_.jobs.empty());
+    Set(how, false);
+  }
+}
+
+// A long translation stops between its pieces once the APIs are off.
+TEST_F(MoltAIManagerTurnedOffTest, ALongTranslationStopsBetweenPieces) {
+  const std::string a = std::string(740, 'a') + ".";
+  const std::string b = std::string(740, 'b') + ".";
+  for (TurnedOff how : kTurnedOff) {
+    SCOPED_TRACE(static_cast<int>(how));
+    auto client = AllowedTranslator("en", "es");
+    TestResponder responder;
+    client->session->TranslateStreaming(a + "\n\n" + b, responder.Remote());
+    RunUntilIdle();
+    const uint64_t id = backend_.OnlyJob();
+    Set(how, true);
+    backend_.Reply(id, {TranslationReply("A.")});
+    RunUntilIdle();
+    EXPECT_EQ(responder.error,
+              ModelStreamingResponseStatus::kErrorGenericFailure);
+    EXPECT_TRUE(backend_.jobs.empty());
+    Set(how, false);
+  }
+}
+
+// The change itself ends the sessions that may no longer serve, cancelling
+// their generations; the Translator's own policy ends only Translators.
+TEST_F(MoltAIManagerTurnedOffTest, TurningTheAPIsOffEndsTheSessions) {
+  auto model = AllowedLanguageModel();
+  auto translator = AllowedTranslator();
+  TestResponder running;
+  Prompt(*model, "one", running);
+  const uint64_t id = backend_.OnlyJob();
+  ASSERT_TRUE(env_.access_changed);
+  env_.translator_policy_allowed = false;
+  env_.access_changed.Run();
+  RunUntilIdle();
+  EXPECT_FALSE(translator->session.is_connected());
+  EXPECT_TRUE(model->session.is_connected());
+  EXPECT_TRUE(backend_.cancelled.empty());
+  EXPECT_EQ(manager_->session_count_for_testing(), 1u);
+  env_.translator_policy_allowed = true;
+
+  for (TurnedOff how : kTurnedOff) {
+    SCOPED_TRACE(static_cast<int>(how));
+    auto client = AllowedLanguageModel();
+    // A change that leaves the APIs on changes nothing.
+    env_.access_changed.Run();
+    RunUntilIdle();
+    EXPECT_TRUE(client->session.is_connected());
+    Set(how, true);
+    env_.access_changed.Run();
+    RunUntilIdle();
+    EXPECT_FALSE(client->session.is_connected());
+    EXPECT_EQ(manager_->session_count_for_testing(), 0u);
+    Set(how, false);
+  }
+  EXPECT_EQ(backend_.cancelled, std::vector<uint64_t>{id});
+  EXPECT_EQ(running.error,
+            ModelStreamingResponseStatus::kErrorSessionDestroyed);
+  EXPECT_FALSE(model->session.is_connected());
+  EXPECT_EQ(backend_.sessions[env_.site_key], 0u);
+}
+
+// Turned off while the model loads, create() fails as it would have before.
+TEST_F(MoltAIManagerTurnedOffTest, TurnedOffWhileTheModelLoadsFailsCreate) {
+  for (TurnedOff how : kTurnedOff) {
+    SCOPED_TRACE(static_cast<int>(how));
+    env_.consent = SiteConsent::kAllowed;
+    backend_.hold_prepare = true;
+    auto client = CreateLanguageModel();
+    ASSERT_EQ(backend_.held_prepare.size(), 1u);
+    Set(how, true);
+    std::move(backend_.held_prepare[0]).Run(true, 8192, true);
+    backend_.held_prepare.clear();
+    RunUntilIdle();
+    EXPECT_EQ(client->error,
+              AIManagerCreateClientError::kUnableToCreateSession);
+    EXPECT_FALSE(client->session.is_bound());
+    EXPECT_EQ(manager_->session_count_for_testing(), 0u);
+    Set(how, false);
+  }
 }
 
 TEST_F(MoltAIManagerTest, CloneCopiesTheCommittedContext) {
@@ -2446,8 +2672,8 @@ TEST_F(MoltAIManagerTest, TakingBackTheAnswerEndsTheTranslators) {
   RunUntilIdle();
   const uint64_t id = backend_.OnlyJob();
   env_.consent = SiteConsent::kBlocked;
-  ASSERT_TRUE(env_.consent_changed);
-  env_.consent_changed.Run();
+  ASSERT_TRUE(env_.access_changed);
+  env_.access_changed.Run();
   RunUntilIdle();
   EXPECT_EQ(backend_.cancelled, std::vector<uint64_t>{id});
   EXPECT_FALSE(client->session.is_connected());

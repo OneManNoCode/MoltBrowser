@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/web_ai/molt_ai_manager_binder.h"
 
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -26,6 +27,7 @@
 #include "components/on_device_translation/buildflags/buildflags.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
 #include "components/policy/core/common/policy_pref_names.h"
+#include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/document_user_data.h"
@@ -137,6 +139,32 @@ bool UserAllows() {
              prefs::localstate::kOnDeviceAiUserSettingsEnabled);
 }
 
+// The TranslatorAPIAllowed pref, or null in a build without it.
+const char* TranslatorPolicyPref() {
+#if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+  return ::prefs::kTranslatorAPIAllowed;
+#else
+  return nullptr;
+#endif
+}
+
+// Runs |on_change| when any of |paths| (null ones skipped) that |prefs| has
+// changes.
+void WatchPrefs(PrefChangeRegistrar& registrar,
+                PrefService* prefs,
+                std::initializer_list<const char*> paths,
+                const base::RepeatingClosure& on_change) {
+  if (!prefs) {
+    return;
+  }
+  registrar.Init(prefs);
+  for (const char* path : paths) {
+    if (path && prefs->FindPreference(path)) {
+      registrar.Add(path, on_change);
+    }
+  }
+}
+
 // A document's or worker's facts, read when asked (the document can move
 // in and out of the back/forward cache; its origin never changes).
 class FrameEnvironment : public WebAIEnvironment {
@@ -197,8 +225,24 @@ class FrameEnvironment : public WebAIEnvironment {
                    : SiteConsent::kAsk;
   }
 
-  void ObserveConsent(base::RepeatingClosure on_change) override {
-    // Any site's change: the manager reads its own answer again.
+  void ObserveChanges(base::RepeatingClosure on_change) override {
+    // What GetContextFacts() reads that can change: the policies and the
+    // On-device AI switch. The manager reads them again.
+    WatchPrefs(local_state_prefs_,
+               g_browser_process ? g_browser_process->local_state() : nullptr,
+               {prefs::localstate::kOnDeviceAiUserSettingsEnabled,
+                prefs::localstate::
+                    kGenAILocalFoundationalModelEnterprisePolicySettings},
+               on_change);
+    Profile* profile = Profile::FromBrowserContext(browser_context_);
+    WatchPrefs(
+        profile_prefs_, profile ? profile->GetPrefs() : nullptr,
+        {policy::policy_prefs::kBuiltInAIAPIsEnabled, TranslatorPolicyPref()},
+        on_change);
+    // The "web_ai_apis" switch.
+    switch_subscription_ =
+        RuntimeWebAIBackend::GetInstance()->ObserveWebApisSwitch(on_change);
+    // Any site's answer: the manager reads its own again.
     if (WebAISitePermissions* answers =
             WebAISitePermissions::Get(browser_context_)) {
       consent_subscription_ = answers->AddObserver(std::move(on_change));
@@ -242,6 +286,9 @@ class FrameEnvironment : public WebAIEnvironment {
   const raw_ptr<content::BrowserContext> browser_context_;
   const bool is_document_;
   const content::WeakDocumentPtr document_;
+  PrefChangeRegistrar local_state_prefs_;
+  PrefChangeRegistrar profile_prefs_;
+  base::CallbackListSubscription switch_subscription_;
   base::CallbackListSubscription consent_subscription_;
 };
 

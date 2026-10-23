@@ -246,6 +246,13 @@ CaptureDecision DecideCapture(const CaptureFacts& facts) {
     return CaptureDecision::kOriginChanged;
   if (!facts.origin_allowed)
     return CaptureDecision::kOriginNotAllowed;
+  // A mask covers only a frame's box, and the page decides how the frame
+  // is painted: another origin's frame anywhere in the page means no
+  // screenshot.
+  if (facts.cross_origin_frames > 0)
+    return CaptureDecision::kCrossOriginFrame;
+  if (!facts.frames_settled)
+    return CaptureDecision::kFramesChanging;
   return CaptureDecision::kCapture;
 }
 
@@ -273,6 +280,10 @@ std::string_view CaptureDecisionName(CaptureDecision decision) {
       return "origin changed";
     case CaptureDecision::kOriginNotAllowed:
       return "origin not allowed";
+    case CaptureDecision::kCrossOriginFrame:
+      return "frame of another origin";
+    case CaptureDecision::kFramesChanging:
+      return "frames changing";
   }
   return "";
 }
