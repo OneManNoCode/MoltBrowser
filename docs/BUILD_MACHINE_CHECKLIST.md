@@ -373,7 +373,7 @@ read. Upstream files are whole copies under `src/`, each hook marked
 
 | File | What to watch | From |
 |---|---|---|
-| `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_basic_and_digest_auth_only` (`HttpAuthStaticNetworkContextParams`), `[MinVersion=1] string? molt_socks_isolation_password` and the three `[MinVersion=1] bool molt_uncached_cert_verification`, `molt_no_shared_cache_entries`, `molt_hsts_top_level_navigations_only` (`NetworkContextParams`): last in their structs, so positional constructors still compile | #51, #55, MoltNet state |
+| `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_basic_and_digest_auth_only` (`HttpAuthStaticNetworkContextParams`), `[MinVersion=1] string? molt_socks_isolation_password` and the three `[MinVersion=1] bool molt_uncached_cert_verification`, `molt_no_shared_cache_entries`, `molt_hsts_top_level_navigations_only` (`NetworkContextParams`): last in their structs, so positional constructors still compile | #51, #55, #62 |
 | `services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom` | `[MinVersion=1] bool molt_isolate_each_cert_fetch` | #51 |
 | `third_party/blink/public/mojom/worker/shared_worker_info.mojom`, `.../service_worker/service_worker.mojom` | `[MinVersion=1] bool molt_shields_down`; `ServiceWorker.InitializeGlobalScope` change | #24 |
 | `chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom` | the generated union API (`GenerationParams.constraint`), `LoadEmbeddingModel`/`EmbeddingModel.Embed`, the projector handle, GPU fields | #15, #28, #30, #38, #52 |
@@ -390,12 +390,12 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `net/socket/socks_connect_job.cc` | per-site username (also for opaque top-level sites), the per-context password | #49, #55 |
 | `net/socket/connect_job.h` | `CommonConnectJobParams` holds a `raw_ptr` to the session's password | #55 |
 | `net/http/http_network_session.{h,cc}` | `HttpNetworkSessionParams` carries the password | #55 |
-| `services/network/network_context.cc` | copies the password; Basic/Digest-only auth in the constructor and after each browser-wide auth update; no `CachingCertVerifier`/`CoalescingCertVerifier` in `MakeURLRequestContext()`, `SharedResourceChecker::MoltDisableSharing()` in the constructor and `MoltSetUpgradeTopLevelNavigationsOnly()` after `Build()`, each only for MoltNet's params | #51, #55, MoltNet state |
-| `net/http/transport_security_state.{h,cc}` | a per-instance `kHstsTopLevelNavigationsOnly` in `GetSSLUpgradeDecision()`. `transport_security_state.h` is widely included | MoltNet state |
-| `services/network/pervasive_resources/shared_resource_checker.h` | inline `MoltDisableSharing()` | MoltNet state |
+| `services/network/network_context.cc` | copies the password; Basic/Digest-only auth in the constructor and after each browser-wide auth update; no `CachingCertVerifier`/`CoalescingCertVerifier` in `MakeURLRequestContext()`, `SharedResourceChecker::MoltDisableSharing()` in the constructor and `MoltSetUpgradeTopLevelNavigationsOnly()` after `Build()`, each only for MoltNet's params | #51, #55, #62 |
+| `net/http/transport_security_state.{h,cc}` | a per-instance `kHstsTopLevelNavigationsOnly` in `GetSSLUpgradeDecision()`. `transport_security_state.h` is widely included | #62 |
+| `services/network/pervasive_resources/shared_resource_checker.h` | inline `MoltDisableSharing()` | #62 |
 | `services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.{h,cc}`, `services/cert_verifier/cert_verifier_service_factory.cc` | numbered fetches, `IsolationInfo::CreateTransient` in `Job::StartURLLoader` | #51 |
-| `chrome/browser/net/profile_network_context_service.cc` | sets the MoltNet params (via `molt_net_network_context_policy.h`); `ShouldSplitAuthCacheByNetworkIsolationKey()` and both `block_trust_tokens` places (creation, `UpdateAntiAbuseSettings()`) ask it too | #21, #51, #55, MoltNet state |
-| `chrome/browser/molt_ai/tor/molt_net_routing.cc` | `ProcessWidePartitioningError()` calls `net::NetworkAnonymizationKey::IsPartitioningEnabled()` and `net::HttpCache::IsSplitCacheEnabled()` (`//net`) | MoltNet state |
+| `chrome/browser/net/profile_network_context_service.cc` | sets the MoltNet params (via `molt_net_network_context_policy.h`); `ShouldSplitAuthCacheByNetworkIsolationKey()` and both `block_trust_tokens` places (creation, `UpdateAntiAbuseSettings()`) ask it too | #21, #51, #55, #62 |
+| `chrome/browser/molt_ai/tor/molt_net_routing.cc` | `ProcessWidePartitioningError()` calls `net::NetworkAnonymizationKey::IsPartitioningEnabled()` and `net::HttpCache::IsSplitCacheEnabled()` (`//net`) | #62 |
 | `chrome/browser/ssl/chrome_security_blocking_page_factory.cc` | `OpenLoginTab()` returns early for MoltNet | #51 |
 | `chrome/browser/profiles/off_the_record_profile_impl.cc` | no zoom from the regular profile | #20, #21, #49 |
 | `net/dns/host_resolver_manager.cc`, `net/base/features.cc` | `.onion` and MoltNet resolver rules | #2 and the MoltNet P1-P15 work, carried over in #11 |
@@ -566,7 +566,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `AgentPlanTest`, `AgentPromptTest` | #47, #55 |
   | `PageTranslatePlanTest`, `PageTranslateIoTest`, `PageTranslateMessagesTest`, `PageTranslationJobTest` | #48, #55 |
   | `TorControlProtocolTest`, `TorrcBuilderTest`, `PluggableTransportsTest`, `OnionLocationTest` | #6, #49 |
-  | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, MoltNet state |
+  | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -593,8 +593,8 @@ pass except where the table below says otherwise (verify the filters).
 
 | Binary | `--gtest_filter` | From |
 |---|---|---|
-| `services_unittests` | `NetworkContextTest.*:NetworkContextTestWithMockTime.*:CertNetFetcherURLLoaderTest.*:CertVerifierServiceFactoryTest.*:CertVerifierServiceFactoryBuiltinVerifierTest.*:SharedResourceChecker*` | #51, #55, MoltNet state |
-| `net_unittests` | `SOCKSConnectJobTest.*:*SOCKS5*:ConnectJobTest.*:HttpNetworkSession*:HostResolverManager*:TransportSecurityState*:URLRequestTest*HSTS*:*Hsts*` | #49, #55, #2, MoltNet state |
+| `services_unittests` | `NetworkContextTest.*:NetworkContextTestWithMockTime.*:CertNetFetcherURLLoaderTest.*:CertVerifierServiceFactoryTest.*:CertVerifierServiceFactoryBuiltinVerifierTest.*:SharedResourceChecker*` | #51, #55, #62 |
+| `net_unittests` | `SOCKSConnectJobTest.*:*SOCKS5*:ConnectJobTest.*:HttpNetworkSession*:HostResolverManager*:TransportSecurityState*:URLRequestTest*HSTS*:*Hsts*` | #49, #55, #2, #62 |
 | `components_unittests` | `AutocompleteControllerTest.*` | #44 |
 | `components_unittests` | `TranslateManagerTest.*:TranslateLanguageListTest.*` | #48 (expected failures) |
 | `unit_tests` | `TranslateServiceTest.*:TranslateBubbleViewTest.*` | #48 (expected failures) |
@@ -923,7 +923,7 @@ macOS, and for the manual steps everywhere:
   per request) costs no measurable page-load time (from #6); `.onion`
   requests from a regular page, including a worker's WebSocket, are refused
   (§4 step 13, which the kit automates on Linux) (from #6, #12).
-- [ ] Per-site network state (MoltNet state; MOLTNET_COMPLIANCE.md §2
+- [ ] Per-site network state (#62; MOLTNET_COMPLIANCE.md §2
   *Shared network state*, §4 steps 8 and 9): in `chrome://net-export`, two
   sites embedding the same third-party HTTPS host each get a certificate
   verification for it in a MoltNet window (one in a regular window); page
@@ -976,7 +976,7 @@ Mac; use a real Linux host.
   - the identity checks pass, including `identity.session_circuits` (from
     #55), `identity.sandboxed_circuits` (from #49) and
     `identity.cert_fetch_circuits` with `cert_fetch_b` (from #51),
-    `identity.partitioning_override_refused` (MoltNet state); New
+    `identity.partitioning_override_refused` (#62); New
     Identity's order (a beforeunload page, an immediate second New
     Identity) (from #49);
   - the uniformity checks pass, including the scrollbar and media-query
