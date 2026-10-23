@@ -72,12 +72,23 @@ source_set("gpu_offload") {
   ]
 }
 
+# Which of llama.cpp's x86-64 CPU kernel sets this CPU runs
+# (docs/design/SANDBOXED_INFERENCE.md section 12): CPUID and XCR0 in, a
+# level out. Built on every platform, so its tests always run.
+source_set("cpu_kernels") {
+  sources = [
+    "cpu_kernels.cc",
+    "cpu_kernels.h",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "bounded_json_unittest.cc",
     "context_budget_unittest.cc",
+    "cpu_kernels_unittest.cc",
     "embedding_utils_unittest.cc",
     "gpu_offload_unittest.cc",
     "grammar_tokens_unittest.cc",
@@ -88,6 +99,7 @@ source_set("unit_tests") {
   ]
   deps = [
     ":constrained_decoding",
+    ":cpu_kernels",
     ":embedding_utils",
     ":gpu_offload",
     ":image_input",
