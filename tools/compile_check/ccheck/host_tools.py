@@ -21,10 +21,13 @@ DEBS = ["libprotoc-dev", "libprotoc32t64", "libprotobuf-dev",
         "libprotobuf32t64"]
 PLUGINS = ["protozero_plugin", "cppgen_plugin"]
 # perfetto/src/base files the plugins need (string_utils and what it uses).
+# Files a pinned perfetto doesn't have are skipped (progress_reporter.cc,
+# which logging.cc calls, is new in the perfetto of Chromium 156).
 PERFETTO_BASE = ["src/base/string_utils.cc", "src/base/logging.cc",
                  "src/base/utils.cc", "src/base/string_view.cc",
                  "src/base/file_utils.cc", "src/base/pipe.cc",
-                 "src/base/status.cc", "src/base/platform.cc"]
+                 "src/base/status.cc", "src/base/platform.cc",
+                 "src/base/progress_reporter.cc"]
 
 
 def _libprotoc(work):
