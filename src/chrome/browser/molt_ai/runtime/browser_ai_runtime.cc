@@ -391,13 +391,15 @@ std::string ComputeUnsupportedReason() {
          "a cloud model instead (AI Settings > Connect AI Providers).";
 #else
 #if defined(ARCH_CPU_X86_64)
-  // //third_party/llama_cpp builds ggml's x86 kernels with -mavx2 -mfma
-  // -mf16c. On a CPU without them the first quantized matmul raises SIGILL.
-  // (Every shipping AVX2 CPU also has F16C, which base::CPU doesn't
-  // expose.) The inference service checks again before loading.
+  // //third_party/llama_cpp builds ggml's x86 kernels for three levels and
+  // the inference service runs the best this CPU supports
+  // (docs/design/SANDBOXED_INFERENCE.md section 12). The lowest is
+  // x86-64-v2: SSE3, SSSE3, SSE4.1, SSE4.2 and POPCNT. The service checks
+  // again before loading.
   const base::CPU& cpu = base::CPU::GetInstanceNoAllocation();
-  if (!cpu.has_avx2() || !cpu.has_fma3()) {
-    return "This CPU doesn't support AVX2, which on-device AI in "
+  if (!cpu.has_sse3() || !cpu.has_ssse3() || !cpu.has_sse41() ||
+      !cpu.has_sse42() || !cpu.has_popcnt()) {
+    return "This CPU doesn't support SSE4.2, which on-device AI in "
            "MoltBrowser needs. Use a cloud model instead (AI Settings > "
            "Connect AI Providers).";
   }
@@ -574,7 +576,7 @@ std::string LoadError(const InferenceOutcome& outcome, const std::string& name) 
         case mojom::LoadModelStatus::kOk:
           return std::string();
         case mojom::LoadModelStatus::kUnsupportedCpu:
-          return "This CPU doesn't support AVX2, which on-device AI in "
+          return "This CPU doesn't support SSE4.2, which on-device AI in "
                  "MoltBrowser needs. Use a cloud model instead (AI Settings "
                  "> Connect AI Providers).";
         case mojom::LoadModelStatus::kInvalidModelFile:

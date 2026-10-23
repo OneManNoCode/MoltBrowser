@@ -159,7 +159,10 @@ EmbeddingLoadResult LlamaEmbeddingEngine::Load(
     return result;
   }
 
-  LlamaEngine::InitBackendOnce();
+  if (!LlamaEngine::InitBackendOnce()) {
+    result.status = EngineLoadStatus::kUnsupportedCpu;
+    return result;
+  }
   if (ggml_backend_dev_count() == 0) {
     result.status = EngineLoadStatus::kBackendUnavailable;
     return result;

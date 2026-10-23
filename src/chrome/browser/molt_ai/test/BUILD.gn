@@ -76,4 +76,10 @@ test("molt_ai_unittests") {
   if (is_linux || is_chromeos) {
     deps += [ "//content/utility/on_device_model:molt_unit_tests" ]
   }
+
+  # llama.cpp's x86-64 CPU kernel levels agree with each other (links
+  # ggml's CPU backend into this test binary only).
+  if (current_cpu == "x64" && !is_android && !is_ios) {
+    deps += [ "//chrome/services/molt_ai/inference:x86_cpu_kernels_unittests" ]
+  }
 }

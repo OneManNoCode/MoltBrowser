@@ -17,7 +17,10 @@ sandboxed utility process: the inference service in
 //chrome/services/molt_ai/inference (kOnDeviceModelExecution sandbox,
 docs/design/SANDBOXED_INFERENCE.md), the only code BUILD.gn lets link it.
 Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
-macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev). With the GN switch
+macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev). On x64, ggml's
+instruction-set-specific CPU kernels are built for three levels
+(x86-64-v2, AVX, AVX2) and the service picks one at run time
+(docs/design/SANDBOXED_INFERENCE.md section 12). With the GN switch
 molt_llama_vulkan (llama_cpp.gni, off by default; Linux and Windows) the
 Vulkan backend is built too, its SPIR-V compiled at build time with the
 glslang and SPIRV-Tools Chromium pins
@@ -97,6 +100,25 @@ Local Modifications:
 - chromium/llama_guard.{h,cc} (not upstream): the exception boundary for the
   service's llama.cpp calls that can reach a GPU (see Exceptions above), and
   the bring-up of the Vulkan backend for it.
+- x64 CPU kernels per instruction-set level (BUILD.gn's _ggml_x86_levels,
+  not upstream; upstream gets the same from GGML_CPU_ALL_VARIANTS with
+  GGML_BACKEND_DL, one shared library per level, which the sandbox can't
+  load; docs/design/SANDBOXED_INFERENCE.md section 12).
+  ggml-cpu/arch/x86/quants.c and arch/x86/repack.cpp, the only ggml-cpu
+  files built with instruction-set flags, are compiled once per level
+  (:ggml_cpu_x86_v2 -msse4.2 -mpopcnt, :ggml_cpu_x86_avx + -mavx,
+  :ggml_cpu_x86_avx2 -mavx2 -mfma -mf16c as before), unmodified, with
+  chromium/ggml-cpu-x86-variants.h force-included: it renames the 40
+  functions they define to molt_x86_<level>_<name>.
+  chromium/ggml-cpu-x86-dispatch.{h,cpp} define the original names as
+  thunks into the level the service chose (molt_llama::UseX86CpuKernels),
+  so ggml-cpu.c's type traits and ggml-cpu/repack.cpp are unchanged.
+  arch/x86/cpu-feats.cpp isn't built (it is only GGML_BACKEND_DL's score).
+  When updating: the variants header's two lists must name exactly what the
+  two files define (a mismatch is a link error), and the level objects must
+  define no weak (COMDAT) symbol and no data (nm), or the linker could give
+  a lower level AVX2 code. molt_ai_unittests' X86CpuKernelsTest checks the
+  levels against each other.
 - Removed backends no BUILD.gn file references: ggml/src/ggml-cuda,
   ggml-hip and ggml-musa (both build ggml-cuda's sources), ggml-sycl,
   ggml-opencl, ggml-hexagon, ggml-webgpu, ggml-virtgpu, ggml-cann,

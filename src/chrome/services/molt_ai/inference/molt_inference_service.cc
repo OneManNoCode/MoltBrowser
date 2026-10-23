@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/cpu.h"
 #include "base/files/file.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -48,15 +47,11 @@ void LlamaLogCallback(ggml_log_level level, const char* text, void*) {
 }
 
 // Second line of defence: the browser checks the CPU before launching. On
-// x64 ggml's kernels are built with -mavx2 -mfma -mf16c and raise SIGILL
-// without them.
+// x64 ggml's kernels are built for three levels, the lowest x86-64-v2
+// (SSE4.2, POPCNT); the engine runs the best this CPU supports
+// (docs/design/SANDBOXED_INFERENCE.md section 12).
 bool CpuSupported() {
-#if defined(ARCH_CPU_X86_64)
-  const base::CPU& cpu = base::CPU::GetInstanceNoAllocation();
-  return cpu.has_avx2() && cpu.has_fma3();
-#else
-  return true;
-#endif
+  return LlamaEngine::CpuSupported();
 }
 
 // This process's limit on anonymous memory, set by the sandbox
@@ -130,6 +125,8 @@ mojom::LoadModelStatus ToMojo(EngineLoadStatus status) {
       return mojom::LoadModelStatus::kOutOfMemory;
     case EngineLoadStatus::kBackendUnavailable:
       return mojom::LoadModelStatus::kBackendUnavailable;
+    case EngineLoadStatus::kUnsupportedCpu:
+      return mojom::LoadModelStatus::kUnsupportedCpu;
     case EngineLoadStatus::kInvalidVisionProjector:
       return mojom::LoadModelStatus::kInvalidVisionProjector;
   }
@@ -235,6 +232,10 @@ void MoltInferenceService::OnLoaded(mojo::PendingReceiver<mojom::Model> model,
     engine_.Reset();  // frees whatever was loaded, on the engine sequence
     std::move(callback).Run(ToMojo(result.status), nullptr);
     return;
+  }
+  if (!result.description.cpu_kernels.empty()) {
+    VLOG(1) << "[MoltAI inference] CPU kernels: "
+            << result.description.cpu_kernels;
   }
   auto description = mojom::ModelDescription::New();
   description->architecture = std::move(result.description.architecture);

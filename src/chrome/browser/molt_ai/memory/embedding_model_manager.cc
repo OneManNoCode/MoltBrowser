@@ -70,10 +70,12 @@ std::string EmbeddingModelManager::NotOfferedReason() const {
   return "On-device AI isn't available in this version of MoltBrowser.";
 #else
 #if defined(ARCH_CPU_X86_64)
-  // The inference service's kernels need AVX2/FMA (see BrowserAIRuntime).
+  // The inference service's kernels need x86-64-v2 at least (see
+  // BrowserAIRuntime).
   const base::CPU& cpu = base::CPU::GetInstanceNoAllocation();
-  if (!cpu.has_avx2() || !cpu.has_fma3()) {
-    return "This CPU doesn't support AVX2, which on-device AI in "
+  if (!cpu.has_sse3() || !cpu.has_ssse3() || !cpu.has_sse41() ||
+      !cpu.has_sse42() || !cpu.has_popcnt()) {
+    return "This CPU doesn't support SSE4.2, which on-device AI in "
            "MoltBrowser needs.";
   }
 #endif
