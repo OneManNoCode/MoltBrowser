@@ -47,12 +47,12 @@ the build machine adds its items under the right phase, with its tag.
 native Linux box). Windows builds are paused (CLAUDE.md, 2026-07-03); its
 items are marked *deferred*.
 
-> **macOS and the Docker Linux build share `chromium/src/out/MoltBrowser`.**
-> `build/docker/build-linux.sh` and `scripts/package-linux.sh` both use that
-> out dir, so a Linux build there throws away the macOS build (and back).
-> Finish every macOS phase, including the macOS packaging in §10, before
-> the Linux build in the same checkout, or build Linux on a separate
-> machine.
+> **Out dirs.** macOS builds in `chromium/src/out/MoltBrowser`, Linux in
+> `chromium/src/out/MoltBrowser-linux` (`scripts/configure.sh` picks it for a
+> Linux target, `scripts/build.sh --platform linux` and
+> `scripts/package-linux.sh` use it). So the Docker Linux build no longer
+> throws away the macOS build in the same checkout: the phases below can
+> interleave, given the disk for both (§0).
 
 ### The phases
 
@@ -61,7 +61,7 @@ items are marked *deferred*.
 | 0 | Before you start | Mac | 30 min |
 | 1 | Sync to the pin, vendor the Rust crates | Mac | 1-2 h |
 | 2 | Pins and keys the owner must do first | Mac + offline machine | 2-3 h |
-| 3 | Configure and build | Mac, then Linux | a full build each (hours) |
+| 3 | Configure and build | Mac, Linux | a full build each (hours) |
 | 4 | Compile-risk hot spots (read when the build fails) | | |
 | 5 | Unit tests | Mac, Linux | hours |
 | 6 | Fuzzers | Mac or Linux (GN); Linux (standalone) | 3-6 h |
@@ -76,8 +76,11 @@ items are marked *deferred*.
 ## 0. Before you start
 
 - [ ] Disk: at least 120 GB free for the checkout and one out dir; each
-  extra out dir (§5 tests, §6 fuzzers) needs tens of GB more (from
-  `build/docker/build-linux-fresh.sh`, `scripts/setup.sh`).
+  extra out dir (the Linux build's `out/MoltBrowser-linux` in the same
+  checkout, §5 tests, §6 fuzzers) needs tens of GB more (from
+  `build/docker/build-linux-fresh.sh`, `scripts/setup.sh`). Building with
+  the Mac's release runner (§10.1, route A) needs room for its own checkout
+  as well.
 - [ ] `main` is current and clean, and there is a log folder (from CLAUDE.md
   "Git Workflow"):
   ```bash
@@ -313,15 +316,16 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 - [ ] Day-to-day install loop: `./scripts/dev-install-mac.sh` (stages the
   app, adds `default.metallib`, signs inside-out, runs a headless renderer
   gate, installs to `/Applications`). *Expected:* `signature valid,
-  allow-jit intact` and `gate passed`. It copies `tor`, `ocr`, `whisper`
-  and `molt_models` from the **installed** app over the out dir's. To test
-  freshly bundled helpers (§7.1, from #16 and #17), bundle them with
-  `./scripts/build.sh` (plain `autoninja` doesn't) and use the release build
-  of §10, or empty those folders in `/Applications/MoltBrowser.app` first.
+  allow-jit intact` and `gate passed`. It keeps the `tor`, `ocr` and
+  `whisper` the out-dir app already has, and copies only missing ones (and
+  `molt_models`) from the installed app. Plain `autoninja` bundles none, so
+  to test freshly bundled helpers (§7.1, from #16 and #17), build with
+  `./scripts/build.sh`, which bundles them after the compile.
 
 ### 3.2 Linux x64
 
-Do this after every macOS phase (shared out dir), or on a native Linux
+Linux builds in its own out dir, `out/MoltBrowser-linux`, so this can run
+next to the macOS build in the same checkout, or on a native Linux
 machine. Docker on an Apple Silicon Mac runs under Rosetta and took 24-40 h
 per attempt; a native x86_64 Linux box takes about 4 h (from
 `.github/workflows/release-linux.yml`).
@@ -330,11 +334,14 @@ per attempt; a native x86_64 Linux box takes about 4 h (from
   from Mac)"):
   `./build/docker/build-linux.sh 2>&1 | tee ~/molt-v0.3.0/build-linux.log`
   (syncs the Linux toolchains if `buildtools/linux64/gn` is missing, then
-  `configure.sh --platform linux --arch x64` and `build.sh --jobs 4`).
-  Or, on a fresh Linux machine: `./build/docker/build-linux-fresh.sh --version 0.3.0`.
+  `configure.sh --platform linux --arch x64` and
+  `build.sh --platform linux --jobs 4`).
+  Or, on a fresh Linux machine: `./build/docker/build-linux-fresh.sh`
+  (with `--package`, the packages take `kMoltBrowserVersion`'s version, 0.3.0
+  after §2.6; `--version X.Y.Z` overrides it).
 - [ ] `grep -nE 'error:|FAILED|finished with an error' ~/molt-v0.3.0/build-linux.log`
-  → no match. The binary is `chromium/src/out/MoltBrowser/chrome` (from
-  CLAUDE.md "Build gotchas").
+  → no match. The binary is `chromium/src/out/MoltBrowser-linux/chrome`
+  (from CLAUDE.md "Build gotchas").
 - [ ] `molt_llama_vulkan` stays off: `configs/linux-x64.gn` only mentions it
   in a comment. Turning it on is §9 (from #52).
 
@@ -506,8 +513,10 @@ extension enablement and `MediaRouterEnabled()`).
   ./scripts/configure.sh --config "$PWD/build/cache/macos-arm64-tests.gn" --build-dir out/MoltTests
   ```
   (`build/` is gitignored, so the release provenance's clean-tree check
-  doesn't see the file.) On Linux, the same from `configs/linux-x64.gn`;
-  inside the Docker image the repository is `/moltbrowser`, so pass
+  doesn't see the file.) On Linux, the same from `configs/linux-x64.gn`,
+  with `--build-dir out/MoltTests-linux` so it doesn't replace the Mac's
+  test out dir in a shared checkout; inside the Docker image the repository
+  is `/moltbrowser`, so pass
   `--config /moltbrowser/build/cache/linux-x64-tests.gn`.
 
 ### 5.1 MoltBrowser's own tests
@@ -517,8 +526,9 @@ extension enablement and `MediaRouterEnabled()`).
   autoninja -C chromium/src/out/MoltBrowser molt_ai_unittests
   chromium/src/out/MoltBrowser/molt_ai_unittests 2>&1 | tee ~/molt-v0.3.0/molt_ai_unittests-mac.log
   ```
-  *Expected:* every test passes, on macOS and on Linux (Linux adds
-  `MoltGpuInferenceSandboxPolicyTest.*` and `HelperSandboxLinuxTest.*`).
+  *Expected:* every test passes, on macOS and on Linux (there in
+  `out/MoltBrowser-linux`; Linux adds `MoltGpuInferenceSandboxPolicyTest.*`
+  and `HelperSandboxLinuxTest.*`).
   The suites the PRs said were never compiled, to look at first if
   something fails:
 
@@ -692,7 +702,9 @@ item says otherwise.
   APP=chromium/src/out/MoltBrowser/MoltBrowser.app
   codesign --verify --deep --strict --verbose=2 "$APP"
   codesign -d --entitlements - "$APP/Contents/Frameworks/MoltBrowser Framework.framework/Versions/Current/Helpers/MoltBrowser Helper (Renderer).app" 2>&1 | grep allow-jit
-  for f in $(find "$APP/Contents/Resources/tor" "$APP/Contents/Resources/ocr" "$APP/Contents/Resources/whisper" -type f); do
+  find "$APP/Contents/Resources/tor" "$APP/Contents/Resources/ocr" "$APP/Contents/Resources/whisper" \
+       "$APP/Contents/Frameworks/MoltBrowser Framework.framework/Versions/Current/Libraries" -type f -print0 |
+  while IFS= read -r -d '' f; do
     file "$f" | grep -q Mach-O && { codesign -dv "$f" 2>&1 | grep -q 'TeamIdentifier=83DA5U8N7Z' || echo "UNSIGNED: $f"; }
   done
   ls "$APP/Contents/Frameworks/MoltBrowser Framework.framework/Versions/Current/Resources/default.metallib"
@@ -702,7 +714,9 @@ item says otherwise.
   hdiutil detach /Volumes/MoltBrowser
   ```
   *Expected:* valid signatures, `allow-jit` present, no `UNSIGNED` line
-  (`release.sh` signs these with `|| true`, so a failure there is silent),
+  (`release.sh` now stops on a failure to sign the `Resources/` helpers and
+  checks their hardened runtime; this re-checks them and the framework's
+  `Libraries/` dylibs in the shipped app),
   `default.metallib` present, `accepted` / `source=Notarized Developer ID`,
   `The validate action worked!`.
 - [ ] Upgrade over a v0.2.5 profile, here and on Linux (from #11): existing
@@ -917,7 +931,7 @@ Mac; use a real Linux host.
 - [ ] The full run against the build, then the installed `.deb` under
   another locale and time zone (from #29, #49, #51, #55):
   ```bash
-  sudo tools/leak_test/leaktest.sh run --browser chromium/src/out/MoltBrowser/chrome --out ~/molt-v0.3.0/leak-a
+  sudo tools/leak_test/leaktest.sh run --browser chromium/src/out/MoltBrowser-linux/chrome --out ~/molt-v0.3.0/leak-a
   sudo tools/leak_test/leaktest.sh run --browser /opt/moltbrowser/moltbrowser --out ~/molt-v0.3.0/leak-b \
        --locale de_DE.UTF-8 --timezone Asia/Tokyo
   tools/leak_test/leaktest.sh diff ~/molt-v0.3.0/leak-a/*/report.json ~/molt-v0.3.0/leak-b/*/report.json
@@ -995,8 +1009,9 @@ docs/design/SANDBOXED_INFERENCE.md §11.9 (from #52, #55).
 
 ## 10. Packaging, signing and the draft release
 
-macOS first (shared out dir), then Linux. The private key never leaves the
-offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
+macOS and Linux in either order (each has its own out dir). The private
+key never leaves the offline machine; the full runbook is
+docs/SIGNED_UPDATES.md "Every release".
 
 ### 10.1 Before the tag
 
@@ -1011,23 +1026,37 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
   `MoltBrowser-macOS-arm64.dmg`, `MoltBrowser-Linux-x64.deb`,
   `MoltBrowser-Linux-x64.rpm`, `MoltBrowser-Linux-x64.tar.gz`
   (`UpdateManager::PlatformAssetName()`; the README's `/latest/download/`
-  links use them too). The workflows produce these names; the local
-  scripts produce versioned names, so §10.2 and §10.3 rename before the
-  SBOMs.
-- [ ] Decide which machine builds what (found while writing this runbook,
-  in `release.yml` and `scripts/sign-app.sh`). **Pushing a `v*` tag starts
-  two workflows on self-hosted runners**, if they are online: `release.yml`
+  links use them too). Every release script and workflow now produces
+  exactly these names, from `scripts/lib-release-names.sh`, so nothing is
+  renamed by hand; CI checks them against the updater
+  (`scripts/release_asset_names_test.py`, in `lint.yml`).
+- [ ] Decide which machine builds what. **Pushing a `v*` tag starts two
+  workflows on self-hosted runners**, if they are online: `release.yml`
   (macOS job on `[self-hosted, macOS, ARM64]`) and `release-linux.yml`
-  (`[self-hosted, linux-chromium-builder]`).
-  - Don't use `release.yml`'s macOS job for v0.3.0 as it stands: it never
-    compiles `default.metallib` (without it no model loads; CLAUDE.md), it
-    never runs `bundle-tor.sh`, `bundle-whisper.sh` or
-    `bundle-tesseract.sh`, and `scripts/sign-app.sh` skips the dylibs in the
-    framework's `Libraries/` that `release.sh` signs explicitly. Stop the
-    Mac runner before pushing the tag, or cancel that run
+  (`[self-hosted, linux-chromium-builder]`). Pick one route per platform:
+  two builds would upload the same names with `--clobber`, and the last
+  one wins.
+  - macOS, route A: the tag push runs `release.yml`'s macOS job. It runs
+    the scripts of §10.2: `configure.sh`, `build.sh` (compile, then Tor,
+    whisper and tesseract, failing if one can't be bundled), and
+    `release.sh` (Info.plist version, `default.metallib`, inside-out
+    signing including the framework's `Libraries/` and the `Resources/`
+    helpers, the notarized and stapled `MoltBrowser-macOS-arm64.dmg`), then
+    the SBOM, checksums and provenance. Its build number is the commit
+    count up to the tag. It has not run end to end yet, so watch the run.
+    Before the tag, on the runner: its workspace
+    (`<runner dir>/_work/MoltBrowser/MoltBrowser/`) needs `depot_tools/` and a
+    `chromium/` checkout at the pin (`./scripts/setup.sh --target-os mac`
+    there once; a second full checkout on the Mac, §0), `MOLT_BUILDER_ID`
+    in the runner's `.env` (§2.5), the four secrets in the `release.yml`
+    header, the Metal toolchain, `cmake` and Homebrew's `tesseract` (§0).
+    Then the §7.1 codesign checks on the draft's DMG.
+  - macOS, route B: §10.2 on your own checkout. Stop the Mac runner before
+    pushing the tag, or cancel that run
     (`gh run list --workflow release.yml --repo OneManNoCode/MoltBrowser`,
-    then `gh run cancel <id>`), and use §10.2.
-  - `release-linux.yml` is how v0.2.5's Linux packages were made (§10.3).
+    then `gh run cancel <id>`).
+  - Linux: §10.3. `release-linux.yml` is how v0.2.5's Linux packages were
+    made.
 - [ ] Tag the merged commit; `scripts/release-draft.sh` refuses a tag that
   isn't pushed (from #43):
   ```bash
@@ -1035,7 +1064,7 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
   git tag -a v0.3.0 -m "MoltBrowser v0.3.0" && git push origin v0.3.0
   ```
 
-### 10.2 macOS (local scripts)
+### 10.2 macOS (local scripts, route B)
 
 - [ ] Build from the tag with a clean tree; the provenance refuses anything
   else (from #43):
@@ -1049,21 +1078,24 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
   grep -nE 'error:|FAILED|finished with an error|bundling failed' ~/molt-v0.3.0/release-build-mac.log
   ```
   *Expected:* no match. `build.sh` bundles Tor, whisper and tesseract into
-  the app after the compile, but only **warns** when bundling fails.
+  the app after the compile; with `MOLT_RELEASE_BUILD=1` it fails when one
+  can't be bundled (a development build only warns).
 - [ ] Notarization credentials, once per machine (from `release.yml`):
   `xcrun notarytool store-credentials AC_PASSWORD --apple-id <Apple ID> --team-id 83DA5U8N7Z --password <app-specific password>`.
 - [ ] Sign, notarize and make the DMG (from CLAUDE.md "Packaging gotchas",
   `scripts/release.sh`): Info.plist version, `default.metallib`, inside-out
-  signing with per-helper entitlements, the `Resources/` helpers and
-  `Libraries/` dylibs, DMG, notarization, stapling. Without `--upload`: the
-  versioned DMG name is wrong for the updater.
+  signing with per-helper entitlements, the `Resources/` helpers (any
+  failure stops it) and `Libraries/` dylibs, then
+  `dist/MoltBrowser-macOS-arm64.dmg`, signed, notarized and stapled. It
+  refuses an app without its bundled tor, whisper-cli or tesseract, and
+  `--notarize` without `--identity` and `--team-id`.
   ```bash
-  ./scripts/release.sh --version 0.3.0 --build <N> \
+  ./scripts/release.sh --version 0.3.0 --build "$(git rev-list --count HEAD)" \
     --identity "Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)" \
     --team-id 83DA5U8N7Z --notarize --skip-build
-  mv dist/MoltBrowser-0.3.0-macOS-arm64.dmg dist/MoltBrowser-macOS-arm64.dmg
   ```
-  `<N>`: the next build number after v0.2.5's
+  The build number is the commit count up to the tag, as in `release.yml`;
+  check that it is above v0.2.5's
   (`defaults read /Applications/MoltBrowser.app/Contents/Info.plist CFBundleVersion`).
 - [ ] The §7.1 codesign and notarization checks pass on this app and DMG
   (from CLAUDE.md).
@@ -1097,37 +1129,29 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
   *Expected:* the draft gains `MoltBrowser-Linux-x64.{deb,rpm,tar.gz}`,
   their three `*.spdx.json`, `SHA256SUMS-linux-x64`,
   `molt-provenance-linux-x64.json` and the unsigned
-  `MoltBrowser-Linux-repository.tar`.
-- [ ] Route B, Docker on the Mac after §10.2 (slow; it replaces the macOS out
-  dir). The same steps as the workflow, with the Docker provenance details
-  `scripts/release-linux.sh` adds (from #25, #43) (verify the command):
+  `MoltBrowser-Linux-repository.tar`. The runner's first build after the
+  move to `out/MoltBrowser-linux` is a full one (its warm build is in
+  `out/MoltBrowser`, which can then be deleted).
+- [ ] Route B, Docker on the Mac (slow; it builds in `out/MoltBrowser-linux`,
+  next to the macOS build). `build-linux.sh` builds (syncing the Linux
+  toolchains if needed); `scripts/release-linux.sh` packages in the same
+  container and does what the workflow does after that, with the
+  container's toolchain and image in the provenance (from #25, #43)
+  (verify the command):
   ```bash
   git switch --detach v0.3.0 && git status --short
   export MOLT_RELEASE_BUILD=1
   export MOLT_BUILD_STARTED_ON="$(./scripts/release-provenance.sh --start --version 0.3.0)"
-  ./build/docker/build-linux.sh
-  D=(--platform=linux/amd64 --rm -v "$PWD:/moltbrowser" -w /moltbrowser -e HOME=/tmp/builder moltbrowser-linux)
-  rm -f dist/MoltBrowser-Linux-x64.* dist/moltbrowser*.deb dist/moltbrowser*.rpm \
-        dist/MoltBrowser-*-linux-x64.tar.gz dist/MoltBrowser-Linux-repository.tar
-  docker run "${D[@]}" bash -c "./scripts/package-linux.sh --version 0.3.0"
-  mv dist/moltbrowser_0.3.0_amd64.deb dist/MoltBrowser-Linux-x64.deb
-  mv dist/moltbrowser-0.3.0-*.x86_64.rpm dist/MoltBrowser-Linux-x64.rpm
-  mv dist/MoltBrowser-0.3.0-linux-x64.tar.gz dist/MoltBrowser-Linux-x64.tar.gz
-  L=(dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm dist/MoltBrowser-Linux-x64.tar.gz)
-  S=(dist/MoltBrowser-Linux-x64-deb.spdx.json dist/MoltBrowser-Linux-x64-rpm.spdx.json dist/MoltBrowser-Linux-x64-tar-gz.spdx.json)
-  ./scripts/release-sbom.sh --platform linux --arch x64 --version 0.3.0 "${L[@]}"
-  ./scripts/linux-repo-build.sh dist/MoltBrowser-Linux-repository.tar dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm
-  ./scripts/release-checksums.sh dist/SHA256SUMS-linux-x64 "${L[@]}" "${S[@]}"
-  docker run "${D[@]}" python3 tools/release_signing/molt_provenance.py probe --platform linux \
-    --chromium-src chromium/src > /tmp/molt-linux-facts.json
-  ./scripts/release-provenance.sh --platform linux --arch x64 --version 0.3.0 --out-dir dist \
-    --builder-facts /tmp/molt-linux-facts.json \
-    --container-image "moltbrowser-linux@$(docker image inspect --format '{{.Id}}' moltbrowser-linux)" \
-    "${L[@]}" "${S[@]}" dist/SHA256SUMS-linux-x64
-  ./scripts/release-draft.sh v0.3.0
-  gh release upload v0.3.0 "${L[@]}" "${S[@]}" dist/SHA256SUMS-linux-x64 \
-    dist/molt-provenance-linux-x64.json dist/MoltBrowser-Linux-repository.tar --clobber
+  ./build/docker/build-linux.sh 2>&1 | tee ~/molt-v0.3.0/release-build-linux.log
+  grep -nE 'error:|FAILED|finished with an error' ~/molt-v0.3.0/release-build-linux.log
+  ./scripts/release-linux.sh --version 0.3.0 --build 1 --docker --skip-build --upload
   ```
+  *Expected:* no match from the `grep`; the same assets on the draft as
+  route A (plus `MoltBrowser-Linux-x64.AppImage` and its SBOM if the image
+  has `appimagetool`). The packages are written as
+  `dist/MoltBrowser-Linux-x64.*`, the names the updater downloads, and the
+  Flatpak manifest goes to `dist/flatpak/`, so the tree stays clean for the
+  provenance.
 - [ ] The §7.2 package check on the uploaded `.deb`; the leak kit (§8) on
   the installed package (from #25, #29).
 
@@ -1219,7 +1243,8 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   memory limits (item 4), pre-warming after idle unload (5), keeping prompts
   out of crash dumps (9), whether the agent and automation reload a model
   after an idle unload (12), the macOS `sysctl` denial noise (14) (from #15).
-- [ ] **`release.yml`'s macOS job** (§10.1): fix it (metallib, helper
-  bundling, `Libraries/` dylibs, the stable DMG name are what §10.2 does by
-  hand) or retire it in favour of the local scripts (found while writing
-  this runbook).
+- [ ] **Who builds the macOS release** (§10.1): `release.yml`'s macOS job
+  now runs the same scripts as §10.2 (the metallib, helper bundling,
+  `Libraries/` signing and DMG name it lacked when this runbook was
+  written are fixed), but it has never run end to end. Route A (the runner,
+  watched) or route B (by hand, runner stopped) for v0.3.0?
