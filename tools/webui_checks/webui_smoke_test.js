@@ -67,6 +67,25 @@ function trustedTypesMode(src) {
 // promoteTrust calls the Agent studio makes ([id, level] each).
 const agentTrustCalls = [];
 
+// A draft saved from an AI agent run (docs/design/AGENT_ACTIONS.md §2.9), as
+// getWorkflow returns it, and the confirmDraftSites calls (JSON of [id,
+// sites]).
+const DRAFT_WORKFLOW = {
+  id: 'd1', name: 'Buy socks', variables: {pin: ''},
+  security: {trust: 'casual', sites_unconfirmed: true},
+  draftSites: ['shop.example', '<b>evil</b>.example', 7, ''],
+  steps: [
+    {type: 'navigate', target: 'https://shop.example/', description: 'Open shop.example'},
+    {type: 'type', target: '#pin', value: '{{pin}}', description: 'Type your “PIN” (asked at each run)',
+     extra: {review: 'value_withheld', text: 'PIN', host: 'shop.example'}},
+    {type: 'type', target: '#cc', description: 'Enter the payment card yourself (not saved)',
+     extra: {review: 'secret_field', secret: 'vault', secret_kind: 'payment_card'}},
+    {type: 'click', target: '#x', description: 'Click “<img src=x onerror=alert(1)>”',
+     extra: {review: '__proto__', text: '<img src=x onerror=alert(1)>'}},
+  ],
+};
+const draftConfirmCalls = [];
+
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
 
@@ -1056,12 +1075,19 @@ const PAGES = [
    responses: {
      listWorkflows: {workflows: [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
-        host: 'example.com', trigger: {type: 'manual'}}]},
+        host: 'example.com', trigger: {type: 'manual'}},
+       {id: 'd1', name: 'Buy socks', stepCount: 4, trust: 'casual', draft: true,
+        host: 'shop.example', trigger: {type: 'manual'}}]},
      getRuns: {runs: []},
-     getWorkflow: {id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
-                   steps: [{type: 'navigate', target: 'https://www.example.com/'},
-                           {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
+     getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
+       id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
+       steps: [{type: 'navigate', target: 'https://www.example.com/'},
+               {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
+     confirmDraftSites: (args) => {
+       draftConfirmCalls.push(JSON.stringify(args.slice(1)));
+       return {ok: true, trust: 'casual'};
+     },
    },
    async after(window) {
      const doc = window.document;
@@ -1106,6 +1132,51 @@ const PAGES = [
      await tick();
      assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length, before + 1,
                         're-run after trusting');
+     // A draft from an AI agent run: "Review" instead of Run / Edit /
+     // Schedule and no trust item; the editor's review panel lists the
+     // browser's sites as text, points at the steps that need the user,
+     // won't run, and "Confirm" sends exactly the sites shown, from the
+     // click; afterwards it is an ordinary untrusted workflow.
+     window.showView('library');
+     await window.loadLibrary();
+     await tick();
+     const draftCard = doc.querySelectorAll('#libList .card')[1];
+     assert(/draft · review it/.test(draftCard.querySelector('.csub').textContent),
+            'draft badge');
+     assert.deepStrictEqual(
+         Array.from(draftCard.querySelectorAll('.card-actions button')).map((b) => b.textContent),
+         ['\u{1F50D} Review', '⋯'], 'a draft is reviewed, not run');
+     draftCard.querySelector('.kebab').click();
+     assert(!Array.from(draftCard.querySelectorAll('.menu-item')).some(
+         (m) => /[Tt]rust/.test(m.textContent)), 'no trust item for a draft');
+     draftCard.querySelector('.kebab').click();
+     draftCard.querySelector('.card-actions .run').click();
+     await tick();
+     const draftPanel = doc.getElementById('edTrust');
+     assert(/Draft from an AI agent run/.test(draftPanel.textContent), 'review panel');
+     assert(/1 value asked at each run, 1 card or code field you enter yourself/.test(
+         draftPanel.textContent), 'counts what needs the user');
+     assert.deepStrictEqual(
+         Array.from(draftPanel.querySelectorAll('.draft-site')).map((s) => s.textContent),
+         ['shop.example', '<b>evil</b>.example'], 'sites as text, junk dropped');
+     assert.strictEqual(draftPanel.querySelectorAll('b').length, 0);
+     const notes = doc.querySelectorAll('#edSteps .review-note');
+     assert.strictEqual(notes.length, 2, 'two steps need the user (junk codes ignored)');
+     assert(/asked for it at each run/.test(notes[0].textContent));
+     assert(/never saves those/.test(notes[1].textContent));
+     assert.strictEqual(doc.querySelectorAll('#edSteps img[onerror]').length, 0);
+     const runsBefore = window.__sent.filter((m) => m === 'runWorkflow').length;
+     window.runWorkflowFlow('d1');
+     await tick();
+     assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length, runsBefore,
+                        'a draft never runs');
+     assert(!window.__sent.includes('saveSchedule'));
+     doc.getElementById('draftConfirmBtn').click();
+     assert.strictEqual(draftConfirmCalls.pop(),
+                        '["d1",["shop.example","<b>evil</b>.example"]]', 'sent from the click');
+     await tick();
+     assert(!/Draft from an AI agent run/.test(draftPanel.textContent), 'confirmed');
+     assert(/Not trusted/.test(draftPanel.textContent), 'now an untrusted workflow');
      // Leave an empty editor for the click-everything pass below: it clicks
      // controls in DOM order, so a populated step list would see its later
      // buttons clicked after "Delete step" had already detached them.
