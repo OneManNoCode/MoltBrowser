@@ -206,7 +206,8 @@ def do_gen(args, tree, missing):
             continue
         # The include may be relative to a generated include dir.
         for rel in _gen_candidates(name):
-            w1, f1 = gen_misc.generate(tree, interp, gen_dir, [rel])
+            w1, f1 = gen_misc.generate(tree, interp, gen_dir, [rel],
+                                       {rel: includers.get(name, [])})
             if w1:
                 w.append(name)
                 f.pop(name, None)

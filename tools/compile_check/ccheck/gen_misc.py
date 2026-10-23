@@ -141,9 +141,42 @@ def _grd_names(tree, interp, path, seen=None):
     return names
 
 
-def grit_header(tree, interp, name):
+def _camel(stem):
+    return "k" + "".join(w[:1].upper() + w[1:] for w in stem.split("_"))
+
+
+def webui_grit_header(tree, name, includers):
+    """A WebUI's resources come from a .grd the build generates from its
+    TypeScript build, so no source .grd lists them: the map header
+    declares the map (as grit's resource_map_header does) and the ID
+    header the IDR_<STEM>_* names its includers use."""
+    stem = name.rsplit("/", 1)[-1][:-2]
+    head = ["// compile_check STAND-IN for grit's %s (its .grd is generated "
+            "by a WebUI build)." % name, "#pragma once", ""]
+    if stem.endswith("_map"):
+        return "\n".join(head + [
+            "extern const webui::ResourcePath %s[1];" % _camel(stem[:-4]),
+            ""])
+    prefix = "IDR_" + stem[:-len("_resources")].upper() + "_" \
+        if stem.endswith("_resources") else "IDR_" + stem.upper() + "_"
+    names = set()
+    for inc in includers or []:
+        if inc.startswith("gen:"):
+            continue
+        data = tree.read(inc)
+        if data:
+            names |= set(re.findall(r"\b(%s[A-Z0-9_]+)\b" % re.escape(
+                prefix), data.decode("utf-8", "replace")))
+    base = 10000 + int(hashlib.sha1(name.encode()).hexdigest()[:4], 16) * 4
+    return "\n".join(head + ["#define %s %d" % (n, base + i)
+                             for i, n in enumerate(sorted(names))]) + "\n"
+
+
+def grit_header(tree, interp, name, includers=None):
     t = _find_grit_target(tree, interp, name)
     if t is None:
+        if name.startswith("chrome/grit/") and "_resources" in name:
+            return webui_grit_header(tree, name, includers)
         raise RuntimeError("no grit() target writes %s" % name)
     src = t.get("source")
     if not isinstance(src, str):
@@ -173,12 +206,14 @@ WRITERS = {
 }
 
 
-def generate(tree, interp, gen_dir, names):
+def generate(tree, interp, gen_dir, names, includers=None):
+    """includers: {name: [files including it]} (for WebUI ID stand-ins)."""
     written, failed = [], {}
+    includers = includers or {}
     for n in names:
         try:
             if GRIT_RE.search(n):
-                text = grit_header(tree, interp, n)
+                text = grit_header(tree, interp, n, includers.get(n))
             elif n.endswith(".rs.h"):
                 text = cxx_bridge_header(tree, interp, n)
             elif n.endswith("_generated.h"):

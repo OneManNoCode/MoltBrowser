@@ -75,6 +75,7 @@ def _build_files_mentioning(tree, word, limit=40):
 # reach (subproject BUILD.gn files are not indexed).
 EXTRA_BUILD_FILES = {
     "third_party/perfetto/build_config/": "third_party/perfetto/gn/BUILD.gn",
+    "v8/include/inspector/": "v8/src/inspector/BUILD.gn",
 }
 
 
