@@ -44,16 +44,22 @@ function fill(tpl, args) {
 }
 
 const ORIGIN = 'https://shop.example';
-const listScript = (id) =>
-    fill(template('BuildToolListScript'), [JSON.stringify(id), FORM_HELPERS]);
+// The document mark the browser passes (an unguessable token there).
+const MARK = '3F2A9C0B7D1E4F6A8B5C2D9E0F1A3B4C';
+const listScript = (id, mark = MARK) =>
+    fill(template('BuildToolListScript'),
+         [JSON.stringify(id), JSON.stringify(mark), FORM_HELPERS]);
 const listPoll = (id) =>
     fill(template('BuildToolListPollScript'), [JSON.stringify(id)]);
-// |tool| as SiteTool keeps it: listed description, schema (or null), the
-// read-only hint, the form's fields (or null); |args| the JSON the browser
-// wrote.
+// |tool| as SiteTool keeps it: the mark of the document that listed it
+// (|tool.doc|, MARK unless given), listed description, schema (or null),
+// the read-only hint, the form's fields (or null); |args| the JSON the
+// browser wrote.
 const callScript = (id, origin, tool, args) =>
     fill(template('BuildToolCallScript'), [
-      JSON.stringify(id), JSON.stringify(origin), JSON.stringify(tool.name),
+      JSON.stringify(id),
+      JSON.stringify(tool.doc === undefined ? MARK : tool.doc),
+      JSON.stringify(origin), JSON.stringify(tool.name),
       JSON.stringify(tool.description),
       tool.schema === null ? 'null' : JSON.stringify(tool.schema),
       tool.readOnly ? 'true' : 'false',
@@ -90,6 +96,9 @@ function page(url, tools, options = {}) {
   if (!options.noModelContext) {
     Object.defineProperty(w.document, 'modelContext', {value: mc});
   }
+  // A document the agent already listed carries its mark (in the browser,
+  // on the isolated world's global; here the page's).
+  if (options.mark !== null) w.__moltToolDocument = options.mark || MARK;
   if (options.insecure) {
     Object.defineProperty(w, 'isSecureContext', {value: false});
   } else if (w.isSecureContext !== true) {
@@ -192,6 +201,24 @@ const SEARCH = {
                            [['password', ''], ['select-one', ''], ['text', '']]);
   }
 
+  // The document's mark: set by the first listing, kept by the next ones
+  // (the chat's, another run's), reported with the tools.
+  p = page(ORIGIN, [SEARCH], {mark: null});
+  assert.strictEqual(p.w.__moltToolDocument, undefined);
+  p.run(listScript('m1', 'FIRST'));
+  await settle();
+  assert.strictEqual(p.run(listPoll('m1')).document, 'FIRST');
+  p.run(listScript('m2', 'SECOND'));
+  await settle();
+  r = p.run(listPoll('m2'));
+  assert.strictEqual(r.state, 'done');
+  assert.strictEqual(r.document, 'FIRST');
+  assert.strictEqual(p.w.__moltToolDocument, 'FIRST');
+  // Without WebMCP nothing is marked.
+  p = page(ORIGIN, [SEARCH], {mark: null, noModelContext: true});
+  p.run(listScript('m3', 'X'));
+  assert.strictEqual(p.w.__moltToolDocument, undefined);
+
   // ---- Calling ------------------------------------------------------------
 
   const listed = {name: 'search', description: SEARCH.description,
@@ -278,6 +305,28 @@ const SEARCH = {
       assert.strictEqual(q.run(callPoll('c6')).state, 'changed', html);
       assert.strictEqual(q.calls.length, 0);
     }
+  }
+
+  // Only in the document that listed the tool: another document (one a
+  // frame navigated to, a new document in a reused frame host) has no mark
+  // or another one, whatever tools it lists; nothing runs.
+  for (const mark of [null, 'OTHER']) {
+    const q = page(ORIGIN, [SEARCH], {mark});
+    assert.strictEqual(q.run(callScript('c13', ORIGIN, listed, '{}')),
+                       'document_changed');
+    assert.deepStrictEqual(q.run(callPoll('c13')), {state: 'gone'});
+    await settle();
+    assert.strictEqual(q.calls.length, 0);
+  }
+  // A tool the browser holds without a mark never runs.
+  {
+    const q = page(ORIGIN, [SEARCH]);
+    assert.strictEqual(
+        q.run(callScript('c14', ORIGIN, Object.assign({}, listed, {doc: ''}),
+                         '{}')),
+        'document_changed');
+    await settle();
+    assert.strictEqual(q.calls.length, 0);
   }
 
   // Answers: any value as text (cut), nothing, a failure.

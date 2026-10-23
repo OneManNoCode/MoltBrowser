@@ -82,6 +82,11 @@ source_set("molt_ai_agents") {
   sources = [
     "agents/agent_screenshot.cc",
     "agents/agent_screenshot.h",
+
+    # Lists and calls a page's site tools (its main document's and its
+    # same-origin frames'), for the web agent and the AI chat.
+    "agents/site_tool_host.cc",
+    "agents/site_tool_host.h",
     "agents/web_agent.cc",
     "agents/web_agent.h",
   ]

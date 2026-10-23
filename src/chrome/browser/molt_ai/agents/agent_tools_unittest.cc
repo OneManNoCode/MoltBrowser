@@ -78,12 +78,16 @@ ArgumentsError Read(const SiteTool& tool,
   return ReadArguments(Json(json), tool, out ? out : &ignored);
 }
 
+constexpr char kMark[] = "3F2A9C0B7D1E4F6A8B5C2D9E0F1A3B4C";
+
 // A list result as BuildToolListPollScript() reports it.
 base::Value ListResult(base::ListValue tools,
-                       std::string origin = "https://shop.example") {
+                       std::string origin = "https://shop.example",
+                       std::string document = kMark) {
   base::DictValue d;
   d.Set("state", "done");
   d.Set("origin", std::move(origin));
+  d.Set("document", std::move(document));
   d.Set("tools", std::move(tools));
   return base::Value(std::move(d));
 }
@@ -1062,8 +1066,11 @@ TEST(AgentToolsTest, OnlyReadOnlyToolsRunWithoutAsking) {
 
 TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
   const std::string hostile = "x\"); alert(1); (\"</script>\u2028";
-  EXPECT_NE(BuildToolListScript(hostile).find(
-                "\"x\\\"); alert(1); (\\\"\\u003C/script>\\u2028\""),
+  EXPECT_NE(BuildToolListScript(hostile, kMark)
+                .find("\"x\\\"); alert(1); (\\\"\\u003C/script>\\u2028\""),
+            std::string::npos);
+  EXPECT_NE(BuildToolListScript("l1", kMark)
+                .find("mark = \"" + std::string(kMark) + "\""),
             std::string::npos);
   EXPECT_NE(BuildToolListPollScript(hostile).find("\\u003C/script>"),
             std::string::npos);
@@ -1071,9 +1078,16 @@ TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
   SiteTool tool = ToolFrom("{\"properties\":{\"q\":{\"type\":\"string\"}}}",
                            /*read_only=*/true);
   tool.listed_description = hostile;
+  tool.document = kMark;
   const std::string call = BuildToolCallScript(
       "c1", "https://shop.example", tool, "{\"q\":\"');alert(1);//\"}");
   EXPECT_NE(call.find("desc = \"x\\\"); alert(1); (\\\"\\u003C/script>"),
+            std::string::npos);
+  // Only in the document that listed it.
+  EXPECT_NE(call.find("doc = \"" + std::string(kMark) + "\""),
+            std::string::npos);
+  EXPECT_NE(call.find("if (globalThis.__moltToolDocument !== doc) return "
+                      "'document_changed';"),
             std::string::npos);
   // The arguments go in as one JSON string, never as code.
   EXPECT_NE(call.find("args = \"{\\\"q\\\":\\\"');alert(1);//\\\"}\""),
@@ -1101,6 +1115,8 @@ TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
 TEST(AgentToolsTest, ParsesCallStart) {
   EXPECT_EQ(ParseToolCallStart(base::Value("started")).state,
             CallState::kStarted);
+  EXPECT_EQ(ParseToolCallStart(base::Value("document_changed")).state,
+            CallState::kDocumentChanged);
   EXPECT_EQ(ParseToolCallStart(base::Value("origin_changed")).state,
             CallState::kOriginChanged);
   EXPECT_EQ(ParseToolCallStart(base::Value("unavailable")).state,
@@ -1165,9 +1181,12 @@ TEST(AgentToolsTest, FailureNotesAndResultText) {
   for (CallState s :
        {CallState::kFailed, CallState::kNotFound, CallState::kChanged,
         CallState::kOriginChanged, CallState::kUnavailable, CallState::kGone,
-        CallState::kTimedOut}) {
+        CallState::kTimedOut, CallState::kDocumentChanged}) {
     EXPECT_FALSE(CallFailureNote(s).empty());
   }
+  EXPECT_EQ(CallFailureNote(CallState::kDocumentChanged),
+            "Not run: the page or frame that offered the tool has changed or "
+            "gone.");
   for (CallState s :
        {CallState::kStarted, CallState::kPending, CallState::kDone}) {
     EXPECT_TRUE(CallFailureNote(s).empty());
@@ -1183,6 +1202,264 @@ TEST(AgentToolsTest, FailureNotesAndResultText) {
   EXPECT_EQ(DescribeToolResult(tool, outcome),
             "TOOL RESULT (the page's tool tool; the site says it may contain "
             "other people's content):\n3 results\n[cut at 1500 characters]\n");
+  // A frame's tool is named with its frame.
+  tool.frame = 3;
+  tool.untrusted_output = false;
+  outcome.result_cut = false;
+  EXPECT_EQ(DescribeToolResult(tool, outcome),
+            "TOOL RESULT (the page's tool tool in frame 3):\n3 results\n");
+}
+
+// ---------------------------------------------------------------------------
+// Frames
+// ---------------------------------------------------------------------------
+
+constexpr char kShopOrigin[] = "https://shop.example";
+
+PageFrame Frame(std::optional<size_t> parent,
+                std::string origin = kShopOrigin,
+                bool in_page = true) {
+  PageFrame f;
+  f.parent = parent;
+  f.origin = std::move(origin);
+  f.in_page = in_page;
+  return f;
+}
+
+TEST(AgentToolsTest, ToolFramesAreTheMainDocumentThenSameOriginFrames) {
+  // As ForEachRenderFrameHost visits them (breadth first):
+  //   0 main
+  //   ├ 1 same origin
+  //   │ └ 4 same origin
+  //   ├ 2 ads.example (cross-origin)
+  //   │ └ 5 same origin, inside the cross-origin frame
+  //   └ 3 same origin
+  //     └ 6 fenced frame (not in the page)
+  //       └ 7 same origin, inside the fenced frame
+  std::vector<PageFrame> frames = {
+      Frame(std::nullopt),
+      Frame(0),
+      Frame(0, "https://ads.example"),
+      Frame(0),
+      Frame(1),
+      Frame(2),
+      Frame(3, kShopOrigin, /*in_page=*/false),
+      Frame(6),
+  };
+  // The main document first, then depth first in tree order: 1, its child
+  // 4, then 3. Never 2 (another origin), nor 5 inside it, nor 6 (fenced)
+  // or 7 inside it.
+  EXPECT_EQ(ToolFrames(frames), (std::vector<size_t>{0, 1, 4, 3}));
+}
+
+TEST(AgentToolsTest, ToolFramesNeedExactlyTheSameOrigin) {
+  // Same site is not same origin: another subdomain, scheme or port.
+  for (const char* other :
+       {"https://www.shop.example", "https://shop.example:8443",
+        "http://shop.example", "https://example", "null", "",
+        "https://shop.example.", "https://SHOP.example"}) {
+    std::vector<PageFrame> frames = {Frame(std::nullopt), Frame(0, other)};
+    EXPECT_EQ(ToolFrames(frames), std::vector<size_t>{0}) << other;
+  }
+  std::vector<PageFrame> frames = {Frame(std::nullopt), Frame(0)};
+  EXPECT_EQ(ToolFrames(frames), (std::vector<size_t>{0, 1}));
+}
+
+TEST(AgentToolsTest, ToolFramesSkipFramesOutsideThePage) {
+  // A frame that isn't active, live and in the page (a fenced frame, a
+  // guest view, one being unloaded) counts for nothing, nor does its
+  // subtree.
+  std::vector<PageFrame> frames = {Frame(std::nullopt),
+                                   Frame(0, kShopOrigin, false), Frame(1),
+                                   Frame(0)};
+  EXPECT_EQ(ToolFrames(frames), (std::vector<size_t>{0, 3}));
+}
+
+TEST(AgentToolsTest, ToolFramesNeedAWebMainDocument) {
+  EXPECT_TRUE(ToolFrames({}).empty());
+  // An opaque or non-web main document: nothing, even with frames that
+  // serialize the same.
+  for (const char* main : {"null", "", "chrome://settings", "file://",
+                           "molt://ai-chat", "data:"}) {
+    std::vector<PageFrame> frames = {Frame(std::nullopt, main), Frame(0, main)};
+    EXPECT_TRUE(ToolFrames(frames).empty()) << main;
+  }
+  // A main document that isn't in the page, or a "main document" with a
+  // parent.
+  EXPECT_TRUE(ToolFrames({Frame(std::nullopt, kShopOrigin, false)}).empty());
+  EXPECT_TRUE(ToolFrames({Frame(0)}).empty());
+  EXPECT_EQ(ToolFrames({Frame(std::nullopt, "http://localhost:8080")}),
+            std::vector<size_t>{0});
+}
+
+TEST(AgentToolsTest, ToolFramesKeepAtMostEightFrames) {
+  std::vector<PageFrame> frames = {Frame(std::nullopt)};
+  for (size_t i = 0; i < 20; ++i)
+    frames.push_back(Frame(0));
+  const std::vector<size_t> listed = ToolFrames(frames);
+  ASSERT_EQ(listed.size(), kMaxToolFrames + 1);
+  for (size_t i = 0; i < listed.size(); ++i)
+    EXPECT_EQ(listed[i], i);
+  // Deep nesting: the cap counts frames in tree order.
+  std::vector<PageFrame> deep = {Frame(std::nullopt)};
+  for (size_t i = 0; i < 20; ++i)
+    deep.push_back(Frame(i));
+  EXPECT_EQ(ToolFrames(deep).size(), kMaxToolFrames + 1);
+  EXPECT_EQ(ToolFrames(deep).back(), kMaxToolFrames);
+}
+
+TEST(AgentToolsTest, ToolFramesIgnoreWhatIsNotATree) {
+  // A parent after its child, a frame its own parent, no parent, a parent
+  // out of range: not a frame tree, never listed.
+  std::vector<PageFrame> frames = {Frame(std::nullopt), Frame(2), Frame(0),
+                                   Frame(3), Frame(std::nullopt), Frame(99)};
+  EXPECT_EQ(ToolFrames(frames), (std::vector<size_t>{0, 2}));
+}
+
+TEST(AgentToolsTest, ToolFrameChainsAreCheckedAgainAtCallTime) {
+  // main > frame > frame: callable.
+  std::vector<PageFrame> chain = {Frame(std::nullopt), Frame(0), Frame(1)};
+  EXPECT_TRUE(IsToolFrameChain(chain));
+  EXPECT_TRUE(IsToolFrameChain({Frame(std::nullopt)}));
+  EXPECT_FALSE(IsToolFrameChain({}));
+  // Any link of another origin, out of the page, or not the parent of the
+  // next: not callable.
+  for (size_t i = 0; i < chain.size(); ++i) {
+    std::vector<PageFrame> other = chain;
+    other[i].origin = "https://ads.example";
+    EXPECT_FALSE(IsToolFrameChain(other)) << i;
+    std::vector<PageFrame> gone = chain;
+    gone[i].in_page = false;
+    EXPECT_FALSE(IsToolFrameChain(gone)) << i;
+  }
+  std::vector<PageFrame> unlinked = chain;
+  unlinked[2].parent = 0;
+  EXPECT_FALSE(IsToolFrameChain(unlinked));
+  unlinked[2].parent = std::nullopt;
+  EXPECT_FALSE(IsToolFrameChain(unlinked));
+  std::vector<PageFrame> rooted = chain;
+  rooted[0].parent = 0;
+  EXPECT_FALSE(IsToolFrameChain(rooted));
+  EXPECT_FALSE(IsToolFrameChain({Frame(std::nullopt, "null"), Frame(0, "null")}));
+  // No deeper than ToolFrames() lists.
+  std::vector<PageFrame> deep = {Frame(std::nullopt)};
+  for (size_t i = 0; i < kMaxToolFrames; ++i)
+    deep.push_back(Frame(i));
+  EXPECT_TRUE(IsToolFrameChain(deep));
+  deep.push_back(Frame(kMaxToolFrames));
+  EXPECT_FALSE(IsToolFrameChain(deep));
+}
+
+TEST(AgentToolsTest, FrameTextShowsOriginAndPath) {
+  EXPECT_EQ(FrameText(kShopOrigin, "/widgets/cart"),
+            "https://shop.example/widgets/cart");
+  // The path is cut, at a character boundary, with an ellipsis.
+  const std::string long_path = "/" + std::string(200, 'p');
+  EXPECT_EQ(FrameText(kShopOrigin, long_path),
+            "https://shop.example/" + std::string(118, 'p') + "\xE2\x80\xA6");
+  std::string accents = "/";
+  for (int i = 0; i < 150; ++i)
+    accents += "\xC3\xA9";
+  const std::string shown = FrameText(kShopOrigin, accents);
+  EXPECT_EQ(shown, "https://shop.example/" + accents.substr(1, 2 * 118) +
+                       "\xE2\x80\xA6");
+  // Exactly at the cap: whole.
+  const std::string at_cap = "/" + std::string(kMaxShownFramePathChars - 1, 'q');
+  EXPECT_EQ(FrameText(kShopOrigin, at_cap), kShopOrigin + at_cap);
+  // Characters that hide or reorder text are shown, quotes escaped, line
+  // breaks are spaces.
+  EXPECT_EQ(FrameText(kShopOrigin, "/a\xE2\x80\xAE\"b\nc"),
+            "https://shop.example/a\xEF\xBF\xBD\\\"b c");
+  // A frame without an http(s) URL (about:srcdoc) says so.
+  EXPECT_EQ(FrameText(kShopOrigin, ""),
+            "https://shop.example (a frame without an address of its own)");
+}
+
+TEST(AgentToolsTest, FrameToolsAreLabelledByTheBrowser) {
+  base::ListValue entries;
+  base::DictValue e = Entry("search", "Search the widget.");
+  e.Set("readOnly", true);
+  entries.Append(std::move(e));
+  entries.Append(Entry("bad name", "skipped"));
+  ToolList list = ParseToolList(ListResult(std::move(entries)));
+  ASSERT_EQ(list.state, ListState::kDone);
+  EXPECT_EQ(list.document, kMark);
+
+  std::vector<SiteTool> main_tools = MakeSiteTools(list, 0, "ignored");
+  ASSERT_EQ(main_tools.size(), 1u);
+  EXPECT_EQ(main_tools[0].frame, 0u);
+  EXPECT_EQ(main_tools[0].frame_text, "");
+  EXPECT_EQ(main_tools[0].document, kMark);
+  EXPECT_EQ(ToolLabel(main_tools[0]), "search");
+
+  std::vector<SiteTool> frame_tools =
+      MakeSiteTools(list, 2, "https://shop.example/widget");
+  ASSERT_EQ(frame_tools.size(), 1u);
+  EXPECT_EQ(frame_tools[0].frame, 2u);
+  EXPECT_EQ(frame_tools[0].frame_text, "https://shop.example/widget");
+  EXPECT_EQ(frame_tools[0].document, kMark);
+  // The browser's number of the frame, never page text (a tool name has no
+  // spaces, so it can't fake one).
+  EXPECT_EQ(ToolLabel(frame_tools[0]), "search in frame 2");
+  frame_tools[0].ref = "t3";
+  EXPECT_EQ(DescribeTool(frame_tools[0]),
+            "t3 search in frame 2 [reads only]: Search the widget.\n"
+            "   arguments: none\n");
+
+  // A list that isn't done gives nothing.
+  ToolList pending;
+  pending.state = ListState::kPending;
+  EXPECT_TRUE(MakeSiteTools(pending, 0, "").empty());
+}
+
+TEST(AgentToolsTest, ListNeedsADocumentMark) {
+  for (const char* bad : {"", "has space", "a-b", "\xC3\xA9", "x\n"}) {
+    EXPECT_EQ(ParseToolList(ListResult(base::ListValue(), kShopOrigin, bad))
+                  .state,
+              ListState::kFailed)
+        << bad;
+  }
+  EXPECT_EQ(ParseToolList(ListResult(base::ListValue(), kShopOrigin,
+                                     std::string(kMaxDocumentMarkChars + 1,
+                                                 'a')))
+                .state,
+            ListState::kFailed);
+  EXPECT_EQ(ParseToolList(ListResult(base::ListValue(), kShopOrigin,
+                                     std::string(kMaxDocumentMarkChars, 'a')))
+                .state,
+            ListState::kDone);
+  base::DictValue d;
+  d.Set("state", "done");
+  d.Set("origin", kShopOrigin);
+  d.Set("tools", base::ListValue());
+  EXPECT_EQ(ParseToolList(base::Value(d.Clone())).state, ListState::kFailed);
+  d.Set("document", 42);
+  EXPECT_EQ(ParseToolList(base::Value(std::move(d))).state, ListState::kFailed);
+}
+
+TEST(AgentToolsTest, FrameToolApprovalsShowTheFrame) {
+  SiteTool tool = ToolFrom("{}", /*read_only=*/false);
+  tool.name = "add_to_cart";
+  CallCheck main = CheckToolCall(tool, "", kShopOrigin);
+  EXPECT_EQ(main.message,
+            "Run the site's tool \"add_to_cart\" on https://shop.example "
+            "\xE2\x80\x94 it may change something there, with no arguments");
+  tool.frame = 1;
+  tool.frame_text = FrameText(kShopOrigin, "/cart/\"widget\"");
+  CallCheck framed = CheckToolCall(tool, "id = \"A1\"", kShopOrigin);
+  EXPECT_TRUE(framed.ask);
+  EXPECT_EQ(framed.message,
+            "Run the site's tool \"add_to_cart\" in the frame "
+            "https://shop.example/cart/\\\"widget\\\" on https://shop.example "
+            "\xE2\x80\x94 it may change something there, with id = \"A1\"");
+  // A read-only frame tool runs unasked, as the main document's does (the
+  // same origin's own script); the message still names the frame.
+  tool.read_only = true;
+  framed = CheckToolCall(tool, "", kShopOrigin);
+  EXPECT_FALSE(framed.ask);
+  EXPECT_NE(framed.message.find("in the frame https://shop.example/cart/"),
+            std::string::npos);
+  EXPECT_TRUE(ToolCallEffects(tool).empty());
 }
 
 }  // namespace

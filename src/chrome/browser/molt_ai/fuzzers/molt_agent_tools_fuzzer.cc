@@ -25,14 +25,23 @@
 //    the tool's own arguments without nulls, each within its spec; the
 //    call script carries them as one JSON string;
 //  * a call's answer as the model sees it is capped, trimmed, and has no
-//    control characters but line breaks and tabs.
+//    control characters but line breaks and tabs;
+//  * the same list from a frame adds tools told apart by the browser's
+//    frame number, never repeated within a frame, eight in all;
+//  * of any frame tree, the documents listed are the main document first,
+//    then frames of exactly its origin whose every ancestor counts too, at
+//    most kMaxToolFrames, each a callable chain (IsToolFrameChain()); a
+//    frame's text is the origin, then the path on one line, capped, its
+//    quotes escaped.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <fuzzer/FuzzedDataProvider.h>
@@ -205,11 +214,15 @@ void CheckTool(const SiteTool& tool, const agent_tools::ListedTool& listed) {
 
 void CheckOfferedTools(const agent_actions::Observation& o) {
   CHECK(o.tools.size() <= agent_tools::kMaxSiteTools);
-  std::set<std::string> names;
+  std::set<std::pair<size_t, std::string>> names;
   for (size_t i = 0; i < o.tools.size(); ++i) {
     CHECK(o.tools[i].ref == "t" + std::to_string(i + 1));
     CHECK(o.FindTool(o.tools[i].ref) == &o.tools[i]);
-    CHECK(names.insert(o.tools[i].name).second) << "a tool name twice";
+    CHECK(names.insert({o.tools[i].frame, o.tools[i].name}).second)
+        << "a tool name twice in a frame";
+    // In order: the main document's, then each frame's.
+    CHECK(i == 0 || o.tools[i - 1].frame <= o.tools[i].frame);
+    CHECK((o.tools[i].frame == 0) == o.tools[i].frame_text.empty());
   }
   const std::string text = agent_tools::DescribeTools(o.tools);
   CHECK(CountChars(text) <= agent_tools::kMaxToolsTextChars);
@@ -222,7 +235,9 @@ void CheckOfferedTools(const agent_actions::Observation& o) {
     const std::string_view line(text.data() + at, end - at);
     if (lines % 2 == 0) {
       const std::string& ref = o.tools[lines / 2].ref;
-      CHECK(line.starts_with(ref + " " + o.tools[lines / 2].name + " ["));
+      CHECK(line.starts_with(ref + " " +
+                             agent_tools::ToolLabel(o.tools[lines / 2]) +
+                             " ["));
     } else {
       CHECK(line.starts_with("   arguments: "));
     }
@@ -271,6 +286,63 @@ void CheckCall(const agent_actions::AgentAction& action,
       << "the arguments must go in as one JSON string";
 }
 
+// The documents ToolFrames() lists of |frames|.
+void CheckToolFrames(const std::vector<agent_tools::PageFrame>& frames) {
+  const std::vector<size_t> listed = agent_tools::ToolFrames(frames);
+  const bool main_counts =
+      !frames.empty() && !frames[0].parent &&
+      agent_tools::IsSameOriginFrame(frames[0], frames[0].origin);
+  CHECK(listed.empty() == !main_counts);
+  if (listed.empty()) return;
+  CHECK(listed[0] == 0) << "the main document first";
+  CHECK(listed.size() <= agent_tools::kMaxToolFrames + 1);
+  std::set<size_t> seen;
+  for (size_t at = 0; at < listed.size(); ++at) {
+    const size_t i = listed[at];
+    CHECK(i < frames.size());
+    CHECK(seen.insert(i).second) << "a frame twice";
+    if (i == 0) {
+      CHECK(at == 0);
+      continue;
+    }
+    CHECK(agent_tools::IsSameOriginFrame(frames[i], frames[0].origin))
+        << "a frame of another origin, or outside the page";
+    // Its parent came first (tree order), and so did every ancestor: the
+    // chain down to it is one a call accepts.
+    std::vector<size_t> up = {i};
+    while (up.back() != 0) {
+      const std::optional<size_t> parent = frames[up.back()].parent;
+      CHECK(parent && *parent < up.back());
+      CHECK(seen.count(*parent)) << "a frame listed before its parent";
+      up.push_back(*parent);
+    }
+    std::vector<agent_tools::PageFrame> chain;
+    for (auto it = up.rbegin(); it != up.rend(); ++it) {
+      agent_tools::PageFrame f = frames[*it];
+      f.parent = chain.empty() ? std::nullopt
+                               : std::optional<size_t>(chain.size() - 1);
+      chain.push_back(std::move(f));
+    }
+    CHECK(agent_tools::IsToolFrameChain(chain));
+  }
+}
+
+void CheckFrameText(const std::string& text, std::string_view origin) {
+  CHECK(text.starts_with(origin));
+  CHECK(!HasControl(text, false));
+  // The path's characters, each quote and backslash escaped.
+  CHECK(CountChars(text) <=
+        CountChars(origin) + 2 * agent_tools::kMaxShownFramePathChars + 48);
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (text[i] == '"') {
+      // Escaped: an odd run of backslashes before it.
+      size_t slashes = 0;
+      while (slashes < i && text[i - 1 - slashes] == '\\') ++slashes;
+      CHECK(slashes % 2 == 1) << "a quote that could close the text's";
+    }
+  }
+}
+
 void CheckOutcome(const agent_tools::CallOutcome& outcome) {
   if (outcome.state != agent_tools::CallState::kDone) {
     CHECK(!outcome.result);
@@ -312,12 +384,23 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   if (list.state != agent_tools::ListState::kDone) {
     CHECK(list.tools.empty() && list.origin.empty());
   }
+  if (list.state == agent_tools::ListState::kDone) {
+    CHECK(!list.document.empty() &&
+          list.document.size() <= agent_tools::kMaxDocumentMarkChars);
+  }
   std::vector<SiteTool> tools;
   for (const agent_tools::ListedTool& listed : list.tools) {
     std::optional<SiteTool> tool = agent_tools::MakeSiteTool(listed);
     if (!tool) continue;
     CheckTool(*tool, listed);
     tools.push_back(std::move(*tool));
+  }
+  // The same list from a same-origin frame: two tools of one name each.
+  std::vector<SiteTool> from_frame = agent_tools::MakeSiteTools(
+      list, 1, agent_tools::FrameText("https://shop.example", "/frame"));
+  CHECK(from_frame.size() == tools.size());
+  for (const SiteTool& t : from_frame) {
+    CHECK(t.frame == 1 && t.document == list.document);
   }
 
   // An input schema on its own.
@@ -346,7 +429,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // What the model is offered.
   agent_actions::Observation observation =
       p.ConsumeBool() ? SampleObservation() : agent_actions::Observation();
-  agent_actions::AddSiteTools(tools, &observation);
+  std::vector<SiteTool> all = tools;
+  all.insert(all.end(), from_frame.begin(), from_frame.end());
+  agent_actions::AddSiteTools(std::move(all), &observation);
   CheckOfferedTools(observation);
 
   // The model's reply.
@@ -375,5 +460,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(!HasControl(shown, true));
     CHECK(shown.starts_with("TOOL RESULT (the page's tool "));
   }
+
+  // The frames whose tools are listed, of any frame tree (the browser's
+  // facts; the tree, the origins and the paths are the page's choice).
+  static constexpr const char* kOrigins[] = {
+      "https://shop.example", "https://ads.example", "null",
+      "http://shop.example"};
+  const size_t n = p.ConsumeIntegralInRange<size_t>(0, 24);
+  std::vector<agent_tools::PageFrame> frames;
+  for (size_t i = 0; i < n; ++i) {
+    agent_tools::PageFrame f;
+    const size_t parent = p.ConsumeIntegralInRange<size_t>(0, n);
+    if (parent < n) f.parent = parent;  // n: none
+    f.origin = kOrigins[p.ConsumeIntegralInRange<size_t>(0, 3)];
+    f.in_page = p.ConsumeBool();
+    frames.push_back(std::move(f));
+  }
+  CheckToolFrames(frames);
+  CheckFrameText(agent_tools::FrameText("https://shop.example",
+                                        p.ConsumeRandomLengthString(1024)),
+                 "https://shop.example");
   return 0;
 }
