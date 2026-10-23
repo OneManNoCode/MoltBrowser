@@ -382,7 +382,7 @@ back/forward, and a MoltNet window with Shields off.
 | `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
-| HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
+| HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
 | `WEBGL_debug_renderer_info` | real | **unavailable** (null from `getExtension`, absent from `getSupportedExtensions`) | `webgl_debug_renderer_info.cc`: `Supported` |
 | WebGL limits (`getParameter` `MAX_*`, ranges, `MAX_VIEWPORT_DIMS`, ...), `getShaderPrecisionFormat`, `getInternalformatParameter(SAMPLES)` | real | **fixed baselines**, never above the real value ([details](#webgl-and-webgpu-in-moltnet-windows)) | `webgl_rendering_context_base.cc`, `webgl2_rendering_context_base.cc` |
 | WebGL extensions (`getSupportedExtensions`, `getExtension`) | real | **fixed allow-list of 23**, intersected with the GPU's | `webgl_rendering_context_base.cc`: `ExtensionSupportedAndAllowed` |
@@ -3084,9 +3084,10 @@ Honest list; anything not in the table above is not covered.
   features, and timing are not addressed; MoltNet windows have no WebGPU
   adapter at all ([WebGL and WebGPU in MoltNet
   windows](#webgl-and-webgpu-in-moltnet-windows)).
-* `copyElementImageToTexture` / canvas `drawElement` (HTML-in-canvas) are
-  behind the `CanvasDrawElement` runtime flag (status "test" at the pin) and
-  not hooked.
+* `copyElementImageToTexture`, `drawElementImageToTexture` / canvas
+  `drawElement` (HTML-in-canvas) are behind the `CanvasDrawElement` runtime
+  flag (status "experimental" at the pin; its `HTMLInCanvas` origin trial's
+  tokens are refused) and not hooked.
 * **Encoder identity.** `VideoEncoder`/`MediaRecorder` output of a farbled
   frame no longer reveals the canvas pixels, but the encoder implementation
   itself (hardware encoders) is a device signal; not addressed.
