@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/extensions/extension_side_panel_coordinator.h"
@@ -91,6 +92,13 @@ void ExtensionSidePanelManager::MaybeCreateExtensionSidePanelCoordinator(
     const Extension* extension) {
   if (!extension->permissions_data()->HasAPIPermission(
           mojom::APIPermissionID::kSidePanel)) {
+    return;
+  }
+
+  // MoltBrowser: no side panel entry (and so no pinnable action, which only
+  // exists while an entry is registered) for an extension kept out of
+  // MoltNet (Tor) windows (molt_ai/tor/molt_net_isolation.h).
+  if (molt_ai::tor::IsExtensionKeptOutOf(extension, profile_)) {
     return;
   }
 
