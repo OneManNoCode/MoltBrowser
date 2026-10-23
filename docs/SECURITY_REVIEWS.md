@@ -4,6 +4,50 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-23: MoltNet's network isolation and linkability
+
+**Scope.** MoltNet, MoltBrowser's Tor mode, against the claims in
+`docs/MOLTNET_COMPLIANCE.md`:
+
+1. Traffic that could leave a MoltNet window, or be caused by one, outside
+   Tor: name resolution, UDP and QUIC, fetches the browser makes for a page
+   (certificates, reporting, favicons, downloads, captive-portal checks,
+   ...), workers and keepalive requests, extensions, internal pages, and
+   MoltBrowser's own features (AI chat and agent, automation, memory,
+   translation).
+2. State that could link a MoltNet identity to the regular profile, one
+   MoltNet session to the next, or one site to another within a session:
+   network state and caches, settings and per-site exceptions, Tor circuit
+   isolation and New Identity, MoltBrowser's own stores.
+3. The Chromium 152 behaviour the compliance document relies on, and the
+   coverage of the leak-test kit (`tools/leak_test/`).
+
+**Method.** Each candidate traced from its trigger (page script, user
+action, background task) through MoltBrowser's code and the upstream
+Chromium 152 code at the pinned revision to the socket or the shared
+state; Tor's control-port behaviour checked against Tor 0.4.9.11; fixes
+tested with the standalone stand-in harnesses (gtest, ASan/UBSan,
+`-fno-exceptions`) and mutants, and with new leak-kit cases checked against
+its recorded sample run.
+
+**Findings.** 9: 4 medium, 5 low. Fixed: 3 of the medium and 3 of the low.
+
+**Fixed.**
+
+- New Identity: the old identity's windows close even if a page asks
+  "Leave site?", Tor is asked for new circuits only once the old profile is
+  destroyed, and the new window opens only once Tor confirms that it has
+  switched (`650 SIGNAL NEWNYM`), which can be up to ten seconds later. No
+  other MoltNet window opens meanwhile.
+- A MoltNet page always gets the prompt before an external application
+  opens: the regular profile's "Always allow" exemptions are no longer read.
+- Pages served sandboxed (opaque top-level origins) get per-site Tor
+  circuits.
+- MoltNet pages start at 100% zoom and never take the regular profile's
+  zoom levels, also with fingerprinting protection switched off.
+- The Tor control connection waits with `poll()` instead of `select()` on
+  POSIX, and frames replies and asynchronous events separately.
+
 ## 2026-10-22: PRs #26-#45 (October 2026)
 
 **Scope.** The code merged in pull requests #26 to #45, in this order of

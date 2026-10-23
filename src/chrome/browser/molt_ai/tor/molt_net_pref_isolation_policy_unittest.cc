@@ -74,6 +74,8 @@ TEST(MoltNetPrefIsolationPolicyTest, OtherWebVisiblePrefsArePinned) {
            "settings.a11y.page_colors_block_list",
            "settings.a11y.prefers_default_scrollbar_styles",
            "payments.can_make_payment_enabled",  // payments::kCanMake...
+           // prefs::kProtocolHandlerPerOriginAllowedProtocols
+           "protocol_handler.allowed_origin_protocol_pairs",
            "privacy_sandbox.m1.topics_enabled",
            "privacy_sandbox.m1.fledge_enabled",
            "privacy_sandbox.m1.ad_measurement_enabled",

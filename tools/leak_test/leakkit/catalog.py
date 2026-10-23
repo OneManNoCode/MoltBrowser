@@ -169,6 +169,22 @@ TESTS = (
         'basic.html', origin='aia', wait=8.0, expect_load=False,
         doc='MOLTNET_COMPLIANCE.md §2 (certificate fetches through Tor)',
         via_tor_paths=['/canary/aia-{nonce}.crt']),
+    # Two pages their servers sandbox (opaque origins) on two sites; read
+    # by report.py's identity.sandboxed_circuits check.
+    LeakTest(
+        'sandboxed_a', 'A page its server sandboxes, on one site',
+        'sandboxed.html', origin='http', wait=3.0,
+        doc='MOLTNET_COMPLIANCE.md §1.4, §4 step 8',
+        assertions=[('opaque_origin', 'eq', True,
+                     'the page has an opaque origin (CSP sandbox)')],
+        via_tor_paths=['/canary/sbx-{nonce}.png']),
+    LeakTest(
+        'sandboxed_b', 'A page its server sandboxes, on another site',
+        'sandboxed.html', origin='https_b', wait=3.0,
+        doc='MOLTNET_COMPLIANCE.md §1.4, §4 step 8',
+        assertions=[('opaque_origin', 'eq', True,
+                     'the page has an opaque origin (CSP sandbox)')],
+        via_tor_paths=['/canary/sbx-{nonce}.png']),
     LeakTest(
         'builtin_ai', 'Built-in AI APIs and Translator (no component '
                       'download)',
@@ -261,11 +277,12 @@ COMPLIANCE_STEPS = (
      'a regular-profile cookie doesn\'t show in MoltNet; a MoltNet cookie is '
      'gone after the last window closes'),
     (7, 'New Identity', 'automated',
-     'new profile, cookies gone, new canvas key; the exit IP check needs the '
-     'public internet'),
+     'new profile, cookies gone, new canvas key, no old page left open, a '
+     'second New Identity waits for Tor to switch circuits; the exit IP '
+     'check needs the public internet'),
     (8, 'Per-site circuits', 'automated',
-     'different SOCKS usernames per site, read from the loopback capture and '
-     'Tor\'s circuit list'),
+     'different SOCKS usernames per site (sandboxed pages included), read '
+     'from the loopback capture and Tor\'s circuit list'),
     (9, 'Overrides are refused', 'partial',
      '--proxy-server blocks MoltNet; the extension-set proxy case is manual'),
     (10, 'The relays are real', 'automated',

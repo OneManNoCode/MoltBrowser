@@ -308,6 +308,12 @@ def _judge_identity(data):
     return status, ev
 
 
+# Tor applies at most one NEWNYM every 10 s and acknowledges a later one at
+# once. A second New Identity may only open its window after Tor has
+# switched again; 2 s of slack for timing between the two calls.
+NEWNYM_MIN_GAP_S = 8.0
+
+
 def _judge_new_identity(data):
     ev = ['newIdentity -> %s' % json.dumps(data.get('result'),
                                            sort_keys=True)[:200]]
@@ -339,6 +345,32 @@ def _judge_new_identity(data):
     if not data.get('new_context'):
         status = FAIL
         ev.append('no new MoltNet window appeared')
+    if 'old_pages_left' in data:
+        if data['old_pages_left']:
+            ev.append('%d page(s) of the old identity were still open '
+                      '(a "Leave site?" handler kept them; hold page: %s)' %
+                      (data['old_pages_left'], data.get('hold_page')))
+            status = FAIL
+        else:
+            ev.append('no page of the old identity left (one asked "Leave '
+                      'site?": %s)' % data.get('hold_page'))
+    if 'second_after_first_s' in data:
+        second = data['second_after_first_s']
+        if (data.get('second_result') or {}).get('error'):
+            ev.append('second New Identity -> %s' % json.dumps(
+                data.get('second_result'), sort_keys=True)[:200])
+            status = FAIL
+        elif second < NEWNYM_MIN_GAP_S:
+            ev.append('a second New Identity right after the first finished '
+                      '%.1f s later, before Tor could switch circuits again '
+                      '(it applies NEWNYM at most every 10 s)' % second)
+            status = FAIL
+        else:
+            ev.append('a second New Identity right after the first finished '
+                      '%.1f s later, once Tor had switched circuits' % second)
+        if not data.get('second_context'):
+            ev.append('no window appeared after the second New Identity')
+            status = FAIL
     return status, ev
 
 
@@ -412,6 +444,34 @@ def _judge_seed(data):
                        'nothing'])
 
 
+SANDBOXED_TESTS = ('sandboxed_a', 'sandboxed_b')
+
+
+def _sandboxed_circuit_check(tr):
+    """Pages served with a CSP sandbox have opaque origins. Their requests
+    must still be kept apart per site: the SOCKS usernames the two
+    sandboxed tests used after their documents loaded must not overlap."""
+    by_test = {}
+    for s in tr['socks']:
+        if s.get('test') in SANDBOXED_TESTS and s.get('host'):
+            by_test.setdefault(s['test'], set()).add(s.get('username'))
+    ev = ['%s -> SOCKS usernames %s' % (t, sorted(u or '(none)' for u in us))
+          for t, us in sorted(by_test.items())]
+    if len(by_test) < 2:
+        status = SKIP
+        ev.append('the two sandboxed-page tests didn\'t both reach Tor')
+    else:
+        shared = set.intersection(*by_test.values())
+        status = FAIL if shared else PASS
+        if shared:
+            ev.append('two sandboxed pages on different sites shared a '
+                      'username: %s' % sorted(u or '(none)' for u in shared))
+    return check(
+        'identity.sandboxed_circuits', 'identity',
+        'Sandboxed pages (opaque origins) on two sites use different SOCKS '
+        'usernames', status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8')
+
+
 def _circuit_checks(manifest, tr):
     checks = []
     socks = [s for s in tr['socks'] if s.get('host')]
@@ -440,6 +500,7 @@ def _circuit_checks(manifest, tr):
         'identity.per_site_circuits', 'identity',
         'Different sites use different SOCKS usernames (per-site circuits)',
         status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8'))
+    checks.append(_sandboxed_circuit_check(tr))
     phase = _phase(manifest, 'circuit')
     if phase and (phase.get('data') or {}).get('hops'):
         data = phase['data']

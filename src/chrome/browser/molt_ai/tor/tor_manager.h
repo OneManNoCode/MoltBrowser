@@ -183,8 +183,12 @@ class TorManager {
   base::CallbackListSubscription AddStateChangedCallback(
       base::RepeatingClosure callback);
 
-  // Sends SIGNAL NEWNYM (fresh circuits for new streams) and reports whether
-  // Tor acknowledged it. Fails if Tor isn't running.
+  // Sends SIGNAL NEWNYM (fresh circuits for new streams) and reports
+  // success once Tor has applied it ("650 SIGNAL NEWNYM"), which can be up
+  // to ten seconds after a previous NEWNYM (a New Identity or an exit
+  // country change); Tor acknowledges the command at once either way.
+  // Fails if Tor isn't running, rejects the command or doesn't confirm the
+  // switch in time.
   void SendNewIdentitySignal(DoneCallback done);
 
   // ---- Exit-country selection ----

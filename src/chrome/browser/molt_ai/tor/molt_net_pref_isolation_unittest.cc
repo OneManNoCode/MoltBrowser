@@ -60,6 +60,7 @@ TEST(MoltNetIsolationTest, PinnedNamesMatchChromiumsConstants) {
            prefs::kPrivacySandboxM1TopicsEnabled,
            prefs::kPrivacySandboxM1FledgeEnabled,
            prefs::kPrivacySandboxM1AdMeasurementEnabled,
+           prefs::kProtocolHandlerPerOriginAllowedProtocols,
            shield::prefs::kRemoveTrackingParams,
        }) {
     EXPECT_TRUE(IsMoltNetPinnedPref(name)) << name;
@@ -163,6 +164,34 @@ TEST_F(MoltNetPrefServiceTest, MoltNetWritesStayInMoltNet) {
   moltnet->SetBoolean(kBookmarkBar, false);
   EXPECT_EQ(regular_.GetInteger(kCookieMode), 0);
   EXPECT_TRUE(regular_.GetBoolean(kBookmarkBar));
+}
+
+// "Always allow <site> to open links of this type" from the regular profile
+// doesn't let a MoltNet page open an application without asking
+// (ExternalProtocolHandler::GetBlockState reads this dictionary), and one
+// given in a MoltNet window stays there.
+TEST(MoltNetIsolationTest, ExternalProtocolExemptionsStayInTheirProfile) {
+  sync_preferences::TestingPrefServiceSyncable regular;
+  regular.registry()->RegisterDictionaryPref(
+      prefs::kProtocolHandlerPerOriginAllowedProtocols);
+  base::DictValue allowed;
+  allowed.Set("https://meet.example",
+              base::DictValue().Set("examplemeet", true));
+  regular.SetDict(prefs::kProtocolHandlerPerOriginAllowedProtocols,
+                  allowed.Clone());
+
+  std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
+      CreateMoltNetPrefService(&regular, nullptr);
+  EXPECT_TRUE(
+      moltnet->GetDict(prefs::kProtocolHandlerPerOriginAllowedProtocols)
+          .empty());
+
+  moltnet->SetDict(prefs::kProtocolHandlerPerOriginAllowedProtocols,
+                   base::DictValue().Set(
+                       "https://other.example",
+                       base::DictValue().Set("examplemeet", true)));
+  EXPECT_EQ(regular.GetDict(prefs::kProtocolHandlerPerOriginAllowedProtocols),
+            allowed);
 }
 
 TEST_F(MoltNetPrefServiceTest, PolicyStillWins) {

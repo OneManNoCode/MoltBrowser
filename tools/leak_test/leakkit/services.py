@@ -117,6 +117,8 @@ def _page_headers(name, nonce, cfg, scheme):
                          '"success_fraction":1.0,"failure_fraction":1.0}'))
         h.append(('Cross-Origin-Opener-Policy-Report-Only',
                   'same-origin; report-to="mlk"'))
+    if name == 'sandboxed.html':
+        h.append(('Content-Security-Policy', 'sandbox allow-scripts'))
     if name == 'fp.html':
         h.append(('Accept-CH', 'Sec-CH-UA-Platform-Version, Sec-CH-UA-Arch, '
                   'Sec-CH-UA-Bitness, Sec-CH-UA-Model, Sec-CH-UA-WoW64, '

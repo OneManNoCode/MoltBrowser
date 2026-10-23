@@ -142,10 +142,10 @@
    "details": null,
    "doc": "",
    "evidence": [
-    "all: 18 frames, 18 IP, 0 malformed",
+    "all: 26 frames, 26 IP, 0 malformed",
     "firewall log: 12 frames",
     "Tor connections: 2 frames",
-    "loopback packets: 6"
+    "loopback packets: 10"
    ],
    "group": "harness",
    "id": "harness.capture",
@@ -205,7 +205,9 @@
    "evidence": [
     "newIdentity -> {\"running\": true}",
     "cookie gone after New Identity",
-    "canvas readback changed (new farbling seed)"
+    "canvas readback changed (new farbling seed)",
+    "no page of the old identity left (one asked \"Leave site?\": True)",
+    "a second New Identity right after the first finished 10.4 s later, once Tor had switched circuits"
    ],
    "group": "identity",
    "id": "identity.new_identity",
@@ -240,8 +242,8 @@
    "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
    "evidence": [
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion']",
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion']"
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(11aa)\\\\x20derived\\\\x20from\\\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]']",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(22bb)\\\\x20derived\\\\x20from\\\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']"
    ],
    "group": "identity",
    "id": "identity.per_site_circuits",
@@ -260,6 +262,18 @@
    "id": "identity.relays_real",
    "status": "PASS",
    "title": "The panel's relays are in the consensus Tor downloaded"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
+   "evidence": [
+    "sandboxed_a -> SOCKS usernames ['opaque\\\\x20null\\\\x20[internally:\\\\x20(11aa)\\\\x20derived\\\\x20from\\\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]']",
+    "sandboxed_b -> SOCKS usernames ['opaque\\\\x20null\\\\x20[internally:\\\\x20(22bb)\\\\x20derived\\\\x20from\\\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']"
+   ],
+   "group": "identity",
+   "id": "identity.sandboxed_circuits",
+   "status": "PASS",
+   "title": "Sandboxed pages (opaque origins) on two sites use different SOCKS usernames"
   },
   {
    "details": null,
@@ -383,6 +397,50 @@
    "id": "net.onion_http.traffic",
    "status": "PASS",
    "title": "A MoltNet window loads an http:// onion site: nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
+   "evidence": [
+    "opaque_origin = true"
+   ],
+   "group": "network",
+   "id": "net.sandboxed_a.a1",
+   "status": "PASS",
+   "title": "A page its server sandboxes, on one site: the page has an opaque origin (CSP sandbox)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
+   "evidence": [
+    "not requested (info): /canary/sbx-iiiiii9999.png"
+   ],
+   "group": "network",
+   "id": "net.sandboxed_a.traffic",
+   "status": "PASS",
+   "title": "A page its server sandboxes, on one site: nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
+   "evidence": [
+    "opaque_origin = true"
+   ],
+   "group": "network",
+   "id": "net.sandboxed_b.a1",
+   "status": "PASS",
+   "title": "A page its server sandboxes, on another site: the page has an opaque origin (CSP sandbox)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
+   "evidence": [
+    "not requested (info): /canary/sbx-jjjjjj0000.png"
+   ],
+   "group": "network",
+   "id": "net.sandboxed_b.traffic",
+   "status": "PASS",
+   "title": "A page its server sandboxes, on another site: nothing outside Tor"
   },
   {
    "details": null,
@@ -2269,7 +2327,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 100,
+  "PASS": 105,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2575,13 +2633,13 @@
   },
   {
    "automation": "automated",
-   "note": "new profile, cookies gone, new canvas key; the exit IP check needs the public internet",
+   "note": "new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet",
    "step": 7,
    "title": "New Identity"
   },
   {
    "automation": "automated",
-   "note": "different SOCKS usernames per site, read from the loopback capture and Tor's circuit list",
+   "note": "different SOCKS usernames per site (sandboxed pages included), read from the loopback capture and Tor's circuit list",
    "step": 8,
    "title": "Per-site circuits"
   },
@@ -2786,6 +2844,30 @@
   },
   {
    "error": null,
+   "id": "sandboxed_a",
+   "load_error": null,
+   "nonce": "iiiiii9999",
+   "results": {
+    "img": "load",
+    "opaque_origin": true
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/iiiiii9999/x.html"
+  },
+  {
+   "error": null,
+   "id": "sandboxed_b",
+   "load_error": null,
+   "nonce": "jjjjjj0000",
+   "results": {
+    "img": "load",
+    "opaque_origin": true
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/jjjjjj0000/x.html"
+  },
+  {
+   "error": null,
    "id": "mdns",
    "load_error": null,
    "nonce": "hhhhhh8888",
@@ -2797,8 +2879,8 @@
  "traffic": {
   "capture_stats": {
    "all": {
-    "decoded": 18,
-    "frames": 18,
+    "decoded": 26,
+    "frames": 26,
     "linktypes": [
      276
     ],
@@ -2816,7 +2898,7 @@
     "non_ip": 0,
     "truncated_file": false
    },
-   "loopback_packets": 6,
+   "loopback_packets": 10,
    "tor": {
     "decoded": 2,
     "frames": 2,
@@ -3113,6 +3195,26 @@
     "test": "dns_prefetch",
     "ts": 1760000031.0,
     "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52003,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "port": 80,
+    "server_port": 9150,
+    "test": "sandboxed_a",
+    "ts": 1760000077.0,
+    "username": "opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]"
+   },
+   {
+    "client_port": 52004,
+    "command": 1,
+    "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "port": 443,
+    "server_port": 9150,
+    "test": "sandboxed_b",
+    "ts": 1760000079.3,
+    "username": "opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]"
    }
   ],
   "tor_connections": 2,

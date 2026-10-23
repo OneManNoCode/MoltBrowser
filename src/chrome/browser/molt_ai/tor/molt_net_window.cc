@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -14,7 +15,9 @@
 #include "base/scoped_observation.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
@@ -168,6 +171,36 @@ void CloseMoltNetWindows(Profile* original) {
   }
 }
 
+// ---- New Identity ----
+//
+// The old identity must be gone before Tor is asked for new circuits, and
+// Tor must have switched before the new identity sends anything. Every
+// MoltNet profile uses the same SOCKS credentials for a given site
+// (net/socket/socks_connect_job.cc), so a request of the old identity made
+// after NEWNYM (a pagehide beacon, a keepalive fetch, a window a page kept
+// open) would share the new identity's circuit and exit for that site, and
+// a new-identity request made before Tor applied NEWNYM would share the old
+// one's.
+
+// How long New Identity waits for the old identity's windows to close and
+// its profile to be destroyed. Normally about a second (ProfileDestroyer
+// waits that long for renderers); longer only while a "Leave site?" dialog
+// waits for the user, which happens when DevTools is open on a MoltNet page
+// (Chromium can't skip beforeunload handlers then).
+constexpr base::TimeDelta kRetireTimeout = base::Seconds(60);
+constexpr base::TimeDelta kRetirePollInterval = base::Milliseconds(100);
+
+// Original profiles (by path) whose New Identity is under way. No MoltNet
+// window opens for them meanwhile, except New Identity's own.
+std::set<base::FilePath>& ProfilesSwitchingIdentity() {
+  static base::NoDestructor<std::set<base::FilePath>> paths;
+  return *paths;
+}
+
+bool IsSwitchingIdentity(const base::FilePath& path) {
+  return ProfilesSwitchingIdentity().count(path) > 0;
+}
+
 // New MoltNet windows open at a size whose page area is exactly one
 // letterbox size, the largest that fits on the screen (1400 x 900 DIPs
 // where there is room), so they start without margins
@@ -226,9 +259,18 @@ void FitPageToLetterbox(base::WeakPtr<BrowserWindowInterface> weak_browser,
 
 void OpenVerifiedWindow(base::FilePath path,
                         GURL url,
+                        bool for_new_identity,
                         MoltNetWindow::DoneCallback done,
                         bool ok,
                         std::string error) {
+  if (!for_new_identity && IsSwitchingIdentity(path)) {
+    // New Identity started while this window was on its way; it would
+    // belong to neither identity cleanly.
+    std::move(done).Run(false,
+                        "MoltNet is switching to a new identity. Try again "
+                        "in a moment.");
+    return;
+  }
   if (!ok) {
     if (Profile* moltnet = MoltNetRouting::GetMoltNetProfile(
             ProfileByPath(path))) {
@@ -268,8 +310,15 @@ void OpenVerifiedWindow(base::FilePath path,
 
 void OnTorReady(base::FilePath path,
                 GURL url,
+                bool for_new_identity,
                 MoltNetWindow::DoneCallback done,
                 TorLaunchResult result) {
+  if (!for_new_identity && IsSwitchingIdentity(path)) {
+    std::move(done).Run(false,
+                        "MoltNet is switching to a new identity. Try again "
+                        "in a moment.");
+    return;
+  }
   if (!result.success) {
     // Fail closed: no window, nothing falls back to a direct connection.
     std::move(done).Run(false, result.error.empty()
@@ -296,20 +345,105 @@ void OnTorReady(base::FilePath path,
   MoltNetRouting::VerifyRouting(
       moltnet, socks_port,
       base::BindOnce(&OpenVerifiedWindow, std::move(path), std::move(url),
-                     std::move(done)));
+                     for_new_identity, std::move(done)));
+}
+
+void OpenImpl(Profile* from,
+              const GURL& url,
+              bool for_new_identity,
+              MoltNetWindow::DoneCallback done) {
+  if (!from) {
+    std::move(done).Run(false, "No profile.");
+    return;
+  }
+  const base::FilePath path = from->GetOriginalProfile()->GetPath();
+  if (!for_new_identity && IsSwitchingIdentity(path)) {
+    std::move(done).Run(false,
+                        "MoltNet is switching to a new identity. Try again "
+                        "in a moment.");
+    return;
+  }
+  TorManager::Get()->Launch(base::BindOnce(&OnTorReady, path, url,
+                                           for_new_identity, std::move(done)));
+}
+
+void FinishNewIdentity(base::FilePath path,
+                       MoltNetWindow::DoneCallback done,
+                       bool ok,
+                       std::string error) {
+  ProfilesSwitchingIdentity().erase(path);
+  std::move(done).Run(ok, std::move(error));
+}
+
+void OnNewCircuits(base::FilePath path,
+                   MoltNetWindow::DoneCallback done,
+                   bool ok,
+                   std::string error) {
+  if (!ok) {
+    FinishNewIdentity(std::move(path), std::move(done), false,
+                      "New identity failed: " + error);
+    return;
+  }
+  Profile* profile = ProfileByPath(path);
+  if (!profile) {
+    FinishNewIdentity(std::move(path), std::move(done), false,
+                      "The profile went away.");
+    return;
+  }
+  OpenImpl(profile, GURL(), /*for_new_identity=*/true,
+           base::BindOnce(&FinishNewIdentity, path, std::move(done)));
+}
+
+// Waits until none of the MoltNet profiles `retiring` of the original
+// profile at `path` exists any more, then asks Tor for new circuits.
+void WaitForRetiredProfiles(base::FilePath path,
+                            std::vector<Profile::OTRProfileID> retiring,
+                            base::TimeTicks deadline,
+                            MoltNetWindow::DoneCallback done) {
+  Profile* original = ProfileByPath(path);
+  if (!original) {
+    FinishNewIdentity(std::move(path), std::move(done), false,
+                      "The profile went away.");
+    return;
+  }
+  std::erase_if(retiring, [original](const Profile::OTRProfileID& id) {
+    return !original->HasOffTheRecordProfile(id);
+  });
+  if (!retiring.empty()) {
+    if (base::TimeTicks::Now() < deadline) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&WaitForRetiredProfiles, std::move(path),
+                         std::move(retiring), deadline, std::move(done)),
+          kRetirePollInterval);
+      return;
+    }
+    // A window of the old identity stayed open. Don't change circuits
+    // under it or open a second identity next to it: it stays the current
+    // MoltNet identity (Open() reuses it), as if New Identity hadn't run.
+    if (!MoltNetRouting::GetMoltNetProfile(original)) {
+      if (Profile* survivor = original->GetOffTheRecordProfile(
+              retiring.front(), /*create_if_needed=*/false)) {
+        MoltNetRouting::AdoptMoltNetProfile(survivor);
+      }
+    }
+    FinishNewIdentity(std::move(path), std::move(done), false,
+                      "New Identity stopped because a MoltNet window didn't "
+                      "close. Close it and try again.");
+    return;
+  }
+  // The old identity's profile, and with it its network context and every
+  // connection it had, is gone. Only now ask Tor for new circuits; the new
+  // window opens once Tor confirms the switch.
+  TorManager::Get()->SendNewIdentitySignal(
+      base::BindOnce(&OnNewCircuits, std::move(path), std::move(done)));
 }
 
 }  // namespace
 
 // static
 void MoltNetWindow::Open(Profile* from, const GURL& url, DoneCallback done) {
-  if (!from) {
-    std::move(done).Run(false, "No profile.");
-    return;
-  }
-  TorManager::Get()->Launch(base::BindOnce(
-      &OnTorReady, from->GetOriginalProfile()->GetPath(), url,
-      std::move(done)));
+  OpenImpl(from, url, /*for_new_identity=*/false, std::move(done));
 }
 
 // static
@@ -355,29 +489,34 @@ void MoltNetWindow::NewIdentity(Profile* from, DoneCallback done) {
     return;
   }
   Profile* original = from->GetOriginalProfile();
-  if (Profile* moltnet = MoltNetRouting::GetMoltNetProfile(original)) {
-    // Drop live sockets + cached DNS first so nothing from the old identity
-    // can be reused, then make sure the next window gets a NEW profile.
+  const base::FilePath path = original->GetPath();
+  if (!ProfilesSwitchingIdentity().insert(path).second) {
+    std::move(done).Run(false, "New Identity is already under way.");
+    return;
+  }
+  EnsureReaper();
+  // Every MoltNet profile of `original` ends now: the current one, and an
+  // older one whose window is still open (normally there is none).
+  std::vector<Profile::OTRProfileID> retiring;
+  for (Profile* moltnet : original->GetAllOffTheRecordProfiles()) {
+    if (!IsMoltNetProfile(moltnet)) {
+      continue;
+    }
+    retiring.push_back(moltnet->GetOTRProfileID());
+    // Drop live sockets + cached DNS first, and make sure the next window
+    // gets a NEW profile.
     MoltNetRouting::FlushNetworkState(moltnet);
     MoltNetRouting::ForgetMoltNetProfile(moltnet);
-    CloseMoltNetWindows(original);
+    // As Chromium closes Incognito: a page's beforeunload handler ("Leave
+    // site?") can't keep the old identity open.
+    chrome::CloseAllBrowsersWithIncognitoProfile(moltnet,
+                                                 /*skip_beforeunload=*/true);
     // Covers the no-window case; with windows, the reaper also fires.
     PostDestroyIfUnused(moltnet);
   }
-  TorManager::Get()->SendNewIdentitySignal(base::BindOnce(
-      [](base::FilePath path, DoneCallback done, bool ok, std::string error) {
-        if (!ok) {
-          std::move(done).Run(false, "New identity failed: " + error);
-          return;
-        }
-        Profile* profile = ProfileByPath(path);
-        if (!profile) {
-          std::move(done).Run(false, "The profile went away.");
-          return;
-        }
-        MoltNetWindow::Open(profile, GURL(), std::move(done));
-      },
-      original->GetPath(), std::move(done)));
+  WaitForRetiredProfiles(path, std::move(retiring),
+                         base::TimeTicks::Now() + kRetireTimeout,
+                         std::move(done));
 }
 
 // static

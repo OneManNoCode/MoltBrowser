@@ -137,7 +137,7 @@ Ordered by exposure: input a page or a model controls comes first.
 | `molt_automation_script_fuzzer` | imported `.molt` workflows (anyone) | stand_ins | save/load round trip; scrubbing secrets is idempotent; trust is never raised by loading or saving |
 | `molt_onion_location_fuzzer` | `Onion-Location` headers, hosts (site) | std | honoured only once, on https, for a valid v3 onion |
 | `molt_torrc_fuzzer` | pasted bridge lines (user, from anywhere) | std | no injected torrc option; fixed options exactly once |
-| `molt_tor_control_protocol_fuzzer` | control-port replies, port file (whoever owns the port) | stand_ins | a complete reply's verdict can't change; fixed field sizes; loopback ports only; SAFECOOKIE accepts only the exact hash |
+| `molt_tor_control_protocol_fuzzer` | control-port replies and events, port file (whoever owns the port) | stand_ins | a complete reply's verdict can't change; replies and events split off a stream agree with it and always progress; fixed field sizes; loopback ports only; SAFECOOKIE accepts only the exact hash |
 | `molt_release_manifest_fuzzer` | release manifest and signature (release page) | stand_ins | only a listed key's signature over the exact bytes verifies; assets are plain, distinct names; no downgrade passes the policy |
 
 Each fuzzer's header comment states its checks in full. The checked-in

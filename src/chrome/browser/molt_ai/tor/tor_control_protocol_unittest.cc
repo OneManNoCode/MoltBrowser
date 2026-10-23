@@ -157,6 +157,57 @@ TEST(TorControlProtocolTest, ReplyStatusAndOk) {
   EXPECT_TRUE(IsOkReply("250-a=1\r\n250 OK\r\n"));
 }
 
+// Replies and events arrive on one connection, possibly in one read.
+TEST(TorControlProtocolTest, CompleteReplyLengthSplitsOneReplyOff) {
+  EXPECT_EQ(0u, CompleteReplyLength(""));
+  EXPECT_EQ(0u, CompleteReplyLength("250 OK"));  // No LF yet.
+  EXPECT_EQ(0u, CompleteReplyLength("250-a=1\r\n"));
+  EXPECT_EQ(8u, CompleteReplyLength("250 OK\r\n"));
+  EXPECT_EQ(7u, CompleteReplyLength("250 OK\n"));
+  // A reply followed by an event: only the reply.
+  const std::string both = "250 OK\r\n650 SIGNAL NEWNYM\r\n";
+  EXPECT_EQ(8u, CompleteReplyLength(both));
+  EXPECT_EQ(both.size() - 8, CompleteReplyLength(both.substr(8)));
+  // An event before a reply.
+  EXPECT_EQ(19u, CompleteReplyLength("650 SIGNAL NEWNYM\r\n250 OK\r\n"));
+  // Multi-line, and a data block whose contents look like an end line.
+  const std::string multi = "250-a=1\r\n250-b=2\r\n250 OK\r\nrest";
+  EXPECT_EQ(multi.size() - 4, CompleteReplyLength(multi));
+  const std::string data =
+      "650+NS\r\n250 OK\r\n650 SIGNAL NEWNYM\r\n.\r\n650 OK\r\n";
+  EXPECT_EQ(data.size(), CompleteReplyLength(data));
+  EXPECT_EQ(0u, CompleteReplyLength(data.substr(0, data.size() - 1)));
+  // Garbage ends a reply (the caller then fails), like IsCompleteReply().
+  EXPECT_EQ(9u, CompleteReplyLength("garbage\r\n\n250 OK\r\n"));
+  EXPECT_EQ(2u, CompleteReplyLength("\r\n250 OK\r\n"));
+}
+
+TEST(TorControlProtocolTest, AsyncEvents) {
+  EXPECT_TRUE(IsAsyncEvent("650 SIGNAL NEWNYM\r\n"));
+  EXPECT_TRUE(IsAsyncEvent("650-CIRC 1 BUILT\r\n650 OK\r\n"));
+  EXPECT_FALSE(IsAsyncEvent("250 OK\r\n"));
+  EXPECT_FALSE(IsAsyncEvent("650 SIGNAL NEWNYM"));  // Incomplete.
+  EXPECT_FALSE(IsAsyncEvent("6500 SIGNAL NEWNYM\r\n"));
+  EXPECT_FALSE(IsAsyncEvent(""));
+}
+
+TEST(TorControlProtocolTest, NewnymAppliedEvent) {
+  EXPECT_TRUE(IsNewnymAppliedEvent("650 SIGNAL NEWNYM\r\n"));
+  EXPECT_TRUE(IsNewnymAppliedEvent("650 SIGNAL NEWNYM\n"));
+  // Tor's acknowledgement of the command is not the switch.
+  EXPECT_FALSE(IsNewnymAppliedEvent("250 OK\r\n"));
+  // Other signals, and look-alikes.
+  EXPECT_FALSE(IsNewnymAppliedEvent("650 SIGNAL CLEARDNSCACHE\r\n"));
+  EXPECT_FALSE(IsNewnymAppliedEvent("650 SIGNAL NEWNYMX\r\n"));
+  EXPECT_FALSE(IsNewnymAppliedEvent("650 SIGNAL NEWNYM \r\n"));
+  EXPECT_FALSE(IsNewnymAppliedEvent("650 signal newnym\r\n"));
+  EXPECT_FALSE(IsNewnymAppliedEvent("650-SIGNAL NEWNYM\r\n650 OK\r\n"));
+  EXPECT_FALSE(IsNewnymAppliedEvent("250 SIGNAL NEWNYM\r\n"));
+  // Exactly one event, nothing after it.
+  EXPECT_FALSE(IsNewnymAppliedEvent("650 SIGNAL NEWNYM\r\n250 OK\r\n"));
+  EXPECT_FALSE(IsNewnymAppliedEvent("650 SIGNAL NEWNYM"));
+}
+
 TEST(TorControlProtocolTest, ParseProtocolInfo) {
   const char kReply[] =
       "250-PROTOCOLINFO 1\r\n"

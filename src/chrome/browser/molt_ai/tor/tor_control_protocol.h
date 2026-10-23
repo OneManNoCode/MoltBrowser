@@ -60,6 +60,25 @@ int GetReplyStatus(std::string_view reply);
 // exactly "250 OK".
 bool IsOkReply(std::string_view reply);
 
+// Length in bytes of the first complete reply at the start of |buffer|,
+// synchronous or asynchronous (control-spec §2.3, §4.1): up to and
+// including the "\n" of its EndReplyLine, "+" data blocks included. 0 while
+// |buffer| doesn't hold a whole reply yet. As in IsCompleteReply(), a
+// malformed line ends a reply, so a reader never waits on garbage.
+size_t CompleteReplyLength(std::string_view buffer);
+
+// True iff |reply| is an asynchronous event (status 650, control-spec
+// §4.1), which Tor sends between synchronous replies once a connection has
+// asked for events with SETEVENTS.
+bool IsAsyncEvent(std::string_view reply);
+
+// True iff |reply| is exactly "650 SIGNAL NEWNYM", the SIGNAL event Tor
+// sends when it has applied a NEWNYM. Tor answers SIGNAL NEWNYM with
+// "250 OK" at once, but within ten seconds of the previous one it only
+// applies it when that time is up, and new streams keep using the old
+// circuits until then; this event says the switch has happened.
+bool IsNewnymAppliedEvent(std::string_view reply);
+
 // Parsed PROTOCOLINFO reply (control-spec §3.21).
 struct ProtocolInfo {
   ProtocolInfo();

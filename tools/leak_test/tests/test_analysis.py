@@ -96,11 +96,14 @@ class SampleRun(unittest.TestCase):
         self.assertEqual([(e['dst'], e['dport']) for e in
                           self.traffic['escaped']], [('203.0.113.99', 80)])
         socks = self.traffic['socks']
-        self.assertEqual(len(socks), 3)
+        self.assertEqual(len(socks), 5)
         self.assertEqual(socks[2]['host'], 'anchor-cccccc3333.moltleak.test')
         self.assertEqual(socks[2]['test'], 'dns_prefetch')
+        self.assertEqual([s['test'] for s in socks[3:]],
+                         ['sandboxed_a', 'sandboxed_b'])
         # Loopback packets appear twice in `any` captures; counted once.
-        self.assertEqual(self.traffic['capture_stats']['loopback_packets'], 6)
+        self.assertEqual(self.traffic['capture_stats']['loopback_packets'],
+                         10)
 
     def test_verdicts(self):
         rep = report.build(sample.OUT)
@@ -118,6 +121,8 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['regular.proxy_no_onion'], 'FAIL')
         self.assertEqual(status['regular.onion_interstitial'], 'PASS')
         self.assertEqual(status['identity.per_site_circuits'], 'PASS')
+        self.assertEqual(status['identity.sandboxed_circuits'], 'PASS')
+        self.assertEqual(status['identity.new_identity'], 'PASS')
         self.assertEqual(status['identity.fail_closed'], 'PASS')
         self.assertEqual(status['uniform.nav.hardwareConcurrency'], 'FAIL')
         self.assertEqual(status['uniform.win.innerWidth'], 'FAIL')
@@ -137,6 +142,60 @@ class SampleRun(unittest.TestCase):
                 self.assertEqual(json.load(f)['verdict'], rep['verdict'])
         finally:
             shutil.rmtree(tmp)
+
+
+class IdentityChecks(unittest.TestCase):
+    """The New Identity and sandboxed-page judgements, failing cases."""
+
+    GOOD = {'result': {'running': True}, 'old_context': 'C1',
+            'new_context': 'C2', 'cookie_after': False,
+            'canvas_before': '1', 'canvas_after': '2', 'hold_page': True,
+            'old_pages_left': 0, 'second_result': {'running': True},
+            'second_after_first_s': 10.2, 'second_context': 'C3'}
+
+    def judge(self, **changes):
+        data = dict(self.GOOD)
+        data.update(changes)
+        return report._judge_new_identity(data)
+
+    def test_new_identity(self):
+        self.assertEqual(self.judge()[0], report.PASS)
+        # A "Leave site?" handler kept the old identity's page open.
+        status, ev = self.judge(old_pages_left=1)
+        self.assertEqual(status, report.FAIL)
+        self.assertIn('still open', ' '.join(ev))
+        # The second window opened before Tor could switch circuits.
+        status, ev = self.judge(second_after_first_s=1.5)
+        self.assertEqual(status, report.FAIL)
+        self.assertIn('before Tor could switch', ' '.join(ev))
+        self.assertEqual(self.judge(second_context=None)[0], report.FAIL)
+        self.assertEqual(
+            self.judge(second_result={'error': 'x'})[0], report.FAIL)
+        # Runs from before these fields existed are judged as before.
+        data = dict(self.GOOD)
+        for key in ('hold_page', 'old_pages_left', 'second_result',
+                    'second_after_first_s', 'second_context'):
+            del data[key]
+        self.assertEqual(report._judge_new_identity(data)[0], report.PASS)
+
+    def socks(self, *entries):
+        return {'socks': [{'test': t, 'host': h, 'username': u}
+                          for t, h, u in entries]}
+
+    def test_sandboxed_circuits(self):
+        a, b = 'a' * 55 + 'd.onion', 'b' * 55 + 'd.onion'
+        ok = report._sandboxed_circuit_check(self.socks(
+            ('sandboxed_a', a, 'opaque null [internally: (1) derived from a]'),
+            ('sandboxed_b', b, 'opaque null [internally: (2) derived from b]'),
+        ))
+        self.assertEqual(ok['status'], report.PASS)
+        shared = report._sandboxed_circuit_check(self.socks(
+            ('sandboxed_a', a, 'http://' + a), ('sandboxed_a', a, 'opaque'),
+            ('sandboxed_b', b, 'https://' + b), ('sandboxed_b', b, 'opaque')))
+        self.assertEqual(shared['status'], report.FAIL)
+        one = report._sandboxed_circuit_check(self.socks(
+            ('sandboxed_a', a, 'opaque')))
+        self.assertEqual(one['status'], report.SKIP)
 
 
 class Classification(unittest.TestCase):

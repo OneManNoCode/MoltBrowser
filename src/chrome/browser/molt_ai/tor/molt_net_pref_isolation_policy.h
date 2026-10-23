@@ -88,6 +88,12 @@ inline constexpr auto kMoltNetPinnedPrefNames =
         "settings.a11y.prefers_default_scrollbar_styles",
         // PaymentRequest.canMakePayment() and hasEnrolledInstrument().
         "payments.can_make_payment_enabled",
+        // The sites allowed to open an application without asking ("Always
+        // allow <site> to open links of this type"). In MoltNet every
+        // launch asks: the application is outside Tor, and whether a page
+        // can open it without a prompt shows a choice made in the regular
+        // profile.
+        "protocol_handler.allowed_origin_protocol_pairs",
         // Protected Audience, Attribution Reporting and Topics. Like
         // CookieSettings, PrivacySandboxSettings only switches them off for
         // the primary Incognito profile, so in MoltNet these prefs decide.
