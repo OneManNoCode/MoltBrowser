@@ -135,6 +135,17 @@ PINNED_STRINGS = [
     ("IDS_FORM_SELECT_MENU_LIST_TEXT", "<select multiple> shown as a menu"),
     ("IDS_PRETTY_PRINT_JSON",
      "JSON viewer's label, in a same-origin frame's document"),
+    # The XSLT deprecation banner (new at 156): Blink inserts it into the
+    # transformed page's own DOM, in an open shadow root, so the page can
+    # read every text node of it.
+    ("IDS_XSLT_DEPRECATION_BANNER_TEXT", "XSLT deprecation banner"),
+    ("IDS_XSLT_DEPRECATION_BANNER_REMOVAL_LINK", "XSLT deprecation banner"),
+    ("IDS_XSLT_DEPRECATION_BANNER_CAP_ALERT_TEXT", "XSLT deprecation banner"),
+    ("IDS_XSLT_DEPRECATION_BANNER_CAP_ALERT_REMOVAL_LINK",
+     "XSLT deprecation banner"),
+    ("IDS_XSLT_DEPRECATION_BANNER_EXTENSION_LINK", "XSLT deprecation banner"),
+    ("IDS_XSLT_DEPRECATION_BANNER_NEVER_SHOW_AGAIN",
+     "XSLT deprecation banner"),
     # Byte units: no page-readable use found at the pin; pinned anyway,
     # English units cost nothing.
     ("IDS_UNITS_KIBIBYTES", "byte units (use not established)"),
