@@ -59,7 +59,9 @@
 #include "services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <utility>
 
@@ -80,6 +82,7 @@
 #include "base/timer/timer.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "net/base/isolation_info.h"
 #include "net/base/load_flags.h"
 #include "net/cert/cert_net_fetcher.h"
 #include "net/http/http_request_headers.h"
@@ -141,10 +144,13 @@ class CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader {
   // Initializes AsyncCertNetFetcherURLLoader, binding the
   // PendingRemote<URLLoaderFactory> into a Remote<URLLoaderFactory> for
   // creating URLLoaders.
-  explicit AsyncCertNetFetcherURLLoader(
+  // MoltBrowser: `isolate_each_fetch`, see
+  // CertNetFetcherURLLoader::SetIsolateEachFetch().
+  AsyncCertNetFetcherURLLoader(
       mojo::PendingRemote<network::mojom::URLLoaderFactory>
           factory_pending_remote,
-      BindNewURLLoaderFactoryCallback bind_new_url_loader_factory_cb);
+      BindNewURLLoaderFactoryCallback bind_new_url_loader_factory_cb,
+      bool isolate_each_fetch);
 
   AsyncCertNetFetcherURLLoader(const AsyncCertNetFetcherURLLoader&) = delete;
   AsyncCertNetFetcherURLLoader& operator=(const AsyncCertNetFetcherURLLoader&) =
@@ -194,6 +200,11 @@ class CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader {
   // A callback provided by the creator of the CertNetFetcherURLLoader that can
   // be used to bind a new URLLoaderFactory if the current one disconnects.
   BindNewURLLoaderFactoryCallback bind_new_url_loader_factory_cb_;
+
+  // MoltBrowser: if set, Fetch() numbers every fetch (from 1), which keeps
+  // it out of FindJob() and gives it a one-off network key.
+  const bool isolate_each_fetch_;
+  uint64_t last_isolated_fetch_id_ = 0;
 
   SEQUENCE_CHECKER(sequence_checker_);
 };
@@ -327,6 +338,11 @@ struct CertNetFetcherURLLoader::RequestParams {
   // If set to a value == 0 then means "no timeout".
   base::TimeDelta timeout;
 
+  // MoltBrowser: non-zero (unique per fetcher) when the fetcher isolates
+  // each fetch: no other request's params compare equal, so no two fetches
+  // share a Job, and the Job loads with a one-off network key.
+  uint64_t isolated_fetch_id = 0;
+
   // IMPORTANT: When adding fields to this structure, update operator<().
 };
 
@@ -335,9 +351,10 @@ CertNetFetcherURLLoader::RequestParams::RequestParams()
 
 bool CertNetFetcherURLLoader::RequestParams::operator<(
     const RequestParams& other) const {
-  return std::tie(url, http_method, max_response_bytes, timeout) <
+  return std::tie(url, http_method, max_response_bytes, timeout,
+                  isolated_fetch_id) <
          std::tie(other.url, other.http_method, other.max_response_bytes,
-                  other.timeout);
+                  other.timeout, other.isolated_fetch_id);
 }
 
 namespace {
@@ -526,6 +543,15 @@ void Job::StartURLLoader(network::mojom::URLLoaderFactory* factory) {
   // fetches to prevent deadlock.
   request->trusted_params = network::ResourceRequest::TrustedParams();
   request->trusted_params->disable_secure_dns = true;
+  // MoltBrowser: an isolated fetch gets a fresh transient IsolationInfo. It
+  // takes precedence over the factory's automatically assigned one (keyed
+  // by the URL's own site), so this fetch shares no HTTP cache entry (none
+  // is kept for transient keys), connection or proxy identity with any
+  // other request.
+  if (request_params_->isolated_fetch_id) {
+    request->trusted_params->isolation_info =
+        net::IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
+  }
   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   // Ensure that we bypass HSTS for all requests sent through
   // CertNetFetcherURLLoader, since AIA/CRL/OCSP requests must be in HTTP to
@@ -609,10 +635,12 @@ CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::
     AsyncCertNetFetcherURLLoader(
         mojo::PendingRemote<network::mojom::URLLoaderFactory>
             factory_pending_remote,
-        BindNewURLLoaderFactoryCallback bind_new_url_loader_factory_cb)
+        BindNewURLLoaderFactoryCallback bind_new_url_loader_factory_cb,
+        bool isolate_each_fetch)
     : factory_(std::move(factory_pending_remote)),
       bind_new_url_loader_factory_cb_(
-          std::move(bind_new_url_loader_factory_cb)) {}
+          std::move(bind_new_url_loader_factory_cb)),
+      isolate_each_fetch_(isolate_each_fetch) {}
 
 CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::
     ~AsyncCertNetFetcherURLLoader() {
@@ -641,6 +669,11 @@ void CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::Fetch(
     std::unique_ptr<RequestParams> request_params,
     scoped_refptr<RequestCore> request) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // MoltBrowser: an isolated fetch never matches another one.
+  if (isolate_each_fetch_) {
+    request_params->isolated_fetch_id = ++last_isolated_fetch_id_;
+  }
 
   // If there is an in-progress job that matches the request parameters use it.
   // Otherwise start a new job.
@@ -764,7 +797,14 @@ void CertNetFetcherURLLoader::SetURLLoaderFactoryAndReconnector(
         bind_new_url_loader_factory_cb) {
   DCHECK(!impl_);
   impl_ = std::make_unique<AsyncCertNetFetcherURLLoader>(
-      std::move(factory), std::move(bind_new_url_loader_factory_cb));
+      std::move(factory), std::move(bind_new_url_loader_factory_cb),
+      isolate_each_fetch_);
+}
+
+void CertNetFetcherURLLoader::SetIsolateEachFetch(bool isolate_each_fetch) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  DCHECK(!impl_);
+  isolate_each_fetch_ = isolate_each_fetch;
 }
 
 // static

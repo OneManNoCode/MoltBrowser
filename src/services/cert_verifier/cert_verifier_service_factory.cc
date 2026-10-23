@@ -89,6 +89,10 @@ internal::CertVerifierServiceImpl* GetNewCertVerifierImpl(
   // failure, so keep a ref.
   if (IsUsingCertNetFetcher()) {
     cert_net_fetcher = base::MakeRefCounted<CertNetFetcherURLLoader>();
+    // MoltBrowser: MoltNet's network contexts give every certificate fetch
+    // a one-off network key.
+    cert_net_fetcher->SetIsolateEachFetch(
+        creation_params->molt_isolate_each_cert_fetch);
   }
 
   // Populate initial instance params from creation params.

@@ -45,6 +45,13 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
           void(mojo::PendingReceiver<network::mojom::URLLoaderFactory>)>
           bind_new_url_loader_factory_cb);
 
+  // MoltBrowser: if `isolate_each_fetch`, every fetch gets a one-off
+  // network key of its own (net::IsolationInfo::CreateTransient()): it
+  // shares no HTTP cache entry, connection or proxy identity with another
+  // fetch, and identical fetches in flight at the same time are not merged.
+  // Must be called before SetURLLoaderFactoryAndReconnector().
+  void SetIsolateEachFetch(bool isolate_each_fetch);
+
   // Returns the default timeout value. Intended for test use only.
   static base::TimeDelta GetDefaultTimeoutForTesting();
 
@@ -77,6 +84,9 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   std::unique_ptr<AsyncCertNetFetcherURLLoader> impl_;
+
+  // MoltBrowser: see SetIsolateEachFetch().
+  bool isolate_each_fetch_ = false;
 };
 
 }  // namespace cert_verifier

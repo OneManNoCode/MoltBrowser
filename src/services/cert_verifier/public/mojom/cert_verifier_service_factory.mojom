@@ -34,6 +34,12 @@ struct CertVerifierCreationParams {
   // Initial certificate transparency policies.
   [EnableIf=is_ct_supported]
   network.mojom.CTPolicy? ct_policy;
+
+  // MoltBrowser: if true, every certificate fetch (AIA, OCSP, CRL) gets a
+  // one-off network key of its own (net::IsolationInfo::CreateTransient()),
+  // and no two fetches share a request. Set for MoltNet's network contexts
+  // only (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h).
+  bool molt_isolate_each_cert_fetch = false;
 };
 
 // Information about a certificate in the Chrome Root Store
