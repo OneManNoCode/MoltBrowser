@@ -47,6 +47,7 @@
 #include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_gpu_inference_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
@@ -2329,7 +2330,8 @@ class MoltAISettingsDataSource : public content::URLDataSource {
       std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
           std::string(molt_webui::kMoltTrustedHtmlJs) +
           molt_webui::kMoltActionsJs + kSettingsPageJs +
-          molt_ai::shield::kMoltShieldSettingsJs + kWebAISitesSettingsJs));
+          molt_ai::shield::kMoltShieldSettingsJs + kWebAISitesSettingsJs +
+          kGpuInferenceSettingsJs));
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
@@ -2524,6 +2526,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="field">
       <label>Model Directory</label>
       <div class="model-dir">~/.moltbrowser/models/</div>
+    </div>
+  </div>
+
+  <div class="section" id="gpuSection" hidden>
+    <h2><span class="icon">&#9889;</span> Graphics processor</h2>
+    <div class="field" role="radiogroup" aria-labelledby="gpuModeLabel">
+      <label id="gpuModeLabel">Use the GPU for on-device AI</label>
+      <label class="radio"><input type="radio" name="gpuMode" id="gpuModeAuto" value="auto" checked data-on-change="gpuSetMode"> Automatic</label>
+      <label class="radio"><input type="radio" name="gpuMode" id="gpuModeOff" value="off" data-on-change="gpuSetMode"> Off</label>
+      <div class="desc">Automatic runs models on the graphics processor when its driver works with MoltBrowser, and on the processor otherwise. Off always uses the processor. Applies to the next model load.</div>
+      <div class="desc" id="gpuNotes"></div>
+    </div>
+    <div class="field">
+      <div id="gpuTurnedOff"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="btn secondary" id="gpuRetryBtn" type="button" data-on-click="gpuRetry" style="font-size:12px;padding:6px 16px" hidden>Try the GPU again</button>
+        <span class="desc" id="gpuStatus" role="status"></span>
+      </div>
     </div>
   </div>
 
@@ -2725,6 +2745,9 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
       std::make_unique<molt_ai::shield::MoltShieldSettingsHandler>());
   // "Sites using on-device AI" (id="webAiSection").
   web_ui->AddMessageHandler(std::make_unique<MoltWebAISitesHandler>());
+  // "Use the GPU for on-device AI" (id="gpuSection"; shown only in builds
+  // with GPU inference).
+  web_ui->AddMessageHandler(std::make_unique<MoltGpuInferenceHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;

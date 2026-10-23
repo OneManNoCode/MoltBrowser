@@ -631,6 +631,83 @@ async function checkWebAISites(window) {
   webAiState = {enabled: true, available: true, persistent: true, sites: WEB_AI_SITES};
 }
 
+// molt://ai-settings "Use the GPU for on-device AI"
+// (docs/design/SANDBOXED_INFERENCE.md section 11.11). The driver names come
+// from the inference service (sanitized by the browser, still untrusted
+// text here); rows of the wrong shape are skipped.
+const GPU_DRIVERS = [
+  {name: 'AMD Radeon <b>RX</b> 6600 <img src=x onerror=alert(1)>',
+   version: '25.2.3', since: 1760000000000, unidentified: false},
+  {name: '', version: '', since: 1760000000000, unidentified: true},
+  null, 'junk',
+];
+const gpuCalls = [];
+let gpuState = {available: true, automatic: true, disabledBySwitch: false,
+                offForSession: false, drivers: GPU_DRIVERS};
+function gpuInference(args) {
+  gpuCalls.push([args[0].replace(/_\d+$/, '')].concat(args.slice(1)));
+  return gpuState;
+}
+
+async function checkGpuSection(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const section = doc.getElementById('gpuSection');
+  assert(section, 'GPU section present');
+  assert.strictEqual(section.hidden, false, 'shown in a build with GPU inference');
+  assert.strictEqual(section.querySelectorAll('img, b').length, 0, 'driver names stay text');
+  const rows = Array.from(section.querySelectorAll('.gpu-turned-off'));
+  assert.strictEqual(rows.length, 2, 'one line per turned-off driver');
+  assert(rows[0].textContent.includes('<b>RX</b>'), rows[0].textContent);
+  assert(rows[0].textContent.includes('driver 25.2.3'));
+  assert(/before it could be identified/.test(rows[1].textContent));
+  assert.strictEqual(doc.getElementById('gpuRetryBtn').hidden, false, 'retry offered');
+  assert(doc.getElementById('gpuModeAuto').checked);
+
+  // Off, then Automatic: the value goes to the browser (which checks the
+  // click and its argument), and the page shows what it answers.
+  gpuState = Object.assign({}, gpuState, {automatic: false});
+  doc.getElementById('gpuModeOff').click();
+  await tick();
+  assert.deepStrictEqual(gpuCalls.pop(), ['gpuInferenceSetMode', 'off']);
+  assert(doc.getElementById('gpuModeOff').checked);
+  // A refused change (no real click): the answer's value and its error.
+  gpuState = Object.assign({}, gpuState, {error: '<b>Click the setting to change it.</b>'});
+  doc.getElementById('gpuModeAuto').click();
+  await tick();
+  assert.deepStrictEqual(gpuCalls.pop(), ['gpuInferenceSetMode', 'auto']);
+  assert(doc.getElementById('gpuModeOff').checked, 'shows the saved value');
+  assert.strictEqual(doc.getElementById('gpuStatus').textContent,
+                     '<b>Click the setting to change it.</b>');
+  assert.strictEqual(section.querySelectorAll('b').length, 0);
+
+  // Retry: nothing turned off any more, the button goes.
+  gpuState = {available: true, automatic: true, disabledBySwitch: true,
+              offForSession: false, drivers: []};
+  doc.getElementById('gpuRetryBtn').click();
+  await tick();
+  assert.deepStrictEqual(gpuCalls.pop(), ['gpuInferenceRetry']);
+  assert.strictEqual(section.querySelectorAll('.gpu-turned-off').length, 0);
+  assert.strictEqual(doc.getElementById('gpuRetryBtn').hidden, true);
+  assert(/--disable-gpu/.test(doc.getElementById('gpuNotes').textContent));
+
+  // A build without GPU inference: the section hides.
+  gpuState = {available: false, automatic: true, drivers: GPU_DRIVERS};
+  doc.getElementById('gpuModeOff').click();
+  await tick();
+  assert.strictEqual(section.hidden, true, 'hidden without GPU inference');
+
+  // Garbage answers don't break it.
+  for (const junk of [null, 'x', 7, {available: true, drivers: 'nope'},
+                      {available: true, drivers: [{}]}]) {
+    gpuState = junk;
+    doc.getElementById('gpuModeAuto').click();
+    await tick();
+  }
+  gpuState = {available: true, automatic: true, disabledBySwitch: false,
+              offForSession: false, drivers: GPU_DRIVERS};
+}
+
 // Model licence display (A13), shared by molt://ai and molt://ai-chat: the
 // licence name is text, only an http(s) licence URL becomes a link, the
 // link opens through openUrlInTab, and in the model menu it doesn't also
@@ -986,17 +1063,24 @@ const PAGES = [
      webAiSitesRemove: webAiSites,
      webAiSitesClear: webAiSites,
      webAiSitesSetEnabled: webAiSites,
+     // "Use the GPU for on-device AI" (script: kGpuInferenceSettingsJs).
+     gpuInferenceGetState: gpuInference,
+     gpuInferenceSetMode: gpuInference,
+     gpuInferenceRetry: gpuInference,
    },
    extraFiles: ['molt_webui_csp.h',
                 '../../../molt_ai/shield/molt_shield_settings_handler.cc',
-                'molt_web_ai_sites_handler.cc'],
+                'molt_web_ai_sites_handler.cc',
+                'molt_gpu_inference_handler.cc'],
    listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click',
                     '#shieldUpdateBtn:click', '#webAiClearBtn:click',
-                    '#webAiEnabled:change'],
+                    '#webAiEnabled:change', '#gpuModeAuto:change',
+                    '#gpuModeOff:change', '#gpuRetryBtn:click'],
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 10));
      await checkWebAISites(window);
+     await checkGpuSection(window);
      // MoltShield: hostile list/tab metadata renders as text, never markup.
      assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));
