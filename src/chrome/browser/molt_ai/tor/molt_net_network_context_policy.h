@@ -108,6 +108,18 @@ struct MoltNetNetworkContextSettings {
   // updates sent when the policy changes.
   bool split_http_auth_cache = false;
 
+  // Network quality: the network service keeps one estimate for the whole
+  // browser (net::NetworkQualityEstimator), fed by every network context's
+  // requests. A context's request scheduling (ResourceScheduler) holds back
+  // low-priority requests while the estimate says 3g or slower, so a page's
+  // load timing would depend on it, and other sites could move it by
+  // loading heavily; MoltNet's own requests would move what other windows
+  // read. When true, the context has no estimator: its requests don't feed
+  // the estimate and it schedules as on a network of unknown quality, the
+  // same for every MoltNet user (MoltNet's renderers report fixed values,
+  // third_party/blink/renderer/core/molt_fingerprinting/moltnet_network.h).
+  bool no_network_quality_estimator = false;
+
   // Private State Tokens: tokens an issuer gives on one site can be
   // detected and redeemed on any other (document.hasPrivateToken()), by
   // design. When true, issuance and redemption are blocked for the context
@@ -129,6 +141,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.no_shared_cache_entries = is_moltnet_profile;
   settings.hsts_top_level_navigations_only = is_moltnet_profile;
   settings.split_http_auth_cache = is_moltnet_profile;
+  settings.no_network_quality_estimator = is_moltnet_profile;
   settings.block_private_state_tokens = is_moltnet_profile;
   return settings;
 }
@@ -181,6 +194,8 @@ void ApplyMoltNetNetworkContextSettings(
       settings.no_shared_cache_entries;
   network_context_params.molt_hsts_top_level_navigations_only =
       settings.hsts_top_level_navigations_only;
+  network_context_params.molt_no_network_quality_estimator =
+      settings.no_network_quality_estimator;
 }
 
 }  // namespace molt_ai::tor

@@ -373,7 +373,7 @@ read. Upstream files are whole copies under `src/`, each hook marked
 
 | File | What to watch | From |
 |---|---|---|
-| `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_basic_and_digest_auth_only` (`HttpAuthStaticNetworkContextParams`), `[MinVersion=1] string? molt_socks_isolation_password` and the three `[MinVersion=1] bool molt_uncached_cert_verification`, `molt_no_shared_cache_entries`, `molt_hsts_top_level_navigations_only` (`NetworkContextParams`): last in their structs, so positional constructors still compile | #51, #55, #62 |
+| `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_basic_and_digest_auth_only` (`HttpAuthStaticNetworkContextParams`), `[MinVersion=1] string? molt_socks_isolation_password` and the four `[MinVersion=1] bool molt_uncached_cert_verification`, `molt_no_shared_cache_entries`, `molt_hsts_top_level_navigations_only`, `molt_no_network_quality_estimator` (`NetworkContextParams`): last in their structs, so positional constructors still compile | #51, #55, #62, network quality |
 | `services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom` | `[MinVersion=1] bool molt_isolate_each_cert_fetch` | #51 |
 | `third_party/blink/public/mojom/worker/shared_worker_info.mojom`, `.../service_worker/service_worker.mojom` | `[MinVersion=1] bool molt_shields_down`; `ServiceWorker.InitializeGlobalScope` change | #24 |
 | `chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom` | the generated union API (`GenerationParams.constraint`), `LoadEmbeddingModel`/`EmbeddingModel.Embed`, the projector handle, GPU fields | #15, #28, #30, #38, #52 |
@@ -390,7 +390,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `net/socket/socks_connect_job.cc` | per-site username (also for opaque top-level sites), the per-context password | #49, #55 |
 | `net/socket/connect_job.h` | `CommonConnectJobParams` holds a `raw_ptr` to the session's password | #55 |
 | `net/http/http_network_session.{h,cc}` | `HttpNetworkSessionParams` carries the password | #55 |
-| `services/network/network_context.cc` | copies the password; Basic/Digest-only auth in the constructor and after each browser-wide auth update; no `CachingCertVerifier`/`CoalescingCertVerifier` in `MakeURLRequestContext()`, `SharedResourceChecker::MoltDisableSharing()` in the constructor and `MoltSetUpgradeTopLevelNavigationsOnly()` after `Build()`, each only for MoltNet's params | #51, #55, #62 |
+| `services/network/network_context.cc` | copies the password; Basic/Digest-only auth in the constructor and after each browser-wide auth update; no `CachingCertVerifier`/`CoalescingCertVerifier` in `MakeURLRequestContext()`, `SharedResourceChecker::MoltDisableSharing()` in the constructor and `MoltSetUpgradeTopLevelNavigationsOnly()` after `Build()`, and no `set_network_quality_estimator()` in `MakeURLRequestContext()` (so `CreateURLLoaderFactory()` hands the `ResourceSchedulerClient` a null estimator), each only for MoltNet's params | #51, #55, #62, network quality |
 | `net/http/transport_security_state.{h,cc}` | a per-instance `kHstsTopLevelNavigationsOnly` in `GetSSLUpgradeDecision()`. `transport_security_state.h` is widely included | #62 |
 | `services/network/pervasive_resources/shared_resource_checker.h` | inline `MoltDisableSharing()` | #62 |
 | `services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.{h,cc}`, `services/cert_verifier/cert_verifier_service_factory.cc` | numbered fetches, `IsolationInfo::CreateTransient` in `Job::StartURLLoader` | #51 |
@@ -456,6 +456,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `core/css/media_values.cc`, `core/frame/screen.cc`, `core/events/pointer_event_factory.cc`, `core/input/touch_event_manager.cc`, `platform/text/platform_locale.*` and others | screen, touch and locale uniformity | #20 |
 | `modules/webgl/*`, `modules/webgpu/gpu.cc`, `platform/fonts/font_selector.*`, `font_fallback_list.cc`, `css/local_font_face_source.cc` | font allow-lists, uniform WebGL/WebGPU | #19 |
 | `content/public/browser/client_hints_controller_delegate.h` (a new virtual in every implementation), `chrome/browser/client_hints/BUILD.gn`, `core/loader/frame_fetch_context.cc`, worker files | client hints and per-document Shields decisions | #24 |
+| `platform/network/network_state_notifier.{h,cc}`, `core/molt_fingerprinting/moltnet_network.{h,cc}` | `SetUniformNetworkState()`, an early return in four setters, no per-host factor in `GetRandomMultiplier()` once pinned; a `std::atomic<bool>` member in a header much of Blink includes (expect a large Blink rebuild); `Configure(kUniform)` calls `PinUniformNetworkState()` | network quality |
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
 
 ### 4.8 WebUI handlers and the agents
@@ -566,7 +567,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `AgentPlanTest`, `AgentPromptTest` | #47, #55 |
   | `PageTranslatePlanTest`, `PageTranslateIoTest`, `PageTranslateMessagesTest`, `PageTranslationJobTest` | #48, #55 |
   | `TorControlProtocolTest`, `TorrcBuilderTest`, `PluggableTransportsTest`, `OnionLocationTest` | #6, #49 |
-  | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62 |
+  | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -581,7 +582,8 @@ extension enablement and `MediaRouterEnabled()`).
   *Expected:* all pass. This covers `MoltLetterboxTest` (the zoom,
   scrollbar and viewport cases), `MoltNetTextTest` (with the real Roboto
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
-  `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltFingerprintingTest`,
+  `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
+  `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
   `MoltFont*`, `MoltWebGLUniform` and `MoltNet*Values` suites.
@@ -593,15 +595,15 @@ pass except where the table below says otherwise (verify the filters).
 
 | Binary | `--gtest_filter` | From |
 |---|---|---|
-| `services_unittests` | `NetworkContextTest.*:NetworkContextTestWithMockTime.*:CertNetFetcherURLLoaderTest.*:CertVerifierServiceFactoryTest.*:CertVerifierServiceFactoryBuiltinVerifierTest.*:SharedResourceChecker*` | #51, #55, #62 |
+| `services_unittests` | `NetworkContextTest.*:NetworkContextTestWithMockTime.*:CertNetFetcherURLLoaderTest.*:CertVerifierServiceFactoryTest.*:CertVerifierServiceFactoryBuiltinVerifierTest.*:SharedResourceChecker*:ResourceScheduler*` | #51, #55, #62, network quality |
 | `net_unittests` | `SOCKSConnectJobTest.*:*SOCKS5*:ConnectJobTest.*:HttpNetworkSession*:HostResolverManager*:TransportSecurityState*:URLRequestTest*HSTS*:*Hsts*` | #49, #55, #2, #62 |
 | `components_unittests` | `AutocompleteControllerTest.*` | #44 |
 | `components_unittests` | `TranslateManagerTest.*:TranslateLanguageListTest.*` | #48 (expected failures) |
 | `unit_tests` | `TranslateServiceTest.*:TranslateBubbleViewTest.*` | #48 (expected failures) |
 | `unit_tests` | `ChromeBrowsingDataRemoverDelegateTest.*:ProfileResetterTest.*` | #32 |
 | `unit_tests` | `AboutFlagsTest.*:AboutFlagsHistogramTest.*` | #39, #45, #47 |
-| `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*` | #20, #27, #33, #37 |
-| `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*` | #37, #50 |
+| `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
+| `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 
 - [ ] Build and run each row above (from the PRs in the table):
@@ -937,6 +939,24 @@ macOS, and for the manual steps everywhere:
   site (opened past the HTTPS-Only warning) loading an image from that
   host's `http://` URL isn't upgraded (DevTools shows no internal 307),
   while a navigation to it still is.
+- [ ] Connection and network quality (network quality; FINGERPRINTING.md
+  *MoltNet: connection and network quality*): start the browser with
+  `--force-effective-connection-type=Slow-2G`. A regular window reports
+  `navigator.connection.effectiveType` "slow-2g" (and its `rtt` and
+  `downlink` vary a little between sites); a MoltNet window and a worker
+  in it report 4g, 200, 1.6 and `saveData` false on every site, and a
+  `change` listener never fires, also while another window loads a large
+  file. In MoltNet, an image with `loading=lazy` 2000 px below the fold
+  isn't fetched until scrolled near (4g's distance is 1250 px, slow-2g's
+  8000, so the regular window fetches it at once), text in a slow
+  `font-display: auto` web font stays hidden until the font arrives
+  rather than showing a fallback at once, and in `chrome://net-export` a
+  MoltNet page with many images over HTTP/2 has as many of them in flight
+  with the switch as without it (a regular window has fewer with it).
+  Without the switch:
+  regular windows still follow the network (e.g. DevTools' "Slow 4G"
+  throttling changes `effectiveType` there, and in MoltNet too while
+  DevTools emulates it).
 - [ ] Captive portals and authentication (from #51; §4 step 20): no
   `generate_204` request and no sign-in tab after a certificate error; a
   `401` offering only `Negotiate` and `NTLM` shows its page, one also
@@ -980,8 +1000,9 @@ Mac; use a real Linux host.
     Identity's order (a beforeunload page, an immediate second New
     Identity) (from #49);
   - the uniformity checks pass, including the scrollbar and media-query
-    exactness (from #33) and `text.metrics_whole` (from #37); `diff` shows
-    no difference in a promised value.
+    exactness (from #33), `text.metrics_whole` (from #37) and
+    `nav.connection`, `worker.connection` and `nav.connection_changes`
+    (network quality); `diff` shows no difference in a promised value.
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet

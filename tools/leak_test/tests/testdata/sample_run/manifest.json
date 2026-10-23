@@ -63,6 +63,13 @@
     "mq.pointer_fine": true,
     "mq.resolution_1dppx": true,
     "mq.viewport_exact": true,
+    "nav.connection": {
+     "downlink": 1.6,
+     "effectiveType": "4g",
+     "rtt": 200,
+     "saveData": false
+    },
+    "nav.connection_changes": 0,
     "nav.cpuPerformance": 0,
     "nav.deviceMemory": 8,
     "nav.doNotTrack": null,
@@ -141,7 +148,13 @@
     "win.outerHeight": 900,
     "win.outerWidth": 1400,
     "win.screenX": 0,
-    "win.screenY": 0
+    "win.screenY": 0,
+    "worker.connection": {
+     "downlink": 1.6,
+     "effectiveType": "4g",
+     "rtt": 200,
+     "saveData": false
+    }
    },
    "window": null,
    "zoom_actual": 1.0,

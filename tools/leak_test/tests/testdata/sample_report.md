@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 110 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 113 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -237,6 +237,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mq.pointer_fine is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.resolution_1dppx is uniform | FINGERPRINTING.md "Device pixel ratio" |
 | PASS | mq.viewport_exact is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
+| PASS | nav.connection is uniform | FINGERPRINTING.md "MoltNet: connection and network quality" |
+| PASS | nav.connection_changes is uniform | FINGERPRINTING.md "MoltNet: connection and network quality" |
 | PASS | nav.cpuPerformance is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | nav.deviceMemory is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | nav.doNotTrack is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
@@ -285,6 +287,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | win.outerWidth is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | win.screenX is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | win.screenY is uniform | FINGERPRINTING.md "Surface covered" |
+| PASS | worker.connection is uniform | FINGERPRINTING.md "MoltNet: connection and network quality" |
 | SKIP | webgl.p.ALIASED_LINE_WIDTH_RANGE is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
 | SKIP | webgl.p.MAX_COMBINED_TEXTURE_IMAGE_UNITS is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
 | SKIP | webgl.p.MAX_CUBE_MAP_TEXTURE_SIZE is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |

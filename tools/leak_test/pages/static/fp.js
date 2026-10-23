@@ -10,6 +10,14 @@
 'use strict';
 
 let lastMouse = null;
+// navigator.connection change events from page load to the end of the
+// collection (none in MoltNet: its values never change).
+let connectionChanges = 0;
+if (navigator.connection) {
+  navigator.connection.addEventListener('change', () => {
+    connectionChanges += 1;
+  });
+}
 addEventListener('mousemove', (e) => {
   lastMouse = {screenX: e.screenX, screenY: e.screenY, clientX: e.clientX,
     clientY: e.clientY};
@@ -348,6 +356,19 @@ async function collect() {
   v['nav.connection'] = n.connection ? {effectiveType:
       n.connection.effectiveType, rtt: n.connection.rtt, downlink:
       n.connection.downlink, saveData: n.connection.saveData} : null;
+  // The same in a dedicated worker, which has a navigator.connection of
+  // its own.
+  await step('worker.connection', () => new Promise((resolve) => {
+    const src = 'const c = navigator.connection; postMessage(c ? ' +
+        '{effectiveType: c.effectiveType, rtt: c.rtt, downlink: ' +
+        'c.downlink, saveData: c.saveData} : null);';
+    const w = new Worker(URL.createObjectURL(new Blob([src])));
+    w.onmessage = (e) => {
+      resolve(e.data);
+      w.terminate();
+    };
+    w.onerror = () => resolve('error');
+  }));
   if (n.userAgentData) {
     v['uad.platform'] = n.userAgentData.platform;
     v['uad.brands'] = n.userAgentData.brands.map((b) => b.brand + '/' +
@@ -513,6 +534,8 @@ async function collect() {
   await step('canvas.hash', canvasHash);
   await step('audio.hash', audioHash);
   Object.assign(v, window.mlGeometry());
+  v['nav.connection_changes'] = navigator.connection ? connectionChanges :
+      null;
   return v;
 }
 

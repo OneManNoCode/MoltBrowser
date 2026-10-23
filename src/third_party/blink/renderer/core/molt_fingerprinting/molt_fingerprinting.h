@@ -67,6 +67,9 @@
 //   MoltNet  navigator.deviceMemory, subresource client hints
 //            (frame_fetch_context.cc), navigator.userAgentData's
 //            high-entropy values                -> moltnet_device.h
+//   MoltNet  NetworkStateNotifier::SetUniformNetworkState (navigator.connection
+//              and Blink's own network-quality heuristics)
+//                                                   -> moltnet_network.h
 //   shields  DedicatedWorker::CreateGlobalScopeCreationParams
 //              -> ProvideShieldsDecisionToDedicatedWorker
 //            ServiceWorkerGlobalScope::InitializeGlobalScope (the

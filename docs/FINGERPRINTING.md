@@ -397,6 +397,7 @@ back/forward, and a MoltNet window with Shields off.
 | `AnalyserNode.get{Float,Byte}{Frequency,TimeDomain}Data()` | farbled | farbled | `analyser_node.cc` |
 | `navigator.hardwareConcurrency` (window and workers) | per site, in [2, real] | **4** | `navigator_base.cc`: `hardwareConcurrency` |
 | `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **8**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
+| `navigator.connection` (`effectiveType`, `rtt`, `downlink`, `saveData`; window and workers) and its `change` event; what Blink decides from the network quality (lazy-loading distances, the slow-network font and `document.write()` measures, media preload); request scheduling | the browser's estimate (`rtt` and `downlink` with a per-site factor) | **4g**, **200**, **1.6**, **false**, never changes; scheduling as on 4g ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.{h,cc}`: `SetUniformNetworkState`; network service: `network_context.cc` |
 | `screen.width/height/availWidth/availHeight` | real | viewport in CSS pixels rounded **down** to 200x100 steps, max 1400x900 | `screen.cc`: `GetRect` |
 | `screen.availLeft/availTop` | real | **0** | `screen.cc`: `GetRect` |
 | `screen.colorDepth/pixelDepth`, `screen.isExtended` | real | **24**, **false** | `screen.cc` |
@@ -1573,6 +1574,7 @@ for everyone:
 | Touch-event feature detection: `ontouchstart` and the other `ontouch*` attributes, `document.createEvent('TouchEvent')` | off on desktop, on with `--touch-events` | **off** | same |
 | `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **8** | `navigator_device_memory.cc` |
 | `navigator.cpuPerformance` | the CPU's tier, 1 to 4 | **0** ("unknown") | browser, `GetCpuPerformanceTierOverride` |
+| `navigator.connection` | the browser's network-quality estimate | **4g**, rtt **200**, downlink **1.6** ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.cc` |
 | `navigator.userAgentData.getHighEntropyValues()` | the real platform version, architecture, bitness, WoW64, full versions and form factors | **blank** | `navigator_ua.cc` |
 | Client hints | every hint a site asks for | **only** `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, `Save-Data` and the `Sec-CH-Prefers-*` hints | `frame_fetch_context.cc` (subresources); content's `client_hints.cc` and MoltNet's `ClientHintsControllerDelegate` (navigations) |
 
@@ -1799,6 +1801,188 @@ blank `getHighEntropyValues()`, and the hints a server receives on a
 subresource request after asking for every hint with `Accept-CH` and
 `Critical-CH` (the navigation's headers are in the run's server log). Still
 manual: touchscreens, `delegate-ch` and iframe delegation, Windows and macOS.
+
+## MoltNet: connection and network quality
+
+The network service keeps one network-quality estimate for the whole
+browser (`net::NetworkQualityEstimator`): an effective connection type
+(slow-2g to 4g), HTTP and transport round-trip times and a downlink
+throughput, worked out from the requests of every window. Content sends it
+to every renderer, together with the operating system's connection type
+and whether data saver is on, and Blink uses it in several places. In
+MoltNet windows that estimate described the user's own connection (mixed
+with Tor's), not something every MoltNet user shares; it moved while
+pages loaded, so two sites open at the same time, or one site before and
+after New Identity, could each see changes the other caused; and it
+decided how MoltNet's network context scheduled a page's requests. The
+`ECT`, `RTT` and `Downlink` client hints were already withheld ([Client
+hints](#client-hints)). Now nothing a MoltNet page can observe depends on
+the estimate:
+
+| What a page reads | Before, in MoltNet | Now |
+|---|---|---|
+| `navigator.connection.effectiveType` (windows and workers) | the browser's estimate | **`4g`** |
+| `navigator.connection.rtt` | the estimate, times a per-site and per-renderer factor between 0.9 and 1.1, in 50 ms steps | **200** |
+| `navigator.connection.downlink` | the same for the throughput, in 50 kbps steps up to 10 | **1.6** |
+| `navigator.connection.saveData`, the `Save-Data` header, `prefers-reduced-data` | false: Chromium never turns data saver on in an off-the-record profile | **false** |
+| `navigator.connection.type`, `downlinkMax` (exposed on Android and ChromeOS only) | the system's connection | **`unknown`**, **`Infinity`** |
+| `change` and `typechange` events on `navigator.connection` | whenever the estimate or the connection changed | **never** (DevTools' network emulation still fires them) |
+| Blink's own network-quality measures (below) | followed the estimate | **as on a 4g network**, always |
+| Request scheduling in MoltNet's network context | held back low-priority requests while the estimate said 3g or slower | **as on a network of unknown quality** (the same as on 4g), always |
+| `navigator.onLine`, `online` and `offline` events | the system's | unchanged |
+
+Normal and Incognito windows keep Chromium's behaviour, per-site factor
+included: a fixed value there would only make a user look like other
+MoltBrowser users, which normal windows don't try.
+
+### Blink's own uses
+
+Everything in Blink that depends on the estimate, the connection type or
+data saver reads it from the renderer's `NetworkStateNotifier`. At 152:
+`navigator.connection` (`modules/netinfo`); the `ECT`, `RTT`, `Downlink`
+and `Save-Data` request headers (`frame_fetch_context.cc`,
+`worker_fetch_context.cc`); `prefers-reduced-data` (`media_values.cc`);
+the lazy-loading distances of images and iframes, which are longer on
+slower networks (`lazy_load_media_observer.cc`,
+`lazy_load_frame_observer.cc`); the web-font measure that shows text in a
+fallback font at once on 3g and slower (`remote_font_face_source.cc`);
+low-priority iframes on slow networks
+(`frame_resource_fetcher_properties.cc`); blocking scripts inserted with
+`document.write()` on 2g (`document_write_intervention.cc`); preloading
+only metadata of media on cellular connections (`html_media_element.cc`);
+and preloading eligibility under data saver
+(`anchor_element_interaction_tracker.cc`). Blink's own request scheduler
+(`ResourceLoadScheduler`) doesn't read the estimate at 152. Each of these
+changes what a page can see or time, so in MoltNet each now behaves as on
+a 4g network for every user.
+
+### What MoltNet does
+
+**One renderer-side choke point.** When a MoltNet renderer starts,
+`Configure(kUniform)` pins its `NetworkStateNotifier` to fixed values
+(`moltnet_network.{h,cc}`, through one new upstream method,
+`NetworkStateNotifier::SetUniformNetworkState`), before any document or
+worker exists. From then on the updates content sends
+(`SetWebConnection`, `SetNetworkQuality`, `SetSaveDataEnabled` and the
+holdback experiment's `SetNetworkQualityWebHoldback`) change nothing, so
+no change event fires, and `RoundRtt`/`RoundMbps` add no per-site factor,
+so every site reads the same numbers. Every reader above, in every
+window, iframe and worker of the process, sees the fixed values; none of
+them needed a hook of its own. The on-line state isn't pinned, and
+DevTools' network emulation still applies on top while it is on.
+
+**The network context.** MoltNet's network context has no network-quality
+estimator (`NetworkContextParams.molt_no_network_quality_estimator`, set by
+`molt_net_network_context_policy.h`). Its request scheduler
+(`ResourceScheduler`, which at 152 holds back low-priority requests while
+the estimate says 3g or slower) treats every MoltNet page as on a network
+of unknown quality, which schedules as on 4g; and MoltNet's own requests
+no longer feed the estimate that regular windows read.
+
+**The values** (`moltnet_network_values.h`):
+
+* `effectiveType` **4g**: the fastest class and what nearly every desktop
+  reports; the class in which Blink applies none of its slow-network
+  measures; and the one in which sites serve their normal pages, as they
+  do in Firefox, Safari and Tor Browser, which have no
+  `navigator.connection`.
+* `rtt` **200** and `downlink` **1.6**: Chromium's own typical network
+  quality for 4g (175 ms and 1600 kbps in `net/nqe`), which Blink already
+  reports for a type when it shows the type without the measurement (the
+  network-quality web holdback), on NetInfo's 50 ms and 50 kbps grid.
+  Chromium calls any HTTP round trip under 272 ms 4g, so the three agree.
+  A round trip through Tor is usually slower, which Chromium would call
+  3g; but 3g turns on the slow-network measures above and makes sites
+  serve their low-bandwidth pages, which Tor's throughput usually doesn't
+  call for. A moderate downlink makes adaptive players that start from it
+  begin at a moderate quality and adapt from there.
+* `saveData` **false**: data saver only exists on Android, and Chromium
+  never turns it on for an off-the-record profile, which MoltNet's is, so
+  the user's setting never counted in MoltNet. Pinning it also keeps the
+  `Save-Data` header of subresource requests (never sent in MoltNet) and
+  `saveData` in agreement.
+* `type` **unknown** and `downlinkMax` **Infinity**: what Chromium itself
+  reports when it hides the connection type (its `NetInfoConstantType`
+  feature). Not a cellular type, so media keep their usual preload.
+
+**`navigator.onLine` stays as upstream.** It and the `online` and
+`offline` events come from whether the operating system has a network at
+all, not from the estimate; a site can't change it; while a MoltNet page
+loads, it is `true` for everybody; and when the network goes down, every
+site sees its requests fail at that moment anyway. Pages use it to show
+that they are offline and to retry.
+
+**What it costs MoltNet users.** Sites that adapt to the connection
+always see a 4g connection with a moderate downlink, so on a slow circuit
+they don't switch to lighter pages by themselves (as in Tor Browser);
+adaptive video still adapts to the throughput it measures. Blink's
+slow-network measures never apply: text set in a web font waits for the
+font as on a fast network, and lazy images and iframes load at the 4g
+distances, Chromium's shortest. MoltNet's network context schedules
+requests as on 4g whatever the circuit does.
+
+### Which contexts
+
+The renderer values cover the whole MoltNet renderer process (windows,
+iframes, dedicated, shared and service workers), like the other uniform
+values, and follow the kill switch. The network-context setting covers
+every network context of a MoltNet profile; it is part of MoltNet's
+network settings ([MOLTNET_COMPLIANCE.md](MOLTNET_COMPLIANCE.md) §2,
+*Shared network state*), not of fingerprinting protection, so the kill
+switch doesn't turn it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_network_values.h` | the fixed values, std-only (+ `moltnet_network_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_network.{h,cc}` | the values as Blink's `NetworkState` and the pin, called from `Configure(kUniform)` (+ `moltnet_network_test.cc`) |
+| `chrome/browser/molt_ai/tor/molt_net_network_context_policy.h` | `no_network_quality_estimator` for MoltNet's network contexts (+ `molt_net_network_context_policy_unittest.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`):
+`platform/network/network_state_notifier.{h,cc}`
+(`SetUniformNetworkState`, an early return in `SetWebConnection`,
+`SetNetworkQuality`, `SetNetworkQualityWebHoldback` and
+`SetSaveDataEnabled`, and no factor in `GetRandomMultiplier` once
+pinned); `services/network/network_context.cc` (`MakeURLRequestContext`:
+no `set_network_quality_estimator` for MoltNet) and
+`services/network/public/mojom/network_context.mojom` (the new field).
+
+### Verification
+
+Standalone (no Chromium checkout): the real `network_state_notifier.cc`
+with the hooks, `moltnet_network.cc`, `moltnet_network_test.cc` (8 tests:
+the fixed state, every site reading the same rounded values where a
+regular notifier still varies them, the browser's updates changing
+nothing and firing no event, the on-line state still following the
+system, DevTools' emulation, one change at pinning, an unpinned notifier
+unchanged) and `moltnet_network_values_unittest.cc` (6 tests: the enum
+values, agreement with the estimator's thresholds and typical values,
+NetInfo's grid) pass against stand-ins of the 152 base and WTF types with
+g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`); the hooked
+file warns exactly where the unchanged 152 file does under
+`-Wshorten-64-to-32 -Wimplicit-int-conversion -Wshadow
+-Wexit-time-destructors -Wglobal-constructors`. The network-context hook,
+extracted verbatim from `network_context.cc` with the
+`ResourceSchedulerClient` creation that reads its result, passes 2 tests
+against stand-ins, and the policy's unit tests pass against the mojom
+stand-in. 32 mutants of the hooks, values and policy (each hook removed
+or inverted, the per-site factor kept, the on-line state overwritten, the
+real values kept, each value changed, the policy applied to every
+profile or to none) all fail these checks. Every changed C++ file
+type-checks against Chromium 152's headers (`tools/compile_check`, with
+the mojom regenerated). **Needs the build machine:** compiling and linking,
+`blink_unittests` (`MoltNetNetworkTest.*`), `molt_ai_unittests`, and in a
+browser started with `--force-effective-connection-type=Slow-2G` (which
+makes the estimate slow-2g): a regular window reports slow-2g and its
+lazy images and iframes load early, while a MoltNet window and its
+workers report 4g, 200, 1.6 and false, load lazy content at the 4g
+distances, don't show fallback text at once while a `font-display: auto`
+web font loads, and don't hold back low-priority requests
+(`chrome://net-export`); no `change` event in MoltNet while another window
+loads heavily. **Automated** by [`tools/leak_test`](LEAK_TESTING.md):
+`navigator.connection` in a MoltNet window and in a dedicated worker, and
+no `change` event while the page runs.
 
 ## Fonts
 
@@ -2960,10 +3144,12 @@ Honest list; anything not in the table above is not covered.
   touch-event feature detection no longer show it
   ([Touchscreens](#touchscreens)). Pen pressure, tilt and twist stay real
   (touch contact and coordinates are uniform, see [Touches](#touches)).
-* `navigator.connection` (`effectiveType`, `rtt`, `downlink`) still shows
-  the browser's network-quality estimate, which isn't Tor's; the matching
-  `ECT`, `RTT` and `Downlink` client hints are no longer sent
-  ([Client hints](#client-hints)).
+* (Closed: `navigator.connection`, its `change` event and what Blink and
+  MoltNet's network context decide from the network quality no longer
+  follow the browser's estimate, see [connection and network
+  quality](#moltnet-connection-and-network-quality).) What is left there:
+  `navigator.onLine` and the `online` and `offline` events still follow
+  the operating system, on purpose.
 * (Closed: permission and content-setting state, fonts and other user
   settings MoltNet inherited from the regular profile, see [settings from
   the regular profile](#moltnet-settings-from-the-regular-profile).) What
@@ -3120,6 +3306,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/webgl_uniform.{h,cc}`, `gpu_uniformity.{h,cc}` | MoltNet WebGL baselines (pure, + `webgl_uniform_unittest.cc`) and their Blink glue, incl. WebGPU (+ `gpu_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/letterbox.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_letterbox.h`, `molt_letterbox_view.{h,cc}` | MoltNet screen size in the page's CSS pixels, pixel ratio, scrollbar thickness, whole viewport lengths (+ `letterbox_test.cc`); the browser-side letterbox geometry at any zoom and scale factor, margins, re-layout on zoom and page changes, background tabs (+ `molt_letterbox_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.{h,cc}`, `moltnet_device.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}`, `molt_net_client_hints.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_window.cc` | MoltNet memory, client hints, `userAgentData` (pure, + `moltnet_device_values_unittest.cc`; glue, + `moltnet_device_test.cc`); touch / pointer / hover, CPU tier and navigation client hints in the browser (+ `molt_net_device_values_unittest.cc`); the size new windows open at |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_network_values.h`, `moltnet_network.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_network_context_policy.h` | MoltNet's connection and network quality (pure, + `moltnet_network_values_unittest.cc`; glue, + `moltnet_network_test.cc`); no network-quality estimator in MoltNet's network context (+ `molt_net_network_context_policy_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
@@ -3165,6 +3352,9 @@ MoltNet device and client hints: `frame_fetch_context.cc`,
 `content/public/browser/client_hints_controller_delegate.{h,cc}`,
 `content/browser/client_hints/client_hints.cc`,
 `chrome/browser/client_hints/client_hints_factory.cc` and `BUILD.gn`;
+MoltNet connection and network quality:
+`platform/network/network_state_notifier.{h,cc}`,
+`services/network/network_context.cc`, `network_context.mojom`;
 MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
@@ -3240,7 +3430,9 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    controls](#moltnet-touches-screens-orientation-and-form-controls)),
    renderer strings and the default text locale in en-US ([the browser's
    UI language](#moltnet-the-browsers-ui-language)), a touchscreen-less
-   look ([Touchscreens](#touchscreens)), and
+   look ([Touchscreens](#touchscreens)),
    permission state and user settings that no longer come from the regular
    profile ([settings from the regular
-   profile](#moltnet-settings-from-the-regular-profile)).
+   profile](#moltnet-settings-from-the-regular-profile)), and one fixed
+   connection and network quality ([connection and network
+   quality](#moltnet-connection-and-network-quality)).

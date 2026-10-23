@@ -2977,8 +2977,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     }
     builder.SetHttpAuthHandlerFactory(
         network_service_->CreateHttpAuthHandlerFactory(this));
-    builder.set_network_quality_estimator(
-        network_service_->network_quality_estimator());
+    // MoltBrowser: not for MoltNet, whose pages must not depend on the
+    // browser-wide estimate, nor move it.
+    if (!params_->molt_no_network_quality_estimator) {
+      builder.set_network_quality_estimator(
+          network_service_->network_quality_estimator());
+    }
   }
   trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
 
