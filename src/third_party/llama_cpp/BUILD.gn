@@ -365,6 +365,11 @@ if (current_cpu == "x64") {
     # information (like every llama.cpp file).
     configs += _llama_cpp_cfi_configs
     deps = _ggml_x86_level_targets
+
+    # It includes ggml-cpu's internal headers (for upstream's declarations
+    # of the 40 functions), which aren't written for Chromium's warnings.
+    # The file itself builds clean with -Wall -Wextra.
+    cflags_cc = [ "-w" ]
   }
 }
 
