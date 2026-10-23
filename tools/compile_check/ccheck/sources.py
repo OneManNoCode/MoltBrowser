@@ -73,6 +73,9 @@ SUBPROJECTS = {
                                "", None),
     "third_party/webrtc": ("https://github.com/webrtc-mirror/webrtc", "",
                            None),
+    "third_party/libyuv": ("https://github.com/lemenkov/libyuv", "", None),
+    "third_party/openscreen/src": ("https://github.com/chromium/openscreen",
+                                   "", None),
     # Substitutes (no GitHub mirror of Chromium's copy):
     # dom_distiller_js/dist is a CIPD package built from dom-distiller;
     # its proto/ comes from the repository's HEAD.
@@ -90,7 +93,8 @@ SUBPROJECTS = {
 # Subprojects whose pinned commit is missing from the mirror: their headers
 # come from the mirror's HEAD instead (a stand-in; reported as such). Public
 # C APIs that change slowly only.
-HEAD_FALLBACK = {"third_party/pdfium"}
+HEAD_FALLBACK = {"third_party/pdfium", "third_party/webrtc",
+                 "third_party/libyuv", "third_party/openscreen/src"}
 
 
 def log(msg):

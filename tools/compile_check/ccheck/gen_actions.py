@@ -44,7 +44,8 @@ def _ensure_py_deps(tree):
         paths += [x for x in tree.glob_upstream(p)
                   if x.endswith((".py", ".tmpl", ".jinja", ".json", ".gni",
                                  ".pyl", ".h", ".cc", ".txt", ".json5",
-                                 "VERSION", ".pdl", ".spec", ".yaml"))
+                                 "VERSION", ".pdl", ".spec", ".yaml",
+                                 ".template"))
                   or "/templates/" in x]
     tree.materialize(paths)
     _py_deps_done = True
@@ -175,6 +176,12 @@ def _gen_inputs(interp, t):
     return out
 
 
+def _perfetto_plugin_target(t):
+    """perfetto_proto_library() actions: zero_gen (protozero) and cpp_gen
+    (cppgen)."""
+    return t.name.endswith(("zero_gen", "cpp_gen"))
+
+
 def run_action(tree, interp, t, depth=0):
     """Returns None on success, else a reason."""
     if depth < 4:
@@ -199,6 +206,12 @@ def run_action(tree, interp, t, depth=0):
                 continue
             if a in ("--js-out-dir", "--protoc-gen-js", "--ts-out-dir",
                      "--protoc-gen-ts"):
+                skip = 1
+                continue
+            if a in ("--plugin", "--plugin-out-dir", "--plugin-options") \
+                    and not _perfetto_plugin_target(t):
+                # A generator plugin Chromium builds (not perfetto's):
+                # the C++ protoc output is all a syntax check needs.
                 skip = 1
                 continue
             out.append(a)

@@ -162,6 +162,11 @@ def do_gen(args, tree, missing):
                                        config.INCLUDE_DIRS)
         report["buildflags"] = {"written": w, "failed": f}
         written += len(w)
+        # Not a buildflag_header() after all (e.g. Blink's generated
+        # runtime_enabled_features.h): leave it to the actions below.
+        for n in f:
+            missing.setdefault("other", {})[n] = \
+                missing["buildflags"][n]
         print("buildflags: %d written, %d failed" % (len(w), len(f)))
     names = sorted(missing.get("mojom", {}))
     if names:
@@ -176,14 +181,21 @@ def do_gen(args, tree, missing):
     # Everything else: the GN action that writes it, else a known
     # generator (gen_misc), else it stays missing.
     other = {}
+    includers = {}
     for kind in ("proto", "pbzero", "grit", "vector_icons", "other"):
-        for name in missing.get(kind, {}):
+        for name, incs in missing.get(kind, {}).items():
             other[name] = kind
+            includers[name] = incs
     done = set()
     for name, kind in sorted(other.items()):
         if gen_misc.handles_exclusively(name):
             continue
-        for rel in _gen_candidates(name):
+        cands = _gen_candidates(name)
+        # A generated file including a bare name: next to it.
+        for inc in includers.get(name, []):
+            if inc.startswith("gen:") and "/" in inc and "/" not in name:
+                cands.append(inc[4:].rsplit("/", 1)[0] + "/" + name)
+        for rel in cands:
             if produce([rel]):
                 done.add(name)
                 written += 1
@@ -283,8 +295,12 @@ def classify(r, graph, gen_dir):
                 head = ""
             if "STAND-IN" in head:
                 stand_ins.append("grit stand-in")
-        elif n.startswith("src:third_party/pdfium/"):
-            stand_ins.append("pdfium (mirror HEAD)")
+        else:
+            for mount in ("third_party/pdfium", "third_party/webrtc",
+                          "third_party/libyuv", "third_party/openscreen/src",
+                          "third_party/dom_distiller_js/dist"):
+                if n.startswith("src:" + mount + "/"):
+                    stand_ins.append(mount + " (mirror HEAD)")
     stand_ins = sorted(set(stand_ins))
     if missing:
         name = missing[0]["msg"].split("'")[1] if "'" in missing[0]["msg"] \

@@ -341,12 +341,10 @@ class Scanner:
                         continue
                     r = self.resolve(name, key, angle)
                     if r is None:
-                        # A generated file's sibling ("foo.pb.h" from
-                        # gen/x/bar.pb.h) is generated next to it.
-                        if key[0] == "gen" and not angle and "/" not in name \
-                                and "/" in key[1]:
-                            name = key[1].rsplit("/", 1)[0] + "/" + name
-                        self.missing.setdefault(name, set()).add(key[1])
+                        # Includers in gen/ are marked, so a bare name can
+                        # be looked for next to its (generated) includer.
+                        self.missing.setdefault(name, set()).add(
+                            ("gen:" + key[1]) if key[0] == "gen" else key[1])
                     else:
                         edges.append(r)
                         if r not in seen:

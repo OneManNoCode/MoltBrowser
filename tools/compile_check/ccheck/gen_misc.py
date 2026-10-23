@@ -94,6 +94,7 @@ def cxx_bridge_header(tree, interp, name):
     src = name[:-2]
     if not tree.exists(src):
         raise RuntimeError("%s not found" % src)
+    tree.materialize([src])
     exe = TOOLS["cxxbridge"]()
     r = subprocess.run([str(exe), str(tree.tree_dir / src), "--header"],
                        capture_output=True, text=True)

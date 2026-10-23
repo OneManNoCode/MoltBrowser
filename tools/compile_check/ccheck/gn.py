@@ -518,9 +518,14 @@ class Interp:
             return self.binop(op, self.eval(e[2], scope, ctx),
                               self.eval(e[3], scope, ctx))
         if k == "member":
+            # Like gn, a scope's member is looked up in its containing
+            # scopes too (a template's invoker sees the invoking scope).
             base = self.eval(e[1], scope, ctx)
             if isinstance(base, Scope):
-                return base.vars.get(e[2], UNKNOWN)
+                try:
+                    return base.get(e[2])
+                except KeyError:
+                    return UNKNOWN
             return UNKNOWN
         if k == "index":
             base = self.eval(e[1], scope, ctx)
@@ -600,7 +605,7 @@ class Interp:
                 return scope.has(a[1])
             if a[0] == "member":
                 base = self.eval(a[1], scope, ctx)
-                return isinstance(base, Scope) and a[2] in base.vars
+                return isinstance(base, Scope) and base.has(a[2])
             return UNKNOWN
         if name == "getenv":
             return ""
@@ -661,6 +666,31 @@ class Interp:
             if all(isinstance(x, str) for x in (v, a, b)):
                 return v.replace(a, b)
             return UNKNOWN
+        if name == "process_file_template":
+            srcs, tmpls = ev(0), ev(1)
+            if isinstance(tmpls, str):
+                tmpls = [tmpls]
+            if not isinstance(srcs, list) or not isinstance(tmpls, list):
+                return UNKNOWN
+            out = []
+            for src in srcs:
+                if not isinstance(src, str):
+                    return UNKNOWN
+                a = self.abspath(src, ctx)
+                d, f = a.rsplit("/", 1)
+                vals = {"source": src, "source_file_part": f,
+                        "source_name_part": f.rsplit(".", 1)[0],
+                        "source_dir": d,
+                        "source_root_relative_dir": d[2:],
+                        "source_gen_dir": OUT + "/gen/" + d[2:],
+                        "source_out_dir": OUT + "/obj/" + d[2:]}
+                for t in tmpls:
+                    if not isinstance(t, str):
+                        return UNKNOWN
+                    for k, v in vals.items():
+                        t = t.replace("{{%s}}" % k, v)
+                    out.append(t)
+            return out
         if name == "get_target_outputs":
             label = ev(0)
             if not isinstance(label, str) or ctx.get("targets") is None:
