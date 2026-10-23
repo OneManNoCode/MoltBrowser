@@ -482,6 +482,17 @@ class SourcesStateTest(unittest.TestCase):
         self.assertEqual(sources.stand_in_mounts(self.tree.work),
                          {self.mount: "webrtc (near)"})
 
+    def test_legacy_head_fallback_to_a_mirror(self):
+        # Before sources.json the mount came from the mirror's HEAD
+        # (head_fallback.json); now a mirror has the pinned commit.
+        self.populate()
+        repos = self.tree.work / "repos"
+        repos.mkdir(parents=True, exist_ok=True)
+        (repos / "head_fallback.json").write_text(json.dumps(
+            {self.mount: "c0"}))
+        self.tree._record(self.mount, "git https://x/webrtc c1", True, None)
+        self.assertFalse(self.files.exists())
+
 
 class ReportTest(unittest.TestCase):
     def test_classify_names_stand_ins(self):

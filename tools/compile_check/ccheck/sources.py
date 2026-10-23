@@ -420,8 +420,10 @@ class SourceTree:
         old = state.get(mount, {}).get("key")
         d = self.tree_dir / mount
         # A work dir from before sources.json: what's there came from a
-        # mirror at the pin, or from a stand-in.
-        legacy = old is None and d.exists() and not key.startswith("git ")
+        # mirror at the pin, or from a stand-in (the mirror's HEAD, listed
+        # in head_fallback.json, or a substitute).
+        legacy = old is None and d.exists() and (
+            not key.startswith("git ") or mount in self._legacy_heads())
         if (old is not None and old != key) or legacy:
             log("subproject %s: source changed (%s -> %s); dropping its "
                 "files" % (mount, old or "earlier stand-in", key))
@@ -447,6 +449,13 @@ class SourceTree:
             state[mount] = {"key": key, "exact": exact, "desc": desc}
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(json.dumps(state, indent=1, sort_keys=True))
+
+    def _legacy_heads(self):
+        try:
+            return set(json.loads((self.work / "repos" /
+                                   "head_fallback.json").read_text()))
+        except (OSError, ValueError):
+            return set()
 
     def validate_mounts(self):
         """Resolves every mount used before (recorded, or with files here),
