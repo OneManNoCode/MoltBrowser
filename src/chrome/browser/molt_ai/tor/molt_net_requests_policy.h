@@ -6,8 +6,9 @@
 //
 // Most of what a MoltNet page, tab or chat does already uses that context:
 // navigations, subresources, workers, downloads and "Save page as",
-// favicons, certificate (AIA) fetches, captive-portal checks, payment
-// manifests, Lens, the chat's /pdf fetch and model downloads
+// favicons, certificate (AIA) fetches (each on a one-off network key,
+// molt_net_network_context_policy.h), payment manifests, Lens, the chat's
+// /pdf fetch and model downloads
 // (docs/MOLTNET_COMPLIANCE.md §2, "Requests outside Tor"). This file
 // decides the rest: browser features that, for a MoltNet window, would
 // send something through another context (the system network context, the

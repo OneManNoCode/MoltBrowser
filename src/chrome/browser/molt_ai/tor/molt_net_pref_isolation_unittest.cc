@@ -22,6 +22,7 @@
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/embedder_support/pref_names.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
@@ -61,6 +62,7 @@ TEST(MoltNetIsolationTest, PinnedNamesMatchChromiumsConstants) {
            prefs::kPrivacySandboxM1FledgeEnabled,
            prefs::kPrivacySandboxM1AdMeasurementEnabled,
            prefs::kProtocolHandlerPerOriginAllowedProtocols,
+           embedder_support::kAlternateErrorPagesEnabled,
            shield::prefs::kRemoveTrackingParams,
        }) {
     EXPECT_TRUE(IsMoltNetPinnedPref(name)) << name;
@@ -192,6 +194,37 @@ TEST(MoltNetIsolationTest, ExternalProtocolExemptionsStayInTheirProfile) {
                        base::DictValue().Set("examplemeet", true)));
   EXPECT_EQ(regular.GetDict(prefs::kProtocolHandlerPerOriginAllowedProtocols),
             allowed);
+}
+
+// Captive-portal detection follows "Use a web service to help resolve
+// navigation errors" (CaptivePortalService reads it from the tab's
+// profile). With MoltBrowser's defaults, a regular profile that switched it
+// on doesn't switch it on in MoltNet, and a MoltNet window can't switch it
+// on for the regular profile.
+TEST(MoltNetIsolationTest, CaptivePortalDetectionStaysOffInMoltNet) {
+  static constexpr const char* kAlternateErrorPages =
+      embedder_support::kAlternateErrorPagesEnabled;
+  sync_preferences::TestingPrefServiceSyncable regular;
+  // Chromium registers it on (ProfileNetworkContextService); MoltBrowser
+  // makes off the default (molt_privacy_prefs.cc), which MoltNet pins.
+  regular.registry()->RegisterBooleanPref(kAlternateErrorPages, true);
+  regular.registry()->SetDefaultPrefValue(kAlternateErrorPages,
+                                          base::Value(false));
+  regular.SetBoolean(kAlternateErrorPages, true);
+
+  std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
+      CreateMoltNetPrefService(&regular, nullptr);
+  EXPECT_FALSE(moltnet->GetBoolean(kAlternateErrorPages));
+  // Held in MoltNet's own store, so later changes don't show either.
+  EXPECT_TRUE(
+      moltnet->FindPreference(kAlternateErrorPages)->IsUserControlled());
+  regular.SetBoolean(kAlternateErrorPages, false);
+  regular.SetBoolean(kAlternateErrorPages, true);
+  EXPECT_FALSE(moltnet->GetBoolean(kAlternateErrorPages));
+
+  regular.SetBoolean(kAlternateErrorPages, false);
+  moltnet->SetBoolean(kAlternateErrorPages, true);
+  EXPECT_FALSE(regular.GetBoolean(kAlternateErrorPages));
 }
 
 TEST_F(MoltNetPrefServiceTest, PolicyStillWins) {

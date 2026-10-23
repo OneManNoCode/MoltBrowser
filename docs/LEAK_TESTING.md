@@ -226,6 +226,7 @@ paths that reached the onion server.
 | `quic` | `Alt-Svc: h3` on the onion, fetches again, a canary name | no UDP/QUIC |
 | `mdns` | `.local` names | no mDNS, no IGMP/MLD join of the mDNS group |
 | `cert_fetch` | an https onion whose certificate lacks its intermediate, with AIA, OCSP and CRL URLs | no lookup of those names outside Tor; whether AIA came through Tor is shown |
+| `cert_fetch_b` | the same certificate on the second onion site (so the same AIA URLs) | nothing outside Tor; read with `cert_fetch` by `identity.cert_fetch_circuits` |
 | `builtin_ai` | `availability()` and `create()` (with a user gesture) of every built-in AI API | `LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator` unavailable; no component or model download host looked up |
 | `geolocation` | `getCurrentPosition()` | error 1 at once (no prompt); no location provider host |
 | `extension` | a test extension allowed in Incognito (content script, web-accessible resource, `tabs`, `webRequest`) | the MoltNet page isn't marked, `chrome.runtime` is absent, the resource can't be fetched, and its background never sees a MoltNet tab or request (it would look up a canary name if it did) (step 16) |
@@ -248,7 +249,7 @@ the report. Anything else is a leak.
 |---|---|---|
 | Separate identity | a cookie set for the onion in the regular profile (DevTools `Storage.setCookies`) doesn't show in MoltNet; a MoltNet cookie is gone after its last window closed and MoltNet reopened in a new browser context | 6 |
 | New Identity | `moltnet.newIdentity`: a new browser context, the cookie gone, the canvas readback changed (new farbling seed); no page of the old identity left open, although it asked "Leave site?" with a user activation; a second New Identity right after the first opens its window only once Tor can have switched circuits again (at least 8 s later; Tor applies NEWNYM at most every 10 s); exit IP before/after if online | 7 |
-| Per-site circuits | the two onion sites' SOCKS5 connections carry different usernames, and every one carries one; two pages their servers sandbox (`Content-Security-Policy: sandbox`, opaque origins) on two sites use different usernames too (`identity.sandboxed_circuits`) | 8 |
+| Per-site circuits | the two onion sites' SOCKS5 connections carry different usernames, and every one carries one; two pages their servers sandbox (`Content-Security-Policy: sandbox`, opaque origins) on two sites use different usernames too (`identity.sandboxed_circuits`); the certificate fetches made for the two certificate tests use usernames of their own, none shared between the two sites and none a page used, and the second site's check makes a fetch of its own (`identity.cert_fetch_circuits`) | 8 |
 | The relays are real | the panel's guard, middle and exit fingerprints (`moltnet.getCircuit`) are in the consensus MoltNet's Tor downloaded | 10 |
 | On Tor | the panel's *Verify* and `check.torproject.org/api/ip` in the MoltNet tab (online) | 1 |
 | Fail-closed | the `tor` cgroup is killed; the next MoltNet navigation fails with a proxy/SOCKS error and nothing leaves directly | 5 |

@@ -465,6 +465,28 @@
    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/aaaaaa1111/x.html"
   },
   {
+   "end": 1760000015.5,
+   "id": "cert_fetch",
+   "ipv4": "198.51.100.31",
+   "ipv6": "2001:db8::25",
+   "nonce": "kkkkkk1212",
+   "settle_end": 1760000017.5,
+   "start": 1760000015.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/kkkkkk1212/x.html"
+  },
+  {
+   "end": 1760000018.0,
+   "id": "cert_fetch_b",
+   "ipv4": "198.51.100.32",
+   "ipv6": "2001:db8::26",
+   "nonce": "llllll3434",
+   "settle_end": 1760000020.0,
+   "start": 1760000017.5,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/llllll3434/x.html"
+  },
+  {
    "end": 1760000028.0,
    "id": "webrtc",
    "ipv4": "198.51.100.12",

@@ -48,6 +48,18 @@ its recorded sample run.
 - The Tor control connection waits with `poll()` instead of `select()` on
   POSIX, and frames replies and asynchronous events separately.
 
+**Fixed since.** The other three (the remaining medium and two low), in a
+follow-up the same day:
+
+- Certificate fetches made while checking a MoltNet site's certificate
+  (missing intermediate certificates, revocation checks) each get a
+  one-off network key: never cached, never merged with another fetch, and
+  on a Tor circuit of their own.
+- MoltNet windows don't check for captive portals and never open a
+  network sign-in page.
+- MoltNet windows offer sites Basic and Digest authentication only, never
+  NTLM or Negotiate (Kerberos).
+
 ## 2026-10-22: PRs #26-#45 (October 2026)
 
 **Scope.** The code merged in pull requests #26 to #45, in this order of
