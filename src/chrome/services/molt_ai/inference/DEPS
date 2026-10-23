@@ -7,4 +7,15 @@ include_rules = [
   "+third_party/llama_cpp/chromium/llama_guard.h",
   # Image input: llama.cpp's multimodal library (its public header only).
   "+third_party/llama_cpp/tools/mtmd/mtmd.h",
+  # Which x86-64 CPU kernel level ggml runs
+  # (docs/design/SANDBOXED_INFERENCE.md section 12).
+  "+third_party/llama_cpp/chromium/ggml-cpu-x86-dispatch.h",
 ]
+
+specific_include_rules = {
+  # Runs each level's kernels through ggml's type traits.
+  "x86_cpu_kernels_unittest\.cc": [
+    "+third_party/llama_cpp/ggml/include/ggml.h",
+    "+third_party/llama_cpp/ggml/include/ggml-cpu.h",
+  ],
+}

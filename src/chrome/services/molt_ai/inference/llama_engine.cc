@@ -89,6 +89,7 @@
 #include <utility>
 
 #include "chrome/services/molt_ai/inference/engine/context_budget.h"
+#include "chrome/services/molt_ai/inference/engine/cpu_kernels.h"
 #include "chrome/services/molt_ai/inference/engine/gpu_offload.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
@@ -97,6 +98,10 @@
 #include "third_party/llama_cpp/chromium/llama_guard.h"
 #include "third_party/llama_cpp/include/llama.h"
 #include "third_party/llama_cpp/tools/mtmd/mtmd.h"
+
+#if defined(GGML_MOLTBROWSER_X86_CPU_KERNELS)
+#include "third_party/llama_cpp/chromium/ggml-cpu-x86-dispatch.h"
+#endif
 
 namespace molt_ai {
 
@@ -549,15 +554,82 @@ struct LlamaEngine::DecodeParams {
   const MediaPrompt* media = nullptr;
 };
 
-// static
-void LlamaEngine::InitBackendOnce() {
-  static std::once_flag once;
-  std::call_once(once, []() { llama_backend_init(); });
+namespace {
+
+std::atomic<bool> g_allow_software_gpu_for_testing{false};
+
+// SetCpuKernelsForTesting(): -1 for this CPU's own choice, else an
+// X86CpuKernels value.
+std::atomic<int> g_cpu_kernels_for_testing{-1};
+
+#if defined(GGML_MOLTBROWSER_X86_CPU_KERNELS)
+molt_llama::X86CpuKernels ToDispatch(X86CpuKernels kernels) {
+  switch (kernels) {
+    case X86CpuKernels::kX86_64_V2:
+      return molt_llama::X86CpuKernels::kX86_64_V2;
+    case X86CpuKernels::kAvx:
+      return molt_llama::X86CpuKernels::kAvx;
+    case X86CpuKernels::kAvx2:
+      return molt_llama::X86CpuKernels::kAvx2;
+  }
+  return molt_llama::X86CpuKernels::kX86_64_V2;
 }
 
-namespace {
-std::atomic<bool> g_allow_software_gpu_for_testing{false};
+// The level this process should run: the test override, or the best this
+// CPU and its OS support.
+std::optional<X86CpuKernels> WantedCpuKernels() {
+  const int forced = g_cpu_kernels_for_testing.load();
+  if (forced >= 0) return static_cast<X86CpuKernels>(forced);
+  return HostX86CpuKernels();
+}
+#endif
+
 }  // namespace
+
+// static
+bool LlamaEngine::CpuSupported() {
+#if defined(GGML_MOLTBROWSER_X86_CPU_KERNELS)
+  return WantedCpuKernels().has_value();
+#else
+  return true;
+#endif
+}
+
+// static
+bool LlamaEngine::InitBackendOnce() {
+#if defined(GGML_MOLTBROWSER_X86_CPU_KERNELS)
+  // ggml's x86 kernels for this CPU (design section 12), before anything
+  // computes. Set at every load (it's one store), so a test can change it
+  // between loads.
+  const std::optional<X86CpuKernels> kernels = WantedCpuKernels();
+  if (!kernels) return false;
+  molt_llama::UseX86CpuKernels(ToDispatch(*kernels));
+#endif
+  static std::once_flag once;
+  std::call_once(once, []() { llama_backend_init(); });
+  return true;
+}
+
+// static
+std::string LlamaEngine::CpuKernelsName() {
+#if defined(GGML_MOLTBROWSER_X86_CPU_KERNELS)
+  switch (molt_llama::CurrentX86CpuKernels()) {
+    case molt_llama::X86CpuKernels::kX86_64_V2:
+      return X86CpuKernelsName(X86CpuKernels::kX86_64_V2);
+    case molt_llama::X86CpuKernels::kAvx:
+      return X86CpuKernelsName(X86CpuKernels::kAvx);
+    case molt_llama::X86CpuKernels::kAvx2:
+      return X86CpuKernelsName(X86CpuKernels::kAvx2);
+  }
+#endif
+  return std::string();
+}
+
+// static
+void LlamaEngine::SetCpuKernelsForTesting(
+    std::optional<X86CpuKernels> kernels) {
+  g_cpu_kernels_for_testing.store(kernels ? static_cast<int>(*kernels) : -1);
+}
 
 // static
 void LlamaEngine::SetAllowSoftwareGpuForTesting(bool allow) {
@@ -592,7 +664,10 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
     return result;
   }
 
-  InitBackendOnce();
+  if (!InitBackendOnce()) {
+    result.status = EngineLoadStatus::kUnsupportedCpu;
+    return result;
+  }
   if (ggml_backend_dev_count() == 0) {
     result.status = EngineLoadStatus::kBackendUnavailable;
     return result;
@@ -838,6 +913,7 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   result.description.train_context_tokens = ToU32(sizing_in.n_ctx_train);
   result.description.vocab_size = ToU32(llama_vocab_n_tokens(m->vocab));
   result.description.cpu_repack_used = repack && !all_on_gpu;
+  result.description.cpu_kernels = CpuKernelsName();
   result.description.vision = m->mtmd != nullptr;
   result.description.gpu_status = gpu_status;
   if (gpu_device) {
