@@ -98,7 +98,13 @@ GOOD_FP = {
                   '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
     'nav.userAgent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
                      '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
-    'storage.quota': 1717986918, 'media.devices': {'audiooutput': 1},
+    'storage.quota': 10737418240, 'media.devices': {'audiooutput': 1},
+    'storage.quota_over_usage': 10737418240,
+    'audio.render_quantum_hardware': 128,
+    'mq.color_gamut_srgb': True, 'mq.color_gamut_p3': False,
+    'mq.color_gamut_rec2020': False, 'mq.dynamic_range_high': False,
+    'mq.video_dynamic_range_high': False, 'mq.color_bits': 8,
+    'mq.monochrome': False,
     'canvas.hash': '0123456789abcdef01234567',
 }
 
@@ -111,6 +117,7 @@ def geometry(w, h):
             'win.screenX': 0, 'win.screenY': 0, 'win.devicePixelRatio': 1,
             'mq.resolution_1dppx': True, 'mq.device_size_matches': True,
             'mq.viewport_exact': True, 'scrollbar.box': 16,
+            'scrollbar.overlay': False,
             'screen.colorDepth': 24, 'screen.pixelDepth': 24,
             'screen.isExtended': False,
             'screen.orientation.type': 'landscape-primary' if w > h else

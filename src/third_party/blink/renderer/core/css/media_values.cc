@@ -24,6 +24,7 @@
 #include "third_party/blink/renderer/core/media_type_names.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/preferences/preference_overrides.h"
@@ -211,6 +212,10 @@ float MediaValues::CalculateDevicePixelRatio(LocalFrame* frame) {
 bool MediaValues::CalculateDeviceSupportsHDR(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetPage());
+  // MoltBrowser: MoltNet pages see a standard-dynamic-range display.
+  if (const auto uniform = molt_fingerprinting::UniformDisplaySupportsHDR()) {
+    return *uniform;
+  }
   return frame->GetPage()
       ->GetChromeClient()
       .GetScreenInfo(*frame)
@@ -220,6 +225,11 @@ bool MediaValues::CalculateDeviceSupportsHDR(LocalFrame* frame) {
 int MediaValues::CalculateColorBitsPerComponent(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetPage());
+  // MoltBrowser: MoltNet pages see an 8-bit colour display.
+  if (const auto uniform =
+          molt_fingerprinting::UniformDisplayColorBitsPerComponent()) {
+    return *uniform;
+  }
   const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   if (screen_info.is_monochrome) {
@@ -231,6 +241,11 @@ int MediaValues::CalculateColorBitsPerComponent(LocalFrame* frame) {
 int MediaValues::CalculateMonochromeBitsPerComponent(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetPage());
+  // MoltBrowser: MoltNet pages see a colour display.
+  if (const auto uniform =
+          molt_fingerprinting::UniformDisplayMonochromeBitsPerComponent()) {
+    return *uniform;
+  }
   const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   if (!screen_info.is_monochrome) {
@@ -401,6 +416,10 @@ ColorSpaceGamut MediaValues::CalculateColorGamut(LocalFrame* frame) {
       frame->GetPage()->GetMediaFeatureOverrides();
   std::optional<ColorSpaceGamut> override_value =
       overrides ? overrides->GetColorGamut() : std::nullopt;
+  // MoltBrowser: MoltNet pages see an sRGB display (DevTools' override wins).
+  if (!override_value) {
+    override_value = molt_fingerprinting::UniformDisplayColorGamut();
+  }
   return override_value.value_or(color_space_utilities::GetColorSpaceGamut(
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame)));
 }

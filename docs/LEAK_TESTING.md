@@ -274,7 +274,8 @@ level, and in one browser launch per device scale factor
   `clientX/Y`; the `width`/`height` media queries and `vw`/`vh` exactly
   `innerWidth` x `innerHeight` (strict comparisons included); a classic
   scrollbar 16 CSS pixels wide (0 with overlay scrollbars; 15 or 17 by
-  design at 33% and 67% zoom, which the default zoom list leaves out).
+  design at 33% and 67% zoom, which the default zoom list leaves out);
+  overlay scrollbars on macOS only, classic ones on Linux and Windows.
 * **Once per launch:** UTC (also `Date` strings), en-US (`Intl`, numbers,
   `navigator.language(s)`, `Accept-Language`), 4 cores, 8 GB,
   `cpuPerformance` 0, `navigator.connection` (4g, rtt 200, downlink 1.6,
@@ -292,7 +293,11 @@ level, and in one browser launch per device scale factor
   `getScreenDetails()` rejected, `persist()` false, autoplay
   `allowed-muted`, no Shared Storage (removed upstream at 156; the kit
   also accepts an older build's rejected `set()`), no third-party cookie,
-  WebRTC off, the built-in AI APIs unavailable, the reduced user agent.
+  WebRTC off, the built-in AI APIs unavailable, the reduced user agent,
+  an sRGB display with a standard dynamic range and 8 bits per colour (the
+  `color-gamut`, `dynamic-range`, `video-dynamic-range`, `color` and
+  `monochrome` queries), a storage quota reported as 10 GiB over the usage,
+  and `renderQuantumSize` 128 for `renderSizeHint: "hardware"`.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

@@ -195,6 +195,12 @@ def check_rule(values, rule, os_name=None):
     elif op == 'regex':
         status = PASS if (isinstance(value, str) and
                           re.search(expected, value)) else FAIL
+    elif op == 'per_os_eq':
+        if os_name not in expected:
+            return _result(key, INFO, expected, value, doc,
+                           'no expectation for %s' % os_name)
+        expected = expected[os_name]
+        status = PASS if value == expected else FAIL
     else:
         return _result(key, SKIP, expected, value, doc, 'unknown rule ' + op)
     return _result(key, status, expected, value, doc, note)

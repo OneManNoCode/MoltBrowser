@@ -602,6 +602,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 128, expected [128, \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.render_quantum_hardware",
+   "status": "PASS",
+   "title": "audio.render_quantum_hardware is uniform"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a71.11",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"allowed-muted\", expected allowed-muted"
@@ -781,6 +792,50 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 8, expected 8"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.color_bits",
+   "status": "PASS",
+   "title": "mq.color_bits is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.color_gamut_p3",
+   "status": "PASS",
+   "title": "mq.color_gamut_p3 is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.color_gamut_rec2020",
+   "status": "PASS",
+   "title": "mq.color_gamut_rec2020 is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.color_gamut_srgb",
+   "status": "PASS",
+   "title": "mq.color_gamut_srgb is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
@@ -795,6 +850,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.dynamic_range_high",
+   "status": "PASS",
+   "title": "mq.dynamic_range_high is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
@@ -803,6 +869,17 @@
    "id": "uniform.mq.hover_hover",
    "status": "PASS",
    "title": "mq.hover_hover is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.monochrome",
+   "status": "PASS",
+   "title": "mq.monochrome is uniform"
   },
   {
    "details": null,
@@ -839,6 +916,17 @@
    "id": "uniform.mq.resolution_1dppx",
    "status": "PASS",
    "title": "mq.resolution_1dppx is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.video_dynamic_range_high",
+   "status": "PASS",
+   "title": "mq.video_dynamic_range_high is uniform"
   },
   {
    "details": null,
@@ -1156,6 +1244,20 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual false, expected false",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual false, expected false",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.scrollbar.overlay",
+   "status": "PASS",
+   "title": "scrollbar.overlay is uniform"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a71.11",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"rejected\", expected [\"rejected\", \"absent\"]"
@@ -1175,6 +1277,17 @@
    "id": "uniform.storage.persist",
    "status": "PASS",
    "title": "storage.persist is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 10737418240, expected 10737418240"
+   ],
+   "group": "uniformity",
+   "id": "uniform.storage.quota_over_usage",
+   "status": "PASS",
+   "title": "storage.quota_over_usage is uniform"
   },
   {
    "details": null,
@@ -2420,7 +2533,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 113,
+  "PASS": 123,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2436,6 +2549,7 @@
     "ai.Summarizer": "unavailable",
     "ai.Translator": "unavailable",
     "ai.Writer": "unavailable",
+    "audio.render_quantum_hardware": 128,
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
@@ -2466,11 +2580,18 @@
     "mouse.screen_equals_client": true,
     "mq.any_hover_none": false,
     "mq.any_pointer_coarse": false,
+    "mq.color_bits": 8,
+    "mq.color_gamut_p3": false,
+    "mq.color_gamut_rec2020": false,
+    "mq.color_gamut_srgb": true,
     "mq.device_size_matches": true,
+    "mq.dynamic_range_high": false,
     "mq.hover_hover": true,
+    "mq.monochrome": false,
     "mq.pointer_coarse": false,
     "mq.pointer_fine": true,
     "mq.resolution_1dppx": true,
+    "mq.video_dynamic_range_high": false,
     "mq.viewport_exact": true,
     "nav.connection": {
      "downlink": 1.6,
@@ -2505,9 +2626,11 @@
     "screen.width": 1400,
     "screenDetails.error": "NotAllowedError",
     "scrollbar.box": 16,
+    "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
     "storage.persist": false,
-    "storage.quota": 1717986918,
+    "storage.quota": 10737418240,
+    "storage.quota_over_usage": 10737418240,
     "text.metrics_whole": true,
     "touch.createEvent": "NotSupportedError",
     "touch.ontouchstart": false,
@@ -2592,6 +2715,7 @@
     "screen.pixelDepth": 24,
     "screen.width": 1200,
     "scrollbar.box": 16,
+    "scrollbar.overlay": false,
     "win.devicePixelRatio": 1,
     "win.innerHeight": 600,
     "win.innerWidth": 1200,
@@ -2630,6 +2754,7 @@
     "screen.pixelDepth": 24,
     "screen.width": 1401,
     "scrollbar.box": 16,
+    "scrollbar.overlay": false,
     "win.devicePixelRatio": 1,
     "win.innerHeight": 900,
     "win.innerWidth": 1401,
@@ -2669,6 +2794,7 @@
     "screen.pixelDepth": 24,
     "screen.width": 1400,
     "scrollbar.box": 16,
+    "scrollbar.overlay": false,
     "win.devicePixelRatio": 1,
     "win.innerHeight": 800,
     "win.innerWidth": 1400,

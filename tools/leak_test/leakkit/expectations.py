@@ -19,6 +19,7 @@ fp.js reports. Operators (uniformity.py):
   only_hints          only the allowed client hints reach the server
   orientation         landscape-primary iff screen.width > screen.height
   regex               the string matches
+  per_os_eq           equals expected[<the run's OS>] (INFO on another OS)
 
 DIFF_KEYS lists what two runs (two machines, two OS locales) must report
 identically even where the docs promise no fixed value; INFO_KEYS are
@@ -132,6 +133,14 @@ S_AI = FP + ' "Built-in AI APIs"'
 S_FONTS = FP + ' "Fonts"'
 S_TEXT = FP + ' "Text metrics (MoltNet)"'
 S_NETQ = FP + ' "MoltNet: connection and network quality"'
+S_156 = FP + ' "Re-checked at Chromium 156"'
+
+# MoltNet's scrollbar style: each platform's default (moltnet_values.h,
+# UsesOverlayScrollbars).
+OVERLAY_SCROLLBARS = {'macOS': True, 'Windows': False, 'Linux': False}
+# The reported storage quota over the usage in an off-the-record profile
+# (storage/browser/quota: 10 GiB at 156).
+STATIC_QUOTA = 10 * 1024 ** 3
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
@@ -161,6 +170,7 @@ GEOMETRY_RULES = (
     # CSS pixels aren't whole device pixels and this reads 15 or 17
     # (FINGERPRINTING.md "Zoom").
     ('scrollbar.box', 'in', [0, 16], S_LETTER),
+    ('scrollbar.overlay', 'per_os_eq', OVERLAY_SCROLLBARS, S_156),
     ('screen.colorDepth', 'eq', 24, S_SURFACE),
     ('screen.pixelDepth', 'eq', 24, S_SURFACE),
     ('screen.isExtended', 'eq', False, S_SURFACE),
@@ -229,6 +239,16 @@ FULL_RULES = (
     ('ai.Rewriter', 'in', ['unavailable', 'absent'], S_AI),
     ('ai.Translator', 'in', ['unavailable', 'absent'], S_AI),
     ('ua.reduced', 'regex', r'Chrome/\d+\.0\.0\.0 ', S_DEVICE),
+    # The display's colour: sRGB, standard dynamic range, 8 bits.
+    ('mq.color_gamut_srgb', 'eq', True, S_156),
+    ('mq.color_gamut_p3', 'eq', False, S_156),
+    ('mq.color_gamut_rec2020', 'eq', False, S_156),
+    ('mq.dynamic_range_high', 'eq', False, S_156),
+    ('mq.video_dynamic_range_high', 'eq', False, S_156),
+    ('mq.color_bits', 'eq', 8, S_156),
+    ('mq.monochrome', 'eq', False, S_156),
+    ('storage.quota_over_usage', 'eq', STATIC_QUOTA, S_156),
+    ('audio.render_quantum_hardware', 'in', [128, 'absent'], S_156),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -255,8 +275,8 @@ DIFF_KEYS = (
     'fonts.visible', 'fonts.widths', 'form.widths', 'css.default_font_size',
     'intl.datetime', 'intl.calendar', 'intl.numberingSystem',
     'mq.prefers_color_scheme_dark', 'mq.prefers_reduced_motion',
-    'mq.forced_colors', 'mq.prefers_contrast_more', 'mq.color_gamut_p3',
-    'mq.dynamic_range_high', 'webgl.extensions', 'webgl2.extensions',
+    'mq.forced_colors', 'mq.prefers_contrast_more', 'webgl.extensions',
+    'webgl2.extensions',
     'webgl.vendor', 'webgl.renderer', 'nav.pdfViewerEnabled',
     'nav.plugins', 'doc.characterSet_undeclared',
     # The same fonts measure the same on every machine of an OS (on Linux,

@@ -421,6 +421,15 @@ class Uniformity(unittest.TestCase):
         self.assertEqual(self.check(square, ('screen.orientation.type',
                                              'orientation', None, ''))[
             'status'], 'PASS')
+        rule = ('scrollbar.overlay', 'per_os_eq', ex.OVERLAY_SCROLLBARS, '')
+        self.assertEqual(self.check(geo, rule)['status'], 'PASS')
+        self.assertEqual(self.check(geo, rule, 'Windows')['status'], 'PASS')
+        self.assertEqual(self.check(geo, rule, 'macOS')['status'], 'FAIL')
+        overlay = dict(geo, **{'scrollbar.overlay': True})
+        self.assertEqual(self.check(overlay, rule, 'macOS')['status'], 'PASS')
+        self.assertEqual(self.check(overlay, rule)['status'], 'FAIL')
+        self.assertEqual(self.check(overlay, rule, 'unknown')['status'],
+                         'INFO')
 
     def test_webgl_rules(self):
         rule = ('p', 'baseline_max', 8192, '')

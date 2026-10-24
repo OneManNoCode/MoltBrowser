@@ -141,5 +141,29 @@ TEST(MoltNetValuesTest, FormLocaleIsConsistent) {
   EXPECT_EQ(std::strlen(kNegativeSuffix), 0u);
 }
 
+// The display the media queries describe agrees with screen.colorDepth and
+// is the plain one: sRGB, standard dynamic range, colour (not monochrome).
+TEST(MoltNetValuesTest, TheDisplayIsAPlainSrgbScreen) {
+  EXPECT_EQ(kDisplayGamut, DisplayGamut::kSRGB);
+  EXPECT_FALSE(kDisplayHighDynamicRange);
+  EXPECT_EQ(3 * kDisplayColorBitsPerComponent,
+            static_cast<int>(kUniformColorDepth));
+  // (color) and (monochrome) can't both match: a colour screen reports no
+  // monochrome bits.
+  EXPECT_GT(kDisplayColorBitsPerComponent, 0);
+  EXPECT_EQ(kDisplayMonochromeBitsPerComponent, 0);
+}
+
+// Each platform's default scrollbar style: overlay where Chromium turns
+// overlay scrollbars on by default, classic elsewhere.
+TEST(MoltNetValuesTest, ScrollbarStyleIsThePlatformDefault) {
+  EXPECT_TRUE(UsesOverlayScrollbars(FontPlatform::kMac));
+  EXPECT_TRUE(UsesOverlayScrollbars(FontPlatform::kAndroid));
+  EXPECT_FALSE(UsesOverlayScrollbars(FontPlatform::kWindows));
+  EXPECT_FALSE(UsesOverlayScrollbars(FontPlatform::kLinux));
+  // An out-of-range value (a future platform) gets classic scrollbars.
+  EXPECT_FALSE(UsesOverlayScrollbars(static_cast<FontPlatform>(0x7f)));
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting::moltnet

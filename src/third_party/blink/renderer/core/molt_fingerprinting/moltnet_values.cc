@@ -14,4 +14,16 @@ float PointerPressure(bool buttons_down) {
   return buttons_down ? 0.5f : 0.0f;
 }
 
+bool UsesOverlayScrollbars(FontPlatform platform) {
+  switch (platform) {
+    case FontPlatform::kMac:
+    case FontPlatform::kAndroid:
+      return true;
+    case FontPlatform::kWindows:
+    case FontPlatform::kLinux:
+      return false;
+  }
+  return false;
+}
+
 }  // namespace blink::molt_fingerprinting::moltnet
