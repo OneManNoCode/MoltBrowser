@@ -68,6 +68,9 @@ chrome/browser/media/webrtc/webrtc_logging_controller.cc.patch
 chrome/browser/metrics/chrome_feature_list_creator.cc.patch
 chrome/browser/net/net_error_diagnostics_dialog_win.cc.patch
 chrome/browser/net/profile_network_context_service.cc.patch
+chrome/browser/net/proxy_config_monitor.cc.patch
+chrome/browser/net/proxy_config_monitor.h.patch
+chrome/browser/payments/chrome_payment_request_delegate.cc.patch
 chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc.patch
 chrome/browser/prefs/session_startup_pref.cc.patch
 chrome/browser/profile_resetter/profile_resetter.cc.patch
@@ -97,6 +100,7 @@ chrome/browser/translate/chrome_translate_client.cc.patch
 chrome/browser/translate/translate_service.cc.patch
 chrome/browser/ui/BUILD.gn.patch
 chrome/browser/ui/actions/chrome_action_id.h.patch
+chrome/browser/ui/autofill/chrome_autofill_client.cc.patch
 chrome/browser/ui/bookmarks/bookmark_stats.cc.patch
 chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc.patch
 chrome/browser/ui/browser_actions.cc.patch
