@@ -19,6 +19,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/common/pref_names.h"
+#include "components/policy/core/common/policy_pref_names.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
@@ -46,6 +47,10 @@ const char* const kWatchedPrefs[] = {
     prefs::kSafeBrowsingEnabled,
     // Blob URL partitioning (PartitionedBlobUrlUsage).
     prefs::kPartitionedBlobUrlUsage,
+    // Incognito's availability (IncognitoModeAvailability, IncognitoEnabled,
+    // and an account becoming supervised). Parental controls and Isolated
+    // Mode are read once per browser run, as Chromium reads them.
+    policy::policy_prefs::kIncognitoModeAvailability,
 };
 
 class Guard : public ProfileObserver {

@@ -98,10 +98,18 @@ class MoltNetRouting {
                                 uint16_t socks_port,
                                 std::string* error);
 
+  // Empty if a standard Incognito window may open for |profile|'s original
+  // profile (Incognito's availability covers MoltNet: the
+  // IncognitoModeAvailability policy, supervision, parental controls,
+  // Isolated Mode; molt_net_live_policy.h). Otherwise the error to show
+  // instead of opening a MoltNet window. Checked before Tor starts, and with
+  // the rest of the settings (SettingsError()).
+  static std::string IncognitoPolicyError(Profile* profile);
+
   // Empty if |moltnet_profile|'s settings are MoltNet's own: its Tor proxy
   // with nothing outranking it or applied on top (no policy, flag or
-  // override rules), the leak controls, blob URL partitioning
-  // (molt_net_live_policy.h). Otherwise the error to show. ApplyRoutingPrefs()
+  // override rules), the leak controls, blob URL partitioning, and Incognito
+  // available (molt_net_live_policy.h). Otherwise the error to show. ApplyRoutingPrefs()
   // runs it with |socks_port| (the proxy must point at that port); while
   // MoltNet is open it runs without, whenever one of these settings changes
   // (molt_net_live_guard.h), and then the port MoltNet last wrote counts:

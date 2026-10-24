@@ -11,6 +11,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/enterprise/isolated_mode/isolated_mode_settings_service_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/chrome_switches.h"
@@ -88,6 +89,12 @@ bool IncognitoModePrefs::ShouldOpenSubsequentBrowsersInIncognito(
 
 // static
 bool IncognitoModePrefs::CanOpenBrowser(Profile* profile) {
+  // MoltBrowser: a MoltNet window is a private window: it may open while
+  // Incognito is forced and may not while Incognito is off
+  // (molt_net_live_policy.h).
+  if (molt_ai::tor::IsMoltNetProfile(profile)) {
+    return GetAvailability(profile) != IncognitoModeAvailability::kDisabled;
+  }
   switch (GetAvailability(profile)) {
     case IncognitoModeAvailability::kEnabled:
       return true;

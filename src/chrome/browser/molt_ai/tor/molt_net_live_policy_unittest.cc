@@ -22,6 +22,7 @@ MoltNetProfileSettings MoltNetsOwnSettings() {
   settings.proxy_is_moltnets_own = true;
   settings.leak_controls_in_place = true;
   settings.blob_urls_partitioned = true;
+  settings.incognito = MoltNetProfileSettings::Incognito::kStandard;
   return settings;
 }
 
@@ -133,6 +134,32 @@ TEST(MoltNetLivePolicyTest, UnpartitionedBlobUrlsRefuse) {
             MoltNetSettingsCheck::kBlobUrlsUnpartitioned);
 }
 
+// Incognito's availability covers MoltNet.
+TEST(MoltNetLivePolicyTest, IncognitoOffRefuses) {
+  MoltNetProfileSettings settings = MoltNetsOwnSettings();
+  settings.incognito = MoltNetProfileSettings::Incognito::kOff;
+  EXPECT_EQ(CheckMoltNetSettings(settings),
+            MoltNetSettingsCheck::kIncognitoOff);
+  settings.incognito =
+      MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode;
+  EXPECT_EQ(CheckMoltNetSettings(settings),
+            MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode);
+}
+
+TEST(MoltNetLivePolicyTest, IncognitoCheckAlone) {
+  // Before Tor starts, only Incognito's availability is known.
+  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kStandard),
+            MoltNetSettingsCheck::kOk);
+  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kOff),
+            MoltNetSettingsCheck::kIncognitoOff);
+  EXPECT_EQ(CheckMoltNetIncognito(
+                MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode),
+            MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode);
+  // Nobody filled it in: refused.
+  EXPECT_EQ(MoltNetProfileSettings().incognito,
+            MoltNetProfileSettings::Incognito::kOff);
+}
+
 TEST(MoltNetLivePolicyTest, TheProxyIsCheckedFirst) {
   // With several reasons, the message names the proxy, as before the blob
   // URL check was added.
@@ -145,6 +172,12 @@ TEST(MoltNetLivePolicyTest, TheProxyIsCheckedFirst) {
   settings.proxy.override_rule_count = 0;
   EXPECT_EQ(CheckMoltNetSettings(settings),
             MoltNetSettingsCheck::kLeakControlsOverridden);
+  // Incognito last: a routing problem is named before it.
+  settings = MoltNetsOwnSettings();
+  settings.blob_urls_partitioned = false;
+  settings.incognito = MoltNetProfileSettings::Incognito::kOff;
+  EXPECT_EQ(CheckMoltNetSettings(settings),
+            MoltNetSettingsCheck::kBlobUrlsUnpartitioned);
 }
 
 TEST(MoltNetLivePolicyTest, MessagesNameTheCause) {
@@ -161,13 +194,23 @@ TEST(MoltNetLivePolicyTest, MessagesNameTheCause) {
       MoltNetSettingsError(MoltNetSettingsCheck::kBlobUrlsUnpartitioned);
   EXPECT_NE(blob.find("PartitionedBlobUrlUsage"), std::string::npos);
   EXPECT_NE(blob.find("policy"), std::string::npos);
+  const std::string off =
+      MoltNetSettingsError(MoltNetSettingsCheck::kIncognitoOff);
+  EXPECT_NE(off.find("IncognitoModeAvailability"), std::string::npos);
+  EXPECT_NE(off.find("MoltNet"), std::string::npos);
+  const std::string isolated = MoltNetSettingsError(
+      MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode);
+  EXPECT_NE(isolated.find("Isolated Mode"), std::string::npos);
+  EXPECT_NE(off, isolated);
 }
 
 TEST(MoltNetLivePolicyTest, EveryRefusalHasAMessage) {
   for (MoltNetSettingsCheck check :
        {MoltNetSettingsCheck::kProxyNotMoltNets,
         MoltNetSettingsCheck::kLeakControlsOverridden,
-        MoltNetSettingsCheck::kBlobUrlsUnpartitioned}) {
+        MoltNetSettingsCheck::kBlobUrlsUnpartitioned,
+        MoltNetSettingsCheck::kIncognitoOff,
+        MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode}) {
     const std::string error = MoltNetSettingsError(check);
     EXPECT_FALSE(error.empty());
     // Shown in a dialog: one sentence, plain text.

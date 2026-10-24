@@ -468,8 +468,14 @@ void OpenImpl(Profile* from,
     return;
   }
   // Before Tor starts: there is nothing to wait for if sites can't be kept
-  // apart (GetOrCreateMoltNetProfile() checks again).
+  // apart, or if Incognito is off (GetOrCreateMoltNetProfile() checks
+  // again).
   if (std::string error = MoltNetRouting::ProcessWidePartitioningError();
+      !error.empty()) {
+    std::move(done).Run(false, std::move(error));
+    return;
+  }
+  if (std::string error = MoltNetRouting::IncognitoPolicyError(from);
       !error.empty()) {
     std::move(done).Run(false, std::move(error));
     return;

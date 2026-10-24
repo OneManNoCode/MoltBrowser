@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/memory/singleton.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/browser/url_list/policy_blocklist_service.h"
@@ -65,7 +66,11 @@ ChromePolicyBlocklistServiceFactory::BuildServiceInstanceForBrowserContext(
       policy::policy_prefs::kUrlAllowlist);
 
   std::unique_ptr<policy::URLBlocklistManager> incognito_url_blocklist_manager;
-  if (profile->IsIncognitoProfile()) {
+  // MoltBrowser: MoltNet follows Incognito's URL lists too, so where an
+  // administrator turned Incognito off for all but some sites
+  // (IncognitoModeAvailability with IncognitoModeUrlAllowlist), MoltNet
+  // allows those sites only (molt_net_incognito_parity.h).
+  if (molt_ai::tor::GetsIncognitoProtections(profile)) {
     incognito_url_blocklist_manager =
         std::make_unique<policy::URLBlocklistManager>(
             pref_service, policy::policy_prefs::kIncognitoModeUrlBlocklist,

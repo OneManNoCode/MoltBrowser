@@ -22,6 +22,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_proxy_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
@@ -195,11 +196,29 @@ bool BlobUrlsPartitioned(PrefService* prefs) {
   return pref->GetValue()->is_bool() && pref->GetValue()->GetBool();
 }
 
+// Whether a standard Incognito window may open for |original|, as Chromium
+// decides it (molt_net_live_policy.h): the IncognitoModeAvailability policy
+// (and IncognitoEnabled), supervision and the platform's parental controls,
+// and Enterprise Isolated Mode replacing Incognito.
+MoltNetProfileSettings::Incognito ReadIncognito(const Profile* original) {
+  switch (IncognitoModePrefs::GetIncognitoModeType(original)) {
+    case IncognitoModePrefs::IncognitoModeType::kStandard:
+      return MoltNetProfileSettings::Incognito::kStandard;
+    case IncognitoModePrefs::IncognitoModeType::kEnterprise:
+      return MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode;
+    case IncognitoModePrefs::IncognitoModeType::kNone:
+    case IncognitoModePrefs::IncognitoModeType::kNumTypes:
+      break;
+  }
+  return MoltNetProfileSettings::Incognito::kOff;
+}
+
 // What the settings check reads (molt_net_live_policy.h). With
 // |socks_port|, MoltNet's proxy must also point at that port.
 MoltNetProfileSettings ReadMoltNetSettings(
-    PrefService* prefs,
+    Profile* moltnet_profile,
     std::optional<uint16_t> socks_port) {
+  PrefService* prefs = moltnet_profile->GetPrefs();
   MoltNetProfileSettings settings;
   settings.proxy = ReadProfileProxyPrefs(prefs);
   settings.proxy_is_moltnets_own =
@@ -207,6 +226,7 @@ MoltNetProfileSettings ReadMoltNetSettings(
                  : MoltNetsOwnSocksPort(prefs).has_value();
   settings.leak_controls_in_place = LeakPrefsInPlace(prefs);
   settings.blob_urls_partitioned = BlobUrlsPartitioned(prefs);
+  settings.incognito = ReadIncognito(moltnet_profile->GetOriginalProfile());
   return settings;
 }
 
@@ -318,8 +338,17 @@ std::string MoltNetRouting::SettingsError(Profile* moltnet_profile,
   if (!IsMoltNetProfile(moltnet_profile)) {
     return "Not a MoltNet profile";
   }
-  return MoltNetSettingsError(CheckMoltNetSettings(
-      ReadMoltNetSettings(moltnet_profile->GetPrefs(), socks_port)));
+  return MoltNetSettingsError(
+      CheckMoltNetSettings(ReadMoltNetSettings(moltnet_profile, socks_port)));
+}
+
+// static
+std::string MoltNetRouting::IncognitoPolicyError(Profile* profile) {
+  if (!profile) {
+    return "No profile";
+  }
+  return MoltNetSettingsError(
+      CheckMoltNetIncognito(ReadIncognito(profile->GetOriginalProfile())));
 }
 
 // static
@@ -382,6 +411,13 @@ Profile* MoltNetRouting::GetOrCreateMoltNetProfile(Profile* profile,
   if (std::string partitioning = ProcessWidePartitioningError();
       !partitioning.empty()) {
     *error = std::move(partitioning);
+    return nullptr;
+  }
+  // Before a profile is made: MoltNet doesn't open where Incognito can't
+  // (ApplyRoutingPrefs() checks again, with the rest of the settings).
+  if (std::string incognito = IncognitoPolicyError(original);
+      !incognito.empty()) {
+    *error = std::move(incognito);
     return nullptr;
   }
   Profile* moltnet = GetMoltNetProfile(original);

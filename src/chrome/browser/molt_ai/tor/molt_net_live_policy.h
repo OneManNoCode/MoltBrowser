@@ -38,6 +38,29 @@
 // while MoltNet is open. Blob URL partitioning can: the
 // PartitionedBlobUrlUsage policy turns it off per profile, at any time.
 //
+// Incognito's availability covers MoltNet, as Brave's Tor windows follow
+// it: MoltNet opens only where a standard Incognito window may open for the
+// regular profile (IncognitoModePrefs::GetIncognitoModeType() is kStandard).
+// That is false when the IncognitoModeAvailability policy (or the
+// deprecated IncognitoEnabled) turns Incognito off, when a supervised
+// account or the platform's parental controls do, and when the
+// IsolatedModeSettings policy replaces Incognito with Enterprise Isolated
+// Mode, an administrator's controlled private mode MoltNet would get
+// around. "Forced" (value 2) leaves MoltNet available: a MoltNet window is
+// a private window too, so IncognitoModePrefs::CanOpenBrowser(), which
+// Chromium asks before it creates any browser window, lets a MoltNet
+// profile open one while Incognito is forced (Chromium: the Incognito
+// profile only) and refuses it while Incognito is off (Chromium: every
+// profile but Incognito's); one hook marked "MoltBrowser:". Where an
+// administrator turned Incognito off for all but some sites (the policy
+// with IncognitoModeUrlAllowlist, which Chromium turns into "available, for
+// those sites only"), MoltNet gets Incognito's URL lists too
+// (chrome_policy_blocklist_service_factory.cc). The availability pref can
+// change while MoltNet is open (a policy refresh, an account becoming
+// supervised); the live guard watches it like the settings above. Parental
+// controls and Isolated Mode are read once per browser run, as Chromium
+// reads them.
+//
 // Header-only and std-only, so molt_ai_unittests tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_LIVE_POLICY_H_
@@ -125,6 +148,17 @@ struct MoltNetProfileSettings {
   // ChromeContentBrowserClient::IsBlobUrlPartitioningEnabled() and for each
   // new renderer process).
   bool blob_urls_partitioned = false;
+  // Whether a standard Incognito window may open for the regular profile
+  // (IncognitoModePrefs::GetIncognitoModeType(), see the top of this file).
+  enum class Incognito {
+    kStandard,
+    // Turned off: IncognitoModeAvailability (or IncognitoEnabled), a
+    // supervised account, the platform's parental controls.
+    kOff,
+    // Replaced by Enterprise Isolated Mode (IsolatedModeSettings).
+    kReplacedByIsolatedMode,
+  };
+  Incognito incognito = Incognito::kOff;
 };
 
 enum class MoltNetSettingsCheck {
@@ -137,6 +171,10 @@ enum class MoltNetSettingsCheck {
   kLeakControlsOverridden,
   // A policy turned blob URL partitioning off.
   kBlobUrlsUnpartitioned,
+  // Incognito is turned off for this profile; MoltNet follows it.
+  kIncognitoOff,
+  // Incognito is replaced by Enterprise Isolated Mode.
+  kIncognitoReplacedByIsolatedMode,
 };
 
 constexpr MoltNetSettingsCheck CheckMoltNetSettings(
@@ -151,7 +189,30 @@ constexpr MoltNetSettingsCheck CheckMoltNetSettings(
   if (!settings.blob_urls_partitioned) {
     return MoltNetSettingsCheck::kBlobUrlsUnpartitioned;
   }
-  return MoltNetSettingsCheck::kOk;
+  switch (settings.incognito) {
+    case MoltNetProfileSettings::Incognito::kStandard:
+      return MoltNetSettingsCheck::kOk;
+    case MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode:
+      return MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode;
+    case MoltNetProfileSettings::Incognito::kOff:
+      break;
+  }
+  return MoltNetSettingsCheck::kIncognitoOff;
+}
+
+// Whether Incognito's availability lets MoltNet open; for the check before
+// Tor starts, which needs only this (MoltNetRouting::IncognitoPolicyError()).
+constexpr MoltNetSettingsCheck CheckMoltNetIncognito(
+    MoltNetProfileSettings::Incognito incognito) {
+  MoltNetProfileSettings settings;
+  settings.proxy = {.proxy_is_default = false,
+                    .proxy_is_user_controlled = true,
+                    .override_rule_count = 0};
+  settings.proxy_is_moltnets_own = true;
+  settings.leak_controls_in_place = true;
+  settings.blob_urls_partitioned = true;
+  settings.incognito = incognito;
+  return CheckMoltNetSettings(settings);
 }
 
 // The message shown instead of opening a MoltNet window, and when MoltNet
@@ -171,6 +232,12 @@ inline std::string MoltNetSettingsError(MoltNetSettingsCheck check) {
     case MoltNetSettingsCheck::kBlobUrlsUnpartitioned:
       return "A policy turns off the partitioning of blob URLs by site "
              "(PartitionedBlobUrlUsage), so MoltNet can't keep sites apart";
+    case MoltNetSettingsCheck::kIncognitoOff:
+      return "Incognito is turned off (IncognitoModeAvailability or parental "
+             "controls), and MoltNet windows follow it";
+    case MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode:
+      return "Your administrator replaced Incognito with Isolated Mode, and "
+             "MoltNet windows follow it";
   }
   return "MoltNet can't check its settings";
 }

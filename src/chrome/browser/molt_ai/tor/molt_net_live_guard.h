@@ -9,9 +9,10 @@
 // MoltNetRouting::SettingsError() reads (the proxy, the proxy override
 // rules, the leak controls, blob URL partitioning: molt_net_live_policy.h),
 // in the MoltNet profile's settings and in those of the regular profile it
-// was made from. MoltNet's settings store shares the regular profile's
-// policy store, so a policy change (a cloud policy refresh, a changed GPO,
-// plist or policy file) notifies both. The check itself always reads the
+// was made from, and Incognito's availability (MoltNet follows it). MoltNet's
+// settings store shares the regular profile's policy store, so a policy
+// change (a cloud policy refresh, a changed GPO, plist or policy file)
+// notifies both. The check itself always reads the
 // MoltNet profile's effective values, so a change on the regular side that
 // doesn't reach MoltNet (an extension taking over the regular profile's
 // proxy, a user setting) leaves MoltNet as it is, as the open check would.
