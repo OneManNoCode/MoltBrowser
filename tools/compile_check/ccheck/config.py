@@ -73,6 +73,8 @@ INCLUDE_DIRS = [
     "third_party/llama_cpp",
     "third_party/llama_cpp/include",
     "third_party/llama_cpp/ggml/include",
+    # third_party/libaddressinput:libaddressinput_config
+    "third_party/libaddressinput/src/cpp/include",
 ]
 
 # Under the sysroot, as -isystem: what pkg-config adds for glib, nss, dbus
@@ -130,6 +132,9 @@ DEFINES = [
     "GGML_USE_CPU",
     # third_party/webrtc:common_inherited_config (Linux, in Chromium)
     "WEBRTC_CHROMIUM_BUILD", "WEBRTC_POSIX", "WEBRTC_LINUX",
+    # third_party/libaddressinput:libaddressinput_config
+    "I18N_ADDRESS_VALIDATION_DATA_URL="
+    "\"https://chromium-i18n.appspot.com/ssl-aggregate-address/\"",
 ]
 
 # Headers only ever included through a macro the GN configs define
