@@ -199,14 +199,18 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
       CreateCommonConnectJobParams(true /* for_websockets */),
       SocketPoolType::kNormal,
       // cleanup_on_ip_address_change
-      !params.ignore_ip_address_changes);
+      !params.ignore_ip_address_changes,
+      // MoltBrowser: per-site pools (MoltNet's network context).
+      params.molt_per_site_socket_pool_size);
   websocket_socket_pool_manager_ =
       std::make_unique<ClientSocketPoolManagerImpl>(
           CreateCommonConnectJobParams(false /* for_websockets */),
           CreateCommonConnectJobParams(true /* for_websockets */),
           SocketPoolType::kWebSocket,
           // cleanup_on_ip_address_change
-          !params.ignore_ip_address_changes);
+          !params.ignore_ip_address_changes,
+          // MoltBrowser: per-site pools (MoltNet's network context).
+          params.molt_per_site_socket_pool_size);
 
   if (params_.enable_http2) {
     next_protos_.push_back(NextProto::kProtoHTTP2);
@@ -266,6 +270,15 @@ ClientSocketPool* HttpNetworkSession::GetSocketPool(
     SocketPoolType pool_type,
     const ProxyChain& proxy_chain) {
   return GetSocketPoolManager(pool_type)->GetSocketPool(proxy_chain);
+}
+
+// MoltBrowser:
+ClientSocketPool* HttpNetworkSession::GetSocketPoolForSite(
+    SocketPoolType pool_type,
+    const ProxyChain& proxy_chain,
+    const NetworkAnonymizationKey& network_anonymization_key) {
+  return GetSocketPoolManager(pool_type)->GetSocketPoolForSite(
+      proxy_chain, network_anonymization_key);
 }
 
 base::Value HttpNetworkSession::SocketPoolInfoToValue() const {

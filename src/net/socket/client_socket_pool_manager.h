@@ -74,6 +74,16 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
   // ProxyChain::Direct()).
   virtual ClientSocketPool* GetSocketPool(const ProxyChain& proxy_chain) = 0;
 
+  // MoltBrowser: the socket pool requests of the top-level site
+  // `network_anonymization_key` use for `proxy_chain`. GetSocketPool() for
+  // every manager but one with per-site pools (MoltNet's network context:
+  // net/socket/molt_per_site_socket_pool_policy.h).
+  virtual ClientSocketPool* GetSocketPoolForSite(
+      const ProxyChain& proxy_chain,
+      const NetworkAnonymizationKey& network_anonymization_key) {
+    return GetSocketPool(proxy_chain);
+  }
+
   // Creates a Value summary of the state of the socket pools.
   virtual base::Value SocketPoolInfoToValue() const = 0;
 };

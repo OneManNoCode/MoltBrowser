@@ -233,6 +233,15 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
   bool HasActiveSocket(const GroupId& group_id) const override;
   size_t SocketsInUse() const override;
 
+  // MoltBrowser: true if nothing uses this pool: no group (no request, idle
+  // or handed-out socket, connect job), no callback waiting to run, no
+  // higher-layered pool (net/socket/molt_per_site_socket_pools.h drops such
+  // a site pool after a while).
+  bool MoltIsUnused() const {
+    return group_map_.empty() && pending_callback_map_.empty() &&
+           higher_pools_.empty() && SocketsInUse() == 0;
+  }
+
   bool RequestInGroupWithHandleHasJobForTesting(
       const GroupId& group_id,
       const ClientSocketHandle* handle) const {

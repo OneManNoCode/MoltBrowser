@@ -30,6 +30,7 @@ TEST(MoltNetNetworkContextPolicyTest, OtherProfilesKeepChromiumsBehaviour) {
   EXPECT_FALSE(settings.send_no_client_certificates);
   EXPECT_FALSE(settings.no_doh_probes);
   EXPECT_FALSE(settings.no_device_bound_sessions);
+  EXPECT_EQ(settings.per_site_socket_pool_size, 0u);
 }
 
 TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
@@ -47,6 +48,8 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
   EXPECT_TRUE(settings.send_no_client_certificates);
   EXPECT_TRUE(settings.no_doh_probes);
   EXPECT_TRUE(settings.no_device_bound_sessions);
+  // Chromium's default per-proxy limit, for each site on its own.
+  EXPECT_EQ(settings.per_site_socket_pool_size, 128u);
 }
 
 // Private State Tokens: ProfileNetworkContextService asks this when it
@@ -161,6 +164,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetParamsSetTheFlags) {
   EXPECT_TRUE(params.network_context->molt_no_network_quality_estimator);
   EXPECT_TRUE(params.network_context->molt_send_no_client_certificates);
   EXPECT_TRUE(params.network_context->molt_no_doh_probes);
+  EXPECT_EQ(params.network_context->molt_per_site_socket_pool_size, 128u);
 }
 
 // One password per network context: the hook runs once for each context
@@ -200,6 +204,8 @@ TEST(MoltNetNetworkContextPolicyTest, EachMoltNetContextGetsItsOwnPassword) {
   EXPECT_TRUE(
       second_identity.network_context->molt_send_no_client_certificates);
   EXPECT_TRUE(second_identity.network_context->molt_no_doh_probes);
+  EXPECT_EQ(second_identity.network_context->molt_per_site_socket_pool_size,
+            128u);
   EXPECT_TRUE(second_identity.cert_verifier->molt_isolate_each_cert_fetch);
 }
 
@@ -216,6 +222,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_no_network_quality_estimator);
   EXPECT_FALSE(params.network_context->molt_send_no_client_certificates);
   EXPECT_FALSE(params.network_context->molt_no_doh_probes);
+  EXPECT_EQ(params.network_context->molt_per_site_socket_pool_size, 0u);
 
   // And the hook writes them off for any other profile, even over a stale
   // value.
@@ -229,6 +236,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   params.network_context->molt_no_network_quality_estimator = true;
   params.network_context->molt_send_no_client_certificates = true;
   params.network_context->molt_no_doh_probes = true;
+  params.network_context->molt_per_site_socket_pool_size = 7;
   ApplyMoltNetNetworkContextSettings(/*is_moltnet_profile=*/false,
                                      *params.network_context,
                                      *params.cert_verifier);
@@ -243,6 +251,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_no_network_quality_estimator);
   EXPECT_FALSE(params.network_context->molt_send_no_client_certificates);
   EXPECT_FALSE(params.network_context->molt_no_doh_probes);
+  EXPECT_EQ(params.network_context->molt_per_site_socket_pool_size, 0u);
 }
 
 }  // namespace

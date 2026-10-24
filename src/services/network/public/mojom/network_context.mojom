@@ -712,6 +712,12 @@ struct NetworkContextParams {
   // If true, ActivateDohProbes() starts no DNS-over-HTTPS probes for this
   // context (they bypass its proxy).
   [MinVersion=1] bool molt_no_doh_probes = false;
+  // If not 0, every top-level site (network anonymization key) gets socket
+  // pools of its own in this context, each with this limit, instead of one
+  // pool per proxy chain that all sites share, so one site's connections
+  // never make another site's wait
+  // (net/socket/molt_per_site_socket_pool_policy.h).
+  [MinVersion=1] uint32 molt_per_site_socket_pool_size = 0;
 };
 
 struct NetworkConditions {

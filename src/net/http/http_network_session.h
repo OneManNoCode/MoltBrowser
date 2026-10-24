@@ -53,6 +53,7 @@ class NetLog;
 #if BUILDFLAG(ENABLE_REPORTING)
 class NetworkErrorLoggingService;
 #endif
+class NetworkAnonymizationKey;  // MoltBrowser
 class NetworkQualityEstimator;
 class ProxyDelegate;
 class ProxyResolutionService;
@@ -170,6 +171,12 @@ struct NET_EXPORT HttpNetworkSessionParams {
   // context (network::mojom::NetworkContextParams), so Tor never puts two
   // MoltNet identities on one circuit.
   std::string molt_socks_isolation_password;
+
+  // MoltBrowser: if not 0, every top-level site gets socket pools of its own,
+  // each with this limit, instead of one pool per proxy chain for all sites
+  // (net/socket/molt_per_site_socket_pool_policy.h). Set for MoltNet's
+  // network contexts only.
+  size_t molt_per_site_socket_pool_size = 0;
 };
 
 // Structure with pointers to the dependencies of the HttpNetworkSession.
@@ -233,6 +240,14 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   // connections.
   ClientSocketPool* GetSocketPool(SocketPoolType pool_type,
                                   const ProxyChain& proxy_chain);
+
+  // MoltBrowser: the pool requests of the top-level site
+  // `network_anonymization_key` use: the site's own where the session has
+  // per-site pools (molt_per_site_socket_pool_size), else GetSocketPool().
+  ClientSocketPool* GetSocketPoolForSite(
+      SocketPoolType pool_type,
+      const ProxyChain& proxy_chain,
+      const NetworkAnonymizationKey& network_anonymization_key);
 
   CertVerifier* cert_verifier() { return cert_verifier_; }
   ProxyResolutionService* proxy_resolution_service() {

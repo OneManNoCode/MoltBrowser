@@ -109,8 +109,11 @@ int InitSocketPoolHelper(
   scoped_refptr<ClientSocketPool::SocketParams> socket_params =
       CreateSocketParams(connection_group, allowed_bad_certs);
 
-  ClientSocketPool* pool =
-      session->GetSocketPool(socket_pool_type, proxy_info.proxy_chain());
+  // MoltBrowser: the site's own pool where the session has one per site
+  // (net/socket/molt_per_site_socket_pool_policy.h).
+  ClientSocketPool* pool = session->GetSocketPoolForSite(
+      socket_pool_type, proxy_info.proxy_chain(),
+      connection_group.network_anonymization_key());
   ClientSocketPool::RespectLimits respect_limits =
       ClientSocketPool::RespectLimits::ENABLED;
   if ((request_load_flags & LOAD_IGNORE_LIMITS) != 0)

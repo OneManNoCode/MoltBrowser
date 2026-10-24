@@ -30,11 +30,22 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
     const CommonConnectJobParams& common_connect_job_params,
     const CommonConnectJobParams& websocket_common_connect_job_params,
     HttpNetworkSession::SocketPoolType pool_type,
-    bool cleanup_on_ip_address_change)
+    bool cleanup_on_ip_address_change,
+    size_t molt_per_site_pool_size)
     : common_connect_job_params_(common_connect_job_params),
       websocket_common_connect_job_params_(websocket_common_connect_job_params),
       pool_type_(pool_type),
-      cleanup_on_ip_address_change_(cleanup_on_ip_address_change) {
+      cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
+      molt_per_site_pool_size_(molt_per_site_pool_size) {
+  // MoltBrowser: per-site pools for MoltNet's network context. As for a
+  // proxy chain's pool below, with a fixed limit per site.
+  if (molt_per_site_pool_size_ > 0) {
+    molt_per_site_pools_ = std::make_unique<MoltPerSiteSocketPools>(
+        molt_per_site_pool_size_, max_sockets_per_group(pool_type_),
+        unused_idle_socket_timeout(pool_type_),
+        pool_type_ == HttpNetworkSession::SocketPoolType::kWebSocket,
+        &common_connect_job_params_, cleanup_on_ip_address_change_);
+  }
   // |websocket_endpoint_lock_manager| must only be set for websocket
   // connections.
   DCHECK(!common_connect_job_params_.websocket_endpoint_lock_manager);
@@ -51,6 +62,10 @@ void ClientSocketPoolManagerImpl::FlushSocketPoolsWithError(
   for (const auto& it : socket_pools_) {
     it.second->FlushWithError(net_error, net_log_reason_utf8);
   }
+  // MoltBrowser:
+  if (molt_per_site_pools_) {
+    molt_per_site_pools_->FlushWithError(net_error, net_log_reason_utf8);
+  }
 }
 
 void ClientSocketPoolManagerImpl::CloseIdleSockets(
@@ -58,6 +73,22 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
   for (const auto& it : socket_pools_) {
     it.second->CloseIdleSockets(net_log_reason_utf8);
   }
+  // MoltBrowser:
+  if (molt_per_site_pools_) {
+    molt_per_site_pools_->CloseIdleSockets(net_log_reason_utf8);
+  }
+}
+
+// MoltBrowser: a site's own pool for a proxy chain, where this manager has
+// per-site pools (net/socket/molt_per_site_socket_pool_policy.h).
+ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPoolForSite(
+    const ProxyChain& proxy_chain,
+    const NetworkAnonymizationKey& network_anonymization_key) {
+  if (molt_per_site_pools_ &&
+      MoltUsesPerSitePool(molt_per_site_pool_size_, proxy_chain.is_direct())) {
+    return molt_per_site_pools_->Get(proxy_chain, network_anonymization_key);
+  }
+  return GetSocketPool(proxy_chain);
 }
 
 ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPool(
@@ -116,6 +147,10 @@ base::Value ClientSocketPoolManagerImpl::SocketPoolInfoToValue() const {
     }
     list.Append(
         socket_pool.second->GetInfoAsValue(proxy_chain.ToDebugString(), type));
+  }
+  // MoltBrowser:
+  if (molt_per_site_pools_) {
+    molt_per_site_pools_->AppendInfo(list);
   }
 
   return base::Value(std::move(list));
