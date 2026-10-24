@@ -135,6 +135,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/molt_net_language_policy.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
@@ -3210,7 +3211,11 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
             blink::switches::kDisableBackForwardCacheForWebSockets);
       }
 
-      if (!prefs->GetBoolean(prefs::kReduceAcceptLanguageEnabled)) {
+      // MoltBrowser: MoltNet ignores the ReduceAcceptLanguageEnabled policy
+      // (molt_net_language_policy.h).
+      if (!molt_ai::tor::ReduceAcceptLanguageEnabledFor(
+              molt_ai::tor::IsMoltNetProfile(profile),
+              prefs->GetBoolean(prefs::kReduceAcceptLanguageEnabled))) {
         command_line->AppendSwitch(
             blink::switches::kDisableReduceAcceptLanguage);
       }
@@ -9503,7 +9508,12 @@ bool ChromeContentBrowserClient::ShouldReduceAcceptLanguage(
           ->FindPreference(prefs::kReduceAcceptLanguageEnabled);
 
   if (pref && pref->IsManaged() && pref->GetValue()->is_bool()) {
-    return pref->GetValue()->GetBool();
+    // MoltBrowser: MoltNet ignores the ReduceAcceptLanguageEnabled policy
+    // (molt_net_language_policy.h).
+    return molt_ai::tor::ReduceAcceptLanguageEnabledFor(
+        molt_ai::tor::IsMoltNetProfile(
+            Profile::FromBrowserContext(browser_context)),
+        pref->GetValue()->GetBool());
   }
   return true;
 }

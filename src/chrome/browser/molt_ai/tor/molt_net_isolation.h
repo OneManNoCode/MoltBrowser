@@ -57,10 +57,10 @@
 #include <memory>
 
 #include "base/memory/scoped_refptr.h"
+#include "components/prefs/value_map_pref_store.h"
 
 class HostContentSettingsMap;
 class KeyedService;
-class PrefStore;
 class Profile;
 
 namespace content {
@@ -86,11 +86,15 @@ bool IsExtensionKeptOutOf(const extensions::Extension* extension,
                           content::BrowserContext* context);
 
 // The extension-controlled preference store for a MoltNet profile's pref
-// service: empty and never written, so no extension's proxy, privacy,
-// font or other controlled setting applies in MoltNet. (Other off-the-
-// record profiles get Profile::CreateExtensionPrefStore(original, true),
-// which carries the settings of every extension allowed in Incognito.)
-scoped_refptr<PrefStore> CreateMoltNetExtensionPrefStore();
+// service: no extension's setting is ever written to it, so no extension's
+// proxy, privacy, font or other controlled setting applies in MoltNet.
+// (Other off-the-record profiles get Profile::CreateExtensionPrefStore(
+// original, true), which carries the settings of every extension allowed in
+// Incognito.) It ranks above MoltNet's own settings store, so
+// CreateMoltNetPrefService() keeps MoltNet's language list there, where
+// nothing that writes the profile's settings can change it
+// (molt_net_language_policy.h). Empty when created.
+scoped_refptr<ValueMapPrefStore> CreateMoltNetExtensionPrefStore();
 
 // The SSLHostStateDelegate of a MoltNet profile. Like Chromium's
 // StatefulSSLHostStateDelegate, except that certificate-error exceptions

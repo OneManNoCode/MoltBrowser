@@ -24,9 +24,7 @@
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
 #include "chrome/common/pref_names.h"
-#include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/proxy_config/pref_proxy_config_tracker_impl.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
@@ -78,11 +76,6 @@ constexpr char kLegacyDohModeOff[] = "off";
 // Any http(s) URL works for the routing self-check; the lookup never leaves
 // the network service (no request is made).
 constexpr char kRoutingProbeUrl[] = "https://check.torproject.org/";
-
-// Uniform language for every MoltNet window (fingerprinting protection). Off-
-// the-record profiles only send the first entry, so pages see "en-US" in both
-// Accept-Language and navigator.language(s).
-constexpr char kMoltNetAcceptLanguages[] = "en-US,en";
 
 // The current MoltNet OTR profile id, attached to the ORIGINAL profile.
 const void* const kMoltNetProfileDataKey = &kMoltNetProfileDataKey;
@@ -452,13 +445,14 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   // Google outside Tor (see kMoltNetSafeBrowsingEnabled). Download warnings
   // for dangerous file types are local and stay.
   prefs->SetBoolean(prefs::kSafeBrowsingEnabled, kMoltNetSafeBrowsingEnabled);
-  // Uniformity: the same languages for everyone. (The renderer side -- UTC,
-  // the en-US Intl locale, letterboxed screen metrics -- is configured per
-  // renderer process; see chrome/browser/molt_ai/fingerprinting.)
-  if (fingerprinting::IsFingerprintingProtectionEnabled()) {
-    prefs->SetString(language::prefs::kAcceptLanguages,
-                     kMoltNetAcceptLanguages);
-  }
+  // Uniformity: the same languages for everyone. Not written here: MoltNet's
+  // pref service holds them above this store when it is created, where
+  // nothing that writes the profile's settings (language::LanguagePrefs,
+  // following the ForcedLanguages policy and the user's own list) can change
+  // them (molt_net_language_policy.h, molt_net_pref_isolation.h). (The
+  // renderer side -- UTC, the en-US Intl locale, letterboxed screen metrics
+  // -- is configured per renderer process; see
+  // chrome/browser/molt_ai/fingerprinting.)
 
   // The same check runs again whenever one of these settings changes while
   // MoltNet is open (molt_net_live_guard.h).

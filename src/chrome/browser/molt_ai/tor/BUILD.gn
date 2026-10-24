@@ -10,6 +10,10 @@
 #   molt_net_pref_isolation* — MoltNet's pref service: nothing written
 #                              through to the regular profile, web-visible
 #                              settings pinned to MoltBrowser's defaults
+#   molt_net_language_policy — MoltNet's language list, fixed above its own
+#                              settings (no ForcedLanguages, --accept-lang or
+#                              user list), and ReduceAcceptLanguageEnabled
+#                              ignored
 #   molt_net_locale_prefs*   — MoltNet's fixed fonts, minimum font size and
 #                              encoding where Chromium's default follows the
 #                              UI language
@@ -94,19 +98,34 @@ source_set("locale_prefs") {
   ]
 }
 
+# MoltNet's language list and the language policies it ignores
+# (molt_net_language_policy.h). Header-only and std-only, so the hooks in
+# chrome_content_browser_client.cc need no link dependency and
+# molt_ai_unittests tests it.
+source_set("language_policy") {
+  sources = [ "molt_net_language_policy.h" ]
+}
+
 # MoltNet's pref service (molt_net_pref_isolation.h). Created by
 # OffTheRecordProfileImpl (//chrome/browser/profiles:misc) for MoltNet
-# profile ids, so it depends on components only (no //chrome/browser cycle).
+# profile ids, so it depends on components and //chrome/common only (no
+# //chrome/browser cycle).
 source_set("pref_isolation") {
   sources = [
     "molt_net_pref_isolation.cc",
     "molt_net_pref_isolation.h",
   ]
-  public_deps = [ "//base" ]
+  public_deps = [
+    "//base",
+    "//components/prefs",
+  ]
   deps = [
+    ":language_policy",
     ":locale_prefs",
     ":pref_isolation_policy",
-    "//components/prefs",
+
+    # MoltNet's language list is en-US while fingerprinting protection is on.
+    "//chrome/common/molt_ai/fingerprinting",
     "//components/sync_preferences",
   ]
 }
@@ -203,6 +222,7 @@ source_set("tor") {
   public_deps = [
     ":autofill",
     ":incognito_parity_policy",
+    ":language_policy",
     ":live_policy",
     ":network_context_policy",
     ":partitioning_policy",
@@ -227,9 +247,9 @@ source_set("tor") {
     "//chrome/browser/profiles:profile",
     "//chrome/common",
 
-    # MoltNet's uniform Accept-Language (fingerprinting protection).
+    # Whether new MoltNet windows open at a letterbox size (fingerprinting
+    # protection; molt_net_window.cc).
     "//chrome/common/molt_ai/fingerprinting",
-    "//components/language/core/browser",
     "//components/prefs",
     "//components/proxy_config",
 
@@ -448,6 +468,7 @@ source_set("unit_tests") {
   sources = [
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
+    "molt_net_language_policy_unittest.cc",
     "molt_net_live_policy_unittest.cc",
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
@@ -468,6 +489,7 @@ source_set("unit_tests") {
   deps = [
     ":incognito_parity_policy",
     ":isolation_policy",
+    ":language_policy",
     ":live_policy",
     ":locale_prefs",
     ":network_context_policy",
@@ -486,6 +508,9 @@ source_set("unit_tests") {
     # Pref-name constants checked against the pinned list.
     "//chrome/browser/molt_ai/shield:prefs",
     "//chrome/common:constants",
+
+    # Whether MoltNet's language list is en-US (the fingerprinting switch).
+    "//chrome/common/molt_ai/fingerprinting",
     "//components/autofill/core/common",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
