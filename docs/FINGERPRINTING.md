@@ -433,7 +433,7 @@ back/forward, and a MoltNet window with Shields off.
 | Default text locale (text without `lang`: CJK glyph variants, hyphenation, line breaking), date picker language | UI language | **en-US** ([details](#default-text-locale)) | `language.cc`: `DefaultLanguage`, `UserPreferredLanguages` |
 | Time zone (`Date`, `Intl`) | real | **Etc/UTC** (renderer-wide `TimeZoneController` override) | glue: `Configure` |
 | `Intl` / ICU default locale | real | **en-US** (`LocaleController` override) | glue: `Configure` |
-| `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`) | `molt_net_routing.cc` (MoltBrowser file) |
+| `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`, held above its own settings, so no language setting or policy changes it) | `molt_net_language_policy.h`, `molt_net_pref_isolation.cc` (MoltBrowser files) |
 
 "Farbled" in normal windows means: unless Shields are off for the site.
 
