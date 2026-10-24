@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/platform/audio/audio_destination.h"
 
 #include <algorithm>
+#include <atomic>  // MoltBrowser
 #include <memory>
 #include <utility>
 
@@ -90,7 +91,33 @@ bool BypassOutputBuffer() {
   return RuntimeEnabledFeatures::WebAudioBypassOutputBufferingEnabled();
 }
 
+// MoltBrowser: see AudioDestination::SetMoltNetDeviceFactory().
+std::atomic<AudioDestination::MoltNetDeviceFactory> g_moltnet_device_factory{
+    nullptr};
+
+std::unique_ptr<WebAudioDevice> CreateWebAudioDevice(
+    const WebAudioSinkDescriptor& sink_descriptor,
+    unsigned number_of_output_channels,
+    const WebAudioLatencyHint& latency_hint,
+    std::optional<float> context_sample_rate,
+    media::AudioRendererSink::RenderCallback* callback) {
+  if (const AudioDestination::MoltNetDeviceFactory factory =
+          g_moltnet_device_factory.load(std::memory_order_acquire)) {
+    return factory(sink_descriptor, number_of_output_channels, latency_hint,
+                   context_sample_rate, callback);
+  }
+  return Platform::Current()->CreateAudioDevice(
+      sink_descriptor, number_of_output_channels, latency_hint,
+      context_sample_rate, callback);
+}
+
 }  // namespace
+
+// MoltBrowser.
+// static
+void AudioDestination::SetMoltNetDeviceFactory(MoltNetDeviceFactory factory) {
+  g_moltnet_device_factory.store(factory, std::memory_order_release);
+}
 
 void AudioDestinationTraits::Destruct(const AudioDestination* destination) {
   if (destination->main_thread_task_runner_ &&
@@ -481,12 +508,12 @@ AudioDestination::AudioDestination(
     const WebAudioLatencyHint& latency_hint,
     std::optional<float> context_sample_rate,
     unsigned render_quantum_frames)
-    : web_audio_device_(
-          Platform::Current()->CreateAudioDevice(sink_descriptor,
-                                                 number_of_output_channels,
-                                                 latency_hint,
-                                                 context_sample_rate,
-                                                 this)),
+    // MoltBrowser: MoltNet's device in MoltNet (SetMoltNetDeviceFactory).
+    : web_audio_device_(CreateWebAudioDevice(sink_descriptor,
+                                             number_of_output_channels,
+                                             latency_hint,
+                                             context_sample_rate,
+                                             this)),
       callback_buffer_size_(
           web_audio_device_ ? web_audio_device_->FramesPerBuffer() : 0),
       number_of_output_channels_(number_of_output_channels),

@@ -100,6 +100,18 @@ class PLATFORM_EXPORT AudioDestination final
       std::optional<float> context_sample_rate,
       unsigned render_quantum_frames);
 
+  // MoltBrowser: where destinations get their WebAudioDevice from instead of
+  // Platform::CreateAudioDevice(), when set: MoltNet renderers render on a
+  // clock of their own (core/molt_fingerprinting/moltnet_audio_device.h).
+  // Main thread, before any destination exists.
+  using MoltNetDeviceFactory = std::unique_ptr<WebAudioDevice> (*)(
+      const WebAudioSinkDescriptor& sink_descriptor,
+      unsigned number_of_output_channels,
+      const WebAudioLatencyHint& latency_hint,
+      std::optional<float> context_sample_rate,
+      media::AudioRendererSink::RenderCallback* callback);
+  static void SetMoltNetDeviceFactory(MoltNetDeviceFactory factory);
+
   AudioDestination(const AudioDestination&) = delete;
   AudioDestination& operator=(const AudioDestination&) = delete;
 

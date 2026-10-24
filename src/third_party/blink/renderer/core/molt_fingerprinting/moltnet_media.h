@@ -16,6 +16,12 @@
 //                                         -> UniformAudioOutputLatency,
 //                                            UniformAudioOutputPosition,
 //                                            UniformAudioPlayoutDelay
+//               AudioContext::IsValidSinkDescriptor (the default device's
+//                 ID, for setSinkId() and device changes)
+//                                         -> HasUniformDefaultAudioOutput
+//               AudioDestination's constructor: the device it renders for
+//                 (platform/audio/audio_destination.cc)
+//                                         -> moltnet_audio_device.h
 //               RealtimeAudioDestinationHandler::MaxChannelCount,
 //                 GetCallbackBufferSize, GetFramesPerBuffer
 //                 (realtime_audio_destination_handler.cc: maxChannelCount
@@ -90,6 +96,19 @@ CORE_EXPORT std::optional<uint32_t> UniformAudioCallbackFrames(
     const WebAudioLatencyHint& latency_hint,
     double context_sample_rate);
 
+// The uniform device's callback buffer for `latency_hint` at
+// `context_sample_rate` in any mode (0 for a rate an AudioContext can't
+// have): what UniformAudioCallbackFrames() reports in MoltNet and the tick of
+// MoltNet's audio clock (moltnet_audio_device.h).
+CORE_EXPORT uint32_t UniformDeviceCallbackFrames(
+    const WebAudioLatencyHint& latency_hint,
+    double context_sample_rate);
+
+// Whether the default output device always exists (true in MoltNet, whose
+// contexts render on their own clock): AudioContext's sink checks then
+// accept it on a machine that lists no output device.
+CORE_EXPORT bool HasUniformDefaultAudioOutput();
+
 // destination.maxChannelCount: 2 in MoltNet, else `real`.
 CORE_EXPORT uint32_t UniformAudioMaxChannelCount(uint32_t real);
 
@@ -137,7 +156,8 @@ CORE_EXPORT bool UsesPlatformMediaCodecs();
 
 // Makes the functions above behave as in kUniform without configuring the
 // process for it (which would pin the time zone and locale for every later
-// test).
+// test); also renders new AudioContexts on MoltNet's clock
+// (PinUniformAudioClock).
 CORE_EXPORT void SetMoltNetMediaForTesting(bool uniform);
 
 }  // namespace molt_fingerprinting

@@ -11,6 +11,7 @@
 #include "third_party/blink/public/platform/web_encrypted_media_request.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_device.h"
 
 namespace blink::molt_fingerprinting {
 
@@ -67,6 +68,16 @@ std::optional<uint32_t> UniformAudioCallbackFrames(
   if (!UniformMode()) {
     return std::nullopt;
   }
+  const uint32_t frames =
+      UniformDeviceCallbackFrames(latency_hint, context_sample_rate);
+  if (frames == 0) {
+    return std::nullopt;
+  }
+  return frames;
+}
+
+uint32_t UniformDeviceCallbackFrames(const WebAudioLatencyHint& latency_hint,
+                                     double context_sample_rate) {
   moltnet::AudioLatency latency = moltnet::AudioLatency::kInteractive;
   double exact_seconds = 0;
   switch (latency_hint.Category()) {
@@ -88,10 +99,11 @@ std::optional<uint32_t> UniformAudioCallbackFrames(
   }
   const int frames =
       moltnet::AudioCallbackFrames(latency, exact_seconds, context_sample_rate);
-  if (frames <= 0) {
-    return std::nullopt;
-  }
-  return static_cast<uint32_t>(frames);
+  return frames > 0 ? static_cast<uint32_t>(frames) : 0;
+}
+
+bool HasUniformDefaultAudioOutput() {
+  return UniformMode();
 }
 
 uint32_t UniformAudioMaxChannelCount(uint32_t real) {
@@ -149,6 +161,7 @@ bool UsesPlatformMediaCodecs() {
 
 void SetMoltNetMediaForTesting(bool uniform) {
   g_media_for_testing.store(uniform, std::memory_order_relaxed);
+  PinUniformAudioClock(uniform || IsUniform());
 }
 
 }  // namespace blink::molt_fingerprinting
