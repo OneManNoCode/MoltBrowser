@@ -89,8 +89,9 @@ class OutputRing {
 
 // The ring size for a clock tick of `tick_frames` and a device that reads
 // `device_frames` (both in frames at `sample_rate`) in chunks of
-// `read_frames`: room for the device's buffer, two ticks, the largest
-// excess DriftControl tolerates before dropping and its largest margin.
+// `read_frames`: room for what DriftControl fills it to (two of the
+// device's callbacks and its largest margin), two ticks, and the largest
+// excess it tolerates before dropping.
 int OutputRingFrames(int tick_frames,
                      int device_frames,
                      int read_frames,
@@ -117,10 +118,12 @@ struct ReadPlan {
 // of audio read, the lowest headroom of the last 1.5 s above the margin
 // sets the read rate: 1 + excess / 4 s, within 1 +- 0.002 (a pitch change
 // of at most 3.5 cents; following a typical device's clock takes about
-// 0.01%). An excess of more than 50 ms is dropped at once, silence above
-// 1 ms is dropped freely, and an underrun waits for the ring to refill (and
-// adds 2 ms to the margin, up to 20 ms). Not thread-safe; no time source of
-// its own.
+// 0.01%). Excess that grows by more than 50 ms (a device that stalled) is
+// dropped at once, silence above 1 ms is dropped freely. After a start or
+// an underrun the ring fills to one of the device's callbacks and a cushion
+// (another callback, at most 20 ms) before it plays; an underrun also adds
+// a callback (at least 2 ms) to the margin, up to 20 ms or a callback. Not
+// thread-safe; no time source of its own.
 class DriftControl {
  public:
   // The clock renders `tick_frames` frames per tick at `sample_rate`; the
@@ -163,6 +166,8 @@ class DriftControl {
   size_t windows_seen_ = 0;
   int pending_drop_ = 0;
   int pending_silent_drop_ = 0;
+  // An excess above this is dropped at once.
+  double hard_limit_ = 0;
 };
 
 }  // namespace blink::molt_fingerprinting::moltnet

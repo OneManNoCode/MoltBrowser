@@ -180,10 +180,10 @@ TEST(MoltNetAudioClockTest, RingRejectsNonsense) {
 }
 
 TEST(MoltNetAudioClockTest, RingSize) {
-  // A 480-frame tick and device, 128-frame reads at 48 kHz: the device's
-  // buffer, two ticks, two reads and 75 ms.
+  // A 480-frame tick and device, 128-frame reads at 48 kHz: three of the
+  // device's buffers, two ticks, two reads and 145 ms.
   EXPECT_EQ(OutputRingFrames(480, 480, 128, 48000),
-            480 + 960 + 256 + 3600);
+            3 * 480 + 960 + 256 + 6960);
   // The largest device buffer Web Audio opens (8192) fits.
   EXPECT_GT(OutputRingFrames(480, 8192, 128, 48000), 8192 + 960);
   EXPECT_EQ(OutputRingFrames(480, 480, 128, kNaN), 0);
@@ -208,14 +208,14 @@ TEST(MoltNetAudioClockTest, VirtualLevelTakesOutTheClocksSawtooth) {
 }
 
 TEST(MoltNetAudioClockTest, PrimesBeforePlaying) {
-  // A 128-frame device reading 128 frames at a time waits for 128 frames
-  // plus 3 ms of margin plus 5 ms: 512.
+  // A 128-frame device reading 128 frames at a time waits for two of its
+  // callbacks (one and a cushion) plus 3 ms of margin plus 5 ms: 640.
   DriftControl control(480, 128, 48000);
   EXPECT_FALSE(control.primed());
-  ReadPlan plan = control.BeforeRead(511, 1, 128);
+  ReadPlan plan = control.BeforeRead(639, 1, 128);
   EXPECT_FALSE(plan.play);
   EXPECT_FALSE(control.primed());
-  plan = control.BeforeRead(512, 1, 128);
+  plan = control.BeforeRead(640, 1, 128);
   EXPECT_TRUE(plan.play);
   EXPECT_TRUE(control.primed());
   EXPECT_EQ(plan.drop, 0);
@@ -226,12 +226,12 @@ TEST(MoltNetAudioClockTest, PrimesBeforePlaying) {
   EXPECT_FALSE(control.BeforeRead(300, 1, 128).play);
 
   // A device that takes 2048 frames per callback (in 128-frame reads, back
-  // to back) waits for all of them.
+  // to back) waits for a whole callback and a 20 ms cushion.
   DriftControl big(480, 2048, 48000);
-  EXPECT_FALSE(big.BeforeRead(2048 + 383, 1, 128).play);
-  EXPECT_TRUE(big.BeforeRead(2048 + 384, 1, 128).play);
+  EXPECT_FALSE(big.BeforeRead(2048 + 960 + 383, 1, 128).play);
+  EXPECT_TRUE(big.BeforeRead(2048 + 960 + 384, 1, 128).play);
   // Measured on the clock's continuous schedule.
-  EXPECT_FALSE(DriftControl(480, 128, 48000).BeforeRead(512, 0, 128).play);
+  EXPECT_FALSE(DriftControl(480, 128, 48000).BeforeRead(640, 0, 128).play);
 }
 
 // One read of a whole window (half a second of audio) at a constant virtual
@@ -284,24 +284,49 @@ TEST(MoltNetAudioClockTest, DropsSilentExcess) {
 
 TEST(MoltNetAudioClockTest, DropsALargeExcessAtOnce) {
   DriftControl control(480, 480, 48000);
-  // 100 ms of excess (a device that stalled): dropped down to the margin.
-  ReadWindow(control, 144 + 4800);
+  // Primes with 5 ms of excess.
+  EXPECT_TRUE(ReadWindow(control, 144 + 240).play);
+  // 100 ms more (a device that stalled), once the last 1.5 s all had it:
+  // dropped down to the margin.
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(ReadWindow(control, 144 + 4800).drop, 0);
+  }
   EXPECT_DOUBLE_EQ(control.read_rate(), 1);
   const ReadPlan plan = control.BeforeRead(128 + 144 + 4800, 1, 128);
   EXPECT_EQ(plan.drop, 4800);
   EXPECT_EQ(plan.drop_if_silent, 0);
   // Never more than the ring holds.
   DriftControl again(480, 480, 48000);
-  ReadWindow(again, 144 + 4800);
+  ReadWindow(again, 144 + 240);
+  for (int i = 0; i < 3; ++i) {
+    ReadWindow(again, 144 + 4800);
+  }
   EXPECT_EQ(again.BeforeRead(1000, 1, 128).drop, 1000);
 }
 
+TEST(MoltNetAudioClockTest, KeepsWhatTheDeviceStartedWith) {
+  // A device that took 100 ms to start: the audio rendered meanwhile is
+  // played late rather than skipped (silence would go at once), and the
+  // read rate works the excess off.
+  DriftControl control(480, 480, 48000);
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_EQ(ReadWindow(control, 144 + 4800 - 48 * i).drop, 0);
+  }
+  EXPECT_DOUBLE_EQ(control.read_rate(), 1.002);
+  // A stall on top of it is dropped.
+  for (int i = 0; i < 3; ++i) {
+    ReadWindow(control, 144 + 4800 + 2600);
+  }
+  EXPECT_EQ(control.BeforeRead(20000, 1, 128).drop, 4800 + 2600);
+}
+
 TEST(MoltNetAudioClockTest, AnUnderrunRefillsAndWidensTheMargin) {
-  DriftControl control(480, 128, 48000);
+  DriftControl control(480, 64, 48000);
   EXPECT_DOUBLE_EQ(control.margin_frames(), 144);
   ASSERT_TRUE(control.BeforeRead(10000, 1, 128).play);
   control.OnShortRead();
   EXPECT_FALSE(control.primed());
+  // At least 2 ms more.
   EXPECT_DOUBLE_EQ(control.margin_frames(), 144 + 96);
   // It now waits for 128 + 240 + 240 frames.
   EXPECT_FALSE(control.BeforeRead(607, 1, 128).play);
@@ -314,6 +339,12 @@ TEST(MoltNetAudioClockTest, AnUnderrunRefillsAndWidensTheMargin) {
   // A restart keeps what it learned.
   control.Reset();
   EXPECT_DOUBLE_EQ(control.margin_frames(), 960);
+
+  // A device with a longer callback: a whole callback more, up to a
+  // callback.
+  DriftControl big(480, 2048, 48000);
+  big.OnShortRead();
+  EXPECT_DOUBLE_EQ(big.margin_frames(), 2048);
 }
 
 TEST(MoltNetAudioClockTest, NonsenseInputsAreSafe) {

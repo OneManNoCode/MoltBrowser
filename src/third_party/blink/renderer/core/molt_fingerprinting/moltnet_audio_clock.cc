@@ -19,11 +19,15 @@ constexpr double kMaxContextSampleRate = 768000;
 // The headroom kept above what a read takes: covers the jitter of the
 // clock's and the device's threads that a window didn't happen to see.
 constexpr double kMargin = 0.003;
-// An underrun adds this much to the margin, up to kMaxMargin.
+// An underrun adds the device's callback (at least this much) to the margin,
+// up to kMaxMargin or the device's callback, whichever is longer.
 constexpr double kMarginStep = 0.002;
 constexpr double kMaxMargin = 0.020;
-// After a (re)start or an underrun the ring fills to a read plus the margin
-// plus this before the device hears it again.
+// After a (re)start or an underrun the ring fills to the device's callback,
+// once more that or kMaxCushion if shorter (the audio service converting
+// another rate asks for two callbacks at once now and then), the margin and
+// kPrimeExtra before the device hears it again.
+constexpr double kMaxCushion = 0.020;
 constexpr double kPrimeExtra = 0.005;
 // How much audio the device reads between two adjustments; each looks at
 // the lowest headroom of the last kWindows windows.
@@ -32,8 +36,9 @@ constexpr double kWindow = 0.5;
 // kMaxAdjust faster or slower than the clock.
 constexpr double kTimeConstant = 4;
 constexpr double kMaxAdjust = 0.002;
-// More excess than this is dropped at once; silent excess above
-// kSilentExcess is dropped freely.
+// Excess that grows by more than this (a device that stalled) is dropped at
+// once; what was there when the device started is left to the read rate.
+// Silent excess above kSilentExcess is dropped freely.
 constexpr double kHardExcess = 0.050;
 constexpr double kSilentExcess = 0.001;
 
@@ -166,10 +171,14 @@ int OutputRingFrames(int tick_frames,
   if (!IsValidRate(sample_rate)) {
     return 0;
   }
+  // What it fills to, one more callback as the largest margin, and the
+  // excess it lets grow before dropping (twice: what it started with and
+  // a stall).
   const double frames =
-      std::max(0, device_frames) + 2.0 * std::max(0, tick_frames) +
+      3.0 * std::max(0, device_frames) + 2.0 * std::max(0, tick_frames) +
       2.0 * std::max(0, read_frames) +
-      (kHardExcess + kMaxMargin + kPrimeExtra) * sample_rate;
+      (kMaxCushion + kMaxMargin + kPrimeExtra + 2 * kHardExcess) *
+          sample_rate;
   return ClampFrames(std::ceil(frames));
 }
 
@@ -181,10 +190,13 @@ DriftControl::DriftControl(int tick_frames,
     : sample_rate_(IsValidRate(sample_rate) ? sample_rate : 48000),
       tick_frames_(std::max(0, tick_frames)),
       device_frames_(std::max(0, device_frames)),
-      margin_(kMargin * sample_rate_) {}
+      margin_(kMargin * sample_rate_) {
+  Reset();
+}
 
 void DriftControl::Reset() {
   primed_ = false;
+  hard_limit_ = std::numeric_limits<double>::infinity();
   window_read_ = 0;
   window_min_headroom_ = 0;
   windows_seen_ = 0;
@@ -212,9 +224,12 @@ ReadPlan DriftControl::BeforeRead(int level,
   const double virtual_level = VirtualLevel(level, since_tick_seconds);
   ReadPlan plan;
   if (!primed_) {
-    // Enough for the device's whole callback: its reads come back to back.
-    if (virtual_level <
-        std::max(read, device_frames_) + margin_ + kPrimeExtra * sample_rate_) {
+    // Enough for the device's callback (its reads come back to back) and
+    // a cushion.
+    const double cushion =
+        std::min(device_frames_, kMaxCushion * sample_rate_);
+    if (virtual_level < std::max(read, device_frames_ + cushion) + margin_ +
+                            kPrimeExtra * sample_rate_) {
       return plan;
     }
     primed_ = true;
@@ -248,12 +263,18 @@ void DriftControl::EndWindow() {
   const double excess = lowest - margin_;
   window_read_ = 0;
   window_min_headroom_ = std::numeric_limits<double>::infinity();
-  if (excess > kHardExcess * sample_rate_) {
+  if (excess > hard_limit_) {
     // Down to the margin in one step; the next window starts from there.
     pending_drop_ = ClampFrames(std::floor(excess));
     adjust_ = 0;
+    hard_limit_ = kHardExcess * sample_rate_;
     return;
   }
+  // The limit follows the excess down, never up: what the device started
+  // with is never dropped, a stall on top of it is.
+  const double hard_excess = kHardExcess * sample_rate_;
+  hard_limit_ =
+      std::max(hard_excess, std::min(hard_limit_, excess + hard_excess));
   adjust_ = std::clamp(excess / (kTimeConstant * sample_rate_), -kMaxAdjust,
                        kMaxAdjust);
   if (excess > kSilentExcess * sample_rate_) {
@@ -262,8 +283,9 @@ void DriftControl::EndWindow() {
 }
 
 void DriftControl::OnShortRead() {
-  margin_ = std::min(margin_ + kMarginStep * sample_rate_,
-                     kMaxMargin * sample_rate_);
+  margin_ = std::min(
+      margin_ + std::max(kMarginStep * sample_rate_, device_frames_),
+      std::max(kMaxMargin * sample_rate_, device_frames_));
   Reset();
 }
 
