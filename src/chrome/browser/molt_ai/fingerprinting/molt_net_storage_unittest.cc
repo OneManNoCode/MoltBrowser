@@ -19,6 +19,8 @@ TEST(MoltNetStorageTest, OtherProfilesKeepChromiumsLimits) {
     EXPECT_FALSE(MoltNetQuotaSettings(mode).has_value());
     EXPECT_FALSE(MoltNetBlobStorageLimits(mode).has_value());
   }
+  // Chromium's own settings have no per-site budget.
+  EXPECT_EQ(storage::QuotaSettings().molt_per_site_quota, 0);
 }
 
 TEST(MoltNetStorageTest, QuotaSettings) {
@@ -30,6 +32,9 @@ TEST(MoltNetStorageTest, QuotaSettings) {
   EXPECT_EQ(settings->session_only_per_storage_key_quota,
             kMoltNetQuotaPerStorageKeyBytes);
   EXPECT_LE(settings->per_storage_key_quota, settings->pool_size);
+  // Each site's own budget, and with it no eviction.
+  EXPECT_EQ(settings->molt_per_site_quota, kMoltNetQuotaPerSiteBytes);
+  EXPECT_LT(settings->molt_per_site_quota, settings->pool_size);
   EXPECT_EQ(settings->should_remain_available, 0);
   EXPECT_EQ(settings->must_remain_available, 0);
   EXPECT_TRUE(settings->refresh_interval.is_max());

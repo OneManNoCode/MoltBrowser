@@ -734,6 +734,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context) override;  // MoltBrowser
   std::optional<storage::BlobStorageLimits> GetFixedBlobStorageLimits(
       content::BrowserContext* browser_context) override;  // MoltBrowser
+  bool ShouldKeepDownloadsWithTheirSite(
+      content::BrowserContext* browser_context) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

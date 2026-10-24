@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/tor/torrc_builder.h"
 
 #include <set>
+#include <string>
 #include <utility>
 
 namespace molt_ai {
@@ -478,6 +479,10 @@ std::optional<std::string> BuildTorrc(const TorrcOptions& options,
   t += "DataDirectory " + options.data_dir + "\n";
   t += "Log notice file " + options.log_file + "\n";
   t += "AvoidDiskWrites 1\n";
+  // Capacity every MoltNet site shares (torrc_builder.h).
+  t += "ConnLimit " + std::to_string(kTorConnLimit) + "\n";
+  t += "MaxClientCircuitsPending " +
+       std::to_string(kTorMaxClientCircuitsPending) + "\n";
   if (!options.geoip_file.empty()) {
     t += "GeoIPFile " + options.geoip_file + "\n";
   }

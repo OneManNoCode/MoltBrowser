@@ -1213,6 +1213,12 @@ class Run(object):
                 fp = (hop.get('fingerprint') or '').lstrip('$').upper()
                 hop['in_consensus'] = (fp in known) if known else None
             phase['data'] = {'hops': hops, 'consensus_relays': len(known)}
+            # The capacity every MoltNet site shares, as Tor was started.
+            torrc = self.tor_torrc()
+            if torrc:
+                phase['data']['tor_options'] = {
+                    key: support.torrc_value(torrc, key)
+                    for key in ('ConnLimit', 'MaxClientCircuitsPending')}
             self.phase_end(phase)
         except cdplib.CdpError as e:
             self.phase_end(phase, str(e))

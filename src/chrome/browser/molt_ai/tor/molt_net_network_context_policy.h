@@ -175,11 +175,18 @@ struct MoltNetNetworkContextSettings {
   // traffic goes through Tor's SOCKS5 port, one proxy chain, so every site
   // shared that limit: one site holding its connections open made every
   // other site's new connections wait, which a site open at the same time
-  // can measure. When not 0, each top-level site (network anonymization
-  // key) gets socket pools of its own with this limit, a fixed one, so
-  // MaxConnectionsPerProxy doesn't show either
+  // can measure. When not 0, each site gets socket pools of its own with
+  // fixed limits derived from this one, so MaxConnectionsPerProxy doesn't
+  // show either, all of them within one budget that Tor can always hold
   // (net/socket/molt_per_site_socket_pool_policy.h).
   uint32_t per_site_socket_pool_size = 0;
+
+  // Keepalive request limits: the network service counts requests that may
+  // outlive their page for all profiles and sites together (2048 in
+  // flight), so one site using them up shows to another, and to regular
+  // windows. When true, the context's requests count against limits of
+  // their own site (services/network/molt_keepalive_partitions.h).
+  bool per_site_keepalive_limits = false;
 
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
@@ -204,6 +211,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.per_site_socket_pool_size =
       is_moltnet_profile ? static_cast<uint32_t>(net::kMoltPerSitePoolSize)
                          : 0;
+  settings.per_site_keepalive_limits = is_moltnet_profile;
   return settings;
 }
 
@@ -217,6 +225,21 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
 // compromised MoltNet renderer. Decided by the profile alone (as WebRTC is,
 // molt_net_webrtc.h), not by the fingerprinting switch.
 constexpr bool SendUniformNetworkStateToRenderers(bool is_moltnet_profile) {
+  return is_moltnet_profile;
+}
+
+// Whether the download requests the browser makes for a profile's pages
+// carry the network isolation of the frame or download they come from
+// (ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(),
+// content/browser/download/molt_download_isolation_policy.h). Chromium
+// files a download a page starts without navigating (a link with
+// `download`, "Save link as", "Save image as"), a resumed download and Save
+// Page As's resources under their destination, as top-level navigations
+// there: their cache partition, connections and cookies, and in MoltNet the
+// destination's Tor circuit. Background Fetch, in every off-the-record
+// profile, carries the site's isolation through the download service
+// (components/download/.../molt_registering_site_isolation.h).
+constexpr bool KeepDownloadsWithTheirSite(bool is_moltnet_profile) {
   return is_moltnet_profile;
 }
 
@@ -285,6 +308,8 @@ void ApplyMoltNetNetworkContextSettings(
   network_context_params.molt_no_doh_probes = settings.no_doh_probes;
   network_context_params.molt_per_site_socket_pool_size =
       settings.per_site_socket_pool_size;
+  network_context_params.molt_per_site_keepalive_limits =
+      settings.per_site_keepalive_limits;
 }
 
 }  // namespace molt_ai::tor

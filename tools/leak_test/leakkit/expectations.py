@@ -170,9 +170,15 @@ RECORDER_MIME = {'default': 'video/webm;codecs=vp8',
                  'video/x-matroska': 'video/x-matroska;codecs=vp8',
                  'video/mp4': 'video/mp4;codecs=vp9'}
 # The quota the browser enforces per site in MoltNet (molt_net_storage_
-# values.h), read through DevTools: writing until QuotaExceededError would
-# take too long for the kit, so the configured limit is checked instead.
-MOLTNET_SITE_QUOTA = 200 * 1024 ** 2
+# values.h: each site's budget, all its storage keys together), read through
+# DevTools for a site that stores nothing: writing until QuotaExceededError
+# would take too long for the kit, so the configured limit is checked
+# instead.
+MOLTNET_SITE_QUOTA = 60 * 1024 ** 2
+
+# What MoltBrowser's torrc sets for the capacity every MoltNet site shares
+# (chrome/browser/molt_ai/tor/torrc_builder.h).
+TOR_CAPACITY = {'ConnLimit': '1000', 'MaxClientCircuitsPending': '64'}
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,

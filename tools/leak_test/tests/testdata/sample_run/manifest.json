@@ -195,7 +195,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
-    "storage.enforced_quota": 209715200,
+    "storage.enforced_quota": 62914560,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,
@@ -485,7 +485,11 @@
       "nickname": "e1",
       "role": "exit"
      }
-    ]
+    ],
+    "tor_options": {
+     "ConnLimit": "1000",
+     "MaxClientCircuitsPending": "64"
+    }
    },
    "end": 1760000003.0,
    "name": "circuit",

@@ -202,6 +202,17 @@ TESTS = (
         assertions=[('opaque_origin', 'eq', True,
                      'the page has an opaque origin (CSP sandbox)')],
         via_tor_paths=['/canary/sbx-{nonce}.png']),
+    # A Background Fetch on two sites, each to a name of its own test; read
+    # by report.py's identity.background_fetch_circuits check (the fetch
+    # must go to Tor with its page's site as SOCKS username).
+    LeakTest(
+        'bgfetch_a', 'A Background Fetch, on one site',
+        'bgfetch.html', origin='https', wait=3.0, timeout=60.0,
+        doc='MOLTNET_COMPLIANCE.md §2 (Shared network state), §4 step 8'),
+    LeakTest(
+        'bgfetch_b', 'A Background Fetch, on another site',
+        'bgfetch.html', origin='https_b', wait=3.0, timeout=60.0,
+        doc='MOLTNET_COMPLIANCE.md §2 (Shared network state), §4 step 8'),
     LeakTest(
         'builtin_ai', 'Built-in AI APIs and Translator (no component '
                       'download)',
@@ -299,8 +310,9 @@ COMPLIANCE_STEPS = (
      'check needs the public internet'),
     (8, 'Per-site circuits', 'automated',
      'different SOCKS usernames per site (sandboxed pages included), a '
-     'SOCKS username of its own for each certificate fetch, read from the '
-     'loopback capture and Tor\'s circuit list'),
+     'SOCKS username of its own for each certificate fetch, its site\'s for '
+     'a Background Fetch, read from the loopback capture and Tor\'s circuit '
+     'list'),
     (9, 'Overrides are refused', 'partial',
      '--proxy-server and each partitioning switch block MoltNet; a proxy '
      'policy set while MoltNet is open closes its windows; the '

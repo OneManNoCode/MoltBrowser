@@ -12,13 +12,40 @@
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_TORRC_BUILDER_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_TORRC_BUILDER_H_
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+// MoltNet's connection limits (std-only), which Tor's own must fit.
+#include "net/socket/molt_per_site_socket_pool_policy.h"
+
 namespace molt_ai {
 namespace tor {
+
+// Tor's capacity, as MoltNet's torrc sets it (all of MoltNet's sites share
+// its one Tor process; net/socket/molt_per_site_socket_pool_policy.h keeps
+// MoltNet's side within it):
+//
+//  * ConnLimit: Tor refuses to start unless it may open this many file
+//    descriptors, and keeps 32 of them for itself; MoltNet states Tor's
+//    default, the floor its connection budget is sized against. Tor itself
+//    raises its descriptor limit as far as the system allows.
+inline constexpr size_t kTorConnLimit = 1000;
+static_assert(kTorConnLimit == net::kMoltTorConnLimit);
+//  * MaxClientCircuitsPending: how many circuits Tor builds for streams at
+//    a time, for all sites together; a stream that needs a new circuit
+//    beyond it waits. Twice Tor's default (32), so that no one site can
+//    fill it: a site has at most kMoltSocksHandshakesPerSite handshakes in
+//    progress, and a connection needs at most three new circuits at a time
+//    (an onion service's descriptor, introduction and rendezvous circuits),
+//    with the one-off certificate fetches' handshakes on top.
+inline constexpr size_t kTorMaxClientCircuitsPending = 64;
+inline constexpr size_t kTorNewCircuitsPerConnection = 3;
+static_assert(net::kMoltSocksHandshakesPerSite * kTorNewCircuitsPerConnection +
+                  net::kMoltUnattributedSocksHandshakes <
+              kTorMaxClientCircuitsPending);
 
 // Pluggable transports MoltNet knows how to drive.
 enum class BridgeTransport {

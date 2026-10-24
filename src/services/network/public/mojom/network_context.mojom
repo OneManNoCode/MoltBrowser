@@ -718,6 +718,11 @@ struct NetworkContextParams {
   // never make another site's wait
   // (net/socket/molt_per_site_socket_pool_policy.h).
   [MinVersion=1] uint32 molt_per_site_socket_pool_size = 0;
+  // If true, this context's keepalive requests (fetch() with keepalive,
+  // sendBeacon(), pings) count against limits of their own site, apart from
+  // every other context's and site's
+  // (services/network/molt_keepalive_partitions.h).
+  [MinVersion=1] bool molt_per_site_keepalive_limits = false;
 };
 
 struct NetworkConditions {

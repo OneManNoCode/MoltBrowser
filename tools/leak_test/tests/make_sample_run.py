@@ -149,7 +149,7 @@ GOOD_FP = {
                            'Liberation Sans', 'LiberationSans-Bold',
                            'Liberation Serif Italic', 'Noto Sans',
                            'NotoSans-Bold'],
-    'storage.enforced_quota': 200 * 1024 ** 2,
+    'storage.enforced_quota': 60 * 1024 ** 2,
     'canvas.hash': '0123456789abcdef01234567',
 }
 
@@ -245,7 +245,9 @@ def manifest():
                          {'role': 'exit', 'nickname': 'e1', 'ip':
                           '192.0.2.70', 'fingerprint': 'C' * 40,
                           'in_consensus': True}],
-                'consensus_relays': 7000}},
+                'consensus_relays': 7000,
+                'tor_options': {'ConnLimit': '1000',
+                                'MaxClientCircuitsPending': '64'}}},
             {'name': 'identity', 'start': t(80), 'end': t(90), 'data': {
                 'regular_cookie_in_moltnet': False,
                 'cookie_after_close': False,

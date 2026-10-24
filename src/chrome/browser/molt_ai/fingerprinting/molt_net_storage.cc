@@ -19,6 +19,10 @@ std::optional<storage::QuotaSettings> MoltNetQuotaSettings(RendererMode mode) {
   settings.per_storage_key_quota = kMoltNetQuotaPerStorageKeyBytes;
   settings.session_only_per_storage_key_quota =
       kMoltNetQuotaPerStorageKeyBytes;
+  // Each site's own budget within the pool, which then bounds all of them
+  // together, and no eviction (storage/browser/quota/
+  // molt_storage_budget_policy.h).
+  settings.molt_per_site_quota = kMoltNetQuotaPerSiteBytes;
   // MoltNet's partitions are in memory: no disk space to keep free.
   settings.should_remain_available = 0;
   settings.must_remain_available = 0;

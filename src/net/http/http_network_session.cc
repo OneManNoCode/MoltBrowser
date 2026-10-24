@@ -31,6 +31,7 @@
 #include "net/quic/quic_session_pool.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_pool_manager_impl.h"
+#include "net/socket/molt_connection_budget.h"  // MoltBrowser
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket_close_reason.h"
@@ -194,6 +195,15 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
   CHECK(http_server_properties_);
   DCHECK(context_.client_socket_factory);
 
+  // MoltBrowser: MoltNet's connection budget and SOCKS handshake limits,
+  // before the pools and connect jobs that use them.
+  if (params.molt_per_site_socket_pool_size > 0) {
+    molt_connection_budget_ =
+        std::make_unique<MoltConnectionBudget>(kMoltNetConnectionBudget);
+    molt_socks_handshake_limiter_ =
+        std::make_unique<MoltSocksHandshakeLimiter>();
+  }
+
   normal_socket_pool_manager_ = std::make_unique<ClientSocketPoolManagerImpl>(
       CreateCommonConnectJobParams(false /* for_websockets */),
       CreateCommonConnectJobParams(true /* for_websockets */),
@@ -201,7 +211,7 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
       // cleanup_on_ip_address_change
       !params.ignore_ip_address_changes,
       // MoltBrowser: per-site pools (MoltNet's network context).
-      params.molt_per_site_socket_pool_size);
+      params.molt_per_site_socket_pool_size, molt_connection_budget_.get());
   websocket_socket_pool_manager_ =
       std::make_unique<ClientSocketPoolManagerImpl>(
           CreateCommonConnectJobParams(false /* for_websockets */),
@@ -210,7 +220,7 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
           // cleanup_on_ip_address_change
           !params.ignore_ip_address_changes,
           // MoltBrowser: per-site pools (MoltNet's network context).
-          params.molt_per_site_socket_pool_size);
+          params.molt_per_site_socket_pool_size, molt_connection_budget_.get());
 
   if (params_.enable_http2) {
     next_protos_.push_back(NextProto::kProtoHTTP2);
@@ -440,9 +450,12 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
       for_websockets ? &websocket_endpoint_lock_manager_ : nullptr,
       context_.http_server_properties, &next_protos_, &application_settings_,
       &params_.ignore_certificate_errors, &params_.enable_early_data);
-  // MoltBrowser: this session's SOCKS5 password for MoltNet's Tor.
+  // MoltBrowser: this session's SOCKS5 password for MoltNet's Tor, and its
+  // SOCKS handshake limits (null unless it has per-site pools).
   common_connect_job_params.molt_socks_isolation_password =
       &params_.molt_socks_isolation_password;
+  common_connect_job_params.molt_socks_handshake_limiter =
+      molt_socks_handshake_limiter_.get();
   return common_connect_job_params;
 }
 

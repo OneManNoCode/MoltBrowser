@@ -53,7 +53,9 @@ class NetLog;
 #if BUILDFLAG(ENABLE_REPORTING)
 class NetworkErrorLoggingService;
 #endif
-class NetworkAnonymizationKey;  // MoltBrowser
+class MoltConnectionBudget;       // MoltBrowser
+class MoltSocksHandshakeLimiter;  // MoltBrowser
+class NetworkAnonymizationKey;    // MoltBrowser
 class NetworkQualityEstimator;
 class ProxyDelegate;
 class ProxyResolutionService;
@@ -172,8 +174,10 @@ struct NET_EXPORT HttpNetworkSessionParams {
   // MoltNet identities on one circuit.
   std::string molt_socks_isolation_password;
 
-  // MoltBrowser: if not 0, every top-level site gets socket pools of its own,
-  // each with this limit, instead of one pool per proxy chain for all sites
+  // MoltBrowser: if not 0, every site gets socket pools of its own, with
+  // fixed limits derived from this one, instead of one pool per proxy chain
+  // for all sites; together they stay within a connection budget, and each
+  // site's SOCKS handshakes in progress are limited
   // (net/socket/molt_per_site_socket_pool_policy.h). Set for MoltNet's
   // network contexts only.
   size_t molt_per_site_socket_pool_size = 0;
@@ -358,6 +362,12 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   SSLClientSessionCache ssl_client_session_cache_;
   SSLClientContext ssl_client_context_;
   WebSocketEndpointLockManager websocket_endpoint_lock_manager_;
+  // MoltBrowser: MoltNet's connection budget and SOCKS handshake limits,
+  // made iff params.molt_per_site_socket_pool_size isn't 0
+  // (net/socket/molt_connection_budget.h). Before the socket pool managers,
+  // which use them, so that they outlive them.
+  std::unique_ptr<MoltConnectionBudget> molt_connection_budget_;
+  std::unique_ptr<MoltSocksHandshakeLimiter> molt_socks_handshake_limiter_;
   std::unique_ptr<ClientSocketPoolManager> normal_socket_pool_manager_;
   std::unique_ptr<ClientSocketPoolManager> websocket_socket_pool_manager_;
   QuicSessionPool quic_session_pool_;

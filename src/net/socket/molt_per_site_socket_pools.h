@@ -5,8 +5,10 @@
 // (molt_per_site_socket_pool_policy.h says why). Owned by a
 // ClientSocketPoolManagerImpl whose session has
 // HttpNetworkSessionParams::molt_per_site_socket_pool_size set; one per
-// pool type. Header-only: //net's sources are Chromium's BUILD.gn, which
-// MoltBrowser doesn't change.
+// pool type. Each pool's limits are fixed, and with the session's
+// MoltConnectionBudget (molt_connection_budget.h) every pool asks the
+// budget before it opens a socket. Header-only: //net's sources are
+// Chromium's BUILD.gn, which MoltBrowser doesn't change.
 
 #ifndef NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 #define NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
@@ -14,55 +16,79 @@
 #include <map>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/proxy_chain.h"
+#include "net/socket/client_socket_pool.h"
 #include "net/socket/connect_job.h"
+#include "net/socket/molt_connection_budget.h"
 #include "net/socket/molt_per_site_socket_pool_policy.h"
 #include "net/socket/transport_client_socket_pool.h"
 
 namespace net {
 
-class MoltPerSiteSocketPools {
+class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
+                               public MoltConnectionBudget::Member {
  public:
   // The arguments a ClientSocketPoolManagerImpl gives the pool of a proxy
-  // chain, except the limits: `per_site_pool_size` for each site's pool,
-  // and MoltPerSiteGroupLimit() of it and `max_sockets_per_group` per group.
+  // chain, except the limits: MoltPerSitePoolLimit() of
+  // `per_site_pool_size` for each site's pool, and MoltPerSiteGroupLimit()
+  // of that and `max_sockets_per_group` per group. `budget` (may be null)
+  // outlives this.
   MoltPerSiteSocketPools(size_t per_site_pool_size,
                          size_t max_sockets_per_group,
                          base::TimeDelta unused_idle_socket_timeout,
                          bool is_for_websockets,
                          const CommonConnectJobParams* common_connect_job_params,
-                         bool cleanup_on_ip_address_change)
+                         bool cleanup_on_ip_address_change,
+                         MoltConnectionBudget* budget = nullptr)
       : per_site_pool_size_(per_site_pool_size),
-        per_group_limit_(
-            MoltPerSiteGroupLimit(per_site_pool_size, max_sockets_per_group)),
+        max_sockets_per_group_(max_sockets_per_group),
         unused_idle_socket_timeout_(unused_idle_socket_timeout),
         is_for_websockets_(is_for_websockets),
         common_connect_job_params_(common_connect_job_params),
-        cleanup_on_ip_address_change_(cleanup_on_ip_address_change) {}
+        cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
+        budget_(budget) {
+    if (budget_) {
+      budget_->AddMember(this);
+    }
+  }
 
   MoltPerSiteSocketPools(const MoltPerSiteSocketPools&) = delete;
   MoltPerSiteSocketPools& operator=(const MoltPerSiteSocketPools&) = delete;
 
-  // The pool for requests of the site `network_anonymization_key` through
-  // `proxy_chain`; made on first use. Drops the site pools nothing has used
-  // for a while first, when it makes one.
+  ~MoltPerSiteSocketPools() override {
+    if (budget_) {
+      budget_->RemoveMember(this);
+    }
+    // What the pools release while they go no longer concerns the budget.
+    budget_ = nullptr;
+    pools_.clear();
+  }
+
+  // The pool for requests of network key `network_anonymization_key`
+  // through `proxy_chain`: its site's (MoltBudgetSiteFor()); made on first
+  // use. Drops the site pools nothing has used for a while first, when it
+  // makes one.
   ClientSocketPool* Get(const ProxyChain& proxy_chain,
                         const NetworkAnonymizationKey& network_anonymization_key) {
     const base::TimeTicks now = base::TimeTicks::Now();
-    Key key(proxy_chain, network_anonymization_key);
+    Key key(proxy_chain, MoltBudgetSiteFor(network_anonymization_key));
     auto it = pools_.find(key);
     if (it == pools_.end()) {
       DropUnusedPools(now);
+      const size_t limit = MoltPerSitePoolLimit(
+          per_site_pool_size_, is_for_websockets_, !key.second.has_value());
       Entry entry;
       entry.pool = std::make_unique<TransportClientSocketPool>(
-          per_site_pool_size_, per_group_limit_, unused_idle_socket_timeout_,
-          proxy_chain, is_for_websockets_, common_connect_job_params_,
-          cleanup_on_ip_address_change_);
+          limit, MoltPerSiteGroupLimit(limit, max_sockets_per_group_),
+          unused_idle_socket_timeout_, proxy_chain, is_for_websockets_,
+          common_connect_job_params_, cleanup_on_ip_address_change_);
+      entry.pool->MoltSetSocketGate(this);
       it = pools_.emplace(std::move(key), std::move(entry)).first;
     }
     it->second.last_handed_out = now;
@@ -72,6 +98,10 @@ class MoltPerSiteSocketPools {
   void FlushWithError(int net_error, const char* net_log_reason_utf8) {
     for (auto& [key, entry] : pools_) {
       entry.pool->FlushWithError(net_error, net_log_reason_utf8);
+    }
+    // Cancelled connect jobs leave room the pools don't report.
+    if (budget_) {
+      budget_->OnReleased();
     }
   }
 
@@ -96,12 +126,78 @@ class MoltPerSiteSocketPools {
 
   size_t PoolCountForTesting() const { return pools_.size(); }
 
+  // ClientSocketPool::MoltSocketGate:
+  bool MoltMayAllocate(const ClientSocketPool* pool) override {
+    if (!budget_) {
+      return true;
+    }
+    for (const auto& [key, entry] : pools_) {
+      if (entry.pool.get() == pool) {
+        return budget_->MayAllocate(this, key.second);
+      }
+    }
+    return true;
+  }
+  void MoltOnReleased(const ClientSocketPool* pool) override {
+    if (budget_) {
+      budget_->OnReleased();
+    }
+  }
+
+  // MoltConnectionBudget::Member:
+  void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads) const override {
+    for (const auto& [key, entry] : pools_) {
+      loads[key.second] += entry.pool->SocketsInUse();
+    }
+  }
+  bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
+    for (const auto& [key, entry] : pools_) {
+      if (key.second == site && entry.pool->MoltHasStalledRequest()) {
+        return true;
+      }
+    }
+    return false;
+  }
+  void MoltRetryStalledRequests(const MoltBudgetSite& site) override {
+    for (TransportClientSocketPool* pool : PoolsOf(site)) {
+      pool->MoltRetryStalledRequests();
+    }
+  }
+  bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override {
+    for (TransportClientSocketPool* pool : PoolsOf(site)) {
+      if (pool->MoltCloseOneIdleSocket()) {
+        return true;
+      }
+    }
+    return false;
+  }
+  bool MoltCloseIdleSessions(const MoltBudgetSite& site) override {
+    bool any = false;
+    for (TransportClientSocketPool* pool : PoolsOf(site)) {
+      any |= pool->MoltCloseIdleSessions();
+    }
+    return any;
+  }
+
  private:
-  using Key = std::pair<ProxyChain, NetworkAnonymizationKey>;
+  using Key = std::pair<ProxyChain, MoltBudgetSite>;
   struct Entry {
     std::unique_ptr<TransportClientSocketPool> pool;
     base::TimeTicks last_handed_out;
   };
+
+  // `site`'s pools (one per proxy chain), collected first: what a pool does
+  // when asked doesn't change the map, but this doesn't rely on it.
+  std::vector<TransportClientSocketPool*> PoolsOf(
+      const MoltBudgetSite& site) const {
+    std::vector<TransportClientSocketPool*> pools;
+    for (const auto& [key, entry] : pools_) {
+      if (key.second == site) {
+        pools.push_back(entry.pool.get());
+      }
+    }
+    return pools;
+  }
 
   void DropUnusedPools(base::TimeTicks now) {
     std::erase_if(pools_, [now](const auto& item) {
@@ -113,11 +209,12 @@ class MoltPerSiteSocketPools {
   }
 
   const size_t per_site_pool_size_;
-  const size_t per_group_limit_;
+  const size_t max_sockets_per_group_;
   const base::TimeDelta unused_idle_socket_timeout_;
   const bool is_for_websockets_;
   const raw_ptr<const CommonConnectJobParams> common_connect_job_params_;
   const bool cleanup_on_ip_address_change_;
+  raw_ptr<MoltConnectionBudget> budget_;
   std::map<Key, Entry> pools_;
 };
 
