@@ -12,6 +12,7 @@
 #include "base/cpu.h"
 #include "base/memory/aligned_memory.h"
 #include "build/build_config.h"
+#include "media/base/molt_portable_media.h"
 #include "media/base/vector_math_testing.h"
 
 // NaCl does not allow intrinsics.
@@ -43,6 +44,11 @@ void FMAC(base::span<const float> src, float scale, base::span<float> dest) {
   DCHECK(base::IsAligned(src.data(), kRequiredAlignment));
   DCHECK(base::IsAligned(dest.data(), kRequiredAlignment));
   static const auto fmac_func = [] {
+    // MoltBrowser: the same sums on every CPU in MoltNet's renderers, where
+    // pages read what an encoder downmixed (media/base/molt_portable_media.h).
+    if (IsPortableMediaProcess()) {
+      return FMAC_C;
+    }
 #if defined(ARCH_CPU_X86_FAMILY)
     base::CPU cpu;
     if (cpu.has_avx2() && cpu.has_fma3())

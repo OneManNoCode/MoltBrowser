@@ -88,6 +88,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
+#include "media/base/molt_portable_media.h"
 
 #if defined(ARCH_CPU_X86_FAMILY)
 #include <immintrin.h>
@@ -128,6 +129,12 @@ static double SincScaleFactor(double io_ratio, size_t kernel_size) {
 
 // If we know the minimum architecture at compile time, avoid CPU detection.
 void SincResampler::InitializeCPUSpecificFeatures() {
+  // MoltBrowser: the same samples on every CPU in MoltNet's renderers, where
+  // pages read what an encoder resampled (media/base/molt_portable_media.h).
+  if (IsPortableMediaProcess()) {
+    convolve_proc_ = Convolve_C;
+    return;
+  }
 #if defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
   convolve_proc_ = Convolve_NEON;
 #elif defined(ARCH_CPU_X86_FAMILY)

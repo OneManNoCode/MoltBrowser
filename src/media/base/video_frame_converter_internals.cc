@@ -4,6 +4,7 @@
 
 #include "media/base/video_frame_converter_internals.h"
 
+#include "media/base/molt_portable_media.h"
 #include "media/base/video_types.h"
 #include "third_party/libyuv/include/libyuv.h"
 
@@ -87,6 +88,10 @@ bool ARGBScale(const VideoFrame& src_frame,
                VideoFrame& dest_frame,
                libyuv::FilterMode filter) {
   DCHECK(IsSupportedRGBFormat(src_frame.format()));
+  // MoltBrowser: libyuv's filters round differently on x86 and Arm.
+  if (filter != libyuv::kFilterNone && IsPortableMediaProcess()) {
+    return PortableScaleFrame(src_frame, dest_frame);
+  }
   return libyuv::ARGBScale(
              src_frame.visible_data(VideoFrame::Plane::kARGB),
              src_frame.stride(VideoFrame::Plane::kARGB),
@@ -243,6 +248,11 @@ void I4xxxScale(const VideoFrame& src_frame, VideoFrame& dest_frame) {
       src_frame.visible_rect() == dest_frame.visible_rect()
           ? libyuv::kFilterNone
           : libyuv::kFilterBox;
+  // MoltBrowser: libyuv's filters round differently on x86 and Arm.
+  if (kDefaultFiltering != libyuv::kFilterNone && IsPortableMediaProcess()) {
+    PortableScaleFrame(src_frame, dest_frame);
+    return;
+  }
 
   for (size_t i = 0; i < VideoFrame::NumPlanes(dest_frame.format()); ++i) {
     libyuv::ScalePlane(src_frame.visible_data(i), src_frame.stride(i),
@@ -278,6 +288,11 @@ void I4xxxScale_16(const VideoFrame& src_frame, VideoFrame& dest_frame) {
       src_frame.visible_rect() == dest_frame.visible_rect()
           ? libyuv::kFilterNone
           : libyuv::kFilterBox;
+  // MoltBrowser: libyuv's filters round differently on x86 and Arm.
+  if (kDefaultFiltering != libyuv::kFilterNone && IsPortableMediaProcess()) {
+    PortableScaleFrame(src_frame, dest_frame);
+    return;
+  }
 
   for (size_t i = 0; i < VideoFrame::NumPlanes(dest_frame.format()); ++i) {
     const uint16_t* src_ptr = base::subtle::reinterpret_span<const uint16_t>(
@@ -497,6 +512,10 @@ bool NVxxScale(const VideoFrame& src_frame,
          src_frame.format() == PIXEL_FORMAT_NV12A);
   if (src_frame.visible_rect().size() == dest_frame.visible_rect().size()) {
     filter = libyuv::kFilterNone;
+  }
+  // MoltBrowser: libyuv's filters round differently on x86 and Arm.
+  if (filter != libyuv::kFilterNone && IsPortableMediaProcess()) {
+    return PortableScaleFrame(src_frame, dest_frame);
   }
   if (((src_frame.format() == PIXEL_FORMAT_NV12 ||
         src_frame.format() == PIXEL_FORMAT_NV12A) &&
