@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/callback_list.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -41,8 +42,12 @@
 #include "net/base/proxy_server.h"
 #include "net/base/schemeful_site.h"
 #include "net/http/http_cache.h"
+#include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_config_with_annotation.h"
+#include "net/proxy_resolution/proxy_host_matching_rules.h"
 #include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_list.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/proxy_lookup_client.mojom.h"
@@ -80,6 +85,43 @@ constexpr char kRoutingProbeUrl[] = "https://check.torproject.org/";
 
 // The current MoltNet OTR profile id, attached to the ORIGINAL profile.
 const void* const kMoltNetProfileDataKey = &kMoltNetProfileDataKey;
+
+// Set on a MoltNet profile whose identity has ended (EndIdentity()).
+const void* const kMoltNetIdentityEndedKey = &kMoltNetIdentityEndedKey;
+
+base::RepeatingCallbackList<void(Profile*)>& IdentityEndedCallbacks() {
+  static base::NoDestructor<base::RepeatingCallbackList<void(Profile*)>>
+      callbacks;
+  return *callbacks;
+}
+
+// The proxy configuration an ended identity's network context gets. It
+// sends nothing; Chromium's tools want every configuration annotated.
+constexpr net::NetworkTrafficAnnotationTag kMoltNetEndedIdentityAnnotation =
+    net::DefineNetworkTrafficAnnotation("moltnet_ended_identity", R"(
+      semantics {
+        sender: "MoltNet"
+        description:
+          "The proxy configuration of a MoltNet identity that has ended "
+          "(New Identity, or a setting MoltNet can't accept while its "
+          "windows are open). It lists no proxy and no direct connection, "
+          "so that identity's network context refuses every request while "
+          "its windows close."
+        trigger: "New Identity, or a policy change while MoltNet is open."
+        data: "None: no request is sent."
+        destination: OTHER
+        destination_other: "None: no request is sent."
+        internal {
+          contacts { email: "security@geneye.ai" }
+        }
+        user_data { type: NONE }
+        last_reviewed: "2026-10-24"
+      }
+      policy {
+        cookies_allowed: NO
+        setting: "None: it only stops requests."
+        policy_exception_justification: "Sends nothing."
+      })");
 
 struct MoltNetProfileData : public base::SupportsUserData::Data {
   explicit MoltNetProfileData(const Profile::OTRProfileID& otr_id)
@@ -352,13 +394,14 @@ std::string MoltNetRouting::IncognitoPolicyError(Profile* profile) {
 }
 
 // static
-bool MoltNetRouting::MayApplyProxyConfig(
+std::optional<net::ProxyConfigWithAnnotation> MoltNetRouting::ProxyConfigFor(
     Profile* profile,
     const net::ProxyConfigWithAnnotation& config,
     bool available) {
   const bool is_moltnet = IsMoltNetProfile(profile);
+  const bool ended = is_moltnet && HasIdentityEnded(profile);
   bool is_moltnets_own = false;
-  if (is_moltnet && available) {
+  if (is_moltnet && !ended && available) {
     // What MoltNet itself wrote, whatever outranks it: the user store's
     // value, converted the way PrefProxyConfigTrackerImpl converts the
     // effective one. Only a value MoltNetSocksPort() accepts counts.
@@ -373,7 +416,60 @@ bool MoltNetRouting::MayApplyProxyConfig(
         // override rules, dynamic routes.
         config.value().Equals(expected.value());
   }
-  return MoltNetAcceptsProxyConfig(is_moltnet, available, is_moltnets_own);
+  switch (MoltNetProxyConfigActionFor(is_moltnet, ended, available,
+                                      is_moltnets_own)) {
+    case MoltNetProxyConfigAction::kApply:
+      return config;
+    case MoltNetProxyConfigAction::kHoldBack:
+      return std::nullopt;
+    case MoltNetProxyConfigAction::kRefuseAll:
+      return RefuseAllProxyConfig();
+  }
+  return std::nullopt;
+}
+
+// static
+net::ProxyConfigWithAnnotation MoltNetRouting::RefuseAllProxyConfig() {
+  net::ProxyConfig config;
+  // A proxy list, and an empty one: ProxyConfig::ProxyRules::Apply() hands
+  // every URL an empty ProxyInfo (EMPTY rules would mean DIRECT), and the
+  // stream factory fails the request with ERR_NO_SUPPORTED_PROXIES.
+  config.proxy_rules().type = net::ProxyConfig::ProxyRules::Type::PROXY_LIST;
+  config.proxy_rules().single_proxies.Clear();
+  // Without this, localhost, loopback and link-local URLs would match
+  // Chromium's implicit bypass rules and go DIRECT.
+  config.proxy_rules().bypass_rules.AddRulesToSubtractImplicit();
+  return net::ProxyConfigWithAnnotation(config,
+                                        kMoltNetEndedIdentityAnnotation);
+}
+
+// static
+void MoltNetRouting::EndIdentity(Profile* moltnet_profile) {
+  if (!IsMoltNetProfile(moltnet_profile)) {
+    return;
+  }
+  const bool first_time = !HasIdentityEnded(moltnet_profile);
+  if (first_time) {
+    moltnet_profile->SetUserData(kMoltNetIdentityEndedKey,
+                                 std::make_unique<base::SupportsUserData::Data>());
+    // Its network contexts get RefuseAllProxyConfig() now
+    // (ProxyConfigMonitor), before anything else happens to the identity.
+    IdentityEndedCallbacks().Notify(moltnet_profile);
+  }
+  ForgetMoltNetProfile(moltnet_profile);
+  FlushNetworkState(moltnet_profile);
+}
+
+// static
+bool MoltNetRouting::HasIdentityEnded(Profile* moltnet_profile) {
+  return moltnet_profile &&
+         moltnet_profile->GetUserData(kMoltNetIdentityEndedKey) != nullptr;
+}
+
+// static
+base::CallbackListSubscription MoltNetRouting::AddIdentityEndedCallback(
+    IdentityEndedCallback callback) {
+  return IdentityEndedCallbacks().Add(std::move(callback));
 }
 
 // static
@@ -543,20 +639,6 @@ void MoltNetRouting::ForgetMoltNetProfile(Profile* moltnet_profile) {
   if (data && data->id == moltnet_profile->GetOTRProfileID()) {
     original->RemoveUserData(kMoltNetProfileDataKey);
   }
-}
-
-// static
-void MoltNetRouting::AdoptMoltNetProfile(Profile* moltnet_profile) {
-  if (!IsMoltNetProfile(moltnet_profile)) {
-    return;
-  }
-  Profile* original = moltnet_profile->GetOriginalProfile();
-  if (GetMoltNetProfile(original)) {
-    return;
-  }
-  original->SetUserData(
-      kMoltNetProfileDataKey,
-      std::make_unique<MoltNetProfileData>(moltnet_profile->GetOTRProfileID()));
 }
 
 // static

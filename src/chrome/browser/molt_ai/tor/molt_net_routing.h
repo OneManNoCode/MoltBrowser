@@ -18,9 +18,13 @@
 //     they never go direct. A window is only opened after the profile's own
 //     NetworkContext confirms (LookUpProxyForURL) that it routes via Tor.
 //     That NetworkContext is never given another proxy configuration (a
-//     policy's, override rules: MayApplyProxyConfig()), and if a setting
+//     policy's, override rules: ProxyConfigFor()), and if a setting
 //     the open check reads changes while MoltNet is open, MoltNet ends
 //     (SettingsError(), molt_net_live_guard.h).
+//   * An identity that has ended (New Identity, a refused setting:
+//     EndIdentity()) refuses every request from that moment: its
+//     NetworkContext gets a proxy configuration with no proxy and no
+//     DIRECT (RefuseAllProxyConfig()).
 //
 // Leak controls applied to the MoltNet profile (rationale in the .cc):
 //   proxy = socks5://127.0.0.1:<auto port> (remote DNS, fail-closed),
@@ -38,6 +42,7 @@
 #include <optional>
 #include <string>
 
+#include "base/callback_list.h"
 #include "base/functional/callback.h"
 
 class Profile;
@@ -117,16 +122,47 @@ class MoltNetRouting {
   static std::string SettingsError(Profile* moltnet_profile,
                                    std::optional<uint16_t> socks_port);
 
-  // For ProxyConfigMonitor: whether |profile|'s network contexts may be
-  // given the proxy configuration |config| (|available|: Chromium has one,
-  // rather than none, which the monitor would send as DIRECT). True for
-  // every profile but MoltNet's. A MoltNet profile's network contexts only
-  // get exactly the configuration its own Tor proxy setting describes, so
-  // a policy's proxy or override rules never reach them, while open or not
-  // (molt_net_live_policy.h).
-  static bool MayApplyProxyConfig(Profile* profile,
-                                  const net::ProxyConfigWithAnnotation& config,
-                                  bool available);
+  // For ProxyConfigMonitor: the proxy configuration |profile|'s network
+  // contexts get when Chromium computes |config| (|available|: Chromium has
+  // one, rather than none, which the monitor would send as DIRECT), or
+  // nullopt if they get none. Every profile but MoltNet's: |config|. A
+  // MoltNet profile's network contexts only get exactly the configuration
+  // its own Tor proxy setting describes, so a policy's proxy or override
+  // rules never reach them, while open or not; anything else is held back
+  // (nullopt). Once its identity has ended (EndIdentity()), they get
+  // RefuseAllProxyConfig() whatever |config| is (molt_net_live_policy.h).
+  static std::optional<net::ProxyConfigWithAnnotation> ProxyConfigFor(
+      Profile* profile,
+      const net::ProxyConfigWithAnnotation& config,
+      bool available);
+
+  // The proxy configuration that makes a network context refuse every
+  // request: a proxy list with no entry, not even DIRECT, so the network
+  // stack fails each request with ERR_NO_SUPPORTED_PROXIES before it
+  // connects anywhere; and Chromium's implicit bypass of localhost, loopback
+  // and link-local addresses removed ("<-loopback>"), so those are refused
+  // too instead of going direct.
+  static net::ProxyConfigWithAnnotation RefuseAllProxyConfig();
+
+  // Ends |moltnet_profile|'s identity at once (New Identity, a setting the
+  // live check refuses): from now on its network contexts refuse every
+  // request (ProxyConfigMonitor gives them RefuseAllProxyConfig()), its
+  // connections and host cache are dropped (FlushNetworkState()), and it is
+  // no longer the current MoltNet profile (ForgetMoltNetProfile()), so no
+  // window opens in it. Closes no window and destroys nothing (it runs
+  // inside settings notifications). Idempotent; only for MoltNet profiles.
+  static void EndIdentity(Profile* moltnet_profile);
+
+  // Whether EndIdentity() ended |moltnet_profile|'s identity.
+  static bool HasIdentityEnded(Profile* moltnet_profile);
+
+  // Runs |callback| with the MoltNet profile whenever EndIdentity() ends an
+  // identity (first time only). ProxyConfigMonitor uses it to hand that
+  // profile's network contexts RefuseAllProxyConfig() at once.
+  using IdentityEndedCallback =
+      base::RepeatingCallback<void(Profile* moltnet_profile)>;
+  static base::CallbackListSubscription AddIdentityEndedCallback(
+      IdentityEndedCallback callback);
 
   // Asks the MoltNet profile's own NetworkContext how it would route a
   // request. |done(true)| only if the answer is exactly SOCKS5
@@ -143,11 +179,6 @@ class MoltNetRouting {
   // GetOrCreateMoltNetProfile() builds a brand-new one (fresh cookies, cache
   // and storage). Does not destroy it.
   static void ForgetMoltNetProfile(Profile* moltnet_profile);
-
-  // Makes |moltnet_profile| the current MoltNet profile of its original
-  // profile again, unless that has a current one already (used when New
-  // Identity gives up because a window of the old identity stayed open).
-  static void AdoptMoltNetProfile(Profile* moltnet_profile);
 
   // Routing of the profile a UI surface is shown in.
   static Status GetStatus(Profile* profile);

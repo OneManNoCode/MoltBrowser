@@ -237,6 +237,35 @@ TEST(MoltNetLivePolicyTest, MoltNetGetsOnlyItsOwnProxyConfig) {
   EXPECT_FALSE(MoltNetAcceptsProxyConfig(true, false, false));
 }
 
+TEST(MoltNetLivePolicyTest, AnEndedIdentityRefusesEverything) {
+  for (bool available : {false, true}) {
+    for (bool own : {false, true}) {
+      // Whatever Chromium computes, MoltNet's own included.
+      EXPECT_EQ(MoltNetProxyConfigActionFor(true, true, available, own),
+                MoltNetProxyConfigAction::kRefuseAll)
+          << available << own;
+      // Other profiles never get it, also if something called them ended.
+      EXPECT_EQ(MoltNetProxyConfigActionFor(false, true, available, own),
+                MoltNetProxyConfigAction::kApply)
+          << available << own;
+      EXPECT_EQ(MoltNetProxyConfigActionFor(false, false, available, own),
+                MoltNetProxyConfigAction::kApply)
+          << available << own;
+    }
+  }
+}
+
+TEST(MoltNetLivePolicyTest, ALiveIdentityGetsOnlyItsOwnConfig) {
+  EXPECT_EQ(MoltNetProxyConfigActionFor(true, false, true, true),
+            MoltNetProxyConfigAction::kApply);
+  EXPECT_EQ(MoltNetProxyConfigActionFor(true, false, true, false),
+            MoltNetProxyConfigAction::kHoldBack);
+  EXPECT_EQ(MoltNetProxyConfigActionFor(true, false, false, true),
+            MoltNetProxyConfigAction::kHoldBack);
+  EXPECT_EQ(MoltNetProxyConfigActionFor(true, false, false, false),
+            MoltNetProxyConfigAction::kHoldBack);
+}
+
 TEST(MoltNetLivePolicyTest, IsAConstantExpression) {
   static_assert(MoltNetSocksPort(true, "socks5://127.0.0.1:9050",
                                  "<-loopback>") == 9050);

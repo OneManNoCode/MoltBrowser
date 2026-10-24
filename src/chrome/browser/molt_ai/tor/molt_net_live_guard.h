@@ -25,7 +25,7 @@
 //
 // Between the change and the end, MoltNet's network context keeps MoltNet's
 // Tor proxy configuration whatever the settings say
-// (MoltNetRouting::MayApplyProxyConfig(), asked by ProxyConfigMonitor), so
+// (MoltNetRouting::ProxyConfigFor(), asked by ProxyConfigMonitor), so
 // no request of that identity leaves outside Tor meanwhile.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_LIVE_GUARD_H_

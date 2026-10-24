@@ -21,7 +21,7 @@
 //  * MoltNet's network context only ever gets MoltNet's own proxy
 //    configuration: Tor's SOCKS5 port on 127.0.0.1, nothing bypassed
 //    (MoltNetAcceptsProxyConfig(), asked by ProxyConfigMonitor through
-//    MoltNetRouting::MayApplyProxyConfig()). It never gets any other one,
+//    MoltNetRouting::ProxyConfigFor()). It never gets any other one,
 //    so its requests keep going to Tor, or fail, and never go direct, to
 //    another proxy or where an override rule says. A network context that
 //    hasn't had MoltNet's configuration yet has none at all: its requests
@@ -262,6 +262,47 @@ constexpr bool MoltNetAcceptsProxyConfig(bool is_moltnet_profile,
                                          bool available,
                                          bool is_moltnets_own) {
   return !is_moltnet_profile || (available && is_moltnets_own);
+}
+
+// ---- An identity that has ended ----------------------------------------
+//
+// A MoltNet identity ends at New Identity and when the live check refuses
+// (above). From that moment its network contexts refuse every request: they
+// are given a proxy configuration that lists no proxy and no direct
+// connection (MoltNetRouting::RefuseAllProxyConfig()), so the network stack
+// fails each new request with ERR_NO_SUPPORTED_PROXIES before it connects
+// anywhere, whatever a page, a worker, DevTools or a keepalive request still
+// tries while the identity's windows close. Its connections are closed as
+// well. Nothing a later setting change computes replaces that configuration.
+
+// What ProxyConfigMonitor sends a profile's network contexts when Chromium
+// computes a proxy configuration (`available`: one, rather than none).
+enum class MoltNetProxyConfigAction {
+  // Chromium's configuration (every profile but MoltNet's), or MoltNet's
+  // own (`is_moltnets_own`, see MoltNetAcceptsProxyConfig()).
+  kApply,
+  // Nothing: the network context keeps the configuration it has, MoltNet's,
+  // or, before it has had MoltNet's, none (its requests wait).
+  kHoldBack,
+  // The configuration that refuses every request: the identity has ended.
+  kRefuseAll,
+};
+
+constexpr MoltNetProxyConfigAction MoltNetProxyConfigActionFor(
+    bool is_moltnet_profile,
+    bool identity_ended,
+    bool available,
+    bool is_moltnets_own) {
+  if (!is_moltnet_profile) {
+    return MoltNetProxyConfigAction::kApply;
+  }
+  if (identity_ended) {
+    return MoltNetProxyConfigAction::kRefuseAll;
+  }
+  return MoltNetAcceptsProxyConfig(is_moltnet_profile, available,
+                                   is_moltnets_own)
+             ? MoltNetProxyConfigAction::kApply
+             : MoltNetProxyConfigAction::kHoldBack;
 }
 
 }  // namespace molt_ai::tor

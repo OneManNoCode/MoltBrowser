@@ -256,6 +256,10 @@ source_set("tor") {
     # MoltNet turns Safe Browsing off (molt_net_routing.cc).
     "//components/safe_browsing/core/common:safe_browsing_prefs",
     "//content/public/browser",
+
+    # content::RESULT_CODE_KILLED: molt_net_window.cc ends the renderer
+    # processes of an ended identity whose window is still open.
+    "//content/public/common",
     # Random SAFECOOKIE client nonces (crypto/random.h).
     "//crypto",
     "//mojo/public/cpp/bindings",

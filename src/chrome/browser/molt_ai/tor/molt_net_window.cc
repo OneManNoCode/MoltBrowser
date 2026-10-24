@@ -12,6 +12,8 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/scoped_observation.h"
@@ -19,7 +21,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
@@ -38,8 +39,13 @@
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/unload_controller.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
+#include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/result_codes.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/base_window.h"
 #include "ui/base/mojom/window_show_state.mojom.h"
@@ -161,15 +167,155 @@ void EnsureReaper() {
   [[maybe_unused]] static base::NoDestructor<MoltNetProfileReaper> reaper;
 }
 
+// ---- Ending an identity ----
+//
+// New Identity and the live guard end an identity the same way:
+//   1. At once, its network contexts refuse every request
+//      (MoltNetRouting::EndIdentity(): a proxy configuration with no proxy
+//      and no DIRECT, ERR_NO_SUPPORTED_PROXIES), its connections are
+//      dropped, and it stops being the current identity.
+//   2. Every DevTools session on its pages and workers is detached, which
+//      closes the DevTools windows attached to them, in any profile
+//      (chrome://inspect from a regular window too), and ends DevTools'
+//      interception of "Leave site?".
+//   3. Every window of it (normal, popup, app, DevTools, picture-in-picture)
+//      closes, whatever is open in it, as BrowserCloseManager closes
+//      windows at logoff and WebAppUiManagerImpl::CloseAppWindows() closes
+//      an app's: its UnloadController skips every warning and every
+//      beforeunload and unload handler
+//      (set_force_skip_warning_user_on_close()), so no "Leave site?"
+//      (with or without DevTools), download warning or hung handler holds
+//      it. Tab-modal dialogs and prompts (a JavaScript alert, an
+//      authentication prompt, print preview, a file chooser, a download's
+//      "Save as") go with their tabs.
+//   4. If a window is still open kForceCloseGrace later, its renderer
+//      processes are ended, its tabs closed and the window closed again,
+//      a few times over.
+// Upstream's chrome::CloseAllBrowsersWithIncognitoProfile() runs every
+// "Leave site?" again as soon as one DevTools window of the profile exists,
+// and then waits for the user; MoltNet doesn't use it any more.
+
+constexpr base::TimeDelta kForceCloseGrace = base::Seconds(2);
+constexpr int kMaxForceCloseRounds = 5;
+
+// The MoltNet profile |id| of the original profile at |path|, or null.
+Profile* LookUpMoltNetProfile(const base::FilePath& path,
+                              const Profile::OTRProfileID& id) {
+  Profile* original = ProfileByPath(path);
+  if (!original || !original->HasOffTheRecordProfile(id)) {
+    return nullptr;
+  }
+  Profile* moltnet =
+      original->GetOffTheRecordProfile(id, /*create_if_needed=*/false);
+  return IsMoltNetProfile(moltnet) ? moltnet : nullptr;
+}
+
+// Detaches every DevTools session (DevTools windows of any profile, remote
+// debugging clients) from |moltnet|'s pages and workers. A DevTools window
+// whose target is detached closes (DevToolsWindow::InspectedContentsClosing).
+void DetachDevTools(Profile* moltnet) {
+  for (const scoped_refptr<content::DevToolsAgentHost>& host :
+       content::DevToolsAgentHost::GetOrCreateAll()) {
+    if (host->GetBrowserContext() == moltnet) {
+      host->ForceDetachAllSessions();
+    }
+  }
+}
+
+// Every window of |moltnet|, of any type.
+std::vector<BrowserWindowInterface*> WindowsOf(Profile* moltnet) {
+  std::vector<BrowserWindowInterface*> windows;
+  for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
+    if (window->GetProfile() == moltnet) {
+      windows.push_back(window);
+    }
+  }
+  return windows;
+}
+
+// Step 3: no warning, no beforeunload or unload handler, for any window.
+void CloseWindowsSkippingHandlers(Profile* moltnet) {
+  for (BrowserWindowInterface* window : WindowsOf(moltnet)) {
+    if (UnloadController* unload = UnloadController::From(window)) {
+      unload->set_force_skip_warning_user_on_close(true);
+    }
+    if (window->GetWindow()) {
+      window->GetWindow()->Close();
+    }
+  }
+}
+
+// Step 4, for whatever is still open: the renderers go first, so nothing in
+// a page runs any more, then the tabs, then the window.
+void ForceCloseRemainingWindows(base::FilePath path,
+                                Profile::OTRProfileID id,
+                                int rounds_left) {
+  Profile* moltnet = LookUpMoltNetProfile(path, id);
+  if (!moltnet || !HasOpenBrowserWindow(moltnet)) {
+    return;
+  }
+  LOG(WARNING) << "[MoltNet] a window of an ended identity is still open; "
+                  "ending its renderer processes";
+  MoltNetRouting::FlushNetworkState(moltnet);
+  DetachDevTools(moltnet);
+  for (content::RenderProcessHost::iterator it =
+           content::RenderProcessHost::AllHostsIterator();
+       !it.IsAtEnd(); it.Advance()) {
+    content::RenderProcessHost* host = it.GetCurrentValue();
+    if (host->GetBrowserContext() == moltnet &&
+        host->IsInitializedAndNotDead()) {
+      host->Shutdown(content::RESULT_CODE_KILLED);
+    }
+  }
+  for (BrowserWindowInterface* window : WindowsOf(moltnet)) {
+    if (UnloadController* unload = UnloadController::From(window)) {
+      unload->set_force_skip_warning_user_on_close(true);
+    }
+    if (TabStripModel* tabs = window->GetTabStripModel()) {
+      tabs->CloseAllTabs();
+    }
+    if (window->GetWindow()) {
+      window->GetWindow()->Close();
+    }
+  }
+  if (rounds_left > 0) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&ForceCloseRemainingWindows, std::move(path), id,
+                       rounds_left - 1),
+        kForceCloseGrace);
+  }
+}
+
+// Steps 1 to 3 now, step 4 later if needed; the profile is destroyed once
+// its windows are gone (the reaper, or PostDestroyIfUnused() here).
+void EndIdentityAndCloseWindows(Profile* moltnet) {
+  if (!IsMoltNetProfile(moltnet)) {
+    return;
+  }
+  EnsureReaper();
+  MoltNetRouting::EndIdentity(moltnet);
+  DetachDevTools(moltnet);
+  CloseWindowsSkippingHandlers(moltnet);
+  // Covers the no-window case; with windows, the reaper also fires.
+  PostDestroyIfUnused(moltnet);
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&ForceCloseRemainingWindows,
+                     moltnet->GetOriginalProfile()->GetPath(),
+                     moltnet->GetOTRProfileID(), kMaxForceCloseRounds),
+      kForceCloseGrace);
+}
+
 // ---- A setting changed while MoltNet was open ----
 //
 // MoltNetLiveGuard (molt_net_live_guard.h) runs the open check again
 // whenever one of the settings it reads changes (a policy's proxy or
-// override rules, a leak control, blob URL partitioning). When it refuses,
-// that identity ends as in New Identity's first step, and the user is told
-// why. MoltNet's network context never got the new proxy configuration
-// (MoltNetRouting::MayApplyProxyConfig()), so until the profile is gone its
-// requests still go to Tor, or fail.
+// override rules, a leak control, blob URL partitioning, Incognito's
+// availability). When it refuses, that identity ends as above, and the user
+// is told why. MoltNet's network context never got the new proxy
+// configuration (MoltNetRouting::ProxyConfigFor()), and from the end on it
+// refuses every request, so nothing of that identity leaves outside Tor.
 
 // Tells the user why the MoltNet windows of |original| closed, over one of
 // its regular windows if there is one.
@@ -187,8 +333,8 @@ void ShowEndedMessage(Profile* original, const std::string& error) {
 }
 
 // Closes the windows of the MoltNet profile |id| of the original profile at
-// |path| (a "Leave site?" prompt can't keep one open, as when Incognito
-// closes) and destroys the profile once they are gone.
+// |path| whatever is open in them (EndIdentityAndCloseWindows()) and
+// destroys the profile once they are gone.
 void CloseEndedIdentity(base::FilePath path,
                         Profile::OTRProfileID id,
                         bool tell_user,
@@ -197,16 +343,8 @@ void CloseEndedIdentity(base::FilePath path,
   if (!original) {
     return;
   }
-  if (original->HasOffTheRecordProfile(id)) {
-    Profile* moltnet =
-        original->GetOffTheRecordProfile(id, /*create_if_needed=*/false);
-    if (moltnet && IsMoltNetProfile(moltnet)) {
-      EnsureReaper();
-      chrome::CloseAllBrowsersWithIncognitoProfile(moltnet,
-                                                   /*skip_beforeunload=*/true);
-      // Covers the no-window case; with windows, the reaper also fires.
-      PostDestroyIfUnused(moltnet);
-    }
+  if (Profile* moltnet = LookUpMoltNetProfile(path, id)) {
+    EndIdentityAndCloseWindows(moltnet);
   }
   if (tell_user) {
     ShowEndedMessage(original, error);
@@ -215,15 +353,15 @@ void CloseEndedIdentity(base::FilePath path,
 
 // MoltNetLiveGuard's callback. Runs inside the settings-change
 // notification, so only the parts that destroy nothing happen here: the
-// identity stops being the current one (no window opens in it any more)
-// and its connections are dropped. The windows close, and the profile is
-// destroyed, in a task of their own.
+// identity's network contexts refuse every request from now on, its
+// connections are dropped and it stops being the current one (no window
+// opens in it any more). The windows close, and the profile is destroyed,
+// in a task of their own.
 void EndForChangedSettings(Profile* moltnet, const std::string& error) {
   if (!IsMoltNetProfile(moltnet)) {
     return;
   }
-  MoltNetRouting::ForgetMoltNetProfile(moltnet);
-  MoltNetRouting::FlushNetworkState(moltnet);
+  MoltNetRouting::EndIdentity(moltnet);
   // Only an identity the user had windows of needs explaining; one that
   // was still opening reports the error to whatever opened it.
   const bool tell_user = HasOpenBrowserWindow(moltnet);
@@ -261,9 +399,9 @@ void CloseMoltNetWindows(Profile* original) {
 
 // How long New Identity waits for the old identity's windows to close and
 // its profile to be destroyed. Normally about a second (ProfileDestroyer
-// waits that long for renderers); longer only while a "Leave site?" dialog
-// waits for the user, which happens when DevTools is open on a MoltNet page
-// (Chromium can't skip beforeunload handlers then).
+// waits that long for renderers); nothing a page or DevTools does can hold
+// a window open (EndIdentityAndCloseWindows()), so this only guards against
+// the unexpected.
 constexpr base::TimeDelta kRetireTimeout = base::Seconds(60);
 constexpr base::TimeDelta kRetirePollInterval = base::Milliseconds(100);
 
@@ -541,15 +679,11 @@ void WaitForRetiredProfiles(base::FilePath path,
           kRetirePollInterval);
       return;
     }
-    // A window of the old identity stayed open. Don't change circuits
-    // under it or open a second identity next to it: it stays the current
-    // MoltNet identity (Open() reuses it), as if New Identity hadn't run.
-    if (!MoltNetRouting::GetMoltNetProfile(original)) {
-      if (Profile* survivor = original->GetOffTheRecordProfile(
-              retiring.front(), /*create_if_needed=*/false)) {
-        MoltNetRouting::AdoptMoltNetProfile(survivor);
-      }
-    }
+    // A window of the old identity stayed open, although it was closed
+    // forcibly (EndIdentityAndCloseWindows()). Its network context refuses
+    // every request, so nothing of it can be sent; don't open a second
+    // identity next to it. The next Open() makes a new profile (fresh
+    // circuits: its network context has a SOCKS password of its own).
     FinishNewIdentity(std::move(path), std::move(done), false,
                       "New Identity stopped because a MoltNet window didn't "
                       "close. Close it and try again.");
@@ -626,16 +760,10 @@ void MoltNetWindow::NewIdentity(Profile* from, DoneCallback done) {
       continue;
     }
     retiring.push_back(moltnet->GetOTRProfileID());
-    // Drop live sockets + cached DNS first, and make sure the next window
-    // gets a NEW profile.
-    MoltNetRouting::FlushNetworkState(moltnet);
-    MoltNetRouting::ForgetMoltNetProfile(moltnet);
-    // As Chromium closes Incognito: a page's beforeunload handler ("Leave
-    // site?") can't keep the old identity open.
-    chrome::CloseAllBrowsersWithIncognitoProfile(moltnet,
-                                                 /*skip_beforeunload=*/true);
-    // Covers the no-window case; with windows, the reaper also fires.
-    PostDestroyIfUnused(moltnet);
+    // From now on its network contexts refuse every request, and the next
+    // window gets a NEW profile; then every window of it closes, whatever
+    // is open in it ("Leave site?", also with DevTools open).
+    EndIdentityAndCloseWindows(moltnet);
   }
   WaitForRetiredProfiles(path, std::move(retiring),
                          base::TimeTicks::Now() + kRetireTimeout,
