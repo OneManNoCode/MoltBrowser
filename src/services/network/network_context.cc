@@ -857,6 +857,13 @@ NetworkContext::NetworkContext(
   if (params_->molt_no_shared_cache_entries) {
     shared_resource_checker_->MoltDisableSharing();
   }
+  // MoltBrowser: MoltNet's keepalive limits are per site and its own
+  // (services/network/molt_keepalive_partitions.h); before any of its
+  // URLLoaderFactories exists.
+  if (params_->molt_per_site_keepalive_limits) {
+    network_service_->keepalive_statistics_recorder()
+        ->MoltAddPartitionedContext(this);
+  }
 
   network_service_->RegisterNetworkContext(this);
 
@@ -1034,6 +1041,10 @@ NetworkContext::~NetworkContext() {
   // May be nullptr in tests.
   if (network_service_) {
     network_service_->DeregisterNetworkContext(this);
+    // MoltBrowser: this context's per-site keepalive records, if it has
+    // them, go now; its URLLoaderFactories go later and find them gone.
+    network_service_->keepalive_statistics_recorder()
+        ->MoltRemovePartitionedContext(this);
   }
 
   if (domain_reliability_monitor_) {

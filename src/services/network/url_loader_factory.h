@@ -7,6 +7,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -24,6 +25,7 @@
 
 namespace network {
 
+class KeepaliveStatisticsRecorder;  // MoltBrowser
 class NetworkContext;
 class ResourceSchedulerClient;
 
@@ -139,6 +141,12 @@ class URLLoaderFactory : public mojom::URLLoaderFactory,
   mojo::Remote<mojom::DevToolsObserver> devtools_observer_;
   scoped_refptr<RefCountedDeviceBoundSessionAccessObserverRemote>
       device_bound_session_observer_;
+
+  // MoltBrowser: the recorder this factory's keepalive requests count in:
+  // the network service's, or in a MoltNet context its site's own
+  // (services/network/molt_keepalive_partitions.h), which goes with the
+  // context.
+  base::WeakPtr<KeepaliveStatisticsRecorder> molt_keepalive_recorder_;
 };
 
 }  // namespace network

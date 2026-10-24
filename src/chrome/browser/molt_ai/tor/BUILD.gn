@@ -472,6 +472,7 @@ source_set("unit_tests") {
   sources = [
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
+    "molt_net_keepalive_partitions_unittest.cc",
     "molt_net_language_policy_unittest.cc",
     "molt_net_live_policy_unittest.cc",
     "molt_net_locale_prefs_resource_ids.h",

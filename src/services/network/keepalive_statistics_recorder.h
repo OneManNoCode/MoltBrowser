@@ -6,10 +6,12 @@
 #define SERVICES_NETWORK_KEEPALIVE_STATISTICS_RECORDER_H_
 
 #include <map>
+#include <string>
 
 #include "base/component_export.h"
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
+#include "services/network/molt_keepalive_partitions.h"  // MoltBrowser
 
 namespace network {
 
@@ -62,11 +64,25 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) KeepaliveStatisticsRecorder final {
     return weak_ptr_factory_.GetWeakPtr();
   }
 
+  // MoltBrowser: keepalive limits per site for MoltNet's network contexts
+  // (services/network/molt_keepalive_partitions.h). Marks `context` (the
+  // network service's recorder only), whose URLLoaderFactories then count
+  // their requests in a recorder of their site's instead of this one.
+  void MoltAddPartitionedContext(const void* context);
+  // Unmarks it; its sites' recorders, and what they count, go.
+  void MoltRemovePartitionedContext(const void* context);
+  // The recorder for requests of `context`'s factories of site `site`: this
+  // one, or the site's own in a marked context.
+  KeepaliveStatisticsRecorder* MoltRecorderFor(const void* context,
+                                               const std::string& site);
+
  private:
   std::map<base::UnguessableToken, PerTopLevelFrameStats>
       per_top_level_frame_records_;
   int num_inflight_requests_ = 0;
   int peak_inflight_requests_ = 0;
+  // MoltBrowser: see MoltAddPartitionedContext().
+  MoltKeepalivePartitions<KeepaliveStatisticsRecorder> molt_partitions_;
   base::WeakPtrFactory<KeepaliveStatisticsRecorder> weak_ptr_factory_{this};
 };
 

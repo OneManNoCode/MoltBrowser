@@ -5,6 +5,7 @@
 #include "services/network/keepalive_statistics_recorder.h"
 
 #include <algorithm>
+#include <cstdint>
 
 
 namespace network {
@@ -63,6 +64,24 @@ void KeepaliveStatisticsRecorder::OnLoadFinished(
     it->second.total_request_size -= request_size;
   }
   --num_inflight_requests_;
+}
+
+// MoltBrowser:
+void KeepaliveStatisticsRecorder::MoltAddPartitionedContext(
+    const void* context) {
+  molt_partitions_.AddContext(reinterpret_cast<uintptr_t>(context));
+}
+
+void KeepaliveStatisticsRecorder::MoltRemovePartitionedContext(
+    const void* context) {
+  molt_partitions_.RemoveContext(reinterpret_cast<uintptr_t>(context));
+}
+
+KeepaliveStatisticsRecorder* KeepaliveStatisticsRecorder::MoltRecorderFor(
+    const void* context,
+    const std::string& site) {
+  return molt_partitions_.RecorderFor(reinterpret_cast<uintptr_t>(context),
+                                      site, this);
 }
 
 int KeepaliveStatisticsRecorder::NumInflightRequestsPerTopLevelFrame(
