@@ -19,8 +19,10 @@
 // an axis that grows, a linear interpolation between the two nearest source
 // samples, with centres aligned (a tent filter); an axis that keeps its size
 // is copied. Weights are exact integers (Q14, summing to exactly 1 << 14 for
-// every output sample), the accumulation is integer, and there is no
-// overshoot, so no value leaves the input's range.
+// every output sample), the accumulation is integer (8-bit planes round the
+// horizontal pass to 1/128 before the vertical one, 16-bit planes don't
+// round between the passes), and there is no overshoot, so no value leaves
+// the input's range. Rows are scaled horizontally first, then vertically.
 
 #ifndef MEDIA_BASE_MOLT_PORTABLE_SCALE_H_
 #define MEDIA_BASE_MOLT_PORTABLE_SCALE_H_

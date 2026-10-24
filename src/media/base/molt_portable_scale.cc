@@ -4,9 +4,9 @@
 #include "media/base/molt_portable_scale.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <limits>
 #include <span>
 #include <vector>
@@ -27,6 +27,111 @@ bool RowsFit(size_t available, int rows, size_t stride, size_t row_size) {
   // (rows - 1) * stride + row_size <= available, without overflowing.
   const size_t full_rows = static_cast<size_t>(rows) - 1;
   return full_rows == 0 || stride <= (available - row_size) / full_rows;
+}
+
+// How a sample type is accumulated. Horizontal sums are Q14 (weights sum to
+// kOne) in 32 bits. 8-bit planes round them to Q7 so that the vertical pass
+// also fits 32 bits (255 << 7 << 14 < 2^29); 16-bit planes keep Q14 and sum
+// vertically in 64 bits (65535 << 14 << 14 < 2^44).
+template <typename T>
+struct Accumulation;
+
+template <>
+struct Accumulation<uint8_t> {
+  using Vertical = int32_t;
+  static constexpr int kHorizontalShift = 7;
+};
+
+template <>
+struct Accumulation<uint16_t> {
+  using Vertical = int64_t;
+  static constexpr int kHorizontalShift = 0;
+};
+
+// Source row `row` scaled horizontally into `out` (one value per output
+// sample, Q(14 - kHorizontalShift)).
+template <typename T, size_t kChannels>
+void ScaleRow(std::span<const T> row,
+              const PortableScaleAxis& hx,
+              std::span<int32_t> out) {
+  constexpr int kShift = Accumulation<T>::kHorizontalShift;
+  constexpr int32_t kRound = kShift > 0 ? int32_t{1} << (kShift - 1) : 0;
+  const std::span<const int32_t> weights(hx.weights);
+  const size_t width = hx.first.size();
+  for (size_t x = 0; x < width; ++x) {
+    const std::span<const T> in =
+        row.subspan(static_cast<size_t>(hx.first[x]) * kChannels);
+    const std::span<const int32_t> taps =
+        weights.subspan(hx.offset[x], hx.count[x]);
+    std::array<int32_t, kChannels> sum{};
+    for (size_t k = 0; k < taps.size(); ++k) {
+      const int32_t w = taps[k];
+      for (size_t c = 0; c < kChannels; ++c) {
+        sum[c] += w * static_cast<int32_t>(in[k * kChannels + c]);
+      }
+    }
+    for (size_t c = 0; c < kChannels; ++c) {
+      out[x * kChannels + c] = (sum[c] + kRound) >> kShift;
+    }
+  }
+}
+
+template <typename T, size_t kChannels>
+void ScalePlaneChecked(std::span<const T> src,
+                       size_t src_stride,
+                       size_t src_row,
+                       std::span<T> dst,
+                       size_t dst_stride,
+                       const PortableScaleAxis& hx,
+                       const PortableScaleAxis& vy) {
+  using Vertical = typename Accumulation<T>::Vertical;
+  constexpr int kShift = 28 - Accumulation<T>::kHorizontalShift;
+  constexpr Vertical kRound = Vertical{1} << (kShift - 1);
+  constexpr Vertical kMax = std::numeric_limits<T>::max();
+  const size_t dst_row = hx.first.size() * kChannels;
+  const size_t dst_height = vy.first.size();
+
+  // The source rows the current output row reads, scaled horizontally, in a
+  // ring: row r lives in slot r % slots. Both ends of every axis' taps are
+  // non-decreasing, so the window only moves forward.
+  uint32_t slots = 1;
+  for (const uint32_t count : vy.count) {
+    slots = std::max(slots, count);
+  }
+  std::vector<int32_t> ring(static_cast<size_t>(slots) * dst_row);
+  const std::span<int32_t> rows(ring);
+  auto slot = [&](int64_t r) {
+    return rows.subspan(static_cast<size_t>(r % slots) * dst_row, dst_row);
+  };
+  int64_t next = 0;  // the next source row to scale horizontally
+  std::vector<Vertical> acc(dst_row);
+  const std::span<const int32_t> vweights(vy.weights);
+  for (size_t y = 0; y < dst_height; ++y) {
+    const int64_t first = vy.first[y];
+    const int64_t end = first + vy.count[y];
+    next = std::max(next, first);
+    for (; next < end; ++next) {
+      ScaleRow<T, kChannels>(
+          src.subspan(static_cast<size_t>(next) * src_stride, src_row), hx,
+          slot(next));
+    }
+    const std::span<const int32_t> taps =
+        vweights.subspan(vy.offset[y], vy.count[y]);
+    std::fill(acc.begin(), acc.end(), Vertical{0});
+    for (size_t k = 0; k < taps.size(); ++k) {
+      const Vertical w = taps[k];
+      const std::span<const int32_t> h = slot(first + static_cast<int64_t>(k));
+      for (size_t i = 0; i < dst_row; ++i) {
+        acc[i] += w * h[i];
+      }
+    }
+    const std::span<T> out = dst.subspan(y * dst_stride, dst_row);
+    for (size_t i = 0; i < dst_row; ++i) {
+      out[i] =
+          static_cast<T>(std::clamp<Vertical>((acc[i] + kRound) >> kShift, 0,
+                                              kMax));
+    }
+  }
 }
 
 template <typename T>
@@ -51,73 +156,25 @@ bool ScalePlane(std::span<const T> src,
       !RowsFit(dst.size(), dst_height, dst_stride, dst_row)) {
     return false;
   }
-
   const PortableScaleAxis hx = PortableScaleAxis::Make(src_width, dst_width);
   const PortableScaleAxis vy = PortableScaleAxis::Make(src_height, dst_height);
-  const std::span<const int32_t> hweights(hx.weights);
-  const std::span<const int32_t> vweights(vy.weights);
-
-  // Source row `r` scaled horizontally, Q14 (at most 65535 << 14: fits).
-  auto horizontal = [&](int r, std::vector<int32_t>& out) {
-    out.assign(dst_row, 0);
-    const std::span<const T> row =
-        src.subspan(static_cast<size_t>(r) * src_stride, src_row);
-    for (size_t x = 0; x < static_cast<size_t>(dst_width); ++x) {
-      const size_t first = static_cast<size_t>(hx.first[x]);
-      const std::span<const int32_t> taps =
-          hweights.subspan(hx.offset[x], hx.count[x]);
-      for (size_t c = 0; c < ch; ++c) {
-        int32_t sum = 0;
-        for (size_t k = 0; k < taps.size(); ++k) {
-          sum += taps[k] * static_cast<int32_t>(row[(first + k) * ch + c]);
-        }
-        out[x * ch + c] = sum;
-      }
-    }
-  };
-
-  // The source rows the current output row reads, scaled horizontally. The
-  // window only moves forward: both ends of every axis' taps are
-  // non-decreasing.
-  std::deque<std::vector<int32_t>> window;
-  int window_first = 0;
-  std::vector<int64_t> acc(dst_row);
-  constexpr int64_t kMax = std::numeric_limits<T>::max();
-  for (size_t y = 0; y < static_cast<size_t>(dst_height); ++y) {
-    const int first = vy.first[y];
-    const int count = static_cast<int>(vy.count[y]);
-    if (first < window_first) {
-      window.clear();
-    }
-    while (!window.empty() && window_first < first) {
-      window.pop_front();
-      ++window_first;
-    }
-    if (window.empty()) {
-      window_first = first;
-    }
-    while (window_first + static_cast<int>(window.size()) < first + count) {
-      window.emplace_back();
-      horizontal(window_first + static_cast<int>(window.size()) - 1,
-                 window.back());
-    }
-
-    std::fill(acc.begin(), acc.end(), 0);
-    const std::span<const int32_t> taps =
-        vweights.subspan(vy.offset[y], vy.count[y]);
-    for (size_t k = 0; k < taps.size(); ++k) {
-      const std::vector<int32_t>& h =
-          window[static_cast<size_t>(first - window_first) + k];
-      const int64_t w = taps[k];
-      for (size_t i = 0; i < dst_row; ++i) {
-        acc[i] += w * h[i];
-      }
-    }
-    const std::span<T> out = dst.subspan(y * dst_stride, dst_row);
-    for (size_t i = 0; i < dst_row; ++i) {
-      const int64_t v = (acc[i] + (int64_t{1} << 27)) >> 28;
-      out[i] = static_cast<T>(std::clamp<int64_t>(v, 0, kMax));
-    }
+  switch (channels) {
+    case 1:
+      ScalePlaneChecked<T, 1>(src, src_stride, src_row, dst, dst_stride,
+                              hx, vy);
+      break;
+    case 2:
+      ScalePlaneChecked<T, 2>(src, src_stride, src_row, dst, dst_stride,
+                              hx, vy);
+      break;
+    case 3:
+      ScalePlaneChecked<T, 3>(src, src_stride, src_row, dst, dst_stride,
+                              hx, vy);
+      break;
+    default:
+      ScalePlaneChecked<T, 4>(src, src_stride, src_row, dst, dst_stride,
+                              hx, vy);
+      break;
   }
   return true;
 }
