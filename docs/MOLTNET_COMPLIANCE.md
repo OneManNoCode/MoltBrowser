@@ -874,7 +874,11 @@ measured in a built browser):
 | HTTP cache | keyed by top-level site and frame site; one-off keys (certificate fetches, opaque origins) are never cached. Chromium 152 files a built-in list of well-known scripts and styles under one entry shared by every site where cookie settings allow full cookie access; MoltNet's context never does | gone (in memory, with the context) |
 | Code cache | none: off-the-record profiles have no code cache | — |
 | Idle sockets, HTTP/2 sessions | keyed by top-level site; each site's connections also go to Tor with that site as SOCKS username, so on circuits of their own (§1.4) | closed, then gone |
-| Connection limits | **per site**. Chromium gives each proxy one pool of connections, 128 at most for all sites together (the `MaxConnectionsPerProxy` policy changes the number), so a site that kept many connections open made other sites' requests wait, and could count how many the others held. MoltNet's context gives each network key (the top-level site; its embedded third parties get a second one, as everywhere in Chromium; each one-off key) a pool of its own, of 128 connections whatever the policy says, with Chromium's 6 per host inside it | closed, then gone |
+| Connection limits | **per site**. Chromium gives each proxy one pool of connections, 128 at most for all sites together (the `MaxConnectionsPerProxy` policy changes the number; at 156 the pool may also grow past it by a random amount), so a site that kept many connections open made other sites' requests wait, and could count how many the others held. MoltNet's context gives each site (the top-level site, for its first-party and third-party requests alike; a page its server sandboxed counts against the site it came from) pools of its own: 48 connections for HTTP and 16 for WebSockets, whatever the policy says and with no random room, with Chromium's 6 per host inside. The one-off keys no site can be named for (certificate fetches) share one pool of 8 | closed, then gone |
+| Connections to Tor, all sites together | **within a budget** of 768, which fits eleven sites' full shares, inside what MoltNet's single Tor process always accepts (*Tor's capacity* below) | closed, then gone |
+| Circuits Tor builds at a time | **at most 16 per site**: a site's SOCKS handshakes in progress, each of which may make Tor build a circuit, are limited, and Tor's limit for all sites together is 64 (*Tor's capacity*) | — |
+| Keepalive requests (`fetch()` with `keepalive`, `sendBeacon()`, pings) | **per site**. The network service lets 2048 be in flight for every profile and site together (and 256 per page), so a site that used them up made another site's, or a regular window's, fail. MoltNet's context counts each site's on their own, 2048 for the site and 256 per page, and none of them toward another context's | gone |
+| Storage quota and eviction (IndexedDB, Cache Storage, OPFS, service worker scripts) | **per site**: each site's storage keys together may use 60 MiB, all sites together 600 MiB, and nothing is evicted to make room ([FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits)). Chromium checks writes against each storage key's quota only and, every half hour, evicts the least recently used data of any site until all sites use 70% of a pool | gone (in memory) |
 | TLS session resumption | keyed by top-level site | gone |
 | QUIC sessions and server configurations | not used: QUIC doesn't go through a SOCKS5 proxy | — |
 | Certificate verification results | none kept. Chromium keeps each network context's results for up to 30 minutes, keyed by certificate, hostname and flags only, and merges identical verifications in flight; MoltNet's context verifies every certificate on its own, also on resumed connections | — |
@@ -904,18 +908,100 @@ everything in the table kept there, has been destroyed (§1.3); the next
 identity's network context starts empty and gets MoltNet's settings again.
 
 The connection limits in detail: `net/socket/molt_per_site_socket_pool_policy.h`
-and `molt_per_site_socket_pools.h`, used by `ClientSocketPoolManagerImpl`
-for MoltNet's context only (a `[MinVersion=1]` field of its network
-context parameters); every other context, and connections that don't go
-through a proxy, keep Chromium's one pool. What a page can still observe
-of them: its own site's limits, as in any Chromium (requests beyond 6
-connections to one host, or 128 for the site, wait), and nothing of
-another site's use. What they cost: a pool is a small object and holds
-connections only while they are used or idle; a pool with no connection
-left that nobody has asked for in 60 seconds is dropped the next time a
-pool is made. The ceiling is higher than Chromium's: up to 128
-connections per network key instead of 128 for the whole context, each
-of them a local connection to MoltNet's Tor and a stream there.
+(the numbers and the decisions), `molt_per_site_socket_pools.h` and
+`molt_connection_budget.h`, used by `ClientSocketPoolManagerImpl` and
+`SOCKSConnectJob` for MoltNet's context only (a `[MinVersion=1]` field of
+its network context parameters); every other context, and connections
+that don't go through a proxy, keep Chromium's one pool. A site's pools
+ask the context's budget before each new connection (a gate in
+`ClientSocketPool`). A request it holds back waits in its pool, as for
+the pool's own limit, and gets a connection when one is released
+anywhere: the waiting site using the fewest goes first, and no site using
+more may take one before it. While the budget is full, MoltNet closes an
+idle connection of the site using the most (or its idle HTTP/2 sessions,
+as Chromium does for a pool at its own limit), if that site uses more
+than one more than the waiting site; a connection in use is never closed.
+
+What a page can still observe of them: its own site's limits (requests
+beyond 6 connections to one host, 48 for the site or 16 WebSockets wait,
+and beyond 16 connections being set up at once they start in turn), and
+nothing of another site's use while fewer than eleven other sites hold
+their full share. Past that, a site below its own limits can see that the
+budget is full (its new connections wait for one to be released), and a
+site holding idle connections while it is the largest can see one closed.
+Filling the budget takes many sites' connections held open at the same
+time: a page that navigates its tab through sites of its own leaves the
+earlier ones' connections idle, and those are the first closed.
+
+What they cost: a pool is a small object and holds connections only while
+they are used or idle; a pool with no connection left that nobody has
+asked for in 60 seconds is dropped the next time a pool is made. A site
+has 48 HTTP connections instead of the 128 Chromium gives all sites
+through a proxy together (with HTTP/2 a site needs one per server, and
+through Tor a site's streams share its circuit, so more connections in
+parallel don't add bandwidth), and sets up 16 at a time.
+
+**Tor's capacity.** All of MoltNet's sites share one Tor process.
+MoltBrowser's torrc states `ConnLimit 1000`: Tor refuses to start unless
+the system lets it open that many file descriptors, and keeps 32 of them
+for itself, so a Tor that runs accepts at least 968 connections, on every
+system (checked with Tor 0.4.9: with its descriptor limit at exactly
+1000, it answered 965 SOCKS connections and then logged "Failing because
+we have 967 connections already"). MoltNet's budget of 768 leaves 200 of
+those to Tor's own connections (guards, directory fetches, the control
+port, its files), so no page can make Tor turn away other sites'
+connections. Each site's SOCKS handshakes in progress are limited to 16
+(the one-off keys' to 8 together): a handshake is what makes Tor build a
+circuit for a stream that can't use an existing one, and Tor builds at
+most `MaxClientCircuitsPending` circuits at a time for all sites together.
+MoltBrowser sets that to 64, twice Tor's default, so that no one site can
+fill it: 16 connections that each need at most three new circuits at a
+time (an onion service's descriptor, introduction and rendezvous
+circuits) make 48, and the certificate fetches' 8 more make 56. Tor
+Browser leaves both at Tor's defaults (1000 and 32) and lets Firefox's
+connection limits apply: 900 connections for all sites together, 6 per
+server.
+
+What a page can still observe of Tor's capacity: its bandwidth and its
+circuit building are shared. A site downloading at full speed slows other
+sites' traffic on the same guard connection (Tor sends a quiet circuit's
+cells before a busy one's, which keeps the delay small, not zero), and a
+group of sites that each start 16 connections needing new circuits can
+fill Tor's pending-circuit limit, so that another site's first
+connection waits until one of those circuits is built. Tor's memory for
+queued cells is bounded per circuit by its flow control; if it ever runs
+short (`MaxMemInQueues`, which MoltNet leaves at Tor's default, a share of
+the machine's memory), Tor closes the circuits whose queued data is
+oldest: a site that stopped reading before one that reads. Tor Browser
+shares all of these the same way.
+
+**Keepalive requests.** Requests that may outlive their page (`fetch()`
+with `keepalive`, `navigator.sendBeacon()`, `<a ping>`) are limited by
+the network service: a new one fails (`ERR_INSUFFICIENT_RESOURCES`, a
+network error in the page) once 2048 are in flight, once 256 are in
+flight for its page (top-level frame), or once that page's hold 512 KiB
+of URLs and headers. Chromium counts the 2048 for the whole network
+service, every profile and site together, so one site using them up made
+another site's requests fail, between MoltNet sites and between MoltNet
+and regular windows. In MoltNet's network context each site (a page's
+top-level site; a page its server sandboxed counts against the site it
+came from) has a count of its own with the same three limits, and none
+of MoltNet's requests count toward another context's
+(`services/network/molt_keepalive_partitions.h`, hooked into
+`KeepaliveStatisticsRecorder`, `URLLoaderFactory` and `NetworkContext` for
+contexts with the `[MinVersion=1]` field `molt_per_site_keepalive_limits`).
+What a page can still observe: its own site's use, and its own pages'.
+What it costs: a small count for each site visited, kept until the
+identity ends.
+
+**Storage.** What MoltNet's sites store (IndexedDB, Cache Storage, the
+origin-private file system, service worker scripts) is held in memory.
+Each site's storage keys together (its own and those of what it embeds)
+may use 60 MiB, all sites together 600 MiB, and nothing is evicted to make
+room: Chromium evicts the least recently used data of any site every half
+hour once all sites use 70% of its pool. The details, what a page can
+still observe and what it costs:
+[FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits).
 
 The certificate-verification choice in detail: a cache keyed by top-level
 site would meet the rule too, but Chromium 152's verifier interface doesn't
@@ -1103,7 +1189,12 @@ gpg-verified steps documented in that script.
 | Ending an identity (§1.3, §2 *Fail-closed*): from that moment its network context refuses every request (`localhost` included), whatever configuration comes later; its windows and the DevTools windows on its pages close, also a page asking "Leave site?" with DevTools open (docked or in a window of its own), and a window that stays open is closed by force; New Identity changes nothing if one still stays | Unit tests (`molt_ai_unittests`: the configuration rule); standalone simulation: the code of `molt_net_window.cc` verbatim against stand-ins (windows whose unload processing shows "Leave site?" and lets DevTools intercept it, DevTools agents, renderer processes, Tor) on a simulated clock, g++ ASan/UBSan, 7 tests, 10 mutants caught; standalone harness: `RefuseAllProxyConfig()` verbatim with Chromium 156's proxy-rule and bypass-rule code verbatim, 3 tests, 3 mutants caught; standalone harness: the `proxy_config_monitor.cc` hooks and `MoltNetRouting`'s `EndIdentity()`, `HasIdentityEnded()`, `AddIdentityEndedCallback()` and `ProxyConfigFor()` verbatim, next to Chromium 156's monitor, against stand-ins (g++ ASan/UBSan, clang `-fno-exceptions`), 6 tests, 10 mutants caught; the changed files (`molt_net_window.cc`, `molt_net_routing.cc`, `proxy_config_monitor.cc`) type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
 | MoltNet's languages (§1.10, §2 *Settings isolation*): MoltNet's list sits above the profile's own settings, so neither the `ForcedLanguages` policy, nor the chosen languages it reads from the regular profile, nor `--accept-lang` change it, also after Chromium's language code rebuilds a profile's list; `ReduceAcceptLanguageEnabled` is ignored for MoltNet only | Unit tests (`molt_ai_unittests`): the list and the policy rule (3 tests, built standalone), and MoltNet's settings store with Chromium's real `LanguagePrefs` and a managed `ForcedLanguages`; standalone harness: `FixMoltNetLanguages()` verbatim against a stand-in that layers the settings stores as Chromium 156 does and rewrites the list as `LanguagePrefs` does, 4 tests, 4 mutants caught; the two `chrome_content_browser_client.cc` hooks verbatim next to Chromium 156's code, 2 tests, 2 mutants caught (g++ ASan/UBSan, clang `-fno-exceptions`); the changed files (`molt_net_pref_isolation.cc`, `molt_net_routing.cc`, `chrome_content_browser_client.cc`) type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the settings-store tests need a Chromium build |
 | Incognito's availability (§2): MoltNet refuses to open, with its message, while Incognito is off or replaced by Isolated Mode, opens while it is forced; the live check watches the setting, in both profiles; Chromium's window check and Incognito's URL lists treat MoltNet as Incognito | Unit tests (`molt_ai_unittests`, the live policy's 20 tests, built standalone with g++ ASan/UBSan and clang `-fno-exceptions`); standalone harness: `molt_net_live_guard.cc` compiled unchanged against stand-ins, 11 tests, 11 mutants caught, among them the availability setting; standalone harness: the `CanOpenBrowser()` and URL-list hooks verbatim next to Chromium 156's code, for regular, Incognito, Isolated Mode, DevTools, look-alike and MoltNet profiles, 5 tests, 4 mutants caught; `incognito_mode_prefs.cc`, `chrome_policy_blocklist_service_factory.cc`, `molt_net_routing.cc` and `molt_net_window.cc` type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
-| Per-site connection limits (§2 *Shared network state*): each network key gets a pool of its own in MoltNet's context, of the fixed size whatever `MaxConnectionsPerProxy` says, with Chromium's per-host limit; flushes, idle-socket clean-up and `chrome://net-internals` reach every pool, which is named after the proxy, never the site; unused pools go; other contexts and connections without a proxy keep the one shared pool | Unit tests (`molt_ai_unittests`): the size rule (4 tests, built standalone) and Chromium's real `HttpNetworkSession` and pools (4 tests); standalone harness: `client_socket_pool_manager_impl.cc` and the new headers verbatim against stand-ins of the pools (g++ ASan/UBSan, clang `-fno-exceptions`), 5 tests, 11 mutants caught; the changed `net/` and `services/network/` files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the real-pool tests need a Chromium build |
+| Per-site connection limits (§2 *Shared network state*): each site gets pools of its own in MoltNet's context, of fixed sizes whatever `MaxConnectionsPerProxy` says, with Chromium's per-host limit; flushes, idle-socket clean-up and `chrome://net-internals` reach every pool, which is named after the proxy, never the site; unused pools go; other contexts and connections without a proxy keep the one shared pool | Unit tests (`molt_ai_unittests`): the size rule (4 tests, built standalone) and Chromium's real `HttpNetworkSession` and pools (4 tests); standalone harness: `client_socket_pool_manager_impl.cc` and the new headers verbatim against stand-ins of the pools (g++ ASan/UBSan, clang `-fno-exceptions`), 5 tests, 11 mutants caught; the changed `net/` and `services/network/` files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the real-pool tests need a Chromium build |
+| Connection budget and per-site shares (§2 *Shared network state*, *Tor's capacity*): a site's first-party and third-party keys, and its sandboxed pages, share its pools; the one-off keys share one small pool; each pool's limit is fixed (no random room); all pools of both types stay within 768; with the budget full, the next freed connection goes to the waiting site using the fewest and an idle connection of a larger site is closed for it (idle HTTP/2 sessions too, busy ones never); a cancelled or self-limited waiter holds nobody back; one greedy site never makes a polite one wait, and eleven full sites still leave room | Unit tests (`molt_ai_unittests`): the policy (13 tests, built standalone with g++ ASan/UBSan) and the real `HttpNetworkSession` and pools (7 tests); standalone harness: `molt_connection_budget.h`, `molt_per_site_socket_pools.h` and the policy compiled verbatim, `ClientSocketPool`'s hooked functions and `TransportClientSocketPool`'s new methods included verbatim into a stand-in pool with 156's slot logic (requests, connect jobs, idle sockets, releases, stalled groups, HTTP/2 sessions as higher-layered pools), g++ ASan/UBSan and clang `-fno-exceptions`: 12 tests, 16 mutants, 15 caught (the last, waking the largest site first, changes nothing: the admission rule still lets the smallest in first); the changed `net/` files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the real-pool tests need a Chromium build |
+| SOCKS handshake slots (§2 *Tor's capacity*): a site's 17th handshake waits, without a connection to Tor and with no timer, and reports "resolving host" so the pool starts no backup job; another site's doesn't wait; a finished, failed or dropped handshake gives its slot back; a dropped waiting job leaves the queue; a job's raised priority moves it up; only MoltNet's sessions and a loopback SOCKS5 proxy are limited | Standalone harness: `socks_connect_job.{h,cc}` and `molt_connection_budget.h` compiled unchanged against stand-ins of `ConnectJob` (156's base behaviour), the connection to the proxy and the SOCKS5 socket (g++ ASan/UBSan, clang `-fno-exceptions`): 5 tests, 8 mutants caught (the harness found that a waiting job first reported itself as idle, which would have started backup jobs; fixed); unit tests (`molt_ai_unittests`, `MoltSocksHandshakeLimiter` on a real task environment, 2 tests) | Partly: the standalone tests pass; the unit tests need a Chromium build |
+| Tor's capacity (§2 *Tor's capacity*): the torrc states `ConnLimit 1000` and `MaxClientCircuitsPending 64`; MoltNet's budget plus 200 fits what Tor accepts; no one site can fill the pending-circuit limit | Unit tests (`TorrcBuilderTest`, built standalone); `tor --verify-config` with Tor 0.4.9.11 on the torrc `BuildTorrc()` writes; Tor 0.4.9.11 under a descriptor limit of exactly 1000 (only a local bridge, so nothing left the machine): 965 SOCKS connections answered, then "Failing because we have 967 connections already"; the leak kit reads both options from the torrc MoltBrowser started Tor with (`identity.tor_capacity`) | Pass |
+| Keepalive limits per site (§2 *Keepalive requests*): in MoltNet one site's 2048 in flight leave another site's, and a regular window's, alone, and a regular profile's leave MoltNet's alone; the per-page limits (256, 512 KiB) still hold; a sandboxed page counts against its site; a context's counts go with it and its factories and loaders, destroyed after it, find them gone | Standalone harness: `keepalive_statistics_recorder.{h,cc}`, `molt_keepalive_partitions.h` and `molt_keepalive_site.h` compiled verbatim, the hooked parts of `URLLoaderFactory` (constructor, destructor, `CreateLoaderAndStart()`'s limit checks) and `NetworkContext` (constructor, destructor) included verbatim into stand-ins with 156's ownership (g++ ASan/UBSan, clang `-fno-exceptions`): 5 tests, 8 mutants caught; unit tests (`molt_ai_unittests`: the registry, 3 tests, built standalone; the network context policy); the changed `services/network/` files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the network service's own suites need a Chromium build |
+| Storage per site (§2 *Storage*, [FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits)) | See FINGERPRINTING.md | Partly |
 | The same in a running browser: language policies change nothing in MoltNet; Incognito turned off closes MoltNet with DevTools open in a window of its own and an unanswered "Leave site?", MoltNet refuses to open, and opens again once allowed; Incognito only keeps it open (§4 step 9) | Needs a Chromium build; the leak kit's `identity.language_policy_ignored`, `identity.incognito_off_closes`, `identity.incognito_forced_allows` | **Not yet done** |
 | No Autofill server traffic and no address-format downloads in MoltNet (§2 *Requests outside Tor*): no query and no vote (Autofill's or the password manager's), also with `AutofillServerCommunication` turned on; no address rules downloaded or read from the shared file, for Autofill or the payment sheet; every other profile keeps Chromium's | Unit tests (`molt_ai_unittests`); `molt_net_autofill.cc` and `chrome_payment_request_delegate.cc` type-checked against Chromium 156's headers, and the two hooked functions of `chrome_autofill_client.cc` too (copied verbatim into a stand-in of the class: the checker can't generate one header the whole file needs) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser (§4 step 20) | Needs a Chromium build; the leak kit's `net.autofill_server` | **Not yet done** |
@@ -1452,6 +1543,27 @@ help. The last column names the report's checks.
     background traffic, §5.6, can appear), and the DNS log no lookup of
     any site you used. In a regular window the same download shows the
     `sb-ssl.google.com` lookup, as in Chromium.
+21. **Shared limits stay per site.** (Kit: Tor's options and the storage
+    quota; the rest is manual, see `docs/BUILD_MACHINE_CHECKLIST.md`,
+    "moltnet-shared".) With Tor's log at `Log info`, in MoltNet windows:
+    - A test page on site A that opens 1000 long-polling requests to 200
+      hosts of its own, and a page on site B in another tab: B loads at
+      once. `chrome://net-internals/#sockets` shows A's pool at 48 (its
+      WebSockets' at 16). Tor's log shows no "Failing because we have"
+      line.
+    - A page that connects to 100 onion addresses or unusual ports at
+      once: Tor's log may say it waits for pending circuits; a page of
+      another site opened meanwhile loads (its first connection may take
+      a little longer).
+    - A page on site A that keeps 2048 `fetch(..., {keepalive: true})`
+      requests in flight (to a server that answers slowly) from nine
+      pages: the 2049th fails; site B's, and a regular window's, still
+      go out.
+    - Write to IndexedDB until `QuotaExceededError`: about 60 MiB per
+      site, a subdomain's iframe on that site counting toward it; another
+      site still gets its 60 MiB. Store a little on one site, then fill
+      nine others: after more than 35 minutes (Chromium evicts every half
+      hour) the first site's data is still there.
 
 ## 5. What MoltNet does *not* do
 
