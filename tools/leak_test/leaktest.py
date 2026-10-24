@@ -99,6 +99,9 @@ def cmd_service(args):
         for spec in args.https or []:
             host, port, cert, key = spec.split(':', 3)
             listens.append(('https', host, int(port), cert, key))
+        for spec in args.https_clientauth or []:
+            host, port, cert, key = spec.split(':', 3)
+            listens.append(('https-clientauth', host, int(port), cert, key))
         services.run_pages(args.config, args.log, listens)
     elif args.kind == 'dns':
         services.run_dns(args.listen, args.port, args.log)
@@ -193,6 +196,7 @@ def main(argv=None):
     s.add_argument('--port', type=int, default=0)
     s.add_argument('--http', action='append')
     s.add_argument('--https', action='append')
+    s.add_argument('--https-clientauth', action='append')
     s.set_defaults(fn=cmd_service)
 
     args = p.parse_args(argv)

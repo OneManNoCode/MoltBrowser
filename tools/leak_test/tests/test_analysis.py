@@ -326,6 +326,42 @@ class IdentityChecks(unittest.TestCase):
             (11, a, 8443, 'https://' + a), (12, a, 80, 'opaque (1)'))[
                 'status'], report.SKIP)
 
+    def client_cert_run(self, handshakes, target='moltnet'):
+        """`handshakes`: (seconds, port, ok, client_cert)."""
+        test = {'id': 'client_cert', 'start': 10.0, 'settle_end': 14.0}
+        manifest = {'target': target, 'tests': [test]}
+        log = [{'event': 'tls_handshake', 'ts': ts, 'port': port, 'ok': ok,
+                'client_cert': cert, 'error': None if ok else 'EOF'}
+               for ts, port, ok, cert in handshakes]
+        # Requests and other ports' handshakes don't count.
+        log.append({'ts': 11.0, 'port': 28445, 'path': '/t/x/basic.html'})
+        log.append({'event': 'tls_handshake', 'ts': 11.0, 'port': 28444,
+                    'ok': False})
+        return report._client_cert_check(manifest, test, log)
+
+    def test_client_cert(self):
+        # MoltNet: every handshake completes, no certificate.
+        ok = self.client_cert_run([(10.5, 28445, True, False),
+                                   (12.0, 28445, True, False)])
+        self.assertEqual(ok['status'], report.PASS)
+        # Chromium's behaviour: the first handshake dropped to ask, then a
+        # second connection.
+        retried = self.client_cert_run([(10.5, 28445, False, False),
+                                        (11.5, 28445, True, False)])
+        self.assertEqual(retried['status'], report.FAIL)
+        self.assertIn('dropped a handshake', ' '.join(retried['evidence']))
+        sent = self.client_cert_run([(10.5, 28445, True, True)])
+        self.assertEqual(sent['status'], report.FAIL)
+        # Outside the test's window, or no handshake at all: no verdict.
+        self.assertEqual(self.client_cert_run(
+            [(30.0, 28445, False, False)])['status'], report.SKIP)
+        # A regular window is reported, not judged.
+        regular = self.client_cert_run([(10.5, 18445, False, False),
+                                        (11.0, 18445, True, False)],
+                                       target='regular')
+        self.assertEqual(regular['status'], report.SKIP)
+        self.assertIn('1 dropped', regular['evidence'][0])
+
 
 class Classification(unittest.TestCase):
 
@@ -528,7 +564,7 @@ class Catalog(unittest.TestCase):
                 self.assertIn(a[1], ('eq', 'in', 'lt', 'truthy', 'falsy',
                                      'all_fail'), a)
             self.assertIn(t.origin, ('http', 'https', 'https_b', 'aia',
-                                     'aia_b', 'local'))
+                                     'aia_b', 'clientauth', 'local'))
         self.assertEqual([s[0] for s in catalog.COMPLIANCE_STEPS],
                          list(range(1, 21)))
 

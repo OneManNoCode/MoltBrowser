@@ -32,6 +32,8 @@ PAGES = os.path.join(KIT_DIR, 'pages')
 ENTRY = os.path.join(KIT_DIR, 'leaktest.py')
 
 LOCAL_HTTP, LOCAL_HTTPS, LOCAL_AIA = 18080, 18443, 18444
+# The HTTPS port that asks for a client certificate (the client_cert test).
+LOCAL_CLIENTAUTH, ONION_CLIENTAUTH, CLIENTAUTH_PORT = 18445, 28445, 8444
 LOOPBACK_CANARY = 47321
 PROXY_PORT = 18888
 # The process-wide switches MoltNet needs on
@@ -369,9 +371,13 @@ class Run(object):
         data = self.path('onion')
         socks = support.free_port()
         services = [(os.path.join(data, 'a'), [(80, 28080), (443, 28443),
-                                               (8443, 28444)]),
+                                               (8443, 28444),
+                                               (CLIENTAUTH_PORT,
+                                                ONION_CLIENTAUTH)]),
                     (os.path.join(data, 'b'), [(80, 28080), (443, 28443),
-                                               (8443, 28444)])]
+                                               (8443, 28444),
+                                               (CLIENTAUTH_PORT,
+                                                ONION_CLIENTAUTH)])]
         self.user_write('onion/torrc', support.onion_torrc(data, socks,
                                                            services))
         self.start('onion-tor', [tor, '-f', self.path('onion', 'torrc')],
@@ -401,6 +407,7 @@ class Run(object):
                     'BASE_B_HTTPS': 'https://' + b,
                     'BASE_AIA': 'https://%s:8443' % a,
                     'BASE_B_AIA': 'https://%s:8443' % b,
+                    'BASE_CLIENTAUTH': 'https://%s:%d' % (a, CLIENTAUTH_PORT),
                     'BASE_LOCAL': 'http://127.0.0.1:%d' % LOCAL_HTTP,
                     'ONION_A': a, 'ONION_B': b}
         return {'BASE_HTTP': 'http://127.0.0.1:%d' % LOCAL_HTTP,
@@ -408,6 +415,7 @@ class Run(object):
                 'BASE_B_HTTPS': 'https://localhost:%d' % LOCAL_HTTPS,
                 'BASE_AIA': 'https://127.0.0.1:%d' % LOCAL_AIA,
                 'BASE_B_AIA': 'https://localhost:%d' % LOCAL_AIA,
+                'BASE_CLIENTAUTH': 'https://127.0.0.1:%d' % LOCAL_CLIENTAUTH,
                 'BASE_LOCAL': 'http://127.0.0.1:%d' % LOCAL_HTTP,
                 'ONION_A': self.onion['a'], 'ONION_B': self.onion['a']}
 
@@ -451,7 +459,9 @@ class Run(object):
                      '--https', '127.0.0.1:%d:%s:%s' % (LOCAL_HTTPS, cert,
                                                         key),
                      '--https', '127.0.0.1:%d:%s:%s' % (LOCAL_AIA, acert,
-                                                        akey))
+                                                        akey),
+                     '--https-clientauth', '127.0.0.1:%d:%s:%s' % (
+                         LOCAL_CLIENTAUTH, cert, key))
         if self.opts.target != 'moltnet':
             self.manifest['logs']['server'] = 'logs/local_server.jsonl'
             return
@@ -463,6 +473,8 @@ class Run(object):
                      '--http', '127.0.0.1:28080',
                      '--https', '127.0.0.1:28443:%s:%s' % (cert, key),
                      '--https', '127.0.0.1:28444:%s:%s' % (acert, akey),
+                     '--https-clientauth', '127.0.0.1:%d:%s:%s' % (
+                         ONION_CLIENTAUTH, cert, key),
                      in_ns=False)
         ok, why = support.wait_onion_reachable(
             self.onion['socks'], self.onion['a'], self.opts.onion_timeout,
@@ -740,6 +752,7 @@ class Run(object):
         base = {'http': bases['BASE_HTTP'], 'https': bases['BASE_HTTPS'],
                 'https_b': bases['BASE_B_HTTPS'], 'aia': bases['BASE_AIA'],
                 'aia_b': bases['BASE_B_AIA'],
+                'clientauth': bases['BASE_CLIENTAUTH'],
                 'local': bases['BASE_LOCAL']}[test.origin]
         return '%s/t/%s/%s%s' % (base, entry['nonce'], test.page, query)
 
