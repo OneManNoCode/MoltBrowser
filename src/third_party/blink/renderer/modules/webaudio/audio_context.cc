@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
@@ -483,6 +484,12 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
         break;
     }
   }
+
+  // MoltBrowser: MoltNet runs a context at 48 kHz unless the page asks for a
+  // rate, and renders "hardware" in 128 frames (moltnet_media.h).
+  sample_rate = molt_fingerprinting::UniformAudioContextSampleRate(sample_rate);
+  render_quantum_frames =
+      molt_fingerprinting::UniformRenderQuantumFrames(render_quantum_frames);
 
   // The empty string means the default audio device.
   auto frame_token = window.GetLocalFrameToken();
@@ -998,6 +1005,18 @@ AudioTimestamp* AudioContext::getOutputTimestamp(
   WindowPerformance* performance = DOMWindowPerformance::performance(*window);
   DCHECK(performance);
 
+  // MoltBrowser: MoltNet reports the uniform device's output position.
+  if (const auto uniform =
+          molt_fingerprinting::UniformAudioOutputPosition(currentTime())) {
+    result->setContextTime(uniform->context_time);
+    result->setPerformanceTime(
+        uniform->playing
+            ? std::max(0.0, performance->MonotonicTimeToDOMHighResTimeStamp(
+                                base::TimeTicks::Now()))
+            : 0.0);
+    return result;
+  }
+
   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
   double performance_time = performance->MonotonicTimeToDOMHighResTimeStamp(
       base::TimeTicks() + base::Seconds(output_position_.timestamp));
@@ -1297,6 +1316,12 @@ double AudioContext::baseLatency() const {
 double AudioContext::outputLatency() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
   DCHECK(destinationNode());
+
+  // MoltBrowser: MoltNet reports the uniform device's latency.
+  if (const std::optional<double> uniform =
+          molt_fingerprinting::UniformAudioOutputLatency()) {
+    return *uniform;
+  }
 
   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
 
@@ -1600,8 +1625,13 @@ bool AudioContext::HandlePreRenderTasks(
       stats_update_restrictor_->IsVisibleOrHasPermission();
 
   if (is_stat_collection_allowed) {
-    pending_audio_frame_stats_.Update(frames_to_process, sampleRate(),
-                                      playout_delay, glitch_info);
+    // MoltBrowser: in MoltNet the stats describe the uniform device: its
+    // fixed latency and no underruns (moltnet_media.h).
+    const std::optional<base::TimeDelta> uniform_delay =
+        molt_fingerprinting::UniformAudioPlayoutDelay();
+    pending_audio_frame_stats_.Update(
+        frames_to_process, sampleRate(), uniform_delay.value_or(playout_delay),
+        uniform_delay ? media::AudioGlitchInfo() : glitch_info);
   }
 
   // At the beginning of every render quantum, try to update the internal

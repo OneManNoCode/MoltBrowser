@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 
 namespace blink {
 
@@ -128,6 +129,11 @@ EncryptedMediaUtils::ConvertMediaKeysRequirementToEnum(
 WebEncryptedMediaClient*
 EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
     LocalDOMWindow* window) {
+  // MoltBrowser: MoltNet has no key systems (moltnet_media.h).
+  if (WebEncryptedMediaClient* none =
+          molt_fingerprinting::MoltNetEncryptedMediaClient()) {
+    return none;
+  }
   WebLocalFrameImpl* web_frame =
       WebLocalFrameImpl::FromFrame(window->GetFrame());
   return web_frame->Client()->EncryptedMediaClient();

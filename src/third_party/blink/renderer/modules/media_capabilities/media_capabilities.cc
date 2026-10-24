@@ -52,6 +52,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.h"
@@ -833,6 +834,17 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::decodingInfo(
     UseCounter::Count(ExecutionContext::From(script_state),
                       WebFeature::kMediaCapabilitiesDecodingInfoWebrtc);
 
+    // MoltBrowser: MoltNet has no WebRTC, so no WebRTC codec
+    // (moltnet_media.h).
+    if (const auto uniform = molt_fingerprinting::UniformWebrtcCodingInfo()) {
+      MediaCapabilitiesDecodingInfo* info =
+          CreateDecodingInfoWith(uniform->supported);
+      info->setSmooth(uniform->smooth);
+      info->setPowerEfficient(uniform->power_efficient);
+      return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state,
+                                                              info);
+    }
+
     auto* resolver = MakeGarbageCollected<
         ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>>(
         script_state, exception_state.GetContext());
@@ -1078,6 +1090,15 @@ ScriptPromise<MediaCapabilitiesInfo> MediaCapabilities::encodingInfo(
   if (is_webrtc) {
     UseCounter::Count(ExecutionContext::From(script_state),
                       WebFeature::kMediaCapabilitiesEncodingInfoWebrtc);
+
+    // MoltBrowser: as for decodingInfo().
+    if (const auto uniform = molt_fingerprinting::UniformWebrtcCodingInfo()) {
+      MediaCapabilitiesInfo* info = CreateEncodingInfoWith(uniform->supported);
+      info->setSmooth(uniform->smooth);
+      info->setPowerEfficient(uniform->power_efficient);
+      resolver->Resolve(info);
+      return promise;
+    }
 
     if (auto* handler = webrtc_encoding_info_handler_for_test_
                             ? webrtc_encoding_info_handler_for_test_.get()
@@ -1375,6 +1396,19 @@ void MediaCapabilities::GetPerfInfo(
   if (!decoding_config->hasVideo()) {
     // Audio-only is always smooth and power efficient.
     MediaCapabilitiesDecodingInfo* info = CreateDecodingInfoWith(true);
+    info->setKeySystemAccess(access);
+    resolver->Resolve(info);
+    return;
+  }
+
+  // MoltBrowser: MoltNet answers from a fixed table, never from the decode
+  // history or the GPU (moltnet_media.h).
+  if (const auto uniform = molt_fingerprinting::UniformVideoDecodingInfo(
+          media::IsDecoderBuiltInVideoCodec(video_codec))) {
+    MediaCapabilitiesDecodingInfo* info =
+        CreateDecodingInfoWith(uniform->supported);
+    info->setSmooth(uniform->smooth);
+    info->setPowerEfficient(uniform->power_efficient);
     info->setKeySystemAccess(access);
     resolver->Resolve(info);
     return;

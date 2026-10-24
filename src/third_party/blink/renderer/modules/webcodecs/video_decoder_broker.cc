@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/modules/webcodecs/decoder_selector.h"
@@ -198,7 +199,9 @@ class MediaVideoTaskWrapper {
     // Bind the |interface_factory_| above before passing to
     // |external_decoder_factory|.
     std::unique_ptr<media::DecoderFactory> external_decoder_factory;
-    if (hardware_preference_ != HardwarePreference::kPreferSoftware) {
+    // MoltBrowser: no platform decoders in MoltNet (moltnet_media.h).
+    if (hardware_preference_ != HardwarePreference::kPreferSoftware &&
+        molt_fingerprinting::UsesPlatformMediaCodecs()) {
 #if BUILDFLAG(ENABLE_MOJO_VIDEO_DECODER)
       external_decoder_factory = std::make_unique<media::MojoDecoderFactory>(
           media_interface_factory_.get());

@@ -12,6 +12,7 @@
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
 #include "third_party/blink/public/platform/web_audio_sink_descriptor.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_context.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
@@ -203,7 +204,9 @@ void RealtimeAudioDestinationHandler::RestartRendering() {
 }
 
 uint32_t RealtimeAudioDestinationHandler::MaxChannelCount() const {
-  return platform_destination_->MaxChannelCount();
+  // MoltBrowser: MoltNet's device is stereo (moltnet_media.h).
+  return molt_fingerprinting::UniformAudioMaxChannelCount(
+      platform_destination_->MaxChannelCount());
 }
 
 double RealtimeAudioDestinationHandler::SampleRate() const {
@@ -350,6 +353,13 @@ uint32_t RealtimeAudioDestinationHandler::GetCallbackBufferSize() const {
   DCHECK(IsMainThread());
   DCHECK(IsInitialized());
 
+  // MoltBrowser: MoltNet reports the uniform device's buffer
+  // (moltnet_media.h); only page-visible values and traces read it.
+  if (const std::optional<uint32_t> uniform =
+          molt_fingerprinting::UniformAudioCallbackFrames(latency_hint_,
+                                                          SampleRate())) {
+    return *uniform;
+  }
   return platform_destination_->CallbackBufferSize();
 }
 
@@ -357,6 +367,12 @@ int RealtimeAudioDestinationHandler::GetFramesPerBuffer() const {
   DCHECK(IsMainThread());
   DCHECK(IsInitialized());
 
+  // MoltBrowser: the same for the base latency the context computes from it.
+  if (const std::optional<uint32_t> uniform =
+          molt_fingerprinting::UniformAudioCallbackFrames(latency_hint_,
+                                                          SampleRate())) {
+    return static_cast<int>(*uniform);
+  }
   return platform_destination_ ? platform_destination_->FramesPerBuffer() : 0;
 }
 

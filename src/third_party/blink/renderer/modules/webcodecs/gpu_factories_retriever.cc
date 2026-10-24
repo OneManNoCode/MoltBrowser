@@ -6,6 +6,7 @@
 
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -26,6 +27,12 @@ media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread() {
 }
 
 void RetrieveGpuFactories(OutputCB result_callback) {
+  // MoltBrowser: no hardware or OS codecs in MoltNet (moltnet_media.h).
+  if (!molt_fingerprinting::UsesPlatformMediaCodecs()) {
+    std::move(result_callback).Run(nullptr);
+    return;
+  }
+
   if (IsMainThread()) {
     std::move(result_callback).Run(GetGpuFactoriesOnMainThread());
     return;
