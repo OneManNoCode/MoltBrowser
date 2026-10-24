@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_device.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_network.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"
@@ -575,6 +576,9 @@ void Configure(Mode mode) {
     // Web Audio renders on the uniform device's clock, whatever the real
     // device (moltnet_audio_device.h).
     PinUniformAudioClock();
+    // Software video encoders run as on the core count pages see
+    // (moltnet_encoders.h).
+    PinUniformSoftwareEncoding();
   }
 }
 

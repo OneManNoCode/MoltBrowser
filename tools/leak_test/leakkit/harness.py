@@ -889,6 +889,7 @@ class Run(object):
         values = dict(results)
         values.update(self.geometry(sid))
         values.update(self.audio_cadence(sid))
+        values.update(self.enforced_quota(sid, base))
         rec = {'label': label_prefix + 'initial', 'phase': 'main', 'dsf': dsf,
                'window': None, 'zoom_requested': 100, 'zoom_actual':
                self.page_zoom(sid), 'kind': 'full', 'target': target,
@@ -965,6 +966,20 @@ class Run(object):
                     'key': char}, session=sid)
             except cdplib.CdpError:
                 return
+
+    def enforced_quota(self, sid, origin):
+        """The storage quota the browser enforces for the fingerprint
+        page's origin: DevTools' Storage.getUsageAndQuota gives the per-site
+        limit writes are checked against, not the static quota
+        navigator.storage.estimate() reports. A page writing until
+        QuotaExceededError would measure the same limit, but that takes too
+        long for the kit (FINGERPRINTING.md "MoltNet: storage limits")."""
+        try:
+            r = self.cdp.call('Storage.getUsageAndQuota', {'origin': origin},
+                              session=sid)
+        except cdplib.CdpError as e:
+            return {'storage.enforced_quota': {'error': str(e)}}
+        return {'storage.enforced_quota': r.get('quota')}
 
     def page_zoom(self, sid):
         try:

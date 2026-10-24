@@ -135,6 +135,8 @@ S_TEXT = FP + ' "Text metrics (MoltNet)"'
 S_NETQ = FP + ' "MoltNet: connection and network quality"'
 S_156 = FP + ' "Re-checked at Chromium 156"'
 S_MEDIA = FP + ' "MoltNet: audio, DRM and media capabilities"'
+S_REC = FP + ' "MoltNet: MediaRecorder"'
+S_STORAGE = FP + ' "MoltNet: storage limits"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -159,6 +161,18 @@ MC_SOFTWARE_VIDEO = {'supported': True, 'smooth': True,
                      'powerEfficient': False}
 MC_UNSUPPORTED = {'supported': False, 'smooth': False,
                   'powerEfficient': False}
+
+# MediaRecorder in MoltNet records with the build's software encoders
+# (moltnet_encoders.h): the type it reports for a canvas stream and each
+# container a page can ask for.
+RECORDER_MIME = {'default': 'video/webm;codecs=vp8',
+                 'video/webm': 'video/webm;codecs=vp8',
+                 'video/x-matroska': 'video/x-matroska;codecs=vp8',
+                 'video/mp4': 'video/mp4;codecs=vp9'}
+# The quota the browser enforces per site in MoltNet (molt_net_storage_
+# values.h), read through DevTools: writing until QuotaExceededError would
+# take too long for the kit, so the configured limit is checked instead.
+MOLTNET_SITE_QUOTA = 200 * 1024 ** 2
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
@@ -295,6 +309,10 @@ FULL_RULES = (
     ('mc.webrtc_encoding', 'eq', MC_UNSUPPORTED, S_MEDIA),
     ('webcodecs.decoder_hardware', 'in', [False, 'absent'], S_MEDIA),
     ('webcodecs.encoder_hardware', 'in', [False, 'absent'], S_MEDIA),
+    # MediaRecorder, src: local() and the storage limits.
+    ('recorder.mime_type', 'eq', RECORDER_MIME, S_REC),
+    ('fonts.local_hidden', 'eq', [], S_FONTS),
+    ('storage.enforced_quota', 'eq', MOLTNET_SITE_QUOTA, S_STORAGE),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -334,6 +352,9 @@ DIFF_KEYS = (
     'mc.opus', 'mc.h264', 'mc.hevc', 'media.can_play',
     'webcodecs.decoder_software', 'webcodecs.encoder_vp8',
     'webcodecs.encoder_h264', 'audio.sink_id',
+    # So does what MediaRecorder can record, and src: local() resolves
+    # through the visible families (FINGERPRINTING.md "Fonts").
+    'recorder.supported', 'fonts.local_listed',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference

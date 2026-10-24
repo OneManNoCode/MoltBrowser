@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 149 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 152 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -248,6 +248,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.playready is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.widevine is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | fonts.local_hidden is uniform | FINGERPRINTING.md "Fonts" |
 | PASS | form.numberMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | form.validationMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | hdr.accept-language is uniform | FINGERPRINTING.md "Surface covered" |
@@ -291,6 +292,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | nav.maxTouchPoints is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | perm.geolocation is uniform | FINGERPRINTING.md "Known gaps": a documented giveaway |
 | PASS | perm.window-management is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
+| PASS | recorder.mime_type is uniform | FINGERPRINTING.md "MoltNet: MediaRecorder" |
 | PASS | screen.availHeight is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.availLeft is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.availTop is uniform | FINGERPRINTING.md "Surface covered" |
@@ -306,6 +308,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | scrollbar.box is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | scrollbar.overlay is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | sharedStorage.set is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | storage.enforced_quota is uniform | FINGERPRINTING.md "MoltNet: storage limits" |
 | PASS | storage.persist is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | storage.quota_over_usage is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | text.metrics_whole is uniform | FINGERPRINTING.md "Text metrics (MoltNet)" |

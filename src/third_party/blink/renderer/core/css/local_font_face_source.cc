@@ -33,6 +33,12 @@ LocalFontFaceSource::LocalFontFaceSource(CSSFontFace* css_font_face,
 LocalFontFaceSource::~LocalFontFaceSource() {}
 
 bool LocalFontFaceSource::IsLocalNonBlocking() const {
+  // MoltBrowser: protected contexts never use the unique-name lookup, so they
+  // never wait for it either (system_fonts.h).
+  if (molt_fingerprinting::RestrictsLocalFontFaces(
+          font_selector_ ? font_selector_->GetExecutionContext() : nullptr)) {
+    return true;
+  }
   FontUniqueNameLookup* unique_name_lookup =
       FontGlobalContext::Get().GetFontUniqueNameLookup();
   if (!unique_name_lookup) {
@@ -43,12 +49,16 @@ bool LocalFontFaceSource::IsLocalNonBlocking() const {
 
 bool LocalFontFaceSource::IsLocalFontAvailable(
     const FontDescription& font_description) const {
+  // MoltBrowser: protected contexts decide from the name which visible
+  // families to look up, and never look the unique name up (system_fonts.h).
+  ExecutionContext* const context =
+      font_selector_ ? font_selector_->GetExecutionContext() : nullptr;
+  if (molt_fingerprinting::RestrictsLocalFontFaces(context)) {
+    return molt_fingerprinting::GetLocalFontFaceData(
+               context, font_description, font_name_) != nullptr;
+  }
   // TODO(crbug.com/1025945): Properly handle Windows prior to 10 and Android.
   bool font_available = FontCache::Get().IsPlatformFontUniqueNameMatchAvailable(
-      font_description, font_name_);
-  // MoltBrowser: installed faces hidden from web content are unavailable.
-  font_available = font_available && molt_fingerprinting::AllowLocalFontFace(
-      font_selector_ ? font_selector_->GetExecutionContext() : nullptr,
       font_description, font_name_);
   return font_available;
 }
@@ -110,12 +120,16 @@ const SimpleFontData* LocalFontFaceSource::CreateFontData(
   // potentially doing GMSCore lookups for fonts available through that, mainly
   // to retrieve and get access to the SkTypeface. This may return nullptr (e.g.
   // OOM), in which case we want to exit before creating the SkTypeface.
-  const SimpleFontData* unique_lookup_result = FontCache::Get().GetFontData(
-      unstyled_description, font_name_, AlternateFontName::kLocalUniqueFace);
-  if (!unique_lookup_result ||
-      // MoltBrowser: also checks the face found for this description.
-      !molt_fingerprinting::AllowInstalledFont(
-          font_selector_->GetExecutionContext(), *unique_lookup_result)) {
+  // MoltBrowser: protected contexts look up visible families instead of the
+  // unique name (system_fonts.h).
+  ExecutionContext* const context = font_selector_->GetExecutionContext();
+  const SimpleFontData* unique_lookup_result =
+      molt_fingerprinting::RestrictsLocalFontFaces(context)
+          ? molt_fingerprinting::GetLocalFontFaceData(
+                context, unstyled_description, font_name_)
+          : FontCache::Get().GetFontData(unstyled_description, font_name_,
+                                         AlternateFontName::kLocalUniqueFace);
+  if (!unique_lookup_result) {
     return nullptr;
   }
 

@@ -486,6 +486,9 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 | `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
 | `platform/audio/audio_destination.{h,cc}`, `modules/mediastream/media_devices.cc` (new upstream copies), `audio_context.cc` (`IsValidSinkDescriptor`), `core/molt_fingerprinting/moltnet_audio_{clock,device}.{h,cc}` | a static setter on the `PLATFORM_EXPORT` `AudioDestination` holding a function pointer in a `std::atomic`, called from core; core now uses `media::FakeAudioWorker`, `media::MultiChannelResampler`, `media::AudioBus` and `NonMainThread` with `base::ThreadType::kRealtimeAudio` (`gn check`: core reaches `//media` through `platform`'s public deps, `platform/media:media_final` → `//media`; Chromium's presubmit `audit_non_blink_usage.py`, which the build does not run, would list the `media::` names used in `core/molt_fingerprinting`); `WebMediaDeviceInfo` (`blink/public/common`) in core | fp-audio |
+| `modules/mediarecorder/video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.{h,cc}` (all four new upstream copies), `core/molt_fingerprinting/moltnet_encoders.{h,cc}` | modules calling a new core glue file; core's DEPS now allow four `media/base` headers (`media::IsEncoderBuiltInVideoType`, `media::VideoType`, `media::SetProcessorCountForSoftwareEncoding`, a new `MEDIA_EXPORT` function); a `constinit std::atomic<int>` in `video_encoder.cc` | fp-probes |
+| `core/css/local_font_face_source.cc`, `core/molt_fingerprinting/fonts.{h,cc}`, `system_fonts.{h,cc}` | `local()` through visible families: `GetLocalFontFaceData` calls `FontCache::GetFontData(description, family, AlternateFontName::kNoAlternate)` and reads `SkTypeface::fontStyle()`; `String::substr` with a `wtf_size_t` | fp-probes |
+| `content/public/browser/content_browser_client.{h,cc}` (two new virtuals returning `std::optional` of `storage::QuotaSettings` and `storage::BlobStorageLimits`), `chrome/browser/chrome_content_browser_client.{h,cc}`, `content/browser/storage_partition_impl.cc`, `content/browser/blob_storage/chrome_blob_storage_context.cc`, `storage/browser/blob/blob_memory_controller.{h,cc}` (new upstream copies), `chrome/browser/molt_ai/fingerprinting/molt_net_storage{,_values}.*` | MoltNet's fixed storage limits; a new `:storage` target in `//chrome/browser/molt_ai/fingerprinting` that `//chrome/browser/molt_ai` depends on (`gn check` on `chrome_content_browser_client.cc`); the blob limits are posted to the IO thread after `InitializeOnIOThread` | fp-probes |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -642,6 +645,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
   | `MoltNetMediaValuesTest.*` | fp-media |
   | `MoltNetAudioClockTest.*` (the output ring, drift control and a simulation against devices of 128 to 8192 frames) | fp-audio |
+  | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
@@ -663,6 +667,7 @@ extension enablement and `MediaRouterEnabled()`).
   `MoltNetAudioDeviceTest` (fp-audio: real threads and a few hundred
   milliseconds of real time each; on a loaded bot rerun a timing failure
   once before you report it),
+  `MoltNetEncodersTest` and the pure `MoltLocalFaceTest` (fp-probes),
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
@@ -688,6 +693,10 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `blink_platform_unittests` | `AudioDestination*:PushPullFIFO*` (the device factory is unset outside MoltNet) | fp-audio |
 | `blink_unittests` | `AudioContext*:AudioWorklet*:*MediaDevices*:*MediaDeviceInfo*` | fp-audio |
+| `blink_unittests` | `MediaRecorder*:VideoTrackRecorder*:AudioTrackRecorder*:*LocalFontFace*:FontFace*:*FontFaceSet*` (normal windows: unchanged) | fp-probes |
+| `media_unittests` | `*VideoEncoder*:VpxVideoEncoder*:Av1VideoEncoder*` | fp-probes |
+| `storage_unittests` | `BlobMemoryController*:BlobStorageContext*:Quota*` | fp-probes |
+| `content_unittests` | `StoragePartitionImpl*:*BlobStorage*:*Quota*` | fp-probes |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
 | `net_unittests` | `SSLClientSocketTest.*:*ClientAuth*:*ClientCert*:HttpNetworkTransactionTest.*` | MoltNet 156 |
@@ -701,7 +710,7 @@ pass except where the table below says otherwise (verify the filters).
   ```bash
   cd chromium/src
   autoninja -C out/MoltTests services_unittests net_unittests components_unittests unit_tests \
-    blink_unittests blink_platform_unittests content_unittests
+    blink_unittests blink_platform_unittests content_unittests media_unittests storage_unittests
   out/MoltTests/services_unittests --gtest_filter='NetworkContextTest.*:...'   # one run per row
   ```
   *Expected:* as in §5.3.
@@ -1080,6 +1089,43 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   WebCodecs player (e.g. the WebCodecs samples' video decode demo) still
   plays in MoltNet, in software; on macOS a `VideoEncoder` for
   `avc1.42001E` is unsupported in MoltNet.
+- [ ] MediaRecorder in MoltNet (fp-probes): on a machine with hardware
+  video encoders (a Mac; Windows or Linux with a recent Intel, AMD or
+  NVIDIA GPU), a MoltNet page records a 1280x720 canvas `captureStream()`
+  with no `mimeType`: after `start` (or `stop`), `mimeType` is
+  `video/webm;codecs=vp8`, and `video/mp4;codecs=vp9` for `video/mp4`; the
+  files play back; `chrome://media-internals` shows the build's encoder
+  for them, never a hardware one; `isTypeSupported()` is the same as on a
+  machine without a GPU encoder. A regular window on that machine still
+  uses the hardware encoder (its default `mimeType` may differ). On a
+  machine with 8 or more cores, a 1080p AV1 recording
+  (`video/webm;codecs=av01`) in MoltNet plays back and the encoder's
+  threads (the renderer's thread list in the OS's task manager or `top -H`)
+  number at most 4.
+- [ ] `src: local()` (fp-probes): on each OS with a family installed that
+  is not on its allow-list (Ubuntu or Cantarell on Linux, Open Sans
+  installed by hand, `Segoe UI Variable` on Windows 11), `@font-face {
+  src: local("<its full name>") }` and `local("<its PostScript name>")`
+  fall back in MoltNet and in a regular window with Shields on (unless the
+  family is in the site's sample), and load with Shields off; `local("DejaVu Sans Bold")`,
+  `local("DejaVuSans-Bold")` (Linux), `local("Arial Bold")`,
+  `local("Arial-BoldMT")` (Windows, macOS) load the bold face in MoltNet;
+  a page that times `new FontFace("x", 'local("<installed, hidden face>")')
+  .load()` against a missing name over a thousand tries finds no
+  difference in MoltNet; on Windows a `local()` page in MoltNet renders
+  without waiting for the font table (a fresh browser start). East Asian
+  sites still render (with fallback fonts where they name local CJK
+  faces).
+- [ ] Storage limits in MoltNet (fp-probes): on a 16 GB machine, a
+  MoltNet page writes 1 MiB IndexedDB records until `QuotaExceededError`:
+  it stops at 200 MiB; the same for Cache Storage (`cache.put` of 1 MiB
+  responses) and OPFS (`createSyncAccessHandle().write()` in a worker);
+  three more sites writing at the same time stop when all of them
+  together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
+  be read (`arrayBuffer()` rejects) and a 700 MiB one can. Repeat on a
+  4 GB machine (or VM): the same limits, and no process is killed for
+  memory. An Incognito window keeps Chromium's limits (more than 200 MiB
+  per site on 16 GB).
 
 ### 7.4 MoltNet
 
@@ -1249,6 +1295,10 @@ Mac; use a real Linux host.
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.
+  - `recorder.mime_type`, `fonts.local_hidden` and
+    `storage.enforced_quota` pass (fp-probes), and `diff` shows no
+    difference in `recorder.supported` or `fonts.local_listed` between
+    two machines of an OS.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
     asks for a client certificate saw only completed handshakes, none with
     a certificate. A FAIL listing a dropped handshake means MoltNet's
