@@ -497,6 +497,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 | `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
 | `platform/audio/audio_destination.{h,cc}`, `modules/mediastream/media_devices.cc` (new upstream copies), `audio_context.cc` (`IsValidSinkDescriptor`), `core/molt_fingerprinting/moltnet_audio_{clock,device}.{h,cc}` | a static setter on the `PLATFORM_EXPORT` `AudioDestination` holding a function pointer in a `std::atomic`, called from core; core now uses `media::FakeAudioWorker`, `media::MultiChannelResampler`, `media::AudioBus` and `NonMainThread` with `base::ThreadType::kRealtimeAudio` (`gn check`: core reaches `//media` through `platform`'s public deps, `platform/media:media_final` → `//media`; Chromium's presubmit `audit_non_blink_usage.py`, which the build does not run, would list the `media::` names used in `core/molt_fingerprinting`); `WebMediaDeviceInfo` (`blink/public/common`) in core | fp-audio |
+| `modules/media/audio/audio_device_factory.cc`, `modules/audio_output_devices/html_media_element_audio_output_device.cc`, `modules/mediastream/user_media_processor.cc`, `core/timing/memory_info.cc`, `core/timing/measure_memory/measure_memory_controller.cc` (all five new upstream copies), `media_devices.cc` (new hooks), `core/molt_fingerprinting/moltnet_audio_{output,sink}.{h,cc}`, `moltnet_media_devices.{h,cc}`, `moltnet_memory{,_values}.{h,cc}` | a `CORE_EXPORT` `media::AudioRendererSink` subclass in core with a ref-counted engine posting `CrossThreadBindOnce` tasks to a leaked `NonMainThread`; `blink::BindOnce` named explicitly where a `base::OnceCallback` argument made it ambiguous with `base::BindOnce`; core uses `media::AudioLatency`, `media::FakeAudioWorker::ComputeFakeOutputDelay` and `media::AudioDeviceDescription` (`media/audio`; DEPS rules in `core/molt_fingerprinting/DEPS`, tests included); a garbage-collected `HeapMojoRemote<mojom::blink::PermissionService>` bound through `LocalDOMWindow::GetBrowserInterfaceBroker()` in core; `UserMediaProcessor::GetUserMediaRequestFailed` binding a lambda with `WrapWeakPersistent(this)`; `memory_info.cc`'s `HeapSizeCache::Update` and `measure_memory_controller.cc`'s `ConvertResult` call core glue (same component) | fp-mediaclock |
 | `modules/mediarecorder/video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.{h,cc}` (all four new upstream copies), `core/molt_fingerprinting/moltnet_encoders.{h,cc}` | modules calling a new core glue file; core's DEPS now allow four `media/base` headers (`media::IsEncoderBuiltInVideoType`, `media::VideoType`, `media::SetProcessorCountForSoftwareEncoding`, a new `MEDIA_EXPORT` function); a `constinit std::atomic<int>` in `video_encoder.cc` | fp-probes |
 | `core/css/local_font_face_source.cc`, `core/molt_fingerprinting/fonts.{h,cc}`, `system_fonts.{h,cc}` | `local()` through visible families: `GetLocalFontFaceData` calls `FontCache::GetFontData(description, family, AlternateFontName::kNoAlternate)` and reads `SkTypeface::fontStyle()`; `String::substr` with a `wtf_size_t` | fp-probes |
 | `content/public/browser/content_browser_client.{h,cc}` (two new virtuals returning `std::optional` of `storage::QuotaSettings` and `storage::BlobStorageLimits`), `chrome/browser/chrome_content_browser_client.{h,cc}`, `content/browser/storage_partition_impl.cc`, `content/browser/blob_storage/chrome_blob_storage_context.cc`, `storage/browser/blob/blob_memory_controller.{h,cc}` (new upstream copies), `chrome/browser/molt_ai/fingerprinting/molt_net_storage{,_values}.*` | MoltNet's fixed storage limits; a new `:storage` target in `//chrome/browser/molt_ai/fingerprinting` that `//chrome/browser/molt_ai` depends on (`gn check` on `chrome_content_browser_client.cc`); the blob limits are posted to the IO thread after `InitializeOnIOThread` | fp-probes |
@@ -670,6 +671,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
   | `MoltNetMediaValuesTest.*` | fp-media |
   | `MoltNetAudioClockTest.*` (the output ring, drift control and a simulation against devices of 128 to 8192 frames) | fp-audio |
+  | `MoltNetMemoryValuesTest.*` (V8's heap limit for 1 to 64 GB, the fixed table of sizes), and the device-list and `getUserMedia()` cases of `MoltNetMediaValuesTest.*` | fp-mediaclock |
   | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
@@ -692,7 +694,9 @@ extension enablement and `MediaRouterEnabled()`).
   `MoltNetDisplayTest` (fingerprinting 156), `MoltNetMediaTest` (fp-media),
   `MoltNetAudioDeviceTest` (fp-audio: real threads and a few hundred
   milliseconds of real time each; on a loaded bot rerun a timing failure
-  once before you report it),
+  once before you report it), `MoltNetAudioSinkTest` (fp-mediaclock: the
+  same, up to 1.5 s of real time), `MoltNetMediaDevicesTest` and
+  `MoltNetMemoryTest` (fp-mediaclock),
   `MoltNetEncodersTest` and the pure `MoltLocalFaceTest` (fp-probes),
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
@@ -719,6 +723,8 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `blink_platform_unittests` | `AudioDestination*:PushPullFIFO*` (the device factory is unset outside MoltNet) | fp-audio |
 | `blink_unittests` | `AudioContext*:AudioWorklet*:*MediaDevices*:*MediaDeviceInfo*` | fp-audio |
+| `blink_unittests` | `*AudioRendererMixer*:*AudioRendererSinkCache*:*AudioDeviceFactory*:*HTMLMediaElementAudioOutputDevice*:*MediaDevices*:*UserMediaProcessor*:*UserMediaClient*:MemoryInfo*:*MeasureMemory*` (normal windows: the hooks only act in MoltNet) | fp-mediaclock |
+| `blink_platform_unittests` | `WebMediaPlayerImpl*:*AudioRendererSink*` (unchanged code that a MoltNet sink now sits under) | fp-mediaclock |
 | `blink_unittests` | `MediaRecorder*:VideoTrackRecorder*:AudioTrackRecorder*:*LocalFontFace*:FontFace*:*FontFaceSet*` (normal windows: unchanged) | fp-probes |
 | `media_unittests` | `*VideoEncoder*:VpxVideoEncoder*:Av1VideoEncoder*` | fp-probes |
 | `storage_unittests` | `BlobMemoryController*:BlobStorageContext*:Quota*` | fp-probes |
@@ -1114,6 +1120,63 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   kHz (or an `error`) and no `audiooutput`. Plug a device in afterwards
   and report whether, and after how long, the MoltNet tone is heard
   without reloading (a regular window is the reference).
+- [ ] Media playback on real hardware (fp-mediaclock). In a MoltNet window
+  play a video with sound for a few minutes on: the output set to
+  44.1 kHz and then 96 kHz, a 48 kHz device as the control, a 1024-frame
+  and a 128-frame device (as in the fp-audio item above), Bluetooth
+  headphones; with each, pause and play, seek, and play at 0.5x and 2x.
+  Right pitch and speed, no clicks, dropouts or drift. Measure A/V sync
+  with an A/V sync test clip (a flash and a beep each second), filmed with
+  a phone at 120 fps or more next to the speaker: on wired outputs expect
+  the sound up to about 35 ms behind the picture in the first seconds and
+  within about 15 ms either way after 30 s; with Bluetooth report how far
+  behind it is (a regular window is the reference, where the system
+  reports the headset's latency). Report the renderer's CPU while it
+  plays, in MoltNet and in a regular window.
+- [ ] When MoltNet's media plays, on real hardware (fp-mediaclock). On the
+  same devices, in the leak kit's `fp.html`, click the page once and run
+  `await mlMediaClock()` five times: `media.clock_running` is true and
+  `media.clock_start_ms` stays within a few tens of milliseconds of the
+  same value on every device (report them); in a regular window note how
+  it follows the device. Then a page that logs `currentTime` at every
+  `requestAnimationFrame` and `requestVideoFrameCallback()`'s `mediaTime`
+  and `expectedDisplayTime` for 30 s of a 30 fps video: the frame-to-
+  display relation is the same on every device in MoltNet, apart from
+  scheduling noise.
+- [ ] Device changes and no device during playback in MoltNet
+  (fp-mediaclock). With a video playing in a MoltNet page that logs
+  `error`, `stalled`, `waiting` and `devicechange`: unplug wired
+  headphones, switch Bluetooth headphones off, change the system's default
+  output: the page logs nothing, `currentTime` keeps advancing and the
+  sound comes back on the new device within about a second (a regular
+  window for comparison). On a machine or VM with no output device (as in
+  the fp-audio item above): the video plays at the right speed with no
+  `error` and `new Audio().setSinkId("")` resolves (note what a regular
+  window answers).
+- [ ] Cameras and microphones in MoltNet (fp-mediaclock). On a desktop
+  without a camera and a VM without a microphone, and on a laptop with
+  both as the control: `enumerateDevices()` lists `audioinput`,
+  `videoinput`, `audiooutput`, one each, with empty IDs, labels and
+  groups, on all three. `getUserMedia({video: true})` on the machine
+  without a camera shows the camera prompt; Block gives `NotAllowedError`,
+  closing the prompt `NotAllowedError`, Allow `NotFoundError`; with the
+  camera, `getUserMedia({video: {width: {exact: 12345}}})` prompts and
+  then gives `OverconstrainedError` after Allow; the laptop behaves as in
+  a regular window (prompt, then a stream). Reset the permissions between
+  runs. With a page listening for `devicechange`, plug in a USB headset:
+  no event before a permission, an event after microphone access is
+  granted. After granting the microphone, the outputs are listed with
+  labels and `setSinkId()` to another one works for a `<video>`.
+- [ ] `performance.memory` in MoltNet (fp-mediaclock). On a machine with
+  8 GB or more and one (or a VM) with 4 GB: `jsHeapSizeLimit` is
+  3760000000 in MoltNet on both (a regular window shows each machine's own
+  precise value); `usedJSHeapSize` and `totalJSHeapSize` are multiples of
+  100000 and don't change for 20 minutes after allocating 100 MB. On a
+  cross-origin isolated page (COOP `same-origin`, COEP `require-corp`),
+  `performance.measureUserAgentSpecificMemory()` in a window and in a
+  shared worker reports rounded byte counts (one of the 100 sizes, or 0).
+  A memory-heavy page (a large canvas game, a long spreadsheet) still runs
+  on the 4 GB machine.
 - [ ] EME, Media Capabilities and WebCodecs in MoltNet (fp-media): a
   Clear Key test page (e.g. the W3C EME test player) fails with
   `NotSupportedError` in MoltNet and plays in a regular window;
@@ -1362,7 +1425,14 @@ Mac; use a real Linux host.
     `storage.quota_over_usage` and `audio.render_quantum_hardware`
     (fingerprinting 156), and the `audio.*`, `eme.*`, `mc.*` and
     `webcodecs.*` checks (fp-media), `audio.cadence_interval_ms`,
-    `audio.cadence_burst_frames` and `media.audiooutput` (fp-audio); `diff`
+    `audio.cadence_burst_frames` and `media.audiooutput` (fp-audio), the
+    `media.clock_running`, `media.sink_default`, `media.devices`,
+    `media.device_order`, `media.device_blank`, `media.gum`,
+    `media.gum_overconstrained`, `perf.jsHeapSizeLimit`,
+    `perf.heap_rounded` and `perf.heap_cached` checks (fp-mediaclock; the
+    `media.gum*` probes leave a prompt open for 1.5 s in a frame they then
+    remove, and `media.clock_start_ms` is recorded only: report its spread
+    between machines); `diff`
     shows no difference in a
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
