@@ -2390,11 +2390,11 @@ All nine files are new in `src/` (the last three since the audio clock).
 
 ### Verification
 
-Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (12
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (13
 tests: the device, the buffer for every latency hint, rate and nonsense
 input, the base latency, the output latency on Chromium's grid, the
-ScriptProcessorNode size, the output position, the key-system message and
-the Media Capabilities table) passes with g++ (ASan/UBSan) and clang (UBSan
+ScriptProcessorNode size, the output position, the key-system message, the
+Media Capabilities table and the listed output device) passes with g++ (ASan/UBSan) and clang (UBSan
 trap, `-fno-exceptions` and the strict warning set). A harness runs the
 real `moltnet_media.cc` and the hooked code extracted verbatim from all six
 upstream files, plus 156's unhooked `ChooseBufferSize` from
@@ -2412,14 +2412,57 @@ values' ScriptProcessorNode rule equals 156's for every buffer from 1 to
 it or the values test. Every changed C++ file, the two tests included,
 compiles without errors against Chromium 156's real headers
 (`tools/compile_check`; it now mounts libwebm, which
-`media_capabilities.cc` reaches through MediaRecorder). **Needs the build
-machine:** compiling and linking, `blink_unittests` (`MoltNetMediaTest.*`,
-`MoltNetMediaValuesTest.*`), `molt_ai_unittests`, and the checks in
-`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio on 44.1 and 96
-kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs pages).
-**Automated** by [`tools/leak_test`](LEAK_TESTING.md): every value in the
-first table except the device-dependent cases a kit run can't produce, and
-codec support compared between runs.
+`media_capabilities.cc` reaches through MediaRecorder).
+
+**The audio clock.** `moltnet_audio_clock_unittest.cc` (18 tests: the
+clock's rate and ticks, the ring's order, overflow, missing and short
+channels, discarding, leading silence, nonsense input and its size for
+every device, the clock's sawtooth taken out, priming, the ratio following
+the excess within its limit, silent excess, a large excess dropped at
+once, an excess the device started with kept, underruns and the growing
+margin, and a simulation that runs the ring and the drift control against
+devices of 128, 256, 441 (44.1 kHz), 480, 512, 1024, 2048 and 8192 frames
+and a converted stream reading two buffers at once, with the clocks up to
+200 ppm apart and up to 4 ms of scheduling jitter: once filled it never
+runs dry or drops audio, follows the device's clock within 0.1% and holds
+little more than the device's buffer and a tick) passes in the same two
+configurations. A second harness
+runs the real `audio_destination.cc` (hooked), 156's `PushPullFIFO` and
+`FakeAudioWorker`, and the real `moltnet_audio_device.cc` and
+`moltnet_media.cc` against stand-ins of the platform, on simulated time,
+with simulated devices of 128, 256, 441 (44.1 kHz), 480, 512, 1024 and
+2048 frames, a bursty converted stream, Chromium's fake 44.1 kHz stream and
+no device (9 tests): the time of every render quantum (what `currentTime`,
+`process()`, `onaudioprocess` and `getOutputTimestamp()` follow) is the
+same for every device, single-thread and AudioWorklet, with and without
+output buffering, while a normal window's follows the device; the other
+latency hints and rates; no device (OK status, no error, the device opened
+again on its schedule); a device lost and a device switched mid-play;
+suspend, resume and a frozen frame; silent sinks; a chosen device's errors;
+every frame rendered reaching the device in order, with the latency
+quoted above. With it, the hooked `IsValidSinkDescriptor` and
+`OnDevicesChanged`, extracted verbatim from `audio_context.cc`, and the
+listed output device (4 tests): no `error` without an output device in
+MoltNet, as against Chromium's. 28 mutants of the clock, the device, the
+hooks and the values each fail one of them. The resampler's cost was
+measured with Chromium 156's `SincResampler` and `MultiChannelResampler`
+built standalone. Every changed C++ file compiles without errors against
+Chromium 156's real headers.
+
+**Needs the build machine:** compiling and linking, `blink_unittests`
+(`MoltNetMediaTest.*`, `MoltNetMediaValuesTest.*`, `MoltNetAudioClockTest.*`,
+`MoltNetAudioDeviceTest.*`, and the upstream Web Audio and media devices
+suites), `blink_platform_unittests` (`AudioDestination*`), `molt_ai_unittests`,
+and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio
+on 44.1 and 96 kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs
+pages) and "fp-audio" (when Web Audio renders on 44.1 and 96 kHz, 128- and
+1024-frame and Bluetooth devices, sound quality and latency, device changes
+and a machine without an output device). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): every value in the first table except
+the device-dependent cases a kit run can't produce, codec support compared
+between runs, the render cadence (`audio.cadence_interval_ms`,
+`audio.cadence_burst_frames`) and the listed output device
+(`media.audiooutput`).
 
 ## Fonts
 
