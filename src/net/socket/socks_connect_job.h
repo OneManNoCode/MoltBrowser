@@ -18,6 +18,7 @@
 #include "net/dns/public/resolve_error_info.h"
 #include "net/socket/connect_job.h"
 #include "net/socket/connect_job_params.h"
+#include "net/socket/molt_connection_budget.h"  // MoltBrowser
 #include "net/socket/socks_client_socket.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
@@ -107,6 +108,9 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
 
  private:
   enum State {
+    // MoltBrowser: waits for one of the site's SOCKS handshake slots
+    // (net/socket/molt_connection_budget.h), only in a session that has them.
+    STATE_MOLT_HANDSHAKE_SLOT,
     STATE_TRANSPORT_CONNECT,
     STATE_TRANSPORT_CONNECT_COMPLETE,
     STATE_SOCKS_CONNECT,
@@ -126,6 +130,7 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
   // Runs the state transition loop.
   int DoLoop(int result);
 
+  int DoMoltHandshakeSlot();  // MoltBrowser
   int DoTransportConnect();
   int DoTransportConnectComplete(int result);
   int DoSOCKSConnect();
@@ -146,6 +151,10 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
   raw_ptr<SOCKSClientSocket> socks_socket_ptr_;
 
   ResolveErrorInfo resolve_error_info_;
+
+  // MoltBrowser: the site's handshake slot, from before the connection to
+  // the proxy until the handshake is done.
+  std::unique_ptr<MoltSocksHandshakeLimiter::Slot> molt_handshake_slot_;
 };
 
 }  // namespace net

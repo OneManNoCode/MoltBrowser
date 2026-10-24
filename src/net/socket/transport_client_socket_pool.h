@@ -242,6 +242,42 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
            higher_pools_.empty() && SocketsInUse() == 0;
   }
 
+  // MoltBrowser: for MoltNet's connection budget (net/socket/
+  // molt_connection_budget.h), which may hold back this pool's new sockets
+  // (MoltSetSocketGate()).
+  // Whether a request waits for a socket slot that only the budget holds
+  // back: below the pool's own limit, not at its group's.
+  bool MoltHasStalledRequest() const {
+    if (SocketsInUse() >= SocketSoftCap()) {
+      return false;
+    }
+    for (const auto& [group_id, group] : group_map_) {
+      if (group.CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  // Retries the requests that wait for a socket slot, now that the budget
+  // may have room (as when a socket of this pool is released).
+  void MoltRetryStalledRequests() {
+    UpdateExpandabilityBeforeAllocation();
+    CheckForStalledSocketGroups();
+  }
+  // Closes one idle socket, for a site that uses fewer; true if it did.
+  bool MoltCloseOneIdleSocket() {
+    return idle_socket_count_ > 0 && CloseOneIdleSocketExceptInGroup(nullptr);
+  }
+  // Asks the HTTP/2 sessions on this pool's sockets to close if they are
+  // idle (they close later); true if there are any.
+  bool MoltCloseIdleSessions() {
+    if (higher_pools_.empty()) {
+      return false;
+    }
+    CloseOneIdleConnectionInHigherLayeredPool();
+    return true;
+  }
+
   bool RequestInGroupWithHandleHasJobForTesting(
       const GroupId& group_id,
       const ClientSocketHandle* handle) const {

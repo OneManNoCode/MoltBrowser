@@ -45,6 +45,7 @@ class HttpAuthController;
 class HttpAuthHandlerFactory;
 class HttpResponseInfo;
 class HttpUserAgentSettings;
+class MoltSocksHandshakeLimiter;  // MoltBrowser
 class NetLog;
 class NetLogWithSource;
 class NetworkQualityEstimator;
@@ -118,6 +119,10 @@ struct NET_EXPORT_PRIVATE CommonConnectJobParams {
   // (HttpNetworkSessionParams::molt_socks_isolation_password), read by
   // SOCKSConnectJob. Null or empty: none for this session.
   raw_ptr<const std::string> molt_socks_isolation_password = nullptr;
+  // MoltBrowser: the session's SOCKS handshake limits for MoltNet's Tor
+  // (net/socket/molt_connection_budget.h), read by SOCKSConnectJob. Null:
+  // none for this session.
+  raw_ptr<MoltSocksHandshakeLimiter> molt_socks_handshake_limiter = nullptr;
 };
 
 // When a host resolution completes, OnHostResolutionCallback() is invoked. If

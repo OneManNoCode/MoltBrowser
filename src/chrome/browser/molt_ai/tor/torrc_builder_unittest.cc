@@ -59,6 +59,23 @@ TEST(TorrcBuilderTest, BaseConfigUsesAutoPortsAndCookieAuth) {
   EXPECT_EQ(std::string::npos, torrc->find("StrictNodes"));
 }
 
+// The capacity MoltNet's sites share: stated, so MoltNet's connection
+// budget (net/socket/molt_per_site_socket_pool_policy.h) stays inside it.
+TEST(TorrcBuilderTest, StatesTorsSharedCapacity) {
+  std::optional<std::string> torrc = BuildTorrc(BaseOptions(), nullptr);
+  ASSERT_TRUE(torrc);
+  EXPECT_TRUE(HasLine(*torrc, "ConnLimit 1000"));
+  EXPECT_TRUE(HasLine(*torrc, "MaxClientCircuitsPending 64"));
+  // Tor accepts at least ConnLimit - 32 connections; MoltNet's budget and a
+  // fifth for Tor's own fit in that.
+  EXPECT_LE(net::kMoltNetConnectionBudget + net::kMoltTorOwnConnections,
+            kTorConnLimit - net::kMoltTorKeptFileDescriptors);
+  // No one site can fill Tor's pending-circuit limit.
+  EXPECT_LT(net::kMoltSocksHandshakesPerSite * kTorNewCircuitsPerConnection +
+                net::kMoltUnattributedSocksHandshakes,
+            kTorMaxClientCircuitsPending);
+}
+
 TEST(TorrcBuilderTest, ExitCountryAddsStrictNodesOnlyWhenSet) {
   TorrcOptions o = BaseOptions();
   o.exit_country = "de";

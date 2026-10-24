@@ -31,15 +31,18 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
   // connections (No proxies in use). It's never used if `pool_type` is not
   // HttpNetworkSession::SocketPoolType::kWebSocket.
   //
-  // MoltBrowser: if `molt_per_site_pool_size` isn't 0, each top-level site
-  // gets a pool of its own for every proxy chain, with that limit
+  // MoltBrowser: if `molt_per_site_pool_size` isn't 0, each site gets a pool
+  // of its own for every proxy chain, with fixed limits derived from it, and
+  // they all draw on `molt_connection_budget` if it isn't null (the
+  // session's; it outlives this manager)
   // (net/socket/molt_per_site_socket_pool_policy.h).
   ClientSocketPoolManagerImpl(
       const CommonConnectJobParams& common_connect_job_params,
       const CommonConnectJobParams& websocket_common_connect_job_params,
       HttpNetworkSession::SocketPoolType pool_type,
       bool cleanup_on_ip_address_change = true,
-      size_t molt_per_site_pool_size = 0);
+      size_t molt_per_site_pool_size = 0,
+      MoltConnectionBudget* molt_connection_budget = nullptr);
 
   ClientSocketPoolManagerImpl(const ClientSocketPoolManagerImpl&) = delete;
   ClientSocketPoolManagerImpl& operator=(const ClientSocketPoolManagerImpl&) =

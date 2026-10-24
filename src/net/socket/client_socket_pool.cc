@@ -263,14 +263,31 @@ std::unique_ptr<ConnectJob> ClientSocketPool::CreateConnectJob(
       common_connect_job_params_, group_id.target_network(), delegate);
 }
 
+// MoltBrowser:
+void ClientSocketPool::MoltSetSocketGate(MoltSocketGate* gate) {
+  molt_socket_gate_ = gate;
+  additional_capacity_ = SocketPoolAdditionalCapacity::CreateEmpty();
+  ResetExpandability();
+}
+
 void ClientSocketPool::UpdateExpandabilityBeforeAllocation() {
   expandability_ = additional_capacity_.NextExpandabilityBeforeAllocation(
       Expandability(), SocketsInUse(), SocketSoftCap());
+  // MoltBrowser: the gate may hold back a socket the pool's limits allow.
+  if (molt_socket_gate_ &&
+      expandability_ == SocketPoolExpandability::kUncapped &&
+      !molt_socket_gate_->MoltMayAllocate(this)) {
+    expandability_ = SocketPoolExpandability::kCapped;
+  }
 }
 
 void ClientSocketPool::UpdateExpandabilityAfterRelease() {
   expandability_ = additional_capacity_.NextExpandabilityAfterRelease(
       Expandability(), SocketsInUse(), SocketSoftCap());
+  // MoltBrowser: tell the gate, so others waiting for it can go on.
+  if (molt_socket_gate_) {
+    molt_socket_gate_->MoltOnReleased(this);
+  }
 }
 
 }  // namespace net

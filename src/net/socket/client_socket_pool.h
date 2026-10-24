@@ -387,6 +387,25 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
     socket_soft_cap_override_for_test_ = socket_soft_cap_override_for_test;
   }
 
+  // MoltBrowser: a gate that may hold back a socket this pool's own limits
+  // would allow (MoltNet's connection budget, net/socket/
+  // molt_connection_budget.h). A held-back request waits in the pool as for
+  // the pool's own limit.
+  class MoltSocketGate {
+   public:
+    // Whether `pool` may open one more socket now.
+    virtual bool MoltMayAllocate(const ClientSocketPool* pool) = 0;
+    // `pool` released a socket.
+    virtual void MoltOnReleased(const ClientSocketPool* pool) = 0;
+
+   protected:
+    virtual ~MoltSocketGate() = default;
+  };
+  // MoltBrowser: set once, right after the pool is made; `gate` outlives the
+  // pool. The pool's limit is then its soft cap exactly (no randomized
+  // additional capacity).
+  void MoltSetSocketGate(MoltSocketGate* gate);
+
  protected:
   ClientSocketPool(size_t socket_soft_cap,
                    const ProxyChain& proxy_chain,
@@ -461,6 +480,9 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
 
   // If set, this overrides `socket_soft_cap_` for future calculations.
   std::optional<size_t> socket_soft_cap_override_for_test_ = std::nullopt;
+
+  // MoltBrowser: see MoltSetSocketGate().
+  raw_ptr<MoltSocketGate> molt_socket_gate_ = nullptr;
 
   const ProxyChain proxy_chain_;
   const bool is_for_websockets_;
