@@ -417,6 +417,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `content/public/browser/content_browser_client.{h,cc}` | new virtual `ShouldSendUniformNetworkState(BrowserContext*)`, default `false` | MoltNet 156 |
 | `content/browser/network/network_quality_observer_impl.cc`, `content/browser/network/browser_online_state_observer.cc`, new `content/browser/network/molt_uniform_network_state.h` | the five `OnNetworkQualityChanged()`/`OnNetworkConnectionChanged()` sends go through the header-only helpers (fixed values for MoltNet's renderers, no quality updates to them). The header is in no GN target's `sources` (header-only, to leave `content/browser/BUILD.gn` alone); if `gn check` complains, list it in `//content/browser:browser` | MoltNet 156 |
 | `chrome/browser/molt_ai/tor/molt_net_routing.cc` | `ProxyExternallyControlled()` also reads `proxy_config::prefs::kProxyOverrideRules` (new target `:proxy_policy`, header-only) | MoltNet 156 |
+| `chrome/browser/net/profile_network_context_service.cc` | `device_bound_sessions_enabled` comes from `DeviceBoundSessionsEnabledFor()` (false for MoltNet) | MoltNet 156 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -1030,6 +1031,11 @@ macOS, and for the manual steps everywhere:
   Cloudflare, run `sudo tcpdump -n 'host 1.1.1.1 or host 1.0.0.1'`, open a
   MoltNet window and press *New Identity* twice: no packets (a regular
   window's network context probes as usual, once at startup).
+- [ ] Device-bound sessions (MoltNet 156, Windows and macOS): sign in to
+  a site that registers one (e.g. a Google account, or a test server that
+  sends `Secure-Session-Registration`) in a regular window: DevTools'
+  Application panel lists the session. The same in a MoltNet window: no
+  session, no registration request, and the sign-in still works.
 - [ ] Proxy override rules (MoltNet 156; §4 step 9): with the
   `ProxyOverrideRules` policy set (any rule), MoltNet refuses to open with
   the proxy error and the panel says the proxy is overridden; removing the

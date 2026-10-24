@@ -193,6 +193,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - MoltNet hardening: MoltNet doesn't open while the `ProxyOverrideRules`
   policy is set, since its rules would apply on top of MoltNet's Tor
   proxy, and the MoltNet panel shows the proxy as overridden.
+- MoltNet hardening: MoltNet windows don't use device-bound sessions
+  (Chromium 156, Windows and macOS), which tie a site's sign-in to a key
+  in your computer's secure hardware; sites use their ordinary cookies
+  there, as in Tor Browser.
 - MoltNet hardening: the browser tells MoltNet's page processes the same
   fixed connection type and network quality their pages report, instead
   of your own connection's, and only whether you are online after that.
