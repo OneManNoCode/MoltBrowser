@@ -157,6 +157,12 @@ GOOD_FP = {
                            'Liberation Serif Italic', 'Noto Sans',
                            'NotoSans-Bold'],
     'storage.enforced_quota': 60 * 1024 ** 2,
+    'pixels.video_frame_format': 'I420',
+    'pixels.video_frame': {'format': 'I420',
+                           'planes': '35ec97d035df255c26cac4ae',
+                           'rgba': 'ee1de75109443c46529f39c1'},
+    'pixels.encoded_opus_48k': {'chunks': 26, 'bytes': 4283,
+                                'hash': 'bbcab34ea3e06d12e5058b12'},
     'canvas.hash': '0123456789abcdef01234567',
 }
 

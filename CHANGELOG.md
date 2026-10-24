@@ -299,6 +299,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   little softer on standard-density Linux screens. Element sizes aren't
   rounded, and font versions still differ between OS releases
   (`docs/FINGERPRINTING.md`, "Text metrics").
+- **MoltNet's video and audio bytes are the same on every machine of an
+  OS.** In MoltNet windows video plays with MoltBrowser's own software
+  decoders instead of the graphics card's, video frames a page reads back
+  are converted on the CPU, and the Opus encoder, the encoders' scaling
+  and their resampling compute the same way on every processor, so what a
+  page reads back from a video or an encoder no longer shows your
+  processor, graphics card or video decoder. Video in MoltNet uses more
+  CPU and battery, most at 4K (`docs/FINGERPRINTING.md`, "MoltNet: pixels
+  and encoded bytes"); regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

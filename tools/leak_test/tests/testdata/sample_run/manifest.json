@@ -181,6 +181,17 @@
     "perf.jsHeapSizeLimit": 3760000000,
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "pixels.encoded_opus_48k": {
+     "bytes": 4283,
+     "chunks": 26,
+     "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.video_frame": {
+     "format": "I420",
+     "planes": "35ec97d035df255c26cac4ae",
+     "rgba": "ee1de75109443c46529f39c1"
+    },
+    "pixels.video_frame_format": "I420",
     "recorder.mime_type": {
      "default": "video/webm;codecs=vp8",
      "video/mp4": "video/mp4;codecs=vp9",

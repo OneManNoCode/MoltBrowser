@@ -43,6 +43,8 @@ blink_core_sources_molt_fingerprinting = [
   "shields_decision.h",
   "moltnet_encoders.cc",
   "moltnet_encoders.h",
+  "moltnet_pixels.cc",
+  "moltnet_pixels.h",
 ]
 
 blink_core_tests_molt_fingerprinting = [
@@ -64,4 +66,5 @@ blink_core_tests_molt_fingerprinting = [
   "moltnet_network_test.cc",
   "shields_decision_test.cc",
   "moltnet_encoders_test.cc",
+  "moltnet_pixels_test.cc",
 ]

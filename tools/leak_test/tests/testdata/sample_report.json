@@ -1510,6 +1510,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: pixels and encoded bytes\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"I420\", expected I420"
+   ],
+   "group": "uniformity",
+   "id": "uniform.pixels.video_frame_format",
+   "status": "PASS",
+   "title": "pixels.video_frame_format is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: MediaRecorder\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"default\": \"video/webm;codecs=vp8\", \"video/mp4\": \"video/mp4;codecs=vp9\", \"video/webm\": \"video/webm;codecs=vp8\", \"video/x-matroska\": \"video/x-matroska;codecs=vp, expected {\"default\": \"video/webm;codecs=vp8\", \"video/mp4\": \"video/mp4;codecs=vp9\", \"video/webm\": \"video/webm;codecs=vp8\", \"video/"
@@ -3033,7 +3044,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 166,
+  "PASS": 167,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3203,6 +3214,17 @@
     "perf.jsHeapSizeLimit": 3760000000,
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "pixels.encoded_opus_48k": {
+     "bytes": 4283,
+     "chunks": 26,
+     "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.video_frame": {
+     "format": "I420",
+     "planes": "35ec97d035df255c26cac4ae",
+     "rgba": "ee1de75109443c46529f39c1"
+    },
+    "pixels.video_frame_format": "I420",
     "recorder.mime_type": {
      "default": "video/webm;codecs=vp8",
      "video/mp4": "video/mp4;codecs=vp9",
