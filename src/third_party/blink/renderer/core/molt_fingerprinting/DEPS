@@ -19,3 +19,25 @@ include_rules = [
     "+media/base/video_codecs.h",
     "+media/base/video_encoder.h",
 ]
+
+specific_include_rules = {
+  # MoltNet's audio clock (moltnet_audio_*): the media sinks, clock and
+  # resampler Web Audio and media playback render through, as
+  # platform/audio and modules/media/audio use them.
+  "moltnet_audio_(device|output|sink)(_test)?\.(cc|h)": [
+    "+base/functional/callback.h",
+    "+base/memory/raw_ptr.h",
+    "+media/audio/audio_device_description.h",
+    "+media/base/audio_bus.h",
+    "+media/base/audio_glitch_info.h",
+    "+media/base/audio_latency.h",
+    "+media/base/audio_parameters.h",
+    "+media/base/audio_renderer_sink.h",
+    "+media/base/audio_timestamp_helper.h",
+    "+media/base/channel_layout.h",
+    "+media/base/fake_audio_worker.h",
+    "+media/base/multi_channel_resampler.h",
+    "+media/base/output_device_info.h",
+    "+media/base/sinc_resampler.h",
+  ],
+}

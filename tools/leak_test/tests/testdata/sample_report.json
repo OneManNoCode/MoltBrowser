@@ -1091,6 +1091,83 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: media playback clock\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.clock_running",
+   "status": "PASS",
+   "title": "media.clock_running is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.device_blank",
+   "status": "PASS",
+   "title": "media.device_blank is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"audioinput\", \"videoinput\", \"audiooutput\"], expected [\"audioinput\", \"videoinput\", \"audiooutput\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.device_order",
+   "status": "PASS",
+   "title": "media.device_order is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"audioinput\": 1, \"audiooutput\": 1, \"videoinput\": 1}, expected {\"audioinput\": 1, \"audiooutput\": 1, \"videoinput\": 1}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.devices",
+   "status": "PASS",
+   "title": "media.devices is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"pending\", expected [\"pending\", \"NotAllowedError\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.gum",
+   "status": "PASS",
+   "title": "media.gum is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"pending\", expected [\"pending\", \"NotAllowedError\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.gum_overconstrained",
+   "status": "PASS",
+   "title": "media.gum_overconstrained is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: media playback clock\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"resolved\", expected resolved"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.sink_default",
+   "status": "PASS",
+   "title": "media.sink_default is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Surface covered\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
@@ -1375,6 +1452,39 @@
    "id": "uniform.nav.maxTouchPoints",
    "status": "PASS",
    "title": "nav.maxTouchPoints is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perf.heap_cached",
+   "status": "PASS",
+   "title": "perf.heap_cached is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perf.heap_rounded",
+   "status": "PASS",
+   "title": "perf.heap_rounded is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 3760000000, expected 3760000000"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perf.jsHeapSizeLimit",
+   "status": "PASS",
+   "title": "perf.jsHeapSizeLimit is uniform"
   },
   {
    "details": null,
@@ -2923,7 +3033,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 156,
+  "PASS": 166,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3038,9 +3148,22 @@
      "supported": false
     },
     "media.audiooutput": 1,
+    "media.clock_running": true,
+    "media.clock_start_ms": 40,
+    "media.device_blank": true,
+    "media.device_order": [
+     "audioinput",
+     "videoinput",
+     "audiooutput"
+    ],
     "media.devices": {
-     "audiooutput": 1
+     "audioinput": 1,
+     "audiooutput": 1,
+     "videoinput": 1
     },
+    "media.gum": "pending",
+    "media.gum_overconstrained": "pending",
+    "media.sink_default": "resolved",
     "mouse.screen_equals_client": true,
     "mq.any_hover_none": false,
     "mq.any_pointer_coarse": false,
@@ -3075,6 +3198,9 @@
     ],
     "nav.maxTouchPoints": 0,
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "perf.heap_cached": true,
+    "perf.heap_rounded": true,
+    "perf.jsHeapSizeLimit": 3760000000,
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
     "recorder.mime_type": {

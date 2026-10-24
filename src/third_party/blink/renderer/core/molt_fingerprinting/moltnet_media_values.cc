@@ -118,8 +118,24 @@ AudioOutputPosition AudioOutputPositionAt(double current_time) {
   return {std::max(0.0, current_time - kAudioOutputLatencySeconds), true};
 }
 
-bool ListsUniformAudioOutput(size_t outputs_listed, bool audio_ids_exposed) {
-  return outputs_listed == 0 && !audio_ids_exposed;
+bool ListsUniformDevice(size_t listed, bool ids_exposed) {
+  return listed == 0 && !ids_exposed;
+}
+
+UserMediaVerdict UserMediaFailureVerdict(
+    std::span<const PermissionAnswer> answers) {
+  if (answers.empty()) {
+    return UserMediaVerdict::kPermissionDenied;
+  }
+  bool granted = true;
+  for (const PermissionAnswer answer : answers) {
+    if (answer == PermissionAnswer::kDenied) {
+      return UserMediaVerdict::kPermissionDenied;
+    }
+    granted &= answer == PermissionAnswer::kGranted;
+  }
+  return granted ? UserMediaVerdict::kRealFailure
+                 : UserMediaVerdict::kPermissionDismissed;
 }
 
 MediaCapabilitiesAnswer VideoDecodingInfo(bool has_built_in_decoder) {

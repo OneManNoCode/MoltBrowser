@@ -6,7 +6,6 @@
 #include <atomic>
 
 #include "base/no_destructor.h"
-#include "third_party/blink/public/common/mediastream/media_devices.h"
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
 #include "third_party/blink/public/platform/web_encrypted_media_client.h"
 #include "third_party/blink/public/platform/web_encrypted_media_request.h"
@@ -133,21 +132,8 @@ std::optional<moltnet::AudioOutputPosition> UniformAudioOutputPosition(
   return moltnet::AudioOutputPositionAt(current_time);
 }
 
-bool ShouldListUniformAudioOutput(
-    const Vector<WebMediaDeviceInfo>& audio_inputs,
-    const Vector<WebMediaDeviceInfo>& audio_outputs) {
-  if (!UniformMode()) {
-    return false;
-  }
-  bool audio_ids_exposed = false;
-  for (const WebMediaDeviceInfo& device : audio_inputs) {
-    audio_ids_exposed |= !device.device_id.empty();
-  }
-  for (const WebMediaDeviceInfo& device : audio_outputs) {
-    audio_ids_exposed |= !device.device_id.empty();
-  }
-  return moltnet::ListsUniformAudioOutput(audio_outputs.size(),
-                                          audio_ids_exposed);
+bool UsesUniformMediaDevices() {
+  return UniformMode();
 }
 
 WebEncryptedMediaClient* MoltNetEncryptedMediaClient() {

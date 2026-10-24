@@ -26,6 +26,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace blink::molt_fingerprinting::moltnet {
 
@@ -111,14 +112,37 @@ AudioOutputPosition AudioOutputPositionAt(double current_time);
 
 // --- Media devices ------------------------------------------------------------
 //
-// navigator.mediaDevices.enumerateDevices() lists, until the page may use the
-// microphone, one entry of each kind the machine has, with no ID or label.
-// Every MoltNet machine has the uniform output device, so the list then
-// always has an "audiooutput" entry: one is added when the machine has
-// none. `outputs_listed`: the "audiooutput" entries Chromium listed;
-// `audio_ids_exposed`: whether an audio entry has an ID (the page has the
-// permission and sees the real devices).
-bool ListsUniformAudioOutput(size_t outputs_listed, bool audio_ids_exposed);
+// navigator.mediaDevices.enumerateDevices() lists, until the page may use a
+// kind of device, one entry of that kind if the machine has one, with no ID
+// or label. Every MoltNet machine has one microphone, one camera and one
+// output device, so before a permission the list is always
+// [audioinput, videoinput, audiooutput]: an entry is added for a kind the
+// machine has none of. `listed`: the entries of the kind Chromium listed;
+// `ids_exposed`: whether the page sees that kind's real devices (an entry of
+// it has an ID; for the audio kinds, an entry of either, since microphone
+// permission shows both).
+bool ListsUniformDevice(size_t listed, bool ids_exposed);
+
+// getUserMedia() for a camera or microphone the page may not use yet, when no
+// device of a kind it asks for exists or none meets its constraints:
+// Chromium rejects at once (NotFoundError, OverconstrainedError), while a
+// machine with a matching device shows a permission prompt and answers when
+// the user does. MoltNet asks for the permissions first, with the same
+// prompt, and then answers from the permission, as a request a device could
+// meet would be answered: `answers` holds the status of each kind the
+// request asks for, after asking.
+enum class PermissionAnswer { kGranted, kDenied, kAsk };
+enum class UserMediaVerdict {
+  // Every kind granted: the page may know its devices now, so the real
+  // failure (NotFoundError or OverconstrainedError).
+  kRealFailure,
+  // A kind denied (now or before): NotAllowedError "Permission denied".
+  kPermissionDenied,
+  // The prompt dismissed or ignored: NotAllowedError "Permission dismissed".
+  kPermissionDismissed,
+};
+UserMediaVerdict UserMediaFailureVerdict(
+    std::span<const PermissionAnswer> answers);
 
 // --- Encrypted Media Extensions ---------------------------------------------
 //

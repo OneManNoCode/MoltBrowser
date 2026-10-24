@@ -513,6 +513,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   events, one listed output device). Your device plays the result through
   a short buffer, which adds about 13 to 32 ms of audio latency in MoltNet
   windows. Regular and incognito windows are unchanged.
+- **Media playback, devices and memory look alike in MoltNet.** In MoltNet
+  pages `<audio>` and `<video>` keep time on a fixed clock instead of your
+  output device's, the same on every machine, with or without an output
+  device; until a page may use them, every machine lists one microphone,
+  one camera and one output device, and asking for a camera or microphone
+  the machine doesn't have shows the usual permission prompt instead of
+  failing at once; and `performance.memory` reports rounded sizes,
+  refreshed every 20 minutes, with an 8 GB machine's heap limit. Media
+  sound reaches your speakers a little later (about 60 ms at first,
+  settling to 15 to 35 ms), and with Bluetooth headphones a video's sound
+  trails its picture by the headset's delay. Regular and incognito windows
+  are unchanged.
 - **No DRM in MoltNet.** MoltNet pages are told that no media key system
   exists, Clear Key included, whichever ones the build or the operating
   system offers, and a MoltNet window no longer asks which ones there are.

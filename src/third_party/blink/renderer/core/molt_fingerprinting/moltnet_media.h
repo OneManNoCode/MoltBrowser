@@ -29,9 +29,10 @@
 //                 computes from the device's buffer, createScriptProcessor()'s
 //                 default size)       -> UniformAudioMaxChannelCount,
 //                                        UniformAudioCallbackFrames
-//   Media       MediaDevices::DevicesEnumerated (media_devices.cc:
-//   devices       enumerateDevices()' list)
-//                                         -> ShouldListUniformAudioOutput
+//   Media       enumerateDevices(), devicechange, getUserMedia()
+//   devices                               -> moltnet_media_devices.h
+//   Media       the output device media elements and MediaStream tracks
+//   playback      play to                 -> moltnet_audio_sink.h
 //   EME         EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow
 //                 (encrypted_media_utils.cc; requestMediaKeySystemAccess()
 //                 and Media Capabilities' key-system queries both get their
@@ -69,13 +70,11 @@
 #include "base/time/time.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.h"
-#include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
 class WebAudioLatencyHint;
 class WebEncryptedMediaClient;
-struct WebMediaDeviceInfo;
 
 namespace molt_fingerprinting {
 
@@ -134,12 +133,10 @@ UniformAudioOutputPosition(double current_time);
 
 // --- Media devices ------------------------------------------------------------
 
-// enumerateDevices() in MoltNet: whether to list the uniform output device
-// (an "audiooutput" entry with no ID, label or group) after what Chromium
-// listed (moltnet::ListsUniformAudioOutput). false outside MoltNet.
-CORE_EXPORT bool ShouldListUniformAudioOutput(
-    const Vector<WebMediaDeviceInfo>& audio_inputs,
-    const Vector<WebMediaDeviceInfo>& audio_outputs);
+// Whether pages see the uniform media devices: one microphone, camera and
+// output device, before a permission (moltnet_media_devices.h), and media
+// playback on MoltNet's clock (moltnet_audio_sink.h). Any thread.
+CORE_EXPORT bool UsesUniformMediaDevices();
 
 // --- Encrypted Media Extensions ---------------------------------------------
 
