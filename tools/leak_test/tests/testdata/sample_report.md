@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 123 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 144 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -215,11 +215,24 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | ai.Summarizer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Translator is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Writer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
+| PASS | audio.base_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.output_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.output_timestamp_ok is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.playback_latency_max is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.playback_underruns is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.render_quantum_hardware is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
+| PASS | audio.sample_rate is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.script_processor_buffer is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | autoplay.mediaelement is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | cookies.third_party is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | css.default_font_size is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
 | PASS | doc.characterSet_undeclared is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
+| PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | eme.playready is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | eme.widevine is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | form.numberMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | form.validationMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | hdr.accept-language is uniform | FINGERPRINTING.md "Surface covered" |
@@ -229,6 +242,12 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | intl.locale is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | intl.number is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | js.enabled_on_blocked_site is uniform | MOLTNET_COMPLIANCE.md §4 step 15 |
+| PASS | mc.av1_2160p60 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.encrypted is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.vp8_360p is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.vp9_1080p is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.webrtc_decoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.webrtc_encoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
@@ -282,6 +301,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | tz.resolved is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | ua.reduced is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | uad.high_entropy is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | webcodecs.decoder_hardware is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | webcodecs.encoder_hardware is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | webgl.debug_renderer_info is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
 | PASS | webgl.extensions is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
 | PASS | webgl.p.ALIASED_POINT_SIZE_RANGE is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |

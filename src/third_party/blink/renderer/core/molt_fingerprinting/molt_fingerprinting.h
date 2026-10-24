@@ -73,6 +73,9 @@
 //   MoltNet  MediaValues colour (color-gamut, dynamic-range, color,
 //              monochrome), WebViewImpl::UpdateRendererPreferences (overlay
 //              or classic scrollbars)               -> moltnet_display.h
+//   MoltNet  Web Audio's output device (AudioContext, its destination),
+//              EME key systems, Media Capabilities, WebCodecs' platform
+//              codecs                               -> moltnet_media.h
 //   shields  DedicatedWorker::CreateGlobalScopeCreationParams
 //              -> ProvideShieldsDecisionToDedicatedWorker
 //            ServiceWorkerGlobalScope::InitializeGlobalScope (the

@@ -76,6 +76,10 @@ SUBPROJECTS = {
     "third_party/wuffs/src": ("https://github.com/google/wuffs", "", None),
     "third_party/libwebp/src": ("https://github.com/webmproject/libwebp", "",
                                 None),
+    # media/muxers/webm_muxer.h (Blink's MediaRecorder, which
+    # media_capabilities.cc includes).
+    "third_party/libwebm/source": ("https://github.com/webmproject/libwebm",
+                                   "", None),
     # GitHub's mirror stops at older release branches; this GitLab mirror
     # carries chromium/<branch> (the pinned M152 commit among them).
     "third_party/pdfium": (("https://github.com/chromium/pdfium",

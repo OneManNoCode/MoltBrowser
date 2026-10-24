@@ -25,6 +25,8 @@ blink_core_sources_molt_fingerprinting = [
   "moltnet_device.h",
   "moltnet_display.cc",
   "moltnet_display.h",
+  "moltnet_media.cc",
+  "moltnet_media.h",
   "moltnet_network.cc",
   "moltnet_network.h",
   "shields_decision.cc",
@@ -42,6 +44,7 @@ blink_core_tests_molt_fingerprinting = [
   "moltnet_text_test.cc",
   "moltnet_device_test.cc",
   "moltnet_display_test.cc",
+  "moltnet_media_test.cc",
   "moltnet_network_test.cc",
   "shields_decision_test.cc",
 ]

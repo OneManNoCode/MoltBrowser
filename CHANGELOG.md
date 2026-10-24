@@ -462,6 +462,24 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   layout. On a Mac set to always show scroll bars, MoltNet windows show
   them while scrolling. Regular and incognito windows follow
   your setting as before.
+- **One audio device for every MoltNet user.** Web Audio in MoltNet pages
+  now describes the same output device on every machine: a 48 kHz stereo
+  device with a 10 ms buffer and a 24 ms output latency (sample rate,
+  latencies, output timestamps, playback statistics, channel count), and
+  pages' audio runs at 48 kHz, converted for your device when it uses
+  another rate. Surround audio plays as stereo in MoltNet windows. Regular
+  and incognito windows are unchanged.
+- **No DRM in MoltNet.** MoltNet pages are told that no media key system
+  exists, Clear Key included, whichever ones the build or the operating
+  system offers, and a MoltNet window no longer asks which ones there are.
+  Regular and incognito windows are unchanged.
+- **The same media answers for every MoltNet user.** Media Capabilities in
+  MoltNet pages answers from the codecs built into MoltBrowser (video is
+  smooth and never power efficient; WebRTC queries are unsupported, as
+  WebRTC is off there) instead of your graphics hardware and what you
+  played before, and WebCodecs uses MoltBrowser's own software codecs, so
+  `"prefer-hardware"` isn't supported in MoltNet windows. Regular and
+  incognito windows are unchanged.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

@@ -27,12 +27,33 @@
     "ai.Summarizer": "unavailable",
     "ai.Translator": "unavailable",
     "ai.Writer": "unavailable",
+    "audio.base_latency": {
+     "balanced": 0.01,
+     "exact_0": 0.0026666666666666666,
+     "exact_20ms": 0.021333333333333333,
+     "interactive": 0.01,
+     "playback": 0.021333333333333333,
+     "rate_44100": 0.01
+    },
+    "audio.channel_count": 2,
+    "audio.channel_count_3": "IndexSizeError",
+    "audio.max_channel_count": 2,
+    "audio.output_latency": 0.024,
+    "audio.output_timestamp_ok": true,
+    "audio.playback_latency_max": 0,
+    "audio.playback_underruns": 0,
     "audio.render_quantum_hardware": 128,
+    "audio.sample_rate": 48000,
+    "audio.script_processor_buffer": 2048,
+    "audio.sink_id": "",
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
     "css.default_font_size": "16px",
     "doc.characterSet_undeclared": "windows-1252",
+    "eme.clearkey": "NotSupportedError",
+    "eme.playready": "NotSupportedError",
+    "eme.widevine": "NotSupportedError",
     "fonts.visible": [
      "DejaVu Sans",
      "Liberation Sans",
@@ -52,6 +73,41 @@
     "intl.locale": "en-US",
     "intl.number": "1,234,567.891",
     "js.enabled_on_blocked_site": true,
+    "mc.av1_2160p60": {
+     "powerEfficient": false,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.encrypted": {
+     "powerEfficient": false,
+     "smooth": false,
+     "supported": false
+    },
+    "mc.opus": {
+     "powerEfficient": true,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.vp8_360p": {
+     "powerEfficient": false,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.vp9_1080p": {
+     "powerEfficient": false,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.webrtc_decoding": {
+     "powerEfficient": false,
+     "smooth": false,
+     "supported": false
+    },
+    "mc.webrtc_encoding": {
+     "powerEfficient": false,
+     "smooth": false,
+     "supported": false
+    },
     "media.devices": {
      "audiooutput": 1
     },
@@ -128,6 +184,10 @@
      "wow64": false
     },
     "uad.platform": "Linux",
+    "webcodecs.decoder_hardware": false,
+    "webcodecs.decoder_software": true,
+    "webcodecs.encoder_hardware": false,
+    "webcodecs.encoder_vp8": true,
     "webgl.context": true,
     "webgl.debug_renderer_info": false,
     "webgl.extensions": [

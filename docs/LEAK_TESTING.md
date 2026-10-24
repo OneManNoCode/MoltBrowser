@@ -298,7 +298,17 @@ level, and in one browser launch per device scale factor
   an sRGB display with a standard dynamic range and 8 bits per colour (the
   `color-gamut`, `dynamic-range`, `video-dynamic-range`, `color` and
   `monochrome` queries), a storage quota reported as 10 GiB over the usage,
-  and `renderQuantumSize` 128 for `renderSizeHint: "hardware"`.
+  and `renderQuantumSize` 128 for `renderSizeHint: "hardware"`; one audio
+  device (`AudioContext` at 48 kHz, `baseLatency` for every `latencyHint`
+  and at a page's 44.1 kHz, `outputLatency` 24 ms, 2 channels at most and
+  `channelCount` 3 refused, the default `ScriptProcessorNode` size, the
+  output timestamp, `playbackStats`), no key system (Clear Key, Widevine,
+  PlayReady, and Media Capabilities with a `keySystemConfiguration`), Media
+  Capabilities' fixed answers for VP8, VP9 and AV1 video and for WebRTC,
+  and WebCodecs refusing `prefer-hardware`. Codec support (Media
+  Capabilities for Opus, H.264 and HEVC, `canPlayType()`,
+  `MediaSource.isTypeSupported()`, WebCodecs without a hardware
+  preference) follows the build and is compared between runs.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

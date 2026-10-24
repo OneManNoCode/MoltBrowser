@@ -478,6 +478,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `platform/network/network_state_notifier.{h,cc}`, `core/molt_fingerprinting/moltnet_network.{h,cc}` | `SetUniformNetworkState()`, an early return in four setters, no per-host factor in `GetRandomMultiplier()` once pinned; a `std::atomic<bool>` member in a header much of Blink includes (expect a large Blink rebuild); `Configure(kUniform)` calls `PinUniformNetworkState()` | network quality |
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
+| `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -620,6 +621,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `TorControlProtocolTest`, `TorrcBuilderTest`, `PluggableTransportsTest`, `OnionLocationTest` | #6, #49 |
   | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
+  | `MoltNetMediaValuesTest.*` | fp-media |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -636,7 +638,8 @@ extension enablement and `MediaRouterEnabled()`).
   scrollbar and viewport cases), `MoltNetTextTest` (with the real Roboto
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
   `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
-  `MoltNetDisplayTest` (fingerprinting 156), `MoltFingerprintingTest`,
+  `MoltNetDisplayTest` (fingerprinting 156), `MoltNetMediaTest` (fp-media),
+  `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
   `MoltFont*`, `MoltWebGLUniform` and `MoltNet*Values` suites.
@@ -657,6 +660,7 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `AboutFlagsTest.*:AboutFlagsHistogramTest.*` | #39, #45, #47 |
 | `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
 | `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
+| `blink_unittests` | `AudioContext*:BaseAudioContext*:*ScriptProcessor*:*RealtimeAudioDestination*:*EncryptedMedia*:*MediaKey*:MediaCapabilities*:*VideoDecoder*:*VideoEncoder*:*DecoderTemplate*` (normal windows: the hooks only act in MoltNet) | fp-media |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
@@ -979,6 +983,39 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   on, MoltNet pages keep classic 16 CSS px scrollbars. The scrollbars are
   drawn, animate and can be dragged normally in all three cases, and the
   DevTools device toolbar (mobile emulation) still shows overlay ones.
+- [ ] Audio in MoltNet on real hardware (fp-media): with the output device
+  set to 44.1 kHz and then to 96 kHz (Windows' "Default format", macOS's
+  Audio MIDI Setup, `pw-metadata -n settings 0 clock.force-rate` or
+  PulseAudio's `default-sample-rate`), and on a 48 kHz device as the
+  control, a MoltNet page plays a Web Audio tone, a `<audio>` file routed
+  through `createMediaElementSource()` and an `AudioWorklet` synth
+  correctly: right pitch and speed, no clicks or dropouts over a few
+  minutes, A/V sync of a video with Web Audio sound within what you'd
+  expect from 24 ms. Report the audio service's CPU (the browser's task
+  manager) while it plays, with and without the 44.1/96 kHz
+  resampling. `new AudioContext().sampleRate` is 48000,
+  `baseLatency` 0.01, `outputLatency` 0.024 and
+  `destination.maxChannelCount` 2 in MoltNet, and the device's values in
+  a regular window.
+- [ ] More audio devices in MoltNet (fp-media): a 5.1/7.1 device (HDMI
+  receiver) plays a 6-channel Web Audio graph as stereo and
+  `destination.channelCount = 6` throws `IndexSizeError`; Bluetooth
+  headphones play without dropouts; `playbackStats` (while the page is
+  visible) reads 24 ms and no underruns while the CPU is loaded;
+  `createScriptProcessor().bufferSize` is 2048; a page that asks for
+  `sampleRate: 22050` gets it and plays at the right pitch; after granting
+  microphone access, `setSinkId()` to another output device still works.
+- [ ] EME, Media Capabilities and WebCodecs in MoltNet (fp-media): a
+  Clear Key test page (e.g. the W3C EME test player) fails with
+  `NotSupportedError` in MoltNet and plays in a regular window;
+  `decodingInfo()` for VP9 1080p and AV1 4K reads `{supported: true,
+  smooth: true, powerEfficient: false}` on a machine with hardware VP9/AV1
+  decoding (regular window: power efficient); `VideoDecoder.isConfigSupported(
+  {codec: "vp09.00.10.08", hardwareAcceleration: "prefer-hardware"})` is
+  `false` in MoltNet and `true` in a regular window on that machine; a
+  WebCodecs player (e.g. the WebCodecs samples' video decode demo) still
+  plays in MoltNet, in software; on macOS a `VideoEncoder` for
+  `avc1.42001E` is unsupported in MoltNet.
 
 ### 7.4 MoltNet
 
@@ -1111,7 +1148,11 @@ Mac; use a real Linux host.
     (`mq.color_gamut_*`, `mq.dynamic_range_high`,
     `mq.video_dynamic_range_high`, `mq.color_bits`, `mq.monochrome`),
     `storage.quota_over_usage` and `audio.render_quantum_hardware`
-    (fingerprinting 156); `diff` shows no difference in a promised value.
+    (fingerprinting 156), and the `audio.*`, `eme.*`, `mc.*` and
+    `webcodecs.*` checks (fp-media); `diff` shows no difference in a
+    promised value, nor in the codec support it compares (`mc.opus`,
+    `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
+    `webcodecs.encoder_*`) between two machines of an OS.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
     asks for a client certificate saw only completed handshakes, none with
     a certificate. A FAIL listing a dropped handshake means MoltNet's
