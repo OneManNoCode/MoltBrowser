@@ -14,6 +14,7 @@ import os
 
 from . import KIT_VERSION, REPORT_SCHEMA
 from . import catalog
+from . import expectations as ex
 from . import traffic
 from . import uniformity
 
@@ -739,7 +740,26 @@ def _circuit_checks(manifest, tr):
             'The panel\'s relays are in the consensus Tor downloaded', SKIP,
             [(phase or {}).get('error') or 'no circuit data'],
             'MOLTNET_COMPLIANCE.md §4 step 10'))
+    checks.append(_tor_capacity_check(phase))
     return checks
+
+
+def _tor_capacity_check(phase):
+    """MoltBrowser's Tor runs with the capacity MoltNet's connection limits
+    are sized against (ConnLimit) and the pending-circuit limit no one site
+    can fill (MaxClientCircuitsPending), as its torrc states them."""
+    title = ('Tor runs with the shared capacity MoltNet is sized for '
+             '(ConnLimit, MaxClientCircuitsPending)')
+    doc = 'MOLTNET_COMPLIANCE.md §2 (Tor\'s capacity)'
+    options = ((phase or {}).get('data') or {}).get('tor_options')
+    if not options:
+        return check('identity.tor_capacity', 'identity', title, SKIP,
+                     ['MoltBrowser\'s torrc wasn\'t found'], doc)
+    ev = ['%s %s (expected %s)' % (k, options.get(k), v)
+          for k, v in sorted(ex.TOR_CAPACITY.items())]
+    ok = all(options.get(k) == v for k, v in ex.TOR_CAPACITY.items())
+    return check('identity.tor_capacity', 'identity', title,
+                 PASS if ok else FAIL, ev, doc)
 
 
 def _phase_checks(manifest):

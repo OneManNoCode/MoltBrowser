@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 155 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 156 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -167,6 +167,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | Sandboxed pages (opaque origins) on two sites use different SOCKS usernames | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | Separate identity: cookies don't cross, and go with the last window | MOLTNET_COMPLIANCE.md §4 step 6 |
 | PASS | A site visited again in a new MoltNet session (after the last window closed, after New Identity) uses new SOCKS credentials, so new circuits | MOLTNET_COMPLIANCE.md §1.2-§1.4, §4 steps 6 and 7 |
+| PASS | Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending) | MOLTNET_COMPLIANCE.md §2 (Tor's capacity) |
 | SKIP | check.torproject.org says the MoltNet window uses Tor | MOLTNET_COMPLIANCE.md §4 step 1 |
 
 - **PASS** Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch)
@@ -230,6 +231,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
   - new_identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
   - new_identity, session 1 -> 2: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
+- **PASS** Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending)
+  - ConnLimit 1000 (expected 1000)
+  - MaxClientCircuitsPending 64 (expected 64)
 - **SKIP** check.torproject.org says the MoltNet window uses Tor
   - --offline
 

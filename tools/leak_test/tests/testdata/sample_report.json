@@ -385,6 +385,18 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Tor's capacity)",
+   "evidence": [
+    "ConnLimit 1000 (expected 1000)",
+    "MaxClientCircuitsPending 64 (expected 64)"
+   ],
+   "group": "identity",
+   "id": "identity.tor_capacity",
+   "status": "PASS",
+   "title": "Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending)"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 Requests outside Tor, \u00a74 step 20",
    "evidence": [
     "flags: --enable-features=AutofillServerCommunication,ReduceAcceptLanguage",
@@ -1605,7 +1617,7 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: storage limits\"",
    "evidence": [
-    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 209715200, expected 209715200"
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 62914560, expected 62914560"
    ],
    "group": "uniformity",
    "id": "uniform.storage.enforced_quota",
@@ -2900,7 +2912,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 155,
+  "PASS": 156,
   "SKIP": 84
  },
  "fingerprints": [
@@ -3084,7 +3096,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
-    "storage.enforced_quota": 209715200,
+    "storage.enforced_quota": 62914560,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,

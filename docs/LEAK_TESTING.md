@@ -261,6 +261,7 @@ the report. Anything else is a leak.
 | New Identity | `moltnet.newIdentity`: a new browser context, the cookie gone, the canvas readback changed (new farbling seed); no page of the old identity left open, although it asked "Leave site?" with a user activation; a second New Identity right after the first opens its window only once Tor can have switched circuits again (at least 8 s later; Tor applies NEWNYM at most every 10 s); the same site's SOCKS5 credentials differ before and after each New Identity (`identity.session_circuits`); exit IP before/after if online | 7 |
 | Per-site circuits | the two onion sites' SOCKS5 connections carry different usernames, and every one carries one; two pages their servers sandbox (`Content-Security-Policy: sandbox`, opaque origins) on two sites use different usernames too (`identity.sandboxed_circuits`); the certificate fetches made for the two certificate tests use usernames of their own, none shared between the two sites and none a page used, and the second site's check makes a fetch of its own (`identity.cert_fetch_circuits`) | 8 |
 | The relays are real | the panel's guard, middle and exit fingerprints (`moltnet.getCircuit`) are in the consensus MoltNet's Tor downloaded | 10 |
+| Tor's shared capacity | the torrc MoltBrowser started its Tor with sets `ConnLimit 1000` and `MaxClientCircuitsPending 64`, the capacity MoltNet's connection limits are sized against (`identity.tor_capacity`). The limits themselves (each site's connections, the context's budget of 768, each site's 16 SOCKS handshakes, each site's keepalive requests) would take hundreds of connections or thousands of requests through Tor to reach, too slow and too uneven for a kit run: they are checked on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "moltnet-shared") | 10 |
 | On Tor | the panel's *Verify* and `check.torproject.org/api/ip` in the MoltNet tab (online) | 1 |
 | Fail-closed | the `tor` cgroup is killed; the next MoltNet navigation fails with a proxy/SOCKS error and nothing leaves directly | 5 |
 | No restore | a relaunch with the same profile shows no MoltNet page | 5 |
@@ -332,8 +333,8 @@ level, and in one browser launch per device scale factor
   `src: local()` face of a family outside the allow-list loads, installed
   or not (the result is checked, not the time: such a face is never looked
   up, so it costs what a missing one costs); the quota the browser enforces
-  for the page's site, 200 MiB, read through DevTools
-  (`Storage.getUsageAndQuota`). Writing until `QuotaExceededError` would
+  for the page's site, its budget of 60 MiB (all its storage keys
+  together), read through DevTools (`Storage.getUsageAndQuota`). Writing until `QuotaExceededError` would
   find the same limit but takes too long for the kit, so the configured
   limit is checked instead. What `isTypeSupported()` accepts and which
   listed faces `local()` finds follow the build and the OS and are
