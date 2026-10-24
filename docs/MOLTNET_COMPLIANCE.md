@@ -434,7 +434,7 @@ browser):
 | The HTTP stream pool (Happy Eyeballs v3) | Direct connections only; all of MoltNet's go to its proxy |
 | Device-bound sessions (on by default on Windows and macOS) | Off in MoltNet's network context: sites use their ordinary cookies, as in Tor Browser. A session binds a site's cookies to a key the operating system's secure hardware (a TPM, the Secure Enclave) makes, so whether a site can set one up differs between machines, and the key isn't kept in MoltNet's memory. (Its requests, also 156's proactive refresh, would go through MoltNet's context) |
 | Connection-Allowlist embedded enforcement (a base feature on by default at 156, and an origin trial) | Only narrows what a framed document may connect to; it sends the embedder's requirement in the frame's own request, through MoltNet's context, and looks nothing up |
-| Background Fetch's Local Network Access check (`BackgroundFetchLocalNetworkAccess`, on at 156) | Background Fetch requests get a URL loader factory from the service worker's storage partition, MoltNet's for a MoltNet page, so they go through Tor; the new check reads the URL or the connection's address only |
+| Background Fetch's Local Network Access check (`BackgroundFetchLocalNetworkAccess`, on at 156) | Background Fetch requests get a URL loader factory from the service worker's storage partition, MoltNet's for a MoltNet page, so they go through Tor, keyed by the site that started them (*Shared network state*); the new check reads the URL or the connection's address only |
 | Prefetch, preconnect and prerender | Every prefetch the browser makes checks the network-prediction setting first, which MoltNet turns off (156 adds a way past the data- and battery-saver checks, not past that one). The search-engine preconnector also runs in off-the-record profiles but checks the same setting; search prefetch and the new search preloading check it or don't run off the record. 156's direct preconnect path only skips a pre-resolve, and off-the-record profiles still have no preconnect service for pages' hints. A navigation's own preconnect goes to the proxy |
 | Local Network Access | 156 changes only its logging. The checks read the URL or the connection's address and look nothing up |
 | Proxy routes from enterprise provisioning domains (`EnableDynamicRouteFetching`, on in Chromium's field-trial testing config) | Only a regular profile's proxy settings can get them: an off-the-record profile has no provisioning-domain service |
@@ -877,6 +877,7 @@ measured in a built browser):
 | Connection limits | **per site**. Chromium gives each proxy one pool of connections, 128 at most for all sites together (the `MaxConnectionsPerProxy` policy changes the number; at 156 the pool may also grow past it by a random amount), so a site that kept many connections open made other sites' requests wait, and could count how many the others held. MoltNet's context gives each site (the top-level site, for its first-party and third-party requests alike; a page its server sandboxed counts against the site it came from) pools of its own: 48 connections for HTTP and 16 for WebSockets, whatever the policy says and with no random room, with Chromium's 6 per host inside. The one-off keys no site can be named for (certificate fetches) share one pool of 8 | closed, then gone |
 | Connections to Tor, all sites together | **within a budget** of 768, which fits eleven sites' full shares, inside what MoltNet's single Tor process always accepts (*Tor's capacity* below) | closed, then gone |
 | Circuits Tor builds at a time | **at most 16 per site**: a site's SOCKS handshakes in progress, each of which may make Tor build a circuit, are limited, and Tor's limit for all sites together is 64 (*Tor's capacity*) | — |
+| Downloads the browser makes for a page, Background Fetch | **keyed by the site they come from**. A Background Fetch is made by the browser's download service; it carries the network key of the site that started it (its service worker's or its page's), so its connections, cache partition, cookies and Tor circuit are that site's (off-the-record profiles at 156 filed it under its destination, as a top-level site of its own; regular profiles already keyed it by the site). A download a page starts without navigating (a link with `download`, "Save link as", "Save image as", a dragged link) is keyed by the frame it came from, a resumed download by the download's first request, and the resources "Save page as" fetches by the frame they belong to; with no frame left, by a key of its own. A navigation that turns into a download keeps its navigation's key | gone |
 | Keepalive requests (`fetch()` with `keepalive`, `sendBeacon()`, pings) | **per site**. The network service lets 2048 be in flight for every profile and site together (and 256 per page), so a site that used them up made another site's, or a regular window's, fail. MoltNet's context counts each site's on their own, 2048 for the site and 256 per page, and none of them toward another context's | gone |
 | Storage quota and eviction (IndexedDB, Cache Storage, OPFS, service worker scripts) | **per site**: each site's storage keys together may use 60 MiB, all sites together 600 MiB, and nothing is evicted to make room ([FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits)). Chromium checks writes against each storage key's quota only and, every half hour, evicts the least recently used data of any site until all sites use 70% of a pool | gone (in memory) |
 | TLS session resumption | keyed by top-level site | gone |
@@ -1002,6 +1003,45 @@ room: Chromium evicts the least recently used data of any site every half
 hour once all sites use 70% of its pool. The details, what a page can
 still observe and what it costs:
 [FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits).
+
+**Downloads and Background Fetch.** Some requests a page causes are made
+by the browser, not the page, and Chromium gives some of them no network
+key of their own, so they were filed under their destination, as if the
+destination were a top-level site: its connections, cache partition and
+cookies, and in MoltNet its Tor circuit (the SOCKS username is the
+top-level site). Each now carries the key of where it came from:
+
+- A Background Fetch (`registration.backgroundFetch.fetch()`): the key of
+  the service worker that started it, or of the page, the same as their
+  own requests. Content gives the download service that key with each
+  request; off the record, the in-memory download service now puts it on
+  the request instead of only its cookie site
+  (`components/download/internal/background_service/molt_registering_site_isolation.h`,
+  hooked into `in_memory_download.cc`). This applies to every
+  off-the-record profile: the in-memory service exists only for them,
+  Background Fetch is its only client there, and regular profiles already
+  send the same key. The fetch's icon is loaded by the page itself.
+- A download a page starts without navigating (a link with `download`,
+  "Save link as", "Save image as" or "Save video as" in a top-level page, a
+  link dragged out): the key of the frame it came from, as that frame's
+  own requests have; a resumed download: its first request's key; the
+  resources "Save page as" fetches: the key of the frame they belong to.
+  With no frame left and nothing to resume, a one-off key. Such a request
+  keeps its first party on redirects (`content/browser/download/
+  molt_download_isolation{,_policy}.h`, hooked into
+  `DownloadManagerImpl::BeginDownloadInternal()` and
+  `SaveFileManager::SaveURL()`; MoltNet only, through
+  `ContentBrowserClient::ShouldKeepDownloadsWithTheirSite()`).
+- Not changed: a navigation that turns into a download keeps its
+  navigation's key (a link opened in the page leads to its destination's
+  site, as in any browser), and saving a page or a frame keeps the key of
+  that page or frame.
+
+What a page can still observe: nothing of another site's downloads. What
+it costs: a file saved with "Save link as" from another site's link no
+longer carries that site's first-party cookies, as in Tor Browser, so a
+download that needs a sign-in on that site may fail from the link; open
+the link instead.
 
 The certificate-verification choice in detail: a cache keyed by top-level
 site would meet the rule too, but Chromium 152's verifier interface doesn't
@@ -1195,6 +1235,7 @@ gpg-verified steps documented in that script.
 | Tor's capacity (§2 *Tor's capacity*): the torrc states `ConnLimit 1000` and `MaxClientCircuitsPending 64`; MoltNet's budget plus 200 fits what Tor accepts; no one site can fill the pending-circuit limit | Unit tests (`TorrcBuilderTest`, built standalone); `tor --verify-config` with Tor 0.4.9.11 on the torrc `BuildTorrc()` writes; Tor 0.4.9.11 under a descriptor limit of exactly 1000 (only a local bridge, so nothing left the machine): 965 SOCKS connections answered, then "Failing because we have 967 connections already"; the leak kit reads both options from the torrc MoltBrowser started Tor with (`identity.tor_capacity`) | Pass |
 | Keepalive limits per site (§2 *Keepalive requests*): in MoltNet one site's 2048 in flight leave another site's, and a regular window's, alone, and a regular profile's leave MoltNet's alone; the per-page limits (256, 512 KiB) still hold; a sandboxed page counts against its site; a context's counts go with it and its factories and loaders, destroyed after it, find them gone | Standalone harness: `keepalive_statistics_recorder.{h,cc}`, `molt_keepalive_partitions.h` and `molt_keepalive_site.h` compiled verbatim, the hooked parts of `URLLoaderFactory` (constructor, destructor, `CreateLoaderAndStart()`'s limit checks) and `NetworkContext` (constructor, destructor) included verbatim into stand-ins with 156's ownership (g++ ASan/UBSan, clang `-fno-exceptions`): 5 tests, 8 mutants caught; unit tests (`molt_ai_unittests`: the registry, 3 tests, built standalone; the network context policy); the changed `services/network/` files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the network service's own suites need a Chromium build |
 | Storage per site (§2 *Storage*, [FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits)) | See FINGERPRINTING.md | Partly |
+| Downloads and Background Fetch keyed by their site (§2 *Downloads and Background Fetch*): a Background Fetch has its service worker's or page's key (also a third-party worker's, under each embedding site), not its server's, in every off-the-record profile; a download from a frame embedded on two sites has each site's key, "Save image as" the page's, a resumed download its first request's, "Save page as"'s resources their frame's, none of them a first party that follows redirects; with nothing to go by a one-off key; regular profiles unchanged | Standalone harness: `molt_registering_site_isolation.h` and `molt_download_isolation{,_policy}.h` compiled verbatim, the request set-up of `InMemoryDownloadImpl::SendRequest()` and `SaveFileManager::SaveURL()` as Chromium 156 has them and as hooked, `DownloadManagerImpl::BeginDownloadInternal()`'s hook, `download::CreateResourceRequest()`, `StorageKey::ToPartialNetIsolationInfo()` and the network service's choice of a request's isolation (`url_loader_util::GetIsolationInfo()`) included verbatim, against stand-ins of origins, sites and `IsolationInfo` (g++ ASan/UBSan, clang `-fno-exceptions`): the key before and after for each case, 10 tests, 17 mutants caught; unit tests (`molt_ai_unittests`: the choice, 5 tests, built standalone; the profile rule); the changed files type-checked against Chromium 156's headers (`tools/compile_check`); the leak kit's `identity.background_fetch_circuits` | Partly: the standalone tests pass; the download suites need a Chromium build |
 | The same in a running browser: language policies change nothing in MoltNet; Incognito turned off closes MoltNet with DevTools open in a window of its own and an unanswered "Leave site?", MoltNet refuses to open, and opens again once allowed; Incognito only keeps it open (§4 step 9) | Needs a Chromium build; the leak kit's `identity.language_policy_ignored`, `identity.incognito_off_closes`, `identity.incognito_forced_allows` | **Not yet done** |
 | No Autofill server traffic and no address-format downloads in MoltNet (§2 *Requests outside Tor*): no query and no vote (Autofill's or the password manager's), also with `AutofillServerCommunication` turned on; no address rules downloaded or read from the shared file, for Autofill or the payment sheet; every other profile keeps Chromium's | Unit tests (`molt_ai_unittests`); `molt_net_autofill.cc` and `chrome_payment_request_delegate.cc` type-checked against Chromium 156's headers, and the two hooked functions of `chrome_autofill_client.cc` too (copied verbatim into a stand-in of the class: the checker can't generate one header the whole file needs) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser (§4 step 20) | Needs a Chromium build; the leak kit's `net.autofill_server` | **Not yet done** |
@@ -1288,7 +1329,9 @@ help. The last column names the report's checks.
    third-party HTTPS host, then a second site that embeds the same host;
    the log shows a certificate verification for each site's connection to
    it (a regular window verifies it once and answers the second from its
-   cache).
+   cache). A Background Fetch started on two sites for the same file
+   goes out with each site's username; so does a file saved with "Save
+   link as" from a frame of one site embedded on two others.
 9. **Overrides are refused.** (Kit: the `--proxy-server` half, the partitioning switches, and a proxy, a language and an Incognito policy set while MoltNet is open; the extension half and the URL allow list are manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
