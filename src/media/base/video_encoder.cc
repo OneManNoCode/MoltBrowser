@@ -5,6 +5,7 @@
 #include "media/base/video_encoder.h"
 
 #include <algorithm>
+#include <atomic>
 
 #include "base/numerics/checked_math.h"
 #include "base/numerics/clamped_math.h"
@@ -18,6 +19,10 @@
 namespace media {
 
 namespace {
+
+// MoltBrowser: SetProcessorCountForSoftwareEncoding(); 0 = the machine's.
+constinit std::atomic<int> g_processor_count_for_software_encoding{0};
+
 const char* GetContentHintName(VideoEncoder::ContentHint content_hint) {
   switch (content_hint) {
     case VideoEncoder::ContentHint::Camera:
@@ -69,10 +74,19 @@ int GetNumberOfThreadsForSoftwareEncoding(gfx::Size frame_size) {
   }
 
   // Clamp to the number of available logical processors/cores.
-  desired_threads =
-      std::min(desired_threads, base::SysInfo::NumberOfProcessors());
+  // MoltBrowser: or to the count this process was given.
+  const int processors =
+      g_processor_count_for_software_encoding.load(std::memory_order_relaxed);
+  desired_threads = std::min(
+      desired_threads,
+      processors > 0 ? processors : base::SysInfo::NumberOfProcessors());
 
   return desired_threads;
+}
+
+void SetProcessorCountForSoftwareEncoding(int count) {
+  g_processor_count_for_software_encoding.store(std::max(count, 0),
+                                                std::memory_order_relaxed);
 }
 
 uint8_t QIndexToQuantizer(VideoCodec codec, uint8_t q_index) {

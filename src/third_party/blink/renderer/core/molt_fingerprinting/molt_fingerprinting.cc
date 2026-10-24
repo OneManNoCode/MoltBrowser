@@ -25,6 +25,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_network.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"
@@ -571,6 +572,9 @@ void Configure(Mode mode) {
     // The connection and network quality are the same for every MoltNet
     // user and never change (moltnet_network.h).
     PinUniformNetworkState();
+    // Software video encoders run as on the core count pages see
+    // (moltnet_encoders.h).
+    PinUniformSoftwareEncoding();
   }
 }
 

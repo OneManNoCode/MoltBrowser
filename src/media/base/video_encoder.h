@@ -36,6 +36,12 @@ MEDIA_EXPORT uint32_t GetDefaultVideoEncodeBitrate(gfx::Size frame_size,
 
 MEDIA_EXPORT int GetNumberOfThreadsForSoftwareEncoding(gfx::Size frame_size);
 
+// MoltBrowser: when `count` is positive, GetNumberOfThreadsForSoftwareEncoding()
+// counts that many logical processors instead of the machine's, for the rest
+// of the process (MoltNet's renderers set the core count their pages see;
+// third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h).
+MEDIA_EXPORT void SetProcessorCountForSoftwareEncoding(int count);
+
 // Converts AV1/VP9 qindex (0-255) to the quantizer parameter (0-63).
 MEDIA_EXPORT uint8_t QIndexToQuantizer(VideoCodec codec, uint8_t q_index);
 
