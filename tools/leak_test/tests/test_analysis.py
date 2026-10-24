@@ -140,6 +140,8 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['identity.fail_closed'], 'PASS')
         self.assertEqual(status['identity.partitioning_override_refused'],
                          'PASS')
+        self.assertEqual(status['identity.policy_change_closes'], 'PASS')
+        self.assertEqual(status['net.autofill_server'], 'PASS')
         self.assertEqual(status['uniform.nav.hardwareConcurrency'], 'FAIL')
         self.assertEqual(status['uniform.win.innerWidth'], 'FAIL')
         self.assertEqual(status['uniform.fonts.visible'], 'FAIL')
@@ -226,6 +228,75 @@ class IdentityChecks(unittest.TestCase):
             'moltnet_pages': 1}})[0], report.FAIL)
         self.assertEqual(report._judge_partitioning_override({})[0],
                          report.SKIP)
+
+    POLICY_HOST = 'plc-pppppp9999.moltleak.test'
+
+    def policy_live(self, events=(), socks=(), skipped=None, **changes):
+        """Both checks of the policy_live phase (100 s to 136 s), for a
+        phase whose data is the sample's with `changes`."""
+        data = {'flags': ['--enable-features=AutofillServerCommunication'],
+                'autofill_start': 101.0, 'autofill_end': 111.0,
+                'autofill_nav_error': None, 'canary_host': self.POLICY_HOST,
+                'moltnet_pages_before': 1, 'policy': {'ProxyMode': 'direct'},
+                'policy_written': 115.0, 'closed_after_s': 6.5,
+                'moltnet_pages_after': 0,
+                'reopen_with_policy': {'error': 'A policy or command-line '
+                                                'flag controls the proxy'},
+                'pages_with_policy': 0, 'policy_removed': 124.0,
+                'reopen_without_policy': {'running': True},
+                'reopened': True}
+        data.update(changes)
+        phase = {'name': 'policy_live', 'start': 100.0, 'end': 136.0,
+                 'data': data}
+        if skipped:
+            phase = {'name': 'policy_live', 'skipped': skipped}
+        tr = {'events': [dict({'first': 120.0, 'kind': 'dns', 'dst': None,
+                               'dport': 53, 'qtype': 'A', 'count': 1,
+                               'detail': None, 'reason': 'x',
+                               'sources': ['kit resolver']}, **e)
+                         for e in events],
+              'socks': [dict({'port': 443}, **s) for s in socks]}
+        checks = report._policy_live_checks({'phases': [phase]}, tr)
+        return {c['id']: c['status'] for c in checks}
+
+    def test_policy_live(self):
+        closes, autofill = ('identity.policy_change_closes',
+                            'net.autofill_server')
+        ok = self.policy_live(socks=[{'ts': 113.0, 'host': self.POLICY_HOST},
+                                     {'ts': 117.0, 'host': self.POLICY_HOST}])
+        self.assertEqual(ok, {closes: report.PASS, autofill: report.PASS})
+        # The windows stayed open.
+        self.assertEqual(self.policy_live(closed_after_s=None,
+                                          moltnet_pages_after=1)[closes],
+                         report.FAIL)
+        # MoltNet opened although the policy was set.
+        self.assertEqual(self.policy_live(
+            reopen_with_policy={'running': True}, pages_with_policy=1)[closes],
+            report.FAIL)
+        # ... or refused only because the harness failed.
+        self.assertEqual(self.policy_live(
+            reopen_with_policy={'error': 'harness: timeout'})[closes],
+            report.FAIL)
+        # The page's canary name was looked up outside Tor (the policy's
+        # DIRECT reached MoltNet's network context).
+        self.assertEqual(self.policy_live(
+            events=[{'qname': self.POLICY_HOST}])[closes], report.FAIL)
+        # MoltNet didn't open again once the policy was gone.
+        self.assertEqual(self.policy_live(reopened=False)[closes],
+                         report.FAIL)
+        # No MoltNet page to begin with: the check proves nothing.
+        self.assertEqual(self.policy_live(moltnet_pages_before=0)[closes],
+                         report.ERROR)
+        # Autofill asked its server, through Tor or outside it.
+        self.assertEqual(self.policy_live(socks=[{
+            'ts': 104.0, 'host': 'content-autofill.googleapis.com'}])[
+                autofill], report.FAIL)
+        self.assertEqual(self.policy_live(events=[{
+            'qname': 'chromium-i18n.appspot.com', 'first': 105.0}])[
+                autofill], report.FAIL)
+        # Not run.
+        self.assertEqual(self.policy_live(skipped='--phases'),
+                         {closes: report.SKIP, autofill: report.SKIP})
 
     def socks(self, *entries):
         return {'socks': [{'test': t, 'host': h, 'username': u}

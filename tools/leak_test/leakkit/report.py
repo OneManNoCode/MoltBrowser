@@ -807,6 +807,132 @@ def _proxy_checks(manifest, run_dir):
                   'MOLTNET_COMPLIANCE.md §4 step 13')]
 
 
+# Autofill's server, and libaddressinput's address rules (Autofill, the
+# payment sheet): nothing may go there from a MoltNet window, through Tor
+# or not (MOLTNET_COMPLIANCE.md §2 "Requests outside Tor").
+AUTOFILL_HOSTS = ('content-autofill.googleapis.com',
+                  'chromium-i18n.appspot.com')
+
+
+def _host_is(host, names):
+    host = (host or '').lower().rstrip('.')
+    return any(host == n or host.endswith('.' + n) for n in names)
+
+
+def _policy_live_checks(manifest, tr):
+    """The policy_live phase: a proxy policy set while MoltNet is open
+    closes its windows, nothing leaves outside Tor meanwhile, MoltNet then
+    refuses to open and opens again once the policy is gone; and no
+    Autofill server query from the MoltNet page, with the queries turned
+    on for that launch."""
+    phase = _phase(manifest, 'policy_live')
+    doc9 = 'MOLTNET_COMPLIANCE.md §2 Fail-closed, §4 step 9'
+    doc20 = 'MOLTNET_COMPLIANCE.md §2 Requests outside Tor, §4 step 20'
+    t_close = ('A proxy policy set while MoltNet is open closes its windows, '
+               'nothing leaves outside Tor meanwhile, and MoltNet refuses to '
+               'open until the policy is gone')
+    t_autofill = ('A MoltNet page\'s forms cause no Autofill server query '
+                  'or address-rule download, also with the queries on')
+    if phase is None or phase.get('skipped'):
+        why = [(phase or {}).get('skipped') or 'not run']
+        return [check('identity.policy_change_closes', 'identity', t_close,
+                      SKIP, why, doc9),
+                check('net.autofill_server', 'network', t_autofill, SKIP,
+                      why, doc20)]
+    data = phase.get('data') or {}
+    start, end = phase.get('start') or 0, phase.get('end') or 0
+    events = [e for e in tr.get('events') or []
+              if start - 1 <= (e.get('first') or 0) <= end + 5]
+    socks = tr.get('socks') or []
+
+    # -- the policy --
+    if phase.get('error') and 'policy_written' not in data:
+        close = check('identity.policy_change_closes', 'identity', t_close,
+                      ERROR, [phase['error']], doc9)
+    else:
+        ev, status = [], PASS
+        written = data.get('policy_written') or 0
+        host = (data.get('canary_host') or '').lower()
+        ev.append('policy %s written to the managed-policy directory' %
+                  json.dumps(data.get('policy'), sort_keys=True))
+        closed = data.get('closed_after_s')
+        if not data.get('moltnet_pages_before'):
+            status = ERROR
+            ev.append('no MoltNet page was open before the change')
+        elif closed is None:
+            status = FAIL
+            ev.append('%s MoltNet page(s) still open 60 s after the policy '
+                      'was written' % data.get('moltnet_pages_after'))
+        else:
+            ev.append('MoltNet\'s %d page(s) closed %.1f s after the policy '
+                      'was written (Chromium reads a changed policy file '
+                      'about 5 s later)' % (data['moltnet_pages_before'],
+                                            closed))
+        res = data.get('reopen_with_policy') or {}
+        err = str(res.get('error') or '')
+        ev.append('openWindow with the policy -> %s; MoltNet pages: %s' % (
+            json.dumps(res, sort_keys=True)[:200],
+            data.get('pages_with_policy')))
+        if not err or err.startswith('harness:') or \
+                data.get('pages_with_policy'):
+            status = FAIL if status == PASS else status
+            ev.append('expected MoltNet to refuse to open with the proxy '
+                      'error')
+        leaked = [e for e in events if host and
+                  host in (e.get('qname') or '').lower()]
+        for e in leaked:
+            status = FAIL
+            ev.append('OUTSIDE TOR: ' + _fmt_event(e))
+        via_tor = [s for s in socks if host and
+                   (s.get('host') or '').lower() == host]
+        ev.append('the page\'s canary went through Tor %d time(s) before the '
+                  'policy and %d time(s) after it' % (
+                      len([s for s in via_tor if s['ts'] < written]),
+                      len([s for s in via_tor if s['ts'] >= written])))
+        if not leaked:
+            ev.append('no lookup or packet of the canary outside Tor')
+        again = data.get('reopen_without_policy') or {}
+        ev.append('openWindow once the policy was removed -> %s; a MoltNet '
+                  'page opened: %s' % (json.dumps(again, sort_keys=True)[:200],
+                                       data.get('reopened')))
+        if again.get('error') or not data.get('reopened'):
+            status = FAIL if status == PASS else status
+            ev.append('expected MoltNet to open again without the policy')
+        if phase.get('error'):
+            ev.append('harness: ' + phase['error'])
+        close = check('identity.policy_change_closes', 'identity', t_close,
+                      status, ev, doc9)
+
+    # -- Autofill --
+    a0, a1 = data.get('autofill_start'), data.get('autofill_end')
+    if a0 is None or a1 is None:
+        autofill = check('net.autofill_server', 'network', t_autofill,
+                         ERROR if phase.get('error') else SKIP,
+                         [phase.get('error') or 'no Autofill window'], doc20)
+    else:
+        ev, status = ['flags: %s' % ' '.join(data.get('flags') or []),
+                      'form page: %s' % (data.get('autofill_nav_error') or
+                                         'loaded')], PASS
+        if data.get('autofill_nav_error'):
+            status = ERROR
+        for s in socks:
+            if start <= s['ts'] <= end and _host_is(s.get('host'),
+                                                    AUTOFILL_HOSTS):
+                status = FAIL
+                ev.append('through Tor at +%.1fs: %s:%s' % (
+                    s['ts'] - a0, s.get('host'), s.get('port')))
+        for e in events:
+            if _host_is(e.get('qname'), AUTOFILL_HOSTS):
+                status = FAIL
+                ev.append('OUTSIDE TOR: ' + _fmt_event(e))
+        if status == PASS:
+            ev.append('no connection to %s, through Tor or outside it, '
+                      'during the phase' % ', '.join(AUTOFILL_HOSTS))
+        autofill = check('net.autofill_server', 'network', t_autofill,
+                         status, ev, doc20)
+    return [close, autofill]
+
+
 def _regular_nav_check(manifest):
     for test in manifest.get('tests') or []:
         if test['id'] != 'regular_onion_navigation':
@@ -941,6 +1067,7 @@ def build(run_dir):
     checks += _proxy_checks(manifest, run_dir)
     if manifest.get('target') == 'moltnet':
         checks += _circuit_checks(manifest, tr)
+        checks += _policy_live_checks(manifest, tr)
     uni, os_names = _uniformity_checks(manifest)
     checks += uni
     checks += _control_checks(manifest)

@@ -566,6 +566,38 @@
    "target": "regular"
   },
   {
+   "data": {
+    "autofill_end": 1760000153.0,
+    "autofill_nav_error": null,
+    "autofill_start": 1760000143.0,
+    "canary_host": "plc-pppppp9999.moltleak.test",
+    "canary_url": "http://plc-pppppp9999.moltleak.test/x",
+    "closed_after_s": 6.5,
+    "flags": [
+     "--enable-features=AutofillServerCommunication"
+    ],
+    "moltnet_pages_after": 0,
+    "moltnet_pages_before": 1,
+    "pages_with_policy": 0,
+    "policy": {
+     "ProxyMode": "direct"
+    },
+    "policy_removed": 1760000166.0,
+    "policy_written": 1760000157.0,
+    "reopen_with_policy": {
+     "error": "A policy or command-line flag controls the proxy, so MoltNet can't guarantee Tor routing"
+    },
+    "reopen_without_policy": {
+     "running": true
+    },
+    "reopened": true
+   },
+   "end": 1760000178.0,
+   "name": "policy_live",
+   "start": 1760000142.0,
+   "target": "moltnet"
+  },
+  {
    "name": "extension",
    "skipped": "--no-extension"
   }

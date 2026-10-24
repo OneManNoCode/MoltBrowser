@@ -94,6 +94,10 @@ SUBPROJECTS = {
     "third_party/libyuv": ("https://github.com/lemenkov/libyuv", "", None),
     "third_party/openscreen/src": ("https://github.com/chromium/openscreen",
                                    "", None),
+    # Chromium's external/libaddressinput is Google's repository (Autofill's
+    # address metadata; molt_net_autofill.cc and its hooks reach it).
+    "third_party/libaddressinput/src": (
+        "https://github.com/google/libaddressinput", "", None),
     # No GitHub mirror (Chromium's own forks and a CIPD-built package):
     # from the tarball.
     "third_party/dom_distiller_js/dist": (None, "", None),

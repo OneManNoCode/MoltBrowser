@@ -16,6 +16,13 @@
 // MoltNet windows are never session-restored (OTR profiles have no session
 // service). When the last MoltNet window of a profile closes, the MoltNet
 // profile is destroyed, discarding its cookies, cache and storage.
+//
+// While a MoltNet profile exists, the settings step 2 checked are watched
+// (molt_net_live_guard.h). If one changes so that the check would refuse (a
+// policy proxy, override rules, a leak control, blob URL partitioning),
+// that identity ends as New Identity ends the old one (connections dropped,
+// windows closed without "Leave site?", profile destroyed), with no new
+// window, and a dialog gives the check's message.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_WINDOW_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_WINDOW_H_

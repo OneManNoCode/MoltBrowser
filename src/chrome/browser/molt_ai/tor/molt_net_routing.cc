@@ -13,10 +13,10 @@
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_partitioning_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_proxy_policy.h"
@@ -28,6 +28,7 @@
 #include "chrome/common/pref_names.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
+#include "components/proxy_config/pref_proxy_config_tracker_impl.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/proxy_config/proxy_prefs.h"
@@ -41,6 +42,7 @@
 #include "net/base/proxy_server.h"
 #include "net/base/schemeful_site.h"
 #include "net/http/http_cache.h"
+#include "net/proxy_resolution/proxy_config_with_annotation.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -91,10 +93,6 @@ struct MoltNetProfileData : public base::SupportsUserData::Data {
   const Profile::OTRProfileID id;
 };
 
-std::string SocksProxyUri(uint16_t port) {
-  return "socks5://127.0.0.1:" + base::NumberToString(port);
-}
-
 std::optional<std::string> FixedProxyServer(const base::Value* value) {
   if (!value || !value->is_dict()) {
     return std::nullopt;
@@ -109,6 +107,26 @@ std::optional<std::string> FixedProxyServer(const base::Value* value) {
   return server;
 }
 
+// The SOCKS port of a "proxy" value if it is exactly what MoltNet writes
+// (molt_net_live_policy.h: fixed servers, socks5://127.0.0.1:<port>,
+// "<-loopback>"); otherwise nullopt.
+std::optional<uint16_t> MoltNetSocksPortOf(const base::Value* value) {
+  if (!value || !value->is_dict()) {
+    return std::nullopt;
+  }
+  ProxyConfigDictionary dict(value->GetDict().Clone());
+  ProxyPrefs::ProxyMode mode;
+  std::string server;
+  std::string bypass_list;
+  if (!dict.GetMode(&mode) || !dict.GetProxyServer(&server)) {
+    return std::nullopt;
+  }
+  // Absent means no bypass list, which MoltNetSocksPort() refuses.
+  dict.GetBypassList(&bypass_list);
+  return MoltNetSocksPort(mode == ProxyPrefs::MODE_FIXED_SERVERS, server,
+                          bypass_list);
+}
+
 // True iff |name|'s effective value comes from the user store (for an OTR
 // profile: the in-memory overlay MoltNet wrote), i.e. no policy, extension,
 // supervision or command-line flag outranks it.
@@ -117,11 +135,8 @@ bool IsUserControlled(PrefService* prefs, const char* name) {
   return pref && pref->IsUserControlled();
 }
 
-// True if the proxy of |prefs| is decided by something other than the user
-// store or the default (policy, extension, command line, supervision), or
-// if proxy override rules (the ProxyOverrideRules policy) apply on top of
-// it (molt_net_proxy_policy.h).
-bool ProxyExternallyControlled(PrefService* prefs) {
+// The proxy settings of |prefs| as molt_net_proxy_policy.h reads them.
+ProfileProxyPrefs ReadProfileProxyPrefs(PrefService* prefs) {
   const PrefService::Preference* pref =
       prefs->FindPreference(proxy_config::prefs::kProxy);
   const PrefService::Preference* rules =
@@ -133,7 +148,15 @@ bool ProxyExternallyControlled(PrefService* prefs) {
       rules && rules->GetValue() && rules->GetValue()->is_list()
           ? rules->GetValue()->GetList().size()
           : 0;
-  return ProxyPrefsOverrideMoltNet(state);
+  return state;
+}
+
+// True if the proxy of |prefs| is decided by something other than the user
+// store or the default (policy, extension, command line, supervision), or
+// if proxy override rules (the ProxyOverrideRules policy) apply on top of
+// it (molt_net_proxy_policy.h).
+bool ProxyExternallyControlled(PrefService* prefs) {
+  return ProxyPrefsOverrideMoltNet(ReadProfileProxyPrefs(prefs));
 }
 
 bool LeakPrefsInPlace(PrefService* prefs) {
@@ -150,14 +173,48 @@ bool LeakPrefsInPlace(PrefService* prefs) {
              kMoltNetSafeBrowsingEnabled;
 }
 
-bool ProxyPointsAtTor(PrefService* prefs, uint16_t socks_port) {
-  if (!socks_port ||
-      !IsUserControlled(prefs, proxy_config::prefs::kProxy)) {
-    return false;
+// The SOCKS port of |prefs|' effective proxy if it is MoltNet's own value,
+// from MoltNet's own store; otherwise nullopt.
+std::optional<uint16_t> MoltNetsOwnSocksPort(PrefService* prefs) {
+  if (!IsUserControlled(prefs, proxy_config::prefs::kProxy)) {
+    return std::nullopt;
   }
-  std::optional<std::string> server = FixedProxyServer(
+  return MoltNetSocksPortOf(
       prefs->FindPreference(proxy_config::prefs::kProxy)->GetValue());
-  return server && *server == SocksProxyUri(socks_port);
+}
+
+bool ProxyPointsAtTor(PrefService* prefs, uint16_t socks_port) {
+  return socks_port && MoltNetsOwnSocksPort(prefs) == socks_port;
+}
+
+// Blob URLs are partitioned by top-level site unless a policy turned that
+// off (PartitionedBlobUrlUsage). Chromium reads the same setting for the
+// browser (ChromeContentBrowserClient::IsBlobUrlPartitioningEnabled(),
+// policy values only) and for each new renderer process (any value), so
+// any value but true counts as off.
+bool BlobUrlsPartitioned(PrefService* prefs) {
+  const PrefService::Preference* pref =
+      prefs->FindPreference(prefs::kPartitionedBlobUrlUsage);
+  if (!pref || !pref->GetValue()) {
+    // Not registered: Chromium partitions them.
+    return true;
+  }
+  return pref->GetValue()->is_bool() && pref->GetValue()->GetBool();
+}
+
+// What the settings check reads (molt_net_live_policy.h). With
+// |socks_port|, MoltNet's proxy must also point at that port.
+MoltNetProfileSettings ReadMoltNetSettings(
+    PrefService* prefs,
+    std::optional<uint16_t> socks_port) {
+  MoltNetProfileSettings settings;
+  settings.proxy = ReadProfileProxyPrefs(prefs);
+  settings.proxy_is_moltnets_own =
+      socks_port ? ProxyPointsAtTor(prefs, *socks_port)
+                 : MoltNetsOwnSocksPort(prefs).has_value();
+  settings.leak_controls_in_place = LeakPrefsInPlace(prefs);
+  settings.blob_urls_partitioned = BlobUrlsPartitioned(prefs);
+  return settings;
 }
 
 // Self-owned ProxyLookupClient: asks a NetworkContext how it would route
@@ -263,6 +320,41 @@ std::string MoltNetRouting::ProcessWidePartitioningError() {
 }
 
 // static
+std::string MoltNetRouting::SettingsError(Profile* moltnet_profile,
+                                          std::optional<uint16_t> socks_port) {
+  if (!IsMoltNetProfile(moltnet_profile)) {
+    return "Not a MoltNet profile";
+  }
+  return MoltNetSettingsError(CheckMoltNetSettings(
+      ReadMoltNetSettings(moltnet_profile->GetPrefs(), socks_port)));
+}
+
+// static
+bool MoltNetRouting::MayApplyProxyConfig(
+    Profile* profile,
+    const net::ProxyConfigWithAnnotation& config,
+    bool available) {
+  const bool is_moltnet = IsMoltNetProfile(profile);
+  bool is_moltnets_own = false;
+  if (is_moltnet && available) {
+    // What MoltNet itself wrote, whatever outranks it: the user store's
+    // value, converted the way PrefProxyConfigTrackerImpl converts the
+    // effective one. Only a value MoltNetSocksPort() accepts counts.
+    const base::Value* own =
+        profile->GetPrefs()->GetUserPrefValue(proxy_config::prefs::kProxy);
+    net::ProxyConfigWithAnnotation expected;
+    is_moltnets_own =
+        MoltNetSocksPortOf(own).has_value() &&
+        PrefProxyConfigTrackerImpl::PrefConfigToNetConfig(
+            ProxyConfigDictionary(own->GetDict().Clone()), &expected) &&
+        // Everything: proxy rules, bypass rules, PAC and auto-detect,
+        // override rules, dynamic routes.
+        config.value().Equals(expected.value());
+  }
+  return MoltNetAcceptsProxyConfig(is_moltnet, available, is_moltnets_own);
+}
+
+// static
 Profile* MoltNetRouting::GetMoltNetProfile(Profile* profile) {
   if (!profile) {
     return nullptr;
@@ -347,7 +439,8 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   // (Tor Browser does the same).
   prefs->Set(proxy_config::prefs::kProxy,
              base::Value(ProxyConfigDictionary::CreateFixedServers(
-                 SocksProxyUri(socks_port), /*bypass_list=*/"<-loopback>")));
+                 MoltNetSocksProxyUri(socks_port),
+                 std::string(kMoltNetProxyBypassList))));
   prefs->SetString(prefs::kWebRTCIPHandlingPolicy,
                    kWebRtcDisableNonProxiedUdp);
   prefs->SetInteger(prefs::kNetworkPredictionOptions,
@@ -367,18 +460,11 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
                      kMoltNetAcceptLanguages);
   }
 
-  if (ProxyExternallyControlled(prefs) || !ProxyPointsAtTor(prefs, socks_port)) {
-    *error =
-        // Extension-controlled settings never reach MoltNet's profile
-        // (molt_net_isolation.h: CreateMoltNetExtensionPrefStore).
-        "A policy or command-line flag controls the proxy, so MoltNet "
-        "can't guarantee Tor routing";
-    return false;
-  }
-  if (!LeakPrefsInPlace(prefs)) {
-    *error =
-        "A policy overrides MoltNet's WebRTC / prediction / HTTPS-Only / "
-        "Safe Browsing settings";
+  // The same check runs again whenever one of these settings changes while
+  // MoltNet is open (molt_net_live_guard.h).
+  if (std::string settings_error = SettingsError(moltnet_profile, socks_port);
+      !settings_error.empty()) {
+    *error = std::move(settings_error);
     return false;
   }
   return true;

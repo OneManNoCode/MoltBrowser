@@ -277,6 +277,22 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Fail-closed, \u00a74 step 9",
+   "evidence": [
+    "policy {\"ProxyMode\": \"direct\"} written to the managed-policy directory",
+    "MoltNet's 1 page(s) closed 6.5 s after the policy was written (Chromium reads a changed policy file about 5 s later)",
+    "openWindow with the policy -> {\"error\": \"A policy or command-line flag controls the proxy, so MoltNet can't guarantee Tor routing\"}; MoltNet pages: 0",
+    "the page's canary went through Tor 0 time(s) before the policy and 0 time(s) after it",
+    "no lookup or packet of the canary outside Tor",
+    "openWindow once the policy was removed -> {\"running\": true}; a MoltNet page opened: True"
+   ],
+   "group": "identity",
+   "id": "identity.policy_change_closes",
+   "status": "PASS",
+   "title": "A proxy policy set while MoltNet is open closes its windows, nothing leaves outside Tor meanwhile, and MoltNet refuses to open until the policy is gone"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 10",
    "evidence": [
     "guard g1 192.0.2.50 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA in consensus: True",
@@ -325,6 +341,19 @@
    "id": "identity.session_circuits",
    "status": "PASS",
    "title": "A site visited again in a new MoltNet session (after the last window closed, after New Identity) uses new SOCKS credentials, so new circuits"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Requests outside Tor, \u00a74 step 20",
+   "evidence": [
+    "flags: --enable-features=AutofillServerCommunication",
+    "form page: loaded",
+    "no connection to content-autofill.googleapis.com, chromium-i18n.appspot.com, through Tor or outside it, during the phase"
+   ],
+   "group": "network",
+   "id": "net.autofill_server",
+   "status": "PASS",
+   "title": "A MoltNet page's forms cause no Autofill server query or address-rule download, also with the queries on"
   },
   {
    "details": null,
@@ -2764,7 +2793,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 144,
+  "PASS": 146,
   "SKIP": 84
  },
  "fingerprints": [
@@ -3168,7 +3197,7 @@
   },
   {
    "automation": "partial",
-   "note": "--proxy-server blocks MoltNet; the extension-set proxy case is manual",
+   "note": "--proxy-server and each partitioning switch block MoltNet; a proxy policy set while MoltNet is open closes its windows; the extension-set proxy case is manual",
    "step": 9,
    "title": "Overrides are refused"
   },
@@ -3234,7 +3263,7 @@
   },
   {
    "automation": "partial",
-   "note": "downloads, geolocation and the built-in AI are automated; the AI chat, Cast menu, phone passkeys and \"Open all\" bookmarks stay manual",
+   "note": "downloads, geolocation, the built-in AI and Autofill's server queries are automated; the AI chat, Cast menu, phone passkeys, \"Open all\" bookmarks and address formats stay manual",
    "step": 20,
    "title": "Nothing goes around Tor"
   }

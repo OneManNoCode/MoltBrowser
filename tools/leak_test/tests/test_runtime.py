@@ -139,8 +139,12 @@ class TorWrapper(unittest.TestCase):
         launcher = netns.LAUNCHER
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp)
+        rest = ['p', 'r', 'n', '0', '0', '-', '-', '--', 'true']
         for args in ([], ['p', 'r', 'n', 'x', '0', '-', '-', '--', 'true'],
-                     ['p', 'r', 'n', '0', '0', '3', '4', '--', 'true']):
+                     ['p', 'r', 'n', '0', '0', '3', '4', '--', 'true'],
+                     ['--policy-dir'],
+                     ['--policy-dir', 'relative/dir'] + rest,
+                     ['--policy-dir', '/nonexistent-moltleak-dir'] + rest):
             proc = subprocess.run(['bash', launcher] + args,
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, cwd=self.tmp)
@@ -170,6 +174,39 @@ class TorWrapper(unittest.TestCase):
             self.assertEqual(f.read(), before)
         with open(os.path.join(tmp, 'procs')) as f:
             self.assertTrue(f.read().strip().isdigit())
+
+    @unittest.skipUnless(os.geteuid() == 0 and shutil.which('unshare'),
+                         'needs root')
+    def test_launcher_policy_dir_stays_private(self):
+        """--policy-dir shows the run's policy files to the launched
+        process only; the mount point the harness makes is removed by
+        teardown, and the host's directory never sees the files."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        policies = os.path.join(tmp, 'policies')
+        os.mkdir(policies)
+        with open(os.path.join(policies, 'moltleak.json'), 'w') as f:
+            f.write('{"ProxyMode": "direct"}')
+        box = netns.Sandbox('t0', 0, 0, tmp, lambda *a: None)
+        box.private_dir = os.path.join(tmp, 'private')
+        os.mkdir(box.private_dir)
+        existed = os.path.isdir(netns.MANAGED_POLICY_DIR)
+        path = box.policy_dir()
+        self.addCleanup(box.teardown)
+        self.assertTrue(os.path.isdir(netns.MANAGED_POLICY_DIR))
+        self.assertEqual(path, os.path.join(box.private_dir, 'policies'))
+        before = sorted(os.listdir(netns.MANAGED_POLICY_DIR))
+        proc = subprocess.run(
+            ['bash', netns.LAUNCHER, '--policy-dir', policies,
+             os.path.join(tmp, 'procs'), '-', '-', '0', '0', '-', '-', '--',
+             'cat', os.path.join(netns.MANAGED_POLICY_DIR, 'moltleak.json')],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, '{"ProxyMode": "direct"}')
+        self.assertEqual(sorted(os.listdir(netns.MANAGED_POLICY_DIR)), before)
+        self.assertEqual(box.teardown(), [])
+        self.assertEqual(os.path.isdir(netns.MANAGED_POLICY_DIR), existed)
 
 
 class Servers(unittest.TestCase):

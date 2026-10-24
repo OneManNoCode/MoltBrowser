@@ -175,7 +175,11 @@ claims below as the design intent, not as measured results.
     Browsing, Google's image descriptions, location, Cast, signing in with
     a passkey on your phone and shopping features (price insights,
     discounts) are off in MoltNet windows, and bookmarks you open there
-    with "Open all" stay there. MoltNet doesn't check whether your network
+    with "Open all" stay there. Autofill doesn't ask Google's Autofill
+    server about the forms on MoltNet pages or send it anything, and
+    neither Autofill nor a page's payment sheet downloads address formats:
+    fields are recognised on your device, and your saved addresses and
+    passwords still fill. MoltNet doesn't check whether your network
     wants you to sign in first (a captive portal, as on hotel or airport
     Wi-Fi) and never opens such a sign-in page: Tor can't reach it, so sign
     in to the network in a regular window. A site that asks for a TLS
@@ -218,7 +222,8 @@ value is never read, and changing it later has no effect on MoltNet.
 MoltNet's own settings (the proxy and leak controls below, en-US) are
 written on top. Settings an administrator's policy or an extension
 controls still take precedence; for the proxy and the leak controls that
-blocks MoltNet (see *Fail-closed*).
+blocks MoltNet, and a policy that arrives while MoltNet is open ends it
+(see *Fail-closed*).
 
 **Fail-closed.** The MoltNet profile's proxy is `socks5://127.0.0.1:<port>` with
 no direct fallback, so if Tor stops, pages in MoltNet windows fail with a proxy
@@ -228,11 +233,58 @@ to be MoltNet's own (a policy or command-line flag that overrides them
 blocks MoltNet with an error, and so does the ProxyOverrideRules policy,
 whose rules would apply on top of MoltNet's proxy and could send some
 destinations elsewhere or DIRECT; settings controlled by extensions don't
-reach MoltNet's profile at all, see below), (c) the MoltNet profile's network
+reach MoltNet's profile at all, see below), and blob URLs are partitioned
+by site (a policy that turns that off, PartitionedBlobUrlUsage, blocks
+MoltNet too), (c) the MoltNet profile's network
 context itself confirms it would send requests to exactly that SOCKS5
 endpoint, and (d) the browser-wide switches that keep sites' connections,
 HTTP cache and third-party storage apart are on (*Shared network state*).
 MoltNet windows are never restored after a restart.
+
+These checks also hold while MoltNet is open, not only when a window
+opens. Of what (b) checks, policies can change while the browser runs: a
+cloud policy refresh, a changed Group Policy, configuration profile or
+policy file reaches MoltNet's profile at once, because its settings store
+shares the regular profile's policy store. Chromium would then hand a
+policy's proxy settings to MoltNet's network context, where they outrank
+MoltNet's own Tor proxy, and override rules would apply on top of it. So:
+
+- MoltNet's network context only ever gets MoltNet's own proxy
+  configuration, exactly the SOCKS5 proxy MoltNet set, with no bypass and
+  no override rules. Any other one (a policy's proxy, override rules, the
+  system's settings, none at all) is never sent to it: it keeps routing
+  to Tor. A network context that hasn't had MoltNet's configuration yet
+  starts with none, and its requests wait for it
+  (`MoltNetRouting::MayApplyProxyConfig()`, asked by Chromium's
+  `ProxyConfigMonitor`).
+- MoltNet watches every setting (b) reads (the proxy, proxy override
+  rules, WebRTC IP handling, network prediction, HTTPS-Only mode, Safe
+  Browsing, blob URL partitioning), in its own profile and in the regular
+  profile it was made from, and checks again whenever one changes. If (b)
+  would now refuse, MoltNet ends that identity as New Identity ends the
+  old one: it drops its connections, closes its windows (a "Leave site?"
+  prompt can't keep one open) and discards its profile. It opens no new
+  window, and a dialog gives the reason, with the same message as when
+  MoltNet refuses to open. A window that was about to open checks again
+  before it appears (`molt_net_live_guard.h`, `molt_net_live_policy.h`).
+- What can't change while the browser runs: command-line flags
+  (`--proxy-server` and the like) and the switches (d) checks (they are
+  `base::Feature`s, fixed at startup). A change only the regular profile
+  sees, such as an extension taking over its proxy, doesn't reach
+  MoltNet's settings and leaves MoltNet open, as it would let MoltNet
+  open. Tor stopping is not a settings change: pages fail with a proxy
+  error, as above.
+
+What this guarantees for requests in flight at that moment: none of them
+leaves outside Tor. A request already sent finishes or fails on its Tor
+connection (MoltNet drops its connections at once, and the rest go with
+the profile); one a page makes while its window closes (a `pagehide`
+beacon, a keepalive fetch) still goes through Tor. What it can't
+guarantee: that nothing at all is sent after the change. Pages keep
+running for the moment their windows take to close, and what a server
+already received can't be recalled. MoltNet also reacts when Chromium
+applies a policy, not when an administrator sets it: a cloud policy
+arrives at its next refresh, a policy file once Chromium has read it.
 
 **Leak controls on the MoltNet profile.**
 
@@ -576,11 +628,14 @@ in a built browser):
   model that sees images, the agent's screenshots of that tab go only to
   the on-device model: no request at all, docs/design/AGENT_ACTIONS.md
   §2.6); DevTools opened on a MoltNet page (the resources it loads come
-  through the inspected tab's context); Autofill's field-type queries, sent
-  with the page's own network key, so on the page's circuit (Autofill never
-  uploads from an off-the-record profile); the email-verification step of
+  through the inspected tab's context); the email-verification step of
   FedCM, whose DNS TXT lookup is an HTTPS request through the page's
-  context; and Background Fetch downloads.
+  context; and Background Fetch downloads. Google's services among them
+  reach Google only when the page or you choose them, and then on the
+  page's circuit like any other request: signing in with Google on a site
+  (FedCM), Google Pay as a page's payment method (its payment manifest),
+  Lens and "Search image with Google", and searches, if Google is your
+  search engine.
 - *Never sent from an off-the-record profile* (Chromium's own rules):
   address-bar suggestions, including the on-focus ones; adding search
   engines a page announces; Google's spelling service; real-time and
@@ -592,8 +647,11 @@ in a built browser):
   either.
 - *Not in MoltBrowser builds:* they need a Google API key or a Google
   sign-in, which MoltBrowser doesn't ship (docs/NETWORK_TRAFFIC.md):
-  password affiliations, Google's speech recognition, and the
-  on-device model of Chrome's built-in AI (Chrome builds only).
+  password affiliations, Google's speech recognition, the
+  on-device model of Chrome's built-in AI (Chrome builds only), and
+  Autofill's Google-account features (Google Payments cards and their
+  card art, Wallet passes, plus addresses, one-time codes from Gmail,
+  Autofill's AI features).
 - *On the device, no request at all:* translating a page. Translate runs
   on MoltBrowser's on-device model and its language list is built in, so
   Google's translate script (which came through the browser-wide context)
@@ -655,13 +713,39 @@ in a built browser):
     can't open off the record (Settings, History) opened in a regular
     window, the rest followed it there, outside Tor. They now stay in
     MoltNet, as Incognito's stay in Incognito.
+  - **Autofill's server.** When a page shows a form, Autofill asks
+    Google's Autofill server what kind of data each field takes, with
+    signatures of the form and its fields (hashes of the form's target
+    host and of the form and field names): the same for that form on
+    every site and in every session. After a submission, Autofill and the
+    password manager upload votes (what the fields turned out to be;
+    Autofill sends none from an off-the-record profile). The queries
+    went through MoltNet's context, on the page's circuit, but to Google,
+    which could tie together the forms one MoltNet user loads, across
+    sites and identities. MoltBrowser turns the Autofill server off for
+    every window by default (docs/NETWORK_TRAFFIC.md), but a command-line
+    flag turns it back on. MoltNet windows send it nothing either way: no
+    query, no vote. Fields are still recognised on the device, and your
+    saved addresses and passwords still fill.
+  - **Address formats.** To fill a state or region list it can't match
+    directly, Autofill downloads the country's address rules
+    (libaddressinput's, from `chromium-i18n.appspot.com`), and so does a
+    page's payment sheet (Payment Request API) when you pick or edit a
+    shipping address. That download went through the browser-wide
+    context, outside Tor, named the address's country, and the rules were
+    kept in a file every profile shares. MoltNet windows download none
+    and read none from that file: a region that needs the rules isn't
+    filled, the payment sheet keeps the address as you entered it, and its
+    address editor asks for the region as text.
 
   The binders for image descriptions and location are in
   `molt_net_request_binders.h` (registered with the WebRTC ones); the
   rest are one-line hooks marked `MoltBrowser:` in
   `media_router_feature.cc`, `chrome_authenticator_request_delegate.cc`,
   `tab_features.cc`, `tab_helpers.cc` and `bookmark_utils_desktop.cc`,
-  and in MoltBrowser's chat handler and `molt_net_routing.cc`.
+  and in MoltBrowser's chat handler and `molt_net_routing.cc`; the
+  Autofill ones in `chrome_autofill_client.cc` and
+  `chrome_payment_request_delegate.cc`, through `molt_net_autofill.h`.
 - *Browser-wide, not caused by MoltNet pages:* MoltShield's list updates
   and MoltBrowser's update check (§5.6) use the regular profile's
   context. DNS-over-HTTPS probes run in the browser's other network
@@ -789,6 +873,14 @@ state once the browser has started, whatever set it, and per switch:
 | `CacheCertVerification` | adding results to the verification cache | MoltNet's context has no such cache |
 | `SplitHostCacheByNetworkAnonymizationKey` | the host-name cache | On at 156 (off in 152 builds, by the testing config); MoltNet pages' names aren't looked up locally either way |
 | `PrivateStateTokens` | nothing: an issuer's tokens work on every site | Blocked per network context for MoltNet, whatever it and the anti-abuse setting say |
+| Policy `PartitionedBlobUrlUsage` (a profile setting, not a `base::Feature`) | blob URLs: whether a third party's blob URL made on one site can be fetched or opened by the same third party on another | Per profile, and a policy can change it while the browser runs. MoltNet doesn't open while it is off ("A policy turns off the partitioning of blob URLs by site (PartitionedBlobUrlUsage), so MoltNet can't keep sites apart"), and ends if it is turned off while MoltNet is open (*Fail-closed*) |
+
+The first three, like every `base::Feature`, are fixed once the browser
+has started, so they can't change while MoltNet is open. The policies
+that once turned third-party storage partitioning off for some or all
+sites (`DefaultThirdPartyStoragePartitioningSetting`,
+`ThirdPartyStoragePartitioningBlockedForOrigins`) were supported up to
+Chromium 145; 156 has neither.
 
 `PartitionSSLSessionsByNetworkIsolationKey`,
 `EnableCrossSiteFlagNetworkIsolationKey` and the other per-state switches
@@ -924,6 +1016,10 @@ gpg-verified steps documented in that script.
 | The same in a running browser: a verification for every new TLS connection, the switches refused (§4 steps 8 and 9) | Needs a Chromium build; the leak kit's `identity.partitioning_override_refused` | **Not yet done** |
 | The Chromium 156 network re-check (§2 *New network paths at Chromium 156*): MoltNet's context sends no TLS client certificate and remembers no choice, the same for every server and every site, and a request that reaches the browser is answered with no certificate and no picker; no DNS-over-HTTPS probes and no device-bound sessions in MoltNet's context; MoltNet refused while proxy override rules are set; MoltNet's renderers get the fixed network quality once and only "online" or "offline" as the connection; every other profile and context keeps Chromium's behaviour | Unit tests (`molt_ai_unittests`); standalone harness: the hooks taken verbatim from `ssl_client_socket.{h,cc}`, `network_context.cc`, `chrome_content_browser_client.cc`, `molt_net_routing.cc` and the two observers (the `profile_network_context_service.cc` hook for device-bound sessions through its policy's tests) in `content/browser/network/`, and the real `molt_uniform_network_state.h`, against stand-ins with the 156 shapes, including Chromium's client-certificate restart (g++ ASan/UBSan, clang `-fno-exceptions`): 22 policy and 17 hook tests, 17 mutants all caught; the changed files type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser (§4 steps 9 and 20) | Needs a Chromium build; the leak kit's `net.client_cert.*` | **Not yet done** |
+| MoltNet fails closed while it is open (§2 *Fail-closed*): the check before opening runs again whenever a setting it reads changes (a policy's proxy, override rules, a leak control, blob URL partitioning, in the MoltNet profile or the regular one); a refusal ends that identity once, as New Identity does, with the open check's message; a window about to open checks again; MoltNet's network contexts only ever get MoltNet's own proxy configuration (none before it: requests wait), whatever the settings say; every other profile and the system's network context keep Chromium's | Unit tests (`molt_ai_unittests`: the check and its messages, the parser for MoltNet's proxy setting, the configuration rule), built standalone with g++ ASan/UBSan and clang `-fno-exceptions`, 11 mutants of the policy all caught; standalone harness: `molt_net_live_guard.cc` compiled unchanged against stand-ins of `Profile`, `PrefService`, `PrefChangeRegistrar` and `ProfileObserver` with Chromium's destruction order (g++ ASan/UBSan, clang `-fno-exceptions`): which profiles are watched, which settings run the check, one end per identity, the regular profile's changes, both profiles' destruction, two identities of one profile; 10 tests, 10 mutants all caught; the changed files (`molt_net_routing.cc`, `molt_net_window.cc`, `molt_net_live_guard.cc`, `proxy_config_monitor.cc`) type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
+| The same in a running browser: a proxy policy set while a MoltNet window is open closes it, nothing leaves outside Tor meanwhile, MoltNet then refuses to open, and opens again once the policy is gone (§4 step 9) | Needs a Chromium build; the leak kit's `identity.policy_change_closes` | **Not yet done** |
+| No Autofill server traffic and no address-format downloads in MoltNet (§2 *Requests outside Tor*): no query and no vote (Autofill's or the password manager's), also with `AutofillServerCommunication` turned on; no address rules downloaded or read from the shared file, for Autofill or the payment sheet; every other profile keeps Chromium's | Unit tests (`molt_ai_unittests`); `molt_net_autofill.cc` and `chrome_payment_request_delegate.cc` type-checked against Chromium 156's headers, and the two hooked functions of `chrome_autofill_client.cc` too (copied verbatim into a stand-in of the class: the checker can't generate one header the whole file needs) | Pass (built standalone; not yet built in the Chromium tree) |
+| The same in a running browser (§4 step 20) | Needs a Chromium build; the leak kit's `net.autofill_server` | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | An automated leak and uniformity test of a built browser (§4, FINGERPRINTING.md) | `tools/leak_test/` ([LEAK_TESTING.md](LEAK_TESTING.md)): its analysis checked against a recorded sample run; the harness run against stock Chromium, where it finds the WebRTC, DNS-prefetch, mDNS, onion and LAN leaks that MoltNet closes | Kit ready; **not yet run on a MoltBrowser build** |
 | Independent third-party audit | — | **Not done** |
@@ -951,7 +1047,7 @@ help. The last column names the report's checks.
 | 6 | automated | `identity.separate`, `identity.session_circuits` |
 | 7 | automated (exit IP only online) | `identity.new_identity`, `identity.session_circuits` |
 | 8 | automated | `identity.per_site_circuits`, `identity.sandboxed_circuits`, `identity.cert_fetch_circuits` |
-| 9 | partial | `identity.override_refused`, `identity.partitioning_override_refused` |
+| 9 | partial | `identity.override_refused`, `identity.partitioning_override_refused`, `identity.policy_change_closes` |
 | 10 | automated (offline, against Tor's consensus) | `identity.relays_real` |
 | 11 | partial | `net.onion_http.*`, `net.onion_https.*` |
 | 12 | automated | `net.regular_onion_*`, `regular.onion_interstitial` |
@@ -962,7 +1058,7 @@ help. The last column names the report's checks.
 | 17 | partial | `uniform.autoplay.mediaelement`, `uniform.storage.persist`, `uniform.cookies.third_party`, `uniform.sharedStorage.set` |
 | 18 | automated | `net.webrtc.*` |
 | 19 | manual | |
-| 20 | partial | `net.download.*`, `net.geolocation.*`, `net.builtin_ai.*`, `net.client_cert.*` |
+| 20 | partial | `net.download.*`, `net.geolocation.*`, `net.builtin_ai.*`, `net.client_cert.*`, `net.autofill_server` |
 
 1. **You are on Tor.** (Kit: partial.) Open `check.torproject.org`: it must say you are using
    Tor and show an IP that isn't yours. The panel's *Verify* must show the
@@ -1009,7 +1105,7 @@ help. The last column names the report's checks.
    the log shows a certificate verification for each site's connection to
    it (a regular window verifies it once and answers the second from its
    cache).
-9. **Overrides are refused.** (Kit: the `--proxy-server` half and the partitioning switches; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
+9. **Overrides are refused.** (Kit: the `--proxy-server` half, the partitioning switches and a proxy policy set while MoltNet is open; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
    allowed in Incognito, MoltNet must open and step 1 must pass. Start it
@@ -1020,7 +1116,21 @@ help. The last column names the report's checks.
    windows must work. Set the `ProxyOverrideRules` policy (any rule, e.g.
    one that sends `*.example.com` `DIRECT`) and restart: opening a MoltNet
    window must fail with the proxy error, and the MoltNet panel must say
-   that the proxy is overridden.
+   that the proxy is overridden. Then the same while MoltNet is open:
+   open a MoltNet window, keep a page in it loading something (a test
+   page that fetches a URL of your test server every second), and set a
+   proxy policy (on Linux, write `{"ProxyMode": "direct"}` to a file in
+   `/etc/chromium/policies/managed/`, which Chromium reads a few seconds
+   later; on Windows and macOS, the `ProxyMode` policy, then
+   `chrome://policy` → *Reload policies*). Every MoltNet window must
+   close, also one whose page asks "Leave site?" (unless DevTools is open
+   on it, as for New Identity), a dialog must give the proxy error, no
+   request from it may go out directly (watch tcpdump as in step 4; your
+   test server sees the page's requests only through Tor until the window
+   closes), and opening a MoltNet window must now fail with that error.
+   Remove the policy: MoltNet opens again. Repeat with
+   `ProxyOverrideRules`, with `WebRtcIPHandling`, and with
+   `PartitionedBlobUrlUsage` set to false (the error names it).
 10. **The relays are real.** (Kit: automated against the consensus Tor downloaded.) *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.
@@ -1178,7 +1288,7 @@ help. The last column names the report's checks.
       deprecation banner in a regular window: the banner still shows in
       a MoltNet window; clicking it there doesn't hide it in a new
       MoltNet session.
-20. **Nothing goes around Tor.** (Kit: the download, geolocation and the built-in AI APIs; the AI chat, Cast, passkeys and bookmarks are manual.) Keep
+20. **Nothing goes around Tor.** (Kit: the download, geolocation, the built-in AI APIs and Autofill's server queries; the AI chat, Cast, passkeys, bookmarks and address formats are manual.) Keep
     `sudo tcpdump -n 'not host <Tor guard or bridge IP>' and not port 53`
     and a DNS log (as in step 18) running, connect an AI provider in a
     regular window (molt://ai-settings) and make it the default model,
@@ -1223,6 +1333,15 @@ help. The last column names the report's checks.
       restart, then open a MoltNet window, and press *New Identity*:
       tcpdump shows no connection to that provider's addresses outside
       Tor while it happens.
+    - Start MoltBrowser with `--enable-features=AutofillServerCommunication`
+      and Tor's log at `SafeLogging 0` + `Log info`. In a MoltNet window,
+      open a page with an address form and a sign-in form, fill and submit
+      them: Tor's log shows no stream to `content-autofill.googleapis.com`
+      (in a regular window the same page queries it). With a saved
+      address whose state is spelled differently from the page's state
+      list (e.g. "Calif." against "California"), fill the form in a
+      MoltNet window: no lookup or stream of `chromium-i18n.appspot.com`,
+      in tcpdump or in Tor's log.
     tcpdump must show nothing caused by these steps (the browser's own
     background traffic, §5.6, can appear), and the DNS log no lookup of
     any site you used. In a regular window the same download shows the

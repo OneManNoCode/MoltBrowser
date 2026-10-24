@@ -1,4 +1,10 @@
 specific_include_rules = {
+  # MoltNet's address normalizer and region loader: libaddressinput with no
+  # source and no cache of rules (molt_net_autofill.h).
+  "molt_net_autofill\.cc": [
+    "+third_party/libaddressinput/src/cpp/include/libaddressinput/null_storage.h",
+    "+third_party/libaddressinput/src/cpp/include/libaddressinput/source.h",
+  ],
   # MoltNet's default fonts must be ones every machine of the OS has: the
   # test checks them against Blink's allow-lists (std + //base only).
   "molt_net_locale_prefs_unittest\.cc": [

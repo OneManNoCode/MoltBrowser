@@ -23,6 +23,8 @@ TEST(MoltNetRequestsPolicyTest, OtherProfilesKeepEveryFeature) {
   EXPECT_TRUE(access.relay_authenticators);
   EXPECT_TRUE(access.commerce);
   EXPECT_TRUE(access.client_certificates);
+  EXPECT_TRUE(access.autofill_server);
+  EXPECT_TRUE(access.address_metadata);
 }
 
 TEST(MoltNetRequestsPolicyTest, MoltNetGetsNoneOfThem) {
@@ -37,6 +39,8 @@ TEST(MoltNetRequestsPolicyTest, MoltNetGetsNoneOfThem) {
   EXPECT_FALSE(access.relay_authenticators);
   EXPECT_FALSE(access.commerce);
   EXPECT_FALSE(access.client_certificates);
+  EXPECT_FALSE(access.autofill_server);
+  EXPECT_FALSE(access.address_metadata);
 }
 
 TEST(MoltNetRequestsPolicyTest, IsAConstantExpression) {
@@ -45,6 +49,10 @@ TEST(MoltNetRequestsPolicyTest, IsAConstantExpression) {
   static_assert(MoltNetRequestAccessForProfile(false).relay_authenticators);
   static_assert(!MoltNetRequestAccessForProfile(true).client_certificates);
   static_assert(MoltNetRequestAccessForProfile(false).client_certificates);
+  static_assert(!MoltNetRequestAccessForProfile(true).autofill_server);
+  static_assert(MoltNetRequestAccessForProfile(false).autofill_server);
+  static_assert(!MoltNetRequestAccessForProfile(true).address_metadata);
+  static_assert(MoltNetRequestAccessForProfile(false).address_metadata);
   static_assert(SandboxTabWindowFor(true) == SandboxTabWindow::kMoltNet);
   static_assert(!MayChatActInWindow(true, false, false));
 }

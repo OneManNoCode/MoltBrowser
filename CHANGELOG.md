@@ -200,6 +200,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - MoltNet hardening: the browser tells MoltNet's page processes the same
   fixed connection type and network quality their pages report, instead
   of your own connection's, and only whether you are online after that.
+- MoltNet hardening: MoltNet's settings checks also hold while it is
+  open. If a policy sets a proxy or proxy override rules, overrides one of
+  MoltNet's leak controls or turns off blob URL partitioning while MoltNet
+  windows are open, they close, their identity is discarded as with New
+  Identity, and a dialog says why; MoltNet's connection keeps using only
+  its own Tor proxy until then. MoltNet also doesn't open while a policy
+  turns blob URL partitioning off.
+- MoltNet hardening: MoltNet windows send nothing to Google's Autofill
+  server (no form queries, no votes) and download no address formats;
+  fields are still recognised on your device, and saved addresses and
+  passwords still fill.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

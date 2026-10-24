@@ -560,7 +560,8 @@ class Run(object):
                     env[k] = os.environ[k]
         return env
 
-    def launch_browser(self, label, extra_flags=(), dsf=None):
+    def launch_browser(self, label, extra_flags=(), dsf=None,
+                       policy_dir=None):
         args = [self.opts.browser,
                 '--user-data-dir=' + self.path('profile'),
                 '--remote-debugging-pipe', '--no-first-run',
@@ -591,7 +592,7 @@ class Run(object):
             args, 'browser', self.browser_env(), stdout=logf, stderr=logf,
             resolv=self.path('resolv.conf'),
             nsswitch=self.path('nsswitch.conf'),
-            pipe_fds=(child_in, child_out))
+            pipe_fds=(child_in, child_out), policy_dir=policy_dir)
         for fd in (cmd_r, resp_w, child_in, child_out):
             try:
                 os.close(fd)
@@ -1381,6 +1382,106 @@ class Run(object):
             self.phase_end(phase, str(e))
         self.close_browser()
 
+    # A policy that changes while MoltNet is open (MOLTNET_COMPLIANCE.md §2
+    # Fail-closed, §4 steps 9 and 20). One browser launch with the run's
+    # own managed-policy directory mounted over the one Linux builds read,
+    # and Autofill's server queries turned on (MoltBrowser turns them off
+    # by default; MoltNet must send none either way).
+    POLICY_FILE = 'moltleak.json'
+    LIVE_POLICY = {'ProxyMode': 'direct'}
+
+    def write_policy(self, policy_dir, policies):
+        path = os.path.join(policy_dir, self.POLICY_FILE)
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(policies, f)
+        os.chmod(tmp, 0o644)
+        os.rename(tmp, path)
+
+    def remove_policy(self, policy_dir):
+        try:
+            os.unlink(os.path.join(policy_dir, self.POLICY_FILE))
+        except FileNotFoundError:
+            pass
+
+    def policy_live_session(self):
+        phase = self.phase_begin('policy_live')
+        data = phase['data']
+        policy_dir = None
+        try:
+            policy_dir = self.sandbox.policy_dir()
+            self.remove_policy(policy_dir)
+            flag = '--enable-features=AutofillServerCommunication'
+            data['flags'] = [flag]
+            self.launch_browser('policy-live', [flag], policy_dir=policy_dir)
+            if not self.open_moltnet('open_moltnet_policy_live'):
+                raise RuntimeError('MoltNet did not open')
+            sid = self.moltnet[1]
+            nonce = support.nonce()
+            url = '%s/t/%s/policylive.html' % (self.bases()['BASE_HTTP'],
+                                               nonce)
+            # 1. Forms Autofill would ask its server about: no query may go
+            # out, through Tor or not.
+            data['autofill_start'] = _now()
+            data['autofill_nav_error'] = self.cdp.navigate(sid, url,
+                                                           timeout=60)
+            try:
+                self.cdp.evaluate(
+                    sid, "document.querySelector('[name=name]').focus()",
+                    user_gesture=True)
+            except cdplib.CdpError:
+                pass
+            time.sleep(10)
+            data['autofill_end'] = _now()
+            # 2. Keep fetching a canary name, then set a proxy policy.
+            data['canary_host'] = 'plc-%s.%s' % (nonce, CANARY_DOMAIN)
+            data['canary_url'] = self.cdp.evaluate(sid, 'mlkCanaryLoop(250)')
+            time.sleep(4)
+            before = set(t['targetId'] for t in self.moltnet_pages())
+            data['moltnet_pages_before'] = len(before)
+            data['policy'] = self.LIVE_POLICY
+            data['policy_written'] = _now()
+            self.write_policy(policy_dir, self.LIVE_POLICY)
+            # Chromium reads a changed policy file about 5 s after the
+            # change (its settle delay), then MoltNet's windows close.
+            closed = None
+            deadline = _now() + 60
+            while _now() < deadline:
+                if not before & set(t['targetId']
+                                    for t in self.moltnet_pages()):
+                    closed = _now()
+                    break
+                time.sleep(0.5)
+            data['closed_after_s'] = (round(closed - data['policy_written'],
+                                            1) if closed else None)
+            data['moltnet_pages_after'] = len(self.moltnet_pages())
+            # With the policy set, MoltNet must refuse to open.
+            try:
+                data['reopen_with_policy'] = self.molt_net_call(
+                    'moltnet.openWindow', timeout=self.opts.open_timeout)
+            except (cdplib.CdpError, RuntimeError) as e:
+                data['reopen_with_policy'] = {'error': 'harness: %s' % e}
+            time.sleep(3)
+            data['pages_with_policy'] = len(self.moltnet_pages())
+            # Without it, MoltNet opens again.
+            self.remove_policy(policy_dir)
+            data['policy_removed'] = _now()
+            time.sleep(10)
+            before = set(t['targetId'] for t in self.moltnet_pages())
+            try:
+                data['reopen_without_policy'] = self.molt_net_call(
+                    'moltnet.openWindow', timeout=self.opts.open_timeout)
+            except (cdplib.CdpError, RuntimeError) as e:
+                data['reopen_without_policy'] = {'error': 'harness: %s' % e}
+            data['reopened'] = bool(self.wait_new_moltnet_page(before, 30))
+            self.phase_end(phase)
+        except (RuntimeError, OSError, cdplib.CdpError) as e:
+            self.phase_end(phase, str(e))
+        finally:
+            if policy_dir:
+                self.remove_policy(policy_dir)
+        self.close_browser()
+
     def dsf_sessions(self):
         for dsf in self.opts.dsfs:
             if dsf == 1:
@@ -1429,6 +1530,9 @@ class Run(object):
                     self.override_session()
                 if self.want_phase('partitioning_override'):
                     self.partitioning_override_session()
+                if self.opts.target == 'moltnet' and \
+                        self.want_phase('policy_live'):
+                    self.policy_live_session()
             if self.want_phase('dsf'):
                 self.dsf_sessions()
         except KeyboardInterrupt:
