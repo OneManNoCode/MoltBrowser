@@ -3487,6 +3487,15 @@ void StoragePartitionImpl::GetQuotaSettings(
     return;
   }
 
+  // MoltBrowser: fixed settings, instead of ones derived from the machine's
+  // memory or disk, for embedders that ask for them (MoltNet).
+  if (std::optional<storage::QuotaSettings> fixed =
+          GetContentClient()->browser()->GetFixedQuotaSettings(
+              browser_context_)) {
+    std::move(callback).Run(std::move(fixed));
+    return;
+  }
+
   storage::GetNominalDynamicSettings(
       GetPath(), browser_context_->IsOffTheRecord(),
       storage::GetDefaultDeviceInfoHelper(), std::move(callback));

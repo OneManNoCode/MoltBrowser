@@ -180,6 +180,12 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
     manual_limits_set_ = true;
   }
 
+  // MoltBrowser: `limits` from now on, for embedders that fix them
+  // (ContentBrowserClient::GetFixedBlobStorageLimits): the limits derived
+  // from the machine's memory and disk never replace them, and memory
+  // pressure doesn't scale them.
+  void SetFixedStorageLimits(const BlobStorageLimits& limits);
+
   void ShrinkMemoryAllocation(ShareableBlobDataItem* item);
   void ShrinkFileAllocation(ShareableFileReference* file_reference,
                             uint64_t old_length,
@@ -276,6 +282,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   // Store that we set manual limits so we don't accidentally override them with
   // our configuration task.
   bool manual_limits_set_ = false;
+  // MoltBrowser: SetFixedStorageLimits() was called.
+  bool fixed_limits_ = false;
   BlobStorageLimits base_limits_;
   BlobStorageLimits limits_;
   bool did_schedule_limit_calculation_ = false;

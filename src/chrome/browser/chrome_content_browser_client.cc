@@ -127,6 +127,7 @@
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_storage.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
 #include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
 #include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
@@ -7159,6 +7160,23 @@ bool ChromeContentBrowserClient::ShouldSendUniformNetworkState(
          molt_ai::tor::SendUniformNetworkStateToRenderers(
              molt_ai::tor::IsMoltNetProfile(
                  Profile::FromBrowserContext(browser_context)));
+}
+
+std::optional<storage::QuotaSettings>
+ChromeContentBrowserClient::GetFixedQuotaSettings(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: the same storage limits for every MoltNet user
+  // (molt_ai/fingerprinting/molt_net_storage.h).
+  return molt_ai::fingerprinting::MoltNetQuotaSettings(
+      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+}
+
+std::optional<storage::BlobStorageLimits>
+ChromeContentBrowserClient::GetFixedBlobStorageLimits(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: as GetFixedQuotaSettings(), for blobs.
+  return molt_ai::fingerprinting::MoltNetBlobStorageLimits(
+      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
 }
 
 bool ChromeContentBrowserClient::WillInterceptWebSocket(

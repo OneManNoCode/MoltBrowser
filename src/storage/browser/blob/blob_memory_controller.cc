@@ -812,6 +812,15 @@ base::WeakPtr<BlobMemoryController> BlobMemoryController::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
+void BlobMemoryController::SetFixedStorageLimits(
+    const BlobStorageLimits& limits) {
+  // MoltBrowser: see the header.
+  fixed_limits_ = true;
+  manual_limits_set_ = false;
+  OnStorageLimitsCalculated(limits);
+  manual_limits_set_ = true;
+}
+
 void BlobMemoryController::OnStorageLimitsCalculated(BlobStorageLimits limits) {
   DCHECK(limits.IsValid());
   if (manual_limits_set_)
@@ -819,7 +828,8 @@ void BlobMemoryController::OnStorageLimitsCalculated(BlobStorageLimits limits) {
   base_limits_ = limits;
   limits_ = limits;
 
-  if (IsStatefulMemoryPressureEnabled()) {
+  // MoltBrowser: fixed limits don't follow memory pressure.
+  if (IsStatefulMemoryPressureEnabled() && !fixed_limits_) {
     size_t target_max_memory = base::ScaleByMemoryLimit(
         base_limits_.max_blob_in_memory_space, memory_limit());
     limits_.max_blob_in_memory_space =
@@ -1039,7 +1049,8 @@ void BlobMemoryController::OnEvictionComplete(
 }
 
 void BlobMemoryController::OnUpdateMemoryLimit() {
-  if (!IsStatefulMemoryPressureEnabled()) {
+  // MoltBrowser: fixed limits don't follow memory pressure.
+  if (!IsStatefulMemoryPressureEnabled() || fixed_limits_) {
     return;
   }
   if (memory_limit() < base::MemoryLimit::ModeratePressureThreshold()) {
@@ -1059,8 +1070,11 @@ void BlobMemoryController::OnReleaseMemory() {
       return;
     }
     // Enforce the actual scaled target limit now
-    limits_.max_blob_in_memory_space =
-        memory_limit().Scale(base_limits_.max_blob_in_memory_space);
+    // MoltBrowser: unless the limits are fixed.
+    if (!fixed_limits_) {
+      limits_.max_blob_in_memory_space =
+          memory_limit().Scale(base_limits_.max_blob_in_memory_space);
+    }
     MaybeScheduleEvictionUntilSystemHealthy(
         base::MemoryLimit::NoPressureThreshold());
     return;

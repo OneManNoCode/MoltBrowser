@@ -5,6 +5,7 @@
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "base/feature_list.h"
@@ -24,6 +25,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/content_browser_client.h"  // MoltBrowser
+#include "content/public/common/content_client.h"          // MoltBrowser
 #include "content/public/common/content_features.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
@@ -137,12 +140,30 @@ ChromeBlobStorageContext* ChromeBlobStorageContext::GetFor(
     }
 
     if (io_thread_valid) {
+      // MoltBrowser: fixed limits, for embedders that ask for them (MoltNet),
+      // set right after the context exists, before anything uses it.
+      std::optional<storage::BlobStorageLimits> fixed_limits =
+          GetContentClient()->browser()->GetFixedBlobStorageLimits(context);
+      scoped_refptr<ChromeBlobStorageContext> molt_context =
+          blob_storage_context;
       GetIOThreadTaskRunner({})->PostTask(
           FROM_HERE,
           base::BindOnce(&ChromeBlobStorageContext::InitializeOnIOThread,
                          std::move(blob_storage_context), context->GetPath(),
                          std::move(blob_storage_dir),
                          std::move(file_task_runner)));
+      if (fixed_limits) {
+        GetIOThreadTaskRunner({})->PostTask(
+            FROM_HERE,
+            base::BindOnce(
+                [](scoped_refptr<ChromeBlobStorageContext> blob_context,
+                   const storage::BlobStorageLimits& limits) {
+                  blob_context->context()
+                      ->mutable_memory_controller()
+                      ->SetFixedStorageLimits(limits);
+                },
+                std::move(molt_context), *fixed_limits));
+      }
     }
   }
 

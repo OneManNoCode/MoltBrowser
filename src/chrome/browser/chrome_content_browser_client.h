@@ -730,6 +730,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const blink::StorageKey& storage_key) override;  // MoltBrowser
   bool ShouldSendUniformNetworkState(
       content::BrowserContext* browser_context) override;  // MoltBrowser
+  std::optional<storage::QuotaSettings> GetFixedQuotaSettings(
+      content::BrowserContext* browser_context) override;  // MoltBrowser
+  std::optional<storage::BlobStorageLimits> GetFixedBlobStorageLimits(
+      content::BrowserContext* browser_context) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

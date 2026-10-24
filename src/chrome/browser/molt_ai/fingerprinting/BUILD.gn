@@ -116,6 +116,29 @@ source_set("device") {
   ]
 }
 
+# MoltNet's fixed storage limits: the values (std-only, constexpr) ...
+source_set("storage_values") {
+  sources = [ "molt_net_storage_values.h" ]
+}
+
+# ... as the quota settings and blob limits content asks the embedder for
+# (molt_net_storage.h), called from chrome_content_browser_client.cc with
+# the profile's renderer mode (so unit-tested in molt_ai_unittests).
+source_set("storage") {
+  sources = [
+    "molt_net_storage.cc",
+    "molt_net_storage.h",
+  ]
+  public_deps = [
+    "//chrome/common/molt_ai/fingerprinting",
+    "//storage/browser",
+  ]
+  deps = [
+    ":storage_values",
+    "//base",
+  ]
+}
+
 # ... and MoltNet's ClientHintsControllerDelegate (molt_net_client_hints.h),
 # which ClientHintsFactory (//chrome/browser/client_hints) builds.
 source_set("client_hints") {
@@ -144,12 +167,16 @@ source_set("unit_tests") {
   sources = [
     "molt_letterbox_unittest.cc",
     "molt_net_device_values_unittest.cc",
+    "molt_net_storage_unittest.cc",
+    "molt_net_storage_values_unittest.cc",
     "molt_shields_decision_unittest.cc",
   ]
   deps = [
     ":device_values",
     ":letterbox",
     ":shields_decision",
+    ":storage",
+    ":storage_values",
     "//base",
     "//base/test:test_support",
     "//components/content_settings/core/browser",

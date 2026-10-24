@@ -80,7 +80,9 @@
 #include "services/network/public/mojom/web_sandbox_flags.mojom-forward.h"
 #include "services/network/public/mojom/web_transport.mojom-forward.h"
 #include "services/network/public/mojom/websocket.mojom-forward.h"
+#include "storage/browser/blob/blob_storage_constants.h"  // MoltBrowser
 #include "storage/browser/file_system/file_system_context.h"
+#include "storage/browser/quota/quota_settings.h"  // MoltBrowser
 #include "third_party/blink/public/common/mediastream/media_devices.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
@@ -2010,6 +2012,19 @@ class CONTENT_EXPORT ContentBrowserClient {
   // operating system's connection type
   // (content/browser/network/molt_uniform_network_state.h).
   virtual bool ShouldSendUniformNetworkState(BrowserContext* browser_context);
+
+  // MoltBrowser: fixed quota settings for `browser_context`'s storage
+  // partitions, instead of the ones Chromium derives from the machine's
+  // memory or disk (StoragePartitionImpl::GetQuotaSettings); nullopt keeps
+  // Chromium's.
+  virtual std::optional<storage::QuotaSettings> GetFixedQuotaSettings(
+      BrowserContext* browser_context);
+
+  // MoltBrowser: fixed blob limits for `browser_context`, which neither the
+  // machine's memory and disk nor memory pressure change
+  // (ChromeBlobStorageContext); nullopt keeps Chromium's.
+  virtual std::optional<storage::BlobStorageLimits> GetFixedBlobStorageLimits(
+      BrowserContext* browser_context);
 
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
