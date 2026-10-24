@@ -260,8 +260,8 @@ void MoltNetAudioDevice::OnRenderError() {
   StopOutputDevice();
   main_task_runner_->PostDelayedTask(
       FROM_HERE,
-      BindOnce(&MoltNetAudioDevice::RetryOutputDevice,
-               weak_factory_.GetWeakPtr()),
+      blink::BindOnce(&MoltNetAudioDevice::RetryOutputDevice,
+                      weak_factory_.GetWeakPtr()),
       retry_delay_);
   retry_delay_ = std::min(retry_delay_ * 2, kMaxRetry);
 }
