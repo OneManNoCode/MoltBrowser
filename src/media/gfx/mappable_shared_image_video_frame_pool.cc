@@ -52,6 +52,7 @@
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
 #include "media/video/gpu_video_accelerator_factories.h"
@@ -1412,6 +1413,13 @@ void MappableSharedImageVideoFramePool::MaybeCreateHardwareFrame(
     scoped_refptr<VideoFrame> video_frame,
     FrameReadyCB frame_ready_cb) {
   DCHECK(video_frame);
+  // MoltBrowser: in MoltNet's renderers frames stay in CPU memory, so what a
+  // page reads back of them is converted by the CPU, not by the GPU
+  // (media/base/molt_portable_media.h).
+  if (IsPortableMediaProcess()) {
+    std::move(frame_ready_cb).Run(std::move(video_frame));
+    return;
+  }
   pool_impl_->CreateHardwareFrame(std::move(video_frame),
                                   std::move(frame_ready_cb));
 }

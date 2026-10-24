@@ -48,6 +48,7 @@
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "media/base/data_buffer.h"
 #include "media/base/format_utils.h"
+#include "media/base/molt_portable_media.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_transformation.h"
 #include "media/base/video_util.h"
@@ -661,6 +662,11 @@ class VideoImageGenerator : public cc::PaintImageGenerator {
 
   bool QueryYUVA(const SkYUVAPixmapInfo::SupportedDataTypes&,
                  SkYUVAPixmapInfo* info) const override {
+    // MoltBrowser: in MoltNet's renderers the CPU converts to RGB
+    // (GetPixels(), libyuv), never the GPU (media/base/molt_portable_media.h).
+    if (IsPortableMediaProcess()) {
+      return false;
+    }
     SkYUVAInfo::PlaneConfig plane_config;
     SkYUVAInfo::Subsampling subsampling;
     std::tie(plane_config, subsampling) =
@@ -1417,6 +1423,11 @@ bool PaintCanvasVideoRenderer::MultiPlaneChannelFormatSupported(
 bool PaintCanvasVideoRenderer::
     IsPixelFormatSupportedForYuvSharedImageConversion(
         VideoPixelFormat video_format) {
+  // MoltBrowser: no GPU conversion of CPU frames in MoltNet's renderers
+  // (WebGL and WebGPU uploads); they take the CPU path through Paint().
+  if (IsPortableMediaProcess()) {
+    return false;
+  }
   // To expand support for additional VideoFormats expand this switch.
   switch (video_format) {
     case PIXEL_FORMAT_NV12:

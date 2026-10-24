@@ -14,6 +14,7 @@
 #include "media/base/decoder_factory.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"
 #include "media/media_buildflags.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 
@@ -133,8 +134,11 @@ void DefaultDecoderFactory::CreateVideoDecoders(
 
   // Prefer an external decoder since one will only exist if it is hardware
   // accelerated.
+  // MoltBrowser: never in MoltNet's renderers, whose frames must not carry
+  // the GPU's decoder or colour conversion (media/base/molt_portable_media.h).
   if (external_decoder_factory_ && gpu_factories &&
-      gpu_factories->IsGpuVideoDecodeAcceleratorEnabled()) {
+      gpu_factories->IsGpuVideoDecodeAcceleratorEnabled() &&
+      !IsPortableMediaProcess()) {
     // |gpu_factories_| requires that its entry points be called on its
     // |GetTaskRunner()|. Since |pipeline_| will own decoders created from the
     // factories, require that their message loops are identical.
