@@ -108,9 +108,11 @@ async function audioDevice(v) {
 // device's clock, 480 frames every 10 ms, whatever the real device).
 // currentTime is polled on the main thread for 300 ms; its changes less
 // than 1.5 ms apart are one burst of rendering. Reports the median time
-// between bursts and the burst sizes seen, in frames (3 or 4 render quanta
-// of 128 for 480 frames). Needs a running context, so the harness calls it
-// with a user gesture after the page's collection.
+// between bursts and the burst sizes, in frames (3 or 4 render quanta of 128
+// for 480 frames), that make up at least a tenth of the bursts. A poll held
+// up (the machine, a garbage collection) can split or merge bursts, so the
+// bursts next to one aren't sized. Needs a running context, so the harness
+// calls it with a user gesture after the page's collection.
 async function audioCadence() {
   if (!window.AudioContext) {
     return {'audio.cadence_interval_ms': 'absent',
@@ -129,8 +131,17 @@ async function audioCadence() {
     }
     const bursts = [];
     let last = ctx.currentTime;
-    const end = performance.now() + 300;
-    for (let now = performance.now(); now < end; now = performance.now()) {
+    let prev = performance.now();
+    let held = false;
+    const end = prev + 300;
+    for (let now = prev; now < end; prev = now, now = performance.now()) {
+      if (now - prev > 0.5) {
+        held = true;
+        const b = bursts[bursts.length - 1];
+        if (b && prev - b.end < 1.5) {
+          b.held = true;
+        }
+      }
       const t = ctx.currentTime;
       if (t === last) {
         continue;
@@ -141,19 +152,27 @@ async function audioCadence() {
       if (b && now - b.end < 1.5) {
         b.frames += frames;
         b.end = now;
+        b.held = b.held || held;
       } else {
-        bursts.push({start: now, end: now, frames});
+        bursts.push({start: now, end: now, frames, held});
       }
+      held = false;
     }
     // The first and last may be cut short.
     const whole = bursts.slice(1, -1);
     const gaps = whole.slice(1).map((b, i) => b.start - whole[i].start)
         .sort((a, b) => a - b);
+    const sized = whole.filter((b) => !b.held);
+    const counts = new Map();
+    for (const b of sized) {
+      counts.set(b.frames, (counts.get(b.frames) || 0) + 1);
+    }
     return {
       'audio.cadence_interval_ms': gaps.length ?
           Math.round(gaps[Math.floor(gaps.length / 2)]) : 'no bursts',
-      'audio.cadence_burst_frames': [...new Set(whole.map((b) => b.frames))]
-          .sort((a, b) => a - b),
+      'audio.cadence_burst_frames': [...counts]
+          .filter(([, n]) => n * 10 >= sized.length)
+          .map(([frames]) => frames).sort((a, b) => a - b),
     };
   } finally {
     await ctx.close();
