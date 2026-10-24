@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/core/frame/dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
 #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
 #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
@@ -2253,6 +2254,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
   SendLogMessage(base::StringPrintf(
       "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
       current_request_info_->request_id(), constraint_name.Ascii().c_str()));
+
+  // MoltBrowser: in MoltNet, a missing camera or microphone, or one that
+  // can't meet the constraints, shows only once the user was asked, as when
+  // one can (moltnet_media_devices.h).
+  if (UserMediaRequest* request = current_request_info_->request();
+      molt_fingerprinting::ConfirmUserMediaFailure(
+          frame_ ? frame_->DomWindow() : nullptr,
+          request->Audio() && request->AudioMediaStreamType() ==
+                                  MediaStreamType::DEVICE_AUDIO_CAPTURE,
+          request->Video() && request->VideoMediaStreamType() ==
+                                  MediaStreamType::DEVICE_VIDEO_CAPTURE,
+          result,
+          BindOnce(
+              [](UserMediaProcessor* processor, int32_t request_id,
+                 const String& constraint, MediaStreamRequestResult reported) {
+                if (!processor || !processor->IsCurrentRequestInfo(request_id)) {
+                  return;
+                }
+                processor->DelayedGetUserMediaRequestFailed(
+                    request_id, processor->current_request_info_->request(),
+                    reported, constraint);
+              },
+              WrapWeakPersistent(this), current_request_info_->request_id(),
+              constraint_name))) {
+    return;
+  }
 
   // Completing the getUserMedia request can lead to that the RenderFrame and
   // the UserMediaClient/UserMediaProcessor are destroyed if the JavaScript

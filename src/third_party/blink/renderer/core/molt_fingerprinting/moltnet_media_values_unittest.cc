@@ -3,6 +3,7 @@
 
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -202,15 +203,38 @@ TEST(MoltNetMediaValuesTest, MediaCapabilitiesTable) {
   EXPECT_FALSE(kWebrtcCodingInfo.power_efficient);
 }
 
-TEST(MoltNetMediaValuesTest, AnOutputDeviceIsAlwaysListed) {
-  // A machine without an output device lists one, as every other machine
-  // does before the page may use the microphone.
-  EXPECT_TRUE(ListsUniformAudioOutput(0, false));
-  // A machine with one already lists it.
-  EXPECT_FALSE(ListsUniformAudioOutput(1, false));
-  // With the permission the page sees the real devices.
-  EXPECT_FALSE(ListsUniformAudioOutput(0, true));
-  EXPECT_FALSE(ListsUniformAudioOutput(3, true));
+TEST(MoltNetMediaValuesTest, OneDeviceOfEachKindIsListed) {
+  // A machine without a device of a kind lists one, as every other machine
+  // does before the page may use that kind.
+  EXPECT_TRUE(ListsUniformDevice(0, false));
+  // A machine with one already lists it (one entry, whatever the count).
+  EXPECT_FALSE(ListsUniformDevice(1, false));
+  // With the permission the page sees the real devices, or none.
+  EXPECT_FALSE(ListsUniformDevice(0, true));
+  EXPECT_FALSE(ListsUniformDevice(3, true));
+}
+
+TEST(MoltNetMediaValuesTest, UserMediaFailsOnlyAfterAsking) {
+  using A = PermissionAnswer;
+  using V = UserMediaVerdict;
+  // Granted (now or before): the page may know the devices.
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kGranted}), V::kRealFailure);
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kGranted, A::kGranted}),
+            V::kRealFailure);
+  // Denied, now or before: as a request a device could meet.
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kDenied}),
+            V::kPermissionDenied);
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kGranted, A::kDenied}),
+            V::kPermissionDenied);
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kAsk, A::kDenied}),
+            V::kPermissionDenied);
+  // Dismissed.
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kAsk}),
+            V::kPermissionDismissed);
+  EXPECT_EQ(UserMediaFailureVerdict(std::array{A::kGranted, A::kAsk}),
+            V::kPermissionDismissed);
+  // Nothing asked: never the real failure.
+  EXPECT_EQ(UserMediaFailureVerdict({}), V::kPermissionDenied);
 }
 
 }  // namespace
