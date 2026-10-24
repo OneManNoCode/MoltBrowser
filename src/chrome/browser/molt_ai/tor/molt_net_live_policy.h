@@ -176,7 +176,7 @@ inline std::string MoltNetSettingsError(MoltNetSettingsCheck check) {
 }
 
 // The title of the dialog that tells the user why MoltNet ended.
-inline constexpr char kMoltNetEndedTitle[] = "MoltNet windows closed";
+inline constexpr char16_t kMoltNetEndedTitle[] = u"MoltNet windows closed";
 
 // ---- What MoltNet's network context may be given ---------------------------
 

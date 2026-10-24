@@ -174,7 +174,7 @@ TEST(MoltNetLivePolicyTest, EveryRefusalHasAMessage) {
     EXPECT_LT(error.size(), 120u) << error;
     EXPECT_EQ(error.find('<'), std::string::npos) << error;
   }
-  EXPECT_FALSE(std::string(kMoltNetEndedTitle).empty());
+  EXPECT_FALSE(std::u16string(kMoltNetEndedTitle).empty());
 }
 
 TEST(MoltNetLivePolicyTest, OtherProfilesGetEveryProxyConfig) {

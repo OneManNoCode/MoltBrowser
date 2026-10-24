@@ -182,7 +182,7 @@ void ShowEndedMessage(Profile* original, const std::string& error) {
     }
   }
   chrome::ShowWarningMessageBoxAsync(parent,
-                                     base::UTF8ToUTF16(kMoltNetEndedTitle),
+                                     std::u16string(kMoltNetEndedTitle),
                                      base::UTF8ToUTF16(error));
 }
 
