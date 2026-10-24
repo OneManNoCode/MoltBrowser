@@ -7184,6 +7184,17 @@ ChromeContentBrowserClient::GetFixedBlobStorageLimits(
       molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
 }
 
+bool ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: MoltNet's downloads stay in the partition, and on the Tor
+  // circuit, of the site they come from
+  // (molt_ai/tor/molt_net_network_context_policy.h).
+  return browser_context &&
+         molt_ai::tor::KeepDownloadsWithTheirSite(
+             molt_ai::tor::IsMoltNetProfile(
+                 Profile::FromBrowserContext(browser_context)));
+}
+
 bool ChromeContentBrowserClient::WillInterceptWebSocket(
     content::RenderFrameHost* frame) {
   // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.

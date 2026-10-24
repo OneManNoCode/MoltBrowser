@@ -46,6 +46,7 @@
 #include "content/browser/data_url_loader_factory.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/download/embedder_download_data.pb.h"
+#include "content/browser/download/molt_download_isolation.h"  // MoltBrowser
 #include "content/browser/file_system/file_system_url_loader_factory.h"
 #include "content/browser/loader/file_url_loader_factory.h"
 #include "content/browser/loader/response_head_update_params.h"
@@ -1888,6 +1889,13 @@ void DownloadManagerImpl::BeginDownloadInternal(
 
   auto* rfh = RenderFrameHost::FromID(params->render_process_host_id(),
                                       params->render_frame_host_routing_id());
+
+  // MoltBrowser: in MoltNet the download keeps the network isolation of the
+  // frame that started it, or of the download it resumes, not its
+  // destination's (molt_download_isolation.h).
+  MoltKeepDownloadWithItsSite(
+      browser_context_, rfh,
+      is_new_download ? nullptr : GetDownloadByGuid(params->guid()), *params);
 
   StoragePartitionConfig storage_partition_config;
   if (rfh && serialized_embedder_download_data.empty()) {

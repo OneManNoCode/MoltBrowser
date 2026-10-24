@@ -95,6 +95,15 @@ TEST(MoltNetNetworkContextPolicyTest, UniformNetworkStateForMoltNetOnly) {
   static_assert(!SendUniformNetworkStateToRenderers(false));
 }
 
+// Downloads keep the network isolation of the frame or download they come
+// from in MoltNet; every other profile keeps Chromium's.
+TEST(MoltNetNetworkContextPolicyTest, DownloadsKeptWithTheirSiteInMoltNetOnly) {
+  static_assert(KeepDownloadsWithTheirSite(/*is_moltnet_profile=*/true));
+  static_assert(!KeepDownloadsWithTheirSite(/*is_moltnet_profile=*/false));
+  EXPECT_TRUE(KeepDownloadsWithTheirSite(true));
+  EXPECT_FALSE(KeepDownloadsWithTheirSite(false));
+}
+
 bool IsUpperHex(const std::string& s) {
   for (char c : s) {
     if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {

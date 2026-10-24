@@ -11,6 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/download/internal/background_service/blob_task_proxy.h"
+#include "components/download/internal/background_service/molt_registering_site_isolation.h"  // MoltBrowser
 #include "net/base/load_flags.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -231,6 +232,9 @@ void InMemoryDownloadImpl::SendRequest() {
     request->site_for_cookies =
         request_params_.isolation_info->site_for_cookies();
   }
+  // MoltBrowser: and the network isolation of the site that started it, not
+  // its destination's (molt_registering_site_isolation.h).
+  MoltCarryRegisteringSiteIsolation(request_params_.isolation_info, *request);
 
   url_chain_.push_back(request_params_.url);
 

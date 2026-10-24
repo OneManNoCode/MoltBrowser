@@ -15,6 +15,7 @@
 #include "build/build_config.h"
 #include "components/download/public/common/download_task_runner.h"
 #include "content/browser/data_url_loader_factory.h"
+#include "content/browser/download/molt_download_isolation.h"  // MoltBrowser
 #include "content/browser/download/save_file.h"
 #include "content/browser/download/save_package.h"
 #include "content/browser/file_system/file_system_url_loader_factory.h"
@@ -294,6 +295,10 @@ void SaveFileManager::SaveURL(
     mojo::Remote<network::mojom::URLLoaderFactory> factory_remote;
     auto* rfh = RenderFrameHostImpl::FromID(render_process_host_id,
                                             render_frame_routing_id);
+    // MoltBrowser: in MoltNet a saved page's resources keep the network
+    // isolation of the frame they belong to, not their destination's
+    // (molt_download_isolation.h).
+    MoltKeepSavedResourceWithItsFrame(context, rfh, *request);
 
     // TODO(crbug.com/382291442): Remove feature guarding once launched.
     if (base::FeatureList::IsEnabled(

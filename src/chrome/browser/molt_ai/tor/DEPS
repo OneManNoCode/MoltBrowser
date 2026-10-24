@@ -15,4 +15,8 @@ specific_include_rules = {
   "molt_net_keepalive_partitions_unittest\.cc": [
     "+services/network/molt_keepalive_partitions.h",
   ],
+  # Which isolation MoltNet's downloads carry (std-only).
+  "molt_net_download_isolation_unittest\.cc": [
+    "+content/browser/download/molt_download_isolation_policy.h",
+  ],
 }

@@ -228,6 +228,21 @@ constexpr bool SendUniformNetworkStateToRenderers(bool is_moltnet_profile) {
   return is_moltnet_profile;
 }
 
+// Whether the download requests the browser makes for a profile's pages
+// carry the network isolation of the frame or download they come from
+// (ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(),
+// content/browser/download/molt_download_isolation_policy.h). Chromium
+// files a download a page starts without navigating (a link with
+// `download`, "Save link as", "Save image as"), a resumed download and Save
+// Page As's resources under their destination, as top-level navigations
+// there: their cache partition, connections and cookies, and in MoltNet the
+// destination's Tor circuit. Background Fetch, in every off-the-record
+// profile, carries the site's isolation through the download service
+// (components/download/.../molt_registering_site_isolation.h).
+constexpr bool KeepDownloadsWithTheirSite(bool is_moltnet_profile) {
+  return is_moltnet_profile;
+}
+
 // ProfileNetworkContextService's block_trust_tokens, when a network context
 // is created and when the anti-abuse content setting changes:
 // `chromium_value` is Chromium's (the setting blocks them).
