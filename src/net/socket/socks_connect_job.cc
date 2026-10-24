@@ -157,6 +157,7 @@ LoadState SOCKSConnectJob::GetLoadState() const {
     // job in this state (TransportClientSocketPool::Group::
     // OnBackupJobTimerFired()), which would only queue for the same slots.
     case STATE_MOLT_HANDSHAKE_SLOT:
+    case STATE_MOLT_HANDSHAKE_SLOT_COMPLETE:
       return LOAD_STATE_RESOLVING_HOST;
     case STATE_TRANSPORT_CONNECT:
       return LOAD_STATE_IDLE;
@@ -217,6 +218,10 @@ int SOCKSConnectJob::DoLoop(int result) {
         DCHECK_EQ(OK, rv);
         rv = DoMoltHandshakeSlot();
         break;
+      case STATE_MOLT_HANDSHAKE_SLOT_COMPLETE:
+        DCHECK_EQ(OK, rv);
+        rv = DoMoltHandshakeSlotComplete();
+        break;
       case STATE_TRANSPORT_CONNECT:
         DCHECK_EQ(OK, rv);
         rv = DoTransportConnect();
@@ -245,7 +250,7 @@ int SOCKSConnectJob::DoLoop(int result) {
 // and every site shares Tor's limit on circuits being built. No timer runs
 // while it waits (this job's starts after the connection to the proxy).
 int SOCKSConnectJob::DoMoltHandshakeSlot() {
-  next_state_ = STATE_TRANSPORT_CONNECT;
+  next_state_ = STATE_MOLT_HANDSHAKE_SLOT_COMPLETE;
   MoltSocksHandshakeLimiter* limiter =
       common_connect_job_params()->molt_socks_handshake_limiter;
   if (!limiter || !TorIsolationUsername(*socks_params_)) {
@@ -257,6 +262,12 @@ int SOCKSConnectJob::DoMoltHandshakeSlot() {
       base::BindOnce(&SOCKSConnectJob::OnIOComplete, base::Unretained(this),
                      OK));
   return molt_handshake_slot_->granted() ? OK : ERR_IO_PENDING;
+}
+
+// MoltBrowser: it has a slot (or needs none).
+int SOCKSConnectJob::DoMoltHandshakeSlotComplete() {
+  next_state_ = STATE_TRANSPORT_CONNECT;
+  return OK;
 }
 
 int SOCKSConnectJob::DoTransportConnect() {

@@ -111,6 +111,7 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
     // MoltBrowser: waits for one of the site's SOCKS handshake slots
     // (net/socket/molt_connection_budget.h), only in a session that has them.
     STATE_MOLT_HANDSHAKE_SLOT,
+    STATE_MOLT_HANDSHAKE_SLOT_COMPLETE,
     STATE_TRANSPORT_CONNECT,
     STATE_TRANSPORT_CONNECT_COMPLETE,
     STATE_SOCKS_CONNECT,
@@ -130,7 +131,8 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
   // Runs the state transition loop.
   int DoLoop(int result);
 
-  int DoMoltHandshakeSlot();  // MoltBrowser
+  int DoMoltHandshakeSlot();          // MoltBrowser
+  int DoMoltHandshakeSlotComplete();  // MoltBrowser
   int DoTransportConnect();
   int DoTransportConnectComplete(int result);
   int DoSOCKSConnect();
