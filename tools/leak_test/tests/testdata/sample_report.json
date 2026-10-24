@@ -602,6 +602,94 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"balanced\": 0.01, \"exact_0\": 0.0026666666666666666, \"exact_20ms\": 0.021333333333333333, \"interactive\": 0.01, \"playback\": 0.021333333333333333, \"rate_44100\": 0., expected {\"balanced\": 0.01, \"exact_0\": 0.0026666666666666666, \"exact_20ms\": 0.021333333333333333, \"interactive\": 0.01, \"playback\""
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.base_latency",
+   "status": "PASS",
+   "title": "audio.base_latency is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 2, expected 2"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.channel_count",
+   "status": "PASS",
+   "title": "audio.channel_count is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"IndexSizeError\", expected IndexSizeError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.channel_count_3",
+   "status": "PASS",
+   "title": "audio.channel_count_3 is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 2, expected 2"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.max_channel_count",
+   "status": "PASS",
+   "title": "audio.max_channel_count is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0.024, expected 0.024"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.output_latency",
+   "status": "PASS",
+   "title": "audio.output_latency is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.output_timestamp_ok",
+   "status": "PASS",
+   "title": "audio.output_timestamp_ok is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected [0, 0.024, \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.playback_latency_max",
+   "status": "PASS",
+   "title": "audio.playback_latency_max is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected [0, \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.playback_underruns",
+   "status": "PASS",
+   "title": "audio.playback_underruns is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Re-checked at Chromium 156\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 128, expected [128, \"absent\"]"
@@ -610,6 +698,28 @@
    "id": "uniform.audio.render_quantum_hardware",
    "status": "PASS",
    "title": "audio.render_quantum_hardware is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 48000, expected 48000"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.sample_rate",
+   "status": "PASS",
+   "title": "audio.sample_rate is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 2048, expected 2048"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.script_processor_buffer",
+   "status": "PASS",
+   "title": "audio.script_processor_buffer is uniform"
   },
   {
    "details": null,
@@ -654,6 +764,39 @@
    "id": "uniform.doc.characterSet_undeclared",
    "status": "PASS",
    "title": "doc.characterSet_undeclared is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotSupportedError\", expected NotSupportedError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.eme.clearkey",
+   "status": "PASS",
+   "title": "eme.clearkey is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotSupportedError\", expected NotSupportedError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.eme.playready",
+   "status": "PASS",
+   "title": "eme.playready is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotSupportedError\", expected NotSupportedError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.eme.widevine",
+   "status": "PASS",
+   "title": "eme.widevine is uniform"
   },
   {
    "details": null,
@@ -753,6 +896,72 @@
    "id": "uniform.js.enabled_on_blocked_site",
    "status": "PASS",
    "title": "js.enabled_on_blocked_site is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"powerEfficient\": false, \"smooth\": true, \"supported\": true}, expected {\"powerEfficient\": false, \"smooth\": true, \"supported\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mc.av1_2160p60",
+   "status": "PASS",
+   "title": "mc.av1_2160p60 is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"powerEfficient\": false, \"smooth\": false, \"supported\": false}, expected {\"powerEfficient\": false, \"smooth\": false, \"supported\": false}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mc.encrypted",
+   "status": "PASS",
+   "title": "mc.encrypted is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"powerEfficient\": false, \"smooth\": true, \"supported\": true}, expected {\"powerEfficient\": false, \"smooth\": true, \"supported\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mc.vp8_360p",
+   "status": "PASS",
+   "title": "mc.vp8_360p is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"powerEfficient\": false, \"smooth\": true, \"supported\": true}, expected {\"powerEfficient\": false, \"smooth\": true, \"supported\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mc.vp9_1080p",
+   "status": "PASS",
+   "title": "mc.vp9_1080p is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"powerEfficient\": false, \"smooth\": false, \"supported\": false}, expected {\"powerEfficient\": false, \"smooth\": false, \"supported\": false}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mc.webrtc_decoding",
+   "status": "PASS",
+   "title": "mc.webrtc_decoding is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"powerEfficient\": false, \"smooth\": false, \"supported\": false}, expected {\"powerEfficient\": false, \"smooth\": false, \"supported\": false}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mc.webrtc_encoding",
+   "status": "PASS",
+   "title": "mc.webrtc_encoding is uniform"
   },
   {
    "details": null,
@@ -1387,6 +1596,28 @@
    "id": "uniform.uad.high_entropy",
    "status": "PASS",
    "title": "uad.high_entropy is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected [false, \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webcodecs.decoder_hardware",
+   "status": "PASS",
+   "title": "webcodecs.decoder_hardware is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected [false, \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webcodecs.encoder_hardware",
+   "status": "PASS",
+   "title": "webcodecs.encoder_hardware is uniform"
   },
   {
    "details": null,
@@ -2533,7 +2764,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 123,
+  "PASS": 144,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2549,12 +2780,33 @@
     "ai.Summarizer": "unavailable",
     "ai.Translator": "unavailable",
     "ai.Writer": "unavailable",
+    "audio.base_latency": {
+     "balanced": 0.01,
+     "exact_0": 0.0026666666666666666,
+     "exact_20ms": 0.021333333333333333,
+     "interactive": 0.01,
+     "playback": 0.021333333333333333,
+     "rate_44100": 0.01
+    },
+    "audio.channel_count": 2,
+    "audio.channel_count_3": "IndexSizeError",
+    "audio.max_channel_count": 2,
+    "audio.output_latency": 0.024,
+    "audio.output_timestamp_ok": true,
+    "audio.playback_latency_max": 0,
+    "audio.playback_underruns": 0,
     "audio.render_quantum_hardware": 128,
+    "audio.sample_rate": 48000,
+    "audio.script_processor_buffer": 2048,
+    "audio.sink_id": "",
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
     "css.default_font_size": "16px",
     "doc.characterSet_undeclared": "windows-1252",
+    "eme.clearkey": "NotSupportedError",
+    "eme.playready": "NotSupportedError",
+    "eme.widevine": "NotSupportedError",
     "fonts.visible": [
      "DejaVu Sans",
      "Liberation Sans",
@@ -2574,6 +2826,41 @@
     "intl.locale": "en-US",
     "intl.number": "1,234,567.891",
     "js.enabled_on_blocked_site": true,
+    "mc.av1_2160p60": {
+     "powerEfficient": false,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.encrypted": {
+     "powerEfficient": false,
+     "smooth": false,
+     "supported": false
+    },
+    "mc.opus": {
+     "powerEfficient": true,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.vp8_360p": {
+     "powerEfficient": false,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.vp9_1080p": {
+     "powerEfficient": false,
+     "smooth": true,
+     "supported": true
+    },
+    "mc.webrtc_decoding": {
+     "powerEfficient": false,
+     "smooth": false,
+     "supported": false
+    },
+    "mc.webrtc_encoding": {
+     "powerEfficient": false,
+     "smooth": false,
+     "supported": false
+    },
     "media.devices": {
      "audiooutput": 1
     },
@@ -2650,6 +2937,10 @@
      "wow64": false
     },
     "uad.platform": "Linux",
+    "webcodecs.decoder_hardware": false,
+    "webcodecs.decoder_software": true,
+    "webcodecs.encoder_hardware": false,
+    "webcodecs.encoder_vp8": true,
     "webgl.context": true,
     "webgl.debug_renderer_info": false,
     "webgl.extensions": [

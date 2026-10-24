@@ -134,6 +134,7 @@ S_FONTS = FP + ' "Fonts"'
 S_TEXT = FP + ' "Text metrics (MoltNet)"'
 S_NETQ = FP + ' "MoltNet: connection and network quality"'
 S_156 = FP + ' "Re-checked at Chromium 156"'
+S_MEDIA = FP + ' "MoltNet: audio, DRM and media capabilities"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -141,6 +142,19 @@ OVERLAY_SCROLLBARS = {'macOS': True, 'Windows': False, 'Linux': False}
 # The reported storage quota over the usage in an off-the-record profile
 # (storage/browser/quota: 10 GiB at 156).
 STATIC_QUOTA = 10 * 1024 ** 3
+
+# Web Audio's output device in MoltNet (moltnet_media_values.h): 48 kHz,
+# a 10 ms buffer (480 frames; 441 at a page's 44.1 kHz), 20 ms rounded up
+# to 1024 frames for "playback", an exact hint of 0 as 128 frames.
+AUDIO_BASE_LATENCY = {'interactive': 480 / 48000, 'balanced': 480 / 48000,
+                      'playback': 1024 / 48000, 'exact_0': 128 / 48000,
+                      'exact_20ms': 1024 / 48000, 'rate_44100': 441 / 44100}
+# Media Capabilities in MoltNet: a video the build decodes itself is smooth
+# and not power efficient; key systems and WebRTC are never supported.
+MC_SOFTWARE_VIDEO = {'supported': True, 'smooth': True,
+                     'powerEfficient': False}
+MC_UNSUPPORTED = {'supported': False, 'smooth': False,
+                  'powerEfficient': False}
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
@@ -249,6 +263,28 @@ FULL_RULES = (
     ('mq.monochrome', 'eq', False, S_156),
     ('storage.quota_over_usage', 'eq', STATIC_QUOTA, S_156),
     ('audio.render_quantum_hardware', 'in', [128, 'absent'], S_156),
+    # Web Audio's output device, EME, Media Capabilities, WebCodecs.
+    ('audio.sample_rate', 'eq', 48000, S_MEDIA),
+    ('audio.base_latency', 'eq', AUDIO_BASE_LATENCY, S_MEDIA),
+    ('audio.output_latency', 'eq', 0.024, S_MEDIA),
+    ('audio.max_channel_count', 'eq', 2, S_MEDIA),
+    ('audio.channel_count', 'eq', 2, S_MEDIA),
+    ('audio.channel_count_3', 'eq', 'IndexSizeError', S_MEDIA),
+    ('audio.script_processor_buffer', 'eq', 2048, S_MEDIA),
+    ('audio.output_timestamp_ok', 'eq', True, S_MEDIA),
+    ('audio.playback_latency_max', 'in', [0, 0.024, 'absent'], S_MEDIA),
+    ('audio.playback_underruns', 'in', [0, 'absent'], S_MEDIA),
+    ('eme.clearkey', 'eq', 'NotSupportedError', S_MEDIA),
+    ('eme.widevine', 'eq', 'NotSupportedError', S_MEDIA),
+    ('eme.playready', 'eq', 'NotSupportedError', S_MEDIA),
+    ('mc.vp8_360p', 'eq', MC_SOFTWARE_VIDEO, S_MEDIA),
+    ('mc.vp9_1080p', 'eq', MC_SOFTWARE_VIDEO, S_MEDIA),
+    ('mc.av1_2160p60', 'eq', MC_SOFTWARE_VIDEO, S_MEDIA),
+    ('mc.encrypted', 'eq', MC_UNSUPPORTED, S_MEDIA),
+    ('mc.webrtc_decoding', 'eq', MC_UNSUPPORTED, S_MEDIA),
+    ('mc.webrtc_encoding', 'eq', MC_UNSUPPORTED, S_MEDIA),
+    ('webcodecs.decoder_hardware', 'in', [False, 'absent'], S_MEDIA),
+    ('webcodecs.encoder_hardware', 'in', [False, 'absent'], S_MEDIA),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -282,6 +318,12 @@ DIFF_KEYS = (
     # The same fonts measure the same on every machine of an OS (on Linux,
     # of a distribution release: font package versions differ).
     'text.metrics', 'text.emoji', 'text.dom_width',
+    # Codec support follows the build (the decoders and encoders compiled
+    # in), never the machine (FINGERPRINTING.md "MoltNet: audio, DRM and
+    # media capabilities").
+    'mc.opus', 'mc.h264', 'mc.hevc', 'media.can_play',
+    'webcodecs.decoder_software', 'webcodecs.encoder_vp8',
+    'webcodecs.encoder_h264', 'audio.sink_id',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference
