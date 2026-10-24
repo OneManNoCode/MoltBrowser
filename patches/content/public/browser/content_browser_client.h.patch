@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 6e730455c66df584a721a2b4720f25bf9844f16d..a5c37a3febf3a720068e06b9d525e432fe63f667 100644
+index 6e730455c66df584a721a2b4720f25bf9844f16d..33ee61f794d6748050ff1e3c6ed1e0f35ff3ffca 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
-@@ -1989,6 +1989,22 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1989,6 +1989,28 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  
@@ -27,6 +27,12 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..a5c37a3febf3a720068e06b9d525e432
 +  virtual bool AreMoltShieldsDownForWorker(
 +      BrowserContext* browser_context,
 +      const blink::StorageKey& storage_key);
++
++  // MoltBrowser: true if the renderers of `browser_context` are told fixed
++  // values instead of the browser's network-quality estimate and the
++  // operating system's connection type
++  // (content/browser/network/molt_uniform_network_state.h).
++  virtual bool ShouldSendUniformNetworkState(BrowserContext* browser_context);
 +
    struct CONTENT_EXPORT WebSocketOptions {
      WebSocketOptions();

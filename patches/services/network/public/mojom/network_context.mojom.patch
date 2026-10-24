@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 5eb7be85b1897244caed5096c5e58922e964aae1..b0b405f9b308772800cb384b4e7ba8fb590b1fa7 100644
+index 5eb7be85b1897244caed5096c5e58922e964aae1..56d3e7d3f45a5d11e06ead9f7d34fa53afdf56b7 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -229,6 +229,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,7 +24,7 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..b0b405f9b308772800cb384b4e7ba8fb
  };
  
  struct NetworkContextFilePaths {
-@@ -661,6 +670,40 @@ struct NetworkContextParams {
+@@ -661,6 +670,48 @@ struct NetworkContextParams {
    // do not have an associated `URLLoaderFactory`.
    pending_remote<URLLoaderNetworkServiceObserver>?
        device_bound_sessions_network_observer;
@@ -62,6 +62,14 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..b0b405f9b308772800cb384b4e7ba8fb
 +  // don't feed the network service's estimate, and its request scheduling
 +  // (ResourceScheduler) doesn't depend on it.
 +  [MinVersion=1] bool molt_no_network_quality_estimator = false;
++  // If true, the context answers every server's TLS client-certificate
++  // request with no certificate, at once (net::SSLClientContext::
++  // MoltSendNoClientCertificates()): no choice is remembered per host and
++  // port across top-level sites, and nothing is asked of the browser.
++  [MinVersion=1] bool molt_send_no_client_certificates = false;
++  // If true, ActivateDohProbes() starts no DNS-over-HTTPS probes for this
++  // context (they bypass its proxy).
++  [MinVersion=1] bool molt_no_doh_probes = false;
  };
  
  struct NetworkConditions {

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b1685811714d8b0553 100644
+index 66e2d0450518803f1531470045ffadc1412c497f..a11ae21f888cf878bec9786439de51e3b27d5cc3 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -665,6 +665,34 @@ void RemoveInvalidationFilterCallback(
@@ -66,7 +66,20 @@ index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b168581171
  
    InitializeCorsParams();
  
-@@ -2855,6 +2892,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+@@ -1114,6 +1151,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
+ void NetworkContext::ActivateDohProbes() {
+   DCHECK(url_request_context_->host_resolver());
+ 
++  // MoltBrowser: none for MoltNet's context. A DoH probe bypasses the
++  // context's proxy (Tor), and Tor resolves MoltNet's names.
++  if (params_ && params_->molt_no_doh_probes) {
++    return;
++  }
++
+   doh_probes_request_.reset();
+   doh_probes_request_ =
+       url_request_context_->host_resolver()->CreateDohProbeRequest();
+@@ -2855,6 +2898,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
    http_auth_merged_preferences_.set_http_auth_scheme_filter(
        base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                            base::Unretained(this)));
@@ -77,7 +90,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b168581171
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
-@@ -2894,9 +2935,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2894,9 +2941,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
  
      // Whether the cert verifier is remote or in-process, we should wrap it in
      // caching and coalescing layers to avoid extra verifications and IPCs.
@@ -94,7 +107,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b168581171
    }
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-@@ -2938,8 +2983,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2938,8 +2989,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      }
      builder.SetHttpAuthHandlerFactory(
          network_service_->CreateHttpAuthHandlerFactory(this));
@@ -109,7 +122,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b168581171
    }
    trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
  
-@@ -3209,6 +3258,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3209,6 +3264,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -121,7 +134,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b168581171
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3344,6 +3398,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3344,6 +3404,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  
@@ -129,6 +142,15 @@ index 66e2d0450518803f1531470045ffadc1412c497f..8594a38424790ae77496a2b168581171
 +  if (params_->molt_hsts_top_level_navigations_only) {
 +    result.url_request_context->transport_security_state()
 +        ->MoltSetUpgradeTopLevelNavigationsOnly();
++  }
++  // MoltBrowser: MoltNet sends no TLS client certificate and remembers no
++  // choice per server.
++  if (params_->molt_send_no_client_certificates) {
++    if (net::HttpNetworkSession* session =
++            result.url_request_context->http_transaction_factory()
++                ->GetSession()) {
++      session->ssl_client_context()->MoltSendNoClientCertificates();
++    }
 +  }
 +
    if (network_service_->pins_list_updated()) {

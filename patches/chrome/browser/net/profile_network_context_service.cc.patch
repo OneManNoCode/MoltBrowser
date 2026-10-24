@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
-index 028fe9924cdbfe586c8a0029ac27d53746f995ff..b82d202b93758ec443552109c4b6c4a82e57154d 100644
+index 028fe9924cdbfe586c8a0029ac27d53746f995ff..0352dd11d39de747187a9582b1296fb1d92e903d 100644
 --- a/chrome/browser/net/profile_network_context_service.cc
 +++ b/chrome/browser/net/profile_network_context_service.cc
 @@ -37,6 +37,8 @@
@@ -74,7 +74,7 @@ index 028fe9924cdbfe586c8a0029ac27d53746f995ff..b82d202b93758ec443552109c4b6c4a8
    network_context_params->cookie_manager_params =
        CreateCookieManagerParams(profile_, *cookie_settings_);
  
-@@ -1567,8 +1596,11 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+@@ -1567,15 +1596,21 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
    ContentSetting anti_abuse_content_setting =
        HostContentSettingsMapFactory::GetForProfile(profile_)
            ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);
@@ -87,3 +87,14 @@ index 028fe9924cdbfe586c8a0029ac27d53746f995ff..b82d202b93758ec443552109c4b6c4a8
  
    network_context_params->acam_preflight_spec_conformant =
        profile_->GetPrefs()->GetBoolean(
+           prefs::kAccessControlAllowMethodsInCORSPreflightSpecConformant);
+ 
++  // MoltBrowser: never in MoltNet (molt_net_network_context_policy.h).
+   network_context_params->device_bound_sessions_enabled =
+-      base::FeatureList::IsEnabled(net::features::kDeviceBoundSessions);
++      molt_ai::tor::DeviceBoundSessionsEnabledFor(
++          molt_ai::tor::IsMoltNetProfile(profile_),
++          base::FeatureList::IsEnabled(net::features::kDeviceBoundSessions));
+   // Restrict sessions on google.com and youtube.com so that we can run
+   // an experiment to understand their session's impact on Chrome's
+   // special cookie handling for these sites.

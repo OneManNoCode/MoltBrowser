@@ -1,0 +1,41 @@
+MoltBrowser patch for content/browser/network/browser_online_state_observer.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/network/browser_online_state_observer.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/network/browser_online_state_observer.cc b/content/browser/network/browser_online_state_observer.cc
+index 1ff8033756e879883067ba5fc6945b0c8c17d3e2..3f0c538d460e0785743e57127512fd9e19df319e 100644
+--- a/content/browser/network/browser_online_state_observer.cc
++++ b/content/browser/network/browser_online_state_observer.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "content/browser/network/browser_online_state_observer.h"
+ 
++#include "content/browser/network/molt_uniform_network_state.h"  // MoltBrowser
+ #include "content/common/renderer.mojom.h"
+ #include "content/public/browser/render_process_host.h"
+ 
+@@ -25,8 +26,9 @@ void BrowserOnlineStateObserver::OnMaxBandwidthChanged(
+     // TODO(crbug.com/40563310): Remove this check once we have a better
+     // way of iterating the hosts.
+     if (it.GetCurrentValue()->IsInitializedAndNotDead()) {
+-      it.GetCurrentValue()->GetRendererInterface()->OnNetworkConnectionChanged(
+-          type, max_bandwidth_mbps);
++      // MoltBrowser: uniform values for MoltNet's renderers.
++      MoltNotifyNetworkConnectionChanged(it.GetCurrentValue(), type,
++                                         max_bandwidth_mbps);
+     }
+   }
+ }
+@@ -37,8 +39,8 @@ void BrowserOnlineStateObserver::OnRenderProcessHostCreated(
+   net::NetworkChangeNotifier::ConnectionType connection_type;
+   net::NetworkChangeNotifier::GetMaxBandwidthAndConnectionType(
+       &max_bandwidth_mbps, &connection_type);
+-  rph->GetRendererInterface()->OnNetworkConnectionChanged(connection_type,
+-                                                          max_bandwidth_mbps);
++  // MoltBrowser: uniform values for MoltNet's renderers.
++  MoltNotifyNetworkConnectionChanged(rph, connection_type, max_bandwidth_mbps);
+ }
+ 
+ }  // namespace content
