@@ -31,6 +31,8 @@
 
 namespace {
 
+using molt_ai::tor::kTorConnLimit;
+using molt_ai::tor::kTorMaxClientCircuitsPending;
 using molt_ai::tor::TorrcOptions;
 
 std::string Field(FuzzedDataProvider* p, const char* typical) {
@@ -45,6 +47,7 @@ void CheckTorrc(const std::string& torrc, const TorrcOptions& options) {
       "Log",           "AvoidDiskWrites", "GeoIPFile",
       "GeoIPv6File",   "UseBridges",    "ClientTransportPlugin",
       "Bridge",        "ExitNodes",     "StrictNodes",
+      "ConnLimit",     "MaxClientCircuitsPending",
   };
   static const std::set<std::string> kRepeatable = {"ClientTransportPlugin",
                                                     "Bridge"};
@@ -75,9 +78,17 @@ void CheckTorrc(const std::string& torrc, const TorrcOptions& options) {
       CHECK(line == "SocksPort auto IsolateSOCKSAuth KeepAliveIsolateSOCKSAuth");
     }
     if (key == "ControlPort") CHECK(line == "ControlPort auto");
+    if (key == "ConnLimit") {
+      CHECK(line == "ConnLimit " + std::to_string(kTorConnLimit));
+    }
+    if (key == "MaxClientCircuitsPending") {
+      CHECK(line == "MaxClientCircuitsPending " +
+                        std::to_string(kTorMaxClientCircuitsPending));
+    }
   }
   CHECK(seen["SocksPort"] == 1 && seen["ControlPort"] == 1 &&
-        seen["CookieAuthentication"] == 1);
+        seen["CookieAuthentication"] == 1 && seen["ConnLimit"] == 1 &&
+        seen["MaxClientCircuitsPending"] == 1);
   size_t bridges = 0;
   for (size_t at = 0; (at = torrc.find("\nBridge ", at)) != std::string::npos;
        ++at) {
