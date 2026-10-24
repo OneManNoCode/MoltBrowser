@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "base/no_destructor.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -18,11 +19,14 @@
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_family.h"
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
+#include "third_party/blink/renderer/platform/fonts/font_selection_types.h"
 #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/skia/include/core/SkFontStyle.h"
 #include "third_party/skia/include/core/SkString.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 
@@ -233,24 +237,63 @@ std::optional<bool> IsSystemFontFamilyAvailable(
          nullptr;
 }
 
-bool AllowLocalFontFace(ExecutionContext* context,
-                        const FontDescription& font_description,
-                        const AtomicString& unique_name) {
-  const FontVisibility visibility = SystemFontVisibility(context);
-  if (!visibility.restricts()) {
-    return true;
-  }
-  // The lookup LocalFontFaceSource::CreateFontData() does. Unique names
-  // match exactly on every platform (no aliases), so the face's family alone
-  // decides.
-  const SimpleFontData* font_data = FontCache::Get().GetFontData(
-      font_description, unique_name, AlternateFontName::kLocalUniqueFace);
-  return font_data && IsVisible(visibility, *font_data);
+bool RestrictsLocalFontFaces(ExecutionContext* context) {
+  return SystemFontVisibility(context).restricts();
 }
 
-bool AllowInstalledFont(ExecutionContext* context,
-                        const SimpleFontData& font_data) {
-  return IsVisible(SystemFontVisibility(context), font_data);
+const SimpleFontData* GetLocalFontFaceData(
+    ExecutionContext* context,
+    const FontDescription& font_description,
+    const AtomicString& unique_name) {
+  const FontVisibility visibility = SystemFontVisibility(context);
+  if (!visibility.restricts()) {
+    return nullptr;  // Callers look the unique name up themselves.
+  }
+  const FontVisibility::LocalFaceRequest request =
+      visibility.ForLocalFaceRequest(ToFontName(unique_name));
+  FontCache& font_cache = FontCache::Get();
+  for (const FontVisibility::LocalFace& face : request.candidates()) {
+    // The family lookup CSS would do for this family and style. No
+    // alternate names: Blink's Arial-for-Helvetica substitutes are not this
+    // face's family.
+    FontDescription description(font_description);
+    if (face.styled) {
+      description.SetWeight(FontSelectionValue(face.weight));
+      description.SetStyle(face.italic ? kItalicSlopeValue : kNormalSlopeValue);
+      description.SetStretch(kNormalWidthValue);
+    }
+    const AtomicString family =
+        face.sampled()
+            ? AtomicString(unique_name.GetString().Left(
+                  base::checked_cast<wtf_size_t>(face.prefix_length)))
+            : AtomicString::FromUtf8(face.listed);
+    const SimpleFontData* font_data = font_cache.GetFontData(
+        description, family, AlternateFontName::kNoAlternate);
+    if (!font_data) {
+      continue;
+    }
+    const SkTypeface* typeface = font_data->PlatformData().Typeface();
+    if (!typeface) {
+      continue;
+    }
+    // The family it resolved to must be visible (as for any family lookup)
+    // and, for a name in the sample, the one asked for.
+    const TypefaceFamily resolved = FamilyOf(*typeface);
+    if (!resolved.named ||
+        !visibility.IsFamilyVisible(resolved.hash, resolved.allow_listed) ||
+        (face.sampled() && resolved.hash != face.family_hash)) {
+      continue;
+    }
+    // And a face of the style the name gives, not a neighbour the platform
+    // matched instead (or one Blink would make bold or italic itself).
+    const SkFontStyle style = typeface->fontStyle();
+    if (!face.StyleMatches(style.weight(),
+                           style.slant() != SkFontStyle::kUpright_Slant)) {
+      continue;
+    }
+    return font_data;
+  }
+  return nullptr;
 }
 
 bool AllowEnumeratedFont(ExecutionContext* context, std::string_view family) {

@@ -81,6 +81,111 @@ const FontListIndex& IndexFor(FontPlatform platform) {
   return index;
 }
 
+// Style words in local() names (FontVisibility::ForLocalFaceRequest), in
+// normalized form, longest first so the first match is the longest one.
+enum class StyleWordKind : uint8_t { kWeight, kSlope, kSuffixMT, kSuffixPS };
+struct StyleWord {
+  std::string_view text;
+  StyleWordKind kind;
+  uint16_t weight = 0;  // kWeight: what to ask for ...
+  uint16_t min_weight = 0;  // ... and the face weights it names.
+  uint16_t max_weight = 0;
+};
+constexpr StyleWord kStyleWords[] = {
+    {"extralight", StyleWordKind::kWeight, 200, 200, 200},
+    {"ultralight", StyleWordKind::kWeight, 200, 200, 200},
+    {"extrablack", StyleWordKind::kWeight, 950, 950, 1000},
+    {"ultrablack", StyleWordKind::kWeight, 950, 950, 1000},
+    {"semilight", StyleWordKind::kWeight, 350, 350, 350},
+    {"demilight", StyleWordKind::kWeight, 350, 350, 350},
+    {"extrabold", StyleWordKind::kWeight, 800, 800, 800},
+    {"ultrabold", StyleWordKind::kWeight, 800, 800, 800},
+    {"hairline", StyleWordKind::kWeight, 100, 100, 100},
+    {"semibold", StyleWordKind::kWeight, 600, 600, 600},
+    {"demibold", StyleWordKind::kWeight, 600, 600, 600},
+    {"regular", StyleWordKind::kWeight, 400, 400, 400},
+    {"oblique", StyleWordKind::kSlope},
+    {"normal", StyleWordKind::kWeight, 400, 400, 400},
+    {"medium", StyleWordKind::kWeight, 500, 500, 500},
+    {"italic", StyleWordKind::kSlope},
+    {"light", StyleWordKind::kWeight, 300, 300, 300},
+    {"roman", StyleWordKind::kWeight, 400, 400, 400},
+    {"plain", StyleWordKind::kWeight, 400, 400, 400},
+    {"heavy", StyleWordKind::kWeight, 900, 800, 900},
+    {"black", StyleWordKind::kWeight, 900, 900, 900},
+    {"thin", StyleWordKind::kWeight, 100, 100, 100},
+    {"book", StyleWordKind::kWeight, 400, 350, 400},
+    {"demi", StyleWordKind::kWeight, 600, 600, 600},
+    {"bold", StyleWordKind::kWeight, 700, 700, 700},
+    {"it", StyleWordKind::kSlope},
+    {"mt", StyleWordKind::kSuffixMT},
+    {"ps", StyleWordKind::kSuffixPS},
+};
+
+bool IsStyleWordSeparator(char32_t c) {
+  return c == '-' || c == '_';
+}
+
+// Reads `rest` (normalized code points after the family) as style words
+// into `face`; false if anything else is there.
+bool ReadStyleWords(base::span<const char32_t> rest,
+                    FontVisibility::LocalFace& face) {
+  face.styled = !rest.empty();
+  bool weight = false;
+  bool slope = false;
+  bool suffix_mt = false;
+  bool suffix_ps = false;
+  size_t i = 0;
+  while (i < rest.size()) {
+    if (IsStyleWordSeparator(rest[i])) {
+      ++i;
+      continue;
+    }
+    const StyleWord* match = nullptr;
+    for (const StyleWord& word : kStyleWords) {
+      if (rest.size() - i < word.text.size()) {
+        continue;
+      }
+      bool equal = true;
+      for (size_t k = 0; k < word.text.size() && equal; ++k) {
+        equal = rest[i + k] == static_cast<char32_t>(word.text[k]);
+      }
+      if (equal) {
+        match = &word;
+        break;
+      }
+    }
+    if (!match) {
+      return false;
+    }
+    bool* seen = nullptr;
+    switch (match->kind) {
+      case StyleWordKind::kWeight:
+        seen = &weight;
+        face.weight = match->weight;
+        face.min_weight = match->min_weight;
+        face.max_weight = match->max_weight;
+        break;
+      case StyleWordKind::kSlope:
+        seen = &slope;
+        face.italic = true;
+        break;
+      case StyleWordKind::kSuffixMT:
+        seen = &suffix_mt;
+        break;
+      case StyleWordKind::kSuffixPS:
+        seen = &suffix_ps;
+        break;
+    }
+    if (*seen) {
+      return false;
+    }
+    *seen = true;
+    i += match->text.size();
+  }
+  return true;
+}
+
 }  // namespace
 
 // Decodes a FontName into normalized code points: ASCII letters lower-cased,
@@ -88,6 +193,10 @@ const FontListIndex& IndexFor(FontPlatform platform) {
 class NormalizedFontNameReader {
  public:
   explicit NormalizedFontNameReader(const FontName& name) : name_(name) {}
+
+  // The bytes (UTF-8, Latin-1) or code units (UTF-16) read so far: after
+  // Next() returned a code point, where it ends.
+  size_t position() const { return pos_; }
 
   // Stores the next normalized code point in `out`; false at the end.
   bool Next(char32_t& out) {
@@ -274,6 +383,15 @@ bool FontName::IsEmpty() const {
   return !reader.Next(c);
 }
 
+FontName FontName::Prefix(size_t length) const {
+  if (encoding_ == Encoding::kUtf16) {
+    return FontName(encoding_, {},
+                    units_.first(std::min(length, units_.size())));
+  }
+  return FontName(encoding_, bytes_.first(std::min(length, bytes_.size())),
+                  {});
+}
+
 const FontListEntry* FindInFontList(FontPlatform platform,
                                     const FontName& name,
                                     uint64_t hash) {
@@ -360,6 +478,75 @@ bool FontVisibility::IsFamilyVisible(uint64_t family_hash,
 bool FontVisibility::IsSampled(uint64_t hash) const {
   return access_ == Access::kAllowListAndSample && farbler_ &&
          farbler_->Prf(kDomainFontSample, hash) % kExtraFontOneIn == 0;
+}
+
+bool FontVisibility::LocalFace::StyleMatches(int face_weight,
+                                             bool face_italic) const {
+  return !styled || (face_weight >= min_weight && face_weight <= max_weight &&
+                     face_italic == italic);
+}
+
+FontVisibility::LocalFaceRequest FontVisibility::ForLocalFaceRequest(
+    const FontName& unique_name) const {
+  LocalFaceRequest request;
+  if (!restricts()) {
+    return request;
+  }
+  // The normalized code points, where each ends in `unique_name`, and the
+  // hash of the name up to and including it (FontName::Hash() of that
+  // prefix).
+  std::array<char32_t, kMaxLocalFaceNameLength> code_points{};
+  std::array<size_t, kMaxLocalFaceNameLength> ends{};
+  std::array<uint64_t, kMaxLocalFaceNameLength> hashes{};
+  size_t length = 0;
+  NormalizedFontNameReader reader(unique_name);
+  uint64_t hash = kFnvOffsetBasis;
+  char32_t c = 0;
+  while (reader.Next(c)) {
+    if (length == kMaxLocalFaceNameLength) {
+      return request;  // No face has a name that long.
+    }
+    hash ^= c;
+    hash *= kFnvPrime;
+    code_points[length] = c;
+    ends[length] = reader.position();
+    hashes[length] = hash;
+    ++length;
+  }
+  const base::span<const char32_t> name =
+      base::span<const char32_t>(code_points).first(length);
+  // Longest family first: "DejaVu Sans Condensed Bold" is DejaVu Sans
+  // Condensed's bold face.
+  for (size_t family_length = length;
+       family_length > 0 && request.size < kMaxLocalFaceCandidates;
+       --family_length) {
+    LocalFace face;
+    if (!ReadStyleWords(name.subspan(family_length), face)) {
+      continue;
+    }
+    const size_t end = ends[family_length - 1];
+    const uint64_t family_hash = hashes[family_length - 1];
+    const FontName family = unique_name.Prefix(end);
+    // Blink's name for the platform UI font, not a face.
+    if (family.Equals(FontName::Utf8("system-ui"))) {
+      continue;
+    }
+    const FontListEntry* entry = FindInFontList(platform_, family, family_hash);
+    if (entry && entry->alias_of.empty()) {
+      face.listed = entry->name;
+    } else if (IsSampled(family_hash)) {
+      // A sampled name, or an alias in the sample (which CSS looks up as
+      // is, ForFamilyRequest()).
+      face.prefix_length = end;
+    } else {
+      // Hidden, or an alias outside the sample: CSS would look up the
+      // listed family instead, which is not this face's family.
+      continue;
+    }
+    face.family_hash = family_hash;
+    request.faces[request.size++] = face;
+  }
+  return request;
 }
 
 }  // namespace blink::molt_fingerprinting

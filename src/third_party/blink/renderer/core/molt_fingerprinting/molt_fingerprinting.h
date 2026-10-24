@@ -37,9 +37,10 @@
 //                 CSSFontSelectorBase               -> GetSystemFontData
 //            CSSFontSelectorBase::IsPlatformFamilyMatchAvailable
 //              (document.fonts.check())    -> IsSystemFontFamilyAvailable
-//            LocalFontFaceSource::IsLocalFontAvailable,
-//              CreateFontData                       -> AllowLocalFontFace,
-//                                                      AllowInstalledFont
+//            LocalFontFaceSource::IsLocalNonBlocking,
+//              IsLocalFontAvailable, CreateFontData
+//                                          -> RestrictsLocalFontFaces,
+//                                             GetLocalFontFaceData
 //            FontAccess::DidGetEnumerationResponse -> AllowEnumeratedFont
 //            (all in system_fonts.h)
 //   MoltNet  MediaValues::CalculateDeviceWidth/Height -> UniformScreenRect;

@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -386,6 +387,247 @@ TEST(MoltFontVisibilityTest, UniformIgnoresTheKey) {
               two.ForFamilyRequest(Utf8(name)).kind);
     EXPECT_FALSE(one.IsFamilyVisible(Utf8(name)));
   }
+}
+
+// The family lookups local(`name`) makes, as "family|weight|italic" (or
+// "family" when the name has no style words; sampled families are given as
+// "sampled:<prefix>").
+std::vector<std::string> LocalLookups(const FontVisibility& visibility,
+                                      std::string_view name) {
+  std::vector<std::string> out;
+  const FontName font_name = Utf8(name);
+  const FontVisibility::LocalFaceRequest request =
+      visibility.ForLocalFaceRequest(font_name);
+  for (const FontVisibility::LocalFace& face : request.candidates()) {
+    std::string family =
+        face.sampled()
+            ? "sampled:" + std::string(name.substr(0, face.prefix_length))
+            : std::string(face.listed);
+    EXPECT_EQ(face.family_hash,
+              face.sampled() ? font_name.Prefix(face.prefix_length).Hash()
+                             : Utf8(face.listed).Hash())
+        << name;
+    if (face.styled) {
+      family += "|" + std::to_string(face.weight) + "|" +
+                (face.italic ? "italic" : "upright");
+    }
+    out.push_back(family);
+  }
+  return out;
+}
+
+using Lookups = std::vector<std::string>;
+
+TEST(MoltLocalFaceTest, ListedFamiliesAndStyleWords) {
+  const FontVisibility linux = FontVisibility::AllowList(FontPlatform::kLinux);
+  // Full names and PostScript names of listed families' faces.
+  EXPECT_EQ(LocalLookups(linux, "DejaVu Sans"), Lookups({"DejaVu Sans"}));
+  EXPECT_EQ(LocalLookups(linux, "DejaVuSans"), Lookups({"DejaVu Sans"}));
+  EXPECT_EQ(LocalLookups(linux, "DejaVu Sans Bold"),
+            Lookups({"DejaVu Sans|700|upright"}));
+  EXPECT_EQ(LocalLookups(linux, "DejaVuSans-BoldOblique"),
+            Lookups({"DejaVu Sans|700|italic"}));
+  EXPECT_EQ(LocalLookups(linux, "DejaVu Sans ExtraLight"),
+            Lookups({"DejaVu Sans|200|upright"}));
+  EXPECT_EQ(LocalLookups(linux, "LiberationSans-Italic"),
+            Lookups({"Liberation Sans|400|italic"}));
+  EXPECT_EQ(LocalLookups(linux, "liberation serif regular"),
+            Lookups({"Liberation Serif|400|upright"}));
+  // The longest listed family first.
+  EXPECT_EQ(LocalLookups(linux, "DejaVu Sans Condensed Bold"),
+            Lookups({"DejaVu Sans Condensed|700|upright"}));
+  EXPECT_EQ(LocalLookups(linux, "DejaVuSansCondensed"),
+            Lookups({"DejaVu Sans Condensed"}));
+
+  const FontVisibility windows =
+      FontVisibility::AllowList(FontPlatform::kWindows);
+  EXPECT_EQ(LocalLookups(windows, "Segoe UI Semibold"),
+            Lookups({"Segoe UI Semibold", "Segoe UI|600|upright"}));
+  EXPECT_EQ(LocalLookups(windows, "ArialMT"), Lookups({"Arial|400|upright"}));
+  EXPECT_EQ(LocalLookups(windows, "Arial-BoldItalicMT"),
+            Lookups({"Arial|700|italic"}));
+  EXPECT_EQ(LocalLookups(windows, "Arial Black"),
+            Lookups({"Arial Black", "Arial|900|upright"}));
+  EXPECT_EQ(LocalLookups(windows, "Arial Black Italic"),
+            Lookups({"Arial Black|400|italic", "Arial|900|italic"}));
+  EXPECT_EQ(LocalLookups(windows, "Calibri Light Italic"),
+            Lookups({"Calibri Light|400|italic", "Calibri|300|italic"}));
+}
+
+TEST(MoltLocalFaceTest, NothingElseIsLookedUp) {
+  for (const FontPlatform platform : kPlatforms) {
+    const FontVisibility visibility = FontVisibility::AllowList(platform);
+    for (std::string_view name :
+         {"", " ", "-", "Bold", "Ubuntu", "Ubuntu Bold", "Cantarell-Regular",
+          "Probe Font 7", "system-ui", "system-ui Bold", "DejaVu",
+          "Times New Roman PS Std Bold"}) {
+      EXPECT_EQ(LocalLookups(visibility, name), Lookups()) << name;
+    }
+  }
+  const FontVisibility linux = FontVisibility::AllowList(FontPlatform::kLinux);
+  for (std::string_view name : {
+           // Width words are not style words: a hidden narrow family is
+           // never looked up through a listed one.
+           "Liberation Sans Narrow", "LiberationSansNarrow-Bold",
+           "DejaVu Sans Wide",
+           // Each kind of word once; nothing else after the family.
+           "DejaVu Sans Bold Bold", "DejaVu Serif Light Bold",
+           "DejaVu Sans Italic Oblique", "DejaVuSans-BoldMTMT",
+           "DejaVu Sans Bold 2", "DejaVu Sans.Bold", "DejaVu Sans Boldx",
+           // Aliases name no face: local() doesn't resolve them to the
+           // listed family CSS looks up instead.
+           "Arial", "Arial Bold", "Helvetica", "TimesNewRomanPSMT",
+           "Courier New Bold"}) {
+    EXPECT_EQ(LocalLookups(linux, name), Lookups()) << name;
+  }
+  // Windows' Office fonts aren't listed.
+  const FontVisibility windows =
+      FontVisibility::AllowList(FontPlatform::kWindows);
+  for (std::string_view name :
+       {"Arial Narrow", "Arial Narrow Bold", "ArialNarrow-Bold",
+        "Arial Rounded MT Bold", "Franklin Gothic Book",
+        "Franklin Gothic Medium Cond"}) {
+    EXPECT_EQ(LocalLookups(windows, name), Lookups()) << name;
+  }
+}
+
+TEST(MoltLocalFaceTest, StyleWords) {
+  const FontVisibility linux = FontVisibility::AllowList(FontPlatform::kLinux);
+  const std::vector<std::pair<std::string_view, int>> weights = {
+      {"Thin", 100},      {"Hairline", 100},  {"ExtraLight", 200},
+      {"UltraLight", 200}, {"Light", 300},    {"SemiLight", 350},
+      {"DemiLight", 350}, {"Book", 400},      {"Regular", 400},
+      {"Normal", 400},    {"Roman", 400},     {"Plain", 400},
+      {"Medium", 500},    {"SemiBold", 600},  {"DemiBold", 600},
+      {"Demi", 600},      {"Bold", 700},      {"ExtraBold", 800},
+      {"UltraBold", 800}, {"Heavy", 900},     {"Black", 900},
+      {"ExtraBlack", 950}, {"UltraBlack", 950}};
+  for (const auto& [word, weight] : weights) {
+    for (std::string_view slope : {"", "Italic", "It", "Oblique"}) {
+      for (std::string_view separator : {" ", "-", "_", ""}) {
+        const std::string name = "Noto Serif" + std::string(separator) +
+                                 std::string(word) + std::string(slope);
+        const auto request = linux.ForLocalFaceRequest(Utf8(name));
+        ASSERT_EQ(request.size, 1u) << name;
+        const FontVisibility::LocalFace& face = request.faces[0];
+        EXPECT_EQ(face.listed, "Noto Serif");
+        EXPECT_TRUE(face.styled);
+        EXPECT_EQ(face.weight, weight) << name;
+        EXPECT_EQ(face.italic, !slope.empty()) << name;
+        // Slope first works too.
+        const std::string swapped = "Noto Serif" + std::string(separator) +
+                                    std::string(slope) + std::string(word);
+        EXPECT_EQ(LocalLookups(linux, swapped), LocalLookups(linux, name))
+            << swapped;
+      }
+    }
+  }
+  // Faces of the style the name gives.
+  FontVisibility::LocalFace bold;
+  bold.styled = true;
+  bold.weight = bold.min_weight = bold.max_weight = 700;
+  EXPECT_TRUE(bold.StyleMatches(700, false));
+  EXPECT_FALSE(bold.StyleMatches(600, false));
+  EXPECT_FALSE(bold.StyleMatches(400, false));
+  EXPECT_FALSE(bold.StyleMatches(700, true));
+  const FontVisibility::LocalFace book =
+      linux.ForLocalFaceRequest(Utf8("DejaVu Sans Book")).faces[0];
+  EXPECT_TRUE(book.StyleMatches(350, false));
+  EXPECT_TRUE(book.StyleMatches(400, false));
+  EXPECT_FALSE(book.StyleMatches(300, false));
+  const FontVisibility::LocalFace plain =
+      linux.ForLocalFaceRequest(Utf8("DejaVu Sans")).faces[0];
+  EXPECT_FALSE(plain.styled);
+  EXPECT_TRUE(plain.StyleMatches(100, true));  // The family's own pick.
+  const FontVisibility::LocalFace suffix_only =
+      linux.ForLocalFaceRequest(Utf8("DejaVuSans-MT")).faces[0];
+  EXPECT_TRUE(suffix_only.styled);
+  EXPECT_TRUE(suffix_only.StyleMatches(400, false));
+  EXPECT_FALSE(suffix_only.StyleMatches(700, false));
+}
+
+TEST(MoltLocalFaceTest, SampledFamilies) {
+  const std::vector<std::string> names = SyntheticNames(2000);
+  for (uint8_t key_byte = 1; key_byte < 5; ++key_byte) {
+    const FontVisibility farble = FontVisibility::AllowListAndSample(
+        FontPlatform::kLinux, Farbler(KeyFromByte(key_byte)));
+    size_t sampled_count = 0;
+    for (const std::string& family : names) {
+      const bool sampled = farble.IsSampled(Utf8(family).Hash());
+      sampled_count += sampled;
+      // The family itself, and its faces by style words.
+      const Lookups expected =
+          sampled ? Lookups({"sampled:" + family}) : Lookups();
+      EXPECT_EQ(LocalLookups(farble, family), expected) << family;
+      const std::string bold = family + "-BoldItalic";
+      const Lookups lookups = LocalLookups(farble, bold);
+      if (sampled) {
+        ASSERT_FALSE(lookups.empty()) << bold;
+        EXPECT_EQ(lookups.back(), "sampled:" + family + "|700|italic");
+      }
+      // Whatever is looked up, CSS would look up as is.
+      const FontVisibility::LocalFaceRequest request =
+          farble.ForLocalFaceRequest(Utf8(bold));
+      for (const FontVisibility::LocalFace& face : request.candidates()) {
+        const FontName looked_up =
+            face.sampled() ? Utf8(bold).Prefix(face.prefix_length)
+                           : Utf8(face.listed);
+        EXPECT_EQ(farble.ForFamilyRequest(looked_up).kind,
+                  FontVisibility::Request::Kind::kLookUp)
+            << bold;
+      }
+    }
+    EXPECT_GT(sampled_count, 0u);
+  }
+  // kAllowList (MoltNet, random keys) samples nothing.
+  const FontVisibility uniform =
+      FontVisibility::AllowList(FontPlatform::kLinux);
+  for (const std::string& family : names) {
+    EXPECT_EQ(LocalLookups(uniform, family + " Bold"), Lookups()) << family;
+  }
+}
+
+TEST(MoltLocalFaceTest, EncodingsLengthsAndAll) {
+  const FontVisibility linux = FontVisibility::AllowList(FontPlatform::kLinux);
+  // The same answers in Latin-1 and UTF-16, with prefix lengths in their
+  // units.
+  const std::u16string utf16 = u"DejaVuSans-Bold";
+  const std::string latin1 = "DejaVuSans-Bold";
+  const auto a = linux.ForLocalFaceRequest(FontName::Utf16(base::span(utf16)));
+  const auto b = linux.ForLocalFaceRequest(
+      FontName::Latin1(base::as_byte_span(latin1)));
+  ASSERT_EQ(a.size, 1u);
+  ASSERT_EQ(b.size, 1u);
+  EXPECT_EQ(a.faces[0].listed, b.faces[0].listed);
+  EXPECT_EQ(a.faces[0].weight, b.faces[0].weight);
+
+  // Names longer than any face's are never looked up.
+  std::string long_name = "DejaVu Sans";
+  while (long_name.size() < kMaxLocalFaceNameLength) {
+    long_name += " ";  // Whitespace doesn't count.
+  }
+  EXPECT_EQ(LocalLookups(linux, long_name), Lookups({"DejaVu Sans"}));
+  long_name = "DejaVuSans-Bold" + std::string(kMaxLocalFaceNameLength, '-');
+  EXPECT_EQ(LocalLookups(linux, long_name), Lookups());
+  long_name = "DejaVuSans-Bold" +
+              std::string(kMaxLocalFaceNameLength - 15, '-');
+  EXPECT_EQ(LocalLookups(linux, long_name), Lookups({"DejaVu Sans|700|upright"}));
+
+  // At most kMaxLocalFaceCandidates lookups.
+  for (const FontPlatform platform : kPlatforms) {
+    const FontVisibility visibility = FontVisibility::AllowList(platform);
+    for (const FontListEntry& entry : FontListFor(platform)) {
+      EXPECT_LE(visibility.ForLocalFaceRequest(Utf8(std::string(entry.name) +
+                                                    " Bold Italic"))
+                    .size,
+                kMaxLocalFaceCandidates);
+    }
+  }
+
+  // A context that sees every font gets nothing: the caller looks the
+  // unique name up as Chromium does.
+  EXPECT_EQ(FontVisibility::All().ForLocalFaceRequest(Utf8("DejaVu Sans")).size,
+            0u);
 }
 
 TEST(MoltFontVisibilityTest, CurrentPlatform) {
