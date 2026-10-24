@@ -80,6 +80,10 @@ SUBPROJECTS = {
     # media_capabilities.cc includes).
     "third_party/libwebm/source": ("https://github.com/webmproject/libwebm",
                                    "", None),
+    # media/video/vpx_video_encoder.h (MediaRecorder's software encoder,
+    # which video_track_recorder.cc creates).
+    "third_party/libvpx/source/libvpx": (
+        "https://github.com/webmproject/libvpx", "", None),
     # GitHub's mirror stops at older release branches; this GitLab mirror
     # carries chromium/<branch> (the pinned M152 commit among them).
     "third_party/pdfium": (("https://github.com/chromium/pdfium",
@@ -104,6 +108,9 @@ SUBPROJECTS = {
     "third_party/libc++/src": (None, "", None),
     "third_party/libc++abi/src": (None, "", None),
     "third_party/icu": (None, "", None),
+    # media/video/av1_video_encoder.h (MediaRecorder's AV1 encoder, which
+    # video_track_recorder.cc creates): aomedia.googlesource.com only.
+    "third_party/libaom/source/libaom": (None, "", None),
 }
 
 # Stand-ins for when neither a mirror nor a tarball has the pinned tree
