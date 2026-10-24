@@ -491,6 +491,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   played before, and WebCodecs uses MoltBrowser's own software codecs, so
   `"prefer-hardware"` isn't supported in MoltNet windows. Regular and
   incognito windows are unchanged.
+- **Recordings, `local()` fonts and storage limits.** MediaRecorder in
+  MoltNet pages records with MoltBrowser's own software encoders (VP8, or
+  VP9 for MP4), threaded for the 4 cores MoltNet reports, never with your
+  graphics hardware. Wherever fingerprinting protection is on, a
+  `@font-face` `local()` font is found only through the font families the
+  page may already name, so an installed font the page can't see costs
+  exactly what a missing one does. And a MoltNet site can store at most
+  200 MiB (600 MiB for all sites, 800 MiB of blobs) on every machine,
+  instead of limits that follow your memory. Regular and incognito windows
+  keep Chromium's recording and storage limits.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
