@@ -395,6 +395,10 @@ back/forward, and a MoltNet window with Shields off.
 | `AudioBuffer.getChannelData()`, `copyFromChannel()` (incl. `OfflineAudioContext` results and `ScriptProcessorNode`'s `inputBuffer`/`outputBuffer`) | farbled | farbled | `audio_buffer.cc` (binding entry points only) |
 | `AudioWorkletProcessor.process()` `inputs` | farbled | farbled | `audio_worklet_processor.cc`: `CopyPortToArrayBuffers` |
 | `AnalyserNode.get{Float,Byte}{Frequency,TimeDomain}Data()` | farbled | farbled | `analyser_node.cc` |
+| Web Audio's output device: `AudioContext.sampleRate` (no rate given), `baseLatency`, `outputLatency`, `getOutputTimestamp()`, `playbackStats`, `destination.maxChannelCount`, `createScriptProcessor()`'s default size | the device's | **one 48 kHz stereo device** with a 10 ms buffer and a 24 ms output latency; the context runs at 48 kHz ([details](#moltnet-audio-drm-and-media-capabilities)) | `audio_context.cc`: `Create`, `outputLatency`, `getOutputTimestamp`, `HandlePreRenderTasks`; `realtime_audio_destination_handler.cc` |
+| `requestMediaKeySystemAccess()`, `MediaKeys`, Media Capabilities with a `keySystemConfiguration` | the build's and the system's key systems (Clear Key in MoltBrowser's builds) | **none**: `NotSupportedError` | `encrypted_media_utils.cc`: `GetEncryptedMediaClientFromLocalDOMWindow` |
+| `mediaCapabilities.decodingInfo()` / `encodingInfo()` | the build's decoders, then the decode history and the GPU | video: the build's decoders, **smooth**, **not power efficient**; `"webrtc"` **unsupported** | `media_capabilities.cc`: `decodingInfo`, `encodingInfo`, `GetPerfInfo` |
+| WebCodecs: `isConfigSupported()` / `configure()` with `"prefer-hardware"`, the decoder or encoder used | the GPU's codecs | **software codecs only**; `"prefer-hardware"` unsupported | `gpu_factories_retriever.cc`, `video_decoder_broker.cc` |
 | `navigator.hardwareConcurrency` (window and workers) | per site, in [2, real] | **4** | `navigator_base.cc`: `hardwareConcurrency` |
 | `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **8**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
 | `navigator.connection` (`effectiveType`, `rtt`, `downlink`, `saveData`; window and workers) and its `change` event; what Blink decides from the network quality (lazy-loading distances, the slow-network font and `document.write()` measures, media preload); request scheduling | the browser's estimate (`rtt` and `downlink` with a per-site factor) | **4g**, **200**, **1.6**, **false**, never changes; scheduling as on 4g ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.{h,cc}`: `SetUniformNetworkState`; network service: `network_context.cc` |
@@ -1990,6 +1994,294 @@ loads heavily. **Automated** by [`tools/leak_test`](LEAK_TESTING.md):
 `navigator.connection` in a MoltNet window and in a dedicated worker, and
 no `change` event while the page runs.
 
+## MoltNet: audio, DRM and media capabilities
+
+Three media APIs answered from the machine itself: Web Audio from the
+output device (its sample rate, buffer, channels and delay), Encrypted
+Media Extensions from the content decryption modules (CDMs) the build and
+the operating system offer, and Media Capabilities and WebCodecs from the
+video decoders and encoders, including the GPU's, and from the profile's
+decode history. In MoltNet windows all three now describe the same media
+hardware for every user:
+
+| What a page reads | Before, in MoltNet | Now |
+|---|---|---|
+| `AudioContext.sampleRate` when the page gives no `sampleRate` | the output device's rate (44.1, 48, 96 kHz, ...) | **48000**; the context really runs at 48 kHz |
+| `baseLatency`, for each `latencyHint` | the device's buffer over its rate (256 frames on macOS, 480 on Windows, 512 with PulseAudio, more with Bluetooth) | the uniform device's: **0.01** for `"interactive"` and `"balanced"`, **1024/48000** for `"playback"`, and Chromium's rule for a number ([below](#web-audios-output-device)) |
+| `createScriptProcessor()` with no buffer size | four device buffers, rounded to a power of two | **2048** (4096 for `"playback"`) |
+| `outputLatency` | the device's output delay (100 ms and more with Bluetooth) in 8 ms steps, 1 ms steps once the page may use the microphone | **0.024** |
+| `getOutputTimestamp()` | the device's delay and its clock | **{0, 0}** until something has been rendered, then `currentTime` minus 24 ms, heard now |
+| `playbackStats` (latency, underruns) | the device's delay to 0.1 ms (5 µs when cross-origin isolated); the system's glitches | **24 ms**; **no underruns** |
+| `destination.maxChannelCount` | the device's channels (1, 2, 6, 8, ...) | **2**; a `channelCount` above 2 throws `IndexSizeError` |
+| `renderSizeHint: "hardware"` | 128 at 156 (no device value is read) | **128**, pinned |
+| `requestMediaKeySystemAccess()`; Media Capabilities with a `keySystemConfiguration` | Clear Key (and, in builds that have them, which Widevine or PlayReady version, robustness levels and hardware-secure decoding the machine has) | **`NotSupportedError`**, every key system; `{supported: false}` |
+| `mediaCapabilities.decodingInfo()` for video | supported from the decoders, then `smooth` and `powerEfficient` from the decode history and the GPU's decoders | **supported** when the build has its own decoder, **smooth**, **not power efficient** |
+| `decodingInfo()` and `encodingInfo()` for `"webrtc"` | the machine's WebRTC codecs, hardware ones included | **unsupported** (WebRTC is off in MoltNet) |
+| WebCodecs `isConfigSupported()` and `configure()` with `hardwareAcceleration: "prefer-hardware"`; which decoder or encoder runs otherwise | the GPU's decoders and encoders (and macOS's H.264 encoder) | **not supported**; always the build's software codecs |
+
+Normal and Incognito windows keep Chromium's behaviour: there these values
+can't vary per site without breaking audio and video, and a fixed value
+would only make a user look like other MoltBrowser users. MoltNet ignores
+Shields off, as elsewhere, and the kill switch turns all of it off.
+
+### Web Audio's output device
+
+**Where 156 gets the values.** An `AudioContext` opens an output stream
+through content's `RendererWebAudioDeviceImpl`, which reads the device's
+parameters (rate, channels, buffer size and its limits) and derives the
+stream's callback buffer from them and the `latencyHint`
+(`GetOutputBufferSize`). `sampleRate` is the device's rate unless the page
+gave one; `baseLatency` is the callback buffer (or the render quantum, if
+longer) over the rate; `createScriptProcessor()` sizes a default
+ScriptProcessorNode from the callback buffer; `maxChannelCount` is the
+device's channel count; `outputLatency`, `getOutputTimestamp()` and
+`playbackStats` follow the delay the device reports with each callback.
+
+**What MoltNet does.**
+
+* `AudioContext::Create` runs a context at **48 kHz** when the page gives
+  no rate, as if the page had asked for it, and renders
+  `renderSizeHint: "hardware"` in Chromium's default 128 frames (156 reads
+  no device value there either; the pin keeps a later Chromium that does
+  from showing it). A rate, latency hint or render quantum the page chooses
+  is its own choice and is kept.
+* `RealtimeAudioDestinationHandler` reports the callback buffer of one
+  uniform device (`GetCallbackBufferSize`, `GetFramesPerBuffer`), so
+  `baseLatency` and the default ScriptProcessorNode size describe it, and a
+  maximum of **2** channels, which `channelCount` is checked against.
+* `outputLatency` is **24 ms**; `getOutputTimestamp()` is `{0, 0}` until
+  the context has rendered anything, then the frame rendered 24 ms ago,
+  heard now; `playbackStats` sees a 24 ms delay and no underruns for every
+  rendered buffer (they are still only collected while the page is
+  visible).
+
+**The uniform device** (`moltnet_media_values.h`): 48 kHz, stereo, a
+480-frame (10 ms) buffer and a 24 ms output latency. The context's callback
+buffer is derived from it exactly as Chromium derives it from a device
+without buffer limits of its own: the 10 ms at the context's rate for
+`"interactive"` and `"balanced"`, 20 ms rounded up to a power of two
+(1024 frames at 48 kHz) but at least the 10 ms for `"playback"`, and for a
+number the frames it asks for, at least 128 and the 10 ms unless it asks
+for 128 or fewer, rounded up to 128 frames, at most 8192.
+
+* **48 kHz** is what nearly every output device runs at today (Windows'
+  and PipeWire's default, the built-in speakers of current Macs, HDMI and
+  USB interfaces), Chromium's own rate when it can't read a device, and the
+  rate of Opus and of WebRTC audio, so most MoltNet users need no
+  resampling at all.
+* **480 frames** is Windows' shared-mode period and the buffer Chromium
+  falls back to when it can't read a device.
+* **24 ms** is a 10 ms device with double buffering and a few milliseconds
+  of converter latency, and it is on the 8 ms grid Chromium rounds
+  `outputLatency` to, so it reads the same with or without microphone
+  permission.
+* **Stereo**: what almost every device offers and what Tor Browser reports.
+
+**Running at 48 kHz, and what it costs.** Since 156 Chromium opens the
+renderer's stream at the context's rate when a page asks for one
+(`WebAudioRemoveAudioDestinationResampler`, on by default on desktop), and
+the audio service converts it to the device's rate with its
+`SincResampler`, as it already does for every page that picks a rate. On a
+48 kHz device nothing changes. On another device the conversion costs, per
+second of stereo audio, measured on the 2.1 GHz Xeon VM this was developed
+on with 156's resampler loop and convolutions (64 taps, 10 ms requests,
+`-O2`): 2.1 ms of CPU to 44.1 kHz, 3.2 ms to 96 kHz and 5.6 ms to 192 kHz
+with AVX2 (0.2-0.6% of a core); 2.8, 4.7 and 8.7 ms with SSE; 5.0, 9.6 and
+17.8 ms without SIMD. It only runs while a context plays. It adds the
+filter's delay (32 frames, under 1 ms) and at most one 10 ms request of
+buffering (an estimate, not measured). The sound is the same resampled
+audio any page that asks for 48 kHz already gets.
+
+**Tor Browser** (Firefox's resistFingerprinting mode, checked in Firefox's
+current sources) reports 44.1 kHz, `baseLatency` 0 (always, in Firefox),
+an `outputLatency` fixed per OS (25 ms on Linux, 40 ms on Windows, 512
+frames on macOS), 2 channels, and `getOutputTimestamp()` derived from
+`currentTime` and `performance.now()` minus that latency. Firefox has no
+`latencyHint`, `sinkId`, `renderSizeHint` or `playbackStats`. MoltNet
+matches it on the channels and on deriving the timestamp from a fixed
+latency, and not on the rest: a page tells Chromium from Firefox in many
+other ways, so what matters is that MoltNet users all answer alike, and
+48 kHz spares most of them the resampler that 44.1 kHz would cost.
+
+**`sinkId` and `setSinkId()`** are unchanged. Output device IDs only reach
+a page once it has a media permission (Chromium hides them, and lists one
+device per kind, before that), and they are salted per site and per
+MoltNet identity. Before that, `setSinkId("")` succeeds and every other ID
+is `NotFoundError` for everyone with an output device; after it, the
+choice of output device is what the user granted.
+
+**What it costs MoltNet users.** Surround audio (5.1, 7.1) plays as
+stereo. Pages that use `outputLatency` or `baseLatency` to line sound up
+with pictures (games, music tools) are off by the difference between the
+real delay and 24 ms: a few milliseconds on built-in speakers, up to about
+200 ms with Bluetooth headphones. `playbackStats` never reports underruns,
+so a page can't react to them. 44.1 and 96 kHz devices pay the resampler
+above.
+
+### Encrypted Media Extensions
+
+**What 156 offers.** `requestMediaKeySystemAccess()` (and Media
+Capabilities' `keySystemConfiguration`, which runs the same request) asks
+the frame's EME client, which asks the browser which key systems exist and
+what they support. Widevine and PlayReady need Chrome branding, so
+MoltBrowser's desktop builds only have Clear Key, a test and
+interoperability key system real DRM content doesn't use; in a build with
+CDMs the answers would show the CDM's version, robustness levels and
+hardware-secure decoding.
+
+**What MoltNet does: no key systems.** One hook,
+`EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow`, where
+every request gets its client, hands MoltNet pages a client that refuses
+every key system with `NotSupportedError` and Chromium's own message for
+an unknown one ("Unsupported keySystem or supportedConfigurations."). That
+covers `requestMediaKeySystemAccess()` (also from a prerendered page once
+it is shown) and Media Capabilities, which resolves `{supported: false,
+smooth: false, powerEfficient: false}` with no `keySystemAccess`. A
+`MediaKeys` can only come from a granted request, so `createMediaKeys()`,
+`setMediaKeys()` and `getStatusForPolicy()` are never reached. The frame's
+own client is never created, so a MoltNet renderer never asks the browser
+about key systems. `encrypted` events still fire for encrypted media (they
+describe the file).
+
+**Why off rather than one uniform answer.** Tor Browser ships with DRM
+off; DRM content needs a CDM these builds don't ship anyway; and "no key
+system" is the same answer whatever CDMs a build, a later Chromium or the
+operating system adds. (Firefox, and so Tor Browser, still grants Clear
+Key; refusing it too changes no answer between two MoltNet users.) *Cost:*
+Clear Key test pages and players don't work in MoltNet windows; DRM video
+didn't play there before either.
+
+### Media Capabilities, codec support and WebCodecs
+
+**How 156 answers.** `decodingInfo()` first checks the codec against the
+decoders the build supports (`media::IsDecoderSupportedVideoType`), then
+asks the profile's decode history (`VideoDecodePerfHistory`; MoltNet's is
+in memory, but learns from what MoltNet played on this machine) whether
+such a video was smooth and power efficient, and the GPU whether it has a
+decoder for it; a codec only a platform decoder handles is unsupported
+without one. `"webrtc"` queries ask WebRTC's codec factories, hardware
+codecs included. Audio-only queries depend on the build alone (supported,
+smooth and power efficient alike).
+
+**What MoltNet answers.**
+
+* Video, clear: **supported** when the build has its own decoder for the
+  codec (`media::IsDecoderBuiltInVideoCodec`: libvpx for VP8 and VP9, dav1d
+  for AV1), **smooth**, and **not power efficient** (software decoding),
+  from a fixed table in `MediaCapabilities::GetPerfInfo`, never from the
+  history or the GPU. Tor Browser reports the same (smooth, not power
+  efficient) in resistFingerprinting mode.
+* Audio-only: Chromium's answer, unchanged.
+* `"webrtc"` (`decodingInfo()` and `encodingInfo()`): **unsupported**, as
+  WebRTC is off in MoltNet windows.
+* With a `keySystemConfiguration`: unsupported (no key systems, above).
+* `encodingInfo()` of type `"record"` is behind the experimental
+  `MediaCapabilitiesEncodingInfo` flag at 156 (a `TypeError` by default);
+  re-check when it ships.
+
+**`canPlayType()`, `MediaSource.isTypeSupported()`,
+`MediaRecorder.isTypeSupported()`** follow the codecs compiled into the
+build, the same for every user of a build: MoltBrowser's builds have no
+proprietary codecs (no H.264, HEVC or AAC) and no platform HEVC or Dolby
+decoders, so 156's `media::IsDefault*SupportedType` answers from libvpx,
+dav1d, libaom and the open-source audio decoders only, and Chrome's
+renderer client doesn't override it. Not changed; the leak kit compares them
+between machines.
+
+**WebCodecs.** `isConfigSupported()` with `"prefer-hardware"` asks the GPU
+for a decoder or encoder, and with no preference a decoder or encoder may
+still be the GPU's (its output frames and bitstreams show it). MoltNet's
+WebCodecs gets no GPU codec factories (`RetrieveGpuFactories`) and no
+platform decoders (`VideoDecoderBroker`), so it only uses the build's
+software codecs: `"prefer-hardware"` is never supported and `configure()`
+with it fails with `NotSupportedError`, as on a machine without hardware
+codecs; every other preference decodes with libvpx or dav1d and encodes
+with libvpx or libaom. macOS's own H.264 encoder isn't used either.
+
+**`getVideoPlaybackQuality()`** is unchanged. Its dropped frames measure
+how fast the machine plays a video, which a page can time itself
+(`requestVideoFrameCallback`, animation frames); hiding them would stop
+adaptive players from stepping down on slow machines.
+
+**What it costs MoltNet users.** WebCodecs pages (video editors, cloud
+gaming) decode and encode on the CPU; pages that require hardware fall
+back or refuse. Sites that choose formats by `powerEfficient` see `false`
+for every video and pick by their own preference. Media elements still
+play with hardware decoders where Chromium uses them.
+
+### What is left
+
+* A page that picks a sample rate, latency hint or render quantum gets it;
+  that is its own choice, the same for everyone.
+* Output device IDs, once the user grants a media permission
+  (`sinkId`, `setSinkId()`, `enumerateDevices()`).
+* `<video>` and `<audio>` still decode with the machine's decoders; only
+  their speed shows (`getVideoPlaybackQuality()`, frame timing).
+* `MediaRecorder` and normal windows' encoders (see *Encoder identity* in
+  [Known gaps](#known-gaps-and-attacks)); `RTCRtpSender.getCapabilities()`
+  (see the same list).
+* `encodingInfo()` of type `"record"`, behind a flag at 156.
+
+### Which contexts
+
+The whole MoltNet renderer process: windows, iframes and workers (Media
+Capabilities and WebCodecs exist in workers), like the other uniform
+values. The kill switch turns it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the uniform device and its buffer rule, the output position, the key-system message, the Media Capabilities table; std-only (+ `moltnet_media_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client (+ `moltnet_media_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`):
+`modules/webaudio/audio_context.cc` (`AudioContext::Create`: the rate and
+the `"hardware"` quantum; `outputLatency`; `getOutputTimestamp`;
+`HandlePreRenderTasks`: the playbackStats update),
+`modules/webaudio/realtime_audio_destination_handler.cc`
+(`MaxChannelCount`, `GetCallbackBufferSize`, `GetFramesPerBuffer`),
+`modules/encryptedmedia/encrypted_media_utils.cc`
+(`GetEncryptedMediaClientFromLocalDOMWindow`),
+`modules/media_capabilities/media_capabilities.cc` (`decodingInfo` and
+`encodingInfo`: the `"webrtc"` branch; `GetPerfInfo`),
+`modules/webcodecs/gpu_factories_retriever.cc` (`RetrieveGpuFactories`)
+and `modules/webcodecs/video_decoder_broker.cc` (`UpdateDecoderFactory`).
+All six files are new in `src/`.
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (12
+tests: the device, the buffer for every latency hint, rate and nonsense
+input, the base latency, the output latency on Chromium's grid, the
+ScriptProcessorNode size, the output position, the key-system message and
+the Media Capabilities table) passes with g++ (ASan/UBSan) and clang (UBSan
+trap, `-fno-exceptions` and the strict warning set). A harness runs the
+real `moltnet_media.cc` and the hooked code extracted verbatim from all six
+upstream files, plus 156's unhooked `ChooseBufferSize` from
+`script_processor_node.cc`, against stand-ins of the types they touch, in
+kOff, kFarble and real kUniform (13 tests: the device rate and quantum, the
+destination's channels and buffers on mono, 5.1, 7.1 and Bluetooth-sized
+devices for every hint, the base latency and ScriptProcessorNode size as
+Chromium computes them, the output latency with and without microphone
+permission, the output timestamp, playbackStats, key systems through the
+real lookup with the frame's client never asked, Media Capabilities with
+the history and the GPU never asked, WebCodecs' GPU factories on the main
+thread and in a worker, the decoder factories for every preference); the
+values' ScriptProcessorNode rule equals 156's for every buffer from 1 to
+20000 frames. 47 mutants of the values, the glue and every hook each fail
+it or the values test. Every changed C++ file, the two tests included,
+compiles without errors against Chromium 156's real headers
+(`tools/compile_check`; it now mounts libwebm, which
+`media_capabilities.cc` reaches through MediaRecorder). **Needs the build
+machine:** compiling and linking, `blink_unittests` (`MoltNetMediaTest.*`,
+`MoltNetMediaValuesTest.*`), `molt_ai_unittests`, and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio on 44.1 and 96
+kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs pages).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): every value in the
+first table except the device-dependent cases a kit run can't produce, and
+codec support compared between runs.
+
 ## Fonts
 
 The set of installed font families is one of the strongest fingerprinting
@@ -3089,7 +3381,7 @@ new early returns or paths around the hook (none found).
 | `color-gamut` is computed from how much of the P3 and Rec. 2020 gamuts the display covers (90%); with `dynamic-range`, `video-dynamic-range`, `color` and `monochrome` the media queries describe the display | the display's gamut, HDR support and bits per component | **srgb, standard, 8 bits, colour**, the same for everyone (new) | real | made uniform in MoltNet ([below](#moltnets-display-colour-and-scrollbar-style)) |
 | macOS takes overlay or classic scrollbars from `RendererPreferences`, like Windows, Linux and ChromeOS | whether scrollbars take room, and when that changes (a mouse plugged in) | **the platform's default style** (new) | the OS setting | made uniform in MoltNet ([below](#moltnets-display-colour-and-scrollbar-style)) |
 | Off-the-record profiles report a static storage quota (`kIncognitoStaticStorageQuota` on by default) | `navigator.storage.estimate()` | the usage + 10 GiB for everyone | Incognito the same; a regular profile the usage + 10 GiB, or its disk where that is smaller | upstream; the leak kit checks it |
-| `renderSizeHint` / `renderQuantumSize` (`WebAudioConfigurableRenderQuantum`, stable) | the render quantum a page asked for; `"hardware"` | 128 for `"hardware"` (no hardware value is read at 156) | same | none; the leak kit checks it, so a later Chromium that reads the hardware's buffer size shows up. Audio read back from any quantum is farbled as before |
+| `renderSizeHint` / `renderQuantumSize` (`WebAudioConfigurableRenderQuantum`, stable) | the render quantum a page asked for; `"hardware"` | 128 for `"hardware"` (no hardware value is read at 156), now pinned ([audio](#moltnet-audio-drm-and-media-capabilities)) | same (not pinned) | the leak kit checks it. Audio read back from any quantum is farbled as before |
 | `<camera>` and `<microphone>` elements (`CameraAndMicrophoneElements`, stable) | permission elements like `<usermedia>` | labels in en-US (the generated table covers them), the session's own permission state, a track only after the user grants access | the profile's permission state | none |
 | CSS `random()` (`CSSRandomFunction`, stable) | random values, cached per document and element from a CSPRNG | nothing about the device | same | none |
 | `RTCPeerConnection.startDiagnosticLogging()` (`RTCDiagnosticLogging`, stable on desktop) | a random session id | the browser collects no logs (MoltNet keeps no WebRTC text logs) | logs only for origins an enterprise policy lists | none |
@@ -3101,7 +3393,7 @@ new early returns or paths around the hook (none found).
 | `drawElementImageToTexture` (WebGPU, HTML-in-canvas) | page content in a GPU texture | **off**: behind `CanvasDrawElement` (experimental); the `HTMLInCanvas` origin trial's tokens stay refused | same | none |
 | `system_color_chooser_is_modal` (`RendererPreferences`, Linux) | on Wayland the colour picker waits while the system eyedropper has focus, which makes it behave as on X11 | no value a page reads changes | same | none |
 | Linux takes the desktop's accent colour from the XDG portal (`kUsePortalAccentColor`) | the `AccentColor` keyword shows it to installed web apps of the default profile only; form controls paint with it, which pages can't read back | the default accent | the default accent (the OS's only in installed web apps of the default profile) | none |
-| Media Capabilities: `encryptionScheme` in key-system queries (`KeySystemTrackConfigurationEncryptionScheme`) | the answer EME's `encryptionScheme` already gives | unchanged | unchanged | none |
+| Media Capabilities: `encryptionScheme` in key-system queries (`KeySystemTrackConfigurationEncryptionScheme`) | the answer EME's `encryptionScheme` already gives | no key systems at all ([DRM](#moltnet-audio-drm-and-media-capabilities)) | unchanged | none |
 | Unbounded elements (`HTMLElement.unbounded`, `showUnboundedElement()`; `UnboundedElement`, stable) | - | **not on the web**: enabled per context, and the open web needs `UnsafeUnboundedElementOnTheOpenWeb` (off) | same | none |
 | The Global Privacy Control setting, the XSLT banner's "Never show again" and the AtMemory shortcut in the preferences the browser sends (`RendererPreferences`, `WebPreferences`) | user settings | MoltBrowser's (pinned at the rebase, [settings](#moltnet-settings-from-the-regular-profile)) | the user's | done at the rebase |
 | Behind flags, not shipped: `GeometryUtils` (`getBoxQuads()`), HTML-in-canvas, `navigator.playHaptics()`, persistent widgets, `window.alwaysOnTop`, the WebTransport additions, `FractionalScrollOffsets` | - | - | - | re-check when they ship |
@@ -3286,7 +3578,10 @@ Honest list; anything not in the table above is not covered.
   tokens are refused) and not hooked.
 * **Encoder identity.** `VideoEncoder`/`MediaRecorder` output of a farbled
   frame no longer reveals the canvas pixels, but the encoder implementation
-  itself (hardware encoders) is a device signal; not addressed.
+  itself (hardware encoders) is a device signal; not addressed for
+  `MediaRecorder` and in normal windows. (MoltNet's WebCodecs only uses
+  the build's software codecs, see [audio, DRM and media
+  capabilities](#moltnet-audio-drm-and-media-capabilities).)
 * **Audio routed out of Web Audio**: `MediaStreamAudioDestinationNode` ->
   `MediaStreamTrackProcessor` (`AudioData.copyTo`), `MediaRecorder`,
   `AudioEncoder`. `AudioParam` automation values computed by the browser are
@@ -3357,6 +3652,11 @@ Honest list; anything not in the table above is not covered.
   filter lists, and `prefers-color-scheme`, which is dark for everyone
   only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
   otherwise follows the regular profile's theme).
+* (Closed: Web Audio's output device, key systems, Media Capabilities and
+  WebCodecs' hardware codecs, see [audio, DRM and media
+  capabilities](#moltnet-audio-drm-and-media-capabilities).) What is left
+  there: output device IDs once the user grants a media permission, and
+  the speed of media playback.
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -3507,6 +3807,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_network_values.h`, `moltnet_network.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_network_context_policy.h` | MoltNet's connection and network quality (pure, + `moltnet_network_values_unittest.cc`; glue, + `moltnet_network_test.cc`); no network-quality estimator in MoltNet's network context (+ `molt_net_network_context_policy_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour and scrollbar style (values in `moltnet_values.h`; + `moltnet_display_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.{h,cc}`, `moltnet_media.{h,cc}` | MoltNet's audio device, key systems, Media Capabilities table and WebCodecs codecs (pure, + `moltnet_media_values_unittest.cc`; glue, + `moltnet_media_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
@@ -3559,7 +3860,11 @@ MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
 `screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet's
 display colour and scrollbar style: `media_values.cc`,
-`core/exported/web_view_impl.cc`; MoltNet
+`core/exported/web_view_impl.cc`; MoltNet's audio device, key systems,
+Media Capabilities and WebCodecs codecs: `audio_context.cc`,
+`realtime_audio_destination_handler.cc`, `encrypted_media_utils.cc`,
+`media_capabilities.cc`, `gpu_factories_retriever.cc`,
+`video_decoder_broker.cc`; MoltNet
 default text locale: `platform/language.{h,cc}`; MoltNet text metrics:
 `base_rendering_context_2d.cc` (`measureText`), `text_metrics.{h,cc}`,
 `platform/fonts/font_platform_data.{h,cc}`,
@@ -3636,10 +3941,15 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    profile ([settings from the regular
    profile](#moltnet-settings-from-the-regular-profile)), one fixed
    connection and network quality ([connection and network
-   quality](#moltnet-connection-and-network-quality)), and one display
+   quality](#moltnet-connection-and-network-quality)), one display
    colour and scrollbar style per platform ([MoltNet's
-   display](#moltnets-display-colour-and-scrollbar-style)).
+   display](#moltnets-display-colour-and-scrollbar-style)), and one audio
+   device, no key systems and fixed media answers ([audio, DRM and media
+   capabilities](#moltnet-audio-drm-and-media-capabilities)).
 9. Repeat the [Chromium-update audit](#re-checked-at-chromium-156) at every
-   rebase. To watch: `renderSizeHint: "hardware"` (128 at 156; a later
-   Chromium may read the audio hardware's buffer size there), and the
-   features that table lists as behind flags, once they ship.
+   rebase. To watch: `renderSizeHint: "hardware"` (128 at 156, and
+   pinned in MoltNet; a later Chromium may read the audio hardware's
+   buffer size there for normal windows), new readers of the audio
+   device's parameters, new key systems or Media Capabilities fields,
+   `encodingInfo()` of type `"record"`, and the features that table lists
+   as behind flags, once they ship.
