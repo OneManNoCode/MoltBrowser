@@ -1,0 +1,39 @@
+MoltBrowser patch for services/network/url_loader_factory.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/services/network/url_loader_factory.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/url_loader_factory.h b/services/network/url_loader_factory.h
+index 233a6425d8ccdd87172d0df186bedccab99d5585..dbf5690b3fab20d0f618ca7331a6294efaaceb2a 100644
+--- a/services/network/url_loader_factory.h
++++ b/services/network/url_loader_factory.h
+@@ -7,6 +7,7 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
++#include "base/memory/weak_ptr.h"  // MoltBrowser
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+@@ -24,6 +25,7 @@
+ 
+ namespace network {
+ 
++class KeepaliveStatisticsRecorder;  // MoltBrowser
+ class NetworkContext;
+ class ResourceSchedulerClient;
+ 
+@@ -139,6 +141,12 @@ class URLLoaderFactory : public mojom::URLLoaderFactory,
+   mojo::Remote<mojom::DevToolsObserver> devtools_observer_;
+   scoped_refptr<RefCountedDeviceBoundSessionAccessObserverRemote>
+       device_bound_session_observer_;
++
++  // MoltBrowser: the recorder this factory's keepalive requests count in:
++  // the network service's, or in a MoltNet context its site's own
++  // (services/network/molt_keepalive_partitions.h), which goes with the
++  // context.
++  base::WeakPtr<KeepaliveStatisticsRecorder> molt_keepalive_recorder_;
+ };
+ 
+ }  // namespace network

@@ -1,0 +1,49 @@
+MoltBrowser patch for net/socket/socks_connect_job.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/socks_connect_job.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/socks_connect_job.h b/net/socket/socks_connect_job.h
+index 3fc7dc02d6f3063fc1f0f1b1400fdcdd4fc183ef..596d575201c64fb19f6ed9eb1fcd4d890d62746b 100644
+--- a/net/socket/socks_connect_job.h
++++ b/net/socket/socks_connect_job.h
+@@ -18,6 +18,7 @@
+ #include "net/dns/public/resolve_error_info.h"
+ #include "net/socket/connect_job.h"
+ #include "net/socket/connect_job_params.h"
++#include "net/socket/molt_connection_budget.h"  // MoltBrowser
+ #include "net/socket/socks_client_socket.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ 
+@@ -107,6 +108,10 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
+ 
+  private:
+   enum State {
++    // MoltBrowser: waits for one of the site's SOCKS handshake slots
++    // (net/socket/molt_connection_budget.h), only in a session that has them.
++    STATE_MOLT_HANDSHAKE_SLOT,
++    STATE_MOLT_HANDSHAKE_SLOT_COMPLETE,
+     STATE_TRANSPORT_CONNECT,
+     STATE_TRANSPORT_CONNECT_COMPLETE,
+     STATE_SOCKS_CONNECT,
+@@ -126,6 +131,8 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
+   // Runs the state transition loop.
+   int DoLoop(int result);
+ 
++  int DoMoltHandshakeSlot();          // MoltBrowser
++  int DoMoltHandshakeSlotComplete();  // MoltBrowser
+   int DoTransportConnect();
+   int DoTransportConnectComplete(int result);
+   int DoSOCKSConnect();
+@@ -146,6 +153,10 @@ class NET_EXPORT_PRIVATE SOCKSConnectJob : public ConnectJob,
+   raw_ptr<SOCKSClientSocket> socks_socket_ptr_;
+ 
+   ResolveErrorInfo resolve_error_info_;
++
++  // MoltBrowser: the site's handshake slot, from before the connection to
++  // the proxy until the handshake is done.
++  std::unique_ptr<MoltSocksHandshakeLimiter::Slot> molt_handshake_slot_;
+ };
+ 
+ }  // namespace net

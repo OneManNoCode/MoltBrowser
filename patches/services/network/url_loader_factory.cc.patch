@@ -1,0 +1,60 @@
+MoltBrowser patch for services/network/url_loader_factory.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/services/network/url_loader_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/url_loader_factory.cc b/services/network/url_loader_factory.cc
+index 541b9e627d41503f8b17984e15a7e6359d0df1ea..127f2975b827c3be1f41b773e5a130911533e30d 100644
+--- a/services/network/url_loader_factory.cc
++++ b/services/network/url_loader_factory.cc
+@@ -23,6 +23,8 @@
+ #include "services/network/cookie_manager.h"
+ #include "services/network/cookie_settings.h"
+ #include "services/network/cors/cors_url_loader_factory.h"
++#include "services/network/keepalive_statistics_recorder.h"  // MoltBrowser
++#include "services/network/molt_keepalive_site.h"            // MoltBrowser
+ #include "services/network/network_context.h"
+ #include "services/network/network_service.h"
+ #include "services/network/observer_wrapper.h"
+@@ -116,15 +118,23 @@ URLLoaderFactory::URLLoaderFactory(
+   }
+ 
+   if (context_->network_service()) {
+-    context_->network_service()->keepalive_statistics_recorder()->Register(
+-        *params_->top_frame_id);
++    // MoltBrowser: this factory's recorder: in a MoltNet context, its site's
++    // own (services/network/molt_keepalive_partitions.h).
++    KeepaliveStatisticsRecorder* recorder =
++        context_->network_service()
++            ->keepalive_statistics_recorder()
++            ->MoltRecorderFor(context_.get(),
++                              MoltKeepaliveSite(params_->isolation_info));
++    molt_keepalive_recorder_ = recorder->AsWeakPtr();
++    recorder->Register(*params_->top_frame_id);
+   }
+ }
+ 
+ URLLoaderFactory::~URLLoaderFactory() {
+-  if (context_->network_service()) {
+-    context_->network_service()->keepalive_statistics_recorder()->Unregister(
+-        *params_->top_frame_id);
++  // MoltBrowser: the recorder it registered with (a MoltNet site's goes with
++  // its context, before the context's factories).
++  if (context_->network_service() && molt_keepalive_recorder_) {
++    molt_keepalive_recorder_->Unregister(*params_->top_frame_id);
+   }
+ }
+ 
+@@ -229,9 +239,8 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
+ 
+   base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder;
+   if (context_->network_service()) {
+-    keepalive_statistics_recorder = context_->network_service()
+-                                        ->keepalive_statistics_recorder()
+-                                        ->AsWeakPtr();
++    // MoltBrowser: this factory's (its site's, in a MoltNet context).
++    keepalive_statistics_recorder = molt_keepalive_recorder_;
+   }
+ 
+   bool exhausted = false;

@@ -156,6 +156,7 @@ components/autofill_strings.grdp.patch
 components/browsing_data_strings.grdp.patch
 components/collaboration_strings.grdp.patch
 components/commerce_strings.grdp.patch
+components/download/internal/background_service/in_memory_download.cc.patch
 components/embedder_support/origin_trials/origin_trial_policy_impl.cc.patch
 components/embedder_support/user_agent_utils.cc.patch
 components/error_page_strings.grdp.patch
@@ -197,6 +198,8 @@ components/translate/core/browser/translate_language_list.h.patch
 components/translate/core/browser/translate_manager.cc.patch
 content/browser/blob_storage/chrome_blob_storage_context.cc.patch
 content/browser/client_hints/client_hints.cc.patch
+content/browser/download/download_manager_impl.cc.patch
+content/browser/download/save_file_manager.cc.patch
 content/browser/network/browser_online_state_observer.cc.patch
 content/browser/network/network_quality_observer_impl.cc.patch
 content/browser/service_worker/fake_service_worker.cc.patch
@@ -228,6 +231,8 @@ net/http/http_network_session.cc.patch
 net/http/http_network_session.h.patch
 net/http/transport_security_state.cc.patch
 net/http/transport_security_state.h.patch
+net/socket/client_socket_pool.cc.patch
+net/socket/client_socket_pool.h.patch
 net/socket/client_socket_pool_manager.cc.patch
 net/socket/client_socket_pool_manager.h.patch
 net/socket/client_socket_pool_manager_impl.cc.patch
@@ -236,6 +241,7 @@ net/socket/connect_job.h.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch
+net/socket/socks_connect_job.h.patch
 net/socket/ssl_client_socket.cc.patch
 net/socket/ssl_client_socket.h.patch
 net/socket/transport_client_socket_pool.h.patch
@@ -243,11 +249,18 @@ services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h.patch
 services/cert_verifier/cert_verifier_service_factory.cc.patch
 services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.patch
+services/network/keepalive_statistics_recorder.cc.patch
+services/network/keepalive_statistics_recorder.h.patch
 services/network/network_context.cc.patch
 services/network/pervasive_resources/shared_resource_checker.h.patch
 services/network/public/mojom/network_context.mojom.patch
+services/network/url_loader_factory.cc.patch
+services/network/url_loader_factory.h.patch
 storage/browser/blob/blob_memory_controller.cc.patch
 storage/browser/blob/blob_memory_controller.h.patch
+storage/browser/quota/quota_manager_impl.cc.patch
+storage/browser/quota/quota_settings.h.patch
+storage/browser/quota/quota_temporary_storage_evictor.cc.patch
 third_party/blink/public/BUILD.gn.patch
 third_party/blink/public/mojom/service_worker/service_worker.mojom.patch
 third_party/blink/public/mojom/worker/shared_worker_info.mojom.patch

@@ -1,0 +1,23 @@
+MoltBrowser patch for storage/browser/quota/quota_settings.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/quota/quota_settings.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/quota/quota_settings.h b/storage/browser/quota/quota_settings.h
+index 61d517ef767f51fdc13fd0088d2ef27bf8820719..402be02d4e97644523751cca30a7f6835379c289 100644
+--- a/storage/browser/quota/quota_settings.h
++++ b/storage/browser/quota/quota_settings.h
+@@ -57,6 +57,12 @@ struct QuotaSettings {
+   // but will rate limit the frequency of the queries to no more than once
+   // per refresh interval.
+   base::TimeDelta refresh_interval = base::TimeDelta::Max();
++
++  // MoltBrowser: if > 0 (MoltNet), each top-level site's storage keys
++  // together may use at most this many bytes, all sites together at most
++  // `pool_size`, and nothing is evicted to bring the pool down
++  // (storage/browser/quota/molt_storage_budget_policy.h).
++  int64_t molt_per_site_quota = 0;
+ };
+ 
+ // Function type used to return the settings in response to a

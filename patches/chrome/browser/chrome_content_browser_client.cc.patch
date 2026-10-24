@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57cf2bf581d 100644
+index 2e0f287290b7656d1b97dffc79bf117da240507a..d0bbc647f8bf68efd88f826610af41cff6dd4576 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -125,6 +125,26 @@
@@ -328,7 +328,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
    return interceptors;
  }
  
-@@ -6947,8 +7139,61 @@ ChromeContentBrowserClient::
+@@ -6947,8 +7139,72 @@ ChromeContentBrowserClient::
    return prefetch_handler;
  }
  
@@ -377,6 +377,17 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
 +      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
 +}
 +
++bool ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(
++    content::BrowserContext* browser_context) {
++  // MoltBrowser: MoltNet's downloads stay in the partition, and on the Tor
++  // circuit, of the site they come from
++  // (molt_ai/tor/molt_net_network_context_policy.h).
++  return browser_context &&
++         molt_ai::tor::KeepDownloadsWithTheirSite(
++             molt_ai::tor::IsMoltNetProfile(
++                 Profile::FromBrowserContext(browser_context)));
++}
++
  bool ChromeContentBrowserClient::WillInterceptWebSocket(
      content::RenderFrameHost* frame) {
 +  // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.
@@ -390,7 +401,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    if (!frame) {
      return false;
-@@ -6994,6 +7239,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
+@@ -6994,6 +7250,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
      mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
          handshake_client,
      content::ContentBrowserClient::WebSocketOptions options) {
@@ -426,7 +437,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
    if (!frame) {
-@@ -9252,7 +9526,12 @@ bool ChromeContentBrowserClient::ShouldReduceAcceptLanguage(
+@@ -9252,7 +9537,12 @@ bool ChromeContentBrowserClient::ShouldReduceAcceptLanguage(
            ->FindPreference(prefs::kReduceAcceptLanguageEnabled);
  
    if (pref && pref->IsManaged() && pref->GetValue()->is_bool()) {
@@ -440,7 +451,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
    }
    return true;
  }
-@@ -9426,15 +9705,12 @@ void ChromeContentBrowserClient::BindAIManager(
+@@ -9426,15 +9716,12 @@ void ChromeContentBrowserClient::BindAIManager(
      base::SupportsUserData* context_user_data,
      content::RenderFrameHost* rfh,
      mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
@@ -462,7 +473,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
  }
  
  #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
-@@ -9444,9 +9720,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
+@@ -9444,9 +9731,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
      base::SupportsUserData* context_user_data,
      const url::Origin& origin,
      mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
@@ -481,7 +492,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
  }
  #endif
  
-@@ -9723,6 +10005,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
+@@ -9723,6 +10016,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
  
  std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
      content::BrowserContext* browser_context) {
@@ -493,7 +504,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..67554a526e1d98f88aa24d2bc699c57c
    if (browser_context) {
      const PrefService* prefs =
          Profile::FromBrowserContext(browser_context)->GetPrefs();
-@@ -9782,9 +10069,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9782,9 +10080,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {

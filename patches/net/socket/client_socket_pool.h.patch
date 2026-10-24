@@ -1,0 +1,46 @@
+MoltBrowser patch for net/socket/client_socket_pool.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/client_socket_pool.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/client_socket_pool.h b/net/socket/client_socket_pool.h
+index 5db1b533d3c1cb995a98de856d31ccd786d1a12c..3c2e5f8ff4ba328789a406d38493b429e6fb2e6c 100644
+--- a/net/socket/client_socket_pool.h
++++ b/net/socket/client_socket_pool.h
+@@ -387,6 +387,25 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+     socket_soft_cap_override_for_test_ = socket_soft_cap_override_for_test;
+   }
+ 
++  // MoltBrowser: a gate that may hold back a socket this pool's own limits
++  // would allow (MoltNet's connection budget, net/socket/
++  // molt_connection_budget.h). A held-back request waits in the pool as for
++  // the pool's own limit.
++  class MoltSocketGate {
++   public:
++    // Whether `pool` may open one more socket now.
++    virtual bool MoltMayAllocate(const ClientSocketPool* pool) = 0;
++    // `pool` released a socket.
++    virtual void MoltOnReleased(const ClientSocketPool* pool) = 0;
++
++   protected:
++    virtual ~MoltSocketGate() = default;
++  };
++  // MoltBrowser: set once, right after the pool is made; `gate` outlives the
++  // pool. The pool's limit is then its soft cap exactly (no randomized
++  // additional capacity).
++  void MoltSetSocketGate(MoltSocketGate* gate);
++
+  protected:
+   ClientSocketPool(size_t socket_soft_cap,
+                    const ProxyChain& proxy_chain,
+@@ -462,6 +481,9 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+   // If set, this overrides `socket_soft_cap_` for future calculations.
+   std::optional<size_t> socket_soft_cap_override_for_test_ = std::nullopt;
+ 
++  // MoltBrowser: see MoltSetSocketGate().
++  raw_ptr<MoltSocketGate> molt_socket_gate_ = nullptr;
++
+   const ProxyChain proxy_chain_;
+   const bool is_for_websockets_;
+   const raw_ptr<const CommonConnectJobParams> common_connect_job_params_;
