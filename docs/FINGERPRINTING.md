@@ -3097,14 +3097,14 @@ new early returns or paths around the hook (none found).
 | WebGPU: compatibility mode, new features, limits and texture usage | the GPU | no adapter | real (not covered, see [known gaps](#known-gaps-and-attacks)) | none |
 | `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the allow-list; the check runs on the face the cache returns | allow-list + the site's sample | none |
 | New audio decoders (Symphonia, direct Opus) | `decodeAudioData()` results | the same for every user of a build; farbled when read | same | none |
-| Media clock coarsening (`kCoarseWallClockTimeSource`, on) | timing | coarser | coarser | upstream hardening |
+| Media clock coarsening (`kCoarseWallClockTimeSource`, on) | the media clock's precision | coarser | coarser | upstream hardening |
 | `drawElementImageToTexture` (WebGPU, HTML-in-canvas) | page content in a GPU texture | **off**: behind `CanvasDrawElement` (experimental); the `HTMLInCanvas` origin trial's tokens stay refused | same | none |
 | `system_color_chooser_is_modal` (`RendererPreferences`, Linux) | on Wayland the colour picker waits while the system eyedropper has focus, which makes it behave as on X11 | no value a page reads changes | same | none |
 | Linux takes the desktop's accent colour from the XDG portal (`kUsePortalAccentColor`) | the `AccentColor` keyword shows it to installed web apps of the default profile only; form controls paint with it, which pages can't read back | the default accent | the default accent (the OS's only in installed web apps of the default profile) | none |
 | Media Capabilities: `encryptionScheme` in key-system queries (`KeySystemTrackConfigurationEncryptionScheme`) | the answer EME's `encryptionScheme` already gives | unchanged | unchanged | none |
-| `<unbounded>` element (`UnboundedElement`, stable) | - | **not on the web**: enabled per context, and the open web needs `UnsafeUnboundedElementOnTheOpenWeb` (off) | same | none |
-| The Global Privacy Control setting, the XSLT banner and the AtMemory shortcut in the renderer preferences | user settings | MoltBrowser's (pinned at the rebase, [settings](#moltnet-settings-from-the-regular-profile)) | the user's | done at the rebase |
-| Behind flags, not shipped: `GeometryUtils` (`getBoxQuads()`), HTML-in-canvas, `navigator.playHaptics()`, persistent widgets, `window.alwaysOnTop`, WebTransport and WebSocket additions, `FractionalScrollOffsets` | - | - | - | re-check when they ship |
+| Unbounded elements (`HTMLElement.unbounded`, `showUnboundedElement()`; `UnboundedElement`, stable) | - | **not on the web**: enabled per context, and the open web needs `UnsafeUnboundedElementOnTheOpenWeb` (off) | same | none |
+| The Global Privacy Control setting, the XSLT banner's "Never show again" and the AtMemory shortcut in the preferences the browser sends (`RendererPreferences`, `WebPreferences`) | user settings | MoltBrowser's (pinned at the rebase, [settings](#moltnet-settings-from-the-regular-profile)) | the user's | done at the rebase |
+| Behind flags, not shipped: `GeometryUtils` (`getBoxQuads()`), HTML-in-canvas, `navigator.playHaptics()`, persistent widgets, `window.alwaysOnTop`, the WebTransport additions, `FractionalScrollOffsets` | - | - | - | re-check when they ship |
 
 No client hint, permission name, WebGL extension, `env()` variable, media
 feature or `ScreenInfo` field was added; Topics' document API moved to the
@@ -3193,7 +3193,8 @@ Read again in the 156 sources, with the result:
 * **Canvas, WebGL, audio and video farbling:** no new readback API in the
   IDL; `toBlob()`'s new colour conversion runs on the farbled copy;
   `copyExternalImageToTexture()` gained an HDR-headroom check before the
-  farbled upload; the other hooked functions only changed messages.
+  farbled upload; the other hooked functions only changed error messages
+  or a helper's signature.
 * **CPU tier, memory, `hardwareConcurrency`:** `navigator.cpuPerformance`
   now applies DevTools' override on top of the browser's tier (0 in
   MoltNet); the others are unchanged.
@@ -3223,7 +3224,8 @@ types they touch, in kOff, kFarble and real kUniform, built as Linux and as
 macOS (8 tests: the real display outside MoltNet, the uniform one inside,
 a monochrome display, DevTools' gamut override, the scrollbar style from
 the start and through OS changes without rebuilding the scrollbars); 15
-mutants of the values, glue and hooks each fail it. Every changed C++ file,
+mutants of the values, glue and hooks each fail it or the values test.
+Every changed C++ file,
 `moltnet_display_test.cc` included, compiles without errors against
 Chromium 156's real headers (`tools/compile_check`). **Needs the build
 machine:** compiling and linking, `blink_unittests`
