@@ -672,7 +672,8 @@ std::optional<ListedTool> ParseListedTool(const base::Value& item) {
     return true;
   };
   if (!read_bool("readOnly", &tool.read_only) ||
-      !read_bool("untrusted", &tool.untrusted_output)) {
+      !read_bool("untrusted", &tool.untrusted_output) ||
+      !read_bool("consequential", &tool.consequential)) {
     return std::nullopt;
   }
   if (const base::Value* form = d.Find("form"); form && !form->is_none()) {
@@ -739,6 +740,17 @@ constexpr char kFormHelpers[] = R"JS(
                   String(attrOf.call(el, 'autocomplete') || '').slice(0, 64)]);
       }
       return out;
+    };
+    const schemaOf = (t) => {
+      const s = t.inputSchema;
+      if (s === undefined || s === null) return null;
+      if (typeof s !== 'object') return '!';
+      try {
+        const text = JSON.stringify(s);
+        return typeof text === 'string' ? text : '!';
+      } catch (e) {
+        return '!';
+      }
     };)JS";
 
 }  // namespace
@@ -911,10 +923,13 @@ std::string BuildToolListScript(std::string_view request_id,
         out.push({
           name: String(t.name).slice(0, 129),
           description: String(t.description).slice(0, 4097),
-          schema: typeof t.inputSchema === 'string' ?
-              t.inputSchema.slice(0, 8193) : null,
+          schema: (() => {
+            const s = schemaOf(t);
+            return s === null ? null : s.slice(0, 8193);
+          })(),
           readOnly: a.readOnlyHint === true,
           untrusted: a.untrustedContentHint === true,
+          consequential: a.consequentialHint === true,
           form: f ? fieldsOf(f) : null,
         });
       }
@@ -1039,6 +1054,7 @@ std::optional<SiteTool> MakeSiteTool(const ListedTool& listed) {
   }
   tool.sensitive = sensitive;
   tool.read_only = listed.read_only;
+  tool.consequential = listed.consequential;
   tool.untrusted_output = listed.untrusted_output;
   tool.form_backed = listed.form_backed;
   tool.listed_description = listed.description;
@@ -1139,7 +1155,7 @@ std::string BuildArgumentsSchema(const SiteTool& tool) {
 
 std::string DescribeTool(const SiteTool& tool) {
   std::string s = tool.ref + " " + ToolLabel(tool);
-  if (tool.read_only && !tool.form_backed &&
+  if (tool.read_only && !tool.consequential && !tool.form_backed &&
       tool.sensitive == FieldKind::kOrdinary) {
     s += " [reads only]";
   } else {
@@ -1242,7 +1258,7 @@ std::vector<std::string> ToolCallEffects(const SiteTool& tool) {
   std::vector<std::string> why;
   if (tool.form_backed)
     why.push_back("it fills a form there and may submit it");
-  else if (!tool.read_only)
+  else if (!tool.read_only || tool.consequential)
     why.push_back("it may change something there");
   if (agent_safety::IsSensitive(tool.sensitive)) {
     why.push_back("it takes a " +
@@ -1304,8 +1320,8 @@ std::string BuildToolCallScript(std::string_view request_id,
       R"JS((() => {
   try {
     const id = %s, doc = %s, origin = %s, name = %s, desc = %s,
-          schema = %s, readOnly = %s, untrusted = %s, form = %s,
-          args = %s;
+          schema = %s, readOnly = %s, untrusted = %s,
+          consequential = %s, form = %s, args = %s;
     if (globalThis.__moltToolDocument !== doc) return 'document_changed';
     if (location.origin !== origin) return 'origin_changed';
     const mc = window.isSecureContext ? document.modelContext : undefined;
@@ -1323,17 +1339,18 @@ std::string BuildToolCallScript(std::string_view request_id,
       if (!t) { st.state = 'not_found'; return; }
       const a = t.annotations || {};
       const f = formOf(name);
-      if (t.description !== desc ||
-          (typeof t.inputSchema === 'string' ? t.inputSchema : null) !==
-              schema ||
+      if (t.description !== desc || schemaOf(t) !== schema ||
           (a.readOnlyHint === true) !== readOnly ||
           (a.untrustedContentHint === true) !== untrusted ||
+          (a.consequentialHint === true) !== consequential ||
           !sameFields(form, f ? fieldsOf(f) : null)) {
         st.state = 'changed';
         return;
       }
       if (location.origin !== origin) { st.state = 'origin_changed'; return; }
-      return mc.executeTool(t, args).then((r) => {
+      // The browser's JSON, as the object executeTool() takes in 156.
+      const input = JSON.parse(args);
+      return mc.executeTool(t, input).then((r) => {
         st.result = (r === null || r === undefined) ? null :
             String(r).slice(0, 8192);
         st.state = 'done';
@@ -1348,7 +1365,8 @@ std::string BuildToolCallScript(std::string_view request_id,
       JsString(origin).c_str(), JsString(tool.name).c_str(),
       JsString(tool.listed_description).c_str(),
       schema.c_str(), tool.read_only ? "true" : "false",
-      tool.untrusted_output ? "true" : "false", form.c_str(),
+      tool.untrusted_output ? "true" : "false",
+      tool.consequential ? "true" : "false", form.c_str(),
       JsString(arguments_json).c_str(), kFormHelpers);
 }
 

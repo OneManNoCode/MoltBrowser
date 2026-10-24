@@ -191,6 +191,40 @@ TEST(AgentToolsTest, ParsesListedTools) {
   EXPECT_TRUE(list.tools[1].form_backed);
   ASSERT_EQ(list.tools[1].form_fields.size(), 1u);
   EXPECT_EQ(list.tools[1].form_fields[0].first, "email");
+  EXPECT_FALSE(list.tools[0].consequential);
+}
+
+// Chromium 156's third hint: consequentialHint.
+TEST(AgentToolsTest, ParsesTheConsequentialHint) {
+  base::ListValue tools;
+  base::DictValue a = Entry("pay", "Pay the invoice.");
+  a.Set("readOnly", true);
+  a.Set("consequential", true);
+  tools.Append(std::move(a));
+  base::DictValue bad = Entry("x", "d");
+  bad.Set("consequential", "yes");
+  tools.Append(std::move(bad));
+  ToolList list = ParseToolList(ListResult(std::move(tools)));
+  ASSERT_EQ(list.state, ListState::kDone);
+  ASSERT_EQ(list.tools.size(), 1u);  // a hint that isn't a boolean: skipped
+  EXPECT_TRUE(list.tools[0].read_only);
+  EXPECT_TRUE(list.tools[0].consequential);
+
+  // Offered, but never as a tool that only reads: every call asks, whatever
+  // readOnlyHint says, and the prompt says so.
+  std::optional<SiteTool> t = MakeSiteTool(list.tools[0]);
+  ASSERT_TRUE(t);
+  EXPECT_TRUE(t->read_only);  // the page's hint, compared at call time
+  EXPECT_TRUE(t->consequential);
+  t->ref = "t1";
+  const CallCheck c = CheckToolCall(*t, "", "https://shop.example");
+  EXPECT_TRUE(c.ask);
+  EXPECT_NE(c.message.find("it may change something there"),
+            std::string::npos);
+  EXPECT_NE(DescribeTool(*t).find("[asks the user first]"), std::string::npos);
+  t->consequential = false;
+  EXPECT_FALSE(CheckToolCall(*t, "", "https://shop.example").ask);
+  EXPECT_NE(DescribeTool(*t).find("[reads only]"), std::string::npos);
 }
 
 TEST(AgentToolsTest, ListRefusesBadOriginsAndShapes) {
@@ -1113,6 +1147,26 @@ TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
             std::string::npos);
   EXPECT_NE(call.find("form = null"), std::string::npos);
   EXPECT_NE(call.find("schema = \"{\\\"properties\\\""), std::string::npos);
+  EXPECT_NE(call.find("consequential = false"), std::string::npos);
+  EXPECT_NE(call.find("(a.consequentialHint === true) !== consequential"),
+            std::string::npos);
+  // Chromium 156: getTools() gives the schema as an object, compared as
+  // JSON.stringify() of it; executeTool() takes the arguments as an object,
+  // parsed from the browser's JSON in the isolated world.
+  EXPECT_NE(call.find("schemaOf(t) !== schema"), std::string::npos);
+  EXPECT_NE(call.find("const input = JSON.parse(args);"), std::string::npos);
+  EXPECT_NE(call.find("mc.executeTool(t, input)"), std::string::npos);
+  EXPECT_EQ(call.find("executeTool(t, args)"), std::string::npos);
+  EXPECT_EQ(call.find("typeof t.inputSchema === 'string'"), std::string::npos);
+  const std::string list_script = BuildToolListScript("l1", kMark);
+  EXPECT_NE(list_script.find("const s = schemaOf(t);"), std::string::npos);
+  EXPECT_NE(list_script.find("consequential: a.consequentialHint === true"),
+            std::string::npos);
+  EXPECT_NE(list_script.find("if (typeof s !== 'object') return '!';"),
+            std::string::npos);
+  // What a non-object schema reads as is refused.
+  EXPECT_FALSE(ConvertInputSchema("!"));
+  EXPECT_FALSE(MakeSiteTool(Listed("x", "d", std::string("!"))));
 
   tool.read_only = false;
   tool.untrusted_output = true;
@@ -1126,6 +1180,10 @@ TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
   EXPECT_NE(form_call.find("readOnly = false"), std::string::npos);
   EXPECT_NE(form_call.find("untrusted = true"), std::string::npos);
   EXPECT_NE(form_call.find("schema = null"), std::string::npos);
+  tool.consequential = true;
+  EXPECT_NE(BuildToolCallScript("c3", "https://shop.example", tool, "{}")
+                .find("consequential = true"),
+            std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

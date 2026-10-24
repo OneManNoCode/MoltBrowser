@@ -455,6 +455,21 @@ It is **content-internal**: nothing in `content/public` lists or calls a
 page's tools from the browser process, and there is no
 `WebContentsObserver` or `ContentBrowserClient` hook for them.
 
+**What 156 changed** (`model_context.idl`, `model_context_tool.idl`,
+`model_context.cc` at 156.0.8078.48), and what the agent's scripts do about
+it:
+
+| 156 | The agent |
+|---|---|
+| `RegisteredTool.inputSchema` is an `object`: `getTools()` parses the JSON the page registered (a tool whose schema doesn't parse is left out of the list) | the list script records `JSON.stringify()` of it, in the isolated world (the object is that world's, so no page getter or `toJSON` runs); anything but an object reads as `"!"`, which `ConvertInputSchema()` refuses; the call script compares the same text |
+| `executeTool(tool, inputObject)` takes an object, serializes it and has the tool's document parse it again (a string is refused) | the call script passes `JSON.parse()` of the browser's JSON, in the isolated world |
+| `ToolAnnotations` gains `consequentialHint` (and `debugging`) | a tool the page marks consequential never counts as one that only reads (`ToolCallEffects()`), whatever `readOnlyHint` says, and the hint is compared at call time like the others; `debugging` is ignored |
+| an `AbortSignal` reaches the tool (`CancelScriptTool`) | not used: a call that times out is abandoned as before |
+
+The scripts' 152 forms (a schema read as a string, arguments passed as a
+string) don't match 156's API; the jsdom test runs against a stand-in of
+156's `document.modelContext`.
+
 #### 2.7.2 What an embedder can hook
 
 | Hook | Where | Used by |

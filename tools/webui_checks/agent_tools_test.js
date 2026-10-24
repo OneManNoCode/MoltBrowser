@@ -1,8 +1,10 @@
 // The web agent's site-tool scripts (agent_tools::BuildToolListScript,
 // BuildToolListPollScript, BuildToolCallScript, BuildToolCallPollScript in
 // src/chrome/browser/molt_ai/agents/agent_tools.cc), run in jsdom against a
-// stand-in for Chromium 152's document.modelContext (WebMCP), which jsdom
-// doesn't have.
+// stand-in for Chromium 156's document.modelContext (WebMCP), which jsdom
+// doesn't have. In 156 getTools() gives each tool's inputSchema as an object
+// (Blink parses the JSON the page registered) and executeTool() takes the
+// arguments as an object (Blink serializes it, and refuses anything else).
 //
 // The scripts are printf templates in C++; this reads them from the source
 // and fills in their %s the way the C++ does (JSON strings and literals),
@@ -52,9 +54,9 @@ const listScript = (id, mark = MARK) =>
 const listPoll = (id) =>
     fill(template('BuildToolListPollScript'), [JSON.stringify(id)]);
 // |tool| as SiteTool keeps it: the mark of the document that listed it
-// (|tool.doc|, MARK unless given), listed description, schema (or null),
-// the read-only and untrusted-content hints, the form's fields (or null);
-// |args| the JSON the browser wrote.
+// (|tool.doc|, MARK unless given), listed description, schema (the listed
+// text, or null), the read-only, untrusted-content and consequential hints,
+// the form's fields (or null); |args| the JSON the browser wrote.
 const callScript = (id, origin, tool, args) =>
     fill(template('BuildToolCallScript'), [
       JSON.stringify(id),
@@ -63,6 +65,7 @@ const callScript = (id, origin, tool, args) =>
       JSON.stringify(tool.description),
       tool.schema === null ? 'null' : JSON.stringify(tool.schema),
       tool.readOnly ? 'true' : 'false', tool.untrusted ? 'true' : 'false',
+      tool.consequential ? 'true' : 'false',
       tool.form === null ? 'null' : JSON.stringify(tool.form),
       JSON.stringify(args), FORM_HELPERS]);
 const callPoll = (id) =>
@@ -88,7 +91,13 @@ function page(url, tools, options = {}) {
         origin: t.origin || new URL(url).origin,
       }, t)));
     },
-    executeTool(tool, args) {
+    // As 156: the input is an object, serialized for the tool; anything
+    // else is refused before any tool runs.
+    executeTool(tool, input) {
+      if (input === null || typeof input !== 'object') {
+        return Promise.reject(new TypeError('invalid input object'));
+      }
+      const args = JSON.stringify(input);
       calls.push({tool, args});
       return answer(tool, args);
     },
@@ -116,9 +125,10 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 const SEARCH = {
   name: 'search', description: 'Search the shop.',
-  inputSchema: '{"type":"object","properties":{"q":{"type":"string"}}}',
+  inputSchema: {type: 'object', properties: {q: {type: 'string'}}},
   annotations: {readOnlyHint: true, untrustedContentHint: false},
 };
+const SEARCH_SCHEMA = JSON.stringify(SEARCH.inputSchema);
 
 (async () => {
   // ---- Listing ------------------------------------------------------------
@@ -135,11 +145,11 @@ const SEARCH = {
   const tools = [
     SEARCH,
     {name: 'subscribe', description: 'Subscribe.',
-     inputSchema: '{"type":"object"}'},
+     inputSchema: {type: 'object'}},
     {name: 'in_frame', description: 'x', otherWindow: true},
     {name: 'other_origin', description: 'x', origin: 'https://ads.example'},
     {name: 'n'.repeat(500), description: 'd'.repeat(9000),
-     inputSchema: 's'.repeat(20000)},
+     inputSchema: {d: 's'.repeat(20000)}},
   ];
   p = page(ORIGIN, tools);
   assert.deepStrictEqual(p.run(listScript('l2')), {state: 'pending'});
@@ -153,19 +163,32 @@ const SEARCH = {
                          [6, 9, 129]);
   assert.deepStrictEqual(r.tools[0], {
     name: 'search', description: 'Search the shop.',
-    schema: SEARCH.inputSchema, readOnly: true, untrusted: false,
-    form: null,
+    schema: SEARCH_SCHEMA, readOnly: true, untrusted: false,
+    consequential: false, form: null,
   });
+  assert.strictEqual(r.tools[1].schema, '{"type":"object"}');
   assert.deepStrictEqual(r.tools[1].form,
                          [['email', 'email'], ['submit', '']]);
   assert.strictEqual(r.tools[1].readOnly, false);
   assert.strictEqual(r.tools[2].description.length, 4097);
   assert.strictEqual(r.tools[2].schema.length, 8193);
-  // A tool without a schema lists null.
-  p = page(ORIGIN, [{name: 'ping', description: 'Ping.'}]);
+  // A tool without a schema lists null; a schema that isn't an object
+  // (152's string, or anything else) lists '!', which the browser refuses.
+  p = page(ORIGIN, [{name: 'ping', description: 'Ping.'},
+                    {name: 'old', description: 'd', inputSchema: '{}'},
+                    {name: 'num', description: 'd', inputSchema: 7}]);
   p.run(listScript('l3'));
   await settle();
-  assert.strictEqual(p.run(listPoll('l3')).tools[0].schema, null);
+  assert.deepStrictEqual(p.run(listPoll('l3')).tools.map((t) => t.schema),
+                         [null, '!', '!']);
+  // The consequential hint (156) is listed.
+  p = page(ORIGIN, [{name: 'pay', description: 'Pay.', annotations:
+      {readOnlyHint: true, consequentialHint: true}}]);
+  p.run(listScript('l3b'));
+  await settle();
+  r = p.run(listPoll('l3b')).tools[0];
+  assert.strictEqual(r.readOnly, true);
+  assert.strictEqual(r.consequential, true);
   // At most 32, and a failure is a failure.
   p = page(ORIGIN, Array.from({length: 50}, (_, i) => (
       {name: 't' + i, description: 'd'})));
@@ -222,8 +245,9 @@ const SEARCH = {
   // ---- Calling ------------------------------------------------------------
 
   const listed = {name: 'search', description: SEARCH.description,
-                  schema: SEARCH.inputSchema, readOnly: true, form: null};
-  // A call runs the tool the page still lists, with the browser's JSON.
+                  schema: SEARCH_SCHEMA, readOnly: true, form: null};
+  // A call runs the tool the page still lists, with the browser's JSON,
+  // which goes in as an object.
   p = page(ORIGIN, [SEARCH]);
   assert.strictEqual(p.run(callScript('c1', ORIGIN, listed, '{"q":"shoes"}')),
                      'started');
@@ -258,8 +282,13 @@ const SEARCH = {
                 'not_found');
   await changed(Object.assign({}, SEARCH, {description: 'Delete everything.'}),
                 'changed');
-  await changed(Object.assign({}, SEARCH, {inputSchema: '{}'}), 'changed');
+  await changed(Object.assign({}, SEARCH, {inputSchema: {}}), 'changed');
   await changed(Object.assign({}, SEARCH, {inputSchema: undefined}), 'changed');
+  await changed(Object.assign({}, SEARCH, {inputSchema: SEARCH_SCHEMA}),
+                'changed');
+  // ... or now says a call has consequences (156).
+  await changed(Object.assign({}, SEARCH, {annotations:
+      {readOnlyHint: true, consequentialHint: true}}), 'changed');
   await changed(Object.assign({}, SEARCH, {annotations: {readOnlyHint: false}}),
                 'changed');
   await changed(Object.assign({}, SEARCH, {annotations: undefined}), 'changed');
@@ -275,6 +304,16 @@ const SEARCH = {
                      Object.assign({}, listed, {untrusted: true}), '{}'));
     await settle();
     assert.strictEqual(q.run(callPoll('c3b')).state, 'done');
+    // ... and one listed as consequential.
+    const weighty = Object.assign({}, SEARCH, {annotations:
+        {readOnlyHint: true, consequentialHint: true}});
+    const q2 = page(ORIGIN, [weighty]);
+    q2.run(callScript('c3c', ORIGIN,
+                      Object.assign({}, listed, {consequential: true}),
+                      '{"q":"x"}'));
+    await settle();
+    assert.deepStrictEqual(q2.run(callPoll('c3c')),
+                           {state: 'done', result: 'ok:{"q":"x"}'});
   }
   // A same-named form: listed without one, called with one.
   {
@@ -288,7 +327,7 @@ const SEARCH = {
   // A form tool whose form gained a password field since it was listed.
   {
     const formTool = {name: 'subscribe', description: 'Subscribe.',
-                      inputSchema: '{"type":"object"}'};
+                      inputSchema: {type: 'object'}};
     const formListed = {name: 'subscribe', description: 'Subscribe.',
                         schema: '{"type":"object"}', readOnly: false,
                         form: [['email', 'email'], ['submit', '']]};
@@ -367,10 +406,11 @@ const SEARCH = {
   // Hostile names, descriptions and arguments stay data.
   const hostile = '"); alert(1); ("</script> ';
   const hostileTool = {name: 'h', description: hostile,
-                       inputSchema: hostile, annotations: {readOnlyHint: true}};
+                       inputSchema: {d: hostile}, annotations: {readOnlyHint: true}};
   p = page(ORIGIN, [hostileTool]);
   assert.strictEqual(p.run(callScript('c12', ORIGIN,
-      {name: 'h', description: hostile, schema: hostile, readOnly: true,
+      {name: 'h', description: hostile,
+       schema: JSON.stringify(hostileTool.inputSchema), readOnly: true,
        form: null}, JSON.stringify({q: hostile}))), 'started');
   await settle();
   assert.strictEqual(p.run(callPoll('c12')).state, 'done');

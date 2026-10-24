@@ -2,7 +2,7 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // Site tools for the web agent and the AI chat's proposals: the tools a
-// page registers with WebMCP (document.modelContext, Chromium 152;
+// page registers with WebMCP (document.modelContext, Chromium 156;
 // docs/design/AGENT_ACTIONS.md §2.7, §4.9).
 //
 // The agent reaches them through the web API itself, from its isolated
@@ -11,8 +11,15 @@
 // (ModelContext.executeTool()). Blink and the browser apply the platform's
 // rules (secure context, the `tools` permissions policy, origin checks); the
 // page can't see or patch the isolated world's calls. Isolated-world
-// scripts don't wait for promises in 152, so each script starts the work,
-// keeps its state in the isolated world, and a poll script reports it.
+// scripts don't wait for promises (156 still runs them with
+// PromiseResultOption::kDoNotWait), so each script starts the work, keeps
+// its state in the isolated world, and a poll script reports it.
+//
+// In 156 a listed tool's input schema is an object (getTools() parses the
+// JSON the page registered) and executeTool() takes the arguments as an
+// object, which Blink serializes again: the scripts turn the schema into
+// text with JSON.stringify and pass the browser's JSON through JSON.parse,
+// both in the isolated world.
 //
 // The documents listed are the main document and its frames of exactly the
 // same origin (ToolFrames(): never a cross-origin frame, nor a same-origin
@@ -166,7 +173,13 @@ struct SiteTool {
   std::string description;
   std::vector<ToolArgument> arguments;
   // annotations.readOnlyHint === true: the page says it changes nothing.
+  // A call goes unasked only if it isn't also consequential (below), nor a
+  // form tool, nor a sensitive one (ToolCallEffects()).
   bool read_only = false;
+  // annotations.consequentialHint === true (156): the page says a call has
+  // consequences. A tool with it never counts as one that only reads,
+  // whatever readOnlyHint says.
+  bool consequential = false;
   // annotations.untrustedContentHint === true: its answers may hold
   // other people's content.
   bool untrusted_output = false;
@@ -287,8 +300,11 @@ std::string BuildToolListScript(std::string_view request_id,
                                 std::string_view document_mark);
 // Reports it: {state: 'pending' | 'failed' | 'gone'} or {state: 'done',
 // origin, document (the mark), tools: [{name, description, schema,
-// readOnly, untrusted, form}]}, the tools the document itself registered
-// (same window and origin), at most kMaxListedTools.
+// readOnly, untrusted, consequential, form}]}, the tools the document
+// itself registered (same window and origin), at most kMaxListedTools.
+// |schema| is JSON.stringify() of the listed input schema (an object in
+// 156), or null without one; anything but an object reads as "!", which
+// ConvertInputSchema() refuses.
 std::string BuildToolListPollScript(std::string_view request_id);
 
 enum class ListState { kPending, kDone, kUnavailable, kFailed, kGone };
@@ -307,6 +323,7 @@ struct ListedTool {
   std::optional<std::string> input_schema;
   bool read_only = false;
   bool untrusted_output = false;
+  bool consequential = false;
   bool form_backed = false;
   // More than kMaxFormControls controls.
   bool form_overflow = false;
@@ -429,8 +446,9 @@ std::string ToolPlaceText(const SiteTool& tool, std::string_view origin_text);
 // Starts the call in the agent's isolated world: only in the document that
 // listed |tool| (its mark, SiteTool::document), at |origin|, after
 // getTools() shows the same tool as |tool| was listed (description, input
-// schema, both annotations, form fields). The arguments go in as one JSON
-// string. Evaluates to 'started', 'document_changed', 'origin_changed',
+// schema, its three annotations, form fields). The arguments go in as one
+// JSON string, which the script parses into the object executeTool()
+// takes. Evaluates to 'started', 'document_changed', 'origin_changed',
 // 'unavailable' or 'error'.
 std::string BuildToolCallScript(std::string_view request_id,
                                 std::string_view origin,
