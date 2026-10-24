@@ -1168,6 +1168,19 @@ Mac; use a real Linux host.
     a certificate. A FAIL listing a dropped handshake means MoltNet's
     context still asked the browser (check the `network_context.cc` hook
     and `molt_send_no_client_certificates` in the context's params).
+  - `identity.policy_change_closes` and `net.autofill_server` pass
+    (moltnet-live, phase `policy_live`): the MoltNet page closed within
+    seconds of the kit's `ProxyMode` policy, its canary went only through
+    Tor, MoltNet refused to open with the policy and opened without it; no
+    connection to `content-autofill.googleapis.com` with
+    `AutofillServerCommunication` on. A FAIL with the canary looked up
+    outside Tor means the policy's proxy reached MoltNet's network context
+    (check the `proxy_config_monitor.cc` hooks); pages still open after 60
+    s means the settings watch didn't fire (check
+    `MoltNetLiveGuard::Watch()` in `OnTorReady()`). First-run question:
+    whether the "MoltNet windows closed" dialog over the
+    `chrome://molt-net/` tab gets in the way of DevTools-pipe calls (if so,
+    note it; the checks only need the targets list).
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet

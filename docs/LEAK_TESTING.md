@@ -177,6 +177,14 @@ asks nobody in particular.
   browser's environment is emptied except for `HOME`, `USER`, `PATH`,
   `LANG`/`LC_ALL`, `TZ`, the display and `XDG_RUNTIME_DIR`. Proxy variables
   in particular are removed.
+* **A policy set while the browser runs.** For one launch (phase
+  `policy_live`) the kit mounts a directory of the run (root-owned, under
+  `/run/moltleak-<id>/`) over `/etc/chromium/policies/managed`, where Linux
+  builds without Chrome branding read mandatory policies, in the browser's
+  private mount namespace only, and writes a policy file there while
+  MoltNet is open. If that directory doesn't exist on the host, the kit
+  makes it (empty) for the run and removes it afterwards; policy files the
+  host has there are hidden from that launch and never touched.
 
 Teardown removes the namespace, the link, the host NAT table, the iptables
 rules, the cgroups and the wrapper. It also restores `ip_forward`, even
@@ -257,6 +265,8 @@ the report. Anything else is a leak.
 | No restore | a relaunch with the same profile shows no MoltNet page | 5 |
 | Overrides refused | a relaunch with `--proxy-server=` (the kit's logging proxy): `openWindow` returns an error and no MoltNet window opens; the same launch runs step 13 | 9, 13 |
 | Partitioning switches refused | one relaunch per switch MoltNet needs on, each with `--disable-features=` for it (`PartitionConnectionsByNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `ThirdPartyStoragePartitioning`): `openWindow` returns an error that names the switch, and no MoltNet window opens (`identity.partitioning_override_refused`, phase `partitioning_override`) | 9 |
+| A policy set while MoltNet is open | a relaunch with the run's policy directory mounted (above): with a MoltNet page fetching a canary name every 250 ms, the kit writes `{"ProxyMode": "direct"}`. Every MoltNet page must close within 60 s (Chromium reads a changed policy file about 5 s later), the canary must never be looked up outside Tor, `openWindow` must then fail, and once the policy file is removed MoltNet must open again (`identity.policy_change_closes`, phase `policy_live`) | 9 |
+| No Autofill server query | in the same launch, with `--enable-features=AutofillServerCommunication` (MoltBrowser turns the queries off by default), a MoltNet page with an address and a sign-in form: no connection to `content-autofill.googleapis.com` or `chromium-i18n.appspot.com`, through Tor (the capture's SOCKS5 requests) or outside it, during the phase (`net.autofill_server`) | 20 |
 
 ### Uniformity (FINGERPRINTING.md)
 
@@ -336,7 +346,7 @@ the level is reported as SKIP ("check this level by hand").
 | 16 Extensions | split mode, keyboard shortcuts, the toolbar and the PDF viewer are manual |
 | 17 Regular-profile carry-over | media engagement, bookmarks and certificate exceptions need a prepared profile: manual |
 | 19 Incognito's protections | manual (DevTools prefs, media controls, macOS, picture-in-picture, GCM, printing) |
-| 20 Nothing goes around Tor | the AI chat, Cast menu, phone passkeys and "Open all" are manual |
+| 20 Nothing goes around Tor | the AI chat, Cast menu, phone passkeys, "Open all" and address formats (a saved address to fill) are manual |
 
 Also manual: running on macOS and Windows (the kit's capture is Linux only;
 the uniformity pages work anywhere a browser can load them), touchscreens,

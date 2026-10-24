@@ -237,6 +237,24 @@ def manifest():
                  for f in ('PartitionConnectionsByNetworkIsolationKey',
                            'SplitCacheByNetworkIsolationKey',
                            'ThirdPartyStoragePartitioning')]}},
+            {'name': 'policy_live', 'target': 'moltnet', 'start': t(142),
+             'end': t(178), 'data': {
+                 'flags': ['--enable-features=AutofillServerCommunication'],
+                 'autofill_start': t(143), 'autofill_end': t(153),
+                 'autofill_nav_error': None,
+                 'canary_host': 'plc-pppppp9999.' + CANARY,
+                 'canary_url': 'http://plc-pppppp9999.%s/x' % CANARY,
+                 'moltnet_pages_before': 1,
+                 'policy': {'ProxyMode': 'direct'},
+                 'policy_written': t(157), 'closed_after_s': 6.5,
+                 'moltnet_pages_after': 0,
+                 'reopen_with_policy': {
+                     'error': 'A policy or command-line flag controls the '
+                              'proxy, so MoltNet can\'t guarantee Tor '
+                              'routing'},
+                 'pages_with_policy': 0, 'policy_removed': t(166),
+                 'reopen_without_policy': {'running': True},
+                 'reopened': True}},
             {'name': 'extension', 'skipped': '--no-extension'},
         ],
         'fingerprints': [
