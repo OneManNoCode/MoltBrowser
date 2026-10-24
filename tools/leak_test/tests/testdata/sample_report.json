@@ -1974,6 +1974,17 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Shared network state), \u00a74 step 8",
+   "evidence": [
+    "no Background Fetch request reached Tor (see the bgfetch tests' page results)"
+   ],
+   "group": "identity",
+   "id": "identity.background_fetch_circuits",
+   "status": "SKIP",
+   "title": "A Background Fetch goes to Tor with its site's SOCKS username (its site's circuit, not its destination's)"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 1",
    "evidence": [
     "--offline"
@@ -2913,7 +2924,7 @@
   "FAIL": 12,
   "INFO": 2,
   "PASS": 156,
-  "SKIP": 84
+  "SKIP": 85
  },
  "fingerprints": [
   {
@@ -3344,7 +3355,7 @@
   },
   {
    "automation": "automated",
-   "note": "different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, read from the loopback capture and Tor's circuit list",
+   "note": "different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, its site's for a Background Fetch, read from the loopback capture and Tor's circuit list",
    "step": 8,
    "title": "Per-site circuits"
   },

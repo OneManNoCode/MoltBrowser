@@ -494,6 +494,76 @@ def _sandboxed_circuit_check(tr):
         'usernames', status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8')
 
 
+# The Background Fetch tests, and the onion site (manifest['onion']) each
+# page is on.
+BGFETCH_TESTS = {'bgfetch_a': 'a', 'bgfetch_b': 'b'}
+
+
+def _background_fetch_circuit_check(manifest, tr):
+    """A Background Fetch is made by the browser's download service, not the
+    page. In MoltNet it must carry the network key of the site that started
+    it: its request must go to Tor with that site's SOCKS username (the
+    username its pages use), not its destination's. Each test fetches a
+    name of its own (`bgf-<nonce>.<canary domain>`), so the request is a new
+    SOCKS connection attributed by its nonce."""
+    title = ('A Background Fetch goes to Tor with its site\'s SOCKS username '
+             '(its site\'s circuit, not its destination\'s)')
+    doc = 'MOLTNET_COMPLIANCE.md §2 (Shared network state), §4 step 8'
+    onion = manifest.get('onion') or {}
+    page_users, fetches = {}, {}
+    for s in tr['socks']:
+        host = (s.get('host') or '').lower()
+        for site, onion_host in onion.items():
+            if onion_host and host == onion_host.lower():
+                page_users.setdefault(site, set()).add(s.get('username'))
+        if s.get('test') in BGFETCH_TESTS and host.startswith('bgf-'):
+            fetches.setdefault(s['test'], set()).add(s.get('username'))
+    ev = ['%s -> Background Fetch SOCKS usernames %s' % (
+        t, sorted(u or '(none)' for u in us))
+          for t, us in sorted(fetches.items())]
+    if not fetches:
+        return check('identity.background_fetch_circuits', 'identity', title,
+                     SKIP, ev + ['no Background Fetch request reached Tor '
+                                 '(see the bgfetch tests\' page results)'],
+                     doc)
+    status = PASS
+    judged = 0
+    for test, users in sorted(fetches.items()):
+        site = BGFETCH_TESTS[test]
+        own = page_users.get(site, set()) - {None}
+        other = set().union(*[u for k, u in page_users.items()
+                              if k != site]) - {None}
+        if None in users:
+            status = FAIL
+            ev.append('%s: a Background Fetch carried no SOCKS username' %
+                      test)
+            continue
+        if not own:
+            ev.append('%s: no request of its site (%s) was seen to compare '
+                      'with' % (test, site))
+            continue
+        judged += 1
+        if not users <= own:
+            status = FAIL
+            ev.append('%s: the Background Fetch used a username its site\'s '
+                      'pages don\'t (its destination\'s): %s' % (
+                          test, sorted(users - own)))
+        if users & other:
+            status = FAIL
+            ev.append('%s: the Background Fetch used the other site\'s '
+                      'username' % test)
+    if len(fetches) == 2:
+        shared = set.intersection(*fetches.values()) - {None}
+        if shared:
+            status = FAIL
+            ev.append('the two sites\' Background Fetches shared a username: '
+                      '%s' % sorted(shared))
+    if status == PASS and not judged:
+        status = SKIP
+    return check('identity.background_fetch_circuits', 'identity', title,
+                 status, ev, doc)
+
+
 # The client_cert test's server, as its log names the port (the onion
 # service's local port, or the regular-window loopback one).
 CLIENT_CERT_LOG_PORTS = (28445, 18445)
@@ -714,6 +784,7 @@ def _circuit_checks(manifest, tr):
         'Different sites use different SOCKS usernames (per-site circuits)',
         status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8'))
     checks.append(_sandboxed_circuit_check(tr))
+    checks.append(_background_fetch_circuit_check(manifest, tr))
     checks.append(_cert_fetch_circuit_check(manifest, tr))
     checks.append(_session_circuit_check(manifest, tr))
     phase = _phase(manifest, 'circuit')
