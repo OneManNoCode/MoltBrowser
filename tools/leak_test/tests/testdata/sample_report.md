@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 155 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 165 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -282,6 +282,13 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mc.webrtc_decoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mc.webrtc_encoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | media.audiooutput is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | media.clock_running is uniform | FINGERPRINTING.md "MoltNet: media playback clock" |
+| PASS | media.device_blank is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.device_order is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.devices is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.gum is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.gum_overconstrained is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.sink_default is uniform | FINGERPRINTING.md "MoltNet: media playback clock" |
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
@@ -307,6 +314,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | nav.language is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | nav.languages is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | nav.maxTouchPoints is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | perf.heap_cached is uniform | FINGERPRINTING.md "MoltNet: performance.memory" |
+| PASS | perf.heap_rounded is uniform | FINGERPRINTING.md "MoltNet: performance.memory" |
+| PASS | perf.jsHeapSizeLimit is uniform | FINGERPRINTING.md "MoltNet: performance.memory" |
 | PASS | perm.geolocation is uniform | FINGERPRINTING.md "Known gaps": a documented giveaway |
 | PASS | perm.window-management is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
 | PASS | recorder.mime_type is uniform | FINGERPRINTING.md "MoltNet: MediaRecorder" |

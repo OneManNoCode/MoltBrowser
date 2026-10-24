@@ -182,6 +182,95 @@ window.mlAudioCadence = () => audioCadence().catch((e) => ({
   'audio.cadence_interval_ms': ML.errInfo(e),
   'audio.cadence_burst_frames': ML.errInfo(e)}));
 
+// A WAV file of `seconds` of digital silence, 16-bit mono at `rate`.
+function silentWav(seconds, rate) {
+  const frames = Math.round(seconds * rate);
+  const d = new DataView(new ArrayBuffer(44 + frames * 2));
+  const text = (at, s) => {
+    for (let i = 0; i < s.length; ++i) {
+      d.setUint8(at + i, s.charCodeAt(i));
+    }
+  };
+  text(0, 'RIFF');
+  d.setUint32(4, 36 + frames * 2, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  d.setUint32(16, 16, true);
+  d.setUint16(20, 1, true);
+  d.setUint16(22, 1, true);
+  d.setUint32(24, rate, true);
+  d.setUint32(28, rate * 2, true);
+  d.setUint16(32, 2, true);
+  d.setUint16(34, 16, true);
+  text(36, 'data');
+  d.setUint32(40, frames * 2, true);
+  return new Blob([d.buffer], {type: 'audio/wav'});
+}
+
+// An <audio> element playing (silence, unmuted, so through the output
+// device's path; MoltNet: on its fixed clock, device or not). Reports
+// whether currentTime runs at the media's pace and, for the record, how
+// long after play() it starts moving (rounded to 10 ms). Needs a user
+// gesture, so the harness calls it after the page's collection.
+async function mediaClock() {
+  const audio = new Audio();
+  const url = URL.createObjectURL(silentWav(3, 48000));
+  try {
+    await ML.timeout(new Promise((resolve, reject) => {
+      audio.oncanplaythrough = resolve;
+      audio.onerror = () => reject(new Error('media error'));
+      audio.src = url;
+    }), 5000);
+    const t0 = performance.now();
+    await ML.timeout(audio.play(), 3000);
+    while (audio.currentTime === 0 && performance.now() - t0 < 2000) {
+      await ML.sleep(2);
+    }
+    if (audio.currentTime === 0) {
+      return {'media.clock_running': false,
+        'media.clock_start_ms': 'not running'};
+    }
+    const start = performance.now() - t0;
+    const c0 = audio.currentTime;
+    const w0 = performance.now();
+    await ML.sleep(500);
+    const pace = (audio.currentTime - c0) * 1000 / (performance.now() - w0);
+    return {'media.clock_running': pace > 0.8 && pace < 1.2,
+      'media.clock_start_ms': Math.round(start / 10) * 10};
+  } finally {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    URL.revokeObjectURL(url);
+  }
+}
+window.mlMediaClock = () => mediaClock().catch((e) => ({
+  'media.clock_running': ML.errInfo(e),
+  'media.clock_start_ms': ML.errInfo(e)}));
+
+// getUserMedia() before any permission, from a frame of its own that is
+// removed after 1.5 s (ending the request and any prompt). A request the
+// user is asked about is still pending then; Chromium fails at once, with
+// NotFoundError or OverconstrainedError, when no device could meet it.
+async function userMediaBeforePermission(constraints) {
+  const frame = document.createElement('iframe');
+  document.body.appendChild(frame);
+  try {
+    const md = frame.contentWindow.navigator.mediaDevices;
+    if (!md || !md.getUserMedia) {
+      return 'absent';
+    }
+    return await Promise.race([
+      md.getUserMedia(constraints).then((stream) => {
+        stream.getTracks().forEach((t) => t.stop());
+        return 'granted';
+      }, (e) => ML.errName(e)),
+      ML.sleep(1500).then(() => 'pending')]);
+  } finally {
+    frame.remove();
+  }
+}
+
 function decodingAnswer(info) {
   return {supported: info.supported, smooth: info.smooth,
     powerEfficient: info.powerEfficient};
@@ -835,8 +924,41 @@ async function collect() {
   await step('media.audiooutput', async () =>
     (await n.mediaDevices.enumerateDevices()).filter(
         (d) => d.kind === 'audiooutput').length);
+  // The device list in order, and whether it names nothing (MoltNet: one
+  // of each kind, without ID, label or group, before any permission).
+  await step('media.device_order', async () =>
+    (await n.mediaDevices.enumerateDevices()).map((d) => d.kind));
+  await step('media.device_blank', async () =>
+    (await n.mediaDevices.enumerateDevices()).every((d) =>
+      d.deviceId === '' && d.label === '' && d.groupId === ''));
+  // A camera and microphone, and constraints no camera meets: asked about
+  // like any request in MoltNet, whatever the machine has.
+  await step('media.gum', () =>
+    userMediaBeforePermission({audio: true, video: true}));
+  await step('media.gum_overconstrained', () =>
+    userMediaBeforePermission({video: {width: {exact: 12345}}}));
+  // setSinkId('') on an element without a player: the default output
+  // (MoltNet: on every machine).
+  await step('media.sink_default', () => new Audio().setSinkId('').then(
+      () => 'resolved', (e) => ML.errName(e)));
   v['perf.jsHeapSizeLimit'] = performance.memory ?
       performance.memory.jsHeapSizeLimit : null;
+  // performance.memory rounded to one of 100 sizes (multiples of 100,000)
+  // and refreshed once every 20 minutes (MoltNet), not every 50 ms.
+  await step('perf.heap_rounded', () => performance.memory ?
+      [performance.memory.usedJSHeapSize,
+        performance.memory.totalJSHeapSize].every((b) => b % 100000 === 0) :
+      'absent');
+  await step('perf.heap_cached', async () => {
+    if (!performance.memory) {
+      return 'absent';
+    }
+    const before = performance.memory.usedJSHeapSize;
+    const keep = new Array(1 << 20).fill(1.5);
+    await ML.sleep(120);
+    const after = performance.memory.usedJSHeapSize;
+    return keep.length > 0 && after === before;
+  });
   await step('speech.voices', () => new Promise((resolve) => {
     const now = speechSynthesis.getVoices();
     if (now.length) {
