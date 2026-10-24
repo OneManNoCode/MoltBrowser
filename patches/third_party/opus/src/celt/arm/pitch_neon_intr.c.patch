@@ -1,0 +1,45 @@
+MoltBrowser patch for third_party/opus/src/celt/arm/pitch_neon_intr.c
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/opus/src/celt/arm/pitch_neon_intr.c by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/opus/src/celt/arm/pitch_neon_intr.c b/third_party/opus/src/celt/arm/pitch_neon_intr.c
+index 43885f528cb64a9a17e47422d39960b6bb98b865..b1cbe5df2578484392e2f5619c7a6f72edef8755 100644
+--- a/third_party/opus/src/celt/arm/pitch_neon_intr.c
++++ b/third_party/opus/src/celt/arm/pitch_neon_intr.c
+@@ -128,6 +128,9 @@ void dual_inner_prod_neon(const opus_val16 *x, const opus_val16 *y01, const opus
+ 
+ #else /* !FIXED_POINT */
+ 
++/* MoltBrowser: celt.c. */
++int opus_moltbrowser_portable(void);
++
+ /* ========================================================================== */
+ 
+ #ifdef __ARM_FEATURE_FMA
+@@ -189,6 +192,11 @@ opus_val32 celt_inner_prod_neon(const opus_val16 *x, const opus_val16 *y, int N)
+     float32x4_t xy_f32x4 = vdupq_n_f32(0);
+     float32x2_t xy_f32x2;
+ 
++    /* MoltBrowser: */
++    if (opus_moltbrowser_portable()) {
++        return celt_inner_prod_c(x, y, N);
++    }
++
+     for (i = 0; i < N - 7; i += 8) {
+         float32x4_t x_f32x4, y_f32x4;
+         x_f32x4  = vld1q_f32(&x[i]);
+@@ -235,6 +243,12 @@ void dual_inner_prod_neon(const opus_val16 *x, const opus_val16 *y01, const opus
+     float32x4_t xy02_f32x4 = vdupq_n_f32(0);
+     float32x2_t xy01_f32x2, xy02_f32x2;
+ 
++    /* MoltBrowser: */
++    if (opus_moltbrowser_portable()) {
++        dual_inner_prod_c(x, y01, y02, N, xy1, xy2);
++        return;
++    }
++
+     for (i = 0; i < N - 7; i += 8) {
+         float32x4_t x_f32x4, y01_f32x4, y02_f32x4;
+         x_f32x4    = vld1q_f32(&x[i]);

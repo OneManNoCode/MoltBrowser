@@ -1,0 +1,31 @@
+MoltBrowser patch for media/base/sinc_resampler.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/base/sinc_resampler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/base/sinc_resampler.cc b/media/base/sinc_resampler.cc
+index 80cc3be61c5d7fc50cb138f5a06f9cd7d943ff29..0b0c54f98bffd0a08bfb52d96ee73fd4b6224043 100644
+--- a/media/base/sinc_resampler.cc
++++ b/media/base/sinc_resampler.cc
+@@ -88,6 +88,7 @@
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+ #include "cc/base/math_util.h"
++#include "media/base/molt_portable_media.h"
+ 
+ #if defined(ARCH_CPU_X86_FAMILY)
+ #include <immintrin.h>
+@@ -128,6 +129,12 @@ static double SincScaleFactor(double io_ratio, size_t kernel_size) {
+ 
+ // If we know the minimum architecture at compile time, avoid CPU detection.
+ void SincResampler::InitializeCPUSpecificFeatures() {
++  // MoltBrowser: the same samples on every CPU in MoltNet's renderers, where
++  // pages read what an encoder resampled (media/base/molt_portable_media.h).
++  if (IsPortableMediaProcess()) {
++    convolve_proc_ = Convolve_C;
++    return;
++  }
+ #if defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
+   convolve_proc_ = Convolve_NEON;
+ #elif defined(ARCH_CPU_X86_FAMILY)

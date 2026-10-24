@@ -223,8 +223,15 @@ extensions/browser/extension_util.cc.patch
 extensions/browser/extensions_browser_client.cc.patch
 extensions/browser/extensions_browser_client.h.patch
 extensions/browser/permissions/active_tab_permission_granter.cc.patch
+media/base/BUILD.gn.patch
+media/base/sinc_resampler.cc.patch
+media/base/vector_math.cc.patch
 media/base/video_encoder.cc.patch
 media/base/video_encoder.h.patch
+media/base/video_frame_converter_internals.cc.patch
+media/gfx/mappable_shared_image_video_frame_pool.cc.patch
+media/gfx/paint_canvas_video_renderer.cc.patch
+media/renderers/default_decoder_factory.cc.patch
 net/base/features.cc.patch
 net/dns/host_resolver_manager.cc.patch
 net/http/http_network_session.cc.patch
@@ -344,6 +351,11 @@ third_party/blink/renderer/platform/network/network_state_notifier.cc.patch
 third_party/blink/renderer/platform/network/network_state_notifier.h.patch
 third_party/blink/renderer/platform/text/platform_locale.cc.patch
 third_party/blink/renderer/platform/text/platform_locale.h.patch
+third_party/opus/BUILD.gn.patch
+third_party/opus/src/celt/arm/celt_neon_intr.c.patch
+third_party/opus/src/celt/arm/pitch_neon_intr.c.patch
+third_party/opus/src/celt/celt.c.patch
+third_party/opus/src/celt/x86/x86cpu.c.patch
 third_party/rust/chromium_crates_io/Cargo.lock.patch
 third_party/rust/chromium_crates_io/Cargo.toml.patch
 third_party/rust/chromium_crates_io/gnrt_config.toml.patch
