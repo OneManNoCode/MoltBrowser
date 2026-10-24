@@ -152,6 +152,13 @@ SOCKSConnectJob::~SOCKSConnectJob() {
 
 LoadState SOCKSConnectJob::GetLoadState() const {
   switch (next_state_) {
+    // MoltBrowser: waiting for a handshake slot (DoMoltHandshakeSlot()). As
+    // for a host being resolved, the socket pool starts no backup job for a
+    // job in this state (TransportClientSocketPool::Group::
+    // OnBackupJobTimerFired()), which would only queue for the same slots.
+    case STATE_MOLT_HANDSHAKE_SLOT:
+    case STATE_MOLT_HANDSHAKE_SLOT_COMPLETE:
+      return LOAD_STATE_RESOLVING_HOST;
     case STATE_TRANSPORT_CONNECT:
       return LOAD_STATE_IDLE;
     case STATE_TRANSPORT_CONNECT_COMPLETE:
@@ -206,6 +213,15 @@ int SOCKSConnectJob::DoLoop(int result) {
     State state = next_state_;
     next_state_ = STATE_NONE;
     switch (state) {
+      // MoltBrowser:
+      case STATE_MOLT_HANDSHAKE_SLOT:
+        DCHECK_EQ(OK, rv);
+        rv = DoMoltHandshakeSlot();
+        break;
+      case STATE_MOLT_HANDSHAKE_SLOT_COMPLETE:
+        DCHECK_EQ(OK, rv);
+        rv = DoMoltHandshakeSlotComplete();
+        break;
       case STATE_TRANSPORT_CONNECT:
         DCHECK_EQ(OK, rv);
         rv = DoTransportConnect();
@@ -226,6 +242,32 @@ int SOCKSConnectJob::DoLoop(int result) {
   } while (rv != ERR_IO_PENDING && next_state_ != STATE_NONE);
 
   return rv;
+}
+
+// MoltBrowser: in a session with SOCKS handshake limits (MoltNet's), a job
+// for MoltNet's local Tor waits for one of its site's slots before it
+// connects: a handshake in progress is what can make Tor build a circuit,
+// and every site shares Tor's limit on circuits being built. No timer runs
+// while it waits (this job's starts after the connection to the proxy).
+int SOCKSConnectJob::DoMoltHandshakeSlot() {
+  next_state_ = STATE_MOLT_HANDSHAKE_SLOT_COMPLETE;
+  MoltSocksHandshakeLimiter* limiter =
+      common_connect_job_params()->molt_socks_handshake_limiter;
+  if (!limiter || !TorIsolationUsername(*socks_params_)) {
+    return OK;
+  }
+  molt_handshake_slot_ = limiter->Acquire(
+      MoltBudgetSiteFor(socks_params_->network_anonymization_key()),
+      priority(),
+      base::BindOnce(&SOCKSConnectJob::OnIOComplete, base::Unretained(this),
+                     OK));
+  return molt_handshake_slot_->granted() ? OK : ERR_IO_PENDING;
+}
+
+// MoltBrowser: it has a slot (or needs none).
+int SOCKSConnectJob::DoMoltHandshakeSlotComplete() {
+  next_state_ = STATE_TRANSPORT_CONNECT;
+  return OK;
 }
 
 int SOCKSConnectJob::DoTransportConnect() {
@@ -283,6 +325,8 @@ int SOCKSConnectJob::DoSOCKSConnect() {
 }
 
 int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
+  // MoltBrowser: the handshake is done; the site's next one may start.
+  molt_handshake_slot_.reset();
   if (!socks_params_->is_socks_v5())
     resolve_error_info_ = socks_socket_ptr_->GetResolveErrorInfo();
   if (result != OK) {
@@ -295,11 +339,16 @@ int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
 }
 
 int SOCKSConnectJob::ConnectInternal() {
-  next_state_ = STATE_TRANSPORT_CONNECT;
+  // MoltBrowser: first a handshake slot (DoMoltHandshakeSlot()).
+  next_state_ = STATE_MOLT_HANDSHAKE_SLOT;
   return DoLoop(OK);
 }
 
 void SOCKSConnectJob::ChangePriorityInternal(RequestPriority priority) {
+  // MoltBrowser:
+  if (molt_handshake_slot_) {
+    molt_handshake_slot_->SetPriority(priority);
+  }
   // Currently doesn't change host resolution request priority for SOCKS4 case.
   if (transport_connect_job_)
     transport_connect_job_->ChangePriority(priority);

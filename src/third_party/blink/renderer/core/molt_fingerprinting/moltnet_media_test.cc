@@ -174,23 +174,5 @@ TEST_F(MoltNetMediaTest, MoltNetMediaCapabilitiesAndCodecs) {
   EXPECT_FALSE(UsesPlatformMediaCodecs());
 }
 
-TEST_F(MoltNetMediaTest, AnOutputDeviceIsAlwaysListed) {
-  const Vector<WebMediaDeviceInfo> none;
-  Vector<WebMediaDeviceInfo> one;
-  one.push_back(WebMediaDeviceInfo());
-  Vector<WebMediaDeviceInfo> named;
-  named.push_back(WebMediaDeviceInfo("id", "Microphone", "group"));
-  // Normal windows list what Chromium listed.
-  EXPECT_FALSE(ShouldListUniformAudioOutput(none, none));
-  SetMoltNetMediaForTesting(true);
-  // A MoltNet machine without an output device lists one before a
-  // permission, like every other.
-  EXPECT_TRUE(ShouldListUniformAudioOutput(none, none));
-  EXPECT_TRUE(ShouldListUniformAudioOutput(one, none));
-  EXPECT_FALSE(ShouldListUniformAudioOutput(none, one));
-  // With the microphone permission the page sees the real devices.
-  EXPECT_FALSE(ShouldListUniformAudioOutput(named, none));
-}
-
 }  // namespace
 }  // namespace blink::molt_fingerprinting

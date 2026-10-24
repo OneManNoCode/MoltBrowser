@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_network.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
@@ -579,6 +580,9 @@ void Configure(Mode mode) {
     // Software video encoders run as on the core count pages see
     // (moltnet_encoders.h).
     PinUniformSoftwareEncoding();
+    // Media pixels and encoded bytes are computed the same way on every
+    // machine of an OS (moltnet_pixels.h).
+    PinUniformMediaPixels();
   }
 }
 

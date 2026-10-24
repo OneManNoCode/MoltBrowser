@@ -167,6 +167,7 @@ source_set("unit_tests") {
   sources = [
     "molt_letterbox_unittest.cc",
     "molt_net_device_values_unittest.cc",
+    "molt_net_storage_budget_policy_unittest.cc",
     "molt_net_storage_unittest.cc",
     "molt_net_storage_values_unittest.cc",
     "molt_shields_decision_unittest.cc",

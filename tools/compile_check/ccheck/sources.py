@@ -84,6 +84,9 @@ SUBPROJECTS = {
     # which video_track_recorder.cc creates).
     "third_party/libvpx/source/libvpx": (
         "https://github.com/webmproject/libvpx", "", None),
+    # media/gfx/paint_canvas_video_renderer.cc (half floats for 16-bit
+    # frames).
+    "third_party/fp16/src": ("https://github.com/Maratyszcza/FP16", "", None),
     # GitHub's mirror stops at older release branches; this GitLab mirror
     # carries chromium/<branch> (the pinned M152 commit among them).
     "third_party/pdfium": (("https://github.com/chromium/pdfium",

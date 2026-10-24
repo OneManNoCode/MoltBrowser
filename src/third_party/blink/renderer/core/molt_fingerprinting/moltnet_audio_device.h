@@ -33,9 +33,9 @@
 //   * MaybeCreateSinkAndGetStatus(): OK for the default device and silent
 //     sinks, the real answer for a chosen device.
 // The real device (the WebAudioDevice Platform::CreateAudioDevice makes, at
-// the context's rate) reads what was rendered from an OutputRing, through a
-// media::MultiChannelResampler that DriftControl keeps in step; silent sinks
-// ({type: "none"}) have no real device at all.
+// the context's rate) reads what was rendered through a MoltNetAudioOutput
+// (moltnet_audio_output.h: a ring and a resampler that DriftControl keeps in
+// step); silent sinks ({type: "none"}) have no real device at all.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_AUDIO_DEVICE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_AUDIO_DEVICE_H_
@@ -46,13 +46,10 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/synchronization/lock.h"
-#include "base/thread_annotations.h"
 #include "base/time/time.h"
 #include "media/base/audio_renderer_sink.h"
 #include "third_party/blink/public/platform/web_audio_device.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_clock.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -61,7 +58,6 @@ class SingleThreadTaskRunner;
 namespace media {
 class AudioBus;
 class FakeAudioWorker;
-class MultiChannelResampler;
 }  // namespace media
 
 namespace blink {
@@ -71,6 +67,8 @@ class WebAudioLatencyHint;
 class WebAudioSinkDescriptor;
 
 namespace molt_fingerprinting {
+
+class MoltNetAudioOutput;
 
 class CORE_EXPORT MoltNetAudioDevice final
     : public WebAudioDevice,
@@ -120,12 +118,9 @@ class CORE_EXPORT MoltNetAudioDevice final
  private:
   enum class State { kStopped, kRunning, kPaused };
 
-  // The clock's tick: renders one callback and hands it to the ring
-  // (the clock's thread).
+  // The clock's tick: renders one callback and hands it to the output (the
+  // clock's thread).
   void OnTick(base::TimeTicks ideal_time, base::TimeTicks now);
-  // The resampler's input: the next chunk from the ring (the real device's
-  // audio thread).
-  void ReadRing(int frame_delay, media::AudioBus* bus);
 
   void StartClock();
   void StopClock();
@@ -153,19 +148,9 @@ class CORE_EXPORT MoltNetAudioDevice final
   // The clock's thread.
   std::unique_ptr<media::AudioBus> tick_bus_;
 
-  // The real device's audio thread.
-  std::unique_ptr<media::MultiChannelResampler> resampler_;
-  double nominal_ratio_ = 1;
-  double resampler_rate_ = 1;
-
-  // Only for an audible sink (SetOutputDevice()).
-  base::Lock lock_;
-  std::unique_ptr<moltnet::OutputRing> ring_ GUARDED_BY(lock_);
-  std::unique_ptr<moltnet::DriftControl> control_ GUARDED_BY(lock_);
-  // Whether ticks go to the ring (only while the real device runs).
-  bool feeding_ GUARDED_BY(lock_) = false;
-  base::TimeTicks last_tick_due_ GUARDED_BY(lock_);
-  bool flush_resampler_ GUARDED_BY(lock_) = false;
+  // Only for an audible sink (SetOutputDevice()); set before the clock and
+  // the real device start.
+  std::unique_ptr<MoltNetAudioOutput> output_;
 
   base::WeakPtrFactory<MoltNetAudioDevice> weak_factory_{this};
 };

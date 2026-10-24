@@ -51,7 +51,7 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
-#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/crop_target.h"
 #include "third_party/blink/renderer/modules/mediastream/input_device_info.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
@@ -1315,8 +1315,11 @@ void MediaDevices::OnDevicesChanged(
 }
 
 void MediaDevices::MaybeFireDeviceChangeEvent(bool has_permission) {
+  // MoltBrowser: in MoltNet a device change shows only once the page may use
+  // the devices, whatever the feature's state (moltnet_media_devices.h).
   if (has_permission ||
-      !base::FeatureList::IsEnabled(kDeviceChangeRequiresPermission)) {
+      (!base::FeatureList::IsEnabled(kDeviceChangeRequiresPermission) &&
+       !molt_fingerprinting::DeviceChangeNeedsPermission())) {
     ScheduleDispatchEvent(Event::Create(event_type_names::kDevicechange));
   }
 }
@@ -1494,18 +1497,19 @@ void MediaDevices::DevicesEnumerated(
             String::FromUtf8(device_info.group_id), device_type));
       }
     }
-  }
-
-  // MoltBrowser: every MoltNet machine has an output device, listed like any
-  // other before a permission (moltnet_media.h).
-  if (molt_fingerprinting::ShouldListUniformAudioOutput(
-          enumeration[static_cast<wtf_size_t>(
-              mojom::blink::MediaDeviceType::kMediaAudioInput)],
-          enumeration[static_cast<wtf_size_t>(
-              mojom::blink::MediaDeviceType::kMediaAudioOutput)])) {
-    media_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
-        g_empty_string, g_empty_string, g_empty_string,
-        mojom::blink::MediaDeviceType::kMediaAudioOutput));
+    // MoltBrowser: every MoltNet machine has a microphone, a camera and an
+    // output device, listed like any other before a permission
+    // (moltnet_media_devices.h).
+    const auto kind = static_cast<mojom::blink::MediaDeviceType>(i);
+    if (molt_fingerprinting::ShouldListUniformDevice(kind, enumeration)) {
+      if (kind == mojom::blink::MediaDeviceType::kMediaAudioOutput) {
+        media_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
+            g_empty_string, g_empty_string, g_empty_string, kind));
+      } else {
+        media_devices.push_back(MakeGarbageCollected<InputDeviceInfo>(
+            g_empty_string, g_empty_string, g_empty_string, kind));
+      }
+    }
   }
 
   ReportCompletedEnumerateDevices(result_contains_nonempty_input_device_ids);

@@ -1,0 +1,32 @@
+MoltBrowser patch for media/gfx/mappable_shared_image_video_frame_pool.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/gfx/mappable_shared_image_video_frame_pool.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/gfx/mappable_shared_image_video_frame_pool.cc b/media/gfx/mappable_shared_image_video_frame_pool.cc
+index 565f8a0286df109b87f14325ddffcd1b6bdfda41..599223eb8462f31bf8e3d6d39303079b72dda6fb 100644
+--- a/media/gfx/mappable_shared_image_video_frame_pool.cc
++++ b/media/gfx/mappable_shared_image_video_frame_pool.cc
+@@ -52,6 +52,7 @@
+ #include "gpu/config/gpu_finch_features.h"
+ #include "gpu/config/gpu_switches.h"
+ #include "media/base/media_switches.h"
++#include "media/base/molt_portable_media.h"
+ #include "media/base/video_types.h"
+ #include "media/base/video_util.h"
+ #include "media/video/gpu_video_accelerator_factories.h"
+@@ -1412,6 +1413,13 @@ void MappableSharedImageVideoFramePool::MaybeCreateHardwareFrame(
+     scoped_refptr<VideoFrame> video_frame,
+     FrameReadyCB frame_ready_cb) {
+   DCHECK(video_frame);
++  // MoltBrowser: in MoltNet's renderers frames stay in CPU memory, so what a
++  // page reads back of them is converted by the CPU, not by the GPU
++  // (media/base/molt_portable_media.h).
++  if (IsPortableMediaProcess()) {
++    std::move(frame_ready_cb).Run(std::move(video_frame));
++    return;
++  }
+   pool_impl_->CreateHardwareFrame(std::move(video_frame),
+                                   std::move(frame_ready_cb));
+ }

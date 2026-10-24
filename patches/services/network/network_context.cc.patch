@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e9d3d9a28 100644
+index 66e2d0450518803f1531470045ffadc1412c497f..51b48f2a97731dbd06e8f803cb8edf1dc8330b37 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -665,6 +665,34 @@ void RemoveInvalidationFilterCallback(
@@ -43,7 +43,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
  }  // namespace
  
  constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
-@@ -825,6 +853,10 @@ NetworkContext::NetworkContext(
+@@ -825,6 +853,17 @@ NetworkContext::NetworkContext(
  
    shared_resource_checker_ = std::make_unique<SharedResourceChecker>(
        cookie_manager_->cookie_settings());
@@ -51,10 +51,17 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
 +  if (params_->molt_no_shared_cache_entries) {
 +    shared_resource_checker_->MoltDisableSharing();
 +  }
++  // MoltBrowser: MoltNet's keepalive limits are per site and its own
++  // (services/network/molt_keepalive_partitions.h); before any of its
++  // URLLoaderFactories exists.
++  if (params_->molt_per_site_keepalive_limits) {
++    network_service_->keepalive_statistics_recorder()
++        ->MoltAddPartitionedContext(this);
++  }
  
    network_service_->RegisterNetworkContext(this);
  
-@@ -854,6 +886,11 @@ NetworkContext::NetworkContext(
+@@ -854,6 +893,11 @@ NetworkContext::NetworkContext(
          params_->http_auth_static_network_context_params
              ->allow_default_credentials);
    }
@@ -66,7 +73,18 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
  
    InitializeCorsParams();
  
-@@ -1114,6 +1151,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
+@@ -997,6 +1041,10 @@ NetworkContext::~NetworkContext() {
+   // May be nullptr in tests.
+   if (network_service_) {
+     network_service_->DeregisterNetworkContext(this);
++    // MoltBrowser: this context's per-site keepalive records, if it has
++    // them, go now; its URLLoaderFactories go later and find them gone.
++    network_service_->keepalive_statistics_recorder()
++        ->MoltRemovePartitionedContext(this);
+   }
+ 
+   if (domain_reliability_monitor_) {
+@@ -1114,6 +1162,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
  void NetworkContext::ActivateDohProbes() {
    DCHECK(url_request_context_->host_resolver());
  
@@ -79,7 +97,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
    doh_probes_request_.reset();
    doh_probes_request_ =
        url_request_context_->host_resolver()->CreateDohProbeRequest();
-@@ -2855,6 +2898,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+@@ -2855,6 +2909,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
    http_auth_merged_preferences_.set_http_auth_scheme_filter(
        base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                            base::Unretained(this)));
@@ -90,7 +108,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
-@@ -2894,9 +2941,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2894,9 +2952,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
  
      // Whether the cert verifier is remote or in-process, we should wrap it in
      // caching and coalescing layers to avoid extra verifications and IPCs.
@@ -107,7 +125,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
    }
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-@@ -2938,8 +2989,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2938,8 +3000,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      }
      builder.SetHttpAuthHandlerFactory(
          network_service_->CreateHttpAuthHandlerFactory(this));
@@ -122,7 +140,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
    }
    trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
  
-@@ -3209,6 +3264,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3209,6 +3275,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -137,7 +155,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..636f8f7a969e3cec9dc9f12a84055b1e
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3344,6 +3407,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3344,6 +3418,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  

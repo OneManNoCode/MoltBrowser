@@ -1,0 +1,30 @@
+MoltBrowser patch for media/base/vector_math.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/base/vector_math.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/base/vector_math.cc b/media/base/vector_math.cc
+index a4c4b2d926880f3787b0f16d74bd2ce001a7adf6..23a7204340711ce7c95a91d8919d6998e47a1492 100644
+--- a/media/base/vector_math.cc
++++ b/media/base/vector_math.cc
+@@ -12,6 +12,7 @@
+ #include "base/cpu.h"
+ #include "base/memory/aligned_memory.h"
+ #include "build/build_config.h"
++#include "media/base/molt_portable_media.h"
+ #include "media/base/vector_math_testing.h"
+ 
+ // NaCl does not allow intrinsics.
+@@ -43,6 +44,11 @@ void FMAC(base::span<const float> src, float scale, base::span<float> dest) {
+   DCHECK(base::IsAligned(src.data(), kRequiredAlignment));
+   DCHECK(base::IsAligned(dest.data(), kRequiredAlignment));
+   static const auto fmac_func = [] {
++    // MoltBrowser: the same sums on every CPU in MoltNet's renderers, where
++    // pages read what an encoder downmixed (media/base/molt_portable_media.h).
++    if (IsPortableMediaProcess()) {
++      return FMAC_C;
++    }
+ #if defined(ARCH_CPU_X86_FAMILY)
+     base::CPU cpu;
+     if (cpu.has_avx2() && cpu.has_fma3())

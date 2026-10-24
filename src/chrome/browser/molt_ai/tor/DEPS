@@ -11,4 +11,12 @@ specific_include_rules = {
     "+third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.h",
     "+third_party/blink/renderer/core/molt_fingerprinting/fonts.h",
   ],
+  # The registry behind MoltNet's per-site keepalive limits (std-only).
+  "molt_net_keepalive_partitions_unittest\.cc": [
+    "+services/network/molt_keepalive_partitions.h",
+  ],
+  # Which isolation MoltNet's downloads carry (std-only).
+  "molt_net_download_isolation_unittest\.cc": [
+    "+content/browser/download/molt_download_isolation_policy.h",
+  ],
 }

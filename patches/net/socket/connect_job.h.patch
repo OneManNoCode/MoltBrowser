@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/connect_job.h b/net/socket/connect_job.h
-index cdd27e0f305aae7291ffb7c656db17fed01f17e4..5b120ff2bc338dfdaf98495198bdf09a65a9d630 100644
+index cdd27e0f305aae7291ffb7c656db17fed01f17e4..5e142077b93f6c9e9e850379139e7fe8621c373f 100644
 --- a/net/socket/connect_job.h
 +++ b/net/socket/connect_job.h
-@@ -113,6 +113,11 @@ struct NET_EXPORT_PRIVATE CommonConnectJobParams {
+@@ -45,6 +45,7 @@ class HttpAuthController;
+ class HttpAuthHandlerFactory;
+ class HttpResponseInfo;
+ class HttpUserAgentSettings;
++class MoltSocksHandshakeLimiter;  // MoltBrowser
+ class NetLog;
+ class NetLogWithSource;
+ class NetworkQualityEstimator;
+@@ -113,6 +114,15 @@ struct NET_EXPORT_PRIVATE CommonConnectJobParams {
    raw_ptr<const SSLConfig::ApplicationSettings> application_settings;
    raw_ptr<const bool> ignore_certificate_errors;
    raw_ptr<const bool> enable_early_data;
@@ -17,6 +25,10 @@ index cdd27e0f305aae7291ffb7c656db17fed01f17e4..5b120ff2bc338dfdaf98495198bdf09a
 +  // (HttpNetworkSessionParams::molt_socks_isolation_password), read by
 +  // SOCKSConnectJob. Null or empty: none for this session.
 +  raw_ptr<const std::string> molt_socks_isolation_password = nullptr;
++  // MoltBrowser: the session's SOCKS handshake limits for MoltNet's Tor
++  // (net/socket/molt_connection_budget.h), read by SOCKSConnectJob. Null:
++  // none for this session.
++  raw_ptr<MoltSocksHandshakeLimiter> molt_socks_handshake_limiter = nullptr;
  };
  
  // When a host resolution completes, OnHostResolutionCallback() is invoked. If

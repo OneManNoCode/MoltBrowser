@@ -434,7 +434,18 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `net/socket/transport_client_socket_pool.h` | inline `MoltIsUnused()` (reads `group_map_`, `pending_callback_map_`, `higher_pools_`). Widely included: another large `//net` rebuild | moltnet-policy |
 | `net/socket/molt_per_site_socket_pool_policy.h`, `net/socket/molt_per_site_socket_pools.h` (new, header-only) | in no target's `sources`, like `molt_uniform_network_state.h`; if `gn check` complains, list them in `//net:net` | moltnet-policy |
 | `net/http/http_network_session.{h,cc}` | `HttpNetworkSessionParams::molt_per_site_socket_pool_size`, passed to both pool managers; `GetSocketPoolForSite()` | moltnet-policy |
-| `services/network/public/mojom/network_context.mojom`, `services/network/network_context.cc` | `[MinVersion=1] uint32 molt_per_site_socket_pool_size`, copied into the session params; set to 128 for MoltNet by `molt_net_network_context_policy.h` (which now includes the `net/` policy header) | moltnet-policy |
+| `services/network/public/mojom/network_context.mojom`, `services/network/network_context.cc` | `[MinVersion=1] uint32 molt_per_site_socket_pool_size`, copied into the session params; set to 128 for MoltNet by `molt_net_network_context_policy.h` (which now includes the `net/` policy header; 48 since moltnet-shared) | moltnet-policy |
+| `net/socket/client_socket_pool.{h,cc}` (new upstream copies) | a public nested interface `ClientSocketPool::MoltSocketGate`, `MoltSetSocketGate()` (also sets `additional_capacity_` to `SocketPoolAdditionalCapacity::CreateEmpty()` and calls `ResetExpandability()`) and a `raw_ptr<MoltSocketGate>` member; `UpdateExpandabilityBeforeAllocation()` asks the gate, `UpdateExpandabilityAfterRelease()` tells it. `client_socket_pool.h` is included by every pool: another large `//net` rebuild | moltnet-shared |
+| `net/socket/transport_client_socket_pool.h` | inline `MoltHasStalledRequest()`, `MoltRetryStalledRequests()`, `MoltCloseOneIdleSocket()`, `MoltCloseIdleSessions()`: read `group_map_`, `idle_socket_count_`, `higher_pools_`, and call `CheckForStalledSocketGroups()`, `CloseOneIdleSocketExceptInGroup()`, `CloseOneIdleConnectionInHigherLayeredPool()` and the base class's `UpdateExpandabilityBeforeAllocation()` (protected) | moltnet-shared |
+| `net/socket/molt_connection_budget.h` (new, header-only, in no target's `sources`), `molt_per_site_socket_pools.h`, `molt_per_site_socket_pool_policy.h` | `MoltConnectionBudget` posts tasks (`base::SequencedTaskRunner::GetCurrentDefault()`, `base::WeakPtrFactory`); `MoltBudgetSiteFor()` uses `NetworkAnonymizationKey::GetTopFrameSite()`, `url::Origin::GetDebugString()` and `SchemefulSite(GURL)`; `MoltSocksHandshakeLimiter` and its `Slot`; the pools object now implements `ClientSocketPool::MoltSocketGate` and `MoltConnectionBudget::Member` and keys its pools by `std::pair<ProxyChain, std::optional<SchemefulSite>>` | moltnet-shared |
+| `net/socket/client_socket_pool_manager_impl.{h,cc}`, `net/http/http_network_session.{h,cc}` | a constructor argument `MoltConnectionBudget*` (default `nullptr`); the session owns a `std::unique_ptr<MoltConnectionBudget>` and a `std::unique_ptr<MoltSocksHandshakeLimiter>`, declared before the pool managers (so destroyed after them), made when `molt_per_site_socket_pool_size` is set, and passes the limiter in `CreateCommonConnectJobParams()` | moltnet-shared |
+| `net/socket/connect_job.h`, `net/socket/socks_connect_job.{h,cc}` (`socks_connect_job.h` a new upstream copy) | `CommonConnectJobParams::molt_socks_handshake_limiter` (a `raw_ptr`); two new states before `STATE_TRANSPORT_CONNECT`, a `std::unique_ptr<MoltSocksHandshakeLimiter::Slot>` member, new cases in `GetLoadState()` and `ChangePriorityInternal()` | moltnet-shared |
+| `services/network/keepalive_statistics_recorder.{h,cc}`, `services/network/url_loader_factory.{h,cc}` (new upstream copies), `services/network/molt_keepalive_partitions.h`, `molt_keepalive_site.h` (new, header-only, in no target's `sources`) | the service's recorder holds MoltNet's per-site recorders (`MoltRecorderFor()` returns a `base::WeakPtr`); the factory keeps a `base::WeakPtr<KeepaliveStatisticsRecorder>` chosen in its constructor from `IsolationInfo::top_frame_origin()` (`url::Origin::GetTupleOrPrecursorTupleIfOpaque()`, `net::SchemefulSite`) and hands it to each `URLLoader` | moltnet-shared |
+| `services/network/network_context.cc`, `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_per_site_keepalive_limits`, set by `molt_net_network_context_policy.h`; the constructor registers the context with the service's recorder, the destructor removes it after `DeregisterNetworkContext()` | moltnet-shared |
+| `storage/browser/quota/quota_settings.h`, `quota_manager_impl.cc`, `quota_temporary_storage_evictor.cc` (new upstream copies), `storage/browser/quota/molt_storage_budget.h`, `molt_storage_budget_policy.h` (new, header-only, in no target's `sources`) | `QuotaSettings::molt_per_site_quota` (0 by default; set by `molt_net_storage.cc`); `UsageAndQuotaInfoGatherer` gets `MoltOnGotGlobalUsage()` (bound to `QuotaManagerImpl::GetGlobalUsage()`, reads `UsageTracker::GetCachedStorageKeysUsage()`) and two members; `OnGotEvictionRoundInfo()` zeroes the overage. `quota_settings.h` is widely included in `//storage` and `//content` | moltnet-shared |
+| `components/download/internal/background_service/in_memory_download.cc` (new upstream copy), `molt_registering_site_isolation.h` (new, header-only, in no target's `sources`) | `SendRequest()` puts `RequestParams::isolation_info` into the request's `trusted_params` (`ResourceRequest::TrustedParams::isolation_info`); the factories it uses must be trusted (they are: `StoragePartitionImpl::CreateURLLoaderFactoryParams()`, the profile's browser-process factory), or the network service reports a bad message | moltnet-shared |
+| `content/browser/download/download_manager_impl.cc`, `save_file_manager.cc` (new upstream copies), `molt_download_isolation.h`, `molt_download_isolation_policy.h` (new, header-only, in no target's `sources`) | `BeginDownloadInternal()` and `SaveURL()` call the header's helpers: `RenderFrameHost::GetIsolationInfoForSubresources()`, `DownloadItem::GetIsolationInfo()`, `DownloadUrlParameters::set_isolation_info()` / `set_update_first_party_url_on_redirect()`, `net::IsolationInfo::CreateTransient()`, `net::SchemefulSite`, `GetContentClient()->browser()` | moltnet-shared |
+| `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | new virtual `ShouldKeepDownloadsWithTheirSite(BrowserContext*)`, default `false`; Chrome's answers `molt_ai::tor::KeepDownloadsWithTheirSite(IsMoltNetProfile(...))` (`molt_net_network_context_policy.h`) | moltnet-shared |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -497,9 +508,11 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 | `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
 | `platform/audio/audio_destination.{h,cc}`, `modules/mediastream/media_devices.cc` (new upstream copies), `audio_context.cc` (`IsValidSinkDescriptor`), `core/molt_fingerprinting/moltnet_audio_{clock,device}.{h,cc}` | a static setter on the `PLATFORM_EXPORT` `AudioDestination` holding a function pointer in a `std::atomic`, called from core; core now uses `media::FakeAudioWorker`, `media::MultiChannelResampler`, `media::AudioBus` and `NonMainThread` with `base::ThreadType::kRealtimeAudio` (`gn check`: core reaches `//media` through `platform`'s public deps, `platform/media:media_final` → `//media`; Chromium's presubmit `audit_non_blink_usage.py`, which the build does not run, would list the `media::` names used in `core/molt_fingerprinting`); `WebMediaDeviceInfo` (`blink/public/common`) in core | fp-audio |
+| `modules/media/audio/audio_device_factory.cc`, `modules/audio_output_devices/html_media_element_audio_output_device.cc`, `modules/mediastream/user_media_processor.cc`, `core/timing/memory_info.cc`, `core/timing/measure_memory/measure_memory_controller.cc` (all five new upstream copies), `media_devices.cc` (new hooks), `core/molt_fingerprinting/moltnet_audio_{output,sink}.{h,cc}`, `moltnet_media_devices.{h,cc}`, `moltnet_memory{,_values}.{h,cc}` | a `CORE_EXPORT` `media::AudioRendererSink` subclass in core with a ref-counted engine posting `CrossThreadBindOnce` tasks to a leaked `NonMainThread`; `blink::BindOnce` named explicitly where a `base::OnceCallback` argument made it ambiguous with `base::BindOnce`; core uses `media::AudioLatency`, `media::FakeAudioWorker::ComputeFakeOutputDelay` and `media::AudioDeviceDescription` (`media/audio`; DEPS rules in `core/molt_fingerprinting/DEPS`, tests included); a garbage-collected `HeapMojoRemote<mojom::blink::PermissionService>` bound through `LocalDOMWindow::GetBrowserInterfaceBroker()` in core; `UserMediaProcessor::GetUserMediaRequestFailed` binding a lambda with `WrapWeakPersistent(this)`; `memory_info.cc`'s `HeapSizeCache::Update` and `measure_memory_controller.cc`'s `ConvertResult` call core glue (same component) | fp-mediaclock |
 | `modules/mediarecorder/video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.{h,cc}` (all four new upstream copies), `core/molt_fingerprinting/moltnet_encoders.{h,cc}` | modules calling a new core glue file; core's DEPS now allow four `media/base` headers (`media::IsEncoderBuiltInVideoType`, `media::VideoType`, `media::SetProcessorCountForSoftwareEncoding`, a new `MEDIA_EXPORT` function); a `constinit std::atomic<int>` in `video_encoder.cc` | fp-probes |
 | `core/css/local_font_face_source.cc`, `core/molt_fingerprinting/fonts.{h,cc}`, `system_fonts.{h,cc}` | `local()` through visible families: `GetLocalFontFaceData` calls `FontCache::GetFontData(description, family, AlternateFontName::kNoAlternate)` and reads `SkTypeface::fontStyle()`; `String::substr` with a `wtf_size_t` | fp-probes |
 | `content/public/browser/content_browser_client.{h,cc}` (two new virtuals returning `std::optional` of `storage::QuotaSettings` and `storage::BlobStorageLimits`), `chrome/browser/chrome_content_browser_client.{h,cc}`, `content/browser/storage_partition_impl.cc`, `content/browser/blob_storage/chrome_blob_storage_context.cc`, `storage/browser/blob/blob_memory_controller.{h,cc}` (new upstream copies), `chrome/browser/molt_ai/fingerprinting/molt_net_storage{,_values}.*` | MoltNet's fixed storage limits; a new `:storage` target in `//chrome/browser/molt_ai/fingerprinting` that `//chrome/browser/molt_ai` depends on (`gn check` on `chrome_content_browser_client.cc`); the blob limits are posted to the IO thread after `InitializeOnIOThread` | fp-probes |
+| `media/renderers/default_decoder_factory.cc`, `media/gfx/mappable_shared_image_video_frame_pool.cc`, `media/gfx/paint_canvas_video_renderer.cc`, `media/base/video_frame_converter_internals.cc`, `media/base/sinc_resampler.cc`, `media/base/vector_math.cc`, `media/base/BUILD.gn`, `third_party/opus/BUILD.gn`, `third_party/opus/src/celt/{celt.c,x86/x86cpu.c,arm/pitch_neon_intr.c,arm/celt_neon_intr.c}` (all new upstream copies), `media/base/molt_portable_{media,scale}.{h,cc}`, `core/molt_fingerprinting/moltnet_pixels.{h,cc}` | `//media/base` now depends on `//third_party/opus` and calls the C function `opus_moltbrowser_set_portable()` (defined in `celt.c`; declared `extern "C"` in `molt_portable_media.cc`); `OPUS_X86_PRESUME_SSE`/`SSE2` are gone, so the SSE kernels go through libopus's run-time tables (`x86_celt_map.c`, `x86_silk_map.c`; built and linked here with Chromium's source list); `base::subtle::reinterpret_span` in `PortableScaleFrame`; `molt_portable_media_unittest.cc` (in `media/base:unit_tests`) includes `media/gfx`, `media/renderers` and `media/video/mock_gpu_video_accelerator_factories.h` through `//media:test_support` (`gn check`); core's DEPS allow `media/base/molt_portable_media.h`. | fp-pixels |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -570,6 +583,18 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `client_socket_pool_manager_impl.h` include the new `net/socket/molt_*`
   headers (§4.2); `molt_ai_unittests` uses `net/spdy/spdy_test_util_common.h`
   (`//net:test_support`, already a dep).
+  New in moltnet-shared: `torrc_builder.h` (`:protocol`, which has no
+  `//net` dep) includes `net/socket/molt_per_site_socket_pool_policy.h`
+  (std-only, in no target's `sources`); `molt_ai_unittests` includes
+  `services/network/molt_keepalive_partitions.h` (allowed for that test in
+  the tor `DEPS`) and `storage/browser/quota/molt_storage_budget_policy.h`
+  (both std-only); `services/network/` and `storage/browser/quota/` include
+  their new header-only `molt_*` files (§4.2). If `gn check` flags any of
+  them, list the header in the target that includes it. The same for
+  `components/download/internal/background_service/molt_registering_site_isolation.h`
+  and `content/browser/download/molt_download_isolation{,_policy}.h`;
+  `molt_ai_unittests` includes the std-only policy (allowed for that test
+  in the tor `DEPS`).
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -670,10 +695,13 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
   | `MoltNetMediaValuesTest.*` | fp-media |
   | `MoltNetAudioClockTest.*` (the output ring, drift control and a simulation against devices of 128 to 8192 frames) | fp-audio |
+  | `MoltNetMemoryValuesTest.*` (V8's heap limit for 1 to 64 GB, the fixed table of sizes), and the device-list and `getUserMedia()` cases of `MoltNetMediaValuesTest.*` | fp-mediaclock |
   | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
+| `media_unittests --gtest_filter='MoltPortable*'` (not in `molt_ai_unittests`): `MoltPortableScaleTest.*` (the integer scaler, golden digests shared with arm64), `MoltPortableMediaTest.*` (frames of every format scaled, the converter, no hardware decoders, frames kept in CPU memory, no GPU YUV conversion; libopus's switch) | fp-pixels |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `MoltNetLanguagesTest` (real `LanguagePrefs`, a managed `ForcedLanguages`), `MoltNetIsolationTest.FixedLanguageNamesMatchChromiumsConstants`, `MoltNetPrefServiceTest.MoltNetWritesStayInMoltNet` (changed), `MoltNetSocketPoolsTest` (real `HttpNetworkSession` and pools, `MOCK_TIME`); built standalone only: `MoltNetLanguagePolicyTest`, `MoltNetSocketPoolPolicyTest`, `MoltNetLivePolicyTest`'s Incognito and ended-identity cases | moltnet-policy |
+  | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity`, `MoltNetDownloadIsolationTest` (new), `MoltNetNetworkContextPolicyTest.DownloadsKeptWithTheirSiteInMoltNetOnly` | moltnet-shared |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -692,8 +720,11 @@ extension enablement and `MediaRouterEnabled()`).
   `MoltNetDisplayTest` (fingerprinting 156), `MoltNetMediaTest` (fp-media),
   `MoltNetAudioDeviceTest` (fp-audio: real threads and a few hundred
   milliseconds of real time each; on a loaded bot rerun a timing failure
-  once before you report it),
+  once before you report it), `MoltNetAudioSinkTest` (fp-mediaclock: the
+  same, up to 1.5 s of real time), `MoltNetMediaDevicesTest` and
+  `MoltNetMemoryTest` (fp-mediaclock),
   `MoltNetEncodersTest` and the pure `MoltLocalFaceTest` (fp-probes),
+  `MoltNetPixelsTest` (fp-pixels),
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
@@ -719,8 +750,12 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `blink_platform_unittests` | `AudioDestination*:PushPullFIFO*` (the device factory is unset outside MoltNet) | fp-audio |
 | `blink_unittests` | `AudioContext*:AudioWorklet*:*MediaDevices*:*MediaDeviceInfo*` | fp-audio |
+| `blink_unittests` | `*AudioRendererMixer*:*AudioRendererSinkCache*:*AudioDeviceFactory*:*HTMLMediaElementAudioOutputDevice*:*MediaDevices*:*UserMediaProcessor*:*UserMediaClient*:MemoryInfo*:*MeasureMemory*` (normal windows: the hooks only act in MoltNet) | fp-mediaclock |
+| `blink_platform_unittests` | `WebMediaPlayerImpl*:*AudioRendererSink*` (unchanged code that a MoltNet sink now sits under) | fp-mediaclock |
 | `blink_unittests` | `MediaRecorder*:VideoTrackRecorder*:AudioTrackRecorder*:*LocalFontFace*:FontFace*:*FontFaceSet*` (normal windows: unchanged) | fp-probes |
 | `media_unittests` | `*VideoEncoder*:VpxVideoEncoder*:Av1VideoEncoder*` | fp-probes |
+| `media_unittests` | `*PaintCanvasVideoRenderer*:*MappableSharedImageVideoFramePool*:*VideoFrameConverter*:*DefaultDecoderFactory*:*DecoderSelector*:SincResampler*:MultiChannelResampler*:*VectorMath*:*ChannelMixer*:*AudioOpusEncoder*:*AudioEncoder*:*AudioConverter*` (outside MoltNet: unchanged; the Opus encoder's output is the same as before on every CPU) | fp-pixels |
+| `blink_unittests` | `*VideoFrame*:*WebMediaPlayer*:*AudioEncoder*:*VideoEncoder*:*AudioTrackRecorder*:*ImageBitmap*` (normal windows: unchanged) | fp-pixels |
 | `storage_unittests` | `BlobMemoryController*:BlobStorageContext*:Quota*` | fp-probes |
 | `content_unittests` | `StoragePartitionImpl*:*BlobStorage*:*Quota*` | fp-probes |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
@@ -734,6 +769,12 @@ pass except where the table below says otherwise (verify the filters).
 | `net_unittests` | `ClientSocketPoolManager*:TransportClientSocketPool*:HttpNetworkSession*:HttpStreamFactory*:HttpNetworkTransactionTest.*:WebSocket*` (no MoltNet params: one pool per proxy, as before) | moltnet-policy |
 | `unit_tests` | `IncognitoModePrefs*:*PolicyBlocklist*:ProxyConfigMonitor*:ChromeContentBrowserClient*:*ReduceAcceptLanguage*` | moltnet-policy |
 | `components_unittests` | `LanguagePrefs*:IncognitoModePolicyHandler*:*URLBlocklist*` | moltnet-policy |
+| `net_unittests` | `ClientSocketPool*:TransportClientSocketPool*:SocketPoolAdditionalCapacity*:SOCKSConnectJobTest.*:ConnectJobTest.*:HttpNetworkSession*:WebSocketTransportClientSocketPool*` (no MoltNet params: Chromium's pool with its random room, no gate and no handshake slots) | moltnet-shared |
+| `services_unittests` | `URLLoaderFactoryTest.*:KeepaliveStatisticsRecorder*:URLLoaderTest.*Keepalive*:NetworkContextTest.*:NetworkServiceTest.*` (every context without the field counts in the service's recorder, as before) | moltnet-shared |
+| `storage_unittests` | `QuotaManagerImplTest.*:QuotaTemporaryStorageEvictorTest.*:UsageTracker*:*QuotaSettings*` (also inside the fp-probes `Quota*` row; `molt_per_site_quota` is 0 outside MoltNet) | moltnet-shared |
+| `components_unittests` | `InMemoryDownloadTest.*:DownloadServiceControllerImplTest.*:BackgroundFetchDelegateBase*` (requests without an isolation unchanged) | moltnet-shared |
+| `content_unittests` | `DownloadManagerTest.*:DownloadManagerImplTest.*:SavePackage*:SaveFileManager*:BackgroundFetch*` (no profile keeps downloads with their site there) | moltnet-shared |
+| `browser_tests` | `BackgroundFetchBrowserTest.*:DownloadTest.*Incognito*:SavePageBrowserTest.*` (Background Fetch in Incognito now sends the site's isolation; every other expectation unchanged) | moltnet-shared |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -767,6 +808,16 @@ pass except where the table below says otherwise (verify the filters).
   page that asks "Leave site?". *Expected:* no `CHECK` in
   `~TransportClientSocketPool()` (`higher_pools_`, `group_map_`) or in
   `UnloadController`/`BrowserCloseManager`, and no MoltNet window left.
+- [ ] The same build, MoltNet's shared limits (moltnet-shared): fifteen
+  MoltNet tabs of different sites, each loading a page with a few hundred
+  images from hosts of its own; close half of them while they load, open
+  an onion site, then New Identity with pages still loading; a page that
+  sends 300 `navigator.sendBeacon()`s and closes at once. *Expected:* no
+  `CHECK` or `DCHECK` in `ClientSocketPool`/`TransportClientSocketPool`
+  (`handed_out_socket_count_`, the stalled-group loop), `SOCKSConnectJob`
+  (`next_state_`), `KeepaliveStatisticsRecorder` or `URLLoaderFactory`, no
+  dangling-pointer report for `molt_socket_gate_` or
+  `molt_socks_handshake_limiter`, and every tab of the new identity loads.
 
 ## 6. Fuzzers
 
@@ -1114,6 +1165,63 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   kHz (or an `error`) and no `audiooutput`. Plug a device in afterwards
   and report whether, and after how long, the MoltNet tone is heard
   without reloading (a regular window is the reference).
+- [ ] Media playback on real hardware (fp-mediaclock). In a MoltNet window
+  play a video with sound for a few minutes on: the output set to
+  44.1 kHz and then 96 kHz, a 48 kHz device as the control, a 1024-frame
+  and a 128-frame device (as in the fp-audio item above), Bluetooth
+  headphones; with each, pause and play, seek, and play at 0.5x and 2x.
+  Right pitch and speed, no clicks, dropouts or drift. Measure A/V sync
+  with an A/V sync test clip (a flash and a beep each second), filmed with
+  a phone at 120 fps or more next to the speaker: on wired outputs expect
+  the sound up to about 35 ms behind the picture in the first seconds and
+  within about 15 ms either way after 30 s; with Bluetooth report how far
+  behind it is (a regular window is the reference, where the system
+  reports the headset's latency). Report the renderer's CPU while it
+  plays, in MoltNet and in a regular window.
+- [ ] When MoltNet's media plays, on real hardware (fp-mediaclock). On the
+  same devices, in the leak kit's `fp.html`, click the page once and run
+  `await mlMediaClock()` five times: `media.clock_running` is true and
+  `media.clock_start_ms` stays within a few tens of milliseconds of the
+  same value on every device (report them); in a regular window note how
+  it follows the device. Then a page that logs `currentTime` at every
+  `requestAnimationFrame` and `requestVideoFrameCallback()`'s `mediaTime`
+  and `expectedDisplayTime` for 30 s of a 30 fps video: the frame-to-
+  display relation is the same on every device in MoltNet, apart from
+  scheduling noise.
+- [ ] Device changes and no device during playback in MoltNet
+  (fp-mediaclock). With a video playing in a MoltNet page that logs
+  `error`, `stalled`, `waiting` and `devicechange`: unplug wired
+  headphones, switch Bluetooth headphones off, change the system's default
+  output: the page logs nothing, `currentTime` keeps advancing and the
+  sound comes back on the new device within about a second (a regular
+  window for comparison). On a machine or VM with no output device (as in
+  the fp-audio item above): the video plays at the right speed with no
+  `error` and `new Audio().setSinkId("")` resolves (note what a regular
+  window answers).
+- [ ] Cameras and microphones in MoltNet (fp-mediaclock). On a desktop
+  without a camera and a VM without a microphone, and on a laptop with
+  both as the control: `enumerateDevices()` lists `audioinput`,
+  `videoinput`, `audiooutput`, one each, with empty IDs, labels and
+  groups, on all three. `getUserMedia({video: true})` on the machine
+  without a camera shows the camera prompt; Block gives `NotAllowedError`,
+  closing the prompt `NotAllowedError`, Allow `NotFoundError`; with the
+  camera, `getUserMedia({video: {width: {exact: 12345}}})` prompts and
+  then gives `OverconstrainedError` after Allow; the laptop behaves as in
+  a regular window (prompt, then a stream). Reset the permissions between
+  runs. With a page listening for `devicechange`, plug in a USB headset:
+  no event before a permission, an event after microphone access is
+  granted. After granting the microphone, the outputs are listed with
+  labels and `setSinkId()` to another one works for a `<video>`.
+- [ ] `performance.memory` in MoltNet (fp-mediaclock). On a machine with
+  8 GB or more and one (or a VM) with 4 GB: `jsHeapSizeLimit` is
+  3760000000 in MoltNet on both (a regular window shows each machine's own
+  precise value); `usedJSHeapSize` and `totalJSHeapSize` are multiples of
+  100000 and don't change for 20 minutes after allocating 100 MB. On a
+  cross-origin isolated page (COOP `same-origin`, COEP `require-corp`),
+  `performance.measureUserAgentSpecificMemory()` in a window and in a
+  shared worker reports rounded byte counts (one of the 100 sizes, or 0).
+  A memory-heavy page (a large canvas game, a long spreadsheet) still runs
+  on the 4 GB machine.
 - [ ] EME, Media Capabilities and WebCodecs in MoltNet (fp-media): a
   Clear Key test page (e.g. the W3C EME test player) fails with
   `NotSupportedError` in MoltNet and plays in a regular window;
@@ -1154,14 +1262,15 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   faces).
 - [ ] Storage limits in MoltNet (fp-probes): on a 16 GB machine, a
   MoltNet page writes 1 MiB IndexedDB records until `QuotaExceededError`:
-  it stops at 200 MiB; the same for Cache Storage (`cache.put` of 1 MiB
-  responses) and OPFS (`createSyncAccessHandle().write()` in a worker);
-  three more sites writing at the same time stop when all of them
-  together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
+  it stops at 60 MiB (the site's budget, moltnet-shared); the same for
+  Cache Storage (`cache.put` of 1 MiB responses) and OPFS
+  (`createSyncAccessHandle().write()` in a worker); ten more sites writing
+  at the same time stop when all of them together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
   be read (`arrayBuffer()` rejects) and a 700 MiB one can. Repeat on a
   4 GB machine (or VM): the same limits, and no process is killed for
   memory. An Incognito window keeps Chromium's limits (more than 200 MiB
   per site on 16 GB).
+- [ ] Pixels and encoded bytes in MoltNet (fp-pixels): run the leak kit (§8) on two machines of each OS with different CPUs and GPUs: on macOS an Intel Mac and an Apple silicon Mac (and the x86-64 build under Rosetta on the Apple silicon one), on Windows and Linux an Intel and an AMD CPU with different GPU vendors. `diff` shows no difference in `pixels.*`; in a regular window the same pages may differ (hardware decoding, `pixels.video_frame_format` `NV12` or null). On a machine with hardware VP9 or AV1 decoding, `chrome://media-internals` shows a software decoder (`VpxVideoDecoder`, `Dav1dVideoDecoder`) for a MoltNet tab playing a 1080p and a 2160p YouTube video, and a hardware one for the same video in a regular window. Note the CPU use (Activity Monitor, Task Manager, `top`) and, on a laptop on battery, the power draw (`powermetrics` on macOS) of each, at 1080p30, 2160p30 and 2160p60, and whether MoltNet drops frames (Stats for nerds): FINGERPRINTING.md "MoltNet: pixels and encoded bytes" estimates 0.5 to 1 W more at 1080p and 2 to 3 W at 2160p; correct it with what you measure. A WebGL video page (e.g. a video texture demo) and a canvas video filter page still run in MoltNet.
 
 ### 7.4 MoltNet
 
@@ -1303,6 +1412,51 @@ macOS, and for the manual steps everywhere:
   set, B waits behind A's requests). `chrome://net-internals/#sockets`
   lists MoltNet's pools as `socks5://127.0.0.1:<port> (per site)`, never
   with a site's name.
+- [ ] Shared limits per site (moltnet-shared; MOLTNET_COMPLIANCE.md §2
+  *Tor's capacity*, *Keepalive requests*, *Storage*, §4 step 21), with
+  Tor's log at `Log info`:
+  - Greedy and polite: a test page on site A opening 1000 long-polling
+    requests to 200 hosts of its own, and a page of site B opened after
+    it: B loads as fast as without A. A's pool in
+    `chrome://net-internals/#sockets` stays at 48 (16 for WebSockets).
+    Ten such greedy sites in tabs, each also holding 16 WebSockets open: a
+    polite site still loads at once, and Tor's log never says "Failing
+    because we have". With seventeen the budget is full: a polite site's
+    new connections wait for one to be released (a long poll ending) and
+    then go before the greedy sites'; idle connections of the largest
+    site are closed for it.
+  - Handshakes: a page that opens 100 connections to hosts needing new
+    circuits (onion addresses, or ports exits rarely allow): a
+    `chrome://net-export` log shows at most 16 of its `SOCKS5_CONNECT`
+    events open at a time, the others' connect jobs waiting in "resolving
+    host" without a backup job; a polite site's
+    page opened meanwhile loads (its first request may take a few seconds
+    longer). Page loads of ordinary sites feel no slower than before.
+  - Keepalive: a page on site A keeping 2048 `fetch(url, {keepalive:
+    true})` requests in flight from nine pages (to a server that answers
+    after a minute): A's 2049th fails, while site B's beacons in another
+    MoltNet tab and a regular window's still go out (DevTools shows them
+    sent).
+  - Storage: two sites each write until `QuotaExceededError`: each stops
+    at 60 MiB, also when the first is full before the second starts; an
+    iframe of a subdomain on the first counts toward its 60 MiB. Store
+    1 MiB on site C, fill nine other sites, wait 40 minutes: C's data is
+    still there. In an Incognito window, Chromium's limits and eviction
+    are unchanged.
+  - Downloads and Background Fetch: with Tor's log at `SafeLogging 0` +
+    `Log info` (or a `chrome://net-export` log), two sites whose service
+    workers `backgroundFetch.fetch()` the same file of a third server: the
+    two streams carry the two sites' SOCKS usernames, and the fetches
+    complete (the download bubble shows them; Incognito too, without
+    Tor). A frame of site T embedded on sites A and B, with a link
+    `<a download>` to a file on T: clicking it in each gives streams with
+    A's and B's usernames; "Save link as" and "Save image as" in a top-level
+    page of A on a file of another site: A's username; "Save page as"
+    (complete) of a page of A with images from a CDN: A's username for the
+    images. Interrupt a large download (stop the server), resume it: the
+    resumed request has the first one's username. In a regular window all
+    of these behave as before (a link's file downloads with that site's
+    cookies).
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1362,15 +1516,39 @@ Mac; use a real Linux host.
     `storage.quota_over_usage` and `audio.render_quantum_hardware`
     (fingerprinting 156), and the `audio.*`, `eme.*`, `mc.*` and
     `webcodecs.*` checks (fp-media), `audio.cadence_interval_ms`,
-    `audio.cadence_burst_frames` and `media.audiooutput` (fp-audio); `diff`
+    `audio.cadence_burst_frames` and `media.audiooutput` (fp-audio), the
+    `media.clock_running`, `media.sink_default`, `media.devices`,
+    `media.device_order`, `media.device_blank`, `media.gum`,
+    `media.gum_overconstrained`, `perf.jsHeapSizeLimit`,
+    `perf.heap_rounded` and `perf.heap_cached` checks (fp-mediaclock; the
+    `media.gum*` probes leave a prompt open for 1.5 s in a frame they then
+    remove, and `media.clock_start_ms` is recorded only: report its spread
+    between machines); `diff`
     shows no difference in a
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.
+  - `identity.background_fetch_circuits` passes (moltnet-shared): each
+    Background Fetch test's request went to Tor with its page's site's
+    SOCKS username. First-run question: whether the fetch starts at all in
+    the kit (a SKIP says none reached Tor: look at the `bgfetch_a`/`_b`
+    page results; `started: false` with a permission error, or `done:
+    false`, means the download service didn't run it, for example because
+    it saw no network in the kit's namespace).
+  - `identity.tor_capacity` passes (moltnet-shared): the torrc the browser
+    started Tor with states `ConnLimit 1000` and `MaxClientCircuitsPending
+    64`. A SKIP saying the torrc wasn't found means the kit's Tor wrapper
+    didn't record Tor's command line (`logs/tor-argv.txt`).
   - `recorder.mime_type`, `fonts.local_hidden` and
-    `storage.enforced_quota` pass (fp-probes), and `diff` shows no
+    `storage.enforced_quota` (60 MiB since moltnet-shared) pass
+    (fp-probes), and `diff` shows no
     difference in `recorder.supported` or `fonts.local_listed` between
     two machines of an OS.
+  - `pixels.video_frame_format` passes (`I420`: `<video>` decoded in
+    software, its frames in CPU memory), and `diff` shows no difference in
+    `pixels.webcodecs_frame`, `pixels.video_frame`,
+    `pixels.encoded_vp8_*` or `pixels.encoded_opus_*` between two machines
+    of an OS (fp-pixels). Every `pixels.*` value is a hash, not an error.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
     asks for a client certificate saw only completed handshakes, none with
     a certificate. A FAIL listing a dropped handshake means MoltNet's

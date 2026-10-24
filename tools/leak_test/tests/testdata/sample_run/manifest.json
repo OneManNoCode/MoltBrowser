@@ -126,9 +126,22 @@
      "supported": false
     },
     "media.audiooutput": 1,
+    "media.clock_running": true,
+    "media.clock_start_ms": 40,
+    "media.device_blank": true,
+    "media.device_order": [
+     "audioinput",
+     "videoinput",
+     "audiooutput"
+    ],
     "media.devices": {
-     "audiooutput": 1
+     "audioinput": 1,
+     "audiooutput": 1,
+     "videoinput": 1
     },
+    "media.gum": "pending",
+    "media.gum_overconstrained": "pending",
+    "media.sink_default": "resolved",
     "mouse.screen_equals_client": true,
     "mq.any_hover_none": false,
     "mq.any_pointer_coarse": false,
@@ -163,8 +176,22 @@
     ],
     "nav.maxTouchPoints": 0,
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "perf.heap_cached": true,
+    "perf.heap_rounded": true,
+    "perf.jsHeapSizeLimit": 3760000000,
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "pixels.encoded_opus_48k": {
+     "bytes": 4283,
+     "chunks": 26,
+     "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.video_frame": {
+     "format": "I420",
+     "planes": "35ec97d035df255c26cac4ae",
+     "rgba": "ee1de75109443c46529f39c1"
+    },
+    "pixels.video_frame_format": "I420",
     "recorder.mime_type": {
      "default": "video/webm;codecs=vp8",
      "video/mp4": "video/mp4;codecs=vp9",
@@ -195,7 +222,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
-    "storage.enforced_quota": 209715200,
+    "storage.enforced_quota": 62914560,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,
@@ -485,7 +512,11 @@
       "nickname": "e1",
       "role": "exit"
      }
-    ]
+    ],
+    "tor_options": {
+     "ConnLimit": "1000",
+     "MaxClientCircuitsPending": "64"
+    }
    },
    "end": 1760000003.0,
    "name": "circuit",

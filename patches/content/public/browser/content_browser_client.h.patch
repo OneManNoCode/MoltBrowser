@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 6e730455c66df584a721a2b4720f25bf9844f16d..ca7086e3abe4f35ac7a49271ebf7420eaf04d2d5 100644
+index 6e730455c66df584a721a2b4720f25bf9844f16d..03dfd32c47237c473f009ebdcf3ce06c0b58cdbb 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
 @@ -80,7 +80,9 @@
@@ -18,7 +18,7 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..ca7086e3abe4f35ac7a49271ebf7420e
  #include "third_party/blink/public/common/mediastream/media_devices.h"
  #include "third_party/blink/public/common/tokens/tokens.h"
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
-@@ -1989,6 +1991,41 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1989,6 +1991,49 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  
@@ -55,6 +55,14 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..ca7086e3abe4f35ac7a49271ebf7420e
 +  // machine's memory and disk nor memory pressure change
 +  // (ChromeBlobStorageContext); nullopt keeps Chromium's.
 +  virtual std::optional<storage::BlobStorageLimits> GetFixedBlobStorageLimits(
++      BrowserContext* browser_context);
++
++  // MoltBrowser: true if the download requests the browser makes for
++  // `browser_context`'s pages (downloads a page starts that aren't
++  // navigations, resumed downloads, Save Page As's resources) carry the
++  // network isolation of the frame or download they come from instead of
++  // their destination's (content/browser/download/molt_download_isolation.h).
++  virtual bool ShouldKeepDownloadsWithTheirSite(
 +      BrowserContext* browser_context);
 +
    struct CONTENT_EXPORT WebSocketOptions {

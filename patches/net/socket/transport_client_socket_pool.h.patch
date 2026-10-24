@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/transport_client_socket_pool.h b/net/socket/transport_client_socket_pool.h
-index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..94433dfe92e5139468e39c69f5181d5c67a71b5b 100644
+index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..027dd5ab0225c6bb3a08cb05f95db65fb481e351 100644
 --- a/net/socket/transport_client_socket_pool.h
 +++ b/net/socket/transport_client_socket_pool.h
-@@ -233,6 +233,15 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+@@ -233,6 +233,51 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
    bool HasActiveSocket(const GroupId& group_id) const override;
    size_t SocketsInUse() const override;
  
@@ -19,6 +19,42 @@ index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..94433dfe92e5139468e39c69f5181d5c
 +  bool MoltIsUnused() const {
 +    return group_map_.empty() && pending_callback_map_.empty() &&
 +           higher_pools_.empty() && SocketsInUse() == 0;
++  }
++
++  // MoltBrowser: for MoltNet's connection budget (net/socket/
++  // molt_connection_budget.h), which may hold back this pool's new sockets
++  // (MoltSetSocketGate()).
++  // Whether a request waits for a socket slot that only the budget holds
++  // back: below the pool's own limit, not at its group's.
++  bool MoltHasStalledRequest() const {
++    if (SocketsInUse() >= SocketSoftCap()) {
++      return false;
++    }
++    for (const auto& [group_id, group] : group_map_) {
++      if (group.CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
++        return true;
++      }
++    }
++    return false;
++  }
++  // Retries the requests that wait for a socket slot, now that the budget
++  // may have room (as when a socket of this pool is released).
++  void MoltRetryStalledRequests() {
++    UpdateExpandabilityBeforeAllocation();
++    CheckForStalledSocketGroups();
++  }
++  // Closes one idle socket, for a site that uses fewer; true if it did.
++  bool MoltCloseOneIdleSocket() {
++    return idle_socket_count_ > 0 && CloseOneIdleSocketExceptInGroup(nullptr);
++  }
++  // Asks the HTTP/2 sessions on this pool's sockets to close if they are
++  // idle (they close later); true if there are any.
++  bool MoltCloseIdleSessions() {
++    if (higher_pools_.empty()) {
++      return false;
++    }
++    CloseOneIdleConnectionInHigherLayeredPool();
++    return true;
 +  }
 +
    bool RequestInGroupWithHandleHasJobForTesting(

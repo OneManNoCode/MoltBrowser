@@ -2026,6 +2026,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual std::optional<storage::BlobStorageLimits> GetFixedBlobStorageLimits(
       BrowserContext* browser_context);
 
+  // MoltBrowser: true if the download requests the browser makes for
+  // `browser_context`'s pages (downloads a page starts that aren't
+  // navigations, resumed downloads, Save Page As's resources) carry the
+  // network isolation of the frame or download they come from instead of
+  // their destination's (content/browser/download/molt_download_isolation.h).
+  virtual bool ShouldKeepDownloadsWithTheirSite(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

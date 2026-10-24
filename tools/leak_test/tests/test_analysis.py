@@ -442,6 +442,39 @@ class IdentityChecks(unittest.TestCase):
             ('sandboxed_a', a, 'opaque')))
         self.assertEqual(one['status'], report.SKIP)
 
+    def test_background_fetch_circuits(self):
+        a, b = 'a' * 55 + 'd.onion', 'b' * 55 + 'd.onion'
+        manifest = {'onion': {'a': a, 'b': b}}
+        fa, fb = 'bgf-aaaa1111.moltleak.test', 'bgf-bbbb2222.moltleak.test'
+        pages = (('bgfetch_a', a, 'https://' + a), ('cert_fetch', a,
+                                                    'http://' + a),
+                 ('bgfetch_b', b, 'https://' + b))
+
+        def status(*fetches):
+            return report._background_fetch_circuit_check(
+                manifest, self.socks(*(pages + fetches)))['status']
+
+        # Each site's fetch under its own site's username.
+        self.assertEqual(status(('bgfetch_a', fa, 'https://' + a),
+                                ('bgfetch_b', fb, 'https://' + b)),
+                         report.PASS)
+        # Filed under the destination (the fetched name's site).
+        self.assertEqual(status(('bgfetch_a', fa, 'https://moltleak.test'),
+                                ('bgfetch_b', fb, 'https://moltleak.test')),
+                         report.FAIL)
+        self.assertEqual(status(('bgfetch_b', fb, 'https://moltleak.test')),
+                         report.FAIL)
+        # Under the other site's.
+        self.assertEqual(status(('bgfetch_b', fb, 'https://' + a)),
+                         report.FAIL)
+        # Without a username.
+        self.assertEqual(status(('bgfetch_a', fa, None)), report.FAIL)
+        # No fetch reached Tor, or no page request of its site to compare.
+        self.assertEqual(status(), report.SKIP)
+        self.assertEqual(report._background_fetch_circuit_check(
+            manifest, self.socks(('bgfetch_a', fa, 'https://' + a)))[
+                'status'], report.SKIP)
+
     def session_run(self, *streams, marks=(5.0,)):
         """`streams`: (seconds, host, username, password tag)."""
         manifest = {'phases': [

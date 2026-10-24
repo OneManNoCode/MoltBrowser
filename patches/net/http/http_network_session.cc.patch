@@ -5,17 +5,39 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_network_session.cc b/net/http/http_network_session.cc
-index 05fc047000904255c0ac4273f0bda7a609145412..2c61b3b18c9db267a38c2ab0c3c5b89ad73a3cf3 100644
+index 05fc047000904255c0ac4273f0bda7a609145412..12cd1fabcf4866edaea16c9cf9145a3b8f559252 100644
 --- a/net/http/http_network_session.cc
 +++ b/net/http/http_network_session.cc
-@@ -199,14 +199,18 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
+@@ -31,6 +31,7 @@
+ #include "net/quic/quic_session_pool.h"
+ #include "net/socket/client_socket_factory.h"
+ #include "net/socket/client_socket_pool_manager_impl.h"
++#include "net/socket/molt_connection_budget.h"  // MoltBrowser
+ #include "net/socket/next_proto.h"
+ #include "net/socket/ssl_client_socket.h"
+ #include "net/socket/stream_socket_close_reason.h"
+@@ -194,19 +195,32 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
+   CHECK(http_server_properties_);
+   DCHECK(context_.client_socket_factory);
+ 
++  // MoltBrowser: MoltNet's connection budget and SOCKS handshake limits,
++  // before the pools and connect jobs that use them.
++  if (params.molt_per_site_socket_pool_size > 0) {
++    molt_connection_budget_ =
++        std::make_unique<MoltConnectionBudget>(kMoltNetConnectionBudget);
++    molt_socks_handshake_limiter_ =
++        std::make_unique<MoltSocksHandshakeLimiter>();
++  }
++
+   normal_socket_pool_manager_ = std::make_unique<ClientSocketPoolManagerImpl>(
+       CreateCommonConnectJobParams(false /* for_websockets */),
        CreateCommonConnectJobParams(true /* for_websockets */),
        SocketPoolType::kNormal,
        // cleanup_on_ip_address_change
 -      !params.ignore_ip_address_changes);
 +      !params.ignore_ip_address_changes,
 +      // MoltBrowser: per-site pools (MoltNet's network context).
-+      params.molt_per_site_socket_pool_size);
++      params.molt_per_site_socket_pool_size, molt_connection_budget_.get());
    websocket_socket_pool_manager_ =
        std::make_unique<ClientSocketPoolManagerImpl>(
            CreateCommonConnectJobParams(false /* for_websockets */),
@@ -25,11 +47,11 @@ index 05fc047000904255c0ac4273f0bda7a609145412..2c61b3b18c9db267a38c2ab0c3c5b89a
 -          !params.ignore_ip_address_changes);
 +          !params.ignore_ip_address_changes,
 +          // MoltBrowser: per-site pools (MoltNet's network context).
-+          params.molt_per_site_socket_pool_size);
++          params.molt_per_site_socket_pool_size, molt_connection_budget_.get());
  
    if (params_.enable_http2) {
      next_protos_.push_back(NextProto::kProtoHTTP2);
-@@ -268,6 +272,15 @@ ClientSocketPool* HttpNetworkSession::GetSocketPool(
+@@ -268,6 +282,15 @@ ClientSocketPool* HttpNetworkSession::GetSocketPool(
    return GetSocketPoolManager(pool_type)->GetSocketPool(proxy_chain);
  }
  
@@ -45,7 +67,7 @@ index 05fc047000904255c0ac4273f0bda7a609145412..2c61b3b18c9db267a38c2ab0c3c5b89a
  base::Value HttpNetworkSession::SocketPoolInfoToValue() const {
    // TODO(yutak): Should merge values from normal pools and WebSocket pools.
    return normal_socket_pool_manager_->SocketPoolInfoToValue();
-@@ -417,7 +430,7 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
+@@ -417,7 +440,7 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
      bool for_websockets) {
    // Use null websocket_endpoint_lock_manager, which is only set for WebSockets,
    // and only when not using a proxy.
@@ -54,13 +76,16 @@ index 05fc047000904255c0ac4273f0bda7a609145412..2c61b3b18c9db267a38c2ab0c3c5b89a
        context_.client_socket_factory, context_.host_resolver, &http_auth_cache_,
        context_.http_auth_handler_factory, &spdy_session_pool_,
        &context_.quic_context->params()->supported_versions, &quic_session_pool_,
-@@ -427,6 +440,10 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
+@@ -427,6 +450,13 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
        for_websockets ? &websocket_endpoint_lock_manager_ : nullptr,
        context_.http_server_properties, &next_protos_, &application_settings_,
        &params_.ignore_certificate_errors, &params_.enable_early_data);
-+  // MoltBrowser: this session's SOCKS5 password for MoltNet's Tor.
++  // MoltBrowser: this session's SOCKS5 password for MoltNet's Tor, and its
++  // SOCKS handshake limits (null unless it has per-site pools).
 +  common_connect_job_params.molt_socks_isolation_password =
 +      &params_.molt_socks_isolation_password;
++  common_connect_job_params.molt_socks_handshake_limiter =
++      molt_socks_handshake_limiter_.get();
 +  return common_connect_job_params;
  }
  

@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc b/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
+index 7a13fc9b24726dbe7943db4018886b624e58e1ef..1e0e2a06e0f3696dccb7ad693770fa4c4756524f 100644
+--- a/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
++++ b/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
+@@ -21,6 +21,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/timing/measure_memory/local_web_memory_measurer.h"
+ #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+@@ -310,6 +311,10 @@ MemoryMeasurement* ConvertResult(const WebMemoryMeasurementPtr& measurement) {
+   std::shuffle(breakdown.begin(), breakdown.end(), RandomBitGenerator{});
+   size_t bytes = 0;
+   for (const auto& entry : breakdown) {
++    // MoltBrowser: MoltNet rounds every byte count like performance.memory's
++    // (moltnet_memory.h).
++    entry->setBytes(
++        molt_fingerprinting::UniformMemoryMeasurementBytes(entry->bytes()));
+     bytes += entry->bytes();
+   }
+   auto* result = MemoryMeasurement::Create();

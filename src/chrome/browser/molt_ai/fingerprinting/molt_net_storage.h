@@ -13,6 +13,9 @@
 //              service worker scripts and Background Fetch), asked through
 //              ContentBrowserClient::GetFixedQuotaSettings
 //                                                  -> MoltNetQuotaSettings
+//   storage  the quota manager and evictor read MoltNet's per-site budget
+//              from the settings (QuotaSettings::molt_per_site_quota,
+//              storage/browser/quota/molt_storage_budget_policy.h)
 //            ChromeBlobStorageContext::GetFor (the profile's blob storage:
 //              Blob, File, blob: URLs, fetch().blob(), IndexedDB's blobs),
 //              asked through ContentBrowserClient::GetFixedBlobStorageLimits

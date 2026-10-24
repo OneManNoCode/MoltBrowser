@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 155 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 167 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -167,6 +167,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | Sandboxed pages (opaque origins) on two sites use different SOCKS usernames | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | Separate identity: cookies don't cross, and go with the last window | MOLTNET_COMPLIANCE.md §4 step 6 |
 | PASS | A site visited again in a new MoltNet session (after the last window closed, after New Identity) uses new SOCKS credentials, so new circuits | MOLTNET_COMPLIANCE.md §1.2-§1.4, §4 steps 6 and 7 |
+| PASS | Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending) | MOLTNET_COMPLIANCE.md §2 (Tor's capacity) |
+| SKIP | A Background Fetch goes to Tor with its site's SOCKS username (its site's circuit, not its destination's) | MOLTNET_COMPLIANCE.md §2 (Shared network state), §4 step 8 |
 | SKIP | check.torproject.org says the MoltNet window uses Tor | MOLTNET_COMPLIANCE.md §4 step 1 |
 
 - **PASS** Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch)
@@ -230,6 +232,11 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
   - new_identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
   - new_identity, session 1 -> 2: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
+- **PASS** Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending)
+  - ConnLimit 1000 (expected 1000)
+  - MaxClientCircuitsPending 64 (expected 64)
+- **SKIP** A Background Fetch goes to Tor with its site's SOCKS username (its site's circuit, not its destination's)
+  - no Background Fetch request reached Tor (see the bgfetch tests' page results)
 - **SKIP** check.torproject.org says the MoltNet window uses Tor
   - --offline
 
@@ -282,6 +289,13 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mc.webrtc_decoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mc.webrtc_encoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | media.audiooutput is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | media.clock_running is uniform | FINGERPRINTING.md "MoltNet: media playback clock" |
+| PASS | media.device_blank is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.device_order is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.devices is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.gum is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.gum_overconstrained is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | media.sink_default is uniform | FINGERPRINTING.md "MoltNet: media playback clock" |
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
@@ -307,8 +321,12 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | nav.language is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | nav.languages is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | nav.maxTouchPoints is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | perf.heap_cached is uniform | FINGERPRINTING.md "MoltNet: performance.memory" |
+| PASS | perf.heap_rounded is uniform | FINGERPRINTING.md "MoltNet: performance.memory" |
+| PASS | perf.jsHeapSizeLimit is uniform | FINGERPRINTING.md "MoltNet: performance.memory" |
 | PASS | perm.geolocation is uniform | FINGERPRINTING.md "Known gaps": a documented giveaway |
 | PASS | perm.window-management is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
+| PASS | pixels.video_frame_format is uniform | FINGERPRINTING.md "MoltNet: pixels and encoded bytes" |
 | PASS | recorder.mime_type is uniform | FINGERPRINTING.md "MoltNet: MediaRecorder" |
 | PASS | screen.availHeight is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.availLeft is uniform | FINGERPRINTING.md "Surface covered" |
@@ -475,7 +493,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | 5 | Fail-closed | automated | tor is killed: pages must fail with a proxy error; after a restart no MoltNet window returns |
 | 6 | Separate identity | automated | a regular-profile cookie doesn't show in MoltNet; a MoltNet cookie is gone after the last window closes |
 | 7 | New Identity | automated | new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet |
-| 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, read from the loopback capture and Tor's circuit list |
+| 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, its site's for a Background Fetch, read from the loopback capture and Tor's circuit list |
 | 9 | Overrides are refused | partial | --proxy-server and each partitioning switch block MoltNet; a proxy policy set while MoltNet is open closes its windows; the extension-set proxy case is manual |
 | 10 | The relays are real | automated | the circuit's fingerprints are in the consensus Tor downloaded; the onionoo lookup is optional |
 | 11 | Onion sites | partial | http:// and https:// onions load; the Onion-Location bar is browser UI and stays manual |

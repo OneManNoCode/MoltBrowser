@@ -1,0 +1,42 @@
+MoltBrowser patch for net/socket/client_socket_pool.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/client_socket_pool.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/client_socket_pool.cc b/net/socket/client_socket_pool.cc
+index 43431cba1d7346cf7e4676c5ed1698c9bc6bca70..d5e11723ce430470866c4721b8e07b061d57ef4f 100644
+--- a/net/socket/client_socket_pool.cc
++++ b/net/socket/client_socket_pool.cc
+@@ -263,14 +263,31 @@ std::unique_ptr<ConnectJob> ClientSocketPool::CreateConnectJob(
+       common_connect_job_params_, group_id.target_network(), delegate);
+ }
+ 
++// MoltBrowser:
++void ClientSocketPool::MoltSetSocketGate(MoltSocketGate* gate) {
++  molt_socket_gate_ = gate;
++  additional_capacity_ = SocketPoolAdditionalCapacity::CreateEmpty();
++  ResetExpandability();
++}
++
+ void ClientSocketPool::UpdateExpandabilityBeforeAllocation() {
+   expandability_ = additional_capacity_.NextExpandabilityBeforeAllocation(
+       Expandability(), SocketsInUse(), SocketSoftCap());
++  // MoltBrowser: the gate may hold back a socket the pool's limits allow.
++  if (molt_socket_gate_ &&
++      expandability_ == SocketPoolExpandability::kUncapped &&
++      !molt_socket_gate_->MoltMayAllocate(this)) {
++    expandability_ = SocketPoolExpandability::kCapped;
++  }
+ }
+ 
+ void ClientSocketPool::UpdateExpandabilityAfterRelease() {
+   expandability_ = additional_capacity_.NextExpandabilityAfterRelease(
+       Expandability(), SocketsInUse(), SocketSoftCap());
++  // MoltBrowser: tell the gate, so others waiting for it can go on.
++  if (molt_socket_gate_) {
++    molt_socket_gate_->MoltOnReleased(this);
++  }
+ }
+ 
+ }  // namespace net

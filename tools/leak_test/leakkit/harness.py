@@ -894,6 +894,7 @@ class Run(object):
         values = dict(results)
         values.update(self.geometry(sid))
         values.update(self.audio_cadence(sid))
+        values.update(self.media_clock(sid))
         values.update(self.enforced_quota(sid, base))
         rec = {'label': label_prefix + 'initial', 'phase': 'main', 'dsf': dsf,
                'window': None, 'zoom_requested': 100, 'zoom_actual':
@@ -1000,6 +1001,22 @@ class Run(object):
         keys = ('audio.cadence_interval_ms', 'audio.cadence_burst_frames')
         try:
             values = self.cdp.evaluate(sid, 'mlAudioCadence()', timeout=20,
+                                       user_gesture=True)
+        except cdplib.CdpError as e:
+            values = None
+            error = {'error': 'cdp', 'message': str(e)[:200]}
+        else:
+            error = {'error': 'no value', 'message': ''}
+        if not isinstance(values, dict):
+            return dict((key, error) for key in keys)
+        return dict((key, values.get(key, error)) for key in keys)
+
+    def media_clock(self, sid):
+        """An <audio> element's playback clock (fp.js mlMediaClock), with a
+        user gesture so that it may play unmuted."""
+        keys = ('media.clock_running', 'media.clock_start_ms')
+        try:
+            values = self.cdp.evaluate(sid, 'mlMediaClock()', timeout=20,
                                        user_gesture=True)
         except cdplib.CdpError as e:
             values = None
@@ -1213,6 +1230,12 @@ class Run(object):
                 fp = (hop.get('fingerprint') or '').lstrip('$').upper()
                 hop['in_consensus'] = (fp in known) if known else None
             phase['data'] = {'hops': hops, 'consensus_relays': len(known)}
+            # The capacity every MoltNet site shares, as Tor was started.
+            torrc = self.tor_torrc()
+            if torrc:
+                phase['data']['tor_options'] = {
+                    key: support.torrc_value(torrc, key)
+                    for key in ('ConnLimit', 'MaxClientCircuitsPending')}
             self.phase_end(phase)
         except cdplib.CdpError as e:
             self.phase_end(phase, str(e))

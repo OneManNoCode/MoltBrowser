@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 5eb7be85b1897244caed5096c5e58922e964aae1..740660af213ea1cdc53c3e4614014a6d668c8f82 100644
+index 5eb7be85b1897244caed5096c5e58922e964aae1..1f01893b47b8717ebaccd490408fe85d72ac2d5d 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -229,6 +229,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,7 +24,7 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..740660af213ea1cdc53c3e4614014a6d
  };
  
  struct NetworkContextFilePaths {
-@@ -661,6 +670,54 @@ struct NetworkContextParams {
+@@ -661,6 +670,59 @@ struct NetworkContextParams {
    // do not have an associated `URLLoaderFactory`.
    pending_remote<URLLoaderNetworkServiceObserver>?
        device_bound_sessions_network_observer;
@@ -76,6 +76,11 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..740660af213ea1cdc53c3e4614014a6d
 +  // never make another site's wait
 +  // (net/socket/molt_per_site_socket_pool_policy.h).
 +  [MinVersion=1] uint32 molt_per_site_socket_pool_size = 0;
++  // If true, this context's keepalive requests (fetch() with keepalive,
++  // sendBeacon(), pings) count against limits of their own site, apart from
++  // every other context's and site's
++  // (services/network/molt_keepalive_partitions.h).
++  [MinVersion=1] bool molt_per_site_keepalive_limits = false;
  };
  
  struct NetworkConditions {

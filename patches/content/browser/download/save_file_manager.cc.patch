@@ -1,0 +1,29 @@
+MoltBrowser patch for content/browser/download/save_file_manager.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/download/save_file_manager.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/download/save_file_manager.cc b/content/browser/download/save_file_manager.cc
+index 2381ba6f072ac26a6bc2e69c3f11237602f012b2..a1fc22d5e02142c53389e2310a2c1978b91d9542 100644
+--- a/content/browser/download/save_file_manager.cc
++++ b/content/browser/download/save_file_manager.cc
+@@ -15,6 +15,7 @@
+ #include "build/build_config.h"
+ #include "components/download/public/common/download_task_runner.h"
+ #include "content/browser/data_url_loader_factory.h"
++#include "content/browser/download/molt_download_isolation.h"  // MoltBrowser
+ #include "content/browser/download/save_file.h"
+ #include "content/browser/download/save_package.h"
+ #include "content/browser/file_system/file_system_url_loader_factory.h"
+@@ -294,6 +295,10 @@ void SaveFileManager::SaveURL(
+     mojo::Remote<network::mojom::URLLoaderFactory> factory_remote;
+     auto* rfh = RenderFrameHostImpl::FromID(render_process_host_id,
+                                             render_frame_routing_id);
++    // MoltBrowser: in MoltNet a saved page's resources keep the network
++    // isolation of the frame they belong to, not their destination's
++    // (molt_download_isolation.h).
++    MoltKeepSavedResourceWithItsFrame(context, rfh, *request);
+ 
+     // TODO(crbug.com/382291442): Remove feature guarding once launched.
+     if (base::FeatureList::IsEnabled(

@@ -1,0 +1,43 @@
+MoltBrowser patch for services/network/keepalive_statistics_recorder.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/services/network/keepalive_statistics_recorder.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/keepalive_statistics_recorder.cc b/services/network/keepalive_statistics_recorder.cc
+index afbcd6f7d0e5bffa8183d316c228804be266e8cd..50d9a5b54d8cfa6f1712077f7b0b27efe6d90137 100644
+--- a/services/network/keepalive_statistics_recorder.cc
++++ b/services/network/keepalive_statistics_recorder.cc
+@@ -5,6 +5,7 @@
+ #include "services/network/keepalive_statistics_recorder.h"
+ 
+ #include <algorithm>
++#include <cstdint>
+ 
+ 
+ namespace network {
+@@ -65,6 +66,24 @@ void KeepaliveStatisticsRecorder::OnLoadFinished(
+   --num_inflight_requests_;
+ }
+ 
++// MoltBrowser:
++void KeepaliveStatisticsRecorder::MoltAddPartitionedContext(
++    const void* context) {
++  molt_partitions_.AddContext(reinterpret_cast<uintptr_t>(context));
++}
++
++void KeepaliveStatisticsRecorder::MoltRemovePartitionedContext(
++    const void* context) {
++  molt_partitions_.RemoveContext(reinterpret_cast<uintptr_t>(context));
++}
++
++KeepaliveStatisticsRecorder* KeepaliveStatisticsRecorder::MoltRecorderFor(
++    const void* context,
++    const std::string& site) {
++  return molt_partitions_.RecorderFor(reinterpret_cast<uintptr_t>(context),
++                                      site, this);
++}
++
+ int KeepaliveStatisticsRecorder::NumInflightRequestsPerTopLevelFrame(
+     const base::UnguessableToken& top_level_frame_id) const {
+   auto it = per_top_level_frame_records_.find(top_level_frame_id);

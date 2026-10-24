@@ -137,6 +137,10 @@ S_156 = FP + ' "Re-checked at Chromium 156"'
 S_MEDIA = FP + ' "MoltNet: audio, DRM and media capabilities"'
 S_REC = FP + ' "MoltNet: MediaRecorder"'
 S_STORAGE = FP + ' "MoltNet: storage limits"'
+S_MCLOCK = FP + ' "MoltNet: media playback clock"'
+S_MDEV = FP + ' "MoltNet: cameras, microphones and outputs"'
+S_MEM = FP + ' "MoltNet: performance.memory"'
+S_PIXELS = FP + ' "MoltNet: pixels and encoded bytes"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -155,6 +159,18 @@ AUDIO_BASE_LATENCY = {'interactive': 480 / 48000, 'balanced': 480 / 48000,
 # 48 kHz, which AudioDestination renders as 3 or 4 quanta of 128.
 AUDIO_TICK_MS = 10
 AUDIO_TICK_BURSTS = [384, 512]
+# The devices every MoltNet machine lists before a permission, in the order
+# enumerateDevices() lists kinds (moltnet_media_devices.h).
+MEDIA_DEVICES = {'audioinput': 1, 'videoinput': 1, 'audiooutput': 1}
+MEDIA_DEVICE_ORDER = ['audioinput', 'videoinput', 'audiooutput']
+# getUserMedia() before a permission: asked about (still pending when the
+# probe gives up) or refused, never failed for want of a device.
+USER_MEDIA_ASKED = ['pending', 'NotAllowedError']
+# performance.memory.jsHeapSizeLimit in MoltNet: the 8 GB machine's limit
+# (4 GiB + 96 MiB) rounded to the last of the 100 sizes
+# (moltnet_memory_values.h).
+JS_HEAP_SIZE_LIMIT = 3760000000
+
 # Media Capabilities in MoltNet: a video the build decodes itself is smooth
 # and not power efficient; key systems and WebRTC are never supported.
 MC_SOFTWARE_VIDEO = {'supported': True, 'smooth': True,
@@ -170,9 +186,15 @@ RECORDER_MIME = {'default': 'video/webm;codecs=vp8',
                  'video/x-matroska': 'video/x-matroska;codecs=vp8',
                  'video/mp4': 'video/mp4;codecs=vp9'}
 # The quota the browser enforces per site in MoltNet (molt_net_storage_
-# values.h), read through DevTools: writing until QuotaExceededError would
-# take too long for the kit, so the configured limit is checked instead.
-MOLTNET_SITE_QUOTA = 200 * 1024 ** 2
+# values.h: each site's budget, all its storage keys together), read through
+# DevTools for a site that stores nothing: writing until QuotaExceededError
+# would take too long for the kit, so the configured limit is checked
+# instead.
+MOLTNET_SITE_QUOTA = 60 * 1024 ** 2
+
+# What MoltBrowser's torrc sets for the capacity every MoltNet site shares
+# (chrome/browser/molt_ai/tor/torrc_builder.h).
+TOR_CAPACITY = {'ConnLimit': '1000', 'MaxClientCircuitsPending': '64'}
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
@@ -313,6 +335,19 @@ FULL_RULES = (
     ('recorder.mime_type', 'eq', RECORDER_MIME, S_REC),
     ('fonts.local_hidden', 'eq', [], S_FONTS),
     ('storage.enforced_quota', 'eq', MOLTNET_SITE_QUOTA, S_STORAGE),
+    # Media playback's clock, the device list, getUserMedia() and memory.
+    ('media.clock_running', 'eq', True, S_MCLOCK),
+    ('media.sink_default', 'eq', 'resolved', S_MCLOCK),
+    ('media.devices', 'eq', MEDIA_DEVICES, S_MDEV),
+    ('media.device_order', 'eq', MEDIA_DEVICE_ORDER, S_MDEV),
+    ('media.device_blank', 'eq', True, S_MDEV),
+    ('media.gum', 'in', USER_MEDIA_ASKED, S_MDEV),
+    ('media.gum_overconstrained', 'in', USER_MEDIA_ASKED, S_MDEV),
+    ('perf.jsHeapSizeLimit', 'eq', JS_HEAP_SIZE_LIMIT, S_MEM),
+    ('perf.heap_rounded', 'eq', True, S_MEM),
+    ('perf.heap_cached', 'eq', True, S_MEM),
+    # <video> is decoded in software and its frames stay in CPU memory.
+    ('pixels.video_frame_format', 'eq', 'I420', S_PIXELS),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -355,14 +390,20 @@ DIFF_KEYS = (
     # So does what MediaRecorder can record, and src: local() resolves
     # through the visible families (FINGERPRINTING.md "Fonts").
     'recorder.supported', 'fonts.local_listed',
+    # Decoded frames read back as YUV and RGBA, and the encoders' output for
+    # input they scale or resample, follow the build, never the CPU, GPU or
+    # video decoder (FINGERPRINTING.md "MoltNet: pixels and encoded bytes").
+    'pixels.webcodecs_frame', 'pixels.video_frame',
+    'pixels.encoded_vp8_i420', 'pixels.encoded_vp8_rgba',
+    'pixels.encoded_opus_48k', 'pixels.encoded_opus_44k',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference
 # between two runs is reported as a finding to look at, not as a failure.
 INFO_KEYS = {
-    'media.devices': 'enumerateDevices() kinds before any permission',
     'storage.quota': 'navigator.storage.estimate() quota',
-    'perf.jsHeapSizeLimit': 'performance.memory.jsHeapSizeLimit',
+    'media.clock_start_ms': 'how long after play() an <audio> element\'s '
+                            'currentTime starts moving (rounded to 10 ms)',
     'speech.voices': 'speechSynthesis.getVoices() count',
     'battery': 'navigator.getBattery() level and charging',
     'keyboard.layout': 'navigator.keyboard.getLayoutMap() sample keys',

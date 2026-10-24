@@ -221,6 +221,22 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   applies Incognito's URL lists. Language settings and language policies
   no longer reach MoltNet pages, and each site gets connection limits of
   its own there, so one site's connections can't hold up another's.
+- MoltNet hardening: the limits MoltNet's sites share now stay per site.
+  All of a site's connections, including its embedded third parties',
+  share one fixed limit (48, and 16 WebSockets), all sites together stay
+  within what MoltNet's Tor always accepts, and each site sets up at most
+  16 Tor connections at a time; the torrc states Tor's connection and
+  pending-circuit limits (`ConnLimit 1000`, `MaxClientCircuitsPending
+  64`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
+  counted per site, apart from regular windows. Each site may store 60 MiB
+  (all its storage keys together), all sites 600 MiB, and MoltNet no
+  longer evicts one site's data to make room for another's. Background
+  Fetch requests, and downloads a page starts without navigating ("Save
+  link as", "Save image as", a link with `download`), resumed downloads
+  and "Save page as", now go out with the network key and Tor circuit of
+  the site they come from (Background Fetch in every private profile, as
+  regular profiles already do), so a file saved from another site's link
+  no longer carries that site's cookies (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -283,6 +299,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   little softer on standard-density Linux screens. Element sizes aren't
   rounded, and font versions still differ between OS releases
   (`docs/FINGERPRINTING.md`, "Text metrics").
+- **MoltNet's video and audio bytes are the same on every machine of an
+  OS.** In MoltNet windows video plays with MoltBrowser's own software
+  decoders instead of the graphics card's, video frames a page reads back
+  are converted on the CPU, and the Opus encoder, the encoders' scaling
+  and their resampling compute the same way on every processor, so what a
+  page reads back from a video or an encoder no longer shows your
+  processor, graphics card or video decoder. Video in MoltNet uses more
+  CPU and battery, most at 4K (`docs/FINGERPRINTING.md`, "MoltNet: pixels
+  and encoded bytes"); regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
@@ -497,6 +522,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   events, one listed output device). Your device plays the result through
   a short buffer, which adds about 13 to 32 ms of audio latency in MoltNet
   windows. Regular and incognito windows are unchanged.
+- **Media playback, devices and memory look alike in MoltNet.** In MoltNet
+  pages `<audio>` and `<video>` keep time on a fixed clock instead of your
+  output device's, the same on every machine, with or without an output
+  device; until a page may use them, every machine lists one microphone,
+  one camera and one output device, and asking for a camera or microphone
+  the machine doesn't have shows the usual permission prompt instead of
+  failing at once; and `performance.memory` reports rounded sizes,
+  refreshed every 20 minutes, with an 8 GB machine's heap limit. Media
+  sound reaches your speakers a little later (about 60 ms at first,
+  settling to 15 to 35 ms), and with Bluetooth headphones a video's sound
+  trails its picture by the headset's delay. Regular and incognito windows
+  are unchanged.
 - **No DRM in MoltNet.** MoltNet pages are told that no media key system
   exists, Clear Key included, whichever ones the build or the operating
   system offers, and a MoltNet window no longer asks which ones there are.

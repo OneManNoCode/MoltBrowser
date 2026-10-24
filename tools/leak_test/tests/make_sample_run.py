@@ -98,7 +98,8 @@ GOOD_FP = {
                   '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
     'nav.userAgent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
                      '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
-    'storage.quota': 10737418240, 'media.devices': {'audiooutput': 1},
+    'storage.quota': 10737418240,
+    'media.devices': {'audioinput': 1, 'videoinput': 1, 'audiooutput': 1},
     'storage.quota_over_usage': 10737418240,
     'audio.render_quantum_hardware': 128,
     'audio.sample_rate': 48000, 'audio.output_latency': 0.024,
@@ -113,6 +114,12 @@ GOOD_FP = {
     'audio.playback_underruns': 0, 'audio.sink_id': '',
     'audio.cadence_interval_ms': 10, 'audio.cadence_burst_frames': [384, 512],
     'media.audiooutput': 1,
+    'media.device_order': ['audioinput', 'videoinput', 'audiooutput'],
+    'media.device_blank': True, 'media.gum': 'pending',
+    'media.gum_overconstrained': 'pending', 'media.sink_default': 'resolved',
+    'media.clock_running': True, 'media.clock_start_ms': 40,
+    'perf.jsHeapSizeLimit': 3760000000, 'perf.heap_rounded': True,
+    'perf.heap_cached': True,
     'eme.clearkey': 'NotSupportedError', 'eme.widevine': 'NotSupportedError',
     'eme.playready': 'NotSupportedError',
     'mc.vp8_360p': {'supported': True, 'smooth': True,
@@ -149,7 +156,13 @@ GOOD_FP = {
                            'Liberation Sans', 'LiberationSans-Bold',
                            'Liberation Serif Italic', 'Noto Sans',
                            'NotoSans-Bold'],
-    'storage.enforced_quota': 200 * 1024 ** 2,
+    'storage.enforced_quota': 60 * 1024 ** 2,
+    'pixels.video_frame_format': 'I420',
+    'pixels.video_frame': {'format': 'I420',
+                           'planes': '35ec97d035df255c26cac4ae',
+                           'rgba': 'ee1de75109443c46529f39c1'},
+    'pixels.encoded_opus_48k': {'chunks': 26, 'bytes': 4283,
+                                'hash': 'bbcab34ea3e06d12e5058b12'},
     'canvas.hash': '0123456789abcdef01234567',
 }
 
@@ -245,7 +258,9 @@ def manifest():
                          {'role': 'exit', 'nickname': 'e1', 'ip':
                           '192.0.2.70', 'fingerprint': 'C' * 40,
                           'in_consensus': True}],
-                'consensus_relays': 7000}},
+                'consensus_relays': 7000,
+                'tor_options': {'ConnLimit': '1000',
+                                'MaxClientCircuitsPending': '64'}}},
             {'name': 'identity', 'start': t(80), 'end': t(90), 'data': {
                 'regular_cookie_in_moltnet': False,
                 'cookie_after_close': False,

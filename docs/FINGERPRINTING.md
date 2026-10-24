@@ -381,6 +381,7 @@ back/forward, and a MoltNet window with Shields off.
 | `new VideoFrame(canvas \| OffscreenCanvas \| ImageBitmap \| <img> \| SVG image)`, then `copyTo()`, `VideoEncoder`, `MediaStreamTrackGenerator`, ... | **not farbled** (per-frame cost; see below) | farbled (at creation) | `video_frame.cc`: `VideoFrame::Create` (CanvasImageSource) |
 | `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
+| Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
@@ -423,7 +424,7 @@ back/forward, and a MoltNet window with Shields off.
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
 | `navigator.storage.estimate()` quota | the usage + 10 GiB (the disk, rounded up to whole GiB, where it is smaller) | the usage + **10 GiB**, static in off-the-record profiles since Chromium 156 | none (upstream) |
-| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed**: 200 MiB per site, 600 MiB for all sites, 800 MiB of blobs ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor` |
+| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed**: 60 MiB per site (all its storage keys together), 600 MiB for all sites, nothing evicted for another site, 800 MiB of blobs ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor`; `quota_manager_impl.cc`: `UsageAndQuotaInfoGatherer`; `quota_temporary_storage_evictor.cc`: `OnGotEvictionRoundInfo` |
 | Third-party cookies, Shared Storage | the user's settings | third-party cookies **blocked** (as in Incognito); Shared Storage: removed upstream at 156 | `cookie_settings_factory.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
@@ -600,6 +601,12 @@ frames) instead of on every exported frame, then turn them on everywhere.
 WebGPU uploads from a canvas stay farbled in both (they are per upload, not
 per frame; camera `<video>`/`VideoFrame` sources are not farbled). Nothing is
 copied or computed when protection is off for the context.
+
+Decoded video is not farbled anywhere: its pixels show the clip, not the
+machine's rendering. In MoltNet windows they are also decoded and
+converted the same way on every machine of an OS, and so are the bytes
+the encoders write ([pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes)).
 
 ## WebGL and WebGPU in MoltNet windows
 
@@ -1726,7 +1733,8 @@ hides these values (with a `--user-agent` override): `platformVersion`,
   nearly every machine that runs MoltBrowser's on-device model; and it was
   the most any desktop Chromium reported before the cap went up to 32
   (crbug.com/454354290), so it is a common value. The `Device-Memory`
-  hints aren't sent at all (above).
+  hints aren't sent at all (above). `performance.memory`'s heap limit is
+  this machine's too ([performance.memory](#moltnet-performancememory)).
 * `navigator.cpuPerformance` (stable at 152, on secure pages) reports a
   tier from 1 to 4 that content derives from the CPU model
   (`content::cpu_performance::GetTier`) and hands to each renderer at
@@ -2200,7 +2208,9 @@ clock's ticks pass a fixed delay and no glitches.
   device (`IsValidSinkDescriptor`), so `setSinkId("")` resolves and a
   device list without outputs fires no `error`. `enumerateDevices()` lists
   an `audiooutput` entry before any permission, as on every machine with
-  a device. Changes between devices (the system's default moving to
+  a device (and a microphone and a camera: [cameras, microphones and
+  outputs](#moltnet-cameras-microphones-and-outputs)). Changes between
+  devices (the system's default moving to
   headphones) were already handled in the audio service; they now show
   only as a gap in the sound.
 * **A device the page chose by its ID** (which takes a media permission,
@@ -2337,8 +2347,9 @@ adaptive players from stepping down on slow machines.
 **What it costs MoltNet users.** WebCodecs pages (video editors, cloud
 gaming) decode and encode on the CPU; pages that require hardware fall
 back or refuse. Sites that choose formats by `powerEfficient` see `false`
-for every video and pick by their own preference. Media elements still
-play with hardware decoders where Chromium uses them.
+for every video and pick by their own preference. Media elements decode
+in software too ([pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes), with its costs).
 
 ### What is left
 
@@ -2350,8 +2361,9 @@ play with hardware decoders where Chromium uses them.
 * How the operating system schedules the audio clock's thread, and how
   long the graph takes to render (the machine's speed, which a page can
   time in many other ways).
-* `<video>` and `<audio>` still decode with the machine's decoders; only
-  their speed shows (`getVideoPlaybackQuality()`, frame timing).
+* `<video>` and `<audio>` decode with the build's software decoders
+  ([pixels and encoded bytes](#moltnet-pixels-and-encoded-bytes)); their
+  speed still shows (`getVideoPlaybackQuality()`, frame timing).
 * Normal windows' encoders (see *Encoder identity* in [Known
   gaps](#known-gaps-and-attacks); `MediaRecorder` in MoltNet: [its own
   section](#moltnet-mediarecorder)); `RTCRtpSender.getCapabilities()` (see
@@ -2369,9 +2381,10 @@ values. The kill switch turns it off.
 | Where | What |
 |---|---|
 | `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the uniform device and its buffer rule, the output position, the key-system message, the Media Capabilities table; std-only (+ `moltnet_media_values_unittest.cc`, in `:unit_tests`) |
-| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client, the listed output device (+ `moltnet_media_test.cc`) |
+| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client (+ `moltnet_media_test.cc`; the device list is in `moltnet_media_devices.{h,cc}`, [cameras, microphones and outputs](#moltnet-cameras-microphones-and-outputs)) |
 | `core/molt_fingerprinting/moltnet_audio_clock.{h,cc}` | the clock's rate, the output ring and its drift control; std-only (+ `moltnet_audio_clock_unittest.cc`, in `:unit_tests`, with a simulation against devices of 128 to 8192 frames, bursts, drift and a late clock) |
-| `core/molt_fingerprinting/moltnet_audio_device.{h,cc}` | MoltNet's `WebAudioDevice`: the clock (`FakeAudioWorker` on a realtime thread of its own), the ring, the resampler, the real device and its failures; installed at `Configure()` (+ `moltnet_audio_device_test.cc`) |
+| `core/molt_fingerprinting/moltnet_audio_device.{h,cc}` | MoltNet's `WebAudioDevice`: the clock (`FakeAudioWorker` on a realtime thread of its own), the real device and its failures; installed at `Configure()` (+ `moltnet_audio_device_test.cc`) |
+| `core/molt_fingerprinting/moltnet_audio_output.{h,cc}` | the ring and the resampler to the real device (`MoltNetAudioOutput`), shared with [media playback's clock](#moltnet-media-playback-clock) |
 
 Upstream hooks (each marked `MoltBrowser:`):
 `modules/webaudio/audio_context.cc` (`AudioContext::Create`: the rate and
@@ -2381,7 +2394,7 @@ the `"hardware"` quantum; `outputLatency`; `getOutputTimestamp`;
 `platform/audio/audio_destination.{h,cc}` (the constructor gets its
 `WebAudioDevice` from `SetMoltNetDeviceFactory`'s factory when one is set),
 `modules/mediastream/media_devices.cc` (`DevicesEnumerated`: the listed
-output device),
+output device, now [one of each kind](#moltnet-cameras-microphones-and-outputs)),
 `modules/webaudio/realtime_audio_destination_handler.cc`
 (`MaxChannelCount`, `GetCallbackBufferSize`, `GetFramesPerBuffer`),
 `modules/encryptedmedia/encrypted_media_utils.cc`
@@ -2394,11 +2407,12 @@ All nine files are new in `src/` (the last three since the audio clock).
 
 ### Verification
 
-Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (13
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (14
 tests: the device, the buffer for every latency hint, rate and nonsense
 input, the base latency, the output latency on Chromium's grid, the
 ScriptProcessorNode size, the output position, the key-system message, the
-Media Capabilities table and the listed output device) passes with g++ (ASan/UBSan) and clang (UBSan
+Media Capabilities table, the listed devices and what a failed
+`getUserMedia()` reports) passes with g++ (ASan/UBSan) and clang (UBSan
 trap, `-fno-exceptions` and the strict warning set). A harness runs the
 real `moltnet_media.cc` and the hooked code extracted verbatim from all six
 upstream files, plus 156's unhooked `ChooseBufferSize` from
@@ -2445,9 +2459,10 @@ again on its schedule); a device lost and a device switched mid-play;
 suspend, resume and a frozen frame; silent sinks; a chosen device's errors;
 every frame rendered reaching the device in order, with the latency
 quoted above. With it, the hooked `IsValidSinkDescriptor` and
-`OnDevicesChanged`, extracted verbatim from `audio_context.cc`, and the
-listed output device (4 tests): no `error` without an output device in
-MoltNet, as against Chromium's. 28 mutants of the clock, the device, the
+`OnDevicesChanged`, extracted verbatim from `audio_context.cc` (3 tests;
+the listed devices have tests of their own now): no `error` without an
+output device in MoltNet, as against Chromium's. 28 mutants of the
+clock, the device, the
 hooks and the values each fail one of them. The resampler's cost was
 measured with Chromium 156's `SincResampler` and `MultiChannelResampler`
 built standalone. Every changed C++ file compiles without errors against
@@ -2468,6 +2483,345 @@ between runs, the render cadence (`audio.cadence_interval_ms`,
 `audio.cadence_burst_frames`) and the listed output device
 (`media.audiooutput`).
 
+## MoltNet: media playback clock
+
+`<audio>` and `<video>` play their sound through the output device, and in
+Chromium the device also keeps their time. In MoltNet windows that time now
+comes from a clock of MoltNet's own, the same on every machine:
+
+| What a page reads | Before, in MoltNet | Now |
+|---|---|---|
+| `currentTime` while an element with sound plays, and when it starts moving after `play()` | when the device asks for audio (its buffer and callback pattern), the delay it reports with each callback (its latency, 100 ms and more with Bluetooth), and its clock (a few hundred parts per million off the system's, visible over minutes) | MoltNet's media clock: the system's monotonic clock, the uniform device (48 kHz, stereo, 480 frames) and a fixed delay ([below](#what-moltnet-does-a-media-clock)) |
+| When a video's frames are shown, so `requestVideoFrameCallback()`'s `mediaTime`, `expectedDisplayTime` and `presentedFrames`, and what `drawImage(video)` copies at a given moment | scheduled from that audio time | scheduled from the clock's time |
+| The buffers AudioRendererImpl and the element's mixer choose | from the device's rate and buffer | from the uniform device |
+| A machine with no output device | playback times itself on a fallback sink with other buffers | **like every other machine** |
+| The output device going away or stalling mid-play (unplugged headphones, a device change) | an audio renderer error, or time standing still while the device sends no callbacks | **nothing**: time goes on, the sound goes nowhere until a device opens again |
+| `setSinkId("")` on an element without a player | the system's answer for its default device, which can be `NotFoundError` on a machine without one | **resolves** on every machine |
+
+Normal and Incognito windows keep Chromium's behaviour. MoltNet ignores
+Shields off, as elsewhere, and the kill switch turns it off.
+
+### Where 156 gets the time
+
+Every media element of a frame plays through one `AudioRendererMixer` per
+output device and stream format (`AudioRendererMixerManager`), whose sink
+is the frame's `AudioOutputDevice` (`AudioDeviceFactory::NewMixableSink`); a
+MediaStream track played in an element (`TrackAudioRenderer`) gets an
+output device of its own (`NewAudioRendererSink`). `AudioRendererImpl`
+asks the sink for the device's parameters to choose its buffers, renders
+when the device asks for audio, and keeps `currentTime` with an
+`AudioClock` fed by the delay the device reports, interpolated on the
+system clock between callbacks. A video's frames are shown when that
+audio time says (`GetWallClockTimes`, what `VideoRendererImpl` and the
+compositor follow). When the device's status isn't OK the renderer falls
+back to a `NullAudioSink`, which renders on a `FakeAudioWorker` with its
+own buffers; a device error during playback reaches the renderer as an
+audio renderer error.
+
+### What MoltNet does: a media clock
+
+`AudioDeviceFactory` (one hook in `NewMixableSink`'s sink callback and one
+in `NewAudioRendererSink` for MediaStream tracks) gives media elements'
+mixers and played tracks a `MoltNetMediaAudioSink` in MoltNet renderers,
+wrapping the output device Chromium would have used:
+
+* **Device info.** For the default output device (`""` or `"default"`)
+  it answers the uniform device: 48 kHz, stereo, a 480-frame buffer,
+  status OK, whether or not the machine has a device, without asking one.
+  The mixer and AudioRendererImpl choose their rates and buffers from
+  that, as on every MoltNet machine of the same OS (the mixer renders
+  1024 frames at a time at 48 kHz, 960 on Windows).
+* **The clock.** It renders its client (the mixer, or the track's
+  renderer) one buffer every buffer's duration from `Start()` or `Play()`,
+  on a realtime thread MoltNet's media sinks share, measured on the
+  system's monotonic clock. The clock is `media::FakeAudioWorker`, as for
+  Web Audio's clock ([When Web Audio renders](#when-web-audio-renders)): a
+  late tick runs once, never a burst of catch-up. Every tick passes the
+  delay Chromium's own fake sinks report (two buffers,
+  `FakeAudioWorker::ComputeFakeOutputDelay`, as `NullAudioSink` for a
+  muted element) and no glitches. So `currentTime`, and the video frames
+  that follow it, run on the same schedule on every machine.
+* **The real device.** What the clock renders goes through
+  `MoltNetAudioOutput`, the ring, drift control and resampler Web Audio's
+  clock uses (now shared), to the real device, opened at its own rate
+  with the buffer Chromium gives media playback. Nothing it passes back
+  (its buffer, delay, timing, glitches) reaches the client.
+* **No device, a lost device.** The default device's failures stay
+  inside: rendering goes on, its output goes nowhere, and a new device is
+  opened after 1, 2, 4 ... 30 s. `setSinkId("")` on an element that has no
+  player yet resolves in MoltNet without looking for a device
+  (`HTMLMediaElementAudioOutputDevice`).
+* **A device the page chose by its ID** (which takes a media permission,
+  [below](#moltnet-cameras-microphones-and-outputs)) is timed by the clock
+  too, but answers for itself: its status, and its errors.
+* **What already followed no device.** A muted element (muted autoplay)
+  renders on AudioRendererImpl's own `NullAudioSink`, whose buffers now
+  follow the uniform device; a video without sound is timed by the
+  system's clock (`WallClockTimeSource`). Pause, playback rate (with its
+  pitch-preserving stretch), seeking and volume work as before, on the
+  clock. Web Audio has its own clock, which an element routed through
+  `createMediaElementSource()` follows; WebRTC's output is off in MoltNet.
+
+**What a page reads now** (checked against simulated devices of 128, 256,
+441 (44.1 kHz), 480, 512, 1024 and 2048 (96 kHz) frames and a
+Bluetooth-like one with 180 ms of latency, clocks up to 200 ppm off, no
+device, a device lost and back and a device that stalls, see
+Verification): `currentTime` read every millisecond and the display times
+of the video frames around it at every 60 Hz frame are the same for every
+device, through pause, rate changes, seeks, volume changes, muted
+autoplay unmuted, streams of 22.05 to 96 kHz and a device the page chose;
+a played MediaStream track is rendered at the same moments on every
+device. Outside MoltNet the same harness tells the devices apart. What
+remains is how the operating system schedules the clock's thread and how
+long decoding and rendering take, which a page can time in many other
+ways.
+
+### What it costs
+
+* **Latency.** The ring fills to one of the device's callbacks (a 21 ms
+  playback buffer) and a cushion before the device hears anything, and
+  plays what it started with rather than skip it, then works the excess
+  off within 0.2% of the rate. Against Chromium on the same device, sound
+  starts about 60 ms later, 45 ms later after 10 s, and 13 to 35 ms later
+  once the ring has settled after 20 to 30 s (simulated).
+* **Picture and sound.** A video's frames follow the clock's fixed delay,
+  not the device's, so for the first seconds the sound trails the picture
+  by about 25 to 37 ms on a wired output with 5 to 15 ms of latency of its
+  own, about 15 ms at 10 s, and within about 12 ms either way after 20 s
+  (simulated). An output with a long latency of its own (Bluetooth
+  headphones, 150 to 250 ms) is not made up for: Chromium delays the
+  picture by the latency the system reports, which would show in the
+  timing, so in MoltNet the sound trails the picture by about that much.
+* **CPU and memory.** A wakeup per mixer buffer on the clock's thread, the
+  resampler on devices that don't run at 48 kHz (the Web Audio figures
+  above), and the ring.
+
+### Which contexts
+
+The whole MoltNet renderer process: every media element and played
+MediaStream track in it (media elements only exist in windows). The kill
+switch turns it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_audio_sink.{h,cc}` | `MoltNetMediaAudioSink`: the uniform device info, the shared clock thread, the real device and its failures, `setSinkId("")` without a player (+ `moltnet_audio_sink_test.cc`) |
+| `core/molt_fingerprinting/moltnet_audio_output.{h,cc}` | `MoltNetAudioOutput`: the ring, drift control and resampler to the real device, shared with Web Audio's `MoltNetAudioDevice` |
+
+Upstream hooks (each marked `MoltBrowser:`):
+`modules/media/audio/audio_device_factory.cc` (`NewAudioRendererSink`
+for MediaStream tracks; `NewMixableSink`'s sink callback for media
+elements; `NewMoltNetOutputDevice` makes the real device for each
+attempt) and `modules/audio_output_devices/
+html_media_element_audio_output_device.cc` (`DoSetSinkId` without a
+player). Both files are new in `src/`.
+
+### Verification
+
+Standalone (no Chromium checkout): a harness compiles MoltBrowser's real
+`moltnet_audio_sink.cc`, `moltnet_audio_output.cc`,
+`moltnet_audio_clock.cc`, `moltnet_media.cc` and the hooked
+`audio_device_factory.cc` with Chromium 156's `AudioRendererMixerManager`,
+`AudioRendererMixerInput`, `AudioRendererMixer`, `AudioConverter`,
+`LoopbackAudioConverter`, `AudioClock`, `AudioLatency`, `FakeAudioWorker`
+and `NullAudioSink` unchanged, and AudioRendererImpl's `Render`,
+`CurrentMediaTime`, `GetWallClockTimes`, `SetPlaybackRate`, `SetVolume`,
+`SetMediaTime` and the methods that start and stop its sinks extracted
+verbatim, against stand-ins of the rest, on simulated time with the
+simulated devices above (13 tests, g++ ASan/UBSan and clang
+`-fno-exceptions` with UBSan traps): the timing above, identical for every
+device in MoltNet and telling them apart in a normal window; no device
+(no fallback, no error, as with one; Chromium falls back); a lost device
+reopened and a stalled one, without an error or a change in timing; a
+chosen device's status and errors; one realtime clock thread; the
+MediaStream track sink; `setSinkId("")` without a player; and the
+latency and picture-and-sound figures above. 9 mutants of the sink and
+its hooks each fail it. Web Audio's own harness passes with the ring
+moved into `MoltNetAudioOutput`. Every changed C++ file, the tests
+included, compiles without errors against Chromium 156's real headers
+(`tools/compile_check`).
+
+**Needs the build machine:** compiling and linking, `blink_unittests`
+(`MoltNetAudioSinkTest.*`, `MoltNetAudioDeviceTest.*` and the upstream
+media and audio output device suites), and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (playback, A/V
+sync and device changes on real 44.1, 48 and 96 kHz devices, Bluetooth,
+no output device). **Automated** by [`tools/leak_test`](LEAK_TESTING.md):
+an `<audio>` element's clock running when it plays unmuted
+(`media.clock_running`), `setSinkId("")` without a player
+(`media.sink_default`), and, for the record, how long after `play()` its
+time starts moving (`media.clock_start_ms`).
+
+## MoltNet: cameras, microphones and outputs
+
+Before a page may use a camera or microphone, Chromium tells it which
+kinds of device the machine has, and answers some `getUserMedia()` calls
+without asking the user. In MoltNet windows every machine now has one
+microphone, one camera and one output device until the user lets a page
+use them:
+
+| What a page reads | Before, in MoltNet | Now |
+|---|---|---|
+| `enumerateDevices()` before a permission | one entry, without ID, label or group, for each kind the machine has: no `videoinput` on a desktop without a camera, no `audioinput` without a microphone (no `audiooutput` without an output was already fixed, [above](#when-web-audio-renders)) | **`audioinput`, `videoinput`, `audiooutput`**, one each, without ID, label or group, on every machine |
+| `getUserMedia()` for a kind the machine has none of | `NotFoundError` at once, no prompt | **the permission prompt** of any request; then `NotAllowedError` if the user blocks or dismisses it, `NotFoundError` if they allow it |
+| `getUserMedia()` with constraints no device meets (an exact size the camera doesn't have) | `OverconstrainedError` at once, no prompt | the same: **the prompt** first |
+| `devicechange` | fires when devices change, before any permission unless Chromium's `DeviceChangeRequiresPermission` is on | fires only once the page may use the devices |
+
+Normal and Incognito windows keep Chromium's behaviour. MoltNet ignores
+Shields off, and the kill switch turns it off.
+
+### What MoltNet does
+
+* **The list.** `MediaDevices::DevicesEnumerated` adds, after each kind,
+  one entry without ID, label or group when Chromium listed none of that
+  kind and the page doesn't see that kind's devices. Microphone
+  permission shows a page both the microphones and the outputs (Chromium
+  ties outputs to it), so an ID of either audio kind counts for both. The
+  order is Chromium's (microphones, cameras, outputs), and an added
+  input entry's `getCapabilities()` is empty, as for every entry
+  without a label. Once the user grants a kind, its real devices are
+  listed as in Chromium.
+* **`getUserMedia()`.** When a request for a camera or microphone would
+  fail because no device of a kind it asks for exists (`NO_HARDWARE`) or
+  none meets its constraints (`CONSTRAINT_NOT_SATISFIED`),
+  `UserMediaProcessor::GetUserMediaRequestFailed` first asks for the
+  permissions the request needs (`PermissionService.RequestPermissions`,
+  the request a page makes for a device that exists, with its prompt; a
+  permission already granted or blocked is answered without one). Then:
+  all granted, the real error (the page may see the devices now anyway);
+  any blocked, `NotAllowedError` (`PERMISSION_DENIED`); dismissed or
+  ignored, `NotAllowedError` (`PERMISSION_DISMISSED`), as a request a
+  device could meet ends. Before an answer, the two machines look the
+  same: a prompt, and a promise that waits for it. Screen capture and
+  other failures are unchanged.
+* **`devicechange`** fires only for a page that may use the devices
+  (Chromium's own rule behind `DeviceChangeRequiresPermission`, kept in
+  MoltNet whatever the feature's state), so plugging in headphones or a
+  camera shows no page that may not use them.
+
+**Why a prompt.** The two ways out were a prompt for every request, or
+a fake device. A fake device would have to keep up the act after the user
+allows it (a stream of what?), and the user would have allowed a device
+that isn't there. Asking first keeps the machines alike until the user
+decides, and after that the page may see the devices anyway.
+
+**What it costs.** A user without a camera (or microphone) is asked
+about one when a page wants it, and if they allow it the page then finds
+none. Pages see a `devicechange` only once they may use the devices.
+
+### Which contexts
+
+Windows and their frames, the only contexts these APIs exist in, in the
+whole MoltNet renderer process. The kill switch turns it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`) and what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`); std-only (+ `moltnet_media_values_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | the Blink glue: the added entries, `devicechange`, the permission request (+ `moltnet_media_devices_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`):
+`modules/mediastream/media_devices.cc` (`DevicesEnumerated`: an entry per
+kind; `MaybeFireDeviceChangeEvent`) and
+`modules/mediastream/user_media_processor.cc`
+(`GetUserMediaRequestFailed`). `user_media_processor.cc` is new in
+`src/`.
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (14
+tests, the list rule and the verdict for every mix of answers included)
+passes with g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`).
+Every changed C++ file, the tests included, compiles without errors
+against Chromium 156's real headers (`tools/compile_check`).
+
+**Needs the build machine:** `blink_unittests`
+(`MoltNetMediaDevicesTest.*`, which runs the permission request against a
+fake permission service in a real window, and the upstream
+`MediaDevices` and `UserMediaProcessor` suites), and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (machines with
+no camera or no microphone, the prompt and its three answers,
+`devicechange`). **Automated** by [`tools/leak_test`](LEAK_TESTING.md):
+the device kinds, their order and blank fields (`media.devices`,
+`media.device_order`, `media.device_blank`) and `getUserMedia()` before a
+permission, for a camera and microphone and with constraints no camera
+meets (`media.gum`, `media.gum_overconstrained`: still waiting after
+1.5 s, or refused).
+
+## MoltNet: performance.memory
+
+`performance.memory` (windows only, non-standard) reports the JavaScript
+heap's size and limit; `performance.measureUserAgentSpecificMemory()`
+(cross-origin isolated windows, shared and service workers) breaks memory
+use down by context. In MoltNet windows the machine no longer shows in them:
+
+| What a page reads | Before, in MoltNet | Now |
+|---|---|---|
+| `jsHeapSizeLimit` | V8's heap limit, which V8 derives from the machine's memory (half of it, between 256 MiB and 4 GiB, for the old generation), to the byte: about 2.2 GB on a 4 GB machine, 4,395,630,592 from 8 GB on, and every value between for the sizes between | **3,760,000,000**: the 8 GB machine's limit `navigator.deviceMemory` describes, rounded as below |
+| `usedJSHeapSize`, `totalJSHeapSize` | to the byte, refreshed every 50 ms (a renderer locked to a site, as on desktop) | rounded up to one of 100 sizes from 10 MB to 3.76 GB (three significant digits), refreshed once every 20 minutes |
+| `measureUserAgentSpecificMemory()` | byte counts per context, as precise as the heap's layout | every count rounded the same way (0 stays 0) |
+
+Normal and Incognito windows keep Chromium's behaviour. The kill switch
+turns it off.
+
+### What MoltNet does
+
+* `MemoryInfo` always reports the rounded, cached values Chromium reports
+  when a renderer isn't locked to a site (`Precision::kBucketized`, the
+  20-minute cache), whatever the caller asked for and whatever
+  `--enable-precise-memory-info` says.
+* The used and total sizes are the page's own, rounded with a fixed table
+  of Chromium's 100 sizes (`moltnet::QuantizedMemorySize`): Chromium
+  computes the sizes in floating point at run time with the platform's
+  math library, MoltNet uses the same values on every machine and thread.
+* `jsHeapSizeLimit` is V8's limit for an 8 GB machine at 156 (an old
+  generation of 4 GiB and three new-space areas of 32 MiB,
+  `moltnet::V8HeapSizeLimit`), rounded like the other two: the last size,
+  3,760,000,000, which every machine from 8 GB up also reads when
+  rounded.
+* `measureUserAgentSpecificMemory()` rounds every byte count it reports
+  the same way, before the totals are added up.
+
+### Which contexts
+
+The whole MoltNet renderer process: `performance.memory` exists only in
+windows, the memory measurement also in shared and service workers. The
+kill switch turns it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_memory_values.{h,cc}` | V8's heap limit for a machine's memory, the uniform limit, the fixed table of sizes; std-only (+ `moltnet_memory_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_memory.{h,cc}` | the Blink glue (+ `moltnet_memory_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`): `core/timing/memory_info.cc`
+(`MemoryInfo`'s constructor and `HeapSizeCache::Update`) and
+`core/timing/measure_memory/measure_memory_controller.cc`
+(`ConvertResult`). Both files are new in `src/`.
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_memory_values_unittest.cc` (4
+tests: the uniform limit, the limit V8 156's heap configuration gives 1 to
+64 GB, fractional and nonsense memory sizes, and the table's rounding at,
+between and beyond its sizes, Chromium's own test values included; the
+table was generated with Chromium's computation) passes with g++
+(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`). Every changed C++
+file, the tests included, compiles without errors against Chromium 156's
+real headers (`tools/compile_check`).
+
+**Needs the build machine:** `blink_unittests` (`MoltNetMemoryTest.*`,
+which reads `performance.memory` through a real `MemoryInfo` in a V8
+context, and the upstream `MemoryInfo` and measure-memory suites), and
+the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (a
+4 GB machine, workers). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): `jsHeapSizeLimit`
+(`perf.jsHeapSizeLimit`), the sizes rounded (`perf.heap_rounded`) and not
+refreshed after an allocation (`perf.heap_cached`).
+
 ## MoltNet: MediaRecorder
 
 `MediaRecorder` encodes a stream (a camera, a canvas's `captureStream()`, a
@@ -2482,8 +2836,10 @@ to encode with; in MoltNet windows every answer now comes from the build:
 | The software encoders' threads, and AV1's tile layout, which is written into the stream | sized by the machine's cores | sized by **4** cores, the count `navigator.hardwareConcurrency` reports |
 
 Audio is recorded as Opus (libopus) or PCM, by the build, on every
-machine. A stream whose frames arrive already encoded (a remote WebRTC
-track) is recorded as it is; WebRTC is off in MoltNet.
+machine, and in MoltNet libopus and the resampler use the same kernels on
+every CPU ([pixels and encoded bytes](#moltnet-pixels-and-encoded-bytes)).
+A stream whose frames arrive already encoded (a remote WebRTC track) is
+recorded as it is; WebRTC is off in MoltNet.
 
 The core count is set for the whole MoltNet renderer process
 (`media::SetProcessorCountForSoftwareEncoding`), so WebCodecs' software
@@ -2535,17 +2891,159 @@ machine with hardware encoders). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md): the recorded type for each container,
 and `isTypeSupported()` compared between runs.
 
+## MoltNet: pixels and encoded bytes
+
+A page can read back the media it decodes and encodes: a video frame's
+planes and its RGB pixels (`VideoFrame.copyTo()`, `new VideoFrame(video)`),
+a `<video>` drawn into a canvas or uploaded to WebGL, and the bytes that
+`VideoEncoder`, `AudioEncoder` and `MediaRecorder` write. At 156 those
+bytes depend on the machine in two ways: on the GPU and its video decoder,
+for video a media element plays, and on the CPU's vector instructions, for
+the code that scales, resamples and encodes. In MoltNet windows they are
+computed the same way on every machine of an OS:
+
+| What a page reads | Chromium 156 | MoltNet |
+|---|---|---|
+| `<video>` (and MSE) frames | decoded by the GPU's decoder where Chromium uses one, and kept in GPU memory (NV12); on some platforms software-decoded frames are copied there too | decoded by **the build's software decoders** (libvpx for VP8 and VP9, dav1d for AV1) and kept **in CPU memory** as decoded (I420) |
+| A video frame as RGB: `copyTo({format: 'RGBA'})`, `drawImage()`, `texImage2D()` | converted by the GPU (frames in GPU memory, accelerated canvases, WebGL uploads) or by libyuv | converted by **libyuv on the CPU** |
+| A `VideoEncoder` frame of another size than the encoder's | scaled by libyuv's box or bilinear filter, whose rounding differs between x86 and Arm | scaled by **an integer box (shrinking) and tent (growing) filter** that rounds the same way on every CPU (`media/base/molt_portable_scale.h`) |
+| Opus (`AudioEncoder`, `MediaRecorder`) | libopus with the CPU's SSE, AVX2 or NEON kernels; on x86 its pulse search uses approximate-reciprocal instructions, whose results differ between CPU vendors | **libopus's C kernels** |
+| Audio an encoder resamples (any rate but 8, 12, 16, 24 and 48 kHz) or downmixes | `SincResampler` and `vector_math::FMAC` with AVX2 and FMA, SSE or NEON | **their C versions** |
+
+The libopus row was measured with Chromium 156's libopus built for x86-64
+and arm64 with Chromium's flags: over 300 random encoder configurations,
+the C kernels give other bytes than Chromium's x86-64 build in 257 and than
+its arm64 build in 31, and Chromium's x86-64 build gives other bytes on an
+emulated x86 CPU than on an Intel one in 7 of 8 typical WebCodecs and
+MediaRecorder configurations. With the C kernels the bytes are the same on
+x86-64 (natively, and on emulated Nehalem and Core 2 CPUs) and on arm64
+(emulated Cortex-A72 and qemu's `max` CPU) in all 300, and a libm whose
+results are one unit in the last place off changes none of them.
+`SincResampler`'s SSE and AVX2 convolutions give other samples than its C
+one for three quarters of the output.
+
+**What was already the same.** Measured with Chromium 156's copies, built
+for x86-64 and arm64 with Chromium's flags:
+
+* libyuv: of 97 cases covering the calls the read-back and encoder-input
+  paths make, every conversion (YUV to RGB and back with the BT.601,
+  BT.709 and BT.2020 matrices, full and limited range, with nearest and
+  bilinear chroma, NV12, 10- and 12-bit, with and without alpha) gives the
+  same bytes at every SIMD level of x86-64 (C, SSE2 to AVX-512) and of
+  arm64 (C, NEON, SVE2, SME), and the same on both architectures; so does
+  nearest-neighbour scaling. Only filtered scaling
+  differed: between x86 and Arm (libyuv's own C code rounds per
+  architecture, to match each one's vector code), and on x86 at one ratio
+  (3/8) between SSSE3 and the rest. MoltNet therefore doesn't restrict
+  libyuv's CPU features (`libyuv::MaskCpuFlags`): it would change nothing on
+  one architecture and not make the two agree.
+* libvpx: VP8 and VP9 encoding at Chromium's real-time settings (several
+  sizes and thread counts) and decoding give the same bytes at every SIMD
+  level of x86-64 and on arm64.
+
+Video drawn into a canvas is read back through the canvas, whose
+readbacks are farbled like any drawing.
+
+**Which contexts.** The whole MoltNet renderer process, windows, iframes
+and workers, set once when it starts (`Configure`, before any media object
+exists). Normal and Incognito windows are unchanged, and so are the GPU
+process and other renderers. The kill switch turns it off.
+
+**What it costs MoltNet users.** Measured on one core of this VM (Xeon,
+2.1 GHz), with FFmpeg and the system's libvpx and dav1d, on busy synthetic
+clips at 30 frames a second:
+
+| Clip | VP9 (libvpx) | AV1 (dav1d) |
+|---|---|---|
+| 1080p (VP9 4 Mbit/s, AV1 3 Mbit/s) | 0.15 cores | 0.09 cores |
+| 2160p (VP9 16 Mbit/s, AV1 10 Mbit/s) | 0.68 cores | 0.41 cores |
+
+With four threads a decoder uses a little more CPU in total (1080p 0.19 and
+0.14 cores, 2160p 0.75 and 0.61) and runs 3 to 15 times faster than real
+time. A GPU decodes the same video for a fraction of a watt; at a typical
+laptop core's few watts when busy, software decoding should cost roughly
+0.5 to 1 W more at 1080p and 2 to 3 W more at 2160p, which shortens battery
+life while video plays by very roughly a tenth to a third (an estimate from
+the CPU time, not measured on a battery here). 4K at 60 frames a second
+may drop frames on slow machines (`getVideoPlaybackQuality()` shows it,
+and Media Capabilities already answers "not power efficient" for every
+video in MoltNet). Decoded frames are uploaded for display (3 MB per 1080p
+frame, 12 MB at 2160p) instead of staying on the GPU. The rest is small:
+reading a frame as RGB costs libyuv 0.5 ms at 1080p and 1.8 ms at 2160p;
+the integer scaler takes 9 ms for 1080p to 720p, 14 ms for 2160p to
+1080p and 6 ms for 720p to 1080p (I420; libyuv's filters 0.6 to 3 ms), so
+a page encoding 30 frames a second at another size than its frames uses up
+to half a core more; Opus with its C kernels takes 1.0 to 1.4 times as
+long (about 1% of a core for real-time stereo); the C resampler 2 ms per
+second of 48 kHz stereo (0.5 ms with AVX2).
+
+**Code.** `media/base/molt_portable_media.{h,cc}` (the process's portable
+mode; `PortableScaleFrame()`) and `media/base/molt_portable_scale.{h,cc}`
+(the scaler; std-only), with `molt_portable_media_unittest.cc` and
+`molt_portable_scale_unittest.cc` in `media_unittests`;
+`core/molt_fingerprinting/moltnet_pixels.{h,cc}` (`PinUniformMediaPixels()`,
+called from `Configure`; + `moltnet_pixels_test.cc`). Upstream hooks (each
+marked `MoltBrowser:`; all new in `src/`):
+`media/renderers/default_decoder_factory.cc` (`CreateVideoDecoders`: no
+external, that is hardware, decoders),
+`media/gfx/mappable_shared_image_video_frame_pool.cc`
+(`MaybeCreateHardwareFrame`: frames passed through),
+`media/gfx/paint_canvas_video_renderer.cc` (`VideoImageGenerator::QueryYUVA`
+and `IsPixelFormatSupportedForYuvSharedImageConversion`: no GPU
+conversion), `media/base/video_frame_converter_internals.cc` (`ARGBScale`,
+`NVxxScale`, `I4xxxScale`, `I4xxxScale_16`: filtered scaling),
+`media/base/sinc_resampler.cc` (`InitializeCPUSpecificFeatures`),
+`media/base/vector_math.cc` (`FMAC`), `media/base/BUILD.gn` (the new
+files; `//third_party/opus`), and in `third_party/opus`: `BUILD.gn` (the
+SSE and SSE2 kernels are chosen at run time instead of presumed, which
+`opus_select_arch()` does on every x86-64 CPU, so other processes run the
+same code as before: the same bytes in all 300 configurations, and no
+measurable difference in speed), `src/celt/celt.c` (`opus_moltbrowser_set_portable()`),
+`src/celt/x86/x86cpu.c` (`opus_select_arch()`: the C kernels), and
+`src/celt/arm/pitch_neon_intr.c` and `celt_neon_intr.c` (the presumed NEON
+kernels hand over to C).
+
+**Verification.** Standalone (no Chromium checkout; harnesses in a scratch
+directory): the libyuv comparison above (97 cases, two contents and two
+sizes, on 15 CPU configurations: every `MaskCpuFlags` level natively from
+AVX-512 down to C, emulated Haswell, Sandy Bridge, Nehalem and Core 2, and
+emulated arm64 Cortex-A72, A76, Neoverse N2, qemu's `max` CPU with SVE2
+and SME, and C); the libopus comparison above (Chromium 156's libopus with the
+hooks, 300 random and 8 typical encoder configurations, also with glibc's
+libm replaced by fdlibm and by one perturbed by a unit in the last place);
+the libvpx comparison above; `molt_portable_scale_unittest.cc` (9 tests:
+the weights, copies, constant planes, block means, interpolation, range,
+channels, bad geometry and golden digests) with g++ (ASan/UBSan), clang
+(UBSan trap, `-fno-exceptions`, the strict warning set) and clang for
+arm64 under qemu, with the same digests; a libFuzzer run of the scaler with
+random geometry and short buffers under ASan/UBSan. Every changed C++ file
+compiles against Chromium 156's real headers (`tools/compile_check`, which
+now mounts FP16 for `paint_canvas_video_renderer.cc`); the four libopus
+files, which it doesn't cover, compile without warnings (`-Wall -Wextra
+-Wmissing-prototypes`) for x86-64 and arm64 against 156's libopus, and are
+the ones the comparisons above ran.
+**Needs the build machine:** compiling and linking, `media_unittests`
+(`MoltPortable*`), `blink_unittests` (`MoltNetPixelsTest.*`), and the
+checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-pixels" (two
+machines of an OS with different CPUs and GPUs, playback cost).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): a VP9 frame decoded
+by WebCodecs and by a `<video>`, read as YUV and as RGBA, `<video>` frames
+in I420 (`pixels.video_frame_format`), and the bytes of a scaled VP8 frame
+(I420 and RGBA input) and of Opus at 48 and 44.1 kHz, compared between
+runs (`pixels.*`).
+
 ## MoltNet: storage limits
 
 A page can't ask how much memory a machine has, but it can store data
 until the browser refuses more, and at 156 an off-the-record profile's
 limits are computed from the machine's memory. MoltNet keeps all its
-storage in memory; its limits are now fixed:
+storage in memory; its limits are now fixed, and each site's are its own:
 
 | Limit a page reaches by writing | Chromium 156, off the record | MoltNet |
 |---|---|---|
-| Quota per storage key (an origin, partitioned by top-level site): IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool | **200 MiB** |
-| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile | **600 MiB** |
+| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds |
+| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile; each key's quota is checked on its own, so all keys together may use more | **600 MiB**, the most all sites may store together |
+| Eviction | every half hour (and five minutes after the profile starts), the least recently used data of any site, until all sites use less than 70% of the pool | **none**: a site that reaches its limit gets `QuotaExceededError`, and no site's data is removed to make room |
 | Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser), all sites together | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android; no disk | **800 MiB**; no disk |
 | `localStorage`, `sessionStorage` | 10 MiB per storage area, on every machine | unchanged |
 
@@ -2558,22 +3056,45 @@ off by default at 156) stay fixed.
 
 **Why these values.** MoltNet reports 8 GB of memory, but the limits hold
 real data in the browser and storage processes, so they must be safe on
-the smallest machines MoltNet runs on. They are Chromium's own rules for
-a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
-Incognito's range (15% of 4 GiB, 614 MiB) is 600 MiB, a storage key gets a
-third of it, and blobs get a fifth of 4 GiB (819 MiB), Chromium's rule
-for 32-bit desktops and ChromeOS. On larger machines that is less
-than Incognito allows (on 8 GB, a pool of 1.2 to 1.6 GiB and 410 to 550
-MiB per key) and far more than sites store in practice.
+the smallest machines MoltNet runs on. The totals are Chromium's own rules
+for a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
+Incognito's range (15% of 4 GiB, 614 MiB) is 600 MiB, and blobs get a
+fifth of 4 GiB (819 MiB), Chromium's rule for 32-bit desktops and
+ChromeOS. The 600 MiB bound everything MoltNet's sites store, so the
+memory MoltNet's storage can take is the same whatever sites do. Each site
+gets a tenth of it: Chromium's third per storage key would let a page
+fill the pool from three keys (and more with its embedded frames, each a
+key of its own), at which point eviction would remove other sites' data.
+With a tenth for each site, all of its keys together, a site's writes
+fail only once it has used its own 60 MiB, or once ten other sites hold
+all of theirs; until then nothing another site stores changes how much a
+site may write, and since nothing is evicted, nothing it stores removes
+another site's data. On larger machines the limits are less than
+Incognito allows (on 8 GB, a pool of 1.2 to 1.6 GiB and 410 to 550 MiB per
+key) and far more than sites store in practice (a few MB of caches and
+databases).
 
 **Which profiles.** Only MoltNet's storage partitions (its off-the-record
 profile, through `ModeForBrowserContext`); normal and Incognito profiles
-keep Chromium's limits. The kill switch turns it off.
+keep Chromium's limits, its quota per storage key and its eviction. The
+kill switch turns it off.
+
+**What a page can still observe.** Its own site's limit: writing until
+`QuotaExceededError` finds 60 MiB for the site, the same on every machine,
+less what the site's other storage keys (its subdomains, what it embeds)
+already use. Nothing of what other sites store, unless ten other sites
+hold all 60 MiB each in the same identity; `navigator.storage.estimate()`
+reports the usage + 10 GiB, as in every off-the-record profile at 156.
 
 **What it costs MoltNet users.** Offline web apps, in-browser editors and
-large downloads assembled in the page (`Blob`, OPFS) stop at 200 MiB per
+large downloads assembled in the page (`Blob`, OPFS) stop at 60 MiB per
 site and 800 MiB of blobs, with the same `QuotaExceededError` on every
-machine; MoltNet keeps nothing after the session anyway.
+machine. Since nothing is evicted, an identity whose sites have stored
+600 MiB together gets `QuotaExceededError` on every site until a site's
+data is deleted (by the site, or with New Identity); MoltNet keeps nothing
+after the session anyway. Counting a site's usage needs every storage
+key's usage, which the quota system keeps in memory: one pass over the
+identity's keys per quota check.
 
 **Code.** `chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`
 (the values and their derivation, + `molt_net_storage_values_unittest.cc`)
@@ -2586,7 +3107,16 @@ overridden in `chrome/browser/chrome_content_browser_client.{h,cc}`;
 `content/browser/blob_storage/chrome_blob_storage_context.cc` (`GetFor`)
 and `storage/browser/blob/blob_memory_controller.{h,cc}` (the new
 `SetFixedStorageLimits`, which the machine-derived and pressure-scaled
-limits then leave alone). The last three are new in `src/`.
+limits then leave alone). The site budget:
+`storage/browser/quota/molt_storage_budget_policy.h` (the rules, std-only,
++ `molt_net_storage_budget_policy_unittest.cc`) and `molt_storage_budget.h`
+(a site's usage from each storage key's), hooked into
+`storage/browser/quota/quota_settings.h` (the new `molt_per_site_quota`, 0
+everywhere else), `quota_manager_impl.cc` (`UsageAndQuotaInfoGatherer`
+counts every key's usage when there is a budget, and its `Completed()`
+leaves a key no more room than its site's budget and the total have left)
+and `quota_temporary_storage_evictor.cc` (`OnGotEvictionRoundInfo` evicts
+nothing for the pool when there is a budget).
 
 **Verification.** Standalone: the values and glue tests pass with g++
 (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions` and the strict
@@ -2595,17 +3125,32 @@ warning set); a harness runs the hooked code extracted verbatim from
 `blob_memory_controller.cc` against stand-ins (5 tests: the fixed quota in
 MoltNet, other profiles still asking the machine, test settings still
 winning, the fixed blob limits, which memory pressure doesn't scale); 10
-mutants of the glue and hooks each fail it or the glue tests. Every
-changed C++ file compiles without errors against Chromium 156's real
-headers (`tools/compile_check`). **Needs the
-build machine:** compiling and linking, `molt_ai_unittests`
-(`MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*`), and the checks
-tagged "fp-probes" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
-`QuotaExceededError` with IndexedDB, Cache Storage and OPFS, and a large
-blob). **Automated** by [`tools/leak_test`](LEAK_TESTING.md): the quota the
-browser enforces for the test page's site, read through DevTools; writing
-until the limit would take too long for a kit run, so the configured
-limit is checked instead.
+mutants of the glue and hooks each fail it or the glue tests. The site
+budget: its rules' unit tests (5 tests) pass built standalone with g++
+(ASan/UBSan); a second harness compiles `quota_settings.h`, the two
+budget headers and `molt_net_storage_values.h` unchanged and includes the
+hooked parts of `UsageAndQuotaInfoGatherer` (`OnGotSettings()`, the new
+`MoltOnGotGlobalUsage()`, the MoltBrowser block of `Completed()`) and
+`QuotaTemporaryStorageEvictor::OnGotEvictionRoundInfo()` verbatim into
+stand-ins with 156's members (g++ ASan/UBSan, clang `-fno-exceptions`): 4
+tests (a site's subdomains and embedded third parties share its budget
+and another site keeps all of its own; the total binds only with ten full
+sites; Incognito and unlimited keys keep Chromium's quota and count
+nothing more; the evictor evicts nothing for MoltNet's pool and still does
+for Incognito's), 8 mutants caught. Every changed C++ file compiles
+without errors against Chromium 156's real headers (`tools/compile_check`).
+**Needs the build machine:** compiling and linking, `molt_ai_unittests`
+(`MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*`,
+`MoltNetStorageBudgetPolicyTest.*`), `storage_unittests`
+(`QuotaManagerImplTest.*`, `QuotaTemporaryStorageEvictorTest.*`, for
+Chromium's own behaviour, unchanged), and the checks tagged "fp-probes"
+and "moltnet-shared" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
+`QuotaExceededError` with IndexedDB, Cache Storage and OPFS, a large blob,
+two sites' quotas, and no eviction after more than half an hour).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): the quota the
+browser enforces for the test page's site, read through DevTools (60 MiB
+with nothing stored); writing until the limit would take too long for a
+kit run, so the configured limit is checked instead.
 
 ## Fonts
 
@@ -3965,7 +4510,9 @@ Honest list; anything not in the table above is not covered.
   windows. MoltNet's WebCodecs and `MediaRecorder` only use the build's
   software encoders, with threads for MoltNet's 4 cores (see [audio, DRM
   and media capabilities](#moltnet-audio-drm-and-media-capabilities) and
-  [MediaRecorder](#moltnet-mediarecorder)).
+  [MediaRecorder](#moltnet-mediarecorder)), which scale, resample and
+  encode the same way on every CPU ([pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes)).
 * **Audio routed out of Web Audio**: `MediaStreamAudioDestinationNode` ->
   `MediaStreamTrackProcessor` (`AudioData.copyTo`), `MediaRecorder`,
   `AudioEncoder`. `AudioParam` automation values computed by the browser are
@@ -4042,6 +4589,15 @@ Honest list; anything not in the table above is not covered.
   capabilities](#moltnet-audio-drm-and-media-capabilities).) What is left
   there: output device IDs once the user grants a media permission, and
   the speed of media playback.
+* (Closed: when `<audio>` and `<video>` play, the device list and
+  `getUserMedia()` before a permission, and `performance.memory`, see
+  [media playback clock](#moltnet-media-playback-clock), [cameras,
+  microphones and outputs](#moltnet-cameras-microphones-and-outputs) and
+  [performance.memory](#moltnet-performancememory).)
+* (Closed: in MoltNet, hardware video decoding, the GPU's colour
+  conversion of read-back frames, and the CPU-specific kernels of libopus,
+  libyuv's filtered scaling and the encoders' resampler, see [pixels and
+  encoded bytes](#moltnet-pixels-and-encoded-bytes).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -4193,7 +4749,11 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour and scrollbar style (values in `moltnet_values.h`; + `moltnet_display_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.{h,cc}`, `moltnet_media.{h,cc}` | MoltNet's audio device, key systems, Media Capabilities table and WebCodecs codecs (pure, + `moltnet_media_values_unittest.cc`; glue, + `moltnet_media_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.{h,cc}`, `moltnet_audio_output.{h,cc}` | MoltNet's media playback clock and the ring it shares with Web Audio's (+ `moltnet_audio_sink_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | MoltNet's device list, `devicechange` and `getUserMedia()` before a permission (rules in `moltnet_media_values.h`; + `moltnet_media_devices_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}` | MoltNet's `performance.memory` and memory measurement (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
+| `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
@@ -4208,6 +4768,7 @@ manual.
 | `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode and seed to Blink; `molt_shields_decision_agent.{h,cc}` hands each new document its Shields decision |
 | `src/chrome/browser/molt_ai/tor/molt_net_routing.cc` | MoltNet `Accept-Language` |
 | `src/chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`, `molt_net_storage.{h,cc}` | MoltNet's fixed quota and blob limits (+ `molt_net_storage_values_unittest.cc`, `molt_net_storage_unittest.cc`) |
+| `src/storage/browser/quota/molt_storage_budget_policy.h`, `molt_storage_budget.h` | MoltNet's storage budget per site, and no eviction for the pool (+ `molt_net_storage_budget_policy_unittest.cc`) |
 | `src/chrome/browser/molt_ai/tor/molt_net_isolation_policy.{h,cc}`, `molt_net_isolation.{h,cc}` | which regular-profile prefs MoltNet uses MoltBrowser's defaults for (pure, + `molt_net_isolation_policy_unittest.cc`) and MoltNet's pref service (+ `molt_net_isolation_unittest.cc`) |
 
 Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
@@ -4251,12 +4812,27 @@ display colour and scrollbar style: `media_values.cc`,
 Media Capabilities and WebCodecs codecs: `audio_context.cc`,
 `realtime_audio_destination_handler.cc`, `encrypted_media_utils.cc`,
 `media_capabilities.cc`, `gpu_factories_retriever.cc`,
-`video_decoder_broker.cc`; MoltNet's MediaRecorder encoders:
+`video_decoder_broker.cc`; MoltNet's media playback clock, device list
+and memory: `audio_device_factory.cc`,
+`html_media_element_audio_output_device.cc`, `media_devices.cc`,
+`user_media_processor.cc`, `memory_info.cc`,
+`measure_memory_controller.cc`; MoltNet's MediaRecorder encoders:
 `video_track_recorder.cc`, `media_recorder_handler.cc`,
-`media/base/video_encoder.{h,cc}`; MoltNet's storage limits:
+`media/base/video_encoder.{h,cc}`; MoltNet's media pixels and encoded
+bytes: `media/renderers/default_decoder_factory.cc`,
+`media/gfx/mappable_shared_image_video_frame_pool.cc`,
+`media/gfx/paint_canvas_video_renderer.cc`,
+`media/base/video_frame_converter_internals.cc`,
+`media/base/sinc_resampler.cc`, `media/base/vector_math.cc`,
+`media/base/BUILD.gn`, `third_party/opus/BUILD.gn`,
+`third_party/opus/src/celt/celt.c`, `celt/x86/x86cpu.c`,
+`celt/arm/pitch_neon_intr.c`, `celt/arm/celt_neon_intr.c`; MoltNet's
+storage limits:
 `content/browser/storage_partition_impl.cc`,
 `content/browser/blob_storage/chrome_blob_storage_context.cc`,
-`storage/browser/blob/blob_memory_controller.{h,cc}`; MoltNet
+`storage/browser/blob/blob_memory_controller.{h,cc}`,
+`storage/browser/quota/quota_settings.h`, `quota_manager_impl.cc`,
+`quota_temporary_storage_evictor.cc`; MoltNet
 default text locale: `platform/language.{h,cc}`; MoltNet text metrics:
 `base_rendering_context_2d.cc` (`measureText`), `text_metrics.{h,cc}`,
 `platform/fonts/font_platform_data.{h,cc}`,
@@ -4344,4 +4920,8 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    buffer size there for normal windows), new readers of the audio
    device's parameters, new key systems or Media Capabilities fields,
    `encodingInfo()` of type `"record"`, and the features that table lists
-   as behind flags, once they ship.
+   as behind flags, once they ship. When libyuv, libopus or libvpx roll,
+   repeat the comparisons of [pixels and encoded
+   bytes](#moltnet-pixels-and-encoded-bytes) (every SIMD level of x86-64
+   and arm64), and check that new decoder or frame-pool paths keep
+   MoltNet's video in software and in CPU memory.

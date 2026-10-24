@@ -385,6 +385,18 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Tor's capacity)",
+   "evidence": [
+    "ConnLimit 1000 (expected 1000)",
+    "MaxClientCircuitsPending 64 (expected 64)"
+   ],
+   "group": "identity",
+   "id": "identity.tor_capacity",
+   "status": "PASS",
+   "title": "Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending)"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 Requests outside Tor, \u00a74 step 20",
    "evidence": [
     "flags: --enable-features=AutofillServerCommunication,ReduceAcceptLanguage",
@@ -1079,6 +1091,83 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: media playback clock\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.clock_running",
+   "status": "PASS",
+   "title": "media.clock_running is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.device_blank",
+   "status": "PASS",
+   "title": "media.device_blank is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"audioinput\", \"videoinput\", \"audiooutput\"], expected [\"audioinput\", \"videoinput\", \"audiooutput\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.device_order",
+   "status": "PASS",
+   "title": "media.device_order is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"audioinput\": 1, \"audiooutput\": 1, \"videoinput\": 1}, expected {\"audioinput\": 1, \"audiooutput\": 1, \"videoinput\": 1}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.devices",
+   "status": "PASS",
+   "title": "media.devices is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"pending\", expected [\"pending\", \"NotAllowedError\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.gum",
+   "status": "PASS",
+   "title": "media.gum is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"pending\", expected [\"pending\", \"NotAllowedError\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.gum_overconstrained",
+   "status": "PASS",
+   "title": "media.gum_overconstrained is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: media playback clock\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"resolved\", expected resolved"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.sink_default",
+   "status": "PASS",
+   "title": "media.sink_default is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Surface covered\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
@@ -1366,6 +1455,39 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perf.heap_cached",
+   "status": "PASS",
+   "title": "perf.heap_cached is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perf.heap_rounded",
+   "status": "PASS",
+   "title": "perf.heap_rounded is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 3760000000, expected 3760000000"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perf.jsHeapSizeLimit",
+   "status": "PASS",
+   "title": "perf.jsHeapSizeLimit is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Known gaps\": a documented giveaway",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"prompt\", expected prompt"
@@ -1385,6 +1507,17 @@
    "id": "uniform.perm.window-management",
    "status": "PASS",
    "title": "perm.window-management is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: pixels and encoded bytes\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"I420\", expected I420"
+   ],
+   "group": "uniformity",
+   "id": "uniform.pixels.video_frame_format",
+   "status": "PASS",
+   "title": "pixels.video_frame_format is uniform"
   },
   {
    "details": null,
@@ -1605,7 +1738,7 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: storage limits\"",
    "evidence": [
-    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 209715200, expected 209715200"
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 62914560, expected 62914560"
    ],
    "group": "uniformity",
    "id": "uniform.storage.enforced_quota",
@@ -1959,6 +2092,17 @@
    "id": "identity.extension_loaded",
    "status": "SKIP",
    "title": "The test extension loaded and ran in a regular window (control for the extension test)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Shared network state), \u00a74 step 8",
+   "evidence": [
+    "no Background Fetch request reached Tor (see the bgfetch tests' page results)"
+   ],
+   "group": "identity",
+   "id": "identity.background_fetch_circuits",
+   "status": "SKIP",
+   "title": "A Background Fetch goes to Tor with its site's SOCKS username (its site's circuit, not its destination's)"
   },
   {
    "details": null,
@@ -2900,8 +3044,8 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 155,
-  "SKIP": 84
+  "PASS": 167,
+  "SKIP": 85
  },
  "fingerprints": [
   {
@@ -3015,9 +3159,22 @@
      "supported": false
     },
     "media.audiooutput": 1,
+    "media.clock_running": true,
+    "media.clock_start_ms": 40,
+    "media.device_blank": true,
+    "media.device_order": [
+     "audioinput",
+     "videoinput",
+     "audiooutput"
+    ],
     "media.devices": {
-     "audiooutput": 1
+     "audioinput": 1,
+     "audiooutput": 1,
+     "videoinput": 1
     },
+    "media.gum": "pending",
+    "media.gum_overconstrained": "pending",
+    "media.sink_default": "resolved",
     "mouse.screen_equals_client": true,
     "mq.any_hover_none": false,
     "mq.any_pointer_coarse": false,
@@ -3052,8 +3209,22 @@
     ],
     "nav.maxTouchPoints": 0,
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "perf.heap_cached": true,
+    "perf.heap_rounded": true,
+    "perf.jsHeapSizeLimit": 3760000000,
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "pixels.encoded_opus_48k": {
+     "bytes": 4283,
+     "chunks": 26,
+     "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.video_frame": {
+     "format": "I420",
+     "planes": "35ec97d035df255c26cac4ae",
+     "rgba": "ee1de75109443c46529f39c1"
+    },
+    "pixels.video_frame_format": "I420",
     "recorder.mime_type": {
      "default": "video/webm;codecs=vp8",
      "video/mp4": "video/mp4;codecs=vp9",
@@ -3084,7 +3255,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
-    "storage.enforced_quota": 209715200,
+    "storage.enforced_quota": 62914560,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,
@@ -3332,7 +3503,7 @@
   },
   {
    "automation": "automated",
-   "note": "different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, read from the loopback capture and Tor's circuit list",
+   "note": "different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, its site's for a Background Fetch, read from the loopback capture and Tor's circuit list",
    "step": 8,
    "title": "Per-site circuits"
   },
