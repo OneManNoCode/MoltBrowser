@@ -21,6 +21,7 @@
 #include "third_party/blink/public/web/modules/media/audio/audio_input_ipc_factory.h"
 #include "third_party/blink/public/web/modules/media/audio/audio_output_ipc_factory.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_mixer_input.h"
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_mixer_manager.h"
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_sink_cache.h"
@@ -66,6 +67,15 @@ scoped_refptr<media::AudioOutputDevice> NewOutputDevice(
       auth_timeout);
   device->RequestDeviceAuthorization();
   return device;
+}
+
+// MoltBrowser: NewOutputDevice() as a MoltNet media sink calls it, for each
+// attempt to open the real device (moltnet_audio_sink.h).
+scoped_refptr<media::AudioRendererSink> NewMoltNetOutputDevice(
+    const blink::LocalFrameToken& frame_token,
+    const media::AudioSinkParameters& params,
+    base::TimeDelta auth_timeout) {
+  return NewOutputDevice(frame_token, params, auth_timeout);
 }
 
 // This is where we decide which audio will go to mixers and which one to
@@ -126,6 +136,15 @@ AudioDeviceFactory::NewAudioRendererSink(
     const blink::LocalFrameToken& frame_token,
     const media::AudioSinkParameters& params) {
   DCHECK(!IsMixable(source_type));
+  // MoltBrowser: in MoltNet, a MediaStream track played in a media element
+  // renders on MoltNet's clock, whatever the real device
+  // (moltnet_audio_sink.h).
+  if (molt_fingerprinting::UsesUniformMediaClock(source_type)) {
+    return molt_fingerprinting::CreateMoltNetMediaAudioSink(
+        base::BindRepeating(&NewMoltNetOutputDevice, frame_token, params,
+                            GetDefaultAuthTimeout()),
+        params.device_id);
+  }
   return NewOutputDevice(frame_token, params, GetDefaultAuthTimeout());
 }
 
@@ -141,6 +160,15 @@ AudioDeviceFactory::NewMixableSink(blink::WebAudioDeviceSourceType source_type,
         base::BindRepeating([](const LocalFrameToken& frame_token,
                                const media::AudioSinkParameters& params)
                                 -> scoped_refptr<media::AudioRendererSink> {
+          // MoltBrowser: in MoltNet, media elements render on MoltNet's
+          // clock, whatever the real device (moltnet_audio_sink.h).
+          if (molt_fingerprinting::UsesUniformMediaClock(
+                  blink::WebAudioDeviceSourceType::kMediaElement)) {
+            return molt_fingerprinting::CreateMoltNetMediaAudioSink(
+                base::BindRepeating(&NewMoltNetOutputDevice, frame_token,
+                                    params, base::TimeDelta()),
+                params.device_id);
+          }
           // AudioRendererMixer sinks are always used asynchronously and thus
           // can operate without an authorization timeout value.
           return NewOutputDevice(frame_token, params, base::TimeDelta());
