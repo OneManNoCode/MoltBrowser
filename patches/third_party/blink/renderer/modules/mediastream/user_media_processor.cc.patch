@@ -1,0 +1,51 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediastream/user_media_processor.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/mediastream/user_media_processor.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
+index fea395bd22bade54c77a65bfec31e89b1d6d22a7..69b5fe1a651d4be2cc784372400215335a8683bc 100644
+--- a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
++++ b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
+@@ -39,6 +39,7 @@
+ #include "third_party/blink/renderer/core/frame/dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
+ #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
+@@ -2254,6 +2255,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
+       "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
+       current_request_info_->request_id(), constraint_name.Ascii().c_str()));
+ 
++  // MoltBrowser: in MoltNet, a missing camera or microphone, or one that
++  // can't meet the constraints, shows only once the user was asked, as when
++  // one can (moltnet_media_devices.h).
++  if (UserMediaRequest* request = current_request_info_->request();
++      molt_fingerprinting::ConfirmUserMediaFailure(
++          frame_ ? frame_->DomWindow() : nullptr,
++          request->Audio() && request->AudioMediaStreamType() ==
++                                  MediaStreamType::DEVICE_AUDIO_CAPTURE,
++          request->Video() && request->VideoMediaStreamType() ==
++                                  MediaStreamType::DEVICE_VIDEO_CAPTURE,
++          result,
++          BindOnce(
++              [](UserMediaProcessor* processor, int32_t request_id,
++                 const String& constraint, MediaStreamRequestResult reported) {
++                if (!processor || !processor->IsCurrentRequestInfo(request_id)) {
++                  return;
++                }
++                processor->DelayedGetUserMediaRequestFailed(
++                    request_id, processor->current_request_info_->request(),
++                    reported, constraint);
++              },
++              WrapWeakPersistent(this), current_request_info_->request_id(),
++              constraint_name))) {
++    return;
++  }
++
+   // Completing the getUserMedia request can lead to that the RenderFrame and
+   // the UserMediaClient/UserMediaProcessor are destroyed if the JavaScript
+   // code request the frame to be destroyed within the scope of the callback.

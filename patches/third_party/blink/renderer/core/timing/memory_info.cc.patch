@@ -1,0 +1,60 @@
+MoltBrowser patch for third_party/blink/renderer/core/timing/memory_info.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/timing/memory_info.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/timing/memory_info.cc b/third_party/blink/renderer/core/timing/memory_info.cc
+index b17ada56e6d93cc3f40a867099afd73b19426890..be7d321cb9e966651296302ef8c56352e9547906 100644
+--- a/third_party/blink/renderer/core/timing/memory_info.cc
++++ b/third_party/blink/renderer/core/timing/memory_info.cc
+@@ -35,6 +35,7 @@
+ #include "base/time/default_tick_clock.h"
+ #include "base/time/time.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory.h"  // MoltBrowser
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "v8/include/v8.h"
+@@ -97,6 +98,16 @@ class HeapSizeCache {
+     if (precision == MemoryInfo::Precision::kPrecise)
+       return;
+ 
++    // MoltBrowser: MoltNet rounds with a fixed table (moltnet_memory.h).
++    if (molt_fingerprinting::UsesUniformMemoryInfo()) {
++      info_.used_js_heap_size =
++          molt_fingerprinting::UniformHeapSize(info_.used_js_heap_size);
++      info_.total_js_heap_size =
++          molt_fingerprinting::UniformHeapSize(info_.total_js_heap_size);
++      info_.js_heap_size_limit = molt_fingerprinting::UniformJsHeapSizeLimit();
++      return;
++    }
++
+     info_.used_js_heap_size = QuantizeMemorySize(info_.used_js_heap_size);
+     info_.total_js_heap_size = QuantizeMemorySize(info_.total_js_heap_size);
+     info_.js_heap_size_limit = QuantizeMemorySize(info_.js_heap_size_limit);
+@@ -161,14 +172,23 @@ size_t QuantizeMemorySize(size_t size) {
+ }
+ 
+ MemoryInfo::MemoryInfo(Precision precision) {
++  // MoltBrowser: MoltNet always reports bucketized values, and the heap limit
++  // of the uniform 8 GB machine (moltnet_memory.h).
++  const bool uniform = molt_fingerprinting::UsesUniformMemoryInfo();
++  if (uniform) {
++    precision = Precision::kBucketized;
++  }
+   // With the experimental PreciseMemoryInfoEnabled flag on, we will not
+   // bucketize or cache values, regardless of the value of |precision|. When the
+   // flag is off then our cache is used and |precision| determines the
+   // granularity of the values and the timer of the cache we use.
+-  if (RuntimeEnabledFeatures::PreciseMemoryInfoEnabled())
++  if (RuntimeEnabledFeatures::PreciseMemoryInfoEnabled() && !uniform)
+     GetHeapSize(info_);
+   else
+     HeapSizeCache::ForCurrentThread().GetCachedHeapSize(info_, precision);
++  if (uniform) {
++    info_.js_heap_size_limit = molt_fingerprinting::UniformJsHeapSizeLimit();
++  }
+   // The values must have been computed, so totalJSHeapSize must be greater than
+   // 0.
+   DCHECK_GT(totalJSHeapSize(), 0u);

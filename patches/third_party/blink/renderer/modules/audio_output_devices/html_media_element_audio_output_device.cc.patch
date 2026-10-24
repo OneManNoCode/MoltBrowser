@@ -1,0 +1,34 @@
+MoltBrowser patch for third_party/blink/renderer/modules/audio_output_devices/html_media_element_audio_output_device.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/audio_output_devices/html_media_element_audio_output_device.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/audio_output_devices/html_media_element_audio_output_device.cc b/third_party/blink/renderer/modules/audio_output_devices/html_media_element_audio_output_device.cc
+index c0dceff85c2e602ec40803b0b0e559d9ba2ae99a..4eadcac420d747f2401029991f0ed5979bd17f10 100644
+--- a/third_party/blink/renderer/modules/audio_output_devices/html_media_element_audio_output_device.cc
++++ b/third_party/blink/renderer/modules/audio_output_devices/html_media_element_audio_output_device.cc
+@@ -17,6 +17,7 @@
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.h"  // MoltBrowser
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/heap/persistent.h"
+@@ -131,8 +132,14 @@ void SetSinkIdResolver::DoSetSinkId() {
+   // This is associated with an HTML element, so the context must be a window.
+   if (WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(
+           To<LocalDOMWindow>(context)->GetFrame())) {
++    // MoltBrowser: every MoltNet machine has the default output device, so
++    // it is never looked for (moltnet_audio_sink.h).
+     std::optional<media::OutputDeviceStatus> status =
+-        web_frame->Client()->CheckIfAudioSinkExistsAndIsAuthorized(sink_id_);
++        molt_fingerprinting::UniformDefaultOutputStatus(sink_id_.Utf8());
++    if (!status.has_value()) {
++      status =
++          web_frame->Client()->CheckIfAudioSinkExistsAndIsAuthorized(sink_id_);
++    }
+ 
+     if (!status.has_value()) {
+       status = AudioDeviceFactory::GetInstance()
