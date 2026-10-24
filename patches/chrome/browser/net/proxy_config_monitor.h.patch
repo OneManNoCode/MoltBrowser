@@ -5,18 +5,30 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/proxy_config_monitor.h b/chrome/browser/net/proxy_config_monitor.h
-index 6c060b52d25799c6a7c4e4ee86ed7490060560d6..c551c474670bc9ef7e335652f7f25eb1f32053a7 100644
+index 6c060b52d25799c6a7c4e4ee86ed7490060560d6..de349db55b3068af41916184f5fc001563ae5d98 100644
 --- a/chrome/browser/net/proxy_config_monitor.h
 +++ b/chrome/browser/net/proxy_config_monitor.h
-@@ -96,6 +96,11 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
+@@ -8,6 +8,7 @@
+ #include <memory>
+ #include <string>
+ 
++#include "base/callback_list.h"
+ #include "base/memory/raw_ptr.h"
+ #include "build/buildflag.h"
+ #include "extensions/buildflags/buildflags.h"
+@@ -96,6 +97,15 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
    mojo::ReceiverSet<network::mojom::ProxyErrorClient> error_receiver_set_;
    raw_ptr<Profile> profile_ = nullptr;
  #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 +
 +  // MoltBrowser: the profile, if it is a MoltNet profile. Its network
-+  // contexts only get MoltNet's own proxy configuration
-+  // (MoltNetRouting::MayApplyProxyConfig()).
++  // contexts only get MoltNet's own proxy configuration, and once its
++  // identity has ended, one that refuses every request
++  // (MoltNetRouting::ProxyConfigFor()).
 +  raw_ptr<Profile> moltnet_profile_ = nullptr;
++  // MoltBrowser: hands them that one as soon as the identity ends
++  // (MoltNetRouting::AddIdentityEndedCallback()).
++  base::CallbackListSubscription moltnet_identity_ended_;
  };
  
  #endif  // CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_

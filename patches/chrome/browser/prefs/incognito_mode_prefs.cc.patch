@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/prefs/incognito_mode_prefs.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/prefs/incognito_mode_prefs.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/prefs/incognito_mode_prefs.cc b/chrome/browser/prefs/incognito_mode_prefs.cc
+index 2f63c16702265fea64bc9ad66b318219c321d68f..a266352867948f99691a650eaf765a92a8b7a6d1 100644
+--- a/chrome/browser/prefs/incognito_mode_prefs.cc
++++ b/chrome/browser/prefs/incognito_mode_prefs.cc
+@@ -11,6 +11,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/defaults.h"
+ #include "chrome/browser/enterprise/isolated_mode/isolated_mode_settings_service_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/channel_info.h"
+ #include "chrome/common/chrome_switches.h"
+@@ -88,6 +89,12 @@ bool IncognitoModePrefs::ShouldOpenSubsequentBrowsersInIncognito(
+ 
+ // static
+ bool IncognitoModePrefs::CanOpenBrowser(Profile* profile) {
++  // MoltBrowser: a MoltNet window is a private window: it may open while
++  // Incognito is forced and may not while Incognito is off
++  // (molt_net_live_policy.h).
++  if (molt_ai::tor::IsMoltNetProfile(profile)) {
++    return GetAvailability(profile) != IncognitoModeAvailability::kDisabled;
++  }
+   switch (GetAvailability(profile)) {
+     case IncognitoModeAvailability::kEnabled:
+       return true;

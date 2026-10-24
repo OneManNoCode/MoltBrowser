@@ -72,6 +72,8 @@ chrome/browser/net/proxy_config_monitor.cc.patch
 chrome/browser/net/proxy_config_monitor.h.patch
 chrome/browser/payments/chrome_payment_request_delegate.cc.patch
 chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc.patch
+chrome/browser/policy/chrome_policy_blocklist_service_factory.cc.patch
+chrome/browser/prefs/incognito_mode_prefs.cc.patch
 chrome/browser/prefs/session_startup_pref.cc.patch
 chrome/browser/profile_resetter/profile_resetter.cc.patch
 chrome/browser/profiles/BUILD.gn.patch
@@ -226,12 +228,17 @@ net/http/http_network_session.cc.patch
 net/http/http_network_session.h.patch
 net/http/transport_security_state.cc.patch
 net/http/transport_security_state.h.patch
+net/socket/client_socket_pool_manager.cc.patch
+net/socket/client_socket_pool_manager.h.patch
+net/socket/client_socket_pool_manager_impl.cc.patch
+net/socket/client_socket_pool_manager_impl.h.patch
 net/socket/connect_job.h.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch
 net/socket/ssl_client_socket.cc.patch
 net/socket/ssl_client_socket.h.patch
+net/socket/transport_client_socket_pool.h.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h.patch
 services/cert_verifier/cert_verifier_service_factory.cc.patch
