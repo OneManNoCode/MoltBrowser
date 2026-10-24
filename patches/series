@@ -242,6 +242,7 @@ third_party/blink/renderer/core/events/pointer_event_factory.cc.patch
 third_party/blink/renderer/core/execution_context/navigator_base.cc.patch
 third_party/blink/renderer/core/exported/web_shared_worker_impl.cc.patch
 third_party/blink/renderer/core/exported/web_shared_worker_impl.h.patch
+third_party/blink/renderer/core/exported/web_view_impl.cc.patch
 third_party/blink/renderer/core/frame/dom_visual_viewport.cc.patch
 third_party/blink/renderer/core/frame/local_dom_window.cc.patch
 third_party/blink/renderer/core/frame/local_frame_view.cc.patch

@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/core/exported/web_view_impl.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/exported/web_view_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
+index 210e182a80343b67302a2ed347c1ab984cdc3b09..c63a6a820fe37f2174e07672d760264a2bd20203 100644
+--- a/third_party/blink/renderer/core/exported/web_view_impl.cc
++++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
+@@ -148,6 +148,7 @@
+ #include "third_party/blink/renderer/core/loader/frame_loader.h"
+ #include "third_party/blink/renderer/core/loader/interactive_detector.h"
+ #include "third_party/blink/renderer/core/loader/no_state_prefetch_client.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
+ #include "third_party/blink/renderer/core/page/chrome_client_impl.h"
+ #include "third_party/blink/renderer/core/page/context_menu_controller.h"
+@@ -3875,6 +3876,10 @@ void WebViewImpl::UpdateRendererPreferences(
+ 
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+     BUILDFLAG(IS_WIN)
++  // MoltBrowser: one scrollbar style for every MoltNet page of a platform.
++  renderer_preferences_.use_overlay_scrollbar =
++      molt_fingerprinting::UniformOverlayScrollbars(
++          renderer_preferences_.use_overlay_scrollbar);
+   if (!ScrollbarTheme::MockScrollbarsEnabled()) {
+     // DevTools emulation can update Blink's overlay scrollbar setting,
+     // while OS theme updates can update NativeTheme before renderer preferences
