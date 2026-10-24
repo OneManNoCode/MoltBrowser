@@ -35,7 +35,8 @@ class LeakTest(object):
         self.id = test_id
         self.title = title
         self.page = page          # file under pages/, served at /t/<nonce>/
-        self.origin = origin      # 'http', 'https', 'https_b', 'aia', 'aia_b'
+        self.origin = origin      # 'http', 'https', 'https_b', 'aia', 'aia_b',
+                                  # 'clientauth'
         self.target = target      # 'moltnet' or 'regular'
         self.doc = doc
         self.wait = wait          # seconds to keep watching after the page
@@ -177,6 +178,14 @@ TESTS = (
                         'AIA URL)',
         'basic.html', origin='aia_b', wait=8.0, expect_load=False,
         doc='MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8'),
+    # A server that asks for a TLS client certificate without requiring
+    # one; read by report.py's net.client_cert.handshakes check (from the
+    # server's handshake log).
+    LeakTest(
+        'client_cert', 'A server that asks for a TLS client certificate',
+        'basic.html', origin='clientauth', wait=3.0,
+        doc='MOLTNET_COMPLIANCE.md §1.14, §2 (Shared network state), §4 '
+            'step 20'),
     # Two pages their servers sandbox (opaque origins) on two sites; read
     # by report.py's identity.sandboxed_circuits check.
     LeakTest(

@@ -70,6 +70,9 @@
 //   MoltNet  NetworkStateNotifier::SetUniformNetworkState (navigator.connection
 //              and Blink's own network-quality heuristics)
 //                                                   -> moltnet_network.h
+//   MoltNet  MediaValues colour (color-gamut, dynamic-range, color,
+//              monochrome), WebViewImpl::UpdateRendererPreferences (overlay
+//              or classic scrollbars)               -> moltnet_display.h
 //   shields  DedicatedWorker::CreateGlobalScopeCreationParams
 //              -> ProvideShieldsDecisionToDedicatedWorker
 //            ServiceWorkerGlobalScope::InitializeGlobalScope (the

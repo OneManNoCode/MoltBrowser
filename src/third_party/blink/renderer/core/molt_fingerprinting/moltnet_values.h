@@ -2,15 +2,18 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // MoltBrowser fingerprinting protection: the fixed values MoltNet windows
-// report for touches, the screen orientation and form controls, and the few
-// rules that derive them. Pure and std-only (tested standalone, like
-// farbling.h); the Blink side is moltnet_uniformity.h.
+// report for touches, the screen orientation, form controls, the display's
+// colour and the scrollbar style, and the few rules that derive them. Pure
+// and std-only (tested standalone, like farbling.h); the Blink side is
+// moltnet_uniformity.h and moltnet_display.h.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_VALUES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_VALUES_H_
 
 #include <array>
 #include <cstdint>
+
+#include "third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.h"
 
 namespace blink::molt_fingerprinting::moltnet {
 
@@ -48,6 +51,31 @@ inline constexpr double kPointerAzimuthAngle = 0.0;
 // PointerEvent.pressure for hardware without pressure, per the Pointer Events
 // spec: 0.5 while a button (here: a finger) is down, 0 otherwise.
 float PointerPressure(bool buttons_down);
+
+// --- Display -----------------------------------------------------------------
+//
+// The display MoltNet pages' media queries describe (color-gamut,
+// dynamic-range, video-dynamic-range, color, monochrome): an sRGB screen
+// with a standard dynamic range and 8 bits per colour component, which
+// agrees with screen.colorDepth (kUniformColorDepth: 24 = 3 x 8). It is the
+// common desktop display, and what Chromium reports for a screen whose
+// colour space it can't read.
+
+enum class DisplayGamut { kSRGB, kP3, kRec2020 };
+inline constexpr DisplayGamut kDisplayGamut = DisplayGamut::kSRGB;
+inline constexpr bool kDisplayHighDynamicRange = false;
+inline constexpr int kDisplayColorBitsPerComponent = 8;
+inline constexpr int kDisplayMonochromeBitsPerComponent = 0;
+
+// --- Scrollbars --------------------------------------------------------------
+
+// Whether MoltNet pages on `platform` get overlay scrollbars (drawn over the
+// content, taking no room in the layout) rather than classic ones: what
+// Chromium does on that platform by default (ui's kOverlayScrollbar feature,
+// on by default on macOS and Android only), whatever the user's OS setting
+// (macOS's "Show scroll bars", which follows whether a mouse is connected)
+// or the overlay-scrollbars flag says.
+bool UsesOverlayScrollbars(FontPlatform platform);
 
 // --- Form-control locale -----------------------------------------------------
 //

@@ -704,6 +704,14 @@ struct NetworkContextParams {
   // don't feed the network service's estimate, and its request scheduling
   // (ResourceScheduler) doesn't depend on it.
   [MinVersion=1] bool molt_no_network_quality_estimator = false;
+  // If true, the context answers every server's TLS client-certificate
+  // request with no certificate, at once (net::SSLClientContext::
+  // MoltSendNoClientCertificates()): no choice is remembered per host and
+  // port across top-level sites, and nothing is asked of the browser.
+  [MinVersion=1] bool molt_send_no_client_certificates = false;
+  // If true, ActivateDohProbes() starts no DNS-over-HTTPS probes for this
+  // context (they bypass its proxy).
+  [MinVersion=1] bool molt_no_doh_probes = false;
 };
 
 struct NetworkConditions {

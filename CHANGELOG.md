@@ -182,6 +182,24 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   are off. MoltNet doesn't open while a command-line flag or field trial
   turns off the browser-wide partitioning of connections, the HTTP cache
   or third-party storage, and says which (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening, re-checked at Chromium 156: a site that asks a
+  MoltNet window for a TLS client certificate gets none, at once and the
+  same way on every site, without the certificate picker or an
+  administrator's auto-select policy, and nothing is remembered. Sites
+  that require one don't open in MoltNet windows; use a regular window.
+- MoltNet hardening: MoltNet's network connection runs no secure-DNS
+  (DNS-over-HTTPS) probes; Tor resolves every name a MoltNet window
+  looks up.
+- MoltNet hardening: MoltNet doesn't open while the `ProxyOverrideRules`
+  policy is set, since its rules would apply on top of MoltNet's Tor
+  proxy, and the MoltNet panel shows the proxy as overridden.
+- MoltNet hardening: MoltNet windows don't use device-bound sessions
+  (Chromium 156, Windows and macOS), which tie a site's sign-in to a key
+  in your computer's secure hardware; sites use their ordinary cookies
+  there, as in Tor Browser.
+- MoltNet hardening: the browser tells MoltNet's page processes the same
+  fixed connection type and network quality their pages report, instead
+  of your own connection's, and only whether you are online after that.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -429,6 +447,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   MoltNet behave the same way for everyone, and MoltNet's request
   scheduling and traffic no longer depend on or feed that estimate.
   Regular and incognito windows are unchanged.
+- **One display for every MoltNet user.** The `color-gamut`,
+  `dynamic-range`, `video-dynamic-range`, `color` and `monochrome` media
+  queries in MoltNet pages now describe the same standard (sRGB, 8-bit,
+  standard dynamic range) screen on every machine, matching the colour
+  depth MoltNet already reported; Chromium 156 changed how it classifies
+  wide-gamut displays. Pages that choose HDR video or wide-gamut images by
+  media query serve their standard versions there. Regular and incognito
+  windows are unchanged.
+- **One scrollbar style per platform in MoltNet.** MoltNet pages now get
+  overlay scrollbars on macOS and classic ones on Windows and Linux,
+  whatever your system's scroll bar setting says or whether a mouse is
+  connected, and changing that setting no longer changes MoltNet pages'
+  layout. On a Mac set to always show scroll bars, MoltNet windows show
+  them while scrolling. Regular and incognito windows follow
+  your setting as before.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

@@ -1,0 +1,23 @@
+MoltBrowser patch for net/socket/ssl_client_socket.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/ssl_client_socket.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/ssl_client_socket.cc b/net/socket/ssl_client_socket.cc
+index 2b6cb80c2edf33409bcce257c847b7af94b1356f..7a1c20d5e0acdd1ccb9b36ef48b5e6aa254c0cb0 100644
+--- a/net/socket/ssl_client_socket.cc
++++ b/net/socket/ssl_client_socket.cc
+@@ -268,6 +268,12 @@ bool SSLClientContext::GetClientCertificate(
+     const HostPortPair& server,
+     scoped_refptr<X509Certificate>* client_cert,
+     scoped_refptr<SSLPrivateKey>* private_key) {
++  // MoltBrowser: "no certificate" for every server (MoltNet).
++  if (molt_send_no_client_certificates_) {
++    *client_cert = nullptr;
++    *private_key = nullptr;
++    return true;
++  }
+   return ssl_client_auth_cache_.Lookup(server, client_cert, private_key);
+ }
+ 

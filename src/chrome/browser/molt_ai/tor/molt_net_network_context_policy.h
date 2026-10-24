@@ -10,12 +10,12 @@
 // connect job act on the fields it sets (hooks marked "MoltBrowser:" in
 // services/network/network_context.cc, services/cert_verifier/,
 // net/http/http_network_session.*, net/http/transport_security_state.*,
-// net/socket/ and services/network/pervasive_resources/). Two settings
-// the browser also updates later have their own hooks in
-// ProfileNetworkContextService (split_http_auth_cache and
-// BlockPrivateStateTokensFor()). The only input is whether the profile is
-// MoltNet's (IsMoltNetProfile()): every other profile keeps Chromium's
-// behaviour.
+// net/socket/ (the SOCKS connect job, ssl_client_socket.*) and
+// services/network/pervasive_resources/). Three settings have their own
+// hooks in ProfileNetworkContextService (split_http_auth_cache,
+// BlockPrivateStateTokensFor() and DeviceBoundSessionsEnabledFor()). The
+// only input is whether the profile is MoltNet's (IsMoltNetProfile()):
+// every other profile keeps Chromium's behaviour.
 //
 // Most of these keep per-site state per site: within one MoltNet identity,
 // what one site causes in the network context must not be observable by
@@ -126,6 +126,46 @@ struct MoltNetNetworkContextSettings {
   // whatever the anti-abuse setting says (BlockPrivateStateTokensFor()).
   bool block_private_state_tokens = false;
 
+  // TLS client certificates: Chromium keeps the certificate a user picks
+  // for a server (net::SSLClientAuthCache, inside the context's
+  // SSLClientContext) by host and port, for the context's lifetime, not by
+  // top-level site. That includes "no certificate", which the browser
+  // answers without asking when the user has none. A choice made while
+  // site A was open would then apply to that server under site B too, and
+  // skip the aborted handshake, the browser round trip and the second
+  // connection the first request costs, which the server can time. When
+  // true, the context answers every server's certificate request with no
+  // certificate, at once, the same way each time: nothing is remembered,
+  // nothing is asked, no certificate (and so no name in it) is ever sent,
+  // and an administrator's AutoSelectCertificateForUrls doesn't apply. Tor
+  // Browser keeps its certificate store in memory (security.nocertdb), so
+  // it has no personal certificates to offer either.
+  bool send_no_client_certificates = false;
+
+  // Device-bound sessions (DBSC; on by default on Windows and macOS): a
+  // site can bind its sign-in cookies to a signing key the operating
+  // system's secure hardware makes (a TPM, the Secure Enclave), and the
+  // network context then signs refresh requests with it. Whether a site
+  // can set one up depends on the machine's hardware, which differs between
+  // MoltNet users, and the key is made and held by the operating system,
+  // not in MoltNet's in-memory profile. When true, the context has no
+  // session service (DeviceBoundSessionsEnabledFor()): sites fall back to
+  // their ordinary cookies, as in Tor Browser, which has no such sessions.
+  bool no_device_bound_sessions = false;
+
+  // DNS-over-HTTPS probes: when secure DNS has servers (the user's or an
+  // administrator's choice, or the automatic upgrade of a system resolver
+  // that offers DoH), the network service probes them for every network
+  // context it registers and again after each network change. The probes
+  // are DoH requests made through the context itself but, like every DoH
+  // request, with the proxy bypassed (net::LOAD_BYPASS_PROXY) and the DoH
+  // server's name looked up with the system resolver: from a MoltNet
+  // context, a connection from the user's own address, outside Tor, each
+  // time a MoltNet identity starts. When true, the context starts none.
+  // MoltNet's pages' names are resolved by Tor inside SOCKS5, so it never
+  // needs DoH.
+  bool no_doh_probes = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -143,7 +183,23 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.split_http_auth_cache = is_moltnet_profile;
   settings.no_network_quality_estimator = is_moltnet_profile;
   settings.block_private_state_tokens = is_moltnet_profile;
+  settings.send_no_client_certificates = is_moltnet_profile;
+  settings.no_doh_probes = is_moltnet_profile;
+  settings.no_device_bound_sessions = is_moltnet_profile;
   return settings;
+}
+
+// Whether the browser tells a profile's renderer processes fixed values
+// instead of its network-quality estimate and the operating system's
+// connection type (ChromeContentBrowserClient::
+// ShouldSendUniformNetworkState(), content/browser/network/
+// molt_uniform_network_state.h). The browser keeps one estimate for all
+// profiles and sends it to every renderer; MoltNet's renderers report fixed
+// values to pages anyway, so this only keeps the real ones from a
+// compromised MoltNet renderer. Decided by the profile alone (as WebRTC is,
+// molt_net_webrtc.h), not by the fingerprinting switch.
+constexpr bool SendUniformNetworkStateToRenderers(bool is_moltnet_profile) {
+  return is_moltnet_profile;
 }
 
 // ProfileNetworkContextService's block_trust_tokens, when a network context
@@ -154,6 +210,15 @@ constexpr bool BlockPrivateStateTokensFor(bool is_moltnet_profile,
   return MoltNetNetworkContextSettingsFor(is_moltnet_profile)
              .block_private_state_tokens ||
          chromium_value;
+}
+
+// ProfileNetworkContextService's device_bound_sessions_enabled, when a
+// network context is created: `chromium_value` is Chromium's (the
+// DeviceBoundSessions feature).
+constexpr bool DeviceBoundSessionsEnabledFor(bool is_moltnet_profile,
+                                             bool chromium_value) {
+  return chromium_value && !MoltNetNetworkContextSettingsFor(is_moltnet_profile)
+                                .no_device_bound_sessions;
 }
 
 // A SOCKS5 password for one network context: 128 bits from a
@@ -170,8 +235,9 @@ inline std::string NewSocksIsolationPassword() {
 // `cert_verifier_creation_params` a
 // cert_verifier::mojom::CertVerifierCreationParams. Called once for each
 // network context created, so each MoltNet context gets a password of its
-// own; other contexts get none. (split_http_auth_cache and
-// block_private_state_tokens are written by their own hooks, see above.)
+// own; other contexts get none. (split_http_auth_cache,
+// block_private_state_tokens and no_device_bound_sessions are written by
+// their own hooks, see above.)
 // A template, so this header needs neither mojom.
 template <typename NetworkContextParams, typename CertVerifierCreationParams>
 void ApplyMoltNetNetworkContextSettings(
@@ -196,6 +262,9 @@ void ApplyMoltNetNetworkContextSettings(
       settings.hsts_top_level_navigations_only;
   network_context_params.molt_no_network_quality_estimator =
       settings.no_network_quality_estimator;
+  network_context_params.molt_send_no_client_certificates =
+      settings.send_no_client_certificates;
+  network_context_params.molt_no_doh_probes = settings.no_doh_probes;
 }
 
 }  // namespace molt_ai::tor

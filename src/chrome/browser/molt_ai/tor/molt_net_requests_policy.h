@@ -19,7 +19,8 @@
 // The only input is whether a profile is MoltNet's (IsMoltNetProfile()).
 // Standard library only and header-only, so molt_ai_unittests tests it and
 // the upstream hooks that ask it (media_router_feature.cc,
-// chrome_authenticator_request_delegate.cc) need no new link dependency.
+// chrome_authenticator_request_delegate.cc, chrome_content_browser_client.cc)
+// need no new link dependency.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_REQUESTS_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_REQUESTS_POLICY_H_
@@ -82,6 +83,18 @@ struct MoltNetRequestAccess {
   // (IsPrimaryOTRProfileWithRegularParent()), not out of MoltNet.
   bool commerce = true;
 
+  // TLS client certificates: when a server asks for one, the browser lets
+  // an administrator's AutoSelectCertificateForUrls policy pick one of the
+  // user's certificates, shows a picker, or (with none) answers "no
+  // certificate" without asking; the network context remembers the answer
+  // for that host and port. A certificate names its holder. MoltNet's
+  // network context never asks (MoltNetNetworkContextSettings::
+  // send_no_client_certificates); if a request reaches the browser all the
+  // same, it is answered with no certificate at once, without a picker and
+  // without the policy (ChromeContentBrowserClient::
+  // SelectClientCertificate()).
+  bool client_certificates = true;
+
   friend constexpr bool operator==(const MoltNetRequestAccess&,
                                    const MoltNetRequestAccess&) = default;
 };
@@ -100,6 +113,7 @@ constexpr MoltNetRequestAccess MoltNetRequestAccessForProfile(
   access.cast = false;
   access.relay_authenticators = false;
   access.commerce = false;
+  access.client_certificates = false;
   return access;
 }
 

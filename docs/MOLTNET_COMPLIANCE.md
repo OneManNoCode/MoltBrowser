@@ -178,8 +178,13 @@ claims below as the design intent, not as measured results.
     with "Open all" stay there. MoltNet doesn't check whether your network
     wants you to sign in first (a captive portal, as on hotel or airport
     Wi-Fi) and never opens such a sign-in page: Tor can't reach it, so sign
-    in to the network in a regular window. What still happens outside Tor
-    is listed in §5.7.
+    in to the network in a regular window. A site that asks for a TLS
+    client certificate (a smart card, an ID card, a company certificate)
+    gets none in a MoltNet window, at once and the same way on every site:
+    MoltNet never shows the certificate picker, never sends a certificate
+    and remembers no choice (§2 *Shared network state*). MoltNet's
+    connection never probes your secure-DNS (DNS-over-HTTPS) provider
+    either. What still happens outside Tor is listed in §5.7.
 
 ## 2. How it is built
 
@@ -220,8 +225,10 @@ no direct fallback, so if Tor stops, pages in MoltNet windows fail with a proxy
 error instead of loading directly. A MoltNet window is only opened after (a) Tor
 reports an established circuit, (b) the proxy and leak settings are confirmed
 to be MoltNet's own (a policy or command-line flag that overrides them
-blocks MoltNet with an error; settings controlled by extensions don't reach
-MoltNet's profile at all, see below), (c) the MoltNet profile's network
+blocks MoltNet with an error, and so does the ProxyOverrideRules policy,
+whose rules would apply on top of MoltNet's proxy and could send some
+destinations elsewhere or DIRECT; settings controlled by extensions don't
+reach MoltNet's profile at all, see below), (c) the MoltNet profile's network
 context itself confirms it would send requests to exactly that SOCKS5
 endpoint, and (d) the browser-wide switches that keep sites' connections,
 HTTP cache and third-party storage apart are on (*Shared network state*).
@@ -276,9 +283,10 @@ WebRTC. The code is in `chrome/browser/molt_ai/tor/molt_net_webrtc.h`
 lines) and Blink's `RTCPeerConnection::Create()`.
 
 **Other ways a page could make the browser look up a name.** Checked in
-the Chromium 152 code for MoltNet windows; none of them reaches your DNS
-resolver. `<link rel=dns-prefetch>` and `<link rel=preconnect>` go to the
-browser's preconnect service, which off-the-record profiles don't have,
+the Chromium 152 code for MoltNet windows, and each one again in the
+Chromium 156 code (with the new 156 paths in the next paragraph); none of
+them reaches your DNS resolver. `<link rel=dns-prefetch>` and `<link
+rel=preconnect>` go to the browser's preconnect service, which off-the-record profiles don't have,
 so nothing happens (and with network prediction off, speculative prefetch
 and its origin check don't run either). Early-hints preconnects,
 WebSockets, `fetch()`, `navigator.sendBeacon()`, `<a ping>`, Reporting
@@ -287,12 +295,46 @@ name goes to Tor inside the SOCKS5 request. WebTransport refuses to
 connect through a proxy before it looks anything up. Local Network Access
 checks use the address of the connection itself (for a proxied one:
 unknown) and look nothing up. The Network Information API reads values the
-browser already has. Direct Sockets is only for isolated web apps and
+browser sends; MoltNet's renderers get fixed ones (*Shared network
+state*, network quality). Direct Sockets is only for isolated web apps and
 Chrome Apps, which MoltNet windows can't host. Chromium's built-in proxy
 exceptions (`localhost`, loopback and link-local addresses) are switched off
 for MoltNet (`<-loopback>`): those requests go to Tor too, which refuses
 them, so a MoltNet page can't reach or probe services on your machine or
 your local network.
+
+**New network paths at Chromium 156.** Between 152 and 156 Chromium added
+or changed these ways to resolve a name or open a connection. Each one was
+read in the 156 code for MoltNet windows (not yet tested in a built
+browser):
+
+| Path (Chromium 156) | For a MoltNet window |
+|---|---|
+| A target network for a tab's requests and WebSockets (`ContentBrowserClient::MaybeSetTargetNetwork()`, the target network on the URL loader factory and on each WebSocket) | Only tabs created with a target network have one: Android's multi-network Custom Tabs. Desktop tabs never do. A target network only picks the interface; the request still goes to the proxy |
+| The target address space a renderer sends with each WebSocket | Feeds the Local Network Access check only: it changes no route and looks nothing up. The WebSocket goes through MoltNet's context and Tor |
+| The renderer-accessible HTTP cache (`NetworkContext::RegisterHttpCacheClient()`) | Only for an on-disk cache with the SQL backend, never for a storage partition kept in memory. MoltNet's is in memory, so it has none |
+| New QUIC hints (`AddWildcardQuicHints()`, `SetTryQuicByDefault()`) | No browser code calls them. QUIC never runs behind a SOCKS5 proxy: the attempt fails before it looks anything up |
+| The HTTP stream pool (Happy Eyeballs v3) | Direct connections only; all of MoltNet's go to its proxy |
+| Device-bound sessions (on by default on Windows and macOS) | Off in MoltNet's network context: sites use their ordinary cookies, as in Tor Browser. A session binds a site's cookies to a key the operating system's secure hardware (a TPM, the Secure Enclave) makes, so whether a site can set one up differs between machines, and the key isn't kept in MoltNet's memory. (Its requests, also 156's proactive refresh, would go through MoltNet's context) |
+| Connection-Allowlist embedded enforcement (a base feature on by default at 156, and an origin trial) | Only narrows what a framed document may connect to; it sends the embedder's requirement in the frame's own request, through MoltNet's context, and looks nothing up |
+| Background Fetch's Local Network Access check (`BackgroundFetchLocalNetworkAccess`, on at 156) | Background Fetch requests get a URL loader factory from the service worker's storage partition, MoltNet's for a MoltNet page, so they go through Tor; the new check reads the URL or the connection's address only |
+| Prefetch, preconnect and prerender | Every prefetch the browser makes checks the network-prediction setting first, which MoltNet turns off (156 adds a way past the data- and battery-saver checks, not past that one). The search-engine preconnector also runs in off-the-record profiles but checks the same setting; search prefetch and the new search preloading check it or don't run off the record. 156's direct preconnect path only skips a pre-resolve, and off-the-record profiles still have no preconnect service for pages' hints. A navigation's own preconnect goes to the proxy |
+| Local Network Access | 156 changes only its logging. The checks read the URL or the connection's address and look nothing up |
+| Proxy routes from enterprise provisioning domains (`EnableDynamicRouteFetching`, on in Chromium's field-trial testing config) | Only a regular profile's proxy settings can get them: an off-the-record profile has no provisioning-domain service |
+| Proxy override rules (the `ProxyOverrideRules` policy) | MoltNet doesn't open while they are set (*Fail-closed*) |
+| DNS-over-HTTPS probes | MoltNet's network context starts none (next paragraph) |
+| Connect prediction for address sorting (`ConnectPredictor`) | Only for names resolved locally, which MoltNet pages' names never are |
+
+**DNS-over-HTTPS probes.** When secure DNS has servers (yours, an
+administrator's, or the automatic upgrade of a system resolver that offers
+DNS-over-HTTPS), Chromium's network service probes them for every network
+context it creates and again after each network change. A probe is a DoH
+request sent with the proxy bypassed, after the DoH server's own name has
+been looked up with the system resolver; from MoltNet's context that would
+be a connection from your own address each time a MoltNet identity
+starts. MoltNet's network context starts no probes
+(`molt_net_network_context_policy.h`, read in `network_context.cc`). It
+never needs DoH: Tor resolves MoltNet's names.
 
 **Nothing from the regular profile (extensions and services).** The MoltNet
 profile is an off-the-record profile of your regular one, and Chromium
@@ -516,7 +558,9 @@ the browser-wide (system) one, the regular profile's (Chromium hands
 several services of an off-the-record profile to its regular profile), or
 a service's own. For a MoltNet window that would be a request outside Tor,
 from your own IP address. We went through the candidates in the Chromium
-152 code and MoltBrowser's own (not yet tested in a built browser):
+152 code and MoltBrowser's own, and again in the 156 code, together with
+every browser-process service a MoltNet page can trigger (not yet tested
+in a built browser):
 
 - *Through MoltNet's context, so through Tor:* favicons (the page's
   renderer downloads them); certificate fetches (each network context
@@ -531,15 +575,21 @@ from your own IP address. We went through the candidates in the Chromium
   downloads and its web agent, which acts in the chat's own tab (with a
   model that sees images, the agent's screenshots of that tab go only to
   the on-device model: no request at all, docs/design/AGENT_ACTIONS.md
-  §2.6).
+  §2.6); DevTools opened on a MoltNet page (the resources it loads come
+  through the inspected tab's context); Autofill's field-type queries, sent
+  with the page's own network key, so on the page's circuit (Autofill never
+  uploads from an off-the-record profile); the email-verification step of
+  FedCM, whose DNS TXT lookup is an HTTPS request through the page's
+  context; and Background Fetch downloads.
 - *Never sent from an off-the-record profile* (Chromium's own rules):
   address-bar suggestions, including the on-focus ones; adding search
   engines a page announces; Google's spelling service; real-time and
   hash-prefix real-time Safe Browsing, client-side phishing detection and
   Safe Browsing reports; the password leak check; optimization hints;
-  certificate-transparency (SCT) auditing; push and notifications.
-  Network prediction is off (see above), so nothing is prefetched or
-  prerendered either.
+  certificate-transparency (SCT) auditing; push and notifications; the
+  page info "About this site" and merchant-trust lookups. Network
+  prediction is off (see above), so nothing is prefetched or prerendered
+  either.
 - *Not in MoltBrowser builds:* they need a Google API key or a Google
   sign-in, which MoltBrowser doesn't ship (docs/NETWORK_TRAFFIC.md):
   password affiliations, Google's speech recognition, and the
@@ -614,10 +664,12 @@ from your own IP address. We went through the candidates in the Chromium
   and in MoltBrowser's chat handler and `molt_net_routing.cc`.
 - *Browser-wide, not caused by MoltNet pages:* MoltShield's list updates
   and MoltBrowser's update check (§5.6) use the regular profile's
-  context. DNS-over-HTTPS probes only run in a network context the
-  browser turns them on for, and MoltNet's resolves no page's names
+  context. DNS-over-HTTPS probes run in the browser's other network
+  contexts; MoltNet's starts none (above), and resolves no page's names
   itself (Tor does, inside SOCKS5). MoltBrowser's error pages don't probe
-  DNS (off by default), and Tor failures are proxy errors, not DNS errors.
+  DNS (off by default, and in MoltNet the setting it follows, "Use a web
+  service to help resolve navigation errors", is pinned off), and Tor
+  failures are proxy errors, not DNS errors.
 - *Still outside Tor:* see §5.7.
 
 **Circuits.** Tor keeps connections with different SOCKS5 credentials on
@@ -661,8 +713,10 @@ everything keyed by the top-level site. Chromium 152 keys most of a
 network context's state by the request's network key (the top-level site,
 for some state also the frame's site), but not all of it, and three of the
 switches that turn the keying on apply to the whole browser. We went
-through each cache and pool a 152 network context keeps (read in the
-code, not yet measured in a built browser):
+through each cache and pool a 152 network context keeps, and again
+through a 156 one, which adds the renderer-accessible HTTP cache and
+shared ("pervasive") compression dictionaries (read in the code, not yet
+measured in a built browser):
 
 | State | In MoltNet's network context | After New Identity |
 |---|---|---|
@@ -678,16 +732,19 @@ code, not yet measured in a built browser):
 | Server properties (alternative services, HTTP/2 support, connection statistics) | keyed by top-level site; in memory (only regular profiles save them) | gone |
 | HTTP authentication | server credentials keyed by top-level site, always (Chromium 152 doesn't split them by default, and the `GloballyScopeHTTPAuthCacheEnabled` policy can stop it; neither reaches MoltNet); Basic and Digest only (§2 above) | gone |
 | HSTS | entries a response sets are stored by host. In MoltNet they upgrade top-level navigations only (Chromium's `HstsTopLevelNavigationsOnly`, for MoltNet's context), so a page's subresource requests can't read what other sites' responses stored; HTTPS-Only mode upgrades every plain-HTTP navigation anyway. Expect-CT no longer exists | gone (in memory) |
-| Host-name cache | not keyed by site in MoltBrowser builds (Chromium's field-trial testing config turns `SplitHostCacheByNetworkAnonymizationKey` off, for every profile), but MoltNet pages' host names are never looked up locally: SOCKS5 sends them to Tor | cleared, then gone |
+| Host-name cache | keyed by top-level site at Chromium 156 (`SplitHostCacheByNetworkAnonymizationKey`; at 152 Chromium's field-trial testing config turned it off for every profile, and 156's no longer does), and MoltNet pages' host names are never looked up locally anyway: SOCKS5 sends them to Tor | cleared, then gone |
 | CORS preflight results | keyed by the request's network key | gone |
-| Compression dictionaries | keyed by frame origin and top-level site | gone |
+| Compression dictionaries | keyed by frame origin and top-level site. Chromium 156 adds one store shared by every site for the dictionaries of the well-known scripts and styles above (`PervasiveSharedDictionaries`, on in Chromium's field-trial testing config, so in MoltBrowser builds); a dictionary goes there only from a response filed under the shared cache entries, which MoltNet's context never uses, so its shared store stays empty | gone |
+| Renderer-accessible HTTP cache (Chromium 156) | none: only for on-disk caches, and MoltNet's is in memory | — |
+| Device-bound sessions (Chromium 156, Windows and macOS) | none: MoltNet's context has no session service | — |
+| TLS client-certificate choices | none kept. Chromium remembers the certificate (or "no certificate") picked for a server by host and port, for every site; MoltNet's context answers every server's request with no certificate, at once, the same way on every site, and the browser shows no picker and applies no auto-select policy for MoltNet pages | — |
 | Cookies | third-party cookies blocked; partitioned cookies keyed by top-level site | gone |
 | Private State Tokens | blocked: an issuer's tokens can be detected and redeemed on any site, by design | — |
 | Reporting API, Network Error Logging | not built into MoltBrowser (`enable_reporting = false`) | — |
 | Topics, Shared Storage, Protected Audience, Attribution Reporting | removed upstream at 156: Chromium 156 has none of these web APIs | — |
 | Related Website Sets | one list for the whole browser, from component updates or policy; sites can't change it | — |
 | Preconnect and prediction | off-the-record profiles have no preconnect or prediction service, and network prediction is off | — |
-| Network-quality estimate | **fixed**: none kept. The network service keeps one estimate for the whole browser; MoltNet's context has no estimator, so its requests don't feed it and its request scheduling doesn't follow it, and MoltNet's pages read one fixed connection and network quality instead ([FINGERPRINTING.md](FINGERPRINTING.md#moltnet-connection-and-network-quality)) | — |
+| Network-quality estimate | **fixed**: none kept. The network service keeps one estimate for the whole browser; MoltNet's context has no estimator, so its requests don't feed it and its request scheduling doesn't follow it, and MoltNet's pages read one fixed connection and network quality instead ([FINGERPRINTING.md](FINGERPRINTING.md#moltnet-connection-and-network-quality)). The browser doesn't send MoltNet's renderer processes the real estimate or the operating system's connection type either: they get the same fixed values once, when they start, and after that only "offline" and "online" (`content/browser/network/molt_uniform_network_state.h`) | — |
 
 New Identity flushes the old identity's connections and host-name cache,
 then waits until its profile, and with it the network context and
@@ -711,13 +768,14 @@ downloaded again, on a circuit of its own, for each new connection to it.
 **What can turn the partitioning off.** The keying above follows
 `base::Feature`s and settings that a command-line flag
 (`--disable-features`), `chrome://flags`, an enterprise policy or a field
-trial can change. In Chromium 152 `chrome://flags` has no entry for any of
-them. MoltBrowser has no field-trial server: builds without Chrome branding
-download no variations seed unless started with `--variations-server-url`,
-and they apply Chromium's field-trial testing config, which turns the
-connection and HTTP-cache partitioning on and the host-name cache split
-off. A seed or other trials can still come in through command-line
-switches or a changed `Local State` file. So MoltNet reads the effective
+trial can change. In Chromium 152 and 156 `chrome://flags` has no entry for
+any of them. MoltBrowser has no field-trial server: builds without Chrome
+branding download no variations seed unless started with
+`--variations-server-url`, and they apply Chromium's field-trial testing
+config, which turns the connection and HTTP-cache partitioning on (and, at
+152, the host-name cache split off; 156's config leaves that on). A seed
+or other trials can still come in through command-line switches or a
+changed `Local State` file. So MoltNet reads the effective
 state once the browser has started, whatever set it, and per switch:
 
 | Switch | What it keys by site | MoltNet |
@@ -729,7 +787,7 @@ state once the browser has started, whatever set it, and per switch:
 | `CacheSharingForPervasiveResources` | shared HTTP cache entries for well-known scripts | Per network context: never for MoltNet |
 | `HstsTopLevelNavigationsOnly` | which requests HSTS upgrades | MoltNet's context always behaves as with it on |
 | `CacheCertVerification` | adding results to the verification cache | MoltNet's context has no such cache |
-| `SplitHostCacheByNetworkAnonymizationKey` | the host-name cache | Off in MoltBrowser builds (testing config); MoltNet pages' names aren't looked up locally |
+| `SplitHostCacheByNetworkAnonymizationKey` | the host-name cache | On at 156 (off in 152 builds, by the testing config); MoltNet pages' names aren't looked up locally either way |
 | `PrivateStateTokens` | nothing: an issuer's tokens work on every site | Blocked per network context for MoltNet, whatever it and the anti-abuse setting say |
 
 `PartitionSSLSessionsByNetworkIsolationKey`,
@@ -740,8 +798,9 @@ runs before Tor starts and again before the MoltNet profile is created
 (`molt_net_partitioning_policy.h`, read in `molt_net_routing.cc`); the
 per-context settings are in `molt_net_network_context_policy.h`, applied by
 hooks marked `MoltBrowser:` in `network_context.cc`,
-`transport_security_state.{h,cc}`, `shared_resource_checker.h` and
-`profile_network_context_service.cc`. Regular and Incognito windows follow
+`transport_security_state.{h,cc}`, `shared_resource_checker.h`,
+`ssl_client_socket.{h,cc}` and `profile_network_context_service.cc`.
+Regular and Incognito windows follow
 the flags and Chromium's defaults as before.
 
 **Captive portals.** Chromium checks for a captive portal (a network that
@@ -863,6 +922,8 @@ gpg-verified steps documented in that script.
 | Per-site network state (§2 *Shared network state*): MoltNet's context has no certificate-verification cache or merging, no shared HTTP cache entries, HSTS for top-level navigations only, its HTTP auth cache keyed by site and no Private State Tokens, also after the policy or the anti-abuse setting changes; every other profile keeps 152's behaviour; a new identity's context gets all of it again | Unit tests (`molt_ai_unittests`, with the real parameter structs); standalone harness: the hooks taken verbatim from `network_context.cc`, `transport_security_state.{h,cc}`, `shared_resource_checker.h` and `profile_network_context_service.cc` against stand-ins with the 152 shapes (g++ ASan/UBSan, clang `-fno-exceptions`); the changed files type-checked against Chromium 152's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
 | MoltNet doesn't open while `PartitionConnectionsByNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey` or `ThirdPartyStoragePartitioning` is off, says which, and checks before Tor starts and before the profile is created; Chromium's default-on switches count as on | Unit tests (`molt_ai_unittests`, the feature names checked against Chromium's); the same harness with the glue from `molt_net_routing.cc` and `molt_net_window.cc`, verbatim; 15 tests in the harness, 30 mutants of the hooks and policies all caught | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser: a verification for every new TLS connection, the switches refused (§4 steps 8 and 9) | Needs a Chromium build; the leak kit's `identity.partitioning_override_refused` | **Not yet done** |
+| The Chromium 156 network re-check (§2 *New network paths at Chromium 156*): MoltNet's context sends no TLS client certificate and remembers no choice, the same for every server and every site, and a request that reaches the browser is answered with no certificate and no picker; no DNS-over-HTTPS probes and no device-bound sessions in MoltNet's context; MoltNet refused while proxy override rules are set; MoltNet's renderers get the fixed network quality once and only "online" or "offline" as the connection; every other profile and context keeps Chromium's behaviour | Unit tests (`molt_ai_unittests`); standalone harness: the hooks taken verbatim from `ssl_client_socket.{h,cc}`, `network_context.cc`, `chrome_content_browser_client.cc`, `molt_net_routing.cc` and the two observers (the `profile_network_context_service.cc` hook for device-bound sessions through its policy's tests) in `content/browser/network/`, and the real `molt_uniform_network_state.h`, against stand-ins with the 156 shapes, including Chromium's client-certificate restart (g++ ASan/UBSan, clang `-fno-exceptions`): 22 policy and 17 hook tests, 17 mutants all caught; the changed files type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
+| The same in a running browser (§4 steps 9 and 20) | Needs a Chromium build; the leak kit's `net.client_cert.*` | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | An automated leak and uniformity test of a built browser (§4, FINGERPRINTING.md) | `tools/leak_test/` ([LEAK_TESTING.md](LEAK_TESTING.md)): its analysis checked against a recorded sample run; the harness run against stock Chromium, where it finds the WebRTC, DNS-prefetch, mDNS, onion and LAN leaks that MoltNet closes | Kit ready; **not yet run on a MoltBrowser build** |
 | Independent third-party audit | — | **Not done** |
@@ -901,7 +962,7 @@ help. The last column names the report's checks.
 | 17 | partial | `uniform.autoplay.mediaelement`, `uniform.storage.persist`, `uniform.cookies.third_party`, `uniform.sharedStorage.set` |
 | 18 | automated | `net.webrtc.*` |
 | 19 | manual | |
-| 20 | partial | `net.download.*`, `net.geolocation.*`, `net.builtin_ai.*` |
+| 20 | partial | `net.download.*`, `net.geolocation.*`, `net.builtin_ai.*`, `net.client_cert.*` |
 
 1. **You are on Tor.** (Kit: partial.) Open `check.torproject.org`: it must say you are using
    Tor and show an IP that isn't yours. The panel's *Verify* must show the
@@ -956,7 +1017,10 @@ help. The last column names the report's checks.
    then with `SplitCacheByNetworkIsolationKey` and with
    `ThirdPartyStoragePartitioning` instead: each time, opening a MoltNet
    window must fail with an error that names the switch, and regular
-   windows must work.
+   windows must work. Set the `ProxyOverrideRules` policy (any rule, e.g.
+   one that sends `*.example.com` `DIRECT`) and restart: opening a MoltNet
+   window must fail with the proxy error, and the MoltNet panel must say
+   that the proxy is overridden.
 10. **The relays are real.** (Kit: automated against the consensus Tor downloaded.) *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.
@@ -1147,6 +1211,18 @@ help. The last column names the report's checks.
       `NTLM` and `Basic` gets a Basic sign-in prompt; one that offers only
       `Negotiate` and `NTLM` gets no prompt (its 401 page shows), and on
       Windows the DNS log shows no lookup of its name.
+    - A test server that asks for a TLS client certificate without
+      requiring one (e.g. `openssl s_server -verify 1`), with a client
+      certificate installed in your system or browser: the page loads
+      with no picker, the server sees an empty certificate, and each new
+      connection to it, under any site, sees exactly one handshake (in a
+      regular window the first one is dropped and repeated after the
+      picker). One that requires a certificate (`-Verify 1`) shows a TLS
+      error page.
+    - Set secure DNS to a provider in Settings (e.g. Cloudflare) and
+      restart, then open a MoltNet window, and press *New Identity*:
+      tcpdump shows no connection to that provider's addresses outside
+      Tor while it happens.
     tcpdump must show nothing caused by these steps (the browser's own
     background traffic, §5.6, can appear), and the DNS log no lookup of
     any site you used. In a regular window the same download shows the
@@ -1221,6 +1297,11 @@ help. The last column names the report's checks.
    - Local servers don't open in MoltNet windows: `localhost`, loopback
      and link-local addresses go to Tor, which refuses them (see §2). Use
      a regular window for a local development server.
+   - Sites that require a TLS client certificate (a smart card, an ID
+     card, a company or government certificate) don't open in MoltNet
+     windows: MoltNet never sends one (§2 *Shared network state*). Sites
+     that only ask for one open without it. Use a regular window for
+     them.
    - If Tor stops, another local program could take over its old port; MoltNet
      windows would then talk to that program. Close MoltNet windows when you
      turn MoltNet off.

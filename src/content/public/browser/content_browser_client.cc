@@ -1121,6 +1121,10 @@ bool ContentBrowserClient::AreMoltShieldsDownForWorker(
   return false;
 }
 
+bool ContentBrowserClient::ShouldSendUniformNetworkState(BrowserContext*) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

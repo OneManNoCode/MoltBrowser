@@ -131,6 +131,13 @@ source_set("partitioning_policy") {
   sources = [ "molt_net_partitioning_policy.h" ]
 }
 
+# Whether a profile's proxy settings are MoltNet's own: no policy proxy and
+# no proxy override rules (molt_net_proxy_policy.h); molt_net_routing.cc
+# reads it. Header-only and std-only, so molt_ai_unittests tests it.
+source_set("proxy_policy") {
+  sources = [ "molt_net_proxy_policy.h" ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -157,6 +164,7 @@ source_set("tor") {
     ":partitioning_policy",
     ":pref_isolation",
     ":protocol",
+    ":proxy_policy",
     ":requests_policy",
   ]
 
@@ -402,6 +410,7 @@ source_set("unit_tests") {
     "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
+    "molt_net_proxy_policy_unittest.cc",
     "molt_net_request_binders_unittest.cc",
     "molt_net_requests_policy_unittest.cc",
     "molt_net_webrtc_binders_unittest.cc",
@@ -421,6 +430,7 @@ source_set("unit_tests") {
     ":pref_isolation",
     ":pref_isolation_policy",
     ":protocol",
+    ":proxy_policy",
     ":request_binders",
     ":requests_policy",
     ":webrtc_binders",

@@ -31,6 +31,29 @@ function mq(q) {
   }
 }
 
+// The bits per colour component the (color: N) media query matches, or
+// null when none from 0 to 16 does.
+function colorBits() {
+  for (let bits = 0; bits <= 16; ++bits) {
+    if (mq('(color: ' + bits + ')')) {
+      return bits;
+    }
+  }
+  return null;
+}
+
+// AudioContext.renderQuantumSize for renderSizeHint "hardware" ('absent'
+// without the API).
+function hardwareRenderQuantum() {
+  if (!('renderQuantumSize' in BaseAudioContext.prototype)) {
+    return 'absent';
+  }
+  const ctx = new AudioContext({renderSizeHint: 'hardware'});
+  const size = ctx.renderQuantumSize;
+  ctx.close();
+  return size;
+}
+
 // A classic scrollbar's width in CSS pixels, from a box that always has one
 // (0 with overlay scrollbars).
 function scrollbarBox() {
@@ -74,6 +97,8 @@ window.mlGeometry = () => {
         'px) and (device-height: ' + s.height + 'px)'),
     'scrollbar.width': innerWidth - document.documentElement.clientWidth,
     'scrollbar.box': scrollbarBox(),
+    // Overlay scrollbars take no room (macOS's default style).
+    'scrollbar.overlay': scrollbarBox() === 0,
     'mq.viewport_exact': viewportExact(),
     'vv.width': visualViewport ? visualViewport.width : null,
     'vv.height': visualViewport ? visualViewport.height : null,
@@ -390,8 +415,14 @@ async function collect() {
   v['mq.prefers_reduced_motion'] = mq('(prefers-reduced-motion: reduce)');
   v['mq.forced_colors'] = mq('(forced-colors: active)');
   v['mq.prefers_contrast_more'] = mq('(prefers-contrast: more)');
+  // The display's colour (an sRGB, standard-range, 8-bit screen in MoltNet).
+  v['mq.color_gamut_srgb'] = mq('(color-gamut: srgb)');
   v['mq.color_gamut_p3'] = mq('(color-gamut: p3)');
+  v['mq.color_gamut_rec2020'] = mq('(color-gamut: rec2020)');
   v['mq.dynamic_range_high'] = mq('(dynamic-range: high)');
+  v['mq.video_dynamic_range_high'] = mq('(video-dynamic-range: high)');
+  v['mq.color_bits'] = colorBits();
+  v['mq.monochrome'] = mq('(monochrome)');
   v['touch.ontouchstart'] = 'ontouchstart' in window;
   try {
     document.createEvent('TouchEvent');
@@ -458,6 +489,11 @@ async function collect() {
   await step('storage.persist', () => n.storage.persist());
   await step('storage.quota', () => n.storage.estimate().then((e) =>
       e.quota));
+  // Reported quota minus usage: a fixed 10 GiB in MoltNet (off-the-record
+  // profiles report a static quota at 156).
+  await step('storage.quota_over_usage', () => n.storage.estimate().then(
+      (e) => e.quota - e.usage));
+  await step('audio.render_quantum_hardware', hardwareRenderQuantum);
   v['autoplay.mediaelement'] = n.getAutoplayPolicy ?
       n.getAutoplayPolicy('mediaelement') : 'absent';
   await step('sharedStorage.set', async () => {

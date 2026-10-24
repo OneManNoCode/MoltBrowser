@@ -227,6 +227,7 @@ paths that reached the onion server.
 | `mdns` | `.local` names | no mDNS, no IGMP/MLD join of the mDNS group |
 | `cert_fetch` | an https onion whose certificate lacks its intermediate, with AIA, OCSP and CRL URLs | no lookup of those names outside Tor; whether AIA came through Tor is shown |
 | `cert_fetch_b` | the same certificate on the second onion site (so the same AIA URLs) | nothing outside Tor; read with `cert_fetch` by `identity.cert_fetch_circuits` |
+| `client_cert` | the basic page from an https onion port (8444) whose server asks for a TLS client certificate without requiring one, and logs every handshake | nothing outside Tor; `net.client_cert.handshakes`: every handshake completes and none carries a certificate, so the browser neither asked the user nor connected again. In a regular window Chromium drops the first handshake to ask and connects again; the check reports that as information (step 20) |
 | `builtin_ai` | `availability()` and `create()` (with a user gesture) of every built-in AI API | `LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator` unavailable; no component or model download host looked up |
 | `geolocation` | `getCurrentPosition()` | error 1 at once (no prompt); no location provider host |
 | `extension` | a test extension allowed in Incognito (content script, web-accessible resource, `tabs`, `webRequest`) | the MoltNet page isn't marked, `chrome.runtime` is absent, the resource can't be fetched, and its background never sees a MoltNet tab or request (it would look up a canary name if it did) (step 16) |
@@ -274,7 +275,8 @@ level, and in one browser launch per device scale factor
   `clientX/Y`; the `width`/`height` media queries and `vw`/`vh` exactly
   `innerWidth` x `innerHeight` (strict comparisons included); a classic
   scrollbar 16 CSS pixels wide (0 with overlay scrollbars; 15 or 17 by
-  design at 33% and 67% zoom, which the default zoom list leaves out).
+  design at 33% and 67% zoom, which the default zoom list leaves out);
+  overlay scrollbars on macOS only, classic ones on Linux and Windows.
 * **Once per launch:** UTC (also `Date` strings), en-US (`Intl`, numbers,
   `navigator.language(s)`, `Accept-Language`), 4 cores, 8 GB,
   `cpuPerformance` 0, `navigator.connection` (4g, rtt 200, downlink 1.6,
@@ -292,7 +294,11 @@ level, and in one browser launch per device scale factor
   `getScreenDetails()` rejected, `persist()` false, autoplay
   `allowed-muted`, no Shared Storage (removed upstream at 156; the kit
   also accepts an older build's rejected `set()`), no third-party cookie,
-  WebRTC off, the built-in AI APIs unavailable, the reduced user agent.
+  WebRTC off, the built-in AI APIs unavailable, the reduced user agent,
+  an sRGB display with a standard dynamic range and 8 bits per colour (the
+  `color-gamut`, `dynamic-range`, `video-dynamic-range`, `color` and
+  `monochrome` queries), a storage quota reported as 10 GiB over the usage,
+  and `renderQuantumSize` 128 for `renderSizeHint: "hardware"`.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

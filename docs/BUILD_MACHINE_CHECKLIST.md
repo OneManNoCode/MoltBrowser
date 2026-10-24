@@ -411,6 +411,13 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `chrome/browser/ssl/chrome_security_blocking_page_factory.cc` | `OpenLoginTab()` returns early for MoltNet | #51 |
 | `chrome/browser/profiles/off_the_record_profile_impl.cc` | no zoom from the regular profile | #20, #21, #49 |
 | `net/dns/host_resolver_manager.cc`, `net/base/features.cc` | `.onion` and MoltNet resolver rules | #2 and the MoltNet P1-P15 work, carried over in #11 |
+| `net/socket/ssl_client_socket.{h,cc}` | `SSLClientContext::MoltSendNoClientCertificates()` (inline) and a member flag; `GetClientCertificate()` answers "no certificate" while it is set. `ssl_client_socket.h` is included by `http_network_session.h`, so expect another large `//net` rebuild | MoltNet 156 |
+| `services/network/network_context.cc`, `services/network/public/mojom/network_context.mojom` | two `[MinVersion=1]` fields (`molt_send_no_client_certificates`, `molt_no_doh_probes`); after `Build()` in `MakeURLRequestContext()`, `http_transaction_factory()->GetSession()->ssl_client_context()->MoltSendNoClientCertificates()`; `ActivateDohProbes()` returns early | MoltNet 156 |
+| `chrome/browser/chrome_content_browser_client.{h,cc}` | `SelectClientCertificate()` answers a MoltNet profile with `ContinueWithCertificate(nullptr, nullptr)` before the ChromeOS block and the auto-select policy; the `ShouldSendUniformNetworkState()` override | MoltNet 156 |
+| `content/public/browser/content_browser_client.{h,cc}` | new virtual `ShouldSendUniformNetworkState(BrowserContext*)`, default `false` | MoltNet 156 |
+| `content/browser/network/network_quality_observer_impl.cc`, `content/browser/network/browser_online_state_observer.cc`, new `content/browser/network/molt_uniform_network_state.h` | the five `OnNetworkQualityChanged()`/`OnNetworkConnectionChanged()` sends go through the header-only helpers (fixed values for MoltNet's renderers, no quality updates to them). The header is in no GN target's `sources` (header-only, to leave `content/browser/BUILD.gn` alone); if `gn check` complains, list it in `//content/browser:browser` | MoltNet 156 |
+| `chrome/browser/molt_ai/tor/molt_net_routing.cc` | `ProxyExternallyControlled()` also reads `proxy_config::prefs::kProxyOverrideRules` (new target `:proxy_policy`, header-only) | MoltNet 156 |
+| `chrome/browser/net/profile_network_context_service.cc` | `device_bound_sessions_enabled` comes from `DeviceBoundSessionsEnabledFor()` (false for MoltNet) | MoltNet 156 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -470,6 +477,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `content/public/browser/client_hints_controller_delegate.h` (a new virtual in every implementation), `chrome/browser/client_hints/BUILD.gn`, `core/loader/frame_fetch_context.cc`, worker files | client hints and per-document Shields decisions | #24 |
 | `platform/network/network_state_notifier.{h,cc}`, `core/molt_fingerprinting/moltnet_network.{h,cc}` | `SetUniformNetworkState()`, an early return in four setters, no per-host factor in `GetRandomMultiplier()` once pinned; a `std::atomic<bool>` member in a header much of Blink includes (expect a large Blink rebuild); `Configure(kUniform)` calls `PinUniformNetworkState()` | network quality |
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
+| `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -510,6 +518,12 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   content utility directory → `//sandbox/linux:sandbox_services`, the
   browser → `public:buildflags` and `//content/public/common` (from #52);
   `universal_web_contents_observers.cc` and `:letterbox_view` (from #27).
+  New at MoltNet 156: `chrome_content_browser_client.cc` includes
+  `molt_net_requests_policy.h`, `molt_net_network_context_policy.h` and
+  `molt_net_profile_id.h` (the `:requests_policy`,
+  `:network_context_policy` and `:tor` targets), and the two
+  `content/browser/network/` observers include
+  `molt_uniform_network_state.h`, which no target lists (see §4.2).
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -605,6 +619,8 @@ extension enablement and `MediaRouterEnabled()`).
   | `PageTranslatePlanTest`, `PageTranslateIoTest`, `PageTranslateMessagesTest`, `PageTranslationJobTest` | #48, #55 |
   | `TorControlProtocolTest`, `TorrcBuilderTest`, `PluggableTransportsTest`, `OnionLocationTest` | #6, #49 |
   | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
+  | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
+  | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -620,7 +636,7 @@ extension enablement and `MediaRouterEnabled()`).
   scrollbar and viewport cases), `MoltNetTextTest` (with the real Roboto
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
   `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
-  `MoltFingerprintingTest`,
+  `MoltNetDisplayTest` (fingerprinting 156), `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
   `MoltFont*`, `MoltWebGLUniform` and `MoltNet*Values` suites.
@@ -640,9 +656,14 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `ChromeBrowsingDataRemoverDelegateTest.*:ProfileResetterTest.*` | #32 |
 | `unit_tests` | `AboutFlagsTest.*:AboutFlagsHistogramTest.*` | #39, #45, #47 |
 | `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
+| `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
+| `net_unittests` | `SSLClientSocketTest.*:*ClientAuth*:*ClientCert*:HttpNetworkTransactionTest.*` | MoltNet 156 |
+| `services_unittests` | `NetworkContextTest.*Doh*:NetworkContextTest.*ClientCert*` (inside the `NetworkContextTest.*` row too) | MoltNet 156 |
+| `content_unittests` | `NetworkQualityObserverImplTest.*` | MoltNet 156 |
+| `unit_tests` | `*SSLClientCertificateSelector*:*ClientCertificate*` | MoltNet 156 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -943,6 +964,21 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   uniform values (from #20, #24).
 - [ ] Farbled video exports (`captureStream`) in MoltNet: measure the
   readback cost at 720p30 and 1080p30/60 on real hardware (from #10, #20).
+- [ ] The display in MoltNet (fingerprinting 156): on a Mac with a P3/XDR
+  screen and on an HDR monitor (Windows, Linux), `matchMedia` reports
+  `(color-gamut: srgb)`, not `p3`/`rec2020`, `(dynamic-range: standard)`,
+  `(video-dynamic-range: standard)`, `(color: 8)` and no `(monochrome)`;
+  DevTools' color-gamut emulation still applies; a regular window shows the
+  real display. HDR and P3 video and images still play and render.
+- [ ] Scrollbar style in MoltNet (fingerprinting 156): on macOS with "Show
+  scroll bars" set to Always, and with a mouse plugged in under
+  "Automatically", MoltNet pages get overlay scrollbars (a scrolling box's
+  `offsetWidth - clientWidth` is 0) and switching the setting or
+  unplugging the mouse doesn't relayout them; regular windows follow the
+  setting. On Windows and Linux with `chrome://flags/#overlay-scrollbars`
+  on, MoltNet pages keep classic 16 CSS px scrollbars. The scrollbars are
+  drawn, animate and can be dragged normally in all three cases, and the
+  DevTools device toolbar (mobile emulation) still shows overlay ones.
 
 ### 7.4 MoltNet
 
@@ -999,6 +1035,37 @@ macOS, and for the manual steps everywhere:
   `generate_204` request and no sign-in tab after a certificate error; a
   `401` offering only `Negotiate` and `NTLM` shows its page, one also
   offering `Basic` prompts.
+- [ ] TLS client certificates (MoltNet 156; §4 step 20): with a client
+  certificate installed (on macOS in the login keychain, on Linux in
+  `~/.pki/nssdb`) and `openssl s_server -accept 4433 -verify 1 -www` (asks,
+  doesn't require) behind an onion service or a public test host, a
+  MoltNet window loads the page with no picker and `s_server` prints no
+  client certificate; reloading, and opening it from another site's page,
+  shows one handshake per connection. A regular window shows the picker.
+  With `-Verify 1` (requires) MoltNet shows a TLS error page. With the
+  `AutoSelectCertificateForUrls` policy matching that host, MoltNet still
+  sends none.
+- [ ] DNS-over-HTTPS probes (MoltNet 156; §4 step 20): set secure DNS to
+  Cloudflare, run `sudo tcpdump -n 'host 1.1.1.1 or host 1.0.0.1'`, open a
+  MoltNet window and press *New Identity* twice: no packets (a regular
+  window's network context probes as usual, once at startup).
+- [ ] Device-bound sessions (MoltNet 156, Windows and macOS): sign in to
+  a site that registers one (e.g. a Google account, or a test server that
+  sends `Secure-Session-Registration`) in a regular window: DevTools'
+  Application panel lists the session. The same in a MoltNet window: no
+  session, no registration request, and the sign-in still works.
+- [ ] Proxy override rules (MoltNet 156; §4 step 9): with the
+  `ProxyOverrideRules` policy set (any rule), MoltNet refuses to open with
+  the proxy error and the panel says the proxy is overridden; removing the
+  policy and restarting lets it open.
+- [ ] Network state sent to MoltNet renderers (MoltNet 156): in a MoltNet
+  page, `navigator.connection` still reports 4g, 200, 1.6 (as above), and
+  `navigator.onLine` turns `false` and back to `true` when the network
+  cable or Wi-Fi goes away and comes back. With
+  `--enable-logging=stderr --vmodule=render_thread_impl=2` (or a debugger on
+  `RenderThreadImpl::OnNetworkQualityChanged`), a MoltNet renderer gets one
+  network-quality message, at start-up, while a regular one gets one per
+  change.
 - [ ] The manual parts of MOLTNET_COMPLIANCE.md §4: step 2 (the toolbar
   label), 9 (a proxy set by an extension), 11 (the Onion-Location bar), 14
   (bridges with the distribution's obfs4 and snowflake, from #6), 16 (split
@@ -1038,9 +1105,18 @@ Mac; use a real Linux host.
     Identity's order (a beforeunload page, an immediate second New
     Identity) (from #49);
   - the uniformity checks pass, including the scrollbar and media-query
-    exactness (from #33), `text.metrics_whole` (from #37) and
+    exactness (from #33), `text.metrics_whole` (from #37),
     `nav.connection`, `worker.connection` and `nav.connection_changes`
-    (network quality); `diff` shows no difference in a promised value.
+    (network quality), and `scrollbar.overlay`, the colour media queries
+    (`mq.color_gamut_*`, `mq.dynamic_range_high`,
+    `mq.video_dynamic_range_high`, `mq.color_bits`, `mq.monochrome`),
+    `storage.quota_over_usage` and `audio.render_quantum_hardware`
+    (fingerprinting 156); `diff` shows no difference in a promised value.
+  - `net.client_cert.handshakes` passes (MoltNet 156): the server that
+    asks for a client certificate saw only completed handshakes, none with
+    a certificate. A FAIL listing a dropped handshake means MoltNet's
+    context still asked the browser (check the `network_context.cc` hook
+    and `molt_send_no_client_certificates` in the context's params).
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet

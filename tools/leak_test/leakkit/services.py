@@ -3,9 +3,10 @@
 """The kit's small servers. Each runs as its own process, as the invoking
 (non-root) user, started by the harness through `leaktest.py service ...`:
 
-  pages     the test-page server: HTTP, HTTPS and the AIA-test HTTPS port,
-            behind the kit's onion services (or on loopback for regular
-            windows); templated pages, request log, WebSocket handshake
+  pages     the test-page server: HTTP, HTTPS, the AIA-test HTTPS port and
+            an HTTPS port that asks for a client certificate, behind the
+            kit's onion services (or on loopback for regular windows);
+            templated pages, request log, WebSocket handshake
   dns       the namespace's only resolver: logs every query and answers
             NXDOMAIN, so every lookup the browser makes is on record
   loopback  the loopback canary: a TCP port on this machine no MoltNet page
@@ -141,6 +142,25 @@ class PageHandler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # quiet; we keep our own log
         pass
+
+    def setup(self):
+        # The client-certificate port: the TLS handshake happens here, so
+        # each one is logged, with whether the client sent a certificate,
+        # and a handshake the client drops (a browser that stops at the
+        # certificate request to ask the user, then connects again) too.
+        if getattr(self.server, 'scheme', '') == 'https-clientauth':
+            item = {'event': 'tls_handshake',
+                    'port': self.server.server_address[1]}
+            try:
+                self.request.do_handshake()
+            except (ssl.SSLError, OSError) as e:
+                item.update(ok=False, error=_cap(str(e), 200))
+                self.server.log.write(**item)
+                raise
+            item.update(ok=True, client_cert=bool(
+                self.request.getpeercert(binary_form=True)))
+            self.server.log.write(**item)
+        super().setup()
 
     def _log(self, status, extra=None):
         headers = {}
@@ -325,6 +345,17 @@ def run_pages(config_path, log_path, listens):
             ctx.load_cert_chain(cert, key)
             ctx.set_alpn_protocols(['http/1.1'])
             srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        elif scheme == 'https-clientauth':
+            # Asks for a client certificate and doesn't require one
+            # (MOLTNET_COMPLIANCE.md §2: MoltNet answers with none, at
+            # once). The handshake runs in PageHandler.setup(), logged.
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(cert, key)
+            ctx.set_alpn_protocols(['http/1.1'])
+            ctx.verify_mode = ssl.CERT_OPTIONAL
+            ctx.load_verify_locations(cert)
+            srv.socket = ctx.wrap_socket(srv.socket, server_side=True,
+                                         do_handshake_on_connect=False)
         servers.append(srv)
     for srv in servers:
         threading.Thread(target=srv.serve_forever, daemon=True).start()
