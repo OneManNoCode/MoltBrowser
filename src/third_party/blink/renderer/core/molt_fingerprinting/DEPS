@@ -24,7 +24,7 @@ specific_include_rules = {
   # MoltNet's audio clock (moltnet_audio_*): the media sinks, clock and
   # resampler Web Audio and media playback render through, as
   # platform/audio and modules/media/audio use them.
-  "moltnet_audio_(device|output|sink)\.(cc|h)": [
+  "moltnet_audio_(device|output|sink)(_test)?\.(cc|h)": [
     "+base/functional/callback.h",
     "+base/memory/raw_ptr.h",
     "+media/audio/audio_device_description.h",
