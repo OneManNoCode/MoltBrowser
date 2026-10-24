@@ -153,6 +153,31 @@ source_set("live_policy") {
   public_deps = [ ":proxy_policy" ]
 }
 
+# No Autofill server traffic and no address metadata downloads for MoltNet
+# tabs and payment sheets (molt_net_autofill.h). Asked by
+# ChromeAutofillClient (//chrome/browser/ui) and ChromePaymentRequestDelegate
+# (//chrome/browser/payments:impl); a dep of :tor so it links wherever they
+# do. If `gn check` flags their include, add this target to theirs.
+source_set("autofill") {
+  sources = [
+    "molt_net_autofill.cc",
+    "molt_net_autofill.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [
+    ":requests_policy",
+    "//chrome/browser/profiles:profile",
+    "//components/autofill/core/browser",
+    "//components/autofill/core/common",
+    "//content/public/browser",
+    "//net",
+    "//third_party/libaddressinput",
+  ]
+
+  # g_browser_process (the application locale) is in //chrome/browser,
+  # which depends on this target: not declared, as for :tor.
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -176,6 +201,7 @@ source_set("tor") {
   ]
 
   public_deps = [
+    ":autofill",
     ":incognito_parity_policy",
     ":live_policy",
     ":network_context_policy",

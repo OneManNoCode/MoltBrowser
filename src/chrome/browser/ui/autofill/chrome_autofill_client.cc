@@ -61,6 +61,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/metrics/profile_metrics_service_factory.h"
 #include "chrome/browser/metrics/variations/google_groups_manager_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_autofill.h"  // MoltBrowser
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
@@ -441,6 +442,12 @@ ChromeAutofillClient::GetURLLoaderFactory() {
 
 AutofillCrowdsourcingManager& ChromeAutofillClient::GetCrowdsourcingManager() {
   if (!crowdsourcing_manager_) {
+    // MoltBrowser: a MoltNet tab's manager sends no query and no vote to
+    // the Autofill server (molt_net_autofill.h).
+    crowdsourcing_manager_ = molt_ai::tor::MoltNetCrowdsourcingManagerFor(
+        GetProfile(), this, GetChannel());
+  }
+  if (!crowdsourcing_manager_) {
     // Lazy initialization to avoid virtual function calls in the constructor.
     crowdsourcing_manager_ =
         std::make_unique<AutofillCrowdsourcingManager>(this, GetChannel());
@@ -701,6 +708,12 @@ ukm::UkmRecorder* ChromeAutofillClient::GetUkmRecorder() {
 }
 
 AddressNormalizer* ChromeAutofillClient::GetAddressNormalizer() {
+  // MoltBrowser: a MoltNet tab's normalizer downloads no address metadata
+  // (molt_net_autofill.h).
+  if (AddressNormalizer* moltnet =
+          molt_ai::tor::MoltNetAddressNormalizerFor(GetProfile())) {
+    return moltnet;
+  }
   return AddressNormalizerFactory::GetInstance();
 }
 

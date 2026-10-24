@@ -18,6 +18,7 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/autofill/validation_rules_storage_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_autofill.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/payments/payment_request_display_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -170,6 +171,13 @@ const GURL& ChromePaymentRequestDelegate::GetLastCommittedURL() const {
 
 autofill::AddressNormalizer*
 ChromePaymentRequestDelegate::GetAddressNormalizer() {
+  // MoltBrowser: a MoltNet page's payment sheet downloads no address
+  // metadata (molt_net_autofill.h).
+  if (autofill::AddressNormalizer* moltnet =
+          molt_ai::tor::MoltNetAddressNormalizerFor(
+              GetBrowserContextOrNull())) {
+    return moltnet;
+  }
   return autofill::AddressNormalizerFactory::GetInstance();
 }
 
@@ -277,6 +285,12 @@ ChromePaymentRequestDelegate::GetPaymentUIObserver() const {
 
 autofill::RegionDataLoader*
 ChromePaymentRequestDelegate::GetRegionDataLoader() {
+  // MoltBrowser: nor does its address editor (molt_net_autofill.h).
+  if (autofill::RegionDataLoader* moltnet =
+          molt_ai::tor::MoltNetRegionDataLoaderFor(GetBrowserContextOrNull(),
+                                                   GetApplicationLocale())) {
+    return moltnet;
+  }
   return new autofill::RegionDataLoaderImpl(GetAddressInputSource().release(),
                                             GetAddressInputStorage().release(),
                                             GetApplicationLocale());
