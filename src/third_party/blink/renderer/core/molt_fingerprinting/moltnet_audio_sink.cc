@@ -41,16 +41,6 @@ namespace {
 constexpr base::TimeDelta kFirstRetry = base::Seconds(1);
 constexpr base::TimeDelta kMaxRetry = base::Seconds(30);
 
-// Added to the delay the client is told (two of its buffers, as Chromium's
-// NullAudioSink): about what the ring (MoltNetAudioOutput fills it to one
-// of the real device's callbacks and a cushion before it plays) and a
-// typical wired output add on top, measured with the simulated devices of
-// the media-clock harness. So on such an output the picture of a video and
-// its sound line up within a few milliseconds; with a slower output (a
-// Bluetooth headset) the sound comes that much later than the picture. It
-// is the same on every machine: the real latency stays out of the timing.
-constexpr base::TimeDelta kOutputPathDelay = base::Milliseconds(30);
-
 // The realtime period the shared clock thread asks for (macOS): the uniform
 // device's buffer, the shortest tick a media sink runs.
 constexpr base::TimeDelta kClockPeriod = base::Milliseconds(10);
@@ -335,8 +325,7 @@ class MoltNetMediaAudioSink::Engine final
       worker_ = std::make_unique<media::FakeAudioWorker>(clock_runner_, params);
       worker_params_ = params;
       tick_bus_ = media::AudioBus::Create(params);
-      tick_delay_ = media::FakeAudioWorker::ComputeFakeOutputDelay(params) +
-                    kOutputPathDelay;
+      tick_delay_ = media::FakeAudioWorker::ComputeFakeOutputDelay(params);
     }
     worker_->Start(ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
         &Engine::OnTick, WrapRefCounted(this), generation)));

@@ -271,8 +271,7 @@ TEST_F(MoltNetAudioSinkTest, RendersOnItsOwnClock) {
   EXPECT_LE(renders, 30);
   for (const base::TimeDelta delay : client_.delays()) {
     EXPECT_EQ(delay,
-              media::FakeAudioWorker::ComputeFakeOutputDelay(MixerParams()) +
-                  base::Milliseconds(30));
+              media::FakeAudioWorker::ComputeFakeOutputDelay(MixerParams()));
   }
   EXPECT_EQ(client_.glitches(), 0);
   EXPECT_EQ(client_.errors(), 0);

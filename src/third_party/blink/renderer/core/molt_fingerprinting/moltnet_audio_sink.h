@@ -24,11 +24,14 @@
 //   * Render(): called on a realtime thread MoltNet shares between its media
 //     sinks, the client's buffer (Initialize()) every buffer's duration from
 //     Start() or Play() (media::FakeAudioWorker: a late tick runs once and
-//     the next one is the next on time), with a fixed delay and no
-//     glitches. The delay is what a FakeAudioWorker sink reports (two
-//     buffers, media::FakeAudioWorker::ComputeFakeOutputDelay, as Chromium's
-//     NullAudioSink) and 30 ms, about what the ring and a typical wired
-//     output add, so a video's picture keeps in step with its sound there.
+//     the next one is the next on time), with the delay a FakeAudioWorker
+//     sink reports (two buffers, media::FakeAudioWorker::
+//     ComputeFakeOutputDelay, as Chromium's NullAudioSink) and no glitches.
+//     Once the ring has settled (MoltNetAudioOutput) that is about what the
+//     ring and a typical wired output add, so a video's picture and its
+//     sound line up there within a few milliseconds; for the first seconds
+//     the sound comes up to about 35 ms late, and with a slower output (a
+//     Bluetooth headset) that much later than the picture.
 //   * OnRenderError(): only for a chosen device. The default device never
 //     fails: when the real device can't be opened or goes away, rendering
 //     goes on, its output goes nowhere, and a new device is opened after
