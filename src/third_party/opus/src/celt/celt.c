@@ -309,6 +309,9 @@ const char *opus_strerror(int error)
    (media/base/molt_portable_media.cc). */
 static int moltbrowser_portable = 0;
 
+void opus_moltbrowser_set_portable(int portable);
+int opus_moltbrowser_portable(void);
+
 void opus_moltbrowser_set_portable(int portable)
 {
    __atomic_store_n(&moltbrowser_portable, portable ? 1 : 0, __ATOMIC_RELAXED);
