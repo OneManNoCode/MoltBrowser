@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/platform/audio/audio_destination.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/audio/audio_destination.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/audio/audio_destination.h b/third_party/blink/renderer/platform/audio/audio_destination.h
+index d0fbf03d6bc3026913c6a5ab9010789c3032f32c..bbb090caebe8c1e015641d1e15d06dccc43ed926 100644
+--- a/third_party/blink/renderer/platform/audio/audio_destination.h
++++ b/third_party/blink/renderer/platform/audio/audio_destination.h
+@@ -100,6 +100,18 @@ class PLATFORM_EXPORT AudioDestination final
+       std::optional<float> context_sample_rate,
+       unsigned render_quantum_frames);
+ 
++  // MoltBrowser: where destinations get their WebAudioDevice from instead of
++  // Platform::CreateAudioDevice(), when set: MoltNet renderers render on a
++  // clock of their own (core/molt_fingerprinting/moltnet_audio_device.h).
++  // Main thread, before any destination exists.
++  using MoltNetDeviceFactory = std::unique_ptr<WebAudioDevice> (*)(
++      const WebAudioSinkDescriptor& sink_descriptor,
++      unsigned number_of_output_channels,
++      const WebAudioLatencyHint& latency_hint,
++      std::optional<float> context_sample_rate,
++      media::AudioRendererSink::RenderCallback* callback);
++  static void SetMoltNetDeviceFactory(MoltNetDeviceFactory factory);
++
+   AudioDestination(const AudioDestination&) = delete;
+   AudioDestination& operator=(const AudioDestination&) = delete;
+ 

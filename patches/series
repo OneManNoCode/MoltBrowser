@@ -275,6 +275,7 @@ third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.
 third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc.patch
 third_party/blink/renderer/modules/font_access/font_access.cc.patch
 third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc.patch
+third_party/blink/renderer/modules/mediastream/media_devices.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
 third_party/blink/renderer/modules/permissions/permission_status_listener.cc.patch
 third_party/blink/renderer/modules/screen_details/window_screen_details.cc.patch
@@ -296,6 +297,8 @@ third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc.patch
 third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc.patch
 third_party/blink/renderer/modules/webgpu/gpu.cc.patch
 third_party/blink/renderer/modules/webgpu/gpu_queue.cc.patch
+third_party/blink/renderer/platform/audio/audio_destination.cc.patch
+third_party/blink/renderer/platform/audio/audio_destination.h.patch
 third_party/blink/renderer/platform/fonts/font_fallback_list.cc.patch
 third_party/blink/renderer/platform/fonts/font_platform_data.cc.patch
 third_party/blink/renderer/platform/fonts/font_platform_data.h.patch

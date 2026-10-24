@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_context.cc b/third_party/blink/renderer/modules/webaudio/audio_context.cc
-index 6185684c09623dc44afcdba426f2922eb3a8c899..9b830e69790c32ef2b7f0798764645684b5c6b2b 100644
+index 6185684c09623dc44afcdba426f2922eb3a8c899..0ec044bf7f75c5bd4b2c359a7fc392144e23bcd8 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_context.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_context.cc
 @@ -37,6 +37,7 @@
@@ -77,3 +77,18 @@ index 6185684c09623dc44afcdba426f2922eb3a8c899..9b830e69790c32ef2b7f079876464568
    }
  
    // At the beginning of every render quantum, try to update the internal
+@@ -2134,6 +2164,14 @@ void AudioContext::UpdateV8SinkId() {
+ 
+ bool AudioContext::IsValidSinkDescriptor(
+     const WebAudioSinkDescriptor& sink_descriptor) {
++  // MoltBrowser: MoltNet's default output device always exists, even on a
++  // machine that lists none (moltnet_media.h).
++  if (sink_descriptor.Type() ==
++          WebAudioSinkDescriptor::AudioSinkType::kAudible &&
++      sink_descriptor.SinkId().IsEmpty() &&
++      molt_fingerprinting::HasUniformDefaultAudioOutput()) {
++    return true;
++  }
+   return sink_descriptor.Type() ==
+              WebAudioSinkDescriptor::AudioSinkType::kSilent ||
+          output_device_ids_.Contains(sink_descriptor.SinkId());
