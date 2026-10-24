@@ -264,8 +264,8 @@ const SimpleFontData* GetLocalFontFaceData(
     }
     const AtomicString family =
         face.sampled()
-            ? AtomicString(unique_name.GetString().Left(
-                  base::checked_cast<wtf_size_t>(face.prefix_length)))
+            ? AtomicString(unique_name.GetString().substr(
+                  0, base::checked_cast<wtf_size_t>(face.prefix_length)))
             : AtomicString::FromUtf8(face.listed);
     const SimpleFontData* font_data = font_cache.GetFontData(
         description, family, AlternateFontName::kNoAlternate);

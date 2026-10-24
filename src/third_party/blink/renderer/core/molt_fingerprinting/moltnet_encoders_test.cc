@@ -4,6 +4,7 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/system/sys_info.h"
 #include "media/base/media_types.h"
@@ -19,13 +20,15 @@ namespace blink::molt_fingerprinting {
 namespace {
 
 // The video types MediaRecorder's isTypeSupported() checks.
-constexpr media::VideoType kTypes[] = {
-    {media::VideoCodec::kH264, media::H264PROFILE_BASELINE},
-    {media::VideoCodec::kH264, media::H264PROFILE_HIGH},
-    {media::VideoCodec::kAV1, media::AV1PROFILE_PROFILE_MAIN},
-    {media::VideoCodec::kAV1, media::AV1PROFILE_PROFILE_PRO},
-    {media::VideoCodec::kHEVC, media::HEVCPROFILE_MAIN},
-};
+std::vector<media::VideoType> Types() {
+  return {
+      {media::VideoCodec::kH264, media::H264PROFILE_BASELINE},
+      {media::VideoCodec::kH264, media::H264PROFILE_HIGH},
+      {media::VideoCodec::kAV1, media::AV1PROFILE_PROFILE_MAIN},
+      {media::VideoCodec::kAV1, media::AV1PROFILE_PROFILE_PRO},
+      {media::VideoCodec::kHEVC, media::HEVCPROFILE_MAIN},
+  };
+}
 
 // kUniform can't be configured here (it pins the process's time zone and
 // locale for every later test), so MoltNet is simulated with
@@ -48,7 +51,7 @@ TEST_F(MoltNetEncodersTest, NormalWindowsUseThePlatform) {
     ResetForTesting();
     Configure(mode);
     EXPECT_TRUE(MediaRecorderUsesPlatformEncoders());
-    for (const media::VideoType& type : kTypes) {
+    for (const media::VideoType& type : Types()) {
       EXPECT_EQ(IsMediaRecorderVideoTypeSupported(type),
                 media::IsEncoderSupportedVideoType(type));
     }
@@ -58,7 +61,7 @@ TEST_F(MoltNetEncodersTest, NormalWindowsUseThePlatform) {
 TEST_F(MoltNetEncodersTest, MoltNetUsesTheBuildsEncoders) {
   SetMoltNetEncodersForTesting(true);
   EXPECT_FALSE(MediaRecorderUsesPlatformEncoders());
-  for (const media::VideoType& type : kTypes) {
+  for (const media::VideoType& type : Types()) {
     EXPECT_EQ(IsMediaRecorderVideoTypeSupported(type),
               media::IsEncoderBuiltInVideoType(type));
   }
