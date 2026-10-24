@@ -274,6 +274,13 @@ source_set("base") {
     "mime_util.h",
     "mime_util_internal.cc",
     "mime_util_internal.h",
+
+    # MoltBrowser: media that look and sound the same on every machine
+    # (MoltNet's renderers).
+    "molt_portable_media.cc",
+    "molt_portable_media.h",
+    "molt_portable_scale.cc",
+    "molt_portable_scale.h",
     "multi_channel_resampler.cc",
     "multi_channel_resampler.h",
     "null_video_sink.cc",
@@ -430,6 +437,9 @@ source_set("base") {
     "//net",
     "//skia",
     "//third_party/libyuv",
+
+    # MoltBrowser: molt_portable_media.cc sets libopus's portable mode.
+    "//third_party/opus",
     "//third_party/widevine/cdm:headers",
     "//ui/display",
     "//ui/events",
@@ -667,6 +677,10 @@ source_set("unit_tests") {
     "media_serializers_unittest.cc",
     "metadata_track_unittest.cc",
     "mime_util_unittest.cc",
+
+    # MoltBrowser.
+    "molt_portable_media_unittest.cc",
+    "molt_portable_scale_unittest.cc",
     "multi_channel_resampler_unittest.cc",
     "null_video_sink_unittest.cc",
     "offloading_audio_encoder_unittest.cc",
