@@ -424,6 +424,17 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `chrome/browser/ui/autofill/chrome_autofill_client.cc` | `GetCrowdsourcingManager()` and `GetAddressNormalizer()` ask `molt_net_autofill.h` first (only these two functions were type-checked here: the checker can't generate `components/personal_context/proto/features/at_memory.equal.h`, a proto_extras plugin output the file needs) | moltnet-live |
 | `chrome/browser/payments/chrome_payment_request_delegate.cc` | `GetAddressNormalizer()` and `GetRegionDataLoader()` ask `molt_net_autofill.h` first | moltnet-live |
 | `chrome/browser/molt_ai/tor/molt_net_autofill.cc` (new target `:autofill`, a public dep of `:tor`) | subclasses `autofill::AutofillCrowdsourcingManager` (overrides the two virtual `Start*Request()` and inherits its constructors), and builds an `AddressNormalizerImpl` and a `RegionDataLoaderImpl` on a `::i18n::addressinput::Source` of its own and libaddressinput's `NullStorage`; deps `//components/autofill/core/browser`, `//third_party/libaddressinput` | moltnet-live |
+| `chrome/browser/net/proxy_config_monitor.{h,cc}` | now asks `MoltNetRouting::ProxyConfigFor()` (replaces `MayApplyProxyConfig()`), and holds a `base::CallbackListSubscription` from `MoltNetRouting::AddIdentityEndedCallback()` that sends `RefuseAllProxyConfig()` to every `ProxyConfigClient` of its MoltNet profile | moltnet-policy |
+| `chrome/browser/molt_ai/tor/molt_net_routing.{h,cc}` | `EndIdentity()`/`HasIdentityEnded()` (profile `SupportsUserData`), `AddIdentityEndedCallback()` (`base::RepeatingCallbackList<void(Profile*)>`), `RefuseAllProxyConfig()` (`ProxyConfig::ProxyRules::Type::PROXY_LIST` with an empty list, `ProxyBypassRules::AddRulesToSubtractImplicit()`, a new traffic annotation `moltnet_ended_identity`), `IncognitoPolicyError()` (`IncognitoModePrefs::GetIncognitoModeType()`); the language write is gone (no `//components/language` dep) | moltnet-policy |
+| `chrome/browser/molt_ai/tor/molt_net_window.cc` | ending an identity: `UnloadController::From(browser)->set_force_skip_warning_user_on_close(true)`, `DevToolsAgentHost::GetOrCreateAll()` + `ForceDetachAllSessions()`, `RenderProcessHost::Shutdown(content::RESULT_CODE_KILLED)`, `TabStripModel::CloseAllTabs()`; new dep `//content/public/common` | moltnet-policy |
+| `chrome/browser/molt_ai/tor/molt_net_pref_isolation.{h,cc}` | `CreateMoltNetPrefService()` takes the `ValueMapPrefStore` it puts in the extension slot; `FixMoltNetLanguages()` writes into it (`WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS`); new deps `:language_policy` and `//chrome/common/molt_ai/fingerprinting` (neither depends on `//chrome/browser`, so `//chrome/browser/profiles:misc` keeps no cycle) | moltnet-policy |
+| `chrome/browser/chrome_content_browser_client.cc` | `AppendExtraCommandLineSwitches()` and `ShouldReduceAcceptLanguage()` pass the `ReduceAcceptLanguageEnabled` value through `ReduceAcceptLanguageEnabledFor()` (`molt_net_language_policy.h`, `:language_policy`) | moltnet-policy |
+| `net/socket/client_socket_pool_manager.{h,cc}` | new virtual `ClientSocketPoolManager::GetSocketPoolForSite()` (default: `GetSocketPool()`); `InitSocketPoolHelper()` asks `HttpNetworkSession::GetSocketPoolForSite()` with the group's network anonymization key | moltnet-policy |
+| `net/socket/client_socket_pool_manager_impl.{h,cc}` | a constructor argument `molt_per_site_pool_size` (default 0), a `std::unique_ptr<MoltPerSiteSocketPools>`, the override, and the flush, idle-socket and info calls forwarded to it | moltnet-policy |
+| `net/socket/transport_client_socket_pool.h` | inline `MoltIsUnused()` (reads `group_map_`, `pending_callback_map_`, `higher_pools_`). Widely included: another large `//net` rebuild | moltnet-policy |
+| `net/socket/molt_per_site_socket_pool_policy.h`, `net/socket/molt_per_site_socket_pools.h` (new, header-only) | in no target's `sources`, like `molt_uniform_network_state.h`; if `gn check` complains, list them in `//net:net` | moltnet-policy |
+| `net/http/http_network_session.{h,cc}` | `HttpNetworkSessionParams::molt_per_site_socket_pool_size`, passed to both pool managers; `GetSocketPoolForSite()` | moltnet-policy |
+| `services/network/public/mojom/network_context.mojom`, `services/network/network_context.cc` | `[MinVersion=1] uint32 molt_per_site_socket_pool_size`, copied into the session params; set to 128 for MoltNet by `molt_net_network_context_policy.h` (which now includes the `net/` policy header) | moltnet-policy |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -547,6 +558,18 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `public_deps` and add it to `//chrome/browser/ui` and
   `//chrome/browser/payments:impl` instead. Checkdeps: the tor `DEPS`
   file allows `molt_net_autofill.cc` its two libaddressinput headers.
+  New in moltnet-policy: `chrome/browser/prefs/incognito_mode_prefs.cc`
+  includes `molt_net_profile_id.h` and
+  `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc`
+  includes `molt_net_incognito_parity.h` (both header-only, in `:tor` and
+  `:incognito_parity_policy`); `chrome_content_browser_client.cc` includes
+  `molt_net_language_policy.h` (new header-only `:language_policy`, a
+  public dep of `:tor`); `:pref_isolation` now depends on
+  `:language_policy` and `//chrome/common/molt_ai/fingerprinting`;
+  `molt_net_network_context_policy.h` and
+  `client_socket_pool_manager_impl.h` include the new `net/socket/molt_*`
+  headers (§4.2); `molt_ai_unittests` uses `net/spdy/spdy_test_util_common.h`
+  (`//net:test_support`, already a dep).
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -582,6 +605,8 @@ flags the include, add the dep there.
 | `chrome/browser/media/webrtc/webrtc_logging_controller.cc` | `IsWebRtcTextLogAllowed` false for MoltNet | rebase 156 |
 | `chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc` | `ReduceAcceptLanguageService` gets `is_incognito` for MoltNet | rebase 156 |
 | `chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h` (MoltBrowser's own) | three more pinned prefs; `molt_net_pref_isolation_unittest.cc` now needs `//components/autofill/core/common` and `//components/universal_optout` | rebase 156 |
+| `chrome/browser/prefs/incognito_mode_prefs.cc` (imported from 156) | `CanOpenBrowser()`: a MoltNet profile may open windows unless Incognito is off (forced Incognito no longer refuses it) | moltnet-policy |
+| `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc` (imported from 156) | the Incognito URL lists for `GetsIncognitoProtections()` profiles instead of `IsIncognitoProfile()` | moltnet-policy |
 
 ## 5. Unit tests
 
@@ -648,6 +673,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
+  | `MoltNetLanguagesTest` (real `LanguagePrefs`, a managed `ForcedLanguages`), `MoltNetIsolationTest.FixedLanguageNamesMatchChromiumsConstants`, `MoltNetPrefServiceTest.MoltNetWritesStayInMoltNet` (changed), `MoltNetSocketPoolsTest` (real `HttpNetworkSession` and pools, `MOCK_TIME`); built standalone only: `MoltNetLanguagePolicyTest`, `MoltNetSocketPoolPolicyTest`, `MoltNetLivePolicyTest`'s Incognito and ended-identity cases | moltnet-policy |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -705,6 +731,9 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `*SSLClientCertificateSelector*:*ClientCertificate*` | MoltNet 156 |
 | `unit_tests` | `ProxyConfigMonitor*:PrefProxyConfigTracker*:ProfileNetworkContextService*:ChromeAutofillClient*:*PaymentRequest*` | moltnet-live |
 | `components_unittests` | `PrefProxyConfigTracker*:AutofillCrowdsourcingManager*:AddressNormalizer*:RegionDataLoader*` | moltnet-live |
+| `net_unittests` | `ClientSocketPoolManager*:TransportClientSocketPool*:HttpNetworkSession*:HttpStreamFactory*:HttpNetworkTransactionTest.*:WebSocket*` (no MoltNet params: one pool per proxy, as before) | moltnet-policy |
+| `unit_tests` | `IncognitoModePrefs*:*PolicyBlocklist*:ProxyConfigMonitor*:ChromeContentBrowserClient*:*ReduceAcceptLanguage*` | moltnet-policy |
+| `components_unittests` | `LanguagePrefs*:IncognitoModePolicyHandler*:*URLBlocklist*` | moltnet-policy |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -731,6 +760,13 @@ pass except where the table below says otherwise (verify the filters).
   the ⋮ menu and a video's controls (Cast), then quit (from #21, #23).
   *Expected:* no `DCHECK` or `CHECK` failure (`MediaRouterFactory` CHECKs
   `MediaRouterEnabled()`).
+- [ ] The same build, MoltNet's per-site pools and ended identities
+  (moltnet-policy): open a dozen sites in MoltNet tabs, close them, wait
+  two minutes and open another (unused per-site pools are dropped then),
+  then New Identity with pages still loading, and with DevTools open on a
+  page that asks "Leave site?". *Expected:* no `CHECK` in
+  `~TransportClientSocketPool()` (`higher_pools_`, `group_map_`) or in
+  `UnloadController`/`BrowserCloseManager`, and no MoltNet window left.
 
 ## 6. Fuzzers
 
@@ -1227,10 +1263,46 @@ macOS, and for the manual steps everywhere:
   same error; after removing the policy (and reloading policies) MoltNet
   opens. Repeat with `ProxyOverrideRules` (any rule), `WebRtcIPHandling`
   and `PartitionedBlobUrlUsage` = false. With DevTools open on a MoltNet
-  page whose "Leave site?" prompt you don't answer, that window stays
-  open, but its requests still go to Tor (the test server sees them only
-  from a Tor exit). A change only the regular profile sees (an extension
-  that sets the proxy, allowed in Incognito) leaves MoltNet open.
+  page whose "Leave site?" prompt you don't answer, that window closes
+  too (moltnet-policy). A change only the regular profile sees (an
+  extension that sets the proxy, allowed in Incognito) leaves MoltNet
+  open.
+- [ ] Ending an identity with something open (moltnet-policy; §4 steps 7
+  and 9), on macOS and Linux: in MoltNet windows open DevTools on a page
+  (docked in one window, undocked in another), an `alert(1)`, a sign-in
+  prompt (a `401` with `WWW-Authenticate: Basic`), print preview, a
+  download's "Save as" dialog ("Ask where to save each file" on), an
+  `<input type=file>` chooser and a page that asks "Leave site?", then
+  press *New Identity*. *Expected:* every MoltNet window and DevTools
+  window is gone within about two seconds (a forced close may take a
+  little longer; never more than about ten), the new window opens, and a
+  test page that fetched a URL every second sends nothing more once the
+  old windows start closing (its last requests come from a Tor exit).
+  Repeat by setting `ProxyMode` to `direct` instead of New Identity.
+- [ ] Incognito's availability (moltnet-policy; §4 step 9), on Windows
+  (registry), macOS (configuration profile) and Linux (the kit, or a file
+  in `/etc/chromium/policies/managed/`): `IncognitoModeAvailability` = 1
+  set while MoltNet is open closes it with "Incognito is turned off
+  (IncognitoModeAvailability or parental controls), and MoltNet windows
+  follow it", and MoltNet then refuses to open with that message; with
+  `IncognitoModeUrlAllowlist` = a test site as well, MoltNet opens and only
+  that site loads; = 2: MoltNet stays open and opens (regular windows
+  don't); `IncognitoModeUrlBlocklist` = a test site: it doesn't load in
+  MoltNet. A supervised (Family Link) profile: MoltNet doesn't open.
+- [ ] Language policies (moltnet-policy; §4 step 9): with `ForcedLanguages`
+  = `["ja"]` and `ReduceAcceptLanguageEnabled` = false set while MoltNet
+  is open, and with `--accept-lang=fr` at launch: MoltNet stays open and its
+  pages keep `navigator.languages` `["en-US", "en"]` and `Accept-Language`
+  `en-US,en;q=0.9` (or `en-US` with Reduce Accept-Language on), also after
+  visiting a few pages in other languages; regular windows follow the
+  policy.
+- [ ] Per-site connection limits (moltnet-policy; MOLTNET_COMPLIANCE.md §2
+  *Shared network state*): in a MoltNet window, a test page on site A that
+  opens 200 long-polling requests to 40 hosts of its own, and a page on
+  site B in another tab: B loads at once (in a regular window with a proxy
+  set, B waits behind A's requests). `chrome://net-internals/#sockets`
+  lists MoltNet's pools as `socks5://127.0.0.1:<port> (per site)`, never
+  with a site's name.
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1317,6 +1389,19 @@ Mac; use a real Linux host.
     whether the "MoltNet windows closed" dialog over the
     `chrome://molt-net/` tab gets in the way of DevTools-pipe calls (if so,
     note it; the checks only need the targets list).
+  - `identity.language_policy_ignored`, `identity.incognito_off_closes`
+    and `identity.incognito_forced_allows` pass (moltnet-policy, phases
+    `policy_live` and `policy_live_incognito`). An ERROR in the first that
+    says the regular page didn't change either means the policy didn't
+    arrive (or `ReduceAcceptLanguage` didn't take effect): look at
+    `chrome://policy` in that launch. A FAIL in the second with a
+    `devtools://` page left means the DevTools window survived (check
+    `DetachDevTools()` in `molt_net_window.cc`); with the page left, the
+    forced close didn't run. First-run questions: whether
+    `--auto-open-devtools-for-tabs` opens DevTools undocked for the MoltNet
+    tab with the kit's seeded dock state (`devtools_own_window` in the
+    phase data), and whether the "Leave site?" prompt is reported
+    (`dialog`); the check doesn't depend on either.
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet
@@ -1577,11 +1662,13 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   browser-wide trust change plus mixed-content patches; until then
   `http://` onion sites show "Not secure" and some features stay off. Ship
   v0.3.0 with the documented gap? (from #6; MOLTNET_COMPLIANCE.md §5.7)
-- [ ] **Incognito policies in MoltNet.** Turning Incognito off, the
-  Incognito-only URL blocklist, extensions required for Incognito, and
-  closing a supervised user's Incognito windows don't cover MoltNet
-  windows (forcing Incognito does stop MoltNet). Apply them to MoltNet, or
-  document? (from #23; MOLTNET_COMPLIANCE.md §5.7)
+- [ ] **Incognito policies in MoltNet.** Turning Incognito off (also for
+  a supervised user) and the Incognito URL lists now cover MoltNet, and
+  forcing Incognito no longer stops MoltNet (moltnet-policy;
+  MOLTNET_COMPLIANCE.md §2 *Incognito's availability*). Still open:
+  extensions required for Incognito and the "Incognito" conditions of
+  data-control rules don't cover MoltNet windows. Apply them too, or keep
+  them documented? (from #23; MOLTNET_COMPLIANCE.md §5.7)
 - [ ] **Third-party audit and bug bounty**: "before 1.0" on the roadmap;
   MOLTNET_COMPLIANCE.md §3 lists the audit as not done. Choose an auditor
   and scope (MoltNet first?) and a bounty platform (from ROADMAP.md).

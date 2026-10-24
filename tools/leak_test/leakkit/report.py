@@ -819,12 +819,163 @@ def _host_is(host, names):
     return any(host == n or host.endswith('.' + n) for n in names)
 
 
+def _language_policy_check(phase):
+    """policy_live step 3: language policies set while MoltNet is open
+    change the regular page's languages, not MoltNet's."""
+    doc = 'MOLTNET_COMPLIANCE.md §1.3, §4 step 9'
+    title = ('A language policy set while MoltNet is open (ForcedLanguages, '
+             'ReduceAcceptLanguageEnabled) changes neither navigator.languages '
+             'nor Accept-Language in MoltNet, and MoltNet stays open')
+    cid = 'identity.language_policy_ignored'
+    if phase is None or phase.get('skipped'):
+        return check(cid, 'identity', title, SKIP,
+                     [(phase or {}).get('skipped') or 'not run'], doc)
+    lang = (phase.get('data') or {}).get('languages')
+    if not lang:
+        return check(cid, 'identity', title,
+                     ERROR if phase.get('error') else SKIP,
+                     [phase.get('error') or 'MoltNet did not open again '
+                      'for this step'], doc)
+
+    def show(v):
+        return json.dumps(v, sort_keys=True)[:200]
+    ev = ['policy %s' % show(lang.get('policy'))]
+    for who in ('moltnet', 'regular'):
+        ev.append('%s page: before %s, after %s' % (
+            who, show(lang.get(who + '_before')),
+            show(lang.get(who + '_after'))))
+    m0, m1 = lang.get('moltnet_before'), lang.get('moltnet_after')
+    r0, r1 = lang.get('regular_before'), lang.get('regular_after')
+    status = PASS
+    if any(not isinstance(v, dict) or v.get('error')
+           for v in (m0, m1, r0, r1)):
+        status = ERROR
+        ev.append('a page did not load or answer')
+    elif r0 == r1:
+        status = ERROR
+        ev.append('the regular page did not change either: the policy did '
+                  'not arrive, so this proves nothing')
+    elif m0 != m1:
+        status = FAIL
+        ev.append('MoltNet\'s page saw different languages after the policy')
+    else:
+        ev.append('the regular page changed and MoltNet\'s did not')
+    forced = [str(x).lower() for x in
+              (lang.get('policy') or {}).get('ForcedLanguages') or []]
+    for v in (m0, m1):
+        if not isinstance(v, dict):
+            continue
+        seen = [str(x).lower() for x in v.get('languages') or []]
+        header = str(v.get('accept_language') or '').lower()
+        if any(f in seen or header.startswith(f) or (',' + f) in header
+               for f in forced):
+            status = FAIL
+            ev.append('a forced language reached MoltNet: %s' % show(v))
+    if lang.get('pages_kept', 0) < lang.get('pages_before', 0):
+        status = FAIL if status == PASS else status
+        ev.append('MoltNet closed (%s of %s page(s) left); a language policy '
+                  'is not a reason to close it' % (lang.get('pages_kept'),
+                                                   lang.get('pages_before')))
+    return check(cid, 'identity', title, status, ev, doc)
+
+
+def _incognito_policy_checks(manifest):
+    """Phase policy_live_incognito: IncognitoModeAvailability 1 set while
+    MoltNet is open closes every MoltNet window (DevTools in a window of its
+    own and an unanswered "Leave site?" included), MoltNet refuses to open
+    until the policy is gone; 2 keeps it open and lets it open."""
+    phase = _phase(manifest, 'policy_live_incognito')
+    doc = 'MOLTNET_COMPLIANCE.md §2 Incognito, §4 step 9'
+    t_off = ('IncognitoModeAvailability 1 set while MoltNet is open closes '
+             'every MoltNet window, its DevTools window and a page waiting '
+             'on "Leave site?" included; MoltNet then refuses to open, saying '
+             'why, until the policy is gone')
+    t_forced = ('IncognitoModeAvailability 2 (Incognito only) keeps MoltNet '
+                'open and lets it open')
+    off, forced = 'identity.incognito_off_closes', \
+        'identity.incognito_forced_allows'
+    if phase is None or phase.get('skipped'):
+        why = [(phase or {}).get('skipped') or 'not run']
+        return [check(off, 'identity', t_off, SKIP, why, doc),
+                check(forced, 'identity', t_forced, SKIP, why, doc)]
+    data = phase.get('data') or {}
+
+    def show(v):
+        return json.dumps(v, sort_keys=True)[:200]
+    if 'off_written' not in data:
+        err = [phase.get('error') or 'the policy was not written']
+        return [check(off, 'identity', t_off, ERROR, err, doc),
+                check(forced, 'identity', t_forced, ERROR, err, doc)]
+    ev, status = [], PASS
+    ev.append('flags: %s' % ' '.join(data.get('flags') or []))
+    ev.append('%s MoltNet page(s) open, %s of them DevTools (in a window of '
+              'its own: %s); "Leave site?" prompt: %s' % (
+                  data.get('moltnet_pages_before'),
+                  data.get('devtools_pages'), data.get('devtools_own_window'),
+                  data.get('dialog') or 'not reported'))
+    if not data.get('moltnet_pages_before') or not data.get('devtools_pages'):
+        status = ERROR
+        ev.append('expected a MoltNet page with DevTools open before the '
+                  'change')
+    closed = data.get('closed_after_s')
+    if closed is None:
+        status = FAIL
+        ev.append('still open 60 s after the policy was written: %s' %
+                  show(data.get('pages_left')))
+    else:
+        ev.append('every one of them closed %.1f s after the policy was '
+                  'written' % closed)
+    res = data.get('reopen_off') or {}
+    err = str(res.get('error') or '')
+    ev.append('openWindow with the policy -> %s; MoltNet pages: %s' % (
+        show(res), data.get('pages_off')))
+    if not err or err.startswith('harness:') or data.get('pages_off') or \
+            'incognito' not in err.lower():
+        status = FAIL if status == PASS else status
+        ev.append('expected MoltNet to refuse to open, naming Incognito')
+    again = data.get('reopen_after_off') or {}
+    ev.append('openWindow once the policy was removed -> %s; a MoltNet page '
+              'opened: %s' % (show(again), data.get('reopened_after_off')))
+    if again.get('error') or not data.get('reopened_after_off'):
+        status = FAIL if status == PASS else status
+        ev.append('expected MoltNet to open again without the policy')
+    if phase.get('error'):
+        ev.append('harness: ' + phase['error'])
+    checks = [check(off, 'identity', t_off, status, ev, doc)]
+
+    ev, status = [], PASS
+    if 'forced_written' not in data:
+        checks.append(check(forced, 'identity', t_forced, ERROR,
+                            [phase.get('error') or 'not reached'], doc))
+        return checks
+    ev.append('%s of %s MoltNet page(s) still open 12 s after the policy was '
+              'written' % (data.get('pages_kept_forced'),
+                           data.get('pages_before_forced')))
+    if not data.get('pages_before_forced'):
+        status = ERROR
+        ev.append('no MoltNet page was open before the change')
+    elif data.get('pages_kept_forced', 0) < data['pages_before_forced']:
+        status = FAIL
+        ev.append('MoltNet closed although Incognito is available')
+    res = data.get('open_forced') or {}
+    ev.append('openWindow with the policy -> %s; a MoltNet page opened: %s' % (
+        show(res), data.get('opened_forced')))
+    if res.get('error') or not data.get('opened_forced'):
+        status = FAIL if status == PASS else status
+        ev.append('expected MoltNet to open')
+    if phase.get('error'):
+        ev.append('harness: ' + phase['error'])
+    checks.append(check(forced, 'identity', t_forced, status, ev, doc))
+    return checks
+
+
 def _policy_live_checks(manifest, tr):
     """The policy_live phase: a proxy policy set while MoltNet is open
     closes its windows, nothing leaves outside Tor meanwhile, MoltNet then
     refuses to open and opens again once the policy is gone; and no
     Autofill server query from the MoltNet page, with the queries turned
-    on for that launch."""
+    on for that launch. Then language policies, which MoltNet ignores, and
+    (phase policy_live_incognito) the Incognito availability policy."""
     phase = _phase(manifest, 'policy_live')
     doc9 = 'MOLTNET_COMPLIANCE.md §2 Fail-closed, §4 step 9'
     doc20 = 'MOLTNET_COMPLIANCE.md §2 Requests outside Tor, §4 step 20'
@@ -838,7 +989,9 @@ def _policy_live_checks(manifest, tr):
         return [check('identity.policy_change_closes', 'identity', t_close,
                       SKIP, why, doc9),
                 check('net.autofill_server', 'network', t_autofill, SKIP,
-                      why, doc20)]
+                      why, doc20),
+                _language_policy_check(phase)] + \
+            _incognito_policy_checks(manifest)
     data = phase.get('data') or {}
     start, end = phase.get('start') or 0, phase.get('end') or 0
     events = [e for e in tr.get('events') or []
@@ -930,7 +1083,8 @@ def _policy_live_checks(manifest, tr):
                       'during the phase' % ', '.join(AUTOFILL_HOSTS))
         autofill = check('net.autofill_server', 'network', t_autofill,
                          status, ev, doc20)
-    return [close, autofill]
+    return [close, autofill, _language_policy_check(phase)] + \
+        _incognito_policy_checks(manifest)
 
 
 def _regular_nav_check(manifest):

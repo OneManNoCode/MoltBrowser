@@ -26,7 +26,8 @@
 //
 // Kept: what changes inside the MoltNet session (in memory, gone with the
 // profile), and what MoltNet itself sets afterwards (molt_net_routing.cc:
-// proxy, WebRTC policy, prediction, HTTPS-Only, en-US languages).
+// proxy, WebRTC policy, prediction, HTTPS-Only). MoltNet's languages are
+// fixed above the profile's own store (molt_net_language_policy.h).
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_PREF_ISOLATION_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_PREF_ISOLATION_POLICY_H_
@@ -69,8 +70,12 @@ inline constexpr auto kMoltNetPinnedPrefNames =
         // decides. (Incognito writes it through to the regular profile;
         // MoltNet's pref service writes nothing through.)
         "profile.cookie_controls_mode",
-        // Accept-Language and navigator.languages. MoltNet then sets en-US
-        // itself while fingerprinting protection is on.
+        // Accept-Language and navigator.languages. MoltNet's pref service
+        // then also holds MoltNet's own list (en-US while fingerprinting
+        // protection is on) in the store above this one, where neither
+        // LanguagePrefs (the ForcedLanguages policy, the user's selected
+        // languages) nor anything else can change it
+        // (molt_net_language_policy.h).
         "intl.accept_languages",
         // The encoding of pages that don't declare one (document.characterSet).
         "intl.charset_default",

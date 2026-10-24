@@ -211,6 +211,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   server (no form queries, no votes) and download no address formats;
   fields are still recognised on your device, and saved addresses and
   passwords still fill.
+- MoltNet hardening: when an identity ends (New Identity, or a setting
+  MoltNet can't accept while it is open), its connection refuses every
+  request from that moment, and its windows close with their DevTools
+  windows, whatever they show ("Leave site?", an alert, a sign-in prompt,
+  print preview, a file dialog). MoltNet follows Incognito's availability:
+  it doesn't open, and closes, while an administrator or parental controls
+  turn Incognito off, still opens while only Incognito is allowed, and
+  applies Incognito's URL lists. Language settings and language policies
+  no longer reach MoltNet pages, and each site gets connection limits of
+  its own there, so one site's connections can't hold up another's.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

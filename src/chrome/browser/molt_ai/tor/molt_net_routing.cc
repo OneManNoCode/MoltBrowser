@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/callback_list.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -22,11 +23,10 @@
 #include "chrome/browser/molt_ai/tor/molt_net_proxy_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
 #include "chrome/common/pref_names.h"
-#include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/proxy_config/pref_proxy_config_tracker_impl.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
@@ -42,8 +42,12 @@
 #include "net/base/proxy_server.h"
 #include "net/base/schemeful_site.h"
 #include "net/http/http_cache.h"
+#include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_config_with_annotation.h"
+#include "net/proxy_resolution/proxy_host_matching_rules.h"
 #include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_list.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/proxy_lookup_client.mojom.h"
@@ -79,13 +83,45 @@ constexpr char kLegacyDohModeOff[] = "off";
 // the network service (no request is made).
 constexpr char kRoutingProbeUrl[] = "https://check.torproject.org/";
 
-// Uniform language for every MoltNet window (fingerprinting protection). Off-
-// the-record profiles only send the first entry, so pages see "en-US" in both
-// Accept-Language and navigator.language(s).
-constexpr char kMoltNetAcceptLanguages[] = "en-US,en";
-
 // The current MoltNet OTR profile id, attached to the ORIGINAL profile.
 const void* const kMoltNetProfileDataKey = &kMoltNetProfileDataKey;
+
+// Set on a MoltNet profile whose identity has ended (EndIdentity()).
+const void* const kMoltNetIdentityEndedKey = &kMoltNetIdentityEndedKey;
+
+base::RepeatingCallbackList<void(Profile*)>& IdentityEndedCallbacks() {
+  static base::NoDestructor<base::RepeatingCallbackList<void(Profile*)>>
+      callbacks;
+  return *callbacks;
+}
+
+// The proxy configuration an ended identity's network context gets. It
+// sends nothing; Chromium's tools want every configuration annotated.
+constexpr net::NetworkTrafficAnnotationTag kMoltNetEndedIdentityAnnotation =
+    net::DefineNetworkTrafficAnnotation("moltnet_ended_identity", R"(
+      semantics {
+        sender: "MoltNet"
+        description:
+          "The proxy configuration of a MoltNet identity that has ended "
+          "(New Identity, or a setting MoltNet can't accept while its "
+          "windows are open). It lists no proxy and no direct connection, "
+          "so that identity's network context refuses every request while "
+          "its windows close."
+        trigger: "New Identity, or a policy change while MoltNet is open."
+        data: "None: no request is sent."
+        destination: OTHER
+        destination_other: "None: no request is sent."
+        internal {
+          contacts { email: "security@geneye.ai" }
+        }
+        user_data { type: NONE }
+        last_reviewed: "2026-10-24"
+      }
+      policy {
+        cookies_allowed: NO
+        setting: "None: it only stops requests."
+        policy_exception_justification: "Sends nothing."
+      })");
 
 struct MoltNetProfileData : public base::SupportsUserData::Data {
   explicit MoltNetProfileData(const Profile::OTRProfileID& otr_id)
@@ -202,11 +238,29 @@ bool BlobUrlsPartitioned(PrefService* prefs) {
   return pref->GetValue()->is_bool() && pref->GetValue()->GetBool();
 }
 
+// Whether a standard Incognito window may open for |original|, as Chromium
+// decides it (molt_net_live_policy.h): the IncognitoModeAvailability policy
+// (and IncognitoEnabled), supervision and the platform's parental controls,
+// and Enterprise Isolated Mode replacing Incognito.
+MoltNetProfileSettings::Incognito ReadIncognito(const Profile* original) {
+  switch (IncognitoModePrefs::GetIncognitoModeType(original)) {
+    case IncognitoModePrefs::IncognitoModeType::kStandard:
+      return MoltNetProfileSettings::Incognito::kStandard;
+    case IncognitoModePrefs::IncognitoModeType::kEnterprise:
+      return MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode;
+    case IncognitoModePrefs::IncognitoModeType::kNone:
+    case IncognitoModePrefs::IncognitoModeType::kNumTypes:
+      break;
+  }
+  return MoltNetProfileSettings::Incognito::kOff;
+}
+
 // What the settings check reads (molt_net_live_policy.h). With
 // |socks_port|, MoltNet's proxy must also point at that port.
 MoltNetProfileSettings ReadMoltNetSettings(
-    PrefService* prefs,
+    Profile* moltnet_profile,
     std::optional<uint16_t> socks_port) {
+  PrefService* prefs = moltnet_profile->GetPrefs();
   MoltNetProfileSettings settings;
   settings.proxy = ReadProfileProxyPrefs(prefs);
   settings.proxy_is_moltnets_own =
@@ -214,6 +268,7 @@ MoltNetProfileSettings ReadMoltNetSettings(
                  : MoltNetsOwnSocksPort(prefs).has_value();
   settings.leak_controls_in_place = LeakPrefsInPlace(prefs);
   settings.blob_urls_partitioned = BlobUrlsPartitioned(prefs);
+  settings.incognito = ReadIncognito(moltnet_profile->GetOriginalProfile());
   return settings;
 }
 
@@ -325,18 +380,28 @@ std::string MoltNetRouting::SettingsError(Profile* moltnet_profile,
   if (!IsMoltNetProfile(moltnet_profile)) {
     return "Not a MoltNet profile";
   }
-  return MoltNetSettingsError(CheckMoltNetSettings(
-      ReadMoltNetSettings(moltnet_profile->GetPrefs(), socks_port)));
+  return MoltNetSettingsError(
+      CheckMoltNetSettings(ReadMoltNetSettings(moltnet_profile, socks_port)));
 }
 
 // static
-bool MoltNetRouting::MayApplyProxyConfig(
+std::string MoltNetRouting::IncognitoPolicyError(Profile* profile) {
+  if (!profile) {
+    return "No profile";
+  }
+  return MoltNetSettingsError(
+      CheckMoltNetIncognito(ReadIncognito(profile->GetOriginalProfile())));
+}
+
+// static
+std::optional<net::ProxyConfigWithAnnotation> MoltNetRouting::ProxyConfigFor(
     Profile* profile,
     const net::ProxyConfigWithAnnotation& config,
     bool available) {
   const bool is_moltnet = IsMoltNetProfile(profile);
+  const bool ended = is_moltnet && HasIdentityEnded(profile);
   bool is_moltnets_own = false;
-  if (is_moltnet && available) {
+  if (is_moltnet && !ended && available) {
     // What MoltNet itself wrote, whatever outranks it: the user store's
     // value, converted the way PrefProxyConfigTrackerImpl converts the
     // effective one. Only a value MoltNetSocksPort() accepts counts.
@@ -351,7 +416,60 @@ bool MoltNetRouting::MayApplyProxyConfig(
         // override rules, dynamic routes.
         config.value().Equals(expected.value());
   }
-  return MoltNetAcceptsProxyConfig(is_moltnet, available, is_moltnets_own);
+  switch (MoltNetProxyConfigActionFor(is_moltnet, ended, available,
+                                      is_moltnets_own)) {
+    case MoltNetProxyConfigAction::kApply:
+      return config;
+    case MoltNetProxyConfigAction::kHoldBack:
+      return std::nullopt;
+    case MoltNetProxyConfigAction::kRefuseAll:
+      return RefuseAllProxyConfig();
+  }
+  return std::nullopt;
+}
+
+// static
+net::ProxyConfigWithAnnotation MoltNetRouting::RefuseAllProxyConfig() {
+  net::ProxyConfig config;
+  // A proxy list, and an empty one: ProxyConfig::ProxyRules::Apply() hands
+  // every URL an empty ProxyInfo (EMPTY rules would mean DIRECT), and the
+  // stream factory fails the request with ERR_NO_SUPPORTED_PROXIES.
+  config.proxy_rules().type = net::ProxyConfig::ProxyRules::Type::PROXY_LIST;
+  config.proxy_rules().single_proxies.Clear();
+  // Without this, localhost, loopback and link-local URLs would match
+  // Chromium's implicit bypass rules and go DIRECT.
+  config.proxy_rules().bypass_rules.AddRulesToSubtractImplicit();
+  return net::ProxyConfigWithAnnotation(config,
+                                        kMoltNetEndedIdentityAnnotation);
+}
+
+// static
+void MoltNetRouting::EndIdentity(Profile* moltnet_profile) {
+  if (!IsMoltNetProfile(moltnet_profile)) {
+    return;
+  }
+  const bool first_time = !HasIdentityEnded(moltnet_profile);
+  if (first_time) {
+    moltnet_profile->SetUserData(kMoltNetIdentityEndedKey,
+                                 std::make_unique<base::SupportsUserData::Data>());
+    // Its network contexts get RefuseAllProxyConfig() now
+    // (ProxyConfigMonitor), before anything else happens to the identity.
+    IdentityEndedCallbacks().Notify(moltnet_profile);
+  }
+  ForgetMoltNetProfile(moltnet_profile);
+  FlushNetworkState(moltnet_profile);
+}
+
+// static
+bool MoltNetRouting::HasIdentityEnded(Profile* moltnet_profile) {
+  return moltnet_profile &&
+         moltnet_profile->GetUserData(kMoltNetIdentityEndedKey) != nullptr;
+}
+
+// static
+base::CallbackListSubscription MoltNetRouting::AddIdentityEndedCallback(
+    IdentityEndedCallback callback) {
+  return IdentityEndedCallbacks().Add(std::move(callback));
 }
 
 // static
@@ -389,6 +507,13 @@ Profile* MoltNetRouting::GetOrCreateMoltNetProfile(Profile* profile,
   if (std::string partitioning = ProcessWidePartitioningError();
       !partitioning.empty()) {
     *error = std::move(partitioning);
+    return nullptr;
+  }
+  // Before a profile is made: MoltNet doesn't open where Incognito can't
+  // (ApplyRoutingPrefs() checks again, with the rest of the settings).
+  if (std::string incognito = IncognitoPolicyError(original);
+      !incognito.empty()) {
+    *error = std::move(incognito);
     return nullptr;
   }
   Profile* moltnet = GetMoltNetProfile(original);
@@ -452,13 +577,14 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   // Google outside Tor (see kMoltNetSafeBrowsingEnabled). Download warnings
   // for dangerous file types are local and stay.
   prefs->SetBoolean(prefs::kSafeBrowsingEnabled, kMoltNetSafeBrowsingEnabled);
-  // Uniformity: the same languages for everyone. (The renderer side -- UTC,
-  // the en-US Intl locale, letterboxed screen metrics -- is configured per
-  // renderer process; see chrome/browser/molt_ai/fingerprinting.)
-  if (fingerprinting::IsFingerprintingProtectionEnabled()) {
-    prefs->SetString(language::prefs::kAcceptLanguages,
-                     kMoltNetAcceptLanguages);
-  }
+  // Uniformity: the same languages for everyone. Not written here: MoltNet's
+  // pref service holds them above this store when it is created, where
+  // nothing that writes the profile's settings (language::LanguagePrefs,
+  // following the ForcedLanguages policy and the user's own list) can change
+  // them (molt_net_language_policy.h, molt_net_pref_isolation.h). (The
+  // renderer side -- UTC, the en-US Intl locale, letterboxed screen metrics
+  // -- is configured per renderer process; see
+  // chrome/browser/molt_ai/fingerprinting.)
 
   // The same check runs again whenever one of these settings changes while
   // MoltNet is open (molt_net_live_guard.h).
@@ -513,20 +639,6 @@ void MoltNetRouting::ForgetMoltNetProfile(Profile* moltnet_profile) {
   if (data && data->id == moltnet_profile->GetOTRProfileID()) {
     original->RemoveUserData(kMoltNetProfileDataKey);
   }
-}
-
-// static
-void MoltNetRouting::AdoptMoltNetProfile(Profile* moltnet_profile) {
-  if (!IsMoltNetProfile(moltnet_profile)) {
-    return;
-  }
-  Profile* original = moltnet_profile->GetOriginalProfile();
-  if (GetMoltNetProfile(original)) {
-    return;
-  }
-  original->SetUserData(
-      kMoltNetProfileDataKey,
-      std::make_unique<MoltNetProfileData>(moltnet_profile->GetOTRProfileID()));
 }
 
 // static

@@ -38,8 +38,13 @@ claims below as the design intent, not as measured results.
    network state (cache, connections, certificate checks, sign-ins, HSTS)
    stays with that site (§2 *Shared network state*). Pages visited in
    MoltNet windows are not added to MoltBrowser's on-device memory index.
-3. **New Identity.** Closes the MoltNet windows (a page's "Leave site?"
-   prompt can't keep one open), drops their connections and DNS cache, and
+3. **New Identity.** Ends the current identity: from that moment its
+   network context refuses every new request, and its MoltNet windows
+   close, with any DevTools window open on their pages. Nothing open in a
+   window keeps it open: not a "Leave site?" prompt, a sign-in prompt, an
+   alert, print preview, a download's "Save as" dialog or a file chooser.
+   A window still open two seconds later is closed by force (its pages
+   are stopped). New Identity drops the old connections and DNS cache, and
    waits until the MoltNet profile is discarded (fresh cookies, cache and
    storage), so nothing of the old identity can still send a request. Only
    then it asks Tor for new circuits (`SIGNAL NEWNYM`) and waits until Tor
@@ -115,7 +120,13 @@ claims below as the design intent, not as measured results.
     pages (form messages such as "Please fill out this field.", "Choose
     File", the date picker) is in US English in MoltNet windows, and the
     default fonts and text encoding are the same for everyone on your
-    operating system.
+    operating system. Your languages don't show either, nor languages an
+    administrator sets: whatever your language settings, the
+    `ForcedLanguages` and `ReduceAcceptLanguageEnabled` policies or the
+    `--accept-lang` flag say, MoltNet pages get en-US in
+    `navigator.languages` and `Accept-Language` (with fingerprinting
+    protection off, the default list for MoltBrowser's interface
+    language).
 11. **Your extensions and your regular browsing stay out.** Extensions you
     or an administrator installed don't run in MoltNet windows and can't
     see them, even when they're allowed in Incognito; only the browser's
@@ -155,7 +166,13 @@ claims below as the design intent, not as measured results.
     Network Diagnostics, which logs the page's address; and no WebRTC
     logs are kept (they would be saved in your profile folder and
     uploaded). A few Incognito touches that only change how the window
-    looks are not copied (§5).
+    looks are not copied (§5). MoltNet also follows the settings that
+    decide whether private windows may open at all: when an administrator
+    or parental controls turn Incognito off, or replace it with Isolated
+    Mode, MoltNet doesn't open either, and closes if it is open; when they
+    allow Incognito windows only, MoltNet still opens. Incognito's URL
+    allow and block lists apply in MoltNet windows too (§2 *Incognito's
+    availability*).
 14. **Nothing a MoltNet window does goes around Tor.** What the browser
     does for a MoltNet window goes through Tor too, or doesn't happen.
     The AI chat in a MoltNet window uses on-device models only: a cloud AI
@@ -219,11 +236,22 @@ pages, the Global Privacy Control setting and the AtMemory keyboard
 shortcut, whose keypress the page then doesn't receive) is set to MoltBrowser's
 default in the profile's own in-memory store, so the regular profile's
 value is never read, and changing it later has no effect on MoltNet.
-MoltNet's own settings (the proxy and leak controls below, en-US) are
-written on top. Settings an administrator's policy or an extension
-controls still take precedence; for the proxy and the leak controls that
-blocks MoltNet, and a policy that arrives while MoltNet is open ends it
-(see *Fail-closed*).
+MoltNet's own settings (the proxy and leak controls below) are written on
+top. Its languages (en-US) sit one level higher, in a store above the
+profile's own settings (the level where Chromium keeps the settings
+extensions control, which MoltNet doesn't take;
+`molt_net_language_policy.h`), because Chromium rewrites a profile's
+language list itself: whenever it reads a profile's language settings
+(after each page's language detection, for one), it rebuilds
+`Accept-Language` from the `ForcedLanguages` policy and your chosen
+languages, which an off-the-record profile reads from the regular one
+(and `--accept-lang` sets). None of that reaches the level above, so
+MoltNet pages get the same list whatever your settings and policies say.
+MoltNet also ignores the `ReduceAcceptLanguageEnabled` policy and behaves
+as without it (`chrome_content_browser_client.cc`). Settings an
+administrator's policy controls still take precedence; for the proxy and
+the leak controls that blocks MoltNet, and a policy that arrives while
+MoltNet is open ends it (see *Fail-closed*).
 
 **Fail-closed.** The MoltNet profile's proxy is `socks5://127.0.0.1:<port>` with
 no direct fallback, so if Tor stops, pages in MoltNet windows fail with a proxy
@@ -255,18 +283,27 @@ MoltNet's own Tor proxy, and override rules would apply on top of it. So:
   system's settings, none at all) is never sent to it: it keeps routing
   to Tor. A network context that hasn't had MoltNet's configuration yet
   starts with none, and its requests wait for it
-  (`MoltNetRouting::MayApplyProxyConfig()`, asked by Chromium's
-  `ProxyConfigMonitor`).
+  (`MoltNetRouting::ProxyConfigFor()`, asked by Chromium's
+  `ProxyConfigMonitor`). Once its identity has ended (below, and New
+  Identity), the network context gets a configuration whose only route
+  is an empty proxy list: every request it is then asked to make fails
+  before it connects (`ERR_NO_SUPPORTED_PROXIES`), `localhost` included,
+  and no later configuration replaces it.
 - MoltNet watches every setting (b) reads (the proxy, proxy override
   rules, WebRTC IP handling, network prediction, HTTPS-Only mode, Safe
-  Browsing, blob URL partitioning), in its own profile and in the regular
-  profile it was made from, and checks again whenever one changes. If (b)
-  would now refuse, MoltNet ends that identity as New Identity ends the
-  old one: it drops its connections, closes its windows (a "Leave site?"
-  prompt can't keep one open) and discards its profile. It opens no new
-  window, and a dialog gives the reason, with the same message as when
-  MoltNet refuses to open. A window that was about to open checks again
-  before it appears (`molt_net_live_guard.h`, `molt_net_live_policy.h`).
+  Browsing, blob URL partitioning) and Incognito's availability (below),
+  in its own profile and in the regular profile it was made from, and
+  checks again whenever one changes. If MoltNet would now refuse to open,
+  it ends that identity as New Identity ends the old one: its network
+  context refuses every request from that moment, it drops its
+  connections, its windows and the DevTools windows open on its pages
+  close whatever they show (§1.3; a window still open two seconds later
+  is closed by force, its pages stopped, and again up to five times), and
+  its profile is discarded. It opens no new window, and a dialog gives
+  the reason, with the same message as when MoltNet refuses to open. A
+  window that was about to open checks again before it appears
+  (`molt_net_live_guard.h`, `molt_net_live_policy.h`,
+  `molt_net_window.cc`).
 - What can't change while the browser runs: command-line flags
   (`--proxy-server` and the like) and the switches (d) checks (they are
   `base::Feature`s, fixed at startup). A change only the regular profile
@@ -278,13 +315,41 @@ MoltNet's own Tor proxy, and override rules would apply on top of it. So:
 What this guarantees for requests in flight at that moment: none of them
 leaves outside Tor. A request already sent finishes or fails on its Tor
 connection (MoltNet drops its connections at once, and the rest go with
-the profile); one a page makes while its window closes (a `pagehide`
-beacon, a keepalive fetch) still goes through Tor. What it can't
-guarantee: that nothing at all is sent after the change. Pages keep
-running for the moment their windows take to close, and what a server
+the profile). From the moment the identity ends, its network context
+refuses new requests, so one a page makes while its window closes (a
+`pagehide` beacon, a keepalive fetch) fails instead of going out. The
+refusal reaches the network service as any configuration change does: a
+request that got there first still goes out, through Tor. What it can't
+guarantee: that nothing at all is sent after the change. What a server
 already received can't be recalled. MoltNet also reacts when Chromium
 applies a policy, not when an administrator sets it: a cloud policy
 arrives at its next refresh, a policy file once Chromium has read it.
+
+**Incognito's availability.** A MoltNet window is a private window, so
+it opens only where an Incognito window may. MoltNet asks Chromium's
+`IncognitoModePrefs::GetIncognitoModeType()` about the regular profile,
+which combines the `IncognitoModeAvailability` policy (for the machine
+or the profile; the deprecated `IncognitoEnabled` maps to it), a
+supervised user's settings, Windows parental controls and Chromium 156's
+Isolated Mode setting:
+
+| Setting | Incognito | MoltNet |
+|---|---|---|
+| Incognito available (`IncognitoModeAvailability` 0, the default) | opens | opens |
+| Incognito off (`IncognitoModeAvailability` 1, `IncognitoEnabled` false, a supervised user, Windows parental controls) | doesn't open | doesn't open: "Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it". If the setting changes while MoltNet is open, MoltNet ends (*Fail-closed*) |
+| Incognito off, with `IncognitoModeUrlAllowlist` | opens; only the listed sites load | the same |
+| Incognito only (`IncognitoModeAvailability` 2) | the only window that opens | opens (regular windows don't) |
+| Isolated Mode replaces Incognito (Chromium 156) | an Isolated Mode window instead | doesn't open: "Your administrator replaced Incognito with Isolated Mode, and MoltNet windows follow it". Chromium reads this setting once per run, so it can't change while MoltNet is open |
+| `IncognitoModeUrlBlocklist`, `IncognitoModeUrlAllowlist` | apply | apply |
+
+The open check reads it with the other settings ((b) above), and the
+live check watches the availability setting. Two Chromium checks treated
+MoltNet's profile unlike Incognito's and now don't: which windows may
+open (`IncognitoModePrefs::CanOpenBrowser()`, which refused MoltNet's
+windows while Incognito was forced and let them open while it was off),
+and which URL lists apply (`chrome_policy_blocklist_service_factory.cc`,
+which applied the general URL lists to MoltNet but left Incognito's
+out).
 
 **Leak controls on the MoltNet profile.**
 
@@ -592,7 +657,9 @@ was decided again all the same:
   info's unused Incognito flag for cookies.
 - *Policies for Incognito:* 156 adds a second "Incognito" source condition
   to the administrator's data-control rules (for pasted content). Like the
-  other Incognito-only policies, it doesn't cover MoltNet (§5.7).
+  other data-control conditions, it doesn't cover MoltNet (§5.7).
+  Incognito's availability and its URL lists do (*Incognito's
+  availability*, above).
 
 The off-the-record checks 156 adds or removes keep covering MoltNet: new
 features test `IsOffTheRecord()` (AtMemory, Windows' MediaFoundation
@@ -807,6 +874,7 @@ measured in a built browser):
 | HTTP cache | keyed by top-level site and frame site; one-off keys (certificate fetches, opaque origins) are never cached. Chromium 152 files a built-in list of well-known scripts and styles under one entry shared by every site where cookie settings allow full cookie access; MoltNet's context never does | gone (in memory, with the context) |
 | Code cache | none: off-the-record profiles have no code cache | — |
 | Idle sockets, HTTP/2 sessions | keyed by top-level site; each site's connections also go to Tor with that site as SOCKS username, so on circuits of their own (§1.4) | closed, then gone |
+| Connection limits | **per site**. Chromium gives each proxy one pool of connections, 128 at most for all sites together (the `MaxConnectionsPerProxy` policy changes the number), so a site that kept many connections open made other sites' requests wait, and could count how many the others held. MoltNet's context gives each network key (the top-level site; its embedded third parties get a second one, as everywhere in Chromium; each one-off key) a pool of its own, of 128 connections whatever the policy says, with Chromium's 6 per host inside it | closed, then gone |
 | TLS session resumption | keyed by top-level site | gone |
 | QUIC sessions and server configurations | not used: QUIC doesn't go through a SOCKS5 proxy | — |
 | Certificate verification results | none kept. Chromium keeps each network context's results for up to 30 minutes, keyed by certificate, hostname and flags only, and merges identical verifications in flight; MoltNet's context verifies every certificate on its own, also on resumed connections | — |
@@ -834,6 +902,20 @@ New Identity flushes the old identity's connections and host-name cache,
 then waits until its profile, and with it the network context and
 everything in the table kept there, has been destroyed (§1.3); the next
 identity's network context starts empty and gets MoltNet's settings again.
+
+The connection limits in detail: `net/socket/molt_per_site_socket_pool_policy.h`
+and `molt_per_site_socket_pools.h`, used by `ClientSocketPoolManagerImpl`
+for MoltNet's context only (a `[MinVersion=1]` field of its network
+context parameters); every other context, and connections that don't go
+through a proxy, keep Chromium's one pool. What a page can still observe
+of them: its own site's limits, as in any Chromium (requests beyond 6
+connections to one host, or 128 for the site, wait), and nothing of
+another site's use. What they cost: a pool is a small object and holds
+connections only while they are used or idle; a pool with no connection
+left that nobody has asked for in 60 seconds is dropped the next time a
+pool is made. The ceiling is higher than Chromium's: up to 128
+connections per network key instead of 128 for the whole context, each
+of them a local connection to MoltNet's Tor and a stream there.
 
 The certificate-verification choice in detail: a cache keyed by top-level
 site would meet the rule too, but Chromium 152's verifier interface doesn't
@@ -1018,6 +1100,11 @@ gpg-verified steps documented in that script.
 | The same in a running browser (§4 steps 9 and 20) | Needs a Chromium build; the leak kit's `net.client_cert.*` | **Not yet done** |
 | MoltNet fails closed while it is open (§2 *Fail-closed*): the check before opening runs again whenever a setting it reads changes (a policy's proxy, override rules, a leak control, blob URL partitioning, in the MoltNet profile or the regular one); a refusal ends that identity once, as New Identity does, with the open check's message; a window about to open checks again; MoltNet's network contexts only ever get MoltNet's own proxy configuration (none before it: requests wait), whatever the settings say; every other profile and the system's network context keep Chromium's | Unit tests (`molt_ai_unittests`: the check and its messages, the parser for MoltNet's proxy setting, the configuration rule), built standalone with g++ ASan/UBSan and clang `-fno-exceptions`, 11 mutants of the policy all caught; standalone harness: `molt_net_live_guard.cc` compiled unchanged against stand-ins of `Profile`, `PrefService`, `PrefChangeRegistrar` and `ProfileObserver` with Chromium's destruction order (g++ ASan/UBSan, clang `-fno-exceptions`): which profiles are watched, which settings run the check, one end per identity, the regular profile's changes, both profiles' destruction, two identities of one profile; 10 tests, 10 mutants all caught; the changed files (`molt_net_routing.cc`, `molt_net_window.cc`, `molt_net_live_guard.cc`, `proxy_config_monitor.cc`) type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser: a proxy policy set while a MoltNet window is open closes it, nothing leaves outside Tor meanwhile, MoltNet then refuses to open, and opens again once the policy is gone (§4 step 9) | Needs a Chromium build; the leak kit's `identity.policy_change_closes` | **Not yet done** |
+| Ending an identity (§1.3, §2 *Fail-closed*): from that moment its network context refuses every request (`localhost` included), whatever configuration comes later; its windows and the DevTools windows on its pages close, also a page asking "Leave site?" with DevTools open (docked or in a window of its own), and a window that stays open is closed by force; New Identity changes nothing if one still stays | Unit tests (`molt_ai_unittests`: the configuration rule); standalone simulation: the code of `molt_net_window.cc` verbatim against stand-ins (windows whose unload processing shows "Leave site?" and lets DevTools intercept it, DevTools agents, renderer processes, Tor) on a simulated clock, g++ ASan/UBSan, 7 tests, 10 mutants caught; standalone harness: `RefuseAllProxyConfig()` verbatim with Chromium 156's proxy-rule and bypass-rule code verbatim, 3 tests, 3 mutants caught; standalone harness: the `proxy_config_monitor.cc` hooks and `MoltNetRouting`'s `EndIdentity()`, `HasIdentityEnded()`, `AddIdentityEndedCallback()` and `ProxyConfigFor()` verbatim, next to Chromium 156's monitor, against stand-ins (g++ ASan/UBSan, clang `-fno-exceptions`), 6 tests, 10 mutants caught; the changed files (`molt_net_window.cc`, `molt_net_routing.cc`, `proxy_config_monitor.cc`) type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
+| MoltNet's languages (§1.10, §2 *Settings isolation*): MoltNet's list sits above the profile's own settings, so neither the `ForcedLanguages` policy, nor the chosen languages it reads from the regular profile, nor `--accept-lang` change it, also after Chromium's language code rebuilds a profile's list; `ReduceAcceptLanguageEnabled` is ignored for MoltNet only | Unit tests (`molt_ai_unittests`): the list and the policy rule (3 tests, built standalone), and MoltNet's settings store with Chromium's real `LanguagePrefs` and a managed `ForcedLanguages`; standalone harness: `FixMoltNetLanguages()` verbatim against a stand-in that layers the settings stores as Chromium 156 does and rewrites the list as `LanguagePrefs` does, 4 tests, 4 mutants caught; the two `chrome_content_browser_client.cc` hooks verbatim next to Chromium 156's code, 2 tests, 2 mutants caught (g++ ASan/UBSan, clang `-fno-exceptions`); the changed files (`molt_net_pref_isolation.cc`, `molt_net_routing.cc`, `chrome_content_browser_client.cc`) type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the settings-store tests need a Chromium build |
+| Incognito's availability (§2): MoltNet refuses to open, with its message, while Incognito is off or replaced by Isolated Mode, opens while it is forced; the live check watches the setting, in both profiles; Chromium's window check and Incognito's URL lists treat MoltNet as Incognito | Unit tests (`molt_ai_unittests`, the live policy's 20 tests, built standalone with g++ ASan/UBSan and clang `-fno-exceptions`); standalone harness: `molt_net_live_guard.cc` compiled unchanged against stand-ins, 11 tests, 11 mutants caught, among them the availability setting; standalone harness: the `CanOpenBrowser()` and URL-list hooks verbatim next to Chromium 156's code, for regular, Incognito, Isolated Mode, DevTools, look-alike and MoltNet profiles, 5 tests, 4 mutants caught; `incognito_mode_prefs.cc`, `chrome_policy_blocklist_service_factory.cc`, `molt_net_routing.cc` and `molt_net_window.cc` type-checked against Chromium 156's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
+| Per-site connection limits (§2 *Shared network state*): each network key gets a pool of its own in MoltNet's context, of the fixed size whatever `MaxConnectionsPerProxy` says, with Chromium's per-host limit; flushes, idle-socket clean-up and `chrome://net-internals` reach every pool, which is named after the proxy, never the site; unused pools go; other contexts and connections without a proxy keep the one shared pool | Unit tests (`molt_ai_unittests`): the size rule (4 tests, built standalone) and Chromium's real `HttpNetworkSession` and pools (4 tests); standalone harness: `client_socket_pool_manager_impl.cc` and the new headers verbatim against stand-ins of the pools (g++ ASan/UBSan, clang `-fno-exceptions`), 5 tests, 11 mutants caught; the changed `net/` and `services/network/` files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the real-pool tests need a Chromium build |
+| The same in a running browser: language policies change nothing in MoltNet; Incognito turned off closes MoltNet with DevTools open in a window of its own and an unanswered "Leave site?", MoltNet refuses to open, and opens again once allowed; Incognito only keeps it open (§4 step 9) | Needs a Chromium build; the leak kit's `identity.language_policy_ignored`, `identity.incognito_off_closes`, `identity.incognito_forced_allows` | **Not yet done** |
 | No Autofill server traffic and no address-format downloads in MoltNet (§2 *Requests outside Tor*): no query and no vote (Autofill's or the password manager's), also with `AutofillServerCommunication` turned on; no address rules downloaded or read from the shared file, for Autofill or the payment sheet; every other profile keeps Chromium's | Unit tests (`molt_ai_unittests`); `molt_net_autofill.cc` and `chrome_payment_request_delegate.cc` type-checked against Chromium 156's headers, and the two hooked functions of `chrome_autofill_client.cc` too (copied verbatim into a stand-in of the class: the checker can't generate one header the whole file needs) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser (§4 step 20) | Needs a Chromium build; the leak kit's `net.autofill_server` | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
@@ -1047,7 +1134,7 @@ help. The last column names the report's checks.
 | 6 | automated | `identity.separate`, `identity.session_circuits` |
 | 7 | automated (exit IP only online) | `identity.new_identity`, `identity.session_circuits` |
 | 8 | automated | `identity.per_site_circuits`, `identity.sandboxed_circuits`, `identity.cert_fetch_circuits` |
-| 9 | partial | `identity.override_refused`, `identity.partitioning_override_refused`, `identity.policy_change_closes` |
+| 9 | partial | `identity.override_refused`, `identity.partitioning_override_refused`, `identity.policy_change_closes`, `identity.language_policy_ignored`, `identity.incognito_off_closes`, `identity.incognito_forced_allows` |
 | 10 | automated (offline, against Tor's consensus) | `identity.relays_real` |
 | 11 | partial | `net.onion_http.*`, `net.onion_https.*` |
 | 12 | automated | `net.regular_onion_*`, `regular.onion_interstitial` |
@@ -1087,7 +1174,13 @@ help. The last column names the report's checks.
    close, a new one opens, cookies are gone, and the exit IP normally changes.
    As in step 6, the same site's connections carry a new SOCKS password.
    Click into a page that asks "Leave site?" (e.g. one with an unsent form)
-   and press *New Identity*: its window closes without asking. Press *New
+   and press *New Identity*: its window closes without asking. Again with
+   DevTools open on that page (docked, then in a window of its own), and
+   with a page showing an alert (`alert(1)` in the console), a sign-in
+   prompt (a test server that answers `401` with `WWW-Authenticate:
+   Basic`), print preview, a download's "Save as" dialog ("Ask where to
+   save each file" on) or a file chooser: every MoltNet window and DevTools
+   window closes, without asking, and the new window opens. Press *New
    Identity* twice in a row: the second new window opens only about ten
    seconds after the first (Tor switches circuits at most that often).
 8. **Per-site circuits.** (Kit: automated, from the SOCKS usernames in the capture.) Open two different sites in MoltNet tabs and compare
@@ -1105,7 +1198,7 @@ help. The last column names the report's checks.
    the log shows a certificate verification for each site's connection to
    it (a regular window verifies it once and answers the second from its
    cache).
-9. **Overrides are refused.** (Kit: the `--proxy-server` half, the partitioning switches and a proxy policy set while MoltNet is open; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
+9. **Overrides are refused.** (Kit: the `--proxy-server` half, the partitioning switches, and a proxy, a language and an Incognito policy set while MoltNet is open; the extension half and the URL allow list are manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
    allowed in Incognito, MoltNet must open and step 1 must pass. Start it
@@ -1123,14 +1216,24 @@ help. The last column names the report's checks.
    `/etc/chromium/policies/managed/`, which Chromium reads a few seconds
    later; on Windows and macOS, the `ProxyMode` policy, then
    `chrome://policy` → *Reload policies*). Every MoltNet window must
-   close, also one whose page asks "Leave site?" (unless DevTools is open
-   on it, as for New Identity), a dialog must give the proxy error, no
-   request from it may go out directly (watch tcpdump as in step 4; your
-   test server sees the page's requests only through Tor until the window
+   close, also one whose page asks "Leave site?" with DevTools open on it
+   (as for New Identity), a dialog must give the proxy error, no request
+   from it may go out directly (watch tcpdump as in step 4; your test
+   server sees the page's requests only through Tor until the window
    closes), and opening a MoltNet window must now fail with that error.
    Remove the policy: MoltNet opens again. Repeat with
    `ProxyOverrideRules`, with `WebRtcIPHandling`, and with
-   `PartitionedBlobUrlUsage` set to false (the error names it).
+   `PartitionedBlobUrlUsage` set to false (the error names it). Then
+   `IncognitoModeAvailability`: set to `1` while a MoltNet window is open,
+   every MoltNet window and DevTools window must close and MoltNet must
+   refuse to open with "Incognito is turned off (IncognitoModeAvailability
+   or parental controls), and MoltNet windows follow it"; with
+   `IncognitoModeUrlAllowlist` listing a test site as well, MoltNet opens
+   and only that site loads; set to `2`, MoltNet stays open and opens.
+   Last, set `ForcedLanguages` to `["ja"]` and `ReduceAcceptLanguageEnabled`
+   to false while a MoltNet window is open: it stays open, and
+   `navigator.languages` and the `Accept-Language` header there don't
+   change (regular windows follow the policy).
 10. **The relays are real.** (Kit: automated against the consensus Tor downloaded.) *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.
@@ -1280,6 +1383,9 @@ help. The last column names the report's checks.
       listing a test site, start WebRTC diagnostic logging from that site
       in a MoltNet window: nothing appears under `<profile folder>/WebRTC
       Logs` and nothing is uploaded (in a regular window a log appears).
+    - With `IncognitoModeUrlBlocklist` listing a test site, it doesn't
+      load in a MoltNet window, as in Incognito (a regular window loads
+      it).
     - With `--enable-features=ReduceAcceptLanguage`, fingerprinting
       protection off and two or more languages in your settings, a site
       that answers with `Avail-Language` gets the same language from a
@@ -1405,14 +1511,15 @@ help. The last column names the report's checks.
      doesn't warn that downloads in progress will be cancelled, and the
      "relaunch to update" warnings don't count MoltNet windows; *Clear
      browsing data* opens your regular profile's settings (New Identity is
-     what clears MoltNet). Policies an administrator or parent sets for
-     Incognito don't cover MoltNet windows: turning Incognito off, the
-     Incognito-only URL blocklist, extensions required for Incognito
-     browsing, the "Incognito" conditions of data-control rules, and
-     closing a supervised user's Incognito windows (forcing Incognito does
-     stop MoltNet from opening). Chromium 156's Enterprise Isolated Mode,
-     which a policy can put in Incognito's place, applies to that session;
-     a MoltNet window is never one.
+     what clears MoltNet). Of the policies an administrator or parent sets
+     for Incognito, MoltNet follows whether Incognito may open (also for a
+     supervised user) and Incognito's URL allow and block lists (§2
+     *Incognito's availability*), but not extensions required for
+     Incognito browsing or the "Incognito" conditions of data-control
+     rules. Chromium 156's Enterprise Isolated Mode, which a policy can put
+     in Incognito's place, applies to that session; a MoltNet window is
+     never one, and MoltNet doesn't open while Isolated Mode replaces
+     Incognito.
    - Local servers don't open in MoltNet windows: `localhost`, loopback
      and link-local addresses go to Tor, which refuses them (see §2). Use
      a regular window for a local development server.

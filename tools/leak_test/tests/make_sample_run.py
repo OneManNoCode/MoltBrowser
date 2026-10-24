@@ -284,7 +284,8 @@ def manifest():
                            'ThirdPartyStoragePartitioning')]}},
             {'name': 'policy_live', 'target': 'moltnet', 'start': t(142),
              'end': t(178), 'data': {
-                 'flags': ['--enable-features=AutofillServerCommunication'],
+                 'flags': ['--enable-features=AutofillServerCommunication,'
+                           'ReduceAcceptLanguage'],
                  'autofill_start': t(143), 'autofill_end': t(153),
                  'autofill_nav_error': None,
                  'canary_host': 'plc-pppppp9999.' + CANARY,
@@ -299,7 +300,38 @@ def manifest():
                               'routing'},
                  'pages_with_policy': 0, 'policy_removed': t(166),
                  'reopen_without_policy': {'running': True},
-                 'reopened': True}},
+                 'reopened': True,
+                 'languages': {
+                     'policy': {'ForcedLanguages': ['ja'],
+                                'ReduceAcceptLanguageEnabled': False},
+                     'moltnet_before': {'languages': ['en-US', 'en'],
+                                        'accept_language': 'en-US'},
+                     'regular_before': {'languages': ['de-DE', 'de'],
+                                        'accept_language': 'de-DE'},
+                     'pages_before': 1, 'written': t(170),
+                     'moltnet_after': {'languages': ['en-US', 'en'],
+                                       'accept_language': 'en-US'},
+                     'regular_after': {
+                         'languages': ['ja', 'de-DE', 'de'],
+                         'accept_language': 'ja,de-DE;q=0.9,de;q=0.8'},
+                     'pages_kept': 1, 'removed': t(176)}}},
+            {'name': 'policy_live_incognito', 'target': 'moltnet',
+             'start': t(179), 'end': t(178 + 75), 'data': {
+                 'flags': ['--auto-open-devtools-for-tabs'],
+                 'nav_error': None, 'devtools_pages': 1,
+                 'devtools_own_window': True, 'hold_page': True,
+                 'dialog': 'beforeunload', 'moltnet_pages_before': 2,
+                 'off_written': t(200), 'closed_after_s': 5.5,
+                 'pages_left': [],
+                 'reopen_off': {
+                     'error': 'Incognito is turned off '
+                              '(IncognitoModeAvailability or parental '
+                              'controls), and MoltNet windows follow it'},
+                 'pages_off': 0, 'off_removed': t(210),
+                 'reopen_after_off': {'running': True},
+                 'reopened_after_off': True, 'pages_before_forced': 2,
+                 'forced_written': t(225), 'pages_kept_forced': 2,
+                 'open_forced': {'running': True}, 'opened_forced': True}},
             {'name': 'extension', 'skipped': '--no-extension'},
         ],
         'fingerprints': [

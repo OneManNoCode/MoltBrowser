@@ -3268,6 +3268,9 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
   // MoltNet's contexts only), read by SOCKSConnectJob.
   session_params.molt_socks_isolation_password =
       params_->molt_socks_isolation_password.value_or(std::string());
+  // MoltBrowser: per-site socket pools (MoltNet's contexts only).
+  session_params.molt_per_site_socket_pool_size =
+      params_->molt_per_site_socket_pool_size;
 
   builder.set_http_network_session_params(session_params);
   builder.set_quic_context(std::move(quic_context));

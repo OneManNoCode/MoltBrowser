@@ -12,7 +12,9 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
+#include "chrome/browser/molt_ai/tor/molt_net_language_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h"
+#include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/content_settings/core/browser/content_settings_registry.h"
@@ -24,9 +26,11 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/embedder_support/pref_names.h"
+#include "components/language/core/browser/language_prefs.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+#include "components/prefs/value_map_pref_store.h"
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
@@ -80,6 +84,13 @@ TEST(MoltNetIsolationTest, PinnedNamesMatchChromiumsConstants) {
   // (FirstPartySetsPolicyService), so their switch isn't pinned.
   EXPECT_FALSE(
       IsMoltNetPinnedPref(prefs::kPrivacySandboxRelatedWebsiteSetsEnabled));
+}
+
+// The literals in molt_net_language_policy.h too.
+TEST(MoltNetIsolationTest, FixedLanguageNamesMatchChromiumsConstants) {
+  EXPECT_TRUE(IsMoltNetFixedLanguagePref(language::prefs::kAcceptLanguages));
+  EXPECT_TRUE(IsMoltNetFixedLanguagePref(language::prefs::kSelectedLanguages));
+  EXPECT_FALSE(IsMoltNetFixedLanguagePref(language::prefs::kForcedLanguages));
 }
 
 // Every content and website setting type, present and future, has its
@@ -163,10 +174,17 @@ TEST_F(MoltNetPrefServiceTest, MoltNetWritesStayInMoltNet) {
   std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
       CreateMoltNetPrefService(&regular_, nullptr);
 
-  // MoltNet's own override (MoltNetRouting::ApplyRoutingPrefs) wins over the
-  // pin and stays in MoltNet.
+  // A change made in a MoltNet window (zooming the default font size up)
+  // wins over the pin and stays in MoltNet.
+  moltnet->SetInteger(kFontSize, 18);
+  EXPECT_EQ(moltnet->GetInteger(kFontSize), 18);
+  EXPECT_EQ(regular_.GetInteger(kFontSize), 24);
+
+  // Not the languages: they are fixed above MoltNet's own store
+  // (molt_net_language_policy.h), so no write changes them.
+  const std::string languages = moltnet->GetString(kLanguages);
   moltnet->SetString(kLanguages, "en-US,en;q=0.9");
-  EXPECT_EQ(moltnet->GetString(kLanguages), "en-US,en;q=0.9");
+  EXPECT_EQ(moltnet->GetString(kLanguages), languages);
   EXPECT_EQ(regular_.GetString(kLanguages), "de-CH,de,fr");
 
   // Incognito writes the third-party-cookie mode and the bookmarks bar
@@ -257,6 +275,96 @@ TEST(MoltNetIsolationTest, XsltBannerChoiceStaysInItsProfile) {
   moltnet->SetBoolean(kSuppressed, true);
   EXPECT_TRUE(moltnet->GetBoolean(kSuppressed));
   EXPECT_FALSE(regular.GetBoolean(kSuppressed));
+}
+
+// The ForcedLanguages policy, the user's selected languages and the
+// --accept-lang switch reach "intl.accept_languages" only through
+// language::LanguagePrefs, which every TranslatePrefs makes for the tab's
+// profile (each time translate learns a page's language). For MoltNet, none
+// of them changes the list pages see, also while the window is open.
+TEST(MoltNetLanguagesTest, NoPolicyOrUserListReachesMoltNet) {
+  sync_preferences::TestingPrefServiceSyncable regular;
+  language::LanguagePrefs::RegisterProfilePrefs(regular.registry());
+  // The user's own languages, as the settings page stores them.
+  regular.SetString(language::prefs::kSelectedLanguages, "de-CH,de,fr");
+  regular.SetString(language::prefs::kAcceptLanguages, "de-CH,de,fr");
+  // The ForcedLanguages policy.
+  regular.SetManagedPref(language::prefs::kForcedLanguages,
+                         base::ListValue().Append("ja"));
+
+  std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
+      CreateMoltNetPrefService(&regular, nullptr);
+  const base::Value* registered =
+      moltnet->GetDefaultPrefValue(language::prefs::kAcceptLanguages);
+  ASSERT_TRUE(registered && registered->is_string());
+  const std::string expected = MoltNetLanguageList(
+      fingerprinting::IsFingerprintingProtectionEnabled(),
+      registered->GetString());
+  EXPECT_EQ(moltnet->GetString(language::prefs::kAcceptLanguages), expected);
+  EXPECT_EQ(moltnet->GetString(language::prefs::kSelectedLanguages), expected);
+
+  {
+    // What TranslatePrefs does for a MoltNet tab.
+    language::LanguagePrefs language_prefs(moltnet.get());
+    EXPECT_EQ(moltnet->GetString(language::prefs::kAcceptLanguages),
+              expected);
+    // A policy change while MoltNet is open, and a list changed in it.
+    regular.SetManagedPref(language::prefs::kForcedLanguages,
+                           base::ListValue().Append("ko").Append("pt-BR"));
+    moltnet->SetString(language::prefs::kSelectedLanguages, "it");
+    language_prefs.SetUserSelectedLanguagesList({"es", "fr"});
+    EXPECT_EQ(moltnet->GetString(language::prefs::kAcceptLanguages),
+              expected);
+    // The regular profile's list is never read.
+    regular.SetString(language::prefs::kSelectedLanguages, "nl");
+    EXPECT_EQ(moltnet->GetString(language::prefs::kAcceptLanguages),
+              expected);
+  }
+
+  // The regular profile keeps Chromium's behaviour: the policy's languages
+  // first, then the user's, and nothing MoltNet did shows there.
+  language::LanguagePrefs regular_language_prefs(&regular);
+  EXPECT_EQ(regular.GetString(language::prefs::kAcceptLanguages),
+            "ko,pt-BR,nl");
+}
+
+// The list is en-US with fingerprinting protection on, else the registered
+// default; it lands in the store above MoltNet's own and only for registered
+// string prefs.
+TEST(MoltNetLanguagesTest, FixedListFollowsTheKillSwitchOnly) {
+  for (const bool uniform : {true, false}) {
+    sync_preferences::TestingPrefServiceSyncable regular;
+    // A German UI's default (IDS_ACCEPT_LANGUAGES).
+    regular.registry()->RegisterStringPref(language::prefs::kAcceptLanguages,
+                                           "de-DE,de,en-US,en");
+    regular.registry()->RegisterStringPref(
+        language::prefs::kSelectedLanguages, std::string());
+    regular.SetString(language::prefs::kAcceptLanguages, "fr");
+    auto top_store = base::MakeRefCounted<ValueMapPrefStore>();
+    std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
+        regular.CreateIncognitoPrefService(top_store, {});
+    EXPECT_EQ(FixMoltNetLanguages(moltnet.get(), top_store.get(), uniform),
+              2u);
+    const char* expected = uniform ? "en-US,en" : "de-DE,de,en-US,en";
+    EXPECT_EQ(moltnet->GetString(language::prefs::kAcceptLanguages),
+              expected);
+    EXPECT_EQ(moltnet->GetString(language::prefs::kSelectedLanguages),
+              expected);
+    EXPECT_TRUE(moltnet->FindPreference(language::prefs::kAcceptLanguages)
+                    ->IsExtensionControlled());
+    moltnet->SetString(language::prefs::kAcceptLanguages, "fr");
+    EXPECT_EQ(moltnet->GetString(language::prefs::kAcceptLanguages),
+              expected);
+  }
+  // Unregistered (or not a string): nothing written.
+  sync_preferences::TestingPrefServiceSyncable other;
+  other.registry()->RegisterIntegerPref(language::prefs::kSelectedLanguages,
+                                        0);
+  auto top_store = base::MakeRefCounted<ValueMapPrefStore>();
+  EXPECT_EQ(FixMoltNetLanguages(&other, top_store.get(), true), 0u);
+  EXPECT_TRUE(top_store->GetValues().empty());
+  EXPECT_EQ(FixMoltNetLanguages(nullptr, top_store.get(), true), 0u);
+  EXPECT_EQ(FixMoltNetLanguages(&other, nullptr, true), 0u);
 }
 
 TEST_F(MoltNetPrefServiceTest, PolicyStillWins) {

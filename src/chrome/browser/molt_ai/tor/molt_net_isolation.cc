@@ -124,7 +124,7 @@ bool IsExtensionKeptOutOf(const extensions::Extension* extension,
       ClassifyExtension(/*known=*/extension != nullptr, is_component));
 }
 
-scoped_refptr<PrefStore> CreateMoltNetExtensionPrefStore() {
+scoped_refptr<ValueMapPrefStore> CreateMoltNetExtensionPrefStore() {
   return base::MakeRefCounted<ValueMapPrefStore>();
 }
 
