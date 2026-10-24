@@ -193,6 +193,7 @@ components/translate/core/browser/translate_driver.h.patch
 components/translate/core/browser/translate_language_list.cc.patch
 components/translate/core/browser/translate_language_list.h.patch
 components/translate/core/browser/translate_manager.cc.patch
+content/browser/blob_storage/chrome_blob_storage_context.cc.patch
 content/browser/client_hints/client_hints.cc.patch
 content/browser/network/browser_online_state_observer.cc.patch
 content/browser/network/network_quality_observer_impl.cc.patch
@@ -200,6 +201,7 @@ content/browser/service_worker/fake_service_worker.cc.patch
 content/browser/service_worker/fake_service_worker.h.patch
 content/browser/service_worker/service_worker_job_unittest.cc.patch
 content/browser/service_worker/service_worker_version.cc.patch
+content/browser/storage_partition_impl.cc.patch
 content/browser/websockets/websocket_connector_impl.cc.patch
 content/browser/worker_host/shared_worker_host.cc.patch
 content/common/url_schemes.cc.patch
@@ -216,6 +218,8 @@ extensions/browser/extension_util.cc.patch
 extensions/browser/extensions_browser_client.cc.patch
 extensions/browser/extensions_browser_client.h.patch
 extensions/browser/permissions/active_tab_permission_granter.cc.patch
+media/base/video_encoder.cc.patch
+media/base/video_encoder.h.patch
 net/base/features.cc.patch
 net/dns/host_resolver_manager.cc.patch
 net/http/http_network_session.cc.patch
@@ -235,6 +239,8 @@ services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.patch
 services/network/network_context.cc.patch
 services/network/pervasive_resources/shared_resource_checker.h.patch
 services/network/public/mojom/network_context.mojom.patch
+storage/browser/blob/blob_memory_controller.cc.patch
+storage/browser/blob/blob_memory_controller.h.patch
 third_party/blink/public/BUILD.gn.patch
 third_party/blink/public/mojom/service_worker/service_worker.mojom.patch
 third_party/blink/public/mojom/worker/shared_worker_info.mojom.patch
@@ -275,6 +281,8 @@ third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.
 third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc.patch
 third_party/blink/renderer/modules/font_access/font_access.cc.patch
 third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc.patch
+third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc.patch
+third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc.patch
 third_party/blink/renderer/modules/mediastream/media_devices.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
 third_party/blink/renderer/modules/permissions/permission_status_listener.cc.patch

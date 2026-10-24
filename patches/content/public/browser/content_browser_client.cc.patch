@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..7111fd5086bda419cd9a0cc8140b8c28f9a416dc 100644
+index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..fc659bd625dfcf59ae7962526b53273a70e129b0 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1110,6 +1110,21 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1110,6 +1110,31 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -25,6 +25,16 @@ index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..7111fd5086bda419cd9a0cc8140b8c28
 +
 +bool ContentBrowserClient::ShouldSendUniformNetworkState(BrowserContext*) {
 +  return false;
++}
++
++std::optional<storage::QuotaSettings>
++ContentBrowserClient::GetFixedQuotaSettings(BrowserContext*) {
++  return std::nullopt;
++}
++
++std::optional<storage::BlobStorageLimits>
++ContentBrowserClient::GetFixedBlobStorageLimits(BrowserContext*) {
++  return std::nullopt;
 +}
 +
  ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;

@@ -1,0 +1,53 @@
+MoltBrowser patch for media/base/video_encoder.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/base/video_encoder.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/base/video_encoder.cc b/media/base/video_encoder.cc
+index 60acc82d0a3425cab919beab3d1833d8e79367d7..688800c99c68d610f91518c9b49cf3839665feed 100644
+--- a/media/base/video_encoder.cc
++++ b/media/base/video_encoder.cc
+@@ -5,6 +5,7 @@
+ #include "media/base/video_encoder.h"
+ 
+ #include <algorithm>
++#include <atomic>
+ 
+ #include "base/numerics/checked_math.h"
+ #include "base/numerics/clamped_math.h"
+@@ -18,6 +19,10 @@
+ namespace media {
+ 
+ namespace {
++
++// MoltBrowser: SetProcessorCountForSoftwareEncoding(); 0 = the machine's.
++constinit std::atomic<int> g_processor_count_for_software_encoding{0};
++
+ const char* GetContentHintName(VideoEncoder::ContentHint content_hint) {
+   switch (content_hint) {
+     case VideoEncoder::ContentHint::Camera:
+@@ -69,12 +74,21 @@ int GetNumberOfThreadsForSoftwareEncoding(gfx::Size frame_size) {
+   }
+ 
+   // Clamp to the number of available logical processors/cores.
+-  desired_threads =
+-      std::min(desired_threads, base::SysInfo::NumberOfProcessors());
++  // MoltBrowser: or to the count this process was given.
++  const int processors =
++      g_processor_count_for_software_encoding.load(std::memory_order_relaxed);
++  desired_threads = std::min(
++      desired_threads,
++      processors > 0 ? processors : base::SysInfo::NumberOfProcessors());
+ 
+   return desired_threads;
+ }
+ 
++void SetProcessorCountForSoftwareEncoding(int count) {
++  g_processor_count_for_software_encoding.store(std::max(count, 0),
++                                                std::memory_order_relaxed);
++}
++
+ uint8_t QIndexToQuantizer(VideoCodec codec, uint8_t q_index) {
+   if (codec == VideoCodec::kAV1 || codec == VideoCodec::kVP9) {
+     // The following computation is based on the table in

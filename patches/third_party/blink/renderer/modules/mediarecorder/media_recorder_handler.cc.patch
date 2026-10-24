@@ -1,0 +1,65 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc b/third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc
+index 198279a970353e045bdaeac6cad280d6ec672b73..24ed1e37591028fe860f6f5c1959d6b64d248593 100644
+--- a/third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc
++++ b/third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc
+@@ -47,6 +47,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/mediarecorder/media_recorder.h"
+ #include "third_party/blink/renderer/modules/mediarecorder/video_track_recorder.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
+@@ -381,8 +382,9 @@ bool MediaRecorderHandler::CanSupportMimeTypeForCodec(const String& type,
+       }
+ 
+       // If the profile is not supported by either the HW or the SW encoder,
+-      // reject it.
+-      if (!media::IsEncoderSupportedVideoType(
++      // reject it. MoltBrowser: MoltNet only counts the build's encoders
++      // (moltnet_encoders.h).
++      if (!molt_fingerprinting::IsMediaRecorderVideoTypeSupported(
+               {media::VideoCodec::kH264, profile})) {
+         match = false;
+       }
+@@ -409,8 +411,9 @@ bool MediaRecorderHandler::CanSupportMimeTypeForCodec(const String& type,
+       }
+ 
+       // If the profile is not supported by either the HW or the SW encoder,
+-      // reject it.
+-      if (!media::IsEncoderSupportedVideoType(
++      // reject it. MoltBrowser: MoltNet only counts the build's encoders
++      // (moltnet_encoders.h).
++      if (!molt_fingerprinting::IsMediaRecorderVideoTypeSupported(
+               {media::VideoCodec::kAV1, profile})) {
+         match = false;
+       }
+@@ -435,7 +438,8 @@ bool MediaRecorderHandler::CanSupportMimeTypeForCodec(const String& type,
+           // Only `mkv` and `mp4` are supported, `webm` is not supported.
+           !EqualIgnoringAsciiCase(type, "video/webm") &&
+           // Only if there are platform HEVC main profile support.
+-          media::IsEncoderSupportedVideoType(
++          // MoltBrowser: never in MoltNet (moltnet_encoders.h).
++          molt_fingerprinting::IsMediaRecorderVideoTypeSupported(
+               {media::VideoCodec::kHEVC,
+                media::VideoCodecProfile::HEVCPROFILE_MAIN});
+     }
+@@ -446,8 +450,11 @@ bool MediaRecorderHandler::CanSupportMimeTypeForCodec(const String& type,
+     return false;
+   }
+ 
++  // MoltBrowser: AAC is the platform's encoder, which MoltNet doesn't use
++  // (moltnet_encoders.h).
+   if (codec_string == "mp4a.40.2" &&
+-      !media::MojoAudioEncoder::IsSupported(media::AudioCodec::kAAC)) {
++      (!molt_fingerprinting::MediaRecorderUsesPlatformEncoders() ||
++       !media::MojoAudioEncoder::IsSupported(media::AudioCodec::kAAC))) {
+     return false;
+   }
+   return true;
