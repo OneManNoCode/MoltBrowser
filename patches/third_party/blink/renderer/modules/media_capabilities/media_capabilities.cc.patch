@@ -1,0 +1,72 @@
+MoltBrowser patch for third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
+index 1dea63eee609e98e7ef77872f34cc52bafccb13b..67352d24e9df6f66c3fe3c03de6fa15b6629608f 100644
+--- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
++++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
+@@ -52,6 +52,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.h"
+@@ -833,6 +834,17 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::decodingInfo(
+     UseCounter::Count(ExecutionContext::From(script_state),
+                       WebFeature::kMediaCapabilitiesDecodingInfoWebrtc);
+ 
++    // MoltBrowser: MoltNet has no WebRTC, so no WebRTC codec
++    // (moltnet_media.h).
++    if (const auto uniform = molt_fingerprinting::UniformWebrtcCodingInfo()) {
++      MediaCapabilitiesDecodingInfo* info =
++          CreateDecodingInfoWith(uniform->supported);
++      info->setSmooth(uniform->smooth);
++      info->setPowerEfficient(uniform->power_efficient);
++      return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state,
++                                                              info);
++    }
++
+     auto* resolver = MakeGarbageCollected<
+         ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>>(
+         script_state, exception_state.GetContext());
+@@ -1079,6 +1091,15 @@ ScriptPromise<MediaCapabilitiesInfo> MediaCapabilities::encodingInfo(
+     UseCounter::Count(ExecutionContext::From(script_state),
+                       WebFeature::kMediaCapabilitiesEncodingInfoWebrtc);
+ 
++    // MoltBrowser: as for decodingInfo().
++    if (const auto uniform = molt_fingerprinting::UniformWebrtcCodingInfo()) {
++      MediaCapabilitiesInfo* info = CreateEncodingInfoWith(uniform->supported);
++      info->setSmooth(uniform->smooth);
++      info->setPowerEfficient(uniform->power_efficient);
++      resolver->Resolve(info);
++      return promise;
++    }
++
+     if (auto* handler = webrtc_encoding_info_handler_for_test_
+                             ? webrtc_encoding_info_handler_for_test_.get()
+                             : WebrtcEncodingInfoHandler::Instance()) {
+@@ -1380,6 +1401,19 @@ void MediaCapabilities::GetPerfInfo(
+     return;
+   }
+ 
++  // MoltBrowser: MoltNet answers from a fixed table, never from the decode
++  // history or the GPU (moltnet_media.h).
++  if (const auto uniform = molt_fingerprinting::UniformVideoDecodingInfo(
++          media::IsDecoderBuiltInVideoCodec(video_codec))) {
++    MediaCapabilitiesDecodingInfo* info =
++        CreateDecodingInfoWith(uniform->supported);
++    info->setSmooth(uniform->smooth);
++    info->setPowerEfficient(uniform->power_efficient);
++    info->setKeySystemAccess(access);
++    resolver->Resolve(info);
++    return;
++  }
++
+   const VideoConfiguration* video_config = decoding_config->video();
+   String key_system = "";
+   bool use_hw_secure_codecs = false;

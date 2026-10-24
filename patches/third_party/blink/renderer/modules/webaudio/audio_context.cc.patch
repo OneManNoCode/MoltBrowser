@@ -1,0 +1,79 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webaudio/audio_context.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webaudio/audio_context.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_context.cc b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+index 6185684c09623dc44afcdba426f2922eb3a8c899..9b830e69790c32ef2b7f0798764645684b5c6b2b 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_context.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+@@ -37,6 +37,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
+@@ -484,6 +485,12 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
+     }
+   }
+ 
++  // MoltBrowser: MoltNet runs a context at 48 kHz unless the page asks for a
++  // rate, and renders "hardware" in 128 frames (moltnet_media.h).
++  sample_rate = molt_fingerprinting::UniformAudioContextSampleRate(sample_rate);
++  render_quantum_frames =
++      molt_fingerprinting::UniformRenderQuantumFrames(render_quantum_frames);
++
+   // The empty string means the default audio device.
+   auto frame_token = window.GetLocalFrameToken();
+   WebAudioSinkDescriptor sink_descriptor(g_empty_string, frame_token);
+@@ -998,6 +1005,18 @@ AudioTimestamp* AudioContext::getOutputTimestamp(
+   WindowPerformance* performance = DOMWindowPerformance::performance(*window);
+   DCHECK(performance);
+ 
++  // MoltBrowser: MoltNet reports the uniform device's output position.
++  if (const auto uniform =
++          molt_fingerprinting::UniformAudioOutputPosition(currentTime())) {
++    result->setContextTime(uniform->context_time);
++    result->setPerformanceTime(
++        uniform->playing
++            ? std::max(0.0, performance->MonotonicTimeToDOMHighResTimeStamp(
++                                base::TimeTicks::Now()))
++            : 0.0);
++    return result;
++  }
++
+   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
+   double performance_time = performance->MonotonicTimeToDOMHighResTimeStamp(
+       base::TimeTicks() + base::Seconds(output_position_.timestamp));
+@@ -1298,6 +1317,12 @@ double AudioContext::outputLatency() const {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+   DCHECK(destinationNode());
+ 
++  // MoltBrowser: MoltNet reports the uniform device's latency.
++  if (const std::optional<double> uniform =
++          molt_fingerprinting::UniformAudioOutputLatency()) {
++    return *uniform;
++  }
++
+   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
+ 
+   double factor = GetOutputLatencyQuantizingFactor();
+@@ -1600,8 +1625,13 @@ bool AudioContext::HandlePreRenderTasks(
+       stats_update_restrictor_->IsVisibleOrHasPermission();
+ 
+   if (is_stat_collection_allowed) {
+-    pending_audio_frame_stats_.Update(frames_to_process, sampleRate(),
+-                                      playout_delay, glitch_info);
++    // MoltBrowser: in MoltNet the stats describe the uniform device: its
++    // fixed latency and no underruns (moltnet_media.h).
++    const std::optional<base::TimeDelta> uniform_delay =
++        molt_fingerprinting::UniformAudioPlayoutDelay();
++    pending_audio_frame_stats_.Update(
++        frames_to_process, sampleRate(), uniform_delay.value_or(playout_delay),
++        uniform_delay ? media::AudioGlitchInfo() : glitch_info);
+   }
+ 
+   // At the beginning of every render quantum, try to update the internal

@@ -268,7 +268,9 @@ third_party/blink/renderer/core/workers/dedicated_worker.cc.patch
 third_party/blink/renderer/core/workers/threaded_worklet_messaging_proxy.cc.patch
 third_party/blink/renderer/modules/ai/ai_interface_proxy.cc.patch
 third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.patch
+third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc.patch
 third_party/blink/renderer/modules/font_access/font_access.cc.patch
+third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
 third_party/blink/renderer/modules/permissions/permission_status_listener.cc.patch
 third_party/blink/renderer/modules/screen_details/window_screen_details.cc.patch
@@ -279,7 +281,11 @@ third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h.
 third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc.patch
 third_party/blink/renderer/modules/webaudio/analyser_node.cc.patch
 third_party/blink/renderer/modules/webaudio/audio_buffer.cc.patch
+third_party/blink/renderer/modules/webaudio/audio_context.cc.patch
 third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc.patch
+third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc.patch
+third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc.patch
+third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc.patch
 third_party/blink/renderer/modules/webcodecs/video_frame.cc.patch
 third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc.patch
 third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc.patch
