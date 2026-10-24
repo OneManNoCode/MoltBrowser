@@ -96,6 +96,11 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
   mojo::ReceiverSet<network::mojom::ProxyErrorClient> error_receiver_set_;
   raw_ptr<Profile> profile_ = nullptr;
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+
+  // MoltBrowser: the profile, if it is a MoltNet profile. Its network
+  // contexts only get MoltNet's own proxy configuration
+  // (MoltNetRouting::MayApplyProxyConfig()).
+  raw_ptr<Profile> moltnet_profile_ = nullptr;
 };
 
 #endif  // CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_

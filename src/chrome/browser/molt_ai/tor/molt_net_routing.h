@@ -17,6 +17,10 @@
 //     no DIRECT fallback. If Tor is down, requests fail with a proxy error;
 //     they never go direct. A window is only opened after the profile's own
 //     NetworkContext confirms (LookUpProxyForURL) that it routes via Tor.
+//     That NetworkContext is never given another proxy configuration (a
+//     policy's, override rules: MayApplyProxyConfig()), and if a setting
+//     the open check reads changes while MoltNet is open, MoltNet ends
+//     (SettingsError(), molt_net_live_guard.h).
 //
 // Leak controls applied to the MoltNet profile (rationale in the .cc):
 //   proxy = socks5://127.0.0.1:<auto port> (remote DNS, fail-closed),
@@ -31,12 +35,17 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <string>
 
 #include "base/functional/callback.h"
 
 class Profile;
 class PrefService;
+
+namespace net {
+class ProxyConfigWithAnnotation;
+}  // namespace net
 
 namespace molt_ai {
 namespace tor {
@@ -88,6 +97,28 @@ class MoltNetRouting {
   static bool ApplyRoutingPrefs(Profile* moltnet_profile,
                                 uint16_t socks_port,
                                 std::string* error);
+
+  // Empty if |moltnet_profile|'s settings are MoltNet's own: its Tor proxy
+  // with nothing outranking it or applied on top (no policy, flag or
+  // override rules), the leak controls, blob URL partitioning
+  // (molt_net_live_policy.h). Otherwise the error to show. ApplyRoutingPrefs()
+  // runs it with |socks_port| (the proxy must point at that port); while
+  // MoltNet is open it runs without, whenever one of these settings changes
+  // (molt_net_live_guard.h), and then the port MoltNet last wrote counts:
+  // Tor stopping or restarting isn't a settings change.
+  static std::string SettingsError(Profile* moltnet_profile,
+                                   std::optional<uint16_t> socks_port);
+
+  // For ProxyConfigMonitor: whether |profile|'s network contexts may be
+  // given the proxy configuration |config| (|available|: Chromium has one,
+  // rather than none, which the monitor would send as DIRECT). True for
+  // every profile but MoltNet's. A MoltNet profile's network contexts only
+  // get exactly the configuration its own Tor proxy setting describes, so
+  // a policy's proxy or override rules never reach them, while open or not
+  // (molt_net_live_policy.h).
+  static bool MayApplyProxyConfig(Profile* profile,
+                                  const net::ProxyConfigWithAnnotation& config,
+                                  bool available);
 
   // Asks the MoltNet profile's own NetworkContext how it would route a
   // request. |done(true)| only if the answer is exactly SOCKS5

@@ -3,7 +3,9 @@
 
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 
+#include <optional>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -19,6 +21,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
+#include "chrome/browser/molt_ai/tor/molt_net_live_guard.h"
+#include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -157,6 +161,79 @@ void EnsureReaper() {
   [[maybe_unused]] static base::NoDestructor<MoltNetProfileReaper> reaper;
 }
 
+// ---- A setting changed while MoltNet was open ----
+//
+// MoltNetLiveGuard (molt_net_live_guard.h) runs the open check again
+// whenever one of the settings it reads changes (a policy's proxy or
+// override rules, a leak control, blob URL partitioning). When it refuses,
+// that identity ends as in New Identity's first step, and the user is told
+// why. MoltNet's network context never got the new proxy configuration
+// (MoltNetRouting::MayApplyProxyConfig()), so until the profile is gone its
+// requests still go to Tor, or fail.
+
+// Tells the user why the MoltNet windows of |original| closed, over one of
+// its regular windows if there is one.
+void ShowEndedMessage(Profile* original, const std::string& error) {
+  gfx::NativeWindow parent = gfx::NativeWindow();
+  for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
+    if (window->GetProfile() == original && window->GetWindow()) {
+      parent = window->GetWindow()->GetNativeWindow();
+      break;
+    }
+  }
+  chrome::ShowWarningMessageBoxAsync(parent,
+                                     base::UTF8ToUTF16(kMoltNetEndedTitle),
+                                     base::UTF8ToUTF16(error));
+}
+
+// Closes the windows of the MoltNet profile |id| of the original profile at
+// |path| (a "Leave site?" prompt can't keep one open, as when Incognito
+// closes) and destroys the profile once they are gone.
+void CloseEndedIdentity(base::FilePath path,
+                        Profile::OTRProfileID id,
+                        bool tell_user,
+                        std::string error) {
+  Profile* original = ProfileByPath(path);
+  if (!original) {
+    return;
+  }
+  if (original->HasOffTheRecordProfile(id)) {
+    Profile* moltnet =
+        original->GetOffTheRecordProfile(id, /*create_if_needed=*/false);
+    if (moltnet && IsMoltNetProfile(moltnet)) {
+      EnsureReaper();
+      chrome::CloseAllBrowsersWithIncognitoProfile(moltnet,
+                                                   /*skip_beforeunload=*/true);
+      // Covers the no-window case; with windows, the reaper also fires.
+      PostDestroyIfUnused(moltnet);
+    }
+  }
+  if (tell_user) {
+    ShowEndedMessage(original, error);
+  }
+}
+
+// MoltNetLiveGuard's callback. Runs inside the settings-change
+// notification, so only the parts that destroy nothing happen here: the
+// identity stops being the current one (no window opens in it any more)
+// and its connections are dropped. The windows close, and the profile is
+// destroyed, in a task of their own.
+void EndForChangedSettings(Profile* moltnet, const std::string& error) {
+  if (!IsMoltNetProfile(moltnet)) {
+    return;
+  }
+  MoltNetRouting::ForgetMoltNetProfile(moltnet);
+  MoltNetRouting::FlushNetworkState(moltnet);
+  // Only an identity the user had windows of needs explaining; one that
+  // was still opening reports the error to whatever opened it.
+  const bool tell_user = HasOpenBrowserWindow(moltnet);
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&CloseEndedIdentity,
+                     moltnet->GetOriginalProfile()->GetPath(),
+                     moltnet->GetOTRProfileID(), tell_user, error));
+}
+
 // Closes MoltNet windows; |original| == nullptr means every profile.
 void CloseMoltNetWindows(Profile* original) {
   for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
@@ -258,6 +335,7 @@ void FitPageToLetterbox(base::WeakPtr<BrowserWindowInterface> weak_browser,
 }
 
 void OpenVerifiedWindow(base::FilePath path,
+                        Profile::OTRProfileID id,
                         GURL url,
                         bool for_new_identity,
                         MoltNetWindow::DoneCallback done,
@@ -271,17 +349,33 @@ void OpenVerifiedWindow(base::FilePath path,
                         "in a moment.");
     return;
   }
+  // The MoltNet profile whose routing was just verified.
+  Profile* original = ProfileByPath(path);
+  Profile* moltnet =
+      original && original->HasOffTheRecordProfile(id)
+          ? original->GetOffTheRecordProfile(id, /*create_if_needed=*/false)
+          : nullptr;
   if (!ok) {
-    if (Profile* moltnet = MoltNetRouting::GetMoltNetProfile(
-            ProfileByPath(path))) {
+    if (moltnet) {
       PostDestroyIfUnused(moltnet);
     }
     std::move(done).Run(false, error);
     return;
   }
-  Profile* moltnet = MoltNetRouting::GetMoltNetProfile(ProfileByPath(path));
-  if (!moltnet || GetBrowserWindowCreationStatusForProfile(*moltnet) !=
-                      BrowserWindowInterface::CreationStatus::kOk) {
+  // A setting the check read may have changed while the routing check ran
+  // (MoltNetLiveGuard has then ended this identity, or is about to).
+  if (moltnet) {
+    if (std::string settings_error =
+            MoltNetRouting::SettingsError(moltnet, std::nullopt);
+        !settings_error.empty()) {
+      PostDestroyIfUnused(moltnet);
+      std::move(done).Run(false, std::move(settings_error));
+      return;
+    }
+  }
+  if (!moltnet || MoltNetRouting::GetMoltNetProfile(original) != moltnet ||
+      GetBrowserWindowCreationStatusForProfile(*moltnet) !=
+          BrowserWindowInterface::CreationStatus::kOk) {
     std::move(done).Run(false, "Could not open a MoltNet window.");
     return;
   }
@@ -347,9 +441,14 @@ void OnTorReady(base::FilePath path,
     std::move(done).Run(false, error);
     return;
   }
+  // From now until this identity ends, the settings just checked are
+  // watched: if one changes so that this check would refuse, the identity
+  // ends (molt_net_live_guard.h).
+  MoltNetLiveGuard::Watch(moltnet, base::BindRepeating(&EndForChangedSettings));
   MoltNetRouting::VerifyRouting(
       moltnet, socks_port,
-      base::BindOnce(&OpenVerifiedWindow, std::move(path), std::move(url),
+      base::BindOnce(&OpenVerifiedWindow, std::move(path),
+                     moltnet->GetOTRProfileID(), std::move(url),
                      for_new_identity, std::move(done)));
 }
 

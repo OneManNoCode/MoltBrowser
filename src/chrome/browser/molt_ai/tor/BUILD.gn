@@ -34,6 +34,11 @@
 #   molt_net_partitioning_policy — the process-wide switches MoltNet needs
 #                              on (connections, HTTP cache, third-party
 #                              storage partitioned by site)
+#   molt_net_live_policy / molt_net_live_guard — the open check run again
+#                              whenever a setting it reads changes while
+#                              MoltNet is open (MoltNet then ends), and only
+#                              MoltNet's own proxy configuration for its
+#                              network context
 
 import("//extensions/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
@@ -138,6 +143,16 @@ source_set("proxy_policy") {
   sources = [ "molt_net_proxy_policy.h" ]
 }
 
+# The settings check MoltNet runs before a window opens and again whenever
+# one of its settings changes while MoltNet is open, and which proxy
+# configuration MoltNet's network context may get (molt_net_live_policy.h);
+# molt_net_routing.cc and molt_net_live_guard.cc read it. Header-only and
+# std-only, so molt_ai_unittests tests it.
+source_set("live_policy") {
+  sources = [ "molt_net_live_policy.h" ]
+  public_deps = [ ":proxy_policy" ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -145,6 +160,8 @@ source_set("tor") {
     # Header-only: Chromium's Incognito protections for MoltNet; the
     # upstream hooks marked "MoltBrowser:" include it.
     "molt_net_incognito_parity.h",
+    "molt_net_live_guard.cc",
+    "molt_net_live_guard.h",
     "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
@@ -160,6 +177,7 @@ source_set("tor") {
 
   public_deps = [
     ":incognito_parity_policy",
+    ":live_policy",
     ":network_context_policy",
     ":partitioning_policy",
     ":pref_isolation",
@@ -404,6 +422,7 @@ source_set("unit_tests") {
   sources = [
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
+    "molt_net_live_policy_unittest.cc",
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
@@ -423,6 +442,7 @@ source_set("unit_tests") {
   deps = [
     ":incognito_parity_policy",
     ":isolation_policy",
+    ":live_policy",
     ":locale_prefs",
     ":network_context_policy",
     ":onion_location",

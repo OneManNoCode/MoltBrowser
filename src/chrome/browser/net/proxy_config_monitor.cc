@@ -10,6 +10,8 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_routing.h"  // MoltBrowser
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
@@ -41,6 +43,13 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   profile_ = profile;
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+
+  // MoltBrowser: a MoltNet profile's network contexts only ever get
+  // MoltNet's own Tor proxy configuration, never a policy's proxy or
+  // override rules (molt_net_live_policy.h).
+  if (molt_ai::tor::IsMoltNetProfile(profile)) {
+    moltnet_profile_ = profile;
+  }
 
 // If this is the ChromeOS sign-in or lock screen profile, just create the
 // tracker from global state.
@@ -113,6 +122,14 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
   net::ProxyConfigWithAnnotation proxy_config;
   net::ProxyConfigService::ConfigAvailability availability =
       proxy_config_service_->GetLatestProxyConfig(&proxy_config);
+  // MoltBrowser: a MoltNet network context starts with no configuration
+  // (its requests wait for one) unless this is MoltNet's own.
+  if (moltnet_profile_ &&
+      !molt_ai::tor::MoltNetRouting::MayApplyProxyConfig(
+          moltnet_profile_, proxy_config,
+          availability == net::ProxyConfigService::CONFIG_VALID)) {
+    return;
+  }
   if (availability != net::ProxyConfigService::CONFIG_PENDING)
     network_context_params->initial_proxy_config = proxy_config;
 }
@@ -126,6 +143,16 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
     net::ProxyConfigService::ConfigAvailability availability) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
          !BrowserThread::IsThreadInitialized(BrowserThread::UI));
+  // MoltBrowser: a MoltNet network context keeps MoltNet's own proxy
+  // configuration; any other one (a policy's proxy, override rules, the
+  // system's settings, none) is held back, and MoltNet ends
+  // (molt_net_live_guard.h).
+  if (moltnet_profile_ &&
+      !molt_ai::tor::MoltNetRouting::MayApplyProxyConfig(
+          moltnet_profile_, config,
+          availability == net::ProxyConfigService::CONFIG_VALID)) {
+    return;
+  }
   for (const auto& proxy_config_client : proxy_config_client_set_) {
     switch (availability) {
       case net::ProxyConfigService::CONFIG_VALID:
