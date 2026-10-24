@@ -2671,7 +2671,11 @@ channels, bad geometry and golden digests) with g++ (ASan/UBSan), clang
 (UBSan trap, `-fno-exceptions`, the strict warning set) and clang for
 arm64 under qemu, with the same digests; a libFuzzer run of the scaler with
 random geometry and short buffers under ASan/UBSan. Every changed C++ file
-compiles against Chromium 156's real headers (`tools/compile_check`).
+compiles against Chromium 156's real headers (`tools/compile_check`, which
+now mounts FP16 for `paint_canvas_video_renderer.cc`); the four libopus
+files, which it doesn't cover, compile without warnings (`-Wall -Wextra
+-Wmissing-prototypes`) for x86-64 and arm64 against 156's libopus, and are
+the ones the comparisons above ran.
 **Needs the build machine:** compiling and linking, `media_unittests`
 (`MoltPortable*`), `blink_unittests` (`MoltNetPixelsTest.*`), and the
 checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-pixels" (two
