@@ -48,5 +48,32 @@ TEST(MoltNetMemoryValuesTest, Extremes) {
             UniformJsHeapSizeLimit());
 }
 
+TEST(MoltNetMemoryValuesTest, ChromiumsRounding) {
+  // Golden values of Chromium 156's QuantizeMemorySize (memory_info.cc),
+  // computed by the function itself.
+  EXPECT_EQ(QuantizedMemorySize(0), uint64_t{10000000});
+  EXPECT_EQ(QuantizedMemorySize(1), uint64_t{10000000});
+  EXPECT_EQ(QuantizedMemorySize(10000000), uint64_t{10000000});
+  EXPECT_EQ(QuantizedMemorySize(10000001), uint64_t{10600000});
+  EXPECT_EQ(QuantizedMemorySize(97400001), uint64_t{103000000});
+  EXPECT_EQ(QuantizedMemorySize(2172649472), uint64_t{2190000000});
+  EXPECT_EQ(QuantizedMemorySize(3760000000), uint64_t{3760000000});
+  EXPECT_EQ(QuantizedMemorySize(3760000001), uint64_t{3760000000});
+  EXPECT_EQ(QuantizedMemorySize(std::numeric_limits<uint64_t>::max()),
+            uint64_t{3760000000});
+  // What MoltNet reports as jsHeapSizeLimit.
+  EXPECT_EQ(QuantizedMemorySize(UniformJsHeapSizeLimit()),
+            uint64_t{3760000000});
+  // Rounding never goes down, and stays on the table.
+  uint64_t last = 0;
+  for (uint64_t bytes = 1; bytes < 5000000000; bytes = bytes * 9 / 8 + 1) {
+    const uint64_t rounded = QuantizedMemorySize(bytes);
+    EXPECT_TRUE(rounded >= bytes || rounded == 3760000000) << bytes;
+    EXPECT_GE(rounded, last);
+    EXPECT_EQ(QuantizedMemorySize(rounded), rounded);
+    last = rounded;
+  }
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting::moltnet

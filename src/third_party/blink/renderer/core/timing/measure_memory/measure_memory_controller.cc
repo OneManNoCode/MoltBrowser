@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/timing/measure_memory/local_web_memory_measurer.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -310,6 +311,10 @@ MemoryMeasurement* ConvertResult(const WebMemoryMeasurementPtr& measurement) {
   std::shuffle(breakdown.begin(), breakdown.end(), RandomBitGenerator{});
   size_t bytes = 0;
   for (const auto& entry : breakdown) {
+    // MoltBrowser: MoltNet rounds every byte count like performance.memory's
+    // (moltnet_memory.h).
+    entry->setBytes(
+        molt_fingerprinting::UniformMemoryMeasurementBytes(entry->bytes()));
     bytes += entry->bytes();
   }
   auto* result = MemoryMeasurement::Create();

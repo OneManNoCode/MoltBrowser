@@ -38,6 +38,13 @@ uint64_t V8HeapSizeLimit(uint64_t physical_memory);
 // performance.memory values): an 8 GiB machine's, 4 GiB + 96 MiB.
 uint64_t UniformJsHeapSizeLimit();
 
+// Chromium's rounding of performance.memory values when they aren't precise
+// (core/timing/memory_info.cc, QuantizeMemorySize): up to the next of 100
+// sizes from 10 MB to 3.76 GB, three significant digits each (the last one
+// for anything larger). The same table, fixed rather than computed in
+// floating point at run time, and safe on any thread.
+uint64_t QuantizedMemorySize(uint64_t bytes);
+
 }  // namespace blink::molt_fingerprinting::moltnet
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEMORY_VALUES_H_

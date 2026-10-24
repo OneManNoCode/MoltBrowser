@@ -35,6 +35,7 @@
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "v8/include/v8.h"
@@ -161,14 +162,23 @@ size_t QuantizeMemorySize(size_t size) {
 }
 
 MemoryInfo::MemoryInfo(Precision precision) {
+  // MoltBrowser: MoltNet always reports bucketized values, and the heap limit
+  // of the uniform 8 GB machine (moltnet_memory.h).
+  const bool uniform = molt_fingerprinting::UsesUniformMemoryInfo();
+  if (uniform) {
+    precision = Precision::kBucketized;
+  }
   // With the experimental PreciseMemoryInfoEnabled flag on, we will not
   // bucketize or cache values, regardless of the value of |precision|. When the
   // flag is off then our cache is used and |precision| determines the
   // granularity of the values and the timer of the cache we use.
-  if (RuntimeEnabledFeatures::PreciseMemoryInfoEnabled())
+  if (RuntimeEnabledFeatures::PreciseMemoryInfoEnabled() && !uniform)
     GetHeapSize(info_);
   else
     HeapSizeCache::ForCurrentThread().GetCachedHeapSize(info_, precision);
+  if (uniform) {
+    info_.js_heap_size_limit = molt_fingerprinting::UniformJsHeapSizeLimit();
+  }
   // The values must have been computed, so totalJSHeapSize must be greater than
   // 0.
   DCHECK_GT(totalJSHeapSize(), 0u);
