@@ -11,8 +11,9 @@
 //               baseLatency for every latencyHint, outputLatency,
 //               getOutputTimestamp(), destination.maxChannelCount,
 //               createScriptProcessor()'s default buffer size and
-//               playbackStats all describe it.
-//               An output device is always listed, before a permission.
+//               playbackStats all describe it, enumerateDevices() lists it
+//               before a permission, and contexts render on its clock
+//               (moltnet_audio_clock.h).
 //   EME         no key system at all (as in a build without CDMs).
 //   Media       a fixed table: supported from the decoders compiled into
 //   Capabilities  the build, smooth and never power efficient for video,

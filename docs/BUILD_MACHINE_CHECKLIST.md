@@ -485,6 +485,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 | `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
+| `platform/audio/audio_destination.{h,cc}`, `modules/mediastream/media_devices.cc` (new upstream copies), `audio_context.cc` (`IsValidSinkDescriptor`), `core/molt_fingerprinting/moltnet_audio_{clock,device}.{h,cc}` | a static setter on the `PLATFORM_EXPORT` `AudioDestination` holding a function pointer in a `std::atomic`, called from core; core now uses `media::FakeAudioWorker`, `media::MultiChannelResampler`, `media::AudioBus` and `NonMainThread` with `base::ThreadType::kRealtimeAudio` (`gn check`: core may need `//media` as a direct dep; Blink's `audit_non_blink_usage.py` may want `media::FakeAudioWorker`, `media::MultiChannelResampler` and `base::ThreadType` allowed in `core/molt_fingerprinting`); `WebMediaDeviceInfo` (`blink/public/common`) in core | fp-audio |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -640,6 +641,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
   | `MoltNetMediaValuesTest.*` | fp-media |
+  | `MoltNetAudioClockTest.*` (the output ring, drift control and a simulation against devices of 128 to 8192 frames) | fp-audio |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
@@ -658,6 +660,9 @@ extension enablement and `MediaRouterEnabled()`).
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
   `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
   `MoltNetDisplayTest` (fingerprinting 156), `MoltNetMediaTest` (fp-media),
+  `MoltNetAudioDeviceTest` (fp-audio: real threads and a few hundred
+  milliseconds of real time each; on a loaded bot rerun a timing failure
+  once before you report it),
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
@@ -681,6 +686,8 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
 | `blink_unittests` | `AudioContext*:BaseAudioContext*:*ScriptProcessor*:*RealtimeAudioDestination*:*EncryptedMedia*:*MediaKey*:MediaCapabilities*:*VideoDecoder*:*VideoEncoder*:*DecoderTemplate*` (normal windows: the hooks only act in MoltNet) | fp-media |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
+| `blink_platform_unittests` | `AudioDestination*:PushPullFIFO*` (the device factory is unset outside MoltNet) | fp-audio |
+| `blink_unittests` | `AudioContext*:AudioWorklet*:*MediaDevices*:*MediaDeviceInfo*` | fp-audio |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
 | `net_unittests` | `SSLClientSocketTest.*:*ClientAuth*:*ClientCert*:HttpNetworkTransactionTest.*` | MoltNet 156 |
@@ -1026,6 +1033,42 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   `createScriptProcessor().bufferSize` is 2048; a page that asks for
   `sampleRate: 22050` gets it and plays at the right pitch; after granting
   microphone access, `setSinkId()` to another output device still works.
+- [ ] When MoltNet's Web Audio renders, on real hardware (fp-audio). Open
+  the leak kit's `fp.html` in a MoltNet window, click the page once (an
+  `AudioContext` needs a gesture) and run `await mlAudioCadence()` in
+  DevTools' console: `audio.cadence_interval_ms` is 10 and
+  `audio.cadence_burst_frames` `[384, 512]` on every device below; in a
+  regular window it follows the device (e.g. 21 and `[1024]` on a
+  1024-frame device). Then, on each device, play a Web Audio tone, an
+  `AudioWorklet` synth and an `<audio>` file through
+  `createMediaElementSource()` for a few minutes: right pitch and speed, no
+  clicks, dropouts or drift (a 440 Hz tone against a tuner stays within a
+  cent), and A/V sync of a video with Web Audio sound within about 40 ms.
+  Devices: the output set to 44.1 kHz and then to 96 kHz (Windows'
+  "Default format", Audio MIDI Setup, `pw-metadata -n settings 0
+  clock.force-rate`, PulseAudio's `default-sample-rate`), a 48 kHz device
+  as the control; a 1024-frame device (PipeWire `pw-metadata -n settings
+  0 clock.force-quantum 1024`, or a `latencyHint: "playback"` page on
+  macOS) and a 128-frame one (`clock.force-quantum 128`); Bluetooth
+  headphones. Report the renderer's CPU (the browser's task manager) with
+  the tone playing in MoltNet and in a regular window.
+- [ ] Device changes and no device in MoltNet (fp-audio). With a tone
+  playing in a MoltNet page that logs `onerror`, `onstatechange` and
+  `navigator.mediaDevices.ondevicechange`: unplug wired headphones, connect
+  and then switch off Bluetooth headphones, and change the system's
+  default output: the sound moves to the new device after a short gap,
+  the page logs nothing and `currentTime` keeps advancing (note what a
+  regular window logs, for comparison). On a machine or VM with no audio output device at all
+  (a VM without a sound card; Linux with `snd_dummy` unloaded and
+  PipeWire/PulseAudio stopped; Windows with every playback device
+  disabled): `new AudioContext()` reads 48000, 0.01, 0.024 and 2 channels,
+  `setSinkId("")` resolves, no `error` fires within a minute,
+  `mlAudioCadence()` gives 10 and `[384, 512]`, and
+  `navigator.mediaDevices.enumerateDevices()` lists one `audiooutput`
+  (empty ID and label); in a regular window the same machine shows 44.1
+  kHz (or an `error`) and no `audiooutput`. Plug a device in afterwards
+  and report whether, and after how long, the MoltNet tone is heard
+  without reloading (a regular window is the reference).
 - [ ] EME, Media Capabilities and WebCodecs in MoltNet (fp-media): a
   Clear Key test page (e.g. the W3C EME test player) fails with
   `NotSupportedError` in MoltNet and plays in a regular window;
@@ -1200,7 +1243,9 @@ Mac; use a real Linux host.
     `mq.video_dynamic_range_high`, `mq.color_bits`, `mq.monochrome`),
     `storage.quota_over_usage` and `audio.render_quantum_hardware`
     (fingerprinting 156), and the `audio.*`, `eme.*`, `mc.*` and
-    `webcodecs.*` checks (fp-media); `diff` shows no difference in a
+    `webcodecs.*` checks (fp-media), `audio.cadence_interval_ms`,
+    `audio.cadence_burst_frames` and `media.audiooutput` (fp-audio); `diff`
+    shows no difference in a
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.

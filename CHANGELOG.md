@@ -480,6 +480,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pages' audio runs at 48 kHz, converted for your device when it uses
   another rate. Surround audio plays as stereo in MoltNet windows. Regular
   and incognito windows are unchanged.
+- **Web Audio keeps its own time in MoltNet.** MoltNet pages' Web Audio now
+  renders on the same fixed schedule on every machine (480 frames every
+  10 ms at 48 kHz), whatever your output device's buffer and timing, and a
+  machine without an output device answers like any other (no error
+  events, one listed output device). Your device plays the result through
+  a short buffer, which adds about 13 to 32 ms of audio latency in MoltNet
+  windows. Regular and incognito windows are unchanged.
 - **No DRM in MoltNet.** MoltNet pages are told that no media key system
   exists, Clear Key included, whichever ones the build or the operating
   system offers, and a MoltNet window no longer asks which ones there are.
