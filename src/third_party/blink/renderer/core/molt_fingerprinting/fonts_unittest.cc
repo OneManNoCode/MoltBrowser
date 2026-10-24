@@ -587,6 +587,23 @@ TEST(MoltLocalFaceTest, SampledFamilies) {
   }
 }
 
+TEST(MoltLocalFaceTest, SystemUiIsNoFace) {
+  // Not even where a site's sample has the name (Blink looks "system-ui" up
+  // as the platform UI font, which is not a face called that).
+  const FontName system_ui = Utf8("system-ui");
+  for (uint8_t key_byte = 1; key_byte < 250; ++key_byte) {
+    const FontVisibility farble = FontVisibility::AllowListAndSample(
+        FontPlatform::kLinux, Farbler(KeyFromByte(key_byte)));
+    if (!farble.IsSampled(system_ui.Hash())) {
+      continue;
+    }
+    EXPECT_EQ(LocalLookups(farble, "system-ui"), Lookups());
+    EXPECT_EQ(LocalLookups(farble, "System-UI Bold"), Lookups());
+    return;
+  }
+  FAIL() << "no key samples system-ui";
+}
+
 TEST(MoltLocalFaceTest, EncodingsLengthsAndAll) {
   const FontVisibility linux = FontVisibility::AllowList(FontPlatform::kLinux);
   // The same answers in Latin-1 and UTF-16, with prefix lengths in their
