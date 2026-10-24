@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 113 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 123 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -215,6 +215,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | ai.Summarizer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Translator is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Writer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
+| PASS | audio.render_quantum_hardware is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | autoplay.mediaelement is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | cookies.third_party is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | css.default_font_size is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
@@ -231,11 +232,18 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | mq.color_bits is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
+| PASS | mq.color_gamut_p3 is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
+| PASS | mq.color_gamut_rec2020 is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
+| PASS | mq.color_gamut_srgb is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | mq.device_size_matches is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
+| PASS | mq.dynamic_range_high is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | mq.hover_hover is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | mq.monochrome is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | mq.pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.pointer_fine is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.resolution_1dppx is uniform | FINGERPRINTING.md "Device pixel ratio" |
+| PASS | mq.video_dynamic_range_high is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | mq.viewport_exact is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | nav.connection is uniform | FINGERPRINTING.md "MoltNet: connection and network quality" |
 | PASS | nav.connection_changes is uniform | FINGERPRINTING.md "MoltNet: connection and network quality" |
@@ -261,8 +269,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | screen.width is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | screenDetails.error is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
 | PASS | scrollbar.box is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
+| PASS | scrollbar.overlay is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | sharedStorage.set is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | storage.persist is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | storage.quota_over_usage is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | text.metrics_whole is uniform | FINGERPRINTING.md "Text metrics (MoltNet)" |
 | PASS | touch.createEvent is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | touch.ontouchstart is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
