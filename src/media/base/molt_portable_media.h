@@ -9,10 +9,11 @@
 // page of the process can read back of decoded, converted, scaled or encoded
 // media is computed the same way on every machine of an OS:
 //
-//   * libopus encodes with its portable kernels: no kernel chosen at run
-//     time by the CPU's features, and no pulse search built on the x86
-//     approximate-reciprocal instructions, whose results differ between CPU
-//     vendors (third_party/opus/src/celt/x86/x86cpu.c, vq_sse2.c);
+//   * libopus encodes and decodes with its C kernels, never the SSE, AVX2 or
+//     NEON ones, whose sums round differently and whose x86 pulse search is
+//     built on approximate-reciprocal instructions that differ between CPU
+//     vendors (third_party/opus: BUILD.gn, src/celt/celt.c,
+//     src/celt/x86/x86cpu.c, src/celt/arm/*_neon_intr.c);
 //   * video is decoded by the build's software decoders, never the GPU's
 //     (DefaultDecoderFactory), and decoded frames stay in CPU memory
 //     (MappableSharedImageVideoFramePool);

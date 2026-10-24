@@ -18,4 +18,6 @@ include_rules = [
     "+media/base/supported_types.h",
     "+media/base/video_codecs.h",
     "+media/base/video_encoder.h",
+    # MoltNet's media pixels and encoded bytes (moltnet_pixels.h).
+    "+media/base/molt_portable_media.h",
 ]
