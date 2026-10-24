@@ -230,8 +230,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   64`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
   counted per site, apart from regular windows. Each site may store 60 MiB
   (all its storage keys together), all sites 600 MiB, and MoltNet no
-  longer evicts one site's data to make room for another's
-  (`docs/MOLTNET_COMPLIANCE.md`).
+  longer evicts one site's data to make room for another's. Background
+  Fetch requests, and downloads a page starts without navigating ("Save
+  link as", "Save image as", a link with `download`), resumed downloads
+  and "Save page as", now go out with the network key and Tor circuit of
+  the site they come from (Background Fetch in every private profile, as
+  regular profiles already do), so a file saved from another site's link
+  no longer carries that site's cookies (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

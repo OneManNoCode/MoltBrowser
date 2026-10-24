@@ -443,6 +443,9 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `services/network/keepalive_statistics_recorder.{h,cc}`, `services/network/url_loader_factory.{h,cc}` (new upstream copies), `services/network/molt_keepalive_partitions.h`, `molt_keepalive_site.h` (new, header-only, in no target's `sources`) | the service's recorder holds MoltNet's per-site recorders (`MoltRecorderFor()` returns a `base::WeakPtr`); the factory keeps a `base::WeakPtr<KeepaliveStatisticsRecorder>` chosen in its constructor from `IsolationInfo::top_frame_origin()` (`url::Origin::GetTupleOrPrecursorTupleIfOpaque()`, `net::SchemefulSite`) and hands it to each `URLLoader` | moltnet-shared |
 | `services/network/network_context.cc`, `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_per_site_keepalive_limits`, set by `molt_net_network_context_policy.h`; the constructor registers the context with the service's recorder, the destructor removes it after `DeregisterNetworkContext()` | moltnet-shared |
 | `storage/browser/quota/quota_settings.h`, `quota_manager_impl.cc`, `quota_temporary_storage_evictor.cc` (new upstream copies), `storage/browser/quota/molt_storage_budget.h`, `molt_storage_budget_policy.h` (new, header-only, in no target's `sources`) | `QuotaSettings::molt_per_site_quota` (0 by default; set by `molt_net_storage.cc`); `UsageAndQuotaInfoGatherer` gets `MoltOnGotGlobalUsage()` (bound to `QuotaManagerImpl::GetGlobalUsage()`, reads `UsageTracker::GetCachedStorageKeysUsage()`) and two members; `OnGotEvictionRoundInfo()` zeroes the overage. `quota_settings.h` is widely included in `//storage` and `//content` | moltnet-shared |
+| `components/download/internal/background_service/in_memory_download.cc` (new upstream copy), `molt_registering_site_isolation.h` (new, header-only, in no target's `sources`) | `SendRequest()` puts `RequestParams::isolation_info` into the request's `trusted_params` (`ResourceRequest::TrustedParams::isolation_info`); the factories it uses must be trusted (they are: `StoragePartitionImpl::CreateURLLoaderFactoryParams()`, the profile's browser-process factory), or the network service reports a bad message | moltnet-shared |
+| `content/browser/download/download_manager_impl.cc`, `save_file_manager.cc` (new upstream copies), `molt_download_isolation.h`, `molt_download_isolation_policy.h` (new, header-only, in no target's `sources`) | `BeginDownloadInternal()` and `SaveURL()` call the header's helpers: `RenderFrameHost::GetIsolationInfoForSubresources()`, `DownloadItem::GetIsolationInfo()`, `DownloadUrlParameters::set_isolation_info()` / `set_update_first_party_url_on_redirect()`, `net::IsolationInfo::CreateTransient()`, `net::SchemefulSite`, `GetContentClient()->browser()` | moltnet-shared |
+| `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | new virtual `ShouldKeepDownloadsWithTheirSite(BrowserContext*)`, default `false`; Chrome's answers `molt_ai::tor::KeepDownloadsWithTheirSite(IsMoltNetProfile(...))` (`molt_net_network_context_policy.h`) | moltnet-shared |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -585,7 +588,11 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   the tor `DEPS`) and `storage/browser/quota/molt_storage_budget_policy.h`
   (both std-only); `services/network/` and `storage/browser/quota/` include
   their new header-only `molt_*` files (§4.2). If `gn check` flags any of
-  them, list the header in the target that includes it.
+  them, list the header in the target that includes it. The same for
+  `components/download/internal/background_service/molt_registering_site_isolation.h`
+  and `content/browser/download/molt_download_isolation{,_policy}.h`;
+  `molt_ai_unittests` includes the std-only policy (allowed for that test
+  in the tor `DEPS`).
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -690,7 +697,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `MoltNetLanguagesTest` (real `LanguagePrefs`, a managed `ForcedLanguages`), `MoltNetIsolationTest.FixedLanguageNamesMatchChromiumsConstants`, `MoltNetPrefServiceTest.MoltNetWritesStayInMoltNet` (changed), `MoltNetSocketPoolsTest` (real `HttpNetworkSession` and pools, `MOCK_TIME`); built standalone only: `MoltNetLanguagePolicyTest`, `MoltNetSocketPoolPolicyTest`, `MoltNetLivePolicyTest`'s Incognito and ended-identity cases | moltnet-policy |
-  | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity` | moltnet-shared |
+  | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity`, `MoltNetDownloadIsolationTest` (new), `MoltNetNetworkContextPolicyTest.DownloadsKeptWithTheirSiteInMoltNetOnly` | moltnet-shared |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -754,6 +761,9 @@ pass except where the table below says otherwise (verify the filters).
 | `net_unittests` | `ClientSocketPool*:TransportClientSocketPool*:SocketPoolAdditionalCapacity*:SOCKSConnectJobTest.*:ConnectJobTest.*:HttpNetworkSession*:WebSocketTransportClientSocketPool*` (no MoltNet params: Chromium's pool with its random room, no gate and no handshake slots) | moltnet-shared |
 | `services_unittests` | `URLLoaderFactoryTest.*:KeepaliveStatisticsRecorder*:URLLoaderTest.*Keepalive*:NetworkContextTest.*:NetworkServiceTest.*` (every context without the field counts in the service's recorder, as before) | moltnet-shared |
 | `storage_unittests` | `QuotaManagerImplTest.*:QuotaTemporaryStorageEvictorTest.*:UsageTracker*:*QuotaSettings*` (also inside the fp-probes `Quota*` row; `molt_per_site_quota` is 0 outside MoltNet) | moltnet-shared |
+| `components_unittests` | `InMemoryDownloadTest.*:DownloadServiceControllerImplTest.*:BackgroundFetchDelegateBase*` (requests without an isolation unchanged) | moltnet-shared |
+| `content_unittests` | `DownloadManagerTest.*:DownloadManagerImplTest.*:SavePackage*:SaveFileManager*:BackgroundFetch*` (no profile keeps downloads with their site there) | moltnet-shared |
+| `browser_tests` | `BackgroundFetchBrowserTest.*:DownloadTest.*Incognito*:SavePageBrowserTest.*` (Background Fetch in Incognito now sends the site's isolation; every other expectation unchanged) | moltnet-shared |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1364,6 +1374,20 @@ macOS, and for the manual steps everywhere:
     1 MiB on site C, fill nine other sites, wait 40 minutes: C's data is
     still there. In an Incognito window, Chromium's limits and eviction
     are unchanged.
+  - Downloads and Background Fetch: with Tor's log at `SafeLogging 0` +
+    `Log info` (or a `chrome://net-export` log), two sites whose service
+    workers `backgroundFetch.fetch()` the same file of a third server: the
+    two streams carry the two sites' SOCKS usernames, and the fetches
+    complete (the download bubble shows them; Incognito too, without
+    Tor). A frame of site T embedded on sites A and B, with a link
+    `<a download>` to a file on T: clicking it in each gives streams with
+    A's and B's usernames; "Save link as" and "Save image as" in a top-level
+    page of A on a file of another site: A's username; "Save page as"
+    (complete) of a page of A with images from a CDN: A's username for the
+    images. Interrupt a large download (stop the server), resume it: the
+    resumed request has the first one's username. In a regular window all
+    of these behave as before (a link's file downloads with that site's
+    cookies).
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1428,6 +1452,13 @@ Mac; use a real Linux host.
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.
+  - `identity.background_fetch_circuits` passes (moltnet-shared): each
+    Background Fetch test's request went to Tor with its page's site's
+    SOCKS username. First-run question: whether the fetch starts at all in
+    the kit (a SKIP says none reached Tor: look at the `bgfetch_a`/`_b`
+    page results; `started: false` with a permission error, or `done:
+    false`, means the download service didn't run it, for example because
+    it saw no network in the kit's namespace).
   - `identity.tor_capacity` passes (moltnet-shared): the torrc the browser
     started Tor with states `ConnLimit 1000` and `MaxClientCircuitsPending
     64`. A SKIP saying the torrc wasn't found means the kit's Tor wrapper
