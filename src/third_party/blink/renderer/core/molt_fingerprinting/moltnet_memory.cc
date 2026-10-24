@@ -25,6 +25,11 @@ size_t UniformJsHeapSizeLimit() {
       moltnet::QuantizedMemorySize(moltnet::UniformJsHeapSizeLimit()));
 }
 
+size_t UniformHeapSize(size_t bytes) {
+  return static_cast<size_t>(
+      moltnet::QuantizedMemorySize(static_cast<uint64_t>(bytes)));
+}
+
 uint64_t UniformMemoryMeasurementBytes(uint64_t bytes) {
   if (!UsesUniformMemoryInfo() || bytes == 0) {
     return bytes;

@@ -98,6 +98,16 @@ class HeapSizeCache {
     if (precision == MemoryInfo::Precision::kPrecise)
       return;
 
+    // MoltBrowser: MoltNet rounds with a fixed table (moltnet_memory.h).
+    if (molt_fingerprinting::UsesUniformMemoryInfo()) {
+      info_.used_js_heap_size =
+          molt_fingerprinting::UniformHeapSize(info_.used_js_heap_size);
+      info_.total_js_heap_size =
+          molt_fingerprinting::UniformHeapSize(info_.total_js_heap_size);
+      info_.js_heap_size_limit = molt_fingerprinting::UniformJsHeapSizeLimit();
+      return;
+    }
+
     info_.used_js_heap_size = QuantizeMemorySize(info_.used_js_heap_size);
     info_.total_js_heap_size = QuantizeMemorySize(info_.total_js_heap_size);
     info_.js_heap_size_limit = QuantizeMemorySize(info_.js_heap_size_limit);

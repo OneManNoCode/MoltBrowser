@@ -6,8 +6,10 @@
 //
 // Upstream hooks (each marked "MoltBrowser:"):
 //
-//   performance.memory   MemoryInfo's constructor (core/timing/memory_info.cc)
-//                          -> UsesUniformMemoryInfo, UniformJsHeapSizeLimit
+//   performance.memory   MemoryInfo's constructor and HeapSizeCache::Update
+//                          (core/timing/memory_info.cc)
+//                          -> UsesUniformMemoryInfo, UniformJsHeapSizeLimit,
+//                             UniformHeapSize
 //   measureUserAgent-    ConvertResult (core/timing/measure_memory/
 //   SpecificMemory()       measure_memory_controller.cc)
 //                          -> UniformMemoryMeasurementBytes
@@ -18,7 +20,9 @@
 // sizes and refreshes them once every 20 minutes. MoltNet always does the
 // latter, and its jsHeapSizeLimit is that of the 8 GB machine
 // navigator.deviceMemory describes, rounded the same way. The used and total
-// sizes stay the page's own, rounded.
+// sizes stay the page's own, rounded. MoltNet rounds with a fixed table of
+// Chromium's 100 sizes (moltnet::QuantizedMemorySize) rather than computing
+// them with the platform's floating-point library as Chromium does.
 //
 // measureUserAgentSpecificMemory() (cross-origin isolated pages, windows,
 // shared and service workers): every byte count is rounded the same way (a
@@ -46,6 +50,10 @@ CORE_EXPORT bool UsesUniformMemoryInfo();
 // rounded like every performance.memory value (moltnet::QuantizedMemorySize,
 // Chromium's QuantizeMemorySize).
 CORE_EXPORT size_t UniformJsHeapSizeLimit();
+
+// performance.memory's used or total heap size in MoltNet: `bytes` rounded
+// up to the next of the 100 sizes (moltnet::QuantizedMemorySize). Any thread.
+CORE_EXPORT size_t UniformHeapSize(size_t bytes);
 
 // A byte count measureUserAgentSpecificMemory() reports: rounded in
 // MoltNet like performance.memory's (0 stays 0), `bytes` otherwise. Any
