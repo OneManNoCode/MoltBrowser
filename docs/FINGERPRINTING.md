@@ -2652,7 +2652,8 @@ conversion), `media/base/video_frame_converter_internals.cc` (`ARGBScale`,
 files; `//third_party/opus`), and in `third_party/opus`: `BUILD.gn` (the
 SSE and SSE2 kernels are chosen at run time instead of presumed, which
 `opus_select_arch()` does on every x86-64 CPU, so other processes run the
-same code as before), `src/celt/celt.c` (`opus_moltbrowser_set_portable()`),
+same code as before: the same bytes in all 300 configurations, and no
+measurable difference in speed), `src/celt/celt.c` (`opus_moltbrowser_set_portable()`),
 `src/celt/x86/x86cpu.c` (`opus_select_arch()`: the C kernels), and
 `src/celt/arm/pitch_neon_intr.c` and `celt_neon_intr.c` (the presumed NEON
 kernels hand over to C).
