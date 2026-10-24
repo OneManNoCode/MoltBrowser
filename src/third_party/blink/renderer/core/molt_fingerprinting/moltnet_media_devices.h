@@ -46,8 +46,9 @@ namespace molt_fingerprinting {
 // enumerateDevices() in MoltNet: whether to list one entry of `kind`, with no
 // ID, label or group, after the entries of that kind Chromium listed in
 // `enumeration` (indexed by mojom::MediaDeviceType): when it listed none and
-// the page doesn't see that kind's devices (moltnet::ListsUniformDevice).
-// false outside MoltNet.
+// the page doesn't see that kind's devices (an entry of the kind, or for the
+// audio kinds of either, has an ID; moltnet::ListsUniformDevice). false
+// outside MoltNet.
 CORE_EXPORT bool ShouldListUniformDevice(
     mojom::MediaDeviceType kind,
     const Vector<Vector<WebMediaDeviceInfo>>& enumeration);

@@ -136,8 +136,18 @@ bool ShouldListUniformDevice(
       index >= enumeration.size()) {
     return false;
   }
-  const Vector<WebMediaDeviceInfo>& listed = enumeration[index];
-  return moltnet::ListsUniformDevice(listed.size(), HasDeviceId(listed));
+  bool ids_exposed = HasDeviceId(enumeration[index]);
+  if (kind != mojom::MediaDeviceType::kMediaVideoInput) {
+    // Microphone permission shows both audio kinds.
+    for (const mojom::MediaDeviceType audio :
+         {mojom::MediaDeviceType::kMediaAudioInput,
+          mojom::MediaDeviceType::kMediaAudioOutput}) {
+      const auto other = static_cast<wtf_size_t>(audio);
+      ids_exposed |= other < enumeration.size() &&
+                     HasDeviceId(enumeration[other]);
+    }
+  }
+  return moltnet::ListsUniformDevice(enumeration[index].size(), ids_exposed);
 }
 
 bool DeviceChangeNeedsPermission() {

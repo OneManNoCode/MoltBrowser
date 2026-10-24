@@ -160,6 +160,20 @@ TEST_F(MoltNetMediaDevicesTest, OneOfEachKind) {
     enumeration[static_cast<wtf_size_t>(kind)][0] = device;
     EXPECT_FALSE(ShouldListUniformDevice(kind, enumeration));
   }
+  // Microphone permission shows both audio kinds: with a microphone's ID
+  // listed, no output means none (as in Chromium); a camera still gets one.
+  {
+    Vector<Vector<WebMediaDeviceInfo>> enumeration = Enumeration();
+    WebMediaDeviceInfo mic;
+    mic.device_id = "some-microphone";
+    enumeration[static_cast<wtf_size_t>(
+                    mojom::MediaDeviceType::kMediaAudioInput)]
+        .push_back(mic);
+    EXPECT_FALSE(ShouldListUniformDevice(
+        mojom::MediaDeviceType::kMediaAudioOutput, enumeration));
+    EXPECT_TRUE(ShouldListUniformDevice(
+        mojom::MediaDeviceType::kMediaVideoInput, enumeration));
+  }
   EXPECT_FALSE(ShouldListUniformDevice(
       mojom::MediaDeviceType::kNumMediaDeviceTypes, Enumeration()));
   EXPECT_FALSE(ShouldListUniformDevice(mojom::MediaDeviceType::kMediaAudioInput,
