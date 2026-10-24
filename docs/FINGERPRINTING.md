@@ -381,6 +381,7 @@ back/forward, and a MoltNet window with Shields off.
 | `new VideoFrame(canvas \| OffscreenCanvas \| ImageBitmap \| <img> \| SVG image)`, then `copyTo()`, `VideoEncoder`, `MediaStreamTrackGenerator`, ... | **not farbled** (per-frame cost; see below) | farbled (at creation) | `video_frame.cc`: `VideoFrame::Create` (CanvasImageSource) |
 | `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
+| Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
@@ -600,6 +601,12 @@ frames) instead of on every exported frame, then turn them on everywhere.
 WebGPU uploads from a canvas stay farbled in both (they are per upload, not
 per frame; camera `<video>`/`VideoFrame` sources are not farbled). Nothing is
 copied or computed when protection is off for the context.
+
+Decoded video is not farbled anywhere: its pixels show the clip, not the
+machine's rendering. In MoltNet windows they are also decoded and
+converted the same way on every machine of an OS, and so are the bytes
+the encoders write ([pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes)).
 
 ## WebGL and WebGPU in MoltNet windows
 
@@ -2337,8 +2344,9 @@ adaptive players from stepping down on slow machines.
 **What it costs MoltNet users.** WebCodecs pages (video editors, cloud
 gaming) decode and encode on the CPU; pages that require hardware fall
 back or refuse. Sites that choose formats by `powerEfficient` see `false`
-for every video and pick by their own preference. Media elements still
-play with hardware decoders where Chromium uses them.
+for every video and pick by their own preference. Media elements decode
+in software too ([pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes), with its costs).
 
 ### What is left
 
@@ -2350,8 +2358,9 @@ play with hardware decoders where Chromium uses them.
 * How the operating system schedules the audio clock's thread, and how
   long the graph takes to render (the machine's speed, which a page can
   time in many other ways).
-* `<video>` and `<audio>` still decode with the machine's decoders; only
-  their speed shows (`getVideoPlaybackQuality()`, frame timing).
+* `<video>` and `<audio>` decode with the build's software decoders
+  ([pixels and encoded bytes](#moltnet-pixels-and-encoded-bytes)); their
+  speed still shows (`getVideoPlaybackQuality()`, frame timing).
 * Normal windows' encoders (see *Encoder identity* in [Known
   gaps](#known-gaps-and-attacks); `MediaRecorder` in MoltNet: [its own
   section](#moltnet-mediarecorder)); `RTCRtpSender.getCapabilities()` (see
@@ -2482,8 +2491,10 @@ to encode with; in MoltNet windows every answer now comes from the build:
 | The software encoders' threads, and AV1's tile layout, which is written into the stream | sized by the machine's cores | sized by **4** cores, the count `navigator.hardwareConcurrency` reports |
 
 Audio is recorded as Opus (libopus) or PCM, by the build, on every
-machine. A stream whose frames arrive already encoded (a remote WebRTC
-track) is recorded as it is; WebRTC is off in MoltNet.
+machine, and in MoltNet libopus and the resampler use the same kernels on
+every CPU ([pixels and encoded bytes](#moltnet-pixels-and-encoded-bytes)).
+A stream whose frames arrive already encoded (a remote WebRTC track) is
+recorded as it is; WebRTC is off in MoltNet.
 
 The core count is set for the whole MoltNet renderer process
 (`media::SetProcessorCountForSoftwareEncoding`), so WebCodecs' software
@@ -2534,6 +2545,142 @@ real headers (`tools/compile_check`, which now mounts libvpx and libaom).
 machine with hardware encoders). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md): the recorded type for each container,
 and `isTypeSupported()` compared between runs.
+
+## MoltNet: pixels and encoded bytes
+
+A page can read back the media it decodes and encodes: a video frame's
+planes and its RGB pixels (`VideoFrame.copyTo()`, `new VideoFrame(video)`),
+a `<video>` drawn into a canvas or uploaded to WebGL, and the bytes that
+`VideoEncoder`, `AudioEncoder` and `MediaRecorder` write. At 156 those
+bytes depend on the machine in two ways: on the GPU and its video decoder,
+for video a media element plays, and on the CPU's vector instructions, for
+the code that scales, resamples and encodes. In MoltNet windows they are
+computed the same way on every machine of an OS:
+
+| What a page reads | Chromium 156 | MoltNet |
+|---|---|---|
+| `<video>` (and MSE) frames | decoded by the GPU's decoder where Chromium uses one, and kept in GPU memory (NV12); on some platforms software-decoded frames are copied there too | decoded by **the build's software decoders** (libvpx for VP8 and VP9, dav1d for AV1) and kept **in CPU memory** as decoded (I420) |
+| A video frame as RGB: `copyTo({format: 'RGBA'})`, `drawImage()`, `texImage2D()` | converted by the GPU (frames in GPU memory, accelerated canvases, WebGL uploads) or by libyuv | converted by **libyuv on the CPU** |
+| A `VideoEncoder` frame of another size than the encoder's | scaled by libyuv's box or bilinear filter, whose rounding differs between x86 and Arm | scaled by **an integer box (shrinking) and tent (growing) filter** that rounds the same way on every CPU (`media/base/molt_portable_scale.h`) |
+| Opus (`AudioEncoder`, `MediaRecorder`) | libopus with the CPU's SSE, AVX2 or NEON kernels; on x86 its pulse search uses approximate-reciprocal instructions, whose results differ between CPU vendors | **libopus's C kernels** |
+| Audio an encoder resamples (any rate but 8, 12, 16, 24 and 48 kHz) or downmixes | `SincResampler` and `vector_math::FMAC` with AVX2 and FMA, SSE or NEON | **their C versions** |
+
+The libopus row was measured with Chromium 156's libopus built for x86-64
+and arm64 with Chromium's flags: over 300 random encoder configurations,
+the C kernels give other bytes than Chromium's x86-64 build in 257 and than
+its arm64 build in 31, and Chromium's x86-64 build gives other bytes on an
+emulated x86 CPU than on an Intel one in 7 of 8 typical WebCodecs and
+MediaRecorder configurations. With the C kernels the bytes are the same on
+x86-64 (natively, and on emulated Nehalem and Core 2 CPUs) and on arm64
+(emulated Cortex-A72 and qemu's `max` CPU) in all 300, and a libm whose
+results are one unit in the last place off changes none of them.
+`SincResampler`'s SSE and AVX2 convolutions give other samples than its C
+one for three quarters of the output.
+
+**What was already the same.** Measured with Chromium 156's copies, built
+for x86-64 and arm64 with Chromium's flags:
+
+* libyuv: of 97 cases covering the calls the read-back and encoder-input
+  paths make, every conversion (YUV to RGB and back with the BT.601,
+  BT.709 and BT.2020 matrices, full and limited range, with nearest and
+  bilinear chroma, NV12, 10- and 12-bit, with and without alpha) gives the
+  same bytes at every SIMD level of x86-64 (C, SSE2 to AVX-512) and of
+  arm64 (C, NEON, SVE2, SME), and the same on both architectures; so does
+  nearest-neighbour scaling. Only filtered scaling
+  differed: between x86 and Arm (libyuv's own C code rounds per
+  architecture, to match each one's vector code), and on x86 at one ratio
+  (3/8) between SSSE3 and the rest. MoltNet therefore doesn't restrict
+  libyuv's CPU features (`libyuv::MaskCpuFlags`): it would change nothing on
+  one architecture and not make the two agree.
+* libvpx: VP8 and VP9 encoding at Chromium's real-time settings (several
+  sizes and thread counts) and decoding give the same bytes at every SIMD
+  level of x86-64 and on arm64.
+
+Video drawn into a canvas is read back through the canvas, whose
+readbacks are farbled like any drawing.
+
+**Which contexts.** The whole MoltNet renderer process, windows, iframes
+and workers, set once when it starts (`Configure`, before any media object
+exists). Normal and Incognito windows are unchanged, and so are the GPU
+process and other renderers. The kill switch turns it off.
+
+**What it costs MoltNet users.** Measured on one core of this VM (Xeon,
+2.1 GHz), with FFmpeg and the system's libvpx and dav1d, on busy synthetic
+clips at 30 frames a second:
+
+| Clip | VP9 (libvpx) | AV1 (dav1d) |
+|---|---|---|
+| 1080p (VP9 4 Mbit/s, AV1 3 Mbit/s) | 0.15 cores | 0.09 cores |
+| 2160p (VP9 16 Mbit/s, AV1 10 Mbit/s) | 0.68 cores | 0.41 cores |
+
+With four threads a decoder uses a little more CPU in total (1080p 0.19 and
+0.14 cores, 2160p 0.75 and 0.61) and runs 3 to 15 times faster than real
+time. A GPU decodes the same video for a fraction of a watt; at a typical
+laptop core's few watts when busy, software decoding should cost roughly
+0.5 to 1 W more at 1080p and 2 to 3 W more at 2160p, which shortens battery
+life while video plays by very roughly a tenth to a third (an estimate from
+the CPU time, not measured on a battery here). 4K at 60 frames a second
+may drop frames on slow machines (`getVideoPlaybackQuality()` shows it,
+and Media Capabilities already answers "not power efficient" for every
+video in MoltNet). Decoded frames are uploaded for display (3 MB per 1080p
+frame, 12 MB at 2160p) instead of staying on the GPU. The rest is small:
+reading a frame as RGB costs libyuv 0.5 ms at 1080p and 1.8 ms at 2160p;
+the integer scaler takes 9 ms for 1080p to 720p, 14 ms for 2160p to
+1080p and 6 ms for 720p to 1080p (I420; libyuv's filters 0.6 to 3 ms), so
+a page encoding 30 frames a second at another size than its frames uses up
+to half a core more; Opus with its C kernels takes 1.0 to 1.4 times as
+long (about 1% of a core for real-time stereo); the C resampler 2 ms per
+second of 48 kHz stereo (0.5 ms with AVX2).
+
+**Code.** `media/base/molt_portable_media.{h,cc}` (the process's portable
+mode; `PortableScaleFrame()`) and `media/base/molt_portable_scale.{h,cc}`
+(the scaler; std-only), with `molt_portable_media_unittest.cc` and
+`molt_portable_scale_unittest.cc` in `media_unittests`;
+`core/molt_fingerprinting/moltnet_pixels.{h,cc}` (`PinUniformMediaPixels()`,
+called from `Configure`; + `moltnet_pixels_test.cc`). Upstream hooks (each
+marked `MoltBrowser:`; all new in `src/`):
+`media/renderers/default_decoder_factory.cc` (`CreateVideoDecoders`: no
+external, that is hardware, decoders),
+`media/gfx/mappable_shared_image_video_frame_pool.cc`
+(`MaybeCreateHardwareFrame`: frames passed through),
+`media/gfx/paint_canvas_video_renderer.cc` (`VideoImageGenerator::QueryYUVA`
+and `IsPixelFormatSupportedForYuvSharedImageConversion`: no GPU
+conversion), `media/base/video_frame_converter_internals.cc` (`ARGBScale`,
+`NVxxScale`, `I4xxxScale`, `I4xxxScale_16`: filtered scaling),
+`media/base/sinc_resampler.cc` (`InitializeCPUSpecificFeatures`),
+`media/base/vector_math.cc` (`FMAC`), `media/base/BUILD.gn` (the new
+files; `//third_party/opus`), and in `third_party/opus`: `BUILD.gn` (the
+SSE and SSE2 kernels are chosen at run time instead of presumed, which
+`opus_select_arch()` does on every x86-64 CPU, so other processes run the
+same code as before), `src/celt/celt.c` (`opus_moltbrowser_set_portable()`),
+`src/celt/x86/x86cpu.c` (`opus_select_arch()`: the C kernels), and
+`src/celt/arm/pitch_neon_intr.c` and `celt_neon_intr.c` (the presumed NEON
+kernels hand over to C).
+
+**Verification.** Standalone (no Chromium checkout; harnesses in a scratch
+directory): the libyuv comparison above (97 cases, two contents and two
+sizes, on 15 CPU configurations: every `MaskCpuFlags` level natively from
+AVX-512 down to C, emulated Haswell, Sandy Bridge, Nehalem and Core 2, and
+emulated arm64 Cortex-A72, A76, Neoverse N2, qemu's `max` CPU with SVE2
+and SME, and C); the libopus comparison above (Chromium 156's libopus with the
+hooks, 300 random and 8 typical encoder configurations, also with glibc's
+libm replaced by fdlibm and by one perturbed by a unit in the last place);
+the libvpx comparison above; `molt_portable_scale_unittest.cc` (9 tests:
+the weights, copies, constant planes, block means, interpolation, range,
+channels, bad geometry and golden digests) with g++ (ASan/UBSan), clang
+(UBSan trap, `-fno-exceptions`, the strict warning set) and clang for
+arm64 under qemu, with the same digests; a libFuzzer run of the scaler with
+random geometry and short buffers under ASan/UBSan. Every changed C++ file
+compiles against Chromium 156's real headers (`tools/compile_check`).
+**Needs the build machine:** compiling and linking, `media_unittests`
+(`MoltPortable*`), `blink_unittests` (`MoltNetPixelsTest.*`), and the
+checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-pixels" (two
+machines of an OS with different CPUs and GPUs, playback cost).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): a VP9 frame decoded
+by WebCodecs and by a `<video>`, read as YUV and as RGBA, `<video>` frames
+in I420 (`pixels.video_frame_format`), and the bytes of a scaled VP8 frame
+(I420 and RGBA input) and of Opus at 48 and 44.1 kHz, compared between
+runs (`pixels.*`).
 
 ## MoltNet: storage limits
 
@@ -3965,7 +4112,9 @@ Honest list; anything not in the table above is not covered.
   windows. MoltNet's WebCodecs and `MediaRecorder` only use the build's
   software encoders, with threads for MoltNet's 4 cores (see [audio, DRM
   and media capabilities](#moltnet-audio-drm-and-media-capabilities) and
-  [MediaRecorder](#moltnet-mediarecorder)).
+  [MediaRecorder](#moltnet-mediarecorder)), which scale, resample and
+  encode the same way on every CPU ([pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes)).
 * **Audio routed out of Web Audio**: `MediaStreamAudioDestinationNode` ->
   `MediaStreamTrackProcessor` (`AudioData.copyTo`), `MediaRecorder`,
   `AudioEncoder`. `AudioParam` automation values computed by the browser are
@@ -4042,6 +4191,10 @@ Honest list; anything not in the table above is not covered.
   capabilities](#moltnet-audio-drm-and-media-capabilities).) What is left
   there: output device IDs once the user grants a media permission, and
   the speed of media playback.
+* (Closed: in MoltNet, hardware video decoding, the GPU's colour
+  conversion of read-back frames, and the CPU-specific kernels of libopus,
+  libyuv's filtered scaling and the encoders' resampler, see [pixels and
+  encoded bytes](#moltnet-pixels-and-encoded-bytes).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -4194,6 +4347,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour and scrollbar style (values in `moltnet_values.h`; + `moltnet_display_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.{h,cc}`, `moltnet_media.{h,cc}` | MoltNet's audio device, key systems, Media Capabilities table and WebCodecs codecs (pure, + `moltnet_media_values_unittest.cc`; glue, + `moltnet_media_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
+| `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
@@ -4253,7 +4407,16 @@ Media Capabilities and WebCodecs codecs: `audio_context.cc`,
 `media_capabilities.cc`, `gpu_factories_retriever.cc`,
 `video_decoder_broker.cc`; MoltNet's MediaRecorder encoders:
 `video_track_recorder.cc`, `media_recorder_handler.cc`,
-`media/base/video_encoder.{h,cc}`; MoltNet's storage limits:
+`media/base/video_encoder.{h,cc}`; MoltNet's media pixels and encoded
+bytes: `media/renderers/default_decoder_factory.cc`,
+`media/gfx/mappable_shared_image_video_frame_pool.cc`,
+`media/gfx/paint_canvas_video_renderer.cc`,
+`media/base/video_frame_converter_internals.cc`,
+`media/base/sinc_resampler.cc`, `media/base/vector_math.cc`,
+`media/base/BUILD.gn`, `third_party/opus/BUILD.gn`,
+`third_party/opus/src/celt/celt.c`, `celt/x86/x86cpu.c`,
+`celt/arm/pitch_neon_intr.c`, `celt/arm/celt_neon_intr.c`; MoltNet's
+storage limits:
 `content/browser/storage_partition_impl.cc`,
 `content/browser/blob_storage/chrome_blob_storage_context.cc`,
 `storage/browser/blob/blob_memory_controller.{h,cc}`; MoltNet
@@ -4344,4 +4507,8 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    buffer size there for normal windows), new readers of the audio
    device's parameters, new key systems or Media Capabilities fields,
    `encodingInfo()` of type `"record"`, and the features that table lists
-   as behind flags, once they ship.
+   as behind flags, once they ship. When libyuv, libopus or libvpx roll,
+   repeat the comparisons of [pixels and encoded
+   bytes](#moltnet-pixels-and-encoded-bytes) (every SIMD level of x86-64
+   and arm64), and check that new decoder or frame-pool paths keep
+   MoltNet's video in software and in CPU memory.
