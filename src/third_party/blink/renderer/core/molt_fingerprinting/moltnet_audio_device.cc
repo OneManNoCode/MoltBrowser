@@ -4,9 +4,6 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_device.h"
 
 #include <algorithm>
-#include <array>
-#include <cmath>
-#include <span>
 #include <utility>
 
 #include "base/location.h"
@@ -17,12 +14,12 @@
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/channel_layout.h"
 #include "media/base/fake_audio_worker.h"
-#include "media/base/multi_channel_resampler.h"
 #include "media/base/output_device_info.h"
-#include "media/base/sinc_resampler.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
 #include "third_party/blink/public/platform/web_audio_sink_descriptor.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_clock.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_output.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.h"
 #include "third_party/blink/renderer/platform/audio/audio_destination.h"
@@ -34,10 +31,6 @@
 namespace blink::molt_fingerprinting {
 
 namespace {
-
-// The resampler asks for the ring's audio in chunks of this many frames
-// (the smallest request that keeps its 64-tap kernel).
-constexpr int kReadFrames = media::SincResampler::kSmallRequestSize;
 
 // How long the real device stays closed after it failed, the first time and
 // at most.
@@ -105,28 +98,9 @@ void MoltNetAudioDevice::SetOutputDevice(
   if (!device) {
     return;
   }
-  const double device_rate = device->SampleRate();
-  const int device_frames = device->FramesPerBuffer();
-  nominal_ratio_ = device_rate > 0 && std::isfinite(device_rate)
-                       ? clock_sample_rate_ / device_rate
-                       : 1.0;
-  // The ring holds audio at the clock's rate; the device's buffer in those
-  // frames.
-  const int device_frames_at_clock_rate = static_cast<int>(
-      std::ceil(std::max(device_frames, 0) * std::min(nominal_ratio_, 64.0)));
-  resampler_ = std::make_unique<media::MultiChannelResampler>(
-      static_cast<int>(channels_), nominal_ratio_, kReadFrames,
-      ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
-          &MoltNetAudioDevice::ReadRing, CrossThreadUnretained(this))));
-  {
-    base::AutoLock locker(lock_);
-    ring_ = std::make_unique<moltnet::OutputRing>(
-        static_cast<int>(channels_),
-        moltnet::OutputRingFrames(tick_frames_, device_frames_at_clock_rate,
-                                  kReadFrames, clock_sample_rate_));
-    control_ = std::make_unique<moltnet::DriftControl>(
-        tick_frames_, device_frames_at_clock_rate, clock_sample_rate_);
-  }
+  output_ = std::make_unique<MoltNetAudioOutput>(
+      static_cast<int>(channels_), clock_sample_rate_, tick_frames_,
+      device->SampleRate(), device->FramesPerBuffer());
   output_device_ = std::move(device);
 }
 
@@ -172,13 +146,7 @@ void MoltNetAudioDevice::Resume() {
   }
   state_ = State::kRunning;
   if (output_device_running_) {
-    {
-      base::AutoLock locker(lock_);
-      ring_->Clear();
-      control_->Reset();
-      last_tick_due_ = base::TimeTicks();
-      flush_resampler_ = true;
-    }
+    output_->Restart();
     output_device_->Resume();
   } else {
     StartOutputDevice();
@@ -224,25 +192,11 @@ int MoltNetAudioDevice::Render(base::TimeDelta delay,
                                media::AudioBus* dest) {
   // The real device only takes what the clock rendered: nothing it passes
   // here (its buffer, delay, timing or glitches) reaches the page.
-  if (!resampler_ || dest->channels() != static_cast<int>(channels_)) {
+  if (!output_) {
     dest->Zero();
     return dest->frames();
   }
-  bool flush = false;
-  double rate = 1;
-  {
-    base::AutoLock locker(lock_);
-    flush = std::exchange(flush_resampler_, false);
-    rate = control_->read_rate();
-  }
-  if (flush) {
-    resampler_->Flush();
-  }
-  if (rate != resampler_rate_) {
-    resampler_->SetRatio(nominal_ratio_ * rate);
-    resampler_rate_ = rate;
-  }
-  resampler_->Resample(dest->frames(), dest);
+  output_->Pull(dest);
   return dest->frames();
 }
 
@@ -267,58 +221,15 @@ void MoltNetAudioDevice::OnRenderError() {
 }
 
 int MoltNetAudioDevice::RingLevelForTesting() {
-  base::AutoLock locker(lock_);
-  return ring_ ? ring_->level() : 0;
+  return output_ ? output_->RingLevelForTesting() : 0;
 }
 
 void MoltNetAudioDevice::OnTick(base::TimeTicks ideal_time,
                                 base::TimeTicks now) {
   callback_->Render(tick_delay_, ideal_time, media::AudioGlitchInfo(),
                     tick_bus_.get());
-  base::AutoLock locker(lock_);
-  if (!feeding_ || !ring_) {
-    return;
-  }
-  std::array<std::span<const float>, moltnet::OutputRing::kMaxChannels>
-      channels = {};
-  const size_t count = std::min(static_cast<size_t>(tick_bus_->channels()),
-                                channels.size());
-  for (size_t c = 0; c < count; ++c) {
-    channels[c] = std::span<const float>(tick_bus_->channel(static_cast<int>(c)));
-  }
-  ring_->Push(std::span(channels).first(count), tick_frames_);
-  last_tick_due_ = ideal_time;
-}
-
-void MoltNetAudioDevice::ReadRing(int frame_delay, media::AudioBus* bus) {
-  base::AutoLock locker(lock_);
-  if (!ring_ || !control_) {
-    bus->Zero();
-    return;
-  }
-  const double since_tick =
-      last_tick_due_.is_null()
-          ? 0.0
-          : (base::TimeTicks::Now() - last_tick_due_).InSecondsF();
-  const moltnet::ReadPlan plan =
-      control_->BeforeRead(ring_->level(), since_tick, bus->frames());
-  ring_->Discard(plan.drop);
-  ring_->Discard(ring_->LeadingSilence(plan.drop_if_silent));
-  if (!plan.play) {
-    bus->Zero();
-    return;
-  }
-  std::array<std::span<float>, moltnet::OutputRing::kMaxChannels> channels =
-      {};
-  const size_t count =
-      std::min(static_cast<size_t>(bus->channels()), channels.size());
-  for (size_t c = 0; c < count; ++c) {
-    channels[c] = std::span<float>(bus->channel(static_cast<int>(c)));
-  }
-  const int got = ring_->Pop(std::span(channels).first(count), bus->frames());
-  if (got < bus->frames()) {
-    bus->ZeroFramesPartial(got, bus->frames() - got);
-    control_->OnShortRead();
+  if (output_) {
+    output_->Push(*tick_bus_, ideal_time);
   }
 }
 
@@ -349,14 +260,7 @@ void MoltNetAudioDevice::StartOutputDevice() {
   if (!output_device_ || output_device_running_) {
     return;
   }
-  {
-    base::AutoLock locker(lock_);
-    ring_->Clear();
-    control_->Reset();
-    last_tick_due_ = base::TimeTicks();
-    flush_resampler_ = true;
-    feeding_ = true;
-  }
+  output_->StartFeeding();
   ++output_device_starts_;
   output_device_running_ = true;
   output_device_->Start();
@@ -368,9 +272,7 @@ void MoltNetAudioDevice::StopOutputDevice() {
   }
   output_device_->Stop();
   output_device_running_ = false;
-  base::AutoLock locker(lock_);
-  feeding_ = false;
-  ring_->Clear();
+  output_->StopFeeding();
 }
 
 void MoltNetAudioDevice::RetryOutputDevice() {

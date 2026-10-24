@@ -29,6 +29,8 @@ blink_core_sources_molt_fingerprinting = [
   "moltnet_media.h",
   "moltnet_audio_device.cc",
   "moltnet_audio_device.h",
+  "moltnet_audio_output.cc",
+  "moltnet_audio_output.h",
   "moltnet_network.cc",
   "moltnet_network.h",
   "shields_decision.cc",
