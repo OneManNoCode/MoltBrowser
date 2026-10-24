@@ -19,6 +19,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_partitioning_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_proxy_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -117,11 +118,22 @@ bool IsUserControlled(PrefService* prefs, const char* name) {
 }
 
 // True if the proxy of |prefs| is decided by something other than the user
-// store or the default (policy, extension, command line, supervision).
+// store or the default (policy, extension, command line, supervision), or
+// if proxy override rules (the ProxyOverrideRules policy) apply on top of
+// it (molt_net_proxy_policy.h).
 bool ProxyExternallyControlled(PrefService* prefs) {
   const PrefService::Preference* pref =
       prefs->FindPreference(proxy_config::prefs::kProxy);
-  return pref && !pref->IsDefaultValue() && !pref->IsUserControlled();
+  const PrefService::Preference* rules =
+      prefs->FindPreference(proxy_config::prefs::kProxyOverrideRules);
+  ProfileProxyPrefs state;
+  state.proxy_is_default = !pref || pref->IsDefaultValue();
+  state.proxy_is_user_controlled = pref && pref->IsUserControlled();
+  state.override_rule_count =
+      rules && rules->GetValue() && rules->GetValue()->is_list()
+          ? rules->GetValue()->GetList().size()
+          : 0;
+  return ProxyPrefsOverrideMoltNet(state);
 }
 
 bool LeakPrefsInPlace(PrefService* prefs) {

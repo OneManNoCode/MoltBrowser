@@ -27,6 +27,7 @@ FIRST_PARTY_GLOBS = [
 # (docs/BUILD_MACHINE_CHECKLIST.md section 4).
 UPSTREAM_HOOKS = [
     "net/socket/socks_connect_job.cc",
+    "net/socket/ssl_client_socket.cc",
     "net/http/http_network_session.cc",
     "services/network/network_context.cc",
     "services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc",
@@ -53,6 +54,9 @@ UPSTREAM_HOOKS = [
     "chrome/browser/ui/views/frame/contents_web_view.cc",
     "chrome/browser/universal_web_contents_observers.cc",
     "chrome/browser/about_flags.cc",
+    "content/browser/network/network_quality_observer_impl.cc",
+    "content/browser/network/browser_online_state_observer.cc",
+    "content/public/browser/content_browser_client.cc",
 ]
 
 # The check is a Linux build: other platforms' files are not compiled there.

@@ -227,6 +227,7 @@ paths that reached the onion server.
 | `mdns` | `.local` names | no mDNS, no IGMP/MLD join of the mDNS group |
 | `cert_fetch` | an https onion whose certificate lacks its intermediate, with AIA, OCSP and CRL URLs | no lookup of those names outside Tor; whether AIA came through Tor is shown |
 | `cert_fetch_b` | the same certificate on the second onion site (so the same AIA URLs) | nothing outside Tor; read with `cert_fetch` by `identity.cert_fetch_circuits` |
+| `client_cert` | the basic page from an https onion port (8444) whose server asks for a TLS client certificate without requiring one, and logs every handshake | nothing outside Tor; `net.client_cert.handshakes`: every handshake completes and none carries a certificate, so the browser neither asked the user nor connected again. In a regular window Chromium drops the first handshake to ask and connects again; the check reports that as information (step 20) |
 | `builtin_ai` | `availability()` and `create()` (with a user gesture) of every built-in AI API | `LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator` unavailable; no component or model download host looked up |
 | `geolocation` | `getCurrentPosition()` | error 1 at once (no prompt); no location provider host |
 | `extension` | a test extension allowed in Incognito (content script, web-accessible resource, `tabs`, `webRequest`) | the MoltNet page isn't marked, `chrome.runtime` is absent, the resource can't be fetched, and its background never sees a MoltNet tab or request (it would look up a canary name if it did) (step 16) |

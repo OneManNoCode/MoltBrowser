@@ -148,6 +148,8 @@ def _network_checks(manifest, traffic_result, server_log, t0):
             ': no onion name looked up, nothing leaked'
         checks.append(check('net.%s.traffic' % test['id'], group,
                             title + suffix, status, evidence, doc))
+        if test['id'] == 'client_cert':
+            checks.append(_client_cert_check(manifest, test, server_log))
         if spec:
             results = test.get('results')
             if spec.expect_load and results is None:
@@ -489,6 +491,57 @@ def _sandboxed_circuit_check(tr):
         'identity.sandboxed_circuits', 'identity',
         'Sandboxed pages (opaque origins) on two sites use different SOCKS '
         'usernames', status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8')
+
+
+# The client_cert test's server, as its log names the port (the onion
+# service's local port, or the regular-window loopback one).
+CLIENT_CERT_LOG_PORTS = (28445, 18445)
+
+
+def _client_cert_check(manifest, test, server_log):
+    """A server that asks for a TLS client certificate and doesn't require
+    one. In MoltNet every handshake with it completes and carries no
+    certificate: none is dropped half-way (Chromium drops the first one to
+    ask the user, then connects again, and remembers the answer for that
+    server on every site)."""
+    title = ('A server asking for a TLS client certificate gets none, at '
+             'once')
+    doc = 'MOLTNET_COMPLIANCE.md §2 (Shared network state), §4 step 20'
+    regular = (manifest.get('target') == 'regular' or
+               test.get('target') == 'regular')
+    group = 'regular-window' if regular else 'network'
+    start = test.get('start')
+    end = test.get('settle_end') or test.get('end')
+    if start is None or end is None:
+        return check('net.client_cert.handshakes', group, title, SKIP,
+                     ['the test didn\'t run'], doc)
+    hs = [r for r in server_log if r.get('event') == 'tls_handshake' and
+          r.get('port') in CLIENT_CERT_LOG_PORTS and
+          start - 0.5 <= (r.get('ts') or 0) <= end + 1.0]
+    done = [r for r in hs if r.get('ok')]
+    dropped = [r for r in hs if not r.get('ok')]
+    with_cert = [r for r in done if r.get('client_cert')]
+    ev = ['%d TLS handshake(s) with the server: %d completed, %d dropped, '
+          '%d with a client certificate' % (len(hs), len(done), len(dropped),
+                                            len(with_cert))]
+    ev += ['dropped: %s' % (r.get('error') or '?') for r in dropped[:4]]
+    if not hs:
+        status = SKIP
+        ev.append('no handshake reached the server')
+    elif regular:
+        status = SKIP
+        ev.append('a regular window (info): Chromium drops the first '
+                  'handshake to ask for a certificate, then connects again')
+    elif dropped or with_cert:
+        status = FAIL
+        if dropped:
+            ev.append('the browser dropped a handshake at the certificate '
+                      'request (it asked for a decision and connected again)')
+        if with_cert:
+            ev.append('the browser sent a client certificate')
+    else:
+        status = PASS
+    return check('net.client_cert.handshakes', group, title, status, ev, doc)
 
 
 CERT_FETCH_TESTS = ('cert_fetch', 'cert_fetch_b')

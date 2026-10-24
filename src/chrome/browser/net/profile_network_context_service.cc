@@ -1606,8 +1606,11 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
       profile_->GetPrefs()->GetBoolean(
           prefs::kAccessControlAllowMethodsInCORSPreflightSpecConformant);
 
+  // MoltBrowser: never in MoltNet (molt_net_network_context_policy.h).
   network_context_params->device_bound_sessions_enabled =
-      base::FeatureList::IsEnabled(net::features::kDeviceBoundSessions);
+      molt_ai::tor::DeviceBoundSessionsEnabledFor(
+          molt_ai::tor::IsMoltNetProfile(profile_),
+          base::FeatureList::IsEnabled(net::features::kDeviceBoundSessions));
   // Restrict sessions on google.com and youtube.com so that we can run
   // an experiment to understand their session's impact on Chrome's
   // special cookie handling for these sites.

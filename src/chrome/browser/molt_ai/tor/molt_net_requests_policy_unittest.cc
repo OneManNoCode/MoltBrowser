@@ -22,6 +22,7 @@ TEST(MoltNetRequestsPolicyTest, OtherProfilesKeepEveryFeature) {
   EXPECT_TRUE(access.cast);
   EXPECT_TRUE(access.relay_authenticators);
   EXPECT_TRUE(access.commerce);
+  EXPECT_TRUE(access.client_certificates);
 }
 
 TEST(MoltNetRequestsPolicyTest, MoltNetGetsNoneOfThem) {
@@ -35,12 +36,15 @@ TEST(MoltNetRequestsPolicyTest, MoltNetGetsNoneOfThem) {
   EXPECT_FALSE(access.cast);
   EXPECT_FALSE(access.relay_authenticators);
   EXPECT_FALSE(access.commerce);
+  EXPECT_FALSE(access.client_certificates);
 }
 
 TEST(MoltNetRequestsPolicyTest, IsAConstantExpression) {
   // Upstream hooks include the header and nothing else.
   static_assert(!MoltNetRequestAccessForProfile(true).cast);
   static_assert(MoltNetRequestAccessForProfile(false).relay_authenticators);
+  static_assert(!MoltNetRequestAccessForProfile(true).client_certificates);
+  static_assert(MoltNetRequestAccessForProfile(false).client_certificates);
   static_assert(SandboxTabWindowFor(true) == SandboxTabWindow::kMoltNet);
   static_assert(!MayChatActInWindow(true, false, false));
 }
