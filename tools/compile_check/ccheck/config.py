@@ -39,6 +39,8 @@ INCLUDE_DIRS = [
     "gpu",
     "third_party/vulkan-headers/src/include",
     "third_party/libyuv/include",
+    # libwebm includes itself by its source root (media/muxers/webm_muxer.h).
+    "third_party/libwebm/source",
     "third_party/webrtc",
     "gen:third_party/webrtc",
     "gen:components/policy/proto",
