@@ -470,6 +470,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `content/public/browser/client_hints_controller_delegate.h` (a new virtual in every implementation), `chrome/browser/client_hints/BUILD.gn`, `core/loader/frame_fetch_context.cc`, worker files | client hints and per-document Shields decisions | #24 |
 | `platform/network/network_state_notifier.{h,cc}`, `core/molt_fingerprinting/moltnet_network.{h,cc}` | `SetUniformNetworkState()`, an early return in four setters, no per-host factor in `GetRandomMultiplier()` once pinned; a `std::atomic<bool>` member in a header much of Blink includes (expect a large Blink rebuild); `Configure(kUniform)` calls `PinUniformNetworkState()` | network quality |
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
+| `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -605,6 +606,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `PageTranslatePlanTest`, `PageTranslateIoTest`, `PageTranslateMessagesTest`, `PageTranslationJobTest` | #48, #55 |
   | `TorControlProtocolTest`, `TorrcBuilderTest`, `PluggableTransportsTest`, `OnionLocationTest` | #6, #49 |
   | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
+  | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -620,7 +622,7 @@ extension enablement and `MediaRouterEnabled()`).
   scrollbar and viewport cases), `MoltNetTextTest` (with the real Roboto
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
   `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
-  `MoltFingerprintingTest`,
+  `MoltNetDisplayTest` (fingerprinting 156), `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
   `MoltFont*`, `MoltWebGLUniform` and `MoltNet*Values` suites.
@@ -640,6 +642,7 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `ChromeBrowsingDataRemoverDelegateTest.*:ProfileResetterTest.*` | #32 |
 | `unit_tests` | `AboutFlagsTest.*:AboutFlagsHistogramTest.*` | #39, #45, #47 |
 | `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
+| `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
@@ -943,6 +946,21 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   uniform values (from #20, #24).
 - [ ] Farbled video exports (`captureStream`) in MoltNet: measure the
   readback cost at 720p30 and 1080p30/60 on real hardware (from #10, #20).
+- [ ] The display in MoltNet (fingerprinting 156): on a Mac with a P3/XDR
+  screen and on an HDR monitor (Windows, Linux), `matchMedia` reports
+  `(color-gamut: srgb)`, not `p3`/`rec2020`, `(dynamic-range: standard)`,
+  `(video-dynamic-range: standard)`, `(color: 8)` and no `(monochrome)`;
+  DevTools' color-gamut emulation still applies; a regular window shows the
+  real display. HDR and P3 video and images still play and render.
+- [ ] Scrollbar style in MoltNet (fingerprinting 156): on macOS with "Show
+  scroll bars" set to Always, and with a mouse plugged in under
+  "Automatically", MoltNet pages get overlay scrollbars (a scrolling box's
+  `offsetWidth - clientWidth` is 0) and switching the setting or
+  unplugging the mouse doesn't relayout them; regular windows follow the
+  setting. On Windows and Linux with `chrome://flags/#overlay-scrollbars`
+  on, MoltNet pages keep classic 16 CSS px scrollbars. The scrollbars are
+  drawn, animate and can be dragged normally in all three cases, and the
+  DevTools device toolbar (mobile emulation) still shows overlay ones.
 
 ### 7.4 MoltNet
 
@@ -1038,9 +1056,13 @@ Mac; use a real Linux host.
     Identity's order (a beforeunload page, an immediate second New
     Identity) (from #49);
   - the uniformity checks pass, including the scrollbar and media-query
-    exactness (from #33), `text.metrics_whole` (from #37) and
+    exactness (from #33), `text.metrics_whole` (from #37),
     `nav.connection`, `worker.connection` and `nav.connection_changes`
-    (network quality); `diff` shows no difference in a promised value.
+    (network quality), and `scrollbar.overlay`, the colour media queries
+    (`mq.color_gamut_*`, `mq.dynamic_range_high`,
+    `mq.video_dynamic_range_high`, `mq.color_bits`, `mq.monochrome`),
+    `storage.quota_over_usage` and `audio.render_quantum_hardware`
+    (fingerprinting 156); `diff` shows no difference in a promised value.
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet

@@ -406,8 +406,10 @@ back/forward, and a MoltNet window with Shields off.
 | `MouseEvent`/`PointerEvent`/`WheelEvent`/`DragEvent` `.screenX/Y` | real | relative to the viewport, in CSS pixels (as if the window sat at 0,0 with no browser chrome) | `mouse_event.cc`: `SetCoordinatesFromWebPointerProperties` |
 | Page size (`innerWidth/innerHeight`, layout, width/height media queries) | real | **letterboxed**: the page area itself is rounded down to the screen steps above, in CSS pixels at every zoom level, and centred ([details](#letterboxing-moltnet)); the media queries, `vw`/`vh` and `visualViewport` report it in whole CSS pixels ([details](#zoom)) | browser: `contents_web_view.cc`: `GetInsets`, `PrimaryMainFrameWasResized`, `PrimaryPageChanged`; `local_frame_view.cc`, `dom_visual_viewport.cc` |
 | Classic scrollbars' width | the theme's DIPs (15 or 17) over the page zoom | **16 CSS pixels** at every zoom, scale factor and OS ([details](#zoom)) | `scrollbar.cc`, `scrollable_area.cc`, `paint_layer_scrollable_area.cc`, `layout_text_control.cc` |
+| Scrollbar style: overlay (takes no room) or classic | the OS setting (macOS's "Show scroll bars", which follows whether a mouse is connected; on Windows and Linux classic unless the overlay-scrollbars flag is on) | **the platform's default**: overlay on macOS, classic on Windows and Linux ([details](#moltnets-display-colour-and-scrollbar-style)) | `web_view_impl.cc`: `UpdateRendererPreferences` |
 | `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
 | `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
+| `color-gamut`, `dynamic-range`, `video-dynamic-range`, `color`, `monochrome` media queries | real | **srgb**, **standard**, **standard**, **8** bits, **0** ([details](#moltnets-display-colour-and-scrollbar-style)) | `media_values.cc`: `CalculateColorGamut`, `CalculateDeviceSupportsHDR`, `CalculateColorBitsPerComponent`, `CalculateMonochromeBitsPerComponent` |
 | Client hints (`Sec-CH-DPR`, viewport, width, memory, network, high-entropy `Sec-CH-UA-*`), `navigator.userAgentData.getHighEntropyValues()` | sent / real | **never sent** but `Sec-CH-UA`, `-Mobile`, `-Platform`, `Save-Data` and the preference hints; high-entropy values **blank** ([details](#client-hints)) | `frame_fetch_context.cc`, `navigator_ua.cc`; browser: `client_hints.cc` (content), `client_hints_factory.cc` |
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile; a zoomed page is still letterboxed ([details](#zoom)) | `off_the_record_profile_impl.cc`: `Init` |
 | Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)); the default fonts, minimum logical font size and encoding **fixed per OS**, not by UI language ([details](#default-fonts-font-size-and-encoding)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
@@ -415,6 +417,7 @@ back/forward, and a MoltNet window with Shields off.
 | Installed extensions: web-accessible resources, page-to-extension messaging (`chrome.runtime`), content-script changes, blocked or rewritten requests | the user's (in Incognito: those allowed there) | **none**; only the built-in PDF viewer ([details](MOLTNET_COMPLIANCE.md#2-how-it-is-built)) | `extension_util.cc`: `IsIncognitoEnabled`, `IsExtensionVisibleToContext`; `web_request_api.cc` |
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
+| `navigator.storage.estimate()` quota | the usage + 10 GiB (the disk, rounded up to whole GiB, where it is smaller) | the usage + **10 GiB**, static in off-the-record profiles since Chromium 156 | none (upstream) |
 | Third-party cookies, Shared Storage | the user's settings | third-party cookies **blocked** (as in Incognito); Shared Storage: removed upstream at 156 | `cookie_settings_factory.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
@@ -1229,10 +1232,12 @@ CSS pixels, which `clientWidth` and a scrolling box still round to 16, but
   4/3 and 1.4 screens): the scrollbar is the nearest whole number of device
   pixels, so its sub-pixel width shows the zoom (above), and the integer
   measures can read 15 or 17 (at 33% on a 1x screen, 15).
-* *Overlay or classic.* Pages still see whether scrollbars take room (0 or
-  16): macOS's default overlay scrollbars and the platforms that only have
-  overlay ones tell themselves apart from Windows, Linux and macOS with
-  scroll bars always shown, as upstream (where it was 0 against 15 or 17).
+* *Overlay or classic.* Since Chromium 156 MoltNet pages get their
+  platform's default style whatever the OS setting says (overlay on macOS,
+  classic on Windows and Linux; [MoltNet's
+  display](#moltnets-display-colour-and-scrollbar-style)), so whether
+  scrollbars take room (0 or 16) only tells macOS from the other systems,
+  which the user agent says anyway.
 * *Sub-pixel values* still carry the layout zoom, as they carry the scale
   factor (see [Device pixel ratio](#device-pixel-ratio)): layout geometry
   in device pixels (`getBoundingClientRect()`, `ResizeObserver` and
@@ -1306,8 +1311,9 @@ images four times as large).
   factors a page is a step smaller than its window allows, and on the
   3.5% of pages the browser can't letterbox exactly the media queries and
   `vw` are up to a device pixel off the step.
-* Scrollbars: whether they take room at all (overlay or classic) still
-  shows, as upstream ([Zoom](#zoom)).
+* Scrollbars: whether they take room at all (overlay or classic) follows
+  the platform's default since 156, so it only shows the OS
+  ([Zoom](#zoom)).
 * A maximised window on a large monitor shows the page at 1400 x 900 with
   wide margins: the cap is what makes everyone with a large window
   identical. New MoltNet windows open without margins ([New
@@ -1532,13 +1538,13 @@ manual, like the rest of this list.
 `ViewportLengthsAreWholeInMoltNet`, `OnlyNearlyWholeWebViewportLengthsSnap`,
 and `PredictedArithmeticIsBlinks` now checking `vw` and `visualViewport`
 too); the farbling and letterbox tests in `molt_ai_unittests`. By hand, in
-a MoltNet window, what the kit can't do: on Windows 10 and 11, Linux, and
-macOS with scroll bars always shown, at 1x and a fractional scale, a long
+a MoltNet window, what the kit can't do: on Windows 10 and 11 and Linux,
+at 1x and a fractional scale, a long
 page's `innerWidth - document.documentElement.clientWidth` is 16 at 100%
 and through every zoom level (at 33, 67, 80, 90 and 110% on 1x and 2x
-screens it may read 15 or 17), 12 with `scrollbar-width: thin`, 0 with
-macOS's default overlay scrollbars and with Fluent overlay scrollbars (the
-`fluent-overlay-scrollbars` flag); the scrollbar looks proportionate at
+screens it may read 15 or 17), 12 with `scrollbar-width: thin`, still 16
+with the overlay-scrollbars flag on, and 0 on macOS (overlay whatever "Show
+scroll bars" says, since 156); the scrollbar looks proportionate at
 25% and 500% (arrows, thumb, the corner), and dragging and clicking it
 still work; a `<textarea>`'s width, `scrollbar-gutter: stable` and `100vw`
 under `html { overflow: scroll }` leave out 16 CSS pixels; a regular window
@@ -3055,6 +3061,179 @@ on the user's on-device model ([design](design/WEB_AI_APIS.md), §8,
   `"downloadable"` in a keyless build and `"available"` with the user's own
   key: about one bit).
 
+## Re-checked at Chromium 156
+
+The guarantees above were built against Chromium 152. After the rebase to
+156.0.8078.48 every page-observable surface that shipped or changed in the
+four milestones between was looked at again, and so was every upstream
+function MoltBrowser hooks.
+
+**How.** Without a checkout: the 152 and 156 copies of
+`runtime_enabled_features.json5` (every feature that became `stable`, was
+removed or renamed, or gained an origin trial), the `BASE_FEATURE` defaults
+of `third_party/blink/common/features.cc`, `content_features.cc` and of the
+media, UI, GPU, permissions, storage and `chrome` feature lists (every flip
+to enabled-by-default), the Web IDL of all of Blink (every new interface,
+attribute, method and enum value, with the flag that gates it), the CSS
+media features and `env()` variables, the client hint and permission
+enums, the WebGL extension list, `ScreenInfo`, `WebPreferences` and
+`RendererPreferences`, and the consumers in Blink of the device pixel
+ratio, the screen, the locale and the CPU tier. For each hooked upstream
+function, its 152 and 156 bodies were compared and the 156 body read for
+new early returns or paths around the hook (none found).
+
+### What changed, and what MoltBrowser does about it
+
+| At 156 | What a page can see | MoltNet windows | Normal and Incognito | Decision |
+|---|---|---|---|---|
+| `color-gamut` is computed from how much of the P3 and Rec. 2020 gamuts the display covers (90%); with `dynamic-range`, `video-dynamic-range`, `color` and `monochrome` the media queries describe the display | the display's gamut, HDR support and bits per component | **srgb, standard, 8 bits, colour**, the same for everyone (new) | real | made uniform in MoltNet ([below](#moltnets-display-colour-and-scrollbar-style)) |
+| macOS takes overlay or classic scrollbars from `RendererPreferences`, like Windows, Linux and ChromeOS | whether scrollbars take room, and when that changes (a mouse plugged in) | **the platform's default style** (new) | the OS setting | made uniform in MoltNet ([below](#moltnets-display-colour-and-scrollbar-style)) |
+| Off-the-record profiles report a static storage quota (`kIncognitoStaticStorageQuota` on by default) | `navigator.storage.estimate()` | the usage + 10 GiB for everyone | Incognito the same; a regular profile the usage + 10 GiB, or its disk where that is smaller | upstream; the leak kit checks it |
+| `renderSizeHint` / `renderQuantumSize` (`WebAudioConfigurableRenderQuantum`, stable) | the render quantum a page asked for; `"hardware"` | 128 for `"hardware"` (no hardware value is read at 156) | same | none; the leak kit checks it, so a later Chromium that reads the hardware's buffer size shows up. Audio read back from any quantum is farbled as before |
+| `<camera>` and `<microphone>` elements (`CameraAndMicrophoneElements`, stable) | permission elements like `<usermedia>` | labels in en-US (the generated table covers them), the session's own permission state, a track only after the user grants access | the profile's permission state | none |
+| CSS `random()` (`CSSRandomFunction`, stable) | random values, cached per document and element from a CSPRNG | nothing about the device | same | none |
+| `RTCPeerConnection.startDiagnosticLogging()` (`RTCDiagnosticLogging`, stable on desktop) | a random session id | the browser collects no logs (MoltNet keeps no WebRTC text logs) | logs only for origins an enterprise policy lists | none |
+| `PerformanceEntry.navigationId` always exposed; Event Timing dispatch as HTML specifies (`EventTimingMatchingHTML`) | ids per document, starting at a random 100 to 10000, steps of 7 | same | same | none |
+| WebGPU: compatibility mode, new features, limits and texture usage | the GPU | no adapter | real (not covered, see [known gaps](#known-gaps-and-attacks)) | none |
+| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the allow-list; the check runs on the face the cache returns | allow-list + the site's sample | none |
+| New audio decoders (Symphonia, direct Opus) | `decodeAudioData()` results | the same for every user of a build; farbled when read | same | none |
+| Media clock coarsening (`kCoarseWallClockTimeSource`, on) | timing | coarser | coarser | upstream hardening |
+| `drawElementImageToTexture` (WebGPU, HTML-in-canvas) | page content in a GPU texture | **off**: behind `CanvasDrawElement` (experimental); the `HTMLInCanvas` origin trial's tokens stay refused | same | none |
+| `system_color_chooser_is_modal` (`RendererPreferences`, Linux) | on Wayland the colour picker waits while the system eyedropper has focus, which makes it behave as on X11 | no value a page reads changes | same | none |
+| Linux takes the desktop's accent colour from the XDG portal (`kUsePortalAccentColor`) | the `AccentColor` keyword shows it to installed web apps of the default profile only; form controls paint with it, which pages can't read back | the default accent | the default accent (the OS's only in installed web apps of the default profile) | none |
+| Media Capabilities: `encryptionScheme` in key-system queries (`KeySystemTrackConfigurationEncryptionScheme`) | the answer EME's `encryptionScheme` already gives | unchanged | unchanged | none |
+| `<unbounded>` element (`UnboundedElement`, stable) | - | **not on the web**: enabled per context, and the open web needs `UnsafeUnboundedElementOnTheOpenWeb` (off) | same | none |
+| The Global Privacy Control setting, the XSLT banner and the AtMemory shortcut in the renderer preferences | user settings | MoltBrowser's (pinned at the rebase, [settings](#moltnet-settings-from-the-regular-profile)) | the user's | done at the rebase |
+| Behind flags, not shipped: `GeometryUtils` (`getBoxQuads()`), HTML-in-canvas, `navigator.playHaptics()`, persistent widgets, `window.alwaysOnTop`, WebTransport and WebSocket additions, `FractionalScrollOffsets` | - | - | - | re-check when they ship |
+
+No client hint, permission name, WebGL extension, `env()` variable, media
+feature or `ScreenInfo` field was added; Topics' document API moved to the
+`TopicsAPI` flag and Shared Storage was removed.
+
+### MoltNet's display: colour and scrollbar style
+
+**Colour.** The media queries that describe the display's colour told a
+wide-gamut or HDR screen (most recent Macs, HDR monitors, OLED laptops)
+from a standard one, and its bits per component from 8, while
+`screen.colorDepth` already said 24 for everybody. At 156 the colour gamut
+is decided by how much of the P3 and Rec. 2020 gamuts the display covers,
+which moves some displays from one answer to another. MoltNet pages now
+see one display: `(color-gamut: srgb)` matches and `p3` and `rec2020`
+don't, `(dynamic-range: high)` and `(video-dynamic-range: high)` don't
+match, `(color: 8)` does and `(monochrome)` doesn't, consistent with a
+colour depth of 24. sRGB at 8 bits is the most common desktop display and
+what Chromium reports for a screen whose colour space it can't read. The
+values come from four `MediaValues::Calculate*` functions, the one place
+media queries, `matchMedia`, `<source media>` and the preload scanner get
+them from, so they all agree. DevTools' colour-gamut emulation still wins.
+Only what pages read changes: Blink still renders for the real display, so
+wide-gamut and HDR content still looks right where a page shows it anyway.
+*Cost:* pages that pick HDR video or P3 images by media query serve their
+standard versions in MoltNet windows.
+
+**Scrollbar style.** Whether scrollbars take room in the layout (classic)
+or are drawn over the content (overlay) follows an OS setting: on macOS
+"Show scroll bars", whose default ("automatically") switches to classic
+scrollbars while a mouse is connected; on Windows and Linux the
+overlay-scrollbars flag. A page reads it as `innerWidth -
+document.documentElement.clientWidth` (0 or 16 in MoltNet) and sees it
+change when the user plugs in a mouse. At 156 macOS sends it to the
+renderer in `RendererPreferences` like the other desktop platforms, so one
+renderer-side switch covers all of them: MoltNet renderers apply their
+platform's default style (`moltnet::UsesOverlayScrollbars()`: overlay on
+macOS, classic on Windows and Linux) whatever the browser sends, in
+`WebViewImpl::UpdateRendererPreferences`, where the renderer takes the
+setting for Blink and for the web theme. A renderer has one scrollbar style
+for all its pages, and MoltNet's renderers only host MoltNet pages. Classic
+scrollbars are 16 CSS pixels wide as before ([Zoom](#zoom)). *Cost:* on
+macOS, MoltNet pages show overlay scrollbars even when the user asked for
+scroll bars to be always shown (they appear while scrolling and on hover,
+and can still be dragged); on Windows and Linux the overlay-scrollbars flag
+doesn't apply to MoltNet windows.
+
+Which contexts: the whole MoltNet renderer process, like
+`screen.colorDepth`. Normal and Incognito windows are unchanged: none of
+these values can vary per site in a useful way. The kill switch turns both
+off with the rest.
+
+### The uniform values at 156
+
+Read again in the 156 sources, with the result:
+
+* **Screen and letterbox:** `Screen` and the hooked `LocalDOMWindow`,
+  `MediaValues` and `DOMVisualViewport` functions are unchanged upstream;
+  no new page-facing reader of `ScreenInfo`.
+* **Device pixel ratio:** no new reader of the ratio; `image-set()` now
+  caches its choice per ratio and still gets MoltNet's 1 from
+  `StyleResolverState`, which builds every `ElementStyleResources`.
+* **Scrollbars:** the thickness hooks hold (`Scrollbar::ScrollbarThickness`
+  only reaches its theme through a pointer at 156); the style is new above.
+* **Fonts and text metrics:** the family lookup still goes through
+  `FontFallbackList::GetFontData` and the selector; `local()` and
+  `queryLocalFonts()` as in the table; `text_metrics.cc`,
+  `font_cache_linux.cc` and the hooked `font_platform_data.cc` functions
+  unchanged; the tab-size fallback (`FontFallbackForTabSize`) is now
+  permanent and picks among the fonts the hooked lookup returned.
+* **GPU and WebGL:** every hooked WebGL function unchanged, no new
+  extension; `GPU::RequestAdapterImpl` lost its compatibility-mode warning
+  and still returns no adapter first.
+* **Locale and language:** `language.cc` unchanged; `platform_locale.cc`
+  only renamed types; the new `Locale::DefaultLocale()` caller (the XSLT
+  banner) uses strings MoltNet pins; `tools/moltnet_locale/generate_tables.py`
+  passes at 156.
+* **Client hints, user agent and brands:** no new hint; content's
+  `client_hints.cc` and `user_agent_utils.cc` only refactored around the
+  hooks (`IsClientHintEnabled`, `GenerateBrandVersionList`).
+* **Touch, pointer and hover:** the six `WebPreferences` fields unchanged;
+  `OverrideWebPreferences` still ends with MoltNet's override (156 sets the
+  clipboard exemption and the XSLT banner before it).
+* **Orientation, screen events, `getScreenDetails()`, the
+  `window-management` permission:** the hooked files are unchanged.
+* **Network quality:** `NetworkStateNotifier` only changed a type.
+* **Canvas, WebGL, audio and video farbling:** no new readback API in the
+  IDL; `toBlob()`'s new colour conversion runs on the farbled copy;
+  `copyExternalImageToTexture()` gained an HDR-headroom check before the
+  farbled upload; the other hooked functions only changed messages.
+* **CPU tier, memory, `hardwareConcurrency`:** `navigator.cpuPerformance`
+  now applies DevTools' override on top of the browser's tier (0 in
+  MoltNet); the others are unchanged.
+* **Workers and Shields decisions:** a dedicated worker now also inherits
+  its creator's document policy; the Shields hand-over is unchanged.
+
+### Code and verification
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_values.{h,cc}` | the display's values and `UsesOverlayScrollbars()` (pure, + `moltnet_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_display.{h,cc}` | which processes, the values as Blink types (+ `moltnet_display_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`): `core/css/media_values.cc`
+(`CalculateColorGamut`, `CalculateDeviceSupportsHDR`,
+`CalculateColorBitsPerComponent`, `CalculateMonochromeBitsPerComponent`)
+and `core/exported/web_view_impl.cc` (`UpdateRendererPreferences`; the
+file is new in `src/`).
+
+**Verified without a Chromium checkout:** `moltnet_values_unittest.cc` (7
+tests, 2 new) passes standalone with g++ (ASan/UBSan) and clang (UBSan
+trap, `-fno-exceptions` and the strict warning set), with
+`farbling_unittest.cc` and `fonts_unittest.cc` still passing. A harness
+runs the real `moltnet_display.cc` with the hooked code extracted verbatim
+from `media_values.cc` and `web_view_impl.cc`, against stand-ins of the
+types they touch, in kOff, kFarble and real kUniform, built as Linux and as
+macOS (8 tests: the real display outside MoltNet, the uniform one inside,
+a monochrome display, DevTools' gamut override, the scrollbar style from
+the start and through OS changes without rebuilding the scrollbars); 15
+mutants of the values, glue and hooks each fail it. Every changed C++ file,
+`moltnet_display_test.cc` included, compiles without errors against
+Chromium 156's real headers (`tools/compile_check`). **Needs the build
+machine:** compiling and linking, `blink_unittests`
+(`MoltNetDisplayTest.*`), `molt_ai_unittests`, and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fingerprinting 156" (a P3 or HDR
+display; macOS with "Show scroll bars" set to always and with a mouse).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): the colour media
+queries, `scrollbar.overlay` per OS, the quota over the usage and the
+render quantum for `"hardware"`.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
@@ -3146,8 +3325,9 @@ Honest list; anything not in the table above is not covered.
   zoom show through device-pixel snapping, layout's sub-pixel values
   (including a scrollbar's at zooms where 16 CSS pixels aren't whole device
   pixels) and `devicePixelContentBoxSize`; overlay against classic
-  scrollbars still shows; cross-process iframes can report a screen one
-  step narrower than a main frame with a classic scrollbar.
+  scrollbars shows the OS only (each platform's default style since 156);
+  cross-process iframes can report a screen one step narrower than a main
+  frame with a classic scrollbar.
 * (Closed: renderer strings, the default text locale and the default
   fonts, font size and encoding no longer follow the browser's UI
   language, see [the browser's UI
@@ -3324,6 +3504,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.{h,cc}`, `moltnet_device.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}`, `molt_net_client_hints.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_window.cc` | MoltNet memory, client hints, `userAgentData` (pure, + `moltnet_device_values_unittest.cc`; glue, + `moltnet_device_test.cc`); touch / pointer / hover, CPU tier and navigation client hints in the browser (+ `molt_net_device_values_unittest.cc`); the size new windows open at |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_network_values.h`, `moltnet_network.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_network_context_policy.h` | MoltNet's connection and network quality (pure, + `moltnet_network_values_unittest.cc`; glue, + `moltnet_network_test.cc`); no network-quality estimator in MoltNet's network context (+ `molt_net_network_context_policy_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour and scrollbar style (values in `moltnet_values.h`; + `moltnet_display_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
@@ -3374,7 +3555,9 @@ MoltNet connection and network quality:
 MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
-`screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet
+`screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet's
+display colour and scrollbar style: `media_values.cc`,
+`core/exported/web_view_impl.cc`; MoltNet
 default text locale: `platform/language.{h,cc}`; MoltNet text metrics:
 `base_rendering_context_2d.cc` (`measureText`), `text_metrics.{h,cc}`,
 `platform/fonts/font_platform_data.{h,cc}`,
@@ -3449,6 +3632,12 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    look ([Touchscreens](#touchscreens)),
    permission state and user settings that no longer come from the regular
    profile ([settings from the regular
-   profile](#moltnet-settings-from-the-regular-profile)), and one fixed
+   profile](#moltnet-settings-from-the-regular-profile)), one fixed
    connection and network quality ([connection and network
-   quality](#moltnet-connection-and-network-quality)).
+   quality](#moltnet-connection-and-network-quality)), and one display
+   colour and scrollbar style per platform ([MoltNet's
+   display](#moltnets-display-colour-and-scrollbar-style)).
+9. Repeat the [Chromium-update audit](#re-checked-at-chromium-156) at every
+   rebase. To watch: `renderSizeHint: "hardware"` (128 at 156; a later
+   Chromium may read the audio hardware's buffer size there), and the
+   features that table lists as behind flags, once they ship.
