@@ -128,6 +128,9 @@ void dual_inner_prod_neon(const opus_val16 *x, const opus_val16 *y01, const opus
 
 #else /* !FIXED_POINT */
 
+/* MoltBrowser: celt.c. */
+int opus_moltbrowser_portable(void);
+
 /* ========================================================================== */
 
 #ifdef __ARM_FEATURE_FMA
@@ -189,6 +192,11 @@ opus_val32 celt_inner_prod_neon(const opus_val16 *x, const opus_val16 *y, int N)
     float32x4_t xy_f32x4 = vdupq_n_f32(0);
     float32x2_t xy_f32x2;
 
+    /* MoltBrowser: */
+    if (opus_moltbrowser_portable()) {
+        return celt_inner_prod_c(x, y, N);
+    }
+
     for (i = 0; i < N - 7; i += 8) {
         float32x4_t x_f32x4, y_f32x4;
         x_f32x4  = vld1q_f32(&x[i]);
@@ -234,6 +242,12 @@ void dual_inner_prod_neon(const opus_val16 *x, const opus_val16 *y01, const opus
     float32x4_t xy01_f32x4 = vdupq_n_f32(0);
     float32x4_t xy02_f32x4 = vdupq_n_f32(0);
     float32x2_t xy01_f32x2, xy02_f32x2;
+
+    /* MoltBrowser: */
+    if (opus_moltbrowser_portable()) {
+        dual_inner_prod_c(x, y01, y02, N, xy1, xy2);
+        return;
+    }
 
     for (i = 0; i < N - 7; i += 8) {
         float32x4_t x_f32x4, y01_f32x4, y02_f32x4;

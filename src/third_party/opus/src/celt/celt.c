@@ -301,6 +301,24 @@ const char *opus_strerror(int error)
       return error_strings[-error];
 }
 
+/* MoltBrowser: when set, every encoder and decoder of this process computes
+   the same values on every CPU, whatever its features or vendor: no kernel
+   chosen at run time (x86cpu.c), and the C versions of the kernels a build
+   presumes the CPU has (Arm's NEON ones: pitch_neon_intr.c,
+   celt_neon_intr.c). Set once, before any encoder or decoder exists
+   (media/base/molt_portable_media.cc). */
+static int moltbrowser_portable = 0;
+
+void opus_moltbrowser_set_portable(int portable)
+{
+   __atomic_store_n(&moltbrowser_portable, portable ? 1 : 0, __ATOMIC_RELAXED);
+}
+
+int opus_moltbrowser_portable(void)
+{
+   return __atomic_load_n(&moltbrowser_portable, __ATOMIC_RELAXED);
+}
+
 const char *opus_get_version_string(void)
 {
     return "libopus " PACKAGE_VERSION

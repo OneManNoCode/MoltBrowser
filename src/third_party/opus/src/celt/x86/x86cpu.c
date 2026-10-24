@@ -35,6 +35,9 @@
 #include "pitch.h"
 #include "x86cpu.h"
 
+/* MoltBrowser: celt.c. */
+int opus_moltbrowser_portable(void);
+
 #if defined(OPUS_HAVE_RTCD) && \
   ((defined(OPUS_X86_MAY_HAVE_SSE) && !defined(OPUS_X86_PRESUME_SSE)) || \
   (defined(OPUS_X86_MAY_HAVE_SSE2) && !defined(OPUS_X86_PRESUME_SSE2)) || \
@@ -178,6 +181,10 @@ int opus_select_arch(void) {
     /* Randomly downgrade the architecture. */
     arch = rand()%(arch+1);
 #endif
+    /* MoltBrowser: the C kernels only (celt.c). */
+    if (opus_moltbrowser_portable()) {
+        arch = 0;
+    }
     return arch;
 }
 
