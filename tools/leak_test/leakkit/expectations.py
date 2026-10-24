@@ -135,6 +135,8 @@ S_TEXT = FP + ' "Text metrics (MoltNet)"'
 S_NETQ = FP + ' "MoltNet: connection and network quality"'
 S_156 = FP + ' "Re-checked at Chromium 156"'
 S_MEDIA = FP + ' "MoltNet: audio, DRM and media capabilities"'
+S_REC = FP + ' "MoltNet: MediaRecorder"'
+S_STORAGE = FP + ' "MoltNet: storage limits"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -149,12 +151,28 @@ STATIC_QUOTA = 10 * 1024 ** 3
 AUDIO_BASE_LATENCY = {'interactive': 480 / 48000, 'balanced': 480 / 48000,
                       'playback': 1024 / 48000, 'exact_0': 128 / 48000,
                       'exact_20ms': 1024 / 48000, 'rate_44100': 441 / 44100}
+# When MoltNet renders (moltnet_audio_clock.h): every 10 ms, 480 frames at
+# 48 kHz, which AudioDestination renders as 3 or 4 quanta of 128.
+AUDIO_TICK_MS = 10
+AUDIO_TICK_BURSTS = [384, 512]
 # Media Capabilities in MoltNet: a video the build decodes itself is smooth
 # and not power efficient; key systems and WebRTC are never supported.
 MC_SOFTWARE_VIDEO = {'supported': True, 'smooth': True,
                      'powerEfficient': False}
 MC_UNSUPPORTED = {'supported': False, 'smooth': False,
                   'powerEfficient': False}
+
+# MediaRecorder in MoltNet records with the build's software encoders
+# (moltnet_encoders.h): the type it reports for a canvas stream and each
+# container a page can ask for.
+RECORDER_MIME = {'default': 'video/webm;codecs=vp8',
+                 'video/webm': 'video/webm;codecs=vp8',
+                 'video/x-matroska': 'video/x-matroska;codecs=vp8',
+                 'video/mp4': 'video/mp4;codecs=vp9'}
+# The quota the browser enforces per site in MoltNet (molt_net_storage_
+# values.h), read through DevTools: writing until QuotaExceededError would
+# take too long for the kit, so the configured limit is checked instead.
+MOLTNET_SITE_QUOTA = 200 * 1024 ** 2
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
@@ -274,6 +292,12 @@ FULL_RULES = (
     ('audio.output_timestamp_ok', 'eq', True, S_MEDIA),
     ('audio.playback_latency_max', 'in', [0, 0.024, 'absent'], S_MEDIA),
     ('audio.playback_underruns', 'in', [0, 'absent'], S_MEDIA),
+    # Rendering follows the uniform device's clock, not the real device's:
+    # a burst of 480 frames (3 or 4 quanta of 128) every 10 ms.
+    ('audio.cadence_interval_ms', 'eq', AUDIO_TICK_MS, S_MEDIA),
+    ('audio.cadence_burst_frames', 'eq', AUDIO_TICK_BURSTS, S_MEDIA),
+    # An output device is listed before any permission, device or not.
+    ('media.audiooutput', 'eq', 1, S_MEDIA),
     ('eme.clearkey', 'eq', 'NotSupportedError', S_MEDIA),
     ('eme.widevine', 'eq', 'NotSupportedError', S_MEDIA),
     ('eme.playready', 'eq', 'NotSupportedError', S_MEDIA),
@@ -285,6 +309,10 @@ FULL_RULES = (
     ('mc.webrtc_encoding', 'eq', MC_UNSUPPORTED, S_MEDIA),
     ('webcodecs.decoder_hardware', 'in', [False, 'absent'], S_MEDIA),
     ('webcodecs.encoder_hardware', 'in', [False, 'absent'], S_MEDIA),
+    # MediaRecorder, src: local() and the storage limits.
+    ('recorder.mime_type', 'eq', RECORDER_MIME, S_REC),
+    ('fonts.local_hidden', 'eq', [], S_FONTS),
+    ('storage.enforced_quota', 'eq', MOLTNET_SITE_QUOTA, S_STORAGE),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -324,6 +352,9 @@ DIFF_KEYS = (
     'mc.opus', 'mc.h264', 'mc.hevc', 'media.can_play',
     'webcodecs.decoder_software', 'webcodecs.encoder_vp8',
     'webcodecs.encoder_h264', 'audio.sink_id',
+    # So does what MediaRecorder can record, and src: local() resolves
+    # through the visible families (FINGERPRINTING.md "Fonts").
+    'recorder.supported', 'fonts.local_listed',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference

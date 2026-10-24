@@ -213,6 +213,47 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Incognito, \u00a74 step 9",
+   "evidence": [
+    "2 of 2 MoltNet page(s) still open 12 s after the policy was written",
+    "openWindow with the policy -> {\"running\": true}; a MoltNet page opened: True"
+   ],
+   "group": "identity",
+   "id": "identity.incognito_forced_allows",
+   "status": "PASS",
+   "title": "IncognitoModeAvailability 2 (Incognito only) keeps MoltNet open and lets it open"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Incognito, \u00a74 step 9",
+   "evidence": [
+    "flags: --auto-open-devtools-for-tabs",
+    "2 MoltNet page(s) open, 1 of them DevTools (in a window of its own: True); \"Leave site?\" prompt: beforeunload",
+    "every one of them closed 5.5 s after the policy was written",
+    "openWindow with the policy -> {\"error\": \"Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it\"}; MoltNet pages: 0",
+    "openWindow once the policy was removed -> {\"running\": true}; a MoltNet page opened: True"
+   ],
+   "group": "identity",
+   "id": "identity.incognito_off_closes",
+   "status": "PASS",
+   "title": "IncognitoModeAvailability 1 set while MoltNet is open closes every MoltNet window, its DevTools window and a page waiting on \"Leave site?\" included; MoltNet then refuses to open, saying why, until the policy is gone"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.3, \u00a74 step 9",
+   "evidence": [
+    "policy {\"ForcedLanguages\": [\"ja\"], \"ReduceAcceptLanguageEnabled\": false}",
+    "moltnet page: before {\"accept_language\": \"en-US\", \"languages\": [\"en-US\", \"en\"]}, after {\"accept_language\": \"en-US\", \"languages\": [\"en-US\", \"en\"]}",
+    "regular page: before {\"accept_language\": \"de-DE\", \"languages\": [\"de-DE\", \"de\"]}, after {\"accept_language\": \"ja,de-DE;q=0.9,de;q=0.8\", \"languages\": [\"ja\", \"de-DE\", \"de\"]}",
+    "the regular page changed and MoltNet's did not"
+   ],
+   "group": "identity",
+   "id": "identity.language_policy_ignored",
+   "status": "PASS",
+   "title": "A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 7",
    "evidence": [
     "newIdentity -> {\"running\": true}",
@@ -346,7 +387,7 @@
    "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 Requests outside Tor, \u00a74 step 20",
    "evidence": [
-    "flags: --enable-features=AutofillServerCommunication",
+    "flags: --enable-features=AutofillServerCommunication,ReduceAcceptLanguage",
     "form page: loaded",
     "no connection to content-autofill.googleapis.com, chromium-i18n.appspot.com, through Tor or outside it, during the phase"
    ],
@@ -644,6 +685,28 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
    "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [384, 512], expected [384, 512]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.cadence_burst_frames",
+   "status": "PASS",
+   "title": "audio.cadence_burst_frames is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 10, expected 10"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.cadence_interval_ms",
+   "status": "PASS",
+   "title": "audio.cadence_interval_ms is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 2, expected 2"
    ],
    "group": "uniformity",
@@ -829,6 +892,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Fonts\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [], expected []"
+   ],
+   "group": "uniformity",
+   "id": "uniform.fonts.local_hidden",
+   "status": "PASS",
+   "title": "fonts.local_hidden is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: the browser's UI language\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"Value must be greater than or equal to 10.\", expected Value must be greater than or equal to 10."
@@ -991,6 +1065,17 @@
    "id": "uniform.mc.webrtc_encoding",
    "status": "PASS",
    "title": "mc.webrtc_encoding is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 1, expected 1"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.audiooutput",
+   "status": "PASS",
+   "title": "media.audiooutput is uniform"
   },
   {
    "details": null,
@@ -1303,6 +1388,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: MediaRecorder\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"default\": \"video/webm;codecs=vp8\", \"video/mp4\": \"video/mp4;codecs=vp9\", \"video/webm\": \"video/webm;codecs=vp8\", \"video/x-matroska\": \"video/x-matroska;codecs=vp, expected {\"default\": \"video/webm;codecs=vp8\", \"video/mp4\": \"video/mp4;codecs=vp9\", \"video/webm\": \"video/webm;codecs=vp8\", \"video/"
+   ],
+   "group": "uniformity",
+   "id": "uniform.recorder.mime_type",
+   "status": "PASS",
+   "title": "recorder.mime_type is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Surface covered\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 900, expected screen.height (900)",
@@ -1504,6 +1600,17 @@
    "id": "uniform.sharedStorage.set",
    "status": "PASS",
    "title": "sharedStorage.set is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: storage limits\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 209715200, expected 209715200"
+   ],
+   "group": "uniformity",
+   "id": "uniform.storage.enforced_quota",
+   "status": "PASS",
+   "title": "storage.enforced_quota is uniform"
   },
   {
    "details": null,
@@ -2793,7 +2900,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 146,
+  "PASS": 155,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2817,6 +2924,11 @@
      "playback": 0.021333333333333333,
      "rate_44100": 0.01
     },
+    "audio.cadence_burst_frames": [
+     384,
+     512
+    ],
+    "audio.cadence_interval_ms": 10,
     "audio.channel_count": 2,
     "audio.channel_count_3": "IndexSizeError",
     "audio.max_channel_count": 2,
@@ -2836,6 +2948,18 @@
     "eme.clearkey": "NotSupportedError",
     "eme.playready": "NotSupportedError",
     "eme.widevine": "NotSupportedError",
+    "fonts.local_hidden": [],
+    "fonts.local_listed": [
+     "DejaVu Sans",
+     "DejaVuSans-Bold",
+     "DejaVu Sans Bold Oblique",
+     "DejaVuSansMono",
+     "Liberation Sans",
+     "LiberationSans-Bold",
+     "Liberation Serif Italic",
+     "Noto Sans",
+     "NotoSans-Bold"
+    ],
     "fonts.visible": [
      "DejaVu Sans",
      "Liberation Sans",
@@ -2890,6 +3014,7 @@
      "smooth": false,
      "supported": false
     },
+    "media.audiooutput": 1,
     "media.devices": {
      "audiooutput": 1
     },
@@ -2929,6 +3054,21 @@
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "recorder.mime_type": {
+     "default": "video/webm;codecs=vp8",
+     "video/mp4": "video/mp4;codecs=vp9",
+     "video/webm": "video/webm;codecs=vp8",
+     "video/x-matroska": "video/x-matroska;codecs=vp8"
+    },
+    "recorder.supported": [
+     "video/webm;codecs=vp8",
+     "video/webm;codecs=vp9",
+     "video/webm;codecs=av01",
+     "video/mp4;codecs=av01.0.04M.08",
+     "audio/webm;codecs=opus",
+     "audio/webm;codecs=pcm",
+     "audio/mp4;codecs=opus"
+    ],
     "screen.availHeight": 900,
     "screen.availLeft": 0,
     "screen.availTop": 0,
@@ -2944,6 +3084,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
+    "storage.enforced_quota": 209715200,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,

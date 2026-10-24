@@ -17,7 +17,8 @@
 // round-trip; font names compare the same in UTF-8, Latin-1 and UTF-16 and
 // regardless of ASCII case and whitespace, the hashed index finds exactly
 // what a linear scan finds, and the visibility rules follow from the lists
-// and the site's sample.
+// and the site's sample; a src: local() name only ever leads to family
+// lookups CSS would make anyway, the same in every encoding and spelling.
 
 #include <array>
 #include <bit>
@@ -441,6 +442,63 @@ std::string Respell(std::string_view name, FuzzedDataProvider& p) {
   return out;
 }
 
+// src: local(`name`) under `vis`: only families CSS would look up as is (a
+// listed family, or a name in the sample: never an alias outside it, never a
+// hidden name), each followed by style words only.
+void CheckLocalFaces(const FontVisibility& vis,
+                     FontPlatform platform,
+                     const FontName& name,
+                     size_t raw_size) {
+  using Kind = FontVisibility::Request::Kind;
+  const FontVisibility::LocalFaceRequest local = vis.ForLocalFaceRequest(name);
+  CHECK(local.size <= kMaxLocalFaceCandidates);
+  if (!vis.restricts()) {
+    CHECK(local.size == 0) << "local() changed in an unprotected context";
+    return;
+  }
+  for (const FontVisibility::LocalFace& face : local.candidates()) {
+    const FontName family = face.sampled() ? name.Prefix(face.prefix_length)
+                                           : FontName::Utf8(face.listed);
+    CHECK(!family.IsEmpty());
+    CHECK(family.Hash() == face.family_hash);
+    CHECK(vis.ForFamilyRequest(family).kind == Kind::kLookUp)
+        << "local() looks up a family CSS wouldn't";
+    if (face.sampled()) {
+      CHECK(face.prefix_length <= raw_size);
+      CHECK(vis.IsSampled(face.family_hash));
+    } else {
+      const FontListEntry* entry =
+          FindInFontList(platform, family, face.family_hash);
+      CHECK(entry && entry->alias_of.empty() && entry->name == face.listed);
+    }
+    CHECK(face.min_weight <= face.weight && face.weight <= face.max_weight);
+    CHECK(face.min_weight >= 100 && face.max_weight <= 1000);
+    if (!face.styled) {
+      CHECK(face.weight == 400 && !face.italic);
+    }
+  }
+}
+
+// Whether two local() answers ask for the same families and styles (prefix
+// lengths differ between spellings and encodings).
+bool SameLocalFaces(const FontVisibility::LocalFaceRequest& a,
+                    const FontVisibility::LocalFaceRequest& b) {
+  if (a.size != b.size) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size; ++i) {
+    const FontVisibility::LocalFace& x = a.faces[i];
+    const FontVisibility::LocalFace& y = b.faces[i];
+    if (x.listed != y.listed || x.family_hash != y.family_hash ||
+        x.styled != y.styled || x.weight != y.weight ||
+        x.min_weight != y.min_weight || x.max_weight != y.max_weight ||
+        x.italic != y.italic) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const FontListEntry* LinearFind(FontPlatform platform, const FontName& name) {
   for (const FontListEntry& entry : FontListFor(platform)) {
     if (name.Equals(FontName::Utf8(entry.name))) {
@@ -485,10 +543,18 @@ void CheckFontName(const Farbler& farbler,
     const FontName as16 = FontName::Utf16(base::span(utf16));
     CHECK(as16.Equals(name) && name.Equals(as16)) << "UTF-16 disagrees";
     CHECK(as16.Hash() == hash);
+    const FontVisibility sample =
+        FontVisibility::AllowListAndSample(platform, farbler);
+    CHECK(SameLocalFaces(sample.ForLocalFaceRequest(name),
+                         sample.ForLocalFaceRequest(as16)))
+        << "UTF-16 disagrees on local()";
     if (fits_latin1) {
       const FontName as_latin1 = FontName::Latin1(base::span(latin1));
       CHECK(as_latin1.Equals(name) && as_latin1.Hash() == hash)
           << "Latin-1 disagrees";
+      CHECK(SameLocalFaces(sample.ForLocalFaceRequest(name),
+                           sample.ForLocalFaceRequest(as_latin1)))
+          << "Latin-1 disagrees on local()";
     }
   }
   // Raw bytes as UTF-16 (lone surrogates too) and Latin-1: no errors.
@@ -515,9 +581,15 @@ void CheckFontName(const Farbler& farbler,
   CHECK(all.ForFamilyRequest(name).kind ==
         FontVisibility::Request::Kind::kUnrestricted);
   CHECK(all.IsFamilyVisible(name));
+  CheckLocalFaces(all, platform, name, raw.size());
   for (const FontVisibility& vis :
        {FontVisibility::AllowList(platform),
         FontVisibility::AllowListAndSample(platform, farbler)}) {
+    CheckLocalFaces(vis, platform, name, raw.size());
+    // ASCII case and whitespace don't matter to local() either.
+    CHECK(SameLocalFaces(vis.ForLocalFaceRequest(name),
+                         vis.ForLocalFaceRequest(other)))
+        << "respelling a local() name changed its lookups";
     const bool sampled = vis.IsSampled(hash);
     if (vis.access() == FontVisibility::Access::kAllowList) {
       CHECK(!sampled);

@@ -118,6 +118,10 @@ AudioOutputPosition AudioOutputPositionAt(double current_time) {
   return {std::max(0.0, current_time - kAudioOutputLatencySeconds), true};
 }
 
+bool ListsUniformAudioOutput(size_t outputs_listed, bool audio_ids_exposed) {
+  return outputs_listed == 0 && !audio_ids_exposed;
+}
+
 MediaCapabilitiesAnswer VideoDecodingInfo(bool has_built_in_decoder) {
   if (!has_built_in_decoder) {
     return {false, false, false};

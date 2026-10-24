@@ -289,6 +289,10 @@ group("molt_ai") {
     # from chrome_content_browser_client.cc.
     "fingerprinting:device",
 
+    # MoltNet's fixed storage limits; called from
+    # chrome_content_browser_client.cc.
+    "fingerprinting:storage",
+
     # S19: keeps web pages from opening chrome:// / molt:// pages; used by
     # chrome_content_browser_client.cc.
     "security:webui_navigation_throttle",

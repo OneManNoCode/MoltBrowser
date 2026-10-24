@@ -29,6 +29,8 @@ source_set("farbling") {
     "moltnet_device_values.h",
     "moltnet_media_values.cc",
     "moltnet_media_values.h",
+    "moltnet_audio_clock.cc",
+    "moltnet_audio_clock.h",
     "moltnet_network_values.h",
     "moltnet_text_values.cc",
     "moltnet_text_values.h",
@@ -60,6 +62,7 @@ source_set("unit_tests") {
     "moltnet_values_unittest.cc",
     "moltnet_device_values_unittest.cc",
     "moltnet_media_values_unittest.cc",
+    "moltnet_audio_clock_unittest.cc",
     "moltnet_network_values_unittest.cc",
     "moltnet_text_values_unittest.cc",
   ]

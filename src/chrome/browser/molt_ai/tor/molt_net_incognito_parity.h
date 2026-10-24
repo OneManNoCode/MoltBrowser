@@ -62,6 +62,14 @@
 //     picture-in-picture is blocked unless the site was allowed it ("ask"
 //     counts as "block").
 //
+// Policies for Incognito (Incognito's availability covers MoltNet,
+// molt_net_live_policy.h):
+//   * policy/chrome_policy_blocklist_service_factory.cc: Incognito's URL
+//     blocklist and allowlist (IncognitoModeUrlBlocklist,
+//     IncognitoModeUrlAllowlist) apply in MoltNet windows too.
+//   * prefs/incognito_mode_prefs.cc (CanOpenBrowser) is not a
+//     GetsIncognitoProtections() hook: it asks IsMoltNetProfile() directly.
+//
 // Also from Incognito, in MoltBrowser code: molt_net_window.cc drops the
 // print-preview contents of a MoltNet profile before discarding it, as
 // BrowserManagerService does for Incognito.

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/callback_list.h"
 #include "base/memory/raw_ptr.h"
 #include "build/buildflag.h"
 #include "extensions/buildflags/buildflags.h"
@@ -98,9 +99,13 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 
   // MoltBrowser: the profile, if it is a MoltNet profile. Its network
-  // contexts only get MoltNet's own proxy configuration
-  // (MoltNetRouting::MayApplyProxyConfig()).
+  // contexts only get MoltNet's own proxy configuration, and once its
+  // identity has ended, one that refuses every request
+  // (MoltNetRouting::ProxyConfigFor()).
   raw_ptr<Profile> moltnet_profile_ = nullptr;
+  // MoltBrowser: hands them that one as soon as the identity ends
+  // (MoltNetRouting::AddIdentityEndedCallback()).
+  base::CallbackListSubscription moltnet_identity_ended_;
 };
 
 #endif  // CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_

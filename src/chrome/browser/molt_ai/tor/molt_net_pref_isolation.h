@@ -44,8 +44,16 @@
 // ...) is kept, in memory, until the profile goes away at New Identity or
 // when the last MoltNet window closes. Policy values rank above the user
 // store and still apply; extension-controlled values don't, because
-// MoltNet's extension pref store is empty (CreateMoltNetExtensionPrefStore,
-// molt_net_isolation.h).
+// MoltNet's extension pref store holds no extension's setting
+// (CreateMoltNetExtensionPrefStore, molt_net_isolation.h).
+//
+// MoltNet's languages are the exception to "MoltNet's own values live in its
+// own store": Chromium code rewrites "intl.accept_languages" in the store of
+// the profile it runs for (language::LanguagePrefs, from the ForcedLanguages
+// policy and the user's selected languages; molt_net_language_policy.h). So
+// MoltNet's language list sits in the store that ranks above its own, the
+// extension-controlled layer, where no write to the profile's settings can
+// change it, for the whole life of the profile.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_PREF_ISOLATION_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_PREF_ISOLATION_H_
@@ -55,9 +63,9 @@
 #include <memory>
 
 #include "base/memory/scoped_refptr.h"
+#include "components/prefs/value_map_pref_store.h"
 
 class PrefService;
-class PrefStore;
 
 namespace sync_preferences {
 class PrefServiceSyncable;
@@ -68,11 +76,23 @@ namespace molt_ai::tor {
 // The pref service of a new MoltNet profile whose parent's prefs are
 // `regular_prefs`: an off-the-record overlay that writes nothing through to
 // `regular_prefs`, with every pinned pref already at its registered
-// default. `incognito_extension_pref_store` is the extension-controlled
-// store; MoltNet passes an empty one (CreateMoltNetExtensionPrefStore).
+// default. `top_store` becomes the store that ranks above MoltNet's own
+// (Chromium's extension-controlled layer); MoltNet passes an empty one
+// (CreateMoltNetExtensionPrefStore), null makes a new one. It then gets
+// MoltNet's languages (FixMoltNetLanguages()) and nothing else.
 std::unique_ptr<sync_preferences::PrefServiceSyncable> CreateMoltNetPrefService(
     sync_preferences::PrefServiceSyncable* regular_prefs,
-    scoped_refptr<PrefStore> incognito_extension_pref_store);
+    scoped_refptr<ValueMapPrefStore> top_store);
+
+// Writes MoltNet's language list (MoltNetLanguageList(): en-US while
+// fingerprinting protection is on, else the registered default of
+// "intl.accept_languages") into `top_store` for every registered string pref
+// of kMoltNetFixedLanguagePrefs (molt_net_language_policy.h). `top_store`
+// must be the store above the user store of `prefs` (CreateMoltNetPrefService
+// passes it). Returns how many it wrote.
+size_t FixMoltNetLanguages(PrefService* prefs,
+                           ValueMapPrefStore* top_store,
+                           bool uniform);
 
 // Writes the registered default of every registered pref that
 // IsMoltNetPinnedPref() names into `prefs`' user store (MoltNet's fixed

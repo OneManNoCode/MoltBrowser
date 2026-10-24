@@ -177,8 +177,9 @@ asks nobody in particular.
   browser's environment is emptied except for `HOME`, `USER`, `PATH`,
   `LANG`/`LC_ALL`, `TZ`, the display and `XDG_RUNTIME_DIR`. Proxy variables
   in particular are removed.
-* **A policy set while the browser runs.** For one launch (phase
-  `policy_live`) the kit mounts a directory of the run (root-owned, under
+* **A policy set while the browser runs.** For two launches (phases
+  `policy_live` and `policy_live_incognito`) the kit mounts a directory of
+  the run (root-owned, under
   `/run/moltleak-<id>/`) over `/etc/chromium/policies/managed`, where Linux
   builds without Chrome branding read mandatory policies, in the browser's
   private mount namespace only, and writes a policy file there while
@@ -267,6 +268,8 @@ the report. Anything else is a leak.
 | Partitioning switches refused | one relaunch per switch MoltNet needs on, each with `--disable-features=` for it (`PartitionConnectionsByNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey`, `ThirdPartyStoragePartitioning`): `openWindow` returns an error that names the switch, and no MoltNet window opens (`identity.partitioning_override_refused`, phase `partitioning_override`) | 9 |
 | A policy set while MoltNet is open | a relaunch with the run's policy directory mounted (above): with a MoltNet page fetching a canary name every 250 ms, the kit writes `{"ProxyMode": "direct"}`. Every MoltNet page must close within 60 s (Chromium reads a changed policy file about 5 s later), the canary must never be looked up outside Tor, `openWindow` must then fail, and once the policy file is removed MoltNet must open again (`identity.policy_change_closes`, phase `policy_live`) | 9 |
 | No Autofill server query | in the same launch, with `--enable-features=AutofillServerCommunication` (MoltBrowser turns the queries off by default), a MoltNet page with an address and a sign-in form: no connection to `content-autofill.googleapis.com` or `chromium-i18n.appspot.com`, through Tor (the capture's SOCKS5 requests) or outside it, during the phase (`net.autofill_server`) | 20 |
+| Language policies | in the same launch (with `ReduceAcceptLanguage` on, so that the policy below changes the regular header), once MoltNet has opened again: the kit writes `{"ForcedLanguages": ["ja"], "ReduceAcceptLanguageEnabled": false}`, then loads a page in a MoltNet tab and in a regular tab twice (each load runs the page's language detection, after which Chromium rebuilds a profile's languages). The regular page's `navigator.languages` or `Accept-Language` must change (else the policy did not arrive: ERROR), MoltNet's must not, no forced language may show in MoltNet, and MoltNet must stay open (`identity.language_policy_ignored`, phase `policy_live`) | 9 |
+| Incognito availability | a second launch with `--auto-open-devtools-for-tabs` and DevTools set to open undocked (the kit writes the dock state into the regular profile's `Preferences`; MoltNet's DevTools reads it through): MoltNet opens with its DevTools in a window of its own, the page asks "Leave site?" on a navigation away (user activation, prompt left unanswered). The kit writes `{"IncognitoModeAvailability": 1}`: every MoltNet page, DevTools included, must close within 60 s, `openWindow` must then fail with an error that names Incognito, and open again once the file is removed. Then `{"IncognitoModeAvailability": 2}` (Incognito only): MoltNet must stay open and open (`identity.incognito_off_closes`, `identity.incognito_forced_allows`, phase `policy_live_incognito`) | 9 |
 
 ### Uniformity (FINGERPRINTING.md)
 
@@ -312,13 +315,29 @@ level, and in one browser launch per device scale factor
   device (`AudioContext` at 48 kHz, `baseLatency` for every `latencyHint`
   and at a page's 44.1 kHz, `outputLatency` 24 ms, 2 channels at most and
   `channelCount` 3 refused, the default `ScriptProcessorNode` size, the
-  output timestamp, `playbackStats`), no key system (Clear Key, Widevine,
+  output timestamp, `playbackStats`, and when it renders: with a user
+  gesture so that a context may start, `currentTime` polled for 300 ms
+  shows a burst of 3 or 4 render quanta every 10 ms, the uniform device's
+  clock), an `audiooutput` entry in `enumerateDevices()` before any
+  permission, no key system (Clear Key, Widevine,
   PlayReady, and Media Capabilities with a `keySystemConfiguration`), Media
   Capabilities' fixed answers for VP8, VP9 and AV1 video and for WebRTC,
   and WebCodecs refusing `prefer-hardware`. Codec support (Media
   Capabilities for Opus, H.264 and HEVC, `canPlayType()`,
   `MediaSource.isTypeSupported()`, WebCodecs without a hardware
   preference) follows the build and is compared between runs.
+* **MediaRecorder, `local()` and storage limits** (once per launch): the
+  type MediaRecorder reports for a canvas stream by default and for WebM,
+  Matroska and MP4 (VP8, VP8 and VP9 from the build's own encoders); no
+  `src: local()` face of a family outside the allow-list loads, installed
+  or not (the result is checked, not the time: such a face is never looked
+  up, so it costs what a missing one costs); the quota the browser enforces
+  for the page's site, 200 MiB, read through DevTools
+  (`Storage.getUsageAndQuota`). Writing until `QuotaExceededError` would
+  find the same limit but takes too long for the kit, so the configured
+  limit is checked instead. What `isTypeSupported()` accepts and which
+  listed faces `local()` finds follow the build and the OS and are
+  compared between runs.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
@@ -332,7 +351,9 @@ proves less.
 **Settings from the regular profile (step 15).** Before the first launch the
 kit seeds the regular profile's `Preferences` with Do Not Track on, a 24px
 default font and DejaVu Serif as the standard font, German
-`Accept-Language`, third-party cookies allowed, and JavaScript and location
+`Accept-Language` (and the same list as the user's selected languages,
+which Chromium rebuilds `Accept-Language` from), third-party cookies
+allowed, and JavaScript and location
 blocked for the https onion (and, as the control, for a local page). The
 MoltNet checks above must still read MoltBrowser's defaults, and the
 fingerprint page itself runs on the onion where JavaScript is "blocked".

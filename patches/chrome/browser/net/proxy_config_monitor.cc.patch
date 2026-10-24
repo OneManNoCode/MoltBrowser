@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
-index 0874f5e29440471706f847a9212cdfa2b2eba2a3..06670593b4a1398705ad44314ba21e7921729364 100644
+index 0874f5e29440471706f847a9212cdfa2b2eba2a3..c8cf7f3032a116ad81700530c05d05df0f20ffa0 100644
 --- a/chrome/browser/net/proxy_config_monitor.cc
 +++ b/chrome/browser/net/proxy_config_monitor.cc
-@@ -10,6 +10,8 @@
+@@ -4,12 +4,16 @@
+ 
+ #include "chrome/browser/net/proxy_config_monitor.h"
+ 
++#include <optional>  // MoltBrowser
+ #include <utility>
+ 
++#include "base/functional/bind.h"  // MoltBrowser
+ #include "base/strings/utf_string_conversions.h"
  #include "build/build_config.h"
  #include "build/chromeos_buildflags.h"
  #include "chrome/browser/browser_process.h"
@@ -17,47 +25,72 @@ index 0874f5e29440471706f847a9212cdfa2b2eba2a3..06670593b4a1398705ad44314ba21e79
  #include "chrome/browser/net/proxy_service_factory.h"
  #include "chrome/browser/policy/profile_policy_connector.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -42,6 +44,13 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
+@@ -42,6 +46,28 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
    profile_ = profile;
  #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
  
 +  // MoltBrowser: a MoltNet profile's network contexts only ever get
 +  // MoltNet's own Tor proxy configuration, never a policy's proxy or
-+  // override rules (molt_net_live_policy.h).
++  // override rules, and from the moment the identity ends, one that refuses
++  // every request (molt_net_live_policy.h).
 +  if (molt_ai::tor::IsMoltNetProfile(profile)) {
 +    moltnet_profile_ = profile;
++    moltnet_identity_ended_ =
++        molt_ai::tor::MoltNetRouting::AddIdentityEndedCallback(
++            base::BindRepeating(
++                [](ProxyConfigMonitor* monitor, Profile* ended) {
++                  if (ended != monitor->moltnet_profile_) {
++                    return;
++                  }
++                  for (const auto& client :
++                       monitor->proxy_config_client_set_) {
++                    client->OnProxyConfigUpdated(
++                        molt_ai::tor::MoltNetRouting::RefuseAllProxyConfig());
++                  }
++                },
++                base::Unretained(this)));
 +  }
 +
  // If this is the ChromeOS sign-in or lock screen profile, just create the
  // tracker from global state.
  #if BUILDFLAG(IS_CHROMEOS)
-@@ -113,6 +122,14 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
+@@ -113,6 +139,18 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
    net::ProxyConfigWithAnnotation proxy_config;
    net::ProxyConfigService::ConfigAvailability availability =
        proxy_config_service_->GetLatestProxyConfig(&proxy_config);
-+  // MoltBrowser: a MoltNet network context starts with no configuration
-+  // (its requests wait for one) unless this is MoltNet's own.
-+  if (moltnet_profile_ &&
-+      !molt_ai::tor::MoltNetRouting::MayApplyProxyConfig(
-+          moltnet_profile_, proxy_config,
-+          availability == net::ProxyConfigService::CONFIG_VALID)) {
++  // MoltBrowser: a MoltNet network context starts with MoltNet's own
++  // configuration, with none (its requests wait for one), or, once the
++  // identity has ended, with the one that refuses every request.
++  if (moltnet_profile_) {
++    if (std::optional<net::ProxyConfigWithAnnotation> moltnet_config =
++            molt_ai::tor::MoltNetRouting::ProxyConfigFor(
++                moltnet_profile_, proxy_config,
++                availability == net::ProxyConfigService::CONFIG_VALID)) {
++      network_context_params->initial_proxy_config = *moltnet_config;
++    }
 +    return;
 +  }
    if (availability != net::ProxyConfigService::CONFIG_PENDING)
      network_context_params->initial_proxy_config = proxy_config;
  }
-@@ -126,6 +143,16 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
+@@ -126,6 +164,22 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
      net::ProxyConfigService::ConfigAvailability availability) {
    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
           !BrowserThread::IsThreadInitialized(BrowserThread::UI));
 +  // MoltBrowser: a MoltNet network context keeps MoltNet's own proxy
 +  // configuration; any other one (a policy's proxy, override rules, the
 +  // system's settings, none) is held back, and MoltNet ends
-+  // (molt_net_live_guard.h).
-+  if (moltnet_profile_ &&
-+      !molt_ai::tor::MoltNetRouting::MayApplyProxyConfig(
-+          moltnet_profile_, config,
-+          availability == net::ProxyConfigService::CONFIG_VALID)) {
++  // (molt_net_live_guard.h). An ended identity's keeps refusing every
++  // request.
++  if (moltnet_profile_) {
++    if (std::optional<net::ProxyConfigWithAnnotation> moltnet_config =
++            molt_ai::tor::MoltNetRouting::ProxyConfigFor(
++                moltnet_profile_, config,
++                availability == net::ProxyConfigService::CONFIG_VALID)) {
++      for (const auto& proxy_config_client : proxy_config_client_set_) {
++        proxy_config_client->OnProxyConfigUpdated(*moltnet_config);
++      }
++    }
 +    return;
 +  }
    for (const auto& proxy_config_client : proxy_config_client_set_) {

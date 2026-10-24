@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 146 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 155 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -91,7 +91,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - LEAK dns stun-bbbbbb2222.moltleak.test AAAA x1 at +21.1s: a test page's canary name was looked up outside Tor [firewall log]
   - LEAK udp 198.51.100.12:3478 x1 at +22.0s: a packet to a test page's IP literal outside Tor [firewall log]
 - **PASS** A MoltNet page's forms cause no Autofill server query or address-rule download, also with the queries on
-  - flags: --enable-features=AutofillServerCommunication
+  - flags: --enable-features=AutofillServerCommunication,ReduceAcceptLanguage
   - form page: loaded
   - no connection to content-autofill.googleapis.com, chromium-i18n.appspot.com, through Tor or outside it, during the phase
 - **PASS** Built-in AI APIs and Translator (no component download): LanguageModel is unavailable
@@ -154,6 +154,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 |---|---|---|
 | PASS | Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch) | MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8 |
 | PASS | Fail-closed: with Tor killed, pages fail with a proxy error | MOLTNET_COMPLIANCE.md §4 step 5 |
+| PASS | IncognitoModeAvailability 2 (Incognito only) keeps MoltNet open and lets it open | MOLTNET_COMPLIANCE.md §2 Incognito, §4 step 9 |
+| PASS | IncognitoModeAvailability 1 set while MoltNet is open closes every MoltNet window, its DevTools window and a page waiting on "Leave site?" included; MoltNet then refuses to open, saying why, until the policy is gone | MOLTNET_COMPLIANCE.md §2 Incognito, §4 step 9 |
+| PASS | A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open | MOLTNET_COMPLIANCE.md §1.3, §4 step 9 |
 | PASS | New Identity: new profile, cookies gone, new farbling seed | MOLTNET_COMPLIANCE.md §4 step 7 |
 | PASS | No MoltNet window comes back after a restart | MOLTNET_COMPLIANCE.md §4 step 5 |
 | PASS | A --proxy-server override blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
@@ -172,6 +175,20 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 - **PASS** Fail-closed: with Tor killed, pages fail with a proxy error
   - tor killed: [4242]
   - navigation after the kill: net::ERR_SOCKS_CONNECTION_FAILED
+- **PASS** IncognitoModeAvailability 2 (Incognito only) keeps MoltNet open and lets it open
+  - 2 of 2 MoltNet page(s) still open 12 s after the policy was written
+  - openWindow with the policy -> {"running": true}; a MoltNet page opened: True
+- **PASS** IncognitoModeAvailability 1 set while MoltNet is open closes every MoltNet window, its DevTools window and a page waiting on "Leave site?" included; MoltNet then refuses to open, saying why, until the policy is gone
+  - flags: --auto-open-devtools-for-tabs
+  - 2 MoltNet page(s) open, 1 of them DevTools (in a window of its own: True); "Leave site?" prompt: beforeunload
+  - every one of them closed 5.5 s after the policy was written
+  - openWindow with the policy -> {"error": "Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it"}; MoltNet pages: 0
+  - openWindow once the policy was removed -> {"running": true}; a MoltNet page opened: True
+- **PASS** A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open
+  - policy {"ForcedLanguages": ["ja"], "ReduceAcceptLanguageEnabled": false}
+  - moltnet page: before {"accept_language": "en-US", "languages": ["en-US", "en"]}, after {"accept_language": "en-US", "languages": ["en-US", "en"]}
+  - regular page: before {"accept_language": "de-DE", "languages": ["de-DE", "de"]}, after {"accept_language": "ja,de-DE;q=0.9,de;q=0.8", "languages": ["ja", "de-DE", "de"]}
+  - the regular page changed and MoltNet's did not
 - **PASS** New Identity: new profile, cookies gone, new farbling seed
   - newIdentity -> {"running": true}
   - cookie gone after New Identity
@@ -229,6 +246,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | ai.Translator is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Writer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | audio.base_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.cadence_burst_frames is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.cadence_interval_ms is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
@@ -246,6 +265,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.playready is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.widevine is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | fonts.local_hidden is uniform | FINGERPRINTING.md "Fonts" |
 | PASS | form.numberMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | form.validationMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | hdr.accept-language is uniform | FINGERPRINTING.md "Surface covered" |
@@ -261,6 +281,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mc.vp9_1080p is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mc.webrtc_decoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mc.webrtc_encoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | media.audiooutput is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
@@ -288,6 +309,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | nav.maxTouchPoints is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | perm.geolocation is uniform | FINGERPRINTING.md "Known gaps": a documented giveaway |
 | PASS | perm.window-management is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
+| PASS | recorder.mime_type is uniform | FINGERPRINTING.md "MoltNet: MediaRecorder" |
 | PASS | screen.availHeight is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.availLeft is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.availTop is uniform | FINGERPRINTING.md "Surface covered" |
@@ -303,6 +325,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | scrollbar.box is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | scrollbar.overlay is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | sharedStorage.set is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | storage.enforced_quota is uniform | FINGERPRINTING.md "MoltNet: storage limits" |
 | PASS | storage.persist is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | storage.quota_over_usage is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
 | PASS | text.metrics_whole is uniform | FINGERPRINTING.md "Text metrics (MoltNet)" |

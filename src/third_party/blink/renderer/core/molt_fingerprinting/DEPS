@@ -13,4 +13,9 @@ include_rules = [
     # back. The interface reaches core through platform's public deps.
     "+gpu/command_buffer/client/gles2_interface.h",
     "+ui/gfx/skia_span_util.h",
+    # MoltNet's encoders (moltnet_encoders.h).
+    "+media/base/media_types.h",
+    "+media/base/supported_types.h",
+    "+media/base/video_codecs.h",
+    "+media/base/video_encoder.h",
 ]

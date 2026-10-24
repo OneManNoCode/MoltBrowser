@@ -127,6 +127,7 @@
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_storage.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
 #include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
 #include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
@@ -135,6 +136,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/molt_net_language_policy.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
@@ -3210,7 +3212,11 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
             blink::switches::kDisableBackForwardCacheForWebSockets);
       }
 
-      if (!prefs->GetBoolean(prefs::kReduceAcceptLanguageEnabled)) {
+      // MoltBrowser: MoltNet ignores the ReduceAcceptLanguageEnabled policy
+      // (molt_net_language_policy.h).
+      if (!molt_ai::tor::ReduceAcceptLanguageEnabledFor(
+              molt_ai::tor::IsMoltNetProfile(profile),
+              prefs->GetBoolean(prefs::kReduceAcceptLanguageEnabled))) {
         command_line->AppendSwitch(
             blink::switches::kDisableReduceAcceptLanguage);
       }
@@ -7161,6 +7167,23 @@ bool ChromeContentBrowserClient::ShouldSendUniformNetworkState(
                  Profile::FromBrowserContext(browser_context)));
 }
 
+std::optional<storage::QuotaSettings>
+ChromeContentBrowserClient::GetFixedQuotaSettings(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: the same storage limits for every MoltNet user
+  // (molt_ai/fingerprinting/molt_net_storage.h).
+  return molt_ai::fingerprinting::MoltNetQuotaSettings(
+      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+}
+
+std::optional<storage::BlobStorageLimits>
+ChromeContentBrowserClient::GetFixedBlobStorageLimits(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: as GetFixedQuotaSettings(), for blobs.
+  return molt_ai::fingerprinting::MoltNetBlobStorageLimits(
+      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+}
+
 bool ChromeContentBrowserClient::WillInterceptWebSocket(
     content::RenderFrameHost* frame) {
   // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.
@@ -9503,7 +9526,12 @@ bool ChromeContentBrowserClient::ShouldReduceAcceptLanguage(
           ->FindPreference(prefs::kReduceAcceptLanguageEnabled);
 
   if (pref && pref->IsManaged() && pref->GetValue()->is_bool()) {
-    return pref->GetValue()->GetBool();
+    // MoltBrowser: MoltNet ignores the ReduceAcceptLanguageEnabled policy
+    // (molt_net_language_policy.h).
+    return molt_ai::tor::ReduceAcceptLanguageEnabledFor(
+        molt_ai::tor::IsMoltNetProfile(
+            Profile::FromBrowserContext(browser_context)),
+        pref->GetValue()->GetBool());
   }
   return true;
 }

@@ -35,6 +35,11 @@
      "playback": 0.021333333333333333,
      "rate_44100": 0.01
     },
+    "audio.cadence_burst_frames": [
+     384,
+     512
+    ],
+    "audio.cadence_interval_ms": 10,
     "audio.channel_count": 2,
     "audio.channel_count_3": "IndexSizeError",
     "audio.max_channel_count": 2,
@@ -54,6 +59,18 @@
     "eme.clearkey": "NotSupportedError",
     "eme.playready": "NotSupportedError",
     "eme.widevine": "NotSupportedError",
+    "fonts.local_hidden": [],
+    "fonts.local_listed": [
+     "DejaVu Sans",
+     "DejaVuSans-Bold",
+     "DejaVu Sans Bold Oblique",
+     "DejaVuSansMono",
+     "Liberation Sans",
+     "LiberationSans-Bold",
+     "Liberation Serif Italic",
+     "Noto Sans",
+     "NotoSans-Bold"
+    ],
     "fonts.visible": [
      "DejaVu Sans",
      "Liberation Sans",
@@ -108,6 +125,7 @@
      "smooth": false,
      "supported": false
     },
+    "media.audiooutput": 1,
     "media.devices": {
      "audiooutput": 1
     },
@@ -147,6 +165,21 @@
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "recorder.mime_type": {
+     "default": "video/webm;codecs=vp8",
+     "video/mp4": "video/mp4;codecs=vp9",
+     "video/webm": "video/webm;codecs=vp8",
+     "video/x-matroska": "video/x-matroska;codecs=vp8"
+    },
+    "recorder.supported": [
+     "video/webm;codecs=vp8",
+     "video/webm;codecs=vp9",
+     "video/webm;codecs=av01",
+     "video/mp4;codecs=av01.0.04M.08",
+     "audio/webm;codecs=opus",
+     "audio/webm;codecs=pcm",
+     "audio/mp4;codecs=opus"
+    ],
     "screen.availHeight": 900,
     "screen.availLeft": 0,
     "screen.availTop": 0,
@@ -162,6 +195,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
+    "storage.enforced_quota": 209715200,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,
@@ -574,8 +608,49 @@
     "canary_url": "http://plc-pppppp9999.moltleak.test/x",
     "closed_after_s": 6.5,
     "flags": [
-     "--enable-features=AutofillServerCommunication"
+     "--enable-features=AutofillServerCommunication,ReduceAcceptLanguage"
     ],
+    "languages": {
+     "moltnet_after": {
+      "accept_language": "en-US",
+      "languages": [
+       "en-US",
+       "en"
+      ]
+     },
+     "moltnet_before": {
+      "accept_language": "en-US",
+      "languages": [
+       "en-US",
+       "en"
+      ]
+     },
+     "pages_before": 1,
+     "pages_kept": 1,
+     "policy": {
+      "ForcedLanguages": [
+       "ja"
+      ],
+      "ReduceAcceptLanguageEnabled": false
+     },
+     "regular_after": {
+      "accept_language": "ja,de-DE;q=0.9,de;q=0.8",
+      "languages": [
+       "ja",
+       "de-DE",
+       "de"
+      ]
+     },
+     "regular_before": {
+      "accept_language": "de-DE",
+      "languages": [
+       "de-DE",
+       "de"
+      ]
+     },
+     "removed": 1760000176.0,
+     "written": 1760000170.0
+    },
     "moltnet_pages_after": 0,
     "moltnet_pages_before": 1,
     "pages_with_policy": 0,
@@ -595,6 +670,42 @@
    "end": 1760000178.0,
    "name": "policy_live",
    "start": 1760000142.0,
+   "target": "moltnet"
+  },
+  {
+   "data": {
+    "closed_after_s": 5.5,
+    "devtools_own_window": true,
+    "devtools_pages": 1,
+    "dialog": "beforeunload",
+    "flags": [
+     "--auto-open-devtools-for-tabs"
+    ],
+    "forced_written": 1760000225.0,
+    "hold_page": true,
+    "moltnet_pages_before": 2,
+    "nav_error": null,
+    "off_removed": 1760000210.0,
+    "off_written": 1760000200.0,
+    "open_forced": {
+     "running": true
+    },
+    "opened_forced": true,
+    "pages_before_forced": 2,
+    "pages_kept_forced": 2,
+    "pages_left": [],
+    "pages_off": 0,
+    "reopen_after_off": {
+     "running": true
+    },
+    "reopen_off": {
+     "error": "Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it"
+    },
+    "reopened_after_off": true
+   },
+   "end": 1760000253.0,
+   "name": "policy_live_incognito",
+   "start": 1760000179.0,
    "target": "moltnet"
   },
   {

@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/policy/chrome_policy_blocklist_service_factory.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/policy/chrome_policy_blocklist_service_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/policy/chrome_policy_blocklist_service_factory.cc b/chrome/browser/policy/chrome_policy_blocklist_service_factory.cc
+index b239a5cc013d3a34b1f1612595ca7d0226af40db..3ff9000fa093e49a23f232fc1a55f3acf59bebfe 100644
+--- a/chrome/browser/policy/chrome_policy_blocklist_service_factory.cc
++++ b/chrome/browser/policy/chrome_policy_blocklist_service_factory.cc
+@@ -7,6 +7,7 @@
+ #include <memory>
+ 
+ #include "base/memory/singleton.h"
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/keyed_service/content/browser_context_dependency_manager.h"
+ #include "components/policy/core/browser/url_list/policy_blocklist_service.h"
+@@ -65,7 +66,11 @@ ChromePolicyBlocklistServiceFactory::BuildServiceInstanceForBrowserContext(
+       policy::policy_prefs::kUrlAllowlist);
+ 
+   std::unique_ptr<policy::URLBlocklistManager> incognito_url_blocklist_manager;
+-  if (profile->IsIncognitoProfile()) {
++  // MoltBrowser: MoltNet follows Incognito's URL lists too, so where an
++  // administrator turned Incognito off for all but some sites
++  // (IncognitoModeAvailability with IncognitoModeUrlAllowlist), MoltNet
++  // allows those sites only (molt_net_incognito_parity.h).
++  if (molt_ai::tor::GetsIncognitoProtections(profile)) {
+     incognito_url_blocklist_manager =
+         std::make_unique<policy::URLBlocklistManager>(
+             pref_service, policy::policy_prefs::kIncognitoModeUrlBlocklist,

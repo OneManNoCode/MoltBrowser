@@ -202,5 +202,16 @@ TEST(MoltNetMediaValuesTest, MediaCapabilitiesTable) {
   EXPECT_FALSE(kWebrtcCodingInfo.power_efficient);
 }
 
+TEST(MoltNetMediaValuesTest, AnOutputDeviceIsAlwaysListed) {
+  // A machine without an output device lists one, as every other machine
+  // does before the page may use the microphone.
+  EXPECT_TRUE(ListsUniformAudioOutput(0, false));
+  // A machine with one already lists it.
+  EXPECT_FALSE(ListsUniformAudioOutput(1, false));
+  // With the permission the page sees the real devices.
+  EXPECT_FALSE(ListsUniformAudioOutput(0, true));
+  EXPECT_FALSE(ListsUniformAudioOutput(3, true));
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting::moltnet

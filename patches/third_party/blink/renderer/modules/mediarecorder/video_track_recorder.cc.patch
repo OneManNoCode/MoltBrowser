@@ -1,0 +1,42 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc b/third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc
+index 7e7193507afbd76d8f398499cd446b768511e991..9f0ea61e0a42a61eeb328a8dc5c040a7764a6120 100644
+--- a/third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc
++++ b/third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc
+@@ -40,6 +40,7 @@
+ #include "media/video/vpx_video_encoder.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/mediarecorder/media_recorder_encoder_wrapper.h"
+ #include "third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.h"
+ #include "third_party/blink/renderer/modules/mediarecorder/track_recorder.h"
+@@ -145,6 +146,12 @@ constexpr struct {
+ };
+ 
+ void NotifyEncoderSupportKnown(base::OnceClosure callback) {
++  // MoltBrowser: MoltNet doesn't ask the GPU for its encoders
++  // (moltnet_encoders.h).
++  if (!molt_fingerprinting::MediaRecorderUsesPlatformEncoders()) {
++    std::move(callback).Run();
++    return;
++  }
+   if (!Platform::Current()) {
+     DLOG(ERROR) << "Couldn't access the render thread";
+     std::move(callback).Run();
+@@ -164,6 +171,10 @@ void NotifyEncoderSupportKnown(base::OnceClosure callback) {
+ 
+ // Obtains video encode accelerator's supported profiles.
+ media::VideoEncodeAccelerator::SupportedProfiles GetVEASupportedProfiles() {
++  // MoltBrowser: no GPU (or OS) encoders in MoltNet (moltnet_encoders.h).
++  if (!molt_fingerprinting::MediaRecorderUsesPlatformEncoders()) {
++    return media::VideoEncodeAccelerator::SupportedProfiles();
++  }
+   if (!Platform::Current()) {
+     DLOG(ERROR) << "Couldn't access the render thread";
+     return media::VideoEncodeAccelerator::SupportedProfiles();

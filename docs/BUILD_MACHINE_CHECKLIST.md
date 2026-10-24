@@ -424,6 +424,17 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `chrome/browser/ui/autofill/chrome_autofill_client.cc` | `GetCrowdsourcingManager()` and `GetAddressNormalizer()` ask `molt_net_autofill.h` first (only these two functions were type-checked here: the checker can't generate `components/personal_context/proto/features/at_memory.equal.h`, a proto_extras plugin output the file needs) | moltnet-live |
 | `chrome/browser/payments/chrome_payment_request_delegate.cc` | `GetAddressNormalizer()` and `GetRegionDataLoader()` ask `molt_net_autofill.h` first | moltnet-live |
 | `chrome/browser/molt_ai/tor/molt_net_autofill.cc` (new target `:autofill`, a public dep of `:tor`) | subclasses `autofill::AutofillCrowdsourcingManager` (overrides the two virtual `Start*Request()` and inherits its constructors), and builds an `AddressNormalizerImpl` and a `RegionDataLoaderImpl` on a `::i18n::addressinput::Source` of its own and libaddressinput's `NullStorage`; deps `//components/autofill/core/browser`, `//third_party/libaddressinput` | moltnet-live |
+| `chrome/browser/net/proxy_config_monitor.{h,cc}` | now asks `MoltNetRouting::ProxyConfigFor()` (replaces `MayApplyProxyConfig()`), and holds a `base::CallbackListSubscription` from `MoltNetRouting::AddIdentityEndedCallback()` that sends `RefuseAllProxyConfig()` to every `ProxyConfigClient` of its MoltNet profile | moltnet-policy |
+| `chrome/browser/molt_ai/tor/molt_net_routing.{h,cc}` | `EndIdentity()`/`HasIdentityEnded()` (profile `SupportsUserData`), `AddIdentityEndedCallback()` (`base::RepeatingCallbackList<void(Profile*)>`), `RefuseAllProxyConfig()` (`ProxyConfig::ProxyRules::Type::PROXY_LIST` with an empty list, `ProxyBypassRules::AddRulesToSubtractImplicit()`, a new traffic annotation `moltnet_ended_identity`), `IncognitoPolicyError()` (`IncognitoModePrefs::GetIncognitoModeType()`); the language write is gone (no `//components/language` dep) | moltnet-policy |
+| `chrome/browser/molt_ai/tor/molt_net_window.cc` | ending an identity: `UnloadController::From(browser)->set_force_skip_warning_user_on_close(true)`, `DevToolsAgentHost::GetOrCreateAll()` + `ForceDetachAllSessions()`, `RenderProcessHost::Shutdown(content::RESULT_CODE_KILLED)`, `TabStripModel::CloseAllTabs()`; new dep `//content/public/common` | moltnet-policy |
+| `chrome/browser/molt_ai/tor/molt_net_pref_isolation.{h,cc}` | `CreateMoltNetPrefService()` takes the `ValueMapPrefStore` it puts in the extension slot; `FixMoltNetLanguages()` writes into it (`WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS`); new deps `:language_policy` and `//chrome/common/molt_ai/fingerprinting` (neither depends on `//chrome/browser`, so `//chrome/browser/profiles:misc` keeps no cycle) | moltnet-policy |
+| `chrome/browser/chrome_content_browser_client.cc` | `AppendExtraCommandLineSwitches()` and `ShouldReduceAcceptLanguage()` pass the `ReduceAcceptLanguageEnabled` value through `ReduceAcceptLanguageEnabledFor()` (`molt_net_language_policy.h`, `:language_policy`) | moltnet-policy |
+| `net/socket/client_socket_pool_manager.{h,cc}` | new virtual `ClientSocketPoolManager::GetSocketPoolForSite()` (default: `GetSocketPool()`); `InitSocketPoolHelper()` asks `HttpNetworkSession::GetSocketPoolForSite()` with the group's network anonymization key | moltnet-policy |
+| `net/socket/client_socket_pool_manager_impl.{h,cc}` | a constructor argument `molt_per_site_pool_size` (default 0), a `std::unique_ptr<MoltPerSiteSocketPools>`, the override, and the flush, idle-socket and info calls forwarded to it | moltnet-policy |
+| `net/socket/transport_client_socket_pool.h` | inline `MoltIsUnused()` (reads `group_map_`, `pending_callback_map_`, `higher_pools_`). Widely included: another large `//net` rebuild | moltnet-policy |
+| `net/socket/molt_per_site_socket_pool_policy.h`, `net/socket/molt_per_site_socket_pools.h` (new, header-only) | in no target's `sources`, like `molt_uniform_network_state.h`; if `gn check` complains, list them in `//net:net` | moltnet-policy |
+| `net/http/http_network_session.{h,cc}` | `HttpNetworkSessionParams::molt_per_site_socket_pool_size`, passed to both pool managers; `GetSocketPoolForSite()` | moltnet-policy |
+| `services/network/public/mojom/network_context.mojom`, `services/network/network_context.cc` | `[MinVersion=1] uint32 molt_per_site_socket_pool_size`, copied into the session params; set to 128 for MoltNet by `molt_net_network_context_policy.h` (which now includes the `net/` policy header) | moltnet-policy |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -485,6 +496,10 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
 | `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
+| `platform/audio/audio_destination.{h,cc}`, `modules/mediastream/media_devices.cc` (new upstream copies), `audio_context.cc` (`IsValidSinkDescriptor`), `core/molt_fingerprinting/moltnet_audio_{clock,device}.{h,cc}` | a static setter on the `PLATFORM_EXPORT` `AudioDestination` holding a function pointer in a `std::atomic`, called from core; core now uses `media::FakeAudioWorker`, `media::MultiChannelResampler`, `media::AudioBus` and `NonMainThread` with `base::ThreadType::kRealtimeAudio` (`gn check`: core reaches `//media` through `platform`'s public deps, `platform/media:media_final` → `//media`; Chromium's presubmit `audit_non_blink_usage.py`, which the build does not run, would list the `media::` names used in `core/molt_fingerprinting`); `WebMediaDeviceInfo` (`blink/public/common`) in core | fp-audio |
+| `modules/mediarecorder/video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.{h,cc}` (all four new upstream copies), `core/molt_fingerprinting/moltnet_encoders.{h,cc}` | modules calling a new core glue file; core's DEPS now allow four `media/base` headers (`media::IsEncoderBuiltInVideoType`, `media::VideoType`, `media::SetProcessorCountForSoftwareEncoding`, a new `MEDIA_EXPORT` function); a `constinit std::atomic<int>` in `video_encoder.cc` | fp-probes |
+| `core/css/local_font_face_source.cc`, `core/molt_fingerprinting/fonts.{h,cc}`, `system_fonts.{h,cc}` | `local()` through visible families: `GetLocalFontFaceData` calls `FontCache::GetFontData(description, family, AlternateFontName::kNoAlternate)` and reads `SkTypeface::fontStyle()`; `String::substr` with a `wtf_size_t` | fp-probes |
+| `content/public/browser/content_browser_client.{h,cc}` (two new virtuals returning `std::optional` of `storage::QuotaSettings` and `storage::BlobStorageLimits`), `chrome/browser/chrome_content_browser_client.{h,cc}`, `content/browser/storage_partition_impl.cc`, `content/browser/blob_storage/chrome_blob_storage_context.cc`, `storage/browser/blob/blob_memory_controller.{h,cc}` (new upstream copies), `chrome/browser/molt_ai/fingerprinting/molt_net_storage{,_values}.*` | MoltNet's fixed storage limits; a new `:storage` target in `//chrome/browser/molt_ai/fingerprinting` that `//chrome/browser/molt_ai` depends on (`gn check` on `chrome_content_browser_client.cc`); the blob limits are posted to the IO thread after `InitializeOnIOThread` | fp-probes |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -543,6 +558,18 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `public_deps` and add it to `//chrome/browser/ui` and
   `//chrome/browser/payments:impl` instead. Checkdeps: the tor `DEPS`
   file allows `molt_net_autofill.cc` its two libaddressinput headers.
+  New in moltnet-policy: `chrome/browser/prefs/incognito_mode_prefs.cc`
+  includes `molt_net_profile_id.h` and
+  `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc`
+  includes `molt_net_incognito_parity.h` (both header-only, in `:tor` and
+  `:incognito_parity_policy`); `chrome_content_browser_client.cc` includes
+  `molt_net_language_policy.h` (new header-only `:language_policy`, a
+  public dep of `:tor`); `:pref_isolation` now depends on
+  `:language_policy` and `//chrome/common/molt_ai/fingerprinting`;
+  `molt_net_network_context_policy.h` and
+  `client_socket_pool_manager_impl.h` include the new `net/socket/molt_*`
+  headers (§4.2); `molt_ai_unittests` uses `net/spdy/spdy_test_util_common.h`
+  (`//net:test_support`, already a dep).
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -578,6 +605,8 @@ flags the include, add the dep there.
 | `chrome/browser/media/webrtc/webrtc_logging_controller.cc` | `IsWebRtcTextLogAllowed` false for MoltNet | rebase 156 |
 | `chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc` | `ReduceAcceptLanguageService` gets `is_incognito` for MoltNet | rebase 156 |
 | `chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h` (MoltBrowser's own) | three more pinned prefs; `molt_net_pref_isolation_unittest.cc` now needs `//components/autofill/core/common` and `//components/universal_optout` | rebase 156 |
+| `chrome/browser/prefs/incognito_mode_prefs.cc` (imported from 156) | `CanOpenBrowser()`: a MoltNet profile may open windows unless Incognito is off (forced Incognito no longer refuses it) | moltnet-policy |
+| `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc` (imported from 156) | the Incognito URL lists for `GetsIncognitoProtections()` profiles instead of `IsIncognitoProfile()` | moltnet-policy |
 
 ## 5. Unit tests
 
@@ -640,8 +669,11 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
   | `MoltNetMediaValuesTest.*` | fp-media |
+  | `MoltNetAudioClockTest.*` (the output ring, drift control and a simulation against devices of 128 to 8192 frames) | fp-audio |
+  | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
+  | `MoltNetLanguagesTest` (real `LanguagePrefs`, a managed `ForcedLanguages`), `MoltNetIsolationTest.FixedLanguageNamesMatchChromiumsConstants`, `MoltNetPrefServiceTest.MoltNetWritesStayInMoltNet` (changed), `MoltNetSocketPoolsTest` (real `HttpNetworkSession` and pools, `MOCK_TIME`); built standalone only: `MoltNetLanguagePolicyTest`, `MoltNetSocketPoolPolicyTest`, `MoltNetLivePolicyTest`'s Incognito and ended-identity cases | moltnet-policy |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -658,6 +690,10 @@ extension enablement and `MediaRouterEnabled()`).
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
   `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
   `MoltNetDisplayTest` (fingerprinting 156), `MoltNetMediaTest` (fp-media),
+  `MoltNetAudioDeviceTest` (fp-audio: real threads and a few hundred
+  milliseconds of real time each; on a loaded bot rerun a timing failure
+  once before you report it),
+  `MoltNetEncodersTest` and the pure `MoltLocalFaceTest` (fp-probes),
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
@@ -681,6 +717,12 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
 | `blink_unittests` | `AudioContext*:BaseAudioContext*:*ScriptProcessor*:*RealtimeAudioDestination*:*EncryptedMedia*:*MediaKey*:MediaCapabilities*:*VideoDecoder*:*VideoEncoder*:*DecoderTemplate*` (normal windows: the hooks only act in MoltNet) | fp-media |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
+| `blink_platform_unittests` | `AudioDestination*:PushPullFIFO*` (the device factory is unset outside MoltNet) | fp-audio |
+| `blink_unittests` | `AudioContext*:AudioWorklet*:*MediaDevices*:*MediaDeviceInfo*` | fp-audio |
+| `blink_unittests` | `MediaRecorder*:VideoTrackRecorder*:AudioTrackRecorder*:*LocalFontFace*:FontFace*:*FontFaceSet*` (normal windows: unchanged) | fp-probes |
+| `media_unittests` | `*VideoEncoder*:VpxVideoEncoder*:Av1VideoEncoder*` | fp-probes |
+| `storage_unittests` | `BlobMemoryController*:BlobStorageContext*:Quota*` | fp-probes |
+| `content_unittests` | `StoragePartitionImpl*:*BlobStorage*:*Quota*` | fp-probes |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
 | `net_unittests` | `SSLClientSocketTest.*:*ClientAuth*:*ClientCert*:HttpNetworkTransactionTest.*` | MoltNet 156 |
@@ -689,12 +731,15 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `*SSLClientCertificateSelector*:*ClientCertificate*` | MoltNet 156 |
 | `unit_tests` | `ProxyConfigMonitor*:PrefProxyConfigTracker*:ProfileNetworkContextService*:ChromeAutofillClient*:*PaymentRequest*` | moltnet-live |
 | `components_unittests` | `PrefProxyConfigTracker*:AutofillCrowdsourcingManager*:AddressNormalizer*:RegionDataLoader*` | moltnet-live |
+| `net_unittests` | `ClientSocketPoolManager*:TransportClientSocketPool*:HttpNetworkSession*:HttpStreamFactory*:HttpNetworkTransactionTest.*:WebSocket*` (no MoltNet params: one pool per proxy, as before) | moltnet-policy |
+| `unit_tests` | `IncognitoModePrefs*:*PolicyBlocklist*:ProxyConfigMonitor*:ChromeContentBrowserClient*:*ReduceAcceptLanguage*` | moltnet-policy |
+| `components_unittests` | `LanguagePrefs*:IncognitoModePolicyHandler*:*URLBlocklist*` | moltnet-policy |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
   cd chromium/src
   autoninja -C out/MoltTests services_unittests net_unittests components_unittests unit_tests \
-    blink_unittests blink_platform_unittests content_unittests
+    blink_unittests blink_platform_unittests content_unittests media_unittests storage_unittests
   out/MoltTests/services_unittests --gtest_filter='NetworkContextTest.*:...'   # one run per row
   ```
   *Expected:* as in §5.3.
@@ -715,6 +760,13 @@ pass except where the table below says otherwise (verify the filters).
   the ⋮ menu and a video's controls (Cast), then quit (from #21, #23).
   *Expected:* no `DCHECK` or `CHECK` failure (`MediaRouterFactory` CHECKs
   `MediaRouterEnabled()`).
+- [ ] The same build, MoltNet's per-site pools and ended identities
+  (moltnet-policy): open a dozen sites in MoltNet tabs, close them, wait
+  two minutes and open another (unused per-site pools are dropped then),
+  then New Identity with pages still loading, and with DevTools open on a
+  page that asks "Leave site?". *Expected:* no `CHECK` in
+  `~TransportClientSocketPool()` (`higher_pools_`, `group_map_`) or in
+  `UnloadController`/`BrowserCloseManager`, and no MoltNet window left.
 
 ## 6. Fuzzers
 
@@ -1026,6 +1078,42 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   `createScriptProcessor().bufferSize` is 2048; a page that asks for
   `sampleRate: 22050` gets it and plays at the right pitch; after granting
   microphone access, `setSinkId()` to another output device still works.
+- [ ] When MoltNet's Web Audio renders, on real hardware (fp-audio). Open
+  the leak kit's `fp.html` in a MoltNet window, click the page once (an
+  `AudioContext` needs a gesture) and run `await mlAudioCadence()` in
+  DevTools' console: `audio.cadence_interval_ms` is 10 and
+  `audio.cadence_burst_frames` `[384, 512]` on every device below; in a
+  regular window it follows the device (e.g. 21 and `[1024]` on a
+  1024-frame device). Then, on each device, play a Web Audio tone, an
+  `AudioWorklet` synth and an `<audio>` file through
+  `createMediaElementSource()` for a few minutes: right pitch and speed, no
+  clicks, dropouts or drift (a 440 Hz tone against a tuner stays within a
+  cent), and A/V sync of a video with Web Audio sound within about 40 ms.
+  Devices: the output set to 44.1 kHz and then to 96 kHz (Windows'
+  "Default format", Audio MIDI Setup, `pw-metadata -n settings 0
+  clock.force-rate`, PulseAudio's `default-sample-rate`), a 48 kHz device
+  as the control; a 1024-frame device (PipeWire `pw-metadata -n settings
+  0 clock.force-quantum 1024`, or a `latencyHint: "playback"` page on
+  macOS) and a 128-frame one (`clock.force-quantum 128`); Bluetooth
+  headphones. Report the renderer's CPU (the browser's task manager) with
+  the tone playing in MoltNet and in a regular window.
+- [ ] Device changes and no device in MoltNet (fp-audio). With a tone
+  playing in a MoltNet page that logs `onerror`, `onstatechange` and
+  `navigator.mediaDevices.ondevicechange`: unplug wired headphones, connect
+  and then switch off Bluetooth headphones, and change the system's
+  default output: the sound moves to the new device after a short gap,
+  the page logs nothing and `currentTime` keeps advancing (note what a
+  regular window logs, for comparison). On a machine or VM with no audio output device at all
+  (a VM without a sound card; Linux with `snd_dummy` unloaded and
+  PipeWire/PulseAudio stopped; Windows with every playback device
+  disabled): `new AudioContext()` reads 48000, 0.01, 0.024 and 2 channels,
+  `setSinkId("")` resolves, no `error` fires within a minute,
+  `mlAudioCadence()` gives 10 and `[384, 512]`, and
+  `navigator.mediaDevices.enumerateDevices()` lists one `audiooutput`
+  (empty ID and label); in a regular window the same machine shows 44.1
+  kHz (or an `error`) and no `audiooutput`. Plug a device in afterwards
+  and report whether, and after how long, the MoltNet tone is heard
+  without reloading (a regular window is the reference).
 - [ ] EME, Media Capabilities and WebCodecs in MoltNet (fp-media): a
   Clear Key test page (e.g. the W3C EME test player) fails with
   `NotSupportedError` in MoltNet and plays in a regular window;
@@ -1037,6 +1125,43 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   WebCodecs player (e.g. the WebCodecs samples' video decode demo) still
   plays in MoltNet, in software; on macOS a `VideoEncoder` for
   `avc1.42001E` is unsupported in MoltNet.
+- [ ] MediaRecorder in MoltNet (fp-probes): on a machine with hardware
+  video encoders (a Mac; Windows or Linux with a recent Intel, AMD or
+  NVIDIA GPU), a MoltNet page records a 1280x720 canvas `captureStream()`
+  with no `mimeType`: after `start` (or `stop`), `mimeType` is
+  `video/webm;codecs=vp8`, and `video/mp4;codecs=vp9` for `video/mp4`; the
+  files play back; `chrome://media-internals` shows the build's encoder
+  for them, never a hardware one; `isTypeSupported()` is the same as on a
+  machine without a GPU encoder. A regular window on that machine still
+  uses the hardware encoder (its default `mimeType` may differ). On a
+  machine with 8 or more cores, a 1080p AV1 recording
+  (`video/webm;codecs=av01`) in MoltNet plays back and the encoder's
+  threads (the renderer's thread list in the OS's task manager or `top -H`)
+  number at most 4.
+- [ ] `src: local()` (fp-probes): on each OS with a family installed that
+  is not on its allow-list (Ubuntu or Cantarell on Linux, Open Sans
+  installed by hand, `Segoe UI Variable` on Windows 11), `@font-face {
+  src: local("<its full name>") }` and `local("<its PostScript name>")`
+  fall back in MoltNet and in a regular window with Shields on (unless the
+  family is in the site's sample), and load with Shields off; `local("DejaVu Sans Bold")`,
+  `local("DejaVuSans-Bold")` (Linux), `local("Arial Bold")`,
+  `local("Arial-BoldMT")` (Windows, macOS) load the bold face in MoltNet;
+  a page that times `new FontFace("x", 'local("<installed, hidden face>")')
+  .load()` against a missing name over a thousand tries finds no
+  difference in MoltNet; on Windows a `local()` page in MoltNet renders
+  without waiting for the font table (a fresh browser start). East Asian
+  sites still render (with fallback fonts where they name local CJK
+  faces).
+- [ ] Storage limits in MoltNet (fp-probes): on a 16 GB machine, a
+  MoltNet page writes 1 MiB IndexedDB records until `QuotaExceededError`:
+  it stops at 200 MiB; the same for Cache Storage (`cache.put` of 1 MiB
+  responses) and OPFS (`createSyncAccessHandle().write()` in a worker);
+  three more sites writing at the same time stop when all of them
+  together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
+  be read (`arrayBuffer()` rejects) and a 700 MiB one can. Repeat on a
+  4 GB machine (or VM): the same limits, and no process is killed for
+  memory. An Incognito window keeps Chromium's limits (more than 200 MiB
+  per site on 16 GB).
 
 ### 7.4 MoltNet
 
@@ -1138,10 +1263,46 @@ macOS, and for the manual steps everywhere:
   same error; after removing the policy (and reloading policies) MoltNet
   opens. Repeat with `ProxyOverrideRules` (any rule), `WebRtcIPHandling`
   and `PartitionedBlobUrlUsage` = false. With DevTools open on a MoltNet
-  page whose "Leave site?" prompt you don't answer, that window stays
-  open, but its requests still go to Tor (the test server sees them only
-  from a Tor exit). A change only the regular profile sees (an extension
-  that sets the proxy, allowed in Incognito) leaves MoltNet open.
+  page whose "Leave site?" prompt you don't answer, that window closes
+  too (moltnet-policy). A change only the regular profile sees (an
+  extension that sets the proxy, allowed in Incognito) leaves MoltNet
+  open.
+- [ ] Ending an identity with something open (moltnet-policy; §4 steps 7
+  and 9), on macOS and Linux: in MoltNet windows open DevTools on a page
+  (docked in one window, undocked in another), an `alert(1)`, a sign-in
+  prompt (a `401` with `WWW-Authenticate: Basic`), print preview, a
+  download's "Save as" dialog ("Ask where to save each file" on), an
+  `<input type=file>` chooser and a page that asks "Leave site?", then
+  press *New Identity*. *Expected:* every MoltNet window and DevTools
+  window is gone within about two seconds (a forced close may take a
+  little longer; never more than about ten), the new window opens, and a
+  test page that fetched a URL every second sends nothing more once the
+  old windows start closing (its last requests come from a Tor exit).
+  Repeat by setting `ProxyMode` to `direct` instead of New Identity.
+- [ ] Incognito's availability (moltnet-policy; §4 step 9), on Windows
+  (registry), macOS (configuration profile) and Linux (the kit, or a file
+  in `/etc/chromium/policies/managed/`): `IncognitoModeAvailability` = 1
+  set while MoltNet is open closes it with "Incognito is turned off
+  (IncognitoModeAvailability or parental controls), and MoltNet windows
+  follow it", and MoltNet then refuses to open with that message; with
+  `IncognitoModeUrlAllowlist` = a test site as well, MoltNet opens and only
+  that site loads; = 2: MoltNet stays open and opens (regular windows
+  don't); `IncognitoModeUrlBlocklist` = a test site: it doesn't load in
+  MoltNet. A supervised (Family Link) profile: MoltNet doesn't open.
+- [ ] Language policies (moltnet-policy; §4 step 9): with `ForcedLanguages`
+  = `["ja"]` and `ReduceAcceptLanguageEnabled` = false set while MoltNet
+  is open, and with `--accept-lang=fr` at launch: MoltNet stays open and its
+  pages keep `navigator.languages` `["en-US", "en"]` and `Accept-Language`
+  `en-US,en;q=0.9` (or `en-US` with Reduce Accept-Language on), also after
+  visiting a few pages in other languages; regular windows follow the
+  policy.
+- [ ] Per-site connection limits (moltnet-policy; MOLTNET_COMPLIANCE.md §2
+  *Shared network state*): in a MoltNet window, a test page on site A that
+  opens 200 long-polling requests to 40 hosts of its own, and a page on
+  site B in another tab: B loads at once (in a regular window with a proxy
+  set, B waits behind A's requests). `chrome://net-internals/#sockets`
+  lists MoltNet's pools as `socks5://127.0.0.1:<port> (per site)`, never
+  with a site's name.
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1200,10 +1361,16 @@ Mac; use a real Linux host.
     `mq.video_dynamic_range_high`, `mq.color_bits`, `mq.monochrome`),
     `storage.quota_over_usage` and `audio.render_quantum_hardware`
     (fingerprinting 156), and the `audio.*`, `eme.*`, `mc.*` and
-    `webcodecs.*` checks (fp-media); `diff` shows no difference in a
+    `webcodecs.*` checks (fp-media), `audio.cadence_interval_ms`,
+    `audio.cadence_burst_frames` and `media.audiooutput` (fp-audio); `diff`
+    shows no difference in a
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.
+  - `recorder.mime_type`, `fonts.local_hidden` and
+    `storage.enforced_quota` pass (fp-probes), and `diff` shows no
+    difference in `recorder.supported` or `fonts.local_listed` between
+    two machines of an OS.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
     asks for a client certificate saw only completed handshakes, none with
     a certificate. A FAIL listing a dropped handshake means MoltNet's
@@ -1222,6 +1389,19 @@ Mac; use a real Linux host.
     whether the "MoltNet windows closed" dialog over the
     `chrome://molt-net/` tab gets in the way of DevTools-pipe calls (if so,
     note it; the checks only need the targets list).
+  - `identity.language_policy_ignored`, `identity.incognito_off_closes`
+    and `identity.incognito_forced_allows` pass (moltnet-policy, phases
+    `policy_live` and `policy_live_incognito`). An ERROR in the first that
+    says the regular page didn't change either means the policy didn't
+    arrive (or `ReduceAcceptLanguage` didn't take effect): look at
+    `chrome://policy` in that launch. A FAIL in the second with a
+    `devtools://` page left means the DevTools window survived (check
+    `DetachDevTools()` in `molt_net_window.cc`); with the page left, the
+    forced close didn't run. First-run questions: whether
+    `--auto-open-devtools-for-tabs` opens DevTools undocked for the MoltNet
+    tab with the kit's seeded dock state (`devtools_own_window` in the
+    phase data), and whether the "Leave site?" prompt is reported
+    (`dialog`); the check doesn't depend on either.
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet
@@ -1482,11 +1662,13 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   browser-wide trust change plus mixed-content patches; until then
   `http://` onion sites show "Not secure" and some features stay off. Ship
   v0.3.0 with the documented gap? (from #6; MOLTNET_COMPLIANCE.md §5.7)
-- [ ] **Incognito policies in MoltNet.** Turning Incognito off, the
-  Incognito-only URL blocklist, extensions required for Incognito, and
-  closing a supervised user's Incognito windows don't cover MoltNet
-  windows (forcing Incognito does stop MoltNet). Apply them to MoltNet, or
-  document? (from #23; MOLTNET_COMPLIANCE.md §5.7)
+- [ ] **Incognito policies in MoltNet.** Turning Incognito off (also for
+  a supervised user) and the Incognito URL lists now cover MoltNet, and
+  forcing Incognito no longer stops MoltNet (moltnet-policy;
+  MOLTNET_COMPLIANCE.md §2 *Incognito's availability*). Still open:
+  extensions required for Incognito and the "Incognito" conditions of
+  data-control rules don't cover MoltNet windows. Apply them too, or keep
+  them documented? (from #23; MOLTNET_COMPLIANCE.md §5.7)
 - [ ] **Third-party audit and bug bounty**: "before 1.0" on the roadmap;
   MOLTNET_COMPLIANCE.md §3 lists the audit as not done. Choose an auditor
   and scope (MoltNet first?) and a bounty platform (from ROADMAP.md).

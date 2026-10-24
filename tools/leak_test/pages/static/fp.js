@@ -104,6 +104,84 @@ async function audioDevice(v) {
   v['audio.base_latency'] = latencies;
 }
 
+// When Web Audio renders, as a page can time it (MoltNet: on the uniform
+// device's clock, 480 frames every 10 ms, whatever the real device).
+// currentTime is polled on the main thread for 300 ms; its changes less
+// than 1.5 ms apart are one burst of rendering. Reports the median time
+// between bursts and the burst sizes, in frames (3 or 4 render quanta of 128
+// for 480 frames), that make up at least a tenth of the bursts. A poll held
+// up (the machine, a garbage collection) can split or merge bursts, so the
+// bursts next to one aren't sized. Needs a running context, so the harness
+// calls it with a user gesture after the page's collection.
+async function audioCadence() {
+  if (!window.AudioContext) {
+    return {'audio.cadence_interval_ms': 'absent',
+      'audio.cadence_burst_frames': 'absent'};
+  }
+  const ctx = new AudioContext();
+  try {
+    await ML.timeout(ctx.resume(), 3000);
+    const wait = performance.now();
+    while (ctx.currentTime === 0 && performance.now() - wait < 2000) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    if (ctx.currentTime === 0) {
+      return {'audio.cadence_interval_ms': 'not running',
+        'audio.cadence_burst_frames': 'not running'};
+    }
+    const bursts = [];
+    let last = ctx.currentTime;
+    let prev = performance.now();
+    let held = false;
+    const end = prev + 300;
+    for (let now = prev; now < end; prev = now, now = performance.now()) {
+      if (now - prev > 0.5) {
+        held = true;
+        const b = bursts[bursts.length - 1];
+        if (b && prev - b.end < 1.5) {
+          b.held = true;
+        }
+      }
+      const t = ctx.currentTime;
+      if (t === last) {
+        continue;
+      }
+      const frames = Math.round((t - last) * ctx.sampleRate);
+      last = t;
+      const b = bursts[bursts.length - 1];
+      if (b && now - b.end < 1.5) {
+        b.frames += frames;
+        b.end = now;
+        b.held = b.held || held;
+      } else {
+        bursts.push({start: now, end: now, frames, held});
+      }
+      held = false;
+    }
+    // The first and last may be cut short.
+    const whole = bursts.slice(1, -1);
+    const gaps = whole.slice(1).map((b, i) => b.start - whole[i].start)
+        .sort((a, b) => a - b);
+    const sized = whole.filter((b) => !b.held);
+    const counts = new Map();
+    for (const b of sized) {
+      counts.set(b.frames, (counts.get(b.frames) || 0) + 1);
+    }
+    return {
+      'audio.cadence_interval_ms': gaps.length ?
+          Math.round(gaps[Math.floor(gaps.length / 2)]) : 'no bursts',
+      'audio.cadence_burst_frames': [...counts]
+          .filter(([, n]) => n * 10 >= sized.length)
+          .map(([frames]) => frames).sort((a, b) => a - b),
+    };
+  } finally {
+    await ctx.close();
+  }
+}
+window.mlAudioCadence = () => audioCadence().catch((e) => ({
+  'audio.cadence_interval_ms': ML.errInfo(e),
+  'audio.cadence_burst_frames': ML.errInfo(e)}));
+
 function decodingAnswer(info) {
   return {supported: info.supported, smooth: info.smooth,
     powerEfficient: info.powerEfficient};
@@ -466,6 +544,86 @@ function frameLoad(src, onMessage) {
   });
 }
 
+// MediaRecorder: the type it records for each container a page can ask for
+// (MoltNet: the build's software encoders on every machine, so VP8 in WebM
+// and Matroska, VP9 in MP4), and what isTypeSupported() says.
+const RECORDER_TYPES = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9',
+  'video/webm;codecs=av01', 'video/webm;codecs=h264',
+  'video/x-matroska;codecs=avc1', 'video/mp4;codecs=avc1.42E01E',
+  'video/mp4;codecs=avc1.640028', 'video/mp4;codecs=av01.0.04M.08',
+  'video/mp4;codecs=hvc1.1.6.L93.B0', 'video/x-matroska;codecs=hev1.1.6.L93.B0',
+  'audio/webm;codecs=opus', 'audio/webm;codecs=pcm',
+  'audio/mp4;codecs=mp4a.40.2', 'audio/mp4;codecs=opus'];
+
+async function recorderTypes() {
+  if (!window.MediaRecorder) {
+    return 'absent';
+  }
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 48;
+  c.getContext('2d').fillRect(0, 0, 8, 8);
+  const stream = c.captureStream();
+  const out = {};
+  for (const type of ['', 'video/webm', 'video/x-matroska', 'video/mp4']) {
+    const label = type || 'default';
+    try {
+      // mimeType names the chosen codecs from the start event on; stopping
+      // right away delivers it too.
+      const r = new MediaRecorder(stream, type ? {mimeType: type} : {});
+      const stopped = new Promise((resolve) => {
+        r.onstop = resolve;
+        setTimeout(resolve, 2000);
+      });
+      r.start();
+      r.stop();
+      await stopped;
+      out[label] = r.mimeType;
+    } catch (e) {
+      out[label] = ML.errName(e);
+    }
+  }
+  stream.getTracks().forEach((t) => t.stop());
+  return out;
+}
+
+// src: local() of faces no OS's allow-list has (any that loads is a
+// failure: an installed one must look missing), and of faces of Linux's
+// listed families (the same on every machine of an OS). Only the result is
+// checked: a hidden face isn't looked up at all, so its timing equals a
+// missing one's, which a test run can't measure reliably anyway.
+const LOCAL_HIDDEN = ['Ubuntu', 'Ubuntu-Regular', 'Ubuntu Bold',
+  'Cantarell', 'Cantarell-Regular', 'Noto Sans CJK JP Regular',
+  'NotoSansCJKjp-Regular', 'Liberation Sans Narrow',
+  'LiberationSansNarrow-Bold', 'Fira Sans', 'FiraSans-Regular', 'Open Sans',
+  'OpenSans-Regular', 'Source Code Pro', 'SourceCodePro-Regular'];
+const LOCAL_LISTED = ['DejaVu Sans', 'DejaVuSans-Bold',
+  'DejaVu Sans Bold Oblique', 'DejaVuSansMono', 'Liberation Sans',
+  'LiberationSans-Bold', 'Liberation Serif Italic', 'Noto Sans',
+  'NotoSans-Bold'];
+
+async function localFaces(names) {
+  const loaded = [];
+  for (const name of names) {
+    try {
+      await new FontFace('mlLocalProbe', 'local("' + name + '")').load();
+      loaded.push(name);
+    } catch (e) {
+      // Not available to this page.
+    }
+  }
+  return loaded;
+}
+
+async function recorderAndLocalFonts(v, step) {
+  await step('recorder.mime_type', recorderTypes);
+  v['recorder.supported'] = window.MediaRecorder ?
+      RECORDER_TYPES.filter((t) => MediaRecorder.isTypeSupported(t)) :
+      'absent';
+  await step('fonts.local_hidden', () => localFaces(LOCAL_HIDDEN));
+  await step('fonts.local_listed', () => localFaces(LOCAL_LISTED));
+}
+
 async function collect() {
   const v = {};
   const step = async (key, fn) => {
@@ -626,6 +784,7 @@ async function collect() {
     v['audio.sample_rate'] = ML.errInfo(e);
   }
   await mediaCapabilities(v, step);
+  await recorderAndLocalFonts(v, step);
   v['autoplay.mediaelement'] = n.getAutoplayPolicy ?
       n.getAutoplayPolicy('mediaelement') : 'absent';
   await step('sharedStorage.set', async () => {
@@ -672,6 +831,10 @@ async function collect() {
     }
     return counts;
   });
+  // Output devices listed before any permission (MoltNet: always the one).
+  await step('media.audiooutput', async () =>
+    (await n.mediaDevices.enumerateDevices()).filter(
+        (d) => d.kind === 'audiooutput').length);
   v['perf.jsHeapSizeLimit'] = performance.memory ?
       performance.memory.jsHeapSizeLimit : null;
   await step('speech.voices', () => new Promise((resolve) => {

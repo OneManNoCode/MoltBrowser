@@ -23,16 +23,19 @@
 // state"). What the process-wide switches decide is checked separately,
 // before a MoltNet window opens (molt_net_partitioning_policy.h).
 //
-// Header-only (the standard library and base::Token), so molt_ai_unittests
-// tests it and the upstream hook needs no new link dependency.
+// Header-only (the standard library, base::Token and net's std-only
+// molt_per_site_socket_pool_policy.h), so molt_ai_unittests tests it and the
+// upstream hook needs no new link dependency.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NETWORK_CONTEXT_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NETWORK_CONTEXT_POLICY_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
 #include "base/token.h"
+#include "net/socket/molt_per_site_socket_pool_policy.h"
 
 namespace molt_ai::tor {
 
@@ -166,6 +169,18 @@ struct MoltNetNetworkContextSettings {
   // needs DoH.
   bool no_doh_probes = false;
 
+  // Connection limits: Chromium keeps one socket pool per proxy chain in a
+  // network context, with a limit for the whole pool (128 for a proxy,
+  // or what the MaxConnectionsPerProxy policy says). All of MoltNet's
+  // traffic goes through Tor's SOCKS5 port, one proxy chain, so every site
+  // shared that limit: one site holding its connections open made every
+  // other site's new connections wait, which a site open at the same time
+  // can measure. When not 0, each top-level site (network anonymization
+  // key) gets socket pools of its own with this limit, a fixed one, so
+  // MaxConnectionsPerProxy doesn't show either
+  // (net/socket/molt_per_site_socket_pool_policy.h).
+  uint32_t per_site_socket_pool_size = 0;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -186,6 +201,9 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.send_no_client_certificates = is_moltnet_profile;
   settings.no_doh_probes = is_moltnet_profile;
   settings.no_device_bound_sessions = is_moltnet_profile;
+  settings.per_site_socket_pool_size =
+      is_moltnet_profile ? static_cast<uint32_t>(net::kMoltPerSitePoolSize)
+                         : 0;
   return settings;
 }
 
@@ -265,6 +283,8 @@ void ApplyMoltNetNetworkContextSettings(
   network_context_params.molt_send_no_client_certificates =
       settings.send_no_client_certificates;
   network_context_params.molt_no_doh_probes = settings.no_doh_probes;
+  network_context_params.molt_per_site_socket_pool_size =
+      settings.per_site_socket_pool_size;
 }
 
 }  // namespace molt_ai::tor

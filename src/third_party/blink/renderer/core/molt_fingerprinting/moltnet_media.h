@@ -16,6 +16,12 @@
 //                                         -> UniformAudioOutputLatency,
 //                                            UniformAudioOutputPosition,
 //                                            UniformAudioPlayoutDelay
+//               AudioContext::IsValidSinkDescriptor (the default device's
+//                 ID, for setSinkId() and device changes)
+//                                         -> HasUniformDefaultAudioOutput
+//               AudioDestination's constructor: the device it renders for
+//                 (platform/audio/audio_destination.cc)
+//                                         -> moltnet_audio_device.h
 //               RealtimeAudioDestinationHandler::MaxChannelCount,
 //                 GetCallbackBufferSize, GetFramesPerBuffer
 //                 (realtime_audio_destination_handler.cc: maxChannelCount
@@ -23,6 +29,9 @@
 //                 computes from the device's buffer, createScriptProcessor()'s
 //                 default size)       -> UniformAudioMaxChannelCount,
 //                                        UniformAudioCallbackFrames
+//   Media       MediaDevices::DevicesEnumerated (media_devices.cc:
+//   devices       enumerateDevices()' list)
+//                                         -> ShouldListUniformAudioOutput
 //   EME         EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow
 //                 (encrypted_media_utils.cc; requestMediaKeySystemAccess()
 //                 and Media Capabilities' key-system queries both get their
@@ -60,11 +69,13 @@
 #include "base/time/time.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
 class WebAudioLatencyHint;
 class WebEncryptedMediaClient;
+struct WebMediaDeviceInfo;
 
 namespace molt_fingerprinting {
 
@@ -90,6 +101,19 @@ CORE_EXPORT std::optional<uint32_t> UniformAudioCallbackFrames(
     const WebAudioLatencyHint& latency_hint,
     double context_sample_rate);
 
+// The uniform device's callback buffer for `latency_hint` at
+// `context_sample_rate` in any mode (0 for a rate an AudioContext can't
+// have): what UniformAudioCallbackFrames() reports in MoltNet and the tick of
+// MoltNet's audio clock (moltnet_audio_device.h).
+CORE_EXPORT uint32_t UniformDeviceCallbackFrames(
+    const WebAudioLatencyHint& latency_hint,
+    double context_sample_rate);
+
+// Whether the default output device always exists (true in MoltNet, whose
+// contexts render on their own clock): AudioContext's sink checks then
+// accept it on a machine that lists no output device.
+CORE_EXPORT bool HasUniformDefaultAudioOutput();
+
 // destination.maxChannelCount: 2 in MoltNet, else `real`.
 CORE_EXPORT uint32_t UniformAudioMaxChannelCount(uint32_t real);
 
@@ -107,6 +131,15 @@ CORE_EXPORT std::optional<base::TimeDelta> UniformAudioPlayoutDelay();
 // MoltNet.
 CORE_EXPORT std::optional<moltnet::AudioOutputPosition>
 UniformAudioOutputPosition(double current_time);
+
+// --- Media devices ------------------------------------------------------------
+
+// enumerateDevices() in MoltNet: whether to list the uniform output device
+// (an "audiooutput" entry with no ID, label or group) after what Chromium
+// listed (moltnet::ListsUniformAudioOutput). false outside MoltNet.
+CORE_EXPORT bool ShouldListUniformAudioOutput(
+    const Vector<WebMediaDeviceInfo>& audio_inputs,
+    const Vector<WebMediaDeviceInfo>& audio_outputs);
 
 // --- Encrypted Media Extensions ---------------------------------------------
 
@@ -137,7 +170,8 @@ CORE_EXPORT bool UsesPlatformMediaCodecs();
 
 // Makes the functions above behave as in kUniform without configuring the
 // process for it (which would pin the time zone and locale for every later
-// test).
+// test); also renders new AudioContexts on MoltNet's clock
+// (PinUniformAudioClock).
 CORE_EXPORT void SetMoltNetMediaForTesting(bool uniform);
 
 }  // namespace molt_fingerprinting

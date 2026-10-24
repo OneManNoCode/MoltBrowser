@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,6 +27,10 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/skia/include/core/SkFontStyle.h"
+#include "third_party/skia/include/core/SkString.h"
+#include "third_party/skia/include/core/SkTypeface.h"
 
 namespace blink::molt_fingerprinting {
 namespace {
@@ -67,6 +72,18 @@ std::vector<std::string> Names(size_t count) {
   return names;
 }
 
+// Whether `context` may see the family `font_data`'s typeface belongs to.
+bool VisibleFamily(ExecutionContext* context, const SimpleFontData& font_data) {
+  const SkTypeface* typeface = font_data.PlatformData().Typeface();
+  if (!typeface) {
+    return false;
+  }
+  SkString family;
+  typeface->getFamilyName(&family);
+  return SystemFontVisibility(context).IsFamilyVisible(
+      FontName::Utf8(std::string_view(family.c_str())));
+}
+
 // A family name that is in neither the allow-list nor `visibility`'s sample.
 AtomicString HiddenName(const FontVisibility& visibility) {
   for (const std::string& name : Names(1000)) {
@@ -90,8 +107,9 @@ TEST_F(MoltSystemFontsTest, OffChangesNothing) {
             FontCache::Get().GetFontData(description, family.FamilyName()));
   EXPECT_FALSE(
       IsSystemFontFamilyAvailable(&window, description, family).has_value());
-  EXPECT_TRUE(
-      AllowLocalFontFace(&window, description, AtomicString("Probe Font 1")));
+  // local() looks the unique name up as Chromium does.
+  EXPECT_FALSE(RestrictsLocalFontFaces(&window));
+  EXPECT_FALSE(RestrictsLocalFontFaces(nullptr));
 }
 
 TEST_F(MoltSystemFontsTest, WebSitesSeeTheAllowListAndTheirSample) {
@@ -170,7 +188,51 @@ TEST_F(MoltSystemFontsTest, HiddenFamiliesAreNotLookedUp) {
   EXPECT_EQ(GetSystemFontData(&a, description, family), nullptr);
   EXPECT_EQ(IsSystemFontFamilyAvailable(&a, description, family),
             std::optional<bool>(false));
-  EXPECT_FALSE(AllowLocalFontFace(&a, description, hidden));
+  // local(): neither the name nor the name with style words.
+  EXPECT_TRUE(RestrictsLocalFontFaces(&a));
+  EXPECT_EQ(GetLocalFontFaceData(&a, description, hidden), nullptr);
+  EXPECT_EQ(GetLocalFontFaceData(
+                &a, description,
+                AtomicString(hidden.GetString() + String("-BoldItalic"))),
+            nullptr);
+}
+
+TEST_F(MoltSystemFontsTest, LocalFacesAreFamilyLookups) {
+  Farble();
+  LocalDOMWindow& a = Window("https://a.example/");
+  FontDescription description;
+  // Whatever the test machine has installed: local() of a listed family is
+  // the face the family lookup finds, if its family is visible; with a
+  // weight word, only a face of that weight.
+  for (const FontListEntry& entry : FontListFor(CurrentFontPlatform())) {
+    if (!entry.alias_of.empty()) {
+      // An alias names no face: local() never resolves it to the family
+      // protected contexts look up instead.
+      EXPECT_EQ(GetLocalFontFaceData(&a, description,
+                                     AtomicString::FromUtf8(entry.name)),
+                nullptr)
+          << entry.name;
+      continue;
+    }
+    const AtomicString name = AtomicString::FromUtf8(entry.name);
+    const SimpleFontData* family_data = FontCache::Get().GetFontData(
+        description, name, AlternateFontName::kNoAlternate);
+    const SimpleFontData* local_data =
+        GetLocalFontFaceData(&a, description, name);
+    if (family_data && VisibleFamily(&a, *family_data)) {
+      EXPECT_EQ(local_data, family_data) << entry.name;
+    }
+    if (local_data) {
+      EXPECT_TRUE(VisibleFamily(&a, *local_data)) << entry.name;
+    }
+    const SimpleFontData* bold = GetLocalFontFaceData(
+        &a, description, AtomicString(name.GetString() + String("-Bold")));
+    if (bold) {
+      EXPECT_TRUE(VisibleFamily(&a, *bold)) << entry.name;
+      EXPECT_EQ(bold->PlatformData().Typeface()->fontStyle().weight(), 700)
+          << entry.name;
+    }
+  }
 }
 
 TEST_F(MoltSystemFontsTest, GenericFamiliesAreNotRestricted) {
@@ -200,7 +262,7 @@ TEST_F(MoltSystemFontsTest, FoundFontsMustBeVisible) {
     const SimpleFontData* font_data =
         GetSystemFontData(&a, description, family);
     if (font_data) {
-      EXPECT_TRUE(AllowInstalledFont(&a, *font_data)) << entry.name;
+      EXPECT_TRUE(VisibleFamily(&a, *font_data)) << entry.name;
     }
     EXPECT_EQ(IsSystemFontFamilyAvailable(&a, description, family),
               std::optional<bool>(font_data != nullptr));

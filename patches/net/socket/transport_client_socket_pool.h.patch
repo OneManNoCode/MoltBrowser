@@ -1,0 +1,26 @@
+MoltBrowser patch for net/socket/transport_client_socket_pool.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/transport_client_socket_pool.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/transport_client_socket_pool.h b/net/socket/transport_client_socket_pool.h
+index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..94433dfe92e5139468e39c69f5181d5c67a71b5b 100644
+--- a/net/socket/transport_client_socket_pool.h
++++ b/net/socket/transport_client_socket_pool.h
+@@ -233,6 +233,15 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+   bool HasActiveSocket(const GroupId& group_id) const override;
+   size_t SocketsInUse() const override;
+ 
++  // MoltBrowser: true if nothing uses this pool: no group (no request, idle
++  // or handed-out socket, connect job), no callback waiting to run, no
++  // higher-layered pool (net/socket/molt_per_site_socket_pools.h drops such
++  // a site pool after a while).
++  bool MoltIsUnused() const {
++    return group_map_.empty() && pending_callback_map_.empty() &&
++           higher_pools_.empty() && SocketsInUse() == 0;
++  }
++
+   bool RequestInGroupWithHandleHasJobForTesting(
+       const GroupId& group_id,
+       const ClientSocketHandle* handle) const {

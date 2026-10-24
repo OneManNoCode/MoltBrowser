@@ -41,6 +41,8 @@ INCLUDE_DIRS = [
     "third_party/libyuv/include",
     # libwebm includes itself by its source root (media/muxers/webm_muxer.h).
     "third_party/libwebm/source",
+    # So does libaom (media/video/av1_video_encoder.h).
+    "third_party/libaom/source/libaom",
     "third_party/webrtc",
     "gen:third_party/webrtc",
     "gen:components/policy/proto",

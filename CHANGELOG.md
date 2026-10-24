@@ -211,6 +211,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   server (no form queries, no votes) and download no address formats;
   fields are still recognised on your device, and saved addresses and
   passwords still fill.
+- MoltNet hardening: when an identity ends (New Identity, or a setting
+  MoltNet can't accept while it is open), its connection refuses every
+  request from that moment, and its windows close with their DevTools
+  windows, whatever they show ("Leave site?", an alert, a sign-in prompt,
+  print preview, a file dialog). MoltNet follows Incognito's availability:
+  it doesn't open, and closes, while an administrator or parental controls
+  turn Incognito off, still opens while only Incognito is allowed, and
+  applies Incognito's URL lists. Language settings and language policies
+  no longer reach MoltNet pages, and each site gets connection limits of
+  its own there, so one site's connections can't hold up another's.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -480,6 +490,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pages' audio runs at 48 kHz, converted for your device when it uses
   another rate. Surround audio plays as stereo in MoltNet windows. Regular
   and incognito windows are unchanged.
+- **Web Audio keeps its own time in MoltNet.** MoltNet pages' Web Audio now
+  renders on the same fixed schedule on every machine (480 frames every
+  10 ms at 48 kHz), whatever your output device's buffer and timing, and a
+  machine without an output device answers like any other (no error
+  events, one listed output device). Your device plays the result through
+  a short buffer, which adds about 13 to 32 ms of audio latency in MoltNet
+  windows. Regular and incognito windows are unchanged.
 - **No DRM in MoltNet.** MoltNet pages are told that no media key system
   exists, Clear Key included, whichever ones the build or the operating
   system offers, and a MoltNet window no longer asks which ones there are.
@@ -491,6 +508,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   played before, and WebCodecs uses MoltBrowser's own software codecs, so
   `"prefer-hardware"` isn't supported in MoltNet windows. Regular and
   incognito windows are unchanged.
+- **Recordings, `local()` fonts and storage limits.** MediaRecorder in
+  MoltNet pages records with MoltBrowser's own software encoders (VP8, or
+  VP9 for MP4), threaded for the 4 cores MoltNet reports, never with your
+  graphics hardware. Wherever fingerprinting protection is on, a
+  `@font-face` `local()` font is found only through the font families the
+  page may already name, so an installed font the page can't see costs
+  exactly what a missing one does. And a MoltNet site can store at most
+  200 MiB (600 MiB for all sites, 800 MiB of blobs) on every machine,
+  instead of limits that follow your memory. Regular and incognito windows
+  keep Chromium's recording and storage limits.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

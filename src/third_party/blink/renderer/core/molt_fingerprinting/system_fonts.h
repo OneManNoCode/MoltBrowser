@@ -14,9 +14,10 @@
 //                                                  -> GetSystemFontData
 //   CSSFontSelectorBase::IsPlatformFamilyMatchAvailable
 //     (document.fonts.check())           -> IsSystemFontFamilyAvailable
-//   LocalFontFaceSource::IsLocalFontAvailable / CreateFontData
-//     (@font-face / FontFace src: local())         -> AllowLocalFontFace,
-//                                                     AllowInstalledFont
+//   LocalFontFaceSource::IsLocalNonBlocking, IsLocalFontAvailable,
+//     CreateFontData (@font-face / FontFace src: local())
+//                                                  -> RestrictsLocalFontFaces,
+//                                                     GetLocalFontFaceData
 //   FontAccess::DidGetEnumerationResponse
 //     (window.queryLocalFonts())                   -> AllowEnumeratedFont
 //
@@ -75,14 +76,22 @@ CORE_EXPORT std::optional<bool> IsSystemFontFamilyAvailable(
     const FontDescription& font_description,
     const FontFamily& family);
 
-// src: local(`unique_name`): whether the face it names (full or PostScript
-// name) belongs to a family `context` may see.
-CORE_EXPORT bool AllowLocalFontFace(ExecutionContext* context,
-                                    const FontDescription& font_description,
-                                    const AtomicString& unique_name);
-// Whether `context` may use the installed font `font_data`.
-CORE_EXPORT bool AllowInstalledFont(ExecutionContext* context,
-                                    const SimpleFontData& font_data);
+// src: local(). Whether `context` only sees some installed fonts; then the
+// unique (full or PostScript) name in local() is never looked up as such,
+// installed hidden and missing faces cost the same, and the unique-name
+// lookup's caches (FontCache's typeface cache, the platform's table) are
+// never used, so they can't tell one document what another looked up.
+CORE_EXPORT bool RestrictsLocalFontFaces(ExecutionContext* context);
+// Only where RestrictsLocalFontFaces(context): the face local(`unique_name`)
+// stands for, found by the family lookups FontVisibility::
+// ForLocalFaceRequest() allows (only families `context` may look up in CSS
+// anyway), or null. `font_description` is the description the caller would
+// look the unique name up with; its weight and slope are replaced by those
+// the name gives, if any.
+CORE_EXPORT const SimpleFontData* GetLocalFontFaceData(
+    ExecutionContext* context,
+    const FontDescription& font_description,
+    const AtomicString& unique_name);
 
 // queryLocalFonts(): whether to report a font of family `family` (UTF-8, as
 // the browser enumerated it).

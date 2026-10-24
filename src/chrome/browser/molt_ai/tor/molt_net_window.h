@@ -19,10 +19,17 @@
 //
 // While a MoltNet profile exists, the settings step 2 checked are watched
 // (molt_net_live_guard.h). If one changes so that the check would refuse (a
-// policy proxy, override rules, a leak control, blob URL partitioning),
-// that identity ends as New Identity ends the old one (connections dropped,
-// windows closed without "Leave site?", profile destroyed), with no new
-// window, and a dialog gives the check's message.
+// policy proxy, override rules, a leak control, blob URL partitioning,
+// Incognito turned off), that identity ends as New Identity ends the old
+// one, with no new window, and a dialog gives the check's message.
+//
+// Ending an identity: from that moment its network context refuses every
+// request (MoltNetRouting::EndIdentity()); DevTools sessions on its pages
+// are detached (their windows close, in any profile); every window of it
+// closes whatever is open in it: "Leave site?" (also when DevTools
+// intercepts it), JavaScript and authentication dialogs, print preview,
+// file and download prompts; and a window still open a moment later gets
+// its renderer processes ended and its tabs closed.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_WINDOW_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_WINDOW_H_
@@ -65,9 +72,11 @@ class MoltNetWindow {
   static void CloseAll(Profile* from);
 
   // Tor-Browser-style New Identity, strictly in this order:
-  //   1. drops all connections + the host cache of every MoltNet profile of
-  //      |from|'s original profile and closes their windows (beforeunload
-  //      handlers can't keep one open, as when Incognito closes);
+  //   1. ends every MoltNet identity of |from|'s original profile: its
+  //      network context refuses every request from now on, its
+  //      connections and host cache are dropped, and its windows close
+  //      whatever is open in them ("Leave site?", also with DevTools open;
+  //      see the top of this file);
   //   2. waits until those profiles are destroyed, so nothing of the old
   //      identity (cookies, cache, storage, a late beacon or keepalive
   //      request) is left;
@@ -75,9 +84,9 @@ class MoltNetWindow {
   //      seconds after a previous NEWNYM);
   //   4. opens a fresh MoltNet window.
   // No other MoltNet window opens for that profile meanwhile. If a window
-  // of the old identity stays open (a "Leave site?" dialog the user doesn't
-  // answer, possible while DevTools is open), it fails after a timeout
-  // without changing circuits, and the old identity stays current.
+  // of the old identity somehow stays open, it fails after a timeout
+  // without changing circuits or opening a window; the old identity keeps
+  // refusing every request, and the next Open() makes a new one.
   static void NewIdentity(Profile* from, DoneCallback done);
 
   // Turns MoltNet off: closes all MoltNet windows (every profile) and stops

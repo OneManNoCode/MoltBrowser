@@ -5,7 +5,8 @@
 // server about. window.mlkCanaryLoop() fetches the page's canary name over
 // and over: through Tor while MoltNet is open, and never from outside it,
 // also while a proxy policy arrives (the kit's resolver would log such a
-// lookup).
+// lookup). window.mlkLanguages() reports the page's languages, which a
+// language policy must not change in MoltNet.
 'use strict';
 (() => {
   let sent = 0;
@@ -19,6 +20,20 @@
     return url;
   };
   window.mlkCanarySent = () => sent;
+  // What the page sees of the languages: navigator.languages and the
+  // Accept-Language header of a request to its own server (which echoes
+  // the headers back). Read before and after a language policy is set.
+  window.mlkLanguages = async () => {
+    let header = null;
+    try {
+      const r = await fetch('/headers', {cache: 'no-store'});
+      header = (await r.json())['accept-language'] || null;
+    } catch (e) {
+      header = 'error: ' + e;
+    }
+    return {languages: Array.from(navigator.languages || []),
+            accept_language: header};
+  };
   ML.set('forms', document.forms.length);
   ML.finish();
 })();

@@ -380,6 +380,7 @@ back/forward, and a MoltNet window with Shields off.
 | WebGL2 `readPixels()` into a `PIXEL_PACK_BUFFER` (then `getBufferSubData`, `copyBufferSubData`, texture uploads from it), same formats | farbled (in the buffer) | farbled | `webgl2_rendering_context_base.cc`: `readPixels(..., offset)` |
 | `new VideoFrame(canvas \| OffscreenCanvas \| ImageBitmap \| <img> \| SVG image)`, then `copyTo()`, `VideoEncoder`, `MediaStreamTrackGenerator`, ... | **not farbled** (per-frame cost; see below) | farbled (at creation) | `video_frame.cc`: `VideoFrame::Create` (CanvasImageSource) |
 | `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
+| `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
@@ -422,6 +423,7 @@ back/forward, and a MoltNet window with Shields off.
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
 | `navigator.storage.estimate()` quota | the usage + 10 GiB (the disk, rounded up to whole GiB, where it is smaller) | the usage + **10 GiB**, static in off-the-record profiles since Chromium 156 | none (upstream) |
+| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed**: 200 MiB per site, 600 MiB for all sites, 800 MiB of blobs ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor` |
 | Third-party cookies, Shared Storage | the user's settings | third-party cookies **blocked** (as in Incognito); Shared Storage: removed upstream at 156 | `cookie_settings_factory.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
@@ -433,7 +435,7 @@ back/forward, and a MoltNet window with Shields off.
 | Default text locale (text without `lang`: CJK glyph variants, hyphenation, line breaking), date picker language | UI language | **en-US** ([details](#default-text-locale)) | `language.cc`: `DefaultLanguage`, `UserPreferredLanguages` |
 | Time zone (`Date`, `Intl`) | real | **Etc/UTC** (renderer-wide `TimeZoneController` override) | glue: `Configure` |
 | `Intl` / ICU default locale | real | **en-US** (`LocaleController` override) | glue: `Configure` |
-| `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`) | `molt_net_routing.cc` (MoltBrowser file) |
+| `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`, held above its own settings, so no language setting or policy changes it) | `molt_net_language_policy.h`, `molt_net_pref_isolation.cc` (MoltBrowser files) |
 
 "Farbled" in normal windows means: unless Shields are off for the site.
 
@@ -1997,7 +1999,8 @@ no `change` event while the page runs.
 ## MoltNet: audio, DRM and media capabilities
 
 Three media APIs answered from the machine itself: Web Audio from the
-output device (its sample rate, buffer, channels and delay), Encrypted
+output device (its sample rate, buffer, channels and delay, and when it
+asks for audio), Encrypted
 Media Extensions from the content decryption modules (CDMs) the build and
 the operating system offer, and Media Capabilities and WebCodecs from the
 video decoders and encoders, including the GPU's, and from the profile's
@@ -2014,6 +2017,8 @@ hardware for every user:
 | `playbackStats` (latency, underruns) | the device's delay to 0.1 ms (5 µs when cross-origin isolated); the system's glitches | **24 ms**; **no underruns** |
 | `destination.maxChannelCount` | the device's channels (1, 2, 6, 8, ...) | **2**; a `channelCount` above 2 throws `IndexSizeError` |
 | `renderSizeHint: "hardware"` | 128 at 156 (no device value is read) | **128**, pinned |
+| When rendering happens: `currentTime` steps, AudioWorklet `process()` bursts, `onaudioprocess` callbacks, `getOutputTimestamp()` steps | when the device asks for audio: its buffer (128 to 2048 frames and more), rate and callback pattern, a stall or a gap when it changes | the uniform device's clock: **480 frames every 10 ms** (3 or 4 render quanta), from the moment the context starts, whatever the device ([below](#when-web-audio-renders)) |
+| A machine with no output device | a 44.1 kHz fallback device, an `error` event (`setSinkId("")`, a lost device), no `audiooutput` in `enumerateDevices()` | **like every other machine**: the same values, schedule and device list, no `error` |
 | `requestMediaKeySystemAccess()`; Media Capabilities with a `keySystemConfiguration` | Clear Key (and, in builds that have them, which Widevine or PlayReady version, robustness levels and hardware-secure decoding the machine has) | **`NotSupportedError`**, every key system; `{supported: false}` |
 | `mediaCapabilities.decodingInfo()` for video | supported from the decoders, then `smooth` and `powerEfficient` from the decode history and the GPU's decoders | **supported** when the build has its own decoder, **smooth**, **not power efficient** |
 | `decodingInfo()` and `encodingInfo()` for `"webrtc"` | the machine's WebRTC codecs, hardware ones included | **unsupported** (WebRTC is off in MoltNet) |
@@ -2107,8 +2112,9 @@ other ways, so what matters is that MoltNet users all answer alike, and
 a page once it has a media permission (Chromium hides them, and lists one
 device per kind, before that), and they are salted per site and per
 MoltNet identity. Before that, `setSinkId("")` succeeds and every other ID
-is `NotFoundError` for everyone with an output device; after it, the
-choice of output device is what the user granted.
+is `NotFoundError` for everyone (machines without an output device
+included, [below](#when-web-audio-renders)); after it, the choice of
+output device is what the user granted.
 
 **What it costs MoltNet users.** Surround audio (5.1, 7.1) plays as
 stereo. Pages that use `outputLatency` or `baseLatency` to line sound up
@@ -2116,7 +2122,131 @@ with pictures (games, music tools) are off by the difference between the
 real delay and 24 ms: a few milliseconds on built-in speakers, up to about
 200 ms with Bluetooth headphones. `playbackStats` never reports underruns,
 so a page can't react to them. 44.1 and 96 kHz devices pay the resampler
-above.
+above. Rendering on MoltNet's own clock adds 13 to 32 ms of latency
+([below](#when-web-audio-renders)).
+
+### When Web Audio renders
+
+**What a page can time.** Chromium renders an `AudioContext` when the
+output device asks for audio: `AudioDestination::Render` runs on the
+device's audio thread (or posts to the AudioWorklet thread) with the
+device's buffer, and renders as many 128-frame quanta as that buffer
+needs, back to back. Fixing the reported values doesn't hide this: a page
+that polls `currentTime`, counts AudioWorklet `process()` calls between
+messages, times `onaudioprocess` or `getOutputTimestamp()` steps, or
+compares them with `requestAnimationFrame` sees bursts of 1 quantum every
+2.7 ms (a 128-frame device), 8 every 21 ms (1024), 16 every 43 ms (a
+Bluetooth or `"playback"` buffer), and 3 or 4 every 10 ms on Windows'
+480-frame default. Asking the device for the uniform buffer wouldn't help
+either: the audio service still pulls the renderer's buffers when the
+hardware wants them, in the hardware's pattern. A machine with no output
+device shows too: Chromium opens a fake 44.1 kHz stream for it, or the
+stream fails and the context fires `error` and suspends.
+
+**What MoltNet does: a clock of its own.** Every realtime
+`AudioDestination` in a MoltNet renderer gets its `WebAudioDevice` from
+MoltNet (`MoltNetAudioDevice`, one hook in `AudioDestination`'s
+constructor) instead of the platform. It tells the destination that the
+device is the uniform one (48 kHz, or the page's rate; the uniform rule's
+buffer for the context's latency hint, 480 frames for `"interactive"` at
+48 kHz), and calls `Render()` on a realtime thread of its own on a fixed
+schedule: one buffer every buffer's duration (10 ms), from the moment the
+context starts or resumes, measured on the system's monotonic clock.
+The clock is `media::FakeAudioWorker`, the one Chromium uses for
+`{type: "none"}` sinks and for silent output: a late tick runs once and
+the next one is the next on time, never a burst of catch-up. The
+destination's own logic is unchanged, so rendering follows the uniform
+device exactly as it would follow a real device with that buffer: 4, 4, 4
+and 3 quanta per tick with output buffering bypassed (Chromium's default
+on desktop), the AudioWorklet's earmark and its thread's realtime period
+(macOS) from the uniform buffer.
+
+What it renders goes into a ring buffer (`OutputRing`); the real device,
+opened at the context's rate as Chromium opens it, reads the ring from its
+own thread through `media::MultiChannelResampler`. Nothing the device
+passes (its buffer, delay, timing, glitches) reaches the destination: the
+clock's ticks pass a fixed delay and no glitches.
+
+* **Drift.** The system clock and the device's clock differ by up to a
+  few hundred parts per million. `DriftControl` (`moltnet_audio_clock.h`)
+  keeps the ring short without running dry from the device side only: at
+  each read it takes the clock's sawtooth out of the ring's level (the
+  level it would have if the clock rendered continuously), and every half
+  second of audio the lowest headroom of the last 1.5 s above a 3 ms
+  margin sets the resampler's ratio, 1 plus the excess over 4 s, within
+  1 ± 0.2% (3.5 cents; a typical device needs about 0.01%). The clock
+  never changes for it, so the correction is not a device signal: a page
+  can only hear it, through a microphone it has permission for.
+* **Starting.** The ring fills to one of the device's callbacks and a
+  cushion (another callback, at most 20 ms), plus the margin and 5 ms,
+  before the device hears it; until then the device gets silence. An
+  excess the device started with (a device that took long to start) is
+  played rather than skipped and worked off by the ratio; silent excess
+  (a context that hasn't played anything yet) goes at once.
+* **Underruns and stalls.** If the ring runs dry (the clock's thread was
+  held up beyond the margin) the device gets silence until it has filled
+  again, and the margin grows by a callback (at least 2 ms, at most 20 ms
+  or a callback) for the rest of the session. If the device stops reading
+  for a while (a device change), the excess that grew on top of what it
+  started with is dropped once the last 1.5 s all show it: one skip, where
+  Chromium's audio has a gap anyway.
+* **No device, a lost device.** With the default output device (no
+  `sinkId`, or `""`) the device's status questions (`setSinkId()` checks,
+  the echo-canceller update) always answer OK, and its failures (no device
+  at all, the last one unplugged, a Bluetooth headset gone) stay inside:
+  the context keeps rendering on its clock, its output goes nowhere, and
+  the device is opened again after 1, 2, 4 ... 30 s. `AudioContext`
+  accepts the default sink ID `""` even when the machine lists no output
+  device (`IsValidSinkDescriptor`), so `setSinkId("")` resolves and a
+  device list without outputs fires no `error`. `enumerateDevices()` lists
+  an `audiooutput` entry before any permission, as on every machine with
+  a device. Changes between devices (the system's default moving to
+  headphones) were already handled in the audio service; they now show
+  only as a gap in the sound.
+* **A device the page chose by its ID** (which takes a media permission,
+  see `sinkId` above) renders on the clock too, but answers for itself:
+  `setSinkId()` gets its real status, and if it goes away the context gets
+  `error`, as the spec and Chromium do.
+* **Silent sinks** (`{type: "none"}`) run on the same clock with no device
+  at all.
+* **Suspend, resume, frozen frames, `setSinkId()`.** `suspend()` stops the
+  clock (nothing renders after it returns), `resume()` starts it again
+  with a fresh schedule from that moment; a frozen frame pauses and
+  resumes it the same way. `setSinkId()` and a `channelCount` change make
+  a new destination, as in Chromium, with its own clock from when it
+  starts; `currentTime` carries on.
+
+**What a page reads now** (checked against simulated devices of 128, 256,
+441 (44.1 kHz), 480, 512, 1024 and 2048 frames, a bursty converted
+stream, Chromium's fake 44.1 kHz stream and no device at all, single-
+thread and AudioWorklet rendering, with and without output buffering:
+every render quantum at the same time in every case, see Verification):
+`currentTime` advances by 384 or 512 frames every 10 ms at 48 kHz (480
+frames on average); AudioWorklet `process()` runs in those bursts on its
+thread; a default `ScriptProcessorNode` (2048 frames) fires every 42.7 ms
+on average; `getOutputTimestamp()` follows `currentTime` (it is
+`currentTime` minus 24 ms). `playbackStats` counts the frames rendered,
+with the fixed 24 ms latency and no underruns. The only variation left is
+the operating system's scheduling of the clock's thread and how much of
+the machine's CPU the graph takes (a slow machine renders late), which a
+page can measure in many other ways.
+
+**What it costs.** Latency: measured from rendering a frame to the device
+playing it, against Chromium's own path, MoltNet adds about 13 ms on
+128- and 256-frame devices, 15 to 17 ms on 480- and 512-frame devices,
+20 ms on 1024-frame devices, 22 ms on a 44.1 kHz device's converted
+stream and about 32 ms on 2048-frame devices (the ring holds about half a
+device buffer, half a tick and the margin; simulated, steady state). A
+context that plays from its first moment on a device that starts slowly
+hears that delay as extra latency for its first seconds. CPU: the
+resampler on the device side, about 2.3 ms per second of stereo audio
+with AVX2 (0.23% of a core on the 2.1 GHz VM this was measured on), 2.7
+to 2.9 ms with SSE, 6.5 to 7.7 ms without SIMD, with the ratio changed
+every half second; the clock's thread does the rendering the device's
+thread did before, plus a copy into the ring. Memory: the ring, a few
+hundred kilobytes at most. Normal and Incognito windows, and
+`OfflineAudioContext` (which renders on its own thread as fast as it
+can), are unchanged.
 
 ### Encrypted Media Extensions
 
@@ -2179,14 +2309,15 @@ smooth and power efficient alike).
   `MediaCapabilitiesEncodingInfo` flag at 156 (a `TypeError` by default);
   re-check when it ships.
 
-**`canPlayType()`, `MediaSource.isTypeSupported()`,
-`MediaRecorder.isTypeSupported()`** follow the codecs compiled into the
-build, the same for every user of a build: MoltBrowser's builds have no
-proprietary codecs (no H.264, HEVC or AAC) and no platform HEVC or Dolby
-decoders, so 156's `media::IsDefault*SupportedType` answers from libvpx,
-dav1d, libaom and the open-source audio decoders only, and Chrome's
-renderer client doesn't override it. Not changed; the leak kit compares them
-between machines.
+**`canPlayType()` and `MediaSource.isTypeSupported()`** follow the codecs
+compiled into the build, the same for every user of a build: MoltBrowser's
+builds have no proprietary codecs (no H.264, HEVC or AAC) and no platform
+HEVC or Dolby decoders, so 156's `media::IsDefault*SupportedType` answers
+from libvpx, dav1d, libaom and the open-source audio decoders only, and
+Chrome's renderer client doesn't override it. Not changed; the leak kit
+compares them between machines. `MediaRecorder.isTypeSupported()` also
+counted the machine's hardware encoders; in MoltNet it now answers from the
+build's own encoders (see [MoltNet: MediaRecorder](#moltnet-mediarecorder)).
 
 **WebCodecs.** `isConfigSupported()` with `"prefer-hardware"` asks the GPU
 for a decoder or encoder, and with no preference a decoder or encoder may
@@ -2214,12 +2345,17 @@ play with hardware decoders where Chromium uses them.
 * A page that picks a sample rate, latency hint or render quantum gets it;
   that is its own choice, the same for everyone.
 * Output device IDs, once the user grants a media permission
-  (`sinkId`, `setSinkId()`, `enumerateDevices()`).
+  (`sinkId`, `setSinkId()`, `enumerateDevices()`), and a chosen
+  device's failures.
+* How the operating system schedules the audio clock's thread, and how
+  long the graph takes to render (the machine's speed, which a page can
+  time in many other ways).
 * `<video>` and `<audio>` still decode with the machine's decoders; only
   their speed shows (`getVideoPlaybackQuality()`, frame timing).
-* `MediaRecorder` and normal windows' encoders (see *Encoder identity* in
-  [Known gaps](#known-gaps-and-attacks)); `RTCRtpSender.getCapabilities()`
-  (see the same list).
+* Normal windows' encoders (see *Encoder identity* in [Known
+  gaps](#known-gaps-and-attacks); `MediaRecorder` in MoltNet: [its own
+  section](#moltnet-mediarecorder)); `RTCRtpSender.getCapabilities()` (see
+  the same list).
 * `encodingInfo()` of type `"record"`, behind a flag at 156.
 
 ### Which contexts
@@ -2233,12 +2369,19 @@ values. The kill switch turns it off.
 | Where | What |
 |---|---|
 | `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the uniform device and its buffer rule, the output position, the key-system message, the Media Capabilities table; std-only (+ `moltnet_media_values_unittest.cc`, in `:unit_tests`) |
-| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client (+ `moltnet_media_test.cc`) |
+| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client, the listed output device (+ `moltnet_media_test.cc`) |
+| `core/molt_fingerprinting/moltnet_audio_clock.{h,cc}` | the clock's rate, the output ring and its drift control; std-only (+ `moltnet_audio_clock_unittest.cc`, in `:unit_tests`, with a simulation against devices of 128 to 8192 frames, bursts, drift and a late clock) |
+| `core/molt_fingerprinting/moltnet_audio_device.{h,cc}` | MoltNet's `WebAudioDevice`: the clock (`FakeAudioWorker` on a realtime thread of its own), the ring, the resampler, the real device and its failures; installed at `Configure()` (+ `moltnet_audio_device_test.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`):
 `modules/webaudio/audio_context.cc` (`AudioContext::Create`: the rate and
 the `"hardware"` quantum; `outputLatency`; `getOutputTimestamp`;
-`HandlePreRenderTasks`: the playbackStats update),
+`HandlePreRenderTasks`: the playbackStats update;
+`IsValidSinkDescriptor`: the default device always valid),
+`platform/audio/audio_destination.{h,cc}` (the constructor gets its
+`WebAudioDevice` from `SetMoltNetDeviceFactory`'s factory when one is set),
+`modules/mediastream/media_devices.cc` (`DevicesEnumerated`: the listed
+output device),
 `modules/webaudio/realtime_audio_destination_handler.cc`
 (`MaxChannelCount`, `GetCallbackBufferSize`, `GetFramesPerBuffer`),
 `modules/encryptedmedia/encrypted_media_utils.cc`
@@ -2247,15 +2390,15 @@ the `"hardware"` quantum; `outputLatency`; `getOutputTimestamp`;
 `encodingInfo`: the `"webrtc"` branch; `GetPerfInfo`),
 `modules/webcodecs/gpu_factories_retriever.cc` (`RetrieveGpuFactories`)
 and `modules/webcodecs/video_decoder_broker.cc` (`UpdateDecoderFactory`).
-All six files are new in `src/`.
+All nine files are new in `src/` (the last three since the audio clock).
 
 ### Verification
 
-Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (12
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (13
 tests: the device, the buffer for every latency hint, rate and nonsense
 input, the base latency, the output latency on Chromium's grid, the
-ScriptProcessorNode size, the output position, the key-system message and
-the Media Capabilities table) passes with g++ (ASan/UBSan) and clang (UBSan
+ScriptProcessorNode size, the output position, the key-system message, the
+Media Capabilities table and the listed output device) passes with g++ (ASan/UBSan) and clang (UBSan
 trap, `-fno-exceptions` and the strict warning set). A harness runs the
 real `moltnet_media.cc` and the hooked code extracted verbatim from all six
 upstream files, plus 156's unhooked `ChooseBufferSize` from
@@ -2273,14 +2416,196 @@ values' ScriptProcessorNode rule equals 156's for every buffer from 1 to
 it or the values test. Every changed C++ file, the two tests included,
 compiles without errors against Chromium 156's real headers
 (`tools/compile_check`; it now mounts libwebm, which
-`media_capabilities.cc` reaches through MediaRecorder). **Needs the build
-machine:** compiling and linking, `blink_unittests` (`MoltNetMediaTest.*`,
-`MoltNetMediaValuesTest.*`), `molt_ai_unittests`, and the checks in
-`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio on 44.1 and 96
-kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs pages).
-**Automated** by [`tools/leak_test`](LEAK_TESTING.md): every value in the
-first table except the device-dependent cases a kit run can't produce, and
-codec support compared between runs.
+`media_capabilities.cc` reaches through MediaRecorder).
+
+**The audio clock.** `moltnet_audio_clock_unittest.cc` (18 tests: the
+clock's rate and ticks, the ring's order, overflow, missing and short
+channels, discarding, leading silence, nonsense input and its size for
+every device, the clock's sawtooth taken out, priming, the ratio following
+the excess within its limit, silent excess, a large excess dropped at
+once, an excess the device started with kept, underruns and the growing
+margin, and a simulation that runs the ring and the drift control against
+devices of 128, 256, 441 (44.1 kHz), 480, 512, 1024, 2048 and 8192 frames
+and a converted stream reading two buffers at once, with the clocks up to
+200 ppm apart and up to 4 ms of scheduling jitter: once filled it never
+runs dry or drops audio, follows the device's clock within 0.1% and holds
+little more than the device's buffer and a tick) passes in the same two
+configurations. A second harness
+runs the real `audio_destination.cc` (hooked), 156's `PushPullFIFO` and
+`FakeAudioWorker`, and the real `moltnet_audio_device.cc` and
+`moltnet_media.cc` against stand-ins of the platform, on simulated time,
+with simulated devices of 128, 256, 441 (44.1 kHz), 480, 512, 1024 and
+2048 frames, a bursty converted stream, Chromium's fake 44.1 kHz stream and
+no device (9 tests): the time of every render quantum (what `currentTime`,
+`process()`, `onaudioprocess` and `getOutputTimestamp()` follow) is the
+same for every device, single-thread and AudioWorklet, with and without
+output buffering, while a normal window's follows the device; the other
+latency hints and rates; no device (OK status, no error, the device opened
+again on its schedule); a device lost and a device switched mid-play;
+suspend, resume and a frozen frame; silent sinks; a chosen device's errors;
+every frame rendered reaching the device in order, with the latency
+quoted above. With it, the hooked `IsValidSinkDescriptor` and
+`OnDevicesChanged`, extracted verbatim from `audio_context.cc`, and the
+listed output device (4 tests): no `error` without an output device in
+MoltNet, as against Chromium's. 28 mutants of the clock, the device, the
+hooks and the values each fail one of them. The resampler's cost was
+measured with Chromium 156's `SincResampler` and `MultiChannelResampler`
+built standalone. Every changed C++ file compiles without errors against
+Chromium 156's real headers.
+
+**Needs the build machine:** compiling and linking, `blink_unittests`
+(`MoltNetMediaTest.*`, `MoltNetMediaValuesTest.*`, `MoltNetAudioClockTest.*`,
+`MoltNetAudioDeviceTest.*`, and the upstream Web Audio and media devices
+suites), `blink_platform_unittests` (`AudioDestination*`), `molt_ai_unittests`,
+and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio
+on 44.1 and 96 kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs
+pages) and "fp-audio" (when Web Audio renders on 44.1 and 96 kHz, 128- and
+1024-frame and Bluetooth devices, sound quality and latency, device changes
+and a machine without an output device). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): every value in the first table except
+the device-dependent cases a kit run can't produce, codec support compared
+between runs, the render cadence (`audio.cadence_interval_ms`,
+`audio.cadence_burst_frames`) and the listed output device
+(`media.audiooutput`).
+
+## MoltNet: MediaRecorder
+
+`MediaRecorder` encodes a stream (a camera, a canvas's `captureStream()`, a
+`<video>`) into a file the page reads back. At 156 it asks the machine what
+to encode with; in MoltNet windows every answer now comes from the build:
+
+| What a page sees | Chromium 156 | MoltNet |
+|---|---|---|
+| The codec recorded when the page names none (`mimeType` from the `start` event on) | a codec the GPU can encode, when it has one; else VP8 (VP9 for MP4) | **VP8** for WebM and Matroska, **VP9** for MP4 |
+| `isTypeSupported()` and the constructor, for H.264, AV1 and HEVC profiles and AAC | the build's encoders plus the GPU's (`media::IsEncoderSupportedVideoType`) and the platform's AAC encoder | **the build's own encoders** (`media::IsEncoderBuiltInVideoType`); AAC unsupported |
+| The encoder that writes the recording (its bitstream, rate control and speed) | the GPU's encoder (on macOS also the system's H.264 and HEVC encoders) when it has the codec and the frames are large enough, else the build's | **the build's**: libvpx (VP8, VP9) or libaom (AV1) |
+| The software encoders' threads, and AV1's tile layout, which is written into the stream | sized by the machine's cores | sized by **4** cores, the count `navigator.hardwareConcurrency` reports |
+
+Audio is recorded as Opus (libopus) or PCM, by the build, on every
+machine. A stream whose frames arrive already encoded (a remote WebRTC
+track) is recorded as it is; WebRTC is off in MoltNet.
+
+The core count is set for the whole MoltNet renderer process
+(`media::SetProcessorCountForSoftwareEncoding`), so WebCodecs' software
+encoders, which MoltNet already limits to the build's codecs
+([WebCodecs](#media-capabilities-codec-support-and-webcodecs)), size
+their threads the same way.
+
+Normal and Incognito windows keep Chromium's behaviour (see *Encoder
+identity* in [Known gaps](#known-gaps-and-attacks)). MoltNet ignores
+Shields off, and the kill switch turns all of it off.
+
+**What it costs MoltNet users.** Recording runs on the CPU, also where the
+GPU could encode: long or large recordings (screen recorders, video
+messages) use more CPU and battery. A page that asks for a type only a
+platform encoder handles (H.264 or HEVC in MP4, AAC) gets `false` from
+`isTypeSupported()` or `NotSupportedError`, as on a machine without that
+encoder, and picks another type. On machines with more than 4 cores, large
+software encodes use fewer threads than they could.
+
+**Code.** `core/molt_fingerprinting/moltnet_encoders.{h,cc}` (+
+`moltnet_encoders_test.cc`). Upstream hooks (each marked `MoltBrowser:`;
+all four files are new in `src/`):
+`modules/mediarecorder/video_track_recorder.cc`
+(`VideoTrackRecorderImpl::NotifyEncoderSupportKnown` and
+`GetVEASupportedProfiles`, which `GetPreferredCodec`,
+`CanUseAcceleratedEncoder` and the encoder's creation read),
+`modules/mediarecorder/media_recorder_handler.cc`
+(`CanSupportMimeTypeForCodec`), and `media/base/video_encoder.{h,cc}`
+(`GetNumberOfThreadsForSoftwareEncoding`, and the new
+`SetProcessorCountForSoftwareEncoding`, called from `Configure`).
+
+**Verification.** Standalone (no Chromium checkout): a harness runs the
+real `moltnet_encoders.cc` with the hooked code extracted verbatim from
+`video_track_recorder.cc`, `media_recorder_handler.cc` and
+`video_encoder.cc`, against stand-ins of the types they touch, in kOff and
+real kUniform, built once with MoltBrowser's build flags and once with
+every encoder compiled in (4 tests: in MoltNet the GPU is never asked,
+and a machine without hardware encoders and one with many get the same
+default codec for each container, encoder choice at three frame sizes and
+`isTypeSupported()` answer for every VP8, VP9, AV1, H.264, HEVC, Opus, PCM
+and AAC type, with threads for 4 cores; outside MoltNet the two machines
+differ; the testing switch); 9 mutants of the glue and hooks each fail
+it. Every changed C++ file compiles without errors against Chromium 156's
+real headers (`tools/compile_check`, which now mounts libvpx and libaom).
+**Needs the build machine:** compiling and linking, `blink_unittests`
+(`MoltNetEncodersTest.*`), and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-probes" (a recording on a
+machine with hardware encoders). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): the recorded type for each container,
+and `isTypeSupported()` compared between runs.
+
+## MoltNet: storage limits
+
+A page can't ask how much memory a machine has, but it can store data
+until the browser refuses more, and at 156 an off-the-record profile's
+limits are computed from the machine's memory. MoltNet keeps all its
+storage in memory; its limits are now fixed:
+
+| Limit a page reaches by writing | Chromium 156, off the record | MoltNet |
+|---|---|---|
+| Quota per storage key (an origin, partitioned by top-level site): IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool | **200 MiB** |
+| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile | **600 MiB** |
+| Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser), all sites together | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android; no disk | **800 MiB**; no disk |
+| `localStorage`, `sessionStorage` | 10 MiB per storage area, on every machine | unchanged |
+
+`navigator.storage.estimate()` has reported a fixed quota in off-the-record
+profiles since 156 (the usage + 10 GiB, unchanged); the limits above are
+the ones writes are checked against, so a page that writes until it gets
+`QuotaExceededError` now finds the same limit on every MoltNet machine.
+Blob limits that Chromium can scale with memory pressure (an experiment,
+off by default at 156) stay fixed.
+
+**Why these values.** MoltNet reports 8 GB of memory, but the limits hold
+real data in the browser and storage processes, so they must be safe on
+the smallest machines MoltNet runs on. They are Chromium's own rules for
+a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
+Incognito's range (15% of 4 GiB, 614 MiB) is 600 MiB, a storage key gets a
+third of it, and blobs get a fifth of 4 GiB (819 MiB), Chromium's rule
+for 32-bit desktops and ChromeOS. On larger machines that is less
+than Incognito allows (on 8 GB, a pool of 1.2 to 1.6 GiB and 410 to 550
+MiB per key) and far more than sites store in practice.
+
+**Which profiles.** Only MoltNet's storage partitions (its off-the-record
+profile, through `ModeForBrowserContext`); normal and Incognito profiles
+keep Chromium's limits. The kill switch turns it off.
+
+**What it costs MoltNet users.** Offline web apps, in-browser editors and
+large downloads assembled in the page (`Blob`, OPFS) stop at 200 MiB per
+site and 800 MiB of blobs, with the same `QuotaExceededError` on every
+machine; MoltNet keeps nothing after the session anyway.
+
+**Code.** `chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`
+(the values and their derivation, + `molt_net_storage_values_unittest.cc`)
+and `molt_net_storage.{h,cc}` (the settings for a profile's mode, +
+`molt_net_storage_unittest.cc`). Hooks (each marked `MoltBrowser:`):
+`content/public/browser/content_browser_client.{h,cc}` (new
+`GetFixedQuotaSettings` and `GetFixedBlobStorageLimits`, none by default),
+overridden in `chrome/browser/chrome_content_browser_client.{h,cc}`;
+`content/browser/storage_partition_impl.cc` (`GetQuotaSettings`),
+`content/browser/blob_storage/chrome_blob_storage_context.cc` (`GetFor`)
+and `storage/browser/blob/blob_memory_controller.{h,cc}` (the new
+`SetFixedStorageLimits`, which the machine-derived and pressure-scaled
+limits then leave alone). The last three are new in `src/`.
+
+**Verification.** Standalone: the values and glue tests pass with g++
+(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions` and the strict
+warning set); a harness runs the hooked code extracted verbatim from
+`storage_partition_impl.cc`, `chrome_blob_storage_context.cc` and
+`blob_memory_controller.cc` against stand-ins (5 tests: the fixed quota in
+MoltNet, other profiles still asking the machine, test settings still
+winning, the fixed blob limits, which memory pressure doesn't scale); 10
+mutants of the glue and hooks each fail it or the glue tests. Every
+changed C++ file compiles without errors against Chromium 156's real
+headers (`tools/compile_check`). **Needs the
+build machine:** compiling and linking, `molt_ai_unittests`
+(`MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*`), and the checks
+tagged "fp-probes" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
+`QuotaExceededError` with IndexedDB, Cache Storage and OPFS, and a large
+blob). **Automated** by [`tools/leak_test`](LEAK_TESTING.md): the quota the
+browser enforces for the test page's site, read through DevTools; writing
+until the limit would take too long for a kit run, so the configured
+limit is checked instead.
 
 ## Fonts
 
@@ -2328,6 +2653,47 @@ cached per typeface) are visible:
 `system-ui` is never restricted, also when Blink uses it as a family name
 (quoted, or macOS's `BlinkMacSystemFont`): it is the platform UI font, which
 the generic `system-ui` already shows.
+
+**`src: local()`** names one face by its full or PostScript name ("DejaVu
+Sans Bold", "DejaVuSans-Bold"). At 156 Blink looks such a name up in the
+platform's table of every installed face (fontconfig, through the browser,
+on Linux; on Windows and Android a table the browser builds once, which
+`local()` waits for) and keeps the faces it found per renderer process, by
+name. Protected contexts never make that lookup. They read the name as a
+family they may name in CSS anyway (a listed family; in a normal window
+also a name in the site's sample) followed by style words, and ask for the
+face the way CSS would (`font-family`, `font-weight`, `font-style`):
+
+* Style words: one weight (`Thin`, `Hairline`, `ExtraLight`, `Light`,
+  `SemiLight`, `Book`, `Regular`, `Normal`, `Roman`, `Plain`, `Medium`,
+  `SemiBold`, `Demi`, `Bold`, `ExtraBold`, `Heavy`, `Black`, `ExtraBlack`,
+  and their `Ultra`/`Demi` spellings), one slope (`Italic`, `It`,
+  `Oblique`), and PostScript's `MT` and `PS` suffixes (`Arial-BoldMT`), in
+  any order, with spaces, hyphens or underscores between them. Width words
+  are not style words: a condensed face is found through a listed family
+  that names it (DejaVu Sans Condensed). A name longer than 128 characters
+  names no face, and at most four ways of splitting a name are tried, the
+  longest family first.
+* The face is used only if the family the platform resolved is visible
+  (for a name in the sample: that very family) and, when the name has
+  style words, the face itself has that weight and slope (no substitute,
+  no synthetic bold or italic).
+* Aliases (Arial on Linux, which CSS looks up as Liberation Sans) name no
+  face, except a name in the site's sample whose own family is installed.
+
+So `local()` shows nothing `font-family` doesn't. A hidden face is never
+looked up, installed or not: the decision is made from the name alone,
+before any platform call, so it costs exactly what a missing face costs.
+Protected contexts don't use the unique-name caches either (Blink's
+typeface cache, the platform's table and the faces found through it), so
+one document can't tell, by timing them, whether another used a face;
+keying those caches by visibility instead would not separate documents
+that see the same fonts (every MoltNet page). Nor do they wait for the
+platform's table. Pages that name faces of the listed families keep
+working (`local("Arial Bold")`, `local("Arial-BoldMT")` on Windows and
+macOS); any other name falls back to the next `src` or family, as on a
+machine without the font. Unprotected contexts (Shields off, protection
+off) keep 156's lookup.
 
 **The allow-lists** (`font_allowlists.cc`) hold, per OS, the families every
 supported version installs by default; a font missing on some supported
@@ -2388,7 +2754,7 @@ needs the user's own fonts. The sample is redrawn every session.
 |---|---|
 | CSS `font-family`, canvas `ctx.font` (`measureText`, `fillText`), OffscreenCanvas and `FontFace` in workers, SVG text | `font_fallback_list.cc`: `GetFontData` asks the selector (`font_selector.{h,cc}`: new virtual `FontSelector::GetSystemFontData`, default = the old `FontCache` lookup), overridden in `css_font_selector_base.{h,cc}` for documents and workers |
 | `document.fonts.check()`, `self.fonts.check()` | `css_font_selector_base.cc`: `IsPlatformFamilyMatchAvailable` |
-| `@font-face` / `FontFace` `src: local()` (and `FontFace.load()`'s status) | `local_font_face_source.cc`: `IsLocalFontAvailable`, `CreateFontData` (unique names match exactly on every platform, so the face's family alone decides) |
+| `@font-face` / `FontFace` `src: local()` (and `FontFace.load()`'s status) | `local_font_face_source.cc`: `IsLocalNonBlocking`, `IsLocalFontAvailable`, `CreateFontData` (protected contexts find the face through a visible family, [above](#fonts)) |
 | `queryLocalFonts()` | `font_access.cc`: `DidGetEnumerationResponse` |
 
 **Local Font Access.** `queryLocalFonts()` still needs the permission
@@ -2414,8 +2780,10 @@ choice wins, and pages can't name it, but see the gaps below.
 **Cost.** The visibility of a context is computed once per document or
 worker (string-free afterwards); a decision hashes the name once (linear,
 no allocation), binary-searches the list and, after a successful lookup,
-reads the typeface's family from a 256-entry cache. Toggling Shields applies
-from the next document (MoltShield reloads the page).
+reads the typeface's family from a 256-entry cache. A `local()` name is
+read in one pass over at most 128 characters and costs at most four family
+lookups, each one CSS could make. Toggling Shields applies from the next
+document (MoltShield reloads the page).
 
 **Known gaps (fonts)**
 
@@ -2453,28 +2821,43 @@ from the next document (MoltShield reloads the page).
   content (frameless documents refuse canvas fonts).
 
 **Verification.** Standalone (no Chromium checkout): `fonts_unittest.cc`
-(13 tests: normalization in all three encodings, malformed UTF-8/UTF-16,
+(19 tests: normalization in all three encodings, malformed UTF-8/UTF-16,
 list integrity, the sample's rate, stability and cross-site independence,
-uniform mode) passes with g++ (ASan/UBSan) and clang (UBSan trap,
-`-Wunsafe-buffer-usage -Wshorten-64-to-32 -Wimplicit-int-conversion
--Wexit-time-destructors -Wglobal-constructors -fno-exceptions`), together
+uniform mode; `local()` names: listed and sampled families, every style
+word, lengths and encodings, `system-ui`) passes with g++ (ASan/UBSan)
+and clang (UBSan trap, `-Wunsafe-buffer-usage -Wshorten-64-to-32
+-Wimplicit-int-conversion -Wexit-time-destructors -Wglobal-constructors
+-fno-exceptions`), together
 with `farbling_unittest.cc`; `system_fonts.cc` and `molt_fingerprinting.cc`
 type-check with the strict clang flags against stand-ins of the pinned
 Blink/Skia signatures, and a 12-test harness runs the real glue against a
 fake `FontCache` (per-mode visibility, aliases on two simulated machines,
 name tricks, `check()`, `local()`, `queryLocalFonts()` filtering, Shields
 off, random keys, workers, caching); the upstream hook statements
-type-check against stand-ins of their classes. Needs the build machine:
+type-check against stand-ins of their classes. For `local()`, a harness
+runs the real glue and the hooked `local_font_face_source.cc` code
+extracted verbatim against a fake `FontCache` that records every lookup (8
+tests: unprotected contexts keep unique names; in MoltNet an installed
+hidden face and a missing one make the same lookups, none; listed faces
+with their styles; the site's sample; sampled aliases; substitutes of
+listed families refused; waiting for the platform's table; null contexts);
+14 mutants of the matcher, glue and hooks each fail it or the pure tests,
+and the farbling fuzzer also feeds `local()` names (120 s, no findings).
+Every changed C++ file compiles without errors against Chromium 156's
+real headers (`tools/compile_check`). Needs the build machine:
 compiling Blink with the hooks, `blink_unittests` (`MoltSystemFontsTest.*`,
-`MoltFontNameTest.*`, `MoltFontListTest.*`, `MoltFontVisibilityTest.*`),
-and in a running browser on each OS: font-probing pages and suites
-(FingerprintJS, CreepJS font tests) in normal, Incognito and MoltNet
-windows, with Shields on and off; East Asian sites; design tools with
-`queryLocalFonts()`.
+`MoltFontNameTest.*`, `MoltFontListTest.*`, `MoltFontVisibilityTest.*`,
+`MoltLocalFaceTest.*`), the checks tagged "fp-probes" in
+`docs/BUILD_MACHINE_CHECKLIST.md`, and in a running browser on each OS:
+font-probing pages and suites (FingerprintJS, CreepJS font tests) in
+normal, Incognito and MoltNet windows, with Shields on and off; East Asian
+sites; design tools with `queryLocalFonts()`.
 
 [`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with `document.fonts.check()` in a MoltNet
 window and fails any visible family outside the Linux allow-list; on other
-OSes it records the visible set for `diff`.
+OSes it records the visible set for `diff`. It also fails any `local()`
+face of a family outside every allow-list that loads, and compares the
+listed faces `local()` finds between runs.
 
 ## Text metrics (MoltNet)
 
@@ -3380,14 +3763,14 @@ new early returns or paths around the hook (none found).
 |---|---|---|---|---|
 | `color-gamut` is computed from how much of the P3 and Rec. 2020 gamuts the display covers (90%); with `dynamic-range`, `video-dynamic-range`, `color` and `monochrome` the media queries describe the display | the display's gamut, HDR support and bits per component | **srgb, standard, 8 bits, colour**, the same for everyone (new) | real | made uniform in MoltNet ([below](#moltnets-display-colour-and-scrollbar-style)) |
 | macOS takes overlay or classic scrollbars from `RendererPreferences`, like Windows, Linux and ChromeOS | whether scrollbars take room, and when that changes (a mouse plugged in) | **the platform's default style** (new) | the OS setting | made uniform in MoltNet ([below](#moltnets-display-colour-and-scrollbar-style)) |
-| Off-the-record profiles report a static storage quota (`kIncognitoStaticStorageQuota` on by default) | `navigator.storage.estimate()` | the usage + 10 GiB for everyone | Incognito the same; a regular profile the usage + 10 GiB, or its disk where that is smaller | upstream; the leak kit checks it |
+| Off-the-record profiles report a static storage quota (`kIncognitoStaticStorageQuota` on by default) | `navigator.storage.estimate()` | the usage + 10 GiB for everyone | Incognito the same; a regular profile the usage + 10 GiB, or its disk where that is smaller | upstream; the leak kit checks it. The limits writes reach are fixed in MoltNet too ([storage limits](#moltnet-storage-limits)) |
 | `renderSizeHint` / `renderQuantumSize` (`WebAudioConfigurableRenderQuantum`, stable) | the render quantum a page asked for; `"hardware"` | 128 for `"hardware"` (no hardware value is read at 156), now pinned ([audio](#moltnet-audio-drm-and-media-capabilities)) | same (not pinned) | the leak kit checks it. Audio read back from any quantum is farbled as before |
 | `<camera>` and `<microphone>` elements (`CameraAndMicrophoneElements`, stable) | permission elements like `<usermedia>` | labels in en-US (the generated table covers them), the session's own permission state, a track only after the user grants access | the profile's permission state | none |
 | CSS `random()` (`CSSRandomFunction`, stable) | random values, cached per document and element from a CSPRNG | nothing about the device | same | none |
 | `RTCPeerConnection.startDiagnosticLogging()` (`RTCDiagnosticLogging`, stable on desktop) | a random session id | the browser collects no logs (MoltNet keeps no WebRTC text logs) | logs only for origins an enterprise policy lists | none |
 | `PerformanceEntry.navigationId` always exposed; Event Timing dispatch as HTML specifies (`EventTimingMatchingHTML`) | ids per document, starting at a random 100 to 10000, steps of 7 | same | same | none |
 | WebGPU: compatibility mode, new features, limits and texture usage | the GPU | no adapter | real (not covered, see [known gaps](#known-gaps-and-attacks)) | none |
-| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the allow-list; the check runs on the face the cache returns | allow-list + the site's sample | none |
+| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the allow-list; `local()` is a lookup of a listed family and never uses the cache | allow-list + the site's sample, the same way | `local()` resolved through visible families ([Fonts](#fonts)) |
 | New audio decoders (Symphonia, direct Opus) | `decodeAudioData()` results | the same for every user of a build; farbled when read | same | none |
 | Media clock coarsening (`kCoarseWallClockTimeSource`, on) | the media clock's precision | coarser | coarser | upstream hardening |
 | `drawElementImageToTexture` (WebGPU, HTML-in-canvas) | page content in a GPU texture | **off**: behind `CanvasDrawElement` (experimental); the `HTMLInCanvas` origin trial's tokens stay refused | same | none |
@@ -3578,10 +3961,11 @@ Honest list; anything not in the table above is not covered.
   tokens are refused) and not hooked.
 * **Encoder identity.** `VideoEncoder`/`MediaRecorder` output of a farbled
   frame no longer reveals the canvas pixels, but the encoder implementation
-  itself (hardware encoders) is a device signal; not addressed for
-  `MediaRecorder` and in normal windows. (MoltNet's WebCodecs only uses
-  the build's software codecs, see [audio, DRM and media
-  capabilities](#moltnet-audio-drm-and-media-capabilities).)
+  itself (hardware encoders) is a device signal; not addressed in normal
+  windows. MoltNet's WebCodecs and `MediaRecorder` only use the build's
+  software encoders, with threads for MoltNet's 4 cores (see [audio, DRM
+  and media capabilities](#moltnet-audio-drm-and-media-capabilities) and
+  [MediaRecorder](#moltnet-mediarecorder)).
 * **Audio routed out of Web Audio**: `MediaStreamAudioDestinationNode` ->
   `MediaStreamTrackProcessor` (`AudioData.copyTo`), `MediaRecorder`,
   `AudioEncoder`. `AudioParam` automation values computed by the browser are
@@ -3652,8 +4036,9 @@ Honest list; anything not in the table above is not covered.
   filter lists, and `prefers-color-scheme`, which is dark for everyone
   only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
   otherwise follows the regular profile's theme).
-* (Closed: Web Audio's output device, key systems, Media Capabilities and
-  WebCodecs' hardware codecs, see [audio, DRM and media
+* (Closed: Web Audio's output device and when it renders, a machine
+  without one, key systems, Media Capabilities and WebCodecs' hardware
+  codecs, see [audio, DRM and media
   capabilities](#moltnet-audio-drm-and-media-capabilities).) What is left
   there: output device IDs once the user grants a media permission, and
   the speed of media playback.
@@ -3808,7 +4193,8 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour and scrollbar style (values in `moltnet_values.h`; + `moltnet_display_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.{h,cc}`, `moltnet_media.{h,cc}` | MoltNet's audio device, key systems, Media Capabilities table and WebCodecs codecs (pure, + `moltnet_media_values_unittest.cc`; glue, + `moltnet_media_test.cc`) |
-| `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
 | `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
@@ -3821,6 +4207,7 @@ manual.
 | `src/chrome/browser/molt_ai/shield/molt_shield_site_exceptions.{h,cc}` | whether a site has Shields off, from content settings (+ unit test) |
 | `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode and seed to Blink; `molt_shields_decision_agent.{h,cc}` hands each new document its Shields decision |
 | `src/chrome/browser/molt_ai/tor/molt_net_routing.cc` | MoltNet `Accept-Language` |
+| `src/chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`, `molt_net_storage.{h,cc}` | MoltNet's fixed quota and blob limits (+ `molt_net_storage_values_unittest.cc`, `molt_net_storage_unittest.cc`) |
 | `src/chrome/browser/molt_ai/tor/molt_net_isolation_policy.{h,cc}`, `molt_net_isolation.{h,cc}` | which regular-profile prefs MoltNet uses MoltBrowser's defaults for (pure, + `molt_net_isolation_policy_unittest.cc`) and MoltNet's pref service (+ `molt_net_isolation_unittest.cc`) |
 
 Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
@@ -3864,7 +4251,12 @@ display colour and scrollbar style: `media_values.cc`,
 Media Capabilities and WebCodecs codecs: `audio_context.cc`,
 `realtime_audio_destination_handler.cc`, `encrypted_media_utils.cc`,
 `media_capabilities.cc`, `gpu_factories_retriever.cc`,
-`video_decoder_broker.cc`; MoltNet
+`video_decoder_broker.cc`; MoltNet's MediaRecorder encoders:
+`video_track_recorder.cc`, `media_recorder_handler.cc`,
+`media/base/video_encoder.{h,cc}`; MoltNet's storage limits:
+`content/browser/storage_partition_impl.cc`,
+`content/browser/blob_storage/chrome_blob_storage_context.cc`,
+`storage/browser/blob/blob_memory_controller.{h,cc}`; MoltNet
 default text locale: `platform/language.{h,cc}`; MoltNet text metrics:
 `base_rendering_context_2d.cc` (`measureText`), `text_metrics.{h,cc}`,
 `platform/fonts/font_platform_data.{h,cc}`,

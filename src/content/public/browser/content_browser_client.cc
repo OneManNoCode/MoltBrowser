@@ -1125,6 +1125,16 @@ bool ContentBrowserClient::ShouldSendUniformNetworkState(BrowserContext*) {
   return false;
 }
 
+std::optional<storage::QuotaSettings>
+ContentBrowserClient::GetFixedQuotaSettings(BrowserContext*) {
+  return std::nullopt;
+}
+
+std::optional<storage::BlobStorageLimits>
+ContentBrowserClient::GetFixedBlobStorageLimits(BrowserContext*) {
+  return std::nullopt;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =
