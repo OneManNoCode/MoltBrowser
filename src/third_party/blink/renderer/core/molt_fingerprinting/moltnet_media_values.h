@@ -12,6 +12,7 @@
 //               getOutputTimestamp(), destination.maxChannelCount,
 //               createScriptProcessor()'s default buffer size and
 //               playbackStats all describe it.
+//               An output device is always listed, before a permission.
 //   EME         no key system at all (as in a build without CDMs).
 //   Media       a fixed table: supported from the decoders compiled into
 //   Capabilities  the build, smooth and never power efficient for video,
@@ -22,6 +23,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEDIA_VALUES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEDIA_VALUES_H_
 
+#include <cstddef>
 #include <cstdint>
 
 namespace blink::molt_fingerprinting::moltnet {
@@ -105,6 +107,17 @@ struct AudioOutputPosition {
   bool playing;
 };
 AudioOutputPosition AudioOutputPositionAt(double current_time);
+
+// --- Media devices ------------------------------------------------------------
+//
+// navigator.mediaDevices.enumerateDevices() lists, until the page may use the
+// microphone, one entry of each kind the machine has, with no ID or label.
+// Every MoltNet machine has the uniform output device, so the list then
+// always has an "audiooutput" entry: one is added when the machine has
+// none. `outputs_listed`: the "audiooutput" entries Chromium listed;
+// `audio_ids_exposed`: whether an audio entry has an ID (the page has the
+// permission and sees the real devices).
+bool ListsUniformAudioOutput(size_t outputs_listed, bool audio_ids_exposed);
 
 // --- Encrypted Media Extensions ---------------------------------------------
 //

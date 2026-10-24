@@ -51,6 +51,7 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/crop_target.h"
 #include "third_party/blink/renderer/modules/mediastream/input_device_info.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
@@ -1493,6 +1494,18 @@ void MediaDevices::DevicesEnumerated(
             String::FromUtf8(device_info.group_id), device_type));
       }
     }
+  }
+
+  // MoltBrowser: every MoltNet machine has an output device, listed like any
+  // other before a permission (moltnet_media.h).
+  if (molt_fingerprinting::ShouldListUniformAudioOutput(
+          enumeration[static_cast<wtf_size_t>(
+              mojom::blink::MediaDeviceType::kMediaAudioInput)],
+          enumeration[static_cast<wtf_size_t>(
+              mojom::blink::MediaDeviceType::kMediaAudioOutput)])) {
+    media_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
+        g_empty_string, g_empty_string, g_empty_string,
+        mojom::blink::MediaDeviceType::kMediaAudioOutput));
   }
 
   ReportCompletedEnumerateDevices(result_contains_nonempty_input_device_ids);
