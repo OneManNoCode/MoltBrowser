@@ -1997,7 +1997,8 @@ no `change` event while the page runs.
 ## MoltNet: audio, DRM and media capabilities
 
 Three media APIs answered from the machine itself: Web Audio from the
-output device (its sample rate, buffer, channels and delay), Encrypted
+output device (its sample rate, buffer, channels and delay, and when it
+asks for audio), Encrypted
 Media Extensions from the content decryption modules (CDMs) the build and
 the operating system offer, and Media Capabilities and WebCodecs from the
 video decoders and encoders, including the GPU's, and from the profile's
@@ -2014,6 +2015,8 @@ hardware for every user:
 | `playbackStats` (latency, underruns) | the device's delay to 0.1 ms (5 µs when cross-origin isolated); the system's glitches | **24 ms**; **no underruns** |
 | `destination.maxChannelCount` | the device's channels (1, 2, 6, 8, ...) | **2**; a `channelCount` above 2 throws `IndexSizeError` |
 | `renderSizeHint: "hardware"` | 128 at 156 (no device value is read) | **128**, pinned |
+| When rendering happens: `currentTime` steps, AudioWorklet `process()` bursts, `onaudioprocess` callbacks, `getOutputTimestamp()` steps | when the device asks for audio: its buffer (128 to 2048 frames and more), rate and callback pattern, a stall or a gap when it changes | the uniform device's clock: **480 frames every 10 ms** (3 or 4 render quanta), from the moment the context starts, whatever the device ([below](#when-web-audio-renders)) |
+| A machine with no output device | a 44.1 kHz fallback device, an `error` event (`setSinkId("")`, a lost device), no `audiooutput` in `enumerateDevices()` | **like every other machine**: the same values, schedule and device list, no `error` |
 | `requestMediaKeySystemAccess()`; Media Capabilities with a `keySystemConfiguration` | Clear Key (and, in builds that have them, which Widevine or PlayReady version, robustness levels and hardware-secure decoding the machine has) | **`NotSupportedError`**, every key system; `{supported: false}` |
 | `mediaCapabilities.decodingInfo()` for video | supported from the decoders, then `smooth` and `powerEfficient` from the decode history and the GPU's decoders | **supported** when the build has its own decoder, **smooth**, **not power efficient** |
 | `decodingInfo()` and `encodingInfo()` for `"webrtc"` | the machine's WebRTC codecs, hardware ones included | **unsupported** (WebRTC is off in MoltNet) |
@@ -2107,8 +2110,9 @@ other ways, so what matters is that MoltNet users all answer alike, and
 a page once it has a media permission (Chromium hides them, and lists one
 device per kind, before that), and they are salted per site and per
 MoltNet identity. Before that, `setSinkId("")` succeeds and every other ID
-is `NotFoundError` for everyone with an output device; after it, the
-choice of output device is what the user granted.
+is `NotFoundError` for everyone (machines without an output device
+included, [below](#when-web-audio-renders)); after it, the choice of
+output device is what the user granted.
 
 **What it costs MoltNet users.** Surround audio (5.1, 7.1) plays as
 stereo. Pages that use `outputLatency` or `baseLatency` to line sound up
@@ -2116,7 +2120,131 @@ with pictures (games, music tools) are off by the difference between the
 real delay and 24 ms: a few milliseconds on built-in speakers, up to about
 200 ms with Bluetooth headphones. `playbackStats` never reports underruns,
 so a page can't react to them. 44.1 and 96 kHz devices pay the resampler
-above.
+above. Rendering on MoltNet's own clock adds 13 to 32 ms of latency
+([below](#when-web-audio-renders)).
+
+### When Web Audio renders
+
+**What a page can time.** Chromium renders an `AudioContext` when the
+output device asks for audio: `AudioDestination::Render` runs on the
+device's audio thread (or posts to the AudioWorklet thread) with the
+device's buffer, and renders as many 128-frame quanta as that buffer
+needs, back to back. Fixing the reported values doesn't hide this: a page
+that polls `currentTime`, counts AudioWorklet `process()` calls between
+messages, times `onaudioprocess` or `getOutputTimestamp()` steps, or
+compares them with `requestAnimationFrame` sees bursts of 1 quantum every
+2.7 ms (a 128-frame device), 8 every 21 ms (1024), 16 every 43 ms (a
+Bluetooth or `"playback"` buffer), and 3 or 4 every 10 ms on Windows'
+480-frame default. Asking the device for the uniform buffer wouldn't help
+either: the audio service still pulls the renderer's buffers when the
+hardware wants them, in the hardware's pattern. A machine with no output
+device shows too: Chromium opens a fake 44.1 kHz stream for it, or the
+stream fails and the context fires `error` and suspends.
+
+**What MoltNet does: a clock of its own.** Every realtime
+`AudioDestination` in a MoltNet renderer gets its `WebAudioDevice` from
+MoltNet (`MoltNetAudioDevice`, one hook in `AudioDestination`'s
+constructor) instead of the platform. It tells the destination that the
+device is the uniform one (48 kHz, or the page's rate; the uniform rule's
+buffer for the context's latency hint, 480 frames for `"interactive"` at
+48 kHz), and calls `Render()` on a realtime thread of its own on a fixed
+schedule: one buffer every buffer's duration (10 ms), from the moment the
+context starts or resumes, measured on the system's monotonic clock.
+The clock is `media::FakeAudioWorker`, the one Chromium uses for
+`{type: "none"}` sinks and for silent output: a late tick runs once and
+the next one is the next on time, never a burst of catch-up. The
+destination's own logic is unchanged, so rendering follows the uniform
+device exactly as it would follow a real device with that buffer: 4, 4, 4
+and 3 quanta per tick with output buffering bypassed (Chromium's default
+on desktop), the AudioWorklet's earmark and its thread's realtime period
+(macOS) from the uniform buffer.
+
+What it renders goes into a ring buffer (`OutputRing`); the real device,
+opened at the context's rate as Chromium opens it, reads the ring from its
+own thread through `media::MultiChannelResampler`. Nothing the device
+passes (its buffer, delay, timing, glitches) reaches the destination: the
+clock's ticks pass a fixed delay and no glitches.
+
+* **Drift.** The system clock and the device's clock differ by up to a
+  few hundred parts per million. `DriftControl` (`moltnet_audio_clock.h`)
+  keeps the ring short without running dry from the device side only: at
+  each read it takes the clock's sawtooth out of the ring's level (the
+  level it would have if the clock rendered continuously), and every half
+  second of audio the lowest headroom of the last 1.5 s above a 3 ms
+  margin sets the resampler's ratio, 1 plus the excess over 4 s, within
+  1 ± 0.2% (3.5 cents; a typical device needs about 0.01%). The clock
+  never changes for it, so the correction is not a device signal: a page
+  can only hear it, through a microphone it has permission for.
+* **Starting.** The ring fills to one of the device's callbacks and a
+  cushion (another callback, at most 20 ms), plus the margin and 5 ms,
+  before the device hears it; until then the device gets silence. An
+  excess the device started with (a device that took long to start) is
+  played rather than skipped and worked off by the ratio; silent excess
+  (a context that hasn't played anything yet) goes at once.
+* **Underruns and stalls.** If the ring runs dry (the clock's thread was
+  held up beyond the margin) the device gets silence until it has filled
+  again, and the margin grows by a callback (at least 2 ms, at most 20 ms
+  or a callback) for the rest of the session. If the device stops reading
+  for a while (a device change), the excess that grew on top of what it
+  started with is dropped once the last 1.5 s all show it: one skip, where
+  Chromium's audio has a gap anyway.
+* **No device, a lost device.** With the default output device (no
+  `sinkId`, or `""`) the device's status questions (`setSinkId()` checks,
+  the echo-canceller update) always answer OK, and its failures (no device
+  at all, the last one unplugged, a Bluetooth headset gone) stay inside:
+  the context keeps rendering on its clock, its output goes nowhere, and
+  the device is opened again after 1, 2, 4 ... 30 s. `AudioContext`
+  accepts the default sink ID `""` even when the machine lists no output
+  device (`IsValidSinkDescriptor`), so `setSinkId("")` resolves and a
+  device list without outputs fires no `error`. `enumerateDevices()` lists
+  an `audiooutput` entry before any permission, as on every machine with
+  a device. Changes between devices (the system's default moving to
+  headphones) were already handled in the audio service; they now show
+  only as a gap in the sound.
+* **A device the page chose by its ID** (which takes a media permission,
+  see `sinkId` above) renders on the clock too, but answers for itself:
+  `setSinkId()` gets its real status, and if it goes away the context gets
+  `error`, as the spec and Chromium do.
+* **Silent sinks** (`{type: "none"}`) run on the same clock with no device
+  at all.
+* **Suspend, resume, frozen frames, `setSinkId()`.** `suspend()` stops the
+  clock (nothing renders after it returns), `resume()` starts it again
+  with a fresh schedule from that moment; a frozen frame pauses and
+  resumes it the same way. `setSinkId()` and a `channelCount` change make
+  a new destination, as in Chromium, with its own clock from when it
+  starts; `currentTime` carries on.
+
+**What a page reads now** (checked against simulated devices of 128, 256,
+441 (44.1 kHz), 480, 512, 1024 and 2048 frames, a bursty converted
+stream, Chromium's fake 44.1 kHz stream and no device at all, single-
+thread and AudioWorklet rendering, with and without output buffering:
+every render quantum at the same time in every case, see Verification):
+`currentTime` advances by 384 or 512 frames every 10 ms at 48 kHz (480
+frames on average); AudioWorklet `process()` runs in those bursts on its
+thread; a default `ScriptProcessorNode` (2048 frames) fires every 42.7 ms
+on average; `getOutputTimestamp()` follows `currentTime` (it is
+`currentTime` minus 24 ms). `playbackStats` counts the frames rendered,
+with the fixed 24 ms latency and no underruns. The only variation left is
+the operating system's scheduling of the clock's thread and how much of
+the machine's CPU the graph takes (a slow machine renders late), which a
+page can measure in many other ways.
+
+**What it costs.** Latency: measured from rendering a frame to the device
+playing it, against Chromium's own path, MoltNet adds about 13 ms on
+128- and 256-frame devices, 15 to 17 ms on 480- and 512-frame devices,
+20 ms on 1024-frame devices, 22 ms on a 44.1 kHz device's converted
+stream and about 32 ms on 2048-frame devices (the ring holds about half a
+device buffer, half a tick and the margin; simulated, steady state). A
+context that plays from its first moment on a device that starts slowly
+hears that delay as extra latency for its first seconds. CPU: the
+resampler on the device side, about 2.3 ms per second of stereo audio
+with AVX2 (0.23% of a core on the 2.1 GHz VM this was measured on), 2.7
+to 2.9 ms with SSE, 6.5 to 7.7 ms without SIMD, with the ratio changed
+every half second; the clock's thread does the rendering the device's
+thread did before, plus a copy into the ring. Memory: the ring, a few
+hundred kilobytes at most. Normal and Incognito windows, and
+`OfflineAudioContext` (which renders on its own thread as fast as it
+can), are unchanged.
 
 ### Encrypted Media Extensions
 
@@ -2214,7 +2342,11 @@ play with hardware decoders where Chromium uses them.
 * A page that picks a sample rate, latency hint or render quantum gets it;
   that is its own choice, the same for everyone.
 * Output device IDs, once the user grants a media permission
-  (`sinkId`, `setSinkId()`, `enumerateDevices()`).
+  (`sinkId`, `setSinkId()`, `enumerateDevices()`), and a chosen
+  device's failures.
+* How the operating system schedules the audio clock's thread, and how
+  long the graph takes to render (the machine's speed, which a page can
+  time in many other ways).
 * `<video>` and `<audio>` still decode with the machine's decoders; only
   their speed shows (`getVideoPlaybackQuality()`, frame timing).
 * `MediaRecorder` and normal windows' encoders (see *Encoder identity* in
@@ -2233,12 +2365,19 @@ values. The kill switch turns it off.
 | Where | What |
 |---|---|
 | `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the uniform device and its buffer rule, the output position, the key-system message, the Media Capabilities table; std-only (+ `moltnet_media_values_unittest.cc`, in `:unit_tests`) |
-| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client (+ `moltnet_media_test.cc`) |
+| `core/molt_fingerprinting/moltnet_media.{h,cc}` | which processes, the values as Blink types, MoltNet's EME client, the listed output device (+ `moltnet_media_test.cc`) |
+| `core/molt_fingerprinting/moltnet_audio_clock.{h,cc}` | the clock's rate, the output ring and its drift control; std-only (+ `moltnet_audio_clock_unittest.cc`, in `:unit_tests`, with a simulation against devices of 128 to 8192 frames, bursts, drift and a late clock) |
+| `core/molt_fingerprinting/moltnet_audio_device.{h,cc}` | MoltNet's `WebAudioDevice`: the clock (`FakeAudioWorker` on a realtime thread of its own), the ring, the resampler, the real device and its failures; installed at `Configure()` (+ `moltnet_audio_device_test.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`):
 `modules/webaudio/audio_context.cc` (`AudioContext::Create`: the rate and
 the `"hardware"` quantum; `outputLatency`; `getOutputTimestamp`;
-`HandlePreRenderTasks`: the playbackStats update),
+`HandlePreRenderTasks`: the playbackStats update;
+`IsValidSinkDescriptor`: the default device always valid),
+`platform/audio/audio_destination.{h,cc}` (the constructor gets its
+`WebAudioDevice` from `SetMoltNetDeviceFactory`'s factory when one is set),
+`modules/mediastream/media_devices.cc` (`DevicesEnumerated`: the listed
+output device),
 `modules/webaudio/realtime_audio_destination_handler.cc`
 (`MaxChannelCount`, `GetCallbackBufferSize`, `GetFramesPerBuffer`),
 `modules/encryptedmedia/encrypted_media_utils.cc`
@@ -2247,15 +2386,15 @@ the `"hardware"` quantum; `outputLatency`; `getOutputTimestamp`;
 `encodingInfo`: the `"webrtc"` branch; `GetPerfInfo`),
 `modules/webcodecs/gpu_factories_retriever.cc` (`RetrieveGpuFactories`)
 and `modules/webcodecs/video_decoder_broker.cc` (`UpdateDecoderFactory`).
-All six files are new in `src/`.
+All nine files are new in `src/` (the last three since the audio clock).
 
 ### Verification
 
-Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (12
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (13
 tests: the device, the buffer for every latency hint, rate and nonsense
 input, the base latency, the output latency on Chromium's grid, the
-ScriptProcessorNode size, the output position, the key-system message and
-the Media Capabilities table) passes with g++ (ASan/UBSan) and clang (UBSan
+ScriptProcessorNode size, the output position, the key-system message, the
+Media Capabilities table and the listed output device) passes with g++ (ASan/UBSan) and clang (UBSan
 trap, `-fno-exceptions` and the strict warning set). A harness runs the
 real `moltnet_media.cc` and the hooked code extracted verbatim from all six
 upstream files, plus 156's unhooked `ChooseBufferSize` from
@@ -2273,14 +2412,57 @@ values' ScriptProcessorNode rule equals 156's for every buffer from 1 to
 it or the values test. Every changed C++ file, the two tests included,
 compiles without errors against Chromium 156's real headers
 (`tools/compile_check`; it now mounts libwebm, which
-`media_capabilities.cc` reaches through MediaRecorder). **Needs the build
-machine:** compiling and linking, `blink_unittests` (`MoltNetMediaTest.*`,
-`MoltNetMediaValuesTest.*`), `molt_ai_unittests`, and the checks in
-`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio on 44.1 and 96
-kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs pages).
-**Automated** by [`tools/leak_test`](LEAK_TESTING.md): every value in the
-first table except the device-dependent cases a kit run can't produce, and
-codec support compared between runs.
+`media_capabilities.cc` reaches through MediaRecorder).
+
+**The audio clock.** `moltnet_audio_clock_unittest.cc` (18 tests: the
+clock's rate and ticks, the ring's order, overflow, missing and short
+channels, discarding, leading silence, nonsense input and its size for
+every device, the clock's sawtooth taken out, priming, the ratio following
+the excess within its limit, silent excess, a large excess dropped at
+once, an excess the device started with kept, underruns and the growing
+margin, and a simulation that runs the ring and the drift control against
+devices of 128, 256, 441 (44.1 kHz), 480, 512, 1024, 2048 and 8192 frames
+and a converted stream reading two buffers at once, with the clocks up to
+200 ppm apart and up to 4 ms of scheduling jitter: once filled it never
+runs dry or drops audio, follows the device's clock within 0.1% and holds
+little more than the device's buffer and a tick) passes in the same two
+configurations. A second harness
+runs the real `audio_destination.cc` (hooked), 156's `PushPullFIFO` and
+`FakeAudioWorker`, and the real `moltnet_audio_device.cc` and
+`moltnet_media.cc` against stand-ins of the platform, on simulated time,
+with simulated devices of 128, 256, 441 (44.1 kHz), 480, 512, 1024 and
+2048 frames, a bursty converted stream, Chromium's fake 44.1 kHz stream and
+no device (9 tests): the time of every render quantum (what `currentTime`,
+`process()`, `onaudioprocess` and `getOutputTimestamp()` follow) is the
+same for every device, single-thread and AudioWorklet, with and without
+output buffering, while a normal window's follows the device; the other
+latency hints and rates; no device (OK status, no error, the device opened
+again on its schedule); a device lost and a device switched mid-play;
+suspend, resume and a frozen frame; silent sinks; a chosen device's errors;
+every frame rendered reaching the device in order, with the latency
+quoted above. With it, the hooked `IsValidSinkDescriptor` and
+`OnDevicesChanged`, extracted verbatim from `audio_context.cc`, and the
+listed output device (4 tests): no `error` without an output device in
+MoltNet, as against Chromium's. 28 mutants of the clock, the device, the
+hooks and the values each fail one of them. The resampler's cost was
+measured with Chromium 156's `SincResampler` and `MultiChannelResampler`
+built standalone. Every changed C++ file compiles without errors against
+Chromium 156's real headers.
+
+**Needs the build machine:** compiling and linking, `blink_unittests`
+(`MoltNetMediaTest.*`, `MoltNetMediaValuesTest.*`, `MoltNetAudioClockTest.*`,
+`MoltNetAudioDeviceTest.*`, and the upstream Web Audio and media devices
+suites), `blink_platform_unittests` (`AudioDestination*`), `molt_ai_unittests`,
+and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-media" (audio
+on 44.1 and 96 kHz devices, a 5.1 device, Bluetooth, EME and WebCodecs
+pages) and "fp-audio" (when Web Audio renders on 44.1 and 96 kHz, 128- and
+1024-frame and Bluetooth devices, sound quality and latency, device changes
+and a machine without an output device). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): every value in the first table except
+the device-dependent cases a kit run can't produce, codec support compared
+between runs, the render cadence (`audio.cadence_interval_ms`,
+`audio.cadence_burst_frames`) and the listed output device
+(`media.audiooutput`).
 
 ## Fonts
 
@@ -3652,8 +3834,9 @@ Honest list; anything not in the table above is not covered.
   filter lists, and `prefers-color-scheme`, which is dark for everyone
   only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
   otherwise follows the regular profile's theme).
-* (Closed: Web Audio's output device, key systems, Media Capabilities and
-  WebCodecs' hardware codecs, see [audio, DRM and media
+* (Closed: Web Audio's output device and when it renders, a machine
+  without one, key systems, Media Capabilities and WebCodecs' hardware
+  codecs, see [audio, DRM and media
   capabilities](#moltnet-audio-drm-and-media-capabilities).) What is left
   there: output device IDs once the user grants a media permission, and
   the speed of media playback.

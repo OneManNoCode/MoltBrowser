@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 146 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 149 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -229,6 +229,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | ai.Translator is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Writer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | audio.base_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.cadence_burst_frames is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.cadence_interval_ms is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
@@ -261,6 +263,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mc.vp9_1080p is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mc.webrtc_decoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mc.webrtc_encoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | media.audiooutput is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |

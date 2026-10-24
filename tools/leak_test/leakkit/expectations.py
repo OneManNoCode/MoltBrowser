@@ -149,6 +149,10 @@ STATIC_QUOTA = 10 * 1024 ** 3
 AUDIO_BASE_LATENCY = {'interactive': 480 / 48000, 'balanced': 480 / 48000,
                       'playback': 1024 / 48000, 'exact_0': 128 / 48000,
                       'exact_20ms': 1024 / 48000, 'rate_44100': 441 / 44100}
+# When MoltNet renders (moltnet_audio_clock.h): every 10 ms, 480 frames at
+# 48 kHz, which AudioDestination renders as 3 or 4 quanta of 128.
+AUDIO_TICK_MS = 10
+AUDIO_TICK_BURSTS = [384, 512]
 # Media Capabilities in MoltNet: a video the build decodes itself is smooth
 # and not power efficient; key systems and WebRTC are never supported.
 MC_SOFTWARE_VIDEO = {'supported': True, 'smooth': True,
@@ -274,6 +278,12 @@ FULL_RULES = (
     ('audio.output_timestamp_ok', 'eq', True, S_MEDIA),
     ('audio.playback_latency_max', 'in', [0, 0.024, 'absent'], S_MEDIA),
     ('audio.playback_underruns', 'in', [0, 'absent'], S_MEDIA),
+    # Rendering follows the uniform device's clock, not the real device's:
+    # a burst of 480 frames (3 or 4 quanta of 128) every 10 ms.
+    ('audio.cadence_interval_ms', 'eq', AUDIO_TICK_MS, S_MEDIA),
+    ('audio.cadence_burst_frames', 'eq', AUDIO_TICK_BURSTS, S_MEDIA),
+    # An output device is listed before any permission, device or not.
+    ('media.audiooutput', 'eq', 1, S_MEDIA),
     ('eme.clearkey', 'eq', 'NotSupportedError', S_MEDIA),
     ('eme.widevine', 'eq', 'NotSupportedError', S_MEDIA),
     ('eme.playready', 'eq', 'NotSupportedError', S_MEDIA),

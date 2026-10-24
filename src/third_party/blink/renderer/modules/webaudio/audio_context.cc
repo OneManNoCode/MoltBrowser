@@ -2164,6 +2164,14 @@ void AudioContext::UpdateV8SinkId() {
 
 bool AudioContext::IsValidSinkDescriptor(
     const WebAudioSinkDescriptor& sink_descriptor) {
+  // MoltBrowser: MoltNet's default output device always exists, even on a
+  // machine that lists none (moltnet_media.h).
+  if (sink_descriptor.Type() ==
+          WebAudioSinkDescriptor::AudioSinkType::kAudible &&
+      sink_descriptor.SinkId().IsEmpty() &&
+      molt_fingerprinting::HasUniformDefaultAudioOutput()) {
+    return true;
+  }
   return sink_descriptor.Type() ==
              WebAudioSinkDescriptor::AudioSinkType::kSilent ||
          output_device_ids_.Contains(sink_descriptor.SinkId());

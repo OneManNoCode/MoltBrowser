@@ -888,6 +888,7 @@ class Run(object):
             return
         values = dict(results)
         values.update(self.geometry(sid))
+        values.update(self.audio_cadence(sid))
         rec = {'label': label_prefix + 'initial', 'phase': 'main', 'dsf': dsf,
                'window': None, 'zoom_requested': 100, 'zoom_actual':
                self.page_zoom(sid), 'kind': 'full', 'target': target,
@@ -972,6 +973,22 @@ class Run(object):
             return None
         vv = m.get('cssVisualViewport') or m.get('visualViewport') or {}
         return vv.get('zoom')
+
+    def audio_cadence(self, sid):
+        """When Web Audio renders (fp.js mlAudioCadence), measured with a
+        user gesture so that the page's AudioContext may start."""
+        keys = ('audio.cadence_interval_ms', 'audio.cadence_burst_frames')
+        try:
+            values = self.cdp.evaluate(sid, 'mlAudioCadence()', timeout=20,
+                                       user_gesture=True)
+        except cdplib.CdpError as e:
+            values = None
+            error = {'error': 'cdp', 'message': str(e)[:200]}
+        else:
+            error = {'error': 'no value', 'message': ''}
+        if not isinstance(values, dict):
+            return dict((key, error) for key in keys)
+        return dict((key, values.get(key, error)) for key in keys)
 
     def geometry(self, sid, settle=False):
         if settle:

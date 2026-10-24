@@ -111,6 +111,8 @@ GOOD_FP = {
     'audio.script_processor_buffer': 2048,
     'audio.output_timestamp_ok': True, 'audio.playback_latency_max': 0,
     'audio.playback_underruns': 0, 'audio.sink_id': '',
+    'audio.cadence_interval_ms': 10, 'audio.cadence_burst_frames': [384, 512],
+    'media.audiooutput': 1,
     'eme.clearkey': 'NotSupportedError', 'eme.widevine': 'NotSupportedError',
     'eme.playready': 'NotSupportedError',
     'mc.vp8_360p': {'supported': True, 'smooth': True,

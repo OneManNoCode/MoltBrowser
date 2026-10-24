@@ -35,6 +35,11 @@
      "playback": 0.021333333333333333,
      "rate_44100": 0.01
     },
+    "audio.cadence_burst_frames": [
+     384,
+     512
+    ],
+    "audio.cadence_interval_ms": 10,
     "audio.channel_count": 2,
     "audio.channel_count_3": "IndexSizeError",
     "audio.max_channel_count": 2,
@@ -108,6 +113,7 @@
      "smooth": false,
      "supported": false
     },
+    "media.audiooutput": 1,
     "media.devices": {
      "audiooutput": 1
     },
