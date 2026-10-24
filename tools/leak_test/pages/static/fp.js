@@ -104,6 +104,65 @@ async function audioDevice(v) {
   v['audio.base_latency'] = latencies;
 }
 
+// When Web Audio renders, as a page can time it (MoltNet: on the uniform
+// device's clock, 480 frames every 10 ms, whatever the real device).
+// currentTime is polled on the main thread for 300 ms; its changes less
+// than 1.5 ms apart are one burst of rendering. Reports the median time
+// between bursts and the burst sizes seen, in frames (3 or 4 render quanta
+// of 128 for 480 frames). Needs a running context, so the harness calls it
+// with a user gesture after the page's collection.
+async function audioCadence() {
+  if (!window.AudioContext) {
+    return {'audio.cadence_interval_ms': 'absent',
+      'audio.cadence_burst_frames': 'absent'};
+  }
+  const ctx = new AudioContext();
+  try {
+    await ML.timeout(ctx.resume(), 3000);
+    const wait = performance.now();
+    while (ctx.currentTime === 0 && performance.now() - wait < 2000) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    if (ctx.currentTime === 0) {
+      return {'audio.cadence_interval_ms': 'not running',
+        'audio.cadence_burst_frames': 'not running'};
+    }
+    const bursts = [];
+    let last = ctx.currentTime;
+    const end = performance.now() + 300;
+    for (let now = performance.now(); now < end; now = performance.now()) {
+      const t = ctx.currentTime;
+      if (t === last) {
+        continue;
+      }
+      const frames = Math.round((t - last) * ctx.sampleRate);
+      last = t;
+      const b = bursts[bursts.length - 1];
+      if (b && now - b.end < 1.5) {
+        b.frames += frames;
+        b.end = now;
+      } else {
+        bursts.push({start: now, end: now, frames});
+      }
+    }
+    // The first and last may be cut short.
+    const whole = bursts.slice(1, -1);
+    const gaps = whole.slice(1).map((b, i) => b.start - whole[i].start)
+        .sort((a, b) => a - b);
+    return {
+      'audio.cadence_interval_ms': gaps.length ?
+          Math.round(gaps[Math.floor(gaps.length / 2)]) : 'no bursts',
+      'audio.cadence_burst_frames': [...new Set(whole.map((b) => b.frames))]
+          .sort((a, b) => a - b),
+    };
+  } finally {
+    await ctx.close();
+  }
+}
+window.mlAudioCadence = () => audioCadence().catch((e) => ({
+  'audio.cadence_interval_ms': ML.errInfo(e),
+  'audio.cadence_burst_frames': ML.errInfo(e)}));
+
 function decodingAnswer(info) {
   return {supported: info.supported, smooth: info.smooth,
     powerEfficient: info.powerEfficient};
@@ -672,6 +731,10 @@ async function collect() {
     }
     return counts;
   });
+  // Output devices listed before any permission (MoltNet: always the one).
+  await step('media.audiooutput', async () =>
+    (await n.mediaDevices.enumerateDevices()).filter(
+        (d) => d.kind === 'audiooutput').length);
   v['perf.jsHeapSizeLimit'] = performance.memory ?
       performance.memory.jsHeapSizeLimit : null;
   await step('speech.voices', () => new Promise((resolve) => {

@@ -312,7 +312,11 @@ level, and in one browser launch per device scale factor
   device (`AudioContext` at 48 kHz, `baseLatency` for every `latencyHint`
   and at a page's 44.1 kHz, `outputLatency` 24 ms, 2 channels at most and
   `channelCount` 3 refused, the default `ScriptProcessorNode` size, the
-  output timestamp, `playbackStats`), no key system (Clear Key, Widevine,
+  output timestamp, `playbackStats`, and when it renders: with a user
+  gesture so that a context may start, `currentTime` polled for 300 ms
+  shows a burst of 3 or 4 render quanta every 10 ms, the uniform device's
+  clock), an `audiooutput` entry in `enumerateDevices()` before any
+  permission, no key system (Clear Key, Widevine,
   PlayReady, and Media Capabilities with a `keySystemConfiguration`), Media
   Capabilities' fixed answers for VP8, VP9 and AV1 video and for WebRTC,
   and WebCodecs refusing `prefer-hardware`. Codec support (Media

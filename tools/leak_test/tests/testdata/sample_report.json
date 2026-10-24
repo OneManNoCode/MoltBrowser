@@ -644,6 +644,28 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
    "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [384, 512], expected [384, 512]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.cadence_burst_frames",
+   "status": "PASS",
+   "title": "audio.cadence_burst_frames is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 10, expected 10"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.cadence_interval_ms",
+   "status": "PASS",
+   "title": "audio.cadence_interval_ms is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 2, expected 2"
    ],
    "group": "uniformity",
@@ -991,6 +1013,17 @@
    "id": "uniform.mc.webrtc_encoding",
    "status": "PASS",
    "title": "mc.webrtc_encoding is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 1, expected 1"
+   ],
+   "group": "uniformity",
+   "id": "uniform.media.audiooutput",
+   "status": "PASS",
+   "title": "media.audiooutput is uniform"
   },
   {
    "details": null,
@@ -2793,7 +2826,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 146,
+  "PASS": 149,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2817,6 +2850,11 @@
      "playback": 0.021333333333333333,
      "rate_44100": 0.01
     },
+    "audio.cadence_burst_frames": [
+     384,
+     512
+    ],
+    "audio.cadence_interval_ms": 10,
     "audio.channel_count": 2,
     "audio.channel_count_3": "IndexSizeError",
     "audio.max_channel_count": 2,
@@ -2890,6 +2928,7 @@
      "smooth": false,
      "supported": false
     },
+    "media.audiooutput": 1,
     "media.devices": {
      "audiooutput": 1
     },
