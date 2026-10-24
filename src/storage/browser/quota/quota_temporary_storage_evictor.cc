@@ -16,6 +16,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "storage/browser/quota/quota_features.h"
+#include "storage/browser/quota/molt_storage_budget_policy.h"  // MoltBrowser
 #include "storage/browser/quota/quota_manager_impl.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
@@ -192,6 +193,13 @@ void QuotaTemporaryStorageEvictor::OnGotEvictionRoundInfo(
                                            kUsageRatioToStartEviction));
   int64_t diskspace_shortage =
       std::max(INT64_C(0), settings.should_remain_available - available_space);
+  // MoltBrowser: with MoltNet's storage budget no site's data is evicted
+  // because of what the others store; each site is held to its own budget
+  // instead (molt_storage_budget_policy.h).
+  if (!MoltMayEvictForThePool(settings.molt_per_site_quota)) {
+    usage_overage = 0;
+    diskspace_shortage = 0;
+  }
   CHECK(current_usage_is_complete || diskspace_shortage == 0);
 
   // If we're using so little that freeing all of it wouldn't help,

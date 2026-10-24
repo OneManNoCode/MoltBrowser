@@ -22,13 +22,20 @@
 // so the fixed values must be safe on the smallest machines MoltNet runs
 // on. They are Chromium's own rules applied to a 4 GiB machine, rounded
 // down: the incognito pool at the low end of its range (15% of 4 GiB, 614
-// MiB) is 600 MiB, a site gets a third of it (200 MiB), and blobs get a
-// fifth of 4 GiB (819 MiB): 800 MiB. That is less than Incognito allows on
-// most machines (on 8 GB, 1.2-1.6 GiB of pool, 410-550 MiB per site), and
-// far more than sites store in practice (a few MB of caches and
-// databases); a site that needs more (offline web apps, large in-browser
-// downloads) gets the same QuotaExceededError on every MoltNet machine.
-// No blob data goes to disk (off-the-record profiles never page blobs out).
+// MiB) is 600 MiB, and blobs get a fifth of 4 GiB (819 MiB): 800 MiB.
+// That is less than Incognito allows on most machines (on 8 GB, 1.2-1.6
+// GiB of pool), and far more than sites store in practice (a few MB of
+// caches and databases); a site that needs more (offline web apps, large
+// in-browser downloads) gets the same QuotaExceededError on every MoltNet
+// machine. No blob data goes to disk (off-the-record profiles never page
+// blobs out).
+//
+// The 600 MiB are the most MoltNet's sites may store together (Chromium
+// only evicts down to 70% of its pool every half hour, of any site), and
+// each site, its storage keys and those of what it embeds together, a
+// tenth of that (storage/browser/quota/molt_storage_budget_policy.h): one
+// site's writes can then neither fail nor have another site's data evicted
+// unless ten other sites hold their whole share.
 //
 // Not changed, because they already are the same everywhere: localStorage
 // and sessionStorage (10 MiB per storage area, components/services/storage/
@@ -47,12 +54,15 @@ inline constexpr int64_t kMoltNetStorageMiB = 1024 * 1024;
 inline constexpr int64_t kMoltNetStorageReferenceMemory =
     4096 * kMoltNetStorageMiB;
 
-// Quota (storage::QuotaSettings): the pool all MoltNet sites share, what one
-// storage key may use (also for "session only" sites: every MoltNet site
-// is), and nothing kept free on a disk MoltNet doesn't use.
+// Quota (storage::QuotaSettings): the most all MoltNet sites may store
+// together, what one site may (all its storage keys; also for "session
+// only" sites: every MoltNet site is), and nothing kept free on a disk
+// MoltNet doesn't use.
 inline constexpr int64_t kMoltNetQuotaPoolBytes = 600 * kMoltNetStorageMiB;
+inline constexpr int64_t kMoltNetQuotaPerSiteBytes = 60 * kMoltNetStorageMiB;
+// A storage key may use what its site may.
 inline constexpr int64_t kMoltNetQuotaPerStorageKeyBytes =
-    200 * kMoltNetStorageMiB;
+    kMoltNetQuotaPerSiteBytes;
 
 // Blobs (storage::BlobStorageLimits::max_blob_in_memory_space), all MoltNet
 // sites together; no disk.
@@ -63,7 +73,7 @@ inline constexpr int64_t kMoltNetStorageRounding = 100 * kMoltNetStorageMiB;
 static_assert(kMoltNetQuotaPoolBytes ==
               kMoltNetStorageReferenceMemory * 15 / 100 /
                   kMoltNetStorageRounding * kMoltNetStorageRounding);
-static_assert(kMoltNetQuotaPerStorageKeyBytes == kMoltNetQuotaPoolBytes / 3);
+static_assert(kMoltNetQuotaPerSiteBytes == kMoltNetQuotaPoolBytes / 10);
 static_assert(static_cast<int64_t>(kMoltNetBlobMemoryBytes) ==
               kMoltNetStorageReferenceMemory / 5 / kMoltNetStorageRounding *
                   kMoltNetStorageRounding);

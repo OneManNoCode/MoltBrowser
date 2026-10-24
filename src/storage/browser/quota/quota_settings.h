@@ -57,6 +57,12 @@ struct QuotaSettings {
   // but will rate limit the frequency of the queries to no more than once
   // per refresh interval.
   base::TimeDelta refresh_interval = base::TimeDelta::Max();
+
+  // MoltBrowser: if > 0 (MoltNet), each top-level site's storage keys
+  // together may use at most this many bytes, all sites together at most
+  // `pool_size`, and nothing is evicted to bring the pool down
+  // (storage/browser/quota/molt_storage_budget_policy.h).
+  int64_t molt_per_site_quota = 0;
 };
 
 // Function type used to return the settings in response to a

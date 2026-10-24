@@ -25,13 +25,20 @@ constexpr int64_t IncognitoPoolHigh(int64_t memory) {
 TEST(MoltNetStorageValuesTest, QuotaIsChromiumsOnTheReferenceMachine) {
   EXPECT_EQ(kMoltNetStorageReferenceMemory, 4 * kGiB);
   EXPECT_EQ(kMoltNetQuotaPoolBytes, 600 * kMoltNetStorageMiB);
-  EXPECT_EQ(kMoltNetQuotaPerStorageKeyBytes, 200 * kMoltNetStorageMiB);
   EXPECT_LE(kMoltNetQuotaPoolBytes,
             IncognitoPoolLow(kMoltNetStorageReferenceMemory));
   EXPECT_GT(kMoltNetQuotaPoolBytes,
             IncognitoPoolLow(kMoltNetStorageReferenceMemory) -
                 100 * kMoltNetStorageMiB);
-  EXPECT_EQ(kMoltNetQuotaPerStorageKeyBytes * 3, kMoltNetQuotaPoolBytes);
+}
+
+// Each site gets a tenth of what all may store together, so ten other
+// sites must hold their whole share before a site below its own is
+// refused; a storage key may use what its site may.
+TEST(MoltNetStorageValuesTest, EachSiteATenthOfTheTotal) {
+  EXPECT_EQ(kMoltNetQuotaPerSiteBytes, 60 * kMoltNetStorageMiB);
+  EXPECT_EQ(kMoltNetQuotaPerSiteBytes * 10, kMoltNetQuotaPoolBytes);
+  EXPECT_EQ(kMoltNetQuotaPerStorageKeyBytes, kMoltNetQuotaPerSiteBytes);
 }
 
 TEST(MoltNetStorageValuesTest, NoMoreThanIncognitoOnBiggerMachines) {
@@ -39,7 +46,7 @@ TEST(MoltNetStorageValuesTest, NoMoreThanIncognitoOnBiggerMachines) {
   // hold more than Incognito would there.
   for (int64_t memory : {4 * kGiB, 8 * kGiB, 16 * kGiB, 64 * kGiB}) {
     EXPECT_LE(kMoltNetQuotaPoolBytes, IncognitoPoolLow(memory));
-    EXPECT_LE(kMoltNetQuotaPerStorageKeyBytes, IncognitoPoolLow(memory) / 3);
+    EXPECT_LE(kMoltNetQuotaPerSiteBytes, IncognitoPoolLow(memory) / 3);
     EXPECT_LE(static_cast<int64_t>(kMoltNetBlobMemoryBytes), memory / 5);
   }
   // Only machines below 4 GB get more in MoltNet than in Incognito (on 2
