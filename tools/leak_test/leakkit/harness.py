@@ -522,7 +522,10 @@ class Run(object):
             blocked.append('https://%s:443,*' % self.onion['a'])
         prefs = {
             'enable_do_not_track': True,
-            'intl': {'accept_languages': 'de-DE,de'},
+            # The user's language list: Chromium keeps it in two prefs
+            # and rebuilds the first from the second (and policies).
+            'intl': {'accept_languages': 'de-DE,de',
+                     'selected_languages': 'de-DE,de'},
             'webkit': {'webprefs': {
                 'default_font_size': 24,
                 'fonts': {'standard': {'Zyyy': 'DejaVu Serif'},
@@ -683,6 +686,8 @@ class Run(object):
             sid, 'sendWithPromise(%s)' % json.dumps(message), timeout=timeout)
 
     def moltnet_pages(self):
+        """Every page target in a MoltNet browser context, DevTools windows
+        for MoltNet pages included (they run in the MoltNet profile)."""
         return [t for t in self.cdp.targets() if t['type'] == 'page' and
                 t.get('browserContextId') and
                 t.get('browserContextId') != self.default_ctx]
@@ -701,7 +706,7 @@ class Run(object):
         deadline = _now() + (3 if (result or {}).get('error') else 30)
         while _now() < deadline and not found:
             for t in self.moltnet_pages():
-                if t['targetId'] not in before:
+                if t['targetId'] not in before and not _is_devtools(t):
                     found = t
                     break
             if not found:
@@ -1198,7 +1203,7 @@ class Run(object):
         deadline = _now() + seconds
         while _now() < deadline:
             for t in self.moltnet_pages():
-                if t['targetId'] not in before:
+                if t['targetId'] not in before and not _is_devtools(t):
                     return t
             time.sleep(0.5)
         return None
@@ -1389,6 +1394,21 @@ class Run(object):
     # by default; MoltNet must send none either way).
     POLICY_FILE = 'moltleak.json'
     LIVE_POLICY = {'ProxyMode': 'direct'}
+    # Language policies: they change the regular profile's languages (and,
+    # with ReduceAcceptLanguage on, the regular Accept-Language header) and
+    # must change nothing MoltNet's pages see, nor close MoltNet.
+    LANGUAGE_POLICY = {'ForcedLanguages': ['ja'],
+                       'ReduceAcceptLanguageEnabled': False}
+    # Incognito turned off (1) closes MoltNet and keeps it closed; Incognito
+    # only (2) leaves it open (MOLTNET_COMPLIANCE.md §2 Incognito).
+    INCOGNITO_OFF = {'IncognitoModeAvailability': 1}
+    INCOGNITO_FORCED = {'IncognitoModeAvailability': 2}
+    # DevTools in a window of its own. MoltNet's DevTools settings read
+    # through to the regular profile's, so its DevTools open undocked too.
+    UNDOCKED_DEVTOOLS = {'devtools': {
+        'preferences': {'currentDockState': '"undocked"'},
+        'synced_preferences_sync_disabled': {
+            'currentDockState': '"undocked"'}}}
 
     def write_policy(self, policy_dir, policies):
         path = os.path.join(policy_dir, self.POLICY_FILE)
@@ -1404,6 +1424,96 @@ class Run(object):
         except FileNotFoundError:
             pass
 
+    def set_profile_prefs(self, updates):
+        """Merges `updates` into the regular profile's Preferences file
+        (with the browser closed)."""
+        path = self.path('profile', 'Default', 'Preferences')
+        try:
+            with open(path) as f:
+                prefs = json.load(f)
+        except (OSError, ValueError):
+            prefs = {}
+
+        def merge(into, src):
+            for k, v in src.items():
+                if isinstance(v, dict) and isinstance(into.get(k), dict):
+                    merge(into[k], v)
+                else:
+                    into[k] = v
+        merge(prefs, updates)
+        prefs_dir = self.user_mkdir('profile', 'Default', mode=0o700)
+        tmp = os.path.join(prefs_dir, 'Preferences.moltleak')
+        with open(tmp, 'w') as f:
+            json.dump(prefs, f)
+        os.chmod(tmp, 0o600)
+        os.chown(tmp, self.uid, self.gid)
+        os.rename(tmp, path)
+
+    def wait_gone(self, targets, seconds=60):
+        """Seconds until none of `targets` (target ids) is a MoltNet page
+        any more, or None."""
+        start = _now()
+        while _now() < start + seconds:
+            if not targets & set(t['targetId'] for t in self.moltnet_pages()):
+                return round(_now() - start, 1)
+            time.sleep(0.5)
+        return None
+
+    def page_languages(self, sid, url):
+        err = self.cdp.navigate(sid, url, timeout=60)
+        if err:
+            return {'error': err}
+        try:
+            return self.cdp.evaluate(sid, 'mlkLanguages()', timeout=30)
+        except cdplib.CdpError as e:
+            return {'error': str(e)}
+
+    def open_window_call(self):
+        try:
+            return self.molt_net_call('moltnet.openWindow',
+                                      timeout=self.opts.open_timeout)
+        except (cdplib.CdpError, RuntimeError) as e:
+            return {'error': 'harness: %s' % e}
+
+    def language_policy_step(self, policy_dir, data):
+        """ForcedLanguages and ReduceAcceptLanguageEnabled set while MoltNet
+        is open: the regular page's languages change (so the policy
+        arrived), MoltNet's don't, and MoltNet stays open."""
+        lang = data['languages'] = {'policy': self.LANGUAGE_POLICY}
+        nonce = support.nonce()
+        moltnet_url = '%s/t/%s/policylive.html' % (self.bases()['BASE_HTTP'],
+                                                   nonce)
+        regular_url = 'http://127.0.0.1:%d/t/%s/policylive.html' % (
+            LOCAL_HTTP, nonce)
+        tid = self.cdp.call('Target.createTarget',
+                            {'url': 'about:blank'})['targetId']
+        regular = self.cdp.attach(tid)
+        sid = self.moltnet[1]
+        lang['moltnet_before'] = self.page_languages(sid, moltnet_url)
+        lang['regular_before'] = self.page_languages(regular, regular_url)
+        before = set(t['targetId'] for t in self.moltnet_pages())
+        lang['pages_before'] = len(before)
+        lang['written'] = _now()
+        self.write_policy(policy_dir, self.LANGUAGE_POLICY)
+        # Chromium reads the file about 5 s after the change. Each load
+        # also runs the page's language detection, after which Chromium
+        # rewrites a profile's languages from the policy and the user's own
+        # list.
+        time.sleep(12)
+        for _ in range(2):
+            lang['moltnet_after'] = self.page_languages(sid, moltnet_url)
+            lang['regular_after'] = self.page_languages(regular, regular_url)
+            time.sleep(2)
+        lang['pages_kept'] = len(before & set(
+            t['targetId'] for t in self.moltnet_pages()))
+        self.remove_policy(policy_dir)
+        lang['removed'] = _now()
+        try:
+            self.cdp.call('Target.closeTarget', {'targetId': tid})
+        except cdplib.CdpError:
+            pass
+        time.sleep(8)
+
     def policy_live_session(self):
         phase = self.phase_begin('policy_live')
         data = phase['data']
@@ -1412,6 +1522,10 @@ class Run(object):
             policy_dir = self.sandbox.policy_dir()
             self.remove_policy(policy_dir)
             flag = '--enable-features=AutofillServerCommunication'
+            data['flags'] = [flag]
+            # ReduceAcceptLanguage on, so that ReduceAcceptLanguageEnabled
+            # changes the regular Accept-Language header (step 3).
+            flag += ',ReduceAcceptLanguage'
             data['flags'] = [flag]
             self.launch_browser('policy-live', [flag], policy_dir=policy_dir)
             if not self.open_moltnet('open_moltnet_policy_live'):
@@ -1473,13 +1587,119 @@ class Run(object):
                     'moltnet.openWindow', timeout=self.opts.open_timeout)
             except (cdplib.CdpError, RuntimeError) as e:
                 data['reopen_without_policy'] = {'error': 'harness: %s' % e}
-            data['reopened'] = bool(self.wait_new_moltnet_page(before, 30))
+            found = self.wait_new_moltnet_page(before, 30)
+            data['reopened'] = bool(found)
+            # 3. Language policies: MoltNet's languages stay as they are.
+            if found:
+                self.moltnet = (found['targetId'],
+                                self.cdp.attach(found['targetId']),
+                                found.get('browserContextId'))
+                self.language_policy_step(policy_dir, data)
             self.phase_end(phase)
         except (RuntimeError, OSError, cdplib.CdpError) as e:
             self.phase_end(phase, str(e))
         finally:
             if policy_dir:
                 self.remove_policy(policy_dir)
+        self.close_browser()
+        if policy_dir:
+            self.incognito_policy_session(policy_dir)
+
+    def incognito_policy_session(self, policy_dir):
+        """IncognitoModeAvailability set while MoltNet is open. 1 closes
+        every MoltNet window: here one with DevTools open in a window of its
+        own and a "Leave site?" prompt nobody answers. MoltNet then refuses
+        to open, saying why, until the policy is gone. 2 keeps MoltNet open
+        and lets it open."""
+        phase = self.phase_begin('policy_live_incognito')
+        data = phase['data']
+        try:
+            self.remove_policy(policy_dir)
+            self.set_profile_prefs(self.UNDOCKED_DEVTOOLS)
+            flag = '--auto-open-devtools-for-tabs'
+            data['flags'] = [flag]
+            self.launch_browser('policy-incognito', [flag],
+                                policy_dir=policy_dir)
+            if not self.open_moltnet('open_moltnet_policy_incognito'):
+                raise RuntimeError('MoltNet did not open')
+            tid, sid = self.moltnet[0], self.moltnet[1]
+            nonce = support.nonce()
+            base = self.bases()['BASE_HTTP']
+            data['nav_error'] = self.cdp.navigate(
+                sid, '%s/t/%s/policylive.html' % (base, nonce), timeout=60)
+            # DevTools for the MoltNet page (the flag opens it for every
+            # tab), in a window of its own.
+            deadline = _now() + 20
+            devtools = []
+            while _now() < deadline and not devtools:
+                devtools = [t for t in self.moltnet_pages()
+                            if _is_devtools(t)]
+                time.sleep(0.5)
+            data['devtools_pages'] = len(devtools)
+            windows = {}
+            for target in [tid] + [t['targetId'] for t in devtools]:
+                try:
+                    windows[target] = self.cdp.call(
+                        'Browser.getWindowForTarget',
+                        {'targetId': target}).get('windowId')
+                except cdplib.CdpError:
+                    windows[target] = None
+            data['devtools_own_window'] = any(
+                windows.get(t['targetId']) not in (None, windows.get(tid))
+                for t in devtools)
+            # "Leave site?": a beforeunload handler on a page the user has
+            # used, then a navigation away from it. The prompt stays open.
+            mark = self.cdp.mark()
+            try:
+                data['hold_page'] = bool(self.cdp.evaluate(
+                    sid, self.HOLD_PAGE_JS, user_gesture=True))
+                self.cdp.evaluate(
+                    sid, "setTimeout(() => { location.href = "
+                    "'/t/%s/basic.html'; }, 200); true" % nonce,
+                    user_gesture=True)
+            except cdplib.CdpError as e:
+                data['hold_page'] = 'error: %s' % e
+            ev = self.cdp.wait_event(
+                lambda e: e.get('sessionId') == sid and
+                e.get('method') == 'Page.javascriptDialogOpening',
+                timeout=10, since=mark)
+            data['dialog'] = ((ev or {}).get('params') or {}).get('type')
+            before = set(t['targetId'] for t in self.moltnet_pages())
+            data['moltnet_pages_before'] = len(before)
+            # 1: everything closes, MoltNet refuses to open.
+            data['off_written'] = _now()
+            self.write_policy(policy_dir, self.INCOGNITO_OFF)
+            data['closed_after_s'] = self.wait_gone(before, 60)
+            data['pages_left'] = [
+                (t.get('url') or '')[:80] for t in self.moltnet_pages()
+                if t['targetId'] in before]
+            data['reopen_off'] = self.open_window_call()
+            time.sleep(3)
+            data['pages_off'] = len(self.moltnet_pages())
+            self.remove_policy(policy_dir)
+            data['off_removed'] = _now()
+            time.sleep(10)
+            before = set(t['targetId'] for t in self.moltnet_pages())
+            data['reopen_after_off'] = self.open_window_call()
+            data['reopened_after_off'] = bool(
+                self.wait_new_moltnet_page(before, 30))
+            # 2: MoltNet stays open and opens.
+            before = set(t['targetId'] for t in self.moltnet_pages())
+            data['pages_before_forced'] = len(before)
+            data['forced_written'] = _now()
+            self.write_policy(policy_dir, self.INCOGNITO_FORCED)
+            time.sleep(12)
+            data['pages_kept_forced'] = len(before & set(
+                t['targetId'] for t in self.moltnet_pages()))
+            before = set(t['targetId'] for t in self.moltnet_pages())
+            data['open_forced'] = self.open_window_call()
+            data['opened_forced'] = bool(
+                self.wait_new_moltnet_page(before, 30))
+            self.phase_end(phase)
+        except (RuntimeError, OSError, cdplib.CdpError) as e:
+            self.phase_end(phase, str(e))
+        finally:
+            self.remove_policy(policy_dir)
         self.close_browser()
 
     def dsf_sessions(self):
@@ -1569,6 +1789,10 @@ def _drain(stream, logf):
             logf.flush()
     except (OSError, ValueError):
         pass
+
+
+def _is_devtools(target):
+    return (target.get('url') or '').startswith('devtools://')
 
 
 def _high_fd(fd):

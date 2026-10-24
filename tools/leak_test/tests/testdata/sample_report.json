@@ -213,6 +213,47 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Incognito, \u00a74 step 9",
+   "evidence": [
+    "2 of 2 MoltNet page(s) still open 12 s after the policy was written",
+    "openWindow with the policy -> {\"running\": true}; a MoltNet page opened: True"
+   ],
+   "group": "identity",
+   "id": "identity.incognito_forced_allows",
+   "status": "PASS",
+   "title": "IncognitoModeAvailability 2 (Incognito only) keeps MoltNet open and lets it open"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Incognito, \u00a74 step 9",
+   "evidence": [
+    "flags: --auto-open-devtools-for-tabs",
+    "2 MoltNet page(s) open, 1 of them DevTools (in a window of its own: True); \"Leave site?\" prompt: beforeunload",
+    "every one of them closed 5.5 s after the policy was written",
+    "openWindow with the policy -> {\"error\": \"Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it\"}; MoltNet pages: 0",
+    "openWindow once the policy was removed -> {\"running\": true}; a MoltNet page opened: True"
+   ],
+   "group": "identity",
+   "id": "identity.incognito_off_closes",
+   "status": "PASS",
+   "title": "IncognitoModeAvailability 1 set while MoltNet is open closes every MoltNet window, its DevTools window and a page waiting on \"Leave site?\" included; MoltNet then refuses to open, saying why, until the policy is gone"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.3, \u00a74 step 9",
+   "evidence": [
+    "policy {\"ForcedLanguages\": [\"ja\"], \"ReduceAcceptLanguageEnabled\": false}",
+    "moltnet page: before {\"accept_language\": \"en-US\", \"languages\": [\"en-US\", \"en\"]}, after {\"accept_language\": \"en-US\", \"languages\": [\"en-US\", \"en\"]}",
+    "regular page: before {\"accept_language\": \"de-DE\", \"languages\": [\"de-DE\", \"de\"]}, after {\"accept_language\": \"ja,de-DE;q=0.9,de;q=0.8\", \"languages\": [\"ja\", \"de-DE\", \"de\"]}",
+    "the regular page changed and MoltNet's did not"
+   ],
+   "group": "identity",
+   "id": "identity.language_policy_ignored",
+   "status": "PASS",
+   "title": "A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 7",
    "evidence": [
     "newIdentity -> {\"running\": true}",
@@ -346,7 +387,7 @@
    "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 Requests outside Tor, \u00a74 step 20",
    "evidence": [
-    "flags: --enable-features=AutofillServerCommunication",
+    "flags: --enable-features=AutofillServerCommunication,ReduceAcceptLanguage",
     "form page: loaded",
     "no connection to content-autofill.googleapis.com, chromium-i18n.appspot.com, through Tor or outside it, during the phase"
    ],
@@ -2793,7 +2834,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 146,
+  "PASS": 149,
   "SKIP": 84
  },
  "fingerprints": [

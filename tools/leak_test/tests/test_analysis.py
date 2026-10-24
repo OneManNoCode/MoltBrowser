@@ -230,11 +230,25 @@ class IdentityChecks(unittest.TestCase):
                          report.SKIP)
 
     POLICY_HOST = 'plc-pppppp9999.moltleak.test'
+    LANGUAGES = {
+        'policy': {'ForcedLanguages': ['ja'],
+                   'ReduceAcceptLanguageEnabled': False},
+        'moltnet_before': {'languages': ['en-US', 'en'],
+                           'accept_language': 'en-US'},
+        'moltnet_after': {'languages': ['en-US', 'en'],
+                          'accept_language': 'en-US'},
+        'regular_before': {'languages': ['de-DE', 'de'],
+                           'accept_language': 'de-DE'},
+        'regular_after': {'languages': ['ja', 'de-DE', 'de'],
+                          'accept_language': 'ja,de-DE;q=0.9,de;q=0.8'},
+        'pages_before': 1, 'pages_kept': 1, 'written': 140.0,
+        'removed': 160.0}
 
     def policy_live(self, events=(), socks=(), skipped=None, **changes):
-        """Both checks of the policy_live phase (100 s to 136 s), for a
+        """The checks of the policy_live phase (100 s to 136 s), for a
         phase whose data is the sample's with `changes`."""
-        data = {'flags': ['--enable-features=AutofillServerCommunication'],
+        data = {'flags': ['--enable-features=AutofillServerCommunication,'
+                          'ReduceAcceptLanguage'],
                 'autofill_start': 101.0, 'autofill_end': 111.0,
                 'autofill_nav_error': None, 'canary_host': self.POLICY_HOST,
                 'moltnet_pages_before': 1, 'policy': {'ProxyMode': 'direct'},
@@ -244,7 +258,7 @@ class IdentityChecks(unittest.TestCase):
                                                 'flag controls the proxy'},
                 'pages_with_policy': 0, 'policy_removed': 124.0,
                 'reopen_without_policy': {'running': True},
-                'reopened': True}
+                'reopened': True, 'languages': self.LANGUAGES}
         data.update(changes)
         phase = {'name': 'policy_live', 'start': 100.0, 'end': 136.0,
                  'data': data}
@@ -264,7 +278,8 @@ class IdentityChecks(unittest.TestCase):
                             'net.autofill_server')
         ok = self.policy_live(socks=[{'ts': 113.0, 'host': self.POLICY_HOST},
                                      {'ts': 117.0, 'host': self.POLICY_HOST}])
-        self.assertEqual(ok, {closes: report.PASS, autofill: report.PASS})
+        self.assertEqual(ok[closes], report.PASS)
+        self.assertEqual(ok[autofill], report.PASS)
         # The windows stayed open.
         self.assertEqual(self.policy_live(closed_after_s=None,
                                           moltnet_pages_after=1)[closes],
@@ -295,8 +310,118 @@ class IdentityChecks(unittest.TestCase):
             'qname': 'chromium-i18n.appspot.com', 'first': 105.0}])[
                 autofill], report.FAIL)
         # Not run.
-        self.assertEqual(self.policy_live(skipped='--phases'),
-                         {closes: report.SKIP, autofill: report.SKIP})
+        self.assertEqual(set(self.policy_live(skipped='--phases').values()),
+                         {report.SKIP})
+        self.assertEqual(len(self.policy_live(skipped='--phases')), 5)
+
+    def test_language_policy(self):
+        cid = 'identity.language_policy_ignored'
+
+        def languages(**changes):
+            return self.policy_live(languages=dict(self.LANGUAGES,
+                                                   **changes))[cid]
+        self.assertEqual(self.policy_live()[cid], report.PASS)
+        # The regular page's languages changed, MoltNet's too.
+        self.assertEqual(languages(moltnet_after={
+            'languages': ['ja', 'en-US', 'en'],
+            'accept_language': 'ja,en-US;q=0.9,en;q=0.8'}), report.FAIL)
+        # Only the header (ReduceAcceptLanguageEnabled reached MoltNet).
+        self.assertEqual(languages(moltnet_after={
+            'languages': ['en-US', 'en'],
+            'accept_language': 'en-US,en;q=0.9'}), report.FAIL)
+        # A forced language from the start (as before the policy was set).
+        ja = {'languages': ['ja', 'en-US'], 'accept_language': 'ja'}
+        self.assertEqual(languages(moltnet_before=ja, moltnet_after=ja),
+                         report.FAIL)
+        # MoltNet closed on it.
+        self.assertEqual(languages(pages_kept=0), report.FAIL)
+        # The regular page didn't change: the policy didn't arrive.
+        self.assertEqual(languages(regular_after=self.LANGUAGES[
+            'regular_before']), report.ERROR)
+        # A page didn't load.
+        self.assertEqual(languages(moltnet_after={
+            'error': 'net::ERR_TIMED_OUT'}), report.ERROR)
+        # MoltNet didn't open again for the step.
+        self.assertEqual(self.policy_live(languages=None)[cid], report.SKIP)
+        self.assertEqual(self.policy_live(
+            languages=None, reopened=False)[cid], report.SKIP)
+
+    INCOGNITO = {
+        'flags': ['--auto-open-devtools-for-tabs'], 'nav_error': None,
+        'devtools_pages': 1, 'devtools_own_window': True,
+        'hold_page': True, 'dialog': 'beforeunload',
+        'moltnet_pages_before': 2, 'off_written': 210.0,
+        'closed_after_s': 5.5, 'pages_left': [],
+        'reopen_off': {'error': 'Incognito is turned off '
+                                '(IncognitoModeAvailability or parental '
+                                'controls), and MoltNet windows follow it'},
+        'pages_off': 0, 'off_removed': 230.0,
+        'reopen_after_off': {'running': True}, 'reopened_after_off': True,
+        'pages_before_forced': 2, 'forced_written': 250.0,
+        'pages_kept_forced': 2, 'open_forced': {'running': True},
+        'opened_forced': True}
+
+    def incognito(self, error=None, skipped=None, **changes):
+        data = dict(self.INCOGNITO, **changes)
+        phase = {'name': 'policy_live_incognito', 'start': 200.0,
+                 'end': 280.0, 'data': data}
+        if error:
+            phase['error'] = error
+        if skipped:
+            phase = {'name': 'policy_live_incognito', 'skipped': skipped}
+        checks = report._incognito_policy_checks({'phases': [phase]})
+        return {c['id']: c['status'] for c in checks}
+
+    def test_incognito_policy(self):
+        off, forced = ('identity.incognito_off_closes',
+                       'identity.incognito_forced_allows')
+        self.assertEqual(self.incognito(), {off: report.PASS,
+                                            forced: report.PASS})
+        # A window (the page waiting on "Leave site?", or DevTools) stayed.
+        self.assertEqual(self.incognito(
+            closed_after_s=None,
+            pages_left=['devtools://devtools/bundled/devtools_app.html'])[
+                off], report.FAIL)
+        # MoltNet opened with Incognito off.
+        self.assertEqual(self.incognito(reopen_off={'running': True},
+                                        pages_off=1)[off], report.FAIL)
+        # Refused, but not saying it is Incognito.
+        self.assertEqual(self.incognito(reopen_off={
+            'error': 'MoltNet could not start'})[off], report.FAIL)
+        # Refused only because the harness failed.
+        self.assertEqual(self.incognito(reopen_off={
+            'error': 'harness: Incognito timeout'})[off], report.FAIL)
+        # Didn't open again without the policy.
+        self.assertEqual(self.incognito(reopened_after_off=False)[off],
+                         report.FAIL)
+        # No DevTools window to close: the check proves less than it says.
+        self.assertEqual(self.incognito(devtools_pages=0)[off],
+                         report.ERROR)
+        # Incognito only: MoltNet closed, or didn't open.
+        self.assertEqual(self.incognito(pages_kept_forced=1)[forced],
+                         report.FAIL)
+        self.assertEqual(self.incognito(open_forced={
+            'error': 'Incognito is turned off'}, opened_forced=False)[forced],
+            report.FAIL)
+        self.assertEqual(self.incognito(pages_before_forced=0)[forced],
+                         report.ERROR)
+        # The harness stopped before it got there.
+        partial = dict((k, v) for k, v in self.INCOGNITO.items()
+                       if k in ('flags', 'devtools_pages'))
+        phase = {'name': 'policy_live_incognito', 'start': 200.0,
+                 'end': 280.0, 'data': partial, 'error': 'MoltNet did not '
+                 'open'}
+        self.assertEqual(
+            {c['id']: c['status'] for c in
+             report._incognito_policy_checks({'phases': [phase]})},
+            {off: report.ERROR, forced: report.ERROR})
+        # Not run.
+        self.assertEqual(self.incognito(skipped='--phases'),
+                         {off: report.SKIP, forced: report.SKIP})
+        self.assertEqual(
+            {c['id']: c['status'] for c in
+             report._incognito_policy_checks({'phases': []})},
+            {off: report.SKIP, forced: report.SKIP})
 
     def socks(self, *entries):
         return {'socks': [{'test': t, 'host': h, 'username': u}

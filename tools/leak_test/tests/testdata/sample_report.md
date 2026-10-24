@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 146 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 149 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -91,7 +91,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - LEAK dns stun-bbbbbb2222.moltleak.test AAAA x1 at +21.1s: a test page's canary name was looked up outside Tor [firewall log]
   - LEAK udp 198.51.100.12:3478 x1 at +22.0s: a packet to a test page's IP literal outside Tor [firewall log]
 - **PASS** A MoltNet page's forms cause no Autofill server query or address-rule download, also with the queries on
-  - flags: --enable-features=AutofillServerCommunication
+  - flags: --enable-features=AutofillServerCommunication,ReduceAcceptLanguage
   - form page: loaded
   - no connection to content-autofill.googleapis.com, chromium-i18n.appspot.com, through Tor or outside it, during the phase
 - **PASS** Built-in AI APIs and Translator (no component download): LanguageModel is unavailable
@@ -154,6 +154,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 |---|---|---|
 | PASS | Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch) | MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8 |
 | PASS | Fail-closed: with Tor killed, pages fail with a proxy error | MOLTNET_COMPLIANCE.md §4 step 5 |
+| PASS | IncognitoModeAvailability 2 (Incognito only) keeps MoltNet open and lets it open | MOLTNET_COMPLIANCE.md §2 Incognito, §4 step 9 |
+| PASS | IncognitoModeAvailability 1 set while MoltNet is open closes every MoltNet window, its DevTools window and a page waiting on "Leave site?" included; MoltNet then refuses to open, saying why, until the policy is gone | MOLTNET_COMPLIANCE.md §2 Incognito, §4 step 9 |
+| PASS | A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open | MOLTNET_COMPLIANCE.md §1.3, §4 step 9 |
 | PASS | New Identity: new profile, cookies gone, new farbling seed | MOLTNET_COMPLIANCE.md §4 step 7 |
 | PASS | No MoltNet window comes back after a restart | MOLTNET_COMPLIANCE.md §4 step 5 |
 | PASS | A --proxy-server override blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
@@ -172,6 +175,20 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 - **PASS** Fail-closed: with Tor killed, pages fail with a proxy error
   - tor killed: [4242]
   - navigation after the kill: net::ERR_SOCKS_CONNECTION_FAILED
+- **PASS** IncognitoModeAvailability 2 (Incognito only) keeps MoltNet open and lets it open
+  - 2 of 2 MoltNet page(s) still open 12 s after the policy was written
+  - openWindow with the policy -> {"running": true}; a MoltNet page opened: True
+- **PASS** IncognitoModeAvailability 1 set while MoltNet is open closes every MoltNet window, its DevTools window and a page waiting on "Leave site?" included; MoltNet then refuses to open, saying why, until the policy is gone
+  - flags: --auto-open-devtools-for-tabs
+  - 2 MoltNet page(s) open, 1 of them DevTools (in a window of its own: True); "Leave site?" prompt: beforeunload
+  - every one of them closed 5.5 s after the policy was written
+  - openWindow with the policy -> {"error": "Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it"}; MoltNet pages: 0
+  - openWindow once the policy was removed -> {"running": true}; a MoltNet page opened: True
+- **PASS** A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open
+  - policy {"ForcedLanguages": ["ja"], "ReduceAcceptLanguageEnabled": false}
+  - moltnet page: before {"accept_language": "en-US", "languages": ["en-US", "en"]}, after {"accept_language": "en-US", "languages": ["en-US", "en"]}
+  - regular page: before {"accept_language": "de-DE", "languages": ["de-DE", "de"]}, after {"accept_language": "ja,de-DE;q=0.9,de;q=0.8", "languages": ["ja", "de-DE", "de"]}
+  - the regular page changed and MoltNet's did not
 - **PASS** New Identity: new profile, cookies gone, new farbling seed
   - newIdentity -> {"running": true}
   - cookie gone after New Identity

@@ -574,8 +574,49 @@
     "canary_url": "http://plc-pppppp9999.moltleak.test/x",
     "closed_after_s": 6.5,
     "flags": [
-     "--enable-features=AutofillServerCommunication"
+     "--enable-features=AutofillServerCommunication,ReduceAcceptLanguage"
     ],
+    "languages": {
+     "moltnet_after": {
+      "accept_language": "en-US",
+      "languages": [
+       "en-US",
+       "en"
+      ]
+     },
+     "moltnet_before": {
+      "accept_language": "en-US",
+      "languages": [
+       "en-US",
+       "en"
+      ]
+     },
+     "pages_before": 1,
+     "pages_kept": 1,
+     "policy": {
+      "ForcedLanguages": [
+       "ja"
+      ],
+      "ReduceAcceptLanguageEnabled": false
+     },
+     "regular_after": {
+      "accept_language": "ja,de-DE;q=0.9,de;q=0.8",
+      "languages": [
+       "ja",
+       "de-DE",
+       "de"
+      ]
+     },
+     "regular_before": {
+      "accept_language": "de-DE",
+      "languages": [
+       "de-DE",
+       "de"
+      ]
+     },
+     "removed": 1760000176.0,
+     "written": 1760000170.0
+    },
     "moltnet_pages_after": 0,
     "moltnet_pages_before": 1,
     "pages_with_policy": 0,
@@ -595,6 +636,42 @@
    "end": 1760000178.0,
    "name": "policy_live",
    "start": 1760000142.0,
+   "target": "moltnet"
+  },
+  {
+   "data": {
+    "closed_after_s": 5.5,
+    "devtools_own_window": true,
+    "devtools_pages": 1,
+    "dialog": "beforeunload",
+    "flags": [
+     "--auto-open-devtools-for-tabs"
+    ],
+    "forced_written": 1760000225.0,
+    "hold_page": true,
+    "moltnet_pages_before": 2,
+    "nav_error": null,
+    "off_removed": 1760000210.0,
+    "off_written": 1760000200.0,
+    "open_forced": {
+     "running": true
+    },
+    "opened_forced": true,
+    "pages_before_forced": 2,
+    "pages_kept_forced": 2,
+    "pages_left": [],
+    "pages_off": 0,
+    "reopen_after_off": {
+     "running": true
+    },
+    "reopen_off": {
+     "error": "Incognito is turned off (IncognitoModeAvailability or parental controls), and MoltNet windows follow it"
+    },
+    "reopened_after_off": true
+   },
+   "end": 1760000253.0,
+   "name": "policy_live_incognito",
+   "start": 1760000179.0,
    "target": "moltnet"
   },
   {
