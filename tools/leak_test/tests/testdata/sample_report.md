@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 155 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 156 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -309,6 +309,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | nav.maxTouchPoints is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | perm.geolocation is uniform | FINGERPRINTING.md "Known gaps": a documented giveaway |
 | PASS | perm.window-management is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
+| PASS | pixels.video_frame_format is uniform | FINGERPRINTING.md "MoltNet: pixels and encoded bytes" |
 | PASS | recorder.mime_type is uniform | FINGERPRINTING.md "MoltNet: MediaRecorder" |
 | PASS | screen.availHeight is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.availLeft is uniform | FINGERPRINTING.md "Surface covered" |

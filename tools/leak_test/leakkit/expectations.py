@@ -137,6 +137,7 @@ S_156 = FP + ' "Re-checked at Chromium 156"'
 S_MEDIA = FP + ' "MoltNet: audio, DRM and media capabilities"'
 S_REC = FP + ' "MoltNet: MediaRecorder"'
 S_STORAGE = FP + ' "MoltNet: storage limits"'
+S_PIXELS = FP + ' "MoltNet: pixels and encoded bytes"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -313,6 +314,8 @@ FULL_RULES = (
     ('recorder.mime_type', 'eq', RECORDER_MIME, S_REC),
     ('fonts.local_hidden', 'eq', [], S_FONTS),
     ('storage.enforced_quota', 'eq', MOLTNET_SITE_QUOTA, S_STORAGE),
+    # <video> is decoded in software and its frames stay in CPU memory.
+    ('pixels.video_frame_format', 'eq', 'I420', S_PIXELS),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -355,6 +358,12 @@ DIFF_KEYS = (
     # So does what MediaRecorder can record, and src: local() resolves
     # through the visible families (FINGERPRINTING.md "Fonts").
     'recorder.supported', 'fonts.local_listed',
+    # Decoded frames read back as YUV and RGBA, and the encoders' output for
+    # input they scale or resample, follow the build, never the CPU, GPU or
+    # video decoder (FINGERPRINTING.md "MoltNet: pixels and encoded bytes").
+    'pixels.webcodecs_frame', 'pixels.video_frame',
+    'pixels.encoded_vp8_i420', 'pixels.encoded_vp8_rgba',
+    'pixels.encoded_opus_48k', 'pixels.encoded_opus_44k',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference

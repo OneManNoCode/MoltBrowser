@@ -624,6 +624,246 @@ async function recorderAndLocalFonts(v, step) {
   await step('fonts.local_listed', () => localFaces(LOCAL_LISTED));
 }
 
+// Media pixels and encoded bytes: a decoded video frame read back as YUV
+// and as RGBA (from WebCodecs and from a <video>), and what VideoEncoder
+// and AudioEncoder make of fixed input whose size or rate they must convert.
+// In MoltNet each hash is the same on every machine of an OS, whatever its
+// CPU, GPU and video decoder; `<video>` frames are I420 in CPU memory
+// (software decoding). The clip is one 320x240 VP9 key frame (BT.709): SMPTE
+// bars over a colour gradient.
+const PIXELS_VP9_FRAME =
+    'gkmDQkAT8A72BjgkHBj2AAPAb6z9vqOlYx4R/P+YHtfl/r/Nw31u6/FVfjEfZ3UfrfXhPDjl' +
+    'daOC/IvYwYX9OEyo+Hi4ho2xIv4dAMAAZvgxS52/8ujpO3iTfMq6R+guC/jVlRs1mbIe87yC' +
+    'kJahPD32hDmE5VwhBPK7hh2GgiVk9RtVdJGSlW0naYhusEwfn//8Li//47/8vcom17ANNfcF' +
+    'zyO7AxgCtGQqge5M3uAnJZodyIXNa8j9nne5hOKNcwXF+ooNSDmhPMO8a4EhYdGz92jmt6Zr' +
+    'L29dqnLkpTuxaZMzO+x3vIYbHDSExjpU01P44k/ohdTyg/gxo7yBeobzicxbmyENAJHAv83k' +
+    'BesWx1pdvQgkGnPp8JvGEnDTrHTp5Xo3h3Sxf5qUz/9uI4JsCePLJMBitNbqAOKIEvucTJlU' +
+    '8aGWwKUAVtnTDbIaoUfOIt7FhShtgmyQCnwjkwOpk2FL6Hx3cIteVp+oV/zv5Q+mvChGIjf7' +
+    '1MabXAAbaxGPLeIYqczoSXZ78EJcu5HvI5YgD+hXMq6DJesPYh1mnXIHmTxbl8789mtSAxde' +
+    'qPlBXzDk0AxNaYVZX3+4cc7DT/Lp2qJb8L51tu+RE3SbGn7CUQS/Xp9NE0uFC/dB3bUz4IOp' +
+    'qyT4dEgq7ueSSJhzt+knhR31PRnkVM1VzRWFT732E0DfrBE9T7Mz+oV3X7elzToxZBvFI1n+' +
+    'DjhxvUcOGNu10PNWBQ29ZkANIgPvwxX43QkxbqfgF2CDjES983JVvVe0CC3xoQXGd8lw9Px1' +
+    'vrrKupaC8psa/d60QsImSE31RpnswX3A3KkzF/jXS9R954rtqQGHBc2xkuWSjOKN29UQkKZs' +
+    'SCBdcc4l8tL8zZ4IA1XuK/CEUzXZTlFun9aHDUbs5lvMhhKUM9jFM4psFDFQjTgrsahROHXv' +
+    'U/xy+dRTmcgbPUXP5MUVpQb3fdWbrjrQGgDM3iM2PWBpoArmeX6mzBE0R8QcLllBc7+y0KqF' +
+    'GzOYSIHJzsJHxezxCQM1lNXXc7leow30itt4Gi/bIURvuxb5rwHYGF6qIAkJdq0R0gX4LAOB' +
+    'yiudqjHdOP/KvrPHQtfkIbclgDMyJfifj5Y6mSXRNcslKm/MtNwbkA/6FCZsEoRLn8b2nvWP' +
+    '8ky0k/cbxTkZPVjeyPoSgSHFqpko90/5ORS6cE+OGigPcieqIf4v6qTf2NbjsdRmSduA';
+const PIXELS_VP9_WEBM =
+    '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' +
+    'sdRmSduAHFO7a5G7j7OBALeK94EB8YIBefCBAw==';
+
+function base64Bytes(s) {
+  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+}
+
+async function hashChunks(chunks) {
+  let size = 0;
+  for (const c of chunks) {
+    size += c.length;
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.length;
+  }
+  return {chunks: chunks.length, bytes: size, hash: await hex(all)};
+}
+
+// The frame's own planes (format and bytes) and the frame as RGBA.
+async function frameHashes(frame) {
+  const out = {format: frame.format};
+  if (frame.format) {
+    const planes = new Uint8Array(frame.allocationSize());
+    await frame.copyTo(planes);
+    out.planes = await hex(planes);
+  }
+  const rgba = new Uint8Array(frame.displayWidth * frame.displayHeight * 4);
+  await frame.copyTo(rgba, {format: 'RGBA', colorSpace: 'srgb'});
+  out.rgba = await hex(rgba);
+  return out;
+}
+
+async function webcodecsFrame() {
+  if (!window.VideoDecoder) {
+    return 'absent';
+  }
+  const frames = [];
+  const decoder = new VideoDecoder({output: (f) => frames.push(f),
+    error: () => {}});
+  try {
+    decoder.configure({codec: 'vp09.00.20.08', codedWidth: 320,
+      codedHeight: 240});
+    decoder.decode(new EncodedVideoChunk({type: 'key', timestamp: 0,
+      data: base64Bytes(PIXELS_VP9_FRAME)}));
+    await decoder.flush();
+    return frames.length ? await frameHashes(frames[0]) : 'no frame';
+  } finally {
+    frames.forEach((f) => f.close());
+    if (decoder.state !== 'closed') {
+      decoder.close();
+    }
+  }
+}
+
+async function videoElementFrame() {
+  if (!window.VideoFrame) {
+    return 'absent';
+  }
+  const video = document.createElement('video');
+  video.muted = true;
+  video.preload = 'auto';
+  const url = URL.createObjectURL(new Blob([base64Bytes(PIXELS_VP9_WEBM)],
+      {type: 'video/webm'}));
+  try {
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve;
+      video.onerror = () => reject(video.error || new Error('video error'));
+      video.src = url;
+    });
+    const frame = new VideoFrame(video, {timestamp: 0});
+    try {
+      return await frameHashes(frame);
+    } finally {
+      frame.close();
+    }
+  } finally {
+    video.removeAttribute('src');
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+}
+
+// A 320x240 frame (I420 or RGBA, a fixed pattern) encoded as VP8 at
+// 200x150: the encoder scales it first.
+async function encodedVideo(format) {
+  if (!window.VideoEncoder) {
+    return 'absent';
+  }
+  const w = 320;
+  const h = 240;
+  let data;
+  if (format === 'I420') {
+    data = new Uint8Array(w * h * 3 / 2);
+    for (let y = 0; y < h; ++y) {
+      for (let x = 0; x < w; ++x) {
+        data[y * w + x] = ((x * 3 + y * 5) ^ (x >> 4 << 5)) & 255;
+      }
+    }
+    const cw = w / 2;
+    const ch = h / 2;
+    for (let y = 0; y < ch; ++y) {
+      for (let x = 0; x < cw; ++x) {
+        data[w * h + y * cw + x] = (x * 2 + y) & 255;
+        data[w * h + cw * ch + y * cw + x] = (255 - x - y * 2) & 255;
+      }
+    }
+  } else {
+    data = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; ++i) {
+      const x = i % w;
+      const y = (i - x) / w;
+      data.set([(x * 7) & 255, (y * 3 + x) & 255, (x ^ y) & 255, 255], i * 4);
+    }
+  }
+  const chunks = [];
+  const encoder = new VideoEncoder({output: (chunk) => {
+    const b = new Uint8Array(chunk.byteLength);
+    chunk.copyTo(b);
+    chunks.push(b);
+  }, error: () => {}});
+  const frame = new VideoFrame(data, {format, codedWidth: w, codedHeight: h,
+    timestamp: 0});
+  try {
+    encoder.configure({codec: 'vp8', width: 200, height: 150,
+      bitrate: 400000, framerate: 30});
+    encoder.encode(frame, {keyFrame: true});
+    await encoder.flush();
+    return await hashChunks(chunks);
+  } finally {
+    frame.close();
+    if (encoder.state !== 'closed') {
+      encoder.close();
+    }
+  }
+}
+
+// Half a second of a fixed stereo signal (a sweeping triangle and integer
+// noise) encoded as Opus; 44.1 kHz input is resampled to 48 kHz first.
+async function encodedAudio(sampleRate) {
+  if (!window.AudioEncoder) {
+    return 'absent';
+  }
+  const frames = sampleRate / 2;
+  const data = new Float32Array(frames * 2);
+  let phase = 0;
+  let noise = 12345;
+  for (let i = 0; i < frames; ++i) {
+    phase = (phase + 40 + (i >> 6)) % 4096;
+    noise = (Math.imul(noise, 1103515245) + 12345) >>> 0;
+    const tri = Math.abs(phase - 2048) / 1024 - 1;
+    data[i] = 0.5 * tri + (noise / 4294967296 - 0.5) / 8;
+    data[frames + i] = 0.5 * tri - (noise % 1024) / 8192;
+  }
+  const chunks = [];
+  const encoder = new AudioEncoder({output: (chunk) => {
+    const b = new Uint8Array(chunk.byteLength);
+    chunk.copyTo(b);
+    chunks.push(b);
+  }, error: () => {}});
+  const audio = new AudioData({format: 'f32-planar', sampleRate,
+    numberOfFrames: frames, numberOfChannels: 2, timestamp: 0, data});
+  try {
+    encoder.configure({codec: 'opus', sampleRate, numberOfChannels: 2,
+      bitrate: 64000});
+    encoder.encode(audio);
+    await encoder.flush();
+    return await hashChunks(chunks);
+  } finally {
+    audio.close();
+    if (encoder.state !== 'closed') {
+      encoder.close();
+    }
+  }
+}
+
+async function mediaPixels(v, step) {
+  await step('pixels.webcodecs_frame', webcodecsFrame);
+  await step('pixels.video_frame', videoElementFrame);
+  const frame = v['pixels.video_frame'];
+  v['pixels.video_frame_format'] = frame && typeof frame === 'object' &&
+      'format' in frame ? frame.format : frame;
+  await step('pixels.encoded_vp8_i420', () => encodedVideo('I420'));
+  await step('pixels.encoded_vp8_rgba', () => encodedVideo('RGBA'));
+  await step('pixels.encoded_opus_48k', () => encodedAudio(48000));
+  await step('pixels.encoded_opus_44k', () => encodedAudio(44100));
+}
+
 async function collect() {
   const v = {};
   const step = async (key, fn) => {
@@ -785,6 +1025,7 @@ async function collect() {
   }
   await mediaCapabilities(v, step);
   await recorderAndLocalFonts(v, step);
+  await mediaPixels(v, step);
   v['autoplay.mediaelement'] = n.getAutoplayPolicy ?
       n.getAutoplayPolicy('mediaelement') : 'absent';
   await step('sharedStorage.set', async () => {
