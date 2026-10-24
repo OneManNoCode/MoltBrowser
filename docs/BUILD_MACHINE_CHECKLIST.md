@@ -434,7 +434,15 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `net/socket/transport_client_socket_pool.h` | inline `MoltIsUnused()` (reads `group_map_`, `pending_callback_map_`, `higher_pools_`). Widely included: another large `//net` rebuild | moltnet-policy |
 | `net/socket/molt_per_site_socket_pool_policy.h`, `net/socket/molt_per_site_socket_pools.h` (new, header-only) | in no target's `sources`, like `molt_uniform_network_state.h`; if `gn check` complains, list them in `//net:net` | moltnet-policy |
 | `net/http/http_network_session.{h,cc}` | `HttpNetworkSessionParams::molt_per_site_socket_pool_size`, passed to both pool managers; `GetSocketPoolForSite()` | moltnet-policy |
-| `services/network/public/mojom/network_context.mojom`, `services/network/network_context.cc` | `[MinVersion=1] uint32 molt_per_site_socket_pool_size`, copied into the session params; set to 128 for MoltNet by `molt_net_network_context_policy.h` (which now includes the `net/` policy header) | moltnet-policy |
+| `services/network/public/mojom/network_context.mojom`, `services/network/network_context.cc` | `[MinVersion=1] uint32 molt_per_site_socket_pool_size`, copied into the session params; set to 128 for MoltNet by `molt_net_network_context_policy.h` (which now includes the `net/` policy header; 48 since moltnet-shared) | moltnet-policy |
+| `net/socket/client_socket_pool.{h,cc}` (new upstream copies) | a public nested interface `ClientSocketPool::MoltSocketGate`, `MoltSetSocketGate()` (also sets `additional_capacity_` to `SocketPoolAdditionalCapacity::CreateEmpty()` and calls `ResetExpandability()`) and a `raw_ptr<MoltSocketGate>` member; `UpdateExpandabilityBeforeAllocation()` asks the gate, `UpdateExpandabilityAfterRelease()` tells it. `client_socket_pool.h` is included by every pool: another large `//net` rebuild | moltnet-shared |
+| `net/socket/transport_client_socket_pool.h` | inline `MoltHasStalledRequest()`, `MoltRetryStalledRequests()`, `MoltCloseOneIdleSocket()`, `MoltCloseIdleSessions()`: read `group_map_`, `idle_socket_count_`, `higher_pools_`, and call `CheckForStalledSocketGroups()`, `CloseOneIdleSocketExceptInGroup()`, `CloseOneIdleConnectionInHigherLayeredPool()` and the base class's `UpdateExpandabilityBeforeAllocation()` (protected) | moltnet-shared |
+| `net/socket/molt_connection_budget.h` (new, header-only, in no target's `sources`), `molt_per_site_socket_pools.h`, `molt_per_site_socket_pool_policy.h` | `MoltConnectionBudget` posts tasks (`base::SequencedTaskRunner::GetCurrentDefault()`, `base::WeakPtrFactory`); `MoltBudgetSiteFor()` uses `NetworkAnonymizationKey::GetTopFrameSite()`, `url::Origin::GetDebugString()` and `SchemefulSite(GURL)`; `MoltSocksHandshakeLimiter` and its `Slot`; the pools object now implements `ClientSocketPool::MoltSocketGate` and `MoltConnectionBudget::Member` and keys its pools by `std::pair<ProxyChain, std::optional<SchemefulSite>>` | moltnet-shared |
+| `net/socket/client_socket_pool_manager_impl.{h,cc}`, `net/http/http_network_session.{h,cc}` | a constructor argument `MoltConnectionBudget*` (default `nullptr`); the session owns a `std::unique_ptr<MoltConnectionBudget>` and a `std::unique_ptr<MoltSocksHandshakeLimiter>`, declared before the pool managers (so destroyed after them), made when `molt_per_site_socket_pool_size` is set, and passes the limiter in `CreateCommonConnectJobParams()` | moltnet-shared |
+| `net/socket/connect_job.h`, `net/socket/socks_connect_job.{h,cc}` (`socks_connect_job.h` a new upstream copy) | `CommonConnectJobParams::molt_socks_handshake_limiter` (a `raw_ptr`); two new states before `STATE_TRANSPORT_CONNECT`, a `std::unique_ptr<MoltSocksHandshakeLimiter::Slot>` member, new cases in `GetLoadState()` and `ChangePriorityInternal()` | moltnet-shared |
+| `services/network/keepalive_statistics_recorder.{h,cc}`, `services/network/url_loader_factory.{h,cc}` (new upstream copies), `services/network/molt_keepalive_partitions.h`, `molt_keepalive_site.h` (new, header-only, in no target's `sources`) | the service's recorder holds MoltNet's per-site recorders (`MoltRecorderFor()` returns a `base::WeakPtr`); the factory keeps a `base::WeakPtr<KeepaliveStatisticsRecorder>` chosen in its constructor from `IsolationInfo::top_frame_origin()` (`url::Origin::GetTupleOrPrecursorTupleIfOpaque()`, `net::SchemefulSite`) and hands it to each `URLLoader` | moltnet-shared |
+| `services/network/network_context.cc`, `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_per_site_keepalive_limits`, set by `molt_net_network_context_policy.h`; the constructor registers the context with the service's recorder, the destructor removes it after `DeregisterNetworkContext()` | moltnet-shared |
+| `storage/browser/quota/quota_settings.h`, `quota_manager_impl.cc`, `quota_temporary_storage_evictor.cc` (new upstream copies), `storage/browser/quota/molt_storage_budget.h`, `molt_storage_budget_policy.h` (new, header-only, in no target's `sources`) | `QuotaSettings::molt_per_site_quota` (0 by default; set by `molt_net_storage.cc`); `UsageAndQuotaInfoGatherer` gets `MoltOnGotGlobalUsage()` (bound to `QuotaManagerImpl::GetGlobalUsage()`, reads `UsageTracker::GetCachedStorageKeysUsage()`) and two members; `OnGotEvictionRoundInfo()` zeroes the overage. `quota_settings.h` is widely included in `//storage` and `//content` | moltnet-shared |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -570,6 +578,14 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `client_socket_pool_manager_impl.h` include the new `net/socket/molt_*`
   headers (§4.2); `molt_ai_unittests` uses `net/spdy/spdy_test_util_common.h`
   (`//net:test_support`, already a dep).
+  New in moltnet-shared: `torrc_builder.h` (`:protocol`, which has no
+  `//net` dep) includes `net/socket/molt_per_site_socket_pool_policy.h`
+  (std-only, in no target's `sources`); `molt_ai_unittests` includes
+  `services/network/molt_keepalive_partitions.h` (allowed for that test in
+  the tor `DEPS`) and `storage/browser/quota/molt_storage_budget_policy.h`
+  (both std-only); `services/network/` and `storage/browser/quota/` include
+  their new header-only `molt_*` files (§4.2). If `gn check` flags any of
+  them, list the header in the target that includes it.
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -674,6 +690,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `MoltNetLanguagesTest` (real `LanguagePrefs`, a managed `ForcedLanguages`), `MoltNetIsolationTest.FixedLanguageNamesMatchChromiumsConstants`, `MoltNetPrefServiceTest.MoltNetWritesStayInMoltNet` (changed), `MoltNetSocketPoolsTest` (real `HttpNetworkSession` and pools, `MOCK_TIME`); built standalone only: `MoltNetLanguagePolicyTest`, `MoltNetSocketPoolPolicyTest`, `MoltNetLivePolicyTest`'s Incognito and ended-identity cases | moltnet-policy |
+  | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity` | moltnet-shared |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -734,6 +751,9 @@ pass except where the table below says otherwise (verify the filters).
 | `net_unittests` | `ClientSocketPoolManager*:TransportClientSocketPool*:HttpNetworkSession*:HttpStreamFactory*:HttpNetworkTransactionTest.*:WebSocket*` (no MoltNet params: one pool per proxy, as before) | moltnet-policy |
 | `unit_tests` | `IncognitoModePrefs*:*PolicyBlocklist*:ProxyConfigMonitor*:ChromeContentBrowserClient*:*ReduceAcceptLanguage*` | moltnet-policy |
 | `components_unittests` | `LanguagePrefs*:IncognitoModePolicyHandler*:*URLBlocklist*` | moltnet-policy |
+| `net_unittests` | `ClientSocketPool*:TransportClientSocketPool*:SocketPoolAdditionalCapacity*:SOCKSConnectJobTest.*:ConnectJobTest.*:HttpNetworkSession*:WebSocketTransportClientSocketPool*` (no MoltNet params: Chromium's pool with its random room, no gate and no handshake slots) | moltnet-shared |
+| `services_unittests` | `URLLoaderFactoryTest.*:KeepaliveStatisticsRecorder*:URLLoaderTest.*Keepalive*:NetworkContextTest.*:NetworkServiceTest.*` (every context without the field counts in the service's recorder, as before) | moltnet-shared |
+| `storage_unittests` | `QuotaManagerImplTest.*:QuotaTemporaryStorageEvictorTest.*:UsageTracker*:*QuotaSettings*` (also inside the fp-probes `Quota*` row; `molt_per_site_quota` is 0 outside MoltNet) | moltnet-shared |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -767,6 +787,16 @@ pass except where the table below says otherwise (verify the filters).
   page that asks "Leave site?". *Expected:* no `CHECK` in
   `~TransportClientSocketPool()` (`higher_pools_`, `group_map_`) or in
   `UnloadController`/`BrowserCloseManager`, and no MoltNet window left.
+- [ ] The same build, MoltNet's shared limits (moltnet-shared): fifteen
+  MoltNet tabs of different sites, each loading a page with a few hundred
+  images from hosts of its own; close half of them while they load, open
+  an onion site, then New Identity with pages still loading; a page that
+  sends 300 `navigator.sendBeacon()`s and closes at once. *Expected:* no
+  `CHECK` or `DCHECK` in `ClientSocketPool`/`TransportClientSocketPool`
+  (`handed_out_socket_count_`, the stalled-group loop), `SOCKSConnectJob`
+  (`next_state_`), `KeepaliveStatisticsRecorder` or `URLLoaderFactory`, no
+  dangling-pointer report for `molt_socket_gate_` or
+  `molt_socks_handshake_limiter`, and every tab of the new identity loads.
 
 ## 6. Fuzzers
 
@@ -1154,10 +1184,10 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   faces).
 - [ ] Storage limits in MoltNet (fp-probes): on a 16 GB machine, a
   MoltNet page writes 1 MiB IndexedDB records until `QuotaExceededError`:
-  it stops at 200 MiB; the same for Cache Storage (`cache.put` of 1 MiB
-  responses) and OPFS (`createSyncAccessHandle().write()` in a worker);
-  three more sites writing at the same time stop when all of them
-  together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
+  it stops at 60 MiB (the site's budget, moltnet-shared); the same for
+  Cache Storage (`cache.put` of 1 MiB responses) and OPFS
+  (`createSyncAccessHandle().write()` in a worker); ten more sites writing
+  at the same time stop when all of them together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
   be read (`arrayBuffer()` rejects) and a 700 MiB one can. Repeat on a
   4 GB machine (or VM): the same limits, and no process is killed for
   memory. An Incognito window keeps Chromium's limits (more than 200 MiB
@@ -1303,6 +1333,37 @@ macOS, and for the manual steps everywhere:
   set, B waits behind A's requests). `chrome://net-internals/#sockets`
   lists MoltNet's pools as `socks5://127.0.0.1:<port> (per site)`, never
   with a site's name.
+- [ ] Shared limits per site (moltnet-shared; MOLTNET_COMPLIANCE.md §2
+  *Tor's capacity*, *Keepalive requests*, *Storage*, §4 step 21), with
+  Tor's log at `Log info`:
+  - Greedy and polite: a test page on site A opening 1000 long-polling
+    requests to 200 hosts of its own, and a page of site B opened after
+    it: B loads as fast as without A. A's pool in
+    `chrome://net-internals/#sockets` stays at 48 (16 for WebSockets).
+    Ten such greedy sites in tabs, each also holding 16 WebSockets open: a
+    polite site still loads at once, and Tor's log never says "Failing
+    because we have". With seventeen the budget is full: a polite site's
+    new connections wait for one to be released (a long poll ending) and
+    then go before the greedy sites'; idle connections of the largest
+    site are closed for it.
+  - Handshakes: a page that opens 100 connections to hosts needing new
+    circuits (onion addresses, or ports exits rarely allow): a
+    `chrome://net-export` log shows at most 16 of its `SOCKS5_CONNECT`
+    events open at a time, the others' connect jobs waiting in "resolving
+    host" without a backup job; a polite site's
+    page opened meanwhile loads (its first request may take a few seconds
+    longer). Page loads of ordinary sites feel no slower than before.
+  - Keepalive: a page on site A keeping 2048 `fetch(url, {keepalive:
+    true})` requests in flight from nine pages (to a server that answers
+    after a minute): A's 2049th fails, while site B's beacons in another
+    MoltNet tab and a regular window's still go out (DevTools shows them
+    sent).
+  - Storage: two sites each write until `QuotaExceededError`: each stops
+    at 60 MiB, also when the first is full before the second starts; an
+    iframe of a subdomain on the first counts toward its 60 MiB. Store
+    1 MiB on site C, fill nine other sites, wait 40 minutes: C's data is
+    still there. In an Incognito window, Chromium's limits and eviction
+    are unchanged.
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1367,8 +1428,13 @@ Mac; use a real Linux host.
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.
+  - `identity.tor_capacity` passes (moltnet-shared): the torrc the browser
+    started Tor with states `ConnLimit 1000` and `MaxClientCircuitsPending
+    64`. A SKIP saying the torrc wasn't found means the kit's Tor wrapper
+    didn't record Tor's command line (`logs/tor-argv.txt`).
   - `recorder.mime_type`, `fonts.local_hidden` and
-    `storage.enforced_quota` pass (fp-probes), and `diff` shows no
+    `storage.enforced_quota` (60 MiB since moltnet-shared) pass
+    (fp-probes), and `diff` shows no
     difference in `recorder.supported` or `fonts.local_listed` between
     two machines of an OS.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
