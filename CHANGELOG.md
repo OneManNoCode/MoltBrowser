@@ -221,6 +221,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   applies Incognito's URL lists. Language settings and language policies
   no longer reach MoltNet pages, and each site gets connection limits of
   its own there, so one site's connections can't hold up another's.
+- MoltNet hardening: the limits MoltNet's sites share now stay per site.
+  All of a site's connections, including its embedded third parties',
+  share one fixed limit (48, and 16 WebSockets), all sites together stay
+  within what MoltNet's Tor always accepts, and each site sets up at most
+  16 Tor connections at a time; the torrc states Tor's connection and
+  pending-circuit limits (`ConnLimit 1000`, `MaxClientCircuitsPending
+  64`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
+  counted per site, apart from regular windows. Each site may store 60 MiB
+  (all its storage keys together), all sites 600 MiB, and MoltNet no
+  longer evicts one site's data to make room for another's
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
