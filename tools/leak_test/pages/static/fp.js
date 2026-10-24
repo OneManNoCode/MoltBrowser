@@ -466,6 +466,86 @@ function frameLoad(src, onMessage) {
   });
 }
 
+// MediaRecorder: the type it records for each container a page can ask for
+// (MoltNet: the build's software encoders on every machine, so VP8 in WebM
+// and Matroska, VP9 in MP4), and what isTypeSupported() says.
+const RECORDER_TYPES = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9',
+  'video/webm;codecs=av01', 'video/webm;codecs=h264',
+  'video/x-matroska;codecs=avc1', 'video/mp4;codecs=avc1.42E01E',
+  'video/mp4;codecs=avc1.640028', 'video/mp4;codecs=av01.0.04M.08',
+  'video/mp4;codecs=hvc1.1.6.L93.B0', 'video/x-matroska;codecs=hev1.1.6.L93.B0',
+  'audio/webm;codecs=opus', 'audio/webm;codecs=pcm',
+  'audio/mp4;codecs=mp4a.40.2', 'audio/mp4;codecs=opus'];
+
+async function recorderTypes() {
+  if (!window.MediaRecorder) {
+    return 'absent';
+  }
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 48;
+  c.getContext('2d').fillRect(0, 0, 8, 8);
+  const stream = c.captureStream();
+  const out = {};
+  for (const type of ['', 'video/webm', 'video/x-matroska', 'video/mp4']) {
+    const label = type || 'default';
+    try {
+      // mimeType names the chosen codecs from the start event on; stopping
+      // right away delivers it too.
+      const r = new MediaRecorder(stream, type ? {mimeType: type} : {});
+      const stopped = new Promise((resolve) => {
+        r.onstop = resolve;
+        setTimeout(resolve, 2000);
+      });
+      r.start();
+      r.stop();
+      await stopped;
+      out[label] = r.mimeType;
+    } catch (e) {
+      out[label] = ML.errName(e);
+    }
+  }
+  stream.getTracks().forEach((t) => t.stop());
+  return out;
+}
+
+// src: local() of faces no OS's allow-list has (any that loads is a
+// failure: an installed one must look missing), and of faces of Linux's
+// listed families (the same on every machine of an OS). Only the result is
+// checked: a hidden face isn't looked up at all, so its timing equals a
+// missing one's, which a test run can't measure reliably anyway.
+const LOCAL_HIDDEN = ['Ubuntu', 'Ubuntu-Regular', 'Ubuntu Bold',
+  'Cantarell', 'Cantarell-Regular', 'Noto Sans CJK JP Regular',
+  'NotoSansCJKjp-Regular', 'Liberation Sans Narrow',
+  'LiberationSansNarrow-Bold', 'Fira Sans', 'FiraSans-Regular', 'Open Sans',
+  'OpenSans-Regular', 'Source Code Pro', 'SourceCodePro-Regular'];
+const LOCAL_LISTED = ['DejaVu Sans', 'DejaVuSans-Bold',
+  'DejaVu Sans Bold Oblique', 'DejaVuSansMono', 'Liberation Sans',
+  'LiberationSans-Bold', 'Liberation Serif Italic', 'Noto Sans',
+  'NotoSans-Bold'];
+
+async function localFaces(names) {
+  const loaded = [];
+  for (const name of names) {
+    try {
+      await new FontFace('mlLocalProbe', 'local("' + name + '")').load();
+      loaded.push(name);
+    } catch (e) {
+      // Not available to this page.
+    }
+  }
+  return loaded;
+}
+
+async function recorderAndLocalFonts(v, step) {
+  await step('recorder.mime_type', recorderTypes);
+  v['recorder.supported'] = window.MediaRecorder ?
+      RECORDER_TYPES.filter((t) => MediaRecorder.isTypeSupported(t)) :
+      'absent';
+  await step('fonts.local_hidden', () => localFaces(LOCAL_HIDDEN));
+  await step('fonts.local_listed', () => localFaces(LOCAL_LISTED));
+}
+
 async function collect() {
   const v = {};
   const step = async (key, fn) => {
@@ -626,6 +706,7 @@ async function collect() {
     v['audio.sample_rate'] = ML.errInfo(e);
   }
   await mediaCapabilities(v, step);
+  await recorderAndLocalFonts(v, step);
   v['autoplay.mediaelement'] = n.getAutoplayPolicy ?
       n.getAutoplayPolicy('mediaelement') : 'absent';
   await step('sharedStorage.set', async () => {

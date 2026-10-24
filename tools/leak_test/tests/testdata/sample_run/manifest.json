@@ -54,6 +54,18 @@
     "eme.clearkey": "NotSupportedError",
     "eme.playready": "NotSupportedError",
     "eme.widevine": "NotSupportedError",
+    "fonts.local_hidden": [],
+    "fonts.local_listed": [
+     "DejaVu Sans",
+     "DejaVuSans-Bold",
+     "DejaVu Sans Bold Oblique",
+     "DejaVuSansMono",
+     "Liberation Sans",
+     "LiberationSans-Bold",
+     "Liberation Serif Italic",
+     "Noto Sans",
+     "NotoSans-Bold"
+    ],
     "fonts.visible": [
      "DejaVu Sans",
      "Liberation Sans",
@@ -147,6 +159,21 @@
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
+    "recorder.mime_type": {
+     "default": "video/webm;codecs=vp8",
+     "video/mp4": "video/mp4;codecs=vp9",
+     "video/webm": "video/webm;codecs=vp8",
+     "video/x-matroska": "video/x-matroska;codecs=vp8"
+    },
+    "recorder.supported": [
+     "video/webm;codecs=vp8",
+     "video/webm;codecs=vp9",
+     "video/webm;codecs=av01",
+     "video/mp4;codecs=av01.0.04M.08",
+     "audio/webm;codecs=opus",
+     "audio/webm;codecs=pcm",
+     "audio/mp4;codecs=opus"
+    ],
     "screen.availHeight": 900,
     "screen.availLeft": 0,
     "screen.availTop": 0,
@@ -162,6 +189,7 @@
     "scrollbar.box": 16,
     "scrollbar.overlay": false,
     "sharedStorage.set": "rejected",
+    "storage.enforced_quota": 209715200,
     "storage.persist": false,
     "storage.quota": 10737418240,
     "storage.quota_over_usage": 10737418240,

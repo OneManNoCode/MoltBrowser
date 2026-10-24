@@ -319,6 +319,18 @@ level, and in one browser launch per device scale factor
   Capabilities for Opus, H.264 and HEVC, `canPlayType()`,
   `MediaSource.isTypeSupported()`, WebCodecs without a hardware
   preference) follows the build and is compared between runs.
+* **MediaRecorder, `local()` and storage limits** (once per launch): the
+  type MediaRecorder reports for a canvas stream by default and for WebM,
+  Matroska and MP4 (VP8, VP8 and VP9 from the build's own encoders); no
+  `src: local()` face of a family outside the allow-list loads, installed
+  or not (the result is checked, not the time: such a face is never looked
+  up, so it costs what a missing one costs); the quota the browser enforces
+  for the page's site, 200 MiB, read through DevTools
+  (`Storage.getUsageAndQuota`). Writing until `QuotaExceededError` would
+  find the same limit but takes too long for the kit, so the configured
+  limit is checked instead. What `isTypeSupported()` accepts and which
+  listed faces `local()` finds follow the build and the OS and are
+  compared between runs.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
