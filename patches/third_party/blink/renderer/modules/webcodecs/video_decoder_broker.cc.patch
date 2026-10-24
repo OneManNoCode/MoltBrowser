@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc b/third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc
+index 2d405abca1e020bece8652d0e3039a3e623bdbd5..f66124509bc60e6bcb97018fe142ebfbc0970220 100644
+--- a/third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc
++++ b/third_party/blink/renderer/modules/webcodecs/video_decoder_broker.cc
+@@ -27,6 +27,7 @@
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/modules/webcodecs/decoder_selector.h"
+@@ -198,7 +199,9 @@ class MediaVideoTaskWrapper {
+     // Bind the |interface_factory_| above before passing to
+     // |external_decoder_factory|.
+     std::unique_ptr<media::DecoderFactory> external_decoder_factory;
+-    if (hardware_preference_ != HardwarePreference::kPreferSoftware) {
++    // MoltBrowser: no platform decoders in MoltNet (moltnet_media.h).
++    if (hardware_preference_ != HardwarePreference::kPreferSoftware &&
++        molt_fingerprinting::UsesPlatformMediaCodecs()) {
+ #if BUILDFLAG(ENABLE_MOJO_VIDEO_DECODER)
+       external_decoder_factory = std::make_unique<media::MojoDecoderFactory>(
+           media_interface_factory_.get());

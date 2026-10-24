@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3. -->
+<!-- MoltNet leak kit test page: the policy_live phase. Forms Autofill would
+     ask its server about (address, sign-in), and a canary fetch loop the
+     harness starts before it sets a proxy policy. Served by
+     leakkit/services.py, which fills in the {{...}} values. -->
+<html lang="en" data-nonce="{{NONCE}}" data-canary="{{CANARY}}"
+    data-cip4="{{CIP4}}" data-cip6="{{CIP6}}" data-lport="{{LPORT}}"
+    data-gw="{{GW}}" data-gw6="{{GW6}}" data-nsip="{{NSIP}}"
+    data-base-http="{{BASE_HTTP}}" data-base-https="{{BASE_HTTPS}}"
+    data-base-b-https="{{BASE_B_HTTPS}}" data-onion-a="{{ONION_A}}">
+<head>
+<meta charset="utf-8">
+<title>moltleak: policy while open</title>
+<script src="/static/ml.js"></script>
+</head>
+<body>
+<form id="address" action="/canary/address" method="post">
+  <input name="name" autocomplete="name">
+  <input name="organization" autocomplete="organization">
+  <input name="address" autocomplete="street-address">
+  <input name="city" autocomplete="address-level2">
+  <select name="state" autocomplete="address-level1">
+    <option value="">State</option>
+    <option value="CA">California</option>
+    <option value="NY">New York</option>
+  </select>
+  <input name="zip" autocomplete="postal-code">
+  <input name="country" autocomplete="country-name">
+  <input name="email" type="email" autocomplete="email">
+  <input name="tel" type="tel" autocomplete="tel">
+  <button type="submit">Ship</button>
+</form>
+<form id="signin" action="/canary/signin" method="post">
+  <input name="username" autocomplete="username">
+  <input name="password" type="password" autocomplete="current-password">
+  <button type="submit">Sign in</button>
+</form>
+<script src="/static/policylive.js"></script>
+</body>
+</html>

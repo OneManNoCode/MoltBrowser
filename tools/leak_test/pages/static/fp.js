@@ -54,6 +54,132 @@ function hardwareRenderQuantum() {
   return size;
 }
 
+// Web Audio's output device as a page sees it (MoltNet: one 48 kHz stereo
+// device with a 10 ms buffer and a 24 ms output latency).
+async function audioDevice(v) {
+  if (!window.AudioContext) {
+    v['audio.sample_rate'] = 'absent';
+    return;
+  }
+  const ctx = new AudioContext();
+  v['audio.sample_rate'] = ctx.sampleRate;
+  v['audio.output_latency'] = ctx.outputLatency;
+  v['audio.max_channel_count'] = ctx.destination.maxChannelCount;
+  v['audio.channel_count'] = ctx.destination.channelCount;
+  try {
+    ctx.destination.channelCount = 3;
+    v['audio.channel_count_3'] = 'ok';
+  } catch (e) {
+    v['audio.channel_count_3'] = ML.errName(e);
+  }
+  v['audio.script_processor_buffer'] = ctx.createScriptProcessor().bufferSize;
+  // Nothing played yet reads {0, 0}; afterwards the sample being heard is at
+  // least the output latency behind currentTime.
+  const ts = ctx.getOutputTimestamp();
+  v['audio.output_timestamp_ok'] = ts.contextTime === 0 ?
+      ts.performanceTime === 0 || ctx.currentTime > 0 :
+      ts.contextTime <= Math.max(0, ctx.currentTime - 0.024) + 1e-9 &&
+      ts.performanceTime > 0;
+  if (ctx.playbackStats) {
+    const s = ctx.playbackStats;
+    v['audio.playback_latency_max'] = s.maximumLatency;
+    v['audio.playback_underruns'] = s.underrunEvents;
+  } else {
+    v['audio.playback_latency_max'] = 'absent';
+    v['audio.playback_underruns'] = 'absent';
+  }
+  v['audio.sink_id'] = typeof ctx.sinkId === 'string' ? ctx.sinkId :
+      typeof ctx.sinkId;
+  await ctx.close();
+  const latencies = {};
+  for (const [name, options] of [['interactive', {}],
+    ['balanced', {latencyHint: 'balanced'}],
+    ['playback', {latencyHint: 'playback'}],
+    ['exact_0', {latencyHint: 0}], ['exact_20ms', {latencyHint: 0.02}],
+    ['rate_44100', {sampleRate: 44100}]]) {
+    const c = new AudioContext(options);
+    latencies[name] = c.baseLatency;
+    await c.close();
+  }
+  v['audio.base_latency'] = latencies;
+}
+
+function decodingAnswer(info) {
+  return {supported: info.supported, smooth: info.smooth,
+    powerEfficient: info.powerEfficient};
+}
+
+// Encrypted Media Extensions, Media Capabilities and WebCodecs (MoltNet: no
+// key systems, a fixed table, software codecs only).
+async function mediaCapabilities(v, step) {
+  const n = navigator;
+  const webm = [{initDataTypes: ['webm'], videoCapabilities: [
+    {contentType: 'video/webm; codecs="vp8"'}]}];
+  for (const [name, system] of [['clearkey', 'org.w3.clearkey'],
+    ['widevine', 'com.widevine.alpha'],
+    ['playready', 'com.microsoft.playready.recommendation']]) {
+    await step('eme.' + name, () => n.requestMediaKeySystemAccess(system,
+        webm).then(() => 'granted', (e) => ML.errName(e)));
+  }
+  const video = (contentType, width, height, framerate) => ({contentType,
+    width, height, bitrate: 2000000, framerate});
+  const mc = n.mediaCapabilities;
+  const queries = {
+    'mc.vp8_360p': {type: 'file', video: video('video/webm; codecs="vp8"',
+        640, 360, 30)},
+    'mc.vp9_1080p': {type: 'file', video: video(
+        'video/webm; codecs="vp09.00.40.08"', 1920, 1080, 30)},
+    'mc.av1_2160p60': {type: 'media-source', video: video(
+        'video/webm; codecs="av01.0.13M.08"', 3840, 2160, 60)},
+    'mc.opus': {type: 'file', audio: {contentType:
+        'audio/webm; codecs="opus"'}},
+    'mc.h264': {type: 'media-source', video: video(
+        'video/mp4; codecs="avc1.640028"', 1920, 1080, 30)},
+    'mc.hevc': {type: 'media-source', video: video(
+        'video/mp4; codecs="hvc1.1.6.L120.90"', 1920, 1080, 30)},
+    'mc.encrypted': {type: 'media-source', video: video(
+        'video/webm; codecs="vp09.00.40.08"', 1920, 1080, 30),
+    keySystemConfiguration: {keySystem: 'org.w3.clearkey'}},
+    'mc.webrtc_decoding': {type: 'webrtc', video: video('video/VP8', 1280,
+        720, 30)},
+  };
+  for (const [key, query] of Object.entries(queries)) {
+    await step(key, () => mc ? mc.decodingInfo(query).then(decodingAnswer) :
+        'absent');
+  }
+  await step('mc.webrtc_encoding', () => mc ? mc.encodingInfo({type:
+      'webrtc', video: video('video/VP8', 1280, 720, 30)}).then(
+      decodingAnswer) : 'absent');
+  const canPlay = {};
+  const element = document.createElement('video');
+  for (const type of ['video/webm; codecs="vp8, vorbis"',
+    'video/webm; codecs="vp09.00.10.08"', 'video/mp4; codecs="av01.0.05M.08"',
+    'video/mp4; codecs="avc1.42E01E, mp4a.40.2"',
+    'video/mp4; codecs="hvc1.1.6.L93.B0"', 'audio/mpeg', 'audio/flac',
+    'audio/ogg; codecs="opus"', 'audio/mp4; codecs="mp4a.40.2"']) {
+    canPlay[type] = [element.canPlayType(type), window.MediaSource ?
+        MediaSource.isTypeSupported(type) : null];
+  }
+  v['media.can_play'] = canPlay;
+  const vp9 = 'vp09.00.10.08';
+  await step('webcodecs.decoder_hardware', () => window.VideoDecoder ?
+      VideoDecoder.isConfigSupported({codec: vp9, hardwareAcceleration:
+          'prefer-hardware'}).then((s) => s.supported) : 'absent');
+  await step('webcodecs.decoder_software', () => window.VideoDecoder ?
+      VideoDecoder.isConfigSupported({codec: vp9, hardwareAcceleration:
+          'prefer-software'}).then((s) => s.supported) : 'absent');
+  await step('webcodecs.encoder_hardware', () => window.VideoEncoder ?
+      VideoEncoder.isConfigSupported({codec: 'vp8', width: 640, height: 480,
+        hardwareAcceleration: 'prefer-hardware'}).then((s) => s.supported) :
+      'absent');
+  await step('webcodecs.encoder_vp8', () => window.VideoEncoder ?
+      VideoEncoder.isConfigSupported({codec: 'vp8', width: 640, height: 480})
+          .then((s) => s.supported) : 'absent');
+  await step('webcodecs.encoder_h264', () => window.VideoEncoder ?
+      VideoEncoder.isConfigSupported({codec: 'avc1.42001E', width: 640,
+        height: 480}).then((s) => s.supported) : 'absent');
+}
+
 // A classic scrollbar's width in CSS pixels, from a box that always has one
 // (0 with overlay scrollbars).
 function scrollbarBox() {
@@ -494,6 +620,12 @@ async function collect() {
   await step('storage.quota_over_usage', () => n.storage.estimate().then(
       (e) => e.quota - e.usage));
   await step('audio.render_quantum_hardware', hardwareRenderQuantum);
+  try {
+    await ML.timeout(audioDevice(v), 10000);
+  } catch (e) {
+    v['audio.sample_rate'] = ML.errInfo(e);
+  }
+  await mediaCapabilities(v, step);
   v['autoplay.mediaelement'] = n.getAutoplayPolicy ?
       n.getAutoplayPolicy('mediaelement') : 'absent';
   await step('sharedStorage.set', async () => {

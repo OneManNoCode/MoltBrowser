@@ -1,0 +1,31 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc b/third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc
+index e829dea84d5e261d6c480d209d7bedb14690d337..cb8fa1b95afee25e9ca60bd27b53a774283fa9de 100644
+--- a/third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc
++++ b/third_party/blink/renderer/modules/webcodecs/gpu_factories_retriever.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "media/video/gpu_video_accelerator_factories.h"
+ #include "third_party/blink/public/platform/platform.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
+ #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
+ #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+@@ -26,6 +27,12 @@ media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread() {
+ }
+ 
+ void RetrieveGpuFactories(OutputCB result_callback) {
++  // MoltBrowser: no hardware or OS codecs in MoltNet (moltnet_media.h).
++  if (!molt_fingerprinting::UsesPlatformMediaCodecs()) {
++    std::move(result_callback).Run(nullptr);
++    return;
++  }
++
+   if (IsMainThread()) {
+     std::move(result_callback).Run(GetGpuFactoriesOnMainThread());
+     return;

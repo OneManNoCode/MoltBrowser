@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/net/proxy_config_monitor.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/net/proxy_config_monitor.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/net/proxy_config_monitor.h b/chrome/browser/net/proxy_config_monitor.h
+index 6c060b52d25799c6a7c4e4ee86ed7490060560d6..c551c474670bc9ef7e335652f7f25eb1f32053a7 100644
+--- a/chrome/browser/net/proxy_config_monitor.h
++++ b/chrome/browser/net/proxy_config_monitor.h
+@@ -96,6 +96,11 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
+   mojo::ReceiverSet<network::mojom::ProxyErrorClient> error_receiver_set_;
+   raw_ptr<Profile> profile_ = nullptr;
+ #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
++
++  // MoltBrowser: the profile, if it is a MoltNet profile. Its network
++  // contexts only get MoltNet's own proxy configuration
++  // (MoltNetRouting::MayApplyProxyConfig()).
++  raw_ptr<Profile> moltnet_profile_ = nullptr;
+ };
+ 
+ #endif  // CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_

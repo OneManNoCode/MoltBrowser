@@ -95,6 +95,35 @@ struct MoltNetRequestAccess {
   // SelectClientCertificate()).
   bool client_certificates = true;
 
+  // Google's Autofill server. When a page shows a form, Autofill asks it
+  // for field-type predictions with the form's and its fields' signatures
+  // (hashes of the action host and the form and field names: the same on
+  // every site, in every session, for the same form); after a submission,
+  // Autofill and the password manager upload votes (the field types they
+  // saw). Through the tab's network context, so for MoltNet through Tor,
+  // but to Google, which could tie together which forms a MoltNet user
+  // loads, across sites and identities. Incognito sends the queries
+  // (Autofill uploads no votes from it); MoltNet sends no query and no
+  // vote, the password manager's included. Autofill's local
+  // heuristics (and an on-device model) still classify fields, and saved
+  // addresses and passwords can still be filled. (MoltBrowser also turns
+  // the server off for every profile by default, AutofillServerCommunication
+  // in molt_feature_overrides.cc; a command-line flag can turn it back on,
+  // but never for MoltNet.)
+  bool autofill_server = true;
+
+  // Address metadata: libaddressinput's rules for a country's address
+  // format and regions, downloaded from chromium-i18n.appspot.com when
+  // Autofill fills a state or region <select> it can't match directly,
+  // and when the payment sheet (Payment Request API) checks a shipping
+  // address or lists a country's regions. Chromium downloads them through
+  // the browser-wide network context, outside Tor; the request names the
+  // country of the address, and the rules are kept in a file every profile
+  // shares. In MoltNet nothing is downloaded or read from that file:
+  // Autofill fills what matches without the rules, and the payment sheet's
+  // address editor offers a text field for the region.
+  bool address_metadata = true;
+
   friend constexpr bool operator==(const MoltNetRequestAccess&,
                                    const MoltNetRequestAccess&) = default;
 };
@@ -114,6 +143,8 @@ constexpr MoltNetRequestAccess MoltNetRequestAccessForProfile(
   access.relay_authenticators = false;
   access.commerce = false;
   access.client_certificates = false;
+  access.autofill_server = false;
+  access.address_metadata = false;
   return access;
 }
 

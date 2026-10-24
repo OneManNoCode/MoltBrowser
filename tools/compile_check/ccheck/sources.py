@@ -76,6 +76,10 @@ SUBPROJECTS = {
     "third_party/wuffs/src": ("https://github.com/google/wuffs", "", None),
     "third_party/libwebp/src": ("https://github.com/webmproject/libwebp", "",
                                 None),
+    # media/muxers/webm_muxer.h (Blink's MediaRecorder, which
+    # media_capabilities.cc includes).
+    "third_party/libwebm/source": ("https://github.com/webmproject/libwebm",
+                                   "", None),
     # GitHub's mirror stops at older release branches; this GitLab mirror
     # carries chromium/<branch> (the pinned M152 commit among them).
     "third_party/pdfium": (("https://github.com/chromium/pdfium",
@@ -90,6 +94,10 @@ SUBPROJECTS = {
     "third_party/libyuv": ("https://github.com/lemenkov/libyuv", "", None),
     "third_party/openscreen/src": ("https://github.com/chromium/openscreen",
                                    "", None),
+    # Chromium's external/libaddressinput is Google's repository (Autofill's
+    # address metadata; molt_net_autofill.cc and its hooks reach it).
+    "third_party/libaddressinput/src": (
+        "https://github.com/google/libaddressinput", "", None),
     # No GitHub mirror (Chromium's own forks and a CIPD-built package):
     # from the tarball.
     "third_party/dom_distiller_js/dist": (None, "", None),

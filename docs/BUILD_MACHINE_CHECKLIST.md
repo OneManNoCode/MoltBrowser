@@ -418,6 +418,12 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `content/browser/network/network_quality_observer_impl.cc`, `content/browser/network/browser_online_state_observer.cc`, new `content/browser/network/molt_uniform_network_state.h` | the five `OnNetworkQualityChanged()`/`OnNetworkConnectionChanged()` sends go through the header-only helpers (fixed values for MoltNet's renderers, no quality updates to them). The header is in no GN target's `sources` (header-only, to leave `content/browser/BUILD.gn` alone); if `gn check` complains, list it in `//content/browser:browser` | MoltNet 156 |
 | `chrome/browser/molt_ai/tor/molt_net_routing.cc` | `ProxyExternallyControlled()` also reads `proxy_config::prefs::kProxyOverrideRules` (new target `:proxy_policy`, header-only) | MoltNet 156 |
 | `chrome/browser/net/profile_network_context_service.cc` | `device_bound_sessions_enabled` comes from `DeviceBoundSessionsEnabledFor()` (false for MoltNet) | MoltNet 156 |
+| `chrome/browser/net/proxy_config_monitor.{h,cc}` | a new `raw_ptr<Profile> moltnet_profile_` member, set in the profile constructor for MoltNet profiles; `AddToNetworkContextParams()` leaves `initial_proxy_config` unset, and `OnProxyConfigChanged()` sends nothing, unless `MoltNetRouting::MayApplyProxyConfig()` agrees. `proxy_config_monitor.h` is included by `profile_network_context_service.h` | moltnet-live |
+| `chrome/browser/molt_ai/tor/molt_net_routing.{h,cc}` | `SettingsError()` (shared by the open check and the live one; reads `prefs::kPartitionedBlobUrlUsage`) and `MayApplyProxyConfig()` (`PrefProxyConfigTrackerImpl::PrefConfigToNetConfig()`, `net::ProxyConfig::Equals()`); new header-only target `:live_policy` | moltnet-live |
+| `chrome/browser/molt_ai/tor/molt_net_live_guard.cc`, `molt_net_window.cc` | `PrefChangeRegistrar`s on the MoltNet and the regular profile's prefs, a `ProfileObserver` (`Profile::AddObserver()`), `chrome::ShowWarningMessageBoxAsync()` with a `char16_t` title; `OpenVerifiedWindow()` now gets the profile's `OTRProfileID` | moltnet-live |
+| `chrome/browser/ui/autofill/chrome_autofill_client.cc` | `GetCrowdsourcingManager()` and `GetAddressNormalizer()` ask `molt_net_autofill.h` first (only these two functions were type-checked here: the checker can't generate `components/personal_context/proto/features/at_memory.equal.h`, a proto_extras plugin output the file needs) | moltnet-live |
+| `chrome/browser/payments/chrome_payment_request_delegate.cc` | `GetAddressNormalizer()` and `GetRegionDataLoader()` ask `molt_net_autofill.h` first | moltnet-live |
+| `chrome/browser/molt_ai/tor/molt_net_autofill.cc` (new target `:autofill`, a public dep of `:tor`) | subclasses `autofill::AutofillCrowdsourcingManager` (overrides the two virtual `Start*Request()` and inherits its constructors), and builds an `AddressNormalizerImpl` and a `RegionDataLoaderImpl` on a `::i18n::addressinput::Source` of its own and libaddressinput's `NullStorage`; deps `//components/autofill/core/browser`, `//third_party/libaddressinput` | moltnet-live |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -478,6 +484,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `platform/network/network_state_notifier.{h,cc}`, `core/molt_fingerprinting/moltnet_network.{h,cc}` | `SetUniformNetworkState()`, an early return in four setters, no per-host factor in `GetRandomMultiplier()` once pinned; a `std::atomic<bool>` member in a header much of Blink includes (expect a large Blink rebuild); `Configure(kUniform)` calls `PinUniformNetworkState()` | network quality |
 | `core/molt_fingerprinting` DEPS (`gles2_interface.h`, `site_for_cookies.h`) | | #10 |
 | `core/css/media_values.cc`, `core/exported/web_view_impl.cc` (a new upstream copy), `core/molt_fingerprinting/moltnet_display.{h,cc}` | MoltNet's display colour (four `MediaValues::Calculate*` hooks) and scrollbar style (`UpdateRendererPreferences` pins `use_overlay_scrollbar` inside the desktop `#if`) | fingerprinting 156 |
+| `modules/webaudio/audio_context.cc`, `realtime_audio_destination_handler.cc`, `modules/encryptedmedia/encrypted_media_utils.cc`, `modules/media_capabilities/media_capabilities.cc`, `modules/webcodecs/gpu_factories_retriever.cc`, `video_decoder_broker.cc` (all six new upstream copies), `core/molt_fingerprinting/moltnet_media{,_values}.{h,cc}` | modules calling a new core glue file (`gn check`: modules already depend on core); `media::AudioGlitchInfo()` and `media::IsDecoderBuiltInVideoCodec` in the hooks; `WebEncryptedMediaClient` subclassed in core (its out-of-line destructor is exported from platform); `WebEncryptedMediaRequest` passed by value | fp-media |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -524,6 +531,18 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `:network_context_policy` and `:tor` targets), and the two
   `content/browser/network/` observers include
   `molt_uniform_network_state.h`, which no target lists (see §4.2).
+  New in moltnet-live: `chrome/browser/net/proxy_config_monitor.cc` (in
+  `//chrome/browser`) includes `molt_net_routing.h` and
+  `molt_net_profile_id.h` (`:tor`); `chrome_autofill_client.cc`
+  (`//chrome/browser/ui`) and `chrome_payment_request_delegate.cc`
+  (`//chrome/browser/payments:impl`) include `molt_net_autofill.h`: if
+  `gn check` flags them, add `//chrome/browser/molt_ai/tor:autofill` to
+  those targets' deps. The new `:autofill` target depends on
+  `//components/autofill/core/browser` and `//third_party/libaddressinput`;
+  if that makes a cycle through `:tor`, drop it from `:tor`'s
+  `public_deps` and add it to `//chrome/browser/ui` and
+  `//chrome/browser/payments:impl` instead. Checkdeps: the tor `DEPS`
+  file allows `molt_net_autofill.cc` its two libaddressinput headers.
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -620,7 +639,9 @@ extension enablement and `MediaRouterEnabled()`).
   | `TorControlProtocolTest`, `TorrcBuilderTest`, `PluggableTransportsTest`, `OnionLocationTest` | #6, #49 |
   | `MoltNetNetworkContextPolicyTest`, `MoltNetPartitioningPolicyTest` | #51, #55, #62, network quality |
   | `MoltNetValuesTest.TheDisplayIsAPlainSrgbScreen`, `MoltNetValuesTest.ScrollbarStyleIsThePlatformDefault` | fingerprinting 156 |
+  | `MoltNetMediaValuesTest.*` | fp-media |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
+  | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -636,7 +657,8 @@ extension enablement and `MediaRouterEnabled()`).
   scrollbar and viewport cases), `MoltNetTextTest` (with the real Roboto
   test font and shaper), `MoltNetRendererTest`, `MoltNetDeviceTest`,
   `MoltNetLocaleTest`, `MoltNetUniformityTest`, `MoltNetNetworkTest`,
-  `MoltNetDisplayTest` (fingerprinting 156), `MoltFingerprintingTest`,
+  `MoltNetDisplayTest` (fingerprinting 156), `MoltNetMediaTest` (fp-media),
+  `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
   `MoltFont*`, `MoltWebGLUniform` and `MoltNet*Values` suites.
@@ -657,6 +679,7 @@ pass except where the table below says otherwise (verify the filters).
 | `unit_tests` | `AboutFlagsTest.*:AboutFlagsHistogramTest.*` | #39, #45, #47 |
 | `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
 | `blink_unittests` | `*MediaQuery*:*WebViewTest*:*OverlayScrollbar*` | fingerprinting 156 |
+| `blink_unittests` | `AudioContext*:BaseAudioContext*:*ScriptProcessor*:*RealtimeAudioDestination*:*EncryptedMedia*:*MediaKey*:MediaCapabilities*:*VideoDecoder*:*VideoEncoder*:*DecoderTemplate*` (normal windows: the hooks only act in MoltNet) | fp-media |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 | `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
@@ -664,6 +687,8 @@ pass except where the table below says otherwise (verify the filters).
 | `services_unittests` | `NetworkContextTest.*Doh*:NetworkContextTest.*ClientCert*` (inside the `NetworkContextTest.*` row too) | MoltNet 156 |
 | `content_unittests` | `NetworkQualityObserverImplTest.*` | MoltNet 156 |
 | `unit_tests` | `*SSLClientCertificateSelector*:*ClientCertificate*` | MoltNet 156 |
+| `unit_tests` | `ProxyConfigMonitor*:PrefProxyConfigTracker*:ProfileNetworkContextService*:ChromeAutofillClient*:*PaymentRequest*` | moltnet-live |
+| `components_unittests` | `PrefProxyConfigTracker*:AutofillCrowdsourcingManager*:AddressNormalizer*:RegionDataLoader*` | moltnet-live |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -979,6 +1004,39 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   on, MoltNet pages keep classic 16 CSS px scrollbars. The scrollbars are
   drawn, animate and can be dragged normally in all three cases, and the
   DevTools device toolbar (mobile emulation) still shows overlay ones.
+- [ ] Audio in MoltNet on real hardware (fp-media): with the output device
+  set to 44.1 kHz and then to 96 kHz (Windows' "Default format", macOS's
+  Audio MIDI Setup, `pw-metadata -n settings 0 clock.force-rate` or
+  PulseAudio's `default-sample-rate`), and on a 48 kHz device as the
+  control, a MoltNet page plays a Web Audio tone, a `<audio>` file routed
+  through `createMediaElementSource()` and an `AudioWorklet` synth
+  correctly: right pitch and speed, no clicks or dropouts over a few
+  minutes, A/V sync of a video with Web Audio sound within what you'd
+  expect from 24 ms. Report the audio service's CPU (the browser's task
+  manager) while it plays, with and without the 44.1/96 kHz
+  resampling. `new AudioContext().sampleRate` is 48000,
+  `baseLatency` 0.01, `outputLatency` 0.024 and
+  `destination.maxChannelCount` 2 in MoltNet, and the device's values in
+  a regular window.
+- [ ] More audio devices in MoltNet (fp-media): a 5.1/7.1 device (HDMI
+  receiver) plays a 6-channel Web Audio graph as stereo and
+  `destination.channelCount = 6` throws `IndexSizeError`; Bluetooth
+  headphones play without dropouts; `playbackStats` (while the page is
+  visible) reads 24 ms and no underruns while the CPU is loaded;
+  `createScriptProcessor().bufferSize` is 2048; a page that asks for
+  `sampleRate: 22050` gets it and plays at the right pitch; after granting
+  microphone access, `setSinkId()` to another output device still works.
+- [ ] EME, Media Capabilities and WebCodecs in MoltNet (fp-media): a
+  Clear Key test page (e.g. the W3C EME test player) fails with
+  `NotSupportedError` in MoltNet and plays in a regular window;
+  `decodingInfo()` for VP9 1080p and AV1 4K reads `{supported: true,
+  smooth: true, powerEfficient: false}` on a machine with hardware VP9/AV1
+  decoding (regular window: power efficient); `VideoDecoder.isConfigSupported(
+  {codec: "vp09.00.10.08", hardwareAcceleration: "prefer-hardware"})` is
+  `false` in MoltNet and `true` in a regular window on that machine; a
+  WebCodecs player (e.g. the WebCodecs samples' video decode demo) still
+  plays in MoltNet, in software; on macOS a `VideoEncoder` for
+  `avc1.42001E` is unsupported in MoltNet.
 
 ### 7.4 MoltNet
 
@@ -1066,6 +1124,36 @@ macOS, and for the manual steps everywhere:
   `RenderThreadImpl::OnNetworkQualityChanged`), a MoltNet renderer gets one
   network-quality message, at start-up, while a regular one gets one per
   change.
+- [ ] A policy that changes while MoltNet is open (moltnet-live; §4 step
+  9): with a MoltNet window open on a page that fetches a test URL every
+  second (and a second MoltNet window whose page asks "Leave site?"), set
+  `ProxyMode` to `direct` (Windows: registry, then `chrome://policy` →
+  *Reload policies*; macOS: a configuration profile or `defaults write`
+  into the managed domain, then *Reload policies*; Linux: the kit's
+  `identity.policy_change_closes`, or a file in
+  `/etc/chromium/policies/managed/`). Expected: both MoltNet windows
+  close within a few seconds of Chromium applying the policy, a dialog
+  "MoltNet windows closed" gives the proxy error, the test server sees no
+  request from your own address, and opening MoltNet then fails with the
+  same error; after removing the policy (and reloading policies) MoltNet
+  opens. Repeat with `ProxyOverrideRules` (any rule), `WebRtcIPHandling`
+  and `PartitionedBlobUrlUsage` = false. With DevTools open on a MoltNet
+  page whose "Leave site?" prompt you don't answer, that window stays
+  open, but its requests still go to Tor (the test server sees them only
+  from a Tor exit). A change only the regular profile sees (an extension
+  that sets the proxy, allowed in Incognito) leaves MoltNet open.
+- [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
+  `--enable-features=AutofillServerCommunication` and Tor's log at
+  `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
+  sign-in form, filled and submitted: no stream to
+  `content-autofill.googleapis.com` in Tor's log (a regular window
+  queries it). Fields are still classified
+  (the Autofill dropdown offers a saved address), and saved addresses and
+  passwords fill. With a saved address whose state doesn't match the
+  page's `<select>` options word for word, no lookup or stream of
+  `chromium-i18n.appspot.com`; a page's Payment Request with
+  `requestShipping` shows the sheet, keeps the chosen address as entered,
+  and its address editor asks for the region as text.
 - [ ] The manual parts of MOLTNET_COMPLIANCE.md §4: step 2 (the toolbar
   label), 9 (a proxy set by an extension), 11 (the Onion-Location bar), 14
   (bridges with the distribution's obfs4 and snowflake, from #6), 16 (split
@@ -1111,12 +1199,29 @@ Mac; use a real Linux host.
     (`mq.color_gamut_*`, `mq.dynamic_range_high`,
     `mq.video_dynamic_range_high`, `mq.color_bits`, `mq.monochrome`),
     `storage.quota_over_usage` and `audio.render_quantum_hardware`
-    (fingerprinting 156); `diff` shows no difference in a promised value.
+    (fingerprinting 156), and the `audio.*`, `eme.*`, `mc.*` and
+    `webcodecs.*` checks (fp-media); `diff` shows no difference in a
+    promised value, nor in the codec support it compares (`mc.opus`,
+    `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
+    `webcodecs.encoder_*`) between two machines of an OS.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
     asks for a client certificate saw only completed handshakes, none with
     a certificate. A FAIL listing a dropped handshake means MoltNet's
     context still asked the browser (check the `network_context.cc` hook
     and `molt_send_no_client_certificates` in the context's params).
+  - `identity.policy_change_closes` and `net.autofill_server` pass
+    (moltnet-live, phase `policy_live`): the MoltNet page closed within
+    seconds of the kit's `ProxyMode` policy, its canary went only through
+    Tor, MoltNet refused to open with the policy and opened without it; no
+    connection to `content-autofill.googleapis.com` with
+    `AutofillServerCommunication` on. A FAIL with the canary looked up
+    outside Tor means the policy's proxy reached MoltNet's network context
+    (check the `proxy_config_monitor.cc` hooks); pages still open after 60
+    s means the settings watch didn't fire (check
+    `MoltNetLiveGuard::Watch()` in `OnTorReady()`). First-run question:
+    whether the "MoltNet windows closed" dialog over the
+    `chrome://molt-net/` tab gets in the way of DevTools-pipe calls (if so,
+    note it; the checks only need the targets list).
 - [ ] First-run questions (from #29): DevTools can drive
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet

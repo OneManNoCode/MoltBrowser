@@ -302,7 +302,9 @@ COMPLIANCE_STEPS = (
      'SOCKS username of its own for each certificate fetch, read from the '
      'loopback capture and Tor\'s circuit list'),
     (9, 'Overrides are refused', 'partial',
-     '--proxy-server blocks MoltNet; the extension-set proxy case is manual'),
+     '--proxy-server and each partitioning switch block MoltNet; a proxy '
+     'policy set while MoltNet is open closes its windows; the '
+     'extension-set proxy case is manual'),
     (10, 'The relays are real', 'automated',
      'the circuit\'s fingerprints are in the consensus Tor downloaded; the '
      'onionoo lookup is optional'),
@@ -333,6 +335,7 @@ COMPLIANCE_STEPS = (
      'DevTools prefs, media controls, macOS, picture-in-picture, GCM, '
      'printing'),
     (20, 'Nothing goes around Tor', 'partial',
-     'downloads, geolocation and the built-in AI are automated; the AI chat, '
-     'Cast menu, phone passkeys and "Open all" bookmarks stay manual'),
+     'downloads, geolocation, the built-in AI and Autofill\'s server '
+     'queries are automated; the AI chat, Cast menu, phone passkeys, "Open '
+     'all" bookmarks and address formats stay manual'),
 )

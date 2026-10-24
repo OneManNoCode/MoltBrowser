@@ -1,0 +1,44 @@
+MoltBrowser patch for chrome/browser/ui/autofill/chrome_autofill_client.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/autofill/chrome_autofill_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/autofill/chrome_autofill_client.cc b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+index 5220b34d64f6d89b611ccd882a24ebd94f808926..27ca0db5b4be1df0a3b92bb2b5638d767547ab3a 100644
+--- a/chrome/browser/ui/autofill/chrome_autofill_client.cc
++++ b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+@@ -61,6 +61,7 @@
+ #include "chrome/browser/history/history_service_factory.h"
+ #include "chrome/browser/metrics/profile_metrics_service_factory.h"
+ #include "chrome/browser/metrics/variations/google_groups_manager_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_autofill.h"  // MoltBrowser
+ #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+ #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
+ #include "chrome/browser/password_manager/chrome_password_manager_client.h"
+@@ -440,6 +441,12 @@ ChromeAutofillClient::GetURLLoaderFactory() {
+ }
+ 
+ AutofillCrowdsourcingManager& ChromeAutofillClient::GetCrowdsourcingManager() {
++  if (!crowdsourcing_manager_) {
++    // MoltBrowser: a MoltNet tab's manager sends no query and no vote to
++    // the Autofill server (molt_net_autofill.h).
++    crowdsourcing_manager_ = molt_ai::tor::MoltNetCrowdsourcingManagerFor(
++        GetProfile(), this, GetChannel());
++  }
+   if (!crowdsourcing_manager_) {
+     // Lazy initialization to avoid virtual function calls in the constructor.
+     crowdsourcing_manager_ =
+@@ -701,6 +708,12 @@ ukm::UkmRecorder* ChromeAutofillClient::GetUkmRecorder() {
+ }
+ 
+ AddressNormalizer* ChromeAutofillClient::GetAddressNormalizer() {
++  // MoltBrowser: a MoltNet tab's normalizer downloads no address metadata
++  // (molt_net_autofill.h).
++  if (AddressNormalizer* moltnet =
++          molt_ai::tor::MoltNetAddressNormalizerFor(GetProfile())) {
++    return moltnet;
++  }
+   return AddressNormalizerFactory::GetInstance();
+ }
+ 

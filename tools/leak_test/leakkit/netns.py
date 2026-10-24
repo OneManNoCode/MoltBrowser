@@ -44,6 +44,10 @@ LAUNCHER = os.path.join(HERE, 'launch_in_ns.sh')
 NFLOG_BLOCKED = 1
 NFLOG_TOR = 2
 
+# Where Linux builds without Chrome branding (Chromium, MoltBrowser) read
+# mandatory policies (components/policy/core/common/policy_paths.cc).
+MANAGED_POLICY_DIR = '/etc/chromium/policies/managed'
+
 
 def cgroup2_mount(mountinfo='/proc/self/mountinfo'):
     """Mount point of the cgroup v2 hierarchy, or None."""
@@ -267,6 +271,29 @@ class Sandbox(object):
             self.sh('iptables', '-I', chain, '1', *rule)
             self.undo.append(('iptables', [chain] + rule))
 
+    def policy_dir(self):
+        """The run's own managed-policy directory (root-owned, under the
+        run's private directory), which a browser launch can mount over
+        MANAGED_POLICY_DIR (launch(policy_dir=...)). Makes the mount point
+        on the host if it is missing (an empty directory, removed again by
+        teardown()); the host's policy files there are never touched."""
+        path = os.path.join(self.private_dir, 'policies')
+        if not os.path.isdir(path):
+            os.mkdir(path, 0o755)
+            os.chmod(path, 0o755)
+        created = []
+        cur = '/'
+        for part in MANAGED_POLICY_DIR.strip('/').split('/'):
+            cur = os.path.join(cur, part)
+            if os.path.islink(cur):
+                raise RuntimeError('%s is a symlink' % cur)
+            if not os.path.isdir(cur):
+                os.mkdir(cur, 0o755)
+                created.append(cur)
+        if created:
+            self.undo.append(('policy_mountpoint', created))
+        return path
+
     def write_tor_wrapper(self, real_tor, argv_log):
         path = os.path.join(self.private_dir, 'tor-wrapper')
         with open(path, 'w') as f:
@@ -277,12 +304,17 @@ class Sandbox(object):
     # ---- processes ----------------------------------------------------------
 
     def launch(self, argv, cgroup, env, stdout=None, stderr=None,
-               resolv=None, nsswitch=None, pipe_fds=None):
+               resolv=None, nsswitch=None, pipe_fds=None, policy_dir=None):
         """Starts `argv` as the invoking user in the namespace, in `cgroup`,
-        with exactly `env`. pipe_fds=(in, out) become fds 3 and 4."""
+        with exactly `env`. pipe_fds=(in, out) become fds 3 and 4.
+        policy_dir (from policy_dir()) is mounted over MANAGED_POLICY_DIR
+        for this launch only."""
         cmd = ['nsenter', '--net=/run/netns/' + self.ns, '--',
-               '/bin/bash', LAUNCHER, self.procs(cgroup), resolv or '-',
-               nsswitch or '-', str(self.uid), str(self.gid)]
+               '/bin/bash', LAUNCHER]
+        if policy_dir:
+            cmd += ['--policy-dir', policy_dir]
+        cmd += [self.procs(cgroup), resolv or '-', nsswitch or '-',
+                str(self.uid), str(self.gid)]
         pass_fds = ()
         if pipe_fds:
             cmd += [str(pipe_fds[0]), str(pipe_fds[1])]
@@ -357,6 +389,15 @@ class Sandbox(object):
                     self.sh('iptables', '-D', *arg, check=False)
                 elif kind == 'private_dir':
                     shutil.rmtree(self.private_dir, ignore_errors=True)
+                elif kind == 'policy_mountpoint':
+                    # Only the directories this run made, deepest first,
+                    # and only while they are empty.
+                    for path in reversed(arg):
+                        try:
+                            os.rmdir(path)
+                        except OSError as e:
+                            if e.errno not in (errno.ENOENT, errno.ENOTEMPTY):
+                                raise
             except (OSError, RuntimeError) as e:
                 errors.append('%s: %s' % (kind, e))
         self.undo = []

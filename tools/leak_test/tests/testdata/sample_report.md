@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 123 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 146 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -52,6 +52,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | FAIL | No leak-shaped traffic outside the tests (onion names, mDNS, LAN, STUN, QUIC, canaries) | MOLTNET_COMPLIANCE.md §4 step 4 |
 | FAIL | Every lookup or connection outside Tor is explained | triage: a new background host goes into leakkit/background.py and docs/NETWORK_TRAFFIC.md; anything else is a leak |
 | FAIL | WebRTC: STUN/TURN servers, peer and .local candidates: nothing outside Tor | MOLTNET_COMPLIANCE.md §1.12, §4 step 18 |
+| PASS | A MoltNet page's forms cause no Autofill server query or address-rule download, also with the queries on | MOLTNET_COMPLIANCE.md §2 Requests outside Tor, §4 step 20 |
 | PASS | Built-in AI APIs and Translator (no component download): LanguageModel is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | Built-in AI APIs and Translator (no component download): Summarizer is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | Built-in AI APIs and Translator (no component download): Writer is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
@@ -89,6 +90,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - LEAK dns stun-bbbbbb2222.moltleak.test A x1 at +21.0s: a test page's canary name was looked up outside Tor [firewall log, kit resolver]
   - LEAK dns stun-bbbbbb2222.moltleak.test AAAA x1 at +21.1s: a test page's canary name was looked up outside Tor [firewall log]
   - LEAK udp 198.51.100.12:3478 x1 at +22.0s: a packet to a test page's IP literal outside Tor [firewall log]
+- **PASS** A MoltNet page's forms cause no Autofill server query or address-rule download, also with the queries on
+  - flags: --enable-features=AutofillServerCommunication
+  - form page: loaded
+  - no connection to content-autofill.googleapis.com, chromium-i18n.appspot.com, through Tor or outside it, during the phase
 - **PASS** Built-in AI APIs and Translator (no component download): LanguageModel is unavailable
   - availability.LanguageModel = "unavailable"
 - **PASS** Built-in AI APIs and Translator (no component download): Summarizer is unavailable
@@ -154,6 +159,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | A --proxy-server override blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
 | PASS | Turning off per-site partitioning (connections, HTTP cache, third-party storage) blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
 | PASS | Different sites use different SOCKS usernames (per-site circuits) | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
+| PASS | A proxy policy set while MoltNet is open closes its windows, nothing leaves outside Tor meanwhile, and MoltNet refuses to open until the policy is gone | MOLTNET_COMPLIANCE.md §2 Fail-closed, §4 step 9 |
 | PASS | The panel's relays are in the consensus Tor downloaded | MOLTNET_COMPLIANCE.md §4 step 10 |
 | PASS | Sandboxed pages (opaque origins) on two sites use different SOCKS usernames | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | Separate identity: cookies don't cross, and go with the last window | MOLTNET_COMPLIANCE.md §4 step 6 |
@@ -185,6 +191,13 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 - **PASS** Different sites use different SOCKS usernames (per-site circuits)
   - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]', 'opaque\\x20null\\x20[internally:\\x20(33cc)\\x20anonymous]', 'opaque\\x20null\\x20[internally:\\x20(55ee)\\x20anonymous]']
   - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion', 'opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']
+- **PASS** A proxy policy set while MoltNet is open closes its windows, nothing leaves outside Tor meanwhile, and MoltNet refuses to open until the policy is gone
+  - policy {"ProxyMode": "direct"} written to the managed-policy directory
+  - MoltNet's 1 page(s) closed 6.5 s after the policy was written (Chromium reads a changed policy file about 5 s later)
+  - openWindow with the policy -> {"error": "A policy or command-line flag controls the proxy, so MoltNet can't guarantee Tor routing"}; MoltNet pages: 0
+  - the page's canary went through Tor 0 time(s) before the policy and 0 time(s) after it
+  - no lookup or packet of the canary outside Tor
+  - openWindow once the policy was removed -> {"running": true}; a MoltNet page opened: True
 - **PASS** The panel's relays are in the consensus Tor downloaded
   - guard g1 192.0.2.50 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA in consensus: True
   - middle m1 192.0.2.60 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB in consensus: True
@@ -215,11 +228,24 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | ai.Summarizer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Translator is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Writer is uniform | FINGERPRINTING.md "Built-in AI APIs" |
+| PASS | audio.base_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.output_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.output_timestamp_ok is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.playback_latency_max is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.playback_underruns is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.render_quantum_hardware is uniform | FINGERPRINTING.md "Re-checked at Chromium 156" |
+| PASS | audio.sample_rate is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.script_processor_buffer is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | autoplay.mediaelement is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | cookies.third_party is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | css.default_font_size is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
 | PASS | doc.characterSet_undeclared is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
+| PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | eme.playready is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | eme.widevine is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | form.numberMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | form.validationMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | hdr.accept-language is uniform | FINGERPRINTING.md "Surface covered" |
@@ -229,6 +255,12 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | intl.locale is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | intl.number is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | js.enabled_on_blocked_site is uniform | MOLTNET_COMPLIANCE.md §4 step 15 |
+| PASS | mc.av1_2160p60 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.encrypted is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.vp8_360p is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.vp9_1080p is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.webrtc_decoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | mc.webrtc_encoding is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | mouse.screen_equals_client is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | mq.any_hover_none is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.any_pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
@@ -282,6 +314,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | tz.resolved is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | ua.reduced is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | uad.high_entropy is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | webcodecs.decoder_hardware is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | webcodecs.encoder_hardware is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | webgl.debug_renderer_info is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
 | PASS | webgl.extensions is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
 | PASS | webgl.p.ALIASED_POINT_SIZE_RANGE is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
@@ -419,7 +453,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | 6 | Separate identity | automated | a regular-profile cookie doesn't show in MoltNet; a MoltNet cookie is gone after the last window closes |
 | 7 | New Identity | automated | new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet |
 | 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, read from the loopback capture and Tor's circuit list |
-| 9 | Overrides are refused | partial | --proxy-server blocks MoltNet; the extension-set proxy case is manual |
+| 9 | Overrides are refused | partial | --proxy-server and each partitioning switch block MoltNet; a proxy policy set while MoltNet is open closes its windows; the extension-set proxy case is manual |
 | 10 | The relays are real | automated | the circuit's fingerprints are in the consensus Tor downloaded; the onionoo lookup is optional |
 | 11 | Onion sites | partial | http:// and https:// onions load; the Onion-Location bar is browser UI and stays manual |
 | 12 | No onion names outside Tor (regular window) | automated | the interstitial shows and no onion name is looked up; DoH is covered because every lookup lands on the kit's resolver |
@@ -430,4 +464,4 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | 17 | No regular-profile carry-over | partial | autoplay policy, persist(), third-party cookies and Shared Storage are read in MoltNet; media engagement, bookmarks and certificate exceptions need a prepared regular profile |
 | 18 | No WebRTC, and no name lookups for it | automated |  |
 | 19 | Incognito's protections | manual | DevTools prefs, media controls, macOS, picture-in-picture, GCM, printing |
-| 20 | Nothing goes around Tor | partial | downloads, geolocation and the built-in AI are automated; the AI chat, Cast menu, phone passkeys and "Open all" bookmarks stay manual |
+| 20 | Nothing goes around Tor | partial | downloads, geolocation, the built-in AI and Autofill's server queries are automated; the AI chat, Cast menu, phone passkeys, "Open all" bookmarks and address formats stay manual |
