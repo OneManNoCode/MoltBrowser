@@ -29,6 +29,7 @@ TEST(MoltNetNetworkContextPolicyTest, OtherProfilesKeepChromiumsBehaviour) {
   EXPECT_FALSE(settings.block_private_state_tokens);
   EXPECT_FALSE(settings.send_no_client_certificates);
   EXPECT_FALSE(settings.no_doh_probes);
+  EXPECT_FALSE(settings.no_device_bound_sessions);
 }
 
 TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
@@ -45,6 +46,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
   EXPECT_TRUE(settings.block_private_state_tokens);
   EXPECT_TRUE(settings.send_no_client_certificates);
   EXPECT_TRUE(settings.no_doh_probes);
+  EXPECT_TRUE(settings.no_device_bound_sessions);
 }
 
 // Private State Tokens: ProfileNetworkContextService asks this when it
@@ -60,6 +62,21 @@ TEST(MoltNetNetworkContextPolicyTest, PrivateStateTokensBlockedInMoltNet) {
                                           /*chromium_value=*/false));
   EXPECT_TRUE(BlockPrivateStateTokensFor(/*is_moltnet_profile=*/false,
                                          /*chromium_value=*/true));
+}
+
+// Device-bound sessions: never in MoltNet; every other profile gets exactly
+// Chromium's answer (the feature's state).
+TEST(MoltNetNetworkContextPolicyTest, NoDeviceBoundSessionsInMoltNet) {
+  EXPECT_FALSE(DeviceBoundSessionsEnabledFor(/*is_moltnet_profile=*/true,
+                                             /*chromium_value=*/true));
+  EXPECT_FALSE(DeviceBoundSessionsEnabledFor(/*is_moltnet_profile=*/true,
+                                             /*chromium_value=*/false));
+  EXPECT_TRUE(DeviceBoundSessionsEnabledFor(/*is_moltnet_profile=*/false,
+                                            /*chromium_value=*/true));
+  EXPECT_FALSE(DeviceBoundSessionsEnabledFor(/*is_moltnet_profile=*/false,
+                                             /*chromium_value=*/false));
+  static_assert(!DeviceBoundSessionsEnabledFor(true, true));
+  static_assert(DeviceBoundSessionsEnabledFor(false, true));
 }
 
 // The browser's network-quality estimate and the OS connection type: fixed

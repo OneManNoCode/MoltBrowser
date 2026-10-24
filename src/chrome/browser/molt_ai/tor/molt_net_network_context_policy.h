@@ -11,12 +11,11 @@
 // services/network/network_context.cc, services/cert_verifier/,
 // net/http/http_network_session.*, net/http/transport_security_state.*,
 // net/socket/ (the SOCKS connect job, ssl_client_socket.*) and
-// services/network/pervasive_resources/). Two settings
-// the browser also updates later have their own hooks in
-// ProfileNetworkContextService (split_http_auth_cache and
-// BlockPrivateStateTokensFor()). The only input is whether the profile is
-// MoltNet's (IsMoltNetProfile()): every other profile keeps Chromium's
-// behaviour.
+// services/network/pervasive_resources/). Three settings have their own
+// hooks in ProfileNetworkContextService (split_http_auth_cache,
+// BlockPrivateStateTokensFor() and DeviceBoundSessionsEnabledFor()). The
+// only input is whether the profile is MoltNet's (IsMoltNetProfile()):
+// every other profile keeps Chromium's behaviour.
 //
 // Most of these keep per-site state per site: within one MoltNet identity,
 // what one site causes in the network context must not be observable by
@@ -143,6 +142,17 @@ struct MoltNetNetworkContextSettings {
   // it has no personal certificates to offer either.
   bool send_no_client_certificates = false;
 
+  // Device-bound sessions (DBSC; on by default on Windows and macOS): a
+  // site can bind its sign-in cookies to a signing key the operating
+  // system's secure hardware makes (a TPM, the Secure Enclave), and the
+  // network context then signs refresh requests with it. Whether a site
+  // can set one up depends on the machine's hardware, which differs between
+  // MoltNet users, and the key is made and held by the operating system,
+  // not in MoltNet's in-memory profile. When true, the context has no
+  // session service (DeviceBoundSessionsEnabledFor()): sites fall back to
+  // their ordinary cookies, as in Tor Browser, which has no such sessions.
+  bool no_device_bound_sessions = false;
+
   // DNS-over-HTTPS probes: when secure DNS has servers (the user's or an
   // administrator's choice, or the automatic upgrade of a system resolver
   // that offers DoH), the network service probes them for every network
@@ -175,6 +185,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.block_private_state_tokens = is_moltnet_profile;
   settings.send_no_client_certificates = is_moltnet_profile;
   settings.no_doh_probes = is_moltnet_profile;
+  settings.no_device_bound_sessions = is_moltnet_profile;
   return settings;
 }
 
@@ -201,6 +212,15 @@ constexpr bool BlockPrivateStateTokensFor(bool is_moltnet_profile,
          chromium_value;
 }
 
+// ProfileNetworkContextService's device_bound_sessions_enabled, when a
+// network context is created: `chromium_value` is Chromium's (the
+// DeviceBoundSessions feature).
+constexpr bool DeviceBoundSessionsEnabledFor(bool is_moltnet_profile,
+                                             bool chromium_value) {
+  return chromium_value && !MoltNetNetworkContextSettingsFor(is_moltnet_profile)
+                                .no_device_bound_sessions;
+}
+
 // A SOCKS5 password for one network context: 128 bits from a
 // cryptographically secure source, as 32 hexadecimal digits (RFC 1929
 // allows 1 to 255 bytes).
@@ -215,8 +235,9 @@ inline std::string NewSocksIsolationPassword() {
 // `cert_verifier_creation_params` a
 // cert_verifier::mojom::CertVerifierCreationParams. Called once for each
 // network context created, so each MoltNet context gets a password of its
-// own; other contexts get none. (split_http_auth_cache and
-// block_private_state_tokens are written by their own hooks, see above.)
+// own; other contexts get none. (split_http_auth_cache,
+// block_private_state_tokens and no_device_bound_sessions are written by
+// their own hooks, see above.)
 // A template, so this header needs neither mojom.
 template <typename NetworkContextParams, typename CertVerifierCreationParams>
 void ApplyMoltNetNetworkContextSettings(
