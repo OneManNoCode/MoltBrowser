@@ -285,6 +285,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   ends, the browser sends nothing it was holding for its pages: no
   keepalive request, beacon, `fetchLater`, Background Fetch, download or
   saved page resource (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening: when an identity ends, its connection starts no
+  request from that moment, whichever way a page's request reaches it,
+  and writes nothing more to Tor; the old pages stop only once it has
+  the end. A Background Fetch's response counts against its site's blob
+  memory while it downloads, not only once complete. A site's
+  `localStorage`, and its `sessionStorage`, hold together what one origin
+  may (10 MiB), across its subdomains and tabs, and are written at one
+  origin's rate. In every profile, Background Fetch requests follow the
+  fetch's credentials setting (`credentials: 'omit'` sends no cookies).
+  The MoltNet panel says when a build has no bundled fonts
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
