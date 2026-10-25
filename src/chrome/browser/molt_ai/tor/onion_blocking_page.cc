@@ -13,6 +13,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/webui_url_constants.h"
@@ -107,8 +108,9 @@ void OnionBlockingPage::OpenInMoltNet() {
   content::RenderFrameHost* frame = contents->GetPrimaryMainFrame();
   // The page is an isolated error page that web content can't script, and
   // only its own frame can send commands; on top of that, only a real click
-  // or key press on it may open a MoltNet window.
-  if (!frame || !frame->HasTransientUserActivation()) {
+  // or key press on it may open a MoltNet window, one per click
+  // (molt_ai/common/molt_user_click.h).
+  if (!ConsumeUserClick(true, frame)) {
     LOG(WARNING) << "[MoltNet] onion page: ignoring open without a user "
                     "gesture";
     return;

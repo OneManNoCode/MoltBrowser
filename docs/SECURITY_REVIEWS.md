@@ -52,12 +52,15 @@ informational.
 
 **Fixed.**
 
-- The AI chat's agent "Allow", running a confirmed chat proposal, saving an
-  agent run, and the Agent studio's and the automation page's trust and
-  "Confirm sites" buttons consume the page's user activation, as the
-  answers to a run's questions and to another site's frame's tools already
-  did: one click allows at most one of these, whatever the page's script
-  sends after it.
+- Every MoltBrowser page that takes a click as the user's approval
+  consumes the page's user activation (`molt_ai/common/molt_user_click.h`):
+  the AI chat's agent "Allow", running a confirmed chat proposal, saving
+  an agent run, the Agent studio's and the automation page's trust and
+  "Confirm sites" buttons, the GPU setting and its "Try the GPU again" on
+  `molt://ai-settings`, and the onion page's "Open in a MoltNet window",
+  as the answers to a run's questions and to another site's frame's tools
+  already did: one click allows at most one of these, whatever the page's
+  script sends after it.
 - The font manifest's checks match whole values (a value with a final
   newline no longer passes).
 

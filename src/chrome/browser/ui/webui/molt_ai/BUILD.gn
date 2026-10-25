@@ -130,6 +130,9 @@ source_set("unit_tests") {
   deps = [
     ":chat_form_fill",
     "//base",
+
+    # ConsumeUserClick() (molt_ai_chat_handler_helpers.h).
+    "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//chrome/browser/molt_ai/tor:requests_policy",
 

@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/render_frame_host.h"
@@ -57,9 +58,8 @@ void MoltGpuInferenceHandler::RegisterMessages() {
                           base::Unretained(this)));
 }
 
-bool MoltGpuInferenceHandler::HasUserClick() {
-  content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-  return rfh && rfh->HasTransientUserActivation();
+bool MoltGpuInferenceHandler::ConsumeClick() {
+  return molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost());
 }
 
 void MoltGpuInferenceHandler::Resolve(const std::string& callback_id,
@@ -90,7 +90,7 @@ void MoltGpuInferenceHandler::HandleSetMode(const base::ListValue& args) {
     Resolve(callback_id, std::string("Unknown setting."));
     return;
   }
-  if (!HasUserClick()) {
+  if (!ConsumeClick()) {
     Resolve(callback_id, std::string("Click the setting to change it."));
     return;
   }
@@ -106,7 +106,7 @@ void MoltGpuInferenceHandler::HandleRetry(const base::ListValue& args) {
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
   const std::string callback_id = args[0].GetString();
-  if (!HasUserClick()) {
+  if (!ConsumeClick()) {
     Resolve(callback_id, std::string("Click the button to try again."));
     return;
   }

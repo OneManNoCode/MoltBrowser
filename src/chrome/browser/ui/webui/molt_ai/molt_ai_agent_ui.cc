@@ -853,13 +853,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       return;
     }
     const bool allowed = args[3].is_bool() && args[3].GetBool();
-    if (allowed) {
-      content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-      if (!rfh || !rfh->ConsumeTransientUserActivation()) {
-        out.Set("error", "Click the button to answer");
-        ResolveDict(args, std::move(out));
-        return;
-      }
+    if (allowed && !molt_ai::chat_handler_helpers::ConsumeUserClick(
+                       true, web_ui()->GetRenderFrameHost())) {
+      out.Set("error", "Click the button to answer");
+      ResolveDict(args, std::move(out));
+      return;
     }
     int64_t question_id = 0;
     if (!base::StringToInt64(args[2].GetString(), &question_id) ||
