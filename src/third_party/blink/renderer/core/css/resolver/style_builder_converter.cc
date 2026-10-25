@@ -115,6 +115,7 @@
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -910,7 +911,8 @@ float MathScriptScaleFactor(StyleResolverState& state) {
       }
     }
   }
-  scaleFactor *= pow(defaultScaleDown, exponent);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  scaleFactor *= gfx::molt_math::Pow(defaultScaleDown, exponent);
   return invertScaleFactor ? 1 / scaleFactor : scaleFactor;
 }
 

@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/svg/svg_path_consumer.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -249,13 +250,15 @@ bool SVGPathNormalizer::DecomposeArcToCubic(
     float start_theta = theta1 + i * theta_arc / segments;
     float end_theta = theta1 + (i + 1) * theta_arc / segments;
 
-    float t = (8 / 6.f) * tanf(0.25f * (end_theta - start_theta));
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    float t =
+        (8 / 6.f) * gfx::molt_math::Tan(0.25f * (end_theta - start_theta));
     if (!std::isfinite(t))
       return false;
-    float sin_start_theta = sinf(start_theta);
-    float cos_start_theta = cosf(start_theta);
-    float sin_end_theta = sinf(end_theta);
-    float cos_end_theta = cosf(end_theta);
+    float sin_start_theta = gfx::molt_math::Sin(start_theta);
+    float cos_start_theta = gfx::molt_math::Cos(start_theta);
+    float sin_end_theta = gfx::molt_math::Sin(end_theta);
+    float cos_end_theta = gfx::molt_math::Cos(end_theta);
 
     point1 = gfx::PointF(cos_start_theta - t * sin_start_theta,
                          sin_start_theta + t * cos_start_theta);

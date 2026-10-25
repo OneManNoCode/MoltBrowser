@@ -61,6 +61,7 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
 
@@ -309,7 +310,9 @@ inline void LineTo(CanvasPath* path, const gfx::PointF& p) {
 inline gfx::PointF GetPointOnEllipse(float radius_x,
                                      float radius_y,
                                      float theta) {
-  return gfx::PointF(radius_x * cosf(theta), radius_y * sinf(theta));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::PointF(radius_x * gfx::molt_math::Cos(theta),
+                     radius_y * gfx::molt_math::Sin(theta));
 }
 
 void CanonicalizeAngle(float* start_angle, float* end_angle) {
@@ -456,7 +459,9 @@ void CanvasPath::arc(double double_x,
 
   if (!radius || start_angle == end_angle) [[unlikely]] {
     // The arc is empty but we still need to draw the connecting line.
-    lineTo(x + radius * cosf(start_angle), y + radius * sinf(start_angle));
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    lineTo(x + radius * gfx::molt_math::Cos(start_angle),
+           y + radius * gfx::molt_math::Sin(start_angle));
     return;
   }
 

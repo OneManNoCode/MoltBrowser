@@ -7,6 +7,7 @@
 #include "base/numerics/angle_conversions.h"
 #include "third_party/blink/renderer/core/style/basic_shapes.h"
 #include "third_party/blink/renderer/platform/geometry/path.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -70,8 +71,9 @@ float CalculateDistanceToReferenceBoxSide(
     return 0;
   }
   const float theta = base::DegToRad(angle);
-  float cos_t = std::cos(theta);
-  float sin_t = std::sin(theta);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  float cos_t = gfx::molt_math::Cos(theta);
+  float sin_t = gfx::molt_math::Sin(theta);
   // We are looking for % point, let's swap signs and lines
   // so that we end up in situation like this:
   //         (0, 0) #--------------%--# (box.width, 0)
@@ -128,8 +130,9 @@ PointAndTangent StyleRay::PointAndNormalAtLength(
     float length) const {
   const float angle = Angle() - 90;
   const float rad = base::DegToRad(angle);
-  const float x = starting_point.x() + length * std::cos(rad);
-  const float y = starting_point.y() + length * std::sin(rad);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const float x = starting_point.x() + length * gfx::molt_math::Cos(rad);
+  const float y = starting_point.y() + length * gfx::molt_math::Sin(rad);
   return {{x, y}, angle};
 }
 

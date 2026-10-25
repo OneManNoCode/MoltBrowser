@@ -15,6 +15,7 @@
 #include "base/notreached.h"
 #include "base/numerics/angle_conversions.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/sin_cos_degrees.h"
 
 namespace blink {
@@ -101,7 +102,8 @@ T TanDegrees(T degrees) {
   }
   // Slow path for non-table cases.
   T x = base::DegToRad(degrees);
-  return std::tan(x);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Tan(x);
 }
 
 }  // namespace
@@ -122,24 +124,26 @@ ValueType EvaluateTrigonometricFunction(
     case OperatorType::kTan: {
       return TanDegrees(a);
     }
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h), the
+    // inverse functions below; sin and cos through gfx::SinCosDegrees.
     case OperatorType::kAsin: {
-      ValueType value = base::RadToDeg(std::asin(a));
+      ValueType value = base::RadToDeg(gfx::molt_math::Asin(a));
       DCHECK(value >= -90 && value <= 90 || std::isnan(value));
       return value;
     }
     case OperatorType::kAcos: {
-      ValueType value = base::RadToDeg(std::acos(a));
+      ValueType value = base::RadToDeg(gfx::molt_math::Acos(a));
       DCHECK(value >= 0 && value <= 180 || std::isnan(value));
       return value;
     }
     case OperatorType::kAtan: {
-      ValueType value = base::RadToDeg(std::atan(a));
+      ValueType value = base::RadToDeg(gfx::molt_math::Atan(a));
       DCHECK(value >= -90 && value <= 90 || std::isnan(value));
       return value;
     }
     case OperatorType::kAtan2: {
       DCHECK(b.has_value());
-      ValueType value = base::RadToDeg(std::atan2(a, b.value()));
+      ValueType value = base::RadToDeg(gfx::molt_math::Atan2(a, b.value()));
       DCHECK(value >= -180 && value <= 180 || std::isnan(value));
       return value;
     }

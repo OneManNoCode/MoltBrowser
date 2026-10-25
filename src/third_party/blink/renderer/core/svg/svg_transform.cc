@@ -23,6 +23,7 @@
 #include "base/numerics/angle_conversions.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace blink {
@@ -136,8 +137,9 @@ const char* TransformTypePrefixForParsing(SVGTransformType type) {
 gfx::PointF DecomposeRotationCenter(const AffineTransform& matrix,
                                     float angle) {
   const double angle_in_rad = base::DegToRad(angle);
-  const double cos_angle = std::cos(angle_in_rad);
-  const double sin_angle = std::sin(angle_in_rad);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const double cos_angle = gfx::molt_math::Cos(angle_in_rad);
+  const double sin_angle = gfx::molt_math::Sin(angle_in_rad);
   if (cos_angle == 1)
     return gfx::PointF();
   // Solve for the point <cx, cy> from a matrix on the form:

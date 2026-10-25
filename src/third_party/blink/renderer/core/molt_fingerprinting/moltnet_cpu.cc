@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/modules/skcms/skcms.h"
+#include "ui/gfx/geometry/molt_math.h"
 #include "v8/include/v8-initialization.h"
 
 namespace blink::molt_fingerprinting {
@@ -28,6 +29,8 @@ void PinUniformMachineBeforeV8() {
   skcms_MoltBrowserEnablePortableMode();
   // Before anything is drawn (no raster thread exists yet).
   SkGraphics::MoltBrowserUsePortableRasterPipeline();
+  // Before Blink computes anything a page can read (no thread exists yet).
+  gfx::molt_math::SetPortable(true);
 }
 
 }  // namespace blink::molt_fingerprinting

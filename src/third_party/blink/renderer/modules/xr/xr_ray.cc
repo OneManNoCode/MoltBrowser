@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/modules/xr/xr_utils.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/quaternion.h"
 #include "ui/gfx/geometry/vector3d_f.h"
 
@@ -171,7 +172,8 @@ NotShared<DOMFloat32Array> XRRay::matrix() {
       matrix.RotateAboutXAxis(180);
     } else {
       // Rotation needed - create it from axis-angle.
-      matrix.RotateAbout(axis, base::RadToDeg(std::acos(cos_angle)));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      matrix.RotateAbout(axis, base::RadToDeg(gfx::molt_math::Acos(cos_angle)));
     }
 
     // Step 7: Let matrix be the result of premultiplying rotation from the left

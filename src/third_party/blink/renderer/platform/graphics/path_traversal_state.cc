@@ -21,6 +21,7 @@
 
 #include "base/numerics/angle_conversions.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -211,7 +212,9 @@ void PathTraversalState::ProcessSegment() {
     float slope = (current_ - previous_).SlopeAngleRadians();
     if (action_ == kTraversalPointAtLength) {
       float offset = desired_length_ - total_length_;
-      current_.Offset(offset * cosf(slope), offset * sinf(slope));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      current_.Offset(offset * gfx::molt_math::Cos(slope),
+                      offset * gfx::molt_math::Sin(slope));
     } else {
       normal_angle_ = base::RadToDeg(slope);
     }

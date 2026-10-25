@@ -23,6 +23,7 @@
 
 #include "base/numerics/angle_conversions.h"
 #include "third_party/blink/renderer/platform/geometry/blend.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/quaternion.h"
 #include "ui/gfx/geometry/transform.h"
 
@@ -50,7 +51,9 @@ gfx::Vector3dF NormalizeAxis(gfx::Vector3dF axis) {
 
 Rotation ComputeRotation(Quaternion q) {
   double cos_half_angle = q.w();
-  double interpolated_angle = base::RadToDeg(2 * std::acos(cos_half_angle));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  double interpolated_angle =
+      base::RadToDeg(2 * gfx::molt_math::Acos(cos_half_angle));
   gfx::Vector3dF interpolated_axis =
       NormalizeAxis(gfx::Vector3dF(q.x(), q.y(), q.z()));
   return Rotation(interpolated_axis, interpolated_angle);

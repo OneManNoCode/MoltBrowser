@@ -31,6 +31,14 @@
 //                                molt_portable_math.h), which x86-64 already
 //                                runs; arm64's own build differs for some
 //                                arguments of sin, tan, atan and atan2
+//   Blink's math               what DOMMatrix, SVGMatrix and canvas
+//                                transforms, CSS math functions, transforms
+//                                and their animations, Typed OM, SVG paths,
+//                                pointer events, colour spaces and Web Audio
+//                                compute with the C library uses the same
+//                                portable functions
+//                                (gfx::molt_math::SetPortable,
+//                                ui/gfx/geometry/molt_math.h)
 //   V8's heap                  every isolate (windows, workers, worklets) is
 //                                configured for one machine,
 //                                moltnet::kV8HeapPhysicalMemory

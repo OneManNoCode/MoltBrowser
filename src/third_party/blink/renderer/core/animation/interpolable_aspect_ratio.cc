@@ -6,6 +6,7 @@
 #include "third_party/blink/renderer/core/animation/interpolable_value.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
 #include "third_party/blink/renderer/core/style/style_aspect_ratio.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -25,12 +26,15 @@ InterpolableAspectRatio::InterpolableAspectRatio(
   // have a degenerate aspect ratio.
   DCHECK(aspect_ratio.height() > 0 && aspect_ratio.width() > 0);
 
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
   value_ = MakeGarbageCollected<InterpolableNumber>(
-      log(aspect_ratio.width() / aspect_ratio.height()));
+      gfx::molt_math::Log(aspect_ratio.width() / aspect_ratio.height()));
 }
 
 gfx::SizeF InterpolableAspectRatio::GetRatio() const {
-  return gfx::SizeF(exp(To<InterpolableNumber>(*value_).Value()), 1);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::SizeF(
+      gfx::molt_math::Exp(To<InterpolableNumber>(*value_).Value()), 1);
 }
 
 void InterpolableAspectRatio::Scale(double scale) {

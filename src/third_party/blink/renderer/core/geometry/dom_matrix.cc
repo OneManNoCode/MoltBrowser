@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_matrix_init.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_string_unrestricteddoublesequence.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -242,7 +243,8 @@ DOMMatrix* DOMMatrix::rotateSelf(double rot_x, double rot_y, double rot_z) {
 }
 
 DOMMatrix* DOMMatrix::rotateFromVectorSelf(double x, double y) {
-  matrix_.Rotate(base::RadToDeg(atan2(y, x)));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  matrix_.Rotate(base::RadToDeg(gfx::molt_math::Atan2(y, x)));
   return this;
 }
 

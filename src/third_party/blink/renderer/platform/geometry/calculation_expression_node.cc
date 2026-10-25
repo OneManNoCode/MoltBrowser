@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/platform/geometry/length.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
 #include "third_party/blink/renderer/platform/geometry/math_functions.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -321,10 +322,11 @@ CalculationExpressionOperationNode::CreateSimplified(Children&& children,
       if (!can_simplify) {
         break;
       }
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
       float value = operand_pixels.size() == 1u
-                        ? std::log(operand_pixels.front())
-                        : std::log2(operand_pixels.front()) /
-                              std::log2(operand_pixels.back());
+                        ? gfx::molt_math::Log(operand_pixels.front())
+                        : gfx::molt_math::Log2(operand_pixels.front()) /
+                              gfx::molt_math::Log2(operand_pixels.back());
       return MakeGarbageCollected<CalculationExpressionPixelsAndPercentNode>(
           PixelsAndPercent(value));
     }
@@ -347,7 +349,8 @@ CalculationExpressionOperationNode::CreateSimplified(Children&& children,
       }
       float value = 0;
       for (float operand : operand_pixels) {
-        value = std::hypot(value, operand);
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+        value = gfx::molt_math::Hypot(value, operand);
       }
       return MakeGarbageCollected<CalculationExpressionPixelsAndPercentNode>(
           PixelsAndPercent(value));
@@ -377,8 +380,9 @@ CalculationExpressionOperationNode::CreateSimplified(Children&& children,
         return MakeGarbageCollected<CalculationExpressionNumberNode>(
             EvaluateSignFunction(value));
       } else if (op == CalculationOperator::kExp) {
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
         return MakeGarbageCollected<CalculationExpressionNumberNode>(
-            std::exp(value));
+            gfx::molt_math::Exp(value));
       } else if (op == CalculationOperator::kSqrt) {
         return MakeGarbageCollected<CalculationExpressionNumberNode>(
             std::sqrt(value));
@@ -430,7 +434,8 @@ CalculationExpressionOperationNode::CreateSimplified(Children&& children,
       if (!children.front()->IsNumber() || !children.back()->IsNumber()) {
         break;
       }
-      float value = std::pow(
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      float value = gfx::molt_math::Pow(
           To<CalculationExpressionNumberNode>(*children.front()).Value(),
           To<CalculationExpressionNumberNode>(*children.back()).Value());
       return MakeGarbageCollected<CalculationExpressionNumberNode>(value);
@@ -564,17 +569,22 @@ float CalculationExpressionOperationNode::Evaluate(
     case CalculationOperator::kLog: {
       DCHECK_GE(children_.size(), 1u);
       DCHECK_LE(children_.size(), 2u);
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
       return children_.size() == 1u
-                 ? std::log(children_.front()->Evaluate(max_value, input))
-                 : std::log2(children_.front()->Evaluate(max_value, input)) /
-                       std::log2(children_.back()->Evaluate(max_value, input));
+                 ? gfx::molt_math::Log(
+                       children_.front()->Evaluate(max_value, input))
+                 : gfx::molt_math::Log2(
+                       children_.front()->Evaluate(max_value, input)) /
+                       gfx::molt_math::Log2(
+                           children_.back()->Evaluate(max_value, input));
     }
     case CalculationOperator::kHypot: {
       DCHECK_GE(children_.size(), 1u);
       float value = 0;
       for (const Member<const CalculationExpressionNode>& operand : children_) {
         float a = operand->Evaluate(max_value, input);
-        value = std::hypot(value, a);
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+        value = gfx::molt_math::Hypot(value, a);
       }
       return value;
     }
@@ -587,7 +597,8 @@ float CalculationExpressionOperationNode::Evaluate(
       if (operator_ == CalculationOperator::kAbs) {
         return std::abs(value);
       } else if (operator_ == CalculationOperator::kExp) {
-        return std::exp(value);
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+        return gfx::molt_math::Exp(value);
       } else if (operator_ == CalculationOperator::kSign) {
         return EvaluateSignFunction(value);
       } else {
@@ -625,7 +636,8 @@ float CalculationExpressionOperationNode::Evaluate(
       DCHECK_EQ(children_.size(), 2u);
       float a = children_[0]->Evaluate(max_value, input);
       float b = children_[1]->Evaluate(max_value, input);
-      return std::pow(a, b);
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      return gfx::molt_math::Pow(a, b);
     }
     case CalculationOperator::kSin:
     case CalculationOperator::kCos:

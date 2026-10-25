@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/ascii_ctype.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -153,7 +154,8 @@ static bool GenericParseNumber(base::span<const CharType>& result_span,
     // would yield a representable float), then rely on the pow()+rounding to
     // produce a reasonable result (likely zero.)
     if (exponent) {
-      number *= static_cast<FloatType>(std::pow(10.0, exponent));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      number *= static_cast<FloatType>(gfx::molt_math::Pow(10.0, exponent));
     }
 
     span = span.subspan(exponent_count);

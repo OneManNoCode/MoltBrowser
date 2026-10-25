@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/css/cssom/css_unit_value.h"
 #include "third_party/blink/renderer/core/geometry/dom_matrix.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -71,8 +72,9 @@ DOMMatrix* CSSSkew::toMatrix(ExceptionState&) const {
   DCHECK(ax);
   DCHECK(ay);
   DOMMatrix* result = DOMMatrix::Create();
-  result->setM12(std::tan(ay->value()));
-  result->setM21(std::tan(ax->value()));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  result->setM12(gfx::molt_math::Tan(ay->value()));
+  result->setM21(gfx::molt_math::Tan(ax->value()));
   return result;
 }
 

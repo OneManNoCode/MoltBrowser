@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/superellipse.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -37,8 +38,9 @@ double SuperellipseToInterpolableValue(Superellipse superellipse) {
   if (superellipse.IsFullyConcave()) {
     return kNotchInterpolationValue;
   }
-  const double convex_half_corner =
-      std::pow(0.5, std::pow(0.5, std::abs(superellipse.Parameter())));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const double convex_half_corner = gfx::molt_math::Pow(
+      0.5, gfx::molt_math::Pow(0.5, std::abs(superellipse.Parameter())));
   CHECK_GE(convex_half_corner, 0.5);
   CHECK_LE(convex_half_corner, 1);
   return superellipse.IsConvex() ? convex_half_corner : 1 - convex_half_corner;
@@ -57,11 +59,13 @@ Superellipse SuperellipseFromInterpolableValue(
   }
 
   const bool is_convex = value > 0.5;
-  const double log_half = std::log(0.5);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const double log_half = gfx::molt_math::Log(0.5);
   const double convex_half_corner = is_convex ? value : 1 - value;
   // This is equivalent to log(base 1/2) of log(base 1/2) of convex_half_corner.
   const double param =
-      std::log(std::log(convex_half_corner) / log_half) / log_half;
+      gfx::molt_math::Log(gfx::molt_math::Log(convex_half_corner) / log_half) /
+      log_half;
   return Superellipse(is_convex ? param : -param);
 }
 

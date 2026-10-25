@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/skia/include/core/SkPathBuilder.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -260,8 +261,9 @@ static std::optional<PointAndTangent> CalculatePointAndNormalOnPath(
       if (measure.getPosTan(pos_in_contour, &position, &tangent)) {
         PointAndTangent result;
         result.point = gfx::SkPointToPointF(position);
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
         result.tangent_in_degrees =
-            base::RadToDeg(SkScalarATan2(tangent.fY, tangent.fX));
+            base::RadToDeg(gfx::molt_math::Atan2(tangent.fY, tangent.fX));
         return result;
       }
     }

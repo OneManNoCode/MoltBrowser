@@ -16,6 +16,7 @@
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/modules/skcms/skcms.h"
 #include "ui/gfx/color_space.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace gfx {
 
@@ -28,10 +29,11 @@ constexpr float kD50_z = 0.8251f;
 
 // Power function extended to all real numbers by point symmetry.
 float powExt(float x, float p) {
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
   if (x < 0) {
-    return -powf(-x, p);
+    return -molt_math::Pow(-x, p);
   } else {
-    return powf(x, p);
+    return molt_math::Pow(x, p);
   }
 }
 
@@ -100,7 +102,8 @@ std::tuple<float, float, float> XYZD50ToLab(float x, float y, float z) {
     if (t <= delta_limit)
       return (841.0f / 108.0f) * t + (16.0f / 116.0f);
     else
-      return std::pow(t, 1.0f / 3.0f);
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      return molt_math::Pow(t, 1.0f / 3.0f);
   };
 
   x = LabTransferFunction(x / kD50_x);
@@ -263,12 +266,14 @@ std::tuple<float, float, float> XYZD50ToOklab(float x, float y, float z) {
 }
 
 std::tuple<float, float, float> LchToLab(float l, float c, float h) {
-  return std::make_tuple(l, c * std::cos(base::DegToRad(h)),
-                         c * std::sin(base::DegToRad(h)));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return std::make_tuple(l, c * molt_math::Cos(base::DegToRad(h)),
+                         c * molt_math::Sin(base::DegToRad(h)));
 }
 std::tuple<float, float, float> LabToLch(float l, float a, float b) {
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
   return std::make_tuple(l, std::sqrt(a * a + b * b),
-                         base::RadToDeg(atan2f(b, a)));
+                         base::RadToDeg(molt_math::Atan2(b, a)));
 }
 
 std::tuple<float, float, float> SRGBToSRGBLegacy(float r, float g, float b) {

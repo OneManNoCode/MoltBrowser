@@ -8,6 +8,7 @@
 
 #include "base/numerics/angle_conversions.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 // static
@@ -41,9 +42,10 @@ double PointerEventUtil::AzimuthFromTilt(double tilt_x_degrees,
          abs(tilt_x_degrees) != 90 && abs(tilt_y_degrees) != 90);
   const double tilt_x_radians = base::DegToRad(tilt_x_degrees);
   const double tilt_y_radians = base::DegToRad(tilt_y_degrees);
-  const double tan_x = tan(tilt_x_radians);
-  const double tan_y = tan(tilt_y_radians);
-  double azimuth_radians = atan2(tan_y, tan_x);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const double tan_x = gfx::molt_math::Tan(tilt_x_radians);
+  const double tan_y = gfx::molt_math::Tan(tilt_y_radians);
+  double azimuth_radians = gfx::molt_math::Atan2(tan_y, tan_x);
   azimuth_radians = (azimuth_radians >= 0) ? azimuth_radians
                                            : (azimuth_radians + kTwoPiDouble);
 
@@ -70,8 +72,10 @@ double PointerEventUtil::AltitudeFromTilt(double tilt_x_degrees,
     return kPiOverTwoDouble - abs(tilt_x_radians);
   }
 
-  return atan(1.0 /
-              sqrt(pow(tan(tilt_x_radians), 2) + pow(tan(tilt_y_radians), 2)));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Atan(
+      1.0 / sqrt(gfx::molt_math::Pow(gfx::molt_math::Tan(tilt_x_radians), 2) +
+                 gfx::molt_math::Pow(gfx::molt_math::Tan(tilt_y_radians), 2)));
 }
 
 // static
@@ -82,9 +86,11 @@ int32_t PointerEventUtil::TiltXFromSpherical(double azimuth_radians,
   if (altitude_radians != 0) {
     // Not using std::round because we need Javascript Math.round behaviour
     // here which is different
-    return std::floor(
-        base::RadToDeg(atan(cos(azimuth_radians) / tan(altitude_radians))) +
-        0.5);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    return std::floor(base::RadToDeg(gfx::molt_math::Atan(
+                          gfx::molt_math::Cos(azimuth_radians) /
+                          gfx::molt_math::Tan(altitude_radians))) +
+                      0.5);
   }
 
   if (azimuth_radians == kPiOverTwoDouble ||
@@ -108,9 +114,11 @@ int32_t PointerEventUtil::TiltYFromSpherical(double azimuth_radians,
   if (altitude_radians != 0) {
     // Not using std::round because we need Javascript Math.round behaviour
     // here which is different
-    return std::floor(
-        base::RadToDeg(atan(sin(azimuth_radians) / tan(altitude_radians))) +
-        0.5);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    return std::floor(base::RadToDeg(gfx::molt_math::Atan(
+                          gfx::molt_math::Sin(azimuth_radians) /
+                          gfx::molt_math::Tan(altitude_radians))) +
+                      0.5);
   }
   if (azimuth_radians == 0 || azimuth_radians == kPiDouble ||
       azimuth_radians == kTwoPiDouble) {

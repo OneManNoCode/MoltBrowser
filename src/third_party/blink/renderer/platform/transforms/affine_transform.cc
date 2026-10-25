@@ -35,6 +35,7 @@
 #include "third_party/skia/include/core/SkM44.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "ui/gfx/geometry/decomposed_transform.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -130,8 +131,9 @@ AffineTransform& AffineTransform::Rotate(double a) {
 }
 
 AffineTransform& AffineTransform::RotateRadians(double a) {
-  double cos_angle = cos(a);
-  double sin_angle = sin(a);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  double cos_angle = gfx::molt_math::Cos(a);
+  double sin_angle = gfx::molt_math::Sin(a);
   AffineTransform rot(cos_angle, sin_angle, -sin_angle, cos_angle, 0, 0);
 
   PreConcat(rot);
@@ -162,7 +164,8 @@ AffineTransform& AffineTransform::ScaleNonUniform(double sx, double sy) {
 }
 
 AffineTransform& AffineTransform::RotateFromVector(double x, double y) {
-  return RotateRadians(atan2(y, x));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return RotateRadians(gfx::molt_math::Atan2(y, x));
 }
 
 AffineTransform& AffineTransform::FlipX() {
@@ -186,15 +189,19 @@ AffineTransform& AffineTransform::Shear(double sx, double sy) {
 }
 
 AffineTransform& AffineTransform::Skew(double angle_x, double angle_y) {
-  return Shear(tan(base::DegToRad(angle_x)), tan(base::DegToRad(angle_y)));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return Shear(gfx::molt_math::Tan(base::DegToRad(angle_x)),
+               gfx::molt_math::Tan(base::DegToRad(angle_y)));
 }
 
 AffineTransform& AffineTransform::SkewX(double angle) {
-  return Shear(tan(base::DegToRad(angle)), 0);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return Shear(gfx::molt_math::Tan(base::DegToRad(angle)), 0);
 }
 
 AffineTransform& AffineTransform::SkewY(double angle) {
-  return Shear(0, tan(base::DegToRad(angle)));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return Shear(0, gfx::molt_math::Tan(base::DegToRad(angle)));
 }
 
 gfx::PointF AffineTransform::MapPoint(const gfx::PointF& point) const {

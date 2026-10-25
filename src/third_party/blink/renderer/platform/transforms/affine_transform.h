@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/double4.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace gfx {
 class PointF;
@@ -159,11 +160,14 @@ class PLATFORM_EXPORT AffineTransform {
     return result;
   }
 
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h), both.
   [[nodiscard]] static constexpr AffineTransform MakeSkewX(double angle) {
-    return AffineTransform(1, 0, std::tan(base::DegToRad(angle)), 1, 0, 0);
+    return AffineTransform(1, 0, gfx::molt_math::Tan(base::DegToRad(angle)), 1,
+                           0, 0);
   }
   [[nodiscard]] static constexpr AffineTransform MakeSkewY(double angle) {
-    return AffineTransform(1, std::tan(base::DegToRad(angle)), 0, 1, 0, 0);
+    return AffineTransform(1, gfx::molt_math::Tan(base::DegToRad(angle)), 0, 1,
+                           0, 0);
   }
   [[nodiscard]] static constexpr AffineTransform Translation(double x,
                                                              double y) {
