@@ -21,6 +21,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "components/download/internal/common/molt_fetch_credentials.h"  // MoltBrowser
 #include "components/download/public/common/download_create_info.h"
 #include "components/download/public/common/download_features.h"
 #include "components/download/public/common/download_interrupt_reasons_utils.h"
@@ -493,6 +494,10 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   // - https://crbug.com/952834
   // - https://github.com/whatwg/fetch/issues/896#issuecomment-484423278
   request->mode = network::mojom::RequestMode::kNavigate;
+  // MoltBrowser: unless the parameters ask for another credentials mode
+  // (Background Fetch's), which the request is then made with
+  // (molt_fetch_credentials.h).
+  MoltApplyDownloadCredentialsMode(params->credentials_mode(), *request);
 
   bool has_upload_data = false;
   if (params->post_body()) {
