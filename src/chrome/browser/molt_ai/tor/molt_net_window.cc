@@ -24,6 +24,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
+#include "chrome/browser/molt_ai/tor/molt_net_parental_controls.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -648,8 +649,20 @@ void OpenImpl(Profile* from,
     std::move(done).Run(false, std::move(error));
     return;
   }
-  TorManager::Get()->Launch(base::BindOnce(&OnTorReady, path, url,
-                                           for_new_identity, std::move(done)));
+  // Windows' parental controls as they are now, not as at startup
+  // (molt_net_parental_controls.h).
+  CheckMoltNetParentalControls(base::BindOnce(
+      [](base::FilePath path, GURL url, bool for_new_identity,
+         MoltNetWindow::DoneCallback done, bool allowed) {
+        if (!allowed) {
+          std::move(done).Run(
+              false, MoltNetSettingsError(MoltNetSettingsCheck::kIncognitoOff));
+          return;
+        }
+        TorManager::Get()->Launch(base::BindOnce(
+            &OnTorReady, path, url, for_new_identity, std::move(done)));
+      },
+      path, url, for_new_identity, std::move(done)));
 }
 
 void FinishNewIdentity(base::FilePath path,

@@ -219,6 +219,10 @@ source_set("tor") {
     "molt_net_ended_identity_throttle.h",
     "molt_net_live_guard.cc",
     "molt_net_live_guard.h",
+
+    # Windows' parental controls, read again as a MoltNet window opens.
+    "molt_net_parental_controls.cc",
+    "molt_net_parental_controls.h",
     "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",

@@ -52,6 +52,14 @@ class WinParentalControlsValue {
     return parental_controls_;
   }
 
+  // MoltBrowser: as GetParentalControls(), without the histograms
+  // (MoltReadWinParentalControlsNow()).
+  static WinParentalControls ReadNow() {
+    std::optional<WinParentalControls> controls = GetParentalControlsFromApi();
+    UpdateParentalControlsFromRegistry(controls);
+    return controls.value_or(WinParentalControls());
+  }
+
  private:
   friend struct base::DefaultSingletonTraits<WinParentalControlsValue>;
 
@@ -190,4 +198,9 @@ void InitializeWinParentalControls() {
 
 const WinParentalControls& GetWinParentalControls() {
   return WinParentalControlsValue::GetInstance()->parental_controls();
+}
+
+// MoltBrowser: see parental_controls.h.
+WinParentalControls MoltReadWinParentalControlsNow() {
+  return WinParentalControlsValue::ReadNow();
 }

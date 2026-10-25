@@ -57,9 +57,11 @@
 // those sites only"), MoltNet gets Incognito's URL lists too
 // (chrome_policy_blocklist_service_factory.cc). The availability pref can
 // change while MoltNet is open (a policy refresh, an account becoming
-// supervised); the live guard watches it like the settings above. Parental
-// controls and Isolated Mode are read once per browser run, as Chromium
-// reads them.
+// supervised); the live guard watches it like the settings above.
+// Isolated Mode is read once per browser run, as Chromium reads it. So are
+// Windows' parental controls by Chromium, which has no notification of their
+// changes; MoltNet reads them again each time one of its windows opens
+// (MoltNetParentalControlsAllowOpen(), molt_net_parental_controls.h).
 //
 // An administrator can also require extensions in Incognito
 // (MandatoryExtensionsForIncognitoNavigation: Chromium blocks every
@@ -231,6 +233,17 @@ constexpr MoltNetSettingsCheck CheckMoltNetIncognito(
   settings.incognito = incognito;
   settings.extensions_required_in_incognito = extensions_required_in_incognito;
   return CheckMoltNetSettings(settings);
+}
+
+// Whether the platform's parental controls, read again as a MoltNet window
+// opens, let it open: not while they require activity reporting
+// (`logging_required_now`, Windows), which turns Incognito off.
+// nullopt: nothing to read (not Windows); a failed read counts as no
+// controls, as Chromium counts it (GetWinParentalControls()). Refused with
+// kIncognitoOff's message.
+constexpr bool MoltNetParentalControlsAllowOpen(
+    std::optional<bool> logging_required_now) {
+  return !logging_required_now.value_or(false);
 }
 
 // The message shown instead of opening a MoltNet window, and when MoltNet

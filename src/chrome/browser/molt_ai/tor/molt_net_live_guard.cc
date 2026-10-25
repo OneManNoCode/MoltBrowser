@@ -49,8 +49,10 @@ const char* const kWatchedPrefs[] = {
     // Blob URL partitioning (PartitionedBlobUrlUsage).
     prefs::kPartitionedBlobUrlUsage,
     // Incognito's availability (IncognitoModeAvailability, IncognitoEnabled,
-    // and an account becoming supervised). Parental controls and Isolated
-    // Mode are read once per browser run, as Chromium reads them.
+    // and an account becoming supervised). Isolated Mode is read once per
+    // browser run, as Chromium reads it; Windows' parental controls send no
+    // notification, and are read again when a MoltNet window opens
+    // (molt_net_parental_controls.h).
     policy::policy_prefs::kIncognitoModeAvailability,
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     // Extensions required in Incognito

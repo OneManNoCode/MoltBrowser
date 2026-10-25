@@ -170,6 +170,13 @@ TEST(MoltNetLivePolicyTest, ExtensionsRequiredInIncognitoRefuse) {
             std::string::npos);
 }
 
+// Windows' parental controls, read again as a window opens.
+TEST(MoltNetLivePolicyTest, ParentalControlsReadAgain) {
+  EXPECT_FALSE(MoltNetParentalControlsAllowOpen(true));
+  EXPECT_TRUE(MoltNetParentalControlsAllowOpen(false));
+  EXPECT_TRUE(MoltNetParentalControlsAllowOpen(std::nullopt));
+}
+
 TEST(MoltNetLivePolicyTest, IncognitoCheckAlone) {
   // Before Tor starts, only Incognito's availability, and the extensions it
   // requires, are known.

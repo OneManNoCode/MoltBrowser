@@ -24,4 +24,11 @@ void InitializeWinParentalControls();
 // thread.
 [[nodiscard]] const WinParentalControls& GetWinParentalControls();
 
+// MoltBrowser: the platform parental controls as they are now, read the way
+// GetWinParentalControls() reads them once per run, but not cached
+// (chrome/browser/molt_ai/tor/molt_net_parental_controls.h asks each time a
+// MoltNet window opens). Blocking: call it on a COM STA thread that may
+// block.
+[[nodiscard]] WinParentalControls MoltReadWinParentalControlsNow();
+
 #endif  // CHROME_BROWSER_WIN_PARENTAL_CONTROLS_H_
