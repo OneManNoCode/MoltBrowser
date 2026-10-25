@@ -34,6 +34,7 @@
 #include "chrome/browser/download/download_ui_safe_browsing_util.h"
 #include "chrome/browser/download/download_warning_desktop_hats_utils.h"
 #include "chrome/browser/download/drag_download_item.h"
+#include "chrome/browser/download/molt_retried_download_isolation.h"
 #include "chrome/browser/download/offline_item_utils.h"
 #include "chrome/browser/feature_engagement/non_iph_promo.h"
 #include "chrome/browser/feature_engagement/tracker_factory.h"
@@ -458,6 +459,10 @@ void DownloadsDOMHandler::RetryDownload(const std::string& id) {
   dl_params->set_content_initiated(true);
   dl_params->set_initiator(file->GetRequestInitiator());
   dl_params->set_download_source(download::DownloadSource::RETRY);
+  // MoltBrowser: in MoltNet with the isolation of the download it retries,
+  // not the downloads page's (molt_retried_download_isolation.h).
+  MoltRetryDownloadWithItsSite(web_contents->GetBrowserContext(), file,
+                               *dl_params);
 
   web_contents->GetBrowserContext()->GetDownloadManager()->DownloadUrl(
       std::move(dl_params));

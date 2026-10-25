@@ -25,6 +25,7 @@
 #include "chrome/browser/download/download_item_web_app_data.h"
 #include "chrome/browser/download/download_ui_model.h"
 #include "chrome/browser/download/download_warning_desktop_hats_utils.h"
+#include "chrome/browser/download/molt_retried_download_isolation.h"
 #include "chrome/browser/download/offline_item_model_manager.h"
 #include "chrome/browser/download/offline_item_model_manager_factory.h"
 #include "chrome/browser/download/offline_item_utils.h"
@@ -393,6 +394,10 @@ void DownloadBubbleUIController::RetryDownload(
   download_url_params->set_content_initiated(false);
   download_url_params->set_download_source(
       download::DownloadSource::RETRY_FROM_BUBBLE);
+  // MoltBrowser: in MoltNet with the isolation of the download it retries
+  // (molt_retried_download_isolation.h).
+  MoltRetryDownloadWithItsSite(profile_, model->GetDownloadItem(),
+                               *download_url_params);
 
   download_manager->DownloadUrl(std::move(download_url_params));
 }
