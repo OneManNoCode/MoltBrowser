@@ -350,6 +350,19 @@ class ManifestTest(unittest.TestCase):
                     "also used")
         self.broken(files(0, "source", "elsewhere"), "unknown source")
         self.broken(files(0, "license", "GPL.txt"), "licences")
+        # A final newline is part of the value: re's "$" alone would let it
+        # through.
+        self.broken(files(0, "install_name", "x.ttf\n"), "not allowed")
+        self.broken(files(0, "path", "a/b.ttf\n"), "isn't allowed")
+        self.broken(files(0, "sha256", "0" * 64 + "\n"), "not allowed")
+        first_source = sorted(self.data["sources"])[0]
+        for key in ("repo", "commit"):
+            value = self.data["sources"][first_source][key] + "\n"
+            self.broken(lambda d, k=key, v=value:
+                        d["sources"][first_source].__setitem__(k, v),
+                        "not allowed")
+        self.broken(lambda d: d["files"][0]["faces"][0].__setitem__(
+            "family", d["files"][0]["faces"][0]["family"] + "\n"))
 
     def test_pins(self):
         def files(key, value):

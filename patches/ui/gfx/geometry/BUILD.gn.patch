@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/ui/gfx/geometry/BUILD.gn b/ui/gfx/geometry/BUILD.gn
-index a5e3e1be9fb52bf0716e3e3aa0a7f586625d0f71..8061e5b6779caaf61bf63df05fd1c08d490e8bfa 100644
+index a5e3e1be9fb52bf0716e3e3aa0a7f586625d0f71..e988c4e0290f27b972cfa222a1047119445bc62d 100644
 --- a/ui/gfx/geometry/BUILD.gn
 +++ b/ui/gfx/geometry/BUILD.gn
 @@ -29,6 +29,12 @@ component("geometry") {
@@ -21,7 +21,7 @@ index a5e3e1be9fb52bf0716e3e3aa0a7f586625d0f71..8061e5b6779caaf61bf63df05fd1c08d
      "outsets.h",
      "outsets_f.h",
      "point.cc",
-@@ -76,7 +82,12 @@ component("geometry") {
+@@ -76,7 +82,13 @@ component("geometry") {
  
    defines = [ "IS_GEOMETRY_IMPL" ]
  
@@ -30,12 +30,13 @@ index a5e3e1be9fb52bf0716e3e3aa0a7f586625d0f71..8061e5b6779caaf61bf63df05fd1c08d
 +    "//base",
 +
 +    # MoltBrowser: molt_math.cc.
++    "//third_party/fdlibm",
 +    "//third_party/llvm-libc:molt_portable_math",
 +  ]
  
    if (!is_debug) {
      configs -= [ "//build/config/compiler:default_optimization" ]
-@@ -115,3 +126,15 @@ component("geometry_skia") {
+@@ -115,3 +127,16 @@ component("geometry_skia") {
    ]
    defines = [ "IS_GEOMETRY_SKIA_IMPL" ]
  }
@@ -47,6 +48,7 @@ index a5e3e1be9fb52bf0716e3e3aa0a7f586625d0f71..8061e5b6779caaf61bf63df05fd1c08d
 +  deps = [
 +    ":geometry",
 +    "//testing/gtest",
++    "//third_party/fdlibm",
 +    "//third_party/llvm-libc:molt_portable_math",
 +  ]
 +  visibility = [ "//chrome/browser/molt_ai/test:*" ]

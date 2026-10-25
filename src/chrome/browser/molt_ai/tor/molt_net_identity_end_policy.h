@@ -79,6 +79,20 @@ constexpr bool MoltNetNavigationMayProceed(bool is_moltnet_profile,
   return !(is_moltnet_profile && identity_ended);
 }
 
+// Whether the browser may still send a request it holds for a page of a
+// profile: a keepalive request, beacon, ping or fetchLater it starts,
+// retries or follows a redirect for (the page may be gone), a download or a
+// Save Page As resource, a Background Fetch request. None of an ended
+// MoltNet identity's, from the moment it ends (step 1 below), before its
+// renderers are stopped: a fetchLater the browser would send because its
+// page went away is dropped instead. What already reached the network
+// service is stopped there when the refusal is applied
+// (services/network/molt_ended_identity_policy.h).
+constexpr bool MoltNetBrowserMaySendForPage(bool is_moltnet_profile,
+                                            bool identity_ended) {
+  return !(is_moltnet_profile && identity_ended);
+}
+
 }  // namespace tor
 }  // namespace molt_ai
 

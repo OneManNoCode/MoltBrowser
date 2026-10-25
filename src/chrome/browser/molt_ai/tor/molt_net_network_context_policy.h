@@ -193,6 +193,24 @@ struct MoltNetNetworkContextSettings {
   // their own site (services/network/molt_keepalive_partitions.h).
   bool per_site_keepalive_limits = false;
 
+  // HTTP cache: an off-the-record context keeps it in memory, with one size
+  // limit and one least-recently-used list for every site, so one site's
+  // writes evicted another's entries, which the other could time, and the
+  // machine's memory decided the size and evicted entries under pressure.
+  // When true, each site's entries are evicted only for its own share or for
+  // going unused, all sites stay within a fixed total, and memory pressure
+  // evicts nothing (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
+  bool per_site_http_cache = false;
+
+  // Ending an identity: the browser ends one by sending its network
+  // contexts a configuration that refuses every request; requests already
+  // under way would carry on (a body being sent, a redirect followed on an
+  // open connection). When true, that refusal also cancels every request of
+  // the context and closes its connections, in the same task, so nothing
+  // the identity started is sent after its context has the refusal
+  // (services/network/molt_ended_identity_policy.h).
+  bool stop_all_when_refusing = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -217,6 +235,8 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
       is_moltnet_profile ? static_cast<uint32_t>(net::kMoltPerSitePoolSize)
                          : 0;
   settings.per_site_keepalive_limits = is_moltnet_profile;
+  settings.per_site_http_cache = is_moltnet_profile;
+  settings.stop_all_when_refusing = is_moltnet_profile;
   return settings;
 }
 
@@ -245,6 +265,16 @@ constexpr bool SendUniformNetworkStateToRenderers(bool is_moltnet_profile) {
 // profile, carries the site's isolation through the download service
 // (components/download/.../molt_registering_site_isolation.h).
 constexpr bool KeepDownloadsWithTheirSite(bool is_moltnet_profile) {
+  return is_moltnet_profile;
+}
+
+// Whether the storage service keeps a profile's localStorage and
+// sessionStorage caches per top-level site
+// (ChromeContentBrowserClient::ShouldKeepDomStorageCachesPerSite(),
+// components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+// Chromium purges every site's unused areas when all areas together pass
+// one limit, so one site could push another's out and time the reloads.
+constexpr bool KeepDomStorageCachesPerSite(bool is_moltnet_profile) {
   return is_moltnet_profile;
 }
 
@@ -315,6 +345,10 @@ void ApplyMoltNetNetworkContextSettings(
       settings.per_site_socket_pool_size;
   network_context_params.molt_per_site_keepalive_limits =
       settings.per_site_keepalive_limits;
+  network_context_params.molt_per_site_http_cache =
+      settings.per_site_http_cache;
+  network_context_params.molt_stop_all_when_refusing =
+      settings.stop_all_when_refusing;
 }
 
 }  // namespace molt_ai::tor

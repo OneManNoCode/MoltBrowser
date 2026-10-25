@@ -7,9 +7,10 @@
 # channel-associated configuration sent at RenderProcessWillLaunch (session
 # seed), the per-document and per-worker Shields decisions
 # (molt_shields_delivery.h), MoltNet's letterboxing of the page in the
-# window (:letterbox, :letterbox_view), and MoltNet's input devices, CPU
-# tier and client hints (:device, :client_hints). The engine itself lives
-# in Blink: //third_party/blink/renderer/core/molt_fingerprinting.
+# window (:letterbox, :letterbox_view), MoltNet's input devices, CPU
+# tier and client hints (:device, :client_hints), and no screen, window or
+# tab capture in MoltNet (:display_capture). The engine itself lives in
+# Blink: //third_party/blink/renderer/core/molt_fingerprinting.
 
 source_set("fingerprinting") {
   sources = [
@@ -143,13 +144,12 @@ source_set("storage") {
     "molt_net_storage.h",
   ]
   public_deps = [
+    # Also the reserve ChromeContentBrowserClient gives the memory valve.
+    ":storage_values",
     "//chrome/common/molt_ai/fingerprinting",
     "//storage/browser",
   ]
-  deps = [
-    ":storage_values",
-    "//base",
-  ]
+  deps = [ "//base" ]
 }
 
 # ... and MoltNet's ClientHintsControllerDelegate (molt_net_client_hints.h),
@@ -174,12 +174,36 @@ source_set("client_hints") {
   ]
 }
 
+# No screen, window or tab capture in MoltNet: which requests and their
+# answer (std + mojom enums, constexpr) ...
+source_set("display_capture_policy") {
+  sources = [ "molt_net_display_capture_policy.h" ]
+  public_deps = [ "//third_party/blink/public/mojom:mojom_platform" ]
+}
+
+# ... and the browser's check (header-only), which
+# MediaCaptureDevicesDispatcher::ProcessMediaAccessRequest
+# (//chrome/browser/media/webrtc:webrtc) includes, as other upstream hooks
+# include molt_net_profile_id.h.
+source_set("display_capture") {
+  sources = [ "molt_net_display_capture.h" ]
+  public_deps = [
+    ":display_capture_policy",
+    "//chrome/browser/profiles:profile",
+    "//content/public/browser",
+  ]
+
+  # molt_net_profile_id.h (is this the MoltNet profile?).
+  deps = [ "//chrome/browser/molt_ai/tor" ]
+}
+
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "molt_letterbox_unittest.cc",
     "molt_net_device_values_unittest.cc",
+    "molt_net_display_capture_policy_unittest.cc",
     "molt_net_blob_budget_policy_unittest.cc",
     "molt_net_fonts_unittest.cc",
     "molt_net_storage_budget_policy_unittest.cc",
@@ -189,6 +213,7 @@ source_set("unit_tests") {
   ]
   deps = [
     ":device_values",
+    ":display_capture_policy",
     ":letterbox",
     ":net_fonts",
     ":shields_decision",

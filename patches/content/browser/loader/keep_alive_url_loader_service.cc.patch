@@ -1,0 +1,34 @@
+MoltBrowser patch for content/browser/loader/keep_alive_url_loader_service.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/loader/keep_alive_url_loader_service.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/loader/keep_alive_url_loader_service.cc b/content/browser/loader/keep_alive_url_loader_service.cc
+index a1881d93edb148aab4f188e3be7763f5014263f0..6dda646420358982c02c0c3f8201186bc5be50a0 100644
+--- a/content/browser/loader/keep_alive_url_loader_service.cc
++++ b/content/browser/loader/keep_alive_url_loader_service.cc
+@@ -8,6 +8,8 @@
+ 
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
++#include "content/public/browser/content_browser_client.h"  // MoltBrowser
++#include "content/public/common/content_client.h"           // MoltBrowser
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/ref_counted.h"
+ #include "base/trace_event/typed_macros.h"
+@@ -240,6 +242,14 @@ class KeepAliveURLLoaderService::KeepAliveURLLoaderFactoriesBase {
+       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+     CHECK(context);
++    // MoltBrowser: nothing more is sent for a network identity that has
++    // ended (ContentBrowserClient::HasNetworkIdentityEnded()): a request that
++    // reaches the browser after it is dropped (its client sees the pipe
++    // close).
++    if (GetContentClient()->browser()->HasNetworkIdentityEnded(
++            service_->storage_partition_->browser_context())) {
++      return nullptr;
++    }
+     if (!resource_request.keepalive) {
+       mojo::ReportBadMessage(
+           "Unexpected `resource_request` in "

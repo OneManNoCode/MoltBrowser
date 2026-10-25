@@ -23,7 +23,9 @@
 //
 // Pure functions, no state, safe on any thread. The process-wide switch that
 // decides who calls them lives with the callers: V8's --portable-math
-// (v8/src/base/ieee754.h) and gfx::molt_math (ui/gfx/geometry/molt_math.h).
+// (v8/src/base/ieee754.h), gfx::molt_math (ui/gfx/geometry/molt_math.h) and
+// Skia's SkMoltBrowserMath (third_party/skia/include/private/
+// SkMoltBrowserMath.h).
 
 #ifndef THIRD_PARTY_LLVM_LIBC_MOLT_PORTABLE_MATH_H_
 #define THIRD_PARTY_LLVM_LIBC_MOLT_PORTABLE_MATH_H_

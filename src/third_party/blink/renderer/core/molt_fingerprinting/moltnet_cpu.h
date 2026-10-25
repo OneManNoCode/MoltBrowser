@@ -39,6 +39,14 @@
 //                                portable functions
 //                                (gfx::molt_math::SetPortable,
 //                                ui/gfx/geometry/molt_math.h)
+//   Skia's math                the arcs, strokes, cubic roots and path
+//                                operations behind hit testing, path
+//                                lengths and bounds, and the blur
+//                                kernels, gradients, gain maps and HDR tone
+//                                mapping of what the renderer draws on the
+//                                CPU (shape-outside's images), on the same
+//                                portable functions
+//                                (SkGraphics::MoltBrowserUsePortableMath)
 //   V8's heap                  every isolate (windows, workers, worklets) is
 //                                configured for one machine,
 //                                moltnet::kV8HeapPhysicalMemory

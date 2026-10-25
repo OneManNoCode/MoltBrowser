@@ -1,0 +1,38 @@
+MoltBrowser patch for components/download/internal/background_service/blob_task_proxy.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/download/internal/background_service/blob_task_proxy.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/background_service/blob_task_proxy.h b/components/download/internal/background_service/blob_task_proxy.h
+index 14df8a6ac0152e93b749dbda379d2f03d9319795..4a7858479c6eb552f15249c7e72ffaa061411513 100644
+--- a/components/download/internal/background_service/blob_task_proxy.h
++++ b/components/download/internal/background_service/blob_task_proxy.h
+@@ -12,6 +12,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "storage/browser/blob/blob_storage_constants.h"
++#include "storage/browser/blob/molt_blob_budget_policy.h"  // MoltBrowser
+ 
+ namespace storage {
+ class BlobDataHandle;
+@@ -45,13 +46,17 @@ class BlobTaskProxy {
+   // Save blob data on UI thread. |callback| will be called on main thread after
+   // blob construction completes.
+   void SaveAsBlob(std::unique_ptr<std::string> data,
+-                  BlobDataHandleCallback callback);
++                  BlobDataHandleCallback callback,
++                  // MoltBrowser: the budget key the blob counts to
++                  // (molt_blob_budget_policy.h).
++                  uint64_t molt_budget_key = storage::kMoltBlobBrowserKey);
+ 
+  private:
+   void InitializeOnIO(BlobContextGetter blob_context_getter);
+ 
+   void SaveAsBlobOnIO(std::unique_ptr<std::string> data,
+-                      BlobDataHandleCallback callback);
++                      BlobDataHandleCallback callback,
++                      uint64_t molt_budget_key);  // MoltBrowser
+ 
+   void BlobSavedOnIO(BlobDataHandleCallback callback,
+                      storage::BlobStatus status);

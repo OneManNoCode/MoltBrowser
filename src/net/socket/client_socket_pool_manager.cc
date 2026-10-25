@@ -109,11 +109,14 @@ int InitSocketPoolHelper(
   scoped_refptr<ClientSocketPool::SocketParams> socket_params =
       CreateSocketParams(connection_group, allowed_bad_certs);
 
-  // MoltBrowser: the site's own pool where the session has one per site
+  // MoltBrowser: the site's own pool where the session has one per site, and
+  // for requests that may not start certificate downloads (the certificate
+  // fetcher's) the site's certificate-fetch pool
   // (net/socket/molt_per_site_socket_pool_policy.h).
   ClientSocketPool* pool = session->GetSocketPoolForSite(
       socket_pool_type, proxy_info.proxy_chain(),
-      connection_group.network_anonymization_key());
+      connection_group.network_anonymization_key(),
+      connection_group.disable_cert_network_fetches());
   ClientSocketPool::RespectLimits respect_limits =
       ClientSocketPool::RespectLimits::ENABLED;
   if ((request_load_flags & LOAD_IGNORE_LIMITS) != 0)

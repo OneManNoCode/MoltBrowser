@@ -218,12 +218,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   size_t GetAvailableMemoryForBlobs(uint64_t molt_budget_key) const;
   // MoltBrowser: the memory |molt_budget_key|'s blobs use.
   size_t MoltMemoryUsage(uint64_t molt_budget_key) const;
-  // MoltBrowser: the machine's available memory, for tests.
-  using AvailableMemoryFuncPtr = uint64_t (*)();
-  void molt_set_testing_available_memory(AvailableMemoryFuncPtr function) {
-    molt_available_memory_function_ = function;
-    molt_available_memory_.reset();
-  }
 
   // The given callback will be called when we've finished calculating blob
   // storage limits. Usually limits are calculated at some point after startup,
@@ -293,9 +287,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
                               size_t length,
                               uint64_t molt_budget_key = kMoltBlobBrowserKey);
 
-  // MoltBrowser: the machine's available memory, read at most every
-  // kMoltAvailableMemoryRefresh and lowered by what blobs took since.
-  std::optional<uint64_t> MoltAvailableMemory() const;
+  // MoltBrowser: tells the embedder when blobs are stored past the floor
+  // (molt_blob_budget_policy.h).
+  void MoltNoteGrowth() const;
 
   // This is registered as a callback for file deletions on the file reference
   // of our paging files. We decrement the disk space used.
@@ -359,13 +353,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
 
   base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
 
-  // MoltBrowser: blob memory per budget key (molt_blob_budget_policy.h), and
-  // the last reading of the machine's available memory.
+  // MoltBrowser: blob memory per budget key (molt_blob_budget_policy.h).
   std::map<uint64_t, size_t> molt_memory_used_by_key_;
-  AvailableMemoryFuncPtr molt_available_memory_function_ = nullptr;
-  mutable std::optional<uint64_t> molt_available_memory_;
-  mutable base::TimeTicks molt_available_memory_read_at_;
-  mutable size_t molt_memory_used_at_read_ = 0;
 
   base::WeakPtrFactory<BlobMemoryController> weak_factory_{this};
 };

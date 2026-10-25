@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/rust/read_fonts/v0_43/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/read_fonts/v0_43/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/read_fonts/v0_43/BUILD.gn b/third_party/rust/read_fonts/v0_43/BUILD.gn
+index 3b738e5b644ed1098676bcb4ce432df9935ecb3f..cf21abc2d563e9f411ed1660b1b2a6312766b395 100644
+--- a/third_party/rust/read_fonts/v0_43/BUILD.gn
++++ b/third_party/rust/read_fonts/v0_43/BUILD.gn
+@@ -38,6 +38,9 @@ cargo_crate("lib") {
+     "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/model/font/tables.rs",
+     "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/model/once.rs",
+     "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/model/pen.rs",
++
++    # MoltBrowser: portable glyph-transform math (patches/read-fonts-v0_43).
++    "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/moltbrowser_math.rs",
+     "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/offset.rs",
+     "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/offset_array.rs",
+     "//third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/ps.rs",
+@@ -218,6 +221,9 @@ cargo_crate("lib") {
+   deps = [
+     "//third_party/rust/bytemuck/v1:lib",
+     "//third_party/rust/font_types/v0_12:lib",
++
++    # MoltBrowser: moltbrowser_math's portable functions.
++    "//third_party/rust/libm/v0_2:lib",
+     "//third_party/rust/once_cell/v1:lib",
+   ]
+   features = [

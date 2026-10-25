@@ -78,7 +78,8 @@ def _int(value, where, lo, hi):
 def _str(value, where, pattern=None):
     _expect(isinstance(value, str), where, "must be a string")
     if pattern is not None:
-        _expect(pattern.match(value) is not None, where,
+        # The whole value: re's "$" also matches before a final newline.
+        _expect(pattern.fullmatch(value) is not None, where,
                 "%r is not allowed" % value)
     return value
 
@@ -90,7 +91,7 @@ def _check_path(path, where):
     for part in parts:
         _expect(part not in ("", ".", ".."), where,
                 "%r is not a plain relative path" % path)
-        _expect(_PATH_PART.match(part) is not None, where,
+        _expect(_PATH_PART.fullmatch(part) is not None, where,
                 "%r has a character that isn't allowed" % path)
     return path
 
@@ -257,7 +258,7 @@ def validate(data):
     _expect(isinstance(fallback, dict), "fallback", "must be an object")
     for key, chain in fallback.items():
         where = "fallback[%r]" % key
-        _expect(key in FALLBACK_SPECIAL or _SCRIPT.match(key), where,
+        _expect(key in FALLBACK_SPECIAL or _SCRIPT.fullmatch(key), where,
                 "must be a script code or one of %s" %
                 ", ".join(FALLBACK_SPECIAL))
         _expect(isinstance(chain, list) and chain, where,

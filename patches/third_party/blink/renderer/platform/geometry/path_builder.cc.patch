@@ -1,0 +1,51 @@
+MoltBrowser patch for third_party/blink/renderer/platform/geometry/path_builder.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/geometry/path_builder.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/geometry/path_builder.cc b/third_party/blink/renderer/platform/geometry/path_builder.cc
+index c68eabb5ba5842cb07df1d97e205c3d96d405a4f..9e679b8c40a225d895403d7bac027f35225525df 100644
+--- a/third_party/blink/renderer/platform/geometry/path_builder.cc
++++ b/third_party/blink/renderer/platform/geometry/path_builder.cc
+@@ -16,6 +16,7 @@
+ #include "third_party/blink/renderer/platform/geometry/skia_geometry_utils.h"
+ #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
+ #include "third_party/skia/include/pathops/SkPathOps.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ #include "ui/gfx/geometry/point_f.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/skia_conversions.h"
+@@ -43,14 +44,16 @@ std::array<gfx::Vector2dF, 3> ApproximateSuperellipseHalfCornerAsBezierCurve(
+   // superellipse, flip the center and the outer point and apply the
+   // equivalent convex formula (1/curvature).
+   DCHECK_GE(curvature, 1);
+-  const float s = std::log2(curvature);
+-  const float slope =
+-      p[0] + (p[6] - p[0]) * 0.5 * (1 + std::tanh(p[5] * (s - p[1])));
+-  const float base = 1 / (1 + std::exp(-slope * (0 - p[1])));
+-  const float logistic = 1 / (1 + std::exp(-slope * (s - p[1])));
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  const float s = gfx::molt_math::Log2(curvature);
++  const float slope = p[0] + (p[6] - p[0]) * 0.5 *
++                                 (1 + gfx::molt_math::Tanh(p[5] * (s - p[1])));
++  const float base = 1 / (1 + gfx::molt_math::Exp(-slope * (0 - p[1])));
++  const float logistic = 1 / (1 + gfx::molt_math::Exp(-slope * (s - p[1])));
+ 
+   const float a = (logistic - base) / (1 - base);
+-  const float b = p[2] * std::exp(-p[3] * std::pow(s, p[4]));
++  const float b =
++      p[2] * gfx::molt_math::Exp(-p[3] * gfx::molt_math::Pow(s, p[4]));
+ 
+   // This is the superellipse formula at t=0.5 (45 degrees),
+   // the middle of the corner.
+@@ -161,7 +164,8 @@ std::optional<SkPath> CornerClipOutPath(const Corner& origin,
+   const float end_inset = edge_inset_end >= 0 && !target.v3().Length()
+                               ? edge_inset_end
+                               : end_radius - target.v3().Length();
+-  const float superellipse_parameter = std::log2(origin.Curvature());
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  const float superellipse_parameter = gfx::molt_math::Log2(origin.Curvature());
+   const float inset_difference =
+       std::clamp(end_inset - start_inset, -start_radius, end_radius);
+   if (superellipse_parameter <= 0 &&

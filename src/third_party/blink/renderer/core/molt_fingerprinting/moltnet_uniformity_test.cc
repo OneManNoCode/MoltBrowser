@@ -9,6 +9,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/input/web_pointer_event.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
+#include "third_party/blink/public/web/web_molt_net.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_pointer_event_init.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -16,6 +17,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
+#include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
@@ -205,6 +207,25 @@ TEST_F(MoltNetUniformityTest, MoltNetHidesScreenDetails) {
   EXPECT_TRUE(HidesScreenChanges());
   // (That MoltNet ignores Shields off needs real kUniform; the simulation
   // runs on kFarble, where Shields-off sites aren't farbled.)
+}
+
+TEST_F(MoltNetUniformityTest, DisplayCaptureDeniedWhereMoltNetIs) {
+  LocalDOMWindow& window = Window("https://a.example/");
+  // A regular renderer keeps the browser's answer.
+  EXPECT_FALSE(
+      ReportsPermissionDenied(&window, PermissionName::DISPLAY_CAPTURE));
+  // A MoltNet renderer reports "denied" in every context, with the
+  // fingerprinting protection off too (it follows the profile, like WebRTC).
+  WebMoltNet::DisableWebRtcPeerConnections();
+  EXPECT_TRUE(
+      ReportsPermissionDenied(&window, PermissionName::DISPLAY_CAPTURE));
+  EXPECT_TRUE(
+      ReportsPermissionDenied(nullptr, PermissionName::DISPLAY_CAPTURE));
+  // The other permissions are unchanged by it.
+  EXPECT_FALSE(
+      ReportsPermissionDenied(&window, PermissionName::WINDOW_MANAGEMENT));
+  EXPECT_FALSE(ReportsPermissionDenied(&window, PermissionName::VIDEO_CAPTURE));
+  ResetMoltNetRendererForTesting();
 }
 
 TEST_F(MoltNetUniformityTest, MoltNetOpaqueAndNullContextsFailClosed) {

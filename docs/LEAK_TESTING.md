@@ -240,6 +240,7 @@ paths that reached the onion server.
 | `client_cert` | the basic page from an https onion port (8444) whose server asks for a TLS client certificate without requiring one, and logs every handshake | nothing outside Tor; `net.client_cert.handshakes`: every handshake completes and none carries a certificate, so the browser neither asked the user nor connected again. In a regular window Chromium drops the first handshake to ask and connects again; the check reports that as information (step 20) |
 | `builtin_ai` | `availability()` and `create()` (with a user gesture) of every built-in AI API | `LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator` unavailable; no component or model download host looked up |
 | `geolocation` | `getCurrentPosition()` | error 1 at once (no prompt); no location provider host |
+| `display_capture` | `getDisplayMedia()` with audio and with `preferCurrentTab` (with a user gesture), getUserMedia()'s `chromeMediaSource: 'screen'` (recorded), the `display-capture` permission in the page and a worker | `NotAllowedError` "Permission denied by user" within 2 s (no picker); the permission is `denied` in both |
 | `extension` | a test extension allowed in Incognito (content script, web-accessible resource, `tabs`, `webRequest`) | the MoltNet page isn't marked, `chrome.runtime` is absent, the resource can't be fetched, and its background never sees a MoltNet tab or request (it would look up a canary name if it did) (step 16) |
 | `regular_onion_navigation` | a **regular** window opens an onion address | the "Tor onion site" page; no lookup of the name (step 12) |
 | `regular_onion_subresources` | a regular page loads images, `fetch`, a WebSocket and a worker fetch from an onion host | all fail; no lookup (step 12); with a proxy configured, the proxy sees none (step 13) |
@@ -260,6 +261,7 @@ the report. Anything else is a leak.
 |---|---|---|
 | Separate identity | a cookie set for the onion in the regular profile (DevTools `Storage.setCookies`) doesn't show in MoltNet; a MoltNet cookie is gone after its last window closed and MoltNet reopened in a new browser context; the onion site's SOCKS5 connections after MoltNet reopened carry credentials the earlier session didn't use, so new circuits (`identity.session_circuits`; the kit keeps a digest of each SOCKS password, never the password) | 6 |
 | New Identity | `moltnet.newIdentity`: a new browser context, the cookie gone, the canvas readback changed (new farbling seed); no page of the old identity left open, although it asked "Leave site?" with a user activation; a second New Identity right after the first opens its window only once Tor can have switched circuits again (at least 8 s later; Tor applies NEWNYM at most every 10 s); the same site's SOCKS5 credentials differ before and after each New Identity (`identity.session_circuits`); exit IP before/after if online | 7 |
+| Nothing held after the end | before New Identity the old page calls `fetchLater()` (deferred two minutes) and sends a beacon on `pagehide`: both are sent only once the page closes, after its identity ended, and neither may reach the kit's page server (`identity.nothing_held_after_end`; with no `fetchLater()` in the page, only the beacon) | 7 |
 | Per-site circuits | the two onion sites' SOCKS5 connections carry different usernames, and every one carries one; two pages their servers sandbox (`Content-Security-Policy: sandbox`, opaque origins) on two sites use different usernames too (`identity.sandboxed_circuits`); the certificate fetches made for the two certificate tests use usernames of their own, none shared between the two sites and none a page used, and the second site's check makes a fetch of its own (`identity.cert_fetch_circuits`); a Background Fetch, which the browser's download service makes, uses the username of the site that started it (`identity.background_fetch_circuits`; SKIP if no Background Fetch reached Tor, for example because the permission was refused) | 8 |
 | The relays are real | the panel's guard, middle and exit fingerprints (`moltnet.getCircuit`) are in the consensus MoltNet's Tor downloaded | 10 |
 | Tor's shared capacity | the torrc MoltBrowser started its Tor with sets `ConnLimit 1000` and `MaxClientCircuitsPending 256`, the capacity MoltNet's connection and circuit budgets are sized against (`identity.tor_capacity`). The limits themselves (each site's connections, the Tor process's budget of 768, each site's 16 SOCKS handshake slots within Tor's 192, an onion address counting three, each site's keepalive requests, storage and blob memory) would take hundreds of connections or thousands of requests through Tor to reach, too slow and too uneven for a kit run: they are checked on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "moltnet-shared") | 10 |
@@ -361,6 +363,21 @@ level, and in one browser launch per device scale factor
   an SVG path's arcs (`cpu.dommatrix`); Biquad and IIR filter frequency
   responses and a compressor's `reduction` after rendering a sawtooth
   (`audio.math`).
+* **Geometry** (once per launch), compared between runs: where the edges
+  of 40 canvas arcs and rotated ellipses (`isPointInPath()`) and of a
+  stroked curve with every join, cap and a dash pattern
+  (`isPointInStroke()`) lie, found a float ulp at a time, and where
+  `elementFromPoint()` finds the edges of `clip-path` shapes (a rounded
+  polygon, `circle(closest-side)`, an ellipse, `shape()` with an arc) and
+  `corner-shape` corners, a layout unit at a time (`geom.hit_testing`);
+  SVG shapes' `getTotalLength()` and `getPointAtLength()` and the boxes of
+  elements along six `offset-path`s (`geom.path_length`); the start of
+  every line of inline boxes laid out around six `shape-outside` floats
+  (gradients with colour hints and in OKLab, an SVG image with a blur, a
+  gamma transfer, a hue rotation and a light turned into alpha, a rounded
+  polygon, a margin-box with radii and `shape-margin`)
+  (`geom.shape_outside`); and `contrast-color()` for 87 colours around
+  its threshold (`geom.contrast_color`, `absent` without it).
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

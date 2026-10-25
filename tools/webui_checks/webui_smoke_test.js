@@ -19,8 +19,10 @@
 // Then it checks: the script runs without throwing; no Trusted Types
 // violation happens on load; every data-on-<event>="name" in the DOM and
 // in the page script names a registered moltActions() function; the key
-// controls of each page got a real event listener; and clicking every
-// control in the initial DOM doesn't throw synchronously.
+// controls of each page got a real event listener; clicking every control
+// in the initial DOM doesn't throw synchronously; and each message the
+// browser takes a click for (a page's clickGated list) is sent only with a
+// click of its own: never on load, never twice for one click.
 //
 // Run: npm ci && node webui_smoke_test.js   (from tools/webui_checks)
 'use strict';
@@ -93,6 +95,21 @@ const questionAnswers = [];
 const QUESTION = {id: '42', step: 3, kind: 'weak_match',
                   text: 'The step “Click “<b>Add</b>”” couldn’t find its element ' +
                         'as recorded: the page has changed. Use it?'};
+
+// molt://net: the session's exit-country pin as the browser has it, and,
+// when set, the browser refuses exit-country changes (no real click) and
+// answers with what is really set.
+let netExit = 'de';
+let netExitRefused = false;
+// molt://ai-settings' MoltNet section: the same, for its exit-country picker.
+let settingsExit = 'de';
+let settingsExitRefused = false;
+// Every |method| call's arguments as sent (no callback id).
+const rawArgsOf = (window, method) => window.__sendArgs
+    .filter(([m]) => m === method).map(([, a]) => Array.from(a || []));
+// The arguments (after the callback id) of each |method| call so far.
+const argsOf = (window, method) => window.__sendArgs
+    .filter(([m]) => m === method).map(([, a]) => Array.from(a || []).slice(1));
 
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
@@ -1064,12 +1081,15 @@ const PAGES = [
   {name: 'molt://net', file: 'molt_net_ui.cc',
    listeners: ['#openWindowBtn:click', '#newIdentityBtn:click', '#settingsBtn:click'],
    noClick: ['#settingsBtn'],
+   // MoltNetHandler: these change where MoltNet traffic goes, so each needs
+   // (and uses up) a real click; opening a window and New Identity don't.
+   clickGated: ['moltnet.setExitCountry', 'moltnet.toggle', 'moltnet.setMode'],
    responses: {
-     'moltnet.getStatus': {running: true, starting: false, selected: '', mode: 'multi_hop',
-                           routing: 'tor', in_moltnet_window: true,
-                           proxy_externally_controlled: false},
-     'moltnet.getExitCountries': {available: [
-       {code: 'de', name: '<img src=x onerror=alert(1)>'}], selected: ''},
+     'moltnet.getStatus': () => ({running: true, starting: false, selected: netExit,
+                                  mode: 'multi_hop', routing: 'tor', in_moltnet_window: true,
+                                  proxy_externally_controlled: false}),
+     'moltnet.getExitCountries': () => ({available: [
+       {code: 'de', name: '<img src=x onerror=alert(1)>'}], selected: netExit}),
      'moltnet.getCircuit': {connected: true, hops: [
        {role: 'guard', country: 'DE', country_name: '<b>Germany</b>', ip: '192.0.2.1',
         nickname: '<img src=x onerror=alert(1)>', fingerprint: 'A'.repeat(40)},
@@ -1079,7 +1099,12 @@ const PAGES = [
                             error: '<img src=x onerror=alert(1)>'},
      'moltnet.newIdentity': {running: true, routing: 'tor', in_moltnet_window: true},
      'moltnet.setMode': {running: false, routing: 'not_routed'},
-     'moltnet.setExitCountry': {running: true, selected: 'de', routing: 'tor', in_moltnet_window: true},
+     'moltnet.setExitCountry': (args) => {
+       if (!netExitRefused) netExit = args[1];
+       return Object.assign({running: true, selected: netExit, routing: 'tor',
+                             in_moltnet_window: true},
+                            netExitRefused ? {error: 'Click the setting to change it.'} : {});
+     },
      'moltnet.verifyExit': {ok: true, ip: '192.0.2.3', is_tor: true},
    },
    async after(window) {
@@ -1088,6 +1113,11 @@ const PAGES = [
      await tick();
      assert.strictEqual(doc.getElementById('st').textContent, 'Private via Tor',
                         'status reflects this window\'s routing');
+     // Load shows what is set (the session's exit pin) without sending a
+     // setting, so it needs no click.
+     assert.deepStrictEqual(window.__clickConsumed, [], 'load changes no setting');
+     assert(doc.getElementById('sub').textContent.endsWith(' DE'));
+     assert(doc.querySelector('#list .row:nth-child(2)').classList.contains('active'));
      assert(!/Your IP|origin/i.test(doc.body.textContent), 'no real-IP display');
      assert(!window.__sent.some((m) => /ipify/i.test(m)), 'no IP lookup');
      assert.strictEqual(doc.querySelectorAll('img, b').length, 0, 'relay/country data stays text');
@@ -1098,8 +1128,37 @@ const PAGES = [
      doc.getElementById('openWindowBtn').click(); await tick();
      assert.strictEqual(doc.getElementById('err').textContent, '<img src=x onerror=alert(1)>',
                         'errors are shown as text');
-     doc.querySelector('#list .row:nth-child(2)').click(); await tick();
-     assert(window.__sent.includes('moltnet.setExitCountry'));
+     // Each setting click sends exactly one message the browser takes the
+     // click for; the window buttons take none.
+     const consumedSince = (n) => window.__clickConsumed.slice(n);
+     const row = (i) => doc.querySelector(`#list .row:nth-child(${i})`);
+     let n = window.__clickConsumed.length;
+     row(1).click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), ['moltnet.setExitCountry'], 'one per click');
+     assert.deepStrictEqual(argsOf(window, 'moltnet.setExitCountry').pop(), ['']);
+     assert(row(1).classList.contains('active'), 'Auto');
+     n = window.__clickConsumed.length;
+     row(2).click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), ['moltnet.setExitCountry']);
+     assert(row(2).classList.contains('active'), 'Germany');
+     // A refused change (no real click): the page shows what is really set.
+     netExitRefused = true;
+     row(1).click(); await tick();
+     netExitRefused = false;
+     assert(row(2).classList.contains('active'), 'still Germany');
+     assert.strictEqual(doc.getElementById('err').textContent, 'Click the setting to change it.');
+     n = window.__clickConsumed.length;
+     doc.querySelector('[data-mode=direct]').click(); await tick();
+     doc.querySelector('[data-mode=multi_hop]').click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), ['moltnet.setMode', 'moltnet.setMode']);
+     assert.deepStrictEqual(argsOf(window, 'moltnet.setMode').slice(-2),
+                            [['direct'], ['multi_hop']]);
+     n = window.__clickConsumed.length;
+     const opens = argsOf(window, 'moltnet.openWindow').length;
+     doc.getElementById('openWindowBtn').click(); await tick();
+     doc.getElementById('newIdentityBtn').click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), [], 'opening a window is not a setting');
+     assert.strictEqual(argsOf(window, 'moltnet.openWindow').length, opens + 1);
    }},
   {name: 'molt://ai-settings', file: 'molt_ai_settings_ui.cc',
    listeners: ['#maxTokens:input', '#temperature:input', '#backBtn:click',
@@ -1108,10 +1167,20 @@ const PAGES = [
                '#exitCountry:change', '#importAllBtn:click', '#saveBtn:click',
                '#resetBtn:click'],
    noClick: ['#backBtn'],
+   // MoltNet on/off, exit country and bridges (MoltAISettingsHandler) and
+   // the GPU setting (MoltGpuInferenceHandler) each take a real click.
+   clickGated: ['moltnetConnect', 'moltnetDisconnect', 'moltnetSetExitCountry',
+                'setMoltnetBridges', 'gpuInferenceSetMode', 'gpuInferenceRetry'],
    responses: {
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
-     getMoltnetExitCountries: {available: [{code: 'de', name: 'Germany'}], selected: ''},
+     getMoltnetExitCountries: () => ({available: [{code: 'de', name: 'Germany'}],
+                                      selected: settingsExit}),
+     // Fire-and-forget: the browser keeps the pick unless it refuses it.
+     moltnetSetExitCountry: (args) => {
+       if (!settingsExitRefused) settingsExit = args[0];
+       return NO_REPLY;
+     },
      // Linux without transport packages or a built-in bridge list.
      getMoltnetBridges: {mode: 'custom', custom_lines: '<img src=x onerror=alert(1)>',
                          support: {obfs4: 'Need obfs4proxy <b>x</b>.',
@@ -1162,6 +1231,10 @@ const PAGES = [
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 10));
+     // Load shows what is set (the session's exit pin, the saved bridges)
+     // and sends no setting, so it needs no click.
+     assert.deepStrictEqual(window.__clickConsumed, [], 'load changes no setting');
+     assert.strictEqual(doc.getElementById('exitCountry').value, 'de', 'exit pin shown');
      await checkWebAISites(window);
      await checkGpuSection(window);
      // MoltShield: hostile list/tab metadata renders as text, never markup.
@@ -1229,14 +1302,65 @@ const PAGES = [
      assert.strictEqual(hint.style.display, 'none', 'no hint without bridges');
      mode.value = 'custom';
      mode.dispatchEvent(new window.Event('change'));
+     let n = window.__clickConsumed.length;
      doc.getElementById('saveBridgesBtn').click(); await tick();
-     assert(window.__sent.includes('setMoltnetBridges'), 'bridges saved via setMoltnetBridges');
+     assert.deepStrictEqual(window.__clickConsumed.slice(n), ['setMoltnetBridges'],
+                            'bridges saved via setMoltnetBridges, one per click');
      assert.strictEqual(doc.querySelectorAll('#bridgeStatus b').length, 0, 'bridge errors are text');
      window.cr.webUIListenerCallback('moltnet-status', {status: 'connected', relays: [
        {country: 'de', relay_id: '"><img src=x onerror=alert(1)>', ip: '1.2.3.4'}]});
      const circuit = doc.getElementById('circuitDisplay');
      assert.strictEqual(circuit.querySelectorAll('img').length, 0, 'relay id stays in the title');
      assert(/img src=x/.test(circuit.querySelector('[title]').getAttribute('title')));
+
+     // MoltNet's exit country: one message per pick, made in the open list
+     // (a mousedown there is user input for the page) or with the keyboard.
+     const exit = doc.getElementById('exitCountry');
+     n = window.__clickConsumed.length;
+     exit.dispatchEvent(new window.MouseEvent('mousedown', {bubbles: true}));
+     exit.value = '';
+     exit.dispatchEvent(new window.Event('change', {bubbles: true}));
+     await tick();
+     exit.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'ArrowDown', bubbles: true}));
+     exit.value = 'de';
+     exit.dispatchEvent(new window.Event('change', {bubbles: true}));
+     await tick();
+     assert.deepStrictEqual(window.__clickConsumed.slice(n),
+                            ['moltnetSetExitCountry', 'moltnetSetExitCountry']);
+     assert.deepStrictEqual(rawArgsOf(window, 'moltnetSetExitCountry'), [[''], ['de']]);
+     assert.strictEqual(exit.value, 'de');
+     // Refused (no real click): the page re-reads the pin and shows it.
+     settingsExitRefused = true;
+     exit.dispatchEvent(new window.MouseEvent('mousedown', {bubbles: true}));
+     exit.value = '';
+     exit.dispatchEvent(new window.Event('change', {bubbles: true}));
+     await tick();
+     settingsExitRefused = false;
+     assert.strictEqual(exit.value, 'de', 'the refused pick doesn\'t stay shown');
+
+     // The MoltNet switch: one message per flip, by click or keyboard.
+     const sw = doc.getElementById('moltnetEnabled');
+     window.cr.webUIListenerCallback('moltnet-status', {status: 'disconnected', relays: []});
+     assert(!sw.checked, 'Tor\'s state sets the switch without sending anything');
+     n = window.__clickConsumed.length;
+     sw.click(); await tick();
+     sw.dispatchEvent(new window.KeyboardEvent('keydown', {key: ' ', bubbles: true}));
+     sw.checked = !sw.checked;
+     sw.dispatchEvent(new window.Event('change', {bubbles: true}));
+     await tick();
+     assert.deepStrictEqual(window.__clickConsumed.slice(n),
+                            ['moltnetConnect', 'moltnetDisconnect']);
+     // A refused flip: the browser reports the real state and why.
+     window.cr.webUIListenerCallback('moltnet-status', {status: 'disconnected', relays: [],
+                                                        apparent_ip: 'Click the setting to change it.'});
+     assert(!sw.checked, 'the switch shows the real state');
+     assert.strictEqual(doc.getElementById('moltnetIP').textContent,
+                        'Click the setting to change it.');
+     // New Identity is not a setting.
+     n = window.__clickConsumed.length;
+     doc.getElementById('newCircuitBtn').click(); await tick();
+     assert.deepStrictEqual(window.__clickConsumed.slice(n), []);
+     assert(window.__sent.includes('moltnetNewCircuit'));
    }},
   {name: 'molt://ai-agent', file: 'molt_ai_agent_ui.cc',
    responses: {
@@ -1539,6 +1663,8 @@ const PAGES = [
      assert(doc.querySelector('#messages .highlight'), 'search highlights text');
    }},
   {name: 'molt://ai-chat', file: 'molt_ai_chat_ui.cc',
+   // The exit country takes a real click here too (the page doesn't send it).
+   clickGated: ['setTorExitCountry'],
    extraFiles: ['molt_webui_csp.h', 'molt_ai_chat_ui_js.h'],
    preScripts: ['kChatThemeJs'],
    listeners: ['#sendBtn:click', '#modelChip:click', '#modeChip:click', '#micBtn:click',
@@ -1844,9 +1970,30 @@ async function runPage(page) {
   const sendArgs = [];
   window.__sendArgs = sendArgs;
   const responses = page.responses || {};
+  // The browser's click rule for the messages in page.clickGated: each one
+  // needs, and uses up, the frame's user activation. User input gives it
+  // (mousedown/keydown/pointerdown, and click as this test's stand-in for a
+  // whole mouse click); nothing else does, so a gated message sent on load,
+  // from a timer or a second time for one click is refused here, as the
+  // browser would refuse it.
+  const clickGated = new Set(page.clickGated || []);
+  let activation = false;
+  for (const type of ['mousedown', 'keydown', 'pointerdown', 'click']) {
+    ael.call(window, type, () => { activation = true; }, true);
+  }
+  const unclicked = [];
+  window.__clickConsumed = [];
   window.chrome = {send(method, args) {
     sent.push(method);
     sendArgs.push([method, args]);
+    if (clickGated.has(method)) {
+      if (activation) {
+        activation = false;
+        window.__clickConsumed.push(method);
+      } else {
+        unclicked.push(method);
+      }
+    }
     const id = args && args[0];
     if (typeof id !== 'string') return;
     let r = responses[method];
@@ -1910,6 +2057,7 @@ async function runPage(page) {
     await new Promise((r) => setTimeout(r, 60));
   }
   process.off('unhandledRejection', onRej);
+  for (const m of unclicked) errors.push(`${m} sent without a click of its own`);
   const problems = errors.concat(violations, rejections.map((r) => 'unhandled rejection: ' + r));
   window.__ttOff = true;  // jsdom's own teardown clears the body
   window.close();

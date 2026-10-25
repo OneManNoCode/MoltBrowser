@@ -66,6 +66,7 @@ test("molt_ai_unittests") {
     "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
 
     # MoltNet's portable math: the same results on every CPU and OS.
+    "//skia:molt_math_unittests",
     "//third_party/llvm-libc:molt_portable_math_unittests",
     "//ui/gfx/geometry:molt_math_unittests",
 

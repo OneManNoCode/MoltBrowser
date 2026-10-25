@@ -34,9 +34,13 @@ TEST(MoltNetSocketPoolPolicyTest, FixedLimitsPerSite) {
   EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, true, true), 8u);
   EXPECT_EQ(MoltPerSitePoolLimit(4, true, false), 4u);
   EXPECT_EQ(MoltPerSitePoolLimit(4, false, true), 4u);
-  // A site's one-off keys (certificate fetches): a small pool of its own.
-  EXPECT_EQ(kMoltPerSiteOneOffPoolSize, 4u);
+  // Certificate fetches: a small pool of the site's own, and one for the
+  // keys of no site.
+  EXPECT_EQ(kMoltPerSiteCertFetchPoolSize, 4u);
+  EXPECT_EQ(kMoltUnattributedCertFetchPoolSize, 4u);
   EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, false, false, true),
+            4u);
+  EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, false, true, true),
             4u);
   EXPECT_EQ(MoltPerSitePoolLimit(2, false, false, true), 2u);
   EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, false, false, false),
@@ -47,15 +51,16 @@ TEST(MoltNetSocketPoolPolicyTest, FixedLimitsPerSite) {
   EXPECT_EQ(MoltPerSiteGroupLimit(4, 6), 4u);
 }
 
-// Only HTTP requests of a key that names a site and carries a nonce (a
-// certificate fetch for one of the site's connections) go to the site's
-// one-off pool, so the fetches a site's certificate checks wait for never
-// wait for the slots those checks hold.
-TEST(MoltNetSocketPoolPolicyTest, ASitesOneOffKeysHaveTheirOwnPool) {
-  EXPECT_TRUE(MoltUsesSiteOneOffPool(false, true, true));
-  EXPECT_FALSE(MoltUsesSiteOneOffPool(false, true, false));
-  EXPECT_FALSE(MoltUsesSiteOneOffPool(false, false, true));
-  EXPECT_FALSE(MoltUsesSiteOneOffPool(true, true, true));
+// Only HTTP requests that may not start certificate downloads (the
+// certificate fetcher's) go to a certificate-fetch pool, so the downloads a
+// connection's certificate check waits for never wait for the slots such
+// connections hold: not a site's credentialless iframes' (a nonce alone),
+// nor the keys of no site that may start downloads.
+TEST(MoltNetSocketPoolPolicyTest, CertificateFetchesHaveTheirOwnPools) {
+  EXPECT_TRUE(MoltUsesCertFetchPool(false, true));
+  EXPECT_FALSE(MoltUsesCertFetchPool(false, false));
+  EXPECT_FALSE(MoltUsesCertFetchPool(true, true));
+  EXPECT_FALSE(MoltUsesCertFetchPool(true, false));
 }
 
 // Requests that ignore the limits (synchronous XMLHttpRequests) go past a
@@ -75,8 +80,8 @@ TEST(MoltNetSocketPoolPolicyTest, RequestsIgnoringLimitsGoPastByAFew) {
   EXPECT_TRUE(MoltIgnoreLimitsMayOverflow(51, 48, 4));
   EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(52, 48, 4));
   EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(48, 48, 0));
-  EXPECT_EQ(kMoltOverflowingPools, 16u);
-  EXPECT_EQ(kMoltIgnoreLimitsOverflowTotal, 64u);
+  EXPECT_EQ(kMoltOverflowingPools, 15u);
+  EXPECT_EQ(kMoltIgnoreLimitsOverflowTotal, 60u);
   EXPECT_LE(kMoltIgnoreLimitsOverflowTotal + kMoltTorOwnConnectionsFloor,
             kMoltTorOwnConnections);
   EXPECT_LE(kMoltNetConnectionBudget + kMoltIgnoreLimitsOverflowTotal +
@@ -106,23 +111,42 @@ TEST(MoltNetSocketPoolPolicyTest, OnlyLongUnusedPoolsAreDropped) {
 
 // The budget is well inside what one Tor process always accepts, and it
 // takes eleven other sites at their full share to make a site below its
-// own limits wait for it.
+// own limits wait for it, in either part: the certificate fetches' and the
+// rest.
 TEST(MoltNetSocketPoolPolicyTest, BudgetFitsTorAndManySites) {
   EXPECT_EQ(kMoltNetConnectionBudget, 768u);
+  EXPECT_EQ(kMoltCertFetchConnectionBudget, 48u);
+  EXPECT_EQ(kMoltMainConnectionBudget, 720u);
+  EXPECT_EQ(kMoltMainConnectionBudget + kMoltCertFetchConnectionBudget,
+            kMoltNetConnectionBudget);
   EXPECT_LE(kMoltNetConnectionBudget + kMoltTorOwnConnections,
             kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
+  EXPECT_EQ(kMoltPerSiteMainConnections, 64u);
+  EXPECT_EQ(kMoltUnattributedMainConnections, 16u);
   EXPECT_EQ(kMoltPerSiteConnections, 68u);
-  EXPECT_EQ(kMoltUnattributedConnections, 16u);
+  EXPECT_EQ(kMoltUnattributedConnections, 20u);
   EXPECT_EQ(kMoltSitesToFillBudget, 11u);
-  // Ten sites at their share, every unattributed connection, and one site
-  // one below its share: still room.
-  EXPECT_LT(10 * kMoltPerSiteConnections + kMoltUnattributedConnections +
-                (kMoltPerSiteConnections - 1),
-            kMoltNetConnectionBudget);
+  EXPECT_EQ(kMoltSitesToFillCertFetchBudget, 11u);
+  // The main part: ten sites at their share, every unattributed
+  // connection, and one site one below its share: still room.
+  EXPECT_LT(10 * kMoltPerSiteMainConnections +
+                kMoltUnattributedMainConnections +
+                (kMoltPerSiteMainConnections - 1),
+            kMoltMainConnectionBudget);
   // Eleven: full.
-  EXPECT_GE(11 * kMoltPerSiteConnections + kMoltUnattributedConnections +
-                (kMoltPerSiteConnections - 1),
-            kMoltNetConnectionBudget);
+  EXPECT_GE(11 * kMoltPerSiteMainConnections +
+                kMoltUnattributedMainConnections +
+                (kMoltPerSiteMainConnections - 1),
+            kMoltMainConnectionBudget);
+  // The certificate fetches' part, the same.
+  EXPECT_LT(10 * kMoltPerSiteCertFetchPoolSize +
+                kMoltUnattributedCertFetchPoolSize +
+                (kMoltPerSiteCertFetchPoolSize - 1),
+            kMoltCertFetchConnectionBudget);
+  EXPECT_GE(11 * kMoltPerSiteCertFetchPoolSize +
+                kMoltUnattributedCertFetchPoolSize +
+                (kMoltPerSiteCertFetchPoolSize - 1),
+            kMoltCertFetchConnectionBudget);
   EXPECT_EQ(MoltSitesToFillBudget(100, 10, 0), 10u);
   EXPECT_EQ(MoltSitesToFillBudget(100, 10, 5), 9u);
 }
@@ -332,7 +356,7 @@ TEST(MoltNetSocketPoolPolicyTest, IsAConstantExpression) {
   static_assert(MoltPerSiteGroupLimit(48, 6) == 6);
   static_assert(MoltPerSitePoolLimit(48, true, false) == 16);
   static_assert(MoltPerSitePoolLimit(48, false, false, true) == 4);
-  static_assert(MoltUsesSiteOneOffPool(false, true, true));
+  static_assert(MoltUsesCertFetchPool(false, true));
   static_assert(MoltIgnoreLimitsMayOverflow(48, 48, 4));
   static_assert(MoltIgnoreLimitsOverflowFor(true, false, false) == 0);
   static_assert(!MoltMayDropSitePool(false, 100));

@@ -324,6 +324,14 @@ fuzzer_test("molt_onion_location_fuzzer") {
   libfuzzer_options = [ "max_len=8192" ]
 }
 
+fuzzer_test("molt_http_cache_site_fuzzer") {
+  # The policy is header-only and std-only, in no target's sources.
+  sources = [ "molt_http_cache_site_fuzzer.cc" ]
+  deps = [ "//base" ]
+  seed_corpus = "corpus/molt_http_cache_site_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
 fuzzer_test("molt_torrc_fuzzer") {
   sources = [ "molt_torrc_fuzzer.cc" ]
   deps = [
@@ -375,6 +383,7 @@ group("fuzzers") {
     ":molt_embedding_validator_fuzzer",
     ":molt_memory_query_fuzzer",
     ":molt_memory_snippet_fuzzer",
+    ":molt_http_cache_site_fuzzer",
     ":molt_onion_location_fuzzer",
     ":molt_page_translate_fuzzer",
     ":molt_release_manifest_fuzzer",

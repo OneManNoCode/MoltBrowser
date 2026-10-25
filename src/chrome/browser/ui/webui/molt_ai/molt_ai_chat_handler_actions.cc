@@ -650,10 +650,10 @@ void MoltAIChatHandler::HandleRunChatProposal(const base::ListValue& args) {
   // ... and a site tool runs only on the click itself: the chat page's
   // transient user activation, which its script can't make up (the click's
   // activation reaches the browser before this message: the WebUI pipe is
-  // frame-associated).
-  content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
-  const bool user_activation =
-      chat_frame && chat_frame->HasTransientUserActivation();
+  // frame-associated), consumed by a confirmed run, so one click runs one
+  // proposal (ConsumeUserClick()).
+  const bool user_activation = molt_ai::chat_handler_helpers::ConsumeUserClick(
+      confirmed, web_ui()->GetRenderFrameHost());
   if (!chat_proposal_ || !id || *id != chat_proposal_->id) {
     ResolveChatAction(callback_id, RunError(kNoLongerAvailable));
     return;

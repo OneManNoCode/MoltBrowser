@@ -48,6 +48,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
@@ -760,8 +761,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AllowJavascript();
     base::DictValue out;
     out.Set("ok", false);
-    content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-    if (!rfh || !rfh->HasTransientUserActivation()) {
+    // One click, one change (ConsumeUserClick()).
+    if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
+            true, web_ui()->GetRenderFrameHost())) {
       out.Set("error", "Click the button to change trust");
       ResolveDict(args, std::move(out));
       return;
@@ -794,13 +796,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // click), and only when the sites are exactly the ones the draft's steps
   // target now (AutomationSecurity::ConfirmDraftSites). The draft then
   // becomes an ordinary CASUAL workflow on those sites; trusting it is a
-  // separate click.
+  // separate click (the activation is consumed: ConsumeUserClick()).
   void HandleConfirmDraftSites(const base::ListValue& args) {
     AllowJavascript();
     base::DictValue out;
     out.Set("ok", false);
-    content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-    if (!rfh || !rfh->HasTransientUserActivation()) {
+    if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
+            true, web_ui()->GetRenderFrameHost())) {
       out.Set("error", "Click the button to confirm the sites");
       ResolveDict(args, std::move(out));
       return;
@@ -851,13 +853,11 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       return;
     }
     const bool allowed = args[3].is_bool() && args[3].GetBool();
-    if (allowed) {
-      content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-      if (!rfh || !rfh->ConsumeTransientUserActivation()) {
-        out.Set("error", "Click the button to answer");
-        ResolveDict(args, std::move(out));
-        return;
-      }
+    if (allowed && !molt_ai::chat_handler_helpers::ConsumeUserClick(
+                       true, web_ui()->GetRenderFrameHost())) {
+      out.Set("error", "Click the button to answer");
+      ResolveDict(args, std::move(out));
+      return;
     }
     int64_t question_id = 0;
     if (!base::StringToInt64(args[2].GetString(), &question_id) ||

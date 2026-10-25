@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_memory_controller.h b/storage/browser/blob/blob_memory_controller.h
-index 05cca5797cf86b17e867836ffa07391530e3cb36..bd2323136994cfcedee9433ad5ddcd3e415b16ce 100644
+index 05cca5797cf86b17e867836ffa07391530e3cb36..d693ae732dc11061ae3edf0e174921bf3cb84db3 100644
 --- a/storage/browser/blob/blob_memory_controller.h
 +++ b/storage/browser/blob/blob_memory_controller.h
 @@ -29,6 +29,7 @@
@@ -78,7 +78,7 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..bd2323136994cfcedee9433ad5ddcd3e
    void ShrinkMemoryAllocation(ShareableBlobDataItem* item);
    void ShrinkFileAllocation(ShareableFileReference* file_reference,
                              uint64_t old_length,
-@@ -196,6 +212,19 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -196,6 +212,13 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
    size_t GetAvailableMemoryForBlobs() const;
    uint64_t GetAvailableFileSpaceForBlobs() const;
  
@@ -88,17 +88,11 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..bd2323136994cfcedee9433ad5ddcd3e
 +  size_t GetAvailableMemoryForBlobs(uint64_t molt_budget_key) const;
 +  // MoltBrowser: the memory |molt_budget_key|'s blobs use.
 +  size_t MoltMemoryUsage(uint64_t molt_budget_key) const;
-+  // MoltBrowser: the machine's available memory, for tests.
-+  using AvailableMemoryFuncPtr = uint64_t (*)();
-+  void molt_set_testing_available_memory(AvailableMemoryFuncPtr function) {
-+    molt_available_memory_function_ = function;
-+    molt_available_memory_.reset();
-+  }
 +
    // The given callback will be called when we've finished calculating blob
    // storage limits. Usually limits are calculated at some point after startup,
    // but calling this method may cause them to be calculated sooner.
-@@ -258,8 +287,15 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -258,8 +281,15 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
  
    void GrantMemoryAllocations(
        std::vector<scoped_refptr<ShareableBlobDataItem>>* items,
@@ -110,13 +104,13 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..bd2323136994cfcedee9433ad5ddcd3e
 +                              size_t length,
 +                              uint64_t molt_budget_key = kMoltBlobBrowserKey);
 +
-+  // MoltBrowser: the machine's available memory, read at most every
-+  // kMoltAvailableMemoryRefresh and lowered by what blobs took since.
-+  std::optional<uint64_t> MoltAvailableMemory() const;
++  // MoltBrowser: tells the embedder when blobs are stored past the floor
++  // (molt_blob_budget_policy.h).
++  void MoltNoteGrowth() const;
  
    // This is registered as a callback for file deletions on the file reference
    // of our paging files. We decrement the disk space used.
-@@ -276,6 +312,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -276,6 +306,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
    // Store that we set manual limits so we don't accidentally override them with
    // our configuration task.
    bool manual_limits_set_ = false;
@@ -125,17 +119,12 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..bd2323136994cfcedee9433ad5ddcd3e
    BlobStorageLimits base_limits_;
    BlobStorageLimits limits_;
    bool did_schedule_limit_calculation_ = false;
-@@ -321,6 +359,14 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -321,6 +353,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
  
    base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
  
-+  // MoltBrowser: blob memory per budget key (molt_blob_budget_policy.h), and
-+  // the last reading of the machine's available memory.
++  // MoltBrowser: blob memory per budget key (molt_blob_budget_policy.h).
 +  std::map<uint64_t, size_t> molt_memory_used_by_key_;
-+  AvailableMemoryFuncPtr molt_available_memory_function_ = nullptr;
-+  mutable std::optional<uint64_t> molt_available_memory_;
-+  mutable base::TimeTicks molt_available_memory_read_at_;
-+  mutable size_t molt_memory_used_at_read_ = 0;
 +
    base::WeakPtrFactory<BlobMemoryController> weak_factory_{this};
  };

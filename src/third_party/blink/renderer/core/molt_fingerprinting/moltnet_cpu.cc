@@ -31,6 +31,9 @@ void PinUniformMachineBeforeV8() {
   SkGraphics::MoltBrowserUsePortableRasterPipeline();
   // Before Blink computes anything a page can read (no thread exists yet).
   gfx::molt_math::SetPortable(true);
+  // Skia's own math (arcs, strokes, path operations, blurs, gradients) too,
+  // before anything is drawn or measured.
+  SkGraphics::MoltBrowserUsePortableMath();
 }
 
 }  // namespace blink::molt_fingerprinting

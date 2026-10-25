@@ -229,9 +229,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pending-circuit limits (`ConnLimit 1000`, `MaxClientCircuitsPending
   256`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
   counted per site, apart from regular windows. Each site may store 60 MiB
-  (all its storage keys together), all sites 600 MiB before the computer's
-  free memory decides, and MoltNet no
-  longer evicts one site's data to make room for another's. Background
+  (all its storage keys together), whatever the other sites store, and
+  MoltNet no longer evicts one site's data to make room for another's. Background
   Fetch requests, and downloads a page starts without navigating ("Save
   link as", "Save image as", a link with `download`), resumed downloads
   and "Save page as", now go out with the network key and Tor circuit of
@@ -261,6 +260,31 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (MoltNet windows run no installed extensions), and on Windows reads
   parental controls again each time a MoltNet window opens
   (`docs/MOLTNET_COMPLIANCE.md`).
+- **One click, one approval.** The agent's "Allow" in the AI chat, running
+  a confirmed chat proposal, saving an agent run, changing a workflow's
+  trust or confirming its sites, the GPU setting for on-device AI and its
+  "Try the GPU again", and opening an onion site in a MoltNet window each
+  use up the click that allowed them, so one click can never approve two
+  things. MoltNet's exit country, on/off, mode and bridges take a click of
+  their own in the same way, in the MoltNet popover and in Settings
+  (opening a MoltNet window and New Identity don't need one); the font
+  manifest's checks match whole values (security review of PRs #67-#69,
+  `docs/SECURITY_REVIEWS.md`).
+- MoltNet hardening: still more of what MoltNet's sites share within an
+  identity is kept per site. Each site gets 10 MiB of the in-memory HTTP
+  cache whose entries only its own use (or 30 minutes unused) evicts, and
+  its `localStorage`/`sessionStorage` areas are purged from the storage
+  service's cache only by its own use. Certificate downloads get
+  connection pools and a part of the connection budget of their own, so
+  they never wait behind the connections that need them. A site's storage
+  and blob writes now depend only on its own share, never on other sites
+  or on the computer's free memory; if the computer runs short of memory
+  while MoltNet's pages store more than MoltNet keeps room for, MoltNet
+  ends the identity and says why. A Background Fetch's response counts
+  against the blob memory of the site that started it. Once an identity
+  ends, the browser sends nothing it was holding for its pages: no
+  keepalive request, beacon, `fetchLater`, Background Fetch, download or
+  saved page resource (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -369,6 +393,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   same count on every machine. Web Audio in MoltNet uses a little more CPU
   (`docs/FINGERPRINTING.md`, "MoltNet: portable math"); regular and
   incognito windows are unchanged.
+- **MoltNet's shapes and hit tests use the same portable math.** In MoltNet
+  windows the arcs, curves, strokes, rounded and `corner-shape` corners,
+  `clip-path` and `shape-outside` shapes, gradients, SVG filters, colour
+  web fonts' rotated layers and HDR gain maps that the browser draws or
+  measures on the CPU use that library too, so where a click lands, a
+  path's length and the text around a shape are the same on every
+  processor and system. MoltNet windows also offer no screen, window or
+  tab capture (there is no WebRTC to send it over): `getDisplayMedia()`
+  is refused as if the user cancelled, without a picker, and the
+  `display-capture` permission reads "denied". Drawing speed is unchanged
+  within measurement (`docs/FINGERPRINTING.md`, "MoltNet: portable math");
+  regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

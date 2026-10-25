@@ -19,11 +19,11 @@ std::optional<storage::QuotaSettings> MoltNetQuotaSettings(RendererMode mode) {
   settings.per_storage_key_quota = kMoltNetQuotaPerStorageKeyBytes;
   settings.session_only_per_storage_key_quota =
       kMoltNetQuotaPerStorageKeyBytes;
-  // Each site's own share, whatever the others store; all of them together
-  // the pool, beyond it what the machine can spare above the reserve; and
-  // no eviction (storage/browser/quota/molt_storage_budget_policy.h).
+  // Each site's own share, whatever the others store, and nothing else; no
+  // eviction (storage/browser/quota/molt_storage_budget_policy.h). Past the
+  // pool, the identity's memory valve hears of it (set by
+  // ChromeContentBrowserClient, per profile).
   settings.molt_per_site_quota = kMoltNetQuotaPerSiteBytes;
-  settings.molt_memory_reserve = kMoltNetStorageMemoryReserveBytes;
   // MoltNet's partitions are in memory: no disk space to keep free.
   settings.should_remain_available = 0;
   settings.must_remain_available = 0;
@@ -44,11 +44,11 @@ std::optional<storage::BlobStorageLimits> MoltNetBlobStorageLimits(
       static_cast<size_t>(kMoltNetBlobMemoryBytes);
   limits.desired_max_disk_space = 0;
   limits.effective_max_disk_space = 0;
-  // In shares, per renderer process, with the machine's memory beyond the
-  // fixed limit (storage/browser/blob/molt_blob_budget_policy.h).
+  // In shares, per renderer process (or the site the browser holds a blob
+  // for), and nothing else (storage/browser/blob/molt_blob_budget_policy.h).
+  // Past the floor, the identity's memory valve hears of it (set by
+  // ChromeContentBrowserClient, per profile).
   limits.molt_per_key_memory = kMoltNetBlobMemoryPerKeyBytes;
-  limits.molt_memory_reserve =
-      static_cast<uint64_t>(kMoltNetStorageMemoryReserveBytes);
   return limits;
 }
 

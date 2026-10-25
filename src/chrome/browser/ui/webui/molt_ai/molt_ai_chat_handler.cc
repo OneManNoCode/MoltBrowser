@@ -6036,13 +6036,11 @@ void MoltAIChatHandler::HandleWebAgentConfirm(const base::ListValue& args) {
   // Anything but an explicit boolean true is a denial, and so is an Allow
   // without the click itself: the chat page's transient user activation,
   // which its script can't make up (the click's activation reaches the
-  // browser before this message, as for runChatProposal). A denial stops
-  // the run.
-  bool allowed = args[1].is_bool() && args[1].GetBool();
-  if (allowed) {
-    content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
-    allowed = chat_frame && chat_frame->HasTransientUserActivation();
-  }
+  // browser before this message, as for runChatProposal), consumed, so
+  // one click answers one request (ConsumeUserClick()). A denial stops the
+  // run.
+  const bool allowed = molt_ai::chat_handler_helpers::ConsumeUserClick(
+      args[1].is_bool() && args[1].GetBool(), web_ui()->GetRenderFrameHost());
   web_agent_->ResolveConfirmation(request_id, allowed);
 }
 
@@ -6067,11 +6065,10 @@ void MoltAIChatHandler::HandleWebAgentFrameTools(const base::ListValue& args) {
   // Allowing takes the click itself: the chat page's transient user
   // activation, which its script can't make up. Without it the answer is
   // "Not now" (the run goes on without that frame's tools).
-  if (*grant != molt_ai::frame_tools::Grant::kNone) {
-    content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
-    if (!chat_frame || !chat_frame->ConsumeTransientUserActivation()) {
-      grant = molt_ai::frame_tools::Grant::kNone;
-    }
+  if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
+          *grant != molt_ai::frame_tools::Grant::kNone,
+          web_ui()->GetRenderFrameHost())) {
+    grant = molt_ai::frame_tools::Grant::kNone;
   }
   web_agent_->ResolveFrameTools(request_id, *grant);
 }

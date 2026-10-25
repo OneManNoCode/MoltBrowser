@@ -280,6 +280,18 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 After an identity ends",
+   "evidence": [
+    "set up in the old page: {\"fetch_later\": true}",
+    "none reached the kit's server"
+   ],
+   "group": "identity",
+   "id": "identity.nothing_held_after_end",
+   "status": "PASS",
+   "title": "Nothing the browser holds for a page is sent after its identity ends (fetchLater, a pagehide beacon)"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 9",
    "evidence": [
     "launched with --proxy-server=http://127.0.0.1:18888",
@@ -484,6 +496,81 @@
    "id": "net.cert_fetch_b.traffic",
    "status": "PASS",
    "title": "Certificate fetches for a second site (the same AIA URL): nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "display_media.error = \"NotAllowedError\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a1",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: getDisplayMedia() rejects with NotAllowedError"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "display_media.message = \"Permission denied by user\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a2",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: as a user's Cancel in the picker"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "display_media.ms = 3"
+   ],
+   "group": "network",
+   "id": "net.display_capture.a3",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: at once (no picker waited for an answer)"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "this_tab.error = \"NotAllowedError\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a4",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: getDisplayMedia({preferCurrentTab}) too"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "perm = \"denied\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a5",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: the display-capture permission reads \"denied\""
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "worker_perm = \"denied\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a6",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: in a worker too"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [],
+   "group": "network",
+   "id": "net.display_capture.traffic",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: nothing outside Tor"
   },
   {
    "details": null,
@@ -3077,7 +3164,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 170,
+  "PASS": 178,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3271,6 +3358,10 @@
     ],
     "form.numberMessage": "Value must be greater than or equal to 10.",
     "form.validationMessage": "Please fill out this field.",
+    "geom.contrast_color": "wwwwwwwwwwwwbwwbwwbwwbwwbwbbwbbwbbwbbwbbwbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "geom.hit_testing": "4d2e81b07f3c95a6e10b2c78",
+    "geom.path_length": "b39f05e7c2a1d4860f7e3b19",
+    "geom.shape_outside": "1e7c4a92d5b30f68a3c9e014",
     "hdr.accept-language": "en-US",
     "hdr.client_hints": {
      "sec-ch-ua": "\"Chromium\";v=\"152\"",
@@ -3660,7 +3751,7 @@
   },
   {
    "automation": "automated",
-   "note": "new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet",
+   "note": "new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits, nothing the browser held for the old page (fetchLater, a pagehide beacon) sent; the exit IP check needs the public internet",
    "step": 7,
    "title": "New Identity"
   },
@@ -3886,6 +3977,37 @@
    },
    "target": "regular",
    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/gggggg7777/x.html"
+  },
+  {
+   "error": null,
+   "id": "display_capture",
+   "load_error": null,
+   "nonce": "mmmmmm5656",
+   "results": {
+    "api": {
+     "displaySurface": true,
+     "getDisplayMedia": true
+    },
+    "display_media": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 3
+    },
+    "gum_screen": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 2
+    },
+    "perm": "denied",
+    "this_tab": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 2
+    },
+    "worker_perm": "denied"
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/mmmmmm5656/x.html"
   },
   {
    "error": null,

@@ -7,6 +7,9 @@
 source_set("common") {
   sources = [
     "molt_blocking_scope.h",
+
+    # One click allows one thing (MoltBrowser's own pages).
+    "molt_user_click.h",
   ]
   public_deps = [
     "//base",
@@ -97,8 +100,10 @@ source_set("unit_tests") {
   sources = [
     "helper_output_unittest.cc",
     "helper_sandbox_unittest.cc",
+    "molt_user_click_unittest.cc",
   ]
   deps = [
+    ":common",
     ":helper_output",
     ":helper_sandbox",
     ":helper_sandbox_linux",

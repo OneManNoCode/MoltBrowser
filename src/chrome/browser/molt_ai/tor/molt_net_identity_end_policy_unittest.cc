@@ -56,6 +56,16 @@ TEST(MoltNetIdentityEndPolicyTest, NoNavigationOfAnEndedIdentity) {
   EXPECT_TRUE(MoltNetNavigationMayProceed(false, false));
 }
 
+// Nothing the browser holds for an ended MoltNet identity's pages is sent:
+// keepalive requests, fetchLater, downloads, Background Fetch.
+TEST(MoltNetIdentityEndPolicyTest, NothingHeldForAPageIsSentAfterTheEnd) {
+  EXPECT_FALSE(MoltNetBrowserMaySendForPage(true, true));
+  EXPECT_TRUE(MoltNetBrowserMaySendForPage(true, false));
+  EXPECT_TRUE(MoltNetBrowserMaySendForPage(false, true));
+  EXPECT_TRUE(MoltNetBrowserMaySendForPage(false, false));
+  static_assert(!MoltNetBrowserMaySendForPage(true, true));
+}
+
 }  // namespace
 }  // namespace tor
 }  // namespace molt_ai

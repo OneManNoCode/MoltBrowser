@@ -5,18 +5,37 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-index fea395bd22bade54c77a65bfec31e89b1d6d22a7..69b5fe1a651d4be2cc784372400215335a8683bc 100644
+index fea395bd22bade54c77a65bfec31e89b1d6d22a7..79038fe97de31f6416cf2071dd76d2ffd4962b23 100644
 --- a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 +++ b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-@@ -39,6 +39,7 @@
+@@ -39,6 +39,8 @@
  #include "third_party/blink/renderer/core/frame/dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
 +#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
++#include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"  // MoltBrowser
  #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
  #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
  #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
-@@ -2254,6 +2255,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
+@@ -1242,6 +1244,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
+         *current_request_info_->request()->GetTransferId(), &result, &response);
+     GotOpenDevice(current_request_info_->request_id(), result,
+                   std::move(response));
++  } else if (MoltNetRefusesDisplayCapture(
++                 current_request_info_->stream_controls()->audio.stream_type,
++                 current_request_info_->stream_controls()->video.stream_type)) {
++    // MoltBrowser: no screen, window or tab capture in MoltNet. Answered
++    // as the browser answers a user's Cancel in the picker, without asking
++    // it (core/molt_net/molt_net_renderer.h).
++    task_runner_->PostTask(
++        FROM_HERE,
++        BindOnce(&UserMediaProcessor::OnStreamGenerationFailed,
++                 WrapWeakPersistent(this), current_request_info_->request_id(),
++                 MediaStreamRequestResult::PERMISSION_DENIED_BY_USER));
+   } else {
+     // The browser replies to this request by invoking OnStreamsGenerated().
+     GetMediaStreamDispatcherHost()->GenerateStreams(
+@@ -2254,6 +2267,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
        "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
        current_request_info_->request_id(), constraint_name.Ascii().c_str()));
  

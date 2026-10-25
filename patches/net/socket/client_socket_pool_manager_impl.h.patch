@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool_manager_impl.h b/net/socket/client_socket_pool_manager_impl.h
-index 93235445ecc995486d220bc1b250448645114bbd..0b1c37a1b343b92c000febaa7675290acaa3c685 100644
+index 93235445ecc995486d220bc1b250448645114bbd..5a3359905cf5e40a64ef4fdea23b0af59bcf2380 100644
 --- a/net/socket/client_socket_pool_manager_impl.h
 +++ b/net/socket/client_socket_pool_manager_impl.h
 @@ -17,6 +17,7 @@
@@ -16,7 +16,7 @@ index 93235445ecc995486d220bc1b250448645114bbd..0b1c37a1b343b92c000febaa7675290a
  
  namespace net {
  
-@@ -29,11 +30,21 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
+@@ -29,11 +30,23 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
    // `websocket_common_connect_job_params` is only used for direct WebSocket
    // connections (No proxies in use). It's never used if `pool_type` is not
    // HttpNetworkSession::SocketPoolType::kWebSocket.
@@ -24,8 +24,9 @@ index 93235445ecc995486d220bc1b250448645114bbd..0b1c37a1b343b92c000febaa7675290a
 +  // MoltBrowser: if `molt_per_site_pool_size` isn't 0, each site gets a pool
 +  // of its own for every proxy chain, with fixed limits derived from it, and
 +  // they all draw on `molt_connection_budget` if it isn't null (the one
-+  // every MoltNet session shares; it outlives this manager), where
-+  // `molt_budget_owner` identifies the session
++  // every MoltNet session shares; it outlives this manager), but the
++  // certificate-fetch pools, which draw on `molt_cert_fetch_budget` (the
++  // same), where `molt_budget_owner` identifies the session
 +  // (net/socket/molt_per_site_socket_pool_policy.h).
    ClientSocketPoolManagerImpl(
        const CommonConnectJobParams& common_connect_job_params,
@@ -35,22 +36,24 @@ index 93235445ecc995486d220bc1b250448645114bbd..0b1c37a1b343b92c000febaa7675290a
 +      bool cleanup_on_ip_address_change = true,
 +      size_t molt_per_site_pool_size = 0,
 +      MoltConnectionBudget* molt_connection_budget = nullptr,
-+      uintptr_t molt_budget_owner = 0);
++      uintptr_t molt_budget_owner = 0,
++      MoltConnectionBudget* molt_cert_fetch_budget = nullptr);
  
    ClientSocketPoolManagerImpl(const ClientSocketPoolManagerImpl&) = delete;
    ClientSocketPoolManagerImpl& operator=(const ClientSocketPoolManagerImpl&) =
-@@ -46,6 +57,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
+@@ -46,6 +59,11 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
    void CloseIdleSockets(const char* net_log_reason_utf8) override;
  
    ClientSocketPool* GetSocketPool(const ProxyChain& proxy_chain) override;
 +  // MoltBrowser:
 +  ClientSocketPool* GetSocketPoolForSite(
 +      const ProxyChain& proxy_chain,
-+      const NetworkAnonymizationKey& network_anonymization_key) override;
++      const NetworkAnonymizationKey& network_anonymization_key,
++      bool molt_no_cert_fetches = false) override;
  
    // Creates a Value summary of the state of the socket pools.
    base::Value SocketPoolInfoToValue() const override;
-@@ -63,6 +78,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
+@@ -63,6 +81,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
  
    SocketPoolMap socket_pools_;
  

@@ -2299,6 +2299,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bytemuck",
  "font-types",
+ "libm",
  "once_cell",
 ]
 

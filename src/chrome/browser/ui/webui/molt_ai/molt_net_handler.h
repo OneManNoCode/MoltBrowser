@@ -37,6 +37,8 @@ class MoltNetHandler : public content::WebUIMessageHandler {
  private:
   // Each takes [callback_id, ...args] and resolves the promise on the JS side
   // with the status dict (see StatusDict in the .cc), plus "error" on failure.
+  // SetExitCountry, Toggle and SetMode change where MoltNet traffic goes:
+  // each needs, and uses up, one real click on the page (ConsumeClick()).
   void HandleGetStatus(const base::ListValue& args);
   void HandleGetExitCountries(const base::ListValue& args);
   void HandleSetExitCountry(const base::ListValue& args);
@@ -57,6 +59,10 @@ class MoltNetHandler : public content::WebUIMessageHandler {
   void HandleVerifyExit(const base::ListValue& args);
   void OnVerifyExitDone(std::string callback_id,
                         std::optional<std::string> body);
+
+  // MoltBrowser: takes the page frame's transient user activation (a real
+  // click), consuming it (molt_ai::ConsumeUserClick()).
+  bool ConsumeClick();
 
   // The profile backing this WebUI (the window that opened the popover).
   Profile* GetProfile();

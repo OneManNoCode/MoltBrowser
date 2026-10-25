@@ -5,10 +5,26 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7aed97d057 100644
+index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c096852a281 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
-@@ -665,6 +665,34 @@ void RemoveInvalidationFilterCallback(
+@@ -88,6 +88,7 @@
+ #include "net/device_bound_sessions/session_service.h"
+ #include "net/disk_cache/buildflags.h"
+ #include "net/disk_cache/disk_cache.h"
++#include "net/disk_cache/memory/molt_mem_backend_budget_policy.h"  // MoltBrowser
+ #include "net/dns/context_host_resolver.h"
+ #include "net/dns/host_cache.h"
+ #include "net/dns/mapped_host_resolver.h"
+@@ -141,6 +142,7 @@
+ #include "services/network/prefetch_matching_url_loader_factory.h"
+ #include "services/network/prefetch_url_loader_client.h"
+ #include "services/network/proxy_checking_host_resolver_request.h"
++#include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
+ #include "services/network/proxy_config_service_mojo.h"
+ #include "services/network/proxy_lookup_request.h"
+ #include "services/network/proxy_resolving_socket_factory_mojo.h"
+@@ -665,6 +667,56 @@ void RemoveInvalidationFilterCallback(
    context->OnLogicalFilterRemoved(filter);
  }
  
@@ -40,10 +56,32 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
 +  prefs.set_negotiate_disable_cname_lookup(true);
 +}
 +
++// MoltBrowser: stops everything `context` still has under way: every URL
++// request is cancelled (the requests' delegates hear of it later, as for any
++// cancellation), then every connection, connection attempt and HTTP/2
++// session is closed (services/network/molt_ended_identity_policy.h).
++void MoltStopEverything(base::WeakPtr<NetworkContext> context) {
++  if (!context || !context->url_request_context()) {
++    return;
++  }
++  std::vector<base::WeakPtr<net::URLRequest>> requests;
++  for (const net::URLRequest* request :
++       *context->url_request_context()->url_requests()) {
++    // The context's own requests; cancelling one doesn't change them.
++    requests.push_back(const_cast<net::URLRequest*>(request)->GetWeakPtr());
++  }
++  for (const base::WeakPtr<net::URLRequest>& request : requests) {
++    if (request) {
++      request->Cancel();
++    }
++  }
++  context->CloseAllConnections(base::DoNothing());
++}
++
  }  // namespace
  
  constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
-@@ -825,6 +853,17 @@ NetworkContext::NetworkContext(
+@@ -825,6 +877,17 @@ NetworkContext::NetworkContext(
  
    shared_resource_checker_ = std::make_unique<SharedResourceChecker>(
        cookie_manager_->cookie_settings());
@@ -61,7 +99,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
  
    network_service_->RegisterNetworkContext(this);
  
-@@ -854,6 +893,11 @@ NetworkContext::NetworkContext(
+@@ -854,6 +917,11 @@ NetworkContext::NetworkContext(
          params_->http_auth_static_network_context_params
              ->allow_default_credentials);
    }
@@ -73,7 +111,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
  
    InitializeCorsParams();
  
-@@ -997,6 +1041,10 @@ NetworkContext::~NetworkContext() {
+@@ -997,6 +1065,10 @@ NetworkContext::~NetworkContext() {
    // May be nullptr in tests.
    if (network_service_) {
      network_service_->DeregisterNetworkContext(this);
@@ -84,7 +122,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
    }
  
    if (domain_reliability_monitor_) {
-@@ -1114,6 +1162,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
+@@ -1114,6 +1186,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
  void NetworkContext::ActivateDohProbes() {
    DCHECK(url_request_context_->host_resolver());
  
@@ -97,7 +135,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
    doh_probes_request_.reset();
    doh_probes_request_ =
        url_request_context_->host_resolver()->CreateDohProbeRequest();
-@@ -2855,6 +2909,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+@@ -2855,6 +2933,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
    http_auth_merged_preferences_.set_http_auth_scheme_filter(
        base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                            base::Unretained(this)));
@@ -108,7 +146,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
-@@ -2894,9 +2952,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2894,9 +2976,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
  
      // Whether the cert verifier is remote or in-process, we should wrap it in
      // caching and coalescing layers to avoid extra verifications and IPCs.
@@ -125,7 +163,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
    }
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-@@ -2938,8 +3000,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2938,8 +3024,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      }
      builder.SetHttpAuthHandlerFactory(
          network_service_->CreateHttpAuthHandlerFactory(this));
@@ -140,7 +178,25 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
    }
    trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
  
-@@ -3209,6 +3275,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3079,10 +3169,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+     params_->initial_proxy_config =
+         net::ProxyConfigWithAnnotation::CreateDirect();
+   }
+-  builder.set_proxy_config_service(std::make_unique<ProxyConfigServiceMojo>(
++  auto proxy_config_service = std::make_unique<ProxyConfigServiceMojo>(
+       std::move(params_->proxy_config_client_receiver),
+       std::move(params_->initial_proxy_config),
+-      std::move(params_->proxy_config_poller_client)));
++      std::move(params_->proxy_config_poller_client));
++  // MoltBrowser: kept to be told of an ended identity's refusal below; the
++  // context built here owns it.
++  ProxyConfigServiceMojo* const molt_proxy_config_service =
++      proxy_config_service.get();
++  builder.set_proxy_config_service(std::move(proxy_config_service));
+   builder.set_pac_quick_check_enabled(params_->pac_quick_check_enabled);
+ 
+   std::unique_ptr<PrefService> pref_service;
+@@ -3209,6 +3304,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -155,7 +211,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3344,6 +3418,32 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3344,6 +3447,48 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  
@@ -171,6 +227,22 @@ index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7a
 +            result.url_request_context->http_transaction_factory()
 +                ->GetSession()) {
 +      session->ssl_client_context()->MoltSendNoClientCertificates();
++    }
++  }
++  // MoltBrowser: when MoltNet's identity ends, its refusal of every request
++  // also stops what the context still has under way
++  // (services/network/molt_ended_identity_policy.h).
++  if (params_->molt_stop_all_when_refusing) {
++    molt_proxy_config_service->MoltSetOnRefuseAll(base::BindRepeating(
++        &MoltStopEverything, weak_factory_.GetWeakPtr()));
++  }
++  // MoltBrowser: MoltNet's in-memory HTTP cache keeps limits per site
++  // (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
++  if (params_->molt_per_site_http_cache) {
++    if (net::HttpCache* cache =
++            result.url_request_context->http_transaction_factory()
++                ->GetCache()) {
++      cache->MoltSetPerSiteBudget(disk_cache::MoltNetHttpCacheBudget());
 +    }
 +  }
 +  // MoltBrowser: MoltNet verifies each certificate for its own connection

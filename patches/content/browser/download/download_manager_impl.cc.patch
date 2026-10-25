@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/download/download_manager_impl.cc b/content/browser/download/download_manager_impl.cc
-index 26a84ddd62426531581cdf99a234bf137465d59d..289e49a272aa4d8f589420f1d341c3735899e297 100644
+index 26a84ddd62426531581cdf99a234bf137465d59d..9ede04bd29d10c140467909e46b576e82c46ab88 100644
 --- a/content/browser/download/download_manager_impl.cc
 +++ b/content/browser/download/download_manager_impl.cc
 @@ -46,6 +46,7 @@
@@ -16,7 +16,25 @@ index 26a84ddd62426531581cdf99a234bf137465d59d..289e49a272aa4d8f589420f1d341c373
  #include "content/browser/file_system/file_system_url_loader_factory.h"
  #include "content/browser/loader/file_url_loader_factory.h"
  #include "content/browser/loader/response_head_update_params.h"
-@@ -1889,6 +1890,13 @@ void DownloadManagerImpl::BeginDownloadInternal(
+@@ -1876,9 +1877,14 @@ void DownloadManagerImpl::BeginDownloadInternal(
+     bool is_new_download,
+     const std::string& serialized_embedder_download_data) {
+   // Check if the renderer is permitted to request the requested URL.
+-  if (params->render_process_host_id() >= 0 &&
+-      !DownloadRequestUtils::IsURLSafe(params->render_process_host_id(),
+-                                       params->url())) {
++  // MoltBrowser: and nothing more is sent for a network identity that has
++  // ended (ContentBrowserClient::HasNetworkIdentityEnded()), not a resumed
++  // download either.
++  if (GetContentClient()->browser()->HasNetworkIdentityEnded(
++          browser_context_) ||
++      (params->render_process_host_id() >= 0 &&
++       !DownloadRequestUtils::IsURLSafe(params->render_process_host_id(),
++                                        params->url()))) {
+     CreateInterruptedDownload(
+         std::move(params),
+         download::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST,
+@@ -1889,6 +1895,13 @@ void DownloadManagerImpl::BeginDownloadInternal(
    auto* rfh = RenderFrameHost::FromID(params->render_process_host_id(),
                                        params->render_frame_host_routing_id());
  

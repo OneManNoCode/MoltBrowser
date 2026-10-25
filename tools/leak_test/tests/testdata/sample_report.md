@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 170 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 178 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -60,6 +60,13 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | Built-in AI APIs and Translator (no component download): Translator is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | Certificate fetches (AIA; OCSP/CRL URLs in the certificate): nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (certificate fetches through Tor) |
 | PASS | Certificate fetches for a second site (the same AIA URL): nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8 |
+| PASS | Screen, window and tab capture are refused without a picker: getDisplayMedia() rejects with NotAllowedError | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: as a user's Cancel in the picker | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: at once (no picker waited for an answer) | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: getDisplayMedia({preferCurrentTab}) too | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: the display-capture permission reads "denied" | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: in a worker too | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: nothing outside Tor | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
 | PASS | DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (other ways to look up a name) |
 | PASS | localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it) | MOLTNET_COMPLIANCE.md §2 (<-loopback>), §5.7 |
 | PASS | A MoltNet window loads an http:// onion site: the page loaded (no HTTPS-Only interstitial for http:// onion) | MOLTNET_COMPLIANCE.md §4 steps 1, 11 |
@@ -108,6 +115,18 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\x20null\\x20[internally:\\x20(44dd)\\x20anonymous]')
   - sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\x20null\\x20[internally:\\x20(66ff)\\x20anonymous]')
   - reached the kit's page server (through Tor): /canary/aia-kkkkkk1212.crt
+- **PASS** Screen, window and tab capture are refused without a picker: getDisplayMedia() rejects with NotAllowedError
+  - display_media.error = "NotAllowedError"
+- **PASS** Screen, window and tab capture are refused without a picker: as a user's Cancel in the picker
+  - display_media.message = "Permission denied by user"
+- **PASS** Screen, window and tab capture are refused without a picker: at once (no picker waited for an answer)
+  - display_media.ms = 3
+- **PASS** Screen, window and tab capture are refused without a picker: getDisplayMedia({preferCurrentTab}) too
+  - this_tab.error = "NotAllowedError"
+- **PASS** Screen, window and tab capture are refused without a picker: the display-capture permission reads "denied"
+  - perm = "denied"
+- **PASS** Screen, window and tab capture are refused without a picker: in a worker too
+  - worker_perm = "denied"
 - **PASS** DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor
   - sent to Tor inside SOCKS5: anchor-cccccc3333.moltleak.test:443 (username 'http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion')
 - **PASS** localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it)
@@ -159,6 +178,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | A language policy set while MoltNet is open (ForcedLanguages, ReduceAcceptLanguageEnabled) changes neither navigator.languages nor Accept-Language in MoltNet, and MoltNet stays open | MOLTNET_COMPLIANCE.md §1.3, §4 step 9 |
 | PASS | New Identity: new profile, cookies gone, new farbling seed | MOLTNET_COMPLIANCE.md §4 step 7 |
 | PASS | No MoltNet window comes back after a restart | MOLTNET_COMPLIANCE.md §4 step 5 |
+| PASS | Nothing the browser holds for a page is sent after its identity ends (fetchLater, a pagehide beacon) | MOLTNET_COMPLIANCE.md §2 After an identity ends |
 | PASS | A --proxy-server override blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
 | PASS | Turning off per-site partitioning (connections, HTTP cache, third-party storage) blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
 | PASS | Different sites use different SOCKS usernames (per-site circuits) | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
@@ -199,6 +219,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - a second New Identity right after the first finished 10.4 s later, once Tor had switched circuits
 - **PASS** No MoltNet window comes back after a restart
   - 0 MoltNet page(s) after relaunching with the same profile
+- **PASS** Nothing the browser holds for a page is sent after its identity ends (fetchLater, a pagehide beacon)
+  - set up in the old page: {"fetch_later": true}
+  - none reached the kit's server
 - **PASS** A --proxy-server override blocks MoltNet
   - launched with --proxy-server=http://127.0.0.1:18888
   - openWindow -> {"error": "A command-line flag controls the proxy."}
@@ -495,7 +518,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | 4 | Watch the wire | automated | every packet is captured in a namespace where only Tor may leave |
 | 5 | Fail-closed | automated | tor is killed: pages must fail with a proxy error; after a restart no MoltNet window returns |
 | 6 | Separate identity | automated | a regular-profile cookie doesn't show in MoltNet; a MoltNet cookie is gone after the last window closes |
-| 7 | New Identity | automated | new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet |
+| 7 | New Identity | automated | new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits, nothing the browser held for the old page (fetchLater, a pagehide beacon) sent; the exit IP check needs the public internet |
 | 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, its site's for a Background Fetch, read from the loopback capture and Tor's circuit list |
 | 9 | Overrides are refused | partial | --proxy-server and each partitioning switch block MoltNet; a proxy policy set while MoltNet is open closes its windows; the extension-set proxy case is manual |
 | 10 | The relays are real | automated | the circuit's fingerprints are in the consensus Tor downloaded; the onionoo lookup is optional |

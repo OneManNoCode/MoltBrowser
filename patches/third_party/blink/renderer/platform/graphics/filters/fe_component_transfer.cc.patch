@@ -1,0 +1,32 @@
+MoltBrowser patch for third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc b/third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc
+index 66c00f95b8f03dd871e2f03603fa202ed432f2a3..7a37fc109ba550c07b1e02684cc843dd8b433292 100644
+--- a/third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc
++++ b/third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc
+@@ -32,6 +32,7 @@
+ #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_builder_stream.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -89,9 +90,10 @@ void Gamma(ComponentTransferLutType values,
+            const ComponentTransferFunction& transfer_function) {
+   for (unsigned i = 0; i < 256; ++i) {
+     double exponent = transfer_function.exponent;
+-    double val =
+-        255.0 * (transfer_function.amplitude * pow((i / 255.0), exponent) +
+-                 transfer_function.offset);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++    double val = 255.0 * (transfer_function.amplitude *
++                              gfx::molt_math::Pow((i / 255.0), exponent) +
++                          transfer_function.offset);
+     values[i] = ClampToU8(val);
+   }
+ }

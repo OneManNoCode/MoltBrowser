@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/rust/chromium_crates_io/Cargo.lock b/third_party/rust/chromium_crates_io/Cargo.lock
-index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e488fbbe359 100644
+index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..c196cd0ec8b43b9cb37527d5f0f5e68bbd28df1f 100644
 --- a/third_party/rust/chromium_crates_io/Cargo.lock
 +++ b/third_party/rust/chromium_crates_io/Cargo.lock
 @@ -15,6 +15,16 @@ name = "adler2"
@@ -872,7 +872,15 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "read-fonts"
  version = "0.43.3"
-@@ -1752,7 +2307,7 @@ name = "redox_syscall"
+@@ -1744,6 +2299,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ dependencies = [
+  "bytemuck",
+  "font-types",
++ "libm",
+  "once_cell",
+ ]
+ 
+@@ -1752,7 +2308,7 @@ name = "redox_syscall"
  version = "0.5.18"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  dependencies = [
@@ -881,7 +889,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  ]
  
  [[package]]
-@@ -1948,6 +2503,16 @@ dependencies = [
+@@ -1948,6 +2504,16 @@ dependencies = [
   "ref-cast",
  ]
  
@@ -898,7 +906,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "shared-brotli-patch-decoder"
  version = "0.1.5"
-@@ -2030,6 +2595,16 @@ name = "strength_reduce"
+@@ -2030,6 +2596,16 @@ name = "strength_reduce"
  version = "0.2.4"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  
@@ -915,7 +923,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "strsim"
  version = "0.11.1"
-@@ -2132,7 +2707,7 @@ name = "symphonia-core"
+@@ -2132,7 +2708,7 @@ name = "symphonia-core"
  version = "0.6.1"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  dependencies = [
@@ -924,7 +932,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
   "bytemuck",
   "lazy_static",
   "log",
-@@ -2285,6 +2860,33 @@ dependencies = [
+@@ -2285,6 +2861,33 @@ dependencies = [
   "syn 3.0.5",
  ]
  
@@ -958,7 +966,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "timezone_provider"
  version = "0.2.6"
-@@ -2306,6 +2908,19 @@ dependencies = [
+@@ -2306,6 +2909,19 @@ dependencies = [
   "zerovec",
  ]
  
@@ -978,7 +986,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "toktrie"
  version = "1.8.0"
-@@ -2327,6 +2942,11 @@ dependencies = [
+@@ -2327,6 +2943,11 @@ dependencies = [
   "strength_reduce",
  ]
  
@@ -990,7 +998,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "tuple_list"
  version = "0.1.3"
-@@ -2365,6 +2985,11 @@ name = "typeid"
+@@ -2365,6 +2986,11 @@ name = "typeid"
  version = "1.0.3"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  
@@ -1002,7 +1010,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "typewit"
  version = "1.15.2"
-@@ -2388,6 +3013,19 @@ name = "unicode-ident"
+@@ -2388,6 +3014,19 @@ name = "unicode-ident"
  version = "1.0.24"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  
@@ -1022,7 +1030,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "unicode-width"
  version = "0.2.2"
-@@ -2413,6 +3051,11 @@ name = "utf8_iter"
+@@ -2413,6 +3052,11 @@ name = "utf8_iter"
  version = "1.0.4"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  
@@ -1034,7 +1042,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "uuid"
  version = "1.26.1"
-@@ -2491,6 +3134,20 @@ dependencies = [
+@@ -2491,6 +3135,20 @@ dependencies = [
   "unicode-ident",
  ]
  
@@ -1055,7 +1063,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  [[package]]
  name = "wide"
  version = "0.7.33"
-@@ -2519,7 +3176,7 @@ name = "winapi-util"
+@@ -2519,7 +3177,7 @@ name = "winapi-util"
  version = "0.1.11"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  dependencies = [
@@ -1064,7 +1072,7 @@ index 821e52a5a35dcefb3873f859211ed13a17f0c6f1..f0183fe68cbf4a2bfdf72af2cfd58e48
  ]
  
  [[package]]
-@@ -2626,6 +3283,14 @@ dependencies = [
+@@ -2626,6 +3284,14 @@ dependencies = [
   "windows-targets",
  ]
  

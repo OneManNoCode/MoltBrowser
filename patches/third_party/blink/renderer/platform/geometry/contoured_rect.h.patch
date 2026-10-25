@@ -1,0 +1,28 @@
+MoltBrowser patch for third_party/blink/renderer/platform/geometry/contoured_rect.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/geometry/contoured_rect.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/geometry/contoured_rect.h b/third_party/blink/renderer/platform/geometry/contoured_rect.h
+index 17c97038dc0fdb97021ee4b1aa3c8a4ca459fb2b..0409aea682e61f2f1c32e32996dc6422cf5430ee 100644
+--- a/third_party/blink/renderer/platform/geometry/contoured_rect.h
++++ b/third_party/blink/renderer/platform/geometry/contoured_rect.h
+@@ -13,6 +13,7 @@
+ #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "ui/gfx/geometry/insets_f.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ #include "ui/gfx/geometry/outsets_f.h"
+ #include "ui/gfx/geometry/point_f.h"
+ #include "ui/gfx/geometry/rect_f.h"
+@@ -178,7 +179,8 @@ class PLATFORM_EXPORT ContouredRect {
+     }
+ 
+     static constexpr float HalfCornerForCurvature(float curvature) {
+-      return std::pow(0.5, 1 / ClampCurvature(curvature));
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++      return gfx::molt_math::Pow(0.5, 1 / ClampCurvature(curvature));
+     }
+ 
+     static float CurvatureForHalfCorner(float half_corner);

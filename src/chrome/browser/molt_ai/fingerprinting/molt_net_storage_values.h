@@ -32,16 +32,18 @@
 //
 // Each site, its storage keys and those of what it embeds together, may
 // store a tenth of the 600 MiB, whatever the other sites stored
-// (storage/browser/quota/molt_storage_budget_policy.h). There is no total a
-// group of sites could fill: the 600 MiB are what MoltNet's sites can
-// always store together (every machine MoltNet runs on holds it), and
-// beyond it a write may take only what the machine has available above a
-// reserve of 1 GiB; the write the machine has no room for fails, for the
-// site that writes, and nothing is evicted. Below the 600 MiB the machine
-// isn't asked, so nothing a page can store shows the machine's memory;
-// beyond it, only a group of sites that has filled the machine to its
-// reserve can find a write refused, when the machine would soon run out of
-// memory anyway.
+// (storage/browser/quota/molt_storage_budget_policy.h), and each renderer
+// process (one site in one tab) a quarter of the 800 MiB of blobs
+// (storage/browser/blob/molt_blob_budget_policy.h). That share is the only
+// limit a write meets: there is no total a group of sites could fill, and
+// the machine is never asked on a write, so whether one succeeds says
+// nothing about other sites or the machine. The 600 MiB and 800 MiB are
+// floors: what MoltNet's sites can always store together (every machine
+// MoltNet runs on holds them). Beyond a floor, MoltNet watches the
+// machine's memory apart from any write, and ends the whole identity if
+// less than a reserve of 1 GiB is available
+// (chrome/browser/molt_ai/tor/molt_net_memory_valve_policy.h); nothing is
+// evicted and no other site's write fails.
 //
 // Not changed, because they already are the same everywhere: localStorage
 // and sessionStorage (10 MiB per storage area, components/services/storage/
@@ -61,12 +63,14 @@ inline constexpr int64_t kMoltNetStorageReferenceMemory =
     4096 * kMoltNetStorageMiB;
 
 // Quota (storage::QuotaSettings): what all MoltNet sites can always store
-// together (beyond it, the machine decides), what one site may (all its
-// storage keys; also for "session only" sites: every MoltNet site is), and
-// nothing kept free on a disk MoltNet doesn't use.
+// together (beyond it, MoltNet watches the machine's memory), what one site
+// may (all its storage keys; also for "session only" sites: every MoltNet
+// site is), and nothing kept free on a disk MoltNet doesn't use.
 inline constexpr int64_t kMoltNetQuotaPoolBytes = 600 * kMoltNetStorageMiB;
 inline constexpr int64_t kMoltNetQuotaPerSiteBytes = 60 * kMoltNetStorageMiB;
-// The memory a write beyond the pool must leave available on the machine.
+// The memory the machine must keep available while MoltNet's sites store
+// more than a floor; below it the identity ends
+// (molt_net_memory_valve_policy.h).
 inline constexpr int64_t kMoltNetStorageMemoryReserveBytes =
     1024 * kMoltNetStorageMiB;
 // A storage key may use what its site may.
@@ -74,14 +78,15 @@ inline constexpr int64_t kMoltNetQuotaPerStorageKeyBytes =
     kMoltNetQuotaPerSiteBytes;
 
 // Blobs (storage::BlobStorageLimits::max_blob_in_memory_space): what all
-// MoltNet sites can always hold together (beyond it, the machine decides,
-// with kMoltNetStorageMemoryReserveBytes left available); no disk.
+// MoltNet sites can always hold together (beyond it, MoltNet watches the
+// machine's memory for kMoltNetStorageMemoryReserveBytes); no disk.
 inline constexpr uint64_t kMoltNetBlobMemoryBytes = 800 * kMoltNetStorageMiB;
 // What one budget key may hold (storage::BlobStorageLimits::
 // molt_per_key_memory): the blobs of one renderer process, which in MoltNet
-// serves one site in one tab, or the browser's own
-// (storage/browser/blob/molt_blob_budget_policy.h). A quarter of the floor,
-// so no single process takes the total past it alone.
+// serves one site in one tab, of one site the browser holds blobs for, or
+// the browser's own (storage/browser/blob/molt_blob_budget_policy.h). A
+// quarter of the floor, so no single process takes the total past it
+// alone.
 inline constexpr uint64_t kMoltNetBlobMemoryPerKeyBytes =
     kMoltNetBlobMemoryBytes / 4;
 

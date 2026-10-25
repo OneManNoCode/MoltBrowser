@@ -241,6 +241,26 @@ TESTS = (
         assertions=[('geo.code', 'eq', 1, 'getCurrentPosition fails with '
                      'PERMISSION_DENIED'),
                     ('geo.ms', 'lt', 3000, 'at once (no prompt)')]),
+    LeakTest(
+        'display_capture', 'Screen, window and tab capture are refused '
+                           'without a picker',
+        'capture.html', origin='https', wait=2.0, timeout=60.0,
+        doc='FINGERPRINTING.md "MoltNet: portable math" (what a page reads '
+            'back without noise)',
+        actions=[('gesture_eval', 'mlCapture()'), ('sleep', 1.0)],
+        assertions=[
+            ('display_media.error', 'eq', 'NotAllowedError',
+             'getDisplayMedia() rejects with NotAllowedError'),
+            ('display_media.message', 'eq', 'Permission denied by user',
+             "as a user's Cancel in the picker"),
+            ('display_media.ms', 'lt', 2000,
+             'at once (no picker waited for an answer)'),
+            ('this_tab.error', 'eq', 'NotAllowedError',
+             'getDisplayMedia({preferCurrentTab}) too'),
+            ('perm', 'eq', 'denied',
+             'the display-capture permission reads "denied"'),
+            ('worker_perm', 'eq', 'denied', 'in a worker too'),
+        ]),
     # Run by the extension phase, only when the test extension loaded. Its
     # background page looks up exttab-/extreq-<nonce> if it ever sees a
     # MoltNet tab or request.
@@ -306,8 +326,9 @@ COMPLIANCE_STEPS = (
      'gone after the last window closes'),
     (7, 'New Identity', 'automated',
      'new profile, cookies gone, new canvas key, no old page left open, a '
-     'second New Identity waits for Tor to switch circuits; the exit IP '
-     'check needs the public internet'),
+     'second New Identity waits for Tor to switch circuits, nothing the '
+     'browser held for the old page (fetchLater, a pagehide beacon) sent; '
+     'the exit IP check needs the public internet'),
     (8, 'Per-site circuits', 'automated',
      'different SOCKS usernames per site (sandboxed pages included), a '
      'SOCKS username of its own for each certificate fetch, its site\'s for '

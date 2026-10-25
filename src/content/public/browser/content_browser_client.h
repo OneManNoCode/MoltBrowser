@@ -2042,6 +2042,23 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const GURL& site_url);
 
+  // MoltBrowser: true once `browser_context`'s network identity has ended
+  // (a MoltNet identity's, at New Identity): from then on the browser sends
+  // nothing more it holds for the context's pages, whatever stage it is at:
+  // no keepalive request, beacon or fetchLater is started or retried and no
+  // redirect followed for one, no download or Save Page As resource is
+  // requested, no Background Fetch request is started.
+  virtual bool HasNetworkIdentityEnded(BrowserContext* browser_context);
+
+  // MoltBrowser: whether the storage service keeps `browser_context`'s
+  // localStorage and sessionStorage caches per top-level site: an area is
+  // purged from the cache only because of its own site's use or its own
+  // idleness, never because other sites opened areas
+  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+  // False: Chromium's limits for the whole partition.
+  virtual bool ShouldKeepDomStorageCachesPerSite(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

@@ -1,0 +1,36 @@
+MoltBrowser patch for third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc b/third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc
+index aa76d40b928d64106f44072fdc6eed0db89cecfb..9b65b9e4de87c2033f1b054c3a9cb5ad884d2e23 100644
+--- a/third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc
++++ b/third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc
+@@ -34,6 +34,7 @@
+ #include "third_party/blink/renderer/platform/graphics/filters/point_light_source.h"
+ #include "third_party/blink/renderer/platform/graphics/filters/spot_light_source.h"
+ #include "third_party/skia/include/core/SkPoint3.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -90,9 +91,14 @@ sk_sp<PaintFilter> FELighting::CreateImageFilter() {
+           static_cast<DistantLightSource*>(light_source_.get());
+       float azimuth_rad = base::DegToRad(distant_light_source->Azimuth());
+       float elevation_rad = base::DegToRad(distant_light_source->Elevation());
+-      const SkPoint3 direction = SkPoint3::Make(
+-          cosf(azimuth_rad) * cosf(elevation_rad),
+-          sinf(azimuth_rad) * cosf(elevation_rad), sinf(elevation_rad));
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++      const float cos_azimuth = gfx::molt_math::Cos(azimuth_rad);
++      const float sin_azimuth = gfx::molt_math::Sin(azimuth_rad);
++      const float cos_elevation = gfx::molt_math::Cos(elevation_rad);
++      const float sin_elevation = gfx::molt_math::Sin(elevation_rad);
++      const SkPoint3 direction =
++          SkPoint3::Make(cos_azimuth * cos_elevation,
++                         sin_azimuth * cos_elevation, sin_elevation);
+       // TODO(crbug/1308932): Remove FromColor and make all SkColor4f.
+       return sk_make_sp<LightingDistantPaintFilter>(
+           GetLightingType(), direction, SkColor4f::FromColor(light_color.Rgb()),

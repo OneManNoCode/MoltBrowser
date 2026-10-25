@@ -280,6 +280,13 @@ inline std::string MoltNetSettingsError(MoltNetSettingsCheck check) {
 // The title of the dialog that tells the user why MoltNet ended.
 inline constexpr char16_t kMoltNetEndedTitle[] = u"MoltNet windows closed";
 
+// Why, when the computer ran short of memory while MoltNet's pages stored
+// more than MoltNet keeps room for (molt_net_memory_valve_policy.h).
+inline constexpr char kMoltNetEndedForMemoryMessage[] =
+    "The computer was running out of memory while MoltNet's pages stored "
+    "more than MoltNet keeps room for, so MoltNet ended this identity and "
+    "closed its windows. Open MoltNet again to start a new one.";
+
 // ---- What MoltNet's network context may be given ---------------------------
 
 // Whether a profile's network context may be given a proxy configuration

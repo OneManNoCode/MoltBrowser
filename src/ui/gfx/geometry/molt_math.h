@@ -50,6 +50,10 @@ COMPONENT_EXPORT(GEOMETRY) double Log1p(double x);
 COMPONENT_EXPORT(GEOMETRY) double Pow(double x, double y);
 COMPONENT_EXPORT(GEOMETRY) double Hypot(double x, double y);
 COMPONENT_EXPORT(GEOMETRY) double Cbrt(double x);
+// llvm-libc has no double tanh: the portable one is Chromium's fdlibm
+// (third_party/fdlibm, the code V8's Math.tanh runs), which computes the same
+// on every CPU and OS.
+COMPONENT_EXPORT(GEOMETRY) double Tanh(double x);
 
 // float (std::sin(float) is sinf(), and so on)
 COMPONENT_EXPORT(GEOMETRY) float Sin(float x);
@@ -99,6 +103,7 @@ MOLT_MATH_PROMOTE_1(Log2)
 MOLT_MATH_PROMOTE_1(Log10)
 MOLT_MATH_PROMOTE_1(Log1p)
 MOLT_MATH_PROMOTE_1(Cbrt)
+MOLT_MATH_PROMOTE_1(Tanh)
 MOLT_MATH_PROMOTE_2(Atan2)
 MOLT_MATH_PROMOTE_2(Pow)
 MOLT_MATH_PROMOTE_2(Hypot)
