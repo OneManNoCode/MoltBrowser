@@ -308,6 +308,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   processor, graphics card or video decoder. Video in MoltNet uses more
   CPU and battery, most at 4K (`docs/FINGERPRINTING.md`, "MoltNet: pixels
   and encoded bytes"); regular and incognito windows are unchanged.
+- **What MoltNet pages compute no longer depends on your processor or
+  memory.** In MoltNet windows WebAssembly's relaxed SIMD instructions are
+  off (pages use their plain SIMD code), `Math.pow` and `Math.tanh` use
+  V8's own code, colour conversion (canvas read-back in Display P3, images
+  with colour profiles) and audio decoding compute the same way on every
+  x86-64 and Arm processor, and V8's memory limits are those of a 4 GB
+  machine on every computer (`jsHeapSizeLimit` 2,330,000,000; on Linux,
+  the same memory limit for every page process). Pages in MoltNet can use
+  about 2 GB of JavaScript memory, and colour-managed images decode more
+  slowly (`docs/FINGERPRINTING.md`, "MoltNet: CPU features");
+  regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

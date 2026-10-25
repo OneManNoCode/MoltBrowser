@@ -382,6 +382,7 @@ back/forward, and a MoltNet window with Shields off.
 | `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
 | Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
+| WebAssembly relaxed SIMD, `Math.pow` and `Math.tanh`, colours read back in another colour space, images with a colour profile, decoded audio (`AudioData`); how much heap V8 gives a page | the CPU's vector extensions (relaxed SIMD's results, the code Skia, skcms, Symphonia, FFmpeg and the C library pick); the machine's memory | **one code path for every CPU**: relaxed SIMD off, V8's own `Math` code, portable colour and audio code; V8 configured as on a 4 GB machine ([details](#moltnet-cpu-features)) | `flag-definitions.h`, `function-body-decoder-impl.h`, `ieee754.cc`, `v8.cc`, `isolate_holder.cc`, `chrome_content_renderer_client.cc`; Skia, skcms, Symphonia, `molt_portable_media.cc` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
@@ -1734,7 +1735,9 @@ hides these values (with a `--user-agent` override): `platformVersion`,
   the most any desktop Chromium reported before the cap went up to 32
   (crbug.com/454354290), so it is a common value. The `Device-Memory`
   hints aren't sent at all (above). `performance.memory`'s heap limit is
-  this machine's too ([performance.memory](#moltnet-performancememory)).
+  the same for everyone too, that of the 4 GB machine every MoltNet
+  renderer's V8 heap is configured as
+  ([performance.memory](#moltnet-performancememory)).
 * `navigator.cpuPerformance` (stable at 152, on secure pages) reports a
   tier from 1 to 4 that content derives from the CPU model
   (`content::cpu_performance::GetTier`) and hands to each renderer at
@@ -2755,19 +2758,34 @@ meets (`media.gum`, `media.gum_overconstrained`: still waiting after
 `performance.memory` (windows only, non-standard) reports the JavaScript
 heap's size and limit; `performance.measureUserAgentSpecificMemory()`
 (cross-origin isolated windows, shared and service workers) breaks memory
-use down by context. In MoltNet windows the machine no longer shows in them:
+use down by context. Beneath both, V8 configures its heap from the
+machine's memory, and on Linux the renderer's data limit follows it too:
+a page that allocates until it runs out of memory, or watches when the
+garbage collector runs, measures the machine. In MoltNet windows the
+machine no longer shows in any of them:
 
-| What a page reads | Before, in MoltNet | Now |
+| What a page reads or measures | Chromium 156 | MoltNet |
 |---|---|---|
-| `jsHeapSizeLimit` | V8's heap limit, which V8 derives from the machine's memory (half of it, between 256 MiB and 4 GiB, for the old generation), to the byte: about 2.2 GB on a 4 GB machine, 4,395,630,592 from 8 GB on, and every value between for the sizes between | **3,760,000,000**: the 8 GB machine's limit `navigator.deviceMemory` describes, rounded as below |
+| How much JavaScript heap a page can fill before it runs out of memory, and when V8 collects garbage | V8's configuration for the machine's memory, in every isolate (windows, workers, worklets): an old generation of half the memory (256 MiB to 4 GiB), new-space areas of a 128th of it (2 to 32 MiB), and the heap's growth and initial size following the memory | **every isolate is configured as on a 4 GB machine**: an old generation of 2 GiB, new-space areas of 32 MiB, the 4 GB machine's growth and limits |
+| `jsHeapSizeLimit` | that configuration's limit, to the byte: 2,248,146,944 on a 4 GB machine, 4,395,630,592 from 8 GB on, and every value between for the sizes between | **2,330,000,000**: the 4 GB machine's limit, which V8 really has, rounded as below |
 | `usedJSHeapSize`, `totalJSHeapSize` | to the byte, refreshed every 50 ms (a renderer locked to a site, as on desktop) | rounded up to one of 100 sizes from 10 MB to 3.76 GB (three significant digits), refreshed once every 20 minutes |
-| `measureUserAgentSpecificMemory()` | byte counts per context, as precise as the heap's layout | every count rounded the same way (0 stays 0) |
+| `measureUserAgentSpecificMemory()` | byte counts per context, as precise as the heap's layout; which entries a context gets depends on the process model (a frame in this process that wasn't measured has none, a frame in another process an entry of 0 bytes, a context without canvas buffers no canvas entry) | every count rounded the same way (0 stays 0); **every context gets the same entries**, its JavaScript and its canvas memory (0 bytes where nothing was measured), and so do the shared and Blink memory |
+| On Linux, how much a renderer can reserve (`ArrayBuffer`s, WebAssembly memories, untouched) before an allocation fails | the renderer's data limit: 8 GiB on machines up to 16 GB, 16 or 32 GiB above (`kHigherRendererMemoryLimit` doubles them) | **8 GiB** on every machine |
 
 Normal and Incognito windows keep Chromium's behaviour. The kill switch
 turns it off.
 
 ### What MoltNet does
 
+* **V8's heap.** gin configures every isolate of a MoltNet renderer as
+  for a machine of `moltnet::kV8HeapPhysicalMemory`, 4 GiB
+  (`gin::IsolateHolder::SetPhysicalMemoryForIsolates()`, called before V8
+  starts): V8 sizes the generations, its growth heuristics and the
+  initial heap from that number, whatever the machine has. 4 GB is the
+  smallest machine MoltBrowser supports (the README's Basic tier), so the
+  configuration never promises more than the smallest machine can back;
+  V8's sizes are limits, not reservations, so larger machines lose
+  nothing but the extra headroom.
 * `MemoryInfo` always reports the rounded, cached values Chromium reports
   when a renderer isn't locked to a site (`Precision::kBucketized`, the
   20-minute cache), whatever the caller asked for and whatever
@@ -2776,48 +2794,83 @@ turns it off.
   of Chromium's 100 sizes (`moltnet::QuantizedMemorySize`): Chromium
   computes the sizes in floating point at run time with the platform's
   math library, MoltNet uses the same values on every machine and thread.
-* `jsHeapSizeLimit` is V8's limit for an 8 GB machine at 156 (an old
-  generation of 4 GiB and three new-space areas of 32 MiB,
-  `moltnet::V8HeapSizeLimit`), rounded like the other two: the last size,
-  3,760,000,000, which every machine from 8 GB up also reads when
-  rounded.
-* `measureUserAgentSpecificMemory()` rounds every byte count it reports
-  the same way, before the totals are added up.
+* `jsHeapSizeLimit` is the limit V8 156 computes for the 4 GiB machine (an
+  old generation of 2 GiB and three new-space areas of 32 MiB, 2 GiB +
+  96 MiB, `moltnet::V8HeapSizeLimit`), rounded like the other two:
+  2,330,000,000.
+* `measureUserAgentSpecificMemory()` gives every entry of the browser's
+  measurement a JavaScript and a canvas size, and the measurement a shared
+  and a Blink size, 0 where there was none
+  (`molt_fingerprinting::MakeMemoryMeasurementUniform`), then rounds every
+  byte count the same way, before the totals are added up.
+* **The data limit (Linux).** The sandbox sets a MoltNet renderer's
+  `RLIMIT_DATA` to 8 GiB on every machine
+  (`sandbox::policy::molt::ProcessDataSizeLimit`), the limit Chromium
+  gives machines up to 16 GB. Reserving memory without touching it
+  reaches the limit in a fraction of a second, so the limit was a cheap
+  measurement of the machine.
 
 ### Which contexts
 
-The whole MoltNet renderer process: `performance.memory` exists only in
-windows, the memory measurement also in shared and service workers. The
-kill switch turns it off.
+The whole MoltNet renderer process: every isolate (windows, iframes,
+dedicated, shared and service workers, worklets) and, on Linux, the
+process's data limit; `performance.memory` exists only in windows, the
+memory measurement also in shared and service workers. The kill switch
+turns it off.
+
+### What it costs MoltNet users
+
+A page can fill 2 GiB of JavaScript heap instead of up to 4 GiB on a
+machine with 8 GB or more before its tab runs out of memory (very few
+pages come near either), and V8 collects garbage as it does on a 4 GB
+machine: a little more often on large machines, where Chromium lets the
+heap grow further between collections. On Linux machines with more than
+16 GB, a MoltNet renderer can reserve 8 GiB instead of 16 or 32 GiB.
 
 ### Code
 
 | Where | What |
 |---|---|
-| `core/molt_fingerprinting/moltnet_memory_values.{h,cc}` | V8's heap limit for a machine's memory, the uniform limit, the fixed table of sizes; std-only (+ `moltnet_memory_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_memory_values.{h,cc}` | the 4 GiB machine, V8's heap limit for a machine's memory, the uniform limit, the fixed table of sizes; std-only (+ `moltnet_memory_values_unittest.cc`, in `:unit_tests`) |
 | `core/molt_fingerprinting/moltnet_memory.{h,cc}` | the Blink glue (+ `moltnet_memory_test.cc`) |
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `PinUniformMachineBeforeV8()`, which configures gin before V8 starts (+ `moltnet_cpu_test.cc`: the heap model is V8's, gin configures the fixed machine) |
+| `sandbox/policy/linux/molt_data_limit.h` | the data limit (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`): `core/timing/memory_info.cc`
-(`MemoryInfo`'s constructor and `HeapSizeCache::Update`) and
+(`MemoryInfo`'s constructor and `HeapSizeCache::Update`),
 `core/timing/measure_memory/measure_memory_controller.cc`
-(`ConvertResult`). Both files are new in `src/`.
+(`MeasurementComplete`, `ConvertResult`),
+`gin/public/isolate_holder.h` and `gin/isolate_holder.cc`
+(`SetPhysicalMemoryForIsolates`, used by `getDefaultIsolateParams`, which
+every isolate's parameters come from), `sandbox/policy/linux/sandbox_linux.cc`
+(`LimitAddressSpace`) and `sandbox/policy/BUILD.gn`. All are new in `src/`.
+The call comes from `PinUniformMachineBeforeV8()` ([CPU
+features](#moltnet-cpu-features)).
 
 ### Verification
 
 Standalone (no Chromium checkout): `moltnet_memory_values_unittest.cc` (4
-tests: the uniform limit, the limit V8 156's heap configuration gives 1 to
-64 GB, fractional and nonsense memory sizes, and the table's rounding at,
-between and beyond its sizes, Chromium's own test values included; the
-table was generated with Chromium's computation) passes with g++
-(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`). Every changed C++
-file, the tests included, compiles without errors against Chromium 156's
-real headers (`tools/compile_check`).
+tests: the uniform limit is the 4 GiB machine's, the limit V8 156's heap
+configuration gives 1 to 64 GB, fractional and nonsense memory sizes, and
+the table's rounding at, between and beyond its sizes, Chromium's own test
+values included; the table was generated with Chromium's computation)
+passes with g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`);
+`molt_data_limit_unittest.cc` (3 tests: the switch's names agree with
+chrome's, MoltNet renderers get 8 GiB whatever Chromium's tier and keep a
+smaller limit, other renderers and processes keep Chromium's) with g++
+(ASan/UBSan) against a `base::CommandLine` stand-in. A probe of the data
+limit (node under `prlimit`, untouched `ArrayBuffer`s) reaches 1 to 8 GiB
+limits in about 60 ms with 40 MB resident. Every changed C++ file, the
+tests included, compiles without errors against Chromium 156's real
+headers (`tools/compile_check`).
 
 **Needs the build machine:** `blink_unittests` (`MoltNetMemoryTest.*`,
 which reads `performance.memory` through a real `MemoryInfo` in a V8
-context, and the upstream `MemoryInfo` and measure-memory suites), and
-the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (a
-4 GB machine, workers). **Automated** by
+context and checks the measurement's entries, `MoltNetCpuTest.*`, which
+creates real isolates, and the upstream `MemoryInfo` and measure-memory
+suites), `chrome`'s `molt_ai_unittests` (`MoltDataLimitTest.*`), and the
+checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" and
+"fp-cpu" (a 4 GB machine, a large one, workers). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md): `jsHeapSizeLimit`
 (`perf.jsHeapSizeLimit`), the sizes rounded (`perf.heap_rounded`) and not
 refreshed after an allocation (`perf.heap_cached`).
@@ -2942,7 +2995,9 @@ for x86-64 and arm64 with Chromium's flags:
   level of x86-64 and on arm64.
 
 Video drawn into a canvas is read back through the canvas, whose
-readbacks are farbled like any drawing.
+readbacks are farbled like any drawing. A frame read back in another
+colour space (`copyTo({colorSpace: 'display-p3'})`) is converted by
+Skia's portable raster pipeline ([CPU features](#moltnet-cpu-features)).
 
 **Which contexts.** The whole MoltNet renderer process, windows, iframes
 and workers, set once when it starts (`Configure`, before any media object
@@ -3031,6 +3086,213 @@ by WebCodecs and by a `<video>`, read as YUV and as RGBA, `<video>` frames
 in I420 (`pixels.video_frame_format`), and the bytes of a scaled VP8 frame
 (I420 and RGBA input) and of Opus at 48 and 44.1 kHz, compared between
 runs (`pixels.*`).
+
+## MoltNet: CPU features
+
+Some of what a page computes depends on the CPU it runs on: WebAssembly's
+relaxed SIMD instructions are defined to give implementation-specific
+results, and the browser's own code picks a code path for the CPU's
+vector extensions at run time (SSE4.1, AVX, AVX2, FMA, AVX-512 and VNNI
+on x86-64, NEON on Arm) in colour conversion, audio decoding and two
+`Math` functions. At 156 those results show which extensions the CPU has.
+In MoltNet windows they are computed the same way on every CPU:
+
+| What a page computes | Chromium 156 | MoltNet |
+|---|---|---|
+| WebAssembly relaxed SIMD (`relaxed_madd` and `nmadd`, `relaxed_swizzle`, `relaxed_trunc`, `relaxed_laneselect`, `relaxed_min` and `max`, `relaxed_q15mulr`, `relaxed_dot`) | always on (not behind a flag or a Blink feature): a fused multiply-add on CPUs with FMA, a separate multiply and add without; out-of-range lanes, NaN and rounding as x86 or Arm treat them; dot products with AVX-VNNI-INT8, AVX-VNNI or SSSE3 sequences | **off** (V8's new `--no-wasm-relaxed-simd`): a module that uses them fails validation (`WebAssembly.validate()` is false, compiling throws a `CompileError`) the same way on every machine, as on a browser without them; pages that detect it load the plain-SIMD build they ship for such browsers |
+| `Math.pow` (and `**`), `Math.tanh` | the C library's `pow` and `tanh` (`--use-std-math-pow` is on by default, `tanh` always calls `std::tanh`), which pick their code by CPU feature: glibc has FMA versions it uses on CPUs with FMA, the Windows C runtime FMA3 versions | **V8's own code**, like every other `Math` function: llvm-libc's `pow` and fdlibm's `tanh` (the one V8 used before it called `std::tanh`) over V8's `expm1` |
+| Colours a page reads back in another colour space (`getImageData({colorSpace})`, `VideoFrame.copyTo({colorSpace})`, Display P3 and Rec. 2020 images and video drawn into a canvas) and pixels Skia draws on the CPU | Skia's raster pipeline, blitters and swizzles in their SSE2, AVX2 + FMA or AVX-512 versions on x86-64 (the AVX2 and AVX-512 ones fuse multiply-adds; reciprocal estimates differ between Intel and AMD) and NEON on Arm (fused multiply-adds, its own estimates) | **one raster pipeline for every CPU** and no CPU-specific blitters: no fused multiply-add, exact division and square roots instead of estimates, exact half floats, SSE's rules for minimum, maximum, rounding and NaN everywhere; the same bytes on every x86-64 and arm64 CPU |
+| Images with a colour profile, decoded by Blink or WebCodecs' `ImageDecoder` | skcms in its baseline, AVX2 or AVX-512 version (the baseline converts half floats approximately, the others and NEON exactly) | **skcms's baseline code with exact half floats**: the same bytes on every x86-64 and arm64 CPU |
+| Decoded audio: WebCodecs `AudioDecoder` output (`AudioData`), and the samples `decodeAudioData()` and media elements decode | Symphonia (FLAC, MP3, PCM, Vorbis) computes Vorbis' inverse MDCT with rustfft's AVX + FMA, SSE4.1 or NEON code, whichever the CPU has; FFmpeg, which decodes what Symphonia declines, with its SSE, AVX, AVX2 + FMA or NEON code | **rustfft's scalar code and FFmpeg's C code**: the same samples on every x86-64 and arm64 CPU |
+
+`AudioBuffer`s (`decodeAudioData()`, `OfflineAudioContext`) are also
+farbled where a page reads them ([the noise](#the-noise)); `AudioData` and
+`VideoFrame.copyTo()` aren't.
+
+### What MoltNet does
+
+All of it is set once per MoltNet renderer, before V8 starts and before
+any image, frame or audio is decoded:
+`ChromeContentRendererClient::SetRuntimeFeaturesDefaultsBeforeBlinkInitialization()`
+calls `molt_ai::fingerprinting::ConfigureRendererProcessBeforeBlink()`,
+which for a MoltNet renderer calls
+`WebMoltFingerprinting::ConfigureBeforeBlinkInitialization()`, and
+`PinUniformMachineBeforeV8()` (`core/molt_fingerprinting/moltnet_cpu.h`):
+
+* gives V8 `--no-wasm-relaxed-simd --no-use-std-math-pow
+  --no-use-std-math-tanh` (`v8::V8::SetFlagsFromString`, before gin
+  initialises V8, so the flags hold for every isolate and are frozen with
+  the others);
+* configures every isolate for the 4 GB machine
+  ([performance.memory](#moltnet-performancememory));
+* turns on skcms's portable mode (`skcms_MoltBrowserEnablePortableMode()`:
+  `skcms_DisableRuntimeCPUDetection()` plus exact half floats in the
+  baseline code);
+* installs Skia's portable raster pipeline
+  (`SkGraphics::MoltBrowserUsePortableRasterPipeline()`, a translation unit
+  of its own, `SkOpts_moltbrowser.cpp`, built from the same
+  `SkRasterPipeline_opts.h` with `SKRP_MOLTBROWSER_PORTABLE` and
+  `-ffp-contract=off`).
+
+The browser adds `--disable-skia-runtime-opts` to MoltNet renderers'
+command lines (`molt_fingerprinting_browser.cc`), so Skia's CPU-specific
+blitters, bitmap samplers and swizzles are never installed either. The
+media process mode of [pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes)
+(`media::SetPortableMediaProcess()`) now also turns on Symphonia's
+portable FFT (`SymphoniaAudioDecoder` passes it to the Rust bridge's
+`set_portable_fft()` before it creates a decoder, which calls
+symphonia-core's `moltbrowser_set_portable_fft()`) and gives FFmpeg no CPU
+flags (`av_force_cpu_flags(0)`).
+
+**What was already the same.** Measured with Chromium 156's code, built
+with Chromium's compiler and flags for x86-64 and arm64:
+
+* V8's other `Math` functions (llvm-libc and fdlibm, compiled without
+  fused multiply-adds on x86-64): the same on every x86-64 CPU, and on
+  every arm64 CPU.
+* MP3, FLAC and PCM decoding, in Symphonia and in FFmpeg (integer
+  arithmetic, or no FFT): the same samples on every CPU of both
+  architectures. Opus uses libopus's C kernels since [pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes).
+* skcms's AVX2 and AVX-512 code already gave the same bytes as its arm64
+  code; portable mode gives those bytes on every CPU.
+
+**Camera and screen frames.** Frames from a camera or a screen capture,
+which only exist after the user grants a permission, keep Chromium's path:
+where the platform delivers them in GPU memory, a page's read-back is
+converted on the GPU. Converting them on the CPU would add a readback and
+an upload to every frame of a call or a screen share (3 MB at 1080p,
+12 MB at 2160p).
+
+### Which contexts
+
+The whole MoltNet renderer process: windows, iframes, workers and
+worklets, from before V8 starts. Normal and Incognito windows are
+unchanged, and so are the GPU process (which rasterises accelerated
+canvases and composites pages on the GPU) and other renderers. The kill
+switch turns it off (no mode switch, no call).
+
+### What it costs MoltNet users
+
+Measured on one core of this VM (Xeon, 2.1 GHz, with AVX-512):
+
+| Work | Chromium 156 (AVX-512 / AVX2) | MoltNet |
+|---|---|---|
+| Skia: reading back an sRGB canvas (premultiplied to unpremultiplied 8-bit) | 0.7 / 1.1 ms per megapixel | 2.4 ms |
+| Skia: the same in Display P3, or a half-float P3 image to sRGB | 6 / 9 to 10 ms per megapixel | 26 to 30 ms |
+| skcms: an image with a P3 profile decoded to sRGB (8-bit or half floats) | 6 / 10 ms per megapixel | 19 to 22 ms |
+| Symphonia: 4 s of 48 kHz stereo Vorbis | 5.4 ms | 6.4 ms |
+| FFmpeg (fallback): the same Vorbis; FLAC | 5.2 ms; 6.9 ms | 7.3 ms; 7.9 ms |
+
+Skia's baseline code (what a CPU without AVX2 runs) takes 2.4 ms and 21 to
+22 ms per megapixel for the first two rows: the portable pipeline costs up
+to 36% more than that, for its exact divisions and conversions. A
+12-megapixel photo with a P3 profile takes about 0.23 s of a decoding
+thread instead of 0.07 to 0.12 s. Canvases Skia draws on the CPU (those
+created with `willReadFrequently`, and every canvas where the GPU doesn't
+rasterise) draw without AVX2 and AVX-512 blitters; accelerated canvases and
+the page itself are drawn on the GPU, as before. Audio still decodes
+hundreds of times faster than real time. WebAssembly code that would use
+relaxed SIMD (some machine-learning kernels) runs its plain-SIMD version,
+typically somewhat slower. `Math.pow` and `Math.tanh` cost about what the
+C library's versions cost.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `kMoltNetV8Flags`, `PinUniformMachineBeforeV8()` (+ `moltnet_cpu_test.cc`) |
+| `core/molt_fingerprinting/molt_fingerprinting.cc`, `public/web/web_molt_fingerprinting.h` | `WebMoltFingerprinting::ConfigureBeforeBlinkInitialization()` |
+| `chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.{h,cc}` | `ConfigureRendererProcessBeforeBlink()`: the mode from the command line |
+| `chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.cc` | `--disable-skia-runtime-opts` for MoltNet renderers |
+| `third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | the portable raster pipeline's translation unit |
+| `media/base/molt_portable_media.{h,cc}` | the media process mode: also FFmpeg's CPU flags |
+
+Upstream hooks (each marked `MoltBrowser:`; all new in `src/`):
+
+* V8: `src/flags/flag-definitions.h` (`wasm_relaxed_simd`,
+  `use_std_math_tanh`), `src/wasm/function-body-decoder-impl.h`
+  (`DECODE(Simd)`: a relaxed opcode fails validation without the flag),
+  `src/base/ieee754.{h,cc}` (`tanh`, `SetUseStdTanh`), `src/init/v8.cc`
+  (`V8::Initialize`: applies `use_std_math_tanh`).
+* `chrome/renderer/chrome_content_renderer_client.cc`
+  (`SetRuntimeFeaturesDefaultsBeforeBlinkInitialization`).
+* skcms: `skcms.cc`, `src/skcms_public.h`, `src/skcms_Transform.h`,
+  `src/Transform_inl.h` (`F_from_Half`, `Half_from_F`: exact in portable
+  mode).
+* Skia: `include/core/SkGraphics.h`, `src/core/SkGraphics.cpp`
+  (`MoltBrowserUsePortableRasterPipeline`), `src/opts/SkRasterPipeline_opts.h`
+  (the `SKRP_MOLTBROWSER_PORTABLE` variants: NEON minimum and maximum,
+  reciprocals, square roots and multiply-adds; SSE reciprocals, absolute
+  value, floor and ceiling; half floats; NaN; the low-precision pipeline's
+  minimum, maximum, division by 255 and floor), `skia/BUILD.gn`
+  (`SkOpts_moltbrowser.cpp` in `skia_opts`).
+* Symphonia: `third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs`
+  (`moltbrowser_set_portable_fft`, the planner every FFT is made with),
+  with the same change as a crate patch in
+  `third_party/rust/chromium_crates_io/patches/symphonia-core-v0_6/`, so
+  vendoring the crate again keeps it; `media/filters/symphonia_decoder_bridge.rs`
+  (`set_portable_fft`), `media/filters/symphonia_audio_decoder.cc`
+  (`ConfigureDecoder`).
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory), with
+Chromium 156's sources built with Chromium's clang and flags for x86-64
+(`-msse3`, the AVX2 and AVX-512 files with theirs) and arm64, run natively
+(a Xeon with AVX-512) and under qemu on emulated Core 2, Nehalem, Sandy
+Bridge, Haswell and EPYC (Zen 2) CPUs and arm64 Cortex-A72, Neoverse N1 and
+qemu's `max` CPU:
+
+* **Relaxed SIMD.** A probe of all 20 relaxed instructions with inputs
+  whose results the specification leaves open (Node 22's V8 12.4; 156's
+  V8 picks its code for them the same way, by FMA, AVX-VNNI and SSSE3
+  support): on x86-64 the multiply-adds differ between CPUs with
+  and without FMA and a dot product between Nehalem and later CPUs, and
+  arm64 differs from x86-64 in 13 of the 20. The decoder change needs the
+  build machine.
+* **`Math`.** V8 156's `src/base/ieee754.cc` with 21 functions over a
+  million arguments each: with MoltNet's flags, `pow` and `tanh` give the
+  same results on every CPU above, x86-64 and arm64; `std::pow` and
+  `std::tanh` (glibc 2.39), which Chromium calls, differ between the CPUs
+  with FMA and those without. fdlibm's `tanh` stays within 2.4 units in
+  the last place (glibc's: 2.2).
+* **Skia.** The raster pipeline and `SkConvertPixels` from Chromium 156's
+  Skia over 3075 cases (6 colour types, 7 colour spaces to sRGB, P3 and
+  Rec. 2020, premultiplied and not; the 22 blend modes; HSL, a colour
+  matrix, gamma, PQ and HLG curves): Chromium's code gives 5 different
+  results on x86-64 (its baseline, AVX2 and AVX-512 code, the first two
+  also differing between the Xeon and the emulated CPUs, whose reciprocal
+  estimates differ) and another on arm64; the portable pipeline the same
+  bytes on every CPU above.
+* **skcms.** 1890 transforms (7 source profiles, a table and CLUT one
+  among them, 3 destinations, 6 source and 5 destination formats, 3 alpha
+  modes): the baseline code gives other bytes than the AVX2, AVX-512 and
+  arm64 code; portable mode the same bytes on every CPU above, the ones
+  AVX2, AVX-512 and arm64 give. Its half-float conversion equals F16C's for
+  all 65,536 halves and all 2^32 floats.
+* **Audio.** Symphonia 0.6.1 as Chromium 156 vendors and configures it
+  (cargo, rustfft's AVX, SSE and NEON code on), on 4 s of Vorbis at 48 and
+  44.1 kHz, MP3 and FLAC: Vorbis gives 4 different results on the CPUs
+  above (AVX + FMA, SSE4.1, scalar on Core 2, NEON), the portable FFT one;
+  so do its inverse MDCTs at Vorbis' sizes. FFmpeg (Chromium 156's
+  configuration and source list, its x86 assembly with nasm): Vorbis gives
+  4 different results (C on Core 2 and Nehalem, AVX on Sandy Bridge, AVX2
+  + FMA, NEON), with `av_force_cpu_flags(0)` one, the same on x86-64 and
+  arm64. MP3 and FLAC gave the same samples everywhere in both.
+
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`), except the V8, Skia and skcms internals it
+doesn't cover, which the harnesses above build and run.
+**Needs the build machine:** compiling and linking (Rust included),
+`blink_unittests` (`MoltNetCpuTest.*`), `media_unittests` and V8's own
+tests, and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged
+"fp-cpu" (two machines of different CPU generations, an arm64 Mac).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): relaxed SIMD
+fails validation (`cpu.wasm_relaxed_simd`); compared between runs, a hash
+of `Math` results (`cpu.math`), a frame read back in Display P3
+(`pixels.p3_readback`) and decoded Vorbis (`audio.decoded_vorbis`).
 
 ## MoltNet: storage limits
 
@@ -4598,6 +4860,11 @@ Honest list; anything not in the table above is not covered.
   conversion of read-back frames, and the CPU-specific kernels of libopus,
   libyuv's filtered scaling and the encoders' resampler, see [pixels and
   encoded bytes](#moltnet-pixels-and-encoded-bytes).)
+* (Closed: in MoltNet, WebAssembly relaxed SIMD, the CPU-specific code of
+  Skia, skcms and the audio decoders, `Math.pow` and `Math.tanh` from the
+  C library, and V8's heap configured from the machine's memory, see [CPU
+  features](#moltnet-cpu-features) and
+  [performance.memory](#moltnet-performancememory).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -4751,7 +5018,8 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.{h,cc}`, `moltnet_media.{h,cc}` | MoltNet's audio device, key systems, Media Capabilities table and WebCodecs codecs (pure, + `moltnet_media_values_unittest.cc`; glue, + `moltnet_media_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.{h,cc}`, `moltnet_audio_output.{h,cc}` | MoltNet's media playback clock and the ring it shares with Web Audio's (+ `moltnet_audio_sink_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | MoltNet's device list, `devicechange` and `getUserMedia()` before a permission (rules in `moltnet_media_values.h`; + `moltnet_media_devices_test.cc`) |
-| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}` | MoltNet's `performance.memory` and memory measurement (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}`; `src/sandbox/policy/linux/molt_data_limit.h` | MoltNet's `performance.memory`, memory measurement and the 4 GiB machine V8 is configured as (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`); the renderer's data limit on Linux (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.{h,cc}`; `src/third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | MoltNet's CPU features, set before V8 starts: V8's flags, the heap's machine, skcms's and Skia's portable code (+ `moltnet_cpu_test.cc`); Skia's portable raster pipeline |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
 | `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
@@ -4827,6 +5095,15 @@ bytes: `media/renderers/default_decoder_factory.cc`,
 `media/base/BUILD.gn`, `third_party/opus/BUILD.gn`,
 `third_party/opus/src/celt/celt.c`, `celt/x86/x86cpu.c`,
 `celt/arm/pitch_neon_intr.c`, `celt/arm/celt_neon_intr.c`; MoltNet's
+CPU features and V8's heap: `v8/src/flags/flag-definitions.h`,
+`v8/src/wasm/function-body-decoder-impl.h`, `v8/src/base/ieee754.{h,cc}`,
+`v8/src/init/v8.cc`, `gin/public/isolate_holder.h`, `gin/isolate_holder.cc`,
+skcms's `skcms.cc`, `skcms_public.h`, `skcms_Transform.h`,
+`Transform_inl.h`, Skia's `SkGraphics.{h,cpp}`, `SkRasterPipeline_opts.h`,
+`skia/BUILD.gn`, symphonia-core's `src/dsp/fft/simd.rs` (and its crate
+patch), `media/filters/symphonia_decoder_bridge.rs`,
+`media/filters/symphonia_audio_decoder.cc`,
+`sandbox/policy/linux/sandbox_linux.cc`, `sandbox/policy/BUILD.gn`; MoltNet's
 storage limits:
 `content/browser/storage_partition_impl.cc`,
 `content/browser/blob_storage/chrome_blob_storage_context.cc`,
@@ -4924,4 +5201,8 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    repeat the comparisons of [pixels and encoded
    bytes](#moltnet-pixels-and-encoded-bytes) (every SIMD level of x86-64
    and arm64), and check that new decoder or frame-pool paths keep
-   MoltNet's video in software and in CPU memory.
+   MoltNet's video in software and in CPU memory. When V8, Skia, skcms,
+   Symphonia, rustfft or FFmpeg roll, repeat the comparisons of [CPU
+   features](#moltnet-cpu-features) and look for new instructions or code
+   paths picked by CPU feature (new relaxed instructions, new `SkOpts`
+   entries, new uses of the C library's math in V8).
