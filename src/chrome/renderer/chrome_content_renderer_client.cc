@@ -1530,6 +1530,9 @@ void ChromeContentRendererClient::RunScriptsAtDocumentIdle(
 
 void ChromeContentRendererClient::
     SetRuntimeFeaturesDefaultsBeforeBlinkInitialization() {
+  // MoltBrowser: fingerprinting protection's settings that must precede V8.
+  molt_ai::fingerprinting::ConfigureRendererProcessBeforeBlink();
+
   // The performance manager service interfaces are provided by the chrome
   // embedder only.
   blink::WebRuntimeFeatures::EnablePerformanceManagerInstrumentation(true);

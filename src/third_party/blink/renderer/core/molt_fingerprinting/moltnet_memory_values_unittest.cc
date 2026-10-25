@@ -14,19 +14,26 @@ namespace {
 constexpr uint64_t kMiB = uint64_t{1} << 20;
 constexpr uint64_t kGiB = uint64_t{1} << 30;
 
-TEST(MoltNetMemoryValuesTest, UniformLimitIsAnEightGigabyteMachines) {
-  // 4 GiB of old generation and 3 x 32 MiB of young: what Chromium 156
-  // reports, unrounded, on any 64-bit desktop with 8 GiB or more.
-  EXPECT_EQ(UniformJsHeapSizeLimit(), uint64_t{4395630592});
-  EXPECT_EQ(UniformJsHeapSizeLimit(), 4 * kGiB + 96 * kMiB);
-  EXPECT_EQ(kUniformPhysicalMemory, 8 * kGiB);
-  EXPECT_EQ(V8HeapSizeLimit(16 * kGiB), UniformJsHeapSizeLimit());
-  EXPECT_EQ(V8HeapSizeLimit(64 * kGiB), UniformJsHeapSizeLimit());
+TEST(MoltNetMemoryValuesTest, UniformLimitIsAFourGigabyteMachines) {
+  // 2 GiB of old generation and 3 x 32 MiB of young: what Chromium 156
+  // gives every isolate, and reports unrounded, on a 64-bit desktop with
+  // 4 GiB, the smallest MoltBrowser supports.
+  EXPECT_EQ(kV8HeapPhysicalMemory, 4 * kGiB);
+  EXPECT_EQ(UniformJsHeapSizeLimit(), uint64_t{2248146944});
+  EXPECT_EQ(UniformJsHeapSizeLimit(), 2 * kGiB + 96 * kMiB);
+  EXPECT_EQ(V8HeapSizeLimit(kV8HeapPhysicalMemory), UniformJsHeapSizeLimit());
+  // Larger machines would get a larger heap, smaller ones a smaller one.
+  EXPECT_LT(UniformJsHeapSizeLimit(), V8HeapSizeLimit(8 * kGiB));
+  EXPECT_GT(UniformJsHeapSizeLimit(), V8HeapSizeLimit(4 * kGiB - kMiB));
 }
 
-TEST(MoltNetMemoryValuesTest, SmallerMachinesShowTheirMemory) {
-  // Why MoltNet reports a fixed limit: below 8 GiB the old generation is
-  // half the memory, to the 256 KiB page.
+TEST(MoltNetMemoryValuesTest, MachinesShowTheirMemory) {
+  // Why MoltNet configures one machine: up to 8 GiB the old generation is
+  // half the memory, to the 256 KiB page; from 8 GiB on it is 4 GiB.
+  EXPECT_EQ(V8HeapSizeLimit(8 * kGiB), 4 * kGiB + 96 * kMiB);
+  EXPECT_EQ(V8HeapSizeLimit(8 * kGiB), uint64_t{4395630592});
+  EXPECT_EQ(V8HeapSizeLimit(16 * kGiB), V8HeapSizeLimit(8 * kGiB));
+  EXPECT_EQ(V8HeapSizeLimit(64 * kGiB), V8HeapSizeLimit(8 * kGiB));
   EXPECT_EQ(V8HeapSizeLimit(4 * kGiB), 2 * kGiB + 96 * kMiB);
   EXPECT_EQ(V8HeapSizeLimit(2 * kGiB), 1 * kGiB + 48 * kMiB);
   EXPECT_EQ(V8HeapSizeLimit(1 * kGiB), 512 * kMiB + 24 * kMiB);
@@ -45,7 +52,7 @@ TEST(MoltNetMemoryValuesTest, Extremes) {
   EXPECT_EQ(V8HeapSizeLimit(0), 256 * kMiB + 6 * kMiB);
   EXPECT_EQ(V8HeapSizeLimit(1), 256 * kMiB + 6 * kMiB);
   EXPECT_EQ(V8HeapSizeLimit(std::numeric_limits<uint64_t>::max()),
-            UniformJsHeapSizeLimit());
+            V8HeapSizeLimit(8 * kGiB));
 }
 
 TEST(MoltNetMemoryValuesTest, ChromiumsRounding) {
@@ -61,9 +68,10 @@ TEST(MoltNetMemoryValuesTest, ChromiumsRounding) {
   EXPECT_EQ(QuantizedMemorySize(3760000001), uint64_t{3760000000});
   EXPECT_EQ(QuantizedMemorySize(std::numeric_limits<uint64_t>::max()),
             uint64_t{3760000000});
-  // What MoltNet reports as jsHeapSizeLimit.
+  // What MoltNet reports as jsHeapSizeLimit (and Chromium on a 4 GiB
+  // machine, when it rounds).
   EXPECT_EQ(QuantizedMemorySize(UniformJsHeapSizeLimit()),
-            uint64_t{3760000000});
+            uint64_t{2330000000});
   // Rounding never goes down, and stays on the table.
   uint64_t last = 0;
   for (uint64_t bytes = 1; bytes < 5000000000; bytes = bytes * 9 / 8 + 1) {

@@ -14,6 +14,13 @@
 
 namespace molt_ai::fingerprinting {
 
+// Call once from ChromeContentRendererClient::
+// SetRuntimeFeaturesDefaultsBeforeBlinkInitialization (main thread, before
+// Blink and V8 are initialized). In kUniform (MoltNet) it makes V8 and the
+// colour code run as on one fixed machine (blink::WebMoltFingerprinting::
+// ConfigureBeforeBlinkInitialization).
+void ConfigureRendererProcessBeforeBlink();
+
 // Call once from ChromeContentRendererClient::RenderThreadStarted (main
 // thread, after Blink is initialized, before any frame or worker exists).
 // A missing or malformed mode switch leaves protection off and doesn't

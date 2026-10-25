@@ -20,9 +20,19 @@ include_rules = [
     "+media/base/video_encoder.h",
     # MoltNet's media pixels and encoded bytes (moltnet_pixels.h).
     "+media/base/molt_portable_media.h",
+    # measureUserAgentSpecificMemory()'s entries (moltnet_memory.h).
+    "+base/byte_size.h",
+    "+components/performance_manager/public/mojom/web_memory.mojom-blink.h",
+    "+components/performance_manager/public/mojom/web_memory.mojom-blink-forward.h",
 ]
 
 specific_include_rules = {
+  # The machine V8 and skcms run as in MoltNet, set before V8 starts
+  # (moltnet_cpu.h), as bindings/core/v8 and the image decoders reach them.
+  "moltnet_cpu(_test)?\.cc": [
+    "+gin/public/isolate_holder.h",
+    "+third_party/skia/modules/skcms/skcms.h",
+  ],
   # MoltNet's audio clock (moltnet_audio_*): the media sinks, clock and
   # resampler Web Audio and media playback render through, as
   # platform/audio and modules/media/audio use them.

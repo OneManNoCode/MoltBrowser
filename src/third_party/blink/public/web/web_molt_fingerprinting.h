@@ -4,6 +4,9 @@
 // Entry point for MoltBrowser's engine-level fingerprinting protection. The
 // embedder (chrome/renderer/molt_ai/fingerprinting/) calls, on the main
 // thread:
+//   * ConfigureBeforeBlinkInitialization() once, before blink::Initialize()
+//     (SetRuntimeFeaturesDefaultsBeforeBlinkInitialization), with the same
+//     mode, for what has to be set before V8 starts;
 //   * Configure() once at renderer start (RenderThreadStarted) with the
 //     profile's mode, which the browser put on the command line;
 //   * SetSessionSeed() with the profile's session seed, which the browser
@@ -42,6 +45,12 @@ class BLINK_EXPORT WebMoltFingerprinting {
     kUniform,
   };
 
+  // Must be called before blink::Initialize(), which initialises V8, with
+  // the mode Configure() will get. Only kUniform does anything: V8 (flags,
+  // every isolate's heap) and image colour transforms run as on one fixed
+  // machine (core/molt_fingerprinting/moltnet_cpu.h). Needs no Blink object
+  // or thread; only the first kUniform call has an effect.
+  static void ConfigureBeforeBlinkInitialization(Mode mode);
   // Must be called on the main thread after blink::Initialize() and before
   // any script runs. Only the first call has an effect.
   static void Configure(Mode mode);
