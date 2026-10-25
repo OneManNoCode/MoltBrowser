@@ -89,6 +89,12 @@ V8_BASE_EXPORT double sinh(double x);
 // Returns the hyperbolic tangent of |x|, where |x| is given radians.
 V8_BASE_EXPORT double tanh(double x);
 
+// MoltBrowser: tanh() calls std::tanh, whose C library can pick its code by
+// CPU feature (glibc's FMA variants), unless this is called with false
+// (V8::Initialize does, for --no-use-std-math-tanh): then it computes
+// fdlibm's tanh over expm1() above, the same way on every CPU.
+V8_BASE_EXPORT void SetUseStdTanh(bool use_std_tanh);
+
 }  // namespace ieee754
 }  // namespace base
 }  // namespace v8

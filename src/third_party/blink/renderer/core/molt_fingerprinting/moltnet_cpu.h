@@ -19,6 +19,11 @@
 //                                reports it unsupported, and pages fall back
 //                                to the plain SIMD build they ship for
 //                                browsers without it.
+//   Math.pow, Math.tanh        V8's own code (--no-use-std-math-pow,
+//                                --no-use-std-math-tanh), like every other
+//                                Math function, not the C library's, which
+//                                can pick its code by CPU feature (glibc's and
+//                                the Windows CRT's FMA variants)
 //   V8's heap                  every isolate (windows, workers, worklets) is
 //                                configured for one machine,
 //                                moltnet::kV8HeapPhysicalMemory
@@ -59,7 +64,8 @@
 namespace blink::molt_fingerprinting {
 
 // The V8 flags of a MoltNet renderer.
-inline constexpr std::string_view kMoltNetV8Flags = "--no-wasm-relaxed-simd";
+inline constexpr std::string_view kMoltNetV8Flags =
+    "--no-wasm-relaxed-simd --no-use-std-math-pow --no-use-std-math-tanh";
 
 // For a MoltNet renderer, before V8 is initialised and before any isolate,
 // image decoder or colour transform exists (no Blink object or thread is

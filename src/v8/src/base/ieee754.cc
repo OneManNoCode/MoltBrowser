@@ -15,6 +15,7 @@
 
 #include "src/base/ieee754.h"
 
+#include <atomic>  // MoltBrowser: SetUseStdTanh().
 #include <cmath>
 #include <limits>
 
@@ -353,12 +354,75 @@ double sinh(double x) {
   return x * shuge;
 }
 
+namespace {
+
+// MoltBrowser: see SetUseStdTanh().
+std::atomic<bool> g_use_std_tanh{true};
+
+/*
+ * MoltBrowser: fdlibm's tanh (s_tanh.c, which V8 ran before it called
+ * std::tanh), over expm1() above.
+ * Method :
+ *                                 x    -x
+ *                                e  - e
+ *  0. tanh(x) is defined to be -----------
+ *                                 x    -x
+ *                                e  + e
+ *  1. reduce x to non-negative by tanh(-x) = -tanh(x).
+ *  2.  0      <= x <  2**-28 : tanh(x) := x
+ *      2**-28 <= x <  1      : tanh(x) := -t/(t+2), t = expm1(-2x)
+ *      1      <= x <  22     : tanh(x) := 1 - 2/(t+2), t = expm1(2x)
+ *      22     <= x <= INF    : tanh(x) := 1.
+ *
+ * Special cases:
+ *      tanh(NaN) is NaN;
+ *      only tanh(0)=0 is exact for finite argument.
+ */
+double FdlibmTanh(double x) {
+  static const double one = 1.0, two = 2.0;
+
+  int32_t jx;
+  GET_HIGH_WORD(jx, x);
+  int32_t ix = jx & 0x7FFFFFFF;
+
+  /* x is INF or NaN */
+  if (ix >= 0x7FF00000) {
+    if (jx >= 0) return one / x + one; /* tanh(+-inf)=+-1 */
+    return one / x - one;              /* tanh(NaN) = NaN */
+  }
+
+  double z;
+  if (ix < 0x40360000) {               /* |x|<22 */
+    if (ix < 0x3E300000) return x;     /* |x|<2**-28: tanh(tiny) = tiny */
+    if (ix >= 0x3FF00000) {            /* |x|>=1  */
+      double t = expm1(two * fabs(x));
+      z = one - two / (t + two);
+    } else {
+      double t = expm1(-two * fabs(x));
+      z = -t / (t + two);
+    }
+  } else {
+    z = one; /* |x| >= 22, return +-1 */
+  }
+  return (jx >= 0) ? z : -z;
+}
+
+}  // namespace
+
 #undef EXTRACT_WORDS
 #undef GET_HIGH_WORD
 #undef SET_HIGH_WORD
 #undef SET_LOW_WORD
 
-double tanh(double x) { return std::tanh(x); }
+double tanh(double x) {
+  // MoltBrowser: see SetUseStdTanh().
+  if (!g_use_std_tanh.load(std::memory_order_relaxed)) return FdlibmTanh(x);
+  return std::tanh(x);
+}
+
+void SetUseStdTanh(bool use_std_tanh) {
+  g_use_std_tanh.store(use_std_tanh, std::memory_order_relaxed);
+}
 
 }  // namespace ieee754
 }  // namespace base

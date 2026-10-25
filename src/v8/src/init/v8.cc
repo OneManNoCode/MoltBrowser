@@ -11,6 +11,7 @@
 #include "src/api/api.h"
 #include "src/base/abort-mode.h"
 #include "src/base/atomicops.h"
+#include "src/base/ieee754.h"  // MoltBrowser
 #include "src/base/once.h"
 #include "src/base/platform/platform.h"
 #include "src/codegen/cpu-features.h"
@@ -191,6 +192,9 @@ void V8::Initialize() {
   // are not allowed. Global initialization of the Isolate or the WasmEngine
   // already reads flags, so they should not be changed afterwards.
   if (v8_flags.freeze_flags_after_init) FlagList::FreezeFlags();
+
+  // MoltBrowser: Math.tanh's implementation (src/base/ieee754.h).
+  base::ieee754::SetUseStdTanh(v8_flags.use_std_math_tanh);
 
   // Verify the abort mode was not changed by flag implications.
   DCHECK_EQ(ChooseAbortMode(), base::g_abort_mode);

@@ -1119,6 +1119,10 @@ DEFINE_BOOL(use_std_math_pow, false,
 DEFINE_BOOL(use_std_math_pow, true,
             "use std::pow instead of our custom implementation")
 #endif
+// MoltBrowser: with --no-use-std-math-tanh, Math.tanh is computed with V8's
+// own code (fdlibm's tanh, src/base/ieee754.h), the same way on every CPU,
+// as --no-use-std-math-pow does for Math.pow.
+DEFINE_BOOL(use_std_math_tanh, true, "use std::tanh instead of fdlibm's tanh")
 
 // Flags for inline caching and feedback vectors.
 DEFINE_BOOL(use_ic, true, "use inline caching")
