@@ -5,7 +5,7 @@
 // that must not go on the renderer's command line.
 module molt_ai.fingerprinting.mojom;
 
-import "mojo/public/mojom/base/read_only_file.mojom";
+import "mojo/public/mojom/base/file.mojom";
 
 // Renderer side, one per renderer process, channel-associated: messages are
 // ordered with the rest of the renderer's channel traffic, so what the

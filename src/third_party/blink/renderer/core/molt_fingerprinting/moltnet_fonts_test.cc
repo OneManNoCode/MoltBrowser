@@ -17,10 +17,7 @@
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
-#include "third_party/blink/renderer/platform/fonts/font_family.h"
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
-#include "third_party/blink/renderer/platform/fonts/font_selector.h"
-#include "third_party/blink/renderer/platform/fonts/generic_font_family_settings.h"
 #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
@@ -208,15 +205,19 @@ TEST_F(MoltNetFontsTest, EveryLookupEndsInTheSet) {
     EXPECT_EQ(cache.GetFontData(description_, AtomicString(name)), nullptr)
         << name;
   }
-  // Generic families map to the set, not to the settings.
-  GenericFontFamilySettings settings;
-  settings.UpdateSansSerif(AtomicString("DejaVu Sans"));
-  EXPECT_EQ(FontSelector::FamilyNameFromSettings(
-                settings, description_,
-                FontFamily(font_family_names::kSansSerif,
-                           FontFamily::Type::kGenericFamily),
-                nullptr),
-            AtomicString(set_.family().c_str()));
+  // Generic families map to the set (what FamilyNameFromSettings returns
+  // instead of the settings' family), system-ui is looked up by name.
+  const FontPlatformData::UniformFontSet* set =
+      FontPlatformData::GetUniformFontSet();
+  ASSERT_TRUE(set);
+  for (const AtomicString& generic :
+       {font_family_names::kSansSerif, font_family_names::kSerif,
+        font_family_names::kMonospace, font_family_names::kMath}) {
+    EXPECT_EQ(set->GenericFamily(description_, generic),
+              AtomicString(set_.family().c_str()));
+  }
+  EXPECT_EQ(set->GenericFamily(description_, font_family_names::kSystemUi),
+            g_empty_atom);
   // Fallback stays in the set: the test font has 'a' only.
   const SimpleFontData* fallback =
       cache.FallbackFontForCharacter(description_, 'a', nullptr);
