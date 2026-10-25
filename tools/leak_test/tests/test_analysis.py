@@ -12,11 +12,13 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 
 from leakkit import catalog
 from leakkit import expectations as ex
+from leakkit import harness
 from leakkit import report
 from leakkit import traffic
 from leakkit import uniformity
@@ -219,6 +221,108 @@ class IdentityChecks(unittest.TestCase):
             'fetch_later': False}})
         self.assertEqual(c['status'], report.PASS)
         self.assertIn('only the pagehide beacon', ' '.join(c['evidence']))
+
+    def test_nothing_after_end_race(self):
+        began = 1760000092.0
+
+        def run(data, paths=()):
+            manifest = {'phases': [{'name': 'new_identity', 'data': data}]}
+            log = [{'path': p, 'status': 204} for p in paths]
+            return report._race_after_end_check(manifest, log)
+
+        after_ms = int(began * 1000) + 40
+        good = {'race_nonce': 'endrace1', 'race_setup': {'started': True},
+                'session_marks': [began, began + 4],
+                'race_events': [
+                    {'what': 'started', 't': after_ms - 900},
+                    {'what': 'after', 't': after_ms, 'seq': 9,
+                     'tried': ['fetch', 'keepalive', 'beacon', 'image',
+                               'websocket', 'prefetch']}]}
+        raced = ['/canary/endrace1-race0-1', '/canary/endrace1-race1-2']
+        c = run(good, raced)
+        self.assertEqual(c['status'], report.PASS)
+        self.assertIn('2 racing request(s)', ' '.join(c['evidence']))
+        self.assertIn('40 ms after', ' '.join(c['evidence']))
+        # Another nonce's requests aren't this one's.
+        self.assertEqual(run(good, [
+            '/canary/endrace12after%d-fetch' % after_ms,
+            '/ws/endrace12after%d' % after_ms])['status'], report.PASS)
+        # Any kind started after the refusal that reached the server fails.
+        for path in ('/canary/endrace1after%d-beacon' % after_ms,
+                     '/ws/endrace1after%d' % after_ms):
+            c = run(good, raced + [path])
+            self.assertEqual(c['status'], report.FAIL)
+            self.assertIn(path, ' '.join(c['evidence']))
+        # Even when the page could not say so before it closed.
+        self.assertEqual(run(dict(good, race_events=[]), [
+            '/canary/endrace1after%d-fetch' % after_ms])['status'],
+            report.FAIL)
+        # A refusal before New Identity began (Tor or the server failing)
+        # isn't the end: not judged, whatever reached the server.
+        early = int(began * 1000) - 500
+        self.assertEqual(run(dict(good, race_events=[
+            {'what': 'after', 't': early}]), [
+            '/canary/endrace1after%d-fetch' % early])['status'], report.SKIP)
+        # The page closed before it saw a refusal: nothing to judge.
+        self.assertEqual(run(dict(good, race_events=[
+            {'what': 'started', 't': 1}]))['status'], report.SKIP)
+        self.assertEqual(run({})['status'], report.SKIP)
+        self.assertEqual(run(dict(good, race_setup={'error': 'x'}))['status'],
+                         report.ERROR)
+        self.assertEqual(run(dict(good, session_marks=[]))['status'],
+                         report.ERROR)
+        self.assertEqual(report._race_after_time('/ws/endrace1after12', 'x'),
+                         None)
+        self.assertEqual(report._race_after_time('/canary/xafter', 'x'), None)
+        self.assertEqual(report._race_after_time('/canary/xafter7-a', 'x'), 7)
+
+    # The racing page's script (harness.py RACE_END_JS) in node, with a
+    # stand-in page whose fetches start failing: it starts each kind once,
+    # at the first refusal, with paths the report reads the time from.
+    RACE_PAGE = r"""
+const sent = []; const said = []; let n = 0;
+globalThis.location = {origin: 'http://a.onion'};
+globalThis.fetch = (u) => { sent.push(u); ++n;
+  return n < 8 ? Promise.resolve({}) : Promise.reject(new TypeError('x')); };
+Object.defineProperty(globalThis, 'navigator', {value: {
+  sendBeacon: (u) => { sent.push(u); return true; }}});
+globalThis.Image = function () { return {set src(u) { sent.push(u); }}; };
+globalThis.WebSocket = function (u) { sent.push(u); return {}; };
+globalThis.document = {createElement: () => ({}),
+                       head: {appendChild: (l) => sent.push(l.href)}};
+console.log = (s) => said.push(s);
+const started = eval(require('fs').readFileSync(0, 'utf8'));
+setTimeout(() => {
+  process.stdout.write(JSON.stringify({started, sent, said}));
+}, 300);
+"""
+
+    @unittest.skipUnless(shutil.which('node'), 'node is not installed')
+    def test_race_page_script(self):
+        nonce = 'endrace1'
+        out = subprocess.run(
+            ['node', '-e', self.RACE_PAGE],
+            input=harness.Run.RACE_END_JS % json.dumps(nonce),
+            capture_output=True, text=True, timeout=30, check=True)
+        res = json.loads(out.stdout)
+        self.assertEqual(res['started'], {'started': True})
+        prefix = 'moltleak-race %s ' % nonce
+        said = [s[len(prefix):].split(' ', 1) for s in res['said']
+                if s.startswith(prefix)]
+        events = [dict(json.loads(v), what=w) for w, v in said]
+        afters = [e for e in events if e['what'] == 'after']
+        self.assertEqual(len(afters), 1)
+        self.assertEqual(afters[0]['tried'], [
+            'fetch', 'keepalive', 'beacon', 'image', 'websocket', 'prefetch'])
+        after_paths = [u for u in res['sent'] if nonce + 'after' in u]
+        self.assertEqual(len(after_paths), 6)
+        self.assertIn('ws://a.onion/ws/%safter%d' % (nonce, afters[0]['t']),
+                      after_paths)
+        for u in after_paths:
+            self.assertEqual(report._race_after_time(u, nonce),
+                             afters[0]['t'], u)
+        self.assertTrue(any('/canary/%s-race' % nonce in u
+                            for u in res['sent']))
 
     def partition_runs(self, **changes):
         runs = []

@@ -867,6 +867,80 @@ def _held_after_end_check(manifest, server_log):
     return check(check_id, group, title, PASS, ev, doc)
 
 
+def _race_after_time(path, nonce):
+    """The time (ms) in a racing page's after-the-refusal request path
+    (`<nonce>after<ms>`), or None if the path isn't one."""
+    marker = nonce + 'after'
+    at = path.find(marker)
+    if at < 0:
+        return None
+    digits = ''
+    for ch in path[at + len(marker):]:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits) if digits else None
+
+
+def _race_after_end_check(manifest, server_log):
+    """Requests racing New Identity: the old page keeps fetches to the kit's
+    server going while New Identity runs, and once it sees one refused (the
+    end cancels what is in flight and refuses what follows) it starts one
+    request of each kind it can (harness.py RACE_END_JS). None of those may
+    reach the kit's server. A refusal the page saw before New Identity
+    began (Tor or the server failing) is not the end: that run isn't
+    judged."""
+    check_id, group = 'identity.nothing_after_end_race', 'identity'
+    title = ('Requests a page starts as its identity ends are refused, '
+             'whatever their kind (fetch, keepalive, beacon, image, '
+             'WebSocket, prefetch)')
+    doc = 'MOLTNET_COMPLIANCE.md §2 After an identity ends'
+    phase = _phase(manifest, 'new_identity')
+    data = (phase or {}).get('data') or {}
+    nonce = data.get('race_nonce')
+    if not nonce:
+        return check(check_id, group, title, SKIP,
+                     ['the New Identity phase raced no requests'], doc)
+    marks = data.get('session_marks') or []
+    began_ms = marks[0] * 1000.0 if marks else None
+    raced = [r.get('path', '') for r in server_log
+             if '/canary/%s-race' % nonce in r.get('path', '')]
+    ev = ['%d racing request(s) reached the kit\'s server' % len(raced)]
+    late = []
+    for r in server_log:
+        at = _race_after_time(r.get('path', ''), nonce)
+        if at is not None and began_ms is not None and at >= began_ms:
+            late.append(r.get('path', ''))
+    if late:
+        return check(check_id, group, title, FAIL, ev + [
+            'started after a refusal, once New Identity had begun, and '
+            'reached the kit\'s server: %s' % p for p in late[:6]], doc)
+    setup = data.get('race_setup')
+    if not isinstance(setup, dict) or setup.get('error') or \
+            not setup.get('started') or began_ms is None:
+        return check(check_id, group, title, ERROR, ev + [
+            'the old page could not start the racing requests: %s' %
+            json.dumps(setup, sort_keys=True)[:200]], doc)
+    afters = [e for e in data.get('race_events') or []
+              if isinstance(e, dict) and e.get('what') == 'after']
+    if not afters:
+        return check(check_id, group, title, SKIP, ev + [
+            'the old page closed before it saw a request refused: nothing '
+            'to judge'], doc)
+    first = afters[0]
+    at = first.get('t')
+    if not isinstance(at, (int, float)) or at < began_ms:
+        return check(check_id, group, title, SKIP, ev + [
+            'the old page saw a request refused before New Identity began '
+            '(Tor or the kit\'s server failed): not judged'], doc)
+    tried = [str(k) for k in first.get('tried') or []][:8]
+    ev.append('the old page saw a request refused %d ms after New Identity '
+              'began, then started: %s' % (int(at - began_ms),
+                                           ', '.join(tried) or 'nothing'))
+    ev.append('none of them reached the kit\'s server')
+    return check(check_id, group, title, PASS, ev, doc)
+
+
 def _phase_checks(manifest):
     out = [
         _phase_check(manifest, 'open_moltnet', 'moltnet.open', 'harness',
@@ -1348,6 +1422,7 @@ def build(run_dir):
         checks += _circuit_checks(manifest, tr)
         checks += _policy_live_checks(manifest, tr)
         checks.append(_held_after_end_check(manifest, server_log))
+        checks.append(_race_after_end_check(manifest, server_log))
     uni, os_names = _uniformity_checks(manifest)
     checks += uni
     checks += _control_checks(manifest)

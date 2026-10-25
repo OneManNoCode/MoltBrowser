@@ -684,6 +684,30 @@
     "new_context": "CTX3",
     "old_context": "CTX2",
     "old_pages_left": 0,
+    "race_events": [
+     {
+      "t": 1760000091610,
+      "what": "started"
+     },
+     {
+      "seq": 7,
+      "t": 1760000092045,
+      "tried": [
+       "fetch",
+       "keepalive",
+       "beacon",
+       "image",
+       "websocket",
+       "prefetch"
+      ],
+      "what": "after",
+      "why": "1:5"
+     }
+    ],
+    "race_nonce": "endrace1760000091600",
+    "race_setup": {
+     "started": true
+    },
     "result": {
      "running": true
     },
