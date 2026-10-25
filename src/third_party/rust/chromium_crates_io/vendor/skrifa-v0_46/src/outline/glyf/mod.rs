@@ -1326,7 +1326,8 @@ impl Scaler for HarfBuzzScaler<'_> {
 
 /// Magnitude of the vector (x, y)
 fn hypot(x: f32, y: f32) -> f32 {
-    x.hypot(y)
+    // MoltBrowser: portable in MoltNet (read_fonts::moltbrowser_math).
+    read_fonts::moltbrowser_math::hypot(x, y)
 }
 
 fn map_point(transform: [f32; 6], p: Point<f32>) -> Point<f32> {

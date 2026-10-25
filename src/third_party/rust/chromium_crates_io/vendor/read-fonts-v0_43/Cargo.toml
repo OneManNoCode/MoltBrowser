@@ -98,6 +98,10 @@ optional = true
 version = "0.12.4"
 features = ["bytemuck"]
 
+# MoltBrowser: the portable functions of moltbrowser_math.
+[dependencies.libm]
+version = "0.2.16"
+
 [dependencies.once_cell]
 version = "1.21.4"
 features = [

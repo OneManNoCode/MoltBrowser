@@ -1,0 +1,51 @@
+From: MoltBrowser <noreply@geneye.ai>
+Subject: [PATCH] Use read-fonts' portable glyph-transform math
+
+The rotations and skews of COLRv1 paints and the scale of composite glyphs'
+offsets take their sines, cosines, tangents and hypotenuses from
+read_fonts::moltbrowser_math (read-fonts' 0001 patch): the platform's C
+library functions by default, functions that give the same results on every
+CPU and OS once it is set portable (MoltNet's renderers).
+---
+diff --git a/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/color/instance.rs b/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/color/instance.rs
+index 6b17262..0f9c8ab 100644
+--- a/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/color/instance.rs
++++ b/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/color/instance.rs
+@@ -291,8 +291,9 @@ impl<'a> ResolvedPaint<'a> {
+                 around_center,
+                 paint,
+             } => {
+-                let sin_v = (angle * 180.0).to_radians().sin();
+-                let cos_v = (angle * 180.0).to_radians().cos();
++                // MoltBrowser: portable in MoltNet (read_fonts::moltbrowser_math).
++                let sin_v = read_fonts::moltbrowser_math::sin((angle * 180.0).to_radians());
++                let cos_v = read_fonts::moltbrowser_math::cos((angle * 180.0).to_radians());
+                 let mut out_transform = Transform {
+                     xx: cos_v,
+                     xy: -sin_v,
+@@ -335,8 +336,9 @@ impl<'a> ResolvedPaint<'a> {
+                 around_center,
+                 paint,
+             } => {
+-                let tan_x = (x_skew_angle * 180.0).to_radians().tan();
+-                let tan_y = (y_skew_angle * 180.0).to_radians().tan();
++                // MoltBrowser: portable in MoltNet (read_fonts::moltbrowser_math).
++                let tan_x = read_fonts::moltbrowser_math::tan((x_skew_angle * 180.0).to_radians());
++                let tan_y = read_fonts::moltbrowser_math::tan((y_skew_angle * 180.0).to_radians());
+                 let mut out_transform = Transform {
+                     xy: -tan_x,
+                     yx: tan_y,
+diff --git a/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/outline/glyf/mod.rs b/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/outline/glyf/mod.rs
+index 85bbc45..03f5cb5 100644
+--- a/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/outline/glyf/mod.rs
++++ b/third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/outline/glyf/mod.rs
+@@ -1326,7 +1326,8 @@ impl Scaler for HarfBuzzScaler<'_> {
+ 
+ /// Magnitude of the vector (x, y)
+ fn hypot(x: f32, y: f32) -> f32 {
+-    x.hypot(y)
++    // MoltBrowser: portable in MoltNet (read_fonts::moltbrowser_math).
++    read_fonts::moltbrowser_math::hypot(x, y)
+ }
+ 
+ fn map_point(transform: [f32; 6], p: Point<f32>) -> Point<f32> {

@@ -409,7 +409,9 @@ impl DecomposedTransform {
 
         // Python: t = t.rotate(self.rotation * math.pi)
         if self.rotation != 0.0 {
-            let (s, c) = (self.rotation * core::f32::consts::PI).sin_cos();
+            // MoltBrowser: portable in MoltNet (crate::moltbrowser_math).
+            let (s, c) =
+                crate::moltbrowser_math::sin_cos(self.rotation * core::f32::consts::PI);
             transform *= Matrix::from_elements([c, s, -s, c, 0.0, 0.0]);
         }
 
@@ -422,8 +424,9 @@ impl DecomposedTransform {
         if (self.skew_x, self.skew_y) != (0.0, 0.0) {
             transform *= Matrix::from_elements([
                 1.0,
-                (self.skew_y * core::f32::consts::PI).tan(),
-                (-self.skew_x * core::f32::consts::PI).tan(),
+                // MoltBrowser: portable in MoltNet (crate::moltbrowser_math).
+                crate::moltbrowser_math::tan(self.skew_y * core::f32::consts::PI),
+                crate::moltbrowser_math::tan(-self.skew_x * core::f32::consts::PI),
                 1.0,
                 0.0,
                 0.0,

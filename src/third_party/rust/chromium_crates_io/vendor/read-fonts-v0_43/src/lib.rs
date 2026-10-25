@@ -84,6 +84,8 @@ mod read;
 mod table_provider;
 mod table_ref;
 pub mod tables;
+// MoltBrowser: portable glyph-transform math (see the module).
+pub mod moltbrowser_math;
 #[cfg(feature = "experimental_traverse")]
 pub mod traversal;
 

@@ -291,8 +291,9 @@ impl<'a> ResolvedPaint<'a> {
                 around_center,
                 paint,
             } => {
-                let sin_v = (angle * 180.0).to_radians().sin();
-                let cos_v = (angle * 180.0).to_radians().cos();
+                // MoltBrowser: portable in MoltNet (read_fonts::moltbrowser_math).
+                let sin_v = read_fonts::moltbrowser_math::sin((angle * 180.0).to_radians());
+                let cos_v = read_fonts::moltbrowser_math::cos((angle * 180.0).to_radians());
                 let mut out_transform = Transform {
                     xx: cos_v,
                     xy: -sin_v,
@@ -335,8 +336,9 @@ impl<'a> ResolvedPaint<'a> {
                 around_center,
                 paint,
             } => {
-                let tan_x = (x_skew_angle * 180.0).to_radians().tan();
-                let tan_y = (y_skew_angle * 180.0).to_radians().tan();
+                // MoltBrowser: portable in MoltNet (read_fonts::moltbrowser_math).
+                let tan_x = read_fonts::moltbrowser_math::tan((x_skew_angle * 180.0).to_radians());
+                let tan_y = read_fonts::moltbrowser_math::tan((y_skew_angle * 180.0).to_radians());
                 let mut out_transform = Transform {
                     xy: -tan_x,
                     yx: tan_y,
