@@ -15,6 +15,7 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkStream.h"
 #include "include/effects/SkGradient.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "include/private/SkMutex.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/core/SkFontDescriptor.h"
@@ -161,6 +162,10 @@ sk_sp<SkTypeface> SkTypeface_Fontations::MakeFromStream(std::unique_ptr<SkStream
 
 sk_sp<SkTypeface> SkTypeface_Fontations::MakeFromData(sk_sp<const SkData> data,
                                                       const SkFontArguments& args) {
+    // MoltBrowser: skrifa's glyph-transform math (colour glyphs' rotations and
+    // skews, variable composites, composite offsets) follows Skia's switch,
+    // portable in MoltNet's renderers (include/private/SkMoltBrowserMath.h).
+    fontations_ffi::set_portable_math(SkMoltBrowserMath::IsPortable());
     uint32_t ttcIndex = args.getCollectionIndex() & 0xFFFF;
     rust::Box<fontations_ffi::BridgeFontRef> bridgeFontRef = make_bridge_font_ref(data, ttcIndex);
     if (!fontations_ffi::font_ref_is_valid(*bridgeFontRef)) {

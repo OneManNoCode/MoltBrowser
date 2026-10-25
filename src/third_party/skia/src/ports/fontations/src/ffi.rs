@@ -48,6 +48,14 @@ use crate::{
     verbs_points_pen::{get_path_verbs_points, shrink_verbs_points_if_needed},
 };
 
+// MoltBrowser: makes skrifa's glyph-transform math (colour glyphs' rotations
+// and skews, variable composites, composite offsets) portable in this process
+// (read_fonts::moltbrowser_math), as Skia's own math is in MoltNet's
+// renderers (SkMoltBrowserMath).
+fn set_portable_math(portable: bool) {
+    skrifa::raw::moltbrowser_math::set_portable(portable);
+}
+
 #[cxx::bridge(namespace = "fontations_ffi")]
 pub mod ffi {
     pub struct ColorStop {
@@ -194,6 +202,9 @@ pub mod ffi {
     }
 
     extern "Rust" {
+        // MoltBrowser: see set_portable_math() above.
+        fn set_portable_math(portable: bool);
+
         type BridgeFontRef<'a>;
         unsafe fn make_font_ref<'a>(font_data: &'a [u8], index: u32) -> Box<BridgeFontRef<'a>>;
         // Returns whether BridgeFontRef is a valid font containing at
