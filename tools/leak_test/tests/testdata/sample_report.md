@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 167 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 168 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -267,6 +267,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | audio.script_processor_buffer is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | autoplay.mediaelement is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | cookies.third_party is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | cpu.wasm_relaxed_simd is uniform | FINGERPRINTING.md "MoltNet: CPU features" |
 | PASS | css.default_font_size is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
 | PASS | doc.characterSet_undeclared is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |

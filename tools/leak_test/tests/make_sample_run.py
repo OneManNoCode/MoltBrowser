@@ -118,7 +118,7 @@ GOOD_FP = {
     'media.device_blank': True, 'media.gum': 'pending',
     'media.gum_overconstrained': 'pending', 'media.sink_default': 'resolved',
     'media.clock_running': True, 'media.clock_start_ms': 40,
-    'perf.jsHeapSizeLimit': 3760000000, 'perf.heap_rounded': True,
+    'perf.jsHeapSizeLimit': 2330000000, 'perf.heap_rounded': True,
     'perf.heap_cached': True,
     'eme.clearkey': 'NotSupportedError', 'eme.widevine': 'NotSupportedError',
     'eme.playready': 'NotSupportedError',
@@ -163,6 +163,12 @@ GOOD_FP = {
                            'rgba': 'ee1de75109443c46529f39c1'},
     'pixels.encoded_opus_48k': {'chunks': 26, 'bytes': 4283,
                                 'hash': 'bbcab34ea3e06d12e5058b12'},
+    'cpu.wasm_relaxed_simd': False, 'cpu.wasm_simd': True,
+    'cpu.math': '5d0c1e7a92b4f3608e2d17c4',
+    'pixels.p3_readback': {'rgba': '3f9a61c2d84e0b7a5c1e9f20',
+                           'i420': 'a07b3e95c6d2148f0e6b7d31'},
+    'audio.decoded_vorbis': {'frames': 12288,
+                             'hash': '9c41e2b07d35a8f61e04c2b9'},
     'canvas.hash': '0123456789abcdef01234567',
 }
 

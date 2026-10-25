@@ -340,6 +340,14 @@ level, and in one browser launch per device scale factor
   limit is checked instead. What `isTypeSupported()` accepts and which
   listed faces `local()` finds follow the build and the OS and are
   compared between runs.
+* **CPU features** (once per launch): a WebAssembly module with a relaxed
+  SIMD instruction (`f32x4.relaxed_madd`) fails `WebAssembly.validate()`.
+  Compared between runs: a hash of 27 `Math` results (`Math.pow` and
+  `Math.tanh` among them), a 64 x 32 sRGB frame, as RGBA and as I420, read
+  back in Display P3 (`VideoFrame.copyTo()`), and a quarter second of
+  stereo Vorbis decoded by WebCodecs' `AudioDecoder` (`cpu.*`,
+  `pixels.p3_readback`, `audio.decoded_vorbis`). Recorded: whether a plain
+  SIMD module validates.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
