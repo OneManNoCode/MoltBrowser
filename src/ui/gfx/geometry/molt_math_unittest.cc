@@ -4,11 +4,14 @@
 #include "ui/gfx/geometry/molt_math.h"
 
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/llvm-libc/molt_portable_math.h"
+#include "ui/gfx/geometry/molt_complex_math.h"
 #include "ui/gfx/geometry/sin_cos_degrees.h"
 
 namespace gfx::molt_math {
@@ -118,6 +121,69 @@ TEST_F(MoltMathTest, OnIsPortable) {
   }
   // The one-call detector of glibc's FMA variant of pow (0x...cf1 with FMA).
   EXPECT_EQ(Bits(Pow(9.628, -4.64)), 0x3efca42b3c54ccf2ull);
+}
+
+// The complex functions: std::'s when off; libc++'s formulas with the
+// portable functions when on, NaN and infinity handling included.
+TEST_F(MoltMathTest, Complex) {
+  constexpr double kInf = std::numeric_limits<double>::infinity();
+  constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+  const std::complex<double> values[] = {
+      {0.3, -0.7}, {-2.5, 1e-9}, {1e300, 1e300}, {0.0, -0.0}, {-1.0, 0.0}};
+  const double polar_args[][2] = {{1.0, 0.5},  {2.5, -3.0}, {0.0, 1.0},
+                                  {-1.0, 1.0}, {kInf, 0.0}, {kInf, kNaN},
+                                  {1.0, kNaN}, {1.0, kInf}, {kInf, kInf}};
+  for (bool portable : {false, true}) {
+    SetPortable(portable);
+    for (const auto& z : values) {
+      const double want_abs =
+          portable ? molt_portable_math::Hypot(z.real(), z.imag())
+                   : std::abs(z);
+      const double want_arg =
+          portable ? molt_portable_math::Atan2(z.imag(), z.real())
+                   : std::arg(z);
+      EXPECT_EQ(Bits(ComplexAbs(z)), Bits(want_abs)) << z;
+      EXPECT_EQ(Bits(ComplexArg(z)), Bits(want_arg)) << z;
+      const std::complex<float> zf(static_cast<float>(z.real()),
+                                   static_cast<float>(z.imag()));
+      if (!portable) {
+        EXPECT_EQ(Bits(ComplexAbs(zf)), Bits(std::abs(zf))) << z;
+      }
+    }
+    for (const auto& a : polar_args) {
+      const std::complex<double> got = ComplexPolar(a[0], a[1]);
+      const std::complex<double> want = std::polar(a[0], a[1]);
+      if (!portable) {
+        // Both NaN, or the same bits.
+        EXPECT_EQ(std::isnan(got.real()), std::isnan(want.real()));
+        EXPECT_EQ(std::isnan(got.imag()), std::isnan(want.imag()));
+        if (!std::isnan(want.real())) {
+          EXPECT_EQ(Bits(got.real()), Bits(want.real()));
+        }
+        if (!std::isnan(want.imag())) {
+          EXPECT_EQ(Bits(got.imag()), Bits(want.imag()));
+        }
+        continue;
+      }
+      if (std::isfinite(a[0]) && a[0] >= 0 && std::isfinite(a[1])) {
+        EXPECT_EQ(Bits(got.real()), Bits(a[0] * molt_portable_math::Cos(a[1])));
+        EXPECT_EQ(Bits(got.imag()), Bits(a[0] * molt_portable_math::Sin(a[1])));
+        continue;
+      }
+      // libc++'s answers for NaN, infinite and negative arguments.
+      const bool inf_rho = std::isinf(a[0]);
+      if (a[0] < 0 || (!inf_rho && !std::isfinite(a[1]))) {
+        EXPECT_TRUE(std::isnan(got.real()));
+        EXPECT_TRUE(std::isnan(got.imag()));
+      } else if (std::isfinite(a[1])) {
+        EXPECT_EQ(got.real(), kInf);             // inf * cos(0)
+        EXPECT_EQ(Bits(got.imag()), Bits(0.0));  // inf * sin(0) is NaN: 0
+      } else {
+        EXPECT_EQ(got.real(), kInf);
+        EXPECT_TRUE(std::isnan(got.imag()));
+      }
+    }
+  }
 }
 
 // SinCosDegrees (DOMMatrix and CSS rotations, CSS sin() and cos()) goes

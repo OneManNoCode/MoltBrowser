@@ -32,6 +32,7 @@ component("geometry") {
 
     # MoltBrowser: the math functions of page-visible computations, portable
     # in MoltNet renderers.
+    "molt_complex_math.h",
     "molt_math.cc",
     "molt_math.h",
     "outsets.h",
@@ -133,6 +134,7 @@ source_set("molt_math_unittests") {
   deps = [
     ":geometry",
     "//testing/gtest",
+    "//third_party/llvm-libc:molt_portable_math",
   ]
   visibility = [ "//chrome/browser/molt_ai/test:*" ]
 }

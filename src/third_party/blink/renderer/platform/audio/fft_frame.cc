@@ -38,7 +38,8 @@
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/fdlibm/ieee754.h"
-#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_math.h"          // MoltBrowser
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -187,8 +188,9 @@ void FFTFrame::InterpolateFrequencyComponents(const FFTFrame& frame1,
     std::complex<double> c1(real1_span[i], imag1_span[i]);
     std::complex<double> c2(real2_span[i], imag2_span[i]);
 
-    double mag1 = abs(c1);
-    double mag2 = abs(c2);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    double mag1 = gfx::molt_math::ComplexAbs(c1);
+    double mag2 = gfx::molt_math::ComplexAbs(c2);
 
     // Interpolate magnitudes in decibels
     double db_mag1 = 20.0 * fdlibm::log10(mag1);
@@ -215,8 +217,9 @@ void FFTFrame::InterpolateFrequencyComponents(const FFTFrame& frame1,
     double mag = fdlibm::pow(10.0, 0.05 * db_mag);
 
     // Now, deal with phase
-    double phase1 = arg(c1);
-    double phase2 = arg(c2);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    double phase1 = gfx::molt_math::ComplexArg(c1);
+    double phase2 = gfx::molt_math::ComplexArg(c2);
 
     double delta_phase1 = phase1 - last_phase1;
     double delta_phase2 = phase2 - last_phase2;
@@ -260,7 +263,8 @@ void FFTFrame::InterpolateFrequencyComponents(const FFTFrame& frame1,
       phase_accum += kTwoPiDouble;
     }
 
-    std::complex<double> c = std::polar(mag, phase_accum);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    std::complex<double> c = gfx::molt_math::ComplexPolar(mag, phase_accum);
 
     real[i] = static_cast<float>(c.real());
     imag[i] = static_cast<float>(c.imag());
@@ -283,8 +287,9 @@ double FFTFrame::ExtractAverageGroupDelay() {
   // Calculate weighted average group delay
   for (unsigned i = 0; i < packed_size; i++) {
     std::complex<double> c(real[i], imag[i]);
-    double mag = abs(c);
-    double phase = arg(c);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    double mag = gfx::molt_math::ComplexAbs(c);
+    double phase = gfx::molt_math::ComplexArg(c);
 
     double delta_phase = phase - last_phase;
     last_phase = phase;
@@ -334,12 +339,14 @@ void FFTFrame::AddConstantGroupDelay(double sample_frame_delay) {
   // Add constant group delay
   for (unsigned i = 1; i < packed_size; i++) {
     std::complex<double> c(real[i], imag[i]);
-    double mag = abs(c);
-    double phase = arg(c);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    double mag = gfx::molt_math::ComplexAbs(c);
+    double phase = gfx::molt_math::ComplexArg(c);
 
     phase += i * phase_adj;
 
-    std::complex<double> c2 = std::polar(mag, phase);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    std::complex<double> c2 = gfx::molt_math::ComplexPolar(mag, phase);
 
     real[i] = static_cast<float>(c2.real());
     imag[i] = static_cast<float>(c2.imag());

@@ -37,7 +37,8 @@
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
-#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_math.h"          // MoltBrowser
 
 namespace blink {
 
@@ -319,7 +320,8 @@ void RealtimeAnalyser::DoFFTAnalysis() {
   DCHECK_GE(imag.size(), n);
   for (size_t i = 0; i < n; ++i) {
     std::complex<double> c(real[i], imag[i]);
-    double scalar_magnitude = abs(c) * magnitude_scale;
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+    double scalar_magnitude = gfx::molt_math::ComplexAbs(c) * magnitude_scale;
     destination[i] = EnsureFinite(
         static_cast<float>(k * destination[i] + (1 - k) * scalar_magnitude), 0);
   }

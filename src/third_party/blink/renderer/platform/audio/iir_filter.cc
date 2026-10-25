@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/fdlibm/ieee754.h"
+#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -155,7 +156,9 @@ void IIRFilter::GetFrequencyResponse(base::span<const float> frequency,
       std::complex<double> denominator =
           EvaluatePolynomial(feedback_->as_span(), z_recip);
       std::complex<double> response = numerator / denominator;
-      mag_response[k] = static_cast<float>(abs(response));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+      mag_response[k] =
+          static_cast<float>(gfx::molt_math::ComplexAbs(response));
       phase_response[k] =
           static_cast<float>(fdlibm::atan2(imag(response), real(response)));
     }

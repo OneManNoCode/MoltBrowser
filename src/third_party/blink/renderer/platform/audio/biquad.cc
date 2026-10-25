@@ -42,7 +42,8 @@
 #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/fdlibm/ieee754.h"
-#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_math.h"          // MoltBrowser
 #if BUILDFLAG(IS_MAC)
 #include <Accelerate/Accelerate.h>
 #endif
@@ -592,7 +593,9 @@ void Biquad::GetFrequencyResponse(base::span<const float> frequency,
       std::complex<double> denominator =
           std::complex<double>(1, 0) + (a1 + a2 * z) * z;
       std::complex<double> response = numerator / denominator;
-      mag_response[k] = static_cast<float>(abs(response));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+      mag_response[k] =
+          static_cast<float>(gfx::molt_math::ComplexAbs(response));
       phase_response[k] =
           static_cast<float>(fdlibm::atan2(imag(response), real(response)));
     }
@@ -850,8 +853,11 @@ double Biquad::TailFrame(int coef_index, double max_frame) const {
     if (r == 1) {
       tail_frame = max_frame;
     } else {
-      double c1 = abs((b0 * r1 * r1 + b1 * r1 + b2) / (r2 - r1));
-      double c2 = abs((b0 * r2 * r2 + b1 * r2 + b2) / (r2 - r1));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
+      double c1 =
+          gfx::molt_math::ComplexAbs((b0 * r1 * r1 + b1 * r1 + b2) / (r2 - r1));
+      double c2 =
+          gfx::molt_math::ComplexAbs((b0 * r2 * r2 + b1 * r2 + b2) / (r2 - r1));
 
       DCHECK(std::isfinite(c1));
       DCHECK(std::isfinite(c2));
