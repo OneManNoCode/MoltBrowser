@@ -12,6 +12,7 @@
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai {
 namespace automation {
@@ -724,7 +725,8 @@ struct Builder {
 
   bool AddElementStep(const RunElement& e,
                       bool typing,
-                      const std::string& host) {
+                      const std::string& host,
+                      const std::string& origin) {
     if (e.selector.empty() ||
         !UsableText(e.selector, kMaxSelectorBytes, false) ||
         e.selector.size() > kMaxSelectorBytes) {
@@ -741,6 +743,14 @@ struct Builder {
     Step s;
     s.type = typing ? StepType::TYPE : StepType::CLICK;
     s.target = e.selector;
+    // The element's fallback locators, if they were captured on the page
+    // the step acted on and still read as a stored block would.
+    if (e.locators && e.locators->origin == origin) {
+      std::optional<locators::StepLocators> checked =
+          locators::Parse(locators::ToValue(*e.locators));
+      if (checked && *checked == *e.locators)
+        s.locators = std::move(checked);
+    }
     base::DictValue extra;
     if (!label.empty())
       extra.Set("text", label);
@@ -822,8 +832,9 @@ struct Builder {
     const std::string host = LowerAscii(origin.host());
     if (!IsPlainHost(host))
       return Refuse(Refusal::kUnusableStep);
+    const std::string origin_text = url::Origin::Create(origin).Serialize();
     for (const RunElement& e : rs.elements) {
-      if (!AddElementStep(e, typing, host))
+      if (!AddElementStep(e, typing, host, origin_text))
         return false;
     }
     return true;

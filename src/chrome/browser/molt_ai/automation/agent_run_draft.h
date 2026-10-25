@@ -79,6 +79,10 @@ struct RunElement {
   agent_safety::FieldKind field_kind = agent_safety::FieldKind::kOrdinary;
   // TYPE / FILL_FORM: what the agent typed (model text).
   std::string text;
+  // Its fallback locators, captured on the page right before the action
+  // (automation_locators.h; page data, already checked and capped). The
+  // draft keeps them if they were captured on the page the step acted on.
+  std::optional<locators::StepLocators> locators;
 };
 
 struct RunStep {

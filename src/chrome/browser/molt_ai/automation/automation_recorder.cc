@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
+#include "chrome/browser/molt_ai/automation/automation_locators.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
@@ -28,11 +29,33 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai {
 namespace automation {
 
 namespace {
+
+// What a recorded step may hold of page data (the selectors the recorder's
+// script builds from attribute values, the visible-text anchor, the
+// description, the value typed). A step over a cap is kept without the
+// part over it (a selector, a fallback, the anchor) or, for a value, not
+// recorded: a page can't make a workflow file grow without bound.
+constexpr size_t kMaxRecordedSelectorBytes = 1024;
+constexpr size_t kMaxRecordedFallbacks = 8;
+constexpr size_t kMaxRecordedTextBytes = 4 * 60;
+constexpr size_t kMaxRecordedDescriptionBytes = 400;
+constexpr size_t kMaxRecordedValueBytes = 32 * 1024;
+
+// |s| cut to at most |max| bytes, never inside a UTF-8 character.
+std::string CutUtf8(const std::string& s, size_t max) {
+  if (s.size() <= max)
+    return s;
+  size_t end = max;
+  while (end > 0 && (static_cast<unsigned char>(s[end]) & 0xC0) == 0x80)
+    --end;
+  return s.substr(0, end);
+}
 
 // Self-contained recorder JS: attaches capture-phase listeners and posts
 // each event back to C++ via window.chrome.send('automationStep', [json]).
@@ -184,6 +207,14 @@ const char kRecorderJS[] = R"JS(
     return '';
   }
 
+  // The element's fallback locators (automation_locators.h's library,
+  // injected before this script); null without it.
+  function locate(el){
+    try {
+      return typeof __moltLocatorLib !== 'undefined' ? __moltLocatorLib.capture(el) : null;
+    } catch(e){ return null; }
+  }
+
   // Climb to the nearest actionable ancestor so clicking an icon/label INSIDE
   // a button records the button (not the inner <span>/<svg>).
   var kActionable = 'a,button,[role="button"],[role="link"],[role="tab"],' +
@@ -206,7 +237,7 @@ const char kRecorderJS[] = R"JS(
     if (!rateLimit(el, 50)) return;
     var sels = buildSelectors(el);
     send({type: 'click', target: sels[0] || '', selector_fallbacks: sels.slice(1),
-          text: visibleText(el),
+          text: visibleText(el), locators: locate(el),
           rect: elRect(el), dpr: window.devicePixelRatio || 1,
           description: 'Click ' + friendlyName(el)});
   }, true);
@@ -228,6 +259,7 @@ const char kRecorderJS[] = R"JS(
     if (kind) {
       send({type: 'type', target: sels[0] || '', selector_fallbacks: sels.slice(1),
             secret: kind, field_type: fieldType, autocomplete: autocomplete,
+            locators: locate(el),
             description: (kind === 'password' ? 'Fill your saved password in '
                                               : 'Enter the ' +
                               (kind === 'payment_card' ? 'card details'
@@ -241,6 +273,7 @@ const char kRecorderJS[] = R"JS(
         : el.value;
     send({type: 'type', target: sels[0] || '', selector_fallbacks: sels.slice(1),
           value: v || '', field_type: fieldType, autocomplete: autocomplete,
+          locators: locate(el),
           description: (isSel ? 'Choose "' : 'Type "') +
                        String(v || '').slice(0,40) + '" in ' + fieldLabel(el)});
   }, true);
@@ -420,8 +453,10 @@ void AutomationRecorder::DidFinishNavigation(
 void AutomationRecorder::InjectRecorderJS() {
   if (!web_contents() || !web_contents()->GetPrimaryMainFrame())
     return;
+  // The locator library first, in the same world (a var: it can run
+  // again on the same page).
   web_contents()->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
-      base::UTF8ToUTF16(std::string(kRecorderJS)),
+      base::UTF8ToUTF16(locators::LibraryScript() + std::string(kRecorderJS)),
       base::DoNothing(),
       content::ISOLATED_WORLD_ID_CONTENT_END);
 }
@@ -432,34 +467,63 @@ void AutomationRecorder::OnStepFromInjectedJS(
     return;
   // Track host for whitelist.
   std::string host;
+  std::string origin;
   if (auto* url = step_json.FindString("url")) {
     GURL g(*url);
     if (g.is_valid() && !g.host().empty()) {
       host = std::string(g.host());
       seen_hosts_.insert(host);
+      if (g.SchemeIsHTTPOrHTTPS())
+        origin = url::Origin::Create(g).Serialize();
     }
   }
-  // Build a Step from the JSON.
+  // Build a Step from the JSON, within the caps above.
   Step s;
   if (auto* t = step_json.FindString("type"))
     s.type = StepTypeFromString(*t);
-  if (auto* t = step_json.FindString("target"))
+  if (auto* t = step_json.FindString("target");
+      t && t->size() <= kMaxRecordedSelectorBytes) {
     s.target = *t;
+  }
   if (const base::ListValue* fbs =
           step_json.FindList("selector_fallbacks")) {
-    for (const auto& v : *fbs)
-      if (v.is_string()) s.selector_fallbacks.push_back(v.GetString());
+    for (const auto& v : *fbs) {
+      if (s.selector_fallbacks.size() >= kMaxRecordedFallbacks)
+        break;
+      if (v.is_string() && !v.GetString().empty() &&
+          v.GetString().size() <= kMaxRecordedSelectorBytes) {
+        s.selector_fallbacks.push_back(v.GetString());
+      }
+    }
   }
-  if (auto* v = step_json.FindString("value"))
+  if (auto* v = step_json.FindString("value")) {
+    if (v->size() > kMaxRecordedValueBytes) {
+      LOG(WARNING) << "[MoltAutomation] a value over the cap; step not "
+                      "recorded";
+      return;
+    }
     s.value = *v;
+  }
   if (auto* d = step_json.FindString("description"))
-    s.description = *d;
+    s.description = CutUtf8(*d, kMaxRecordedDescriptionBytes);
+  // The element's fallback locators, captured from it on the page the
+  // step's URL names (checked and capped, automation_locators.h).
+  if (s.type == StepType::CLICK || s.type == StepType::TYPE) {
+    if (const base::Value* report = step_json.Find("locators")) {
+      std::optional<locators::StepLocators> l =
+          locators::FromCaptureReport(*report);
+      if (l && !origin.empty() && l->origin == origin)
+        s.locators = std::move(l);
+    }
+  }
   // Visible-text anchor ("Kids") — stored in extra so the runner can match the
   // element by text when the CSS selectors drift. The page host feeds the
   // workflow's site whitelist (AutomationSecurity::HostsReferencedBy).
   base::DictValue e;
-  if (auto* txt = step_json.FindString("text"); txt && !txt->empty())
+  if (auto* txt = step_json.FindString("text");
+      txt && !txt->empty() && txt->size() <= kMaxRecordedTextBytes) {
     e.Set("text", *txt);
+  }
   if (!host.empty() && (s.type == StepType::CLICK || s.type == StepType::TYPE))
     e.Set(kStepHostKey, host);
   if (!e.empty())

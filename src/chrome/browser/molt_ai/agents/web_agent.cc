@@ -17,6 +17,9 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -66,7 +69,8 @@ agent_actions::ModelReply ToModelReply(GenerationResult& result) {
   return reply;
 }
 
-// What a step acted on, for saving the run as a draft workflow.
+// What a step acted on, for saving the run as a draft workflow. Its
+// locators are captured separately (CaptureLocators).
 WebAgent::Step::Element StepElement(const ObservedElement& element,
                                     std::string text) {
   WebAgent::Step::Element out;
@@ -453,6 +457,36 @@ void WebAgent::ProbeElements(
              selectors.size(), std::move(cb)));
 }
 
+void WebAgent::CaptureLocators(std::vector<std::string> selectors,
+                               base::OnceClosure then) {
+  // Only for "Save as automation": never in MoltNet, where saved
+  // workflows are off.
+  content::BrowserContext* context =
+      web_contents_ ? web_contents_->GetBrowserContext() : nullptr;
+  if (!context || tor::IsMoltNetProfile(Profile::FromBrowserContext(context))) {
+    std::move(then).Run();
+    return;
+  }
+  const size_t n = selectors.size();
+  EvalJS(automation::locators::BuildCaptureListScript(selectors),
+         base::BindOnce(
+             [](base::WeakPtr<WebAgent> self, size_t n, base::OnceClosure then,
+                base::Value v) {
+               if (!self || self->cancelled_)
+                 return;
+               // Kept only if captured on the page the step acts on.
+               std::vector<std::optional<automation::locators::StepLocators>>
+                   got = automation::locators::ParseCaptureList(
+                       v, n, self->action_origin_.Serialize());
+               for (size_t i = 0;
+                    i < n && i < self->pending_step_.elements.size(); ++i) {
+                 self->pending_step_.elements[i].locators = std::move(got[i]);
+               }
+               std::move(then).Run();
+             },
+             weak_factory_.GetWeakPtr(), n, std::move(then)));
+}
+
 void WebAgent::DoClick() {
   // ParseAction checked the id against observation_, which hasn't changed
   // since the model was shown it.
@@ -463,9 +497,12 @@ void WebAgent::DoClick() {
   }
   action_selector_ = element->selector;
   pending_step_.elements = {StepElement(*element, std::string())};
-  ProbeElements({action_selector_},
-                base::BindOnce(&WebAgent::OnClickProbed,
-                               weak_factory_.GetWeakPtr()));
+  CaptureLocators(
+      {action_selector_},
+      base::BindOnce(&WebAgent::ProbeElements, weak_factory_.GetWeakPtr(),
+                     std::vector<std::string>{action_selector_},
+                     base::BindOnce(&WebAgent::OnClickProbed,
+                                    weak_factory_.GetWeakPtr())));
 }
 
 void WebAgent::OnClickProbed(std::vector<ElementProbe> probes) {
@@ -535,9 +572,12 @@ void WebAgent::DoType() {
   }
   action_selector_ = element->selector;
   pending_step_.elements = {StepElement(*element, pending_action_.text)};
-  ProbeElements({action_selector_},
-                base::BindOnce(&WebAgent::OnTypeProbed,
-                               weak_factory_.GetWeakPtr()));
+  CaptureLocators(
+      {action_selector_},
+      base::BindOnce(&WebAgent::ProbeElements, weak_factory_.GetWeakPtr(),
+                     std::vector<std::string>{action_selector_},
+                     base::BindOnce(&WebAgent::OnTypeProbed,
+                                    weak_factory_.GetWeakPtr())));
 }
 
 void WebAgent::OnTypeProbed(std::vector<ElementProbe> probes) {
@@ -600,9 +640,13 @@ void WebAgent::DoFillForm() {
     OnActionDone(false, "Filled 0 fields");
     return;
   }
-  ProbeElements(selectors,
-                base::BindOnce(&WebAgent::OnFillFormProbed,
-                               weak_factory_.GetWeakPtr(), std::move(fields)));
+  CaptureLocators(
+      selectors,
+      base::BindOnce(&WebAgent::ProbeElements, weak_factory_.GetWeakPtr(),
+                     selectors,
+                     base::BindOnce(&WebAgent::OnFillFormProbed,
+                                    weak_factory_.GetWeakPtr(),
+                                    std::move(fields))));
 }
 
 void WebAgent::OnFillFormProbed(FieldList fields,

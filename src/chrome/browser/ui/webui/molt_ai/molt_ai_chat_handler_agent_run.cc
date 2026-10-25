@@ -82,6 +82,7 @@ RunStep ToRunStep(const molt_ai::WebAgent::Step& step) {
     element.label = e.label;
     element.field_kind = e.field_kind;
     element.text = e.text;
+    element.locators = e.locators;
     out.elements.push_back(std::move(element));
   }
   return out;

@@ -149,7 +149,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   }
   CHECK_EQ(d.strength != Strength::kWeak, IsStrong(order[d.locator]));
   const std::string question =
-      WeakMatchQuestion(hint, chosen, order[d.locator], d.strength);
+      WeakMatchQuestion(hint, chosen, Describe(order[d.locator]), d.strength);
   CHECK(question.find('\n') == std::string::npos);
   return 0;
 }

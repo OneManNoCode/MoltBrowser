@@ -88,6 +88,7 @@
 #include "chrome/browser/molt_ai/agents/agent_screenshot.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
 #include "chrome/browser/molt_ai/agents/site_tool_host.h"
+#include "chrome/browser/molt_ai/automation/automation_locators.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -140,6 +141,10 @@ class WebAgent : public content::WebContentsObserver {
       // What the probe found right before the action.
       agent_safety::FieldKind field_kind = agent_safety::FieldKind::kOrdinary;
       std::string text;        // TYPE / FILL_FORM: what was typed
+      // Its fallback locators, captured right before the action on the
+      // page acted on (automation_locators.h); none in MoltNet, where runs
+      // are never saved.
+      std::optional<automation::locators::StepLocators> locators;
     };
     std::string url;     // NAVIGATE / SEARCH: the URL loaded
     std::string origin;  // CLICK / TYPE / FILL_FORM: the page acted on
@@ -260,6 +265,11 @@ class WebAgent : public content::WebContentsObserver {
                          agent_tools::CallOutcome outcome);
   // Observes once the page that a tool loaded has loaded.
   void WaitForLoadThenObserve();
+
+  // Captures the fallback locators of |selectors| (the step's elements,
+  // in order) into pending_step_, then runs |then|. Not in MoltNet.
+  void CaptureLocators(std::vector<std::string> selectors,
+                       base::OnceClosure then);
 
   // Probes |selectors| in the page (see agent_safety::ElementProbe).
   void ProbeElements(

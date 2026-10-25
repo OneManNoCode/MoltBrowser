@@ -227,6 +227,10 @@ class AutomationRunner {
   // legitimately wait longer (an OS keychain prompt, LLM inference).
   void ExtendStepTimeout(base::TimeDelta budget);
 
+  // The step's text anchor (extra.text, or the description's first quoted
+  // token for old recordings), with {{variables}} substituted.
+  std::string TextHintOf(const Step& s) const;
+
   // Resolve {{variable}} placeholders in |raw| using current variables_.
   // With |fence_values|, each substituted value is wrapped in
   // agent_safety::FenceUntrustedText — for LLM prompts, where a value
@@ -241,10 +245,57 @@ class AutomationRunner {
   // Runs the recorded selector + each fallback until one matches; returns
   // the matching selector, or empty string if none found. If all recorded
   // candidates fail, falls back to AskLLMForSelector() which queries the
-  // BrowserAIRuntime for a recovery selector.
+  // BrowserAIRuntime for a recovery selector. A step with fallback
+  // locators (Step::locators) goes through ResolveWithLocators() instead.
+  // Either way found_by_ says how the element was found.
   void ResolveSelector(
       const Step& s,
       base::OnceCallback<void(const std::string&)> cb);
+
+  // Steps with Step::locators (automation_locators.h): one probe of the
+  // recorded selector and every locator, then locators::Decide(): a
+  // strong match is pinned and acted on; a weak or conflicting one only
+  // once the user allows it (AskUser); none, the on-device model's
+  // suggestion, checked as a locator and asked about too.
+  void ResolveWithLocators(const Step& s,
+                           base::OnceCallback<void(const std::string&)> cb);
+  void OnLocatorProbe(std::string probe_id,
+                      std::vector<locators::Locator> order,
+                      locators::StepLocators recorded,
+                      std::string description,
+                      bool from_model,
+                      base::OnceCallback<void(const std::string&)> cb,
+                      base::Value report);
+  void OnLocatorModelSelector(std::string description,
+                              locators::StepLocators recorded,
+                              base::OnceCallback<void(const std::string&)> cb,
+                              const std::string& selector);
+  void OnWeakMatchAnswer(std::string probe_id,
+                         size_t candidate,
+                         std::string found_by,
+                         base::OnceCallback<void(const std::string&)> cb,
+                         bool allowed);
+  // Marks the probe's candidate in the page (an unguessable attribute,
+  // and the element kept in the isolated world) and answers its selector;
+  // the click / type scripts then act only on that very element.
+  void PinLocated(std::string probe_id,
+                  size_t candidate,
+                  std::string found_by,
+                  base::OnceCallback<void(const std::string&)> cb);
+  // The statement the action scripts run on the element they found: for a
+  // pinned element, that it is the one pinned (else they do nothing).
+  std::string PinStatement() const;
+
+  // Asks the user (RunQuestions, answered in the Agent studio) and waits
+  // at most kQuestionTimeoutSeconds; no answer stops the run on this step
+  // (|needs_trust|: trusting the workflow would have let it through).
+  void AskUser(const std::string& kind,
+               const std::string& text,
+               bool needs_trust,
+               base::OnceCallback<void(bool)> on_answer);
+  void OnUserAnswer(base::OnceCallback<void(bool)> on_answer, bool allowed);
+  void OnQuestionTimeout(bool needs_trust);
+  void WithdrawQuestion();
 
   // Internal helper: walks the candidate ladder one at a time, then
   // delegates to AskLLMForSelector if all fail.
@@ -356,6 +407,14 @@ class AutomationRunner {
   // Per-step timeout — fires OnStepTimeout() if the dispatched step
   // doesn't call OnStepFinished in time.
   base::OneShotTimer step_timeout_timer_;
+
+  // How the current step's element was found (StepResult::found_by), and
+  // the token of the element pinned for it (automation_locators.h), if
+  // any. Reset at every step.
+  std::string found_by_;
+  std::string pin_token_;
+  // The question the current step waits on (RunQuestions), or 0.
+  int64_t question_id_ = 0;
 
   StepProgressCallback on_step_;
   RunCompleteCallback on_complete_;

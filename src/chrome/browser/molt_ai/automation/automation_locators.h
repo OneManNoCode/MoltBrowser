@@ -198,6 +198,17 @@ std::string LibraryScript();
 // agent, right after it acted on |selector|.
 std::string BuildCaptureScript(std::string_view selector);
 
+// The same for several elements (a form fill's fields): a list with one
+// report, or null, per selector, in order.
+std::string BuildCaptureListScript(const std::vector<std::string>& selectors);
+
+// Reads BuildCaptureListScript()'s result: |expected| entries, each the
+// captured block or nullopt, kept only if captured on |origin|.
+std::vector<std::optional<StepLocators>> ParseCaptureList(
+    const base::Value& result,
+    size_t expected,
+    std::string_view origin);
+
 // ---------------------------------------------------------------------------
 // Replay
 // ---------------------------------------------------------------------------
@@ -308,10 +319,11 @@ std::string KindWord(const ElementKind& kind);
 
 // The question the runner asks for a weak or conflicting match: names the
 // step (its description, cleaned), the element found (kind and label) and
-// how it was found.
+// how it was found (|found_by|: Describe() of the locator, or the runner's
+// own words, fixed text).
 std::string WeakMatchQuestion(std::string_view step_description,
                               const Candidate& candidate,
-                              const Locator& found_by,
+                              std::string_view found_by,
                               Strength strength);
 
 }  // namespace locators

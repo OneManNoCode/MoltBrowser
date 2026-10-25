@@ -739,6 +739,42 @@ std::string BuildCaptureScript(std::string_view selector) {
              JsString(selector).c_str());
 }
 
+std::string BuildCaptureListScript(const std::vector<std::string>& selectors) {
+  base::ListValue list;
+  for (const std::string& s : selectors)
+    list.Append(s);
+  std::string json;
+  base::JSONWriter::Write(list, &json);
+  return std::string(kLibraryJs) +
+         base::StringPrintf(
+             R"JS((() => {
+  return %s.map((sel) => {
+    try {
+      const el = document.querySelector(sel);
+      return el ? __moltLocatorLib.capture(el) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+})())JS",
+             json.c_str());
+}
+
+std::vector<std::optional<StepLocators>> ParseCaptureList(
+    const base::Value& result,
+    size_t expected,
+    std::string_view origin) {
+  std::vector<std::optional<StepLocators>> out(expected);
+  if (!result.is_list() || result.GetList().size() != expected)
+    return out;
+  for (size_t i = 0; i < expected; ++i) {
+    std::optional<StepLocators> s = FromCaptureReport(result.GetList()[i]);
+    if (s && s->origin == origin)
+      out[i] = std::move(s);
+  }
+  return out;
+}
+
 std::vector<Locator> ProbeOrder(std::string_view selector,
                                 const StepLocators& stored) {
   std::vector<Locator> order;
@@ -999,7 +1035,7 @@ std::string KindWord(const ElementKind& kind) {
 
 std::string WeakMatchQuestion(std::string_view step_description,
                               const Candidate& candidate,
-                              const Locator& found_by,
+                              std::string_view found_by,
                               Strength strength) {
   const std::string step = CleanLabel(step_description, 80);
   std::string q = step.empty() ? std::string("This step")
@@ -1012,7 +1048,7 @@ std::string WeakMatchQuestion(std::string_view step_description,
   q += "The closest match is the " + KindWord(candidate.kind);
   if (!candidate.label.empty())
     q += " \xE2\x80\x9C" + candidate.label + "\xE2\x80\x9D";
-  q += ", found by " + Describe(found_by) + ". Use it?";
+  q += ", found by " + std::string(found_by) + ". Use it?";
   return q;
 }
 

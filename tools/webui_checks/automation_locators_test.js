@@ -46,6 +46,8 @@ function fill(tpl, args) {
 // As the C++ builds them.
 const captureScript = (selector) =>
     LIBRARY + fill(template('BuildCaptureScript'), [JSON.stringify(selector)]);
+const captureListScript = (selectors) =>
+    LIBRARY + fill(template('BuildCaptureListScript'), [JSON.stringify(selectors)]);
 const probeScript = (id, order, hint) =>
     LIBRARY + fill(template('BuildProbeScript'), [
       JSON.stringify(id),
@@ -135,6 +137,18 @@ const STORE = `
   assert(!JSON.stringify(pw).includes('hunter2'));
   const code = p.run(captureScript('[name=code]'));
   assert.strictEqual(code.autocomplete, 'one-time-code');
+}
+
+// Several fields at once (a form fill), in order; a miss or a bad selector
+// is null.
+{
+  const p = page(STORE);
+  const r = p.run(captureListScript(['#em', '#none', '!!', '[name=pw]']));
+  assert.strictEqual(r.length, 4);
+  assert.strictEqual(r[0].list[1].value, 'Email');
+  assert.strictEqual(r[1], null);
+  assert.strictEqual(r[2], null);
+  assert.strictEqual(r[3].input_type, 'password');
 }
 
 // Page text over the cap is dropped, not cut; hostile text stays data.

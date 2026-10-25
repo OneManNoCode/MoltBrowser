@@ -304,6 +304,7 @@ base::DictValue StepResultToDict(const StepResult& r) {
   if (!r.screenshot.empty()) d.Set("shot", r.screenshot);
   if (!r.description.empty()) d.Set("desc", r.description);
   if (!r.note.empty()) d.Set("note", r.note);
+  if (!r.found_by.empty()) d.Set("by", r.found_by);
   return d;
 }
 
@@ -316,6 +317,7 @@ StepResult StepResultFromDict(const base::DictValue& d) {
   r.screenshot = GetString(d, "shot", "");
   r.description = GetString(d, "desc", "");
   r.note = GetString(d, "note", "");
+  r.found_by = GetString(d, "by", "");
   return r;
 }
 

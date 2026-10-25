@@ -65,8 +65,20 @@ source_set("automation") {
     ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
+    ":run_questions",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
+}
+
+# What a running workflow asks the user (a weak fallback match, a site
+# tool that may change something), answered in the Agent studio. base only.
+source_set("run_questions") {
+  sources = [
+    "run_questions.cc",
+    "run_questions.h",
+  ]
+
+  public_deps = [ "//base" ]
 }
 
 # A successful web agent run saved as a draft workflow: which steps it keeps
@@ -155,12 +167,14 @@ source_set("unit_tests") {
     "automation_locators_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
+    "run_questions_unittest.cc",
   ]
   deps = [
     ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
     ":locators",
+    ":run_questions",
     "//base",
 
     # Every schema the runner builds must be accepted by the inference

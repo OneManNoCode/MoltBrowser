@@ -324,6 +324,36 @@ TEST(AutomationLocatorsTest, ReadsCaptureReports) {
       std::string(kGoodEntry) + "]}")));
 }
 
+TEST(AutomationLocatorsTest, ReadsCaptureLists) {
+  const std::string field =
+      "{\"origin\":\"https://shop.example\",\"tag\":\"input\",\"type\":"
+      "\"text\",\"role\":\"textbox\",\"input_type\":\"text\","
+      "\"autocomplete\":\"\",\"list\":[{\"by\":\"label\",\"value\":\"Name\"}]}";
+  const std::string elsewhere =
+      "{\"origin\":\"https://evil.example\",\"tag\":\"input\",\"type\":"
+      "\"text\",\"role\":\"textbox\",\"input_type\":\"text\","
+      "\"autocomplete\":\"\",\"list\":[{\"by\":\"label\",\"value\":\"Name\"}]}";
+  std::vector<std::optional<StepLocators>> got = ParseCaptureList(
+      Json("[" + field + ",null," + elsewhere + ",7]"), 4, kOrigin);
+  ASSERT_EQ(got.size(), 4u);
+  EXPECT_TRUE(got[0]);
+  EXPECT_FALSE(got[1]);
+  EXPECT_FALSE(got[2]) << "captured on another origin";
+  EXPECT_FALSE(got[3]);
+  // Another count than asked: nothing.
+  got = ParseCaptureList(Json("[" + field + "]"), 2, kOrigin);
+  ASSERT_EQ(got.size(), 2u);
+  EXPECT_FALSE(got[0]);
+  got = ParseCaptureList(Json("{}"), 1, kOrigin);
+  EXPECT_FALSE(got[0]);
+  // The script carries the selectors as JSON.
+  const std::string script =
+      BuildCaptureListScript({"#a", "\"</script><b>"});
+  EXPECT_NE(script.find("return [\"#a\",\"\\\"\\u003C/script>"),
+            std::string::npos);
+  EXPECT_EQ(script.find("</script>"), std::string::npos);
+}
+
 // ---------------------------------------------------------------------------
 // The probe and the decision
 // ---------------------------------------------------------------------------
@@ -593,7 +623,7 @@ TEST(AutomationLocatorsTest, CleansLabels) {
 TEST(AutomationLocatorsTest, AsksInTheBrowsersWords) {
   const std::string q = WeakMatchQuestion(
       "Click \xE2\x80\x9C" "Add to cart\xE2\x80\x9D",
-      Cand(kButton, "Add to basket"), L(By::kText, "Add to cart"),
+      Cand(kButton, "Add to basket"), Describe(L(By::kText, "Add to cart")),
       Strength::kWeak);
   EXPECT_EQ(q,
             "The step \xE2\x80\x9C" "Click \xE2\x80\x9C" "Add to cart"
@@ -603,7 +633,7 @@ TEST(AutomationLocatorsTest, AsksInTheBrowsersWords) {
             "Use it?");
   const std::string c = WeakMatchQuestion(
       "", Cand({"input", "text", "textbox"}, ""),
-      L(By::kRole, "Email", "textbox"), Strength::kConflict);
+      Describe(L(By::kRole, "Email", "textbox")), Strength::kConflict);
   EXPECT_EQ(c,
             "This step found different elements in different ways: the page "
             "has changed. The closest match is the text field, found by its "

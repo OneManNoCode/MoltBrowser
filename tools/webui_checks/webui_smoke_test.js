@@ -86,6 +86,12 @@ const DRAFT_WORKFLOW = {
 };
 const draftConfirmCalls = [];
 
+// The Agent studio's run questions (answerRunQuestion [id, qid, allowed]).
+const questionAnswers = [];
+const QUESTION = {id: '42', step: 3, kind: 'weak_match',
+                  text: 'The step “Click “<b>Add</b>”” couldn’t find its element ' +
+                        'as recorded: the page has changed. Use it?'};
+
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
 
@@ -1189,12 +1195,28 @@ const PAGES = [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
         host: 'example.com', trigger: {type: 'manual'}},
        {id: 'd1', name: 'Buy socks', stepCount: 4, trust: 'casual', draft: true,
-        host: 'shop.example', trigger: {type: 'manual'}}]},
-     getRuns: {runs: []},
+        host: 'shop.example', trigger: {type: 'manual'}},
+       {id: 'q1', name: 'Waiting', stepCount: 2, trust: 'approved',
+        host: 'shop.example', trigger: {type: 'manual'},
+        question: {id: '7', step: 1, kind: 'site_tool',
+                   text: 'Run the site’s tool “<img src=x onerror=alert(1)>”?'}}]},
+     getRuns: {id: 'w1', runs: [{ts: 1, ok: true, durationMs: 5, stepsExecuted: 1,
+       totalSteps: 1, steps: [{index: 0, type: 'click', description: 'Click',
+       ok: true, durationMs: 1, foundBy: 'its <b>label</b> (a fallback)'}]}]},
+     answerRunQuestion: (args) => {
+       questionAnswers.push(JSON.stringify(args.slice(1)));
+       return {ok: true};
+     },
      getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
-               {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
+               {type: 'click', target: '#buy', description: 'Click "Buy"',
+                locators: {origin: 'https://www.example.com', list: [
+                  {by: 'role', role: 'button', value: '<b>Buy</b>'},
+                  {by: 'attr', name: 'data-testid', value: 'x'},
+                  {by: 'attr', name: '<i>evil</i>', value: 'y'},
+                  {by: 'text', value: 'Buy'}, {by: 'path', value: 'html'},
+                  {by: '__proto__', value: 'z'}]}}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
      confirmDraftSites: (args) => {
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
@@ -1289,6 +1311,61 @@ const PAGES = [
      await tick();
      assert(!/Draft from an AI agent run/.test(draftPanel.textContent), 'confirmed');
      assert(/Not trusted/.test(draftPanel.textContent), 'now an untrusted workflow');
+     // The fallback locators: by kind only, as text; junk named generically.
+     window.openEditor('w1');
+     await tick();
+     const loc = doc.querySelector('#edSteps .loc-note');
+     assert(loc, 'the step says what else it looks for');
+     assert.strictEqual(loc.textContent,
+         '\u{1F9ED} If the page changes, it also looks for it by its role & name, ' +
+         'data-testid, an attribute, text, position.');
+     assert.strictEqual(doc.querySelectorAll('#edSteps .loc-note b, #edSteps .loc-note i').length, 0);
+     // A run's question: shown in the run's ticker as text; "Use it" and
+     // "Stop the run" send the answer for that question from the click.
+     window.showView('library');
+     await window.loadLibrary();
+     await tick();
+     window.doRun('w1', {}, 'watch');
+     window.cr.webUIListenerCallback('run-question', {id: 'w1', question: QUESTION});
+     const wcard = doc.querySelector('#libList .card');
+     const rq = wcard.querySelector('.card-run .run-q');
+     assert(rq, 'the question in the ticker');
+     assert(rq.textContent.includes('Click “<b>Add</b>”'), 'as text');
+     assert(/step 4/.test(rq.textContent));
+     assert.strictEqual(rq.querySelectorAll('b').length, 0);
+     const use = Array.from(rq.querySelectorAll('button')).find((b) => b.textContent === 'Use it');
+     assert(use, '"Use it" for a weak match');
+     use.click();
+     assert.strictEqual(questionAnswers.pop(), '["w1","42",true]', 'sent from the click');
+     await tick();
+     assert(!wcard.querySelector('.card-run .run-q'), 'answered: gone');
+     window.cr.webUIListenerCallback('run-question', {id: 'w1', question: QUESTION});
+     Array.from(wcard.querySelectorAll('.card-run .run-q button')).find(
+         (b) => b.textContent === 'Stop the run').click();
+     assert.strictEqual(questionAnswers.pop(), '["w1","42",false]');
+     await tick();
+     // Junk questions show nothing.
+     window.cr.webUIListenerCallback('run-question', {id: 'w1', question: {id: 1, text: 7}});
+     window.cr.webUIListenerCallback('run-question', {id: 'w1'});
+     window.cr.webUIListenerCallback('run-complete', {id: 'w1', ok: true});
+     // The library card of a run that waits: its question, "Allow" for a
+     // site tool, as text.
+     const qcard = Array.from(doc.querySelectorAll('#libList .card')).find(
+         (c) => c.getAttribute('data-wf-id') === 'q1');
+     const cq = qcard.querySelector('.run-q');
+     assert(cq && /Needs your OK — step 2/.test(cq.textContent), 'the waiting card');
+     assert.strictEqual(cq.querySelectorAll('img').length, 0);
+     Array.from(cq.querySelectorAll('button')).find((b) => b.textContent === 'Allow').click();
+     assert.strictEqual(questionAnswers.pop(), '["q1","7",true]');
+     await tick();
+     // The Runs view says how each element was found, as text.
+     window.openRuns('w1', 'W');
+     await tick();
+     const found = Array.from(doc.querySelectorAll('#runsList .rnstep-note')).find(
+         (n) => n.textContent.startsWith('Found by'));
+     assert(found && found.textContent === 'Found by its <b>label</b> (a fallback)');
+     assert.strictEqual(doc.querySelectorAll('#runsList b').length, 0);
+     window.showView('library');
      // Leave an empty editor for the click-everything pass below: it clicks
      // controls in DOM order, so a populated step list would see its later
      // buttons clicked after "Delete step" had already detached them.

@@ -141,6 +141,9 @@ source_set("molt_ai_agents") {
     "//chrome/browser/molt_ai/agents:agent_plan",
     "//chrome/browser/molt_ai/agents:agent_prompt",
     "//chrome/browser/molt_ai/agents:agent_vision",
+
+    # WebAgent::Step::Element::locators, for drafts saved from a run.
+    "//chrome/browser/molt_ai/automation:locators",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]

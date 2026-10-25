@@ -186,6 +186,9 @@ struct StepResult {
   // right after this step. Empty when no live surface was available.
   std::string screenshot;
   std::string note;            // e.g. "Clicked", "Selector did not match"
+  // CLICK / TYPE: how the element was found ("the recorded selector", "its
+  // label (a fallback)", ...; the runner's fixed words). Empty otherwise.
+  std::string found_by;
 };
 
 // One row in Stats::run_history. Capped to last N runs by the runner.
