@@ -9,6 +9,7 @@
 
 #include "base/command_line.h"
 #include "base/supports_user_data.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_fonts.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom.h"
@@ -91,6 +92,12 @@ void AppendRendererSwitches(content::RenderProcessHost* host,
     // or AVX-512 variants (InitializeSkia reads it before anything else;
     // third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.h).
     command_line->AppendSwitch(::switches::kDisableSkiaRuntimeOpts);
+    // MoltNet's bundled fonts, when the browser has them (molt_net_fonts.h).
+    // RenderProcessWillLaunch (InitializeRenderer) ran just before, in the
+    // same task: it sent the files exactly when this is true.
+    if (AreMoltNetFontsReady()) {
+      command_line->AppendSwitch(switches::kMoltNetFonts);
+    }
   }
 }
 
@@ -111,6 +118,13 @@ void InitializeRenderer(content::RenderProcessHost* host) {
   }
   const SessionSeed& seed = GetSessionSeed(context);
   configuration->SetSessionSeed(std::vector<uint8_t>(seed.begin(), seed.end()));
+  // MoltNet's bundled fonts (molt_net_fonts.h): opened once, in the
+  // background, when the first renderer launches; MoltNet renderers launched
+  // after that get read-only duplicates, ordered before any navigation.
+  StartLoadingMoltNetFonts();
+  if (mode == RendererMode::kUniform && AreMoltNetFontsReady()) {
+    configuration->SetMoltNetFonts(DuplicateMoltNetFonts());
+  }
   // Shields decisions are per document and per worker, never per process
   // (molt_shields_delivery.h).
 }

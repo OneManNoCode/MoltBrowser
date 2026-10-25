@@ -31,6 +31,11 @@ namespace molt_ai::fingerprinting {
 
 namespace switches {
 inline constexpr char kMode[] = "molt-fingerprinting-mode";
+// On MoltNet (uniform) renderers whose browser has MoltNet's bundled fonts:
+// the renderer takes every font from them (blink::WebMoltFingerprinting::
+// ExpectBundledFonts) and gets the files, read-only, over the channel
+// (FingerprintingConfiguration.SetMoltNetFonts). No value.
+inline constexpr char kMoltNetFonts[] = "molt-net-fonts";
 }  // namespace switches
 
 enum class RendererMode {

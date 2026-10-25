@@ -23,6 +23,8 @@ source_set("fingerprinting") {
 # session seed) or is per document (the Shields decision).
 mojom("mojom") {
   sources = [ "molt_fingerprinting.mojom" ]
+  # MoltNet's bundled fonts go as read-only files.
+  public_deps = [ "//mojo/public/mojom/base" ]
 }
 
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
