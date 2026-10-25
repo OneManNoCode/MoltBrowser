@@ -47,6 +47,14 @@ void skcms_DisableRuntimeCPUDetection() {
     sAllowRuntimeCPUDetection = false;
 }
 
+// MoltBrowser: the same bytes on every CPU (skcms_public.h).
+bool skcms_private::gMoltBrowserExactHalf = false;
+
+void skcms_MoltBrowserEnablePortableMode() {
+    sAllowRuntimeCPUDetection = false;
+    skcms_private::gMoltBrowserExactHalf = true;
+}
+
 static float log2f_(float x) {
     // The first approximation of log2(x) is its exponent 'e', minus 127.
     int32_t bits;

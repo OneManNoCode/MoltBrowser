@@ -149,6 +149,10 @@ static constexpr int SKCMS_MAX_PROGRAM_OPS = 64;
 
 /** Interface */
 
+// MoltBrowser: set by skcms_MoltBrowserEnablePortableMode(), before the first
+// transform; read by the baseline code's half-float conversions.
+extern bool gMoltBrowserExactHalf;
+
 namespace baseline {
 
 void run_program(const Op* program, const void** contexts, ptrdiff_t programSize,

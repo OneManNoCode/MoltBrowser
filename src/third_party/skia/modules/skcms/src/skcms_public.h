@@ -477,6 +477,14 @@ SKCMS_API bool skcms_PrimariesToXYZD50(float rx, float ry,
                                        float wx, float wy,
                                        skcms_Matrix3x3* toXYZD50);
 
+// MoltBrowser: call before your first call to skcms_Transform() to make every
+// transform compute the same bytes on every CPU, x86-64 and Arm alike: runtime
+// CPU detection is skipped (as by skcms_DisableRuntimeCPUDetection()), and the
+// baseline code converts half floats exactly (round to nearest even, keeping
+// denormals, quiet NaNs), as the F16C, AVX-512 and NEON code does, instead of
+// truncating them and flushing denormals to zero.
+SKCMS_API void skcms_MoltBrowserEnablePortableMode(void);
+
 // Call before your first call to skcms_Transform() to skip runtime CPU detection.
 SKCMS_API void skcms_DisableRuntimeCPUDetection(void);
 

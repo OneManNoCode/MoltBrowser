@@ -167,6 +167,19 @@ SI F F_from_Half(U16 half) {
     // Constructing the float is easy if the half is not denormalized.
     F norm = bit_pun<F>( (s<<16) + (em<<13) + ((127-15)<<23) );
 
+    // MoltBrowser: exactly as F16C and NEON convert (skcms_public.h,
+    // skcms_MoltBrowserEnablePortableMode): denormals scaled, infinities and
+    // NaNs (quieted) kept.
+    if (gMoltBrowserExactHalf) {
+        F denorm = bit_pun<F>( (s<<16) |
+                               bit_pun<U32>(cast<F>(cast<I32>(em)) * (1.0f/16777216.0f)) );
+        U32 mant   = em & 0x3ff,
+            quiet  = if_then_else(mant != 0, (mant & 0) | 0x200, mant & 0),
+            infnan = (s<<16) | 0x7f800000 | ((mant | quiet) << 13);
+        return if_then_else(em < 0x0400, denorm,
+                            if_then_else(em >= 0x7c00, bit_pun<F>(infnan), norm));
+    }
+
     // Simply flush all denorm half floats to zero.
     return if_then_else(em < 0x0400, F0, norm);
 #endif
@@ -189,6 +202,20 @@ SI U16 Half_from_F(F f) {
     U32 sem = bit_pun<U32>(f),
         s   = sem & 0x80000000,
          em = sem ^ s;
+
+    // MoltBrowser: exactly as F16C and NEON convert (skcms_public.h,
+    // skcms_MoltBrowserEnablePortableMode): rounded to nearest even, with
+    // denormal halves, infinity for what is too large, quiet NaNs.
+    if (gMoltBrowserExactHalf) {
+        U32 norm   = (em - ((127-15)<<23) + 0xfff + ((em>>13) & 1)) >> 13,
+            inf    = (norm & 0) | 0x7c00,
+            denorm = bit_pun<U32>(bit_pun<F>(em) + 0.5f) - 0x3f000000,
+            nan    = (norm & 0) | 0x7e00 | ((em>>13) & 0x3ff);
+        norm = if_then_else(norm > 0x7c00, inf, norm);
+        U32 half = if_then_else(em < 0x38800000, denorm, norm);
+        half = if_then_else(em > 0x7f800000, nan, half);
+        return cast<U16>(half | (s>>16));
+    }
 
     // For simplicity we flush denorm half floats (including all denorm floats) to zero.
     return cast<U16>(if_then_else(em < 0x38800000, (U32)F0
