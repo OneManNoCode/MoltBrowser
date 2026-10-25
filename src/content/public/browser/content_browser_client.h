@@ -2050,6 +2050,15 @@ class CONTENT_EXPORT ContentBrowserClient {
   // requested, no Background Fetch request is started.
   virtual bool HasNetworkIdentityEnded(BrowserContext* browser_context);
 
+  // MoltBrowser: whether the storage service keeps `browser_context`'s
+  // localStorage and sessionStorage caches per top-level site: an area is
+  // purged from the cache only because of its own site's use or its own
+  // idleness, never because other sites opened areas
+  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+  // False: Chromium's limits for the whole partition.
+  virtual bool ShouldKeepDomStorageCachesPerSite(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

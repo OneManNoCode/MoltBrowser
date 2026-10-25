@@ -510,6 +510,8 @@ source_set("unit_tests") {
   sources = [
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
+    "molt_net_dom_storage_site_policy_unittest.cc",
+    "molt_net_dom_storage_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
     "molt_net_ended_identity_network_unittest.cc",
     "molt_net_http_cache_budget_policy_unittest.cc",
@@ -581,6 +583,11 @@ source_set("unit_tests") {
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
     "//components/universal_optout",
+
+    # MoltNet's localStorage caches per site, with the storage service's
+    # LocalStorageImpl.
+    "//components/services/storage",
+    "//third_party/blink/public/common",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
 

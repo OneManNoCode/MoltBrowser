@@ -104,6 +104,8 @@ TEST(MoltNetNetworkContextPolicyTest, UniformNetworkStateForMoltNetOnly) {
 TEST(MoltNetNetworkContextPolicyTest, DownloadsKeptWithTheirSiteInMoltNetOnly) {
   static_assert(KeepDownloadsWithTheirSite(/*is_moltnet_profile=*/true));
   static_assert(!KeepDownloadsWithTheirSite(/*is_moltnet_profile=*/false));
+  static_assert(KeepDomStorageCachesPerSite(/*is_moltnet_profile=*/true));
+  static_assert(!KeepDomStorageCachesPerSite(/*is_moltnet_profile=*/false));
   EXPECT_TRUE(KeepDownloadsWithTheirSite(true));
   EXPECT_FALSE(KeepDownloadsWithTheirSite(false));
 }

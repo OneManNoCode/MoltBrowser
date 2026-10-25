@@ -1149,6 +1149,11 @@ bool ContentBrowserClient::HasNetworkIdentityEnded(BrowserContext*) {
   return false;
 }
 
+bool ContentBrowserClient::ShouldKeepDomStorageCachesPerSite(
+    BrowserContext*) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

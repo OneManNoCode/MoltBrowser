@@ -19,6 +19,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/sequence_bound.h"
+#include "base/timer/timer.h"  // MoltBrowser
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "build/build_config.h"
@@ -94,6 +95,7 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   void ApplyPolicyUpdates(
       std::vector<mojom::StoragePolicyUpdatePtr> policy_updates) override;
   void ForceKeepSessionState() override;
+  void MoltKeepCachesPerSite() override;  // MoltBrowser
 
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -148,6 +150,12 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
 
   void GetStatistics(size_t* total_cache_size, size_t* unused_area_count);
   void OnCommitResult(DbStatus status);
+
+  // MoltBrowser: with caches per site (molt_dom_storage_site_policy.h),
+  // purges the unused areas of `storage_key`'s top-level site if that site's
+  // areas pass the per-site limits; and the areas unused for long enough.
+  void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
+  void MoltSweepIdleAreas();
 
   // These clear stale storage areas (not read/written to within 400 days) from
   // the database. See crbug.com/40281870 for more info.
@@ -211,6 +219,11 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // before its dependencies accessed by `StorageAreaHolder::context_` in
   // `~StorageAreaHolder()`.
   std::map<blink::StorageKey, std::unique_ptr<StorageAreaHolder>> areas_;
+
+  // MoltBrowser: whether the cached areas are kept per site, and the timer
+  // that purges the ones unused for long enough.
+  bool molt_caches_per_site_ = false;
+  base::RepeatingTimer molt_idle_sweep_;
 
   base::WeakPtrFactory<LocalStorageImpl> weak_ptr_factory_{this};
 };

@@ -28,6 +28,7 @@
 #include "components/services/storage/dom_storage/dom_storage_database.h"
 #include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
 #include "components/services/storage/dom_storage/features.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_area_impl.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -96,7 +97,11 @@ void SessionStorageImpl::BindNamespace(
         database_.get(), metadata_.GetOrCreateNamespaceEntry(namespace_id));
   }
 
-  PurgeUnusedAreasIfNeeded();
+  // MoltBrowser: with caches per site, binding a namespace purges nothing
+  // (it has no site); its areas are purged when their own site opens one.
+  if (!molt_caches_per_site_) {
+    PurgeUnusedAreasIfNeeded();
+  }
   found->second->Bind(std::move(receiver));
 }
 
@@ -124,7 +129,13 @@ void SessionStorageImpl::BindStorageArea(
     found->second->PopulateFromMetadata(database_.get(), namespace_entry);
   }
 
-  PurgeUnusedAreasIfNeeded();
+  // MoltBrowser: with caches per site, only this site's unbound areas, by
+  // its own limits (molt_dom_storage_site_policy.h).
+  if (molt_caches_per_site_) {
+    MoltPurgeUnusedAreasOfSite(storage_key);
+  } else {
+    PurgeUnusedAreasIfNeeded();
+  }
   found->second->OpenArea(storage_key, std::move(receiver), namespace_entry);
 }
 
@@ -369,6 +380,11 @@ void SessionStorageImpl::ShutDown() {
 }
 
 void SessionStorageImpl::PurgeMemory() {
+  // MoltBrowser: with caches per site, nothing drops every site's caches
+  // at once (molt_dom_storage_site_policy.h).
+  if (molt_caches_per_site_) {
+    return;
+  }
   // Purge all areas that don't have bindings.
   for (const auto& namespace_pair : namespaces_) {
     namespace_pair.second->PurgeUnboundAreas();
@@ -823,6 +839,37 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
   // before reopening.
   InitiateConnection(recreate_in_memory,
                      /*destroy_existing_db_for_recovery=*/!in_memory_);
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltKeepCachesPerSite() {
+  molt_caches_per_site_ = true;
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltPurgeUnusedAreasOfSite(
+    const blink::StorageKey& storage_key) {
+  const net::SchemefulSite& site = storage_key.top_level_site();
+  size_t site_maps = 0;
+  size_t site_unused_maps = 0;
+  size_t site_cache_bytes = 0;
+  for (const auto& [map_id, data_map] : data_maps_) {
+    if (data_map->map_locator().storage_key().top_level_site() != site) {
+      continue;
+    }
+    ++site_maps;
+    site_cache_bytes += data_map->storage_area()->memory_used();
+    if (data_map->binding_count() == 0) {
+      ++site_unused_maps;
+    }
+  }
+  if (!MoltDomStoragePurgesSite(site_maps, site_unused_maps,
+                                site_cache_bytes)) {
+    return;
+  }
+  for (const auto& namespace_pair : namespaces_) {
+    namespace_pair.second->MoltPurgeUnboundAreasOfSite(site);
+  }
 }
 
 void SessionStorageImpl::GetStatistics(size_t* total_cache_size,

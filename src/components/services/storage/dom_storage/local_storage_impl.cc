@@ -31,7 +31,9 @@
 #include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
 #include "components/services/storage/dom_storage/features.h"
 #include "components/services/storage/dom_storage/leveldb_status_helper.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/storage_area_impl.h"
+#include "net/base/schemeful_site.h"  // MoltBrowser
 #include "storage/common/database/database_identifier.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
@@ -123,6 +125,8 @@ class LocalStorageImpl::StorageAreaHolder final
 
   void OnNoBindings() override {
     has_bindings_ = false;
+    // MoltBrowser: for the idle sweep (molt_dom_storage_site_policy.h).
+    molt_unused_since_ = base::TimeTicks::Now();
     // Don't delete ourselves, but do schedule an immediate commit. Possible
     // deletion will happen under memory pressure or when another localstorage
     // area is opened.
@@ -159,11 +163,14 @@ class LocalStorageImpl::StorageAreaHolder final
   }
 
   bool has_bindings() const { return has_bindings_; }
+  // MoltBrowser: when the area was last left unused (or made).
+  base::TimeTicks molt_unused_since() const { return molt_unused_since_; }
 
  private:
   raw_ptr<LocalStorageImpl> context_;
   blink::StorageKey storage_key_;
   bool has_bindings_ = false;
+  base::TimeTicks molt_unused_since_ = base::TimeTicks::Now();  // MoltBrowser
   bool has_written_access_meta_data_ = false;
   StorageAreaImpl area_;
 };
@@ -313,6 +320,11 @@ void LocalStorageImpl::ShutDown() {
 }
 
 void LocalStorageImpl::PurgeMemory() {
+  // MoltBrowser: with caches per site, nothing drops every site's caches
+  // at once (molt_dom_storage_site_policy.h).
+  if (molt_caches_per_site_) {
+    return;
+  }
   for (auto it = areas_.begin(); it != areas_.end();) {
     if (it->second->has_bindings()) {
       it->second->storage_area()->PurgeMemory();
@@ -582,7 +594,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
     return found->second.get();
   }
 
-  PurgeUnusedAreasIfNeeded();
+  // MoltBrowser: with caches per site, only this site's unused areas, by its
+  // own limits (molt_dom_storage_site_policy.h).
+  if (molt_caches_per_site_) {
+    MoltPurgeUnusedAreasOfSite(storage_key);
+  } else {
+    PurgeUnusedAreasIfNeeded();
+  }
 
   auto holder = std::make_unique<StorageAreaHolder>(this, storage_key);
   StorageAreaHolder* holder_ptr = holder.get();
@@ -646,6 +664,62 @@ void LocalStorageImpl::OnGotWriteMetaData(
         it.first, storage_area->storage_used(), now));
   }
   std::move(callback).Run(std::move(result));
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltKeepCachesPerSite() {
+  if (molt_caches_per_site_) {
+    return;
+  }
+  molt_caches_per_site_ = true;
+  molt_idle_sweep_.Start(
+      FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
+      base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,
+                          base::Unretained(this)));
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
+    const blink::StorageKey& storage_key) {
+  const net::SchemefulSite& site = storage_key.top_level_site();
+  size_t site_areas = 0;
+  size_t site_unused_areas = 0;
+  size_t site_cache_bytes = 0;
+  for (const auto& [key, holder] : areas_) {
+    if (key.top_level_site() != site) {
+      continue;
+    }
+    ++site_areas;
+    site_cache_bytes += holder->storage_area()->memory_used();
+    if (!holder->has_bindings()) {
+      ++site_unused_areas;
+    }
+  }
+  if (!MoltDomStoragePurgesSite(site_areas, site_unused_areas,
+                                site_cache_bytes)) {
+    return;
+  }
+  for (auto it = areas_.begin(); it != areas_.end();) {
+    if (it->first.top_level_site() == site && !it->second->has_bindings()) {
+      it = areas_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltSweepIdleAreas() {
+  const base::TimeTicks now = base::TimeTicks::Now();
+  for (auto it = areas_.begin(); it != areas_.end();) {
+    if (!it->second->has_bindings() &&
+        MoltDomStorageAreaExpired(
+            (now - it->second->molt_unused_since()).InSeconds())) {
+      it = areas_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void LocalStorageImpl::GetStatistics(size_t* total_cache_size,

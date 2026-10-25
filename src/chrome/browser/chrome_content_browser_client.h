@@ -741,6 +741,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& site_url) override;  // MoltBrowser
   bool HasNetworkIdentityEnded(
       content::BrowserContext* browser_context) override;  // MoltBrowser
+  bool ShouldKeepDomStorageCachesPerSite(
+      content::BrowserContext* browser_context) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

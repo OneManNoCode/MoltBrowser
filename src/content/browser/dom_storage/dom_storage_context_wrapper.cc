@@ -358,6 +358,12 @@ void DOMStorageContextWrapper::MaybeBindSessionStorageControl(
   session_storage_control_.set_disconnect_handler(
       base::BindOnce(&DOMStorageContextWrapper::OnSessionStorageDisconnected,
                      base::Unretained(this)));
+  // MoltBrowser: caches per site for embedders that ask (MoltNet;
+  // components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
+          partition_->browser_context())) {
+    session_storage_control_->MoltKeepCachesPerSite();
+  }
 }
 
 void DOMStorageContextWrapper::OnLocalStorageDisconnected() {
@@ -378,6 +384,11 @@ void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
   local_storage_control_.set_disconnect_handler(
       base::BindOnce(&DOMStorageContextWrapper::OnLocalStorageDisconnected,
                      base::Unretained(this)));
+  // MoltBrowser: as for session storage, above.
+  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
+          partition_->browser_context())) {
+    local_storage_control_->MoltKeepCachesPerSite();
+  }
 }
 
 scoped_refptr<SessionStorageNamespaceHandleImpl>

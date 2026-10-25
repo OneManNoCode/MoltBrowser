@@ -132,6 +132,19 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
   }
 }
 
+// MoltBrowser:
+void SessionStorageNamespaceImpl::MoltPurgeUnboundAreasOfSite(
+    const net::SchemefulSite& site) {
+  auto it = storage_key_areas_.begin();
+  while (it != storage_key_areas_.end()) {
+    if (it->first.top_level_site() == site && !it->second->IsBound()) {
+      it = storage_key_areas_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 void SessionStorageNamespaceImpl::RemoveStorageKeyData(
     const blink::StorageKey& storage_key,
     base::OnceClosure callback) {

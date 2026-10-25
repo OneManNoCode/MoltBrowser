@@ -7236,6 +7236,16 @@ bool ChromeContentBrowserClient::HasNetworkIdentityEnded(
   return molt_ai::tor::HasMoltNetIdentityEnded(browser_context);
 }
 
+bool ChromeContentBrowserClient::ShouldKeepDomStorageCachesPerSite(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: MoltNet's localStorage and sessionStorage caches are kept
+  // per site (molt_ai/tor/molt_net_network_context_policy.h).
+  return browser_context &&
+         molt_ai::tor::KeepDomStorageCachesPerSite(
+             molt_ai::tor::IsMoltNetProfile(
+                 Profile::FromBrowserContext(browser_context)));
+}
+
 bool ChromeContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
     content::BrowserContext* browser_context,
     const GURL& site_url) {

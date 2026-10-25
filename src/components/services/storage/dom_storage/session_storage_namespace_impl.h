@@ -18,6 +18,7 @@
 #include "components/services/storage/dom_storage/session_storage_data_map.h"
 #include "components/services/storage/dom_storage/session_storage_metadata.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "net/base/schemeful_site.h"  // MoltBrowser
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
 
@@ -157,6 +158,9 @@ class SessionStorageNamespaceImpl final
 
   // Removes any StorageAreas bound in |OpenArea| that are no longer bound.
   void PurgeUnboundAreas();
+  // MoltBrowser: the same, for the areas of storage keys whose top-level site
+  // is `site` only (molt_dom_storage_site_policy.h).
+  void MoltPurgeUnboundAreasOfSite(const net::SchemefulSite& site);
 
   // Removes data for the given StorageKey from this namespace. If there is no
   // data map for that given StorageKey, this does nothing. Expects that this

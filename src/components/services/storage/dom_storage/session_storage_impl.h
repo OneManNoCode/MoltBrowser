@@ -90,6 +90,7 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void ScavengeUnusedNamespaces() override;
   void Flush() override;
   void PurgeMemory() override;
+  void MoltKeepCachesPerSite() override;  // MoltBrowser
   void CreateNamespace(const std::string& namespace_id) override;
   void CloneNamespace(const std::string& namespace_id_to_clone,
                       const std::string& clone_namespace_id,
@@ -176,6 +177,12 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void DeleteAndRecreateDatabase(DomStorageRecoveryReason reason);
 
   void GetStatistics(size_t* total_cache_size, size_t* unused_areas_count);
+
+  // MoltBrowser: with caches per site (molt_dom_storage_site_policy.h),
+  // purges the unbound areas of `storage_key`'s top-level site, in every
+  // namespace, if that site's maps pass the per-site limits.
+  void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
+  bool molt_caches_per_site_ = false;
 
   void OnReceiverDisconnected();
 

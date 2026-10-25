@@ -268,6 +268,16 @@ constexpr bool KeepDownloadsWithTheirSite(bool is_moltnet_profile) {
   return is_moltnet_profile;
 }
 
+// Whether the storage service keeps a profile's localStorage and
+// sessionStorage caches per top-level site
+// (ChromeContentBrowserClient::ShouldKeepDomStorageCachesPerSite(),
+// components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+// Chromium purges every site's unused areas when all areas together pass
+// one limit, so one site could push another's out and time the reloads.
+constexpr bool KeepDomStorageCachesPerSite(bool is_moltnet_profile) {
+  return is_moltnet_profile;
+}
+
 // ProfileNetworkContextService's block_trust_tokens, when a network context
 // is created and when the anti-abuse content setting changes:
 // `chromium_value` is Chromium's (the setting blocks them).

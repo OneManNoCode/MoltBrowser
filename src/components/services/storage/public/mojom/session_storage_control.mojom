@@ -76,6 +76,13 @@ interface SessionStorageControl {
   // next access to a StorageArea will reload data from the backing database.
   PurgeMemory();
 
+  // MoltBrowser: from now on, keeps the cached storage areas per top-level
+  // site: opening an area purges only unbound areas of its own site, by
+  // per-site limits, never because of other sites
+  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+  // PurgeMemory() does nothing then.
+  MoltKeepCachesPerSite();
+
   // Creates a new namespace which can later be manipulated by other requests
   // on this interface.
   CreateNamespace(string namespace_id);

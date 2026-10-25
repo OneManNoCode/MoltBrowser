@@ -47,4 +47,11 @@ interface LocalStorageControl {
   // called, that behavior is overridden and Local Storage data is persisted
   // for all StorageKeys.
   ForceKeepSessionState();
+
+  // MoltBrowser: from now on, keeps the cached storage areas per top-level
+  // site: opening an area purges only unused areas of its own site, by
+  // per-site limits, and unused areas are purged after a while unused, not
+  // because of other sites (components/services/storage/dom_storage/
+  // molt_dom_storage_site_policy.h). PurgeMemory() does nothing then.
+  MoltKeepCachesPerSite();
 };
