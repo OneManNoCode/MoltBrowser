@@ -1,0 +1,31 @@
+MoltBrowser patch for sandbox/policy/linux/sandbox_linux.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/sandbox/policy/linux/sandbox_linux.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/sandbox/policy/linux/sandbox_linux.cc b/sandbox/policy/linux/sandbox_linux.cc
+index 7e1dfcd1732a7fa15450f9a17de17ebcbc256e3e..eeeb22ba17406ca894b889e49ef7397c47b535f6 100644
+--- a/sandbox/policy/linux/sandbox_linux.cc
++++ b/sandbox/policy/linux/sandbox_linux.cc
+@@ -51,6 +51,7 @@
+ #include "sandbox/linux/system_headers/linux_stat.h"
+ #include "sandbox/policy/features.h"
+ #include "sandbox/policy/linux/bpf_broker_policy_linux.h"
++#include "sandbox/policy/linux/molt_data_limit.h"  // MoltBrowser
+ #include "sandbox/policy/linux/sandbox_seccomp_bpf_linux.h"
+ #include "sandbox/policy/mojom/sandbox.mojom.h"
+ #include "sandbox/policy/sandbox.h"
+@@ -529,6 +530,12 @@ bool SandboxLinux::LimitAddressSpace(int* error) {
+   // other memory-hungry attack modes.
+ 
+   rlim_t process_data_size_limit = GetProcessDataSizeLimit(sandbox_type);
++  // MoltBrowser: MoltNet's renderers get the same limit on every machine
++  // (molt_data_limit.h).
++  process_data_size_limit =
++      static_cast<rlim_t>(molt::ProcessDataSizeLimit(
++          *command_line, sandbox_type == sandbox::mojom::Sandbox::kRenderer,
++          process_data_size_limit));
+   // Fine to call with multiple threads as we don't use RLIMIT_STACK.
+   *error = ResourceLimits::Lower(RLIMIT_DATA, process_data_size_limit);
+ 

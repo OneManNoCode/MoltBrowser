@@ -1,0 +1,59 @@
+MoltBrowser patch for gin/isolate_holder.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/gin/isolate_holder.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/gin/isolate_holder.cc b/gin/isolate_holder.cc
+index 9157a6b0208b0758df92b3323c0f379b0adc109f..98b84c04c4cef7de3933816485dd3cc9e1026352 100644
+--- a/gin/isolate_holder.cc
++++ b/gin/isolate_holder.cc
+@@ -8,6 +8,8 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++#include <atomic>   // MoltBrowser
++#include <cstdint>  // MoltBrowser
+ #include <memory>
+ #include <optional>
+ #include <utility>
+@@ -36,6 +38,8 @@ v8::ArrayBuffer::Allocator* g_array_buffer_allocator = nullptr;
+ const intptr_t* g_reference_table = nullptr;
+ v8::FatalErrorCallback g_fatal_error_callback = nullptr;
+ v8::OOMErrorCallback g_oom_error_callback = nullptr;
++// MoltBrowser: see IsolateHolder::SetPhysicalMemoryForIsolates().
++constinit std::atomic<uint64_t> g_physical_memory_for_isolates{0};
+ 
+ std::unique_ptr<v8::Isolate::CreateParams> getModifiedIsolateParams(
+     std::unique_ptr<v8::Isolate::CreateParams> params,
+@@ -179,6 +183,13 @@ bool IsolateHolder::Initialized() {
+   return g_array_buffer_allocator;
+ }
+ 
++// static
++void IsolateHolder::SetPhysicalMemoryForIsolates(uint64_t physical_memory) {
++  // MoltBrowser.
++  g_physical_memory_for_isolates.store(physical_memory,
++                                       std::memory_order_relaxed);
++}
++
+ // static
+ std::unique_ptr<v8::Isolate::CreateParams>
+ IsolateHolder::getDefaultIsolateParams() {
+@@ -189,8 +200,15 @@ IsolateHolder::getDefaultIsolateParams() {
+   std::unique_ptr<v8::Isolate::CreateParams> params =
+       std::make_unique<v8::Isolate::CreateParams>();
+   params->code_event_handler = DebugImpl::GetJitCodeEventHandler();
++  // MoltBrowser: a process may configure its isolates for one fixed machine
++  // (MoltNet's renderers: third_party/blink/renderer/core/
++  // molt_fingerprinting/moltnet_cpu.h).
++  const uint64_t fixed_physical_memory =
++      g_physical_memory_for_isolates.load(std::memory_order_relaxed);
+   params->constraints.ConfigureDefaults(
+-      base::SysInfo::AmountOfTotalPhysicalMemory().InBytes(),
++      fixed_physical_memory
++          ? fixed_physical_memory
++          : base::SysInfo::AmountOfTotalPhysicalMemory().InBytes(),
+       base::SysInfo::AmountOfVirtualMemory().InBytes());
+   params->array_buffer_allocator = g_array_buffer_allocator;
+   params->allow_atomics_wait = true;

@@ -3,3 +3,16 @@
 # Upstream files inside DEPS subprojects (separate repos): kept as whole-file
 # overlays, not diffed. Check them by hand on every rebase.
 third_party/search_engines_data/resources/definitions/prepopulated_engines.json	# third_party/search_engines_data/resources@5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c
+third_party/skia/include/core/SkGraphics.h	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/modules/skcms/skcms.cc	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/modules/skcms/src/Transform_inl.h	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/modules/skcms/src/skcms_Transform.h	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/modules/skcms/src/skcms_public.h	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/src/core/SkGraphics.cpp	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/src/opts/SkOpts_moltbrowser.cpp	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+third_party/skia/src/opts/SkRasterPipeline_opts.h	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+v8/src/base/ieee754.cc	# v8@392e44423f46d75904da712fadea4c7d5d97967f
+v8/src/base/ieee754.h	# v8@392e44423f46d75904da712fadea4c7d5d97967f
+v8/src/flags/flag-definitions.h	# v8@392e44423f46d75904da712fadea4c7d5d97967f
+v8/src/init/v8.cc	# v8@392e44423f46d75904da712fadea4c7d5d97967f
+v8/src/wasm/function-body-decoder-impl.h	# v8@392e44423f46d75904da712fadea4c7d5d97967f

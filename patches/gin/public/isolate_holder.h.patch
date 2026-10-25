@@ -1,0 +1,31 @@
+MoltBrowser patch for gin/public/isolate_holder.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/gin/public/isolate_holder.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/gin/public/isolate_holder.h b/gin/public/isolate_holder.h
+index 3909e70dc1425c2cb02624f4b3017784a2ae6c9d..3e8c54de1e392c6a1ab60d6e2df2a38edb43a65c 100644
+--- a/gin/public/isolate_holder.h
++++ b/gin/public/isolate_holder.h
+@@ -5,6 +5,7 @@
+ #ifndef GIN_PUBLIC_ISOLATE_HOLDER_H_
+ #define GIN_PUBLIC_ISOLATE_HOLDER_H_
+ 
++#include <cstdint>  // MoltBrowser
+ #include <memory>
+ 
+ #include "base/memory/raw_ptr.h"
+@@ -130,6 +131,12 @@ class GIN_EXPORT IsolateHolder {
+   // Should only be called after v8::IsolateHolder::Initialize() is invoked.
+   static std::unique_ptr<v8::Isolate::CreateParams> getDefaultIsolateParams();
+ 
++  // MoltBrowser: getDefaultIsolateParams() configures every isolate of the
++  // process for a machine with `physical_memory` bytes of memory
++  // (v8::ResourceConstraints::ConfigureDefaults) instead of this machine's;
++  // 0 restores the machine's. Call before the first isolate is created.
++  static void SetPhysicalMemoryForIsolates(uint64_t physical_memory);
++
+   v8::Isolate* isolate() { return isolate_; }
+ 
+   // This method returns if v8::Locker is needed to access isolate.

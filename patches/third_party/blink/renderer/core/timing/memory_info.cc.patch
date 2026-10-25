@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/timing/memory_info.cc b/third_party/blink/renderer/core/timing/memory_info.cc
-index b17ada56e6d93cc3f40a867099afd73b19426890..be7d321cb9e966651296302ef8c56352e9547906 100644
+index b17ada56e6d93cc3f40a867099afd73b19426890..614615461e2898ab1c475e888a23f31e868a08e5 100644
 --- a/third_party/blink/renderer/core/timing/memory_info.cc
 +++ b/third_party/blink/renderer/core/timing/memory_info.cc
 @@ -35,6 +35,7 @@
@@ -38,7 +38,7 @@ index b17ada56e6d93cc3f40a867099afd73b19426890..be7d321cb9e966651296302ef8c56352
  
  MemoryInfo::MemoryInfo(Precision precision) {
 +  // MoltBrowser: MoltNet always reports bucketized values, and the heap limit
-+  // of the uniform 8 GB machine (moltnet_memory.h).
++  // of the machine its isolates are configured for (moltnet_memory.h).
 +  const bool uniform = molt_fingerprinting::UsesUniformMemoryInfo();
 +  if (uniform) {
 +    precision = Precision::kBucketized;

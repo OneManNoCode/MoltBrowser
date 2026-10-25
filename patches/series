@@ -223,12 +223,16 @@ extensions/browser/extension_util.cc.patch
 extensions/browser/extensions_browser_client.cc.patch
 extensions/browser/extensions_browser_client.h.patch
 extensions/browser/permissions/active_tab_permission_granter.cc.patch
+gin/isolate_holder.cc.patch
+gin/public/isolate_holder.h.patch
 media/base/BUILD.gn.patch
 media/base/sinc_resampler.cc.patch
 media/base/vector_math.cc.patch
 media/base/video_encoder.cc.patch
 media/base/video_encoder.h.patch
 media/base/video_frame_converter_internals.cc.patch
+media/filters/symphonia_audio_decoder.cc.patch
+media/filters/symphonia_decoder_bridge.rs.patch
 media/gfx/mappable_shared_image_video_frame_pool.cc.patch
 media/gfx/paint_canvas_video_renderer.cc.patch
 media/renderers/default_decoder_factory.cc.patch
@@ -252,6 +256,8 @@ net/socket/socks_connect_job.h.patch
 net/socket/ssl_client_socket.cc.patch
 net/socket/ssl_client_socket.h.patch
 net/socket/transport_client_socket_pool.h.patch
+sandbox/policy/BUILD.gn.patch
+sandbox/policy/linux/sandbox_linux.cc.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h.patch
 services/cert_verifier/cert_verifier_service_factory.cc.patch
@@ -263,6 +269,7 @@ services/network/pervasive_resources/shared_resource_checker.h.patch
 services/network/public/mojom/network_context.mojom.patch
 services/network/url_loader_factory.cc.patch
 services/network/url_loader_factory.h.patch
+skia/BUILD.gn.patch
 storage/browser/blob/blob_memory_controller.cc.patch
 storage/browser/blob/blob_memory_controller.h.patch
 storage/browser/quota/quota_manager_impl.cc.patch
@@ -359,6 +366,7 @@ third_party/opus/src/celt/x86/x86cpu.c.patch
 third_party/rust/chromium_crates_io/Cargo.lock.patch
 third_party/rust/chromium_crates_io/Cargo.toml.patch
 third_party/rust/chromium_crates_io/gnrt_config.toml.patch
+third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs.patch
 third_party/rust/chromium_crates_io/vendor/unicode-bidi-v0_3/Cargo.toml.patch
 third_party/rust/chromium_crates_io/vendor/unicode-bidi-v0_3/src/lib.rs.patch
 third_party/rust/getrandom/v0_4/BUILD.gn.patch
