@@ -21,6 +21,8 @@ bool UsesOverlayScrollbars(FontPlatform platform) {
       return true;
     case FontPlatform::kWindows:
     case FontPlatform::kLinux:
+    // Not an OS (the bundled font set's list); never asked about.
+    case FontPlatform::kMoltNetBundled:
       return false;
   }
   return false;
