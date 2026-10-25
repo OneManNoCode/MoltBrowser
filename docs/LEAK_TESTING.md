@@ -348,6 +348,16 @@ level, and in one browser launch per device scale factor
   stereo Vorbis decoded by WebCodecs' `AudioDecoder` (`cpu.*`,
   `pixels.p3_readback`, `audio.decoded_vorbis`). Recorded: whether a plain
   SIMD module validates.
+* **Portable math** (once per launch), compared between runs: `Math`'s
+  `sin`, `tan`, `atan` and `atan2` at arguments where x86-64 and arm64
+  builds of V8's math code differed, and a sweep of 2000 more
+  (`cpu.math_cross_arch`); sixteen CSS math functions in registered
+  custom properties, each amplified with `mod()`, `rem()` or `round()` so
+  that its last bits show in the serialized value (`cpu.css_math`);
+  `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas `getTransform()` and
+  an SVG path's arcs (`cpu.dommatrix`); Biquad and IIR filter frequency
+  responses and a compressor's `reduction` after rendering a sawtooth
+  (`audio.math`).
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

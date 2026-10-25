@@ -405,8 +405,8 @@ DIFF_KEYS = (
     'cpu.math', 'pixels.p3_readback', 'audio.decoded_vorbis',
     # So are Math's trigonometry, CSS math functions, DOMMatrix and other
     # transforms, and Web Audio's filter responses and compressor, with the
-    # same functions on every OS too (FINGERPRINTING.md "MoltNet: CPU
-    # features", "Portable math").
+    # same functions on every OS too (FINGERPRINTING.md "MoltNet: portable
+    # math").
     'cpu.math_cross_arch', 'cpu.css_math', 'cpu.dommatrix', 'audio.math',
 )
 

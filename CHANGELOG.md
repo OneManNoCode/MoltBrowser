@@ -319,6 +319,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   about 2 GB of JavaScript memory, and colour-managed images decode more
   slowly (`docs/FINGERPRINTING.md`, "MoltNet: CPU features");
   regular and incognito windows are unchanged.
+- **MoltNet's math is the same on every processor and system.** In MoltNet
+  windows CSS math functions, `DOMMatrix` and other transforms, canvas and
+  SVG geometry, `Math`'s trigonometry, Web Audio's filters, analyser,
+  oscillators, panners, compressor and convolution, and WebRTC audio
+  levels are computed with one portable math library and Web Audio's plain
+  (non-vector) code, so their results no longer differ between x86-64 and
+  Arm processors or between Windows, macOS and Linux.
+  `navigator.deviceMemory` is now 4, the machine V8's memory limits
+  describe; on Windows a MoltNet page process can commit 8 GB on every
+  machine, pages no longer collect garbage early when the system is short
+  of memory, and same-site MoltNet tabs start sharing processes at the
+  same count on every machine. Web Audio in MoltNet uses a little more CPU
+  (`docs/FINGERPRINTING.md`, "MoltNet: portable math"); regular and
+  incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
