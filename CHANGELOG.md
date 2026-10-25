@@ -304,9 +304,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the SIL Open Font License, about 48 MB) and MoltNet windows draw all
   text with it, on macOS, Linux and Windows alike: the fonts pages can
   name, the generic families, `system-ui` and the fallback for other
-  scripts and emoji. Nothing installed on your computer is used there,
-  so the fonts MoltNet pages get no longer depend on the machine, its OS
-  release or its operating system. Text in MoltNet windows looks the same
+  scripts and emoji, measured the same way on every OS. Nothing installed
+  on your computer is used there, so the fonts MoltNet pages get no longer
+  depend on the machine, its OS release or its operating system. Text in
+  MoltNet windows looks the same
   everywhere rather than native; regular and incognito windows keep your
   system's fonts
   (`docs/FINGERPRINTING.md`, "MoltNet: the bundled font set").

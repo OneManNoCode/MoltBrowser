@@ -3761,24 +3761,46 @@ subpixel positioning and anti-aliasing, without embedded bitmaps: the same
 scaler and settings whatever the OS, its version or the desktop's
 settings. `queryLocalFonts()` lists the set's faces.
 
+**Metrics.** What Blink derives from a font (ascent and descent, x-height,
+cap height, line gap, underline, average and maximum character width, glyph
+bounds and the glyph extents HarfBuzz positions marks with) is computed
+partly per OS upstream. With the set, MoltNet renderers take one path on
+every OS, the one Linux takes: the descent rule for subpixel positioning
+everywhere, the font's own x-height and average width and the maximum
+width from its bounds also on macOS and Windows, Skia's glyph bounds rather
+than path bounds on macOS, and no macOS ascent adjustment for Times,
+Helvetica and Courier. macOS takes HarfBuzz's advances for fonts with a
+`trak` table and no `sbix`; no font of the set has either
+(`tools/fonts/fonts_test.py` checks the files).
+`tools/fonts/metrics_check/run.py` runs that code, copied out of `src/`,
+built as Linux, Windows and macOS, over what Skia's Fontations backend
+reports for every face of the set (the `skrifa` version Chromium vendors,
+at 9 sizes and the faces' weights): the three OSes compute the same values
+in all 828 cases, and Linux the same as without the set.
+
 **How the files reach the renderer.** The browser opens the `molt_fonts`
-files once, on a background thread, when the first renderer launches,
-checking each file's size and sfnt header against the table compiled into
-the browser (`molt_net_fonts_table.h`, generated from the manifest; the
-whole set or none). A MoltNet renderer launched once the set is open gets
-`--molt-net-fonts` on its command line and the files as read-only handles
-over the fingerprinting configuration channel
-(`FingerprintingConfiguration.SetMoltNetFonts`, before any document
-commits). The renderer maps them read-only (shared page cache: only the
-pages a renderer touches become resident) and checks each typeface's
-family against its own table (`moltnet_font_set_table.cc`, the same
-order; `molt_net_fonts_unittest.cc` checks the two agree). From the
-switch on, no font lookup reaches the system: until the files arrive,
-lookups find nothing and text uses an empty last-resort face; the font
-caches are cleared when they arrive. Files that don't match the table
-(count, size, header) are refused together, leaving the set empty rather
-than partial, and a typeface whose family isn't the table's is not used.
-A build without the set uses the per-OS allow-list as before.
+files once, on a background thread, when startup-critical work is done (or
+at the first renderer launch, if that comes first), checking each file's
+size and sfnt header against the table compiled into the browser
+(`molt_net_fonts_table.h`, generated from the manifest; the whole set or
+none). Every MoltNet renderer gets `--molt-net-fonts` on its command line,
+unless the browser knows the installation has no `molt_fonts` folder, and
+the files as read-only handles over the fingerprinting configuration
+channel (`FingerprintingConfiguration.SetMoltNetFonts`): before any
+document commits when the set is open, else as soon as it is (MoltNet's
+first window, a window restored at startup). The renderer maps them
+read-only (shared page cache: only the pages a renderer touches become
+resident) and checks each typeface's family against its own table
+(`moltnet_font_set_table.cc`, the same order; `molt_net_fonts_unittest.cc`
+checks the two agree). From the switch on, no font lookup reaches the
+system: until the files arrive, lookups find nothing and text uses an
+empty last-resort face; when they arrive, every thread that looked a font
+up (the main thread and workers, which have font caches of their own)
+invalidates its font cache, so documents and canvases look their fonts up
+again. Files that don't match the table (count, size, header) are refused
+together, leaving the set empty rather than partial, and a typeface whose
+family isn't the table's is not used. An installation without the set uses
+the per-OS allow-list as before.
 
 **Hooks** (each marked `MoltBrowser:`):
 
@@ -3795,6 +3817,10 @@ A build without the set uses the per-OS allow-list as before.
 | `platform/fonts/font_selector.cc` | `FamilyNameFromSettings` | generic families from the set, not from settings |
 | `core/css/css_pending_system_font_value.cc` | `ResolveFontFamily`, `ResolveFontSize` | system font keywords alike on every OS |
 | `modules/font_access/font_access.cc` | `DidGetEnumerationResponse` | `queryLocalFonts()` lists the set |
+| `platform/fonts/font_metrics.cc` | `AscentDescentWithHacks` | the descent rule on every OS; no macOS ascent adjustment |
+| `platform/fonts/simple_font_data.cc` | `PlatformInit` | x-height, average and maximum width alike on every OS |
+| `platform/fonts/skia/skia_text_metrics.cc` | `SkFontGetGlyphExtentsForHarfBuzz`, `SkFontGetBoundsForGlyph`, `SkFontGetBoundsForGlyphs` | glyph bounds alike on every OS |
+| `chrome/browser/chrome_content_browser_client.cc` | `InitOnUIThread` | the browser opens the set after startup |
 
 MoltBrowser's own code: `core/molt_fingerprinting/moltnet_font_set.{h,cc}`
 (the rules, pure, with the generated `moltnet_font_set_table.cc`),
@@ -3822,12 +3848,16 @@ pinned face against the real files) and, with the C++ tests built
 standalone with g++ (ASan/UBSan) and clang, `moltnet_font_set_unittest.cc`
 (generic mapping, CJK regions, face matching, fallback order, unique
 names); `molt_moltnet_font_set_fuzzer` (names, language tags, scripts,
-weights; [FUZZING](FUZZING.md)). Every changed C++ file compiles against
-Chromium 156's headers (`tools/compile_check`). Needs the build machine:
-`blink_unittests` (`MoltNetFontsTest.*`, `MoltNetFontSetTest.*`),
-`molt_ai_unittests` (`MoltNetFontsTest.*`, `MoltNetFontSetTest.*`), the
-checks tagged "fonts" in `docs/BUILD_MACHINE_CHECKLIST.md`, and the leak
-kit on each OS.
+weights; [FUZZING](FUZZING.md)); `tools/fonts/metrics_check/run.py` (the
+metric code of the three OSes on the real fonts, above; each of its six
+hooks, removed, makes the OSes disagree). Every changed C++ file compiles
+against Chromium 156's headers (`tools/compile_check`; the Windows and
+macOS files need those builds). Needs the build machine: `blink_unittests`
+(`MoltNetFontsTest.*`, with a worker that looked fonts up before the
+files came, `MoltNetFontSetTest.*`), `molt_ai_unittests`
+(`MoltNetFontsTest.*`, `MoltNetFontsDeliveryTest.*`,
+`MoltNetFontSetTest.*`), the checks tagged "fonts" in
+`docs/BUILD_MACHINE_CHECKLIST.md`, and the leak kit on each OS.
 
 ### Checking the allow-lists against fresh installs
 
@@ -3957,10 +3987,11 @@ Windows and macOS have one emoji font per release already.
 
 **4. One font set on every OS.** With the [bundled font
 set](#moltnet-the-bundled-font-set), MoltNet renderers take every font,
-emoji and fallback included, from the fonts MoltBrowser ships, and render
+emoji and fallback included, from the fonts MoltBrowser ships, render
 them with the same scaler (Skia's Fontations) and the same settings
-(unhinted, subpixel positioning, anti-aliased, no embedded bitmaps) on
-Linux, Windows and macOS; 1 and 3 above then only matter for a build
+(unhinted, subpixel positioning, anti-aliased, no embedded bitmaps), and
+derive their metrics the same way ([Metrics](#moltnet-the-bundled-font-set))
+on Linux, Windows and macOS; 1 and 3 above then only matter for a build
 without the set.
 
 ### What is left

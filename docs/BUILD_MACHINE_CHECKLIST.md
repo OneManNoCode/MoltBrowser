@@ -518,6 +518,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `modules/mediarecorder/video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.{h,cc}` (all four new upstream copies), `core/molt_fingerprinting/moltnet_encoders.{h,cc}` | modules calling a new core glue file; core's DEPS now allow four `media/base` headers (`media::IsEncoderBuiltInVideoType`, `media::VideoType`, `media::SetProcessorCountForSoftwareEncoding`, a new `MEDIA_EXPORT` function); a `constinit std::atomic<int>` in `video_encoder.cc` | fp-probes |
 | `core/css/local_font_face_source.cc`, `core/molt_fingerprinting/fonts.{h,cc}`, `system_fonts.{h,cc}` | `local()` through visible families: `GetLocalFontFaceData` calls `FontCache::GetFontData(description, family, AlternateFontName::kNoAlternate)` and reads `SkTypeface::fontStyle()`; `String::substr` with a `wtf_size_t` | fp-probes |
 | `platform/fonts/font_platform_data.{h,cc}`, `font_cache.cc`, `font_selector.cc`, `skia/font_cache_skia.cc`, `linux/font_cache_linux.cc`, `win/font_cache_skia_win.cc`, `win/font_platform_data_win.cc`, `mac/font_cache_mac.mm`, `mac/font_platform_data_mac.mm`, `core/css/css_pending_system_font_value.cc`, `modules/font_access/font_access.cc` (the last eight new upstream copies, or newly hooked), `core/molt_fingerprinting/moltnet_fonts.{h,cc}`, `moltnet_font_set.{h,cc}` | MoltNet's bundled font set: a nested abstract `FontPlatformData::UniformFontSet` held in a `std::atomic` pointer, with `enum class AlternateFontName` and `FontFallbackPriority` forward-declared in `font_platform_data.h` (a header much of Blink includes: expect a large rebuild); `SkTypeface_Make_Fontations` with `SkFontArguments` (collection index, `wght`) from core; `base::MemoryMappedFile` from a `base::File` and `SkData::MakeWithoutCopy`; `FontCache::Invalidate()`; the Windows and macOS hooks have not been compiled yet (the compile check runs on Linux): look at them first on those builds; `font_selector.cc` includes `font_platform_data.h` | fonts |
+| `platform/fonts/font_metrics.cc`, `simple_font_data.cc`, `skia/skia_text_metrics.cc` (new upstream copies), `core/molt_fingerprinting/moltnet_fonts.cc`, `chrome/browser/chrome_content_browser_client.cc` (`InitOnUIThread`), `chrome/browser/molt_ai/fingerprinting/molt_net_fonts.cc` | MoltNet's metrics alike on every OS: the hooks sit in each file's `#if BUILDFLAG(IS_APPLE)` / non-Linux branches, which the Linux compile check doesn't build (`tools/fonts/metrics_check/run.py` builds them against stand-ins): watch `SkFont::isSubpixel()` in `font_metrics.cc`'s new `#else`, the early `return` in its macOS block, and `skia_text_metrics.cc`'s `#endif`s; worker font caches invalidated through `base::SingleThreadTaskRunner::GetCurrentDefault()` and `FontGlobalContext::TryGet()`; the browser posts a best-effort UI task (`content::GetUIThreadTaskRunner`) and keeps callbacks for renderers that launch before the set is open | fonts |
 | `content/public/browser/content_browser_client.{h,cc}` (two new virtuals returning `std::optional` of `storage::QuotaSettings` and `storage::BlobStorageLimits`), `chrome/browser/chrome_content_browser_client.{h,cc}`, `content/browser/storage_partition_impl.cc`, `content/browser/blob_storage/chrome_blob_storage_context.cc`, `storage/browser/blob/blob_memory_controller.{h,cc}` (new upstream copies), `chrome/browser/molt_ai/fingerprinting/molt_net_storage{,_values}.*` | MoltNet's fixed storage limits; a new `:storage` target in `//chrome/browser/molt_ai/fingerprinting` that `//chrome/browser/molt_ai` depends on (`gn check` on `chrome_content_browser_client.cc`); the blob limits are posted to the IO thread after `InitializeOnIOThread` | fp-probes |
 | `media/renderers/default_decoder_factory.cc`, `media/gfx/mappable_shared_image_video_frame_pool.cc`, `media/gfx/paint_canvas_video_renderer.cc`, `media/base/video_frame_converter_internals.cc`, `media/base/sinc_resampler.cc`, `media/base/vector_math.cc`, `media/base/BUILD.gn`, `third_party/opus/BUILD.gn`, `third_party/opus/src/celt/{celt.c,x86/x86cpu.c,arm/pitch_neon_intr.c,arm/celt_neon_intr.c}` (all new upstream copies), `media/base/molt_portable_{media,scale}.{h,cc}`, `core/molt_fingerprinting/moltnet_pixels.{h,cc}` | `//media/base` now depends on `//third_party/opus` and calls the C function `opus_moltbrowser_set_portable()` (defined in `celt.c`; declared `extern "C"` in `molt_portable_media.cc`); `OPUS_X86_PRESUME_SSE`/`SSE2` are gone, so the SSE kernels go through libopus's run-time tables (`x86_celt_map.c`, `x86_silk_map.c`; built and linked here with Chromium's source list); `base::subtle::reinterpret_span` in `PortableScaleFrame`; `molt_portable_media_unittest.cc` (in `media/base:unit_tests`) includes `media/gfx`, `media/renderers` and `media/video/mock_gpu_video_accelerator_factories.h` through `//media:test_support` (`gn check`); core's DEPS allow `media/base/molt_portable_media.h`. | fp-pixels |
 
@@ -716,7 +717,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetMemoryValuesTest.*` (V8's heap limit for 1 to 64 GB, the fixed table of sizes), and the device-list and `getUserMedia()` cases of `MoltNetMediaValuesTest.*` | fp-mediaclock |
   | `MoltNetMemoryValuesTest.UniformLimitIsAFourGigabyteMachines`, `MoltDataLimitTest.*` (Linux: a MoltNet renderer's data limit is 8 GiB whatever Chromium's tier) | fp-cpu |
   | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
-  | `MoltNetFontsTest.*` (the browser opens the whole set or nothing, its table equals Blink's), `MoltNetFontSetTest.*` (generic families, CJK regions, face matching, fallback order) | fonts |
+  | `MoltNetFontsTest.*` (the browser opens the whole set or nothing, its table equals Blink's, an absent set told from a damaged one), `MoltNetFontsDeliveryTest.*` (renderers launched while the set is opening get it later, a damaged set is never sent, the set is opened after startup; `content::BrowserTaskEnvironment`), `MoltNetFontSetTest.*` (generic families, CJK regions, face matching, fallback order) | fonts |
 | `media_unittests --gtest_filter='MoltPortable*'` (not in `molt_ai_unittests`): `MoltPortableScaleTest.*` (the integer scaler, golden digests shared with arm64), `MoltPortableMediaTest.*` (frames of every format scaled, the converter, no hardware decoders, frames kept in CPU memory, no GPU YUV conversion; libopus's switch) | fp-pixels |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
@@ -751,7 +752,9 @@ extension enablement and `MediaRouterEnabled()`).
   `MoltNetFontsTest` and `MoltNetFontSetTest` (fonts: with the Roboto and
   COLRv1 test fonts standing in for the set, nothing comes from the
   system before or after the files arrive, refused files leave the set
-  empty, generic families and `queryLocalFonts()` from the set),
+  empty, generic families and `queryLocalFonts()` from the set, a worker
+  thread that looked a font up before the files came looks again after;
+  the worker test runs a real `NonMainThread`, rerun a timing failure once),
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
@@ -780,7 +783,7 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests` | `*AudioRendererMixer*:*AudioRendererSinkCache*:*AudioDeviceFactory*:*HTMLMediaElementAudioOutputDevice*:*MediaDevices*:*UserMediaProcessor*:*UserMediaClient*:MemoryInfo*:*MeasureMemory*` (normal windows: the hooks only act in MoltNet) | fp-mediaclock |
 | `blink_platform_unittests` | `WebMediaPlayerImpl*:*AudioRendererSink*` (unchanged code that a MoltNet sink now sits under) | fp-mediaclock |
 | `blink_unittests` | `MediaRecorder*:VideoTrackRecorder*:AudioTrackRecorder*:*LocalFontFace*:FontFace*:*FontFaceSet*` (normal windows: unchanged) | fp-probes |
-| `blink_platform_unittests` | `FontCache*:FontPlatformData*:FontFallback*:FontSelector*:*FontDescription*:*WebFontTypeface*` (outside MoltNet nothing is set: unchanged) | fonts |
+| `blink_platform_unittests` | `FontCache*:FontPlatformData*:FontFallback*:FontSelector*:*FontDescription*:*WebFontTypeface*:SimpleFontData*:*FontMetrics*:*SkiaTextMetrics*:*HarfBuzz*` (outside MoltNet nothing is set: unchanged) | fonts |
 | `blink_unittests` | `*FontAccess*:*SystemFont*:*FontFaceSet*:*LocalFontFace*:CSSFontSelector*` (normal windows: unchanged) | fonts |
 | `media_unittests` | `*VideoEncoder*:VpxVideoEncoder*:Av1VideoEncoder*` | fp-probes |
 | `media_unittests` | `*PaintCanvasVideoRenderer*:*MappableSharedImageVideoFramePool*:*VideoFrameConverter*:*DefaultDecoderFactory*:*DecoderSelector*:SincResampler*:MultiChannelResampler*:*VectorMath*:*ChannelMixer*:*AudioOpusEncoder*:*AudioEncoder*:*AudioConverter*` (outside MoltNet: unchanged; the Opus encoder's output is the same as before on every CPU) | fp-pixels |
@@ -1365,6 +1368,21 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
     set (`document.fonts.check('16px Arimo')` is true in the DevTools
     console). A developer build without `molt_fonts` keeps the per-OS
     allow-list (the leak kit's `fonts.moltnet_set` fails there).
+  - A page that starts a worker at once which draws text on an
+    `OffscreenCanvas` and reports `measureText('Hamburg').width` every
+    100 ms: in a MoltNet window opened right after a cold start the value
+    settles on Arimo's width (the worker looked again once the set
+    arrived) and is the same on the three OSes.
+  - Metrics on the three OSes, MoltNet window, the same page: a `span`'s
+    `getBoundingClientRect()` in `16px serif`, `sans-serif` and
+    `monospace`, a `1ex` and a `1ch` box, `line-height: normal`, and
+    canvas `measureText()` of a few strings with
+    `actualBoundingBox*`/`fontBoundingBox*`: identical numbers on Linux,
+    Windows and macOS (send any difference back).
+  - On Linux, `python3 tools/fonts/metrics_check/run.py` (cargo, g++ and
+    clang++; downloads the set and the skrifa crate the first time): "measure
+    alike on Linux, Windows and macOS: yes". Rerun it after every rebase
+    and font update.
   - A regular window is unchanged: the system's fonts, `system-ui`,
     emoji and per-script fallback as before.
   - Memory: with ten MoltNet tabs open, the renderers' resident memory
