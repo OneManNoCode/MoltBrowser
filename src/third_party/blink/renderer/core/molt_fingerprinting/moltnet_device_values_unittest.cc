@@ -8,6 +8,7 @@
 #include <set>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.h"
 
 namespace blink::molt_fingerprinting::moltnet {
 namespace {
@@ -107,11 +108,17 @@ TEST(MoltNetDeviceValuesTest, EverythingElseIsWithheld) {
 }
 
 TEST(MoltNetDeviceValuesTest, DeviceMemoryIsAValidDesktopValue) {
-  // The Device Memory spec's values are powers of two; Chromium 152 reports
-  // 2 to 32 on desktop.
-  EXPECT_EQ(kDeviceMemory, 8.0f);
+  // The Device Memory spec's values are powers of two; Chromium reports 2 to
+  // 32 on desktop.
+  EXPECT_EQ(kDeviceMemory, 4.0f);
   EXPECT_GE(kDeviceMemory, 2.0f);
   EXPECT_LE(kDeviceMemory, 32.0f);
+}
+
+// navigator.deviceMemory describes the machine V8's heap is configured as
+// (performance.memory's jsHeapSizeLimit is that machine's).
+TEST(MoltNetDeviceValuesTest, DeviceMemoryIsTheHeapsMachine) {
+  EXPECT_EQ(static_cast<uint64_t>(kDeviceMemory) << 30, kV8HeapPhysicalMemory);
 }
 
 }  // namespace

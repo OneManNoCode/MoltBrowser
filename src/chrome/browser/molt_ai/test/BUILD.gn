@@ -64,6 +64,10 @@ test("molt_ai_unittests") {
     "//chrome/common/molt_ai/fingerprinting:unit_tests",
     "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
 
+    # MoltNet's portable math: the same results on every CPU and OS.
+    "//third_party/llvm-libc:molt_portable_math_unittests",
+    "//ui/gfx/geometry:molt_math_unittests",
+
     # MoltNet's en-US renderer strings, checked against the en-US paks.
     "//chrome/renderer/molt_ai/fingerprinting:unit_tests",
 

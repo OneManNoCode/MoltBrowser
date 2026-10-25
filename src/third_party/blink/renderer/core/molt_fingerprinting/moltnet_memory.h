@@ -77,6 +77,18 @@ CORE_EXPORT uint64_t UniformMemoryMeasurementBytes(uint64_t bytes);
 CORE_EXPORT void MakeMemoryMeasurementUniform(
     performance_manager::mojom::blink::WebMemoryMeasurement& measurement);
 
+// Whether the isolates of this process ignore the system's memory pressure
+// (MemoryPressureNotificationToAllIsolates, core/workers/
+// worker_backing_thread.cc, which the content layer calls when the browser's
+// memory coordinator asks this renderer to release memory). True in MoltNet:
+// the browser signals pressure from the machine's free memory, to every
+// renderer at once, and the garbage collections it triggers show in what
+// pages observe of collection (FinalizationRegistry callbacks, WeakRefs
+// emptied), at the same moment in every tab, on low-memory machines more
+// often. V8 still collects as its own heuristics for the 4 GB machine decide.
+// Any thread.
+CORE_EXPORT bool IgnoresSystemMemoryPressure();
+
 // Makes the functions above behave as in kUniform without configuring the
 // process for it.
 CORE_EXPORT void SetMoltNetMemoryForTesting(bool uniform);

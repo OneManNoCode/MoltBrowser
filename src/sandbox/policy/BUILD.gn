@@ -153,6 +153,7 @@ component("policy") {
   if (is_win) {
     sources += [
       "win/lpac_capability.h",
+      "win/molt_job_memory_limit.h",  # MoltBrowser
       "win/sandbox_diagnostics.cc",
       "win/sandbox_diagnostics.h",
       "win/sandbox_warmup.cc",

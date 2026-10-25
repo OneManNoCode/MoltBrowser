@@ -246,7 +246,7 @@ FULL_RULES = (
     ('nav.languages', 'eq', ['en-US'], S_SURFACE),
     ('hdr.accept-language', 'eq', 'en-US', S_SURFACE),
     ('nav.hardwareConcurrency', 'eq', 4, S_SURFACE),
-    ('nav.deviceMemory', 'eq', 8, S_DEVICE),
+    ('nav.deviceMemory', 'eq', 4, S_DEVICE),
     ('nav.cpuPerformance', 'in', [0, None], S_DEVICE),
     ('nav.connection', 'eq', CONNECTION, S_NETQ),
     ('worker.connection', 'eq', CONNECTION, S_NETQ),
@@ -403,6 +403,11 @@ DIFF_KEYS = (
     # samples are computed the same way on every CPU (FINGERPRINTING.md
     # "MoltNet: CPU features").
     'cpu.math', 'pixels.p3_readback', 'audio.decoded_vorbis',
+    # So are Math's trigonometry, CSS math functions, DOMMatrix and other
+    # transforms, and Web Audio's filter responses and compressor, with the
+    # same functions on every OS too (FINGERPRINTING.md "MoltNet: portable
+    # math").
+    'cpu.math_cross_arch', 'cpu.css_math', 'cpu.dommatrix', 'audio.math',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference

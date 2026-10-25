@@ -42,7 +42,7 @@ struct UserAgentMetadata;
 
 namespace molt_fingerprinting {
 
-// navigator.deviceMemory: moltnet::kDeviceMemory (8) in MoltNet, else
+// navigator.deviceMemory: moltnet::kDeviceMemory (4) in MoltNet, else
 // `real`.
 CORE_EXPORT float DeviceMemory(float real);
 

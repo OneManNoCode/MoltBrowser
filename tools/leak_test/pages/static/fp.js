@@ -967,6 +967,154 @@ function mathHash() {
   return hex(new Uint8Array(new Float64Array(r).buffer));
 }
 
+// Math functions whose results differ between x86-64 and arm64 builds of
+// V8's C library code for some arguments (sin and tan of tiny numbers,
+// atan near 1, ...), and a sweep of sin, cos, tan and atan. MoltNet
+// computes them the same way on every CPU and OS.
+function mathCrossArch() {
+  const r = [];
+  for (const x of [4.461218733101436e-308, -4.625801642473825e-308]) {
+    r.push(Math.sin(x), Math.tan(x));
+  }
+  for (const x of [1.0078749403766563, 1.315798130607, 2.427365698849,
+    -1.0082559080619857, 9.563150059437]) {
+    r.push(Math.atan(x), Math.atan2(x, 1.5), Math.asin(x / 10),
+        Math.acos(x / 10));
+  }
+  for (let i = 1; i <= 2000; ++i) {
+    const x = i * 0.0123456789;
+    r.push(Math.sin(x), Math.cos(x), Math.tan(x), Math.atan(x));
+  }
+  return hex(new Uint8Array(new Float64Array(r).buffer));
+}
+
+// CSS math functions, through registered custom properties (their computed
+// values are the calculated numbers and angles). mod(), rem() and round()
+// amplify the result so that its last bits show in the six digits CSS
+// serializes.
+const CSS_NUMBER_MATH = [
+  'mod(sin(1.2345) * 1e16, 1000)', 'mod(cos(1.2345) * 1e16, 1000)',
+  'mod(tan(0.777) * 1e16, 1000)', 'mod(sin(37.3deg) * 1e16, 1000)',
+  'mod(pow(9.628, -4.64) * 1e20, 1000)', 'mod(exp(-7.77) * 1e19, 1000)',
+  'mod(log(3.3) * 1e16, 1000)', 'mod(log(7, 2) * 1e15, 1000)',
+  'mod(hypot(3, 4.5) * 1e15, 1000)', 'mod(sqrt(2) * 1e16, 1000)',
+  'rem(exp(3.3) * 1e14, 1000)',
+  'calc(sin(0.7) * 1e16 - round(down, sin(0.7) * 1e16, 1000))',
+];
+const CSS_ANGLE_MATH = [
+  'mod(asin(0.3) * 1e14, 1000deg)', 'mod(acos(0.3) * 1e14, 1000deg)',
+  'mod(atan(1.0078749403766563) * 1e14, 1000deg)',
+  'mod(atan2(1.0078749403766563, 1.5) * 1e14, 1000deg)',
+];
+
+function cssMath() {
+  if (!window.CSS || !CSS.registerProperty) {
+    return 'absent';
+  }
+  for (const [name, syntax, initialValue] of [
+    ['--moltfp-n', '<number>', '0'], ['--moltfp-a', '<angle>', '0deg']]) {
+    try {
+      CSS.registerProperty({name, syntax, inherits: false, initialValue});
+    } catch (e) {
+      // Already registered (the harness collects twice in one page).
+    }
+  }
+  const el = document.createElement('div');
+  document.body.appendChild(el);
+  const out = [];
+  try {
+    for (const [prop, list] of [['--moltfp-n', CSS_NUMBER_MATH],
+      ['--moltfp-a', CSS_ANGLE_MATH]]) {
+      for (const expr of list) {
+        el.style.removeProperty(prop);
+        el.style.setProperty(prop, expr);
+        out.push(getComputedStyle(el).getPropertyValue(prop).trim());
+      }
+    }
+  } finally {
+    el.remove();
+  }
+  return out;
+}
+
+// DOMMatrix, SVGMatrix, CSSOM toMatrix(), a canvas transform and an SVG
+// path's arcs: rotations and skews computed from sines, cosines and
+// tangents, read back as doubles.
+function domMatrixMath() {
+  const v = [];
+  v.push(...new DOMMatrix().rotate(33.3).rotateAxisAngle(1, 2, 3, 47.1)
+      .skewX(12.7).skewY(-5.3).rotateFromVector(3, 7).rotate(10, 20, 30)
+      .toFloat64Array());
+  v.push(...new DOMMatrix(
+      'rotate(33.3deg) skew(12deg, 3deg) rotate3d(1, 1, 0, 0.7rad)')
+      .toFloat64Array());
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const s = svg.createSVGMatrix().rotate(21.7).skewX(9.1).skewY(-3.3)
+      .rotateFromVector(2, 9);
+  v.push(s.a, s.b, s.c, s.d, s.e, s.f);
+  if (window.CSSRotate && window.CSSSkew) {
+    v.push(...new CSSRotate(CSS.deg(37.1)).toMatrix().toFloat64Array());
+    v.push(...new CSSRotate(CSS.number(1), CSS.number(2), CSS.number(3),
+        CSS.rad(0.7)).toMatrix().toFloat64Array());
+    v.push(...new CSSSkew(CSS.deg(11), CSS.deg(-7)).toMatrix()
+        .toFloat64Array());
+  }
+  const g = document.createElement('canvas').getContext('2d');
+  g.rotate(0.7);
+  g.transform(1, 0.2, 0.3, 1, 5, 6);
+  g.rotate(-1.3);
+  v.push(...g.getTransform().toFloat64Array());
+  const path = document.createElementNS('http://www.w3.org/2000/svg',
+      'path');
+  path.setAttribute('d', 'M10 10 A 30 50 23 0 1 162.55 162.45 ' +
+      'a 25 25 -30 1 0 50 -25');
+  svg.appendChild(path);
+  document.body.appendChild(svg);
+  try {
+    const p = path.getPointAtLength(123.4);
+    v.push(p.x, p.y, path.getTotalLength());
+  } finally {
+    svg.remove();
+  }
+  return hex(new Uint8Array(new Float64Array(v).buffer));
+}
+
+// Web Audio: BiquadFilterNode and IIRFilterNode frequency responses (read
+// as they are computed) and a compressor's gain reduction after rendering a
+// sawtooth through it.
+async function audioMath() {
+  if (!window.OfflineAudioContext) {
+    return 'absent';
+  }
+  const ctx = new OfflineAudioContext(1, 4410, 44100);
+  const freqs = new Float32Array(64);
+  for (let i = 0; i < freqs.length; ++i) {
+    freqs[i] = 20 + i * 337.5;
+  }
+  const chunks = [];
+  const response = (node) => {
+    const mag = new Float32Array(freqs.length);
+    const phase = new Float32Array(freqs.length);
+    node.getFrequencyResponse(freqs, mag, phase);
+    chunks.push(new Uint8Array(mag.buffer), new Uint8Array(phase.buffer));
+  };
+  for (const type of ['lowpass', 'highpass', 'bandpass', 'lowshelf',
+    'highshelf', 'peaking', 'notch', 'allpass']) {
+    response(new BiquadFilterNode(ctx, {type, frequency: 1234.5, Q: 3.3,
+      gain: 7.7, detune: 33}));
+  }
+  response(new IIRFilterNode(ctx, {feedforward: [0.1, 0.2, 0.1],
+    feedback: [1, -0.5, 0.25]}));
+  const osc = new OscillatorNode(ctx, {type: 'sawtooth', frequency: 440});
+  const comp = new DynamicsCompressorNode(ctx, {threshold: -40, knee: 12,
+    ratio: 8, attack: 0.003, release: 0.1});
+  osc.connect(comp).connect(ctx.destination);
+  osc.start();
+  await ctx.startRendering();
+  return {response: (await hashChunks(chunks)).hash,
+    reduction: comp.reduction};
+}
+
 // A 64x32 sRGB frame, as RGBA and as I420, read back in Display P3: Skia
 // converts the colours on the CPU.
 async function p3Readback() {
@@ -1152,6 +1300,10 @@ async function cpuFeatures(v, step) {
       new Uint8Array(WASM_RELAXED_SIMD));
   v['cpu.wasm_simd'] = WebAssembly.validate(new Uint8Array(WASM_SIMD));
   await step('cpu.math', mathHash);
+  await step('cpu.math_cross_arch', mathCrossArch);
+  await step('cpu.css_math', cssMath);
+  await step('cpu.dommatrix', domMatrixMath);
+  await step('audio.math', audioMath);
   await step('pixels.p3_readback', p3Readback);
   await step('audio.decoded_vorbis', decodedVorbis);
 }

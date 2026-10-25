@@ -1,0 +1,22 @@
+include_rules = [
+  "-include",
+  "+include/v8config.h",
+  "+include/v8-platform.h",
+  "-src",
+  "+src/base",
+]
+
+specific_include_rules = {
+  "ieee754.cc": [
+    "+third_party/llvm-libc/src/shared/math.h",
+    # MoltBrowser: --portable-math.
+    "+third_party/llvm-libc/molt_portable_math.h",
+  ],
+  "float16.h": [
+    "+third_party/fp16/src/include/fp16.h"
+  ],
+  "hashing.h": [
+    "+third_party/rapidhash-v8/rapidhash.h",
+    "+third_party/rapidhash-v8/secret.h",
+  ],
+}

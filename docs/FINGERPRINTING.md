@@ -383,6 +383,7 @@ back/forward, and a MoltNet window with Shields off.
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
 | Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
 | WebAssembly relaxed SIMD, `Math.pow` and `Math.tanh`, colours read back in another colour space, images with a colour profile, decoded audio (`AudioData`); how much heap V8 gives a page | the CPU's vector extensions (relaxed SIMD's results, the code Skia, skcms, Symphonia, FFmpeg and the C library pick); the machine's memory | **one code path for every CPU**: relaxed SIMD off, V8's own `Math` code, portable colour and audio code; V8 configured as on a 4 GB machine ([details](#moltnet-cpu-features)) | `flag-definitions.h`, `function-body-decoder-impl.h`, `ieee754.cc`, `v8.cc`, `isolate_holder.cc`, `chrome_content_renderer_client.cc`; Skia, skcms, Symphonia, `molt_portable_media.cc` |
+| `Math`'s trigonometry, exponentials and logarithms on arm64; CSS math functions, `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas and SVG transforms and their interpolation; Web Audio's filters, analyser, oscillators, panners, compressor, convolution and resampling; WebRTC audio levels | the OS's C library (glibc, the Windows C runtime and macOS's differ, and pick FMA versions by CPU), V8's math code with fused multiply-adds on arm64, Web Audio's AVX, SSE, NEON and Accelerate code | **one portable math library and Web Audio's scalar code**: the same results on every CPU and OS ([details](#moltnet-portable-math)) | `molt_portable_math.cc`, `ui/gfx/geometry/molt_math.cc`, `ieee754.cc`; the call sites in Blink, `ui/gfx` and `media` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
@@ -403,7 +404,7 @@ back/forward, and a MoltNet window with Shields off.
 | `mediaCapabilities.decodingInfo()` / `encodingInfo()` | the build's decoders, then the decode history and the GPU | video: the build's decoders, **smooth**, **not power efficient**; `"webrtc"` **unsupported** | `media_capabilities.cc`: `decodingInfo`, `encodingInfo`, `GetPerfInfo` |
 | WebCodecs: `isConfigSupported()` / `configure()` with `"prefer-hardware"`, the decoder or encoder used | the GPU's codecs | **software codecs only**; `"prefer-hardware"` unsupported | `gpu_factories_retriever.cc`, `video_decoder_broker.cc` |
 | `navigator.hardwareConcurrency` (window and workers) | per site, in [2, real] | **4** | `navigator_base.cc`: `hardwareConcurrency` |
-| `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **8**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
+| `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **4**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
 | `navigator.connection` (`effectiveType`, `rtt`, `downlink`, `saveData`; window and workers) and its `change` event; what Blink decides from the network quality (lazy-loading distances, the slow-network font and `document.write()` measures, media preload); request scheduling | the browser's estimate (`rtt` and `downlink` with a per-site factor) | **4g**, **200**, **1.6**, **false**, never changes; scheduling as on 4g ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.{h,cc}`: `SetUniformNetworkState`; network service: `network_context.cc` |
 | `screen.width/height/availWidth/availHeight` | real | viewport in CSS pixels rounded **down** to 200x100 steps, max 1400x900 | `screen.cc`: `GetRect` |
 | `screen.availLeft/availTop` | real | **0** | `screen.cc`: `GetRect` |
@@ -1592,7 +1593,7 @@ for everyone:
 | `pointer` / `any-pointer` media queries | `fine`; `coarse` in tablet mode; any-pointer `coarse` and `fine` on a touchscreen laptop | **`fine`** / **`fine`** | same |
 | `hover` / `any-hover` media queries | `hover`; `none` in tablet mode; any-hover `none` and `hover` | **`hover`** / **`hover`** | same |
 | Touch-event feature detection: `ontouchstart` and the other `ontouch*` attributes, `document.createEvent('TouchEvent')` | off on desktop, on with `--touch-events` | **off** | same |
-| `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **8** | `navigator_device_memory.cc` |
+| `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **4** | `navigator_device_memory.cc` |
 | `navigator.cpuPerformance` | the CPU's tier, 1 to 4 | **0** ("unknown") | browser, `GetCpuPerformanceTierOverride` |
 | `navigator.connection` | the browser's network-quality estimate | **4g**, rtt **200**, downlink **1.6** ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.cc` |
 | `navigator.userAgentData.getHighEntropyValues()` | the real platform version, architecture, bitness, WoW64, full versions and form factors | **blank** | `navigator_ua.cc` |
@@ -1729,15 +1730,16 @@ hides these values (with a `--user-agent` override): `platformVersion`,
 
 ### Device memory and CPU performance
 
-* `navigator.deviceMemory` is **8** in MoltNet windows and workers: below
-  that, sites start serving "lite" pages; it is at or below the RAM of
-  nearly every machine that runs MoltBrowser's on-device model; and it was
-  the most any desktop Chromium reported before the cap went up to 32
-  (crbug.com/454354290), so it is a common value. The `Device-Memory`
-  hints aren't sent at all (above). `performance.memory`'s heap limit is
-  the same for everyone too, that of the 4 GB machine every MoltNet
-  renderer's V8 heap is configured as
-  ([performance.memory](#moltnet-performancememory)).
+* `navigator.deviceMemory` is **4** in MoltNet windows and workers: the
+  4 GB machine every MoltNet renderer's V8 heap is configured as, whose
+  limit `performance.memory` reports
+  ([performance.memory](#moltnet-performancememory)), so that the two
+  describe one machine, as they do in Chromium (a page that compares them
+  sees a 4 GB machine, not an 8 GB one with a 4 GB machine's heap). 4 is
+  what Chromium reports on every machine with a little over 3 to 6 GB, it
+  is at or below the RAM of every machine MoltBrowser supports, and it is
+  well above the 1 GB at and below which sites are known to serve lighter
+  pages. The `Device-Memory` hints aren't sent at all (above).
 * `navigator.cpuPerformance` (stable at 152, on secure pages) reports a
   tier from 1 to 4 that content derives from the CPU model
   (`content::cpu_performance::GetTier`) and hands to each renderer at
@@ -2771,6 +2773,10 @@ machine no longer shows in any of them:
 | `usedJSHeapSize`, `totalJSHeapSize` | to the byte, refreshed every 50 ms (a renderer locked to a site, as on desktop) | rounded up to one of 100 sizes from 10 MB to 3.76 GB (three significant digits), refreshed once every 20 minutes |
 | `measureUserAgentSpecificMemory()` | byte counts per context, as precise as the heap's layout; which entries a context gets depends on the process model (a frame in this process that wasn't measured has none, a frame in another process an entry of 0 bytes, a context without canvas buffers no canvas entry) | every count rounded the same way (0 stays 0); **every context gets the same entries**, its JavaScript and its canvas memory (0 bytes where nothing was measured), and so do the shared and Blink memory |
 | On Linux, how much a renderer can reserve (`ArrayBuffer`s, WebAssembly memories, untouched) before an allocation fails | the renderer's data limit: 8 GiB on machines up to 16 GB, 16 or 32 GiB above (`kHigherRendererMemoryLimit` doubles them) | **8 GiB** on every machine |
+| On Windows, how much a renderer can commit before an allocation fails | the system's commit limit (RAM plus page file, less what everything else has committed): the renderer's job allows 1 TB | **8 GiB** on every machine that can commit that much (the renderer's job limit) |
+| When V8 collects garbage because the system is short of memory (seen through `FinalizationRegistry` callbacks and emptied `WeakRef`s, in every tab at once) | when the browser's memory coordinator signals pressure from the machine's free memory | **never** for that reason: V8 collects on its own heuristics for the 4 GB machine |
+| `navigator.deviceMemory` | the RAM rounded to a power of two | **4**, the same machine ([details](#device-memory-and-cpu-performance)) |
+| How many renderer processes the browser runs before a site's new frames go into one of the site's existing processes (two same-site tabs then share a main thread and a heap, which their scripts can time) | a number that follows the RAM: half of it in MiB over 85, at least 3 | **20** on every machine |
 
 Normal and Incognito windows keep Chromium's behaviour. The kill switch
 turns it off.
@@ -2809,6 +2815,28 @@ turns it off.
   gives machines up to 16 GB. Reserving memory without touching it
   reaches the limit in a fraction of a second, so the limit was a cheap
   measurement of the machine.
+* **The commit limit (Windows).** The sandbox sets a MoltNet renderer's
+  job memory limit to 8 GiB on 64-bit Windows
+  (`sandbox::policy::molt_win::kMoltNetRendererJobMemoryLimit`), the
+  Linux data limit's size; Chromium's 1 TB job limit left the system's
+  commit limit, which follows the RAM, the page file and everything else
+  running, as the point where an allocation fails.
+* **Memory pressure.** The isolates of a MoltNet renderer ignore the
+  browser's memory-pressure signals
+  (`molt_fingerprinting::IgnoresSystemMemoryPressure()` in
+  `MemoryPressureNotificationToAllIsolates`): the browser derives them
+  from the machine's free memory and sends them to every renderer at once,
+  so the garbage collections they trigger showed the machine's memory
+  state, at the same moment in every tab. Blink still frees its own caches
+  on them.
+* **Renderer processes.** Chromium starts putting a site's new frames in
+  its existing processes once the browser has a number of renderers that
+  follows the RAM. MoltNet profiles use 20 on every machine
+  (`MoltNetShouldReuseProcess`, from
+  `ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost`): at or
+  below Chromium's own number on every machine MoltBrowser supports, so it
+  never shares later than Chromium would; site isolation still keeps
+  different sites in different processes.
 
 ### Which contexts
 
@@ -2825,7 +2853,12 @@ machine with 8 GB or more before its tab runs out of memory (very few
 pages come near either), and V8 collects garbage as it does on a 4 GB
 machine: a little more often on large machines, where Chromium lets the
 heap grow further between collections. On Linux machines with more than
-16 GB, a MoltNet renderer can reserve 8 GiB instead of 16 or 32 GiB.
+16 GB, a MoltNet renderer can reserve 8 GiB instead of 16 or 32 GiB, and
+on Windows commit 8 GiB however much the machine could. When the machine
+runs short of memory, MoltNet tabs' heaps shrink at V8's next ordinary
+collection rather than at once. Same-site MoltNet tabs share processes
+from 20 renderers on, where Chromium waits for more on machines with more
+than about 3.3 GiB of RAM (up to its cap of 82).
 
 ### Code
 
@@ -2835,6 +2868,8 @@ heap grow further between collections. On Linux machines with more than
 | `core/molt_fingerprinting/moltnet_memory.{h,cc}` | the Blink glue (+ `moltnet_memory_test.cc`) |
 | `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `PinUniformMachineBeforeV8()`, which configures gin before V8 starts (+ `moltnet_cpu_test.cc`: the heap model is V8's, gin configures the fixed machine) |
 | `sandbox/policy/linux/molt_data_limit.h` | the data limit (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
+| `sandbox/policy/win/molt_job_memory_limit.h` | the Windows commit limit (+ `chrome/common/molt_ai/fingerprinting/molt_job_memory_limit_unittest.cc`, Windows only) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}` | the renderer process count (`kMoltNetRendererProcessLimit`, `MoltNetShouldReuseProcess`; + `molt_net_device_values_unittest.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`): `core/timing/memory_info.cc`
 (`MemoryInfo`'s constructor and `HeapSizeCache::Update`),
@@ -2843,7 +2878,12 @@ Upstream hooks (each marked `MoltBrowser:`): `core/timing/memory_info.cc`
 `gin/public/isolate_holder.h` and `gin/isolate_holder.cc`
 (`SetPhysicalMemoryForIsolates`, used by `getDefaultIsolateParams`, which
 every isolate's parameters come from), `sandbox/policy/linux/sandbox_linux.cc`
-(`LimitAddressSpace`) and `sandbox/policy/BUILD.gn`. All are new in `src/`.
+(`LimitAddressSpace`), `sandbox/policy/win/sandbox_win.cc`
+(`GenerateConfigForSandboxedProcess`, after the renderer's job level),
+`sandbox/policy/BUILD.gn`, `core/workers/worker_backing_thread.cc`
+(`MemoryPressureNotificationToAllIsolates`) and
+`chrome/browser/chrome_content_browser_client.cc`
+(`ShouldTryToUseExistingProcessHost`). All are new in `src/`.
 The call comes from `PinUniformMachineBeforeV8()` ([CPU
 features](#moltnet-cpu-features)).
 
@@ -3120,7 +3160,8 @@ which for a MoltNet renderer calls
 `PinUniformMachineBeforeV8()` (`core/molt_fingerprinting/moltnet_cpu.h`):
 
 * gives V8 `--no-wasm-relaxed-simd --no-use-std-math-pow
-  --no-use-std-math-tanh` (`v8::V8::SetFlagsFromString`, before gin
+  --no-use-std-math-tanh --portable-math` (the last one: [portable
+  math](#moltnet-portable-math); `v8::V8::SetFlagsFromString`, before gin
   initialises V8, so the flags hold for every isolate and are frozen with
   the others);
 * configures every isolate for the 4 GB machine
@@ -3132,7 +3173,11 @@ which for a MoltNet renderer calls
   (`SkGraphics::MoltBrowserUsePortableRasterPipeline()`, a translation unit
   of its own, `SkOpts_moltbrowser.cpp`, built from the same
   `SkRasterPipeline_opts.h` with `SKRP_MOLTBROWSER_PORTABLE` and
-  `-ffp-contract=off`).
+  `-ffp-contract=off`), and x86-64's row blitter for pixels drawn with
+  alpha on every CPU ([portable math](#moltnet-portable-math));
+* turns on the portable math library for Blink's and Web Audio's math
+  (`gfx::molt_math::SetPortable(true)`, [portable
+  math](#moltnet-portable-math)).
 
 The browser adds `--disable-skia-runtime-opts` to MoltNet renderers'
 command lines (`molt_fingerprinting_browser.cc`), so Skia's CPU-specific
@@ -3150,7 +3195,8 @@ with Chromium's compiler and flags for x86-64 and arm64:
 
 * V8's other `Math` functions (llvm-libc and fdlibm, compiled without
   fused multiply-adds on x86-64): the same on every x86-64 CPU, and on
-  every arm64 CPU.
+  every arm64 CPU; [portable math](#moltnet-portable-math) makes the two
+  architectures agree.
 * MP3, FLAC and PCM decoding, in Symphonia and in FFmpeg (integer
   arithmetic, or no FFT): the same samples on every CPU of both
   architectures. Opus uses libopus's C kernels since [pixels and encoded
@@ -3297,6 +3343,241 @@ tests, and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged
 fails validation (`cpu.wasm_relaxed_simd`); compared between runs, a hash
 of `Math` results (`cpu.math`), a frame read back in Display P3
 (`pixels.p3_readback`) and decoded Vorbis (`audio.decoded_vorbis`).
+
+## MoltNet: portable math
+
+Beyond the vector code of [CPU features](#moltnet-cpu-features), much of
+what a page computes goes through a math library: CSS's `sin()`, `pow()`
+and the other math functions, `DOMMatrix` and `SVGMatrix` rotations and
+skews, the matrices CSSOM's `toMatrix()` and a canvas's `getTransform()`
+return, transforms and their interpolation, Web Audio's filters,
+oscillators, panners and compressors, and V8's `Math`. At 156 Blink calls
+the C library of the OS for these (glibc on Linux, the Windows C runtime,
+macOS's libm), whose results differ from each other in the last bits, and
+glibc and the Windows runtime pick versions with fused multiply-adds on
+CPUs that have FMA. V8's own math code (llvm-libc) is compiled with fused
+multiply-adds on arm64 and without them on x86-64. Web Audio's vector
+math, its FFTs and a few of its loops pick AVX, SSE, NEON or Accelerate
+code, and a sum over a vector comes out differently with each lane count.
+In MoltNet windows all of it is computed one way:
+
+| What a page computes | Chromium 156 | MoltNet |
+|---|---|---|
+| `Math.sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `expm1`, `log`, `log1p`, `log2`, `log10`, `cbrt`, `pow` | llvm-libc, compiled without fused multiply-adds on x86-64 and with them on arm64 | **llvm-libc without fused multiply-adds on every CPU** (V8's new `--portable-math`): the same results on x86-64 and arm64 |
+| CSS math functions (`sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2()`, `pow()`, `exp()`, `log()`, `hypot()`, and through them `mod()`, `rem()` and `round()`); `DOMMatrix` and `SVGMatrix` rotations, skews and `rotateFromVector()`; CSSOM `CSSRotate` and `CSSSkew` `toMatrix()`; canvas `rotate()`, `arc()` and `ellipse()`; `rotate`, `skew` and 3D transforms and their interpolation; `offset-path: ray()`; SVG arcs, `transform` lists and numbers with exponents; `getPointAtLength()`; `aspect-ratio` and superellipse interpolation; `font-size: math`; pointer events' tilt and azimuth and altitude angles; `lab()`, `lch()`, `oklab()` and `oklch()` colours and colour interpolation; WebXR rays and projection matrices | the C library's functions | **`molt_portable_math`**: llvm-libc's functions compiled for MoltBrowser without fused multiply-adds, the same results on every CPU and OS |
+| Web Audio: `BiquadFilterNode` and `IIRFilterNode` `getFrequencyResponse()`, `AnalyserNode` data, oscillators and `PeriodicWave`, panners (HRTF included), `DynamicsCompressorNode` and its `reduction`, `ConvolverNode`, `DelayNode`, `AudioParam` automation, and the resampling `decodeAudioData()` does | the C library's functions; vector math in AVX, SSE, NEON or Accelerate code; FFTs with rustfft's AVX + FMA, SSE4.1 or NEON code; SSE2 and NEON loops in the oscillator, delay and `AudioParam` code; Accelerate's biquad on macOS | **the portable functions and Web Audio's scalar code**: plain loops in a fixed order and rustfft's scalar FFT, the same samples on every CPU and OS (farbled where a page reads samples, as before) |
+| WebRTC `audioLevel` (`getSynchronizationSources()`, `getContributingSources()`, encoded audio frames' metadata) | the C library's `pow` and `log10` | the portable functions |
+| Pixels drawn with alpha over other pixels on the CPU (Skia's `blit_row_s32a_opaque`) | x86-64's arithmetic, or NEON's, which rounds differently | **x86-64's arithmetic on Arm too** |
+
+### What MoltNet does
+
+* **One math library.** `third_party/llvm-libc/molt_portable_math.{h,cc}`
+  compiles llvm-libc's header-only math (the sources V8 and Chromium
+  already build) into a namespace of its own, with every fused
+  multiply-add path turned off (`__FMA__`, `__ARM_FEATURE_FMA` and
+  llvm-libc's `LIBC_TARGET_CPU_HAS_FMA*` undefined, which an `#error`
+  checks), no rounding-instruction shortcuts, contraction off and errno
+  and floating-point exceptions compiled out. Each function then executes
+  the same IEEE 754 operations on every CPU and OS, and so gives the same
+  result for the same argument; most are correctly rounded (llvm-libc's
+  accurate pass), so their results are also those of any correctly
+  rounded library. 17 double and 15 float functions.
+* **One switch.** `ui/gfx/geometry/molt_math.{h,cc}` (`gfx::molt_math`)
+  wraps each function: by default it is the C library's `std::` function,
+  with the same overloads and the same promotions of integer and mixed
+  arguments, so normal windows compute exactly what they computed before;
+  after `gfx::molt_math::SetPortable(true)` it is the portable one.
+  `PinUniformMachineBeforeV8()` makes that call in MoltNet renderers before
+  Blink starts ([CPU features](#moltnet-cpu-features)).
+  `molt_complex_math.h` adds `std::abs`, `std::arg` and `std::polar` of
+  complex numbers on the same switch (libc++'s formulas over the portable
+  `hypot`, `atan2`, `cos` and `sin`, its handling of NaN and infinities
+  included).
+* **V8.** `--portable-math`, added to `kMoltNetV8Flags`, makes
+  `base::ieee754` call the portable library for the functions in the first
+  row, on every architecture. V8's fdlibm functions (`sinh`, `cosh`,
+  `tanh`, `asinh`, `acosh`, `atanh`) were already the same on both.
+* **Blink** calls `gfx::molt_math::` where it called `std::` at the call
+  sites listed below.
+* **Web Audio** runs its scalar code on the same switch: `vector_math`
+  delegates to its scalar implementation, `FFTFrame` makes its FFTs with
+  rustfft's scalar planner (`rustfft_new_portable()` in the Rust bridge),
+  the oscillator's SSE2 and NEON kernels, `Delay`'s vector a-rate path and
+  `AudioParam`'s SSE loops (which compute in single precision where the
+  scalar code uses double) are skipped, and so is the biquad's Accelerate
+  path on macOS.
+* **Resampling.** `media::SincResampler`'s kernel, which
+  `decodeAudioData()` uses to convert a file to the context's rate, takes
+  its sines and cosines from the switch; its convolution already runs the
+  C code in MoltNet ([pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes)).
+* **Skia.** `SkGraphics::MoltBrowserUsePortableRasterPipeline()` also
+  installs a `blit_row_s32a_opaque` with x86-64's arithmetic (the
+  destination times 256 minus the source's alpha, shifted right by 8, a
+  saturating add), written with Skia's portable vectors.
+
+**What was already the same.** Measured with Chromium 156's code, built
+with Chromium's compiler and flags for x86-64 and arm64:
+
+* Chromium's `third_party/fdlibm`, which Web Audio already used for most
+  of its math, gives the same results on every CPU of both architectures.
+* Skia's other code that MoltNet renderers run (`blit_row_color32`, A8
+  mask blits, the swizzles and premultiplications, bilinear sampling,
+  memsets) gives the same bytes on every x86-64 CPU and on arm64.
+* rustfft computes its twiddle factors with the C library's double
+  `sin` and `cos` and rounds them to float, and so does Blink's bridge:
+  for every power-of-two size up to 2^17, the exact values lie at least
+  711 units in the last place (of a double) from a point where rounding to
+  float would change, so every C library gives the same float twiddles.
+* Of `vector_math`'s functions only the sum of squares (`Vsvesq`) differs
+  between AVX, SSE and NEON; the convolution, complex multiply, `Vsma`,
+  `Vmul` and the maximum give the same results on every CPU, and the
+  `WaveShaperNode` vector path gives the scalar path's.
+* `media::SincResampler`'s kernel from glibc's `sin` and `cos` equals the
+  portable one for all 220 combinations of 11 common sample rates and both
+  kernel sizes.
+* PFFFT is no longer used by Blink at 156: `FFTFrame` uses rustfft on
+  every platform.
+
+### Call sites
+
+Blink, each call marked `MoltBrowser:` (all files new in `src/`):
+
+* transforms and geometry: `platform/transforms/affine_transform.{h,cc}`
+  (rotations, `rotateFromVector`, skews: `SVGMatrix`, canvas and SVG
+  transforms), `rotation.cc` (3D rotation interpolation),
+  `platform/geometry/path.cc` (arcs and ellipses),
+  `calculation_expression_node.cc` and `math_functions.h` (CSS math
+  resolved at layout), `platform/graphics/path_traversal_state.cc`
+  (`getPointAtLength()`, text on a path), `core/geometry/dom_matrix.cc`;
+* CSS: `core/css/css_math_expression_node.cc`, `cssom/css_skew.cc`,
+  `resolver/style_builder_converter.cc` (`font-size: math`),
+  `core/style/style_ray.cc`, `core/animation/css_superellipse_interpolation_type.cc`,
+  `interpolable_aspect_ratio.cc`;
+* SVG: `core/svg/svg_transform.cc`, `svg_path_parser.cc` (arcs),
+  `svg_parser_utilities.cc` (exponents);
+* `core/events/pointer_event_util.cc`,
+  `modules/canvas/canvas2d/canvas_path.cc`, `modules/xr/xr_ray.cc`,
+  `xr_view_geometry.cc`;
+* Web Audio: `platform/audio/audio_utilities.cc`, `biquad.cc`,
+  `dynamics_compressor.cc`, `fft_frame.cc`, `iir_filter.cc`,
+  `vector_math.cc`, `delay.cc`, `rustfft_ffi.rs`;
+  `modules/webaudio/audio_param_handler.cc`, `biquad_filter_handler.cc`,
+  `biquad_filter_node.cc`, `oscillator_handler.cc`, `oscillator_node.cc`,
+  `panner_handler.cc`, `periodic_wave_handler.cc`, `realtime_analyser.cc`;
+* WebRTC: `platform/peerconnection/rtc_rtp_source.cc`,
+  `modules/peerconnection/peer_connection_util.cc`.
+
+Below Blink: `ui/gfx/geometry/sin_cos_degrees.h`, `transform.cc`,
+`quaternion.cc`, `matrix44.cc` (2D decomposition), `vector2d_f.cc`,
+`vector3d_f.cc`; `ui/gfx/color_conversions.cc` (Lab, LCH, OKLab, OKLCH);
+`media/base/sinc_resampler.cc`; Skia's `SkOpts_moltbrowser.cpp`. V8:
+`src/base/ieee754.{h,cc}`, `src/flags/flag-definitions.h`,
+`src/init/v8.cc` and `src/base/DEPS`.
+
+Calls whose result no page reads keep the C library: the browser's own
+input handling (overscroll, autoscroll), DevTools' overlay, metrics, the
+memory cache's heuristics and assertions, and calls whose result is exact
+(`log2` of a power-of-two size, a power of 2 or 10 with a small integer
+exponent). The 4-wide `PeriodicWave` lookups that only the skipped
+oscillator kernels call keep theirs too.
+
+### Which contexts
+
+The whole MoltNet renderer process, from before Blink and V8 start:
+windows, iframes, workers and worklets (the audio rendering thread
+included). Normal and Incognito windows, and every other process, keep the
+C library and the vector code. The kill switch turns it off (no mode
+switch, no call).
+
+### What it costs MoltNet users
+
+Measured on one core of this VM (Xeon, 2.1 GHz):
+
+| Work | Chromium 156 | MoltNet |
+|---|---|---|
+| One call: `sin`, `cos`; `tan`, `atan`; `exp`; `pow`; `atan2`; `hypot` (double) | glibc: 8; 12 to 17; 6; 18; 25; 6 ns | 22; 24 to 34; 21; 45; 34; 11 ns |
+| One call: `sinf`; `powf` | glibc: 6; 11 ns | 29; 20 ns |
+| A sum of squares over a 128-frame render quantum (2.7 ms at 48 kHz) | 15 ns (AVX) | 58 ns |
+| A 128-tap direct convolution of one render quantum | 1.0 µs (AVX) | 7.4 µs |
+| A 2048-point FFT | 2.6 µs (AVX + FMA) | 8.2 µs |
+
+A style or a matrix with math functions makes a few calls per value, so
+these stay in microseconds per page. `Math` on x86-64 runs the code it ran
+before (V8's llvm-libc build there already had no fused multiply-adds);
+on arm64 it runs without them, somewhat slower per call (not measured on
+arm64 hardware). Web Audio graphs spend more of each render quantum in
+their convolvers, analysers and FFTs, still a small part of it: a
+`ConvolverNode` with a long impulse response, the heaviest, does a few
+FFTs per quantum.
+
+### Code
+
+| Where | What |
+|---|---|
+| `third_party/llvm-libc/molt_portable_math.{h,cc}` | the portable functions (+ `molt_portable_math_unittest.cc`: exact values, known results, golden hashes of 32 functions over fixed arguments, which every CPU and OS must reproduce) |
+| `ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | the switch and the wrapped functions (+ `molt_math_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `--portable-math` in `kMoltNetV8Flags`; `SetPortable(true)` in `PinUniformMachineBeforeV8()` (+ `moltnet_cpu_test.cc`) |
+| `third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | the portable `blit_row_s32a_opaque` |
+
+Build files: `third_party/llvm-libc/BUILD.gn` (`molt_portable_math`, a
+dependency of the `:headers` group V8 uses), `ui/gfx/geometry/BUILD.gn`,
+`media/base/BUILD.gn` (`//ui/gfx/geometry` for the resampler),
+`chrome/browser/molt_ai/test/BUILD.gn` (the two unit tests in
+`molt_ai_unittests`).
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory), with
+Chromium 156's sources built with Chromium's clang and flags for x86-64
+(`-msse3`) and arm64, run natively (a Xeon with AVX-512) and under qemu on
+emulated Core 2, Nehalem, Sandy Bridge, Haswell and EPYC (Zen 2) CPUs and
+arm64 Cortex-A72, Neoverse N1 and qemu's `max` CPU:
+
+* **The library.** 32 functions over a million arguments each (small,
+  large, huge and random bit patterns): the same results on every CPU
+  above, in an x86-64 build with FMA enabled too; glibc 2.39 differs from
+  them for up to half of the arguments of a function. The unit test passes
+  on x86-64 (UBSan, ASan) and arm64.
+* **V8.** 156's `src/base/ieee754.cc` for x86-64 and arm64, 21 functions:
+  without the flag arm64 differs from x86-64 for `sin` and `tan` (68
+  arguments in a million), `atan` (4926) and `atan2` (1); with
+  `--portable-math` all 21 agree, and on x86-64 the results equal V8's
+  own.
+* **Blink's wrappers.** `molt_math_unittest.cc` passes on x86-64 (UBSan)
+  and arm64: off, every wrapper is the C library's function bit for bit
+  (promotions included); on, the portable one; the complex functions were
+  also compared with libc++'s for NaN, infinite and negative arguments.
+* **Web Audio.** `vector_math` with 156's SSE, AVX, NEON and scalar code
+  over five sizes and five alignments: the default gives three different
+  results (AVX, SSE, NEON), the portable mode one; rustfft as 156
+  configures it gives four (AVX + FMA, SSE4.1, scalar, NEON), the scalar
+  planner one; fdlibm one.
+* **Skia.** Its baseline row and mask blitters, swizzles, bilinear
+  sampling and memsets: one result on every x86-64 CPU, and arm64
+  differing only in `blit_row_s32a_opaque`; with the portable blitter
+  installed, one result on both.
+
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`; `fft_frame.cc` with the bridge header cxxbridge
+generates from the changed `rustfft_ffi.rs`), except four it doesn't
+cover: V8's `ieee754.cc` and `molt_portable_math.cc`, which build without
+warnings for x86-64 and arm64 in the harnesses above (`-Wall -Wextra
+-Wshadow -Wshorten-64-to-32`, `-Werror` for the library), V8's `v8.cc`
+(a one-line call) and the Windows sandbox hook.
+
+**Needs the build machine:** compiling and linking (V8 and the Rust
+bridge included), `molt_ai_unittests` (`MoltPortableMathTest.*`,
+`MoltMathTest.*`), `blink_unittests` (`MoltNetCpuTest.*` and the Web Audio
+suites), V8's own tests with `--portable-math`, and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-libm" (an x86-64 and an arm64
+machine, Windows and macOS). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md), compared between runs: `Math`'s
+trigonometry with arguments where the architectures differed
+(`cpu.math_cross_arch`), CSS math functions amplified with `mod()`,
+`rem()` and `round()` so their last bits show (`cpu.css_math`), `DOMMatrix`,
+`SVGMatrix`, CSSOM, canvas and SVG path values (`cpu.dommatrix`), and
+filter frequency responses and a compressor's reduction (`audio.math`).
 
 ## MoltNet: storage limits
 
@@ -5067,6 +5348,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.{h,cc}`, `moltnet_audio_output.{h,cc}` | MoltNet's media playback clock and the ring it shares with Web Audio's (+ `moltnet_audio_sink_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | MoltNet's device list, `devicechange` and `getUserMedia()` before a permission (rules in `moltnet_media_values.h`; + `moltnet_media_devices_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}`; `src/sandbox/policy/linux/molt_data_limit.h` | MoltNet's `performance.memory`, memory measurement and the 4 GiB machine V8 is configured as (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`); the renderer's data limit on Linux (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
+| `src/third_party/llvm-libc/molt_portable_math.{h,cc}`; `src/ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | MoltNet's portable math: llvm-libc without fused multiply-adds (+ `molt_portable_math_unittest.cc`) and the process-wide switch Blink, `ui/gfx` and `media` call through (+ `molt_math_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.{h,cc}`; `src/third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | MoltNet's CPU features, set before V8 starts: V8's flags, the heap's machine, skcms's and Skia's portable code (+ `moltnet_cpu_test.cc`); Skia's portable raster pipeline |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
 | `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |

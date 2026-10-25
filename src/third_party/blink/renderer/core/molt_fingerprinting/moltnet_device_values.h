@@ -17,13 +17,17 @@ namespace blink::molt_fingerprinting::moltnet {
 
 // --- navigator.deviceMemory --------------------------------------------------
 
-// The real value is the RAM rounded to a power of two, in [2, 32] GiB on
-// desktop at 152. MoltNet reports 8 for everybody: below that, sites start
-// serving "lite" pages, and 8 is what Chromium reported for every desktop
-// with 8 GiB or more until the cap went up to 32 (crbug.com/454354290), so
-// it is a common value and at or below the RAM of nearly every machine that
-// runs MoltBrowser's on-device model.
-inline constexpr float kDeviceMemory = 8.0f;
+// The real value is the RAM rounded to the nearest power of two, in [2, 32]
+// GiB on desktop (crbug.com/454354290 raised the cap from 8). MoltNet reports
+// 4 for everybody: the machine every MoltNet isolate's V8 heap is configured
+// as (moltnet_memory_values.h, kV8HeapPhysicalMemory), so that the value and
+// the heap a page can fill or read in performance.memory describe one
+// machine, as they do in Chromium. It is what Chromium reports on every
+// machine with a little over 3 to 6 GiB, it is at or below the RAM of every
+// machine MoltBrowser supports (4 GB is the smallest), and it is above the 1
+// GiB at and below which Chromium's own tests see sites serve lighter pages
+// (approximated_device_memory.cc).
+inline constexpr float kDeviceMemory = 4.0f;
 
 // --- Client hints ------------------------------------------------------------
 
