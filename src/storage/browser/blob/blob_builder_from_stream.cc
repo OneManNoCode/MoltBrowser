@@ -399,8 +399,9 @@ void BlobBuilderFromStream::AllocateMoreMemorySpace(
   if (!length_hint)
     length_hint = kMemoryBlockSize;
 
-  if (context_->memory_controller().GetAvailableMemoryForBlobs() <
-      length_hint) {
+  // MoltBrowser: within the blob's budget key (molt_blob_budget_policy.h).
+  if (context_->memory_controller().GetAvailableMemoryForBlobs(
+          molt_budget_key_) < length_hint) {
     OnError(Result::kMemoryAllocationFailed);
     return;
   }
@@ -419,7 +420,8 @@ void BlobBuilderFromStream::AllocateMoreMemorySpace(
           std::move(chunk_items),
           base::BindOnce(&BlobBuilderFromStream::MemoryQuotaAllocated,
                          base::Unretained(this), std::move(pipe),
-                         std::move(progress_client), std::move(items_copy), 0));
+                         std::move(progress_client), std::move(items_copy), 0),
+          molt_budget_key_);
 }
 
 void BlobBuilderFromStream::MemoryQuotaAllocated(

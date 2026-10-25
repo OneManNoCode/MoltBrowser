@@ -67,6 +67,10 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobBuilderFromStream {
 
   void Abort();
 
+  // MoltBrowser: the budget key the blob's memory counts to
+  // (molt_blob_budget_policy.h); call before Start().
+  void MoltSetBudgetKey(uint64_t key) { molt_budget_key_ = key; }
+
  private:
   class WritePipeToFileHelper;
   class WritePipeToFutureDataHelper;
@@ -161,6 +165,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobBuilderFromStream {
 
   std::vector<scoped_refptr<ShareableBlobDataItem>> items_;
   uint64_t current_total_size_ = 0;
+  uint64_t molt_budget_key_ = 0;  // MoltBrowser
   base::WeakPtr<BlobMemoryController::QuotaAllocationTask> pending_quota_task_;
   base::WeakPtrFactory<BlobBuilderFromStream> weak_factory_{this};
 };

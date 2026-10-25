@@ -96,6 +96,13 @@ struct COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageLimits {
   // usually set using the "blob-transport-by-file-min-size" switch (see
   // BlobMemoryController).
   uint64_t override_file_transport_min_size = 0ull;
+
+  // MoltBrowser: each budget key's share of blob memory (0: Chromium's one
+  // limit for all), and the machine memory a blob beyond
+  // |max_blob_in_memory_space| must leave available
+  // (molt_blob_budget_policy.h).
+  uint64_t molt_per_key_memory = 0ull;
+  uint64_t molt_memory_reserve = 0ull;
 };
 
 enum class IPCBlobItemRequestStrategy {

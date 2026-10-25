@@ -234,6 +234,12 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobDataBuilder {
     return IsValid() ? copy_quota_needed_.ValueOrDie() : 0u;
   }
 
+  // MoltBrowser: the budget key the blob's memory counts to
+  // (molt_blob_budget_policy.h): BlobRegistryImpl sets the registering
+  // renderer process's; 0, the browser's own.
+  void MoltSetBudgetKey(uint64_t key) { molt_budget_key_ = key; }
+  uint64_t molt_budget_key() const { return molt_budget_key_; }
+
  private:
   friend class BlobStorageContext;
   friend COMPONENT_EXPORT(STORAGE_BROWSER) void PrintTo(
@@ -248,6 +254,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobDataBuilder {
   std::string uuid_;
   std::string content_type_;
   std::string content_disposition_;
+  uint64_t molt_budget_key_ = 0;  // MoltBrowser
 
   base::CheckedNumeric<uint64_t> total_size_;
   base::CheckedNumeric<uint64_t> total_memory_size_;

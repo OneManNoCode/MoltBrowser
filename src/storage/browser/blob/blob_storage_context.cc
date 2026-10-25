@@ -321,8 +321,11 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
   }
 
   // Avoid the state where we might grant only one quota.
-  if (!memory_controller_.CanReserveQuota(content->copy_quota_needed() +
-                                          content->transport_quota_needed())) {
+  // MoltBrowser: within the blob's budget key (molt_blob_budget_policy.h),
+  // here and below.
+  if (!memory_controller_.CanReserveQuota(
+          content->copy_quota_needed() + content->transport_quota_needed(),
+          content->molt_budget_key())) {
     CancelBuildingBlobInternal(entry, BlobStatus::ERR_OUT_OF_MEMORY);
     return handle;
   }
@@ -333,7 +336,8 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
         memory_controller_.ReserveMemoryQuota(
             std::move(pending_copy_items),
             base::BindOnce(&BlobStorageContext::OnEnoughSpaceForCopies,
-                           ptr_factory_.GetWeakPtr(), content->uuid_));
+                           ptr_factory_.GetWeakPtr(), content->uuid_),
+            content->molt_budget_key());
     // Building state will be null if the blob is already finished.
     if (entry->building_state_)
       entry->building_state_->copy_quota_request = std::move(pending_request);
@@ -346,11 +350,13 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
       case TransportQuotaType::MEMORY: {
         // The blob can complete during the execution of |ReserveMemoryQuota|.
         std::vector<BlobMemoryController::FileCreationInfo> empty_files;
+        const uint64_t molt_budget_key = content->molt_budget_key();
         pending_request = memory_controller_.ReserveMemoryQuota(
             content->ReleasePendingTransportItems(),
             base::BindOnce(&BlobStorageContext::OnEnoughSpaceForTransport,
                            ptr_factory_.GetWeakPtr(), content->uuid_,
-                           std::move(empty_files)));
+                           std::move(empty_files)),
+            molt_budget_key);
         break;
       }
       case TransportQuotaType::FILE:

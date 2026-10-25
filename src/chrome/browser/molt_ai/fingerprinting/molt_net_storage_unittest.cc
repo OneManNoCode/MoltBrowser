@@ -51,6 +51,10 @@ TEST(MoltNetStorageTest, BlobLimits) {
   EXPECT_EQ(limits->max_blob_in_memory_space, kMoltNetBlobMemoryBytes);
   EXPECT_EQ(limits->desired_max_disk_space, 0u);
   EXPECT_EQ(limits->effective_max_disk_space, 0u);
+  // In shares per renderer process, beyond the limit the machine's memory.
+  EXPECT_EQ(limits->molt_per_key_memory, kMoltNetBlobMemoryPerKeyBytes);
+  EXPECT_EQ(limits->molt_memory_reserve,
+            static_cast<uint64_t>(kMoltNetStorageMemoryReserveBytes));
   // Everything else is Chromium's (the same on every machine).
   const storage::BlobStorageLimits defaults;
   EXPECT_EQ(limits->max_ipc_memory_size, defaults.max_ipc_memory_size);

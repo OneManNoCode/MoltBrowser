@@ -44,6 +44,11 @@ std::optional<storage::BlobStorageLimits> MoltNetBlobStorageLimits(
       static_cast<size_t>(kMoltNetBlobMemoryBytes);
   limits.desired_max_disk_space = 0;
   limits.effective_max_disk_space = 0;
+  // In shares, per renderer process, with the machine's memory beyond the
+  // fixed limit (storage/browser/blob/molt_blob_budget_policy.h).
+  limits.molt_per_key_memory = kMoltNetBlobMemoryPerKeyBytes;
+  limits.molt_memory_reserve =
+      static_cast<uint64_t>(kMoltNetStorageMemoryReserveBytes);
   return limits;
 }
 

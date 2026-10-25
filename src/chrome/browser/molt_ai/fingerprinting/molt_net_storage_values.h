@@ -73,9 +73,17 @@ inline constexpr int64_t kMoltNetStorageMemoryReserveBytes =
 inline constexpr int64_t kMoltNetQuotaPerStorageKeyBytes =
     kMoltNetQuotaPerSiteBytes;
 
-// Blobs (storage::BlobStorageLimits::max_blob_in_memory_space), all MoltNet
-// sites together; no disk.
+// Blobs (storage::BlobStorageLimits::max_blob_in_memory_space): what all
+// MoltNet sites can always hold together (beyond it, the machine decides,
+// with kMoltNetStorageMemoryReserveBytes left available); no disk.
 inline constexpr uint64_t kMoltNetBlobMemoryBytes = 800 * kMoltNetStorageMiB;
+// What one budget key may hold (storage::BlobStorageLimits::
+// molt_per_key_memory): the blobs of one renderer process, which in MoltNet
+// serves one site in one tab, or the browser's own
+// (storage/browser/blob/molt_blob_budget_policy.h). A quarter of the floor,
+// so no single process takes the total past it alone.
+inline constexpr uint64_t kMoltNetBlobMemoryPerKeyBytes =
+    kMoltNetBlobMemoryBytes / 4;
 
 // Chromium's rules on the reference machine, rounded down to 100 MiB.
 inline constexpr int64_t kMoltNetStorageRounding = 100 * kMoltNetStorageMiB;
@@ -86,6 +94,8 @@ static_assert(kMoltNetQuotaPerSiteBytes == kMoltNetQuotaPoolBytes / 10);
 static_assert(static_cast<int64_t>(kMoltNetBlobMemoryBytes) ==
               kMoltNetStorageReferenceMemory / 5 / kMoltNetStorageRounding *
                   kMoltNetStorageRounding);
+static_assert(kMoltNetBlobMemoryPerKeyBytes > 0 &&
+              kMoltNetBlobMemoryPerKeyBytes < kMoltNetBlobMemoryBytes);
 
 }  // namespace molt_ai::fingerprinting
 

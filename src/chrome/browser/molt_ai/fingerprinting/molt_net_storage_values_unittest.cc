@@ -76,5 +76,13 @@ TEST(MoltNetStorageValuesTest, BlobMemory) {
             kMoltNetStorageReferenceMemory / 2);
 }
 
+// One process's share: a quarter of what all hold below the machine check,
+// so no single process takes them past it alone; more than one big media
+// file or canvas recording needs.
+TEST(MoltNetStorageValuesTest, BlobShare) {
+  EXPECT_EQ(kMoltNetBlobMemoryPerKeyBytes, uint64_t{200} * 1024 * 1024);
+  EXPECT_EQ(kMoltNetBlobMemoryPerKeyBytes * 4, kMoltNetBlobMemoryBytes);
+}
+
 }  // namespace
 }  // namespace molt_ai::fingerprinting

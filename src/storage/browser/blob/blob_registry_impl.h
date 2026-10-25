@@ -5,6 +5,7 @@
 #ifndef STORAGE_BROWSER_BLOB_BLOB_REGISTRY_IMPL_H_
 #define STORAGE_BROWSER_BLOB_BLOB_REGISTRY_IMPL_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "base/component_export.h"
@@ -15,6 +16,7 @@
 #include "components/file_access/scoped_file_access_delegate.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/self_owned_associated_receiver.h"
+#include "storage/browser/blob/molt_blob_budget_policy.h"
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
 #include "url/origin.h"
 
@@ -38,6 +40,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobRegistryImpl
     virtual ~Delegate() {}
     virtual bool CanReadFile(const base::FilePath& file) = 0;
     virtual bool CanAccessDataForOrigin(const url::Origin& origin) = 0;
+    // MoltBrowser: the budget key the blobs registered here count to
+    // (molt_blob_budget_policy.h); the browser's by default.
+    virtual uint64_t MoltBudgetKey() { return kMoltBlobBrowserKey; }
   };
 
   explicit BlobRegistryImpl(base::WeakPtr<BlobStorageContext> context);
