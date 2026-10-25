@@ -86,6 +86,7 @@ component("geometry") {
     "//base",
 
     # MoltBrowser: molt_math.cc.
+    "//third_party/fdlibm",
     "//third_party/llvm-libc:molt_portable_math",
   ]
 
@@ -134,6 +135,7 @@ source_set("molt_math_unittests") {
   deps = [
     ":geometry",
     "//testing/gtest",
+    "//third_party/fdlibm",
     "//third_party/llvm-libc:molt_portable_math",
   ]
   visibility = [ "//chrome/browser/molt_ai/test:*" ]
