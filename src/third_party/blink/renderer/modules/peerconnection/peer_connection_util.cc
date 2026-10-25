@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/core/timing/worker_global_scope_performance.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -100,14 +101,17 @@ double ToLinearAudioLevel(uint8_t audio_level_dbov) {
   if (audio_level_dbov >= 127u) {
     return 0.0;
   }
-  return std::pow(10.0, -static_cast<double>(audio_level_dbov) / 20.0);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Pow(10.0,
+                             -static_cast<double>(audio_level_dbov) / 20.0);
 }
 
 uint8_t FromLinearAudioLevel(double linear_audio_level) {
   if (linear_audio_level <= 0.0) {
     return 127u;
   }
-  double audio_level_dbov = -20.0 * std::log10(linear_audio_level);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  double audio_level_dbov = -20.0 * gfx::molt_math::Log10(linear_audio_level);
   if (audio_level_dbov >= 127.0) {
     return 127u;
   }

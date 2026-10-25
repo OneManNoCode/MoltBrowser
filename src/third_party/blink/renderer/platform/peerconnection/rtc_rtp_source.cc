@@ -14,6 +14,7 @@
 #include "third_party/webrtc/api/scoped_refptr.h"
 #include "third_party/webrtc/api/transport/rtp/rtp_source.h"
 #include "third_party/webrtc/system_wrappers/include/ntp_time.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -50,7 +51,8 @@ std::optional<double> RTCRtpSource::AudioLevel() const {
     rfc_level = 127u;
   if (rfc_level == 127u)
     return 0.0;
-  return std::pow(10.0, -(double)rfc_level / 20.0);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Pow(10.0, -(double)rfc_level / 20.0);
 }
 
 uint32_t RTCRtpSource::RtpTimestamp() const {
