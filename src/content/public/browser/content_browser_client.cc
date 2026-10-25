@@ -1154,6 +1154,11 @@ bool ContentBrowserClient::ShouldKeepDomStorageCachesPerSite(
   return false;
 }
 
+base::RepeatingClosure
+ContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(BrowserContext*) {
+  return base::RepeatingClosure();
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

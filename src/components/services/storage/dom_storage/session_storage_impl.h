@@ -24,6 +24,7 @@
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/db_status.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_data_map.h"
 #include "components/services/storage/dom_storage/session_storage_metadata.h"
 #include "components/services/storage/dom_storage/session_storage_namespace_impl.h"
@@ -91,6 +92,9 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void Flush() override;
   void PurgeMemory() override;
   void MoltKeepCachesPerSite() override;  // MoltBrowser
+  void MoltSetGrowthObserver(
+      mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
+      override;  // MoltBrowser
   void CreateNamespace(const std::string& namespace_id) override;
   void CloneNamespace(const std::string& namespace_id_to_clone,
                       const std::string& clone_namespace_id,
@@ -138,6 +142,16 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void OnDataMapCreation(int64_t map_id, SessionStorageDataMap* map) override;
   void OnDataMapDestruction(int64_t map_id) override;
   void OnCommitResult(DbStatus status) override;
+  // MoltBrowser: the per-site budget (molt_dom_storage_site_budget.h);
+  // everything goes without caches per site.
+  bool MoltMayGrowTo(int64_t map_id,
+                     const blink::StorageKey& storage_key,
+                     size_t new_storage_used) override;
+  void MoltShrankTo(int64_t map_id, size_t new_storage_used) override;
+  base::TimeDelta MoltSiteCommitDelay(
+      const blink::StorageKey& storage_key) override;
+  void MoltSiteCommitted(const blink::StorageKey& storage_key,
+                         size_t bytes) override;
 
   // SessionStorageNamespaceImpl::Delegate implementation:
   scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
@@ -183,6 +197,10 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   // namespace, if that site's maps pass the per-site limits.
   void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
   bool molt_caches_per_site_ = false;
+  // MoltBrowser: what each site's maps hold, and its commit rate. A map is
+  // forgotten when its data leaves the database.
+  MoltDomStorageSiteBudget molt_site_budget_;
+  void MoltForgetMaps(const std::vector<DomStorageDatabase::MapLocator>& maps);
 
   void OnReceiverDisconnected();
 

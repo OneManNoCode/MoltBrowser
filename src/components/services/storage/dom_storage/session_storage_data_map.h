@@ -39,6 +39,17 @@ class SessionStorageDataMap final
                                    SessionStorageDataMap* map) = 0;
     virtual void OnDataMapDestruction(int64_t map_id) = 0;
     virtual void OnCommitResult(DbStatus status) = 0;
+
+    // MoltBrowser: StorageAreaImpl::Delegate's per-site budget, for the map
+    // `map_id` of `storage_key`; by default none.
+    virtual bool MoltMayGrowTo(int64_t map_id,
+                               const blink::StorageKey& storage_key,
+                               size_t new_storage_used);
+    virtual void MoltShrankTo(int64_t map_id, size_t new_storage_used);
+    virtual base::TimeDelta MoltSiteCommitDelay(
+        const blink::StorageKey& storage_key);
+    virtual void MoltSiteCommitted(const blink::StorageKey& storage_key,
+                                   size_t bytes);
   };
 
   static scoped_refptr<SessionStorageDataMap> CreateFromDisk(
@@ -77,6 +88,12 @@ class SessionStorageDataMap final
   void OnNoBindings() override {}
 
   void DidCommit(DbStatus status) override;
+
+  // MoltBrowser: to the listener (molt_dom_storage_site_policy.h).
+  bool MoltMayGrowTo(size_t new_storage_used) override;
+  void MoltShrankTo(size_t new_storage_used) override;
+  base::TimeDelta MoltSiteCommitDelay() override;
+  void MoltSiteCommitted(size_t bytes) override;
 
  private:
   friend class base::RefCounted<SessionStorageDataMap>;

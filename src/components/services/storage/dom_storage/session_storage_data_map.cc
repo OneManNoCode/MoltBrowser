@@ -10,6 +10,38 @@
 #include "components/services/storage/dom_storage/dom_storage_constants.h"
 
 namespace storage {
+
+// MoltBrowser: no per-site budget by default.
+bool SessionStorageDataMap::Listener::MoltMayGrowTo(int64_t,
+                                                    const blink::StorageKey&,
+                                                    size_t) {
+  return true;
+}
+void SessionStorageDataMap::Listener::MoltShrankTo(int64_t, size_t) {}
+base::TimeDelta SessionStorageDataMap::Listener::MoltSiteCommitDelay(
+    const blink::StorageKey&) {
+  return base::TimeDelta();
+}
+void SessionStorageDataMap::Listener::MoltSiteCommitted(
+    const blink::StorageKey&,
+    size_t) {}
+
+// MoltBrowser: the map's budget is its listener's.
+bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {
+  return listener_->MoltMayGrowTo(map_locator_->map_id().value_or(-1),
+                                  map_locator_->storage_key(),
+                                  new_storage_used);
+}
+void SessionStorageDataMap::MoltShrankTo(size_t new_storage_used) {
+  listener_->MoltShrankTo(map_locator_->map_id().value_or(-1),
+                          new_storage_used);
+}
+base::TimeDelta SessionStorageDataMap::MoltSiteCommitDelay() {
+  return listener_->MoltSiteCommitDelay(map_locator_->storage_key());
+}
+void SessionStorageDataMap::MoltSiteCommitted(size_t bytes) {
+  listener_->MoltSiteCommitted(map_locator_->storage_key(), bytes);
+}
 namespace {
 
 StorageAreaImpl::Options GetOptions() {

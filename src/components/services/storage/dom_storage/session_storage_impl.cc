@@ -334,6 +334,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
   if (map_locator->session_ids().empty()) {
     maps_to_delete.emplace_back(std::move(*map_locator));
   }
+  MoltForgetMaps(maps_to_delete);  // MoltBrowser
   database_->DeleteStorageKeysFromSession(
       namespace_id, /*metadata_to_delete=*/{storage_key},
       std::move(maps_to_delete),
@@ -655,6 +656,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
     }
   }
 
+  // MoltBrowser: what those maps held is gone.
+  MoltForgetMaps(maps_to_delete);
+
   // Delete the namespaces and map key/values from `database_`.
   if (!database_) {
     return;
@@ -844,6 +848,56 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
 // MoltBrowser:
 void SessionStorageImpl::MoltKeepCachesPerSite() {
   molt_caches_per_site_ = true;
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltSetGrowthObserver(
+    mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer) {
+  molt_site_budget_.SetGrowthObserver(std::move(observer));
+}
+
+// MoltBrowser: a map counts to its storage key's top-level site, in every
+// namespace (tab) that uses it.
+bool SessionStorageImpl::MoltMayGrowTo(int64_t map_id,
+                                       const blink::StorageKey& storage_key,
+                                       size_t new_storage_used) {
+  return !molt_caches_per_site_ ||
+         molt_site_budget_.MayGrowTo(base::NumberToString(map_id),
+                                     storage_key.top_level_site().Serialize(),
+                                     new_storage_used);
+}
+
+void SessionStorageImpl::MoltShrankTo(int64_t map_id,
+                                      size_t new_storage_used) {
+  if (molt_caches_per_site_) {
+    molt_site_budget_.ShrankTo(base::NumberToString(map_id), new_storage_used);
+  }
+}
+
+base::TimeDelta SessionStorageImpl::MoltSiteCommitDelay(
+    const blink::StorageKey& storage_key) {
+  return molt_caches_per_site_
+             ? molt_site_budget_.CommitDelay(
+                   storage_key.top_level_site().Serialize())
+             : base::TimeDelta();
+}
+
+void SessionStorageImpl::MoltSiteCommitted(
+    const blink::StorageKey& storage_key,
+    size_t bytes) {
+  if (molt_caches_per_site_) {
+    molt_site_budget_.Committed(storage_key.top_level_site().Serialize(),
+                                bytes);
+  }
+}
+
+void SessionStorageImpl::MoltForgetMaps(
+    const std::vector<DomStorageDatabase::MapLocator>& maps) {
+  for (const DomStorageDatabase::MapLocator& map : maps) {
+    if (map.map_id()) {
+      molt_site_budget_.Forget(base::NumberToString(*map.map_id()));
+    }
+  }
 }
 
 // MoltBrowser:

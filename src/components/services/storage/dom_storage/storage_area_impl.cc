@@ -25,6 +25,16 @@ StorageAreaImpl::Delegate::GetMapUsageMetadataToCommit() {
 
 void StorageAreaImpl::Delegate::OnMapLoaded() {}
 
+// MoltBrowser: none of it by default (molt_dom_storage_site_policy.h).
+bool StorageAreaImpl::Delegate::MoltMayGrowTo(size_t) {
+  return true;
+}
+void StorageAreaImpl::Delegate::MoltShrankTo(size_t) {}
+base::TimeDelta StorageAreaImpl::Delegate::MoltSiteCommitDelay() {
+  return base::TimeDelta();
+}
+void StorageAreaImpl::Delegate::MoltSiteCommitted(size_t) {}
+
 bool StorageAreaImpl::s_aggressive_flushing_enabled_ = false;
 
 StorageAreaImpl::RateLimiter::RateLimiter(size_t desired_rate,
@@ -345,6 +355,17 @@ void StorageAreaImpl::Put(
     }
     return;
   }
+  // MoltBrowser: nor past its site's total, where the partition keeps one
+  // (molt_dom_storage_site_policy.h). Never a bad message: the page can't
+  // know what its site's other areas hold.
+  if (new_item_size > old_item_size &&
+      !delegate_->MoltMayGrowTo(new_storage_used)) {
+    for (const auto& observer : observers_) {
+      observer->KeyChangeFailed(key, source.Clone());
+    }
+    std::move(callback).Run(false);
+    return;
+  }
 
   if (database_) {
     CreateCommitBatchIfNeeded();
@@ -364,6 +385,10 @@ void StorageAreaImpl::Put(
 
   storage_used_ = new_storage_used;
   memory_used_ += new_item_memory - old_item_memory;
+  // MoltBrowser: what it holds now, if less (molt_dom_storage_site_policy.h).
+  if (new_item_size < old_item_size) {
+    delegate_->MoltShrankTo(storage_used_);
+  }
   for (const auto& observer : observers_)
     observer->KeyChanged(key, value, old_value, source.Clone());
   std::move(callback).Run(true);
@@ -445,6 +470,8 @@ void StorageAreaImpl::Delete(
     if (commit_batch_)
       commit_batch_->changed_keys.insert(key);
   }
+  // MoltBrowser: what it holds now (molt_dom_storage_site_policy.h).
+  delegate_->MoltShrankTo(storage_used_);
 
   for (auto& observer : observers_)
     observer->KeyDeleted(key, old_value, source.Clone());
@@ -496,6 +523,7 @@ void StorageAreaImpl::DeleteAll(
 
   storage_used_ = 0;
   memory_used_ = 0;
+  delegate_->MoltShrankTo(0);  // MoltBrowser
   for (const auto& observer : observers_)
     observer->AllDeleted(/*was_nonempty=*/true, source.Clone());
   std::move(callback).Run();
@@ -708,6 +736,9 @@ base::TimeDelta StorageAreaImpl::ComputeCommitDelay() const {
       std::max(default_commit_delay_,
                std::max(commit_rate_limiter_.ComputeDelayNeeded(elapsed_time),
                         data_rate_limiter_.ComputeDelayNeeded(elapsed_time)));
+  // MoltBrowser: and the site's rate, where the partition keeps one
+  // (molt_dom_storage_site_policy.h).
+  delay = std::max(delay, delegate_->MoltSiteCommitDelay());
   // TODO(mek): Rename histogram to match class name, or eliminate histogram
   // entirely.
   base::UmaHistogramLongTimes("LevelDBWrapper.CommitDelay", delay);
@@ -779,6 +810,7 @@ StorageAreaImpl::CollectCommit() {
   }
 
   data_rate_limiter_.add_samples(data_size);
+  delegate_->MoltSiteCommitted(data_size);  // MoltBrowser
 
   ++commit_batches_in_flight_;
   commit_batch_.reset();

@@ -62,6 +62,19 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
 
     virtual void DidCommit(DbStatus error) = 0;
     virtual void OnMapLoaded();
+
+    // MoltBrowser: for partitions that keep totals and a commit rate per
+    // site (molt_dom_storage_site_policy.h); by default none.
+    // Whether the area may grow to `new_storage_used` bytes; counted from
+    // then on if so. A write it refuses fails as one past the area's own
+    // limit does.
+    virtual bool MoltMayGrowTo(size_t new_storage_used);
+    // The area holds `new_storage_used` bytes now, fewer than before.
+    virtual void MoltShrankTo(size_t new_storage_used);
+    // The least delay before the area's next commit, for its site's rate.
+    virtual base::TimeDelta MoltSiteCommitDelay();
+    // The area handed a commit of `bytes` to the database.
+    virtual void MoltSiteCommitted(size_t bytes);
   };
 
   enum class CacheMode {

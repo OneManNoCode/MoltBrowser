@@ -4,6 +4,7 @@
 
 module storage.mojom;
 
+import "components/services/storage/public/mojom/local_storage_control.mojom";  // MoltBrowser
 import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
 import "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom";
 import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
@@ -80,8 +81,13 @@ interface SessionStorageControl {
   // site: opening an area purges only unbound areas of its own site, by
   // per-site limits, never because of other sites
   // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
-  // PurgeMemory() does nothing then.
+  // PurgeMemory() does nothing then. Also keeps a total and a commit rate
+  // per site.
   MoltKeepCachesPerSite();
+
+  // MoltBrowser: with caches per site, `observer` hears when all areas
+  // together grow past the floor.
+  MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
 
   // Creates a new namespace which can later be manipulated by other requests
   // on this interface.

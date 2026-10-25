@@ -2059,6 +2059,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldKeepDomStorageCachesPerSite(
       BrowserContext* browser_context);
 
+  // MoltBrowser: for a context whose DOM storage is kept per site (above),
+  // what runs when its localStorage or sessionStorage areas together grow
+  // past the floor
+  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h);
+  // null for none.
+  virtual base::RepeatingClosure GetDomStorageGrowthBeyondFloorCallback(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

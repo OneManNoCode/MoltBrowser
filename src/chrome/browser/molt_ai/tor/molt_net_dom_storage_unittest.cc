@@ -1,9 +1,10 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltNet's localStorage caches per site, with the real storage service
-// implementation (LocalStorageImpl, in memory as for an off-the-record
-// partition): what one site opens never purges another site's areas.
+// MoltNet's localStorage caches and totals per site, with the real storage
+// service implementation (LocalStorageImpl, in memory as for an
+// off-the-record partition): what one site opens never purges another
+// site's areas, and a site's areas together hold one area's limit.
 
 #include <memory>
 #include <optional>
@@ -52,6 +53,19 @@ class MoltNetDomStorageTest : public testing::Test {
     EXPECT_TRUE(success.Take());
     area.reset();
     task_environment_.RunUntilIdle();
+  }
+
+  // Writes `bytes` under one key of `key`'s area; whether it was stored.
+  bool Write(const blink::StorageKey& key, size_t bytes) {
+    mojo::Remote<blink::mojom::StorageArea> area;
+    storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+    base::test::TestFuture<bool> success;
+    area->Put({'k'}, std::vector<uint8_t>(bytes, 'v'), std::nullopt,
+              /*source=*/nullptr, success.GetCallback());
+    const bool stored = success.Take();
+    area.reset();
+    task_environment_.RunUntilIdle();
+    return stored;
   }
 
   bool Cached(const blink::StorageKey& key) {
@@ -125,6 +139,36 @@ TEST_F(MoltNetDomStorageTest, IdleAreasExpire) {
   EXPECT_FALSE(Cached(idle));
   task_environment_.FastForwardBy(base::Hours(3));
   EXPECT_TRUE(Cached(open));
+}
+
+// With caches per site, a site's subdomains share one area's limit; another
+// site keeps all of its own, and deleting an area gives its bytes back.
+TEST_F(MoltNetDomStorageTest, ASitesAreasShareOneTotal) {
+  storage_->MoltKeepCachesPerSite();
+  constexpr size_t kPart = 3 * 1024 * 1024;
+  int stored = 0;
+  for (int i = 0; i < 10; ++i) {
+    stored += Write(Key(base::StringPrintf("https://s%d.greedy.test", i)),
+                    kPart)
+                  ? 1
+                  : 0;
+  }
+  EXPECT_EQ(stored, 3);
+  EXPECT_TRUE(Write(Key("https://other.test"), 10 * 1024 * 1024));
+
+  base::test::TestFuture<void> deleted;
+  storage_->DeleteStorage(Key("https://s0.greedy.test"), deleted.GetCallback());
+  ASSERT_TRUE(deleted.Wait());
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(Write(Key("https://s9.greedy.test"), kPart));
+}
+
+// Chromium 156: every subdomain has its own 10 MiB.
+TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteEachAreaHasItsOwn) {
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_TRUE(Write(Key(base::StringPrintf("https://s%d.greedy.test", i)),
+                      9 * 1024 * 1024));
+  }
 }
 
 }  // namespace
