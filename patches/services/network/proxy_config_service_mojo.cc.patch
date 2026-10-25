@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/proxy_config_service_mojo.cc b/services/network/proxy_config_service_mojo.cc
-index f988ff52f3550c080582d988e35492a7280fe33e..c00316014f8f75296f3faedafb3eb59ec6fe0feb 100644
+index f988ff52f3550c080582d988e35492a7280fe33e..c7d56dbfcebd1505370d3d84c71ac6cdf1e0a870 100644
 --- a/services/network/proxy_config_service_mojo.cc
 +++ b/services/network/proxy_config_service_mojo.cc
 @@ -7,6 +7,7 @@
@@ -16,7 +16,7 @@ index f988ff52f3550c080582d988e35492a7280fe33e..c00316014f8f75296f3faedafb3eb59e
  
  namespace network {
  
-@@ -46,6 +47,20 @@ void ProxyConfigServiceMojo::OnProxyConfigUpdated(
+@@ -46,6 +47,26 @@ void ProxyConfigServiceMojo::OnProxyConfigUpdated(
  
    for (auto& observer : observers_)
      observer.OnProxyConfigChanged(config_, CONFIG_VALID);
@@ -24,16 +24,22 @@ index f988ff52f3550c080582d988e35492a7280fe33e..c00316014f8f75296f3faedafb3eb59e
 +  // MoltBrowser: an ended MoltNet identity's refusal stops what its context
 +  // still has under way, now that new requests are refused
 +  // (molt_ended_identity_policy.h).
-+  const net::ProxyConfig::ProxyRules& rules = config_.value().proxy_rules();
-+  if (MoltStopsEverythingOnConfig(
-+          !molt_on_refuse_all_.is_null(),
-+          MoltIsRefuseAllProxyConfig(
-+              rules.type == net::ProxyConfig::ProxyRules::Type::PROXY_LIST,
-+              rules.single_proxies.IsEmpty(),
-+              config_.value().HasAutomaticSettings()),
-+          /*changed=*/true)) {
++  if (MoltStopsEverythingOnConfig(!molt_on_refuse_all_.is_null(),
++                                  MoltRefusesAll(),
++                                  /*changed=*/true)) {
 +    molt_on_refuse_all_.Run();
 +  }
++}
++
++// MoltBrowser: see the header.
++bool ProxyConfigServiceMojo::MoltRefusesAll() const {
++  if (config_pending_) {
++    return false;
++  }
++  const net::ProxyConfig::ProxyRules& rules = config_.value().proxy_rules();
++  return MoltIsRefuseAllProxyConfig(
++      rules.type == net::ProxyConfig::ProxyRules::Type::PROXY_LIST,
++      rules.single_proxies.IsEmpty(), config_.value().HasAutomaticSettings());
  }
  
  void ProxyConfigServiceMojo::FlushProxyConfig(

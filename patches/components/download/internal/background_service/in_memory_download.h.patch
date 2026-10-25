@@ -1,0 +1,41 @@
+MoltBrowser patch for components/download/internal/background_service/in_memory_download.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/download/internal/background_service/in_memory_download.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/background_service/in_memory_download.h b/components/download/internal/background_service/in_memory_download.h
+index d010ebbc5885fd9457b3344e7b5cd02bc17dae21..c448bc4671ac680232a1df7217000aec004811b9 100644
+--- a/components/download/internal/background_service/in_memory_download.h
++++ b/components/download/internal/background_service/in_memory_download.h
+@@ -236,6 +236,17 @@ class InMemoryDownloadImpl : public network::SimpleURLLoaderStreamConsumer,
+   // Resets local states.
+   void Reset();
+ 
++  // MoltBrowser: the response counts against the blob share of the site
++  // that started the fetch while it downloads
++  // (molt_registering_site_isolation.h). Reading goes on once a part is
++  // counted; past the share the download fails.
++  void MoltOnBufferHeld(int generation,
++                        base::OnceClosure resume,
++                        storage::MoltBlobHold hold);
++  void MoltContinueReading(base::OnceClosure resume);
++  // Gives up what the buffer holds (it is emptied).
++  void MoltReleaseBuffer();
++
+   // Request parameters of the download.
+   const RequestParams request_params_;
+ 
+@@ -275,6 +286,12 @@ class InMemoryDownloadImpl : public network::SimpleURLLoaderStreamConsumer,
+   // If |OnResponseStarted| is called.
+   bool started_;
+ 
++  // MoltBrowser: whether the buffer is counted (until the blob storage says
++  // it counts nothing: not MoltNet), and which buffer a hold's answer is
++  // for (each Reset() starts a new one).
++  bool molt_counts_buffer_ = true;
++  int molt_buffer_generation_ = 0;
++
+   // Bounded to main thread task runner.
+   base::WeakPtrFactory<InMemoryDownloadImpl> weak_ptr_factory_{this};
+ };

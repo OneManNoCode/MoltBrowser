@@ -1,0 +1,27 @@
+MoltBrowser patch for storage/browser/blob/blob_storage_context.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/blob/blob_storage_context.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/blob/blob_storage_context.h b/storage/browser/blob/blob_storage_context.h
+index f832cb7d3e0f2468f3006fdb72f0f5ab20ecd116..1652085b74098752871cdf53abb00275c2f6bd63 100644
+--- a/storage/browser/blob/blob_storage_context.h
++++ b/storage/browser/blob/blob_storage_context.h
+@@ -179,6 +179,16 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageContext
+     mutable_memory_controller()->DisableFilePaging(base::File::FILE_OK);
+   }
+ 
++  // MoltBrowser: memory held for a site outside any blob, counted against
++  // its blob share (BlobMemoryController::MoltHoldMemory(),
++  // molt_blob_budget_policy.h).
++  MoltBlobHold MoltHoldMemory(uint64_t molt_budget_key, size_t bytes) {
++    return memory_controller_.MoltHoldMemory(molt_budget_key, bytes);
++  }
++  void MoltReleaseHeldMemory(uint64_t molt_budget_key, size_t bytes) {
++    memory_controller_.MoltReleaseHeldMemory(molt_budget_key, bytes);
++  }
++
+  protected:
+   friend class content::ChromeBlobStorageContext;
+   friend class BlobBuilderFromStream;

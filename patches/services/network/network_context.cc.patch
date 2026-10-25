@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c096852a281 100644
+index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88416e0157 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -88,6 +88,7 @@
@@ -24,7 +24,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
  #include "services/network/proxy_config_service_mojo.h"
  #include "services/network/proxy_lookup_request.h"
  #include "services/network/proxy_resolving_socket_factory_mojo.h"
-@@ -665,6 +667,56 @@ void RemoveInvalidationFilterCallback(
+@@ -665,6 +667,34 @@ void RemoveInvalidationFilterCallback(
    context->OnLogicalFilterRemoved(filter);
  }
  
@@ -56,32 +56,10 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
 +  prefs.set_negotiate_disable_cname_lookup(true);
 +}
 +
-+// MoltBrowser: stops everything `context` still has under way: every URL
-+// request is cancelled (the requests' delegates hear of it later, as for any
-+// cancellation), then every connection, connection attempt and HTTP/2
-+// session is closed (services/network/molt_ended_identity_policy.h).
-+void MoltStopEverything(base::WeakPtr<NetworkContext> context) {
-+  if (!context || !context->url_request_context()) {
-+    return;
-+  }
-+  std::vector<base::WeakPtr<net::URLRequest>> requests;
-+  for (const net::URLRequest* request :
-+       *context->url_request_context()->url_requests()) {
-+    // The context's own requests; cancelling one doesn't change them.
-+    requests.push_back(const_cast<net::URLRequest*>(request)->GetWeakPtr());
-+  }
-+  for (const base::WeakPtr<net::URLRequest>& request : requests) {
-+    if (request) {
-+      request->Cancel();
-+    }
-+  }
-+  context->CloseAllConnections(base::DoNothing());
-+}
-+
  }  // namespace
  
  constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
-@@ -825,6 +877,17 @@ NetworkContext::NetworkContext(
+@@ -825,6 +855,17 @@ NetworkContext::NetworkContext(
  
    shared_resource_checker_ = std::make_unique<SharedResourceChecker>(
        cookie_manager_->cookie_settings());
@@ -99,7 +77,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
  
    network_service_->RegisterNetworkContext(this);
  
-@@ -854,6 +917,11 @@ NetworkContext::NetworkContext(
+@@ -854,6 +895,11 @@ NetworkContext::NetworkContext(
          params_->http_auth_static_network_context_params
              ->allow_default_credentials);
    }
@@ -111,7 +89,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
  
    InitializeCorsParams();
  
-@@ -997,6 +1065,10 @@ NetworkContext::~NetworkContext() {
+@@ -997,6 +1043,10 @@ NetworkContext::~NetworkContext() {
    // May be nullptr in tests.
    if (network_service_) {
      network_service_->DeregisterNetworkContext(this);
@@ -122,7 +100,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    }
  
    if (domain_reliability_monitor_) {
-@@ -1114,6 +1186,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
+@@ -1114,6 +1164,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
  void NetworkContext::ActivateDohProbes() {
    DCHECK(url_request_context_->host_resolver());
  
@@ -135,7 +113,143 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    doh_probes_request_.reset();
    doh_probes_request_ =
        url_request_context_->host_resolver()->CreateDohProbeRequest();
-@@ -2855,6 +2933,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+@@ -1370,6 +1426,68 @@ bool NetworkContext::CanCreateLoader(const OriginatingProcessId& process_id) {
+   return count < max_loaders_per_process_;
+ }
+ 
++// MoltBrowser: the end of this context's MoltNet identity, in one task
++// (services/network/molt_ended_identity_policy.h). Whatever the context
++// handles after this starts nothing (MoltAdmits()).
++void NetworkContext::MoltEndIdentity() {
++  net::HttpNetworkSession* const session =
++      url_request_context_ && url_request_context_->http_transaction_factory()
++          ? url_request_context_->http_transaction_factory()->GetSession()
++          : nullptr;
++  for (MoltEndStep step : kMoltEndSteps) {
++    switch (step) {
++      case MoltEndStep::kMarkEnded:
++        molt_identity_ended_ = true;
++        break;
++      case MoltEndStep::kRefuseTorWrites:
++        if (session) {
++          session->MoltEndIdentity();
++        }
++        break;
++      case MoltEndStep::kCloseURLLoaderFactories:
++        ResetURLLoaderFactories();
++        break;
++      case MoltEndStep::kDropWebSockets:
++#if BUILDFLAG(ENABLE_WEBSOCKETS)
++        // Each WebSocket's destructor starts its closing handshake, which
++        // the step above keeps from being written.
++        websocket_factory_.reset();
++#endif  // BUILDFLAG(ENABLE_WEBSOCKETS)
++        break;
++      case MoltEndStep::kDropWebTransports: {
++        // Remove(), which a WebTransport may call as it goes, finds nothing.
++        auto web_transports = std::move(web_transports_);
++        web_transports_.clear();
++        break;
++      }
++      case MoltEndStep::kCancelRequests: {
++        if (!url_request_context_) {
++          break;
++        }
++        std::vector<base::WeakPtr<net::URLRequest>> requests;
++        for (const net::URLRequest* request :
++             *url_request_context_->url_requests()) {
++          // The context's own requests; cancelling one doesn't change them.
++          // Their delegates hear of it later, as for any cancellation.
++          requests.push_back(
++              const_cast<net::URLRequest*>(request)->GetWeakPtr());
++        }
++        for (const base::WeakPtr<net::URLRequest>& request : requests) {
++          if (request) {
++            request->Cancel();
++          }
++        }
++        break;
++      }
++      case MoltEndStep::kCloseConnections:
++        if (url_request_context_) {
++          CloseAllConnections(base::DoNothing());
++        }
++        break;
++    }
++  }
++}
++
+ size_t NetworkContext::GetNumOutstandingResolveHostRequestsForTesting() const {
+   size_t sum = proxy_checking_host_resolver_requests_.size();
+   if (internal_host_resolver_) {
+@@ -2152,6 +2270,13 @@ void NetworkContext::CreateWebSocket(
+     mojom::IPAddressSpace target_address_space,
+     std::optional<int64_t> target_network) {
+ #if BUILDFLAG(ENABLE_WEBSOCKETS)
++  // MoltBrowser: none after this context's MoltNet identity has ended
++  // (services/network/molt_ended_identity_policy.h).
++  if (!MoltAdmits(MoltNetworkEntry::kWebSocket)) {
++    mojo::Remote<mojom::WebSocketHandshakeClient>(std::move(handshake_client))
++        ->OnFailure("", net::ERR_ABORTED, -1);
++    return;
++  }
+   if (!websocket_factory_) {
+     websocket_factory_ = std::make_unique<WebSocketFactory>(this);
+   }
+@@ -2188,6 +2313,13 @@ void NetworkContext::CreateWebTransport(
+         url_loader_network_observer,
+     mojom::ClientSecurityStatePtr client_security_state,
+     const base::UnguessableToken& network_restrictions_id) {
++  // MoltBrowser: none after this context's MoltNet identity has ended.
++  if (!MoltAdmits(MoltNetworkEntry::kWebTransport)) {
++    mojo::Remote<mojom::WebTransportHandshakeClient>(
++        std::move(pending_handshake_client))
++        ->OnHandshakeFailed(net::WebTransportError(net::ERR_ABORTED));
++    return;
++  }
+   if (!IsNetworkForNetworkRestrictionsIdAndUrlAllowed(network_restrictions_id,
+                                                       url, key)) {
+     mojo::Remote<mojom::WebTransportHandshakeClient> remote_handshake_client(
+@@ -2216,6 +2348,14 @@ void NetworkContext::ResolveHost(
+     const net::NetworkAnonymizationKey& network_anonymization_key,
+     mojom::ResolveHostParametersPtr optional_parameters,
+     mojo::PendingRemote<mojom::ResolveHostClient> response_client) {
++  // MoltBrowser: none after this context's MoltNet identity has ended.
++  if (!MoltAdmits(MoltNetworkEntry::kHostResolution)) {
++    mojo::Remote<mojom::ResolveHostClient>(std::move(response_client))
++        ->OnComplete(net::ERR_ABORTED, net::ResolveErrorInfo(net::ERR_ABORTED),
++                     /*resolved_addresses=*/{},
++                     /*alternative_endpoints=*/{});
++    return;
++  }
+   // Dns request is disallowed if network access is disabled for the partition
+   // nonce or the network_restrictions_id.
+   // TODO(crbug.com/447954811): For Connection Allowlist DNS lookups, define a
+@@ -2265,6 +2405,11 @@ void NetworkContext::ResolveHost(
+ void NetworkContext::CreateHostResolver(
+     const std::optional<net::DnsConfigOverrides>& config_overrides,
+     mojo::PendingReceiver<mojom::HostResolver> receiver) {
++  // MoltBrowser: none after this context's MoltNet identity has ended (the
++  // caller's pipe closes unanswered).
++  if (!MoltAdmits(MoltNetworkEntry::kHostResolution)) {
++    return;
++  }
+   net::HostResolver* internal_resolver = url_request_context_->host_resolver();
+   std::unique_ptr<net::HostResolver> private_internal_resolver;
+ 
+@@ -2553,6 +2698,11 @@ void NetworkContext::PreconnectSockets(
+   DCHECK(!require_network_anonymization_key_ ||
+          !network_anonymization_key.IsEmpty());
+ 
++  // MoltBrowser: none after this context's MoltNet identity has ended.
++  if (!MoltAdmits(MoltNetworkEntry::kPreconnect)) {
++    return;
++  }
++
+   if (base::FeatureList::IsEnabled(
+           net::features::kEarlyCookieLoadOnPreconnect)) {
+     net::CookieStore* cookie_store = url_request_context_->cookie_store();
+@@ -2855,6 +3005,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
    http_auth_merged_preferences_.set_http_auth_scheme_filter(
        base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                            base::Unretained(this)));
@@ -146,7 +260,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
-@@ -2894,9 +2976,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2894,9 +3048,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
  
      // Whether the cert verifier is remote or in-process, we should wrap it in
      // caching and coalescing layers to avoid extra verifications and IPCs.
@@ -163,7 +277,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    }
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-@@ -2938,8 +3024,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2938,8 +3096,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      }
      builder.SetHttpAuthHandlerFactory(
          network_service_->CreateHttpAuthHandlerFactory(this));
@@ -178,7 +292,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    }
    trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
  
-@@ -3079,10 +3169,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3079,10 +3241,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      params_->initial_proxy_config =
          net::ProxyConfigWithAnnotation::CreateDirect();
    }
@@ -196,7 +310,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    builder.set_pac_quick_check_enabled(params_->pac_quick_check_enabled);
  
    std::unique_ptr<PrefService> pref_service;
-@@ -3209,6 +3304,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3209,6 +3376,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -211,7 +325,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3344,6 +3447,48 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3344,6 +3519,58 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  
@@ -229,12 +343,22 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
 +      session->ssl_client_context()->MoltSendNoClientCertificates();
 +    }
 +  }
-+  // MoltBrowser: when MoltNet's identity ends, its refusal of every request
-+  // also stops what the context still has under way
++  // MoltBrowser: when MoltNet's identity ends, the context ends with it, in
++  // the task in which its refusal of every request is applied; one made
++  // after the end starts ended
 +  // (services/network/molt_ended_identity_policy.h).
 +  if (params_->molt_stop_all_when_refusing) {
 +    molt_proxy_config_service->MoltSetOnRefuseAll(base::BindRepeating(
-+        &MoltStopEverything, weak_factory_.GetWeakPtr()));
++        &NetworkContext::MoltEndIdentity, weak_factory_.GetWeakPtr()));
++    if (MoltStartsEnded(/*stop_all_when_refusing=*/true,
++                        molt_proxy_config_service->MoltRefusesAll())) {
++      molt_identity_ended_ = true;
++      if (net::HttpNetworkSession* session =
++              result.url_request_context->http_transaction_factory()
++                  ->GetSession()) {
++        session->MoltEndIdentity();
++      }
++    }
 +  }
 +  // MoltBrowser: MoltNet's in-memory HTTP cache keeps limits per site
 +  // (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
@@ -260,3 +384,14 @@ index 66e2d0450518803f1531470045ffadc1412c497f..c4320342c4afba2e6237acc959a11c09
    if (network_service_->pins_list_updated()) {
      result.url_request_context->transport_security_state()->UpdatePinList(
          network_service_->pinsets(), network_service_->host_pins(),
+@@ -3865,6 +4092,10 @@ void NetworkContext::Prefetch(
+   if (!prefetch_enabled_) {
+     return;
+   }
++  // MoltBrowser: none after this context's MoltNet identity has ended.
++  if (!MoltAdmits(MoltNetworkEntry::kPrefetch)) {
++    return;
++  }
+ 
+   // Retrieve the NAK for Connection Allowlist enforcement.
+   const net::NetworkAnonymizationKey& nak =

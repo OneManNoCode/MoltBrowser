@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/proxy_config_service_mojo.h b/services/network/proxy_config_service_mojo.h
-index 84bdea95b29ddd9ac7ca0c8d3bd0712dce3a4292..aa8bce69565a354eb0f48b3625f21c0b1be4ff77 100644
+index 84bdea95b29ddd9ac7ca0c8d3bd0712dce3a4292..d688e38bbe1fbcc8844a859f61ab3911d417efa9 100644
 --- a/services/network/proxy_config_service_mojo.h
 +++ b/services/network/proxy_config_service_mojo.h
 @@ -8,6 +8,7 @@
@@ -16,7 +16,7 @@ index 84bdea95b29ddd9ac7ca0c8d3bd0712dce3a4292..aa8bce69565a354eb0f48b3625f21c0b
  #include "base/observer_list.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
-@@ -55,6 +56,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
+@@ -55,6 +56,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
        net::ProxyConfigWithAnnotation* config) override;
    void OnLazyPoll() override;
  
@@ -27,10 +27,15 @@ index 84bdea95b29ddd9ac7ca0c8d3bd0712dce3a4292..aa8bce69565a354eb0f48b3625f21c0b
 +    molt_on_refuse_all_ = std::move(callback);
 +  }
 +
++  // MoltBrowser: whether the configuration applied now refuses every
++  // request (a network context made after its identity ended has it from
++  // the start).
++  bool MoltRefusesAll() const;
++
   private:
    // mojom::ProxyConfigClient implementation:
    void OnProxyConfigUpdated(
-@@ -69,6 +77,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
+@@ -69,6 +82,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
    mojo::Receiver<mojom::ProxyConfigClient> receiver_{this};
  
    base::ObserverList<Observer>::Unchecked observers_;

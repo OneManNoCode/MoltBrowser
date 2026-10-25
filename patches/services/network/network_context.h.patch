@@ -1,0 +1,46 @@
+MoltBrowser patch for services/network/network_context.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/services/network/network_context.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..c5df0d72c6c6cbfaedf2b8cd0ad56a2c932bfda6 100644
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -55,6 +55,7 @@
+ #include "services/network/cors/preflight_controller.h"
+ #include "services/network/http_cache_data_counter.h"
+ #include "services/network/http_cache_data_remover.h"
++#include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
+ #include "services/network/logical_invalidation_store.h"
+ #include "services/network/network_qualities_pref_delegate.h"
+ #include "services/network/oblivious_http_request_handler.h"
+@@ -672,6 +673,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+   void LoaderDestroyed(const OriginatingProcessId& process_id);
+   bool CanCreateLoader(const OriginatingProcessId& process_id);
+ 
++  // MoltBrowser: the MoltNet identity this context serves has ended. Runs in
++  // the task in which the context's refusal of every request is applied
++  // (ProxyConfigServiceMojo::MoltSetOnRefuseAll()) and takes kMoltEndSteps
++  // (services/network/molt_ended_identity_policy.h).
++  void MoltEndIdentity();
++  // MoltBrowser: whether this context still starts `entry`: everything
++  // until its identity has ended, then only what sends nothing.
++  bool MoltAdmits(MoltNetworkEntry entry) const {
++    return MoltEndedContextAdmits(entry, molt_identity_ended_);
++  }
++
+   void set_max_loaders_per_process_for_testing(uint32_t count) {
+     max_loaders_per_process_ = count;
+   }
+@@ -1155,6 +1167,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+   // calls to DestroyURLLoaderFactory().
+   bool is_destructing_ = false;
+ 
++  // MoltBrowser: see MoltEndIdentity().
++  bool molt_identity_ended_ = false;
++
+   // True if the Prefetch() method is enabled.
+   // TODO(ricea): Remove this when it is enabled by default.
+   const bool prefetch_enabled_;

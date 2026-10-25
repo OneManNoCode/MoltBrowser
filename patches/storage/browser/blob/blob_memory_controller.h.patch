@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_memory_controller.h b/storage/browser/blob/blob_memory_controller.h
-index 05cca5797cf86b17e867836ffa07391530e3cb36..d693ae732dc11061ae3edf0e174921bf3cb84db3 100644
+index 05cca5797cf86b17e867836ffa07391530e3cb36..ae118d9ac166ab700111c8afc9d02ce340cfd9d2 100644
 --- a/storage/browser/blob/blob_memory_controller.h
 +++ b/storage/browser/blob/blob_memory_controller.h
 @@ -29,6 +29,7 @@
@@ -78,7 +78,7 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..d693ae732dc11061ae3edf0e174921bf
    void ShrinkMemoryAllocation(ShareableBlobDataItem* item);
    void ShrinkFileAllocation(ShareableFileReference* file_reference,
                              uint64_t old_length,
-@@ -196,6 +212,13 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -196,6 +212,24 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
    size_t GetAvailableMemoryForBlobs() const;
    uint64_t GetAvailableFileSpaceForBlobs() const;
  
@@ -89,10 +89,21 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..d693ae732dc11061ae3edf0e174921bf
 +  // MoltBrowser: the memory |molt_budget_key|'s blobs use.
 +  size_t MoltMemoryUsage(uint64_t molt_budget_key) const;
 +
++  // MoltBrowser: memory the browser holds for |molt_budget_key| outside any
++  // blob (a Background Fetch's response while it downloads), counted as its
++  // blobs are: against the key's share, in the total the floor is checked
++  // against, past which the embedder hears of it
++  // (molt_blob_budget_policy.h: MoltBlobHoldFor()). Nothing is counted
++  // unless the result is kCounted.
++  MoltBlobHold MoltHoldMemory(uint64_t molt_budget_key, size_t bytes);
++  // MoltBrowser: |bytes| of that memory are no longer held (or are about to
++  // become a blob).
++  void MoltReleaseHeldMemory(uint64_t molt_budget_key, size_t bytes);
++
    // The given callback will be called when we've finished calculating blob
    // storage limits. Usually limits are calculated at some point after startup,
    // but calling this method may cause them to be calculated sooner.
-@@ -258,8 +281,15 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -258,8 +292,15 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
  
    void GrantMemoryAllocations(
        std::vector<scoped_refptr<ShareableBlobDataItem>>* items,
@@ -110,7 +121,7 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..d693ae732dc11061ae3edf0e174921bf
  
    // This is registered as a callback for file deletions on the file reference
    // of our paging files. We decrement the disk space used.
-@@ -276,6 +306,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -276,6 +317,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
    // Store that we set manual limits so we don't accidentally override them with
    // our configuration task.
    bool manual_limits_set_ = false;
@@ -119,7 +130,7 @@ index 05cca5797cf86b17e867836ffa07391530e3cb36..d693ae732dc11061ae3edf0e174921bf
    BlobStorageLimits base_limits_;
    BlobStorageLimits limits_;
    bool did_schedule_limit_calculation_ = false;
-@@ -321,6 +353,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
+@@ -321,6 +364,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
  
    base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
  

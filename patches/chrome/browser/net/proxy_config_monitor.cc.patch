@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
-index 0874f5e29440471706f847a9212cdfa2b2eba2a3..c8cf7f3032a116ad81700530c05d05df0f20ffa0 100644
+index 0874f5e29440471706f847a9212cdfa2b2eba2a3..b34a018ae13b0ac8df8bf7c1d5b436a9b66fa3e0 100644
 --- a/chrome/browser/net/proxy_config_monitor.cc
 +++ b/chrome/browser/net/proxy_config_monitor.cc
 @@ -4,12 +4,16 @@
@@ -25,20 +25,30 @@ index 0874f5e29440471706f847a9212cdfa2b2eba2a3..c8cf7f3032a116ad81700530c05d05df
  #include "chrome/browser/net/proxy_service_factory.h"
  #include "chrome/browser/policy/profile_policy_connector.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -42,6 +46,28 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
+@@ -17,6 +21,7 @@
+ #include "components/proxy_config/pref_proxy_config_tracker_impl.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "extensions/buildflags/buildflags.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"  // MoltBrowser
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ 
+@@ -42,6 +47,36 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
    profile_ = profile;
  #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
  
 +  // MoltBrowser: a MoltNet profile's network contexts only ever get
 +  // MoltNet's own Tor proxy configuration, never a policy's proxy or
 +  // override rules, and from the moment the identity ends, one that refuses
-+  // every request (molt_net_live_policy.h).
++  // every request (molt_net_live_policy.h), with which each context ends
++  // (services/network/molt_ended_identity_policy.h).
 +  if (molt_ai::tor::IsMoltNetProfile(profile)) {
 +    moltnet_profile_ = profile;
 +    moltnet_identity_ended_ =
 +        molt_ai::tor::MoltNetRouting::AddIdentityEndedCallback(
 +            base::BindRepeating(
-+                [](ProxyConfigMonitor* monitor, Profile* ended) {
++                [](ProxyConfigMonitor* monitor, Profile* ended,
++                   const molt_ai::tor::MoltNetRouting::EndAckHolder& hold) {
 +                  if (ended != monitor->moltnet_profile_) {
 +                    return;
 +                  }
@@ -46,6 +56,12 @@ index 0874f5e29440471706f847a9212cdfa2b2eba2a3..c8cf7f3032a116ad81700530c05d05df
 +                       monitor->proxy_config_client_set_) {
 +                    client->OnProxyConfigUpdated(
 +                        molt_ai::tor::MoltNetRouting::RefuseAllProxyConfig());
++                    // On the same pipe, so answered once the context has
++                    // applied the refusal and ended with it; a context that
++                    // goes away answers too (it is gone).
++                    client->FlushProxyConfig(
++                        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++                            hold.Run()));
 +                  }
 +                },
 +                base::Unretained(this)));
@@ -54,7 +70,7 @@ index 0874f5e29440471706f847a9212cdfa2b2eba2a3..c8cf7f3032a116ad81700530c05d05df
  // If this is the ChromeOS sign-in or lock screen profile, just create the
  // tracker from global state.
  #if BUILDFLAG(IS_CHROMEOS)
-@@ -113,6 +139,18 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
+@@ -113,6 +148,18 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
    net::ProxyConfigWithAnnotation proxy_config;
    net::ProxyConfigService::ConfigAvailability availability =
        proxy_config_service_->GetLatestProxyConfig(&proxy_config);
@@ -73,7 +89,7 @@ index 0874f5e29440471706f847a9212cdfa2b2eba2a3..c8cf7f3032a116ad81700530c05d05df
    if (availability != net::ProxyConfigService::CONFIG_PENDING)
      network_context_params->initial_proxy_config = proxy_config;
  }
-@@ -126,6 +164,22 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
+@@ -126,6 +173,22 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
      net::ProxyConfigService::ConfigAvailability availability) {
    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
           !BrowserThread::IsThreadInitialized(BrowserThread::UI));

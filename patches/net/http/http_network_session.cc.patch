@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_network_session.cc b/net/http/http_network_session.cc
-index 05fc047000904255c0ac4273f0bda7a609145412..923a8cd09701dc7c02f66ca9ab39450962bf7fdb 100644
+index 05fc047000904255c0ac4273f0bda7a609145412..8dd9abbb99f65974924a61cbdf73c8ffba779914 100644
 --- a/net/http/http_network_session.cc
 +++ b/net/http/http_network_session.cc
-@@ -31,6 +31,7 @@
+@@ -31,6 +31,8 @@
  #include "net/quic/quic_session_pool.h"
  #include "net/socket/client_socket_factory.h"
  #include "net/socket/client_socket_pool_manager_impl.h"
 +#include "net/socket/molt_connection_budget.h"  // MoltBrowser
++#include "net/socket/molt_identity_end.h"        // MoltBrowser
  #include "net/socket/next_proto.h"
  #include "net/socket/ssl_client_socket.h"
  #include "net/socket/stream_socket_close_reason.h"
-@@ -194,19 +195,38 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
+@@ -194,19 +196,39 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
    CHECK(http_server_properties_);
    DCHECK(context_.client_socket_factory);
  
@@ -27,6 +28,7 @@ index 05fc047000904255c0ac4273f0bda7a609145412..923a8cd09701dc7c02f66ca9ab394509
 +    molt_tor_capacity_ = MoltTorCapacity::GetShared();
 +    molt_socks_handshake_limiter_ = std::make_unique<MoltSocksHandshakeLimiter>(
 +        molt_tor_capacity_, reinterpret_cast<uintptr_t>(this));
++    molt_identity_end_ = base::MakeRefCounted<MoltIdentityEnd>();
 +  }
 +  MoltConnectionBudget* const molt_connection_budget =
 +      molt_tor_capacity_ ? &molt_tor_capacity_->connection_budget() : nullptr;
@@ -57,7 +59,7 @@ index 05fc047000904255c0ac4273f0bda7a609145412..923a8cd09701dc7c02f66ca9ab394509
  
    if (params_.enable_http2) {
      next_protos_.push_back(NextProto::kProtoHTTP2);
-@@ -268,6 +288,16 @@ ClientSocketPool* HttpNetworkSession::GetSocketPool(
+@@ -268,6 +290,16 @@ ClientSocketPool* HttpNetworkSession::GetSocketPool(
    return GetSocketPoolManager(pool_type)->GetSocketPool(proxy_chain);
  }
  
@@ -74,7 +76,7 @@ index 05fc047000904255c0ac4273f0bda7a609145412..923a8cd09701dc7c02f66ca9ab394509
  base::Value HttpNetworkSession::SocketPoolInfoToValue() const {
    // TODO(yutak): Should merge values from normal pools and WebSocket pools.
    return normal_socket_pool_manager_->SocketPoolInfoToValue();
-@@ -417,7 +447,7 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
+@@ -417,7 +449,7 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
      bool for_websockets) {
    // Use null websocket_endpoint_lock_manager, which is only set for WebSockets,
    // and only when not using a proxy.
@@ -83,7 +85,7 @@ index 05fc047000904255c0ac4273f0bda7a609145412..923a8cd09701dc7c02f66ca9ab394509
        context_.client_socket_factory, context_.host_resolver, &http_auth_cache_,
        context_.http_auth_handler_factory, &spdy_session_pool_,
        &context_.quic_context->params()->supported_versions, &quic_session_pool_,
-@@ -427,6 +457,13 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
+@@ -427,6 +459,22 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
        for_websockets ? &websocket_endpoint_lock_manager_ : nullptr,
        context_.http_server_properties, &next_protos_, &application_settings_,
        &params_.ignore_certificate_errors, &params_.enable_early_data);
@@ -93,7 +95,16 @@ index 05fc047000904255c0ac4273f0bda7a609145412..923a8cd09701dc7c02f66ca9ab394509
 +      &params_.molt_socks_isolation_password;
 +  common_connect_job_params.molt_socks_handshake_limiter =
 +      molt_socks_handshake_limiter_.get();
++  // MoltBrowser: and the end of its MoltNet identity (null likewise).
++  common_connect_job_params.molt_identity_end = molt_identity_end_.get();
 +  return common_connect_job_params;
++}
++
++// MoltBrowser: see the header (net/socket/molt_identity_end.h).
++void HttpNetworkSession::MoltEndIdentity() {
++  if (molt_identity_end_) {
++    molt_identity_end_->Mark();
++  }
  }
  
  void HttpNetworkSession::ApplyTestingFixedPort(

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/socks5_client_socket.cc b/net/socket/socks5_client_socket.cc
-index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426eb6f39b2f 100644
+index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..20be525931f33aa482318a882a0800c78f5d2ec0 100644
 --- a/net/socket/socks5_client_socket.cc
 +++ b/net/socket/socks5_client_socket.cc
 @@ -8,6 +8,7 @@
@@ -39,7 +39,20 @@ index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426e
  int SOCKS5ClientSocket::Connect(CompletionOnceCallback callback) {
    DCHECK(transport_socket_);
    DCHECK_EQ(STATE_NONE, next_state_);
-@@ -224,6 +241,21 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
+@@ -151,6 +168,12 @@ int SOCKS5ClientSocket::Write(
+   DCHECK(user_callback_.is_null());
+   DCHECK(!callback.is_null());
+ 
++  // MoltBrowser: nothing more goes to Tor once the MoltNet identity this
++  // socket serves has ended (net/socket/molt_identity_end.h).
++  if (MoltIdentityHasEnded(molt_identity_end_.get())) {
++    return ERR_ABORTED;
++  }
++
+   int rv = transport_socket_->Write(
+       buf, buf_len,
+       base::BindOnce(&SOCKS5ClientSocket::OnReadWriteComplete,
+@@ -224,6 +247,21 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
          net_log_.EndEventWithNetErrorCode(NetLogEventType::SOCKS5_GREET_READ,
                                            rv);
          break;
@@ -61,7 +74,7 @@ index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426e
        case STATE_HANDSHAKE_WRITE:
          DCHECK_EQ(OK, rv);
          net_log_.BeginEvent(NetLogEventType::SOCKS5_HANDSHAKE_WRITE);
-@@ -254,6 +286,15 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
+@@ -254,6 +292,15 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
  static constexpr std::array<uint8_t, 3> kSOCKS5GreetWriteData{
      0x05, 0x01, 0x00};  // no authentication
  
@@ -77,7 +90,7 @@ index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426e
  int SOCKS5ClientSocket::DoGreetWrite() {
    // Since we only have 1 byte to send the hostname length in, if the
    // URL has a hostname longer than 255 characters we can't send it.
-@@ -263,10 +304,15 @@ int SOCKS5ClientSocket::DoGreetWrite() {
+@@ -263,10 +310,15 @@ int SOCKS5ClientSocket::DoGreetWrite() {
    }
  
    if (!write_buf_) {
@@ -95,7 +108,7 @@ index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426e
    }
  
    next_state_ = STATE_GREET_WRITE_COMPLETE;
-@@ -323,12 +369,88 @@ int SOCKS5ClientSocket::DoGreetReadComplete(int result) {
+@@ -323,12 +375,88 @@ int SOCKS5ClientSocket::DoGreetReadComplete(int result) {
                                     "version", read_data[0]);
      return ERR_SOCKS_CONNECTION_FAILED;
    }
@@ -185,3 +198,17 @@ index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426e
    read_buf_.reset();
    next_state_ = STATE_HANDSHAKE_WRITE;
    return OK;
+@@ -363,6 +491,13 @@ scoped_refptr<DrainableIOBuffer> SOCKS5ClientSocket::BuildHandshakeWriteBuffer()
+ int SOCKS5ClientSocket::DoHandshakeWrite() {
+   next_state_ = STATE_HANDSHAKE_WRITE_COMPLETE;
+ 
++  // MoltBrowser: no new stream through Tor once the MoltNet identity has
++  // ended (net/socket/molt_identity_end.h): the CONNECT request is what
++  // makes Tor open one.
++  if (MoltIdentityHasEnded(molt_identity_end_.get())) {
++    return ERR_ABORTED;
++  }
++
+   if (!write_buf_) {
+     write_buf_ = BuildHandshakeWriteBuffer();
+   }

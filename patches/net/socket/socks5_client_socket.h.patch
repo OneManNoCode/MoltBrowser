@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/socks5_client_socket.h b/net/socket/socks5_client_socket.h
-index fe8da4858d69292f2baea559afe1392618e8c68b..651ee4481e02ae491beec37d8712b71978af839b 100644
+index fe8da4858d69292f2baea559afe1392618e8c68b..2307ddd3dbf0fd1be3d686f8fd2283c66725e308 100644
 --- a/net/socket/socks5_client_socket.h
 +++ b/net/socket/socks5_client_socket.h
-@@ -47,6 +47,14 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+@@ -19,6 +19,7 @@
+ #include "net/base/net_errors.h"
+ #include "net/base/net_export.h"
+ #include "net/log/net_log_with_source.h"
++#include "net/socket/molt_identity_end.h"  // MoltBrowser
+ #include "net/socket/stream_socket.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ 
+@@ -47,6 +48,21 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
    // On destruction Disconnect() is called.
    ~SOCKS5ClientSocket() override;
  
@@ -20,10 +28,17 @@ index fe8da4858d69292f2baea559afe1392618e8c68b..651ee4481e02ae491beec37d8712b719
 +  // proxies (MoltNet's Tor). Each value must be 1..255 bytes.
 +  void SetUsernamePasswordAuth(std::string username, std::string password);
 +
++  // MoltBrowser: the end of the MoltNet identity this socket's session
++  // serves (net/socket/molt_identity_end.h). Once it is marked, Write()
++  // refuses everything, whatever the layers above have queued.
++  void MoltSetIdentityEnd(scoped_refptr<MoltIdentityEnd> end) {
++    molt_identity_end_ = std::move(end);
++  }
++
    // StreamSocket implementation.
  
    // Does the SOCKS handshake and completes the protocol.
-@@ -82,6 +90,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+@@ -82,6 +98,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
      STATE_GREET_WRITE_COMPLETE,
      STATE_GREET_READ,
      STATE_GREET_READ_COMPLETE,
@@ -35,7 +50,7 @@ index fe8da4858d69292f2baea559afe1392618e8c68b..651ee4481e02ae491beec37d8712b719
      STATE_HANDSHAKE_WRITE,
      STATE_HANDSHAKE_WRITE_COMPLETE,
      STATE_HANDSHAKE_READ,
-@@ -116,6 +129,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+@@ -116,6 +137,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
    int DoGreetReadComplete(int result);
    int DoGreetWrite();
    int DoGreetWriteComplete(int result);
@@ -47,7 +62,7 @@ index fe8da4858d69292f2baea559afe1392618e8c68b..651ee4481e02ae491beec37d8712b719
  
    // Creates a DrainableIOBuffer containing the SOCKS handshake.
    scoped_refptr<DrainableIOBuffer> BuildHandshakeWriteBuffer() const;
-@@ -145,6 +163,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+@@ -145,6 +171,14 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
  
    const HostPortPair destination_;
  
@@ -55,6 +70,9 @@ index fe8da4858d69292f2baea559afe1392618e8c68b..651ee4481e02ae491beec37d8712b719
 +  // upstream behavior).
 +  std::string auth_username_;
 +  std::string auth_password_;
++
++  // MoltBrowser: see MoltSetIdentityEnd(); null outside MoltNet.
++  scoped_refptr<MoltIdentityEnd> molt_identity_end_;
 +
    NetLogWithSource net_log_;
  

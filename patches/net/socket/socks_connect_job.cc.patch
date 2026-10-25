@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/socks_connect_job.cc b/net/socket/socks_connect_job.cc
-index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab6f030e86 100644
+index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..d74863e47293f3c15e0c43fcb91adf0f25df622e 100644
 --- a/net/socket/socks_connect_job.cc
 +++ b/net/socket/socks_connect_job.cc
-@@ -5,10 +5,17 @@
+@@ -5,15 +5,23 @@
  #include "net/socket/socks_connect_job.h"
  
  #include <memory>
@@ -26,7 +26,13 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
  #include "net/log/net_log_source_type.h"
  #include "net/log/net_log_with_source.h"
  #include "net/socket/client_socket_factory.h"
-@@ -23,6 +30,77 @@ namespace net {
+ #include "net/socket/client_socket_handle.h"
+ #include "net/socket/connect_job_params.h"
++#include "net/socket/molt_identity_end.h"  // MoltBrowser
+ #include "net/socket/socks5_client_socket.h"
+ #include "net/socket/socks_client_socket.h"
+ #include "net/socket/transport_connect_job.h"
+@@ -23,6 +31,77 @@ namespace net {
  // SOCKSConnectJobs will time out if the SOCKS handshake takes longer than this.
  static constexpr base::TimeDelta kSOCKSConnectJobTimeout = base::Seconds(30);
  
@@ -104,7 +110,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
  SOCKSSocketParams::SOCKSSocketParams(
      ConnectJobParams nested_params,
      bool socks_v5,
-@@ -74,6 +152,13 @@ SOCKSConnectJob::~SOCKSConnectJob() {
+@@ -74,6 +153,13 @@ SOCKSConnectJob::~SOCKSConnectJob() {
  
  LoadState SOCKSConnectJob::GetLoadState() const {
    switch (next_state_) {
@@ -118,7 +124,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
      case STATE_TRANSPORT_CONNECT:
        return LOAD_STATE_IDLE;
      case STATE_TRANSPORT_CONNECT_COMPLETE:
-@@ -128,6 +213,15 @@ int SOCKSConnectJob::DoLoop(int result) {
+@@ -128,6 +214,15 @@ int SOCKSConnectJob::DoLoop(int result) {
      State state = next_state_;
      next_state_ = STATE_NONE;
      switch (state) {
@@ -134,7 +140,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
        case STATE_TRANSPORT_CONNECT:
          DCHECK_EQ(OK, rv);
          rv = DoTransportConnect();
-@@ -150,6 +244,34 @@ int SOCKSConnectJob::DoLoop(int result) {
+@@ -150,6 +245,34 @@ int SOCKSConnectJob::DoLoop(int result) {
    return rv;
  }
  
@@ -169,8 +175,16 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
  int SOCKSConnectJob::DoTransportConnect() {
    DCHECK(!transport_connect_job_);
  
-@@ -176,9 +298,20 @@ int SOCKSConnectJob::DoSOCKSConnect() {
+@@ -174,11 +297,32 @@ int SOCKSConnectJob::DoTransportConnectComplete(int result) {
+ int SOCKSConnectJob::DoSOCKSConnect() {
+   next_state_ = STATE_SOCKS_CONNECT_COMPLETE;
  
++  // MoltBrowser: no new stream through Tor once the session's MoltNet
++  // identity has ended (net/socket/molt_identity_end.h).
++  if (MoltIdentityHasEnded(common_connect_job_params()->molt_identity_end)) {
++    return ERR_ABORTED;
++  }
++
    // Add a SOCKS connection on top of the tcp socket.
    if (socks_params_->is_socks_v5()) {
 -    socket_ = std::make_unique<SOCKS5ClientSocket>(
@@ -187,11 +201,15 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
 +              common_connect_job_params()
 +                  ->molt_socks_isolation_password.get()));
 +    }
++    // MoltBrowser: and refuses every write once that identity has ended.
++    if (MoltIdentityEnd* end = common_connect_job_params()->molt_identity_end) {
++      socks5_socket->MoltSetIdentityEnd(base::WrapRefCounted(end));
++    }
 +    socket_ = std::move(socks5_socket);
    } else {
      auto socks_socket = std::make_unique<SOCKSClientSocket>(
          transport_connect_job_->PassSocket(), socks_params_->destination(),
-@@ -194,6 +327,8 @@ int SOCKSConnectJob::DoSOCKSConnect() {
+@@ -194,6 +338,8 @@ int SOCKSConnectJob::DoSOCKSConnect() {
  }
  
  int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
@@ -200,7 +218,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab
    if (!socks_params_->is_socks_v5())
      resolve_error_info_ = socks_socket_ptr_->GetResolveErrorInfo();
    if (result != OK) {
-@@ -206,11 +341,16 @@ int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
+@@ -206,11 +352,16 @@ int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
  }
  
  int SOCKSConnectJob::ConnectInternal() {
