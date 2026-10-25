@@ -3283,8 +3283,12 @@ qemu's `max` CPU:
   arm64. MP3 and FLAC gave the same samples everywhere in both.
 
 Every changed C++ file compiles against Chromium 156's real headers
-(`tools/compile_check`), except the V8, Skia and skcms internals it
-doesn't cover, which the harnesses above build and run.
+(`tools/compile_check`: Skia's and skcms's files included, the arm64 side
+of Skia's and skcms's code without warnings in the harnesses' builds)
+except V8's, which it doesn't cover: `ieee754.cc` builds without warnings
+for x86-64 and arm64 (`-Wall -Wextra -Wshadow -Wshorten-64-to-32`) and is
+the one the `Math` comparison ran. The Rust bridge builds with the crates
+above and cxx (`cargo check`, no clippy warnings).
 **Needs the build machine:** compiling and linking (Rust included),
 `blink_unittests` (`MoltNetCpuTest.*`), `media_unittests` and V8's own
 tests, and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged
