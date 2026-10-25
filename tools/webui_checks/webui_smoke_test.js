@@ -19,8 +19,10 @@
 // Then it checks: the script runs without throwing; no Trusted Types
 // violation happens on load; every data-on-<event>="name" in the DOM and
 // in the page script names a registered moltActions() function; the key
-// controls of each page got a real event listener; and clicking every
-// control in the initial DOM doesn't throw synchronously.
+// controls of each page got a real event listener; clicking every control
+// in the initial DOM doesn't throw synchronously; and each message the
+// browser takes a click for (a page's clickGated list) is sent only with a
+// click of its own: never on load, never twice for one click.
 //
 // Run: npm ci && node webui_smoke_test.js   (from tools/webui_checks)
 'use strict';
@@ -93,6 +95,15 @@ const questionAnswers = [];
 const QUESTION = {id: '42', step: 3, kind: 'weak_match',
                   text: 'The step “Click “<b>Add</b>”” couldn’t find its element ' +
                         'as recorded: the page has changed. Use it?'};
+
+// molt://net: the session's exit-country pin as the browser has it, and,
+// when set, the browser refuses exit-country changes (no real click) and
+// answers with what is really set.
+let netExit = 'de';
+let netExitRefused = false;
+// The arguments (after the callback id) of each |method| call so far.
+const argsOf = (window, method) => window.__sendArgs
+    .filter(([m]) => m === method).map(([, a]) => Array.from(a || []).slice(1));
 
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
@@ -1064,12 +1075,15 @@ const PAGES = [
   {name: 'molt://net', file: 'molt_net_ui.cc',
    listeners: ['#openWindowBtn:click', '#newIdentityBtn:click', '#settingsBtn:click'],
    noClick: ['#settingsBtn'],
+   // MoltNetHandler: these change where MoltNet traffic goes, so each needs
+   // (and uses up) a real click; opening a window and New Identity don't.
+   clickGated: ['moltnet.setExitCountry', 'moltnet.toggle', 'moltnet.setMode'],
    responses: {
-     'moltnet.getStatus': {running: true, starting: false, selected: '', mode: 'multi_hop',
-                           routing: 'tor', in_moltnet_window: true,
-                           proxy_externally_controlled: false},
-     'moltnet.getExitCountries': {available: [
-       {code: 'de', name: '<img src=x onerror=alert(1)>'}], selected: ''},
+     'moltnet.getStatus': () => ({running: true, starting: false, selected: netExit,
+                                  mode: 'multi_hop', routing: 'tor', in_moltnet_window: true,
+                                  proxy_externally_controlled: false}),
+     'moltnet.getExitCountries': () => ({available: [
+       {code: 'de', name: '<img src=x onerror=alert(1)>'}], selected: netExit}),
      'moltnet.getCircuit': {connected: true, hops: [
        {role: 'guard', country: 'DE', country_name: '<b>Germany</b>', ip: '192.0.2.1',
         nickname: '<img src=x onerror=alert(1)>', fingerprint: 'A'.repeat(40)},
@@ -1079,7 +1093,12 @@ const PAGES = [
                             error: '<img src=x onerror=alert(1)>'},
      'moltnet.newIdentity': {running: true, routing: 'tor', in_moltnet_window: true},
      'moltnet.setMode': {running: false, routing: 'not_routed'},
-     'moltnet.setExitCountry': {running: true, selected: 'de', routing: 'tor', in_moltnet_window: true},
+     'moltnet.setExitCountry': (args) => {
+       if (!netExitRefused) netExit = args[1];
+       return Object.assign({running: true, selected: netExit, routing: 'tor',
+                             in_moltnet_window: true},
+                            netExitRefused ? {error: 'Click the setting to change it.'} : {});
+     },
      'moltnet.verifyExit': {ok: true, ip: '192.0.2.3', is_tor: true},
    },
    async after(window) {
@@ -1088,6 +1107,11 @@ const PAGES = [
      await tick();
      assert.strictEqual(doc.getElementById('st').textContent, 'Private via Tor',
                         'status reflects this window\'s routing');
+     // Load shows what is set (the session's exit pin) without sending a
+     // setting, so it needs no click.
+     assert.deepStrictEqual(window.__clickConsumed, [], 'load changes no setting');
+     assert(doc.getElementById('sub').textContent.endsWith(' DE'));
+     assert(doc.querySelector('#list .row:nth-child(2)').classList.contains('active'));
      assert(!/Your IP|origin/i.test(doc.body.textContent), 'no real-IP display');
      assert(!window.__sent.some((m) => /ipify/i.test(m)), 'no IP lookup');
      assert.strictEqual(doc.querySelectorAll('img, b').length, 0, 'relay/country data stays text');
@@ -1098,8 +1122,37 @@ const PAGES = [
      doc.getElementById('openWindowBtn').click(); await tick();
      assert.strictEqual(doc.getElementById('err').textContent, '<img src=x onerror=alert(1)>',
                         'errors are shown as text');
-     doc.querySelector('#list .row:nth-child(2)').click(); await tick();
-     assert(window.__sent.includes('moltnet.setExitCountry'));
+     // Each setting click sends exactly one message the browser takes the
+     // click for; the window buttons take none.
+     const consumedSince = (n) => window.__clickConsumed.slice(n);
+     const row = (i) => doc.querySelector(`#list .row:nth-child(${i})`);
+     let n = window.__clickConsumed.length;
+     row(1).click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), ['moltnet.setExitCountry'], 'one per click');
+     assert.deepStrictEqual(argsOf(window, 'moltnet.setExitCountry').pop(), ['']);
+     assert(row(1).classList.contains('active'), 'Auto');
+     n = window.__clickConsumed.length;
+     row(2).click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), ['moltnet.setExitCountry']);
+     assert(row(2).classList.contains('active'), 'Germany');
+     // A refused change (no real click): the page shows what is really set.
+     netExitRefused = true;
+     row(1).click(); await tick();
+     netExitRefused = false;
+     assert(row(2).classList.contains('active'), 'still Germany');
+     assert.strictEqual(doc.getElementById('err').textContent, 'Click the setting to change it.');
+     n = window.__clickConsumed.length;
+     doc.querySelector('[data-mode=direct]').click(); await tick();
+     doc.querySelector('[data-mode=multi_hop]').click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), ['moltnet.setMode', 'moltnet.setMode']);
+     assert.deepStrictEqual(argsOf(window, 'moltnet.setMode').slice(-2),
+                            [['direct'], ['multi_hop']]);
+     n = window.__clickConsumed.length;
+     const opens = argsOf(window, 'moltnet.openWindow').length;
+     doc.getElementById('openWindowBtn').click(); await tick();
+     doc.getElementById('newIdentityBtn').click(); await tick();
+     assert.deepStrictEqual(consumedSince(n), [], 'opening a window is not a setting');
+     assert.strictEqual(argsOf(window, 'moltnet.openWindow').length, opens + 1);
    }},
   {name: 'molt://ai-settings', file: 'molt_ai_settings_ui.cc',
    listeners: ['#maxTokens:input', '#temperature:input', '#backBtn:click',
@@ -1844,9 +1897,30 @@ async function runPage(page) {
   const sendArgs = [];
   window.__sendArgs = sendArgs;
   const responses = page.responses || {};
+  // The browser's click rule for the messages in page.clickGated: each one
+  // needs, and uses up, the frame's user activation. User input gives it
+  // (mousedown/keydown/pointerdown, and click as this test's stand-in for a
+  // whole mouse click); nothing else does, so a gated message sent on load,
+  // from a timer or a second time for one click is refused here, as the
+  // browser would refuse it.
+  const clickGated = new Set(page.clickGated || []);
+  let activation = false;
+  for (const type of ['mousedown', 'keydown', 'pointerdown', 'click']) {
+    ael.call(window, type, () => { activation = true; }, true);
+  }
+  const unclicked = [];
+  window.__clickConsumed = [];
   window.chrome = {send(method, args) {
     sent.push(method);
     sendArgs.push([method, args]);
+    if (clickGated.has(method)) {
+      if (activation) {
+        activation = false;
+        window.__clickConsumed.push(method);
+      } else {
+        unclicked.push(method);
+      }
+    }
     const id = args && args[0];
     if (typeof id !== 'string') return;
     let r = responses[method];
@@ -1910,6 +1984,7 @@ async function runPage(page) {
     await new Promise((r) => setTimeout(r, 60));
   }
   process.off('unhandledRejection', onRej);
+  for (const m of unclicked) errors.push(`${m} sent without a click of its own`);
   const problems = errors.concat(violations, rejections.map((r) => 'unhandled rejection: ' + r));
   window.__ttOff = true;  // jsdom's own teardown clears the body
   window.close();

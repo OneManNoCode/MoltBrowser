@@ -61,6 +61,11 @@ informational.
   as the answers to a run's questions and to another site's frame's tools
   already did: one click allows at most one of these, whatever the page's
   script sends after it.
+- The MoltNet popover's settings that decide where MoltNet traffic goes
+  (exit country, on/off, mode) each need, and use up, one real click on the
+  page, so a script there can't pin an exit country. Opening a MoltNet
+  window and New Identity only add privacy and stay ungated. The page
+  sends exactly one such message per click and none on load.
 - The font manifest's checks match whole values (a value with a final
   newline no longer passes).
 

@@ -89,8 +89,11 @@ function loadCountries(){ sendWithPromise('moltnet.getExitCountries').then(funct
   STATE.countries=r.available||[]; if(r.selected!=null) STATE.selected=r.selected; render(); }); }
 function refresh(){ sendWithPromise('moltnet.getStatus').then(apply); }
 function busy(){ STATE.busy=true; STATE.error=''; render(); }
-function setMode(m){ if(m!=='direct'){ openWindow(); return; }
-  sendWithPromise('moltnet.setMode','direct').then(apply); }
+// The mode, the exit country (and moltnet.toggle) are settings: the browser
+// takes the click for each, so every click sends exactly one of them. "On"
+// opens a MoltNet window, as the New Tor window button does.
+function setMode(m){ if(m!=='direct') busy();
+  sendWithPromise('moltnet.setMode',m==='direct'?'direct':'multi_hop').then(apply); }
 function openWindow(){ busy(); sendWithPromise('moltnet.openWindow').then(apply); }
 function setCountry(cc){ STATE.selected=cc; render();
   sendWithPromise('moltnet.setExitCountry',cc).then(apply); }
