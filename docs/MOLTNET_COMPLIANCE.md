@@ -1024,12 +1024,14 @@ may need: one, or three for an onion address (its descriptor,
 introduction and rendezvous circuits). A site may have 16 in progress
 (the keys no site can be named for 8 together), all sites together 192,
 which fits eleven sites' full shares, as the connection budget does; the
-torrc sets `MaxClientCircuitsPending 256`, which leaves 64 for Tor's own
-circuits (preemptive ones, at most 14 kept ready, and the measurement
-circuits of its build-time estimate). While the budget is full, the next
-slot freed goes to the waiting site with the fewest in progress, so a
-site starting its first circuit waits for at most one handshake to
-finish, never behind a greedy site
+torrc sets `MaxClientCircuitsPending 256`, which leaves 56, after those
+8, for Tor's own circuits (preemptive ones, at most 14 kept ready, and
+the measurement circuits of its build-time estimate; MoltBrowser checks
+at build time that at least 32 stay free). While the budget is full, the
+next slot freed goes to the waiting site with the fewest in progress, so
+a site starting its first circuit waits only until its handshake's
+weight is free (one handshake finishing, up to three for an onion
+address), never behind a greedy site
 (`net/socket/molt_per_site_socket_pool_policy.h`: `MoltWeightedSlots`).
 Tor Browser leaves `ConnLimit` and `MaxClientCircuitsPending` at Tor's
 defaults (1000 and 32) and lets Firefox's connection limits apply: 900
