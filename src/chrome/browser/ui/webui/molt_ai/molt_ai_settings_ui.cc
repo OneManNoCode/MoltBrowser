@@ -35,6 +35,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
@@ -51,6 +52,7 @@
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -349,6 +351,24 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     return molt_ai::tor::TorManager::Get()->FindTorBinary().error;
   }
 
+  // MoltBrowser: MoltNet on/off, the exit country and the bridges decide
+  // where MoltNet traffic goes, so each change needs, and uses up, one real
+  // click on this page (molt_ai::ConsumeUserClick()), as on the MoltNet
+  // popover. New Identity stays ungated: it only adds privacy.
+  bool ConsumeClick() {
+    return molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost());
+  }
+
+  // A MoltNet change sent without a click changes nothing: report the real
+  // state (which resets the switch) and why, next to the badge.
+  void RefuseMoltnetChange() {
+    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+    EmitMoltnetStatus(mgr->IsRunning()    ? "connected"
+                      : mgr->IsStarting() ? "connecting"
+                                          : "disconnected",
+                      "Click the setting to change it.");
+  }
+
   // Probe the live Tor and, if it's up, fetch the enriched circuit list,
   // then broadcast a "moltnet-status" event built entirely from real
   // data. |forced_status| lets callers show a transient state (e.g.
@@ -452,6 +472,10 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // back to anything: no window opens.
   void HandleMoltnetConnect(const base::ListValue& args) {
     AllowJavascript();
+    if (!ConsumeClick()) {
+      RefuseMoltnetChange();
+      return;
+    }
     std::string mode = "multi_hop";
     if (args.size() > 0 && args[0].is_string()) {
       mode = args[0].GetString();
@@ -494,6 +518,10 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   void HandleMoltnetDisconnect(const base::ListValue& args) {
     AllowJavascript();
+    if (!ConsumeClick()) {
+      RefuseMoltnetChange();
+      return;
+    }
     molt_ai::tor::MoltNetWindow::TurnOff();
     EmitMoltnetStatus("disconnected");
   }
@@ -525,6 +553,10 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   void HandleMoltnetSetExitCountry(const base::ListValue& args) {
     AllowJavascript();
+    if (!ConsumeClick()) {
+      RefuseMoltnetChange();
+      return;
+    }
     std::string country;
     if (args.size() > 0 && args[0].is_string()) {
       country = args[0].GetString();
@@ -593,6 +625,14 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       base::DictValue out;
       out.Set("ok", false);
       out.Set("error", "Unknown bridge mode.");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(out)));
+      return;
+    }
+    if (!ConsumeClick()) {
+      base::DictValue out;
+      out.Set("ok", false);
+      out.Set("error", "Click Save bridges to save them.");
       ResolveJavascriptCallback(base::Value(callback_id),
                                 base::Value(std::move(out)));
       return;
@@ -1708,6 +1748,9 @@ function saveBridges() {
 
 function setExitCountry(cc) {
   chrome.send('moltnetSetExitCountry', [cc]);
+  // The browser takes the click for the change (one per pick, by mouse or
+  // keyboard); re-read what is set, so a refused change doesn't stay shown.
+  loadExitCountries();
 }
 
 // Populate the exit-country picker from the real backend list

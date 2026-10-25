@@ -65,7 +65,9 @@ informational.
   (exit country, on/off, mode) each need, and use up, one real click on the
   page, so a script there can't pin an exit country. Opening a MoltNet
   window and New Identity only add privacy and stay ungated. The page
-  sends exactly one such message per click and none on load.
+  sends exactly one such message per click and none on load. The same
+  settings in `molt://ai-settings` (MoltNet switch, exit country, bridges)
+  and the AI chat handler's exit-country message follow the same rule.
 - The font manifest's checks match whole values (a value with a final
   newline no longer passes).
 

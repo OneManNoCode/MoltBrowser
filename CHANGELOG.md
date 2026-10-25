@@ -266,9 +266,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   trust or confirming its sites, the GPU setting for on-device AI and its
   "Try the GPU again", and opening an onion site in a MoltNet window each
   use up the click that allowed them, so one click can never approve two
-  things. The MoltNet popover's exit country, on/off and mode take a click
-  of their own in the same way (opening a MoltNet window and New Identity
-  don't need one); the font
+  things. MoltNet's exit country, on/off, mode and bridges take a click of
+  their own in the same way, in the MoltNet popover and in Settings
+  (opening a MoltNet window and New Identity don't need one); the font
   manifest's checks match whole values (security review of PRs #67-#69,
   `docs/SECURITY_REVIEWS.md`).
 
