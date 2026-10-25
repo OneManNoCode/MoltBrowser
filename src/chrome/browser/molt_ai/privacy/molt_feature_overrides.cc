@@ -13,7 +13,10 @@
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/optimization_guide/core/delivery/prediction_model_component_configs.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/public/common/features.h"
 
 namespace molt_ai {
@@ -101,6 +104,39 @@ void AppendDefaultFeatureOverrides(
       // MoltBrowser's default engine is DuckDuckGo.
       &omnibox::kOnDeviceHeadProviderNonIncognito,
       &omnibox::kOnDeviceHeadProviderIncognito,
+      // The AI Mode eligibility component (a component extension). Off by
+      // default upstream and touched by no study at 156; listed so that
+      // neither can turn it on. Its registration then uninstalls it.
+      &omnibox::kAimEligibilityComponentExtension,
+
+      // On-device model downloads that nothing MoltBrowser ships asks for.
+      // The manifest of Chromium's on-device models is asked for only when
+      // a feature first asks the broker for a model (hooks in
+      // components/optimization_guide/core/model_execution/manifest_broker/);
+      // these two would ask without the user.
+      //
+      // Background download: the "OnDeviceModelBackgroundDownload" study
+      // lets the broker download models for the Prompt, Writing Assistance
+      // and Summarize APIs ahead of use, on AC power with 50 GB free. At 156
+      // nothing marks a desktop model for it yet; the override keeps it
+      // that way when something does. MoltBrowser serves those APIs from
+      // its own model (docs/design/WEB_AI_APIS.md).
+      &optimization_guide::features::kOnDeviceModelBackgroundDownload,
+      // On-device Web Speech on a small expert model, which comes from
+      // Google through the broker ("EnableOnDeviceWebSpeechSmallExpertModel"
+      // study; off by default upstream). A page's availability check alone
+      // would ask for the manifest. On-device Web Speech then uses
+      // Chromium's default speech engine, which is downloaded only when a
+      // page the user has interacted with installs it.
+      &media::kOnDeviceWebSpeechSmallExpertModel,
+
+      // Secure DNS's fallback to Google Public DNS (8.8.8.8) in automatic
+      // mode, part of the Bundled Security Settings. Off by default and
+      // touched by no study at 156; listed so that neither a study nor a
+      // future default can turn it on. With it off,
+      // StubResolverConfigReader::ShouldUseDohFallback() is false and
+      // automatic mode only upgrades to the user's own DNS provider.
+      &safe_browsing::kBundledSecuritySettingsSecureDnsV2,
   };
   AppendOverrides(kDisabledByDefault,
                   base::FeatureList::OVERRIDE_DISABLE_FEATURE, overrides);

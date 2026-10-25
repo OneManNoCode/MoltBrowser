@@ -65,6 +65,13 @@ class ManifestMonitor {
   // Returns a list of properties for the broker state info.
   std::vector<mojom::BrokerPropertyInfoPtr> GetBrokerProperties() const;
 
+  // MoltBrowser: asks the delegate for the manifest, which in Chrome
+  // registers the manifest component and requests it from the component
+  // updater. The constructor no longer does this; ManifestBrokerState calls
+  // it when a feature first asks for an on-device model
+  // (docs/NETWORK_TRAFFIC.md). Only the first call does anything.
+  void RequestManifest();
+
  private:
   // This should be called once during initialization.
   void OnDiskSpaceEvaluated(std::optional<base::ByteSize> free_space);
@@ -86,6 +93,10 @@ class ManifestMonitor {
   // Inputs:
   const raw_ref<PerformanceClassifier> performance_classifier_;
   const raw_ref<PrefService> local_state_;
+  // MoltBrowser: kept for RequestManifest(). ManifestBrokerState owns the
+  // delegate and declares it before this monitor, so it outlives it.
+  const raw_ref<Delegate> delegate_;
+  bool manifest_requested_ = false;
   std::optional<base::ByteSize> free_space_;
   std::optional<base::FilePath> manifest_dir_;
 

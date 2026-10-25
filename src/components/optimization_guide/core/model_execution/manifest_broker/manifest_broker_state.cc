@@ -103,6 +103,7 @@ void ManifestBrokerState::BindModelBroker(
   if (!features::IsOnDeviceExecutionEnabled()) {
     return;
   }
+  manifest_monitor_.RequestManifest();  // MoltBrowser: first demand.
   model_broker_impl_.BindBroker(std::move(receiver));
 }
 
@@ -145,6 +146,7 @@ void ManifestBrokerState::AddOnDeviceModelAvailabilityChangeObserver(
   if (!features::IsOnDeviceExecutionEnabled()) {
     return;
   }
+  manifest_monitor_.RequestManifest();  // MoltBrowser: first demand.
   model_broker_impl_.GetSolutionProvider(feature).AddObserver(observer);
 }
 
@@ -165,6 +167,8 @@ OnDeviceModelEligibilityReason ManifestBrokerState::GetOnDeviceModelEligibility(
   TRACE_EVENT("optimization_guide",
               "ManifestBrokerState::GetOnDeviceModelEligibility", "feature",
               base::ToString(feature));
+  // MoltBrowser: first demand (StartSession() comes through here too).
+  manifest_monitor_.RequestManifest();
   // TODO(holte): We many want to flush factory to avoid kUnknown responses,
   // but we might not actually need to.  Things should be moving away from
   // this interface already.
@@ -192,6 +196,8 @@ void ManifestBrokerState::GetOnDeviceModelEligibilityAsync(
 
 void ManifestBrokerState::EnsureInitialization(
     ModelBrokerImpl::InitCallback callback) {
+  // MoltBrowser: first demand (initialization waits for the manifest).
+  manifest_monitor_.RequestManifest();
   // Hurry the performance classifier.
   performance_classifier_.EnsurePerformanceClassAvailable(base::DoNothing());
   if (manifest_monitor_.manifest().has_value()) {
@@ -337,6 +343,9 @@ void ManifestBrokerState::GetStateInfo(
 
 void ManifestBrokerState::SetUseCaseRequested(const std::string& use_case,
                                               bool requested) {
+  if (requested) {
+    manifest_monitor_.RequestManifest();  // MoltBrowser: first demand.
+  }
   usage_tracker_.SetPriority(use_case,
                              requested ? UsageTracker::Priority::kUserBlocking
                                        : UsageTracker::Priority::kEvictable);

@@ -55,7 +55,8 @@ ManifestMonitor::ManifestMonitor(PrefService& local_state,
                                  PerformanceClassifier& performance_classifier,
                                  Delegate& delegate)
     : performance_classifier_(performance_classifier),
-      local_state_(local_state) {
+      local_state_(local_state),
+      delegate_(delegate) {  // MoltBrowser: kept for RequestManifest().
   TRACE_EVENT("optimization_guide", "ManifestMonitor::ManifestMonitor",
               perfetto::Flow::FromPointer(this));
   pref_change_registrar_.Init(&local_state_.get());
@@ -69,9 +70,8 @@ ManifestMonitor::ManifestMonitor(PrefService& local_state,
       base::BindRepeating(&ManifestMonitor::OnInputsChanged,
                           weak_ptr_factory_.GetWeakPtr()));
 
-  manifest_ready_subscription_ =
-      delegate.ListenForManifestReady(base::BindRepeating(
-          &ManifestMonitor::OnManifestReady, weak_ptr_factory_.GetWeakPtr()));
+  // MoltBrowser: the manifest is asked for on first demand, by
+  // RequestManifest(), not at startup.
 
   performance_classifier_->ListenForPerformanceClassAvailable(base::BindOnce(
       &ManifestMonitor::OnInputsChanged, weak_ptr_factory_.GetWeakPtr()));
@@ -87,6 +87,17 @@ ManifestMonitor::~ManifestMonitor() {
 void ManifestMonitor::SetCallback(base::RepeatingClosure on_manifest_changed) {
   on_manifest_changed_ = std::move(on_manifest_changed);
   OnInputsChanged();
+}
+
+// MoltBrowser: what the constructor did upstream, on first demand.
+void ManifestMonitor::RequestManifest() {
+  if (manifest_requested_) {
+    return;
+  }
+  manifest_requested_ = true;
+  manifest_ready_subscription_ =
+      delegate_->ListenForManifestReady(base::BindRepeating(
+          &ManifestMonitor::OnManifestReady, weak_ptr_factory_.GetWeakPtr()));
 }
 
 void ManifestMonitor::OnDiskSpaceEvaluated(

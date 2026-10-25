@@ -17,7 +17,10 @@
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/optimization_guide/core/delivery/prediction_model_component_configs.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/public/common/features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -119,9 +122,41 @@ TEST(MoltFeatureOverridesTest, DisablesGoogleOnlyComponents) {
       omnibox::kOnDeviceHeadProviderNonIncognito));
   EXPECT_FALSE(
       base::FeatureList::IsEnabled(omnibox::kOnDeviceHeadProviderIncognito));
+  EXPECT_FALSE(
+      base::FeatureList::IsEnabled(omnibox::kAimEligibilityComponentExtension));
   // No prediction model target is delivered as a component, so the
   // permission and phishing models stay with the key-gated download path.
   EXPECT_TRUE(optimization_guide::GetPredictionModelTargets().empty());
+}
+
+// On-device model downloads nothing MoltBrowser ships asks for: proactive
+// background downloads, and Web Speech on a model from the broker.
+TEST(MoltFeatureOverridesTest, NoUnaskedOnDeviceModelDownloads) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(
+      optimization_guide::features::kOnDeviceModelBackgroundDownload));
+  EXPECT_FALSE(optimization_guide::features::
+                   IsOnDeviceModelBackgroundDownloadEnabledForFeature(
+                       optimization_guide::mojom::OnDeviceFeature::kPromptApi));
+  EXPECT_FALSE(
+      base::FeatureList::IsEnabled(media::kOnDeviceWebSpeechSmallExpertModel));
+}
+
+// Secure DNS's automatic mode never falls back to Google Public DNS: the
+// fallback is read only while BundledSecuritySettingsSecureDnsV2 is on
+// (StubResolverConfigReader::ShouldUseDohFallback()).
+TEST(MoltFeatureOverridesTest, NoSecureDnsFallbackToGooglePublicDns) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(
+      safe_browsing::kBundledSecuritySettingsSecureDnsV2));
+  // Overridden, so a study in the field trial testing config that turned it
+  // on would be skipped as a whole.
+  std::optional<bool> state = base::FeatureList::GetStateIfOverridden(
+      safe_browsing::kBundledSecuritySettingsSecureDnsV2);
+  ASSERT_TRUE(state.has_value());
+  EXPECT_FALSE(*state);
 }
 
 // History embeddings decides on "overridden" first, then on the country and

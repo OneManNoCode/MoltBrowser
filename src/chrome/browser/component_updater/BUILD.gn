@@ -148,6 +148,9 @@ source_set("impl") {
     "//chrome/browser/ai",
     "//chrome/browser/history_embeddings",
     "//chrome/browser/media",
+
+    # MoltBrowser: registration.cc skips Google-only components.
+    "//chrome/browser/molt_ai/privacy:component_policy",
     "//chrome/browser/net",
     "//chrome/browser/page_load_metrics",
     "//chrome/browser/permissions",
