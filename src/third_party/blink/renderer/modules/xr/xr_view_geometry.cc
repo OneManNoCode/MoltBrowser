@@ -9,6 +9,7 @@
 #include "base/numerics/angle_conversions.h"
 #include "device/vr/public/mojom/vr_service.mojom-blink.h"
 #include "third_party/blink/renderer/modules/xr/xr_graphics_binding.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/transform.h"
 
 namespace {
@@ -50,10 +51,11 @@ void XRViewGeometry::UpdateProjectionMatrixFromFoV(float up_rad,
                                                    float right_rad,
                                                    float near_depth,
                                                    float far_depth) {
-  float up_tan = tanf(up_rad);
-  float down_tan = tanf(down_rad);
-  float left_tan = tanf(left_rad);
-  float right_tan = tanf(right_rad);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  float up_tan = gfx::molt_math::Tan(up_rad);
+  float down_tan = gfx::molt_math::Tan(down_rad);
+  float left_tan = gfx::molt_math::Tan(left_rad);
+  float right_tan = gfx::molt_math::Tan(right_rad);
   float x_scale = 2.0f / (left_tan + right_tan);
   float y_scale = 2.0f / (up_tan + down_tan);
   float inv_nf = 1.0f / (near_depth - far_depth);
@@ -82,7 +84,9 @@ void XRViewGeometry::UpdateProjectionMatrixFromAspect(float fovy,
                                                       float aspect,
                                                       float near_depth,
                                                       float far_depth) {
-  float f = 1.0f / tanf(fovy / 2);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h); a page
+  // picks fovy (an inline session's inlineVerticalFieldOfView).
+  float f = 1.0f / gfx::molt_math::Tan(fovy / 2);
   float inv_nf = 1.0f / (near_depth - far_depth);
 
   if (graphics_api_ == XRGraphicsBinding::Api::kWebGPU) {
