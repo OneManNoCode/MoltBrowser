@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.h"
+#include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -182,6 +183,12 @@ bool HidesScreenDetails(LocalDOMWindow* window) {
 
 bool ReportsPermissionDenied(ExecutionContext* context,
                              mojom::blink::PermissionName name) {
+  // display-capture: wherever the process hosts MoltNet, as screen, window
+  // and tab capture are refused there (molt_net_renderer.h), whatever the
+  // fingerprinting mode.
+  if (name == mojom::blink::PermissionName::DISPLAY_CAPTURE) {
+    return MoltNetDisplayCaptureDenied();
+  }
   return name == mojom::blink::PermissionName::WINDOW_MANAGEMENT &&
          UsesMoltNetUniformity(context);
 }

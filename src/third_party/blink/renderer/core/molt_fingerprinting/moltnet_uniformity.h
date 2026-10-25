@@ -101,9 +101,12 @@ CORE_EXPORT bool HidesScreenDetails(LocalDOMWindow* window);
 
 // Whether navigator.permissions reports `name` as "denied" in `context`,
 // fixed for its lifetime (no "change" events): window-management in
-// MoltNet web content, consistent with getScreenDetails(). Otherwise the
-// state is the one MoltNet's profile inherits from the user's regular
-// profile (a block there shows as "denied"), which differs between users.
+// MoltNet web content, consistent with getScreenDetails(), and
+// display-capture in every context of a process that hosts MoltNet
+// (windows and workers alike), consistent with getDisplayMedia() there
+// (core/molt_net/molt_net_renderer.h). Otherwise the state is the one
+// MoltNet's profile inherits from the user's regular profile (a block
+// there shows as "denied"), which differs between users.
 CORE_EXPORT bool ReportsPermissionDenied(ExecutionContext* context,
                                          mojom::blink::PermissionName name);
 

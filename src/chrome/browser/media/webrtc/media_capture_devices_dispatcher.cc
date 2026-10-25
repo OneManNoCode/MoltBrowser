@@ -22,6 +22,7 @@
 #include "chrome/browser/media/prefs/capture_device_ranking.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
 #include "chrome/browser/media/webrtc/permission_bubble_media_access_handler.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_display_capture.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -156,6 +157,17 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequest(
 
   auto* render_frame_host = content::RenderFrameHost::FromID(
       request.render_process_id, request.render_frame_id);
+
+  // MoltBrowser: no screen, window or tab capture in MoltNet, whatever the
+  // renderer sent: answered as a user's Cancel in the picker, before any
+  // handler can show one (molt_net_display_capture.h).
+  if (molt_ai::fingerprinting::RefusesDisplayCapture(
+          web_contents, render_frame_host, request)) {
+    std::move(callback).Run(blink::mojom::StreamDevicesSet(),
+                            molt_ai::fingerprinting::kDisplayCaptureRefusal,
+                            /*ui=*/nullptr);
+    return;
+  }
 
   for (const auto& handler : media_access_handlers_) {
     if (handler->SupportsStreamType(render_frame_host, request.video_type,
