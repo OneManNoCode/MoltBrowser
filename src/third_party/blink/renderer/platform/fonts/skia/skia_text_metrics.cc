@@ -6,6 +6,7 @@
 
 #include "base/containers/span.h"
 #include "build/build_config.h"
+#include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_face.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/skia/include/core/SkFont.h"
@@ -114,7 +115,11 @@ void SkFontGetGlyphExtentsForHarfBuzz(const SkFont& font,
 #if BUILDFLAG(IS_APPLE)
   // TODO(drott): Remove this once we have better metrics bounds
   // on Mac, https://bugs.chromium.org/p/skia/issues/detail?id=5328
-  if (const auto path = font.getPath(glyph)) {
+  // MoltBrowser: MoltNet's bundled fonts measure as on other OSes
+  // (molt_fingerprinting).
+  if (FontPlatformData::GetUniformFontSet()) {
+    sk_bounds = font.getBounds(glyph, nullptr);
+  } else if (const auto path = font.getPath(glyph)) {
     sk_bounds = path->getBounds();
   } else {
     sk_bounds = font.getBounds(glyph, nullptr);
@@ -161,8 +166,13 @@ void SkFontGetBoundsForGlyph(const SkFont& font, Glyph glyph, SkRect* bounds) {
 #if BUILDFLAG(IS_APPLE)
   // TODO(drott): Remove this once we have better metrics bounds
   // on Mac, https://bugs.chromium.org/p/skia/issues/detail?id=5328
-  GetPathBoundsForGlyph(font, glyph, bounds);
-#else
+  // MoltBrowser: MoltNet's bundled fonts measure as on other OSes
+  // (molt_fingerprinting).
+  if (!FontPlatformData::GetUniformFontSet()) {
+    GetPathBoundsForGlyph(font, glyph, bounds);
+    return;
+  }
+#endif
   *bounds = font.getBounds(glyph, nullptr);
 
   if (!font.isSubpixel()) {
@@ -170,7 +180,6 @@ void SkFontGetBoundsForGlyph(const SkFont& font, Glyph glyph, SkRect* bounds) {
     bounds->roundOut(&ir);
     bounds->set(ir);
   }
-#endif
 }
 
 void SkFontGetPreciseBoundsForGlyph(const SkFont& font,
@@ -196,10 +205,15 @@ void SkFontGetBoundsForGlyphs(const SkFont& font,
                               const Vector<Glyph, 256>& glyphs,
                               base::span<SkRect> bounds) {
 #if BUILDFLAG(IS_APPLE)
-  for (unsigned i = 0; i < glyphs.size(); i++) {
-    SkFontGetBoundsForGlyph(font, glyphs[i], &bounds[i]);
+  // MoltBrowser: MoltNet's bundled fonts measure as on other OSes
+  // (molt_fingerprinting).
+  if (!FontPlatformData::GetUniformFontSet()) {
+    for (unsigned i = 0; i < glyphs.size(); i++) {
+      SkFontGetBoundsForGlyph(font, glyphs[i], &bounds[i]);
+    }
+    return;
   }
-#else
+#endif
   static_assert(sizeof(Glyph) == 2, "Skia expects 2 bytes glyph id.");
   font.getBounds(glyphs, {bounds.data(), glyphs.size()}, nullptr);
 
@@ -210,7 +224,6 @@ void SkFontGetBoundsForGlyphs(const SkFont& font,
       bounds[i].set(ir);
     }
   }
-#endif
 }
 
 float SkFontGetWidthForGlyph(const SkFont& font, Glyph glyph) {

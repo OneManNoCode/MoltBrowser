@@ -129,6 +129,14 @@ void FontMetrics::AscentDescentWithHacks(
       ++descent;
       --ascent;
     }
+#else
+    // MoltBrowser: MoltNet's bundled fonts measure alike on every OS: the
+    // rule above, everywhere (molt_fingerprinting).
+    if (FontPlatformData::GetUniformFontSet() && descent < metrics.fDescent &&
+        font.isSubpixel() && ascent >= 1) {
+      ++descent;
+      --ascent;
+    }
 #endif
   }
 
@@ -140,6 +148,10 @@ void FontMetrics::AscentDescentWithHacks(
   // web standard. The AppKit adjustment of 20% is too big and is
   // incorrectly added to line spacing, so we use a 15% adjustment instead
   // and add it to the ascent.
+  // MoltBrowser: not with MoltNet's bundled fonts (molt_fingerprinting).
+  if (FontPlatformData::GetUniformFontSet()) {
+    return;
+  }
   String family_name = platform_data.FontFamilyName();
   if (family_name == font_family_names::kTimes ||
       family_name == font_family_names::kHelvetica ||

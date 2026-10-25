@@ -153,7 +153,10 @@ void SimpleFontData::PlatformInit(bool subpixel_ascent_descent,
     // value from the OS/2 table. However, the CSS ex unit
     // expects only parts above the baseline, hence measuring the glyph:
     // http://www.w3.org/TR/css3-values/#ex-unit
-    const Glyph x_glyph = GlyphForCharacter('x');
+    // MoltBrowser: MoltNet's bundled fonts take the font's own x-height, as
+    // on other OSes (molt_fingerprinting).
+    const Glyph x_glyph =
+        FontPlatformData::GetUniformFontSet() ? 0 : GlyphForCharacter('x');
     if (x_glyph) {
       gfx::RectF glyph_bounds(BoundsForGlyph(x_glyph));
       // SkGlyph bounds, y down, based on rendering at (0,0).
@@ -200,6 +203,11 @@ void SimpleFontData::PlatformInit(bool subpixel_ascent_descent,
   max_char_width_ = SkScalarRoundToInt(metrics.fXMax - metrics.fXMin);
 
 #endif
+  // MoltBrowser: MoltNet's bundled fonts: the rule above, on every OS
+  // (molt_fingerprinting).
+  if (FontPlatformData::GetUniformFontSet()) {
+    max_char_width_ = SkScalarRoundToInt(metrics.fXMax - metrics.fXMin);
+  }
 
 #if !BUILDFLAG(IS_APPLE)
   if (metrics.fAvgCharWidth) {
@@ -212,6 +220,12 @@ void SimpleFontData::PlatformInit(bool subpixel_ascent_descent,
       avg_char_width_ = WidthForGlyph(x_glyph);
     }
 #if !BUILDFLAG(IS_APPLE)
+  }
+#else
+  // MoltBrowser: MoltNet's bundled fonts: the font's own average width, as on
+  // other OSes (molt_fingerprinting).
+  if (FontPlatformData::GetUniformFontSet() && metrics.fAvgCharWidth) {
+    avg_char_width_ = metrics.fAvgCharWidth;
   }
 #endif
 

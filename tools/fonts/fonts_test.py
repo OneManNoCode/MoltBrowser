@@ -284,8 +284,17 @@ class SfntTest(unittest.TestCase):
             path = cache / entry["sha256"]
             if not path.is_file():
                 continue
-            self.assertEqual(pin_fonts.describe_faces(path.read_bytes()),
+            data_bytes = path.read_bytes()
+            self.assertEqual(pin_fonts.describe_faces(data_bytes),
                              entry["faces"], entry["install_name"])
+            # Blink on macOS takes advances from HarfBuzz instead of Skia for
+            # a face with 'trak' and without 'sbix' (harfbuzz_face.cc): no
+            # face of the set may have either, so they measure alike on
+            # every OS (docs/FINGERPRINTING.md, "MoltNet: the bundled font
+            # set").
+            for face in sfnt.read_faces(data_bytes):
+                self.assertNotIn("trak", face["tables"], entry["install_name"])
+                self.assertNotIn("sbix", face["tables"], entry["install_name"])
             checked += 1
         if not checked:
             self.skipTest("no bundled font in %s" % cache)
