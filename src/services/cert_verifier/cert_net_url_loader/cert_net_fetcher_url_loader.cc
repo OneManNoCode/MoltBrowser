@@ -62,6 +62,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>  // MoltBrowser
 #include <tuple>
 #include <utility>
 
@@ -85,10 +86,12 @@
 #include "net/base/isolation_info.h"
 #include "net/base/load_flags.h"
 #include "net/cert/cert_net_fetcher.h"
+#include "net/cert/molt_cert_fetch_site.h"  // MoltBrowser
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/redirect_info.h"
+#include "services/cert_verifier/cert_net_url_loader/molt_cert_fetch_isolation.h"  // MoltBrowser
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
@@ -342,6 +345,12 @@ struct CertNetFetcherURLLoader::RequestParams {
   // each fetch: no other request's params compare equal, so no two fetches
   // share a Job, and the Job loads with a one-off network key.
   uint64_t isolated_fetch_id = 0;
+  // MoltBrowser: the site the verification that asked for this fetch names
+  // ("" for none; net/cert/molt_cert_fetch_site.h): an isolated fetch's
+  // one-off key is that site's (molt_cert_fetch_isolation.h). Not compared:
+  // isolated fetches never match another one anyway, and a fetcher that
+  // doesn't isolate them ignores it.
+  std::string molt_site;
 
   // IMPORTANT: When adding fields to this structure, update operator<().
 };
@@ -543,14 +552,16 @@ void Job::StartURLLoader(network::mojom::URLLoaderFactory* factory) {
   // fetches to prevent deadlock.
   request->trusted_params = network::ResourceRequest::TrustedParams();
   request->trusted_params->disable_secure_dns = true;
-  // MoltBrowser: an isolated fetch gets a fresh transient IsolationInfo. It
-  // takes precedence over the factory's automatically assigned one (keyed
-  // by the URL's own site), so this fetch shares no HTTP cache entry (none
-  // is kept for transient keys), connection or proxy identity with any
-  // other request.
+  // MoltBrowser: an isolated fetch gets a fresh one-off IsolationInfo: of
+  // the site its verification names, else derived from nothing
+  // (molt_cert_fetch_isolation.h). It takes precedence over the factory's
+  // automatically assigned one (keyed by the URL's own site), so this fetch
+  // shares no HTTP cache entry (none is kept for keys with a nonce),
+  // connection or proxy identity with any other request, and counts
+  // against its site's connection limits.
   if (request_params_->isolated_fetch_id) {
     request->trusted_params->isolation_info =
-        net::IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
+        MoltCertFetchIsolationInfo(request_params_->molt_site);
   }
   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   // Ensure that we bypass HSTS for all requests sent through
@@ -891,6 +902,12 @@ CertNetFetcherURLLoader::DoFetch(
     std::unique_ptr<RequestParams> request_params) {
   // Caller thread cannot be the same as the creation thread.
   DCHECK(!task_runner_->RunsTasksInCurrentSequence());
+
+  // MoltBrowser: the site the verification running on this (the caller's)
+  // thread names, if any (net/cert/molt_cert_fetch_site.h).
+  if (const std::string* molt_site = net::MoltGetCertFetchSite()) {
+    request_params->molt_site = *molt_site;
+  }
 
   auto request_core = base::MakeRefCounted<RequestCore>(task_runner_);
 

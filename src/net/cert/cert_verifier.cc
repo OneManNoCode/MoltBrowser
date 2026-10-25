@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <tuple>  // MoltBrowser
 #include <utility>
 
 #include "base/containers/span.h"
@@ -16,10 +17,12 @@
 #include "net/cert/cert_verify_proc.h"
 #include "net/cert/coalescing_cert_verifier.h"
 #include "net/cert/crl_set.h"
+#include "net/cert/molt_cert_fetch_site.h"  // MoltBrowser
 #include "net/cert/do_nothing_ct_verifier.h"
 #include "net/cert/multi_threaded_cert_verifier.h"
 #include "net/cert/x509_util.h"
 #include "net/net_buildflags.h"
+#include "third_party/abseil-cpp/absl/base/attributes.h"  // MoltBrowser
 #include "third_party/boringssl/src/include/openssl/pool.h"
 #include "third_party/boringssl/src/include/openssl/sha.h"
 
@@ -121,12 +124,32 @@ CertVerifier::RequestParams::~RequestParams() = default;
 
 bool CertVerifier::RequestParams::operator==(
     const CertVerifier::RequestParams& other) const {
-  return key_ == other.key_;
+  // MoltBrowser: and the site the verification is for (empty everywhere but
+  // MoltNet).
+  return key_ == other.key_ &&
+         molt_cert_fetch_site_ == other.molt_cert_fetch_site_;
 }
 
 bool CertVerifier::RequestParams::operator<(
     const CertVerifier::RequestParams& other) const {
-  return key_ < other.key_;
+  // MoltBrowser: see operator==.
+  return std::tie(key_, molt_cert_fetch_site_) <
+         std::tie(other.key_, other.molt_cert_fetch_site_);
+}
+
+// MoltBrowser: the site of the certificate verification running on a
+// thread (net/cert/molt_cert_fetch_site.h).
+namespace {
+ABSL_CONST_INIT thread_local const std::string* g_molt_cert_fetch_site =
+    nullptr;
+}  // namespace
+
+const std::string* MoltGetCertFetchSite() {
+  return g_molt_cert_fetch_site;
+}
+
+void MoltSetCertFetchSite(const std::string* site) {
+  g_molt_cert_fetch_site = site;
 }
 
 // static

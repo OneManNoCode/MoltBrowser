@@ -18,6 +18,10 @@ struct RequestParams {
   int32 flags;
   mojo_base.mojom.ByteString ocsp_response;
   mojo_base.mojom.ByteString sct_list;
+  // MoltBrowser: the site whose connection the verification is for, which
+  // the certificate fetches it needs count against (MoltNet's network
+  // contexts only; net/cert/molt_cert_fetch_site.h). Null for none.
+  [MinVersion=1] string? molt_cert_fetch_site;
 };
 
 // Temporary config struct--this should eventually be deleted as the network

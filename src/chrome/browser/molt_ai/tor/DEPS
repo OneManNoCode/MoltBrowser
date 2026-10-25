@@ -19,4 +19,8 @@ specific_include_rules = {
   "molt_net_download_isolation_unittest\.cc": [
     "+content/browser/download/molt_download_isolation_policy.h",
   ],
+  # The network key of MoltNet's certificate fetches (header-only).
+  "molt_net_cert_fetch_site_unittest\.cc": [
+    "+services/cert_verifier/cert_net_url_loader/molt_cert_fetch_isolation.h",
+  ],
 }

@@ -19,6 +19,7 @@
 #include "net/base/url_util.h"
 #include "net/cert/cert_verify_proc.h"
 #include "net/cert/cert_verify_result.h"
+#include "net/cert/molt_cert_fetch_site.h"  // MoltBrowser
 #include "net/cert/x509_certificate.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source_type.h"
@@ -63,6 +64,8 @@ std::unique_ptr<ResultHelper> DoVerifyOnWorkerThread(
     const std::string& hostname,
     const std::string& ocsp_response,
     const std::string& sct_list,
+    // MoltBrowser: the site the verification is for ("" for none).
+    const std::string& molt_cert_fetch_site,
     int flags,
     const NetLogWithSource& net_log) {
   TRACE_EVENT0(NetTracingCategory(), "DoVerifyOnWorkerThread");
@@ -71,6 +74,9 @@ std::unique_ptr<ResultHelper> DoVerifyOnWorkerThread(
   verify_result->net_log = net_log;
   MultiThreadedCertVerifierScopedAllowBaseSyncPrimitives
       allow_base_sync_primitives;
+  // MoltBrowser: the certificate fetches this verification makes on this
+  // thread count against its site (net/cert/molt_cert_fetch_site.h).
+  MoltScopedCertFetchSite molt_scoped_cert_fetch_site(molt_cert_fetch_site);
   verify_result->error =
       verify_proc->Verify(cert.get(), hostname, ocsp_response, sct_list, flags,
                           &verify_result->result, net_log);
@@ -176,7 +182,9 @@ void MultiThreadedCertVerifier::InternalRequest::Start(
       {base::MayBlock(), base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
       base::BindOnce(&DoVerifyOnWorkerThread, verify_proc, params.certificate(),
                      params.hostname(), params.ocsp_response(),
-                     params.sct_list(), flags, net_log),
+                     params.sct_list(),
+                     // MoltBrowser:
+                     params.molt_cert_fetch_site(), flags, net_log),
       base::BindOnce(&MultiThreadedCertVerifier::InternalRequest::OnJobComplete,
                      weak_factory_.GetWeakPtr(), params.hostname(),
                      start_time));

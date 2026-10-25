@@ -5,6 +5,9 @@
 #ifndef SERVICES_NETWORK_PUBLIC_CPP_CERT_VERIFIER_CERT_VERIFIER_MOJOM_TRAITS_H_
 #define SERVICES_NETWORK_PUBLIC_CPP_CERT_VERIFIER_CERT_VERIFIER_MOJOM_TRAITS_H_
 
+#include <optional>  // MoltBrowser
+#include <string>    // MoltBrowser
+
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/x509_certificate.h"
@@ -33,6 +36,14 @@ struct StructTraits<cert_verifier::mojom::RequestParamsDataView,
   static const std::string& sct_list(
       const net::CertVerifier::RequestParams& params) {
     return params.sct_list();
+  }
+  // MoltBrowser:
+  static std::optional<std::string> molt_cert_fetch_site(
+      const net::CertVerifier::RequestParams& params) {
+    if (params.molt_cert_fetch_site().empty()) {
+      return std::nullopt;
+    }
+    return params.molt_cert_fetch_site();
   }
 
   static bool Read(cert_verifier::mojom::RequestParamsDataView data,

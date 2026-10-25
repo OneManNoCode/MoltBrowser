@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>  // MoltBrowser
 #include <vector>
 
 #include "base/memory/scoped_refptr.h"
@@ -136,6 +137,18 @@ class NET_EXPORT CertVerifier {
     const std::string& ocsp_response() const { return ocsp_response_; }
     const std::string& sct_list() const { return sct_list_; }
 
+    // MoltBrowser: the site whose connection this verification is for, as
+    // MoltNet's network contexts name it (a serialized SchemefulSite; ""
+    // for none, as in every other context), so that the certificate
+    // fetches it needs count against that site
+    // (net/cert/molt_cert_fetch_site.h). Compared with the rest.
+    const std::string& molt_cert_fetch_site() const {
+      return molt_cert_fetch_site_;
+    }
+    void MoltSetCertFetchSite(std::string site) {
+      molt_cert_fetch_site_ = std::move(site);
+    }
+
     bool operator==(const RequestParams& other) const;
     bool operator<(const RequestParams& other) const;
 
@@ -148,6 +161,9 @@ class NET_EXPORT CertVerifier {
 
     // Used to optimize sorting/indexing comparisons.
     std::string key_;
+
+    // MoltBrowser: see molt_cert_fetch_site().
+    std::string molt_cert_fetch_site_;
   };
 
   // When the verifier is destroyed, all certificate verification requests are

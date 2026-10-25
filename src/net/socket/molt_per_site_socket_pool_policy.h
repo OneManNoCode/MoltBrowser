@@ -24,8 +24,10 @@
 //    site of the request's network anonymization key, so a page's
 //    first-party and third-party keys count together; a key whose top-level
 //    site is opaque (a page the server sandboxed) counts against the site
-//    the opaque origin was derived from; the one-off keys no site can be
-//    named for (certificate fetches) share one small pool of their own
+//    the opaque origin was derived from; a certificate fetch counts against
+//    the site whose connection needed it (its one-off key has that site as
+//    top-level site, net/cert/molt_cert_fetch_site.h); the one-off keys no
+//    site can be named for share one small pool of their own
 //    (MoltBudgetSiteFor() in molt_connection_budget.h).
 //
 //  * All connections to Tor together stay within a fixed budget

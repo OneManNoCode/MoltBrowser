@@ -470,6 +470,7 @@ source_set("onion") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
@@ -532,6 +533,10 @@ source_set("unit_tests") {
     "//components/universal_optout",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
+
+    # The site MoltNet's certificate verifications carry, across the
+    # verifier service's interface.
+    "//mojo/public/cpp/test_support:test_utils",
     "//net",
     "//net:test_support",
 

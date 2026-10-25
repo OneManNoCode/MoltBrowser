@@ -4,6 +4,7 @@
 
 #include "services/network/public/cpp/cert_verifier/cert_verifier_mojom_traits.h"
 
+#include <optional>  // MoltBrowser
 #include <string>
 #include <vector>
 
@@ -25,6 +26,14 @@ bool StructTraits<cert_verifier::mojom::RequestParamsDataView,
   *params = net::CertVerifier::RequestParams(
       std::move(certificate), std::move(hostname), data.flags(),
       std::move(ocsp_response), std::move(sct_list));
+  // MoltBrowser: the site the certificate fetches count against, if any.
+  std::optional<std::string> molt_cert_fetch_site;
+  if (!data.ReadMoltCertFetchSite(&molt_cert_fetch_site)) {
+    return false;
+  }
+  if (molt_cert_fetch_site) {
+    params->MoltSetCertFetchSite(std::move(*molt_cert_fetch_site));
+  }
   return true;
 }
 

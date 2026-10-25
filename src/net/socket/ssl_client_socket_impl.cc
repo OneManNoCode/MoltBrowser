@@ -55,6 +55,7 @@
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_values.h"
 #include "net/net_buildflags.h"
+#include "net/socket/molt_connection_budget.h"  // MoltBrowser
 #include "net/ssl/cert_compression.h"
 #include "net/ssl/openssl_ssl_util.h"
 #include "net/ssl/ssl_cert_request_info.h"
@@ -1163,14 +1164,23 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
   // information from the server.
   UNSAFE_BUFFERS(base::span sct_list(sct_list_raw, sct_list_len));
 
+  CertVerifier::RequestParams verify_params(
+      server_cert_,
+      ech_name_override.empty() ? host_and_port_.host() : ech_name_override,
+      ssl_config_.GetCertVerifyFlags(),
+      std::string(base::as_string_view(ocsp_response)),
+      std::string(base::as_string_view(sct_list)));
+  // MoltBrowser: in MoltNet, the site of this connection, which the
+  // certificate fetches the verification needs count against
+  // (net/cert/molt_cert_fetch_site.h).
+  if (context_->molt_carries_cert_fetch_site()) {
+    if (const MoltBudgetSite site =
+            MoltBudgetSiteFor(ssl_config_.network_anonymization_key)) {
+      verify_params.MoltSetCertFetchSite(site->Serialize());
+    }
+  }
   cert_verification_result_ = context_->cert_verifier()->Verify(
-      CertVerifier::RequestParams(
-          server_cert_,
-          ech_name_override.empty() ? host_and_port_.host() : ech_name_override,
-          ssl_config_.GetCertVerifyFlags(),
-          std::string(base::as_string_view(ocsp_response)),
-          std::string(base::as_string_view(sct_list))),
-      &server_cert_verify_result_,
+      verify_params, &server_cert_verify_result_,
       base::BindOnce(&SSLClientSocketImpl::OnVerifyComplete,
                      base::Unretained(this)),
       &cert_verifier_request_, net_log_);
