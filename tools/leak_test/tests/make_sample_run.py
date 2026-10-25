@@ -260,7 +260,7 @@ def manifest():
                           'in_consensus': True}],
                 'consensus_relays': 7000,
                 'tor_options': {'ConnLimit': '1000',
-                                'MaxClientCircuitsPending': '64'}}},
+                                'MaxClientCircuitsPending': '256'}}},
             {'name': 'identity', 'start': t(80), 'end': t(90), 'data': {
                 'regular_cookie_in_moltnet': False,
                 'cookie_after_close': False,
