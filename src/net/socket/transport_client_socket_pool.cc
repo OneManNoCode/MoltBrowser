@@ -218,7 +218,9 @@ bool TransportClientSocketPool::IsStalled() const {
   // `max_sockets_per_group_`, then the request is stalled on the group limit,
   // which does not count.)
   for (const auto& it : group_map_) {
-    if (it.second.CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
+    // MoltBrowser: also a request that ignores its group's limit
+    // (MoltCanUseAdditionalSocketSlot()).
+    if (MoltCanUseAdditionalSocketSlot(it.second)) {
       return true;
     }
   }
@@ -429,8 +431,10 @@ int TransportClientSocketPool::RequestSocketInternal(
     }
   }
 
+  // MoltBrowser: with a gate, a request that ignores the limits waits for
+  // the pool's limit too, unless it may go past it (MoltRespectsPoolLimits()).
   if (Expandability() == SocketPoolExpandability::kCapped &&
-      request.respect_limits() == RespectLimits::ENABLED) {
+      MoltRespectsPoolLimits(request.respect_limits())) {
     // NOTE(mmenke):  Wonder if we really need different code for each case
     // here.  Only reason for them now seems to be preconnects.
     if (idle_socket_count_ == 0) {
@@ -1098,7 +1102,9 @@ void TransportClientSocketPool::CheckForStalledSocketGroups() {
     if (Expandability() == SocketPoolExpandability::kCapped) {
       if (idle_socket_count_ > 0) {
         CloseOneIdleSocketExceptInGroup(nullptr);
-      } else {
+      } else if (!MoltFindOverflowGroup(&top_group, &top_group_id)) {
+        // MoltBrowser: unless a request that ignores the limits may go past
+        // ours (MoltFindOverflowGroup()).
         // We can't activate more sockets since we're already at our global
         // limit.
         return;
@@ -1125,7 +1131,8 @@ bool TransportClientSocketPool::FindTopStalledGroup(Group** group,
     Group* curr_group = &it.second;
     if (!curr_group->has_unbound_requests())
       continue;
-    if (curr_group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
+    // MoltBrowser: also a request that ignores its group's limit.
+    if (MoltCanUseAdditionalSocketSlot(*curr_group)) {
       has_stalled_group = true;
       bool has_higher_priority =
           !top_group ||
@@ -1144,6 +1151,38 @@ bool TransportClientSocketPool::FindTopStalledGroup(Group** group,
     CHECK(!has_stalled_group);
   }
   return has_stalled_group;
+}
+
+// MoltBrowser: as CanUseAdditionalSocketSlot(), and in a pool with a gate
+// (MoltNet's per-site pools) also a group with a request that ignores the
+// limits (LOAD_IGNORE_LIMITS: a synchronous XMLHttpRequest) and has no
+// connect job yet: it skips its group's limit, and waits only for the
+// pool's (MoltRespectsPoolLimits()). Serving the group serves it: its next
+// request is one that ignores the limits too, and the new job goes to the
+// first request without one.
+bool TransportClientSocketPool::MoltCanUseAdditionalSocketSlot(
+    const Group& group) const {
+  return group.CanUseAdditionalSocketSlot(max_sockets_per_group_) ||
+         (MoltHasSocketGate() && group.MoltIgnoreLimitsRequestWaits());
+}
+
+// MoltBrowser: at the pool's limit, a group with a request that ignores the
+// limits and has no connect job, when it may go past the limit
+// (MoltMayOverflow()). Serving it adds a connect job, so
+// CheckForStalledSocketGroups() stops once the overflow is used up.
+bool TransportClientSocketPool::MoltFindOverflowGroup(Group** group,
+                                                       GroupId* group_id) {
+  if (!MoltMayOverflow()) {
+    return false;
+  }
+  for (auto& it : group_map_) {
+    if (it.second.MoltIgnoreLimitsRequestWaits()) {
+      *group = &it.second;
+      *group_id = it.first;
+      return true;
+    }
+  }
+  return false;
 }
 
 void TransportClientSocketPool::OnIPAddressChanged(
@@ -1199,8 +1238,9 @@ void TransportClientSocketPool::ProcessPendingRequest(const GroupId& group_id,
   // If the group has no idle sockets, and can't make use of an additional slot,
   // either because it's at the limit or because it's at the socket per group
   // limit, then there's nothing to do.
+  // MoltBrowser: or a request that ignores its group's limit can't.
   if (group->idle_sockets().empty() &&
-      !group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
+      !MoltCanUseAdditionalSocketSlot(*group)) {
     return;
   }
 

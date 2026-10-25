@@ -97,9 +97,12 @@ class MoltConnectionBudget {
   // budget (MoltPerSiteSocketPools).
   class Member {
    public:
-    // Adds each site's sockets in use (handed out, idle or connecting).
-    virtual void MoltAddLoads(
-        std::map<MoltBudgetSite, size_t>& loads) const = 0;
+    // Adds each site's sockets in use (handed out, idle or connecting) to
+    // `loads`, and to `within_limits` those within its pools' limits: what
+    // the budget counts (sockets past a limit come out of Tor's margin,
+    // kMoltIgnoreLimitsOverflow).
+    virtual void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
+                              size_t& within_limits) const = 0;
     // Whether a request of `site` waits for a socket slot.
     virtual bool MoltHasStalledRequest(const MoltBudgetSite& site) const = 0;
     // Lets `site`'s pools retry the requests that wait for a slot.
@@ -168,7 +171,9 @@ class MoltConnectionBudget {
     uintptr_t owner;
   };
   struct Loads {
+    // What the budget counts: sockets within their pools' limits.
     size_t total = 0;
+    // Each owner's sockets, past a limit too: a site's own count.
     std::map<MoltBudgetOwner, size_t> per_owner;
   };
   struct Waiter {
@@ -189,11 +194,12 @@ class MoltConnectionBudget {
     Loads loads;
     for (const MemberEntry& m : members_) {
       std::map<MoltBudgetSite, size_t> member_loads;
-      m.member->MoltAddLoads(member_loads);
+      size_t within_limits = 0;
+      m.member->MoltAddLoads(member_loads, within_limits);
       for (auto& [site, in_use] : member_loads) {
         loads.per_owner[MoltBudgetOwner{m.owner, site}] += in_use;
-        loads.total += in_use;
       }
+      loads.total += within_limits;
     }
     return loads;
   }

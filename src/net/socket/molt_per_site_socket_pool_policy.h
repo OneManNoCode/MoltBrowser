@@ -48,6 +48,10 @@
 //    Identity is ending and the next one) draws on the same one, and a
 //    site of one identity is a site of its own in it.
 //
+//  * Requests that may ignore the limits (synchronous XMLHttpRequests) skip
+//    only the per-group limit; past the site's own they go only by a few,
+//    outside the budget (kMoltIgnoreLimitsOverflow).
+//
 //  * SOCKS handshakes in progress, which are what make Tor build circuits
 //    for streams it can't put on an existing one, are limited the same way
 //    (MoltWeightedSlots): each one weighs the circuits it can make Tor
@@ -97,13 +101,60 @@ inline constexpr size_t kMoltNetConnectionBudget = 768;
 // unless it may open ConnLimit file descriptors (MoltNet writes Tor's
 // default, 1000, into its torrc), and keeps 32 of them for itself, so a Tor
 // that runs accepts at least 968 connections, on every system. The budget
-// leaves a fifth of that to Tor's own connections (guards, directory
-// fetches, the control port, files).
+// leaves a fifth of that beyond it: for the few sockets requests that ignore
+// the limits may take past their site's pool (kMoltIgnoreLimitsOverflow), and
+// at least kMoltTorOwnConnectionsFloor for Tor's own connections (its
+// listeners, the control connection, guard and bridge connections, which
+// also carry its directory fetches, and files).
 inline constexpr size_t kMoltTorConnLimit = 1000;
 inline constexpr size_t kMoltTorKeptFileDescriptors = 32;
 inline constexpr size_t kMoltTorOwnConnections = 200;
+inline constexpr size_t kMoltTorOwnConnectionsFloor = 128;
 static_assert(kMoltNetConnectionBudget + kMoltTorOwnConnections <=
               kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
+
+// Requests that may ignore the limits (LOAD_IGNORE_LIMITS: Blink sets it on
+// every synchronous XMLHttpRequest, whose thread waits for it, so that it
+// never waits behind requests of its own page that can't finish while that
+// thread waits) skip the per-group limit, as in Chromium, but not their
+// site's: they wait for the site's pool and the budget like any request,
+// except that once the site's HTTP pool holds its whole limit, a few more
+// may go past it (MoltIgnoreLimitsMayOverflow()). Those few aren't counted
+// in the budget other sites share (MoltPerSiteSocketPools::MoltAddLoads()),
+// they come out of the margin above: as only sockets within a pool's limit
+// count in the budget, at most kMoltOverflowingPools HTTP pools hold their
+// whole limit at a time, so at most kMoltIgnoreLimitsOverflowTotal sockets
+// go past the limits, whatever the sites do.
+inline constexpr size_t kMoltIgnoreLimitsOverflow = 4;
+inline constexpr size_t kMoltOverflowingPools =
+    kMoltNetConnectionBudget / kMoltPerSitePoolSize;
+inline constexpr size_t kMoltIgnoreLimitsOverflowTotal =
+    kMoltOverflowingPools * kMoltIgnoreLimitsOverflow;
+static_assert(kMoltIgnoreLimitsOverflowTotal + kMoltTorOwnConnectionsFloor <=
+              kMoltTorOwnConnections);
+static_assert(kMoltNetConnectionBudget + kMoltIgnoreLimitsOverflowTotal +
+                  kMoltTorOwnConnectionsFloor <=
+              kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
+
+// How far a site's pool may go past its limit for requests that ignore the
+// limits: its HTTP pool only (WebSockets never ignore them; a site's
+// one-off keys and the keys of no site keep their small pools).
+constexpr size_t MoltIgnoreLimitsOverflowFor(bool for_websockets,
+                                             bool unattributed,
+                                             bool site_one_off) {
+  return for_websockets || unattributed || site_one_off
+             ? 0
+             : kMoltIgnoreLimitsOverflow;
+}
+
+// Whether a request that ignores the limits may take a socket past its
+// pool's `limit` now: only while the pool holds its whole limit (`in_use`,
+// so the budget isn't what holds it back) and fewer than `overflow` more.
+constexpr bool MoltIgnoreLimitsMayOverflow(size_t in_use,
+                                           size_t limit,
+                                           size_t overflow) {
+  return in_use >= limit && in_use < limit + overflow;
+}
 
 // SOCKS handshakes in progress at a time, by weight
 // (MoltSocksHandshakeWeight()): per site, for the keys no site can be named
@@ -255,6 +306,14 @@ inline constexpr size_t kMoltSitesToFillBudget =
     MoltSitesToFillBudget(kMoltNetConnectionBudget, kMoltPerSiteConnections,
                           kMoltUnattributedConnections);
 static_assert(kMoltSitesToFillBudget == 11);
+// Eleven sites at their full share, each also past its limit by all it may
+// (kMoltIgnoreLimitsOverflow), with every unattributed connection, still
+// leave Tor its own.
+static_assert(kMoltSitesToFillBudget *
+                      (kMoltPerSiteConnections + kMoltIgnoreLimitsOverflow) +
+                  kMoltUnattributedConnections <=
+              kMoltTorConnLimit - kMoltTorKeptFileDescriptors -
+                  kMoltTorOwnConnectionsFloor);
 
 // The same for SOCKS handshakes. With weights the rule is unchanged: a site
 // holding at most its share less the weight w it asks for waits only while

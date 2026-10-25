@@ -17,6 +17,7 @@
 #ifndef NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 #define NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 
+#include <algorithm>
 #include <compare>
 #include <cstdint>
 #include <map>
@@ -104,6 +105,9 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
           common_connect_job_params_, cleanup_on_ip_address_change_);
       entry.pool->MoltSetSocketGate(this);
       entry.pool->MoltDisableBackupConnectJobs();
+      entry.pool->MoltSetIgnoreLimitsOverflow(MoltIgnoreLimitsOverflowFor(
+          is_for_websockets_, !key.site.has_value(), key.one_off));
+      entry.limit = limit;
       it = pools_.emplace(std::move(key), std::move(entry)).first;
     }
     it->second.last_handed_out = now;
@@ -135,7 +139,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
       list.Append(entry.pool->GetInfoAsValue(
           key.proxy_chain.ToDebugString() + " (per site)",
           key.proxy_chain.Last().is_socks() ? "socks_socket_pool"
-                                      : "http_proxy_socket_pool"));
+                                            : "http_proxy_socket_pool"));
     }
   }
 
@@ -160,9 +164,15 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   // MoltConnectionBudget::Member:
-  void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads) const override {
+  void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
+                    size_t& within_limits) const override {
     for (const auto& [key, entry] : pools_) {
-      loads[key.site] += entry.pool->SocketsInUse();
+      const size_t in_use = entry.pool->SocketsInUse();
+      loads[key.site] += in_use;
+      // Sockets past the pool's limit (requests that ignore the limits)
+      // count against the site, but come out of Tor's margin, not the
+      // budget other sites share (kMoltIgnoreLimitsOverflow).
+      within_limits += std::min(in_use, entry.limit);
     }
   }
   bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
@@ -206,6 +216,8 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   };
   struct Entry {
     std::unique_ptr<TransportClientSocketPool> pool;
+    // The pool's limit (MoltPerSitePoolLimit()).
+    size_t limit = 0;
     base::TimeTicks last_handed_out;
   };
 

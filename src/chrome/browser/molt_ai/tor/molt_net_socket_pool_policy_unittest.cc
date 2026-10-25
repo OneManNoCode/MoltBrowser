@@ -58,6 +58,39 @@ TEST(MoltNetSocketPoolPolicyTest, ASitesOneOffKeysHaveTheirOwnPool) {
   EXPECT_FALSE(MoltUsesSiteOneOffPool(true, true, true));
 }
 
+// Requests that ignore the limits (synchronous XMLHttpRequests) go past a
+// site's HTTP pool only once it is full, and only by a few, which come out
+// of Tor's margin: every pool that can be full at once, past its limit by
+// all it may, still leaves Tor its own connections.
+TEST(MoltNetSocketPoolPolicyTest, RequestsIgnoringLimitsGoPastByAFew) {
+  EXPECT_EQ(kMoltIgnoreLimitsOverflow, 4u);
+  EXPECT_EQ(MoltIgnoreLimitsOverflowFor(false, false, false), 4u);
+  EXPECT_EQ(MoltIgnoreLimitsOverflowFor(true, false, false), 0u);
+  EXPECT_EQ(MoltIgnoreLimitsOverflowFor(false, true, false), 0u);
+  EXPECT_EQ(MoltIgnoreLimitsOverflowFor(false, false, true), 0u);
+  // Below the limit the budget decides, as for any request.
+  EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(0, 48, 4));
+  EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(47, 48, 4));
+  EXPECT_TRUE(MoltIgnoreLimitsMayOverflow(48, 48, 4));
+  EXPECT_TRUE(MoltIgnoreLimitsMayOverflow(51, 48, 4));
+  EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(52, 48, 4));
+  EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(48, 48, 0));
+  EXPECT_EQ(kMoltOverflowingPools, 16u);
+  EXPECT_EQ(kMoltIgnoreLimitsOverflowTotal, 64u);
+  EXPECT_LE(kMoltIgnoreLimitsOverflowTotal + kMoltTorOwnConnectionsFloor,
+            kMoltTorOwnConnections);
+  EXPECT_LE(kMoltNetConnectionBudget + kMoltIgnoreLimitsOverflowTotal +
+                kMoltTorOwnConnectionsFloor,
+            kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
+  // Eleven sites at their full share and past it by all they may, with every
+  // unattributed connection.
+  EXPECT_LE(kMoltSitesToFillBudget *
+                    (kMoltPerSiteConnections + kMoltIgnoreLimitsOverflow) +
+                kMoltUnattributedConnections,
+            kMoltTorConnLimit - kMoltTorKeptFileDescriptors -
+                kMoltTorOwnConnectionsFloor);
+}
+
 TEST(MoltNetSocketPoolPolicyTest, OnlyLongUnusedPoolsAreDropped) {
   EXPECT_TRUE(MoltMayDropSitePool(true, kMoltUnusedSitePoolTimeoutSeconds));
   EXPECT_TRUE(MoltMayDropSitePool(true, 3600));
@@ -300,6 +333,8 @@ TEST(MoltNetSocketPoolPolicyTest, IsAConstantExpression) {
   static_assert(MoltPerSitePoolLimit(48, true, false) == 16);
   static_assert(MoltPerSitePoolLimit(48, false, false, true) == 4);
   static_assert(MoltUsesSiteOneOffPool(false, true, true));
+  static_assert(MoltIgnoreLimitsMayOverflow(48, 48, 4));
+  static_assert(MoltIgnoreLimitsOverflowFor(true, false, false) == 0);
   static_assert(!MoltMayDropSitePool(false, 100));
   static_assert(MoltBudgetAdmits(1, 2, 0, std::nullopt));
   static_assert(MoltSocksHandshakeLimit(false) == kMoltSocksHandshakesPerSite);

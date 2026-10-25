@@ -116,12 +116,7 @@ int InitSocketPoolHelper(
       connection_group.network_anonymization_key());
   ClientSocketPool::RespectLimits respect_limits =
       ClientSocketPool::RespectLimits::ENABLED;
-  // MoltBrowser: not in MoltNet's per-site pools, whose limits and budget
-  // every request counts against. A page sets LOAD_IGNORE_LIMITS with every
-  // synchronous XMLHttpRequest, so with it a site's workers could open
-  // connections beyond its share (net/socket/molt_connection_budget.h).
-  if ((request_load_flags & LOAD_IGNORE_LIMITS) != 0 &&
-      !pool->MoltHasSocketGate())
+  if ((request_load_flags & LOAD_IGNORE_LIMITS) != 0)
     respect_limits = ClientSocketPool::RespectLimits::DISABLED;
 
   std::optional<NetworkTrafficAnnotationTag> proxy_annotation =
