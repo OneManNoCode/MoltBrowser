@@ -51,6 +51,7 @@
 #include "sandbox/linux/system_headers/linux_stat.h"
 #include "sandbox/policy/features.h"
 #include "sandbox/policy/linux/bpf_broker_policy_linux.h"
+#include "sandbox/policy/linux/molt_data_limit.h"  // MoltBrowser
 #include "sandbox/policy/linux/sandbox_seccomp_bpf_linux.h"
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox.h"
@@ -529,6 +530,12 @@ bool SandboxLinux::LimitAddressSpace(int* error) {
   // other memory-hungry attack modes.
 
   rlim_t process_data_size_limit = GetProcessDataSizeLimit(sandbox_type);
+  // MoltBrowser: MoltNet's renderers get the same limit on every machine
+  // (molt_data_limit.h).
+  process_data_size_limit =
+      static_cast<rlim_t>(molt::ProcessDataSizeLimit(
+          *command_line, sandbox_type == sandbox::mojom::Sandbox::kRenderer,
+          process_data_size_limit));
   // Fine to call with multiple threads as we don't use RLIMIT_STACK.
   *error = ResourceLimits::Lower(RLIMIT_DATA, process_data_size_limit);
 

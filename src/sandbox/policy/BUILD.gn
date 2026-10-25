@@ -88,6 +88,7 @@ component("policy") {
       "linux/bpf_utility_policy_linux.h",
       "linux/landlock_util.cc",
       "linux/landlock_util.h",
+      "linux/molt_data_limit.h",  # MoltBrowser
       "linux/sandbox_debug_handling_linux.cc",
       "linux/sandbox_debug_handling_linux.h",
       "linux/sandbox_linux.cc",

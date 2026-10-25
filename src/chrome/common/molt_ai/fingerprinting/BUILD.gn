@@ -33,4 +33,9 @@ source_set("unit_tests") {
     ":fingerprinting",
     "//testing/gtest",
   ]
+  if (is_linux || is_chromeos) {
+    # MoltNet renderers' data limit (sandbox/policy/linux/molt_data_limit.h).
+    sources += [ "molt_data_limit_unittest.cc" ]
+    deps += [ "//sandbox/policy" ]
+  }
 }
