@@ -38,6 +38,7 @@
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/connect_job.h"
 #include "net/socket/connection_attempts.h"
+#include "net/socket/molt_per_site_socket_pool_policy.h"  // MoltBrowser
 #include "net/socket/socket_tag.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
@@ -242,6 +243,35 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
            higher_pools_.empty() && SocketsInUse() == 0;
   }
 
+  // MoltBrowser: no backup connect jobs for this pool (MoltNet's per-site
+  // pools, net/socket/molt_per_site_socket_pools.h). Called right after the
+  // pool is made, before any request.
+  void MoltDisableBackupConnectJobs() { connect_backup_jobs_enabled_ = false; }
+
+  // MoltBrowser: how many sockets past its limit this pool may take for
+  // requests that ignore the limits (LOAD_IGNORE_LIMITS: synchronous
+  // XMLHttpRequests), once it holds its whole limit (MoltNet's per-site HTTP
+  // pools: net/socket/molt_per_site_socket_pool_policy.h,
+  // kMoltIgnoreLimitsOverflow). Called right after the pool is made.
+  void MoltSetIgnoreLimitsOverflow(size_t overflow) {
+    molt_ignore_limits_overflow_ = overflow;
+  }
+  // MoltBrowser: whether a request that ignores the limits may take a socket
+  // past this pool's limit now.
+  bool MoltMayOverflow() const {
+    return MoltHasSocketGate() &&
+           MoltIgnoreLimitsMayOverflow(SocketsInUse(), SocketSoftCap(),
+                                       molt_ignore_limits_overflow_);
+  }
+  // MoltBrowser: whether a request waits for the pool's limit (and its
+  // gate): every request that respects the limits, as in Chromium, and in a
+  // pool with a gate also one that ignores them, which skips only its
+  // group's limit, unless it may go past the pool's (MoltMayOverflow()).
+  bool MoltRespectsPoolLimits(RespectLimits respect_limits) const {
+    return respect_limits == RespectLimits::ENABLED ||
+           (MoltHasSocketGate() && !MoltMayOverflow());
+  }
+
   // MoltBrowser: for MoltNet's connection budget (net/socket/
   // molt_connection_budget.h), which may hold back this pool's new sockets
   // (MoltSetSocketGate()).
@@ -252,7 +282,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
       return false;
     }
     for (const auto& [group_id, group] : group_map_) {
-      if (group.CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
+      if (MoltCanUseAdditionalSocketSlot(group)) {
         return true;
       }
     }
@@ -460,6 +490,21 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
     // Gets (but does not remove) the next unbound request. Returns
     // NULL if there are no unbound requests.
     const Request* GetNextUnboundRequest() const;
+
+    // MoltBrowser: whether a request that ignores the limits
+    // (RespectLimits::DISABLED, queued ahead of the others) has no connect
+    // job yet. Jobs go to the first requests, so whether there are more of
+    // those requests than jobs.
+    bool MoltIgnoreLimitsRequestWaits() const {
+      size_t ignoring = 0;
+      for (RequestQueue::Pointer p = unbound_requests_.FirstMax();
+           !p.is_null() &&
+           p.value()->respect_limits() == RespectLimits::DISABLED;
+           p = unbound_requests_.GetNextTowardsLastMin(p)) {
+        ++ignoring;
+      }
+      return ignoring > jobs_.size();
+    }
 
     // Gets and removes the next unbound request. Returns NULL if
     // there are no unbound requests.
@@ -700,6 +745,14 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
   // by `this`.
   bool FindTopStalledGroup(Group** group, GroupId* group_id);
 
+  // MoltBrowser: for requests that ignore the limits in a pool with a gate
+  // (MoltRespectsPoolLimits()): whether `group` can use another socket slot,
+  // also at its group's limit; and, at the pool's limit, a group with such a
+  // request still without a connect job, when it may go past the limit
+  // (MoltMayOverflow()).
+  bool MoltCanUseAdditionalSocketSlot(const Group& group) const;
+  bool MoltFindOverflowGroup(Group** group, GroupId* group_id);
+
   // Removes |job| from |group|, which must already own |job|.
   void RemoveConnectJob(ConnectJob* job, Group* group);
 
@@ -851,6 +904,9 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
 
   // TODO(vandebo) Remove when backup jobs move to TransportClientSocketPool
   bool connect_backup_jobs_enabled_;
+
+  // MoltBrowser: see MoltSetIgnoreLimitsOverflow().
+  size_t molt_ignore_limits_overflow_ = 0;
 
   // Pools that create connections through |this|.  |this| will try to close
   // their idle sockets when it stalls.  Must be empty on destruction.

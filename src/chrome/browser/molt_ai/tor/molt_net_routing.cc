@@ -7,16 +7,23 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/callback_list.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/supports_user_data.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_identity_end_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_partitioning_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -34,6 +41,7 @@
 #include "components/proxy_config/proxy_prefs.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/buildflags/buildflags.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "net/base/features.h"
 #include "net/base/net_errors.h"
@@ -255,6 +263,20 @@ MoltNetProfileSettings::Incognito ReadIncognito(const Profile* original) {
   return MoltNetProfileSettings::Incognito::kOff;
 }
 
+// Whether an administrator requires extensions in Incognito for
+// |original| (MandatoryExtensionsForIncognitoNavigation, a policy-only
+// list; molt_net_live_policy.h). Without extensions in the build there is
+// no such policy.
+bool ReadExtensionsRequiredInIncognito(const Profile* original) {
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+  return !original->GetPrefs()
+              ->GetList(prefs::kMandatoryExtensionsForIncognitoNavigation)
+              .empty();
+#else
+  return false;
+#endif
+}
+
 // What the settings check reads (molt_net_live_policy.h). With
 // |socks_port|, MoltNet's proxy must also point at that port.
 MoltNetProfileSettings ReadMoltNetSettings(
@@ -269,6 +291,8 @@ MoltNetProfileSettings ReadMoltNetSettings(
   settings.leak_controls_in_place = LeakPrefsInPlace(prefs);
   settings.blob_urls_partitioned = BlobUrlsPartitioned(prefs);
   settings.incognito = ReadIncognito(moltnet_profile->GetOriginalProfile());
+  settings.extensions_required_in_incognito =
+      ReadExtensionsRequiredInIncognito(moltnet_profile->GetOriginalProfile());
   return settings;
 }
 
@@ -334,6 +358,149 @@ class RoutingCheck : public network::mojom::ProxyLookupClient {
   mojo::Receiver<network::mojom::ProxyLookupClient> receiver_{this};
 };
 
+// Asks every network context of an ended identity how it would route a
+// request until each answers with the refusal, then drops its connections
+// once more (MoltNetRouting::WhenIdentityRefuses(),
+// molt_net_identity_end_policy.h). Deletes itself in Finish().
+class RefusalCheck {
+ public:
+  static void Start(Profile* moltnet_profile,
+                    MoltNetRouting::RefusalCallback done) {
+    auto* check = new RefusalCheck(moltnet_profile, std::move(done));
+    check->deadline_.Start(
+        FROM_HERE, base::Milliseconds(kMoltNetEndProbeDeadlineMs),
+        base::BindOnce(&RefusalCheck::Finish, base::Unretained(check),
+                       /*confirmed=*/false));
+    check->Ask();
+  }
+
+ private:
+  // One network context's answer.
+  class Lookup : public network::mojom::ProxyLookupClient {
+   public:
+    Lookup(RefusalCheck* check, network::mojom::NetworkContext* context)
+        : check_(check) {
+      const GURL url(kRoutingProbeUrl);
+      context->LookUpProxyForURL(
+          url,
+          net::NetworkAnonymizationKey::CreateSameSite(net::SchemefulSite(url)),
+          receiver_.BindNewPipeAndPassRemote());
+      // A context that goes away answers nothing: not the refusal.
+      receiver_.set_disconnect_handler(base::BindOnce(
+          &Lookup::Answer, base::Unretained(this), /*refuses=*/false));
+    }
+
+    // network::mojom::ProxyLookupClient:
+    void OnProxyLookupComplete(
+        int32_t net_error,
+        const std::optional<net::ProxyInfo>& proxy_info) override {
+      Answer(MoltNetContextRefuses(net_error == net::OK,
+                                   proxy_info.has_value(),
+                                   proxy_info && proxy_info->is_empty()));
+    }
+
+   private:
+    void Answer(bool refuses) {
+      receiver_.reset();
+      if (answered_) {
+        return;
+      }
+      answered_ = true;
+      check_->OnAnswer(refuses);
+    }
+
+    const raw_ptr<RefusalCheck> check_;
+    bool answered_ = false;
+    mojo::Receiver<network::mojom::ProxyLookupClient> receiver_{this};
+  };
+
+  RefusalCheck(Profile* moltnet_profile, MoltNetRouting::RefusalCallback done)
+      : profile_(moltnet_profile->GetWeakPtr()), done_(std::move(done)) {}
+
+  // A round: every loaded storage partition's network context is asked.
+  void Ask() {
+    Profile* profile = profile_.get();
+    if (!profile) {
+      Finish(/*confirmed=*/false);
+      return;
+    }
+    std::vector<network::mojom::NetworkContext*> contexts;
+    profile->ForEachLoadedStoragePartition(
+        [&contexts](content::StoragePartition* partition) {
+          if (network::mojom::NetworkContext* context =
+                  partition->GetNetworkContext()) {
+            contexts.push_back(context);
+          }
+        });
+    lookups_.clear();
+    contexts_ = static_cast<int>(contexts.size());
+    answers_ = 0;
+    refusing_ = 0;
+    if (contexts.empty()) {
+      OnRoundDone();
+      return;
+    }
+    for (network::mojom::NetworkContext* context : contexts) {
+      lookups_.push_back(std::make_unique<Lookup>(this, context));
+    }
+  }
+
+  void OnAnswer(bool refuses) {
+    ++answers_;
+    refusing_ += refuses ? 1 : 0;
+    if (answers_ == contexts_) {
+      // Not from inside a Lookup, which the next round destroys.
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, base::BindOnce(&RefusalCheck::OnRoundDone,
+                                    weak_factory_.GetWeakPtr()));
+    }
+  }
+
+  void OnRoundDone() {
+    switch (MoltNetEndProbeNext(contexts_, refusing_,
+                                /*deadline_passed=*/!deadline_.IsRunning())) {
+      case MoltNetEndProbeStep::kRefuses:
+        Finish(/*confirmed=*/true);
+        return;
+      case MoltNetEndProbeStep::kAskAgain:
+        base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(&RefusalCheck::Ask, weak_factory_.GetWeakPtr()),
+            base::Milliseconds(kMoltNetEndProbeIntervalMs));
+        return;
+      case MoltNetEndProbeStep::kGiveUp:
+        Finish(/*confirmed=*/false);
+        return;
+    }
+  }
+
+  void Finish(bool confirmed) {
+    if (Profile* profile = profile_.get()) {
+      // On each context's own pipe, after its answer: once the refusal is
+      // in place, so no connection opened before it is left.
+      MoltNetRouting::FlushNetworkState(profile);
+    }
+    if (!confirmed) {
+      LOG(WARNING) << "[MoltNet] an ended identity's network contexts didn't "
+                      "confirm the refusal in time; ending it anyway";
+    }
+    MoltNetRouting::RefusalCallback done = std::move(done_);
+    delete this;
+    if (done) {
+      std::move(done).Run(confirmed);
+    }
+  }
+
+  const base::WeakPtr<Profile> profile_;
+  MoltNetRouting::RefusalCallback done_;
+  base::OneShotTimer deadline_;
+  std::vector<std::unique_ptr<Lookup>> lookups_;
+  int contexts_ = 0;
+  int answers_ = 0;
+  int refusing_ = 0;
+  base::WeakPtrFactory<RefusalCheck> weak_factory_{this};
+};
+
 void OnTorStateChanged() {
   TorManager* manager = TorManager::Get();
   if (!manager->IsRunning() || !g_browser_process ||
@@ -390,7 +557,9 @@ std::string MoltNetRouting::IncognitoPolicyError(Profile* profile) {
     return "No profile";
   }
   return MoltNetSettingsError(
-      CheckMoltNetIncognito(ReadIncognito(profile->GetOriginalProfile())));
+      CheckMoltNetIncognito(
+          ReadIncognito(profile->GetOriginalProfile()),
+          ReadExtensionsRequiredInIncognito(profile->GetOriginalProfile())));
 }
 
 // static
@@ -464,6 +633,17 @@ void MoltNetRouting::EndIdentity(Profile* moltnet_profile) {
 bool MoltNetRouting::HasIdentityEnded(Profile* moltnet_profile) {
   return moltnet_profile &&
          moltnet_profile->GetUserData(kMoltNetIdentityEndedKey) != nullptr;
+}
+
+// static
+void MoltNetRouting::WhenIdentityRefuses(Profile* moltnet_profile,
+                                         RefusalCallback done) {
+  if (!IsMoltNetProfile(moltnet_profile) ||
+      !HasIdentityEnded(moltnet_profile)) {
+    std::move(done).Run(false);
+    return;
+  }
+  RefusalCheck::Start(moltnet_profile, std::move(done));
 }
 
 // static
@@ -618,14 +798,19 @@ void MoltNetRouting::FlushNetworkState(Profile* moltnet_profile) {
   if (!IsMoltNetProfile(moltnet_profile)) {
     return;
   }
-  network::mojom::NetworkContext* network_context =
-      moltnet_profile->GetDefaultStoragePartition()->GetNetworkContext();
-  if (!network_context) {
-    return;
-  }
-  network_context->CloseAllConnections(base::DoNothing());
-  network_context->ClearHostCache(network::mojom::ClearDataFilterPtr(),
-                                  base::DoNothing());
+  // Every network context of the identity, as WhenIdentityRefuses() asks
+  // them all.
+  moltnet_profile->ForEachLoadedStoragePartition(
+      [](content::StoragePartition* partition) {
+        network::mojom::NetworkContext* network_context =
+            partition->GetNetworkContext();
+        if (!network_context) {
+          return;
+        }
+        network_context->CloseAllConnections(base::DoNothing());
+        network_context->ClearHostCache(network::mojom::ClearDataFilterPtr(),
+                                        base::DoNothing());
+      });
 }
 
 // static

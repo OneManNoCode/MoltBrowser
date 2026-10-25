@@ -23,11 +23,16 @@
 //    (QuotaTemporaryStorageEvictor; a bucket that expires, through the
 //    Storage Buckets API, still goes);
 //  * every top-level site's storage keys together (its own and those of what
-//    it embeds) may use molt_per_site_quota;
-//  * all sites together may use pool_size, the memory bound: a write that
-//    would go beyond it fails. It fits MoltSitesToFillStorage() sites' full
-//    budgets, so a site still below its own budget is refused only once
-//    that many other sites hold theirs.
+//    it embeds) may use molt_per_site_quota, whatever the other sites
+//    stored: there is no total for all sites that a group of sites could
+//    fill, and so none another site could find full;
+//  * the memory it all takes is bounded by the machine instead: all sites
+//    together may always store pool_size (the floor, which every machine
+//    MoltNet runs on holds), and beyond it a write may only take what the
+//    machine has available above molt_memory_reserve
+//    (MoltNeedsMemoryCheck(), MoltStorageQuota()). A write the machine has
+//    no room for fails, for the site that writes; nothing another site
+//    stored is removed.
 //
 // Std-only, so molt_ai_unittests and a standalone harness test it.
 
@@ -37,6 +42,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 namespace storage {
 
@@ -52,35 +58,68 @@ constexpr bool MoltMayEvictForThePool(int64_t per_site_quota) {
   return !MoltUsesStorageBudget(per_site_quota);
 }
 
+// What a site using `site_usage` (all its storage keys) may still store of
+// its own share.
+constexpr int64_t MoltSiteRoom(int64_t site_usage, int64_t per_site_quota) {
+  return std::max<int64_t>(0, per_site_quota - std::max<int64_t>(0, site_usage));
+}
+
+// Whether answering a storage key's quota needs the machine's available
+// memory: only where its site could take all sites' usage (`total_usage`)
+// beyond the floor (QuotaSettings::pool_size), never below it, so the
+// machine never shows in what MoltNet's sites can store while they hold
+// less than the floor together.
+constexpr bool MoltNeedsMemoryCheck(int64_t per_site_quota,
+                                    int64_t site_usage,
+                                    int64_t total_usage,
+                                    int64_t floor) {
+  if (!MoltUsesStorageBudget(per_site_quota)) {
+    return false;
+  }
+  const int64_t site_room = MoltSiteRoom(site_usage, per_site_quota);
+  const int64_t total = std::max<int64_t>(0, total_usage);
+  return site_room > 0 && total > floor - site_room;
+}
+
+// The room the machine leaves beyond what is stored: what it has available
+// (`available_memory`, nullopt: unknown) above `memory_reserve`. Unknown
+// means none.
+constexpr int64_t MoltMachineRoom(std::optional<int64_t> available_memory,
+                                  int64_t memory_reserve) {
+  if (!available_memory) {
+    return 0;
+  }
+  return std::max<int64_t>(0, *available_memory - memory_reserve);
+}
+
 // The quota a storage key (or one of its buckets) using `usage` gets, given
 // Chromium's `quota` for it, its top-level site's `site_usage` (all of the
 // site's storage keys) and all sites' `total_usage`: no more room than the
-// site's budget and the total have left. Chromium's quota where there is no
-// budget.
+// site's own share has left, and no more than all sites together may still
+// take: up to the floor always, beyond it what the machine can spare.
+// Chromium's quota where there is no budget.
 constexpr int64_t MoltStorageQuota(int64_t quota,
                                    int64_t usage,
                                    int64_t site_usage,
                                    int64_t total_usage,
                                    int64_t per_site_quota,
-                                   int64_t total_quota) {
+                                   int64_t floor,
+                                   std::optional<int64_t> available_memory,
+                                   int64_t memory_reserve) {
   if (!MoltUsesStorageBudget(per_site_quota)) {
     return quota;
   }
-  const int64_t site_room = std::max<int64_t>(0, per_site_quota - site_usage);
-  const int64_t total_room = std::max<int64_t>(0, total_quota - total_usage);
-  const int64_t room = std::min(site_room, total_room);
+  const int64_t site_room = MoltSiteRoom(site_usage, per_site_quota);
+  const int64_t below_floor =
+      std::max<int64_t>(0, floor - std::max<int64_t>(0, total_usage));
+  const int64_t all_room =
+      std::max(below_floor, MoltMachineRoom(available_memory, memory_reserve));
+  const int64_t room = std::min(site_room, all_room);
   const int64_t base = std::max<int64_t>(0, usage);
   const int64_t limited = base > std::numeric_limits<int64_t>::max() - room
                               ? std::numeric_limits<int64_t>::max()
                               : base + room;
   return std::min(quota, limited);
-}
-
-// How many other sites must hold their whole budget before a site still
-// below its own is refused: one with `per_site` - 1 bytes writing one more
-// fails only once the others hold more than `total` - `per_site`.
-constexpr int64_t MoltSitesToFillStorage(int64_t total, int64_t per_site) {
-  return (total - per_site) / per_site + 1;
 }
 
 }  // namespace storage

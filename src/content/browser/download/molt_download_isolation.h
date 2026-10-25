@@ -19,6 +19,7 @@
 #include <optional>
 
 #include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_source.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/download/molt_download_isolation_policy.h"
 #include "content/public/browser/browser_context.h"
@@ -67,23 +68,32 @@ inline net::IsolationInfo MoltDownloadIsolationInfo(
   return net::IsolationInfo::CreateTransient(std::nullopt);
 }
 
+// Whether `source` is a retry the user starts from the browser's downloads
+// UI (the download bubble, the downloads page).
+inline bool MoltIsRetry(download::DownloadSource source) {
+  return source == download::DownloadSource::RETRY ||
+         source == download::DownloadSource::RETRY_FROM_BUBBLE;
+}
+
 inline MoltDownloadIsolation MoltChooseFor(
     BrowserContext* browser_context,
     const std::optional<net::IsolationInfo>& isolation,
     const std::optional<net::IsolationInfo>& original,
-    RenderFrameHost* frame) {
+    RenderFrameHost* frame,
+    bool is_retry) {
   const bool has_isolation = isolation.has_value() && !isolation->IsEmpty();
   return MoltChooseDownloadIsolation(
       MoltKeepsDownloadsWithTheirSite(browser_context), has_isolation,
       has_isolation && frame &&
           MoltOnSameTopLevelSite(*isolation,
                                  frame->GetIsolationInfoForSubresources()),
-      original.has_value() && !original->IsEmpty(), frame != nullptr);
+      original.has_value() && !original->IsEmpty(), frame != nullptr,
+      is_retry);
 }
 
 // DownloadManagerImpl::BeginDownloadInternal(): `frame` is the frame that
-// started the download (or null), `resumed` the download it resumes (or
-// null).
+// started the download (or null; for a retry, the downloads page's),
+// `resumed` the download it resumes (or null).
 inline void MoltKeepDownloadWithItsSite(BrowserContext* browser_context,
                                         RenderFrameHost* frame,
                                         const download::DownloadItem* resumed,
@@ -91,7 +101,8 @@ inline void MoltKeepDownloadWithItsSite(BrowserContext* browser_context,
   const std::optional<net::IsolationInfo> original =
       resumed ? resumed->GetIsolationInfo() : std::nullopt;
   const MoltDownloadIsolation choice =
-      MoltChooseFor(browser_context, params.isolation_info(), original, frame);
+      MoltChooseFor(browser_context, params.isolation_info(), original, frame,
+                    MoltIsRetry(params.download_source()));
   if (choice == MoltDownloadIsolation::kAsChromium) {
     return;
   }
@@ -110,7 +121,8 @@ inline void MoltKeepSavedResourceWithItsFrame(
     isolation = request.trusted_params->isolation_info;
   }
   const MoltDownloadIsolation choice =
-      MoltChooseFor(browser_context, isolation, std::nullopt, frame);
+      MoltChooseFor(browser_context, isolation, std::nullopt, frame,
+                    /*is_retry=*/false);
   if (choice == MoltDownloadIsolation::kAsChromium) {
     return;
   }

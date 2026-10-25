@@ -258,6 +258,15 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
     molt_send_no_client_certificates_ = true;
   }
 
+  // MoltBrowser: from now on each server certificate verification names
+  // the site of its connection, so that the certificate fetches it needs
+  // count against that site (net/cert/molt_cert_fetch_site.h). Set for
+  // MoltNet's network contexts only, right after they are built.
+  void MoltCarryCertFetchSite() { molt_carry_cert_fetch_site_ = true; }
+  bool molt_carries_cert_fetch_site() const {
+    return molt_carry_cert_fetch_site_;
+  }
+
   // Add an observer to be notified when configuration has changed.
   // RemoveObserver() must be called before |observer| is destroyed.
   void AddObserver(Observer* observer);
@@ -292,6 +301,8 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
 
   // MoltBrowser: see MoltSendNoClientCertificates().
   bool molt_send_no_client_certificates_ = false;
+  // MoltBrowser: see MoltCarryCertFetchSite().
+  bool molt_carry_cert_fetch_site_ = false;
 
   base::ObserverList<Observer, true /* check_empty */> observers_;
 };

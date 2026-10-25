@@ -234,7 +234,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - new_identity, session 1 -> 2: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
 - **PASS** Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending)
   - ConnLimit 1000 (expected 1000)
-  - MaxClientCircuitsPending 64 (expected 64)
+  - MaxClientCircuitsPending 256 (expected 256)
 - **SKIP** A Background Fetch goes to Tor with its site's SOCKS username (its site's circuit, not its destination's)
   - no Background Fetch request reached Tor (see the bgfetch tests' page results)
 - **SKIP** check.torproject.org says the MoltNet window uses Tor

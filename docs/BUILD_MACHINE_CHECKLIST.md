@@ -393,6 +393,7 @@ read. Upstream files are whole copies under `src/`, each hook marked
 |---|---|---|
 | `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_basic_and_digest_auth_only` (`HttpAuthStaticNetworkContextParams`), `[MinVersion=1] string? molt_socks_isolation_password` and the four `[MinVersion=1] bool molt_uncached_cert_verification`, `molt_no_shared_cache_entries`, `molt_hsts_top_level_navigations_only`, `molt_no_network_quality_estimator` (`NetworkContextParams`): last in their structs, so positional constructors still compile | #51, #55, #62, network quality |
 | `services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom` | `[MinVersion=1] bool molt_isolate_each_cert_fetch` | #51 |
+| `services/network/public/mojom/cert_verifier_service.mojom` (new upstream copy), `services/network/public/cpp/cert_verifier/cert_verifier_mojom_traits.{h,cc}` (new upstream copies) | `[MinVersion=1] string? molt_cert_fetch_site`, last in `RequestParams`; the traits' new getter returns `std::optional<std::string>` (null for none) and `Read()` calls `ReadMoltCertFetchSite()` | moltnet-shared2 |
 | `third_party/blink/public/mojom/worker/shared_worker_info.mojom`, `.../service_worker/service_worker.mojom` | `[MinVersion=1] bool molt_shields_down`; `ServiceWorker.InitializeGlobalScope` change | #24 |
 | `chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom` | the generated union API (`GenerationParams.constraint`), `LoadEmbeddingModel`/`EmbeddingModel.Embed`, the projector handle, GPU fields | #15, #28, #30, #38, #52 |
 | `chrome/services/molt_ai/document_parser/public/mojom/document_parser.mojom` | module constants, `kServiceSandbox` | #13, #18 |
@@ -452,6 +453,17 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `components/download/internal/background_service/in_memory_download.cc` (new upstream copy), `molt_registering_site_isolation.h` (new, header-only, in no target's `sources`) | `SendRequest()` puts `RequestParams::isolation_info` into the request's `trusted_params` (`ResourceRequest::TrustedParams::isolation_info`); the factories it uses must be trusted (they are: `StoragePartitionImpl::CreateURLLoaderFactoryParams()`, the profile's browser-process factory), or the network service reports a bad message | moltnet-shared |
 | `content/browser/download/download_manager_impl.cc`, `save_file_manager.cc` (new upstream copies), `molt_download_isolation.h`, `molt_download_isolation_policy.h` (new, header-only, in no target's `sources`) | `BeginDownloadInternal()` and `SaveURL()` call the header's helpers: `RenderFrameHost::GetIsolationInfoForSubresources()`, `DownloadItem::GetIsolationInfo()`, `DownloadUrlParameters::set_isolation_info()` / `set_update_first_party_url_on_redirect()`, `net::IsolationInfo::CreateTransient()`, `net::SchemefulSite`, `GetContentClient()->browser()` | moltnet-shared |
 | `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | new virtual `ShouldKeepDownloadsWithTheirSite(BrowserContext*)`, default `false`; Chrome's answers `molt_ai::tor::KeepDownloadsWithTheirSite(IsMoltNetProfile(...))` (`molt_net_network_context_policy.h`) | moltnet-shared |
+| `net/base/schemeful_site.h` (new upstream copy) | inline `MoltGetTupleOrPrecursorTupleIfOpaque()` (`url::Origin::GetTupleOrPrecursorTupleIfOpaque()`, returns `url::SchemeHostPort`); `MoltBudgetSiteFor()` uses it instead of reading `url::Origin::GetDebugString()`. Included by most of `//net`, `//services/network` and everything above: close to a full rebuild | moltnet-shared2 |
+| `net/socket/molt_connection_budget.h`, `molt_per_site_socket_pools.h`, `molt_per_site_socket_pool_policy.h` | `MoltTorCapacity` (`base::RefCounted`, one per network service process: `GetShared()`, `base::WrapRefCounted`, `base::MakeRefCounted`) holds the connection budget and `MoltSocksHandshakeBudget` (`MoltWeightedSlots`); budget keys are `(owner, site)` with the session's address as owner (`uintptr_t`); `MoltSocksHandshakeWeight(host)`; each new per-site `TransportClientSocketPool` gets `MoltDisableBackupConnectJobs()`; the pools are keyed by a struct (proxy chain, site, one-off) with a defaulted `operator<=>` (`ProxyChain`'s and `SchemefulSite`'s), and a key with a nonce (`NetworkAnonymizationKey::GetNonce()`) of a nameable site gets the site's HTTP pool of 4 | moltnet-shared2 |
+| `net/http/http_network_session.{h,cc}`, `net/socket/client_socket_pool_manager_impl.{h,cc}` | a `scoped_refptr<MoltTorCapacity>` replaces the session's `std::unique_ptr<MoltConnectionBudget>` (forward declaration and `base/memory/scoped_refptr.h`); `ClientSocketPoolManagerImpl` takes a further `uintptr_t molt_budget_owner` (default 0) | moltnet-shared2 |
+| `net/socket/client_socket_pool.h`, `transport_client_socket_pool.h`, `transport_client_socket_pool.cc` (new upstream copy), `socks_connect_job.cc` | inline `MoltHasSocketGate()`; `client_socket_pool_manager.cc` keeps Chromium's `LOAD_IGNORE_LIMITS` line; `transport_client_socket_pool.h` now includes `molt_per_site_socket_pool_policy.h` (std-only) and has inline `MoltSetIgnoreLimitsOverflow()`, `MoltMayOverflow()`, `MoltRespectsPoolLimits(RespectLimits)`, `Group::MoltIgnoreLimitsRequestWaits()` (walks `unbound_requests_` with `RequestQueue::Pointer`, `FirstMax()`, `GetNextTowardsLastMin()`), private `MoltCanUseAdditionalSocketSlot(const Group&) const` and `MoltFindOverflowGroup(Group**, GroupId*)` (defined in the `.cc`) and a `size_t` member; in the `.cc`, `IsStalled()`, `FindTopStalledGroup()` and `ProcessPendingRequest()` ask `MoltCanUseAdditionalSocketSlot()`, `RequestSocketInternal()`'s pool check asks `MoltRespectsPoolLimits()`, and `CheckForStalledSocketGroups()` serves `MoltFindOverflowGroup()` at the limit; inline `MoltDisableBackupConnectJobs()` (`connect_backup_jobs_enabled_`); `RefreshGroup()` and `CancelAllConnectJobs()` call the base class's protected `UpdateExpandabilityAfterRelease()` when they removed a gated pool's jobs; `DoMoltHandshakeSlot()` passes `MoltSocksHandshakeWeight(socks_params_->destination().host())` to `Acquire()` | moltnet-shared2 |
+| `net/cert/cert_verifier.{h,cc}`, `net/cert/multi_threaded_cert_verifier.cc`, `net/socket/ssl_client_socket_impl.cc` (new upstream copies), `net/socket/ssl_client_socket.h`, `net/cert/molt_cert_fetch_site.h` (new, header-only, in no target's `sources`) | `CertVerifier::RequestParams::molt_cert_fetch_site()` / `MoltSetCertFetchSite()` (compared in `operator==` and `operator<`, with `std::tie`); `NET_EXPORT` `MoltGetCertFetchSite()` / `MoltSetCertFetchSite()` declared in the new header and defined in `cert_verifier.cc` over an `ABSL_CONST_INIT thread_local` pointer (`third_party/abseil-cpp/absl/base/attributes.h`); `DoVerifyOnWorkerThread()` gets the site as a bound argument and holds a `MoltScopedCertFetchSite`; `SSLClientSocketImpl::VerifyCert()` builds the `RequestParams` first and names the site when `SSLClientContext::molt_carries_cert_fetch_site()`. On a component build, `//services/cert_verifier` calls the `NET_EXPORT` functions across the component boundary | moltnet-shared2 |
+| `services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.{h,cc}`, `molt_cert_fetch_isolation.h` (new, header-only, in no target's `sources`), `services/network/network_context.cc` | `RequestParams::molt_site` (a `std::string`, not compared), set in `DoFetch()` from `net::MoltGetCertFetchSite()`; an isolated fetch's `trusted_params->isolation_info` is `MoltCertFetchIsolationInfo()` (`net::IsolationInfo::Create()` with `RequestType::kOther`, the site's origin twice, an empty `SiteForCookies` and a `base::UnguessableToken` nonce); `MakeURLRequestContext()` calls `ssl_client_context()->MoltCarryCertFetchSite()` for `molt_uncached_cert_verification` contexts | moltnet-shared2 |
+| `storage/browser/quota/quota_settings.h`, `quota_manager_impl.cc` | `QuotaSettings::molt_memory_reserve`; `UsageAndQuotaInfoGatherer::MoltOnGotGlobalUsage()` posts `base::SysInfo::AmountOfAvailablePhysicalMemory()` to `base::ThreadPool::PostTaskAndReplyWithResult()` (`MayBlock`, `USER_BLOCKING`) when `MoltNeedsMemoryCheck()`, replying to `MoltOnGotAvailableMemory()` through the gatherer's `weak_factory_`; a new `std::optional<int64_t>` member | moltnet-shared2 |
+| `storage/browser/blob/blob_memory_controller.{h,cc}`, `blob_storage_constants.h`, `blob_data_builder.h`, `blob_storage_context.cc`, `blob_registry_impl.{h,cc}`, `blob_builder_from_stream.{h,cc}` (all but the controller new upstream copies), `molt_blob_budget_policy.h` (new, header-only, std-only, in no target's `sources`), `content/browser/blob_storage/blob_registry_wrapper.cc` (new upstream copy) | `BlobStorageLimits::molt_per_key_memory` / `molt_memory_reserve`; a `uint64_t molt_budget_key` parameter, defaulted, on `DetermineStrategy()`, `CanReserveQuota()`, `ReserveMemoryQuota()`, `GrantMemoryAllocations()`, `RevokeMemoryAllocation()` and `MemoryAllocation`'s constructor; the overload `GetAvailableMemoryForBlobs(uint64_t)` (`base::saturated_cast`), `MoltMemoryUsage()`, `MoltAvailableMemory()` (`base::TimeTicks`, `base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes()`), `molt_set_testing_available_memory()`; members `std::map<uint64_t, size_t>` and `mutable` cache fields declared before `weak_factory_`; `BlobRegistryImpl::Delegate::MoltBudgetKey()` (inline virtual, default 0) overridden by content's `BindingDelegate`, which now also takes the `ChildProcessId` (`is_null()`, `GetUnsafeValue()`); `Register()` reads `delegate` and `RegisterFromStream()` reads `receivers_.current_context()`. `blob_storage_constants.h` and `blob_memory_controller.h` are included across `//storage` and `//content`: a large rebuild | moltnet-shared2 |
+| `content/browser/renderer_host/render_process_host_impl.cc`, `content/browser/security/cpsp/child_process_security_policy_impl.{h,cc}` (new upstream copies), `molt_browsing_instance_processes.h`, `molt_browsing_instance_processes_policy.h` (new, header-only, in no target's `sources`), `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | `IsSuitableHost()` returns false (with a `TRACE_EVENT_INSTANT`) before the embedder's check when `MoltMayServeBrowsingInstance()` refuses; that helper reads `IsolationContext::browsing_instance_id()` and `browser_context()`, `SiteInfo::site_url()`, `RenderProcessHost::GetID()` and calls the new `ChildProcessSecurityPolicyImpl::MoltHostsOtherBrowsingInstance()` (under `lock_`, `GetProcessStateForQuery()`, `browsing_instance_default_isolation_states()`) and the new virtual `ContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(BrowserContext*, const GURL&)`, default `false`, which Chrome answers with `molt_ai::tor::KeepBrowsingInstancesApart()` (`:process_policy`). `child_process_security_policy_impl.h` is widely included in `//content` | moltnet-shared2 |
+| `components/download/internal/background_service/in_memory_download.cc`, `molt_registering_site_isolation.h` | `MoltCarryFetchCredentialsAndInitiator()` sets `ResourceRequest::credentials_mode` and `request_initiator` from `RequestParams::credentials_mode` / `initiator` when the request carries an isolation | moltnet-shared2 |
+| `chrome/browser/download/bubble/download_bubble_ui_controller.cc`, `chrome/browser/ui/webui/downloads/downloads_dom_handler.cc` (new upstream copies), `chrome/browser/download/molt_retried_download_isolation.h` (new, header-only, in no target's `sources`), `content/browser/download/molt_download_isolation{,_policy}.h` | both `RetryDownload()`s call `MoltRetryDownloadWithItsSite()` (`DownloadItem::GetRequestInitiator()`, `GetIsolationInfo()`, `DownloadUrlParameters::set_initiator()`, `set_isolation_info()`, `set_update_first_party_url_on_redirect()`); content's helper reads `DownloadUrlParameters::download_source()` (`download::DownloadSource::RETRY`, `RETRY_FROM_BUBBLE`) | moltnet-shared2 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -602,6 +614,30 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   and `content/browser/download/molt_download_isolation{,_policy}.h`;
   `molt_ai_unittests` includes the std-only policy (allowed for that test
   in the tor `DEPS`).
+  New in moltnet-shared2: header-only files in no target's `sources`,
+  included by the hooked files above: `net/cert/molt_cert_fetch_site.h`
+  (by `//net` and `//services/cert_verifier/cert_net_url_loader`),
+  `services/cert_verifier/cert_net_url_loader/molt_cert_fetch_isolation.h`,
+  `storage/browser/blob/molt_blob_budget_policy.h` (by `//storage/browser`
+  and `content/browser/blob_storage/blob_registry_wrapper.cc`),
+  `content/browser/renderer_host/molt_browsing_instance_processes{,_policy}.h`
+  and `chrome/browser/download/molt_retried_download_isolation.h` (by
+  `download_bubble_ui_controller.cc` and `downloads_dom_handler.cc`, which
+  then include `chrome/browser/molt_ai/tor/molt_net_network_context_policy.h`
+  and `molt_net_profile_id.h`). `molt_ai_unittests` includes the blob
+  policy (`chrome/browser/molt_ai/fingerprinting`), the process policy, the
+  Background Fetch header and the certificate-fetch header (each allowed for
+  its test in the tor `DEPS`) and now needs
+  `//mojo/public/cpp/test_support:test_utils` and
+  `//services/network/public/cpp` (added). `//chrome/browser/molt_ai/tor`
+  gained `:process_policy`, `:identity_end_policy` and
+  `//extensions/buildflags`; `chrome/browser/enterprise/data_controls/`
+  now includes `molt_net_incognito_parity.h` (§4.10). Windows only:
+  `molt_net_parental_controls.cc` includes
+  `chrome/browser/win/parental_controls.h`, whose target is
+  `//chrome/browser` itself (as for the tor target's other
+  `chrome/browser/` includes). If `gn check` flags any of them, list the
+  header in the target that includes it or add the dep.
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -639,6 +675,9 @@ flags the include, add the dep there.
 | `chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h` (MoltBrowser's own) | three more pinned prefs; `molt_net_pref_isolation_unittest.cc` now needs `//components/autofill/core/common` and `//components/universal_optout` | rebase 156 |
 | `chrome/browser/prefs/incognito_mode_prefs.cc` (imported from 156) | `CanOpenBrowser()`: a MoltNet profile may open windows unless Incognito is off (forced Incognito no longer refuses it) | moltnet-policy |
 | `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc` (imported from 156) | the Incognito URL lists for `GetsIncognitoProtections()` profiles instead of `IsIncognitoProfile()` | moltnet-policy |
+| `chrome/browser/enterprise/data_controls/chrome_rules_service.cc` (imported from 156) | `incognito_profile()`, `ExtractPasteActionContext()` and `ExtractPasteActionContextSource()`: a Data Controls rule's `incognito` condition covers `GetsIncognitoProtections()` profiles | moltnet-shared2 |
+| `chrome/browser/enterprise/data_controls/chrome_clipboard_context.cc` (imported from 156) | both `GetClipboardSource()` overloads: text copied in a MoltNet window has the source `INCOGNITO`, with no URL | moltnet-shared2 |
+| `chrome/browser/win/parental_controls.{h,cc}` (imported from 156) | `MoltReadWinParentalControlsNow()`: `WinParentalControlsValue::ReadNow()` (`GetParentalControlsFromApi()` + `UpdateParentalControlsFromRegistry()`, no histograms, not cached), asked on a COM STA runner (`base::ThreadPool::CreateCOMSTATaskRunner()`) each time a MoltNet window opens. Windows-only compile | moltnet-shared2 |
 
 ## 5. Unit tests
 
@@ -710,6 +749,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetLivePolicyTest` (new: the settings check, MoltNet's proxy-setting parser, the proxy-configuration rule), and `MoltNetRequestsPolicyTest`'s `autofill_server` and `address_metadata` | moltnet-live |
   | `MoltNetLanguagesTest` (real `LanguagePrefs`, a managed `ForcedLanguages`), `MoltNetIsolationTest.FixedLanguageNamesMatchChromiumsConstants`, `MoltNetPrefServiceTest.MoltNetWritesStayInMoltNet` (changed), `MoltNetSocketPoolsTest` (real `HttpNetworkSession` and pools, `MOCK_TIME`); built standalone only: `MoltNetLanguagePolicyTest`, `MoltNetSocketPoolPolicyTest`, `MoltNetLivePolicyTest`'s Incognito and ended-identity cases | moltnet-policy |
   | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity`, `MoltNetDownloadIsolationTest` (new), `MoltNetNetworkContextPolicyTest.DownloadsKeptWithTheirSiteInMoltNetOnly` | moltnet-shared |
+  | `MoltNetSocketPoolsTest` (now 11: `OnionHandshakesWeighMore`, `SessionsShareTorsBudgets`, `GreedySitesDontHoldBackAPoliteOne`, `ASitesOneOffKeysHaveAPoolOfTheirOwn`), `MoltNetCertFetchSiteTest` (new: the thread's site, a fetch's key in its site's pools, the site across the verifier service's mojo interface), `MoltNetBackgroundFetchRequestTest` (new), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (17: the weighted slots, a site's one-off pool, requests that ignore the limits), `MoltNetStorageBudgetPolicyTest` (rewritten: the floor and the machine), `MoltNetStorageValuesTest.{EachSiteATenthOfThePool,MemoryReserve,BlobShare}`, `MoltNetBlobBudgetPolicyTest` (new), `MoltNetProcessPolicyTest` (new), `MoltNetIdentityEndPolicyTest` (new), `MoltNetDownloadIsolationTest` (now 7: retries), `MoltNetLivePolicyTest.{ExtensionsRequiredInIncognitoRefuse,ParentalControlsReadAgain}`, `TorrcBuilderTest.StatesTorsSharedCapacity` (256) | moltnet-shared2 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `AutomationLocatorsTest`, `RunQuestionsTest`, `AutomationToolStepsTest`, `FrameToolsTest` (new), and the new cases of `AgentToolsTest` (frames of other sites, `consequentialHint`), `ChatActionsTest`, `AgentRunDraftTest` and `AutomationScriptTest` | agent-replay |
@@ -791,6 +831,13 @@ pass except where the table below says otherwise (verify the filters).
 | `components_unittests` | `InMemoryDownloadTest.*:DownloadServiceControllerImplTest.*:BackgroundFetchDelegateBase*` (requests without an isolation unchanged) | moltnet-shared |
 | `content_unittests` | `DownloadManagerTest.*:DownloadManagerImplTest.*:SavePackage*:SaveFileManager*:BackgroundFetch*` (no profile keeps downloads with their site there) | moltnet-shared |
 | `browser_tests` | `BackgroundFetchBrowserTest.*:DownloadTest.*Incognito*:SavePageBrowserTest.*` (Background Fetch in Incognito now sends the site's isolation; every other expectation unchanged) | moltnet-shared |
+| `net_unittests` | `SchemefulSite*:CertVerifier*:MultiThreadedCertVerifier*:CoalescingCertVerifier*:CachingCertVerifier*:SSLClientSocketTest.*:TransportClientSocketPool*:ClientSocketPoolManager*:HttpNetworkTransactionTest.*` (no MoltNet params: requests name no site, `LOAD_IGNORE_LIMITS` and backup jobs as before) | moltnet-shared2 |
+| `services_unittests` | `CertNetFetcherURLLoaderTest.*:CertVerifierService*:*CertVerifierMojomTraits*:NetworkContextTest.*` | moltnet-shared2 |
+| `storage_unittests` | `BlobMemoryControllerTest.*:BlobStorageContextTest.*:BlobRegistryImplTest.*:BlobBuilderFromStreamTest.*:BlobSlice*:QuotaManagerImplTest.*` (`molt_per_key_memory` and `molt_memory_reserve` are 0 outside MoltNet: one limit and Chromium's queue) | moltnet-shared2 |
+| `content_unittests` | `RenderProcessHostUnitTest.*:SiteInstanceTest.*:ChildProcessSecurityPolicyTest.*:BlobRegistryWrapper*:DownloadManagerImplTest.*` (no embedder keeps BrowsingInstances apart there) | moltnet-shared2 |
+| `unit_tests` | `ChromeRulesServiceTest.*:*DataControls*:*ClipboardContext*:DownloadBubbleUIControllerTest.*:DownloadsDOMHandlerTest.*:ChromeContentBrowserClient*` (Incognito, regular profiles and their retries as before) | moltnet-shared2 |
+| `components_unittests` | `InMemoryDownloadTest.*` (requests without an isolation unchanged) | moltnet-shared2 |
+| `browser_tests` | `DownloadTest.*Retry*:ProcessManagement*:*ProcessReuse*:DataControls*` (regular profiles unchanged) | moltnet-shared2 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -809,6 +856,7 @@ pass except where the table below says otherwise (verify the filters).
 | `AboutFlagsHistogramTest.CheckHistograms` | The `molt-*` flags aren't in `LoginCustomFlags` in `enums.xml` (from #39) | Either accept it (owner's call, §11), or in `chromium/src` run `python3 tools/metrics/histograms/generate_flag_enums.py out/MoltTests`, which runs the test and adds the entries, then import the changed upstream file into `src/` (an unchanged import commit first, then the edit) (verify the command). |
 | `NetworkContextTest`, `CertNetFetcherURLLoaderTest`, `CertVerifierServiceFactoryTest`, `SOCKSConnectJobTest` | Should not fail: the new fields default to off, and contexts without a password keep the fixed one | A failure here is a bug in #51 or #55. |
 | `AboutFlagsTest.*` | Should pass (metadata and never-expire entries were added) | Fix `flag-metadata.json` if not. |
+| `BlobMemoryControllerTest`, `BlobRegistryImplTest`, `RenderProcessHostUnitTest`, `ChildProcessSecurityPolicyTest`, `CertVerifier*`, `CertNetFetcherURLLoaderTest`, `TransportClientSocketPoolTest` | Should not fail: the new limits and fields default to 0 or empty, and only Chrome's client keeps BrowsingInstances apart, for MoltNet | A failure here is a bug in moltnet-shared2. |
 
 ### 5.4 The DCHECK pass
 
@@ -834,6 +882,21 @@ pass except where the table below says otherwise (verify the filters).
   (`next_state_`), `KeepaliveStatisticsRecorder` or `URLLoaderFactory`, no
   dangling-pointer report for `molt_socket_gate_` or
   `molt_socks_handshake_limiter`, and every tab of the new identity loads.
+- [ ] The same build, MoltNet's blobs, processes and identity end
+  (moltnet-shared2): six MoltNet tabs each building and dropping 16 MiB
+  blobs in a loop (and one recording a `MediaRecorder` of a canvas),
+  a popup opened from one of them and a tab of the same site; New
+  Identity while they run and while one of them keeps calling `fetch()`;
+  close the browser during the first second of a New Identity. *Expected:*
+  no `DCHECK` or `CHECK` in `BlobMemoryController` (`DCHECK_LE(length,
+  blob_memory_used_)`, `pending_memory_quota_tasks_`), `BlobStorageContext`,
+  `RenderProcessHostImpl` (the process selection checks after
+  `IsSuitableHost()`), `ChildProcessSecurityPolicyImpl` or
+  `MoltNetRouting`'s refusal check (no use after the profile is gone), and
+  the new identity's window opens. Then a MoltNet page whose twenty workers
+  each send synchronous `XMLHttpRequest`s to six slow hosts while the page
+  holds six downloads from each: no `DCHECK` in `TransportClientSocketPool`
+  (`Group::SanityCheck()`, `CheckForStalledSocketGroups()`), and no hang.
 
 ## 6. Fuzzers
 
@@ -1325,9 +1388,13 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   it stops at 60 MiB (the site's budget, moltnet-shared); the same for
   Cache Storage (`cache.put` of 1 MiB responses) and OPFS
   (`createSyncAccessHandle().write()` in a worker); ten more sites writing
-  at the same time stop when all of them together reach 600 MiB. A 900 MiB `Blob` built from 100 MiB parts can't
-  be read (`arrayBuffer()` rejects) and a 700 MiB one can. Repeat on a
-  4 GB machine (or VM): the same limits, and no process is killed for
+  at the same time each stop at 60 MiB too (moltnet-shared2: beyond 600 MiB
+  for all sites the machine's available memory decides, and 16 GB has it).
+  In a fresh MoltNet tab, a 250 MiB `Blob` built from five 50 MiB
+  `Uint8Array`s can't be read (`arrayBuffer()` rejects) and a 150 MiB one
+  can (moltnet-shared2: 200 MiB per renderer process). Repeat on a
+  4 GB machine (or VM): the same limits while all sites together hold
+  less than 600 MiB (800 MiB of blobs), and no process is killed for
   memory. An Incognito window keeps Chromium's limits (more than 200 MiB
   per site on 16 GB).
 - [ ] Pixels and encoded bytes in MoltNet (fp-pixels): run the leak kit (§8) on two machines of each OS with different CPUs and GPUs: on macOS an Intel Mac and an Apple silicon Mac (and the x86-64 build under Rosetta on the Apple silicon one), on Windows and Linux an Intel and an AMD CPU with different GPU vendors. `diff` shows no difference in `pixels.*`; in a regular window the same pages may differ (hardware decoding, `pixels.video_frame_format` `NV12` or null). On a machine with hardware VP9 or AV1 decoding, `chrome://media-internals` shows a software decoder (`VpxVideoDecoder`, `Dav1dVideoDecoder`) for a MoltNet tab playing a 1080p and a 2160p YouTube video, and a hardware one for the same video in a regular window. Note the CPU use (Activity Monitor, Task Manager, `top`) and, on a laptop on battery, the power draw (`powermetrics` on macOS) of each, at 1080p30, 2160p30 and 2160p60, and whether MoltNet drops frames (Stats for nerds): FINGERPRINTING.md "MoltNet: pixels and encoded bytes" estimates 0.5 to 1 W more at 1080p and 2 to 3 W at 2160p; correct it with what you measure. A WebGL video page (e.g. a video texture demo) and a canvas video filter page still run in MoltNet.
@@ -1489,7 +1556,8 @@ macOS, and for the manual steps everywhere:
   - Handshakes: a page that opens 100 connections to hosts needing new
     circuits (onion addresses, or ports exits rarely allow): a
     `chrome://net-export` log shows at most 16 of its `SOCKS5_CONNECT`
-    events open at a time, the others' connect jobs waiting in "resolving
+    events open at a time (5 for onion addresses, which count three each,
+    moltnet-shared2), the others' connect jobs waiting in "resolving
     host" without a backup job; a polite site's
     page opened meanwhile loads (its first request may take a few seconds
     longer). Page loads of ordinary sites feel no slower than before.
@@ -1518,6 +1586,66 @@ macOS, and for the manual steps everywhere:
     resumed request has the first one's username. In a regular window all
     of these behave as before (a link's file downloads with that site's
     cookies).
+- [ ] Shared limits per site, continued (moltnet-shared2;
+  MOLTNET_COMPLIANCE.md §2 *Tor's capacity*, *Certificate fetches*,
+  *Storage*, *Blob memory*, *Renderer processes*, §4 steps 7, 9 and 21),
+  with Tor's log at `Log info`:
+  - Circuits: twelve greedy sites in tabs, each opening 100 connections to
+    onion addresses or to ports exits rarely allow, and a polite site
+    opened meanwhile: the polite site's first page starts loading within a
+    handshake's time, and Tor's log never says "we already have 256
+    general-purpose client circuits pending". New Identity while they
+    run: the new identity's pages load as the old ones close.
+  - Synchronous requests: a page whose eight workers each send synchronous
+    `XMLHttpRequest`s to 100 slow hosts of its own: its pool in
+    `chrome://net-internals/#sockets` holds at most 52 (its 48, and 4 past
+    them once all 48 are held), and a polite site loads at once. A page
+    with six large downloads in flight from one HTTP/1.1 test server (one
+    that sends a byte a second), then a synchronous `XMLHttpRequest` to
+    that server from the page: it completes and the page doesn't freeze,
+    in a MoltNet window as in a regular one.
+  - Certificate fetches: a site whose server leaves out its intermediate
+    certificate (a test server that sends only its leaf): the page loads,
+    and a `chrome://net-export` log shows the intermediate's fetch with a
+    network key whose top-frame site is that site and a nonce of its own
+    (`chrome://net-internals/#sockets` lists a pool with a limit of 4 for
+    it, apart from the site's 48);
+    with two sites embedding that server, each site's connections fetch it
+    with that site's key.
+  - Blob memory: a MoltNet tab of site A keeps 16 MiB blobs until a new
+    one's `arrayBuffer()` rejects: twelve fit (192 MiB); a tab of site B
+    doing the same at the same time also keeps twelve; with five such
+    tabs (960 MiB together) on a 16 GB machine each still keeps twelve,
+    and on a 4 GB machine (or VM) the blobs beyond 800 MiB fail once the
+    machine has less than 1 GiB available, for the tab that makes them,
+    and no tab crashes. A MediaRecorder recording in another tab keeps
+    recording throughout. An Incognito window keeps Chromium's one limit
+    (one tab holds more than 200 MiB).
+  - Renderer processes: in Chrome's Task Manager, two MoltNet tabs of one
+    site, and an iframe of one third party embedded in two MoltNet tabs of
+    different sites, are in different processes; a popup a MoltNet page
+    opens (with an opener) of the same site shares its process. A regular
+    window's tabs, `chrome://` pages and the PDF viewer behave as before.
+  - Ending an identity: a MoltNet page that `fetch()`es a URL every 10 ms
+    and sends a `sendBeacon()` on `pagehide`, and a second page that sets
+    `location` to a new URL every 50 ms, then *New Identity*: in Tor's log
+    and the test server's, the old pages' requests stop at the click (none
+    started after it), and no navigation of the old windows commits after
+    the click; the windows still close within about two seconds.
+  - Incognito's policies: `MandatoryExtensionsForIncognitoNavigation` set
+    to an extension's ID while MoltNet is open closes it with "Incognito
+    requires extensions (MandatoryExtensionsForIncognitoNavigation), and
+    MoltNet windows run none", and MoltNet then refuses to open with it.
+    A `DataControlsRules` rule blocking paste from `incognito` sources:
+    text copied in a MoltNet window can't be pasted into a regular one,
+    and a reporting rule's event for it names no URL; a rule on
+    `incognito` destinations applies to pasting into a MoltNet page.
+  - Parental controls (Windows, once a Windows build exists): turn on
+    activity reporting for the Windows account (the family settings; what
+    Chromium's Incognito check reads) while the browser runs: the next
+    MoltNet window refuses to open with the Incognito-off message without
+    a browser restart; turn it off: MoltNet opens again. Web filtering
+    alone changes nothing, for Incognito as for MoltNet.
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1598,7 +1726,7 @@ Mac; use a real Linux host.
     it saw no network in the kit's namespace).
   - `identity.tor_capacity` passes (moltnet-shared): the torrc the browser
     started Tor with states `ConnLimit 1000` and `MaxClientCircuitsPending
-    64`. A SKIP saying the torrc wasn't found means the kit's Tor wrapper
+    256` (256 since moltnet-shared2). A SKIP saying the torrc wasn't found means the kit's Tor wrapper
     didn't record Tor's command line (`logs/tor-argv.txt`).
   - `recorder.mime_type`, `fonts.local_hidden` and
     `storage.enforced_quota` (60 MiB since moltnet-shared) pass

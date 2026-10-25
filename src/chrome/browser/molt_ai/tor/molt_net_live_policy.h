@@ -57,9 +57,19 @@
 // those sites only"), MoltNet gets Incognito's URL lists too
 // (chrome_policy_blocklist_service_factory.cc). The availability pref can
 // change while MoltNet is open (a policy refresh, an account becoming
-// supervised); the live guard watches it like the settings above. Parental
-// controls and Isolated Mode are read once per browser run, as Chromium
-// reads them.
+// supervised); the live guard watches it like the settings above.
+// Isolated Mode is read once per browser run, as Chromium reads it. So are
+// Windows' parental controls by Chromium, which has no notification of their
+// changes; MoltNet reads them again each time one of its windows opens
+// (MoltNetParentalControlsAllowOpen(), molt_net_parental_controls.h).
+//
+// An administrator can also require extensions in Incognito
+// (MandatoryExtensionsForIncognitoNavigation: Chromium blocks every
+// Incognito navigation while one of them isn't installed and allowed in
+// Incognito). MoltNet windows run no extension but MoltBrowser's own
+// component ones, so a required extension can never run there: while the
+// policy lists any extension, MoltNet doesn't open, and an open MoltNet
+// ends when it starts to (the live guard watches it too).
 //
 // Header-only and std-only, so molt_ai_unittests tests it.
 
@@ -159,6 +169,9 @@ struct MoltNetProfileSettings {
     kReplacedByIsolatedMode,
   };
   Incognito incognito = Incognito::kOff;
+  // The MandatoryExtensionsForIncognitoNavigation policy lists an
+  // extension (see the top of this file).
+  bool extensions_required_in_incognito = true;
 };
 
 enum class MoltNetSettingsCheck {
@@ -175,6 +188,8 @@ enum class MoltNetSettingsCheck {
   kIncognitoOff,
   // Incognito is replaced by Enterprise Isolated Mode.
   kIncognitoReplacedByIsolatedMode,
+  // Incognito requires extensions, which MoltNet windows don't run.
+  kIncognitoRequiresExtensions,
 };
 
 constexpr MoltNetSettingsCheck CheckMoltNetSettings(
@@ -191,7 +206,9 @@ constexpr MoltNetSettingsCheck CheckMoltNetSettings(
   }
   switch (settings.incognito) {
     case MoltNetProfileSettings::Incognito::kStandard:
-      return MoltNetSettingsCheck::kOk;
+      return settings.extensions_required_in_incognito
+                 ? MoltNetSettingsCheck::kIncognitoRequiresExtensions
+                 : MoltNetSettingsCheck::kOk;
     case MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode:
       return MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode;
     case MoltNetProfileSettings::Incognito::kOff:
@@ -200,10 +217,12 @@ constexpr MoltNetSettingsCheck CheckMoltNetSettings(
   return MoltNetSettingsCheck::kIncognitoOff;
 }
 
-// Whether Incognito's availability lets MoltNet open; for the check before
-// Tor starts, which needs only this (MoltNetRouting::IncognitoPolicyError()).
+// Whether Incognito's availability, and the extensions it requires, let
+// MoltNet open; for the check before Tor starts, which needs only this
+// (MoltNetRouting::IncognitoPolicyError()).
 constexpr MoltNetSettingsCheck CheckMoltNetIncognito(
-    MoltNetProfileSettings::Incognito incognito) {
+    MoltNetProfileSettings::Incognito incognito,
+    bool extensions_required_in_incognito) {
   MoltNetProfileSettings settings;
   settings.proxy = {.proxy_is_default = false,
                     .proxy_is_user_controlled = true,
@@ -212,7 +231,19 @@ constexpr MoltNetSettingsCheck CheckMoltNetIncognito(
   settings.leak_controls_in_place = true;
   settings.blob_urls_partitioned = true;
   settings.incognito = incognito;
+  settings.extensions_required_in_incognito = extensions_required_in_incognito;
   return CheckMoltNetSettings(settings);
+}
+
+// Whether the platform's parental controls, read again as a MoltNet window
+// opens, let it open: not while they require activity reporting
+// (`logging_required_now`, Windows), which turns Incognito off.
+// nullopt: nothing to read (not Windows); a failed read counts as no
+// controls, as Chromium counts it (GetWinParentalControls()). Refused with
+// kIncognitoOff's message.
+constexpr bool MoltNetParentalControlsAllowOpen(
+    std::optional<bool> logging_required_now) {
+  return !logging_required_now.value_or(false);
 }
 
 // The message shown instead of opening a MoltNet window, and when MoltNet
@@ -238,6 +269,10 @@ inline std::string MoltNetSettingsError(MoltNetSettingsCheck check) {
     case MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode:
       return "Your administrator replaced Incognito with Isolated Mode, and "
              "MoltNet windows follow it";
+    case MoltNetSettingsCheck::kIncognitoRequiresExtensions:
+      return "Incognito requires extensions "
+             "(MandatoryExtensionsForIncognitoNavigation), and MoltNet "
+             "windows run none";
   }
   return "MoltNet can't check its settings";
 }

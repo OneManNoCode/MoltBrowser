@@ -46,10 +46,14 @@ struct MoltNetNetworkContextSettings {
   // site, whichever site's certificate needed it, so the same fetch made
   // for different sites shares one HTTP cache entry and, in MoltNet, one
   // Tor circuit (the SOCKS username is the key's top-level site). When
-  // true, each fetch gets a one-off key of its own
-  // (net::IsolationInfo::CreateTransient()): nothing is cached, it has its
-  // own connection and its own Tor circuit, and two fetches are never
-  // merged into one request.
+  // true, each fetch gets a one-off key of its own: nothing is cached, it
+  // has its own connection and its own Tor circuit, and two fetches are
+  // never merged into one request. The key's top-level site is the site
+  // whose connection needed the fetch, which MoltNet's verifications carry
+  // (uncached_cert_verification below; net/cert/molt_cert_fetch_site.h),
+  // so the fetch counts against that site's connection limits; a fetch no
+  // site is named for gets a key derived from nothing
+  // (net::IsolationInfo::CreateTransient()).
   bool isolate_each_cert_fetch = false;
 
   // HTTP authentication: when true, sites are offered Basic and Digest
@@ -81,7 +85,8 @@ struct MoltNetNetworkContextSettings {
   // loaded before in this identity. When true, the context has neither:
   // every TLS connection, resumed ones included, is verified on its own (a
   // few milliseconds, next to the hundreds a connection through Tor
-  // takes).
+  // takes). Each verification then names the site of its connection, for
+  // the certificate fetches it needs (isolate_each_cert_fetch).
   bool uncached_cert_verification = false;
 
   // HTTP cache: Chromium 152 files requests for a built-in list of

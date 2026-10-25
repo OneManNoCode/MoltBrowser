@@ -388,7 +388,7 @@
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Tor's capacity)",
    "evidence": [
     "ConnLimit 1000 (expected 1000)",
-    "MaxClientCircuitsPending 64 (expected 64)"
+    "MaxClientCircuitsPending 256 (expected 256)"
    ],
    "group": "identity",
    "id": "identity.tor_capacity",

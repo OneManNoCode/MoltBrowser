@@ -5,14 +5,21 @@
 // (molt_per_site_socket_pool_policy.h says why). Owned by a
 // ClientSocketPoolManagerImpl whose session has
 // HttpNetworkSessionParams::molt_per_site_socket_pool_size set; one per
-// pool type. Each pool's limits are fixed, and with the session's
-// MoltConnectionBudget (molt_connection_budget.h) every pool asks the
-// budget before it opens a socket. Header-only: //net's sources are
+// pool type. Each pool's limits are fixed, and with the process's
+// MoltConnectionBudget (molt_connection_budget.h: one for every session
+// that goes to MoltNet's Tor) every pool asks the budget before it opens a
+// socket. The pools start no backup connect jobs: those are for a lost
+// connection attempt to the destination, and here every connection goes
+// to Tor on this machine; a second attempt would only be a second stream
+// for Tor to set up, outside the budget. Header-only: //net's sources are
 // Chromium's BUILD.gn, which MoltBrowser doesn't change.
 
 #ifndef NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 #define NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 
+#include <algorithm>
+#include <compare>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <utility>
@@ -38,14 +45,16 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   // chain, except the limits: MoltPerSitePoolLimit() of
   // `per_site_pool_size` for each site's pool, and MoltPerSiteGroupLimit()
   // of that and `max_sockets_per_group` per group. `budget` (may be null)
-  // outlives this.
+  // outlives this; `budget_owner` identifies the session (the same for its
+  // normal and WebSocket pools).
   MoltPerSiteSocketPools(size_t per_site_pool_size,
                          size_t max_sockets_per_group,
                          base::TimeDelta unused_idle_socket_timeout,
                          bool is_for_websockets,
                          const CommonConnectJobParams* common_connect_job_params,
                          bool cleanup_on_ip_address_change,
-                         MoltConnectionBudget* budget = nullptr)
+                         MoltConnectionBudget* budget = nullptr,
+                         uintptr_t budget_owner = 0)
       : per_site_pool_size_(per_site_pool_size),
         max_sockets_per_group_(max_sockets_per_group),
         unused_idle_socket_timeout_(unused_idle_socket_timeout),
@@ -54,7 +63,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
         cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
         budget_(budget) {
     if (budget_) {
-      budget_->AddMember(this);
+      budget_->AddMember(this, budget_owner);
     }
   }
 
@@ -71,24 +80,34 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   // The pool for requests of network key `network_anonymization_key`
-  // through `proxy_chain`: its site's (MoltBudgetSiteFor()); made on first
-  // use. Drops the site pools nothing has used for a while first, when it
-  // makes one.
+  // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or for a key
+  // with a nonce the site's pool for one-off keys (MoltUsesSiteOneOffPool());
+  // made on first use. Drops the site pools nothing has used for a while
+  // first, when it makes one.
   ClientSocketPool* Get(const ProxyChain& proxy_chain,
                         const NetworkAnonymizationKey& network_anonymization_key) {
     const base::TimeTicks now = base::TimeTicks::Now();
-    Key key(proxy_chain, MoltBudgetSiteFor(network_anonymization_key));
+    MoltBudgetSite site = MoltBudgetSiteFor(network_anonymization_key);
+    const bool one_off = MoltUsesSiteOneOffPool(
+        is_for_websockets_, site.has_value(),
+        network_anonymization_key.GetNonce().has_value());
+    Key key{proxy_chain, std::move(site), one_off};
     auto it = pools_.find(key);
     if (it == pools_.end()) {
       DropUnusedPools(now);
-      const size_t limit = MoltPerSitePoolLimit(
-          per_site_pool_size_, is_for_websockets_, !key.second.has_value());
+      const size_t limit =
+          MoltPerSitePoolLimit(per_site_pool_size_, is_for_websockets_,
+                               !key.site.has_value(), key.one_off);
       Entry entry;
       entry.pool = std::make_unique<TransportClientSocketPool>(
           limit, MoltPerSiteGroupLimit(limit, max_sockets_per_group_),
           unused_idle_socket_timeout_, proxy_chain, is_for_websockets_,
           common_connect_job_params_, cleanup_on_ip_address_change_);
       entry.pool->MoltSetSocketGate(this);
+      entry.pool->MoltDisableBackupConnectJobs();
+      entry.pool->MoltSetIgnoreLimitsOverflow(MoltIgnoreLimitsOverflowFor(
+          is_for_websockets_, !key.site.has_value(), key.one_off));
+      entry.limit = limit;
       it = pools_.emplace(std::move(key), std::move(entry)).first;
     }
     it->second.last_handed_out = now;
@@ -118,9 +137,9 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
       // As ClientSocketPoolManagerImpl::SocketPoolInfoToValue() names a
       // proxy chain's pool (never direct here).
       list.Append(entry.pool->GetInfoAsValue(
-          key.first.ToDebugString() + " (per site)",
-          key.first.Last().is_socks() ? "socks_socket_pool"
-                                      : "http_proxy_socket_pool"));
+          key.proxy_chain.ToDebugString() + " (per site)",
+          key.proxy_chain.Last().is_socks() ? "socks_socket_pool"
+                                            : "http_proxy_socket_pool"));
     }
   }
 
@@ -133,7 +152,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
     }
     for (const auto& [key, entry] : pools_) {
       if (entry.pool.get() == pool) {
-        return budget_->MayAllocate(this, key.second);
+        return budget_->MayAllocate(this, key.site);
       }
     }
     return true;
@@ -145,14 +164,20 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   // MoltConnectionBudget::Member:
-  void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads) const override {
+  void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
+                    size_t& within_limits) const override {
     for (const auto& [key, entry] : pools_) {
-      loads[key.second] += entry.pool->SocketsInUse();
+      const size_t in_use = entry.pool->SocketsInUse();
+      loads[key.site] += in_use;
+      // Sockets past the pool's limit (requests that ignore the limits)
+      // count against the site, but come out of Tor's margin, not the
+      // budget other sites share (kMoltIgnoreLimitsOverflow).
+      within_limits += std::min(in_use, entry.limit);
     }
   }
   bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
     for (const auto& [key, entry] : pools_) {
-      if (key.second == site && entry.pool->MoltHasStalledRequest()) {
+      if (key.site == site && entry.pool->MoltHasStalledRequest()) {
         return true;
       }
     }
@@ -180,19 +205,30 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
  private:
-  using Key = std::pair<ProxyChain, MoltBudgetSite>;
+  // A pool: the proxy chain, the site it counts against, and whether it is
+  // that site's pool for one-off keys (MoltUsesSiteOneOffPool()).
+  struct Key {
+    ProxyChain proxy_chain;
+    MoltBudgetSite site;
+    bool one_off = false;
+    friend bool operator==(const Key&, const Key&) = default;
+    friend auto operator<=>(const Key&, const Key&) = default;
+  };
   struct Entry {
     std::unique_ptr<TransportClientSocketPool> pool;
+    // The pool's limit (MoltPerSitePoolLimit()).
+    size_t limit = 0;
     base::TimeTicks last_handed_out;
   };
 
-  // `site`'s pools (one per proxy chain), collected first: what a pool does
-  // when asked doesn't change the map, but this doesn't rely on it.
+  // `site`'s pools (per proxy chain, and its one-off keys'), collected
+  // first: what a pool does when asked doesn't change the map, but this
+  // doesn't rely on it.
   std::vector<TransportClientSocketPool*> PoolsOf(
       const MoltBudgetSite& site) const {
     std::vector<TransportClientSocketPool*> pools;
     for (const auto& [key, entry] : pools_) {
-      if (key.second == site) {
+      if (key.site == site) {
         pools.push_back(entry.pool.get());
       }
     }

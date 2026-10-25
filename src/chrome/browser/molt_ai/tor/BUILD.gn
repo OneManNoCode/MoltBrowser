@@ -172,6 +172,21 @@ source_set("live_policy") {
   public_deps = [ ":proxy_policy" ]
 }
 
+# Which of MoltNet's renderer processes serve one BrowsingInstance each
+# (molt_net_process_policy.h); ChromeContentBrowserClient asks it.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("process_policy") {
+  sources = [ "molt_net_process_policy.h" ]
+}
+
+# When the end of a MoltNet identity counts as done: every network context
+# confirms the refusal (molt_net_identity_end_policy.h); molt_net_routing.cc,
+# molt_net_window.cc and the ended-identity navigation throttle read it.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("identity_end_policy") {
+  sources = [ "molt_net_identity_end_policy.h" ]
+}
+
 # No Autofill server traffic and no address metadata downloads for MoltNet
 # tabs and payment sheets (molt_net_autofill.h). Asked by
 # ChromeAutofillClient (//chrome/browser/ui) and ChromePaymentRequestDelegate
@@ -204,8 +219,17 @@ source_set("tor") {
     # Header-only: Chromium's Incognito protections for MoltNet; the
     # upstream hooks marked "MoltBrowser:" include it.
     "molt_net_incognito_parity.h",
+
+    # No navigation of an ended identity (registered in
+    # chrome_content_browser_client.cc).
+    "molt_net_ended_identity_throttle.cc",
+    "molt_net_ended_identity_throttle.h",
     "molt_net_live_guard.cc",
     "molt_net_live_guard.h",
+
+    # Windows' parental controls, read again as a MoltNet window opens.
+    "molt_net_parental_controls.cc",
+    "molt_net_parental_controls.h",
     "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
@@ -221,6 +245,8 @@ source_set("tor") {
 
   public_deps = [
     ":autofill",
+    ":identity_end_policy",
+    ":process_policy",
     ":incognito_parity_policy",
     ":language_policy",
     ":live_policy",
@@ -262,6 +288,10 @@ source_set("tor") {
     "//content/public/common",
     # Random SAFECOOKIE client nonces (crypto/random.h).
     "//crypto",
+
+    # ENABLE_EXTENSIONS_CORE: whether the build has the
+    # MandatoryExtensionsForIncognitoNavigation policy.
+    "//extensions/buildflags",
     "//mojo/public/cpp/bindings",
     "//net",
 
@@ -470,7 +500,10 @@ source_set("onion") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_background_fetch_request_unittest.cc",
+    "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
+    "molt_net_identity_end_policy_unittest.cc",
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_keepalive_partitions_unittest.cc",
@@ -482,6 +515,7 @@ source_set("unit_tests") {
     "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
+    "molt_net_process_policy_unittest.cc",
     "molt_net_proxy_policy_unittest.cc",
     "molt_net_request_binders_unittest.cc",
     "molt_net_requests_policy_unittest.cc",
@@ -495,6 +529,7 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":identity_end_policy",
     ":incognito_parity_policy",
     ":isolation_policy",
     ":language_policy",
@@ -505,6 +540,7 @@ source_set("unit_tests") {
     ":partitioning_policy",
     ":pref_isolation",
     ":pref_isolation_policy",
+    ":process_policy",
     ":protocol",
     ":proxy_policy",
     ":request_binders",
@@ -532,6 +568,10 @@ source_set("unit_tests") {
     "//components/universal_optout",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
+
+    # The site MoltNet's certificate verifications carry, across the
+    # verifier service's interface.
+    "//mojo/public/cpp/test_support:test_utils",
     "//net",
     "//net:test_support",
 
@@ -539,6 +579,9 @@ source_set("unit_tests") {
     "//services/cert_verifier/public/mojom",
     "//services/device/public/mojom",
     "//services/image_annotation/public/mojom",
+
+    # The ResourceRequest a Background Fetch request is built in.
+    "//services/network/public/cpp",
     "//services/network/public/cpp:buildflags",
     "//services/network/public/mojom",
     "//testing/gtest",

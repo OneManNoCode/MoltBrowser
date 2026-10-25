@@ -425,7 +425,7 @@ back/forward, and a MoltNet window with Shields off.
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
 | `navigator.storage.estimate()` quota | the usage + 10 GiB (the disk, rounded up to whole GiB, where it is smaller) | the usage + **10 GiB**, static in off-the-record profiles since Chromium 156 | none (upstream) |
-| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed**: 60 MiB per site (all its storage keys together), 600 MiB for all sites, nothing evicted for another site, 800 MiB of blobs ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor`; `quota_manager_impl.cc`: `UsageAndQuotaInfoGatherer`; `quota_temporary_storage_evictor.cc`: `OnGotEvictionRoundInfo` |
+| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed** for each site: 60 MiB per site (all its storage keys together) whatever other sites store, 600 MiB that all sites can always store together, beyond which the machine's free memory decides, nothing evicted for another site; 200 MiB of blobs per renderer process (one site in one tab), 800 MiB together before the machine decides ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor`; `quota_manager_impl.cc`: `UsageAndQuotaInfoGatherer`; `quota_temporary_storage_evictor.cc`: `OnGotEvictionRoundInfo`; `blob_memory_controller.cc`: `GetAvailableMemoryForBlobs`; `blob_registry_impl.cc`: `Register`, `RegisterFromStream` |
 | Third-party cookies, Shared Storage | the user's settings | third-party cookies **blocked** (as in Incognito); Shared Storage: removed upstream at 156 | `cookie_settings_factory.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
@@ -3307,10 +3307,10 @@ storage in memory; its limits are now fixed, and each site's are its own:
 
 | Limit a page reaches by writing | Chromium 156, off the record | MoltNet |
 |---|---|---|
-| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds |
-| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile; each key's quota is checked on its own, so all keys together may use more | **600 MiB**, the most all sites may store together |
+| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds; always available to the site, whatever other sites store |
+| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile; each key's quota is checked on its own, so all keys together may use more | **600 MiB** that all sites can always store together; beyond it a write succeeds while the machine keeps 1 GiB of memory available |
 | Eviction | every half hour (and five minutes after the profile starts), the least recently used data of any site, until all sites use less than 70% of the pool | **none**: a site that reaches its limit gets `QuotaExceededError`, and no site's data is removed to make room |
-| Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser), all sites together | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android; no disk | **800 MiB**; no disk |
+| Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser) | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android, for all sites together; no disk | **200 MiB per renderer process** (in MoltNet one site in one tab), whatever the others hold; 800 MiB that all can always hold together, beyond which the machine decides as for the quota; no disk |
 | `localStorage`, `sessionStorage` | 10 MiB per storage area, on every machine | unchanged |
 
 `navigator.storage.estimate()` has reported a fixed quota in off-the-record
@@ -3326,19 +3326,33 @@ the smallest machines MoltNet runs on. The totals are Chromium's own rules
 for a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
 Incognito's range (15% of 4 GiB, 614 MiB) is 600 MiB, and blobs get a
 fifth of 4 GiB (819 MiB), Chromium's rule for 32-bit desktops and
-ChromeOS. The 600 MiB bound everything MoltNet's sites store, so the
-memory MoltNet's storage can take is the same whatever sites do. Each site
-gets a tenth of it: Chromium's third per storage key would let a page
-fill the pool from three keys (and more with its embedded frames, each a
-key of its own), at which point eviction would remove other sites' data.
-With a tenth for each site, all of its keys together, a site's writes
-fail only once it has used its own 60 MiB, or once ten other sites hold
-all of theirs; until then nothing another site stores changes how much a
-site may write, and since nothing is evicted, nothing it stores removes
-another site's data. On larger machines the limits are less than
-Incognito allows (on 8 GB, a pool of 1.2 to 1.6 GiB and 410 to 550 MiB per
-key) and far more than sites store in practice (a few MB of caches and
-databases).
+ChromeOS. Each site gets a tenth of the pool: Chromium's third per
+storage key would let a page fill the pool from three keys (and more with
+its embedded frames, each a key of its own), at which point eviction
+would remove other sites' data. With a tenth for each site, all of its
+keys together, a site's writes fail only once it has used its own 60 MiB,
+and since nothing is evicted, nothing it stores removes another site's
+data.
+
+A total that the sites' shares can fill, any fixed one, can be reached by
+a group of sites (ten at 60 MiB fill 600 MiB) and then refuse a write of
+an eleventh: one site of the group could tell that another site's writes
+fail. So the 600 MiB is a floor, not a total: all sites together can
+always store that much, and a write that takes them beyond it still
+succeeds while the machine would keep 1 GiB of memory available (the
+browser asks how much memory is available, off the browser's main
+threads, only when a write could cross the floor). What bounds the memory
+beyond the floor is then the machine's own: any program on it uses that
+memory up as well, and a site sees it fill only when the machine is
+short of memory, whoever used it. The 1 GiB reserve leaves the system and
+the browser room before the operating system starts reclaiming or ending
+processes on a small machine. The site's 60 MiB still bound what one site
+can take. Blobs follow the same rule per renderer process: 200 MiB each
+(a quarter of the 800 MiB, so no one process takes the total past it
+alone), 800 MiB that all can always hold together, the machine beyond.
+On larger machines the limits are less than Incognito allows (on 8 GB, a
+pool of 1.2 to 1.6 GiB and 410 to 550 MiB per key) and far more than
+sites store in practice (a few MB of caches and databases).
 
 **Which profiles.** Only MoltNet's storage partitions (its off-the-record
 profile, through `ModeForBrowserContext`); normal and Incognito profiles
@@ -3348,19 +3362,27 @@ kill switch turns it off.
 **What a page can still observe.** Its own site's limit: writing until
 `QuotaExceededError` finds 60 MiB for the site, the same on every machine,
 less what the site's other storage keys (its subdomains, what it embeds)
-already use. Nothing of what other sites store, unless ten other sites
-hold all 60 MiB each in the same identity; `navigator.storage.estimate()`
-reports the usage + 10 GiB, as in every off-the-record profile at 156.
+already use. Nothing of what other sites store: its 60 MiB are its own.
+Its renderer process's 200 MiB of blobs, the same way. Only when all sites
+together hold more than 600 MiB (or all processes more than 800 MiB of
+blobs), which takes more than ten sites (more than four processes) at
+their full share, does a write depend on the machine: it succeeds while the
+machine keeps 1 GiB free, so a page that gets there with a group of sites
+can tell roughly whether the machine has more memory than that to spare;
+`navigator.storage.estimate()` reports the usage + 10 GiB, as in every
+off-the-record profile at 156.
 
 **What it costs MoltNet users.** Offline web apps, in-browser editors and
 large downloads assembled in the page (`Blob`, OPFS) stop at 60 MiB per
-site and 800 MiB of blobs, with the same `QuotaExceededError` on every
-machine. Since nothing is evicted, an identity whose sites have stored
-600 MiB together gets `QuotaExceededError` on every site until a site's
-data is deleted (by the site, or with New Identity); MoltNet keeps nothing
-after the session anyway. Counting a site's usage needs every storage
-key's usage, which the quota system keeps in memory: one pass over the
-identity's keys per quota check.
+site and 200 MiB of blobs per tab's process, with the same
+`QuotaExceededError` (or broken blob) on every machine. Since nothing is
+evicted, data a site no longer needs stays until the site deletes it or
+New Identity; MoltNet keeps nothing after the session anyway. Counting a
+site's usage needs every storage key's usage, which the quota system keeps
+in memory: one pass over the identity's keys per quota check; a check
+that could cross the floor also asks the machine how much memory is
+available (on a worker thread for the quota, at most every 200 ms for
+blobs).
 
 **Code.** `chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`
 (the values and their derivation, + `molt_net_storage_values_unittest.cc`)
@@ -3377,12 +3399,25 @@ limits then leave alone). The site budget:
 `storage/browser/quota/molt_storage_budget_policy.h` (the rules, std-only,
 + `molt_net_storage_budget_policy_unittest.cc`) and `molt_storage_budget.h`
 (a site's usage from each storage key's), hooked into
-`storage/browser/quota/quota_settings.h` (the new `molt_per_site_quota`, 0
-everywhere else), `quota_manager_impl.cc` (`UsageAndQuotaInfoGatherer`
-counts every key's usage when there is a budget, and its `Completed()`
-leaves a key no more room than its site's budget and the total have left)
-and `quota_temporary_storage_evictor.cc` (`OnGotEvictionRoundInfo` evicts
-nothing for the pool when there is a budget).
+`storage/browser/quota/quota_settings.h` (the new `molt_per_site_quota`
+and `molt_memory_reserve`, 0 everywhere else), `quota_manager_impl.cc`
+(`UsageAndQuotaInfoGatherer` counts every key's usage when there is a
+budget, reads the machine's available memory on a worker thread when the
+site's room could cross the floor (`MoltOnGotAvailableMemory()`), and its
+`Completed()` leaves a key no more room than its site's share, within
+what is left of the floor or, beyond it, what the machine allows) and
+`quota_temporary_storage_evictor.cc` (`OnGotEvictionRoundInfo` evicts
+nothing for the pool when there is a budget). Blobs:
+`storage/browser/blob/molt_blob_budget_policy.h` (the rules, std-only, +
+`molt_net_blob_budget_policy_unittest.cc`), applied by
+`blob_memory_controller.{h,cc}` (memory counted per budget key, the new
+`BlobStorageLimits` fields `molt_per_key_memory` and
+`molt_memory_reserve`), with the key set by `blob_registry_impl.{h,cc}`
+and `blob_builder_from_stream.{h,cc}` from the registry's binding
+(`content/browser/blob_storage/blob_registry_wrapper.cc`: the renderer
+process) and used by `blob_storage_context.cc`; MoltNet's renderer
+processes each serve one tab (docs/MOLTNET_COMPLIANCE.md §2 *Renderer
+processes*).
 
 **Verification.** Standalone: the values and glue tests pass with g++
 (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions` and the strict
@@ -3403,14 +3438,23 @@ tests (a site's subdomains and embedded third parties share its budget
 and another site keeps all of its own; the total binds only with ten full
 sites; Incognito and unlimited keys keep Chromium's quota and count
 nothing more; the evictor evicts nothing for MoltNet's pool and still does
-for Incognito's), 8 mutants caught. Every changed C++ file compiles
+for Incognito's), 8 mutants caught. Round 24: the rules' unit tests (12
+tests, the floor and the machine) built standalone; the harness, with the
+machine's available memory read on a stand-in worker thread, 6 tests (a
+group of twenty sites at their share leaves a polite site all of its own;
+below the floor the machine isn't asked; beyond it the reserve holds and
+nothing of another site is removed), 14 mutants caught; the blob budget's
+harness (`BlobMemoryController`'s quota code as Chromium 156 has it and as
+hooked, verbatim), 9 tests, 23 mutants caught. Every changed C++ file compiles
 without errors against Chromium 156's real headers (`tools/compile_check`).
 **Needs the build machine:** compiling and linking, `molt_ai_unittests`
 (`MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*`,
-`MoltNetStorageBudgetPolicyTest.*`), `storage_unittests`
-(`QuotaManagerImplTest.*`, `QuotaTemporaryStorageEvictorTest.*`, for
-Chromium's own behaviour, unchanged), and the checks tagged "fp-probes"
-and "moltnet-shared" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
+`MoltNetStorageBudgetPolicyTest.*`, `MoltNetBlobBudgetPolicyTest.*`),
+`storage_unittests` (`QuotaManagerImplTest.*`,
+`QuotaTemporaryStorageEvictorTest.*`, `BlobMemoryControllerTest.*`,
+`BlobStorageContextTest.*`, `BlobRegistryImplTest.*`, for Chromium's own
+behaviour, unchanged), and the checks tagged "fp-probes",
+"moltnet-shared" and "moltnet-shared2" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
 `QuotaExceededError` with IndexedDB, Cache Storage and OPFS, a large blob,
 two sites' quotas, and no eviction after more than half an hour).
 **Automated** by [`tools/leak_test`](LEAK_TESTING.md): the quota the

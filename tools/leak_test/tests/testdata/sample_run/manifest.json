@@ -526,7 +526,7 @@
     ],
     "tor_options": {
      "ConnLimit": "1000",
-     "MaxClientCircuitsPending": "64"
+     "MaxClientCircuitsPending": "256"
     }
    },
    "end": 1760000003.0,

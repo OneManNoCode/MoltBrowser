@@ -24,6 +24,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
+#include "chrome/browser/molt_ai/tor/molt_net_parental_controls.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -169,16 +170,24 @@ void EnsureReaper() {
 
 // ---- Ending an identity ----
 //
-// New Identity and the live guard end an identity the same way:
-//   1. At once, its network contexts refuse every request
+// New Identity and the live guard end an identity the same way, in step
+// with its network contexts (molt_net_identity_end_policy.h):
+//   1. At once, its network contexts are sent the refusal of every request
 //      (MoltNetRouting::EndIdentity(): a proxy configuration with no proxy
 //      and no DIRECT, ERR_NO_SUPPORTED_PROXIES), its connections are
-//      dropped, and it stops being the current identity.
-//   2. Every DevTools session on its pages and workers is detached, which
+//      dropped, it stops being the current identity, and the browser
+//      refuses its navigations (MoltNetEndedIdentityThrottle).
+//   2. At once, its renderer processes are ended (StopPages()): no page,
+//      frame or worker of it can make another request while the refusal is
+//      on its way to the network service.
+//   3. Its network contexts are asked until each confirms the refusal
+//      (MoltNetRouting::WhenIdentityRefuses()), which then drops its
+//      connections once more. The rest waits for that:
+//   4. Every DevTools session on its pages and workers is detached, which
 //      closes the DevTools windows attached to them, in any profile
 //      (chrome://inspect from a regular window too), and ends DevTools'
 //      interception of "Leave site?".
-//   3. Every window of it (normal, popup, app, DevTools, picture-in-picture)
+//   5. Every window of it (normal, popup, app, DevTools, picture-in-picture)
 //      closes, whatever is open in it, as BrowserCloseManager closes
 //      windows at logoff and WebAppUiManagerImpl::CloseAppWindows() closes
 //      an app's: its UnloadController skips every warning and every
@@ -188,9 +197,9 @@ void EnsureReaper() {
 //      it. Tab-modal dialogs and prompts (a JavaScript alert, an
 //      authentication prompt, print preview, a file chooser, a download's
 //      "Save as") go with their tabs.
-//   4. If a window is still open kForceCloseGrace later, its renderer
-//      processes are ended, its tabs closed and the window closed again,
-//      a few times over.
+//   6. If a window is still open kForceCloseGrace later, its renderer
+//      processes are ended again, its tabs closed and the window closed
+//      again, a few times over.
 // Upstream's chrome::CloseAllBrowsersWithIncognitoProfile() runs every
 // "Leave site?" again as soon as one DevTools window of the profile exists,
 // and then waits for the user; MoltNet doesn't use it any more.
@@ -233,7 +242,21 @@ std::vector<BrowserWindowInterface*> WindowsOf(Profile* moltnet) {
   return windows;
 }
 
-// Step 3: no warning, no beforeunload or unload handler, for any window.
+// Step 2: every renderer process of |moltnet| ends now, so nothing in its
+// pages runs, or sends anything, any more.
+void StopPages(Profile* moltnet) {
+  for (content::RenderProcessHost::iterator it =
+           content::RenderProcessHost::AllHostsIterator();
+       !it.IsAtEnd(); it.Advance()) {
+    content::RenderProcessHost* host = it.GetCurrentValue();
+    if (host->GetBrowserContext() == moltnet &&
+        host->IsInitializedAndNotDead()) {
+      host->Shutdown(content::RESULT_CODE_KILLED);
+    }
+  }
+}
+
+// Step 5: no warning, no beforeunload or unload handler, for any window.
 void CloseWindowsSkippingHandlers(Profile* moltnet) {
   for (BrowserWindowInterface* window : WindowsOf(moltnet)) {
     if (UnloadController* unload = UnloadController::From(window)) {
@@ -245,7 +268,7 @@ void CloseWindowsSkippingHandlers(Profile* moltnet) {
   }
 }
 
-// Step 4, for whatever is still open: the renderers go first, so nothing in
+// Step 6, for whatever is still open: the renderers go first, so nothing in
 // a page runs any more, then the tabs, then the window.
 void ForceCloseRemainingWindows(base::FilePath path,
                                 Profile::OTRProfileID id,
@@ -258,15 +281,7 @@ void ForceCloseRemainingWindows(base::FilePath path,
                   "ending its renderer processes";
   MoltNetRouting::FlushNetworkState(moltnet);
   DetachDevTools(moltnet);
-  for (content::RenderProcessHost::iterator it =
-           content::RenderProcessHost::AllHostsIterator();
-       !it.IsAtEnd(); it.Advance()) {
-    content::RenderProcessHost* host = it.GetCurrentValue();
-    if (host->GetBrowserContext() == moltnet &&
-        host->IsInitializedAndNotDead()) {
-      host->Shutdown(content::RESULT_CODE_KILLED);
-    }
-  }
+  StopPages(moltnet);
   for (BrowserWindowInterface* window : WindowsOf(moltnet)) {
     if (UnloadController* unload = UnloadController::From(window)) {
       unload->set_force_skip_warning_user_on_close(true);
@@ -287,24 +302,40 @@ void ForceCloseRemainingWindows(base::FilePath path,
   }
 }
 
-// Steps 1 to 3 now, step 4 later if needed; the profile is destroyed once
-// its windows are gone (the reaper, or PostDestroyIfUnused() here).
-void EndIdentityAndCloseWindows(Profile* moltnet) {
-  if (!IsMoltNetProfile(moltnet)) {
+// Steps 4 and 5, once the refusal is in place (or its deadline passed),
+// step 6 later if needed; the profile is destroyed once its windows are gone
+// (the reaper, or PostDestroyIfUnused() here).
+void CloseEndedWindows(base::FilePath path,
+                       Profile::OTRProfileID id,
+                       bool /*refusal_confirmed*/) {
+  Profile* moltnet = LookUpMoltNetProfile(path, id);
+  if (!moltnet) {
     return;
   }
-  EnsureReaper();
-  MoltNetRouting::EndIdentity(moltnet);
   DetachDevTools(moltnet);
   CloseWindowsSkippingHandlers(moltnet);
   // Covers the no-window case; with windows, the reaper also fires.
   PostDestroyIfUnused(moltnet);
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
-      base::BindOnce(&ForceCloseRemainingWindows,
-                     moltnet->GetOriginalProfile()->GetPath(),
-                     moltnet->GetOTRProfileID(), kMaxForceCloseRounds),
+      base::BindOnce(&ForceCloseRemainingWindows, std::move(path), id,
+                     kMaxForceCloseRounds),
       kForceCloseGrace);
+}
+
+// Steps 1 to 3 now, the rest once the identity's network contexts confirm
+// the refusal.
+void EndIdentityAndCloseWindows(Profile* moltnet) {
+  if (!IsMoltNetProfile(moltnet)) {
+    return;
+  }
+  EnsureReaper();
+  MoltNetRouting::EndIdentity(moltnet);
+  StopPages(moltnet);
+  MoltNetRouting::WhenIdentityRefuses(
+      moltnet, base::BindOnce(&CloseEndedWindows,
+                              moltnet->GetOriginalProfile()->GetPath(),
+                              moltnet->GetOTRProfileID()));
 }
 
 // ---- A setting changed while MoltNet was open ----
@@ -618,8 +649,20 @@ void OpenImpl(Profile* from,
     std::move(done).Run(false, std::move(error));
     return;
   }
-  TorManager::Get()->Launch(base::BindOnce(&OnTorReady, path, url,
-                                           for_new_identity, std::move(done)));
+  // Windows' parental controls as they are now, not as at startup
+  // (molt_net_parental_controls.h).
+  CheckMoltNetParentalControls(base::BindOnce(
+      [](base::FilePath path, GURL url, bool for_new_identity,
+         MoltNetWindow::DoneCallback done, bool allowed) {
+        if (!allowed) {
+          std::move(done).Run(
+              false, MoltNetSettingsError(MoltNetSettingsCheck::kIncognitoOff));
+          return;
+        }
+        TorManager::Get()->Launch(base::BindOnce(
+            &OnTorReady, path, url, for_new_identity, std::move(done)));
+      },
+      path, url, for_new_identity, std::move(done)));
 }
 
 void FinishNewIdentity(base::FilePath path,

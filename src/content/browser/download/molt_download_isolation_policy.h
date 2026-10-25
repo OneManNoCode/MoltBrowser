@@ -35,6 +35,12 @@
 //     has that top-level site (saving the page or a frame itself);
 //   * otherwise (no frame left, nothing to resume): its own isolation if it
 //     has one, else a one-off isolation shared with nothing.
+// A retry the user starts from the download bubble or the downloads page
+// carries the isolation of the download it retries
+// (chrome/browser/download/molt_retried_download_isolation.h) and keeps it;
+// its frame, if any, is the downloads page's, never the site's, so a retry
+// with no isolation gets a one-off one, not that page's (which every retry
+// from it would share).
 // Navigations that turn into downloads keep their navigation's isolation:
 // they don't come through here.
 
@@ -54,15 +60,21 @@ enum class MoltDownloadIsolation {
 // `isolation_on_frames_site`: that isolation has the top-level site (and
 // nonce) of the frame's; `has_original`: it resumes a download whose first
 // request had an isolation; `has_frame`: the frame that started it is still
-// there.
+// there; `is_retry`: the user retries a download from the browser's
+// downloads UI.
 constexpr MoltDownloadIsolation MoltChooseDownloadIsolation(
     bool keep_with_site,
     bool has_isolation,
     bool isolation_on_frames_site,
     bool has_original,
-    bool has_frame) {
+    bool has_frame,
+    bool is_retry) {
   if (!keep_with_site) {
     return MoltDownloadIsolation::kAsChromium;
+  }
+  if (is_retry) {
+    return has_isolation ? MoltDownloadIsolation::kAsChromium
+                         : MoltDownloadIsolation::kTransient;
   }
   if (!has_isolation && has_original) {
     return MoltDownloadIsolation::kOriginal;

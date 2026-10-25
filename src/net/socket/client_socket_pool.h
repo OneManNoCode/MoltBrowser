@@ -405,6 +405,9 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
   // pool. The pool's limit is then its soft cap exactly (no randomized
   // additional capacity).
   void MoltSetSocketGate(MoltSocketGate* gate);
+  // MoltBrowser: whether the pool has a gate (it is one of MoltNet's
+  // per-site pools).
+  bool MoltHasSocketGate() const { return molt_socket_gate_ != nullptr; }
 
  protected:
   ClientSocketPool(size_t socket_soft_cap,

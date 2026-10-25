@@ -3432,6 +3432,17 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
       session->ssl_client_context()->MoltSendNoClientCertificates();
     }
   }
+  // MoltBrowser: MoltNet verifies each certificate for its own connection
+  // (molt_uncached_cert_verification); its verifications name their site,
+  // and the certificate fetches they need count against it
+  // (net/cert/molt_cert_fetch_site.h).
+  if (params_->molt_uncached_cert_verification) {
+    if (net::HttpNetworkSession* session =
+            result.url_request_context->http_transaction_factory()
+                ->GetSession()) {
+      session->ssl_client_context()->MoltCarryCertFetchSite();
+    }
+  }
 
   if (network_service_->pins_list_updated()) {
     result.url_request_context->transport_security_state()->UpdatePinList(

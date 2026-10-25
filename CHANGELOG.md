@@ -227,9 +227,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   within what MoltNet's Tor always accepts, and each site sets up at most
   16 Tor connections at a time; the torrc states Tor's connection and
   pending-circuit limits (`ConnLimit 1000`, `MaxClientCircuitsPending
-  64`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
+  256`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
   counted per site, apart from regular windows. Each site may store 60 MiB
-  (all its storage keys together), all sites 600 MiB, and MoltNet no
+  (all its storage keys together), all sites 600 MiB before the computer's
+  free memory decides, and MoltNet no
   longer evicts one site's data to make room for another's. Background
   Fetch requests, and downloads a page starts without navigating ("Save
   link as", "Save image as", a link with `download`), resumed downloads
@@ -237,6 +238,29 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the site they come from (Background Fetch in every private profile, as
   regular profiles already do), so a file saved from another site's link
   no longer carries that site's cookies (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening: more of what MoltNet's sites share is kept per site.
+  Each site's 60 MiB of storage stays available whatever other sites
+  store (beyond 600 MiB for all sites together the computer's free memory
+  decides), and each tab's page process may hold 200 MiB of blobs whatever
+  other tabs hold; MoltNet tabs (with the windows they open) no longer
+  share page processes, which takes more memory with many tabs open. Tor's
+  connection and circuit-building budgets are shared fairly by every site
+  and by an identity that is ending and its successor (an onion address
+  counts three circuits; the torrc now states `MaxClientCircuitsPending
+  256`). Certificate downloads count against the site that needed them,
+  synchronous requests count against their site's connection limit
+  but not its per-host one (once the site's limit is full they may go past
+  it by a few connections, from Tor's own margin), a
+  retried download keeps the network key of the site it came from, and
+  Background Fetch requests carry the page's credentials setting and
+  origin. When an identity ends,
+  its pages stop at once and its windows close once its connection
+  confirms that it refuses every request; nothing the old windows start
+  afterwards loads. MoltNet applies Incognito's Data Controls conditions,
+  doesn't open while `MandatoryExtensionsForIncognitoNavigation` is set
+  (MoltNet windows run no installed extensions), and on Windows reads
+  parental controls again each time a MoltNet window opens
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
