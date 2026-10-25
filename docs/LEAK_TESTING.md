@@ -361,6 +361,21 @@ level, and in one browser launch per device scale factor
   an SVG path's arcs (`cpu.dommatrix`); Biquad and IIR filter frequency
   responses and a compressor's `reduction` after rendering a sawtooth
   (`audio.math`).
+* **Geometry** (once per launch), compared between runs: where the edges
+  of 40 canvas arcs and rotated ellipses (`isPointInPath()`) and of a
+  stroked curve with every join, cap and a dash pattern
+  (`isPointInStroke()`) lie, found a float ulp at a time, and where
+  `elementFromPoint()` finds the edges of `clip-path` shapes (a rounded
+  polygon, `circle(closest-side)`, an ellipse, `shape()` with an arc) and
+  `corner-shape` corners, a layout unit at a time (`geom.hit_testing`);
+  SVG shapes' `getTotalLength()` and `getPointAtLength()` and the boxes of
+  elements along six `offset-path`s (`geom.path_length`); the start of
+  every line of inline boxes laid out around six `shape-outside` floats
+  (gradients with colour hints and in OKLab, an SVG image with a blur, a
+  gamma transfer, a hue rotation and a light turned into alpha, a rounded
+  polygon, a margin-box with radii and `shape-margin`)
+  (`geom.shape_outside`); and `contrast-color()` for 87 colours around
+  its threshold (`geom.contrast_color`, `absent` without it).
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
