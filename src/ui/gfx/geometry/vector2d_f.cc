@@ -9,6 +9,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace gfx {
 
@@ -41,7 +42,8 @@ double Vector2dF::LengthSquared() const {
 }
 
 float Vector2dF::Length() const {
-  return hypotf(x_, y_);
+  // MoltBrowser: portable in MoltNet (molt_math.h).
+  return molt_math::Hypot(x_, y_);
 }
 
 void Vector2dF::Scale(float x_scale, float y_scale) {
@@ -71,6 +73,11 @@ Vector2dF ScaleVector2d(const Vector2dF& v, float x_scale, float y_scale) {
 }
 
 float Vector2dF::SlopeAngleRadians() const {
+  // MoltBrowser: in MoltNet, the portable atan2f (molt_math.h), the same on
+  // every OS.
+  if (molt_math::IsPortable()) {
+    return molt_math::Atan2(y_, x_);
+  }
 #if BUILDFLAG(IS_APPLE)
   // atan2f(...) returns less accurate results on Mac.
   // 3.1415925 vs. 3.14159274 for atan2f(0, -50) as an example.

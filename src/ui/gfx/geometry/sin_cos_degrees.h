@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/numerics/angle_conversions.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace gfx {
 
@@ -77,8 +78,9 @@ inline SinCos SinCosDegrees(double degrees) {
     }
 
     double rad = base::DegToRad(degrees);
-    double s = std::sin(rad);
-    double c = std::cos(rad);
+    // MoltBrowser: portable in MoltNet (molt_math.h).
+    double s = molt_math::Sin(rad);
+    double c = molt_math::Cos(rad);
 
     // 45..135 and -135..-45 can be moved into the opposite areas
     // simply by flipping the x and y axis (in conjunction with
@@ -106,7 +108,8 @@ inline SinCos SinCosDegrees(double degrees) {
   // Slow path for extreme cases.
   degrees = std::fmod(degrees, 360.0);
   double rad = base::DegToRad(degrees);
-  return SinCos{std::sin(rad), std::cos(rad)};
+  // MoltBrowser: portable in MoltNet (molt_math.h).
+  return SinCos{molt_math::Sin(rad), molt_math::Cos(rad)};
 }
 
 }  // namespace gfx

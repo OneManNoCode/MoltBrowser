@@ -9,6 +9,7 @@
 #include <numbers>
 
 #include "base/strings/stringprintf.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/vector3d_f.h"
 
 namespace gfx {
@@ -29,11 +30,12 @@ Quaternion::Quaternion(const Vector3dF& axis, double theta) {
   normalized.InvScale(length);
 
   theta *= 0.5;
-  double s = sin(theta);
+  // MoltBrowser: portable in MoltNet (molt_math.h), here and below.
+  double s = molt_math::Sin(theta);
   x_ = normalized.x() * s;
   y_ = normalized.y() * s;
   z_ = normalized.z() * s;
-  w_ = cos(theta);
+  w_ = molt_math::Cos(theta);
 }
 
 Quaternion::Quaternion(const Vector3dF& from, const Vector3dF& to) {
@@ -64,8 +66,9 @@ Quaternion Quaternion::FromAxisAngle(double x,
   if (std::abs(length) < kEpsilon)
     return Quaternion(0, 0, 0, 1);
 
-  double scale = std::sin(0.5 * angle) / length;
-  return Quaternion(scale * x, scale * y, scale * z, std::cos(0.5 * angle));
+  double scale = molt_math::Sin(0.5 * angle) / length;
+  return Quaternion(scale * x, scale * y, scale * z,
+                    molt_math::Cos(0.5 * angle));
 }
 
 // Adapted from https://www.euclideanspace.com/maths/algebra/realNormedAlgebra/
@@ -95,10 +98,10 @@ Quaternion Quaternion::Slerp(const Quaternion& to, double t) const {
     return *this;
   }
 
-  double half_angle = std::acos(cos_half_angle);
+  double half_angle = molt_math::Acos(cos_half_angle);
 
-  double scaleA = std::sin((1 - t) * half_angle) / sin_half_angle;
-  double scaleB = std::sin(t * half_angle) / sin_half_angle;
+  double scaleA = molt_math::Sin((1 - t) * half_angle) / sin_half_angle;
+  double scaleB = molt_math::Sin(t * half_angle) / sin_half_angle;
 
   return (scaleA * from) + (scaleB * to);
 }

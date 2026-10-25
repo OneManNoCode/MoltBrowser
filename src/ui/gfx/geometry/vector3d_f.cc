@@ -8,6 +8,7 @@
 
 #include "base/numerics/angle_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace {
 const double kEpsilon = 1.0e-6;
@@ -96,7 +97,8 @@ float AngleBetweenVectorsInDegrees(const gfx::Vector3dF& base,
                                    const gfx::Vector3dF& other) {
   // Clamp the resulting value to prevent potential NANs from floating point
   // precision issues.
-  return base::RadToDeg(std::acos(fmax(
+  // MoltBrowser: portable in MoltNet (molt_math.h).
+  return base::RadToDeg(molt_math::Acos(fmax(
       fmin(gfx::DotProduct(base, other) / base.Length() / other.Length(), 1.f),
       -1.f)));
 }

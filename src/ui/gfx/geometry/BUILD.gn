@@ -29,6 +29,11 @@ component("geometry") {
     "line_f.h",
     "matrix3_f.cc",
     "matrix3_f.h",
+
+    # MoltBrowser: the math functions of page-visible computations, portable
+    # in MoltNet renderers.
+    "molt_math.cc",
+    "molt_math.h",
     "outsets.h",
     "outsets_f.h",
     "point.cc",
@@ -76,7 +81,12 @@ component("geometry") {
 
   defines = [ "IS_GEOMETRY_IMPL" ]
 
-  deps = [ "//base" ]
+  deps = [
+    "//base",
+
+    # MoltBrowser: molt_math.cc.
+    "//third_party/llvm-libc:molt_portable_math",
+  ]
 
   if (!is_debug) {
     configs -= [ "//build/config/compiler:default_optimization" ]
@@ -114,4 +124,15 @@ component("geometry_skia") {
     "//skia",
   ]
   defines = [ "IS_GEOMETRY_SKIA_IMPL" ]
+}
+
+# MoltBrowser: gfx::molt_math (in molt_ai_unittests).
+source_set("molt_math_unittests") {
+  testonly = true
+  sources = [ "molt_math_unittest.cc" ]
+  deps = [
+    ":geometry",
+    "//testing/gtest",
+  ]
+  visibility = [ "//chrome/browser/molt_ai/test:*" ]
 }

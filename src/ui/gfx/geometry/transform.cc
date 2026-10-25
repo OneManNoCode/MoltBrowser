@@ -18,6 +18,7 @@
 #include "ui/gfx/geometry/clamp_float_geometry.h"
 #include "ui/gfx/geometry/decomposed_transform.h"
 #include "ui/gfx/geometry/double4.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/quad_f.h"
@@ -35,7 +36,8 @@ namespace {
 const double kEpsilon = std::numeric_limits<float>::epsilon();
 
 double TanDegrees(double degrees) {
-  return std::tan(base::DegToRad(degrees));
+  // MoltBrowser: portable in MoltNet (molt_math.h).
+  return molt_math::Tan(base::DegToRad(degrees));
 }
 
 inline bool ApproximatelyZero(double x, double tolerance) {
