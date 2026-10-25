@@ -7,6 +7,7 @@
 #include "src/pathops/SkPathOpsCubic.h"
 
 #include "include/private/SkFloatingPoint.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "include/private/SkTPin.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkGeometry.h"
@@ -468,24 +469,25 @@ int SkDCubic::RootsReal(double A, double B, double C, double D, double s[3]) {
     double* roots = s;
     if (R2MinusQ3 < 0) {   // we have 3 real roots
         // the divide/root can, due to finite precisions, be slightly outside of -1...1
-        double theta = acos(SkTPin(R / sqrt(Q3), -1., 1.));
+        // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+        double theta = SkMoltBrowserMath::Acos(SkTPin(R / sqrt(Q3), -1., 1.));
         double neg2RootQ = -2 * sqrt(Q);
 
-        r = neg2RootQ * cos(theta / 3) - adiv3;
+        r = neg2RootQ * SkMoltBrowserMath::Cos(theta / 3) - adiv3;
         *roots++ = r;
 
-        r = neg2RootQ * cos((theta + 2 * SK_DoublePI) / 3) - adiv3;
+        r = neg2RootQ * SkMoltBrowserMath::Cos((theta + 2 * SK_DoublePI) / 3) - adiv3;
         if (!AlmostDequalUlps(s[0], r)) {
             *roots++ = r;
         }
-        r = neg2RootQ * cos((theta - 2 * SK_DoublePI) / 3) - adiv3;
+        r = neg2RootQ * SkMoltBrowserMath::Cos((theta - 2 * SK_DoublePI) / 3) - adiv3;
         if (!AlmostDequalUlps(s[0], r) && (roots - s == 1 || !AlmostDequalUlps(s[1], r))) {
             *roots++ = r;
         }
     } else {  // we have 1 real root
         double sqrtR2MinusQ3 = sqrt(R2MinusQ3);
         A = fabs(R) + sqrtR2MinusQ3;
-        A = std::cbrt(A); // cube root
+        A = SkMoltBrowserMath::Cbrt(A); // cube root (MoltBrowser: portable in MoltNet)
         if (R > 0) {
             A = -A;
         }
