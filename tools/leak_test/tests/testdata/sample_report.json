@@ -1402,7 +1402,7 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
    "evidence": [
-    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 8, expected 8"
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 4, expected 4"
    ],
    "group": "uniformity",
    "id": "uniform.nav.deviceMemory",
@@ -3090,6 +3090,10 @@
      "frames": 12288,
      "hash": "9c41e2b07d35a8f61e04c2b9"
     },
+    "audio.math": {
+     "reduction": -17.30476188659668,
+     "response": "c57e1a2b9d04f8361e7a0b5c"
+    },
     "audio.max_channel_count": 2,
     "audio.output_latency": 0.024,
     "audio.output_timestamp_ok": true,
@@ -3102,7 +3106,27 @@
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
+    "cpu.css_math": [
+     "412",
+     "287.25",
+     "903.5",
+     "78",
+     "650.5",
+     "233",
+     "596",
+     "138",
+     "216",
+     "936",
+     "61",
+     "440",
+     "488.375deg",
+     "311.25deg",
+     "904.5deg",
+     "127.75deg"
+    ],
+    "cpu.dommatrix": "6e3a90c1d2b7f4085a1c9e37",
     "cpu.math": "5d0c1e7a92b4f3608e2d17c4",
+    "cpu.math_cross_arch": "b81f0d6e2a94c3570e1d8f42",
     "cpu.wasm_relaxed_simd": false,
     "cpu.wasm_simd": true,
     "css.default_font_size": "16px",
@@ -3217,7 +3241,7 @@
     },
     "nav.connection_changes": 0,
     "nav.cpuPerformance": 0,
-    "nav.deviceMemory": 8,
+    "nav.deviceMemory": 4,
     "nav.doNotTrack": null,
     "nav.globalPrivacyControl": true,
     "nav.hardwareConcurrency": 8,
