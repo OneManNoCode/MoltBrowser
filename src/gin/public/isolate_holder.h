@@ -5,6 +5,7 @@
 #ifndef GIN_PUBLIC_ISOLATE_HOLDER_H_
 #define GIN_PUBLIC_ISOLATE_HOLDER_H_
 
+#include <cstdint>  // MoltBrowser
 #include <memory>
 
 #include "base/memory/raw_ptr.h"
@@ -129,6 +130,12 @@ class GIN_EXPORT IsolateHolder {
 
   // Should only be called after v8::IsolateHolder::Initialize() is invoked.
   static std::unique_ptr<v8::Isolate::CreateParams> getDefaultIsolateParams();
+
+  // MoltBrowser: getDefaultIsolateParams() configures every isolate of the
+  // process for a machine with `physical_memory` bytes of memory
+  // (v8::ResourceConstraints::ConfigureDefaults) instead of this machine's;
+  // 0 restores the machine's. Call before the first isolate is created.
+  static void SetPhysicalMemoryForIsolates(uint64_t physical_memory);
 
   v8::Isolate* isolate() { return isolate_; }
 

@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <atomic>   // MoltBrowser
+#include <cstdint>  // MoltBrowser
 #include <memory>
 #include <optional>
 #include <utility>
@@ -36,6 +38,8 @@ v8::ArrayBuffer::Allocator* g_array_buffer_allocator = nullptr;
 const intptr_t* g_reference_table = nullptr;
 v8::FatalErrorCallback g_fatal_error_callback = nullptr;
 v8::OOMErrorCallback g_oom_error_callback = nullptr;
+// MoltBrowser: see IsolateHolder::SetPhysicalMemoryForIsolates().
+constinit std::atomic<uint64_t> g_physical_memory_for_isolates{0};
 
 std::unique_ptr<v8::Isolate::CreateParams> getModifiedIsolateParams(
     std::unique_ptr<v8::Isolate::CreateParams> params,
@@ -180,6 +184,13 @@ bool IsolateHolder::Initialized() {
 }
 
 // static
+void IsolateHolder::SetPhysicalMemoryForIsolates(uint64_t physical_memory) {
+  // MoltBrowser.
+  g_physical_memory_for_isolates.store(physical_memory,
+                                       std::memory_order_relaxed);
+}
+
+// static
 std::unique_ptr<v8::Isolate::CreateParams>
 IsolateHolder::getDefaultIsolateParams() {
   CHECK(Initialized())
@@ -189,8 +200,15 @@ IsolateHolder::getDefaultIsolateParams() {
   std::unique_ptr<v8::Isolate::CreateParams> params =
       std::make_unique<v8::Isolate::CreateParams>();
   params->code_event_handler = DebugImpl::GetJitCodeEventHandler();
+  // MoltBrowser: a process may configure its isolates for one fixed machine
+  // (MoltNet's renderers: third_party/blink/renderer/core/
+  // molt_fingerprinting/moltnet_cpu.h).
+  const uint64_t fixed_physical_memory =
+      g_physical_memory_for_isolates.load(std::memory_order_relaxed);
   params->constraints.ConfigureDefaults(
-      base::SysInfo::AmountOfTotalPhysicalMemory().InBytes(),
+      fixed_physical_memory
+          ? fixed_physical_memory
+          : base::SysInfo::AmountOfTotalPhysicalMemory().InBytes(),
       base::SysInfo::AmountOfVirtualMemory().InBytes());
   params->array_buffer_allocator = g_array_buffer_allocator;
   params->allow_atomics_wait = true;
