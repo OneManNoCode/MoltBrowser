@@ -141,6 +141,7 @@ S_MCLOCK = FP + ' "MoltNet: media playback clock"'
 S_MDEV = FP + ' "MoltNet: cameras, microphones and outputs"'
 S_MEM = FP + ' "MoltNet: performance.memory"'
 S_PIXELS = FP + ' "MoltNet: pixels and encoded bytes"'
+S_CPU = FP + ' "MoltNet: CPU features"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -166,10 +167,10 @@ MEDIA_DEVICE_ORDER = ['audioinput', 'videoinput', 'audiooutput']
 # getUserMedia() before a permission: asked about (still pending when the
 # probe gives up) or refused, never failed for want of a device.
 USER_MEDIA_ASKED = ['pending', 'NotAllowedError']
-# performance.memory.jsHeapSizeLimit in MoltNet: the 8 GB machine's limit
-# (4 GiB + 96 MiB) rounded to the last of the 100 sizes
-# (moltnet_memory_values.h).
-JS_HEAP_SIZE_LIMIT = 3760000000
+# performance.memory.jsHeapSizeLimit in MoltNet: the heap limit of the 4 GiB
+# machine every MoltNet isolate is configured as (2 GiB + 96 MiB), rounded
+# up to one of the 100 sizes (moltnet_memory_values.h).
+JS_HEAP_SIZE_LIMIT = 2330000000
 
 # Media Capabilities in MoltNet: a video the build decodes itself is smooth
 # and not power efficient; key systems and WebRTC are never supported.
@@ -348,6 +349,8 @@ FULL_RULES = (
     ('perf.heap_cached', 'eq', True, S_MEM),
     # <video> is decoded in software and its frames stay in CPU memory.
     ('pixels.video_frame_format', 'eq', 'I420', S_PIXELS),
+    # WebAssembly relaxed SIMD fails validation on every machine.
+    ('cpu.wasm_relaxed_simd', 'eq', False, S_CPU),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -396,6 +399,10 @@ DIFF_KEYS = (
     'pixels.webcodecs_frame', 'pixels.video_frame',
     'pixels.encoded_vp8_i420', 'pixels.encoded_vp8_rgba',
     'pixels.encoded_opus_48k', 'pixels.encoded_opus_44k',
+    # Math results, colours read back in Display P3 and decoded Vorbis
+    # samples are computed the same way on every CPU (FINGERPRINTING.md
+    # "MoltNet: CPU features").
+    'cpu.math', 'pixels.p3_readback', 'audio.decoded_vorbis',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference
@@ -414,6 +421,7 @@ INFO_KEYS = {
     'nav.webdriver': 'navigator.webdriver under the kit\'s DevTools pipe',
     'mq.prefers_color_scheme_dark': 'dark while the dark toolbar is on '
                                     '(documented)',
+    'cpu.wasm_simd': 'WebAssembly.validate() of a plain SIMD module',
 }
 
 

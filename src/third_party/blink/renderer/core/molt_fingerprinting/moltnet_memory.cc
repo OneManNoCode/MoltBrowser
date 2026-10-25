@@ -5,6 +5,8 @@
 
 #include <atomic>
 
+#include "base/byte_size.h"
+#include "components/performance_manager/public/mojom/web_memory.mojom-blink.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.h"
 
@@ -35,6 +37,30 @@ uint64_t UniformMemoryMeasurementBytes(uint64_t bytes) {
     return bytes;
   }
   return moltnet::QuantizedMemorySize(bytes);
+}
+
+void MakeMemoryMeasurementUniform(
+    performance_manager::mojom::blink::WebMemoryMeasurement& measurement) {
+  if (!UsesUniformMemoryInfo()) {
+    return;
+  }
+  for (auto& entry : measurement.breakdown) {
+    if (!entry) {
+      continue;
+    }
+    if (!entry->memory) {
+      entry->memory = base::ByteSize(0);
+    }
+    if (!entry->canvas_memory) {
+      entry->canvas_memory = base::ByteSize(0);
+    }
+  }
+  if (!measurement.shared_memory) {
+    measurement.shared_memory = base::ByteSize(0);
+  }
+  if (!measurement.blink_memory) {
+    measurement.blink_memory = base::ByteSize(0);
+  }
 }
 
 void SetMoltNetMemoryForTesting(bool uniform) {

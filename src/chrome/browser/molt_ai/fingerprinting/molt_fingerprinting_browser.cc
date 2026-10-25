@@ -16,6 +16,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/content_switches.h"
 #include "crypto/random.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -85,6 +86,12 @@ void AppendRendererSwitches(content::RenderProcessHost* host,
   }
   // Only the mode: the seed goes over the channel (InitializeRenderer).
   command_line->AppendSwitchASCII(switches::kMode, ModeToSwitchValue(mode));
+  if (mode == RendererMode::kUniform) {
+    // MoltNet: Skia's baseline raster code on every CPU, never its AVX2/FMA
+    // or AVX-512 variants (InitializeSkia reads it before anything else;
+    // third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.h).
+    command_line->AppendSwitch(::switches::kDisableSkiaRuntimeOpts);
+  }
 }
 
 void InitializeRenderer(content::RenderProcessHost* host) {

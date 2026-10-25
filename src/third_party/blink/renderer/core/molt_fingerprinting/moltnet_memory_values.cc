@@ -90,7 +90,7 @@ uint64_t V8HeapSizeLimit(uint64_t physical_memory) {
 }
 
 uint64_t UniformJsHeapSizeLimit() {
-  return V8HeapSizeLimit(kUniformPhysicalMemory);
+  return V8HeapSizeLimit(kV8HeapPhysicalMemory);
 }
 
 uint64_t QuantizedMemorySize(uint64_t bytes) {

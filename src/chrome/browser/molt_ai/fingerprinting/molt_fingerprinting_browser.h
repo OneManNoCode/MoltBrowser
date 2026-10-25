@@ -42,7 +42,8 @@ namespace molt_ai::fingerprinting {
 // Called from ChromeContentBrowserClient::AppendExtraCommandLineSwitches for
 // renderer processes. Appends --molt-fingerprinting-mode for `host`'s
 // BrowserContext, unless the MoltFingerprintingProtection feature is
-// disabled. No-op for a null host.
+// disabled, and for MoltNet (kUniform) --disable-skia-runtime-opts. No-op
+// for a null host.
 void AppendRendererSwitches(content::RenderProcessHost* host,
                             base::CommandLine* command_line);
 

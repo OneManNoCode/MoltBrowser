@@ -1,18 +1,20 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltBrowser fingerprinting protection: the memory MoltNet windows describe
-// to performance.memory, the same for every MoltNet user. Pure and std-only
-// (tested standalone, like moltnet_media_values.h); the Blink side is
-// moltnet_memory.h.
+// MoltBrowser fingerprinting protection: the memory MoltNet's renderers give
+// V8 and describe to performance.memory, the same for every MoltNet user.
+// Pure and std-only (tested standalone, like moltnet_media_values.h); the
+// Blink side is moltnet_memory.h and moltnet_cpu.h.
 //
-// performance.memory.jsHeapSizeLimit is V8's heap limit, which V8 sizes from
-// the machine's physical memory: at Chromium 156 half of it, up to 4 GiB,
-// for the old generation, rounded to V8's 256 KiB pages. On machines with
-// less than 8 GiB it gives the memory away to half a megabyte, and
-// Chromium reports it unrounded whenever the renderer is locked to a site
-// (as on desktop). MoltNet reports the limit of the machine
-// navigator.deviceMemory describes, 8 GB.
+// V8 sizes each isolate's heap from the physical memory gin passes it: at
+// Chromium 156 an old generation of half the memory, up to 4 GiB, rounded
+// to V8's 256 KiB pages, and its garbage collector's heuristics follow the
+// same figure. A page sees it in performance.memory.jsHeapSizeLimit, which
+// Chromium reports unrounded whenever the renderer is locked to a site (as
+// on desktop), in where allocation runs out of heap and in how often the
+// collector runs. MoltNet's renderers configure every isolate as on one
+// machine, the smallest MoltBrowser supports (kV8HeapPhysicalMemory, set by
+// moltnet_cpu.h before V8 starts), and report that machine's limit.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEMORY_VALUES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEMORY_VALUES_H_
@@ -21,9 +23,13 @@
 
 namespace blink::molt_fingerprinting::moltnet {
 
-// The physical memory of the machine MoltNet describes: the 8 GB of
-// navigator.deviceMemory (moltnet_device_values.h), in bytes.
-inline constexpr uint64_t kUniformPhysicalMemory = uint64_t{8} << 30;
+// The physical memory every isolate of a MoltNet renderer is configured for,
+// in bytes: 4 GiB, the smallest machine MoltBrowser supports (README,
+// "Hardware Requirements"). It is the configuration V8 already picks on that
+// machine, so a page can reach the heap limit there as on any other; larger
+// machines run as that one. (navigator.deviceMemory still says 8,
+// moltnet_device_values.h: it describes a typical desktop, not the heap.)
+inline constexpr uint64_t kV8HeapPhysicalMemory = uint64_t{4} << 30;
 
 // v8::HeapStatistics::heap_size_limit() on a 64-bit desktop with
 // `physical_memory` bytes, as V8 at Chromium 156 computes it from the
@@ -34,8 +40,9 @@ inline constexpr uint64_t kUniformPhysicalMemory = uint64_t{8} << 30;
 // sizes rounded to 256 KiB pages (and the semi-space up to a power of two).
 uint64_t V8HeapSizeLimit(uint64_t physical_memory);
 
-// The heap limit MoltNet reports (before Chromium's usual rounding of
-// performance.memory values): an 8 GiB machine's, 4 GiB + 96 MiB.
+// MoltNet's real heap limit, which it reports (before Chromium's usual
+// rounding of performance.memory values): the kV8HeapPhysicalMemory
+// machine's, 2 GiB + 96 MiB.
 uint64_t UniformJsHeapSizeLimit();
 
 // Chromium's rounding of performance.memory values when they aren't precise

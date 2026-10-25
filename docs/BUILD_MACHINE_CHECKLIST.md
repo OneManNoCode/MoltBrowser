@@ -171,6 +171,12 @@ items are marked *deferred*.
   release build provenance records the `src/third_party/rust` tree, so it
   must be committed before the tag. After §3's `configure.sh`, run it again
   with `--check` (gn check plus a build of the shield and anydoc targets).
+  The vendoring keeps symphonia-core's portable FFT (fp-cpu): afterwards
+  `git diff src/third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs`
+  is empty (gnrt applied `patches/symphonia-core-v0_6/0001-Add-a-portable-FFT-mode.patch`,
+  which the script copies with the other crate patches); if gnrt reports
+  that the patch doesn't apply, the crate moved: redo the change on the new
+  version and regenerate the patch.
 
 ## 2. Pins and keys the owner must do first
 
@@ -697,6 +703,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetMediaValuesTest.*` | fp-media |
   | `MoltNetAudioClockTest.*` (the output ring, drift control and a simulation against devices of 128 to 8192 frames) | fp-audio |
   | `MoltNetMemoryValuesTest.*` (V8's heap limit for 1 to 64 GB, the fixed table of sizes), and the device-list and `getUserMedia()` cases of `MoltNetMediaValuesTest.*` | fp-mediaclock |
+  | `MoltNetMemoryValuesTest.UniformLimitIsAFourGigabyteMachines`, `MoltDataLimitTest.*` (Linux: a MoltNet renderer's data limit is 8 GiB whatever Chromium's tier) | fp-cpu |
   | `MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*` | fp-probes |
 | `media_unittests --gtest_filter='MoltPortable*'` (not in `molt_ai_unittests`): `MoltPortableScaleTest.*` (the integer scaler, golden digests shared with arm64), `MoltPortableMediaTest.*` (frames of every format scaled, the converter, no hardware decoders, frames kept in CPU memory, no GPU YUV conversion; libopus's switch) | fp-pixels |
   | `MoltNetProxyPolicyTest` (new), and the new cases of `MoltNetNetworkContextPolicyTest` (client certificates, DoH probes, `UniformNetworkStateForMoltNetOnly`) and `MoltNetRequestsPolicyTest` (`client_certificates`) | MoltNet 156 |
@@ -727,6 +734,8 @@ extension enablement and `MediaRouterEnabled()`).
   `MoltNetMemoryTest` (fp-mediaclock),
   `MoltNetEncodersTest` and the pure `MoltLocalFaceTest` (fp-probes),
   `MoltNetPixelsTest` (fp-pixels),
+  `MoltNetCpuTest` (fp-cpu: real isolates configured for 1 to 64 GB; the
+  heap limit MoltNet reports is V8's) and `MoltNetMemoryTest.MeasurementEntries`,
   `MoltFingerprintingTest`,
   `MoltGpuUniformityTest`, `MoltSharedWorkerKeyTest`,
   `MoltShieldsDecisionTest`, `MoltSystemFontsTest` and the pure `MoltFarbling`,
@@ -758,6 +767,11 @@ pass except where the table below says otherwise (verify the filters).
 | `media_unittests` | `*VideoEncoder*:VpxVideoEncoder*:Av1VideoEncoder*` | fp-probes |
 | `media_unittests` | `*PaintCanvasVideoRenderer*:*MappableSharedImageVideoFramePool*:*VideoFrameConverter*:*DefaultDecoderFactory*:*DecoderSelector*:SincResampler*:MultiChannelResampler*:*VectorMath*:*ChannelMixer*:*AudioOpusEncoder*:*AudioEncoder*:*AudioConverter*` (outside MoltNet: unchanged; the Opus encoder's output is the same as before on every CPU) | fp-pixels |
 | `blink_unittests` | `*VideoFrame*:*WebMediaPlayer*:*AudioEncoder*:*VideoEncoder*:*AudioTrackRecorder*:*ImageBitmap*` (normal windows: unchanged) | fp-pixels |
+| `v8_unittests` | `*Ieee754*:*FunctionBodyDecoder*:*WasmSimd*:*FlagList*` (defaults unchanged: relaxed SIMD on, `std::tanh`; with `--no-wasm-relaxed-simd` a relaxed opcode fails validation) | fp-cpu |
+| `gin_unittests`, `blink_unittests` | `IsolateHolder*`, `*MeasureMemory*:MemoryInfo*:*ImageDecoder*:*AudioDecoder*` (outside MoltNet: unchanged) | fp-cpu |
+| `media_unittests` | `*Symphonia*:*FFmpegAudioDecoder*:*AudioFileReader*:*AudioDecoder*:MoltPortable*` (the Rust bridge's `set_portable_fft`; outside MoltNet the decoders' output is unchanged) | fp-cpu |
+| `skia_unittests`, `gfx_unittests` | `*ColorSpace*:*Skcms*:*ConvertPixels*:*RasterPipeline*` (the portable code is only installed in MoltNet) | fp-cpu |
+| `sandbox_linux_unittests` | all (Linux) | fp-cpu |
 | `storage_unittests` | `BlobMemoryController*:BlobStorageContext*:Quota*` | fp-probes |
 | `content_unittests` | `StoragePartitionImpl*:*BlobStorage*:*Quota*` | fp-probes |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
@@ -1260,8 +1274,8 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   labels and `setSinkId()` to another one works for a `<video>`.
 - [ ] `performance.memory` in MoltNet (fp-mediaclock). On a machine with
   8 GB or more and one (or a VM) with 4 GB: `jsHeapSizeLimit` is
-  3760000000 in MoltNet on both (a regular window shows each machine's own
-  precise value); `usedJSHeapSize` and `totalJSHeapSize` are multiples of
+  2330000000 in MoltNet on both since fp-cpu (a regular window shows each
+  machine's own precise value); `usedJSHeapSize` and `totalJSHeapSize` are multiples of
   100000 and don't change for 20 minutes after allocating 100 MB. On a
   cross-origin isolated page (COOP `same-origin`, COEP `require-corp`),
   `performance.measureUserAgentSpecificMemory()` in a window and in a
@@ -1317,6 +1331,7 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
   memory. An Incognito window keeps Chromium's limits (more than 200 MiB
   per site on 16 GB).
 - [ ] Pixels and encoded bytes in MoltNet (fp-pixels): run the leak kit (§8) on two machines of each OS with different CPUs and GPUs: on macOS an Intel Mac and an Apple silicon Mac (and the x86-64 build under Rosetta on the Apple silicon one), on Windows and Linux an Intel and an AMD CPU with different GPU vendors. `diff` shows no difference in `pixels.*`; in a regular window the same pages may differ (hardware decoding, `pixels.video_frame_format` `NV12` or null). On a machine with hardware VP9 or AV1 decoding, `chrome://media-internals` shows a software decoder (`VpxVideoDecoder`, `Dav1dVideoDecoder`) for a MoltNet tab playing a 1080p and a 2160p YouTube video, and a hardware one for the same video in a regular window. Note the CPU use (Activity Monitor, Task Manager, `top`) and, on a laptop on battery, the power draw (`powermetrics` on macOS) of each, at 1080p30, 2160p30 and 2160p60, and whether MoltNet drops frames (Stats for nerds): FINGERPRINTING.md "MoltNet: pixels and encoded bytes" estimates 0.5 to 1 W more at 1080p and 2 to 3 W at 2160p; correct it with what you measure. A WebGL video page (e.g. a video texture demo) and a canvas video filter page still run in MoltNet.
+- [ ] CPU features and V8's heap in MoltNet (fp-cpu). Run the leak kit (§8) on two x86-64 machines of different CPU generations (one without AVX2 and FMA if you have one, e.g. a pre-2013 Intel or a VM started with `-cpu Nehalem`; an Intel and an AMD one otherwise) and, on macOS, an Intel and an Apple silicon Mac: `cpu.wasm_relaxed_simd` is false, and `diff` shows no difference in `cpu.math`, `pixels.p3_readback` or `audio.decoded_vorbis`, also between the Intel and the Apple silicon Mac; in a regular window the same values may differ (FMA, AVX2, AVX-512, Arm). In MoltNet: a WebAssembly machine-learning demo that uses relaxed SIMD where it can (ONNX Runtime Web or TensorFlow.js with the WASM backend) still runs, with its SIMD build; a page with a 12-megapixel Display P3 photo (an iPhone HEIC converted to JPEG keeps its profile) shows it with the right colours, and note how much longer it takes to appear than in a regular window; a Vorbis file plays in `<audio>` and through `decodeAudioData()`. V8's heap: on a machine with 16 GB or more, a page that pushes 1 MB strings into an array until its tab runs out of memory stops at about 2 GB of JavaScript heap in MoltNet (about 4 GB in a regular window); `chrome://process-internals` or the task manager shows the renderer's memory. On Linux with more than 16 GB, `cat /proc/<renderer pid>/limits` shows a data limit of 8589934592 bytes for a MoltNet renderer (16 or 32 GiB for a regular one).
 
 ### 7.4 MoltNet
 
@@ -1595,6 +1610,12 @@ Mac; use a real Linux host.
     `pixels.webcodecs_frame`, `pixels.video_frame`,
     `pixels.encoded_vp8_*` or `pixels.encoded_opus_*` between two machines
     of an OS (fp-pixels). Every `pixels.*` value is a hash, not an error.
+  - `cpu.wasm_relaxed_simd` passes (false: relaxed SIMD fails validation),
+    and `diff` shows no difference in `cpu.math`, `pixels.p3_readback` or
+    `audio.decoded_vorbis` between two machines of different CPU
+    generations or architectures (fp-cpu). `pixels.p3_readback` and
+    `audio.decoded_vorbis` are hashes, not errors (`audio.decoded_vorbis`
+    has `frames` above 10000); `cpu.wasm_simd` is recorded only.
   - `net.client_cert.handshakes` passes (MoltNet 156): the server that
     asks for a client certificate saw only completed handshakes, none with
     a certificate. A FAIL listing a dropped handshake means MoltNet's

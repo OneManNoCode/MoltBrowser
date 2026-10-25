@@ -62,12 +62,23 @@ class ConfigurationReceiver : public content::RenderThreadObserver,
   mojo::AssociatedReceiverSet<mojom::FingerprintingConfiguration> receivers_;
 };
 
-}  // namespace
-
-void ConfigureRendererProcess() {
-  const RendererMode mode = ModeFromSwitchValue(
+RendererMode ModeFromCommandLine() {
+  return ModeFromSwitchValue(
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kMode));
+}
+
+}  // namespace
+
+void ConfigureRendererProcessBeforeBlink() {
+  if (ModeFromCommandLine() == RendererMode::kUniform) {
+    blink::WebMoltFingerprinting::ConfigureBeforeBlinkInitialization(
+        blink::WebMoltFingerprinting::Mode::kUniform);
+  }
+}
+
+void ConfigureRendererProcess() {
+  const RendererMode mode = ModeFromCommandLine();
   if (mode == RendererMode::kOff) {
     return;
   }

@@ -381,6 +381,9 @@ void RecordWebMemoryUkm(ExecutionContext* execution_context,
 
 void MeasureMemoryController::MeasurementComplete(
     WebMemoryMeasurementPtr measurement) {
+  // MoltBrowser: in MoltNet every context gets the same entries, whatever
+  // the process model (moltnet_memory.h).
+  molt_fingerprinting::MakeMemoryMeasurementUniform(*measurement);
   resolver_->Resolve(ConvertResult(measurement));
   RecordWebMemoryUkm(resolver_->GetExecutionContext(), measurement);
 }

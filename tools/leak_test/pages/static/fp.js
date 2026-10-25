@@ -941,6 +941,221 @@ async function encodedAudio(sampleRate) {
   }
 }
 
+// MoltNet: what a page computes doesn't show the CPU (FINGERPRINTING.md
+// "MoltNet: CPU features"). Two WebAssembly modules with one function of
+// three v128 parameters: one uses a relaxed SIMD instruction
+// (f32x4.relaxed_madd), the other the plain f32x4.add.
+const WASM_HEAD = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x08, 0x01, 0x60, 0x03, 0x7b, 0x7b, 0x7b, 0x01, 0x7b,
+  0x03, 0x02, 0x01, 0x00];
+const WASM_RELAXED_SIMD = WASM_HEAD.concat([0x0a, 0x0d, 0x01, 0x0b, 0x00,
+  0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0xfd, 0x85, 0x02, 0x0b]);
+const WASM_SIMD = WASM_HEAD.concat([0x0a, 0x0b, 0x01, 0x09, 0x00,
+  0x20, 0x00, 0x20, 0x01, 0xfd, 0xe4, 0x01, 0x0b]);
+
+// Math functions, among them arguments for which C libraries' pow and tanh
+// give other results with and without FMA. No result is NaN.
+function mathHash() {
+  const r = [Math.pow(9.628, -4.64), Math.pow(47.161, -5.06),
+    Math.pow(82.58, 6.52), Math.pow(28.837, 3.57), 1.7 ** 2.9,
+    Math.tanh(-0.164651), Math.tanh(-0.149006), Math.tanh(0.17547),
+    Math.tanh(-0.080124), Math.tanh(3.3), Math.exp(-7.77),
+    Math.expm1(0.001), Math.log(3.3), Math.log1p(1e-5), Math.log2(10),
+    Math.log10(7), Math.cbrt(17), Math.cosh(1.7), Math.sinh(-2.2),
+    Math.cos(1.2345), Math.acos(0.3), Math.asin(-0.6), Math.atanh(0.5),
+    Math.asinh(3), Math.acosh(2.5), Math.atan2(1, 3), Math.hypot(3, 4.5)];
+  return hex(new Uint8Array(new Float64Array(r).buffer));
+}
+
+// A 64x32 sRGB frame, as RGBA and as I420, read back in Display P3: Skia
+// converts the colours on the CPU.
+async function p3Readback() {
+  if (!window.VideoFrame) {
+    return 'absent';
+  }
+  const w = 64;
+  const h = 32;
+  const rgba = new Uint8Array(w * h * 4);
+  const i420 = new Uint8Array(w * h * 3 / 2);
+  for (let y = 0; y < h; ++y) {
+    for (let x = 0; x < w; ++x) {
+      rgba.set([x * 4, y * 8, (x * y) & 255, 255], (y * w + x) * 4);
+      i420[y * w + x] = (x * 3 + y * 5) & 255;
+    }
+  }
+  for (let i = w * h; i < i420.length; ++i) {
+    i420[i] = (i * 7) & 255;
+  }
+  const srgb = {primaries: 'bt709', transfer: 'iec61966-2-1', matrix: 'rgb',
+    fullRange: true};
+  const frames = {
+    rgba: new VideoFrame(rgba, {format: 'RGBA', codedWidth: w,
+      codedHeight: h, timestamp: 0, colorSpace: srgb}),
+    i420: new VideoFrame(i420, {format: 'I420', codedWidth: w,
+      codedHeight: h, timestamp: 0}),
+  };
+  const out = {};
+  try {
+    for (const [name, frame] of Object.entries(frames)) {
+      const dest = new Uint8Array(w * h * 4);
+      await frame.copyTo(dest, {format: 'RGBA', colorSpace: 'display-p3'});
+      out[name] = await hex(dest);
+    }
+  } finally {
+    Object.values(frames).forEach((f) => f.close());
+  }
+  return out;
+}
+
+// A quarter second of stereo 48 kHz Vorbis (a sweep and two tones,
+// libvorbis at its lowest quality): the three headers, Xiph-laced (with an
+// empty comment header), and the audio packets.
+const VORBIS_DESCRIPTION =
+    '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' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACAAAcAgAALodCQFQFAnACAwXEsCwAAHEnSLAAA' +
+    'cCRL0wAAwNI0UQQAAEvTRBEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAwIADAECACWWg0JCVAEAUAIBBMTwNYFkA' +
+    'ywJoGkDTAJ4H8DyAKAIAAQAABQ4AAAE2aEosDlBoyEoAIAoAwKAolmVZngdN0zRRhKZpmihC' +
+    '0zRPFKFpmiaKEEXPM014oueZJkxTFE0TiKJpCgAAKHAAAAiwQVNicYBCQ1YCACEBAAZHsSxP' +
+    '8zzPE0XTVFVomueJoiiKpmmqKjTN80RRFE3TNFUVmuZ5oiiKpqmqqgpN8zxRFEXTVFVVheeJ' +
+    'oiiapmmqquvC80RRFE3TNFXVdSGKomiapqmqquu6QBRN0zRVVVVdF4iiaZqmqrquLANRNE3T' +
+    'VFXXlWVgmqqqqqrrurIMUE1VVVXXlWWAqrqq67quLANUVXVd15VlGeC6ruvKsmzbAFzXdWXZ' +
+    'tgUAABw4AAAEGEEnGVUWYaMJFx6AQkNWBABRAACAMUwpppRhTEIoITSKSQgphExKSqmVVEFI' +
+    'JaVSKgippFRKRqWllFLKIJRSUioVhFRKKqUAALADBwCwAwuh0JCVAEAeAABBiFKMMcaclFIp' +
+    'xpxzTkqpFGPOOSelZIwx55yTUjLGmHPOSSkdc84556SUjDnnnHNSSuecc845KaWUzjnnnJRS' +
+    'Sgidc05KKaVzzjknAACowAEAIMBGkc0JRoIKDVkJAKQCABgcx7I0TdM8TxQ1SdI0z/M8UTRN' +
+    'TbI0zfM8TxRNk+d5niiKommqKs/zPFEURdNUVa4riqZpmqqqqmRZFEXRNFVVdWGapqmqquq6' +
+    'ME1RVFXVdV3IsmmqquvKMmzbNFXVdWUZqKqqyq4sA9dVVdeVZQEA4AkOAEAFNqyOcFI0Flho' +
+    'yEoAIAMAgCAEIaUUQkophJRSCCmlEBIAADDgAAAQYEIZKDRkRQAQJwAAICSlgk5KJaGUUkop' +
+    'pZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJK' +
+    'KaWUUkoppZRSSimlk1JKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRS' +
+    'SimllJJSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSSmllFJKKaWUUkoppZRSSiml' +
+    'lFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkop' +
+    'pZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJK' +
+    'KaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRS' +
+    'SimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWUUkoppZRSSimllFJKKaWU' +
+    'CgDQjXAA0H0woQwUGrISAEgFAACMUYoxCKnFViHEmHMSWmutQogx5yS0lGLPmHMQSmkttp4x' +
+    'xyCUklqLvZTOSUmttRh7Kh2jklJLMfbeSyklpdhi7L2nkEKOLcbYe88xpRZbq7H3XmNKsdUY' +
+    'Y++99xhjq7HW3nvvMbZWa44FAGA2OABAJNiwOsJJ0VhgoSErAYCQAADCGKUYY8w555xzTkrJ' +
+    'GHPOQQghhBBKKRljzDkIIYQQQiklY845ByGEUEIopWTMOegghFBCKKWUzjkHHYQQQgmllJIx' +
+    '5yCEEEIJpZRSOucghBBCKKWEVEopnYMQQighhFJKSSmEEEIIoYRQUikphRBCCCGEUEJKJaUQ' +
+    'QgghhBBKSKWklFIIIYQQQgillJRSCiWUEEIooaSSSimlhBBKCKGkVFIqqZQSQgglhJJKSimV' +
+    'VEooIYRSAADAgQMAQIARdJJRZRE2mnDhASg0ZCUAEAUAABkHHZSWG4CQctRahxyEFFsLkUMM' +
+    'WoydcoxBSilkkDHGpJWSQscYpNRiS6GDFHvPuZXUAgAAIAgACDABBAYICr4QAmIMAEAQIjNE' +
+    'QmEVLDAogwaHeQDwABEhEQAkJijSLi6gywAXdHHXgRCCEIQgFgdQQAIOTrjhiTc84QYn6BSV' +
+    'OhAAAAAAAAUAeAAAQCiAiIhmrsLiAiNDY4Ojw+MDRAAAAAAApADgAwAACQEiIpq5CosLjAyN' +
+    'DY4Ojw+QAABAAAEAAAAAEEAAAgICAAAAAAABAAAAAgI=';
+const VORBIS_PACKETS = [
+  'hPfq2dx4r57tN/dPXpu6BQAQAADavyR8dzJIAA==',
+  'mgrfqlfharj7NTjdG2qKv/EH+RDOyTuTVt8B0dUU/Rn9PK98+nbyWfn24f0Hf/XHvz65ow' +
+      'WAAAAAAAAAAAAAAAAA6vPd3Pm525d8gontlY8hy7Kskycj',
+  'nvpe8w8BdH9364R3FDmoKbbCD/UujEnH72j5i66m6Ebe/vJ1Prb3BgAAAAAAAAAAAAAAAO' +
+      'AKYeoXTXOwAbD68IOn3rv0kW+92QA=',
+  'vvo+B+4COLpHR3feUFNchR8b3AU0ftotb1r+pk9XU4R+I7409t3tuvywfBS9BwEAAAAAAA' +
+      'AAAAAAAHTiidOUxNfe928PgGS5LwM=',
+  'vvo+xEMAvjz7PwOr97dATfE1fg7cBbD9PsoC75yNUVOEjv7KJ/8NINblw601AAAAAAAAAA' +
+      'AAAABAu+yB4Gnc00gT1vaNP3w15/IPLwAA',
+  'vvqej5fgN+D7c4v3e46Ir6b4Gj/tuwB67T7y8413lI6qn5oidAK4ZbIGAAAAAAAAAAAAAA' +
+      'CAfvEyAEwi8aOv0sGcO+p22xL32dDw+iIZAACKGQA=',
+  'vvoenx+C3/9Z7Lj5vgdRT6Wm+Brf2jcBQYHcR/33xDvngCispKYInQB2AAAAAAAAAAAAAA' +
+      'DAGD/rAED1/1UYq1QAAAAVh/2XPz/8ap2ch3ardbv9Aw==',
+  'vvqeny/B5/97Zhf+vdlv0Stqiq/x1XoKoOs9rXODd5SO/zU1RegEEBMAAAAAAAAAAAAAAN' +
+      '1nAQDD68avX9MAAADA0u10O93893f3mejp7O2k+QA=',
+  'vvoeH1+C72BzpH8LnmLkn5ria7yrHwKqB0+78V3yjjLio/1KTRFaAQCLAAAAAAAAAAAAAA' +
+      'BAf/kSAFb3XgxDMwAAgI/b93/3fiUSac5ye/wA',
+  'vvquz2++DXvdX+EpPuzvUlN8jRf+W0Bl56PKsneUPX4RpaYInQBQJgAAAAAAAAAAAAAAhp' +
+      'cAgLVlbOMc0gAAADT3W79vX1+3gNP72/vbWTROBQ==',
+  'vvo2r998Mvba/3Z+3nLdqSm+xi1iMwmo/njaTXn/fKOM36dTU4RWAEASAwAAAAAAAAAAAA' +
+      'Cgv3QJAEfnlKaLAgAAADnS7bj7AOT89n7yZ/54CxI=',
+  'vvrWr9982vfaPzlvUZaLmuJrfDj8JSAq22k3Ff5+R+nf+0VNEToBgE0EAAAAAAAAAAAAAB' +
+      'h+BgCo/mfGjskAAADQr37zTw5tCw6/SCueBAA=',
+  'nvpmr9/ccp7a10Z7y83J0TXF17eKN4uAAHHfA/x4e4ft81FTdMPl8/28pcWCBUZr1gAAAA' +
+      'AAAAAAAACAvf//PLHh8Fit+uGF1eloRfjy/e12c7+73dzpxEtMABz2X74SRw2iq6dOf+uD' +
+      'D15YRwA=',
+  'nuiNzx/hZ2Kv/eLpLVeNmuKg18b/W8Bf/2f34al4O80Vaoqu25wZmMoEAyICAAAAAADgoY' +
+      'Sr1xJ+vdxVZyhvd4h1f7y+8GBciNMX3P/m/tf908dPHz/9dLD9YjiuV3eTPrkfNj2iJ+e3' +
+      '9q09aQqQDh74stOmd/1NzTSrBQkF',
+];
+
+// The Vorbis packets decoded by WebCodecs, as 32-bit float planes.
+async function decodedVorbis() {
+  if (!window.AudioDecoder) {
+    return 'absent';
+  }
+  const outputs = [];
+  const decoder = new AudioDecoder({output: (d) => outputs.push(d),
+    error: () => {}});
+  try {
+    decoder.configure({codec: 'vorbis', sampleRate: 48000,
+      numberOfChannels: 2, description: base64Bytes(VORBIS_DESCRIPTION)});
+    VORBIS_PACKETS.forEach((p, i) => decoder.decode(new EncodedAudioChunk(
+        {type: 'key', timestamp: i * 10000, data: base64Bytes(p)})));
+    await decoder.flush();
+    const planes = [];
+    let frames = 0;
+    for (const d of outputs) {
+      for (let ch = 0; ch < d.numberOfChannels; ++ch) {
+        const plane = new Float32Array(d.numberOfFrames);
+        d.copyTo(plane, {planeIndex: ch, format: 'f32-planar'});
+        planes.push(new Uint8Array(plane.buffer));
+      }
+      frames += d.numberOfFrames;
+    }
+    return {frames, hash: (await hashChunks(planes)).hash};
+  } finally {
+    outputs.forEach((d) => d.close());
+    if (decoder.state !== 'closed') {
+      decoder.close();
+    }
+  }
+}
+
+async function cpuFeatures(v, step) {
+  v['cpu.wasm_relaxed_simd'] = WebAssembly.validate(
+      new Uint8Array(WASM_RELAXED_SIMD));
+  v['cpu.wasm_simd'] = WebAssembly.validate(new Uint8Array(WASM_SIMD));
+  await step('cpu.math', mathHash);
+  await step('pixels.p3_readback', p3Readback);
+  await step('audio.decoded_vorbis', decodedVorbis);
+}
+
 async function mediaPixels(v, step) {
   await step('pixels.webcodecs_frame', webcodecsFrame);
   await step('pixels.video_frame', videoElementFrame);
@@ -1115,6 +1330,7 @@ async function collect() {
   await mediaCapabilities(v, step);
   await recorderAndLocalFonts(v, step);
   await mediaPixels(v, step);
+  await cpuFeatures(v, step);
   v['autoplay.mediaelement'] = n.getAutoplayPolicy ?
       n.getAutoplayPolicy('mediaelement') : 'absent';
   await step('sharedStorage.set', async () => {

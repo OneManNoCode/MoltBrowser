@@ -173,7 +173,7 @@ size_t QuantizeMemorySize(size_t size) {
 
 MemoryInfo::MemoryInfo(Precision precision) {
   // MoltBrowser: MoltNet always reports bucketized values, and the heap limit
-  // of the uniform 8 GB machine (moltnet_memory.h).
+  // of the machine its isolates are configured for (moltnet_memory.h).
   const bool uniform = molt_fingerprinting::UsesUniformMemoryInfo();
   if (uniform) {
     precision = Precision::kBucketized;
