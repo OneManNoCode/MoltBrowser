@@ -196,6 +196,30 @@ class IdentityChecks(unittest.TestCase):
             del data[key]
         self.assertEqual(report._judge_new_identity(data)[0], report.PASS)
 
+    def test_nothing_held_after_end(self):
+        def run(data, paths=()):
+            manifest = {'phases': [{'name': 'new_identity', 'data': data}]}
+            log = [{'path': p, 'status': 200} for p in paths]
+            return report._held_after_end_check(manifest, log)
+
+        good = {'held_nonce': 'endheld1', 'held_setup': {'fetch_later': True}}
+        self.assertEqual(run(good)['status'], report.PASS)
+        # Another nonce's canary, or another test's, isn't this one's.
+        self.assertEqual(run(good, ['/canary/endheld12-later',
+                                    '/canary/x-hide'])['status'],
+                         report.PASS)
+        for path in ('/canary/endheld1-later', '/canary/endheld1-hide?x=1'):
+            c = run(good, [path])
+            self.assertEqual(c['status'], report.FAIL)
+            self.assertIn(path, ' '.join(c['evidence']))
+        self.assertEqual(run({})['status'], report.SKIP)
+        self.assertEqual(run({'held_nonce': 'endheld1', 'held_setup': {
+            'error': 'x'}})['status'], report.ERROR)
+        c = run({'held_nonce': 'endheld1', 'held_setup': {
+            'fetch_later': False}})
+        self.assertEqual(c['status'], report.PASS)
+        self.assertIn('only the pagehide beacon', ' '.join(c['evidence']))
+
     def partition_runs(self, **changes):
         runs = []
         for f in ('PartitionConnectionsByNetworkIsolationKey',
