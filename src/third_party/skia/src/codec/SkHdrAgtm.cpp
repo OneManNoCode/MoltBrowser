@@ -10,6 +10,9 @@
 #include "include/core/SkColorFilter.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkHdrMetadata.h"
+// MoltBrowser: the logarithms and powers of 2 in this file are portable in
+// MoltNet.
+#include "include/private/SkMoltBrowserMath.h"
 #include "src/codec/SkHdrAgtmPriv.h"
 
 // Defined locally to avoid pulling in SkCodecPriv.h and general decoder headers.
@@ -189,7 +192,7 @@ float EvaluateGainCurve(const AdaptiveGlobalToneMap::GainCurve& gainCurve, float
     // Handle points off of the right endpoint.
     size_t j = N - 1;
     if (x >= cp[j].fX) {
-        return cp[j].fY + std::log2(cp[j].fX / x);
+        return cp[j].fY + SkMoltBrowserMath::Log2(cp[j].fX / x);
     }
 
     // Binary search for i, j bracket in which we find x.
@@ -359,7 +362,7 @@ void PopulateUsingRwtmo(AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm) {
     hatm.fAlternateImages.resize(2);
     hatm.fAlternateImages[0].fHdrHeadroom = 0.f;
     hatm.fAlternateImages[1].fHdrHeadroom =
-        std::log2(8.f / 3.f) * std::min(hatm.fBaselineHdrHeadroom / std::log2(1000/203.f), 1.f);
+        SkMoltBrowserMath::Log2(8.f / 3.f) * std::min(hatm.fBaselineHdrHeadroom / SkMoltBrowserMath::Log2(1000/203.f), 1.f);
 
     for (size_t a = 0; a < hatm.fAlternateImages.size(); ++a) {
         auto& gain = hatm.fAlternateImages[a].fColorGainFunction;
@@ -371,14 +374,14 @@ void PopulateUsingRwtmo(AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm) {
         // Compute the image of white under the tone mapping from Formula (C.2).
         const float yWhite =
             (a == 1) ? 1.f
-                     : 1.f - 0.5f * std::min(hatm.fBaselineHdrHeadroom / std::log2(1000/203.f), 1.f);
+                     : 1.f - 0.5f * std::min(hatm.fBaselineHdrHeadroom / SkMoltBrowserMath::Log2(1000/203.f), 1.f);
 
         // Compute the Bezier control points using Formula (C.3).
         const float kappa = 0.65f;
         const float xKnee = 1.f;
         const float yKnee = yWhite;
-        const float xMax = std::exp2(hatm.fBaselineHdrHeadroom);
-        const float yMax = std::exp2(hatm.fAlternateImages[a].fHdrHeadroom);
+        const float xMax = SkMoltBrowserMath::Exp2(hatm.fBaselineHdrHeadroom);
+        const float yMax = SkMoltBrowserMath::Exp2(hatm.fAlternateImages[a].fHdrHeadroom);
         const float xMid = (1.f - kappa) * xKnee + kappa * (xKnee * yMax / yKnee);
         const float yMid = (1.f - kappa) * yKnee + kappa * yMax;
 
@@ -401,8 +404,8 @@ void PopulateUsingRwtmo(AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm) {
 
             // Compute the log domain curve values using Formula (C.6).
             cubic.fControlPoints[c].fX = x;
-            cubic.fControlPoints[c].fY = std::log2(y / x);
-            cubic.fControlPoints[c].fM = (x * m - y) / (std::log(2.f) * x * y);
+            cubic.fControlPoints[c].fY = SkMoltBrowserMath::Log2(y / x);
+            cubic.fControlPoints[c].fM = (x * m - y) / (SkMoltBrowserMath::Log(2.f) * x * y);
         }
     }
 }
@@ -500,9 +503,9 @@ void ApplyGain(const AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm,
         for (auto& C : colors) {
             SkColor4f G = AgtmHelpers::EvaluateColorGainFunction(gain, C);
             C = {
-                C.fR * std::exp2(w * G.fR),
-                C.fG * std::exp2(w * G.fG),
-                C.fB * std::exp2(w * G.fB),
+                C.fR * SkMoltBrowserMath::Exp2(w * G.fR),
+                C.fG * SkMoltBrowserMath::Exp2(w * G.fG),
+                C.fB * SkMoltBrowserMath::Exp2(w * G.fB),
                 C.fA,
             };
         }
@@ -518,9 +521,9 @@ void ApplyGain(const AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm,
             SkColor4f G0 = AgtmHelpers::EvaluateColorGainFunction(gain0, C);
             SkColor4f G1 = AgtmHelpers::EvaluateColorGainFunction(gain1, C);
             C = {
-                C.fR * std::exp2(w0 * G0.fR + w1 * G1.fR),
-                C.fG * std::exp2(w0 * G0.fG + w1 * G1.fG),
-                C.fB * std::exp2(w0 * G0.fB + w1 * G1.fB),
+                C.fR * SkMoltBrowserMath::Exp2(w0 * G0.fR + w1 * G1.fR),
+                C.fG * SkMoltBrowserMath::Exp2(w0 * G0.fG + w1 * G1.fG),
+                C.fB * SkMoltBrowserMath::Exp2(w0 * G0.fB + w1 * G1.fB),
                 C.fA,
             };
         }
@@ -661,7 +664,7 @@ bool PopulateToneMapAgtmParams(const Metadata& metadata,
     // from the CLLI and MDCV metadata.
     if (!hatm.has_value()) {
         hatm = {{
-            .fBaselineHdrHeadroom = std::log2(
+            .fBaselineHdrHeadroom = SkMoltBrowserMath::Log2(
                 std::max(get_max_luminance(metadata) / agtm.fHdrReferenceWhite, 1.f))
         }};
         AgtmHelpers::PopulateUsingRwtmo(hatm.value());

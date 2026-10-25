@@ -12,6 +12,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/private/SkGainmapInfo.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "include/utils/SkParse.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/xml/SkDOM.h"
@@ -614,20 +615,21 @@ bool SkXmpImpl::getGainmapInfoAdobe(SkGainmapInfo* outGainmapInfo) const {
     if (!outGainmapInfo) {
         return true;
     }
-    const float kLog2 = std::log(2.f);
-    outGainmapInfo->fGainmapRatioMin = {std::exp(gainMapMin.fR * kLog2),
-                                        std::exp(gainMapMin.fG * kLog2),
-                                        std::exp(gainMapMin.fB * kLog2),
+    // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+    const float kLog2 = SkMoltBrowserMath::Log(2.f);
+    outGainmapInfo->fGainmapRatioMin = {SkMoltBrowserMath::Exp(gainMapMin.fR * kLog2),
+                                        SkMoltBrowserMath::Exp(gainMapMin.fG * kLog2),
+                                        SkMoltBrowserMath::Exp(gainMapMin.fB * kLog2),
                                         1.f};
-    outGainmapInfo->fGainmapRatioMax = {std::exp(gainMapMax.fR * kLog2),
-                                        std::exp(gainMapMax.fG * kLog2),
-                                        std::exp(gainMapMax.fB * kLog2),
+    outGainmapInfo->fGainmapRatioMax = {SkMoltBrowserMath::Exp(gainMapMax.fR * kLog2),
+                                        SkMoltBrowserMath::Exp(gainMapMax.fG * kLog2),
+                                        SkMoltBrowserMath::Exp(gainMapMax.fB * kLog2),
                                         1.f};
     outGainmapInfo->fGainmapGamma = {1.f / gamma.fR, 1.f / gamma.fG, 1.f / gamma.fB, 1.f};
     outGainmapInfo->fEpsilonSdr = offsetSdr;
     outGainmapInfo->fEpsilonHdr = offsetHdr;
-    outGainmapInfo->fDisplayRatioSdr = std::exp(hdrCapacityMin * kLog2);
-    outGainmapInfo->fDisplayRatioHdr = std::exp(hdrCapacityMax * kLog2);
+    outGainmapInfo->fDisplayRatioSdr = SkMoltBrowserMath::Exp(hdrCapacityMin * kLog2);
+    outGainmapInfo->fDisplayRatioHdr = SkMoltBrowserMath::Exp(hdrCapacityMax * kLog2);
     if (baseRenditionIsHDR) {
         outGainmapInfo->fBaseImageType = SkGainmapInfo::BaseImageType::kHDR;
     } else {

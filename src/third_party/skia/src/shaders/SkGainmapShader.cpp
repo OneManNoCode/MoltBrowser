@@ -16,6 +16,7 @@
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkAssert.h"
 #include "include/private/SkGainmapInfo.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "src/core/SkImageInfoPriv.h"
 
 #include <cmath>
@@ -122,12 +123,14 @@ sk_sp<SkShader> SkGainmapShader::Make(const sk_sp<const SkImage>& baseImage,
     const SkMatrix gainmapRectToDstRect = SkMatrix::RectToRectOrIdentity(gainmapRect, dstRect);
 
     // Compute the weight parameter that will be used to blend between the images.
+    // MoltBrowser: the logarithms below are portable in MoltNet
+    // (include/private/SkMoltBrowserMath.h).
     float W = 0.f;
     if (dstHdrRatio > gainmapInfo.fDisplayRatioSdr) {
         if (dstHdrRatio < gainmapInfo.fDisplayRatioHdr) {
-            W = (std::log(dstHdrRatio) - std::log(gainmapInfo.fDisplayRatioSdr)) /
-                (std::log(gainmapInfo.fDisplayRatioHdr) -
-                 std::log(gainmapInfo.fDisplayRatioSdr));
+            W = (SkMoltBrowserMath::Log(dstHdrRatio) - SkMoltBrowserMath::Log(gainmapInfo.fDisplayRatioSdr)) /
+                (SkMoltBrowserMath::Log(gainmapInfo.fDisplayRatioHdr) -
+                 SkMoltBrowserMath::Log(gainmapInfo.fDisplayRatioSdr));
         } else {
             W = 1.f;
         }
@@ -154,13 +157,13 @@ sk_sp<SkShader> SkGainmapShader::Make(const sk_sp<const SkImage>& baseImage,
     sk_sp<SkShader> gainmapMathShader;
     {
         SkRuntimeShaderBuilder builder(gainmap_apply_effect());
-        const SkColor4f logRatioMin({std::log(gainmapInfo.fGainmapRatioMin.fR),
-                                     std::log(gainmapInfo.fGainmapRatioMin.fG),
-                                     std::log(gainmapInfo.fGainmapRatioMin.fB),
+        const SkColor4f logRatioMin({SkMoltBrowserMath::Log(gainmapInfo.fGainmapRatioMin.fR),
+                                     SkMoltBrowserMath::Log(gainmapInfo.fGainmapRatioMin.fG),
+                                     SkMoltBrowserMath::Log(gainmapInfo.fGainmapRatioMin.fB),
                                      1.f});
-        const SkColor4f logRatioMax({std::log(gainmapInfo.fGainmapRatioMax.fR),
-                                     std::log(gainmapInfo.fGainmapRatioMax.fG),
-                                     std::log(gainmapInfo.fGainmapRatioMax.fB),
+        const SkColor4f logRatioMax({SkMoltBrowserMath::Log(gainmapInfo.fGainmapRatioMax.fR),
+                                     SkMoltBrowserMath::Log(gainmapInfo.fGainmapRatioMax.fG),
+                                     SkMoltBrowserMath::Log(gainmapInfo.fGainmapRatioMax.fB),
                                      1.f});
         const int noGamma =
             gainmapInfo.fGainmapGamma.fR == 1.f &&

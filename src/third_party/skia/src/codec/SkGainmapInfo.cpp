@@ -7,6 +7,7 @@
 
 #include <array>
 #include "include/private/SkGainmapInfo.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
@@ -155,19 +156,21 @@ static bool read_iso_gainmap_info(SkStream* s, SkGainmapInfo& info) {
     if (!useBaseColourSpace) {
         info.fGainmapMathColorSpace = SkColorSpace::MakeSRGB();
     }
+    // MoltBrowser: the powers of 2 below are portable in MoltNet
+    // (include/private/SkMoltBrowserMath.h).
     if (baseHdrHeadroom < altrHdrHeadroom) {
         info.fBaseImageType = SkGainmapInfo::BaseImageType::kSDR;
-        info.fDisplayRatioSdr = std::exp2(baseHdrHeadroom);
-        info.fDisplayRatioHdr = std::exp2(altrHdrHeadroom);
+        info.fDisplayRatioSdr = SkMoltBrowserMath::Exp2(baseHdrHeadroom);
+        info.fDisplayRatioHdr = SkMoltBrowserMath::Exp2(altrHdrHeadroom);
     } else {
         info.fBaseImageType = SkGainmapInfo::BaseImageType::kHDR;
-        info.fDisplayRatioHdr = std::exp2(baseHdrHeadroom);
-        info.fDisplayRatioSdr = std::exp2(altrHdrHeadroom);
+        info.fDisplayRatioHdr = SkMoltBrowserMath::Exp2(baseHdrHeadroom);
+        info.fDisplayRatioSdr = SkMoltBrowserMath::Exp2(altrHdrHeadroom);
     }
     for (int i = 0; i < 3; ++i) {
         int j = i >= channelCount ? 0 : i;
-        info.fGainmapRatioMin[i] = std::exp2(gainMapMin[j]);
-        info.fGainmapRatioMax[i] = std::exp2(gainMapMax[j]);
+        info.fGainmapRatioMin[i] = SkMoltBrowserMath::Exp2(gainMapMin[j]);
+        info.fGainmapRatioMax[i] = SkMoltBrowserMath::Exp2(gainMapMax[j]);
         info.fGainmapGamma[i] = 1.f / gamma[j];
         switch (info.fBaseImageType) {
             case SkGainmapInfo::BaseImageType::kSDR:

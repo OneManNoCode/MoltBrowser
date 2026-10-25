@@ -28,6 +28,7 @@
 #include "include/private/SkAssert.h"
 #include "include/private/SkFeatures.h"
 #include "include/private/SkMalloc.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "include/private/SkMath.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkArenaAlloc.h"
@@ -1354,7 +1355,8 @@ void SkShaderBlurAlgorithm::Compute2DBlurKernel(SkSize sigma,
         xTerm = xTerm * xTerm * sigmaXDenom;
         for (int y = 0; y < height; y++) {
             float yTerm = static_cast<float>(y - radius.height());
-            float xyTerm = std::exp(-(xTerm + yTerm * yTerm * sigmaYDenom));
+            // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+            float xyTerm = SkMoltBrowserMath::Exp(-(xTerm + yTerm * yTerm * sigmaYDenom));
             // Note that the constant term (1/(sqrt(2*pi*sigma^2)) of the Gaussian
             // is dropped here, since we renormalize the kernel below.
             kernel[y * width + x] = xyTerm;

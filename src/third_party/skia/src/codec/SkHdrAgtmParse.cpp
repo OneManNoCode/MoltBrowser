@@ -8,6 +8,7 @@
 #include <array>
 #include "include/core/SkStream.h"
 #include "include/private/SkFloatingPoint.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "src/codec/SkHdrAgtmPriv.h"
 #include "src/core/SkStreamPriv.h"
 
@@ -508,7 +509,8 @@ bool AdaptiveGlobalToneMap::parse(const SkData* data) {
                 const float theta = uint16_to_float(
                     syntax.gain_curve_control_points_theta[a][c],
                     1u, 35999u, 18000u, 36000.f / SK_FloatPI);
-                cubic.fControlPoints[c].fM = std::tan(theta);
+                // MoltBrowser: portable in MoltNet (SkMoltBrowserMath.h).
+                cubic.fControlPoints[c].fM = SkMoltBrowserMath::Tan(theta);
             }
         } else {
             AgtmHelpers::PopulateSlopeFromPCHIP(cubic);

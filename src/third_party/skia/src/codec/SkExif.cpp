@@ -6,6 +6,7 @@
  */
 
 #include "include/private/SkExif.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 
 #include "include/core/SkData.h"
 #include "include/core/SkRefCnt.h"
@@ -93,7 +94,8 @@ static std::optional<float> get_maker_note_hdr_headroom(sk_sp<SkData> data) {
             stops = -0.303f * maker48 + 2.303f;
         }
     }
-    return std::pow(2.f, std::max(stops, 0.f));
+    // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+    return SkMoltBrowserMath::Pow(2.f, std::max(stops, 0.f));
 }
 
 static void parse_ifd(Metadata& exif,

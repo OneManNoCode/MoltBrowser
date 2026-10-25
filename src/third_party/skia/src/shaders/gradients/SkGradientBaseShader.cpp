@@ -18,6 +18,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkMalloc.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "include/private/SkTArray.h"
 #include "include/private/SkTPin.h"
 #include "include/private/SkTo.h"
@@ -747,7 +748,8 @@ static SkPMColor4f xyzd50_to_lab(SkPMColor4f xyz, bool* /*hueIsPowerless*/) {
     SkPMColor4f f;
     for (int i = 0; i < 3; ++i) {
         float v = xyz[i] / D50[i];
-        f[i] = (v > e) ? std::cbrtf(v) : (k * v + 16) / 116;
+        // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+        f[i] = (v > e) ? SkMoltBrowserMath::Cbrt(v) : (k * v + 16) / 116;
     }
 
     return {(116 * f[1]) - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2]), xyz.fA};
@@ -757,7 +759,8 @@ static SkPMColor4f xyzd50_to_lab(SkPMColor4f xyz, bool* /*hueIsPowerless*/) {
 // first component. This simplifies the hue handling for HueMethod and premul/unpremul.
 static SkPMColor4f xyzd50_to_hcl(SkPMColor4f xyz, bool* hueIsPowerless) {
     SkPMColor4f Lab = xyzd50_to_lab(xyz, hueIsPowerless);
-    float hue = sk_float_radians_to_degrees(atan2f(Lab[2], Lab[1]));
+    // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+    float hue = sk_float_radians_to_degrees(SkMoltBrowserMath::Atan2(Lab[2], Lab[1]));
     float chroma = sqrtf(Lab[1] * Lab[1] + Lab[2] * Lab[2]);
     // The LCH math produces small-ish (but not tiny) chroma values for achromatic colors:
     constexpr float kMaxChromaForPowerlessHue = 1e-2f;
@@ -772,9 +775,10 @@ static SkPMColor4f lin_srgb_to_oklab(SkPMColor4f rgb, bool* /*hueIsPowerless*/) 
     float l = 0.4122214708f * rgb.fR + 0.5363325363f * rgb.fG + 0.0514459929f * rgb.fB;
     float m = 0.2119034982f * rgb.fR + 0.6806995451f * rgb.fG + 0.1073969566f * rgb.fB;
     float s = 0.0883024619f * rgb.fR + 0.2817188376f * rgb.fG + 0.6299787005f * rgb.fB;
-    l = std::cbrtf(l);
-    m = std::cbrtf(m);
-    s = std::cbrtf(s);
+    // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+    l = SkMoltBrowserMath::Cbrt(l);
+    m = SkMoltBrowserMath::Cbrt(m);
+    s = SkMoltBrowserMath::Cbrt(s);
     return {0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s,
             1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s,
             0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s,
@@ -785,7 +789,8 @@ static SkPMColor4f lin_srgb_to_oklab(SkPMColor4f rgb, bool* /*hueIsPowerless*/) 
 // the first component. This simplifies the hue handling for HueMethod and premul/unpremul.
 static SkPMColor4f lin_srgb_to_okhcl(SkPMColor4f rgb, bool* hueIsPowerless) {
     SkPMColor4f OKLab = lin_srgb_to_oklab(rgb, hueIsPowerless);
-    float hue = sk_float_radians_to_degrees(atan2f(OKLab[2], OKLab[1]));
+    // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+    float hue = sk_float_radians_to_degrees(SkMoltBrowserMath::Atan2(OKLab[2], OKLab[1]));
     float chroma = sqrtf(OKLab[1] * OKLab[1] + OKLab[2] * OKLab[2]);
     // The OKLCH math produces very small chroma values for achromatic colors:
     constexpr float kMaxChromaForPowerlessHue = 1e-6f;

@@ -8,6 +8,7 @@
 #include "src/core/SkGaussFilter.h"
 
 #include "include/private/SkAssert.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 
 #include <array>
 #include <cmath>
@@ -80,7 +81,8 @@ static int calculate_bessel_factors(double sigma, double *gauss) {
     // The following formula for calculating the Gaussian kernel is from
     // "Scale-Space for Discrete Signals" by Tony Lindeberg.
     // gauss(n; var) = besselI_n(var) / (e^var)
-    auto d = std::exp(var);
+    // MoltBrowser: portable in MoltNet (include/private/SkMoltBrowserMath.h).
+    auto d = SkMoltBrowserMath::Exp(var);
     std::array<double, SkGaussFilter::kGaussArrayMax> b = {besselI_0(var), besselI_1(var)};
     gauss[0] = b[0]/d;
     gauss[1] = b[1]/d;
