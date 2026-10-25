@@ -1998,6 +1998,14 @@ DEFINE_DEBUG_BOOL(trace_wasm_serialization, false,
 DEFINE_BOOL(wasm_test_streaming, false,
             "use streaming compilation instead of async compilation for tests")
 DEFINE_BOOL(wasm_native_module_cache, true, "enable the native module cache")
+// MoltBrowser: relaxed SIMD instructions compute results that depend on the
+// CPU (fused or separate multiply-add, x86 or Arm lane semantics, dot
+// products with or without VNNI). Without this flag a module that uses them
+// fails validation, like any instruction the machine lacks, the same way on
+// every machine (third_party/blink/renderer/core/molt_fingerprinting/
+// moltnet_cpu.h).
+DEFINE_BOOL(wasm_relaxed_simd, true,
+            "accept WebAssembly relaxed SIMD instructions")
 // The actual value used at runtime is clamped to kV8MaxWasmMemory{32,64}Pages.
 DEFINE_UINT(wasm_max_mem_pages, kMaxUInt32,
             "maximum number of 64KiB memory pages per wasm memory")

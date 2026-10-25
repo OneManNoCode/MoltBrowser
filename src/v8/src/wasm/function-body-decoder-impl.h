@@ -5078,6 +5078,12 @@ class WasmFullDecoder : public WasmDecoder<ValidationTag, decoding_mode> {
     if (WasmOpcodes::IsFP16SimdOpcode(full_opcode)) {
       this->detected_->add_fp16();
     } else if (WasmOpcodes::IsRelaxedSimdOpcode(full_opcode)) {
+      // MoltBrowser: relaxed SIMD can be turned off (--no-wasm-relaxed-simd,
+      // flag-definitions.h); its instructions then fail validation.
+      if (!VALIDATE(v8_flags.wasm_relaxed_simd)) {
+        this->DecodeError("Wasm relaxed SIMD unsupported");
+        return 0;
+      }
       this->detected_->add_relaxed_simd();
     }
     return DecodeSimdOpcode(full_opcode, opcode_length);
