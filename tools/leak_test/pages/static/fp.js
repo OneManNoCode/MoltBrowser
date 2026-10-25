@@ -704,6 +704,85 @@ async function localFaces(names) {
   return loaded;
 }
 
+// MoltNet's bundled font set (FINGERPRINTING.md "Fonts"): MoltNet pages
+// take every font from it, on every OS. MOLTNET_FONTS is every name a
+// MoltNet page may see (the set's families, their other names and the
+// aliases; tools/fonts/moltnet_fonts.json, checked by the kit's tests).
+const MOLTNET_FONTS = ['Arimo', 'Tinos', 'Cousine', 'Noto Sans',
+  'Noto Naskh Arabic', 'Noto Sans Hebrew', 'Noto Sans Armenian',
+  'Noto Sans Georgian', 'Noto Sans Ethiopic', 'Noto Sans Devanagari',
+  'Noto Sans Bengali', 'Noto Sans Gujarati', 'Noto Sans Gurmukhi',
+  'Noto Sans Kannada', 'Noto Sans Malayalam', 'Noto Sans Oriya',
+  'Noto Sans Tamil', 'Noto Sans Telugu', 'Noto Sans Sinhala',
+  'Noto Sans Thai', 'Noto Sans Lao', 'Noto Sans Khmer', 'Noto Sans Myanmar',
+  'Noto Serif Tibetan', 'Noto Sans Thaana', 'Noto Sans Syriac',
+  'Noto Sans Cherokee', 'Noto Sans Canadian Aboriginal',
+  'Noto Sans Javanese', 'Noto Sans Ol Chiki', 'Noto Sans Adlam',
+  'Noto Sans Mongolian', 'Noto Sans NKo', 'Noto Sans Tifinagh',
+  'Noto Sans Yi', 'Noto Sans Symbols', 'Noto Sans Symbols 2',
+  'Noto Sans Math', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
+  'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Noto Sans CJK HK',
+  'Noto Color Emoji', 'Noto Sans Hebrew Light', 'Arial', 'Helvetica',
+  'Liberation Sans', 'Times New Roman', 'Times', 'MS Serif',
+  'Liberation Serif', 'Courier New', 'Courier', 'Liberation Mono'];
+// The family each generic keyword renders Latin text with, everywhere.
+const MOLTNET_GENERICS = {'serif': 'Tinos', 'sans-serif': 'Arimo',
+  'monospace': 'Cousine', 'cursive': 'Tinos', 'fantasy': 'Tinos',
+  'system-ui': 'Noto Sans', 'math': 'Noto Sans Math'};
+// Text no Latin family has: each run falls back through the set's list for
+// its script, so its width is the same on every machine and OS.
+const FALLBACK_SAMPLES = {
+  Arab: 'العربية',
+  Hebr: 'עברית',
+  Deva: 'हिन्दी',
+  Beng: 'বাংলা',
+  Taml: 'தமிழ்',
+  Thai: 'ภาษาไทย',
+  Khmr: 'ភាសា',
+  Mymr: 'မြန်မာ',
+  Ethi: 'አማርኛ',
+  Geor: 'ქართული',
+  Armn: 'Հայերեն',
+  Sinh: 'සිංහල',
+  Hani: '漢字骨直',
+  Kana: 'ひらがなカタ',
+  Hang: '한국어',
+  Symbols: '☃♥✈⌘☀♻',
+  Math: '∑∫√∂\u{1D400}\u{1D7D8}',
+  Emoji: '\u{1F600}\u{1F9C5}\u{1F44D}\u{1F3FD}\u{1FAE8}',
+  Unassigned: '\u{10FFFD}͸',
+};
+// src: local() names of the set's faces (PostScript and full names).
+const LOCAL_BUNDLED = ['Arimo-Regular', 'Arimo Italic', 'Tinos-Bold',
+  'Tinos Bold Italic', 'Cousine-Regular', 'NotoSans-Regular',
+  'Noto Naskh Arabic Regular', 'NotoSansMath-Regular', 'NotoSansCJKjp-Thin',
+  'Noto Color Emoji'];
+
+async function bundledFonts(v, step) {
+  await step('fonts.moltnet_set', async () => {
+    await document.fonts.ready;
+    return MOLTNET_FONTS.filter((f) => document.fonts.check('16px "' + f +
+        '"'));
+  });
+  // Whether each generic keyword measures exactly like its family.
+  v['fonts.generic_map'] = {};
+  for (const [generic, family] of Object.entries(MOLTNET_GENERICS)) {
+    v['fonts.generic_map'][generic] =
+        textWidth(generic) === textWidth('"' + family + '"');
+  }
+  const c = document.createElement('canvas').getContext('2d');
+  v['fonts.fallback_widths'] = {};
+  for (const [script, text] of Object.entries(FALLBACK_SAMPLES)) {
+    const row = [];
+    for (const family of ['sans-serif', 'serif', 'monospace']) {
+      c.font = '32px ' + family;
+      row.push(Math.round(c.measureText(text).width * 100) / 100);
+    }
+    v['fonts.fallback_widths'][script] = row;
+  }
+  await step('fonts.local_bundled', () => localFaces(LOCAL_BUNDLED));
+}
+
 async function recorderAndLocalFonts(v, step) {
   await step('recorder.mime_type', recorderTypes);
   v['recorder.supported'] = window.MediaRecorder ?
@@ -1279,6 +1358,7 @@ async function collect() {
     v['fonts.widths'][fam] = textWidth(fam);
   }
   v['fonts.system_ui_width'] = textWidth('system-ui');
+  await bundledFonts(v, step);
   textMetrics(v);
   forms(v);
   await step('doc.characterSet_undeclared', () => frameLoad(

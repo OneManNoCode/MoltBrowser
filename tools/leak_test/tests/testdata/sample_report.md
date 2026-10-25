@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 168 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 170 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -273,7 +273,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.playready is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.widevine is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | fonts.generic_map is uniform | FINGERPRINTING.md "Fonts" |
 | PASS | fonts.local_hidden is uniform | FINGERPRINTING.md "Fonts" |
+| PASS | fonts.moltnet_set is uniform | FINGERPRINTING.md "Fonts" |
 | PASS | form.numberMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | form.validationMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | hdr.accept-language is uniform | FINGERPRINTING.md "Surface covered" |
@@ -458,7 +460,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | INFO | Regular-window control: values that are already uniform outside MoltNet on this machine (their MoltNet check proves less here) |  |
 
 - **FAIL** fonts.visible is uniform
-  - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 19 allowed (not on the list: Ubuntu)
+  - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)
 - **FAIL** nav.hardwareConcurrency is uniform
   - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual 8, expected 4
 - **FAIL** win.innerWidth is uniform
