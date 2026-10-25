@@ -5,10 +5,25 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/utility/on_device_model/BUILD.gn b/content/utility/on_device_model/BUILD.gn
-index 717631385e4d35f04fcd5c2b6528b2508be73242..aae86cbc4e6fdbcbdd9b6f58210ee6fc10444d9e 100644
+index 717631385e4d35f04fcd5c2b6528b2508be73242..5875cec8101c044358122463585e6752b704cace 100644
 --- a/content/utility/on_device_model/BUILD.gn
 +++ b/content/utility/on_device_model/BUILD.gn
-@@ -19,10 +19,19 @@ source_set("on_device_model_sandbox_init") {
+@@ -2,10 +2,14 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
++import("//build/buildflag_header.gni")
+ import("//services/on_device_model/on_device_model.gni")
++import("//third_party/llama_cpp/llama_cpp.gni")  # MoltBrowser
+ 
+ source_set("on_device_model_sandbox_init") {
+   sources = [
++    # MoltBrowser: the switch the browser adds for a GPU launch.
++    "molt_gpu_inference_switch.h",
+     "on_device_model_sandbox_init.cc",
+     "on_device_model_sandbox_init.h",
+   ]
+@@ -19,10 +23,32 @@ source_set("on_device_model_sandbox_init") {
      deps += [ "//services/on_device_model/ml" ]
    }
    if (is_linux || is_chromeos) {
@@ -25,13 +40,56 @@ index 717631385e4d35f04fcd5c2b6528b2508be73242..aae86cbc4e6fdbcbdd9b6f58210ee6fc
 +
 +      # MoltBrowser: the broker's permission and command types.
 +      "//sandbox/linux:sandbox_services",
++    ]
++  }
++  if (is_win) {
++    # MoltBrowser: GPU inference's pre-lockdown step
++    # (docs/design/SANDBOXED_INFERENCE.md 11.15), called by
++    # content/utility/utility_main.cc.
++    sources += [
++      "molt_gpu_inference_sandbox_win.cc",
++      "molt_gpu_inference_sandbox_win.h",
++    ]
++    deps += [
++      ":molt_gpu_driver_warmup",
++      ":molt_gpu_inference_buildflags",
      ]
    }
    if (!is_fuchsia) {
-@@ -33,3 +42,24 @@ source_set("on_device_model_sandbox_init") {
+@@ -33,3 +59,54 @@ source_set("on_device_model_sandbox_init") {
      ]
    }
  }
++
++# MoltBrowser: whether this build has GPU inference (molt_llama_vulkan).
++buildflag_header("molt_gpu_inference_buildflags") {
++  header = "molt_gpu_inference_buildflags.h"
++  flags = [ "MOLT_GPU_INFERENCE=$molt_llama_vulkan" ]
++}
++
++# MoltBrowser: brings each GPU's Vulkan driver up before the sandbox locks
++# down (docs/design/SANDBOXED_INFERENCE.md 11.15). Standard library and the
++# Vulkan headers; the loader is passed in.
++source_set("molt_gpu_driver_warmup") {
++  sources = [
++    "molt_gpu_driver_warmup.cc",
++    "molt_gpu_driver_warmup.h",
++  ]
++  defines = [ "VK_NO_PROTOTYPES" ]
++  public_deps = [ "//third_party/vulkan-headers/src:vulkan_headers" ]
++}
++
++# MoltBrowser: part of //chrome/browser/molt_ai/test:molt_ai_unittests on
++# every desktop platform.
++source_set("molt_gpu_driver_warmup_unittests") {
++  testonly = true
++  sources = [ "molt_gpu_driver_warmup_unittest.cc" ]
++  defines = [ "VK_NO_PROTOTYPES" ]
++  deps = [
++    ":molt_gpu_driver_warmup",
++    "//testing/gtest",
++  ]
++}
 +
 +if (is_linux || is_chromeos) {
 +  # MoltBrowser: what the GPU broker of the inference service may open
