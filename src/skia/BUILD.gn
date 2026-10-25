@@ -1444,3 +1444,15 @@ if (!is_ios) {
 group("fuzzers") {
   deps = [ "//skia/tools/fuzzers" ]
 }
+
+# MoltBrowser: Skia's portable math switch (in molt_ai_unittests).
+source_set("molt_math_unittests") {
+  testonly = true
+  sources = [ "ext/skia_molt_math_unittest.cc" ]
+  deps = [
+    ":skia",
+    "//testing/gtest",
+    "//third_party/llvm-libc:molt_portable_math",
+  ]
+  visibility = [ "//chrome/browser/molt_ai/test:*" ]
+}
