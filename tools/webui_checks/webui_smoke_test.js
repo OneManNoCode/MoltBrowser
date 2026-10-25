@@ -101,6 +101,8 @@ const QUESTION = {id: '42', step: 3, kind: 'weak_match',
 // answers with what is really set.
 let netExit = 'de';
 let netExitRefused = false;
+// molt://net: whether this build has MoltNet's bundled fonts.
+let netFonts = 'bundled';
 // molt://ai-settings' MoltNet section: the same, for its exit-country picker.
 let settingsExit = 'de';
 let settingsExitRefused = false;
@@ -1087,7 +1089,7 @@ const PAGES = [
    responses: {
      'moltnet.getStatus': () => ({running: true, starting: false, selected: netExit,
                                   mode: 'multi_hop', routing: 'tor', in_moltnet_window: true,
-                                  proxy_externally_controlled: false}),
+                                  proxy_externally_controlled: false, fonts: netFonts}),
      'moltnet.getExitCountries': () => ({available: [
        {code: 'de', name: '<img src=x onerror=alert(1)>'}], selected: netExit}),
      'moltnet.getCircuit': {connected: true, hops: [
@@ -1097,7 +1099,8 @@ const PAGES = [
        {role: 'exit', country: 'SE', ip: '192.0.2.3', nickname: 'e', fingerprint: 'C'.repeat(40)}]},
      'moltnet.openWindow': {running: true, routing: 'not_routed',
                             error: '<img src=x onerror=alert(1)>'},
-     'moltnet.newIdentity': {running: true, routing: 'tor', in_moltnet_window: true},
+     'moltnet.newIdentity': () => ({running: true, routing: 'tor', in_moltnet_window: true,
+                                    fonts: netFonts}),
      'moltnet.setMode': {running: false, routing: 'not_routed'},
      'moltnet.setExitCountry': (args) => {
        if (!netExitRefused) netExit = args[1];
@@ -1159,6 +1162,21 @@ const PAGES = [
      doc.getElementById('newIdentityBtn').click(); await tick();
      assert.deepStrictEqual(consumedSince(n), [], 'opening a window is not a setting');
      assert.strictEqual(argsOf(window, 'moltnet.openWindow').length, opens + 1);
+     // A build without the bundled fonts says so, without blocking anything.
+     assert.strictEqual(doc.getElementById('fonts').textContent, '',
+                        'no note with the bundled fonts');
+     netFonts = 'missing';
+     doc.getElementById('newIdentityBtn').click(); await tick();
+     assert(/no bundled fonts/.test(doc.getElementById('fonts').textContent),
+            'the panel notes a build without the bundled fonts');
+     assert(!doc.getElementById('openWindowBtn').hasAttribute('disabled'),
+            'the note blocks nothing');
+     netFonts = 'damaged';
+     doc.getElementById('newIdentityBtn').click(); await tick();
+     assert(/damaged/.test(doc.getElementById('fonts').textContent));
+     netFonts = 'bundled';
+     doc.getElementById('newIdentityBtn').click(); await tick();
+     assert.strictEqual(doc.getElementById('fonts').textContent, '');
    }},
   {name: 'molt://ai-settings', file: 'molt_ai_settings_ui.cc',
    listeners: ['#maxTokens:input', '#temperature:input', '#backBtn:click',

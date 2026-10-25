@@ -92,6 +92,12 @@ bool AreMoltNetFontsReady();
 // UI thread. Whether a MoltNet renderer launching now is to expect the set
 // (--molt-net-fonts): always, unless the set is known to be absent.
 bool MoltNetRenderersExpectFonts();
+// UI thread. What opening the set found, once it has been opened; nullopt
+// before. MoltNet's panel tells the user when the set is absent (a build
+// that didn't bundle it: MoltNet pages then take the system's fonts from
+// the platform's allow-list, and look less like other MoltNet users') or
+// damaged.
+std::optional<MoltNetFontsStatus> GetMoltNetFontsStatus();
 // UI thread. Read-only duplicates of the set's files for one renderer, in
 // table order; empty when the set isn't ready or a duplicate fails.
 std::vector<base::File> DuplicateMoltNetFonts();

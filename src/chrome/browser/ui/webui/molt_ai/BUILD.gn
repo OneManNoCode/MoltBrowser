@@ -67,6 +67,9 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/common:helper_output",
     "//chrome/browser/molt_ai/common:helper_sandbox",
     "//chrome/browser/molt_ai/document_parser",
+
+    # Whether the installation has MoltNet's bundled fonts (molt_net_handler.cc).
+    "//chrome/browser/molt_ai/fingerprinting:net_fonts",
     "//chrome/browser/molt_ai/keys",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/models:download",

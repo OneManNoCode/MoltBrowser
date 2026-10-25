@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_fonts.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -77,9 +78,33 @@ std::string RoutingString(MoltNetRouting::RoutingState state) {
   return "not_routed";
 }
 
+// Whether this installation has MoltNet's bundled fonts: "bundled",
+// "missing" (a build without them: MoltNet pages take the system's fonts
+// from the platform's allow-list, so they look less like other MoltNet
+// users'), "damaged" (MoltNet pages show no text), or "checking". Starts
+// the check if nothing has yet (once per browser).
+std::string FontsState() {
+  using molt_ai::fingerprinting::MoltNetFontsStatus;
+  molt_ai::fingerprinting::StartLoadingMoltNetFonts();
+  const std::optional<MoltNetFontsStatus> status =
+      molt_ai::fingerprinting::GetMoltNetFontsStatus();
+  if (!status) {
+    return "checking";
+  }
+  switch (*status) {
+    case MoltNetFontsStatus::kReady:
+      return "bundled";
+    case MoltNetFontsStatus::kAbsent:
+      return "missing";
+    case MoltNetFontsStatus::kBroken:
+      return "damaged";
+  }
+  return "checking";
+}
+
 // The single status shape every call resolves with:
 // { running, starting, selected, mode, routing, in_moltnet_window,
-//   proxy_externally_controlled[, error] }.
+//   proxy_externally_controlled, fonts[, error] }.
 // |routing| describes the window the popover is shown in, not the process:
 // a regular window is "not_routed" even while Tor runs for MoltNet windows.
 // |error| is set up front when there is no tor MoltNet can run, so the
@@ -96,6 +121,7 @@ base::DictValue StatusDict(Profile* profile) {
   d.Set("routing", RoutingString(status.state));
   d.Set("in_moltnet_window", molt_ai::tor::IsMoltNetProfile(profile));
   d.Set("proxy_externally_controlled", status.proxy_externally_controlled);
+  d.Set("fonts", FontsState());
   if (!mgr->IsRunning() && !mgr->IsStarting()) {
     const std::string missing = mgr->FindTorBinary().error;
     if (!missing.empty()) {
