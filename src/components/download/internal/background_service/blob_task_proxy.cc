@@ -45,22 +45,27 @@ void BlobTaskProxy::InitializeOnIO(BlobContextGetter blob_context_getter) {
 }
 
 void BlobTaskProxy::SaveAsBlob(std::unique_ptr<std::string> data,
-                               BlobDataHandleCallback callback) {
+                               BlobDataHandleCallback callback,
+                               uint64_t molt_budget_key) {
   // Unretained the raw pointer because owner on UI thread should destroy this
   // object on IO thread.
   io_task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&BlobTaskProxy::SaveAsBlobOnIO, base::Unretained(this),
-                     std::move(data), std::move(callback)));
+                     std::move(data), std::move(callback), molt_budget_key));
 }
 
 void BlobTaskProxy::SaveAsBlobOnIO(std::unique_ptr<std::string> data,
-                                   BlobDataHandleCallback callback) {
+                                   BlobDataHandleCallback callback,
+                                   uint64_t molt_budget_key) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
 
   // Build blob data. This has to do a copy into blob's internal storage.
   std::string blob_uuid = base::Uuid::GenerateRandomV4().AsLowercaseString();
   auto builder = std::make_unique<storage::BlobDataBuilder>(blob_uuid);
+  // MoltBrowser: held under the key of the site it is for
+  // (molt_blob_budget_policy.h).
+  builder->MoltSetBudgetKey(molt_budget_key);
   builder->AppendData(*data);
   blob_data_handle_ =
       blob_storage_context_->AddFinishedBlob(std::move(builder));

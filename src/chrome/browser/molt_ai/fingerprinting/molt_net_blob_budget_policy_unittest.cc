@@ -7,7 +7,8 @@
 #include "storage/browser/blob/molt_blob_budget_policy.h"
 
 #include <cstdint>
-#include <optional>
+#include <set>
+#include <string>
 
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -18,66 +19,56 @@ namespace {
 constexpr uint64_t kMiB = static_cast<uint64_t>(kMoltNetStorageMiB);
 constexpr uint64_t kShare = kMoltNetBlobMemoryPerKeyBytes;
 constexpr uint64_t kFloor = kMoltNetBlobMemoryBytes;
-constexpr uint64_t kReserve =
-    static_cast<uint64_t>(kMoltNetStorageMemoryReserveBytes);
-
-uint64_t Room(uint64_t key_used,
-              uint64_t total,
-              std::optional<uint64_t> available = std::nullopt) {
-  return storage::MoltBlobRoom(kShare, key_used, total, kFloor, available,
-                               kReserve);
-}
 
 TEST(MoltNetBlobBudgetPolicyTest, OtherProfilesKeepOneLimit) {
   EXPECT_FALSE(storage::MoltUsesBlobBudget(0));
   EXPECT_TRUE(storage::MoltUsesBlobBudget(kShare));
+  EXPECT_FALSE(storage::MoltBlobBeyondFloor(0, 10 * kFloor, kFloor));
 }
 
-// Below the floor a key gets its whole share whatever the others hold, and
-// the machine isn't asked.
-TEST(MoltNetBlobBudgetPolicyTest, AShareBelowTheFloor) {
-  EXPECT_EQ(Room(0, 0), kShare);
-  EXPECT_EQ(Room(0, kFloor - kShare), kShare);
-  EXPECT_FALSE(storage::MoltBlobNeedsMemoryCheck(kShare, 0, kFloor - kShare,
-                                                 kFloor));
-  EXPECT_EQ(Room(50 * kMiB, 300 * kMiB), kShare - 50 * kMiB);
-  // Its own share is all it gets.
-  EXPECT_EQ(Room(kShare, kShare), 0u);
-  EXPECT_EQ(Room(kShare + kMiB, kShare + kMiB), 0u);
-  EXPECT_FALSE(storage::MoltBlobNeedsMemoryCheck(kShare, kShare, kFloor,
-                                                 kFloor));
+// A key's room is what is left of its own share: nothing else counts.
+TEST(MoltNetBlobBudgetPolicyTest, OnlyTheKeysOwnShare) {
+  EXPECT_EQ(storage::MoltBlobRoom(kShare, 0), kShare);
+  EXPECT_EQ(storage::MoltBlobRoom(kShare, kShare - kMiB), kMiB);
+  EXPECT_EQ(storage::MoltBlobRoom(kShare, kShare), 0u);
+  EXPECT_EQ(storage::MoltBlobRoom(kShare, kShare + kMiB), 0u);
 }
 
-// Three greedy keys at their share: a fourth still has all of its share.
-// One more greedy key takes the total to the floor; from then on the
-// machine decides, for everyone alike.
-TEST(MoltNetBlobBudgetPolicyTest, GreedyKeysAgainstAPoliteOne) {
-  EXPECT_EQ(Room(0, 3 * kShare), kShare);
-  EXPECT_TRUE(storage::MoltBlobNeedsMemoryCheck(kShare, 0, 4 * kShare, kFloor));
-  // Plenty available: the polite key gets its share.
-  EXPECT_EQ(Room(0, 4 * kShare, 8ull * 1024 * kMiB), kShare);
-  // Only the reserve left: nothing beyond the floor, for anyone.
-  EXPECT_EQ(Room(0, 4 * kShare, kReserve), 0u);
-  EXPECT_EQ(Room(0, 4 * kShare, kReserve + 30 * kMiB), 30 * kMiB);
-  // The machine unread or failing: nothing beyond the floor.
-  EXPECT_EQ(Room(0, 4 * kShare, std::nullopt), 0u);
-  EXPECT_EQ(Room(0, 4 * kShare, 0), 0u);
+// Past the floor the embedder hears of each blob stored; below it, never.
+TEST(MoltNetBlobBudgetPolicyTest, BeyondTheFloorTheEmbedderHears) {
+  EXPECT_FALSE(storage::MoltBlobBeyondFloor(kShare, 0, kFloor));
+  EXPECT_FALSE(storage::MoltBlobBeyondFloor(kShare, kFloor, kFloor));
+  EXPECT_TRUE(storage::MoltBlobBeyondFloor(kShare, kFloor + 1, kFloor));
 }
 
-// The machine only adds room beyond the floor; below it, what's left of the
-// floor counts even if the machine is short.
-TEST(MoltNetBlobBudgetPolicyTest, TheFloorIsAlwaysThere) {
-  EXPECT_EQ(Room(0, kFloor - 10 * kMiB, 0), 10 * kMiB);
-  EXPECT_TRUE(storage::MoltBlobNeedsMemoryCheck(kShare, 0, kFloor - 10 * kMiB,
-                                                kFloor));
-  EXPECT_EQ(Room(0, kFloor - 10 * kMiB, kReserve + 100 * kMiB), 100 * kMiB);
-}
-
-TEST(MoltNetBlobBudgetPolicyTest, MachineRoom) {
-  EXPECT_EQ(storage::MoltBlobMachineRoom(std::nullopt, kReserve), 0u);
-  EXPECT_EQ(storage::MoltBlobMachineRoom(kReserve, kReserve), 0u);
-  EXPECT_EQ(storage::MoltBlobMachineRoom(kReserve - 1, kReserve), 0u);
-  EXPECT_EQ(storage::MoltBlobMachineRoom(kReserve + 1, kReserve), 1u);
+// The blobs the browser makes for a site count to that site's own key:
+// apart from every renderer process (positive 31-bit ids) and every other
+// site, by construction; the browser's own key for none.
+TEST(MoltNetBlobBudgetPolicyTest, SiteKeys) {
+  storage::MoltBlobSiteKeys site_keys;
+  EXPECT_EQ(site_keys.KeyFor(""), storage::kMoltBlobBrowserKey);
+  EXPECT_EQ(site_keys.size(), 0u);
+  const uint64_t a = site_keys.KeyFor("https://a.test");
+  EXPECT_EQ(a, site_keys.KeyFor("https://a.test"));
+  EXPECT_NE(a, site_keys.KeyFor("https://b.test"));
+  EXPECT_NE(a, site_keys.KeyFor("http://a.test"));
+  EXPECT_NE(a & storage::kMoltBlobSiteKeyBit, 0u);
+  EXPECT_NE(a, storage::kMoltBlobBrowserKey);
+  EXPECT_GT(a, static_cast<uint64_t>(INT32_MAX));
+  EXPECT_EQ(site_keys.size(), 3u);
+  std::set<uint64_t> keys;
+  for (int i = 0; i < 10000; ++i) {
+    keys.insert(site_keys.KeyFor("https://s" + std::to_string(i) + ".test"));
+  }
+  EXPECT_EQ(keys.size(), 10000u);
+  EXPECT_EQ(keys.count(a), 0u);
+  for (uint64_t key : keys) {
+    EXPECT_NE(key & storage::kMoltBlobSiteKeyBit, 0u);
+  }
+  // Asked again, every site keeps its key.
+  EXPECT_EQ(site_keys.KeyFor("https://s42.test"),
+            site_keys.KeyFor("https://s42.test"));
+  EXPECT_EQ(site_keys.size(), 10003u);
 }
 
 }  // namespace

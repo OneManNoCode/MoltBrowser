@@ -143,13 +143,12 @@ source_set("storage") {
     "molt_net_storage.h",
   ]
   public_deps = [
+    # Also the reserve ChromeContentBrowserClient gives the memory valve.
+    ":storage_values",
     "//chrome/common/molt_ai/fingerprinting",
     "//storage/browser",
   ]
-  deps = [
-    ":storage_values",
-    "//base",
-  ]
+  deps = [ "//base" ]
 }
 
 # ... and MoltNet's ClientHintsControllerDelegate (molt_net_client_hints.h),

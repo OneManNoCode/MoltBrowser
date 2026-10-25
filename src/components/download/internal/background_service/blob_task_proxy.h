@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "storage/browser/blob/blob_storage_constants.h"
+#include "storage/browser/blob/molt_blob_budget_policy.h"  // MoltBrowser
 
 namespace storage {
 class BlobDataHandle;
@@ -45,13 +46,17 @@ class BlobTaskProxy {
   // Save blob data on UI thread. |callback| will be called on main thread after
   // blob construction completes.
   void SaveAsBlob(std::unique_ptr<std::string> data,
-                  BlobDataHandleCallback callback);
+                  BlobDataHandleCallback callback,
+                  // MoltBrowser: the budget key the blob counts to
+                  // (molt_blob_budget_policy.h).
+                  uint64_t molt_budget_key = storage::kMoltBlobBrowserKey);
 
  private:
   void InitializeOnIO(BlobContextGetter blob_context_getter);
 
   void SaveAsBlobOnIO(std::unique_ptr<std::string> data,
-                      BlobDataHandleCallback callback);
+                      BlobDataHandleCallback callback,
+                      uint64_t molt_budget_key);  // MoltBrowser
 
   void BlobSavedOnIO(BlobDataHandleCallback callback,
                      storage::BlobStatus status);

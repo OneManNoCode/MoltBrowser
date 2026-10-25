@@ -184,7 +184,10 @@ source_set("process_policy") {
 # molt_net_window.cc and the ended-identity navigation throttle read it.
 # Header-only and std-only, so molt_ai_unittests tests it.
 source_set("identity_end_policy") {
-  sources = [ "molt_net_identity_end_policy.h" ]
+  sources = [
+    "molt_net_identity_end_policy.h",
+    "molt_net_memory_valve_policy.h",
+  ]
 }
 
 # No Autofill server traffic and no address metadata downloads for MoltNet
@@ -226,6 +229,11 @@ source_set("tor") {
     "molt_net_ended_identity_throttle.h",
     "molt_net_live_guard.cc",
     "molt_net_live_guard.h",
+
+    # Ends an identity when the computer runs short of memory while its
+    # sites store more than MoltNet's floors.
+    "molt_net_memory_valve.cc",
+    "molt_net_memory_valve.h",
 
     # Windows' parental controls, read again as a MoltNet window opens.
     "molt_net_parental_controls.cc",
@@ -512,6 +520,7 @@ source_set("unit_tests") {
     "molt_net_keepalive_partitions_unittest.cc",
     "molt_net_language_policy_unittest.cc",
     "molt_net_live_policy_unittest.cc",
+    "molt_net_memory_valve_policy_unittest.cc",
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
@@ -551,6 +560,9 @@ source_set("unit_tests") {
     ":webrtc_binders",
     "//base",
     "//base/test:test_support",
+
+    # The reserve the memory valve keeps (molt_net_memory_valve_policy.h).
+    "//chrome/browser/molt_ai/fingerprinting:storage_values",
 
     # Pref-name constants checked against the pinned list.
     "//chrome/browser/molt_ai/shield:prefs",

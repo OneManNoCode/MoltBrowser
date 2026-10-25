@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "base/component_export.h"
+#include "base/functional/callback.h"  // MoltBrowser
 #include "base/functional/callback_forward.h"
 #include "build/build_config.h"
 
@@ -98,11 +99,12 @@ struct COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageLimits {
   uint64_t override_file_transport_min_size = 0ull;
 
   // MoltBrowser: each budget key's share of blob memory (0: Chromium's one
-  // limit for all), and the machine memory a blob beyond
-  // |max_blob_in_memory_space| must leave available
-  // (molt_blob_budget_policy.h).
+  // limit for all), the only limit a blob meets then; and what runs (on the
+  // blob storage's sequence) each time a blob is stored while all keys
+  // together hold more than |max_blob_in_memory_space|, so the embedder can
+  // watch the machine's memory (molt_blob_budget_policy.h).
   uint64_t molt_per_key_memory = 0ull;
-  uint64_t molt_memory_reserve = 0ull;
+  base::RepeatingClosure molt_on_growth_beyond_floor;
 };
 
 enum class IPCBlobItemRequestStrategy {

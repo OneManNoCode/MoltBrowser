@@ -19,9 +19,13 @@ TEST(MoltNetStorageTest, OtherProfilesKeepChromiumsLimits) {
     EXPECT_FALSE(MoltNetQuotaSettings(mode).has_value());
     EXPECT_FALSE(MoltNetBlobStorageLimits(mode).has_value());
   }
-  // Chromium's own settings have no per-site budget, and no reserve.
+  // Chromium's own settings have no per-site budget, and nobody to tell of
+  // growth.
   EXPECT_EQ(storage::QuotaSettings().molt_per_site_quota, 0);
-  EXPECT_EQ(storage::QuotaSettings().molt_memory_reserve, 0);
+  EXPECT_TRUE(storage::QuotaSettings().molt_on_growth_beyond_floor.is_null());
+  EXPECT_EQ(storage::BlobStorageLimits().molt_per_key_memory, 0u);
+  EXPECT_TRUE(
+      storage::BlobStorageLimits().molt_on_growth_beyond_floor.is_null());
 }
 
 TEST(MoltNetStorageTest, QuotaSettings) {
@@ -33,11 +37,11 @@ TEST(MoltNetStorageTest, QuotaSettings) {
   EXPECT_EQ(settings->session_only_per_storage_key_quota,
             kMoltNetQuotaPerStorageKeyBytes);
   EXPECT_LE(settings->per_storage_key_quota, settings->pool_size);
-  // Each site's own share, the machine's reserve beyond the pool, and with
-  // them no eviction.
+  // Each site's own share, and with it no eviction. The memory valve is the
+  // profile's, set by ChromeContentBrowserClient: none here.
   EXPECT_EQ(settings->molt_per_site_quota, kMoltNetQuotaPerSiteBytes);
   EXPECT_LT(settings->molt_per_site_quota, settings->pool_size);
-  EXPECT_EQ(settings->molt_memory_reserve, kMoltNetStorageMemoryReserveBytes);
+  EXPECT_TRUE(settings->molt_on_growth_beyond_floor.is_null());
   EXPECT_EQ(settings->should_remain_available, 0);
   EXPECT_EQ(settings->must_remain_available, 0);
   EXPECT_TRUE(settings->refresh_interval.is_max());
@@ -51,10 +55,10 @@ TEST(MoltNetStorageTest, BlobLimits) {
   EXPECT_EQ(limits->max_blob_in_memory_space, kMoltNetBlobMemoryBytes);
   EXPECT_EQ(limits->desired_max_disk_space, 0u);
   EXPECT_EQ(limits->effective_max_disk_space, 0u);
-  // In shares per renderer process, beyond the limit the machine's memory.
+  // In shares per renderer process; the memory valve is the profile's (set
+  // by ChromeContentBrowserClient): none here.
   EXPECT_EQ(limits->molt_per_key_memory, kMoltNetBlobMemoryPerKeyBytes);
-  EXPECT_EQ(limits->molt_memory_reserve,
-            static_cast<uint64_t>(kMoltNetStorageMemoryReserveBytes));
+  EXPECT_TRUE(limits->molt_on_growth_beyond_floor.is_null());
   // Everything else is Chromium's (the same on every machine).
   const storage::BlobStorageLimits defaults;
   EXPECT_EQ(limits->max_ipc_memory_size, defaults.max_ipc_memory_size);
