@@ -196,6 +196,28 @@ TEST_F(MoltNetFontsDeliveryTest, AnInstallationWithoutTheSet) {
   EXPECT_FALSE(AreMoltNetFontsReady());
 }
 
+// What MoltNet's panel tells the user (molt_net_handler.cc): nothing until
+// the set has been opened, then whether it is there, absent or damaged.
+TEST_F(MoltNetFontsDeliveryTest, ThePanelKnowsWhatOpeningFound) {
+  SetMoltNetFontsLoadingForTesting();
+  EXPECT_EQ(GetMoltNetFontsStatus(), std::nullopt);
+  FinishMoltNetFontsLoadForTesting(
+      MoltNetFontsLoad(MoltNetFontsStatus::kAbsent, {}));
+  EXPECT_EQ(GetMoltNetFontsStatus(), MoltNetFontsStatus::kAbsent);
+
+  SetMoltNetFontsLoadingForTesting();
+  FinishMoltNetFontsLoadForTesting(
+      MoltNetFontsLoad(MoltNetFontsStatus::kBroken, {}));
+  EXPECT_EQ(GetMoltNetFontsStatus(), MoltNetFontsStatus::kBroken);
+
+  SetMoltNetFontsLoadingForTesting();
+  FinishMoltNetFontsLoadForTesting(LoadMoltNetFonts(dir_.GetPath()));
+  EXPECT_EQ(GetMoltNetFontsStatus(), MoltNetFontsStatus::kReady);
+
+  SetMoltNetFontsForTesting(std::nullopt);
+  EXPECT_EQ(GetMoltNetFontsStatus(), std::nullopt);
+}
+
 TEST_F(MoltNetFontsDeliveryTest, OpensTheSetAfterStartup) {
   StartLoadingMoltNetFontsAfterStartup();
   task_environment_.RunUntilIdle();

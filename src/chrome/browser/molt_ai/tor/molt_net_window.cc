@@ -170,16 +170,19 @@ void EnsureReaper() {
 
 // ---- Ending an identity ----
 //
-// New Identity and the live guard end an identity the same way, in step
-// with its network contexts (molt_net_identity_end_policy.h):
-//   1. At once, its network contexts are sent the refusal of every request
-//      (MoltNetRouting::EndIdentity(): a proxy configuration with no proxy
-//      and no DIRECT, ERR_NO_SUPPORTED_PROXIES), its connections are
-//      dropped, it stops being the current identity, and the browser
-//      refuses its navigations (MoltNetEndedIdentityThrottle).
-//   2. At once, its renderer processes are ended (StopPages()): no page,
-//      frame or worker of it can make another request while the refusal is
-//      on its way to the network service.
+// New Identity, the live guard and the memory valve end an identity the
+// same way, in step with its network contexts
+// (molt_net_identity_end_policy.h):
+//   1. At once, the browser refuses its navigations
+//      (MoltNetEndedIdentityThrottle) and what it holds for its pages, it
+//      stops being the current identity, and its network contexts are sent
+//      the end (MoltNetRouting::EndIdentity(): a proxy configuration with no
+//      proxy and no DIRECT, with which each context ends: it starts nothing
+//      and writes nothing more to Tor).
+//   2. Once every network context has the end
+//      (MoltNetRouting::WhenNetworkHasEnd()), and not before, so that
+//      nothing of the identity reacts to its end while its network may
+//      still send: its renderer processes are ended (StopPages()).
 //   3. Its network contexts are asked until each confirms the refusal
 //      (MoltNetRouting::WhenIdentityRefuses()), which then drops its
 //      connections once more. The rest waits for that:
@@ -323,17 +326,28 @@ void CloseEndedWindows(base::FilePath path,
       kForceCloseGrace);
 }
 
-// Steps 1 to 3 now, the rest once the identity's network contexts confirm
-// the refusal.
+// Steps 2 and 3, once every network context of the identity has the end;
+// the rest once they confirm the refusal.
+void StopPagesThenConfirmRefusal(base::FilePath path,
+                                 Profile::OTRProfileID id) {
+  Profile* moltnet = LookUpMoltNetProfile(path, id);
+  if (!moltnet) {
+    return;
+  }
+  StopPages(moltnet);
+  MoltNetRouting::WhenIdentityRefuses(
+      moltnet, base::BindOnce(&CloseEndedWindows, std::move(path), id));
+}
+
+// Step 1 now, the rest once the identity's network contexts have the end.
 void EndIdentityAndCloseWindows(Profile* moltnet) {
   if (!IsMoltNetProfile(moltnet)) {
     return;
   }
   EnsureReaper();
   MoltNetRouting::EndIdentity(moltnet);
-  StopPages(moltnet);
-  MoltNetRouting::WhenIdentityRefuses(
-      moltnet, base::BindOnce(&CloseEndedWindows,
+  MoltNetRouting::WhenNetworkHasEnd(
+      moltnet, base::BindOnce(&StopPagesThenConfirmRefusal,
                               moltnet->GetOriginalProfile()->GetPath(),
                               moltnet->GetOTRProfileID()));
 }
@@ -384,10 +398,10 @@ void CloseEndedIdentity(base::FilePath path,
 
 // MoltNetLiveGuard's callback. Runs inside the settings-change
 // notification, so only the parts that destroy nothing happen here: the
-// identity's network contexts refuse every request from now on, its
-// connections are dropped and it stops being the current one (no window
-// opens in it any more). The windows close, and the profile is destroyed,
-// in a task of their own.
+// identity's network contexts are sent the end, with which each refuses
+// every request and stops what it has under way, and it stops being the
+// current one (no window opens in it any more). Its pages stop and its
+// windows close, and the profile is destroyed, in tasks of their own.
 void EndForChangedSettings(Profile* moltnet, const std::string& error) {
   if (!IsMoltNetProfile(moltnet)) {
     return;

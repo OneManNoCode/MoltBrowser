@@ -145,16 +145,27 @@ class MoltNetRouting {
   static net::ProxyConfigWithAnnotation RefuseAllProxyConfig();
 
   // Ends |moltnet_profile|'s identity at once (New Identity, a setting the
-  // live check refuses): from now on its network contexts refuse every
-  // request (ProxyConfigMonitor gives them RefuseAllProxyConfig()), its
-  // connections and host cache are dropped (FlushNetworkState()), and it is
-  // no longer the current MoltNet profile (ForgetMoltNetProfile()), so no
-  // window opens in it. Closes no window and destroys nothing (it runs
-  // inside settings notifications). Idempotent; only for MoltNet profiles.
-  // The refusal reaches the network contexts on a pipe of their own, after
-  // some of their pages' requests maybe: WhenIdentityRefuses() tells when
-  // it is in place (molt_net_identity_end_policy.h).
+  // live check refuses, the memory valve): the browser refuses its
+  // navigations and what it holds for its pages from now on, its network
+  // contexts are sent the end (ProxyConfigMonitor gives them
+  // RefuseAllProxyConfig(), with which each context ends:
+  // services/network/molt_ended_identity_policy.h), and it is no longer the
+  // current MoltNet profile (ForgetMoltNetProfile()), so no window opens in
+  // it. Closes no window, stops no page and destroys nothing (it runs inside
+  // settings notifications). Idempotent; only for MoltNet profiles. The end
+  // reaches the network contexts on a pipe of their own: WhenNetworkHasEnd()
+  // tells when it has, and nothing else of the identity is to learn of it
+  // before (molt_net_identity_end_policy.h).
   static void EndIdentity(Profile* moltnet_profile);
+
+  // After EndIdentity(): runs |done| (in a task of its own) once every
+  // network context of |moltnet_profile| that was sent the end has it (has
+  // ended: each answers the FlushProxyConfig sent after the refusal, or its
+  // pipe closes), or once kMoltNetEndProbeDeadlineMs have passed. At once
+  // for a profile whose identity hasn't ended. Never if the profile goes
+  // away first.
+  static void WhenNetworkHasEnd(Profile* moltnet_profile,
+                                base::OnceClosure done);
 
   // Whether EndIdentity() ended |moltnet_profile|'s identity.
   static bool HasIdentityEnded(Profile* moltnet_profile);
@@ -172,10 +183,16 @@ class MoltNetRouting {
                                   RefusalCallback done);
 
   // Runs |callback| with the MoltNet profile whenever EndIdentity() ends an
-  // identity (first time only). ProxyConfigMonitor uses it to hand that
-  // profile's network contexts RefuseAllProxyConfig() at once.
+  // identity (first time only), before anything else happens to it.
+  // ProxyConfigMonitor uses it to hand that profile's network contexts
+  // RefuseAllProxyConfig() at once. |hold| gives the end one more answer to
+  // wait for (WhenNetworkHasEnd()): the closure it returns is to be run once
+  // a network context has the end. |hold| itself may only be run during the
+  // call.
+  using EndAckHolder = base::RepeatingCallback<base::OnceClosure()>;
   using IdentityEndedCallback =
-      base::RepeatingCallback<void(Profile* moltnet_profile)>;
+      base::RepeatingCallback<void(Profile* moltnet_profile,
+                                   const EndAckHolder& hold)>;
   static base::CallbackListSubscription AddIdentityEndedCallback(
       IdentityEndedCallback callback);
 

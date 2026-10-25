@@ -511,11 +511,14 @@ source_set("onion") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_background_fetch_buffer_unittest.cc",
+    "molt_net_background_fetch_credentials_unittest.cc",
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
+    "molt_net_end_ordering_unittest.cc",
     "molt_net_ended_identity_network_unittest.cc",
     "molt_net_http_cache_budget_policy_unittest.cc",
     "molt_net_http_cache_unittest.cc",
@@ -587,6 +590,14 @@ source_set("unit_tests") {
     "//components/sync_preferences:test_support",
     "//components/universal_optout",
 
+    # A regular profile's Background Fetch request carries the fetch's
+    # credentials mode (download::CreateResourceRequest()).
+    "//components/download/public/common:public",
+
+    # A Background Fetch's buffer counts against its site's blob share
+    # (BlobStorageContext).
+    "//storage/browser",
+
     # MoltNet's localStorage caches per site, with the storage service's
     # LocalStorageImpl.
     "//components/services/storage",
@@ -610,8 +621,10 @@ source_set("unit_tests") {
     "//services/network/public/cpp",
     "//services/network/public/cpp:buildflags",
     # An ended identity's network context stops everything with its refusal
-    # (ProxyConfigServiceMojo).
+    # (ProxyConfigServiceMojo) and starts nothing after it (NetworkContext,
+    # with the test cert verifier and URL loader client).
     "//services/network:network_service",
+    "//services/network:test_support",
     "//services/network/public/mojom",
     "//testing/gtest",
     "//third_party/blink/public/mojom:mojom_platform",

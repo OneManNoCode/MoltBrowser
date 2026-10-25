@@ -32,6 +32,7 @@
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/molt_connection_budget.h"  // MoltBrowser
+#include "net/socket/molt_identity_end.h"        // MoltBrowser
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket_close_reason.h"
@@ -202,6 +203,7 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
     molt_tor_capacity_ = MoltTorCapacity::GetShared();
     molt_socks_handshake_limiter_ = std::make_unique<MoltSocksHandshakeLimiter>(
         molt_tor_capacity_, reinterpret_cast<uintptr_t>(this));
+    molt_identity_end_ = base::MakeRefCounted<MoltIdentityEnd>();
   }
   MoltConnectionBudget* const molt_connection_budget =
       molt_tor_capacity_ ? &molt_tor_capacity_->connection_budget() : nullptr;
@@ -463,7 +465,16 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
       &params_.molt_socks_isolation_password;
   common_connect_job_params.molt_socks_handshake_limiter =
       molt_socks_handshake_limiter_.get();
+  // MoltBrowser: and the end of its MoltNet identity (null likewise).
+  common_connect_job_params.molt_identity_end = molt_identity_end_.get();
   return common_connect_job_params;
+}
+
+// MoltBrowser: see the header (net/socket/molt_identity_end.h).
+void HttpNetworkSession::MoltEndIdentity() {
+  if (molt_identity_end_) {
+    molt_identity_end_->Mark();
+  }
 }
 
 void HttpNetworkSession::ApplyTestingFixedPort(

@@ -152,6 +152,53 @@ void InMemoryDownloadImpl::OnDataReceived(std::string_view string_piece,
   data_.append(string_piece);
   bytes_downloaded_ += string_piece.size();
 
+  // MoltBrowser: the response counts against its site's blob share as it
+  // arrives; the next part is read once this one is counted
+  // (molt_registering_site_isolation.h).
+  if (molt_counts_buffer_ && blob_task_proxy_ && !string_piece.empty()) {
+    blob_task_proxy_->MoltHoldMemory(
+        MoltBlobBudgetKeyFor(request_params_.isolation_info),
+        string_piece.size(),
+        base::BindOnce(&InMemoryDownloadImpl::MoltOnBufferHeld,
+                       weak_ptr_factory_.GetWeakPtr(), molt_buffer_generation_,
+                       std::move(resume)));
+    return;
+  }
+  MoltContinueReading(std::move(resume));
+}
+
+// MoltBrowser: see the header.
+void InMemoryDownloadImpl::MoltOnBufferHeld(int generation,
+                                            base::OnceClosure resume,
+                                            storage::MoltBlobHold hold) {
+  if (generation != molt_buffer_generation_) {
+    return;  // For a buffer since given up (a retry, a failure).
+  }
+  switch (hold) {
+    case storage::MoltBlobHold::kNotCounted:
+      molt_counts_buffer_ = false;
+      [[fallthrough]];
+    case storage::MoltBlobHold::kCounted:
+      MoltContinueReading(std::move(resume));
+      return;
+    case storage::MoltBlobHold::kRefused:
+      // Past the site's share: the download fails, as a response its share
+      // can't hold as a blob does (OnSaveBlobDone()), now rather than once
+      // all of it is in memory. Its request goes with the loader.
+      loader_.reset();
+      OnComplete(/*success=*/false);
+      return;
+  }
+}
+
+void InMemoryDownloadImpl::MoltReleaseBuffer() {
+  ++molt_buffer_generation_;
+  if (blob_task_proxy_) {
+    blob_task_proxy_->MoltReleaseHeldMemory();
+  }
+}
+
+void InMemoryDownloadImpl::MoltContinueReading(base::OnceClosure resume) {
   if (paused_) {
     // Read data later and cache the resumption callback when paused.
     resume_callback_ = std::move(resume);
@@ -175,6 +222,7 @@ void InMemoryDownloadImpl::OnComplete(bool success) {
 
   // Release download data.
   data_.clear();
+  MoltReleaseBuffer();  // MoltBrowser
 
   // OnComplete() called without OnResponseStarted(). This will happen when the
   // request was aborted.
@@ -301,6 +349,7 @@ void InMemoryDownloadImpl::OnUploadProgress(uint64_t position, uint64_t total) {
 
 void InMemoryDownloadImpl::Reset() {
   data_.clear();
+  MoltReleaseBuffer();  // MoltBrowser
   url_chain_.clear();
   response_headers_.reset();
   bytes_downloaded_ = 0u;

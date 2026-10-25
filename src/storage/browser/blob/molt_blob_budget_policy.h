@@ -20,6 +20,10 @@
 //    site's own key (MoltBlobSiteKeys);
 //  * the browser's other blobs (kMoltBlobBrowserKey), which no site's page
 //    can make in MoltNet.
+// Memory the browser holds for a site before it becomes a blob (a
+// Background Fetch's response while it downloads, which the in-memory
+// download service keeps in a buffer) counts to that site's key the same
+// way, as it arrives (MoltBlobHoldFor()); it then becomes the blob.
 //
 // A key may use its share (`per_key`), whatever the other keys use; that is
 // the only limit a blob meets. There is no total all keys share that a
@@ -87,6 +91,25 @@ constexpr bool MoltUsesBlobBudget(uint64_t per_key) {
 // not the other keys' blobs, not the machine.
 constexpr uint64_t MoltBlobRoom(uint64_t per_key, uint64_t key_used) {
   return key_used >= per_key ? 0 : per_key - key_used;
+}
+
+// What a hold of `bytes` more for a key that uses `key_used` comes to: with
+// shares, counted against the key's room like a blob, or refused past it
+// (the hold's owner then gives up what it holds, as a blob that doesn't fit
+// fails); without shares (not MoltNet), not counted, as in Chromium.
+enum class MoltBlobHold {
+  kCounted,
+  kNotCounted,
+  kRefused,
+};
+constexpr MoltBlobHold MoltBlobHoldFor(uint64_t per_key,
+                                       uint64_t key_used,
+                                       uint64_t bytes) {
+  if (!MoltUsesBlobBudget(per_key)) {
+    return MoltBlobHold::kNotCounted;
+  }
+  return bytes <= MoltBlobRoom(per_key, key_used) ? MoltBlobHold::kCounted
+                                                   : MoltBlobHold::kRefused;
 }
 
 // Whether all keys' blobs (`total`) are past the floor, so the embedder is

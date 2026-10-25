@@ -38,6 +38,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"  // MoltBrowser
 #include "storage/browser/quota/special_storage_policy.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
@@ -71,6 +72,39 @@ void AdaptStorageUsageInfo(
                         info->last_modified);
   }
   std::move(callback).Run(result);
+}
+
+// MoltBrowser: runs the embedder's callback when a partition's DOM storage
+// grows past the floor (molt_dom_storage_site_policy.h).
+class MoltDomStorageGrowthObserver
+    : public storage::mojom::MoltDomStorageGrowthObserver {
+ public:
+  explicit MoltDomStorageGrowthObserver(base::RepeatingClosure on_growth)
+      : on_growth_(std::move(on_growth)) {}
+  void OnGrowthBeyondFloor() override { on_growth_.Run(); }
+
+ private:
+  const base::RepeatingClosure on_growth_;
+};
+
+// MoltBrowser: caches, totals and a commit rate per site for embedders that
+// ask (MoltNet), with the embedder's memory valve told past the floor.
+template <typename Control>
+void MoltKeepDomStoragePerSite(BrowserContext* browser_context,
+                               Control& control) {
+  ContentBrowserClient* client = GetContentClient()->browser();
+  if (!client->ShouldKeepDomStorageCachesPerSite(browser_context)) {
+    return;
+  }
+  control->MoltKeepCachesPerSite();
+  if (base::RepeatingClosure on_growth =
+          client->GetDomStorageGrowthBeyondFloorCallback(browser_context)) {
+    mojo::PendingRemote<storage::mojom::MoltDomStorageGrowthObserver> observer;
+    mojo::MakeSelfOwnedReceiver(
+        std::make_unique<MoltDomStorageGrowthObserver>(std::move(on_growth)),
+        observer.InitWithNewPipeAndPassReceiver());
+    control->MoltSetGrowthObserver(std::move(observer));
+  }
 }
 
 }  // namespace
@@ -360,10 +394,8 @@ void DOMStorageContextWrapper::MaybeBindSessionStorageControl(
                      base::Unretained(this)));
   // MoltBrowser: caches per site for embedders that ask (MoltNet;
   // components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
-  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
-          partition_->browser_context())) {
-    session_storage_control_->MoltKeepCachesPerSite();
-  }
+  MoltKeepDomStoragePerSite(partition_->browser_context(),
+                            session_storage_control_);
 }
 
 void DOMStorageContextWrapper::OnLocalStorageDisconnected() {
@@ -385,10 +417,8 @@ void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
       base::BindOnce(&DOMStorageContextWrapper::OnLocalStorageDisconnected,
                      base::Unretained(this)));
   // MoltBrowser: as for session storage, above.
-  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
-          partition_->browser_context())) {
-    local_storage_control_->MoltKeepCachesPerSite();
-  }
+  MoltKeepDomStoragePerSite(partition_->browser_context(),
+                            local_storage_control_);
 }
 
 scoped_refptr<SessionStorageNamespaceHandleImpl>

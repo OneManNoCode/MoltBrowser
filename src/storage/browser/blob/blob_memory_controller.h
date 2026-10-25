@@ -219,6 +219,17 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   // MoltBrowser: the memory |molt_budget_key|'s blobs use.
   size_t MoltMemoryUsage(uint64_t molt_budget_key) const;
 
+  // MoltBrowser: memory the browser holds for |molt_budget_key| outside any
+  // blob (a Background Fetch's response while it downloads), counted as its
+  // blobs are: against the key's share, in the total the floor is checked
+  // against, past which the embedder hears of it
+  // (molt_blob_budget_policy.h: MoltBlobHoldFor()). Nothing is counted
+  // unless the result is kCounted.
+  MoltBlobHold MoltHoldMemory(uint64_t molt_budget_key, size_t bytes);
+  // MoltBrowser: |bytes| of that memory are no longer held (or are about to
+  // become a blob).
+  void MoltReleaseHeldMemory(uint64_t molt_budget_key, size_t bytes);
+
   // The given callback will be called when we've finished calculating blob
   // storage limits. Usually limits are calculated at some point after startup,
   // but calling this method may cause them to be calculated sooner.

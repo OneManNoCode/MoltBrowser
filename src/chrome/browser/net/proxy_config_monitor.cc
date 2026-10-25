@@ -21,6 +21,7 @@
 #include "components/proxy_config/pref_proxy_config_tracker_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/buildflags/buildflags.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 
@@ -49,13 +50,15 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
   // MoltBrowser: a MoltNet profile's network contexts only ever get
   // MoltNet's own Tor proxy configuration, never a policy's proxy or
   // override rules, and from the moment the identity ends, one that refuses
-  // every request (molt_net_live_policy.h).
+  // every request (molt_net_live_policy.h), with which each context ends
+  // (services/network/molt_ended_identity_policy.h).
   if (molt_ai::tor::IsMoltNetProfile(profile)) {
     moltnet_profile_ = profile;
     moltnet_identity_ended_ =
         molt_ai::tor::MoltNetRouting::AddIdentityEndedCallback(
             base::BindRepeating(
-                [](ProxyConfigMonitor* monitor, Profile* ended) {
+                [](ProxyConfigMonitor* monitor, Profile* ended,
+                   const molt_ai::tor::MoltNetRouting::EndAckHolder& hold) {
                   if (ended != monitor->moltnet_profile_) {
                     return;
                   }
@@ -63,6 +66,12 @@ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
                        monitor->proxy_config_client_set_) {
                     client->OnProxyConfigUpdated(
                         molt_ai::tor::MoltNetRouting::RefuseAllProxyConfig());
+                    // On the same pipe, so answered once the context has
+                    // applied the refusal and ended with it; a context that
+                    // goes away answers too (it is gone).
+                    client->FlushProxyConfig(
+                        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+                            hold.Run()));
                   }
                 },
                 base::Unretained(this)));

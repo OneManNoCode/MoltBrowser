@@ -218,6 +218,15 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
   // have been rejected at the CorsURLLoader layer.
   DCHECK(!resource_request.trusted_params || params_->is_trusted);
 
+  // MoltBrowser: no request starts once this context's MoltNet identity has
+  // ended, whenever it was sent (services/network/molt_ended_identity_policy.h).
+  if (!context_->MoltAdmits(MoltNetworkEntry::kURLLoader)) {
+    URLLoaderCompletionStatus status(net::ERR_ABORTED);
+    status.completion_time = base::TimeTicks::Now();
+    mojo::Remote<mojom::URLLoaderClient>(std::move(client))->OnComplete(status);
+    return;
+  }
+
   if (resource_request.web_bundle_token_params.has_value() &&
       resource_request.destination !=
           network::mojom::RequestDestination::kWebBundle) {

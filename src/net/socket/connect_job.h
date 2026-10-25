@@ -45,6 +45,7 @@ class HttpAuthController;
 class HttpAuthHandlerFactory;
 class HttpResponseInfo;
 class HttpUserAgentSettings;
+class MoltIdentityEnd;            // MoltBrowser
 class MoltSocksHandshakeLimiter;  // MoltBrowser
 class NetLog;
 class NetLogWithSource;
@@ -123,6 +124,10 @@ struct NET_EXPORT_PRIVATE CommonConnectJobParams {
   // (net/socket/molt_connection_budget.h), read by SOCKSConnectJob. Null:
   // none for this session.
   raw_ptr<MoltSocksHandshakeLimiter> molt_socks_handshake_limiter = nullptr;
+  // MoltBrowser: the end of the session's MoltNet identity
+  // (net/socket/molt_identity_end.h), read by SOCKSConnectJob. Null: not a
+  // MoltNet session.
+  raw_ptr<MoltIdentityEnd> molt_identity_end = nullptr;
 };
 
 // When a host resolution completes, OnHostResolutionCallback() is invoked. If
