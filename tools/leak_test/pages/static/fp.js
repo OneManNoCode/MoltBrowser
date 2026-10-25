@@ -1158,6 +1158,361 @@ function domMatrixMath() {
   return hex(new Uint8Array(new Float64Array(v).buffer));
 }
 
+// Where an edge lies along a line: the index (0 to 128) of the first of 129
+// points, `step` apart from (x, y) - 64 steps along (dx, dy), whose test
+// differs from the first point's, or -1. Arcs, ellipses, strokes, rounded
+// shapes and superellipse corners are computed with sines, cosines, powers
+// and cube roots, so their edges move with those functions' last bits; a
+// step of one float ulp (canvas) or one layout unit (elements) reads them.
+function edgeIndex(test, x, y, dx, dy, step) {
+  const first = test(x - 64 * step * dx, y - 64 * step * dy);
+  for (let k = -63; k <= 64; ++k) {
+    if (test(x + k * step * dx, y + k * step * dy) !== first) {
+      return k + 64;
+    }
+  }
+  return -1;
+}
+
+function indexHash(list) {
+  return hex(new Uint8Array(new Int16Array(list).buffer));
+}
+
+// Hit testing a page reads without pixels: isPointInPath() on arcs and
+// rotated ellipses, isPointInStroke() on curves with round, miter and bevel
+// joins, caps and dashes, and elementFromPoint() over clip-path shapes and
+// corner-shape corners. MoltNet builds them with the portable functions.
+async function geomHitTesting() {
+  const ctx = document.createElement('canvas').getContext('2d');
+  const ulp = 2 ** -17;  // a float ulp for coordinates from 64 to 128
+  const edges = [];
+  for (let i = 0; i < 40; ++i) {
+    const cx = 96 + (i % 5) * 0.37;
+    const cy = 96 + (i % 7) * 0.21;
+    const r = 15 + i * 0.613;
+    const a0 = i * 0.377 - 3;
+    const a1 = a0 + 0.4 + i * 0.151;
+    const rot = i * 0.21;
+    const ry = r * 0.7;
+    const p = new Path2D();
+    p.moveTo(cx, cy);
+    if (i % 2) {
+      p.arc(cx, cy, r, a0, a1, false);
+    } else {
+      p.ellipse(cx, cy, r, ry, rot, a0, a1, false);
+    }
+    p.closePath();
+    for (const t of [0.17, 0.5, 0.83]) {
+      const th = a0 + (a1 - a0) * t;
+      let x;
+      let y;
+      let nx;
+      let ny;
+      if (i % 2) {
+        nx = Math.cos(th);
+        ny = Math.sin(th);
+        x = cx + r * nx;
+        y = cy + r * ny;
+      } else {
+        const ex = r * Math.cos(th);
+        const ey = ry * Math.sin(th);
+        x = cx + ex * Math.cos(rot) - ey * Math.sin(rot);
+        y = cy + ex * Math.sin(rot) + ey * Math.cos(rot);
+        const gx = ex / (r * r);
+        const gy = ey / (ry * ry);
+        nx = gx * Math.cos(rot) - gy * Math.sin(rot);
+        ny = gx * Math.sin(rot) + gy * Math.cos(rot);
+        const n = Math.hypot(nx, ny);
+        nx /= n;
+        ny /= n;
+      }
+      edges.push(edgeIndex((px, py) => ctx.isPointInPath(p, px, py), x, y,
+          nx, ny, ulp));
+    }
+  }
+  // Strokes of cubic curves (their maximum-curvature points are cube roots)
+  // and of arcs, with every join and cap, and dashed.
+  const curve = new Path2D();
+  curve.moveTo(70, 100);
+  curve.bezierCurveTo(140, 20, 50, 30, 120, 110);
+  curve.bezierCurveTo(90, 125, 75, 70, 100, 90);
+  curve.arc(96, 96, 21.3, 0.3, 2.9);
+  const bez = (t, p0, p1, p2, p3) => {
+    const u = 1 - t;
+    return [u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] +
+        t * t * t * p3[0], u * u * u * p0[1] + 3 * u * u * t * p1[1] +
+        3 * u * t * t * p2[1] + t * t * t * p3[1]];
+  };
+  const d = (t, p0, p1, p2, p3) => {
+    const u = 1 - t;
+    return [3 * u * u * (p1[0] - p0[0]) + 6 * u * t * (p2[0] - p1[0]) +
+        3 * t * t * (p3[0] - p2[0]), 3 * u * u * (p1[1] - p0[1]) +
+        6 * u * t * (p2[1] - p1[1]) + 3 * t * t * (p3[1] - p2[1])];
+  };
+  const seg = [[70, 100], [140, 20], [50, 30], [120, 110]];
+  let k = 0;
+  for (const join of ['round', 'miter', 'bevel']) {
+    for (const cap of ['butt', 'round', 'square']) {
+      for (const dash of [[], [7.7, 3.1, 1.3, 5.5]]) {
+        ctx.lineWidth = 5.3 + k * 0.37;
+        ctx.lineJoin = join;
+        ctx.lineCap = cap;
+        ctx.miterLimit = 3 + k * 0.5;
+        ctx.setLineDash(dash);
+        ctx.lineDashOffset = 1.7;
+        for (const t of [0.13, 0.41, 0.66, 0.89]) {
+          const [x, y] = bez(t, ...seg);
+          const [tx, ty] = d(t, ...seg);
+          const n = Math.hypot(tx, ty);
+          for (const side of [1, -1]) {
+            const nx = side * -ty / n;
+            const ny = side * tx / n;
+            edges.push(edgeIndex(
+                (px, py) => ctx.isPointInStroke(curve, px, py),
+                x + nx * ctx.lineWidth / 2, y + ny * ctx.lineWidth / 2, nx, ny,
+                ulp));
+          }
+        }
+        ++k;
+      }
+    }
+  }
+  // Elements: clip-path shapes and corner-shape corners, a layout unit
+  // (1/64 px) at a time.
+  const lu = 1 / 64;
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:0;top:0;width:640px;' +
+      'height:200px;z-index:2147483647';
+  document.body.appendChild(host);
+  const shapes = [
+    ['clip-path', 'polygon(round 11.3px, 10% 5%, 93% 17%, 71% 91%, 7% 77%)'],
+    ['clip-path', 'circle(closest-side at 37% 61%)'],
+    ['clip-path', 'ellipse(41.3% 37.7% at 50% 50%)'],
+    ['clip-path', 'shape(from 10% 10%, arc to 90% 20% of 70% 40% ' +
+        'rotate 17deg large cw, line to 80% 90%, close)'],
+    ['corner-shape', 'superellipse(2.3)'],
+    ['corner-shape', 'superellipse(-0.7)'],
+    ['corner-shape', 'squircle'],
+  ];
+  try {
+    const boxes = [];
+    shapes.forEach(([prop, value], i) => {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:absolute;top:10px;width:83px;height:91px;' +
+          'background:#888;border-radius:37px 29px 41px 23px';
+      el.style.left = (10 + i * 89) + 'px';
+      el.style.setProperty(prop, value);
+      host.appendChild(el);
+      boxes.push(el);
+    });
+    boxes.forEach((el, i) => {
+      if (!el.style.getPropertyValue(shapes[i][0])) {
+        edges.push(-2);  // the property isn't supported
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      for (let j = 0; j < 12; ++j) {
+        const th = j * Math.PI / 6 + 0.123;
+        const nx = Math.cos(th);
+        const ny = Math.sin(th);
+        // Out from the centre, to where the edge is about.
+        let lo = 0;
+        let hi = Math.max(r.width, r.height);
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const hit = (px, py) => document.elementFromPoint(px, py) === el;
+        for (let s = 0; s < 20; ++s) {
+          const mid = (lo + hi) / 2;
+          if (hit(cx + mid * nx, cy + mid * ny)) {
+            lo = mid;
+          } else {
+            hi = mid;
+          }
+        }
+        edges.push(edgeIndex(hit, cx + lo * nx, cy + lo * ny, nx, ny, lu));
+        edges.push(Math.round(lo * 64));
+      }
+    });
+  } finally {
+    host.remove();
+  }
+  return indexHash(edges);
+}
+
+// Lengths and positions along paths: SVG shapes' getTotalLength() and
+// getPointAtLength(), and offset-path positions (and offset-rotate: auto)
+// on basic shapes, shape() arcs and rounded polygons, read back through
+// getBoundingClientRect().
+function geomPathLength() {
+  const v = [];
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', '300');
+  svg.setAttribute('height', '300');
+  const make = (tag, attrs) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [a, b] of Object.entries(attrs)) {
+      el.setAttribute(a, b);
+    }
+    svg.appendChild(el);
+    return el;
+  };
+  const shapes = [
+    make('circle', {cx: 50.3, cy: 61.7, r: 37.7}),
+    make('ellipse', {cx: 150.1, cy: 70.9, rx: 41.3, ry: 17.9}),
+    make('rect', {x: 10.5, y: 120.25, width: 97.3, height: 61.1, rx: 13.7,
+      ry: 9.1}),
+    make('path', {d: 'M 20 200 C 90 120 140 290 210 210 Q 250 170 280 240 ' +
+        'A 31 19 37 1 0 230 280 Z'}),
+  ];
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:0;top:0;width:400px;' +
+      'height:400px';
+  document.body.appendChild(host);
+  host.appendChild(svg);
+  try {
+    for (const s of shapes) {
+      const len = s.getTotalLength();
+      v.push(len);
+      for (let i = 0; i <= 8; ++i) {
+        const p = s.getPointAtLength(len * i / 8);
+        v.push(p.x, p.y);
+      }
+    }
+    const paths = [
+      'circle(43% at 40% 60%)', 'ellipse(31% 23% at 50% 50%)',
+      'polygon(round 9.7px, 10% 10%, 90% 20%, 60% 95%)',
+      'inset(7% 9% 11% 13% round 17px 9px)',
+      'shape(from 0% 0%, arc to 100% 50% of 60% 40% rotate 17deg, ' +
+          'curve to 0% 100% with 50% 120% / 10% 80%, close)',
+      'path("M 10 10 A 37 23 31 1 1 170 90 Z")',
+    ];
+    for (const path of paths) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:absolute;left:30px;top:20px;width:7px;' +
+          'height:5px;offset-rotate:auto';
+      el.style.setProperty('offset-path', path);
+      host.appendChild(el);
+      if (!el.style.getPropertyValue('offset-path')) {
+        v.push(-1);
+        continue;
+      }
+      for (const dist of ['0%', '13.7%', '41%', '66.6%', '97%']) {
+        el.style.offsetDistance = dist;
+        const r = el.getBoundingClientRect();
+        v.push(r.left, r.top, r.width, r.height);
+      }
+    }
+  } finally {
+    host.remove();
+  }
+  return hex(new Uint8Array(new Float64Array(v).buffer));
+}
+
+// shape-outside: the renderer draws the float's image, gradient or path on
+// the CPU and lays the text out around its alpha (no farbling on the way):
+// gradients with colour hints and in OKLab, an SVG image with a blur, a
+// hue rotation turned into alpha, a gamma transfer and a lit surface, a
+// rounded polygon, and a margin-box with radii and shape-margin. The
+// inline boxes' positions are read back.
+async function geomShapeOutside() {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="150" ' +
+      'height="160"><defs><linearGradient id="g"><stop offset="0" ' +
+      'stop-color="#f30"/><stop offset="1" stop-color="#09f"/>' +
+      '</linearGradient><filter id="b"><feGaussianBlur stdDeviation="1.3"/>' +
+      '<feComponentTransfer><feFuncA type="gamma" amplitude="1.1" ' +
+      'exponent="0.73" offset="0"/></feComponentTransfer></filter>' +
+      '<filter id="h"><feColorMatrix type="hueRotate" values="37.3"/>' +
+      '<feColorMatrix type="luminanceToAlpha"/></filter><filter id="l">' +
+      '<feDiffuseLighting surfaceScale="3.3" diffuseConstant="1.1">' +
+      '<feDistantLight azimuth="37" elevation="23"/></feDiffuseLighting>' +
+      '<feColorMatrix type="luminanceToAlpha"/></filter></defs>' +
+      '<circle cx="70" cy="40" r="33.3" filter="url(#b)"/>' +
+      '<rect x="0" y="80" width="150" height="40" fill="url(#g)" ' +
+      'filter="url(#h)"/><circle cx="60" cy="140" r="17" filter="url(#l)"/>' +
+      '</svg>';
+  const url = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+  } catch (e) {
+    // Laid out without the image if it can't be decoded.
+  }
+  const floats = [
+    'shape-outside:linear-gradient(105deg, black, 37.3%, transparent);' +
+        'shape-image-threshold:0.31',
+    'shape-outside:radial-gradient(in oklab, rgb(0 0 0 / 0.9), 23%, ' +
+        'rgb(255 0 0 / 0.1));shape-image-threshold:0.47',
+    'shape-outside:url("' + url + '");shape-image-threshold:0.27',
+    'shape-outside:polygon(round 13px, 0 0, 100% 10%, 40% 50%, 90% 95%, ' +
+        '0 100%);shape-margin:3.7px',
+    'shape-outside:margin-box;border-radius:41px 17px 53px 29px;' +
+        'shape-margin:7.3px;margin:3px',
+    'shape-outside:circle(closest-side at 40% 45%);shape-margin:2.1px',
+  ];
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:0;top:0;width:300px;' +
+      'line-height:4px;font-size:4px';
+  document.body.appendChild(host);
+  const v = [];
+  try {
+    const blocks = floats.map((style) => {
+      const block = document.createElement('div');
+      block.style.cssText = 'width:300px;height:170px;overflow:hidden';
+      const f = document.createElement('div');
+      f.style.cssText = 'float:left;width:150px;height:160px;' + style;
+      block.appendChild(f);
+      for (let i = 0; i < 40 * 30; ++i) {
+        const s = document.createElement('span');
+        s.style.cssText = 'display:inline-block;width:3px;height:4px';
+        block.appendChild(s);
+      }
+      host.appendChild(block);
+      return block;
+    });
+    await new Promise((r) => requestAnimationFrame(() =>
+      requestAnimationFrame(r)));
+    for (const block of blocks) {
+      const top = block.getBoundingClientRect().top;
+      let line = null;
+      for (const s of block.querySelectorAll('span')) {
+        const r = s.getBoundingClientRect();
+        if (r.top !== line) {
+          line = r.top;
+          v.push(r.left, r.top - top);
+        }
+      }
+    }
+  } finally {
+    host.remove();
+  }
+  return hex(new Uint8Array(new Float64Array(v).buffer));
+}
+
+// CSS contrast-color() over the colours where black and white are about
+// equally readable: the choice follows the colours' relative luminance.
+function geomContrastColor() {
+  const el = document.createElement('div');
+  document.body.appendChild(el);
+  const out = [];
+  try {
+    el.style.color = 'contrast-color(red)';
+    if (!el.style.color) {
+      return 'absent';
+    }
+    for (let g = 104; g <= 132; ++g) {
+      for (const [r, b] of [[g, g], [g + 31, g - 23], [g - 40, g + 61]]) {
+        el.style.color = 'contrast-color(rgb(' + r + ' ' + g + ' ' + b + '))';
+        out.push(getComputedStyle(el).color === 'rgb(0, 0, 0)' ? 'b' : 'w');
+      }
+    }
+  } finally {
+    el.remove();
+  }
+  return out.join('');
+}
+
 // Web Audio: BiquadFilterNode and IIRFilterNode frequency responses (read
 // as they are computed) and a compressor's gain reduction after rendering a
 // sawtooth through it.
@@ -1382,6 +1737,10 @@ async function cpuFeatures(v, step) {
   await step('cpu.math_cross_arch', mathCrossArch);
   await step('cpu.css_math', cssMath);
   await step('cpu.dommatrix', domMatrixMath);
+  await step('geom.hit_testing', geomHitTesting);
+  await step('geom.path_length', geomPathLength);
+  await step('geom.shape_outside', geomShapeOutside);
+  await step('geom.contrast_color', geomContrastColor);
   await step('audio.math', audioMath);
   await step('pixels.p3_readback', p3Readback);
   await step('audio.decoded_vorbis', decodedVorbis);

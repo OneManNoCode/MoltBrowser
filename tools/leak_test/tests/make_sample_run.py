@@ -183,6 +183,11 @@ GOOD_FP = {
                      '596', '138', '216', '936', '61', '440',
                      '488.375deg', '311.25deg', '904.5deg', '127.75deg'],
     'cpu.dommatrix': '6e3a90c1d2b7f4085a1c9e37',
+    'geom.hit_testing': '4d2e81b07f3c95a6e10b2c78',
+    'geom.path_length': 'b39f05e7c2a1d4860f7e3b19',
+    'geom.shape_outside': '1e7c4a92d5b30f68a3c9e014',
+    'geom.contrast_color': ('wwwwwwwwwwwwbwwbwwbwwbwwbwbbwbbwbbwbbwbbwbbbbbbbbbb'
+                            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
     'audio.math': {'response': 'c57e1a2b9d04f8361e7a0b5c',
                    'reduction': -17.30476188659668},
     'pixels.p3_readback': {'rgba': '3f9a61c2d84e0b7a5c1e9f20',
