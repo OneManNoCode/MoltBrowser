@@ -130,7 +130,10 @@ Local Modifications:
   service's llama.cpp calls that can reach a GPU (see Exceptions above), and
   the bring-up of the Vulkan backend for it, including the pipeline cache's
   seed, size and data and the lost-device check (SetPipelineCacheData,
-  PipelineCacheSize, GetPipelineCacheData, DeviceLost).
+  PipelineCacheSize, GetPipelineCacheData, DeviceLost); and two header
+  reads through ggml's GGUF parser that catch everything (ReadLayerCount,
+  and ReadProjectorFacts: a projector's encoders, audio projector type
+  and stack factor, which the service's audio allow-list checks).
 - x64 CPU kernels per instruction-set level (BUILD.gn's _ggml_x86_levels,
   not upstream; upstream gets the same from GGML_CPU_ALL_VARIANTS with
   GGML_BACKEND_DL, one shared library per level, which the sandbox can't
@@ -245,6 +248,21 @@ Local Modifications:
     tools/mtmd/clip.cpp: with LLAMA_MOLTBROWSER_SANDBOXED (:llama_sandboxed
       on :mtmd), the MTMD_DEBUG_EMBEDDINGS environment variable is ignored:
       no dump of image embeddings to the log or to a file it names.
+    tools/mtmd/clip.cpp, tools/mtmd/clip-model.h: audio token counts and
+      encode errors. clip_n_output_tokens() counts a Whisper-type audio
+      encoder's output (Ultravox, Voxtral, Qwen2-Audio, MERaLiON, Music
+      Flamingo) in the order clip_graph_whisper_enc builds it: halved by
+      the conv1d, halved again by the average pool where there is one,
+      then frames stacked with the last group padded; upstream stacked
+      first and rounded down. Voxtral is no longer in audio_has_avgpool():
+      its 1500 frames per 30 s window are stacked four by four into 375
+      tokens, without pooling, as the original model does. clip_encode()
+      returns false instead of aborting when the graph's output token
+      count, or the size of the caller's buffer, isn't the expected one
+      (mtmd_encode_chunk() then returns 1), so such a mismatch can't end
+      the process. The service also encodes audio only with projectors on
+      its own allow-list, checked against these counts at load
+      (chrome/services/molt_ai/inference/engine/audio_input.h).
     tools/mtmd/mtmd.cpp, tools/mtmd/mtmd.h: mtmd_init_from_file_ptr(), the
       FILE* counterpart of mtmd_init_from_file() (catches everything and
       returns nullptr, like it).

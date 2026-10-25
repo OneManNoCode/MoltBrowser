@@ -49,6 +49,34 @@ std::optional<std::vector<int16_t>> PrepareModelAudio(int64_t channel_count,
   return out;
 }
 
+namespace {
+
+struct AllowedAudioProjector {
+  std::string_view type;  // llama.cpp's projector type name, exactly
+  uint32_t stack_factor;  // clip.audio.projector.stack_factor, exactly
+  uint32_t window_tokens;
+};
+
+// Voxtral: a Whisper encoder's 1500 frames per window stacked four by four
+// (llama.cpp's converter writes a factor of 4), so 375 tokens; checked end
+// to end with the local clip.cpp patch (README.chromium).
+constexpr AllowedAudioProjector kAllowedAudioProjectors[] = {
+    {"voxtral", 4, 375},
+};
+
+}  // namespace
+
+std::optional<uint32_t> AllowedAudioWindowTokens(
+    std::string_view projector_type,
+    uint32_t stack_factor) {
+  for (const AllowedAudioProjector& p : kAllowedAudioProjectors) {
+    if (p.type == projector_type && p.stack_factor == stack_factor) {
+      return p.window_tokens;
+    }
+  }
+  return std::nullopt;
+}
+
 std::vector<float> AudioSamplesToFloat(const int16_t* samples, size_t count) {
   std::vector<float> out(count);
   for (size_t i = 0; i < count; ++i) {

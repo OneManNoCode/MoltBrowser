@@ -61,6 +61,27 @@ bool MemoryClear(llama_memory_t mem, bool data) noexcept;
 // plan how many layers fit on the GPU.
 uint32_t ReadLayerCount(FILE* file) noexcept;
 
+// What a projector GGUF (llama.cpp's "mmproj") says about its encoders,
+// read from its own header the way llama.cpp's multimodal library reads
+// it: clip.has_vision_encoder and clip.has_audio_encoder (booleans), the
+// audio projector's type (clip.projector_type, or clip.audio.projector_type
+// when that is absent or empty) and clip.audio.projector.stack_factor (an
+// unsigned 32-bit value; 0 when absent or of another type). |read| is false
+// if the header can't be parsed. Seeks |file| back to its start.
+struct ProjectorFacts {
+  ProjectorFacts();
+  ~ProjectorFacts();
+  ProjectorFacts(const ProjectorFacts&);
+  ProjectorFacts& operator=(const ProjectorFacts&);
+
+  bool read = false;
+  bool has_vision_encoder = false;
+  bool has_audio_encoder = false;
+  std::string audio_projector_type;
+  uint32_t audio_stack_factor = 0;
+};
+ProjectorFacts ReadProjectorFacts(FILE* file) noexcept;
+
 // A GPU that llama.cpp's Vulkan backend can use, with what the device
 // policy (chrome/services/molt_ai/inference/engine/gpu_offload.h) needs.
 struct GpuDevice {

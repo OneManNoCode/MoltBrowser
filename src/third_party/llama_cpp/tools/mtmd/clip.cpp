@@ -4440,19 +4440,23 @@ int clip_n_output_tokens(const clip_ctx * ctx, const clip_image_f32 * img) {
             {
                 n_patches = img->nx();
 
-                const int proj_stack_factor = ctx->model.hparams.proj_stack_factor;
-                if (ctx->model.audio_has_stack_frames()) {
-                    GGML_ASSERT(proj_stack_factor > 0);
-                    const int n_len = CLIP_ALIGN(n_patches, proj_stack_factor);
-                    n_patches = n_len / proj_stack_factor;
-                }
-
                 // whisper downscales input token by half after conv1d
                 n_patches /= 2;
 
                 if (ctx->model.audio_has_avgpool()) {
                     // divide by 2 because of nn.AvgPool1d(2, stride=2)
                     n_patches /= 2;
+                }
+
+                // MoltBrowser: counted in the order clip_graph_whisper_enc
+                // builds the output (conv1d, pooling, then frames stacked
+                // with the last group padded, build_stack()), so the count
+                // is the graph's for any frame count and stack factor.
+                const int proj_stack_factor = ctx->model.hparams.proj_stack_factor;
+                if (ctx->model.audio_has_stack_frames()) {
+                    GGML_ASSERT(proj_stack_factor > 0);
+                    const int n_len = CLIP_ALIGN(n_patches, proj_stack_factor);
+                    n_patches = n_len / proj_stack_factor;
                 }
             } break;
         case PROJECTOR_TYPE_QWEN3A:
@@ -5997,7 +6001,9 @@ bool clip_encode(struct clip_ctx * ctx, struct clip_encode_params * params) {
         const int expected_n_tokens_out = clip_n_output_tokens(ctx, &imgs.entries[0]);
         if (n_tokens_out != expected_n_tokens_out) {
             LOG_ERR("%s: expected output %d tokens, got %d\n", __func__, expected_n_tokens_out, n_tokens_out);
-            GGML_ABORT("Invalid number of output tokens");
+            // MoltBrowser: an error for the caller (mtmd_encode_chunk()
+            // returns 1), not an abort of the process; nothing is copied.
+            return false;
         }
 
         LOG_DBG("%s: output embedding shape [%d, %d, %d]\n", __func__,
@@ -6009,7 +6015,8 @@ bool clip_encode(struct clip_ctx * ctx, struct clip_encode_params * params) {
         if (!out_batch_embd.empty()) {
             if (out_batch_embd.size() != (size_t)ggml_nelements(embeddings)) {
                 LOG_ERR("%s: output buffer has %zu elements but expected %zu\n", __func__, out_batch_embd.size(), (size_t)ggml_nelements(embeddings));
-                GGML_ABORT("Output buffer size mismatch");
+                // MoltBrowser: an error, not an abort; nothing is copied.
+                return false;
             }
             ggml_backend_tensor_get(embeddings, out_batch_embd.data(), 0, ggml_nbytes(embeddings));
         } else {

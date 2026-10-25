@@ -83,6 +83,16 @@
 //      returns 1 (no audio encoder, a placeholder).
 //    - mtmd_decode_use_non_causal on an audio chunk: the audio projector's
 //      type; none of them is non-causal at b11641.
+//    - Which audio encoders run at all: the projector's own header is read
+//      first (molt_llama::ReadProjectorFacts(), through llama_guard: it
+//      catches everything and rewinds the file), and audio is given only
+//      to a projector on engine/audio_input.h's allow-list, after a
+//      placeholder clip (nothing encoded) showed llama.cpp reserving the
+//      list's tokens for its window. A projector whose only encoder is
+//      another audio encoder isn't loaded at all. Every audio chunk is
+//      checked against the same count before it is encoded, and clip's
+//      own output-count check returns an error instead of aborting (local
+//      patch, README.chromium).
 //  - The GPU (llama.cpp's Vulkan backend, GN switch molt_llama_vulkan;
 //    design section 11.6): ggml-vulkan throws vk::DeviceLostError and
 //    vk::SystemError from graph compute, synchronization and buffer clears.
@@ -117,6 +127,7 @@
 #include <climits>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <utility>
 
 #include "chrome/services/molt_ai/inference/engine/audio_input.h"
@@ -391,6 +402,33 @@ size_t CountChunkTokens(const mtmd_input_chunks* chunks) {
   return n;
 }
 
+// Whether llama.cpp's tokenizer reserves exactly |window_tokens| tokens for
+// the window of a 1 s placeholder clip (no samples: nothing is encoded), as
+// the allow-list says this projector's encoder gives (engine/audio_input.h).
+// Checked once, at load.
+bool AudioWindowMatches(mtmd_context* ctx, uint32_t window_tokens) {
+  mtmd::bitmap_ptr placeholder(
+      mtmd_bitmap_init_from_audio(kAudioSampleRate, nullptr));
+  if (!placeholder) return false;
+  const mtmd_input_part part = {nullptr, placeholder.get()};
+  const mtmd_input_part* parts[] = {&part};
+  mtmd::input_chunks_ptr chunks(mtmd_input_chunks_init());
+  if (!chunks || mtmd_tokenize_from_parts(ctx, chunks.get(), parts, 1,
+                                          /*add_special=*/false) != 0) {
+    return false;
+  }
+  size_t windows = 0;
+  for (size_t i = 0; i < mtmd_input_chunks_size(chunks.get()); ++i) {
+    const mtmd_input_chunk* chunk = mtmd_input_chunks_get(chunks.get(), i);
+    if (mtmd_input_chunk_get_type(chunk) != MTMD_INPUT_CHUNK_TYPE_AUDIO) {
+      continue;
+    }
+    if (mtmd_input_chunk_get_n_tokens(chunk) != window_tokens) return false;
+    ++windows;
+  }
+  return windows == 1;
+}
+
 // Tokenizes the chat template's output |formatted|, in which each image or
 // audio clip is kMediaMarker, with |bitmaps| (in order) in place of the
 // markers. Text is tokenized with parse_special=true, as without media
@@ -636,9 +674,11 @@ struct LlamaEngine::Model {
   std::unique_ptr<GrammarVocab> grammar_vocab;
   // The projector's context (image and audio input); null without one.
   mtmd_context* mtmd = nullptr;
-  // It has an image encoder; an audio encoder taking kAudioSampleRate.
+  // It has an image encoder; an audio encoder taking kAudioSampleRate, on
+  // the allow-list, whose windows take |audio_window_tokens| tokens.
   bool vision = false;
   bool audio = false;
+  uint32_t audio_window_tokens = 0;
   // A guarded llama.cpp call threw (the GPU failed): the context's state is
   // unknown. Every later request fails with kBackendFailed.
   bool backend_failed = false;
@@ -925,6 +965,27 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
       return result;
     }
   }
+  // What the projector's own header says about its encoders, read here in
+  // the service (never the browser's word): audio only from a projector on
+  // the allow-list (engine/audio_input.h). A projector whose only encoder
+  // is an audio encoder off the list isn't loaded: the model loads for
+  // text alone.
+  std::optional<uint32_t> audio_window_tokens;
+  bool load_projector = proj != nullptr;
+  if (proj) {
+    const molt_llama::ProjectorFacts facts =
+        molt_llama::ReadProjectorFacts(proj);
+    if (!facts.read ||
+        (!facts.has_vision_encoder && !facts.has_audio_encoder)) {
+      result.status = EngineLoadStatus::kInvalidVisionProjector;
+      return result;
+    }
+    if (facts.has_audio_encoder) {
+      audio_window_tokens = AllowedAudioWindowTokens(facts.audio_projector_type,
+                                                     facts.audio_stack_factor);
+    }
+    load_projector = facts.has_vision_encoder || audio_window_tokens;
+  }
 
   // Memory budget under the sandbox limit (design section 2.5). CPU weight
   // repacking copies the weights into anonymous memory, which the limit
@@ -1014,7 +1075,7 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
     // ---- The projector (image and audio input) ----
     // Before the context, so the KV cache is sized with the projector
     // already in memory. clip copies the weights out of the file.
-    if (proj) {
+    if (proj && load_projector) {
       if (!SeekFile(proj, 0, SEEK_SET)) {
         return EngineLoadStatus::kInvalidVisionProjector;
       }
@@ -1031,13 +1092,21 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
       m->mtmd = mtmd_init_from_file_ptr(proj, m->model, mparams);
       if (!m->mtmd) return EngineLoadStatus::kInvalidVisionProjector;
       m->vision = mtmd_support_vision(m->mtmd);
-      // Audio only at the rate the browser prepares (every supported
-      // encoder's): nothing here resamples.
-      m->audio = mtmd_support_audio(m->mtmd) &&
+      // Audio only from an allowed projector, at the rate the browser
+      // prepares (nothing here resamples), whose window llama.cpp counts as
+      // the list does.
+      m->audio = audio_window_tokens && mtmd_support_audio(m->mtmd) &&
                  mtmd_get_audio_sample_rate(m->mtmd) ==
-                     static_cast<int>(kAudioSampleRate);
+                     static_cast<int>(kAudioSampleRate) &&
+                 AudioWindowMatches(m->mtmd, *audio_window_tokens);
+      m->audio_window_tokens = m->audio ? *audio_window_tokens : 0;
       if (!m->vision && !m->audio) {
-        return EngineLoadStatus::kInvalidVisionProjector;
+        if (!audio_window_tokens) {
+          return EngineLoadStatus::kInvalidVisionProjector;
+        }
+        // An allowed audio projector that failed the check: text alone.
+        mtmd_free(m->mtmd);
+        m->mtmd = nullptr;
       }
     }
 
@@ -1788,6 +1857,11 @@ std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
     const size_t n_tok = mtmd_input_chunk_get_n_tokens(chunk);
     if ((type != MTMD_INPUT_CHUNK_TYPE_IMAGE && !is_audio) ||
         (!is_audio && !image) || n_tok == 0 || last) {
+      return fail(EngineStatus::kDecodeFailed);
+    }
+    // An audio window is encoded only when llama.cpp reserved exactly the
+    // allow-list's tokens for it (checked at load too).
+    if (is_audio && (!m.audio || n_tok != m.audio_window_tokens)) {
       return fail(EngineStatus::kDecodeFailed);
     }
     // Some encoders (Gemma 3) attend to the whole image at once: it must

@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <string_view>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -119,6 +121,24 @@ TEST(AudioInputTest, RoundTripIsClose) {
   for (size_t i = 0; i < in.size(); ++i) {
     EXPECT_NEAR(in[i], back[i], 2.0 / 32767.0) << i;
   }
+}
+
+TEST(AudioInputTest, OnlyVerifiedAudioProjectors) {
+  // Voxtral as llama.cpp's converter writes it.
+  EXPECT_EQ(std::optional<uint32_t>(375),
+            AllowedAudioWindowTokens("voxtral", 4));
+  // Anything else: another factor, another type (however close), none.
+  for (uint32_t factor : {0u, 1u, 2u, 3u, 5u, 8u, 0xFFFFFFFFu}) {
+    EXPECT_FALSE(AllowedAudioWindowTokens("voxtral", factor)) << factor;
+  }
+  for (const char* type : {"", "Voxtral", "voxtral ", " voxtral", "ultravox",
+                           "qwen2a", "qwen2.5o", "qwen3a", "glma", "meralion",
+                           "musicflamingo", "lfm2a", "gemma4a", "voxtra"}) {
+    EXPECT_FALSE(AllowedAudioWindowTokens(type, 4)) << type;
+  }
+  // A type with a NUL inside isn't the name either.
+  EXPECT_FALSE(AllowedAudioWindowTokens(std::string_view("voxtral\0x", 9), 4));
+  EXPECT_FALSE(AllowedAudioWindowTokens(std::string_view("voxtral\0", 8), 4));
 }
 
 }  // namespace

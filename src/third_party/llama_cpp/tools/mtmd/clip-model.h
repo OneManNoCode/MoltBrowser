@@ -889,9 +889,11 @@ struct clip_model {
     // qformer projector(s)
     std::vector<qf_block> qf_proj_blocks;
 
+    // MoltBrowser: Voxtral has no average pooling: its Whisper encoder's
+    // 1500 frames per 30 s window are stacked four by four into 375 tokens
+    // (12.5 per second), and the stacked width is the adapter's input.
     bool audio_has_avgpool() const {
         return proj_type == PROJECTOR_TYPE_QWEN2A
-            || proj_type == PROJECTOR_TYPE_VOXTRAL
             || proj_type == PROJECTOR_TYPE_MUSIC_FLAMINGO;
     }
 

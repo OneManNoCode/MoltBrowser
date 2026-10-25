@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace molt_ai {
@@ -82,6 +83,19 @@ std::optional<std::vector<int16_t>> PrepareModelAudio(int64_t channel_count,
 
 // The samples as llama.cpp's audio encoders take them: s / 32768.
 std::vector<float> AudioSamplesToFloat(const int16_t* samples, size_t count);
+
+// Which audio encoders the service runs. llama.cpp's audio projectors
+// encode a clip in windows; how many tokens a window takes depends on the
+// projector's type and its frame-stacking factor. The service gives audio
+// only to projectors on this list, each verified to give one 30-second
+// window exactly the tokens llama.cpp reserves for it (section 13.1 of the
+// design); a projector with any other audio encoder loads without audio
+// input. |projector_type| and |stack_factor| come from the projector's own
+// header, read in the service (molt_llama::ReadProjectorFacts()). The
+// tokens of one window, or nullopt if the projector isn't on the list.
+std::optional<uint32_t> AllowedAudioWindowTokens(
+    std::string_view projector_type,
+    uint32_t stack_factor);
 
 }  // namespace molt_ai
 

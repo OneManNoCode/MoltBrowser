@@ -1596,6 +1596,12 @@ Status: implemented (October 2026), pending a compile on the build machine. A mo
 6. **No KV reuse across media; budget as images** (§10.1, 5 and 6): the new message's clips count with the system prompt, a history turn's go with it.
 7. **Status values.** `GenerationStatus.kAudioUnsupported` for audio sent to a model without an audio encoder (answered at once); the browser maps it to `GenerationResult::audio_unsupported` and fails such a request before sending when it already knows (`LoadedModelHearsAudio()`).
 8. **The catalogue knows what a projector takes** (`kProjectors` in `browser_ai_runtime.cc`: `images`, `audio`), for the model pickers and the Prompt API's availability; what a request may carry is what the loaded projector reports.
+9. **Only verified audio encoders run** (hardening). llama.cpp's audio projectors differ in how many tokens a window takes, so the service gives audio only to projectors on an allow-list (`AllowedAudioWindowTokens()`, `engine/audio_input.h`): a projector type and frame-stacking factor, each verified here to give a window exactly the tokens llama.cpp reserves for it. The list holds one entry, Voxtral with a stacking factor of 4 (375 tokens a window), the layout llama.cpp's converter writes.
+   - *From the file, in the service.* The projector's own header is read before llama.cpp loads it (`molt_llama::ReadProjectorFacts()`, through `llama_guard`: ggml's GGUF parser, every exception caught, the file rewound): its encoders, the audio projector type (as clip picks it) and the stacking factor. The browser's claim isn't consulted.
+   - *Off the list.* A projector whose only encoder is an audio encoder off the list isn't loaded at all: the model loads for text alone, and audio answers `kAudioUnsupported`. One that also has an image encoder loads for images, without audio.
+   - *At load.* Even on the list, audio is on only after a placeholder clip (no samples, nothing encoded) showed llama.cpp reserving the list's count for its window; otherwise the projector goes too and the model loads for text.
+   - *Per window.* Every audio window is checked against the same count before it is encoded, and clip's own check of its graph's output returns an error instead of ending the process (local patch, README.chromium), so a disagreement fails that request (`kDecodeFailed`) and nothing else.
+   - The same local patch has llama.cpp count a window in the order its graph builds it, for every Whisper-type projector, and runs Voxtral without pooling, as the original model does.
 
 ### 13.2 The flow
 
@@ -1627,7 +1633,7 @@ ChatPrompt.user_audio / ChatMessage.audio
 - **Parsers stay where they were.** Compressed audio is decoded in the renderer, the page's own sandboxed process; the browser handles only float samples (a shape check and a clamped conversion, no parser), and the service only 16-bit PCM within the bounds.
 - **The browser trusts no AudioData.** Channel count, rate and frame count must be exactly what the session asked for and match the data; non-finite samples become silence; at most 4 clips of at most 30 s per request, so the conversion is bounded (at most 1.9 million samples, after mojo already copied them). The fuzzers (§13.6) drive it with arbitrary shapes and values.
 - **The service trusts no buffer.** `CheckAudio()` checks count, role and every clip's byte length before anything is queued; a buffer that can't be mapped fails the request. `mtmd_bitmap_init_from_audio()` copies exactly the checked samples. The preprocessing (an FFT and a mel filter bank in `mtmd-audio.cpp`) is linear in the clip, at most two windows per clip.
-- **Exceptions and aborts.** The audio calls (`mtmd_support_audio`, `mtmd_get_audio_sample_rate`, `mtmd_bitmap_init_from_audio`, the encode of an audio chunk) are in the audited list at the top of `llama_engine.cc`.
+- **Exceptions and aborts.** The audio calls (`mtmd_support_audio`, `mtmd_get_audio_sample_rate`, `mtmd_bitmap_init_from_audio`, the encode of an audio chunk) and the projector header read are in the audited list at the top of `llama_engine.cc`. Only allow-listed encoders run (§13.1, 9), and a token-count disagreement is an error for the request, not the end of the process.
 - **Browser memory.** A clip held for a page is at most 0.96 MB and counts as an image against the per-site and total caps (WEB_AI_APIS.md §5.2).
 
 ### 13.4 The model and its pins
@@ -1649,7 +1655,7 @@ The registry gets **Voxtral Mini 3B (2507)** (Mistral AI, Apache 2.0) in Q4_K_M,
   | LFM2-Audio | 1.5B | LFM licence | terms |
   | MERaLiON, Music Flamingo, MiMo-Audio | various | various | regional, music or research models |
 
-- **Fail closed, twice.** Its revision, both SHA-256s and both sizes are empty: until `tools/models/pin_models.py --only voxtral-mini-3b --write` fills all five from one revision, it isn't in the catalogue (`IsPinnedWithProjector()`). Its entry is also hidden: after pinning, the owner unhides it by hand once the pinned files pass the audio check on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "ai-finish"), because the vendored llama.cpp's Voxtral path has run here only with test projectors.
+- **Fail closed, twice.** Its revision, both SHA-256s and both sizes are empty: until `tools/models/pin_models.py --only voxtral-mini-3b --write` fills all five from one revision, it isn't in the catalogue (`IsPinnedWithProjector()`). Its entry is also hidden: after pinning, the owner unhides it by hand once the pinned files pass the audio check on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "ai-finish"), because the vendored llama.cpp's Voxtral path has run here only with test projectors (in the converter's layout, §13.6).
 - **Download** as one unit with its projector, exactly as §10.4.
 - **The pick for pages.** A page that asks for audio gets a downloaded model that hears audio when one has to be loaded (WEB_AI_APIS.md §5.2); the chat's model is never swapped out.
 
@@ -1665,7 +1671,7 @@ The registry gets **Voxtral Mini 3B (2507)** (Mistral AI, Apache 2.0) in Q4_K_M,
 
 **In the repository:**
 
-- `engine/audio_input_unittest.cc` (7, std-only): the bounds and byte lengths, the conversion (only one channel at 16 kHz with the data's frame count, clamping, NaN and infinities, rounding, padding to the minimum, the longest clip), the float conversion.
+- `engine/audio_input_unittest.cc` (8, std-only): the bounds and byte lengths, the conversion (only one channel at 16 kHz with the data's frame count, clamping, NaN and infinities, rounding, padding to the minimum, the longest clip), the float conversion, and the allow-list (Voxtral at a factor of 4 only; other factors, other types, near names and embedded NULs refused).
 - `runtime/model_audio_unittest.cc` (3): a page's audio becoming a clip; validity and length in seconds; which clips a request sends (every split of up to 9 over three turns stays within 4 and takes the newest).
 - `runtime/inference_process_host_unittest.cc`: `audio` with the projector the browser sent is recorded; without one it is a violation.
 - The web AI tests for the Prompt API (WEB_AI_APIS.md §12) and `tools/models/pin_models_test.py` (the audio model and its projector pinned as one; every projector all-or-nothing).
@@ -1679,7 +1685,10 @@ The registry gets **Voxtral Mini 3B (2507)** (Mistral AI, Apache 2.0) in Q4_K_M,
 | Two clips; a clip in the history and one in the new message | two windows each; an answer |
 | 29.99 s and exactly 30 s | two windows (Whisper's padding); an answer |
 | 30 s and one sample, 0.1 s less one sample, five clips | refused (`kTokenizeFailed` from the engine; the service refuses them before as bad messages) |
+| A projector off the allow-list (Voxtral's type with a factor of 2; Ultravox's type with 8) | not loaded: the model answers text, every audio request `kAudioUnsupported` |
 
-The answers are the same text on the CPU and with the language model on lavapipe.
+The projector is the layout llama.cpp's converter writes (a factor of 4); one window takes 375 tokens. The answers start with the same tokens on the CPU and with the language model on lavapipe (random weights part them later at near-ties).
+
+**The count check** (llama.cpp's multimodal library directly, every window encoded, clips of 0.1 s, 1 s, 29.99 s and 30 s): the count llama.cpp reserves and the count its graph produces agree for the Voxtral layout (375 a window) and for the Ultravox layout with a factor of 8 (188 a window), and every window encodes. The safety nets were also run against a build whose count was made wrong on purpose: each encode failed as an error without ending the process, and the engine's load-time check turned audio off (the model answered text, audio requests `kAudioUnsupported`).
 
 **Needs the build machine:** a compile; the pinned Voxtral model with real speech (a question about a recording, a transcription, a 30 s clip, five clips refused) on the CPU and on a GPU, its speed and memory on 8 and 16 GB machines, and the token count of one window (the Prompt API's per-clip count assumes at most 375); the Prompt API with real audio in a page (WEB_AI_APIS.md §12).

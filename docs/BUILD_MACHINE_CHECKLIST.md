@@ -1058,9 +1058,11 @@ WEB_AI_APIS.md §12):
   - a 30 s clip answers, a 31 s clip and five clips reject with
     `NotSupportedError`; `measureInputUsage()` of a 10 s clip with a short
     question is about 380;
-  - the browser log's load line shows the projector loaded, and with
-    `--v=1` the service's prompt token count for one clip is at most 375
-    plus the text (the per-clip count assumes it);
+  - the browser log's load line shows the projector loaded with audio on
+    (the pinned projector passed the service's own audio check at load: its
+    type and stacking factor on the allow-list, and 375 tokens reserved for
+    a window), and with `--v=1` the service's prompt token count for one
+    clip is 375 plus the text (the per-clip count assumes at most that);
   - on the CPU, and with the Vulkan out dir of §9 on a GPU;
   - `availability()` for audio: `"downloadable"` on a site not yet allowed
     (with and without the model), `"unavailable"` on an allowed site with
