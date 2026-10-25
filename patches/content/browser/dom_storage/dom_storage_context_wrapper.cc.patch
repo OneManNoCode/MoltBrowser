@@ -1,0 +1,35 @@
+MoltBrowser patch for content/browser/dom_storage/dom_storage_context_wrapper.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/dom_storage/dom_storage_context_wrapper.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/dom_storage/dom_storage_context_wrapper.cc b/content/browser/dom_storage/dom_storage_context_wrapper.cc
+index abe861aed3e95307caf8e540c0115ce75369e3c2..e0a9db5f322497545f4451c3cce50cd6ae6cc64a 100644
+--- a/content/browser/dom_storage/dom_storage_context_wrapper.cc
++++ b/content/browser/dom_storage/dom_storage_context_wrapper.cc
+@@ -358,6 +358,12 @@ void DOMStorageContextWrapper::MaybeBindSessionStorageControl(
+   session_storage_control_.set_disconnect_handler(
+       base::BindOnce(&DOMStorageContextWrapper::OnSessionStorageDisconnected,
+                      base::Unretained(this)));
++  // MoltBrowser: caches per site for embedders that ask (MoltNet;
++  // components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
++  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
++          partition_->browser_context())) {
++    session_storage_control_->MoltKeepCachesPerSite();
++  }
+ }
+ 
+ void DOMStorageContextWrapper::OnLocalStorageDisconnected() {
+@@ -378,6 +384,11 @@ void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
+   local_storage_control_.set_disconnect_handler(
+       base::BindOnce(&DOMStorageContextWrapper::OnLocalStorageDisconnected,
+                      base::Unretained(this)));
++  // MoltBrowser: as for session storage, above.
++  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
++          partition_->browser_context())) {
++    local_storage_control_->MoltKeepCachesPerSite();
++  }
+ }
+ 
+ scoped_refptr<SessionStorageNamespaceHandleImpl>

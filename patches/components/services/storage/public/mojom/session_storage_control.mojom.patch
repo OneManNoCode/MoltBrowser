@@ -1,0 +1,24 @@
+MoltBrowser patch for components/services/storage/public/mojom/session_storage_control.mojom
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/services/storage/public/mojom/session_storage_control.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/services/storage/public/mojom/session_storage_control.mojom b/components/services/storage/public/mojom/session_storage_control.mojom
+index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..f177165e87dca31b29b56e9a414725f1f286bbd6 100644
+--- a/components/services/storage/public/mojom/session_storage_control.mojom
++++ b/components/services/storage/public/mojom/session_storage_control.mojom
+@@ -76,6 +76,13 @@ interface SessionStorageControl {
+   // next access to a StorageArea will reload data from the backing database.
+   PurgeMemory();
+ 
++  // MoltBrowser: from now on, keeps the cached storage areas per top-level
++  // site: opening an area purges only unbound areas of its own site, by
++  // per-site limits, never because of other sites
++  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
++  // PurgeMemory() does nothing then.
++  MoltKeepCachesPerSite();
++
+   // Creates a new namespace which can later be manipulated by other requests
+   // on this interface.
+   CreateNamespace(string namespace_id);

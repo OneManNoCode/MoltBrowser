@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/download/save_file_manager.cc b/content/browser/download/save_file_manager.cc
-index 2381ba6f072ac26a6bc2e69c3f11237602f012b2..a1fc22d5e02142c53389e2310a2c1978b91d9542 100644
+index 2381ba6f072ac26a6bc2e69c3f11237602f012b2..ec34b587c6d44c40efef8a6f50d5e384617fe2e9 100644
 --- a/content/browser/download/save_file_manager.cc
 +++ b/content/browser/download/save_file_manager.cc
 @@ -15,6 +15,7 @@
@@ -16,7 +16,20 @@ index 2381ba6f072ac26a6bc2e69c3f11237602f012b2..a1fc22d5e02142c53389e2310a2c1978
  #include "content/browser/download/save_file.h"
  #include "content/browser/download/save_package.h"
  #include "content/browser/file_system/file_system_url_loader_factory.h"
-@@ -294,6 +295,10 @@ void SaveFileManager::SaveURL(
+@@ -247,8 +248,11 @@ void SaveFileManager::SaveURL(
+   if (save_source == SaveFileCreateInfo::SAVE_FILE_FROM_NET) {
+     CHECK(url.is_valid(), base::NotFatalUntil::M159);
+     // Starts the actual download.
++    // MoltBrowser: nothing more is sent for a network identity that has
++    // ended (ContentBrowserClient::HasNetworkIdentityEnded()).
+     if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
+-            render_process_host_id, url)) {
++            render_process_host_id, url) ||
++        GetContentClient()->browser()->HasNetworkIdentityEnded(context)) {
+       download::GetDownloadTaskRunner()->PostTask(
+           FROM_HERE,
+           base::BindOnce(&SaveFileManager::SaveFinished, this, save_item_id,
+@@ -294,6 +298,10 @@ void SaveFileManager::SaveURL(
      mojo::Remote<network::mojom::URLLoaderFactory> factory_remote;
      auto* rfh = RenderFrameHostImpl::FromID(render_process_host_id,
                                              render_frame_routing_id);

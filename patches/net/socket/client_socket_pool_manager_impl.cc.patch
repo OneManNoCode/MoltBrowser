@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool_manager_impl.cc b/net/socket/client_socket_pool_manager_impl.cc
-index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..47a85d97ce1872879ae7f9569be09a7fa5f04bd0 100644
+index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..baeed10ba75256d83aad82e83755bd6d5b5bb699 100644
 --- a/net/socket/client_socket_pool_manager_impl.cc
 +++ b/net/socket/client_socket_pool_manager_impl.cc
-@@ -30,11 +30,26 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
+@@ -30,11 +30,27 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
      const CommonConnectJobParams& common_connect_job_params,
      const CommonConnectJobParams& websocket_common_connect_job_params,
      HttpNetworkSession::SocketPoolType pool_type,
@@ -16,7 +16,8 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..47a85d97ce1872879ae7f9569be09a7f
 +    bool cleanup_on_ip_address_change,
 +    size_t molt_per_site_pool_size,
 +    MoltConnectionBudget* molt_connection_budget,
-+    uintptr_t molt_budget_owner)
++    uintptr_t molt_budget_owner,
++    MoltConnectionBudget* molt_cert_fetch_budget)
      : common_connect_job_params_(common_connect_job_params),
        websocket_common_connect_job_params_(websocket_common_connect_job_params),
        pool_type_(pool_type),
@@ -32,12 +33,12 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..47a85d97ce1872879ae7f9569be09a7f
 +        unused_idle_socket_timeout(pool_type_),
 +        pool_type_ == HttpNetworkSession::SocketPoolType::kWebSocket,
 +        &common_connect_job_params_, cleanup_on_ip_address_change_,
-+        molt_connection_budget, molt_budget_owner);
++        molt_connection_budget, molt_budget_owner, molt_cert_fetch_budget);
 +  }
    // |websocket_endpoint_lock_manager| must only be set for websocket
    // connections.
    DCHECK(!common_connect_job_params_.websocket_endpoint_lock_manager);
-@@ -51,6 +66,10 @@ void ClientSocketPoolManagerImpl::FlushSocketPoolsWithError(
+@@ -51,6 +67,10 @@ void ClientSocketPoolManagerImpl::FlushSocketPoolsWithError(
    for (const auto& it : socket_pools_) {
      it.second->FlushWithError(net_error, net_log_reason_utf8);
    }
@@ -48,7 +49,7 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..47a85d97ce1872879ae7f9569be09a7f
  }
  
  void ClientSocketPoolManagerImpl::CloseIdleSockets(
-@@ -58,6 +77,22 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
+@@ -58,6 +78,24 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
    for (const auto& it : socket_pools_) {
      it.second->CloseIdleSockets(net_log_reason_utf8);
    }
@@ -62,16 +63,18 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..47a85d97ce1872879ae7f9569be09a7f
 +// per-site pools (net/socket/molt_per_site_socket_pool_policy.h).
 +ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPoolForSite(
 +    const ProxyChain& proxy_chain,
-+    const NetworkAnonymizationKey& network_anonymization_key) {
++    const NetworkAnonymizationKey& network_anonymization_key,
++    bool molt_no_cert_fetches) {
 +  if (molt_per_site_pools_ &&
 +      MoltUsesPerSitePool(molt_per_site_pool_size_, proxy_chain.is_direct())) {
-+    return molt_per_site_pools_->Get(proxy_chain, network_anonymization_key);
++    return molt_per_site_pools_->Get(proxy_chain, network_anonymization_key,
++                                     molt_no_cert_fetches);
 +  }
 +  return GetSocketPool(proxy_chain);
  }
  
  ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPool(
-@@ -117,6 +152,10 @@ base::Value ClientSocketPoolManagerImpl::SocketPoolInfoToValue() const {
+@@ -117,6 +155,10 @@ base::Value ClientSocketPoolManagerImpl::SocketPoolInfoToValue() const {
      list.Append(
          socket_pool.second->GetInfoAsValue(proxy_chain.ToDebugString(), type));
    }

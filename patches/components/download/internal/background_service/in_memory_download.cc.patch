@@ -5,18 +5,56 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/download/internal/background_service/in_memory_download.cc b/components/download/internal/background_service/in_memory_download.cc
-index 3bd11ee31de6032a46afe80c050e11f30309e3f8..92445cddc8e13f3a630d4b99ef2160ffc872a887 100644
+index 3bd11ee31de6032a46afe80c050e11f30309e3f8..c13cf1b912ded6c5c6b0e6cb91d19b5990bdec7d 100644
 --- a/components/download/internal/background_service/in_memory_download.cc
 +++ b/components/download/internal/background_service/in_memory_download.cc
-@@ -11,6 +11,7 @@
+@@ -9,8 +9,11 @@
+ #include <string_view>
+ 
  #include "base/functional/bind.h"
++#include "base/no_destructor.h"  // MoltBrowser
++#include "base/synchronization/lock.h"  // MoltBrowser
  #include "base/task/single_thread_task_runner.h"
  #include "components/download/internal/background_service/blob_task_proxy.h"
 +#include "components/download/internal/background_service/molt_registering_site_isolation.h"  // MoltBrowser
  #include "net/base/load_flags.h"
  #include "net/traffic_annotation/network_traffic_annotation.h"
  #include "services/network/public/cpp/resource_request.h"
-@@ -231,6 +232,13 @@ void InMemoryDownloadImpl::SendRequest() {
+@@ -21,6 +24,20 @@
+ 
+ namespace download {
+ 
++namespace {
++
++// MoltBrowser: the blob budget key of the site a fetch's response is for,
++// one per site for the whole browser (molt_blob_budget_policy.h).
++uint64_t MoltBlobBudgetKeyFor(
++    const std::optional<net::IsolationInfo>& isolation_info) {
++  static base::NoDestructor<base::Lock> lock;
++  static base::NoDestructor<storage::MoltBlobSiteKeys> keys;
++  base::AutoLock auto_lock(*lock);
++  return MoltBlobBudgetKeyForFetch(isolation_info, *keys);
++}
++
++}  // namespace
++
+ InMemoryDownload::InMemoryDownload(const std::string& guid)
+     : guid_(guid),
+       state_(State::INITIAL),
+@@ -182,7 +199,11 @@ void InMemoryDownloadImpl::SaveAsBlob() {
+   auto callback = base::BindOnce(&InMemoryDownloadImpl::OnSaveBlobDone,
+                                  weak_ptr_factory_.GetWeakPtr());
+   auto data = std::make_unique<std::string>(std::move(data_));
+-  blob_task_proxy_->SaveAsBlob(std::move(data), std::move(callback));
++  // MoltBrowser: the response counts against the blob memory of the site
++  // that started the fetch (molt_registering_site_isolation.h).
++  blob_task_proxy_->SaveAsBlob(
++      std::move(data), std::move(callback),
++      MoltBlobBudgetKeyFor(request_params_.isolation_info));
+ }
+ 
+ void InMemoryDownloadImpl::OnSaveBlobDone(
+@@ -231,6 +252,13 @@ void InMemoryDownloadImpl::SendRequest() {
      request->site_for_cookies =
          request_params_.isolation_info->site_for_cookies();
    }

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 6e730455c66df584a721a2b4720f25bf9844f16d..8d577ab7ccd08304377d259303715e483de8f4da 100644
+index 6e730455c66df584a721a2b4720f25bf9844f16d..d38cf48aebcae99fc44cbf2c7c1da94fcc5fa25b 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
 @@ -80,7 +80,9 @@
@@ -18,7 +18,7 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..8d577ab7ccd08304377d259303715e48
  #include "third_party/blink/public/common/mediastream/media_devices.h"
  #include "third_party/blink/public/common/tokens/tokens.h"
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
-@@ -1989,6 +1991,57 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1989,6 +1991,74 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  
@@ -72,6 +72,23 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..8d577ab7ccd08304377d259303715e48
 +  virtual bool ShouldKeepBrowsingInstancesInOwnProcesses(
 +      BrowserContext* browser_context,
 +      const GURL& site_url);
++
++  // MoltBrowser: true once `browser_context`'s network identity has ended
++  // (a MoltNet identity's, at New Identity): from then on the browser sends
++  // nothing more it holds for the context's pages, whatever stage it is at:
++  // no keepalive request, beacon or fetchLater is started or retried and no
++  // redirect followed for one, no download or Save Page As resource is
++  // requested, no Background Fetch request is started.
++  virtual bool HasNetworkIdentityEnded(BrowserContext* browser_context);
++
++  // MoltBrowser: whether the storage service keeps `browser_context`'s
++  // localStorage and sessionStorage caches per top-level site: an area is
++  // purged from the cache only because of its own site's use or its own
++  // idleness, never because other sites opened areas
++  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
++  // False: Chromium's limits for the whole partition.
++  virtual bool ShouldKeepDomStorageCachesPerSite(
++      BrowserContext* browser_context);
 +
    struct CONTENT_EXPORT WebSocketOptions {
      WebSocketOptions();

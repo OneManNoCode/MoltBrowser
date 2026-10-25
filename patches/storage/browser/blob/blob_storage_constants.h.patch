@@ -5,20 +5,29 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_storage_constants.h b/storage/browser/blob/blob_storage_constants.h
-index e4438a73596af3491a52961f88c525e72016836d..affd2372735d77adc58b834aa338561254de97b6 100644
+index e4438a73596af3491a52961f88c525e72016836d..2c59408f270f4b369c9680a43ed00076d2198f77 100644
 --- a/storage/browser/blob/blob_storage_constants.h
 +++ b/storage/browser/blob/blob_storage_constants.h
-@@ -96,6 +96,13 @@ struct COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageLimits {
+@@ -9,6 +9,7 @@
+ #include <stdint.h>
+ 
+ #include "base/component_export.h"
++#include "base/functional/callback.h"  // MoltBrowser
+ #include "base/functional/callback_forward.h"
+ #include "build/build_config.h"
+ 
+@@ -96,6 +97,14 @@ struct COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageLimits {
    // usually set using the "blob-transport-by-file-min-size" switch (see
    // BlobMemoryController).
    uint64_t override_file_transport_min_size = 0ull;
 +
 +  // MoltBrowser: each budget key's share of blob memory (0: Chromium's one
-+  // limit for all), and the machine memory a blob beyond
-+  // |max_blob_in_memory_space| must leave available
-+  // (molt_blob_budget_policy.h).
++  // limit for all), the only limit a blob meets then; and what runs (on the
++  // blob storage's sequence) each time a blob is stored while all keys
++  // together hold more than |max_blob_in_memory_space|, so the embedder can
++  // watch the machine's memory (molt_blob_budget_policy.h).
 +  uint64_t molt_per_key_memory = 0ull;
-+  uint64_t molt_memory_reserve = 0ull;
++  base::RepeatingClosure molt_on_growth_beyond_floor;
  };
  
  enum class IPCBlobItemRequestStrategy {
