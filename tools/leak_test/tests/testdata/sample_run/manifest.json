@@ -1028,6 +1028,40 @@
    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/gggggg7777/x.html"
   },
   {
+   "end": 1760000074.4,
+   "id": "display_capture",
+   "ipv4": "198.51.100.33",
+   "ipv6": "2001:db8::27",
+   "nonce": "mmmmmm5656",
+   "results": {
+    "api": {
+     "displaySurface": true,
+     "getDisplayMedia": true
+    },
+    "display_media": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 3
+    },
+    "gum_screen": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 2
+    },
+    "perm": "denied",
+    "this_tab": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 2
+    },
+    "worker_perm": "denied"
+   },
+   "settle_end": 1760000076.4,
+   "start": 1760000075.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/mmmmmm5656/x.html"
+  },
+  {
    "end": 1760000076.5,
    "id": "sandboxed_a",
    "ipv4": "198.51.100.29",

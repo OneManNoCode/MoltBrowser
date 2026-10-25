@@ -487,6 +487,81 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "display_media.error = \"NotAllowedError\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a1",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: getDisplayMedia() rejects with NotAllowedError"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "display_media.message = \"Permission denied by user\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a2",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: as a user's Cancel in the picker"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "display_media.ms = 3"
+   ],
+   "group": "network",
+   "id": "net.display_capture.a3",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: at once (no picker waited for an answer)"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "this_tab.error = \"NotAllowedError\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a4",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: getDisplayMedia({preferCurrentTab}) too"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "perm = \"denied\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a5",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: the display-capture permission reads \"denied\""
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [
+    "worker_perm = \"denied\""
+   ],
+   "group": "network",
+   "id": "net.display_capture.a6",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: in a worker too"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: portable math\" (what a page reads back without noise)",
+   "evidence": [],
+   "group": "network",
+   "id": "net.display_capture.traffic",
+   "status": "PASS",
+   "title": "Screen, window and tab capture are refused without a picker: nothing outside Tor"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 (other ways to look up a name)",
    "evidence": [
     "sent to Tor inside SOCKS5: anchor-cccccc3333.moltleak.test:443 (username 'http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion')"
@@ -3077,7 +3152,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 170,
+  "PASS": 177,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3890,6 +3965,37 @@
    },
    "target": "regular",
    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/gggggg7777/x.html"
+  },
+  {
+   "error": null,
+   "id": "display_capture",
+   "load_error": null,
+   "nonce": "mmmmmm5656",
+   "results": {
+    "api": {
+     "displaySurface": true,
+     "getDisplayMedia": true
+    },
+    "display_media": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 3
+    },
+    "gum_screen": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 2
+    },
+    "perm": "denied",
+    "this_tab": {
+     "error": "NotAllowedError",
+     "message": "Permission denied by user",
+     "ms": 2
+    },
+    "worker_perm": "denied"
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/mmmmmm5656/x.html"
   },
   {
    "error": null,
