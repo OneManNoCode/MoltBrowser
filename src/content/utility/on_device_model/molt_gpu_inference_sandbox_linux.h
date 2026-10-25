@@ -24,15 +24,11 @@
 
 #include <vector>
 
+#include "content/utility/on_device_model/molt_gpu_inference_switch.h"
 #include "sandbox/linux/syscall_broker/broker_command.h"
 #include "sandbox/linux/syscall_broker/broker_file_permission.h"
 
 namespace on_device_model {
-
-// The same string as molt_ai::kMoltInferenceGpuSwitch
-// (chrome/browser/molt_ai/runtime/inference_process_host.h), which content
-// can't include.
-inline constexpr char kMoltInferenceGpuSwitch[] = "molt-inference-gpu";
 
 // With kMoltInferenceGpuSwitch on this process's command line, adds to the
 // GPU broker MoltGpuInferenceBrokerGrants() for the render nodes present
