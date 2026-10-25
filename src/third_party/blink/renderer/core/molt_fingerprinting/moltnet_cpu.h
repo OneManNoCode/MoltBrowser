@@ -24,12 +24,23 @@
 //                                moltnet::kV8HeapPhysicalMemory
 //                                (gin::IsolateHolder), whose limit
 //                                performance.memory reports (moltnet_memory.h)
-//   skcms colour transforms    the baseline code on every x86-64 CPU, not the
-//                                AVX2 or AVX-512 variants
-//                                (skcms_DisableRuntimeCPUDetection)
+//   skcms colour transforms    (images with colour profiles, WebCodecs
+//                                ImageDecoder) the baseline code on every
+//                                x86-64 CPU, not the AVX2 or AVX-512
+//                                variants, converting half floats exactly as
+//                                those and NEON do, so x86-64 and Arm give the
+//                                same bytes (skcms_MoltBrowserEnablePortableMode)
+//   Skia's raster pipeline     (canvas, image and video drawing, colour
+//                                conversion of read-back pixels) stages that
+//                                compute the same pixels on every CPU, x86-64
+//                                and Arm alike: no fused multiply-add, no
+//                                reciprocal estimates, exact half floats
+//                                (SkGraphics::
+//                                MoltBrowserUsePortableRasterPipeline)
 //
-// Done elsewhere for the same processes: Skia's CPU-specific raster code is
-// never installed (the browser adds --disable-skia-runtime-opts to MoltNet's
+// Done elsewhere for the same processes: Skia's other CPU-specific code
+// (blitters, bitmap sampling, swizzles) is never installed, nor its raster
+// pipeline's (the browser adds --disable-skia-runtime-opts to MoltNet's
 // renderers, chrome/browser/molt_ai/fingerprinting/
 // molt_fingerprinting_browser.cc), media decodes and encodes with portable
 // kernels (moltnet_pixels.h), and on Linux the process's data limit is the

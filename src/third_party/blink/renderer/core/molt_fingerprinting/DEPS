@@ -31,6 +31,7 @@ specific_include_rules = {
   # (moltnet_cpu.h), as bindings/core/v8 and the image decoders reach them.
   "moltnet_cpu(_test)?\.cc": [
     "+gin/public/isolate_holder.h",
+    "+third_party/skia/include/core/SkGraphics.h",
     "+third_party/skia/modules/skcms/skcms.h",
   ],
   # MoltNet's audio clock (moltnet_audio_*): the media sinks, clock and

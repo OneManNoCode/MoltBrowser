@@ -7,6 +7,7 @@
 
 #include "gin/public/isolate_holder.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/modules/skcms/skcms.h"
 #include "v8/include/v8-initialization.h"
 
@@ -24,7 +25,9 @@ void PinUniformMachineBeforeV8() {
   gin::IsolateHolder::SetPhysicalMemoryForIsolates(
       moltnet::kV8HeapPhysicalMemory);
   // Before the first transform: skcms picks its code once, at the first one.
-  skcms_DisableRuntimeCPUDetection();
+  skcms_MoltBrowserEnablePortableMode();
+  // Before anything is drawn (no raster thread exists yet).
+  SkGraphics::MoltBrowserUsePortableRasterPipeline();
 }
 
 }  // namespace blink::molt_fingerprinting
