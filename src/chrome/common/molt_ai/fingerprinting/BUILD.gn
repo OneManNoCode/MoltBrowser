@@ -38,4 +38,10 @@ source_set("unit_tests") {
     sources += [ "molt_data_limit_unittest.cc" ]
     deps += [ "//sandbox/policy" ]
   }
+  if (is_win) {
+    # MoltNet renderers' job memory limit
+    # (sandbox/policy/win/molt_job_memory_limit.h).
+    sources += [ "molt_job_memory_limit_unittest.cc" ]
+    deps += [ "//sandbox/policy" ]
+  }
 }

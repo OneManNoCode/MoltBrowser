@@ -4,4 +4,8 @@ specific_include_rules = {
   "molt_data_limit_unittest\.cc": [
     "+sandbox/policy/linux/molt_data_limit.h",
   ],
+  # The same for the Windows sandbox (MoltNet renderers' job memory limit).
+  "molt_job_memory_limit_unittest\.cc": [
+    "+sandbox/policy/win/molt_job_memory_limit.h",
+  ],
 }

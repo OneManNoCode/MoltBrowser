@@ -59,6 +59,7 @@
 #include "sandbox/policy/sandbox_type.h"
 #include "sandbox/policy/switches.h"
 #include "sandbox/policy/win/lpac_capability.h"
+#include "sandbox/policy/win/molt_job_memory_limit.h"  // MoltBrowser
 #include "sandbox/policy/win/sandbox_diagnostics.h"
 #include "sandbox/win/src/app_container.h"
 #include "sandbox/win/src/process_mitigations.h"
@@ -575,6 +576,16 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
       result != SBOX_ALL_OK) {
     return result;
   }
+
+#if defined(ARCH_CPU_64_BITS)
+  // MoltBrowser: a MoltNet renderer may commit the same memory on every
+  // machine, 8 GiB instead of 1 TB (win/molt_job_memory_limit.h).
+  if (sandbox_type == Sandbox::kRenderer &&
+      molt_win::IsMoltNetRenderer(cmd_line)) {
+    config->SetJobMemoryLimit(
+        static_cast<size_t>(molt_win::kMoltNetRendererJobMemoryLimit));
+  }
+#endif
 
   if (sandbox_type == Sandbox::kGpu) {
     config->SetLockdownDefaultDacl();
