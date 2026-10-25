@@ -200,6 +200,12 @@ void Parse(Metadata& metadata, const SkData* data) {
             rust_exif::ExifMetadata rustMeta;
             if (rust_exif::parse_exif(
                         rust::Slice<const uint8_t>(data->bytes(), data->size()), rustMeta)) {
+                // MoltBrowser: the headroom from the portable power of 2 in MoltNet
+                // (include/private/SkMoltBrowserMath.h); Rust's powf is the C library's.
+                if (rustMeta.has_hdr_headroom && SkMoltBrowserMath::IsPortable()) {
+                    rustMeta.hdr_headroom =
+                            SkMoltBrowserMath::Pow(2.f, rustMeta.hdr_headroom_log2);
+                }
                 rust_exif::ToSkExifMetadata(rustMeta, &metadata);
             }
         }

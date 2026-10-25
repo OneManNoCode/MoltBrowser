@@ -61,7 +61,14 @@ fn read_i32(data: &[u8], off: usize, endianness: Endianness) -> Option<i32> {
 
 /// Computes Apple HDR headroom from the raw MakerNote IFD bytes.
 /// Formula: <https://developer.apple.com/documentation/appkit/images_and_pdf/applying_apple_hdr_effect_to_your_photos>
+#[cfg(test)]
 fn parse_apple_hdr_headroom(data: &[u8]) -> Option<f32> {
+    parse_apple_hdr_stops(data).map(|stops| f32::powf(2.0, stops))
+}
+
+/// MoltBrowser: the headroom's base-2 logarithm (the formula's stops, at
+/// least 0), which SkExif raises 2 to with the portable functions in MoltNet.
+fn parse_apple_hdr_stops(data: &[u8]) -> Option<f32> {
     // The Apple MakerNote is big-endian only. No little-endian images using
     // this data have been observed (matches the comment in SkExif.cpp).
     if !data.starts_with(APPLE_MAKER_NOTE_SIG) {
@@ -127,7 +134,7 @@ fn parse_apple_hdr_headroom(data: &[u8]) -> Option<f32> {
             -0.303 * maker48 + 2.303
         }
     };
-    Some(f32::powf(2.0, stops.max(0.0)))
+    Some(stops.max(0.0))
 }
 
 fn parse_ifd(
@@ -241,9 +248,11 @@ fn parse_ifd(
                 let off = val_field as usize;
                 let len = cnt as usize;
                 if let Some(bytes) = data.get(off..off + len) {
-                    if let Some(h) = parse_apple_hdr_headroom(bytes) {
+                    if let Some(stops) = parse_apple_hdr_stops(bytes) {
                         out.has_hdr_headroom = true;
-                        out.hdr_headroom = h;
+                        out.hdr_headroom = f32::powf(2.0, stops);
+                        // MoltBrowser: see ExifMetadata::hdr_headroom_log2.
+                        out.hdr_headroom_log2 = stops;
                     }
                 }
             }
@@ -429,6 +438,7 @@ mod tests {
             origin: 0,
             has_hdr_headroom: false,
             hdr_headroom: 0.0,
+            hdr_headroom_log2: 0.0,
             has_resolution_unit: false,
             resolution_unit: 0,
             has_x_resolution: false,

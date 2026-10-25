@@ -26,6 +26,10 @@ mod ffi {
         /// See: https://developer.apple.com/documentation/appkit/images_and_pdf/applying_apple_hdr_effect_to_your_photos
         has_hdr_headroom: bool,
         hdr_headroom: f32,
+        /// MoltBrowser: the base-2 logarithm of `hdr_headroom` (the formula's
+        /// stops), which SkExif raises 2 to with the portable functions in
+        /// MoltNet's renderers (include/private/SkMoltBrowserMath.h).
+        hdr_headroom_log2: f32,
 
         /// Resolution unit (EXIF tag 0x0128): 2 = inch, 3 = centimeter.
         has_resolution_unit: bool,
@@ -63,6 +67,7 @@ pub fn parse_exif(data: &[u8], out: &mut ffi::ExifMetadata) -> bool {
         origin: 0,
         has_hdr_headroom: false,
         hdr_headroom: 0.0,
+        hdr_headroom_log2: 0.0,
         has_resolution_unit: false,
         resolution_unit: 0,
         has_x_resolution: false,
@@ -96,6 +101,7 @@ mod tests {
             origin: 0,
             has_hdr_headroom: false,
             hdr_headroom: 0.0,
+            hdr_headroom_log2: 0.0,
             has_resolution_unit: false,
             resolution_unit: 0,
             has_x_resolution: false,
