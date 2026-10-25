@@ -496,7 +496,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **MoltNet hides your touchscreen, memory, CPU and exact system.** MoltNet
   pages now all see the same mouse-and-keyboard desktop: no touch points, a
   fine pointer that can hover and no touch-event detection (your
-  touchscreen still works), 8 GB of memory and an unknown CPU class. Sites
+  touchscreen still works), 4 GB of memory and an unknown CPU class. Sites
   can no longer ask for your screen's pixel density, viewport, memory,
   network speed, exact OS version, CPU architecture or exact browser
   version through client hints: MoltNet only sends the basic browser,
@@ -578,7 +578,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   one camera and one output device, and asking for a camera or microphone
   the machine doesn't have shows the usual permission prompt instead of
   failing at once; and `performance.memory` reports rounded sizes,
-  refreshed every 20 minutes, with an 8 GB machine's heap limit. Media
+  refreshed every 20 minutes, with a 4 GB machine's heap limit. Media
   sound reaches your speakers a little later (about 60 ms at first,
   settling to 15 to 35 ms), and with Bluetooth headphones a video's sound
   trails its picture by the headset's delay. Regular and incognito windows

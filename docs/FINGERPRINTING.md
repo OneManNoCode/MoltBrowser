@@ -3601,10 +3601,10 @@ the ones writes are checked against, so a page that writes until it gets
 Blob limits that Chromium can scale with memory pressure (an experiment,
 off by default at 156) stay fixed.
 
-**Why these values.** MoltNet reports 8 GB of memory, but the limits hold
-real data in the browser and storage processes, so they must be safe on
-the smallest machines MoltNet runs on. The totals are Chromium's own rules
-for a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
+**Why these values.** The limits hold real data in the browser and
+storage processes, so they must be safe on the smallest machines MoltNet
+runs on, which is also the machine MoltNet reports (4 GB of memory). The
+totals are Chromium's own rules for a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
 Incognito's range (15% of 4 GiB, 614 MiB) is 600 MiB, and blobs get a
 fifth of 4 GiB (819 MiB), Chromium's rule for 32-bit desktops and
 ChromeOS. Each site gets a tenth of the pool: Chromium's third per
