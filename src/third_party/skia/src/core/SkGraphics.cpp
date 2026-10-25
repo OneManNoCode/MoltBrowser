@@ -30,6 +30,15 @@ void SkGraphics::Init() {
     SkOpts::Init_Swizzler();
 }
 
+namespace SkOpts {
+// MoltBrowser: src/opts/SkOpts_moltbrowser.cpp.
+void Init_MoltBrowserPortable();
+}  // namespace SkOpts
+
+void SkGraphics::MoltBrowserUsePortableRasterPipeline() {
+    SkOpts::Init_MoltBrowserPortable();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkGraphics::DumpMemoryStatistics(SkTraceMemoryDump* dump) {

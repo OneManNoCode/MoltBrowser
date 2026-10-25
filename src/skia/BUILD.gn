@@ -1086,6 +1086,11 @@ skia_source_set("skia_opts") {
   cflags = []
   defines = []
 
+  # MoltBrowser: the raster pipeline MoltNet's renderers use, the same pixels
+  # on every CPU (SkGraphics::MoltBrowserUsePortableRasterPipeline). Built
+  # at the baseline, like SkOpts.cpp.
+  sources = [ "//third_party/skia/src/opts/SkOpts_moltbrowser.cpp" ]
+
   deps = [ "//base" ]
 
   if (current_cpu == "x86" || current_cpu == "x64") {

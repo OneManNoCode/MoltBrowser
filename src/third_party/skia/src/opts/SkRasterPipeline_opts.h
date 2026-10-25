@@ -212,18 +212,30 @@ namespace SK_OPTS_NS {
     using U8  = V<uint8_t >;
 
     // We polyfill a few routines that Clang doesn't build into ext_vector_types.
+#if !defined(SKRP_MOLTBROWSER_PORTABLE)
     SI F   min(F a, F b)     { return vminq_f32(a,b); }
+#endif
     SI I32 min(I32 a, I32 b) { return vminq_s32(a,b); }
     SI U32 min(U32 a, U32 b) { return vminq_u32(a,b); }
+#if !defined(SKRP_MOLTBROWSER_PORTABLE)
     SI F   max(F a, F b)     { return vmaxq_f32(a,b); }
+#endif
     SI I32 max(I32 a, I32 b) { return vmaxq_s32(a,b); }
     SI U32 max(U32 a, U32 b) { return vmaxq_u32(a,b); }
 
     SI F   abs_  (F v)       { return vabsq_f32(v); }
     SI I32 abs_  (I32 v)     { return vabsq_s32(v); }
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: exact, as the portable x86 code computes them (there the
+    // estimate instructions differ between CPU vendors).
+    SI F   rcp_approx(F v)   { return 1.0f / v; }
+    SI F   rcp_precise(F v)  { return 1.0f / v; }
+    SI F   rsqrt_approx(F v) { return 1.0f / vsqrtq_f32(v); }
+#else
     SI F   rcp_approx(F v)   { auto e = vrecpeq_f32(v);  return vrecpsq_f32 (v,e  ) * e; }
     SI F   rcp_precise(F v)  { auto e = rcp_approx(v);   return vrecpsq_f32 (v,e  ) * e; }
     SI F   rsqrt_approx(F v) { auto e = vrsqrteq_f32(v); return vrsqrtsq_f32(v,e*e) * e; }
+#endif
 
     SI U16 pack(U32 v)       { return __builtin_convertvector(v, U16); }
     SI U8  pack(U16 v)       { return __builtin_convertvector(v,  U8); }
@@ -231,12 +243,27 @@ namespace SK_OPTS_NS {
     SI F   if_then_else(I32 c, F   t, F   e) { return vbslq_f32((U32)c,t,e); }
     SI I32 if_then_else(I32 c, I32 t, I32 e) { return vbslq_s32((U32)c,t,e); }
 
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: x86's minps/maxps semantics (the second operand when either
+    // is NaN or both are zero), not NEON's NaN-propagating fmin/fmax.
+    SI F   min(F a, F b)     { return if_then_else(a < b, a, b); }
+    SI F   max(F a, F b)     { return if_then_else(a > b, a, b); }
+#endif
+
     #if defined(SK_CPU_ARM64)
         SI bool any(I32 c) { return vmaxvq_u32((U32)c) != 0; }
         SI bool all(I32 c) { return vminvq_u32((U32)c) != 0; }
 
+    #if defined(SKRP_MOLTBROWSER_PORTABLE)
+        // MoltBrowser: a separate multiply and add, rounded twice, as x86's
+        // baseline code computes them (the portable TU is built with
+        // contraction off).
+        SI F     mad(F f, F m, F a) { return a + f*m; }
+        SI F    nmad(F f, F m, F a) { return a - f*m; }
+    #else
         SI F     mad(F f, F m, F a) { return vfmaq_f32(a,f,m); }
         SI F    nmad(F f, F m, F a) { return vfmsq_f32(a,f,m); }
+    #endif
         SI F  floor_(F v)           { return vrndmq_f32(v); }
         SI F   ceil_(F v)           { return vrndpq_f32(v); }
         SI F   sqrt_(F v)           { return vsqrtq_f32(v); }
@@ -967,15 +994,28 @@ namespace SK_OPTS_NS {
 
     SI F   mad(F f, F m, F a)  { return a+f*m;              }
     SI F  nmad(F f, F m, F a)  { return a-f*m;              }
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: the sign bit cleared, NaNs too, as NEON's fabs does.
+    SI F   abs_(F v)           { return sk_bit_cast<F>(sk_bit_cast<I32>(v) & 0x7fffffff); }
+#else
     SI F   abs_(F v)           { return _mm_and_ps(v, 0-v); }
+#endif
 #if defined(SKRP_CPU_SSE41) || defined(SKRP_CPU_AVX)
     SI I32 abs_(I32 v)         { return (I32)_mm_abs_epi32((__m128i)v); }
 #else
     SI I32 abs_(I32 v)         { return max(v, -v); }
 #endif
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: exact, not rcpps/rsqrtps, whose estimates differ between CPU
+    // vendors; what the portable NEON code computes too.
+    SI F   rcp_approx(F v)     { return 1.0f / v; }
+    SI F   rcp_precise (F v)   { return 1.0f / v; }
+    SI F   rsqrt_approx(F v)   { return 1.0f / _mm_sqrt_ps(v); }
+#else
     SI F   rcp_approx(F v)     { return _mm_rcp_ps  (v);    }  // use rcp_fast instead
     SI F   rcp_precise (F v)   { F e = rcp_approx(v); return e * (2.0f - v * e); }
     SI F   rsqrt_approx(F v)   { return _mm_rsqrt_ps(v);    }
+#endif
     SI F    sqrt_(F v)         { return _mm_sqrt_ps (v);    }
 
     // The compiler often scalarizes integer division into scalar idiv loops because
@@ -1062,12 +1102,29 @@ namespace SK_OPTS_NS {
     SI bool any(I32 c) { return _mm_movemask_ps(sk_bit_cast<F>(c)) != 0b0000; }
     SI bool all(I32 c) { return _mm_movemask_ps(sk_bit_cast<F>(c)) == 0b1111; }
 
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: what roundps and NEON's frintm/frintp give for the values
+    // the conversion through int32 gets wrong: from 2^23 on (and NaN) a float
+    // is its own floor and ceiling, and a zero result keeps the sign of `v`.
+    SI F moltbrowser_exact_rounding(F v, F rounded) {
+        const I32 sign = sk_bit_cast<I32>(v) & (int32_t)0x80000000;
+        rounded = if_then_else(rounded == 0.0f, sk_bit_cast<F>(sign), rounded);
+        return if_then_else(sk_bit_cast<F>(sk_bit_cast<I32>(v) & 0x7fffffff) < 8388608.0f,
+                            rounded, v);
+    }
+#endif
+
     SI F floor_(F v) {
     #if defined(SKRP_CPU_SSE41) || defined(SKRP_CPU_AVX)
         return _mm_floor_ps(v);
     #else
         F roundtrip = _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
+      #if defined(SKRP_MOLTBROWSER_PORTABLE)
+        return moltbrowser_exact_rounding(
+                v, roundtrip - if_then_else(roundtrip > v, F() + 1, F() + 0));
+      #else
         return roundtrip - if_then_else(roundtrip > v, F() + 1, F() + 0);
+      #endif
     #endif
     }
 
@@ -1076,7 +1133,12 @@ namespace SK_OPTS_NS {
         return _mm_ceil_ps(v);
     #else
         F roundtrip = _mm_cvtepi32_ps(_mm_cvttps_epi32(v));
+      #if defined(SKRP_MOLTBROWSER_PORTABLE)
+        return moltbrowser_exact_rounding(
+                v, roundtrip + if_then_else(roundtrip < v, F() + 1, F() + 0));
+      #else
         return roundtrip + if_then_else(roundtrip < v, F() + 1, F() + 0);
+      #endif
     #endif
     }
 
@@ -1561,6 +1623,15 @@ SI constexpr U32 U32_(uint32_t x) { return x + U32(); }
 static constexpr F F0 = F_(0.0f),
                    F1 = F_(1.0f);
 
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+// MoltBrowser: one NaN for every NaN. x86 and Arm generate NaNs of opposite
+// signs (for inf - inf, 0 * inf, ...), and where the pipeline reads a value's
+// sign bit (strip_sign) or stores floats, that sign would reach the pixels.
+SI F moltbrowser_canonical_nan(F x) {
+    return if_then_else(x != x, sk_bit_cast<F>(U32_(0x7fc00000)), x);
+}
+#endif
+
 #if !defined(SKRP_CPU_SCALAR)
     SI F min(F a, float b) { return min(a, F_(b)); }
     SI F min(float a, F b) { return min(F_(a), b); }
@@ -1664,14 +1735,30 @@ SI F from_half(U16 h) {
         s   = sem & 0x8000,
          em = sem ^ s;
 
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: exactly as F16C, AVX-512 and NEON convert: denormal halves
+    // scaled, infinities and NaNs (quieted) kept.
+    U32 norm   = (s<<16) + (em<<13) + ((127-15)<<23),
+        denorm = (s<<16) | sk_bit_cast<U32>(cast(em) * (1.0f/16777216.0f)),
+        mant   = em & 0x3ff,
+        quiet  = (U32)if_then_else((I32)mant != 0, I32_(0x200), I32_(0)),
+        infnan = (s<<16) | 0x7f800000 | ((mant | quiet) << 13);
+    return sk_bit_cast<F>((U32)if_then_else((I32)em < 0x0400, (I32)denorm,
+                                            if_then_else((I32)em >= 0x7c00,
+                                                         (I32)infnan, (I32)norm)));
+#else
     // Convert to 1-8-23 float with 127 bias, flushing denorm halfs (including zero) to zero.
     auto denorm = (I32)em < 0x0400;      // I32 comparison is often quicker, and always safe here.
     return if_then_else(denorm, F0
                               , sk_bit_cast<F>( (s<<16) + (em<<13) + ((127-15)<<23) ));
 #endif
+#endif
 }
 
 SI U16 to_half(F f) {
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    f = moltbrowser_canonical_nan(f);  // MoltBrowser: the same NaN everywhere.
+#endif
 #if defined(SKRP_CPU_NEON) && defined(SK_CPU_ARM64)
     return (U16)vcvt_f16_f32(f);
 
@@ -1687,10 +1774,23 @@ SI U16 to_half(F f) {
         s   = sem & 0x80000000,
          em = sem ^ s;
 
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: exactly as F16C, AVX-512 and NEON convert: rounded to
+    // nearest even, with denormal halves, infinity for what is too large, and
+    // quiet NaNs.
+    U32 norm   = (em - ((127-15)<<23) + 0xfff + ((em>>13) & 1)) >> 13,
+        denorm = sk_bit_cast<U32>(sk_bit_cast<F>(em) + 0.5f) - 0x3f000000,
+        nan    = 0x7e00 | ((em>>13) & 0x3ff);
+    norm = (U32)if_then_else((I32)norm > 0x7c00, I32_(0x7c00), (I32)norm);
+    U32 half = (U32)if_then_else((I32)em < 0x38800000, (I32)denorm, (I32)norm);
+    half = (U32)if_then_else((I32)em > 0x7f800000, (I32)nan, (I32)half);
+    return pack(half | (s>>16));
+#else
     // Convert to 1-5-10 half with 15 bias, flushing denorm halfs (including zero) to zero.
     auto denorm = (I32)em < 0x38800000;  // I32 comparison is often quicker, and always safe here.
     return pack((U32)if_then_else(denorm, I32_(0)
                                         , (I32)((s>>16) + (em>>13) - ((127-15)<<10))));
+#endif
 #endif
 }
 
@@ -2988,6 +3088,9 @@ HIGHP_STAGE(byte_tables, const SkRasterPipelineContexts::TablesCtx* tables) {
 }
 
 SI F strip_sign(F x, U32* sign) {
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    x = moltbrowser_canonical_nan(x);  // MoltBrowser: no NaN's sign or payload.
+#endif
     U32 bits = sk_bit_cast<U32>(x);
     *sign = bits & 0x80000000;
     return sk_bit_cast<F>(bits ^ *sign);
@@ -3561,6 +3664,13 @@ HIGHP_STAGE(gather_f32, const SkRasterPipelineContexts::GatherCtx* ctx) {
 }
 HIGHP_STAGE(store_f32, const SkRasterPipelineContexts::MemoryCtx* ctx) {
     auto ptr = ptr_at_xy<float>(ctx, 4*dx,4*dy);
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: the same NaN everywhere.
+    r = moltbrowser_canonical_nan(r);
+    g = moltbrowser_canonical_nan(g);
+    b = moltbrowser_canonical_nan(b);
+    a = moltbrowser_canonical_nan(a);
+#endif
     store4(ptr, r,g,b,a);
 }
 
@@ -5707,6 +5817,10 @@ SI U16 div255(U16 v) {
     // With NEON we can compute [2] just as fast as [3], so let's be correct.
     // First we compute v + ((v+128)>>8), then one more round of (...+128)>>8 to finish up:
     return vrshrq_n_u16(vrsraq_n_u16(v, v, 8), 8);
+#elif defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: always the right answer, NEON's ([2], as div255_accurate).
+    v += 128;
+    return (v+(v/256))/256;
 #else
     // Otherwise, use [3], which is never wrong by more than 1:
     return (v+255)/256;
@@ -5845,6 +5959,11 @@ SI I32 min_intr(I32 x, I32 y) {
 SI U16 max_intr(U16 x, U16 y) { return (U16)_mm256_max_epu16((__m256i)x, (__m256i)y); }
 SI U16 min_intr(U16 x, U16 y) { return (U16)_mm256_min_epu16((__m256i)x, (__m256i)y); }
 #elif defined(SKRP_CPU_SSE2) || defined(SKRP_CPU_SSE41) || defined(SKRP_CPU_AVX)
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+// MoltBrowser: the generic definitions NEON uses, for NaN and equal zeros too.
+SI F max_intr(F x, F y) { return max(x, y); }
+SI F min_intr(F x, F y) { return min(x, y); }
+#else
 SI F max_intr(F x, F y) {
     __m128 x_lo, x_hi, y_lo, y_hi;
     split(x, &x_lo, &x_hi);
@@ -5857,6 +5976,7 @@ SI F min_intr(F x, F y) {
     split(y, &y_lo, &y_hi);
     return join<F>(_mm_min_ps(x_lo, y_lo), _mm_min_ps(x_hi, y_hi));
 }
+#endif
 #if defined(SKRP_CPU_SSE41) || defined(SKRP_CPU_AVX)
 SI I32 max_intr(I32 x, I32 y) {
     __m128i x_lo, x_hi, y_lo, y_hi;
@@ -5937,7 +6057,10 @@ SI U32 trunc_(F x) { return (U32)cast<I32>(x); }
 
 // Use approximate instructions and one Newton-Raphson step to calculate 1/x.
 SI F rcp_precise(F x) {
-#if defined(SKRP_CPU_ML4)
+#if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: exact on every CPU (the estimates differ between vendors).
+    return 1.0f / x;
+#elif defined(SKRP_CPU_ML4)
     F e = _mm512_rcp14_ps(x);
     return _mm512_fnmadd_ps(x, e, _mm512_set1_ps(2.0f)) * e;
 #elif defined(SKRP_CPU_AVX2)
@@ -6030,7 +6153,17 @@ SI F floor_(F x) {
     return join<F>(__lsx_vfrintrm_s(lo), __lsx_vfrintrm_s(hi));
 #else
     F roundtrip = cast<F>(cast<I32>(x));
+  #if defined(SKRP_MOLTBROWSER_PORTABLE)
+    // MoltBrowser: as frintm rounds (see moltbrowser_exact_rounding above):
+    // from 2^23 on (and NaN) its own floor, a zero result with x's sign.
+    F rounded = roundtrip - if_then_else(roundtrip > x, F_(1), F_(0));
+    const I32 sign = sk_bit_cast<I32>(x) & (int32_t)0x80000000;
+    rounded = if_then_else(rounded == 0.0f, sk_bit_cast<F>(sign), rounded);
+    return if_then_else(sk_bit_cast<F>(sk_bit_cast<I32>(x) & 0x7fffffff) < 8388608.0f,
+                        rounded, x);
+  #else
     return roundtrip - if_then_else(roundtrip > x, F_(1), F_(0));
+  #endif
 #endif
 }
 
