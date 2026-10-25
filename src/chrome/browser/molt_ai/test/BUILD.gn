@@ -22,6 +22,7 @@
 #                        --gtest_filter='PdfTextScraperTest.*'
 
 import("//testing/test.gni")
+import("//third_party/llama_cpp/llama_cpp.gni")
 
 test("molt_ai_unittests") {
   deps = [
@@ -81,5 +82,18 @@ test("molt_ai_unittests") {
   # ggml's CPU backend into this test binary only).
   if (current_cpu == "x64" && !is_android && !is_ios) {
     deps += [ "//chrome/services/molt_ai/inference:x86_cpu_kernels_unittests" ]
+  }
+
+  # The GPU driver warm-up of the inference sandbox's pre-lockdown step
+  # (content/utility/on_device_model/molt_gpu_driver_warmup.h).
+  if (!is_android && !is_ios) {
+    deps +=
+        [ "//content/utility/on_device_model:molt_gpu_driver_warmup_unittests" ]
+  }
+
+  # ggml-vulkan's packed shaders (GN switch molt_llama_vulkan).
+  if (molt_llama_vulkan) {
+    deps +=
+        [ "//chrome/services/molt_ai/inference:vulkan_shader_pack_unittests" ]
   }
 }

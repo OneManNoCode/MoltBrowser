@@ -569,6 +569,17 @@ static bool ggml_vk_roll_bk_loop(const uint32_t * code, size_t word_count, std::
     return true;
 }
 
+#if defined(GGML_VULKAN_MOLTBROWSER)
+// MoltBrowser: the embedded shaders are packed (chromium/ggml-vulkan-shader-pack.h,
+// chromium/ggml-vulkan-moltbrowser.cpp): the SPIR-V of one variant, inflated.
+// Throws std::runtime_error, as a Vulkan error would, if it can't (a variant
+// this build left out, or a packing mistake).
+std::vector<uint32_t> ggml_vk_moltbrowser_unpack_shader(const void * data, size_t size);
+// MoltBrowser: false if |op| or one of its sources has a weight type whose
+// shaders this build left out (BUILD.gn _ggml_vk_dropped_types).
+bool ggml_vk_moltbrowser_op_types_built(const ggml_tensor * op);
+#endif
+
 static void ggml_vk_create_pipeline_func(vk_device& device, vk_pipeline& pipeline, size_t spv_size, const void* spv_data, const std::string entrypoint,
                                          uint32_t parameter_count, std::array<uint32_t, 3> wg_denoms, std::vector<uint32_t> specialization_constants,
                                          bool disable_robustness, bool require_full_subgroups, uint32_t required_subgroup_size) {
@@ -578,6 +589,14 @@ static void ggml_vk_create_pipeline_func(vk_device& device, vk_pipeline& pipelin
     GGML_ASSERT(parameter_count > 0);
     GGML_ASSERT(parameter_count <= MAX_PARAMETER_COUNT);
     GGML_ASSERT(wg_denoms[0] > 0 && wg_denoms[1] > 0 && wg_denoms[2] > 0); // NOLINT
+
+#if defined(GGML_VULKAN_MOLTBROWSER)
+    // MoltBrowser: everything below sees the variant's SPIR-V as the generator
+    // wrote it.
+    const std::vector<uint32_t> moltbrowser_spirv = ggml_vk_moltbrowser_unpack_shader(spv_data, spv_size);
+    spv_data = moltbrowser_spirv.data();
+    spv_size = moltbrowser_spirv.size() * sizeof(uint32_t);
+#endif
 
     vk::ShaderModuleCreateInfo shader_module_create_info({}, spv_size, reinterpret_cast<const uint32_t *>(spv_data));
 
@@ -15440,6 +15459,14 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
     if (!tensor_size_supported(ggml_nbytes(op))) {
         return false;
     }
+
+#if defined(GGML_VULKAN_MOLTBROWSER)
+    // MoltBrowser: ops on weight types whose shaders this build left out stay
+    // on the CPU.
+    if (!ggml_vk_moltbrowser_op_types_built(op)) {
+        return false;
+    }
+#endif
 
     switch (op->op) {
         case GGML_OP_UNARY:
