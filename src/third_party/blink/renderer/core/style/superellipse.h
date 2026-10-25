@@ -59,8 +59,9 @@ class Superellipse {
 
   constexpr double Exponent() const {
     // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
-    return gfx::molt_math::Pow(2, ClampTo<float>(param_, -kHighCurvatureThreshold,
-                                                 kHighCurvatureThreshold));
+    return gfx::molt_math::Pow(2,
+                               ClampTo<float>(param_, -kHighCurvatureThreshold,
+                                              kHighCurvatureThreshold));
   }
 
   bool operator==(const Superellipse& other) const = default;

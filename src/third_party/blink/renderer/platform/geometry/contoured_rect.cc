@@ -181,12 +181,9 @@ Corner ContouredRect::Corner::AlignedToOrigin(const Corner& origin,
                               ? edge_inset_end
                               : end_radius - v3().Length();
   // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
-  const float superellipse_parameter =
-      gfx::molt_math::Log2(origin.Curvature());
-  const float exponent =
-      gfx::molt_math::Exp2(std::abs(superellipse_parameter));
-  const float convex_half_corner =
-      gfx::molt_math::Pow(0.5f, 1.0f / exponent);
+  const float superellipse_parameter = gfx::molt_math::Log2(origin.Curvature());
+  const float exponent = gfx::molt_math::Exp2(std::abs(superellipse_parameter));
+  const float convex_half_corner = gfx::molt_math::Pow(0.5f, 1.0f / exponent);
   const float half_corner = superellipse_parameter < 0
                                 ? 1.0f - convex_half_corner
                                 : convex_half_corner;
@@ -282,9 +279,9 @@ Corner ContouredRect::Corner::AlignedToOrigin(const Corner& origin,
 
 // static
 float ContouredRect::Corner::CurvatureForHalfCorner(float half_corner) {
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
   return half_corner >= 1   ? ContouredRect::CornerCurvature::kStraight
          : half_corner <= 0 ? ContouredRect::CornerCurvature::kNotch
-                            // MoltBrowser: portable in MoltNet.
                             : gfx::molt_math::Log(0.5) /
                                   gfx::molt_math::Log(half_corner);
 }

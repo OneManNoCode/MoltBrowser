@@ -144,8 +144,7 @@ float BasicShapeCircle::FloatValueForRadiusInBox(
     return FloatValueForLength(
         radius_.Value(),
         // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
-        gfx::molt_math::Hypot(box_size.width(), box_size.height()) /
-            sqrtf(2));
+        gfx::molt_math::Hypot(box_size.width(), box_size.height()) / sqrtf(2));
   }
 
   if (radius_.GetType() == BasicShapeRadius::kClosestCorner) {

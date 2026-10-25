@@ -16,8 +16,8 @@
 #include "third_party/blink/renderer/platform/geometry/skia_geometry_utils.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
-#include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+#include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/geometry/vector2d_f.h"
@@ -46,9 +46,8 @@ std::array<gfx::Vector2dF, 3> ApproximateSuperellipseHalfCornerAsBezierCurve(
   DCHECK_GE(curvature, 1);
   // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
   const float s = gfx::molt_math::Log2(curvature);
-  const float slope =
-      p[0] +
-      (p[6] - p[0]) * 0.5 * (1 + gfx::molt_math::Tanh(p[5] * (s - p[1])));
+  const float slope = p[0] + (p[6] - p[0]) * 0.5 *
+                                 (1 + gfx::molt_math::Tanh(p[5] * (s - p[1])));
   const float base = 1 / (1 + gfx::molt_math::Exp(-slope * (0 - p[1])));
   const float logistic = 1 / (1 + gfx::molt_math::Exp(-slope * (s - p[1])));
 
@@ -166,8 +165,7 @@ std::optional<SkPath> CornerClipOutPath(const Corner& origin,
                               ? edge_inset_end
                               : end_radius - target.v3().Length();
   // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
-  const float superellipse_parameter =
-      gfx::molt_math::Log2(origin.Curvature());
+  const float superellipse_parameter = gfx::molt_math::Log2(origin.Curvature());
   const float inset_difference =
       std::clamp(end_inset - start_inset, -start_radius, end_radius);
   if (superellipse_parameter <= 0 &&
