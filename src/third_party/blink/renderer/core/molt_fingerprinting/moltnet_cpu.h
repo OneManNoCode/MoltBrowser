@@ -54,7 +54,9 @@
 //                                conversion of read-back pixels) stages that
 //                                compute the same pixels on every CPU, x86-64
 //                                and Arm alike: no fused multiply-add, no
-//                                reciprocal estimates, exact half floats
+//                                reciprocal estimates, exact half floats,
+//                                and x86-64's arithmetic for drawing pixels
+//                                with alpha over others on Arm too
 //                                (SkGraphics::
 //                                MoltBrowserUsePortableRasterPipeline)
 //

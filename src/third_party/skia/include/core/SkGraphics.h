@@ -32,8 +32,9 @@ public:
     /**
      *  MoltBrowser: replaces the raster pipeline's stages with ones that
      *  compute the same pixels on every CPU, x86-64 and Arm alike (no fused
-     *  multiply-add, no reciprocal estimates, exact half floats;
-     *  src/opts/SkOpts_moltbrowser.cpp). Call once, before anything is drawn
+     *  multiply-add, no reciprocal estimates, exact half floats), and the
+     *  row blitter for pixels with alpha with x86-64's arithmetic
+     *  (src/opts/SkOpts_moltbrowser.cpp). Call once, before anything is drawn
      *  (MoltNet's renderers, which skip Init()'s CPU-specific code).
      */
     static void MoltBrowserUsePortableRasterPipeline();
