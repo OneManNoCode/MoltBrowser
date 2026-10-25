@@ -3473,11 +3473,6 @@ so the result is the same on every machine. (`ImageDecoder` frames are
 decoded pixels, not drawn ones: [pixels and encoded
 bytes](#moltnet-pixels-and-encoded-bytes).)
 
-Not covered: a page that captures its own tab (`getDisplayMedia()`, after
-the user picks the tab in a prompt) reads what the GPU composited, which
-depends on the GPU and its driver like every GPU-drawn pixel; MoltNet
-doesn't make that uniform.
-
 **What was already the same.** Measured with Chromium 156's code, built
 with Chromium's compiler and flags for x86-64 and arm64:
 
@@ -3579,8 +3574,8 @@ theirs too. So do:
   dark-mode filtered).
 * Skia in the GPU process (GPU rasterization and accelerated canvases,
   including `SkGeometry`'s angle measure for the GPU tessellator): what it
-  draws depends on the GPU anyway, and reaches a page only through the
-  farbled read-backs above.
+  draws depends on the GPU anyway, and a page reads accelerated canvases
+  back through the farbled read-backs above.
 * Encoders' metadata: the serialization of gain-map and AGTM metadata
   (`log2`, `atan`), which no MoltNet page reaches.
 * `ScreenDetailed.hdrHeadroom` (`getScreenDetails()` is denied in
