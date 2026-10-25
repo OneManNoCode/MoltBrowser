@@ -31,6 +31,7 @@
 #include "net/base/request_priority.h"
 #include "net/disk_cache/buildflags.h"
 #include "net/disk_cache/cache_file.h"
+#include "net/disk_cache/memory/molt_mem_backend_budget_policy.h"  // MoltBrowser
 
 namespace base {
 class FilePath;
@@ -359,6 +360,11 @@ class NET_EXPORT Backend {
   // minimum possible size. Implementations MAY adjust the value to within their
   // own limits. Implementations MAY trigger evictions.
   virtual void SetMaxBytes(base::ByteSize max_bytes) = 0;
+
+  // MoltBrowser: per-site limits, for a backend that keeps them (the
+  // in-memory one: net/disk_cache/memory/molt_mem_backend_budget_policy.h);
+  // the others ignore them.
+  virtual void MoltSetPerSiteBudget(const MoltCacheSiteBudget& budget) {}
 
   // Returns the actual maximum size the cache can grow to in bytes.
   // If an automatic size was chosen due to being set to 0, this returns

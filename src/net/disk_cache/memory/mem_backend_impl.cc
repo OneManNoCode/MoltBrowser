@@ -13,6 +13,7 @@
 #include "base/byte_size.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "base/location.h"  // MoltBrowser
 #include "base/logging.h"
 #include "base/memory_coordinator/memory_consumer.h"
 #include "base/memory_coordinator/memory_coordinator_features.h"
@@ -115,6 +116,10 @@ std::unique_ptr<MemBackendImpl> MemBackendImpl::CreateBackend(
 }
 
 int64_t MemBackendImpl::MaxFileSize() const {
+  // MoltBrowser: with per-site limits, the budget's (half a share).
+  if (MoltHasBudget()) {
+    return molt_budget_.max_entry_bytes;
+  }
   return max_size_ / 8;
 }
 
@@ -143,6 +148,111 @@ void MemBackendImpl::ModifyStorageSize(int32_t delta) {
 
 bool MemBackendImpl::HasExceededStorageSize() const {
   return current_size_ > current_max_size_;
+}
+
+// MoltBrowser: per-site limits (molt_mem_backend_budget_policy.h). Without
+// them, Chromium's ModifyStorageSize() and HasExceededStorageSize().
+void MemBackendImpl::ModifyStorageSize(const MemEntryImpl* entry,
+                                       int32_t delta) {
+  if (!MoltHasBudget()) {
+    ModifyStorageSize(delta);
+    return;
+  }
+  const std::string site(MoltSiteOf(entry));
+  current_size_ += delta;
+  auto it = molt_site_size_.find(site);
+  if (it == molt_site_size_.end()) {
+    it = molt_site_size_.emplace(site, 0).first;
+  }
+  it->second += delta;
+  if (it->second <= 0) {
+    molt_site_size_.erase(it);
+  }
+  // Only the writing site's own entries make room for it; nothing is
+  // evicted for the total.
+  if (delta > 0 && MoltCacheSiteOverShare(MoltSiteSize(site), molt_budget_)) {
+    MoltEvictSiteTill(site, MoltCacheSiteEvictionTarget(molt_budget_));
+  }
+}
+
+bool MemBackendImpl::HasExceededStorageSize(const MemEntryImpl* entry) const {
+  if (!MoltHasBudget()) {
+    return HasExceededStorageSize();
+  }
+  return MoltCacheWriteRefused(MoltSiteSize(MoltSiteOf(entry)), current_size_,
+                               molt_budget_);
+}
+
+// static
+std::string_view MemBackendImpl::MoltSiteOf(const MemEntryImpl* entry) {
+  const MemEntryImpl* parent =
+      entry->type() == MemEntryImpl::EntryType::kChild ? entry->parent()
+                                                       : entry;
+  return MoltHttpCacheSiteOfKey(parent->key());
+}
+
+int64_t MemBackendImpl::MoltSiteSize(std::string_view site) const {
+  auto it = molt_site_size_.find(site);
+  return it == molt_site_size_.end() ? 0 : it->second;
+}
+
+void MemBackendImpl::MoltEvictSiteTill(std::string_view site, int64_t target) {
+  // `site` may point into an entry that goes: keep a copy.
+  const std::string own(site);
+  base::LinkNode<MemEntryImpl>* node = lru_list_.head();
+  while (MoltSiteSize(own) > target && node != lru_list_.end()) {
+    MemEntryImpl* candidate = node->value();
+    node = NextSkippingChildren(lru_list_, node);
+    if (MoltSiteOf(candidate) == own && !candidate->InUse()) {
+      candidate->Doom();
+    }
+  }
+}
+
+bool MemBackendImpl::MoltIsExpired(const MemEntryImpl* entry) const {
+  const base::Time now = custom_clock_for_testing_
+                             ? custom_clock_for_testing_->Now()
+                             : base::Time::Now();
+  return MoltCacheEntryExpired((now - entry->GetLastUsed()).InSeconds(),
+                               molt_budget_);
+}
+
+void MemBackendImpl::MoltDropExpiredEntries() {
+  base::LinkNode<MemEntryImpl>* node = lru_list_.head();
+  while (node != lru_list_.end()) {
+    MemEntryImpl* candidate = node->value();
+    node = NextSkippingChildren(lru_list_, node);
+    if (!candidate->InUse() && MoltIsExpired(candidate)) {
+      candidate->Doom();
+    }
+  }
+}
+
+void MemBackendImpl::MoltSetPerSiteBudget(const MoltCacheSiteBudget& budget) {
+  if (!MoltUsesCacheSiteBudget(budget)) {
+    return;
+  }
+  molt_budget_ = budget;
+  // Every entry so far counts against its site (normally there is none
+  // yet: the budget is set when the backend is made).
+  molt_site_size_.clear();
+  for (base::LinkNode<MemEntryImpl>* node = lru_list_.head();
+       node != lru_list_.end(); node = node->next()) {
+    molt_site_size_[std::string(MoltSiteOf(node->value()))] +=
+        node->value()->GetStorageSize();
+  }
+  max_size_ = base::saturated_cast<int32_t>(budget.total_bytes);
+  current_max_size_ = max_size_;
+  if (budget.idle_expiry_seconds > 0 && budget.sweep_interval_seconds > 0) {
+    molt_expiry_sweep_.Start(
+        FROM_HERE, base::Seconds(budget.sweep_interval_seconds),
+        base::BindRepeating(&MemBackendImpl::MoltDropExpiredEntries,
+                            base::Unretained(this)));
+  }
+}
+
+int64_t MemBackendImpl::MoltSiteSizeForTesting(std::string_view site) const {
+  return MoltSiteSize(site);
 }
 
 void MemBackendImpl::SetPostCleanupCallback(base::OnceClosure cb) {
@@ -184,6 +294,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
   auto it = entries_.find(key);
   if (it == entries_.end())
     return EntryResult::MakeError(net::ERR_FAILED);
+
+  // MoltBrowser: with per-site limits, an entry unused for the idle expiry
+  // is gone, whatever other sites did meanwhile.
+  if (MoltHasBudget() && !it->second->InUse() && MoltIsExpired(it->second)) {
+    it->second->Doom();
+    return EntryResult::MakeError(net::ERR_FAILED);
+  }
 
   it->second->Open();
 
@@ -327,6 +444,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
 }
 
 void MemBackendImpl::SetMaxBytes(base::ByteSize max_bytes) {
+  // MoltBrowser: per-site limits are fixed.
+  if (MoltHasBudget()) {
+    return;
+  }
   max_size_ = base::saturated_cast<int32_t>(max_bytes.InBytes());
   if (base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
     current_max_size_ = CalculateTargetMemoryLimit();
@@ -381,7 +502,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
 }
 
 void MemBackendImpl::OnUpdateMemoryLimit() {
-  if (!base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
+  // MoltBrowser: per-site limits don't follow the machine's memory.
+  if (!base::FeatureList::IsEnabled(base::kStatefulMemoryPressure) ||
+      MoltHasBudget()) {
     return;
   }
   // IMPORTANT: Ensure no memory is released during this call.
@@ -391,6 +514,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
 }
 
 void MemBackendImpl::OnReleaseMemory() {
+  // MoltBrowser: nor does what per-site limits keep.
+  if (MoltHasBudget()) {
+    return;
+  }
   if (base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
     // Now we actually evict entries to reach the target size.
     current_max_size_ = CalculateTargetMemoryLimit();

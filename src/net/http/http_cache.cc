@@ -641,6 +641,15 @@ disk_cache::Backend* HttpCache::GetCurrentBackend() const {
   return disk_cache_.get();
 }
 
+// MoltBrowser: see the header.
+void HttpCache::MoltSetPerSiteBudget(
+    const disk_cache::MoltCacheSiteBudget& budget) {
+  molt_per_site_budget_ = budget;
+  if (disk_cache_) {
+    disk_cache_->MoltSetPerSiteBudget(budget);
+  }
+}
+
 // static
 bool HttpCache::ParseResponseInfo(base::span<const uint8_t> data,
                                   HttpResponseInfo* response_info,
@@ -1874,6 +1883,10 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
     backend_factory_.reset();  // Reclaim memory.
     if (result == OK) {
       disk_cache_ = std::move(pending_op->backend);
+      // MoltBrowser: the per-site limits, before the backend's first entry.
+      if (molt_per_site_budget_) {
+        disk_cache_->MoltSetPerSiteBudget(*molt_per_site_budget_);
+      }
       UMA_HISTOGRAM_MEMORY_KB("HttpCache.MaxFileSizeOnInit",
                               disk_cache_->MaxFileSize() / 1024);
       MaybeLoadNoVarySearchCacheFromDisk();

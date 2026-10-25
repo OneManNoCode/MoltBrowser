@@ -86,7 +86,8 @@ MemEntryImpl::MemEntryImpl(base::WeakPtr<MemBackendImpl> backend,
   Open();
   // Just creating the entry (without any data) could cause the storage to
   // grow beyond capacity, but we allow such infractions.
-  backend_->ModifyStorageSize(GetStorageSize());
+  // MoltBrowser: counted against the entry's site too.
+  backend_->ModifyStorageSize(this, GetStorageSize());
 }
 
 MemEntryImpl::MemEntryImpl(base::WeakPtr<MemBackendImpl> backend,
@@ -372,7 +373,7 @@ MemEntryImpl::MemEntryImpl(base::WeakPtr<MemBackendImpl> backend,
 
 MemEntryImpl::~MemEntryImpl() {
   if (backend_)
-    backend_->ModifyStorageSize(-GetStorageSize());
+    backend_->ModifyStorageSize(this, -GetStorageSize());  // MoltBrowser
 
   if (type() == EntryType::kParent) {
     if (children_) {
@@ -469,12 +470,13 @@ int MemEntryImpl::InternalWriteData(int index, int offset, IOBuffer* buf,
   if (truncate && delta < 0) {
     // We permit reducing the size even if the storage size has been exceeded,
     // since it can only improve the situation. See https://crbug.com/331839344.
-    backend_->ModifyStorageSize(delta);
+    backend_->ModifyStorageSize(this, delta);  // MoltBrowser
     data.resize(end_offset);
   } else if (delta > 0) {
-    backend_->ModifyStorageSize(delta);
-    if (backend_->HasExceededStorageSize()) {
-      backend_->ModifyStorageSize(-delta);
+    // MoltBrowser: against the entry's site too.
+    backend_->ModifyStorageSize(this, delta);
+    if (backend_->HasExceededStorageSize(this)) {
+      backend_->ModifyStorageSize(this, -delta);
       return net::ERR_INSUFFICIENT_RESOURCES;
     }
 

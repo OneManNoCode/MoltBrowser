@@ -291,6 +291,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory {
   // Returns the current backend (can be NULL).
   disk_cache::Backend* GetCurrentBackend() const;
 
+  // MoltBrowser: per-site limits for this cache's backend, now if it exists,
+  // else when it is made (the in-memory backend keeps them; others ignore
+  // them: net/disk_cache/memory/molt_mem_backend_budget_policy.h).
+  void MoltSetPerSiteBudget(const disk_cache::MoltCacheSiteBudget& budget);
+
   // Given a header data blob, convert it to a response info object.
   static bool ParseResponseInfo(base::span<const uint8_t> data,
                                 HttpResponseInfo* response_info,
@@ -927,6 +932,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory {
   std::unique_ptr<HttpTransactionFactory> network_layer_;
 
   std::unique_ptr<disk_cache::Backend> disk_cache_;
+
+  // MoltBrowser: see MoltSetPerSiteBudget().
+  std::optional<disk_cache::MoltCacheSiteBudget> molt_per_site_budget_;
 
   // The set of active entries indexed by cache key.
   ActiveEntriesMap active_entries_;

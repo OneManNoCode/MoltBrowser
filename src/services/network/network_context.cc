@@ -88,6 +88,7 @@
 #include "net/device_bound_sessions/session_service.h"
 #include "net/disk_cache/buildflags.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/disk_cache/memory/molt_mem_backend_budget_policy.h"  // MoltBrowser
 #include "net/dns/context_host_resolver.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -3430,6 +3431,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
             result.url_request_context->http_transaction_factory()
                 ->GetSession()) {
       session->ssl_client_context()->MoltSendNoClientCertificates();
+    }
+  }
+  // MoltBrowser: MoltNet's in-memory HTTP cache keeps limits per site
+  // (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
+  if (params_->molt_per_site_http_cache) {
+    if (net::HttpCache* cache =
+            result.url_request_context->http_transaction_factory()
+                ->GetCache()) {
+      cache->MoltSetPerSiteBudget(disk_cache::MoltNetHttpCacheBudget());
     }
   }
   // MoltBrowser: MoltNet verifies each certificate for its own connection

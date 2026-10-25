@@ -503,6 +503,8 @@ source_set("unit_tests") {
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
+    "molt_net_http_cache_budget_policy_unittest.cc",
+    "molt_net_http_cache_unittest.cc",
     "molt_net_identity_end_policy_unittest.cc",
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
