@@ -8,7 +8,9 @@ include_rules = [
 
 specific_include_rules = {
   "ieee754.cc": [
-    "+third_party/llvm-libc/src/shared/math.h"
+    "+third_party/llvm-libc/src/shared/math.h",
+    # MoltBrowser: --portable-math.
+    "+third_party/llvm-libc/molt_portable_math.h",
   ],
   "float16.h": [
     "+third_party/fp16/src/include/fp16.h"

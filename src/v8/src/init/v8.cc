@@ -195,6 +195,8 @@ void V8::Initialize() {
 
   // MoltBrowser: Math.tanh's implementation (src/base/ieee754.h).
   base::ieee754::SetUseStdTanh(v8_flags.use_std_math_tanh);
+  // MoltBrowser: llvm-libc's build for Math (src/base/ieee754.h).
+  base::ieee754::SetUsePortableMath(v8_flags.portable_math);
 
   // Verify the abort mode was not changed by flag implications.
   DCHECK_EQ(ChooseAbortMode(), base::g_abort_mode);

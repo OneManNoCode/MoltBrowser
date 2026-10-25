@@ -83,7 +83,7 @@ TEST_F(MoltNetCpuTest, GinConfiguresTheFixedMachine) {
 TEST_F(MoltNetCpuTest, Flags) {
   EXPECT_EQ(kMoltNetV8Flags,
             "--no-wasm-relaxed-simd --no-use-std-math-pow "
-            "--no-use-std-math-tanh");
+            "--no-use-std-math-tanh --portable-math");
 }
 
 }  // namespace

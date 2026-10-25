@@ -24,6 +24,13 @@
 //                                Math function, not the C library's, which
 //                                can pick its code by CPU feature (glibc's and
 //                                the Windows CRT's FMA variants)
+//   every Math function        the same results on x86-64 and arm64
+//                                (--portable-math): the llvm-libc ones from
+//                                its build without fused multiply-adds
+//                                (third_party/llvm-libc/
+//                                molt_portable_math.h), which x86-64 already
+//                                runs; arm64's own build differs for some
+//                                arguments of sin, tan, atan and atan2
 //   V8's heap                  every isolate (windows, workers, worklets) is
 //                                configured for one machine,
 //                                moltnet::kV8HeapPhysicalMemory
@@ -65,7 +72,8 @@ namespace blink::molt_fingerprinting {
 
 // The V8 flags of a MoltNet renderer.
 inline constexpr std::string_view kMoltNetV8Flags =
-    "--no-wasm-relaxed-simd --no-use-std-math-pow --no-use-std-math-tanh";
+    "--no-wasm-relaxed-simd --no-use-std-math-pow --no-use-std-math-tanh "
+    "--portable-math";
 
 // For a MoltNet renderer, before V8 is initialised and before any isolate,
 // image decoder or colour transform exists (no Blink object or thread is

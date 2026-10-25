@@ -1123,6 +1123,13 @@ DEFINE_BOOL(use_std_math_pow, true,
 // own code (fdlibm's tanh, src/base/ieee754.h), the same way on every CPU,
 // as --no-use-std-math-pow does for Math.pow.
 DEFINE_BOOL(use_std_math_tanh, true, "use std::tanh instead of fdlibm's tanh")
+// MoltBrowser: with --portable-math, the Math functions V8 computes with
+// llvm-libc use a build of it without fused multiply-adds
+// (third_party/llvm-libc/molt_portable_math.h), which gives the same results
+// on every architecture; arm64's default build has other results than
+// x86-64's for some arguments of sin, tan, atan and atan2.
+DEFINE_BOOL(portable_math, false,
+            "compute Math functions the same way on every architecture")
 
 // Flags for inline caching and feedback vectors.
 DEFINE_BOOL(use_ic, true, "use inline caching")

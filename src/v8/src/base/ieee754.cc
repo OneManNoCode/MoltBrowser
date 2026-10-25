@@ -15,13 +15,14 @@
 
 #include "src/base/ieee754.h"
 
-#include <atomic>  // MoltBrowser: SetUseStdTanh().
+#include <atomic>  // MoltBrowser: SetUseStdTanh(), SetUsePortableMath().
 #include <cmath>
 #include <limits>
 
 #include "src/base/build_config.h"
 #include "src/base/macros.h"
 #include "src/base/overflowing-math.h"
+#include "third_party/llvm-libc/molt_portable_math.h"  // MoltBrowser
 #include "third_party/llvm-libc/src/shared/math.h"
 
 namespace v8 {
@@ -78,7 +79,17 @@ namespace ieee754 {
     (d) = base::bit_cast<double>(bits);          \
   } while (false)
 
-double acos(double x) { return LIBC_NAMESPACE::shared::acos(x); }
+// MoltBrowser: see SetUsePortableMath(). The llvm-libc functions below call
+// molt_portable_math's build of llvm-libc while it is on.
+namespace {
+std::atomic<bool> g_use_portable_math{false};
+}  // namespace
+#define MOLT_LLVM_LIBC(function, portable, ...)             \
+  (g_use_portable_math.load(std::memory_order_relaxed)      \
+       ? molt_portable_math::portable(__VA_ARGS__)          \
+       : LIBC_NAMESPACE::shared::function(__VA_ARGS__))
+
+double acos(double x) { return MOLT_LLVM_LIBC(acos, Acos, x); }
 
 /* acosh(x)
  * Method :
@@ -120,7 +131,7 @@ double acosh(double x) {
   }
 }
 
-double asin(double x) { return LIBC_NAMESPACE::shared::asin(x); }
+double asin(double x) { return MOLT_LLVM_LIBC(asin, Asin, x); }
 
 /* asinh(x)
  * Method :
@@ -162,12 +173,14 @@ double asinh(double x) {
   }
 }
 
-double atan(double x) { return LIBC_NAMESPACE::shared::atan(x); }
-double atan2(double y, double x) { return LIBC_NAMESPACE::shared::atan2(y, x); }
+double atan(double x) { return MOLT_LLVM_LIBC(atan, Atan, x); }
+double atan2(double y, double x) {
+  return MOLT_LLVM_LIBC(atan2, Atan2, y, x);
+}
 
-double cos(double x) { return LIBC_NAMESPACE::shared::cos(x); }
+double cos(double x) { return MOLT_LLVM_LIBC(cos, Cos, x); }
 
-double exp(double x) { return LIBC_NAMESPACE::shared::exp(x); }
+double exp(double x) { return MOLT_LLVM_LIBC(exp, Exp, x); }
 
 /*
  * Method :
@@ -218,18 +231,18 @@ double atanh(double x) {
   }
 }
 
-double log(double x) { return LIBC_NAMESPACE::shared::log(x); }
-double log1p(double x) { return LIBC_NAMESPACE::shared::log1p(x); }
-double log2(double x) { return LIBC_NAMESPACE::shared::log2(x); }
-double log10(double x) { return LIBC_NAMESPACE::shared::log10(x); }
+double log(double x) { return MOLT_LLVM_LIBC(log, Log, x); }
+double log1p(double x) { return MOLT_LLVM_LIBC(log1p, Log1p, x); }
+double log2(double x) { return MOLT_LLVM_LIBC(log2, Log2, x); }
+double log10(double x) { return MOLT_LLVM_LIBC(log10, Log10, x); }
 
-double expm1(double x) { return LIBC_NAMESPACE::shared::expm1(x); }
+double expm1(double x) { return MOLT_LLVM_LIBC(expm1, Expm1, x); }
 
-double cbrt(double x) { return LIBC_NAMESPACE::shared::cbrt(x); }
+double cbrt(double x) { return MOLT_LLVM_LIBC(cbrt, Cbrt, x); }
 
-double sin(double x) { return LIBC_NAMESPACE::shared::sin(x); }
+double sin(double x) { return MOLT_LLVM_LIBC(sin, Sin, x); }
 
-double tan(double x) { return LIBC_NAMESPACE::shared::tan(x); }
+double tan(double x) { return MOLT_LLVM_LIBC(tan, Tan, x); }
 
 /*
  * ES6 draft 09-27-13, section 20.2.2.12.
@@ -298,7 +311,9 @@ double cosh(double x) {
 
 namespace legacy {
 
-double pow(double x, double y) { return LIBC_NAMESPACE::shared::pow(x, y); }
+double pow(double x, double y) {
+  return MOLT_LLVM_LIBC(pow, Pow, x, y);
+}
 
 }  // namespace legacy
 
@@ -413,6 +428,7 @@ double FdlibmTanh(double x) {
 #undef GET_HIGH_WORD
 #undef SET_HIGH_WORD
 #undef SET_LOW_WORD
+#undef MOLT_LLVM_LIBC
 
 double tanh(double x) {
   // MoltBrowser: see SetUseStdTanh().
@@ -422,6 +438,10 @@ double tanh(double x) {
 
 void SetUseStdTanh(bool use_std_tanh) {
   g_use_std_tanh.store(use_std_tanh, std::memory_order_relaxed);
+}
+
+void SetUsePortableMath(bool use_portable_math) {
+  g_use_portable_math.store(use_portable_math, std::memory_order_relaxed);
 }
 
 }  // namespace ieee754

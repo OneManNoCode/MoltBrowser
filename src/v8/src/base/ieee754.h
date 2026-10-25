@@ -95,6 +95,15 @@ V8_BASE_EXPORT double tanh(double x);
 // fdlibm's tanh over expm1() above, the same way on every CPU.
 V8_BASE_EXPORT void SetUseStdTanh(bool use_std_tanh);
 
+// MoltBrowser: the functions above that V8 computes with llvm-libc (acos,
+// asin, atan, atan2, cos, exp, log, log1p, log2, log10, expm1, cbrt, sin,
+// tan, legacy::pow, and through them the fdlibm ones) use llvm-libc's build
+// of the target's features (fused multiply-add on arm64) unless this is
+// called with true (V8::Initialize does, for --portable-math): then they use
+// molt_portable_math's build without them, the same results on every
+// architecture, the ones x86-64 gives by default.
+V8_BASE_EXPORT void SetUsePortableMath(bool use_portable_math);
+
 }  // namespace ieee754
 }  // namespace base
 }  // namespace v8
