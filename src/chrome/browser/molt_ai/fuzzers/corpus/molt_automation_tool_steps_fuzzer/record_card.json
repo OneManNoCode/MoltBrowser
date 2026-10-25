@@ -1,0 +1,1 @@
+{"tool": {"name": "pay", "description": "Pay.", "schema": "{\"type\": \"object\", \"properties\": {\"cc_number\": {\"type\": \"string\"}, \"amount\": {\"type\": \"integer\"}}}"}, "call": {"origin": "https://shop.example", "arguments": "{\"cc_number\": \"4111111111111111\", \"amount\": 5}", "in_frame": true, "frame_origin": "https://pay.example", "frame_path": "/f"}}

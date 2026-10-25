@@ -87,6 +87,15 @@ std::string TextOf(content::RenderFrameHost* frame,
       main_origin, url.SchemeIsHTTPOrHTTPS() ? url.path() : std::string_view());
 }
 
+agent_tools::FrameAddress AddressOf(content::RenderFrameHost* frame) {
+  const GURL& url = frame->GetLastCommittedURL();
+  agent_tools::FrameAddress a;
+  a.origin = frame->GetLastCommittedOrigin().Serialize();
+  if (url.SchemeIsHTTPOrHTTPS())
+    a.path = std::string(url.path());
+  return a;
+}
+
 }  // namespace
 
 SiteToolHost::Listing::Listing() = default;
@@ -206,6 +215,7 @@ void SiteToolHost::List(content::WeakDocumentPtr main_document,
         });
     for (size_t index : agent_tools::ToolFrames(frames)) {
       run->listing.documents.push_back(hosts[index]->GetWeakDocumentPtr());
+      run->listing.frames.push_back(AddressOf(hosts[index]));
       run->frame_texts.push_back(
           index == 0 ? std::string() : TextOf(hosts[index], main_origin));
     }

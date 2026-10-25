@@ -38,6 +38,7 @@
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
@@ -789,11 +790,33 @@ void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
         ResolveChatAction(callback_id, RunError(kNoLongerAvailable));
         return;
       }
+      // If this tab is being recorded (Agent mode), the call the user just
+      // approved becomes a step of the workflow once it has run.
+      molt_ai::automation::tool_steps::RecordedCall record;
+      record.origin = origin;
+      record.tool = *tool;
+      record.arguments_json = action.tool_arguments;
+      if (tool->frame > 0) {
+        if (content::RenderFrameHost* tool_frame =
+                proposal.tool_documents[tool->frame].AsRenderFrameHostIfValid()) {
+          const GURL& tool_url = tool_frame->GetLastCommittedURL();
+          record.in_frame = true;
+          record.frame_origin =
+              tool_frame->GetLastCommittedOrigin().Serialize();
+          record.frame_path = tool_url.SchemeIsHTTPOrHTTPS()
+                                  ? std::string(tool_url.path())
+                                  : std::string();
+        }
+      }
+      content::WebContents* tab = content::WebContents::FromRenderFrameHost(frame);
       ChatSiteTools()->Call(
           proposal.document, proposal.tool_documents[tool->frame],
           proposal.origin, *tool, action.tool_arguments,
           base::BindOnce(&MoltAIChatHandler::OnChatToolCalled,
-                         weak_ptr_factory_.GetWeakPtr(), callback_id));
+                         weak_ptr_factory_.GetWeakPtr(), callback_id,
+                         std::move(record),
+                         tab ? tab->GetWeakPtr()
+                             : base::WeakPtr<content::WebContents>()));
       return;
     }
     case agent_actions::ActionType::kObserve:
@@ -854,8 +877,24 @@ void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
 
 void MoltAIChatHandler::OnChatToolCalled(
     std::string callback_id,
+    molt_ai::automation::tool_steps::RecordedCall record,
+    base::WeakPtr<content::WebContents> tab,
     molt_ai::SiteToolHost::CallEnd end,
     molt_ai::agent_tools::CallOutcome outcome) {
+  // A call that ran (it answered, or loaded another page) in a tab being
+  // recorded is a step of the recording.
+  const bool ran =
+      end == molt_ai::SiteToolHost::CallEnd::kDocumentChanged ||
+      (end == molt_ai::SiteToolHost::CallEnd::kSettled &&
+       outcome.state == molt_ai::agent_tools::CallState::kDone);
+  if (ran && tab) {
+    if (auto* recorder =
+            molt_ai::automation::AutomationRecorderTabHelper::FromWebContents(
+                tab.get());
+        recorder && recorder->is_recording()) {
+      recorder->RecordSiteToolCall(record);
+    }
+  }
   if (!IsJavascriptAllowed()) {
     return;
   }

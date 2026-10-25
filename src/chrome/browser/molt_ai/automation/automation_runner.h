@@ -28,10 +28,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/automation/automation_ai_steps.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/automation/automation_tool_steps.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace content {
@@ -171,6 +173,19 @@ class AutomationRunner {
   void DoEndLoop(const Step& s);
   void DoAssert(const Step& s);
   void DoRunJS(const Step& s);
+
+  // CALL_TOOL (automation_tool_steps.h): lists the page's tools (waiting a
+  // little for the tool to be offered), checks the recorded call against
+  // the tool as offered now, asks the user unless the tool only reads or
+  // the workflow is Approved for the site, then calls it once.
+  void DoCallTool(const Step& s);
+  void ListToolsForStep();
+  void OnToolStepListed(content::WeakDocumentPtr main_document,
+                        SiteToolHost::Listing listing);
+  void OnToolStepAnswer(bool allowed);
+  void CallToolStep();
+  void OnToolStepCalled(SiteToolHost::CallEnd end,
+                        agent_tools::CallOutcome outcome);
 
   // Second halves of DoClick / DoType: once the selector is resolved, probe
   // what the element is (submit control, link target, field kind) and
@@ -415,6 +430,12 @@ class AutomationRunner {
   std::string pin_token_;
   // The question the current step waits on (RunQuestions), or 0.
   int64_t question_id_ = 0;
+
+  // CALL_TOOL steps: the page's tools (made on first use), and the call of
+  // the current step.
+  std::unique_ptr<SiteToolHost> site_tools_;
+  struct ToolCall;
+  std::unique_ptr<ToolCall> tool_call_;
 
   StepProgressCallback on_step_;
   RunCompleteCallback on_complete_;

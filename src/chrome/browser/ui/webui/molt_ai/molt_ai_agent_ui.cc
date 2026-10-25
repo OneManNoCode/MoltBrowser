@@ -94,6 +94,7 @@ std::string StepIcon(StepType t) {
     case StepType::AI_DECIDE: return "🧠";
     case StepType::ASSERT: return "✅";
     case StepType::NOTIFY: return "🔔";
+    case StepType::CALL_TOOL: return "\U0001F9F0";  // toolbox
     default: return "•";
   }
 }
@@ -619,7 +620,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         }
         draft.id = id;
         recorded_ids_.insert(id);
-        out.Set("draft", draft.ToJSON());
+        base::DictValue json = draft.ToJSON();
+        // The page reads {{variable}} defaults under "variables" (as
+        // getWorkflow gives them): a recorded site tool's withheld values.
+        if (const base::DictValue* dv = json.FindDict("default_variables")) {
+          json.Set("variables", dv->Clone());
+        }
+        out.Set("draft", std::move(json));
       }
     }
     base::DictValue st;
@@ -1003,8 +1010,29 @@ function locatorSummary(s){
 }
 var REVIEW_NOTES={
   value_withheld:'The agent typed something here that looked private (a password, code, key or card number). It wasn’t saved: you’re asked for it at each run.',
-  secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.'
+  secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.',
+  secret_argument:'This gives the site’s tool a card number or one-time code. MoltBrowser never saves those, so a run stops at this step: remove it, or do it yourself and run the rest.'
 };
+/* A recorded site-tool step: what it gives the tool (the values the user
+   approved when recording; withheld ones are asked at each run), as text. */
+function toolArgsNode(s){
+  var t=(s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};
+  var args=(t.args&&typeof t.args==='object'&&!Array.isArray(t.args))?t.args:{};
+  var parts=[];
+  Object.keys(args).slice(0,8).forEach(function(k){
+    var v=args[k];
+    var shown=typeof v==='string'?('“'+v.slice(0,120)+'”'):JSON.stringify(v);
+    parts.push(String(k).slice(0,64)+' = '+String(shown).slice(0,160));
+  });
+  var kids=[h('label',{},'What it gives the tool'),
+            h('div',{'class':'tool-args'},parts.length?parts.join('; '):'nothing')];
+  if(t.frame&&typeof t.frame.origin==='string'){
+    kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+t.frame.origin.slice(0,120)));
+  }
+  var secret=Array.isArray(t.secret_args)?t.secret_args.length:0;
+  if(secret){kids.push(h('div',{'class':'loc-note'},secret+' value'+(secret===1?'':'s')+' not saved'));}
+  return h('div',{'class':'efield'},kids);
+}
 function isTrusted(level){return !!level&&level!=='casual';}
 function siteOfSteps(steps){
   for(var i=0;i<(steps||[]).length;i++){
@@ -1024,9 +1052,11 @@ function setTrust(id,level){
 }
 
 var STEP_EMOJI={navigate:'\u{1F310}',click:'\u{1F446}',type:'⌨️',scroll:'\u{1F4DC}',keypress:'⏎',
-  wait:'⏳',wait_for:'⏳',extract:'\u{1F4CB}',ai_decide:'\u{1F9E0}',ai_extract:'\u{1F9E0}',assert:'✅',notify:'\u{1F514}'};
+  wait:'⏳',wait_for:'⏳',extract:'\u{1F4CB}',ai_decide:'\u{1F9E0}',ai_extract:'\u{1F9E0}',assert:'✅',notify:'\u{1F514}',
+  call_tool:'\u{1F9F0}'};
 var STEP_LABEL={navigate:'Go to page',click:'Click',type:'Type text',scroll:'Scroll',keypress:'Press key',
-  wait:'Wait',wait_for:'Wait for',extract:'Extract',ai_decide:'AI decision',ai_extract:'AI extract',assert:'Check',notify:'Notify'};
+  wait:'Wait',wait_for:'Wait for',extract:'Extract',ai_decide:'AI decision',ai_extract:'AI extract',assert:'Check',notify:'Notify',
+  call_tool:'Site tool'};
 function emojiFor(t){return STEP_EMOJI[t]||'⚙️';}
 function labelFor(t){return STEP_LABEL[t]||t;}
 
@@ -1635,6 +1665,12 @@ function buildEditorStep(s,i){
     card.appendChild(h('div',{'class':'review-note'},['⚠ ',review]));
   }
 
+  // A site's tool: what it gives the tool, nothing to type here.
+  if(s.type==='call_tool'){
+    card.appendChild(toolArgsNode(s));
+    return card;
+  }
+
   // The step's fallback locators (what kind only).
   var loc=locatorSummary(s);
   if(loc){card.appendChild(h('div',{'class':'loc-note'},['\u{1F9ED} ',loc]));}
@@ -1736,14 +1772,18 @@ function renameVariable(i,oldName,raw){
   });
   renderEditorSteps();
 }
-/* Recompute the variables map from all step values (keeps defaults). */
+/* Recompute the variables map from all step values (keeps defaults),
+   a recorded site tool's withheld values included. */
 function syncVariables(){
   var found={};
+  function scan(v){
+    if(typeof v!=='string'||!v)return;var m;VAR_RE.lastIndex=0;
+    while((m=VAR_RE.exec(v))){var nm=m[1].trim();found[nm]=true;}
+  }
   editorState.steps.forEach(function(s){
-    ['target','value'].forEach(function(f){
-      var v=s[f];if(!v)return;var m;VAR_RE.lastIndex=0;
-      while((m=VAR_RE.exec(v))){var nm=m[1].trim();found[nm]=true;}
-    });
+    ['target','value'].forEach(function(f){scan(s[f]);});
+    var args=s.type==='call_tool'&&s.extra&&s.extra.tool&&s.extra.tool.args;
+    if(args&&typeof args==='object'){Object.keys(args).forEach(function(k){scan(args[k]);});}
   });
   var next={};
   Object.keys(found).forEach(function(nm){next[nm]=editorState.variables.hasOwnProperty(nm)?editorState.variables[nm]:'';});
@@ -2436,6 +2476,8 @@ button,input,textarea,select{font-family:inherit}
 .run-q .rq-h{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
 .run-q .rq-m{font-size:12px;margin-top:4px;word-break:break-word}
 .loc-note{margin:6px 2px 2px;font-size:11px;color:var(--muted)}
+.tool-args{font-size:12px;word-break:break-word;padding:6px 9px;border-radius:9px;
+  border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:12px;padding:8px 10px}
 /* drafts saved from an AI agent run: badge, review panel, step notes */
 .tbadge.draft{color:var(--warn)}

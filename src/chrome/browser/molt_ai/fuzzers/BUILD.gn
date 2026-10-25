@@ -269,6 +269,21 @@ fuzzer_test("molt_automation_locators_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# A workflow's site-tool step: the CALL_TOOL step of a .molt file, the tool
+# a page offers at replay, a call recorded from the chat.
+fuzzer_test("molt_automation_tool_steps_fuzzer") {
+  sources = [ "molt_automation_tool_steps_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_tools",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/automation:tool_steps",
+  ]
+  dict = "dicts/agent_tools.dict"
+  seed_corpus = "corpus/molt_automation_tool_steps_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 fuzzer_test("molt_automation_ai_steps_fuzzer") {
   sources = [ "molt_automation_ai_steps_fuzzer.cc" ]
   deps = [

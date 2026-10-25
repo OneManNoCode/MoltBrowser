@@ -22,6 +22,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/unguessable_token.h"
+#include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
@@ -339,6 +340,18 @@ struct QueuedPrompt {
   base::OnceCallback<void(GenerationResult)> reply;
 };
 
+// The CALL_TOOL step being run: the step as read, then the tool as the page
+// offers it now, the documents to call it in and the arguments it gets.
+struct AutomationRunner::ToolCall {
+  tool_steps::ToolStep step;
+  base::TimeTicks list_deadline;
+  agent_tools::SiteTool live;
+  agent_tools::ToolArguments arguments;
+  content::WeakDocumentPtr main_document;
+  content::WeakDocumentPtr tool_document;
+  url::Origin origin;
+};
+
 // Observes the target tab after a click and fires |on_settled| once the
 // resulting navigation commits + paints, or immediately if no navigation
 // starts within the grace window, or when a hard cap elapses. This makes a
@@ -518,6 +531,9 @@ void AutomationRunner::ExecuteNextStep() {
   found_by_.clear();
   pin_token_.clear();
   WithdrawQuestion();
+  tool_call_.reset();
+  if (site_tools_)
+    site_tools_->Cancel();
 
   // Control-flow steps always run for stack management. Their effect
   // when in a not-taken branch is adjusted (e.g. nested IF pushes
@@ -604,6 +620,7 @@ void AutomationRunner::ExecuteNextStep() {
     case StepType::ASSERT:      DoAssert(s); break;
     case StepType::RUN_JS:      DoRunJS(s); break;
     case StepType::RUN_SCRIPT:  DoRunScript(s); break;
+    case StepType::CALL_TOOL:   DoCallTool(s); break;
     default:
       OnStepFinished(false, "Unknown step type");
       break;
@@ -662,7 +679,9 @@ bool AutomationRunner::PreflightStepPolicy(const Step& s,
       }
       return false;
     case StepType::KEYPRESS:
-      // Keys go to whatever page is focused; same site rule as a click.
+    case StepType::CALL_TOOL:
+      // Keys go to whatever page is focused; same site rule as a click. A
+      // site's tool runs on the page it is on: one of the workflow's sites.
       if (page_allowed)
         return true;
       *why = other_site;
@@ -773,6 +792,10 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
       // element into existence with exponential backoff — this is what makes a
       // click effectively "wait for the page / dynamic content".
       int effective_retries = s.retries;
+      // A site's tool is called once: a call that failed or timed out may
+      // still have done something, whatever the step's retries say.
+      if (s.type == StepType::CALL_TOOL)
+        effective_retries = 0;
       if (effective_retries == 0) {
         switch (s.type) {
           case StepType::CLICK:
@@ -2184,6 +2207,214 @@ void AutomationRunner::DoRunJS(const Step& s) {
                                                      : "Ran JS -> " + store_as);
       },
       weak_factory_.GetWeakPtr(), s.store_as));
+}
+
+// -----------------------------------------------------------------------------
+// CALL_TOOL: a site's tool, recorded (automation_tool_steps.h)
+// -----------------------------------------------------------------------------
+
+namespace {
+
+// How long a tool step waits for the page to offer its tool, and in all
+// (the listing, the user's answer aside, and the call).
+constexpr base::TimeDelta kToolListWait = base::Seconds(10);
+constexpr base::TimeDelta kToolStepBudget = base::Seconds(45);
+constexpr base::TimeDelta kToolRelistDelay = base::Milliseconds(500);
+
+}  // namespace
+
+void AutomationRunner::DoCallTool(const Step& s) {
+  std::optional<tool_steps::ToolStep> step = tool_steps::ParseToolStep(s);
+  if (!step) {
+    BlockStep("This step's site tool can't be read: remove the step.");
+    return;
+  }
+  if (!step->secret_arguments.empty()) {
+    BlockStep(std::string(
+        tool_steps::CompatText(tool_steps::Compat::kSecretArgument)));
+    return;
+  }
+  if (!agent_features::AgentSiteToolsEnabled()) {
+    BlockStep("Site tools are turned off (chrome://flags/#molt-agent-site-"
+              "tools), so this step can't run.");
+    return;
+  }
+  if (!target_contents_) {
+    OnStepFinished(false, "No target tab");
+    return;
+  }
+  if (!site_tools_)
+    site_tools_ = std::make_unique<SiteToolHost>();
+  ExtendStepTimeout(kToolStepBudget);
+  tool_call_ = std::make_unique<ToolCall>();
+  tool_call_->step = std::move(*step);
+  tool_call_->list_deadline = base::TimeTicks::Now() + kToolListWait;
+  ListToolsForStep();
+}
+
+void AutomationRunner::ListToolsForStep() {
+  if (!tool_call_ || !target_contents_ ||
+      !target_contents_->GetPrimaryMainFrame()) {
+    OnStepFinished(false, "No target tab");
+    return;
+  }
+  content::RenderFrameHost* main = target_contents_->GetPrimaryMainFrame();
+  const url::Origin origin = main->GetLastCommittedOrigin();
+  // Only on the origin it was recorded on (the page may still be loading).
+  if (origin.Serialize() != tool_call_->step.origin) {
+    if (base::TimeTicks::Now() < tool_call_->list_deadline) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&AutomationRunner::ListToolsForStep,
+                         weak_factory_.GetWeakPtr()),
+          kToolRelistDelay);
+      return;
+    }
+    OnStepFinished(false, "Not run: the page isn't on " +
+                              tool_call_->step.origin + ".");
+    return;
+  }
+  content::WeakDocumentPtr main_document = main->GetWeakDocumentPtr();
+  site_tools_->List(
+      main_document, origin,
+      base::BindOnce(&AutomationRunner::OnToolStepListed,
+                     weak_factory_.GetWeakPtr(), main_document));
+}
+
+void AutomationRunner::OnToolStepListed(content::WeakDocumentPtr main_document,
+                                        SiteToolHost::Listing listing) {
+  if (!tool_call_)
+    return;
+  const tool_steps::ToolStep& step = tool_call_->step;
+  const std::optional<size_t> index =
+      tool_steps::FindListedTool(step, listing.tools, listing.frames);
+  if (!index || listing.tools[*index].frame >= listing.documents.size()) {
+    // Not offered (yet): a page registers its tools as it loads.
+    if (base::TimeTicks::Now() < tool_call_->list_deadline) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&AutomationRunner::ListToolsForStep,
+                         weak_factory_.GetWeakPtr()),
+          kToolRelistDelay);
+      return;
+    }
+    OnStepFinished(false, "Not run: the page doesn't offer the site's tool "
+                          "\xE2\x80\x9C" + step.name + "\xE2\x80\x9D.");
+    return;
+  }
+  const agent_tools::SiteTool& live = listing.tools[*index];
+  // The recorded values, with this run's {{variables}} (asked in the run
+  // sheet) filled in; checked again against the tool as offered now.
+  base::DictValue arguments;
+  for (const auto [name, value] : step.arguments) {
+    if (value.is_string()) {
+      arguments.Set(name, Resolve(value.GetString()));
+    } else if (value.is_list()) {
+      base::ListValue list;
+      for (const base::Value& item : value.GetList()) {
+        list.Append(item.is_string() ? base::Value(Resolve(item.GetString()))
+                                     : item.Clone());
+      }
+      arguments.Set(name, std::move(list));
+    } else {
+      arguments.Set(name, value.Clone());
+    }
+  }
+  for (const auto [name, value] : arguments) {
+    const bool unfilled =
+        (value.is_string() &&
+         value.GetString().find("{{") != std::string::npos);
+    if (unfilled) {
+      BlockStep("Not run: this step needs a value you give at each run. "
+                "Run it from Agent mode and fill it in.");
+      return;
+    }
+  }
+  agent_tools::ToolArguments call_arguments;
+  const tool_steps::Compat compat =
+      tool_steps::CheckReplay(step, live, arguments, &call_arguments);
+  if (compat != tool_steps::Compat::kOk) {
+    BlockStep(std::string(tool_steps::CompatText(compat)));
+    return;
+  }
+  tool_call_->live = live;
+  tool_call_->arguments = std::move(call_arguments);
+  tool_call_->main_document = main_document;
+  tool_call_->tool_document = listing.documents[live.frame];
+  tool_call_->origin = url::Origin::Create(GURL(step.origin));
+
+  const std::string page = target_contents_
+                               ? target_contents_->GetLastCommittedURL().spec()
+                               : std::string();
+  const bool approved_for_site = policy_.trust >= TrustLevel::APPROVED &&
+                                 security_.AllowNavigation(policy_, page);
+  if (tool_steps::ApprovalFor(step, live, approved_for_site) ==
+      tool_steps::Approval::kRun) {
+    CallToolStep();
+    return;
+  }
+  // The approval the web agent asks, in its words: the tool, the site (and
+  // frame), why, every argument.
+  const agent_tools::CallCheck check = agent_tools::CheckToolCall(
+      live, tool_call_->arguments.text, tool_call_->origin.Serialize());
+  AskUser(kQuestionSiteTool, check.message,
+          /*needs_trust=*/tool_steps::TrustWouldAllow(step, live),
+          base::BindOnce(&AutomationRunner::OnToolStepAnswer,
+                         weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::OnToolStepAnswer(bool allowed) {
+  if (!allowed) {
+    BlockStep("Stopped: you didn't allow the site's tool.");
+    return;
+  }
+  // The call may take up to agent_tools::kCallTimeoutMs.
+  ExtendStepTimeout(kToolStepBudget);
+  CallToolStep();
+}
+
+void AutomationRunner::CallToolStep() {
+  if (!tool_call_ || !site_tools_) {
+    OnStepFinished(false, "Not run: the step's call is gone.");
+    return;
+  }
+  // In the very document that listed the tool, if it still counts; the
+  // script checks its mark, the origin and that the page still lists the
+  // same tool. Once: never retried.
+  site_tools_->Call(tool_call_->main_document, tool_call_->tool_document,
+                    tool_call_->origin, tool_call_->live,
+                    tool_call_->arguments.json,
+                    base::BindOnce(&AutomationRunner::OnToolStepCalled,
+                                   weak_factory_.GetWeakPtr()));
+  if (storage_) {
+    storage_->AppendAudit(script_.id, "site_tool_called",
+                          "step=" + base::NumberToString(current_index_ + 1) +
+                              " tool=" + tool_call_->live.name);
+  }
+}
+
+void AutomationRunner::OnToolStepCalled(SiteToolHost::CallEnd end,
+                                        agent_tools::CallOutcome outcome) {
+  switch (end) {
+    case SiteToolHost::CallEnd::kTimedOut:
+      OnStepFinished(false, std::string(agent_tools::CallFailureNote(
+                                agent_tools::CallState::kTimedOut)));
+      return;
+    case SiteToolHost::CallEnd::kDocumentChanged:
+      // A <form> tool submitted its form: wait for that page, as after a
+      // click that navigates.
+      BeginClickSettle("The site's tool loaded another page");
+      return;
+    case SiteToolHost::CallEnd::kSettled:
+      break;
+  }
+  if (outcome.state != agent_tools::CallState::kDone) {
+    OnStepFinished(false,
+                   std::string(agent_tools::CallFailureNote(outcome.state)));
+    return;
+  }
+  // What the site answered is its text: not kept in the run's record.
+  OnStepFinished(true, "The site's tool answered");
 }
 
 // RUN_SCRIPT: chain agents. The step's `target` field is the id of a

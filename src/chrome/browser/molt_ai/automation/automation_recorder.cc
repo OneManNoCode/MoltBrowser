@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
+#include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/automation/automation_locators.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
@@ -46,6 +47,17 @@ constexpr size_t kMaxRecordedFallbacks = 8;
 constexpr size_t kMaxRecordedTextBytes = 4 * 60;
 constexpr size_t kMaxRecordedDescriptionBytes = 400;
 constexpr size_t kMaxRecordedValueBytes = 32 * 1024;
+
+// A recorded tool argument is withheld (asked at each run) when its name
+// or its value looks secret, by the heuristics drafts use.
+class RecorderValuePolicy : public tool_steps::ValuePolicy {
+ public:
+  bool Withhold(std::string_view argument_name,
+                std::string_view value) const override {
+    return agent_draft::LabelSuggestsSecret(argument_name) ||
+           agent_draft::TextLooksSecret(value);
+  }
+};
 
 // |s| cut to at most |max| bytes, never inside a UTF-8 character.
 std::string CutUtf8(const std::string& s, size_t max) {
@@ -347,6 +359,7 @@ void AutomationRecorder::Start(StepCapturedCallback on_step_captured) {
   is_recording_ = true;
   steps_.clear();
   seen_hosts_.clear();
+  variables_.clear();
   on_step_captured_ = std::move(on_step_captured);
   // Capture an initial NAVIGATE step for the current URL so replays
   // always start from a known location.
@@ -378,6 +391,8 @@ Script AutomationRecorder::Stop() {
   s.created_at_unix = static_cast<int64_t>(std::time(nullptr));
   s.ai_model = "tinyllama-1.1b";
   s.steps = std::move(steps_);
+  s.default_variables = std::move(variables_);
+  variables_.clear();
   s.security.domain_whitelist.assign(seen_hosts_.begin(), seen_hosts_.end());
   s.security.require_approval_for = {"form_submit", "payment", "login"};
   s.security.trust = TrustLevel::CASUAL;
@@ -571,6 +586,27 @@ void AutomationRecorder::OnStepFromInjectedJS(
   if (is_click && rw > 0 && rh > 0 && !steps_.empty()) {
     CaptureElementThumb(static_cast<int>(steps_.size()) - 1, rx, ry, rw, rh);
   }
+}
+
+void AutomationRecorder::OnSiteToolCall(const tool_steps::RecordedCall& call) {
+  if (!is_recording_ || !web_contents() ||
+      !web_contents()->GetPrimaryMainFrame()) {
+    return;
+  }
+  // Only a call on the page this tab shows now.
+  if (web_contents()->GetPrimaryMainFrame()->GetLastCommittedOrigin()
+          .Serialize() != call.origin) {
+    return;
+  }
+  RecorderValuePolicy policy;
+  std::optional<Step> s = tool_steps::BuildToolStep(call, policy, &variables_);
+  if (!s)
+    return;
+  if (s->extra.is_dict()) {
+    if (const std::string* host = s->extra.GetDict().FindString(kStepHostKey))
+      seen_hosts_.insert(*host);
+  }
+  DeduplicateAndAppend(std::move(*s));
 }
 
 void AutomationRecorder::CaptureElementThumb(int index, int x, int y, int w,

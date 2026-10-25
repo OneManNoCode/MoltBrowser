@@ -57,6 +57,9 @@ enum class StepType {
   SCREENSHOT,
   RUN_JS,      // arbitrary JS in the active frame (Trusted only)
   RUN_SCRIPT,  // delegate to another saved Script by id (chain agents)
+  // A site's WebMCP tool the user approved while recording
+  // (automation_tool_steps.h): target = its name, extra["tool"] the rest.
+  CALL_TOOL,
 
   // Sentinel
   UNKNOWN,

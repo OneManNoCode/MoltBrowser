@@ -1216,7 +1216,14 @@ const PAGES = [
                   {by: 'attr', name: 'data-testid', value: 'x'},
                   {by: 'attr', name: '<i>evil</i>', value: 'y'},
                   {by: 'text', value: 'Buy'}, {by: 'path', value: 'html'},
-                  {by: '__proto__', value: 'z'}]}}]},
+                  {by: '__proto__', value: 'z'}]}},
+               {type: 'call_tool', target: 'add_to_cart',
+                description: 'Run the site’s tool “add_to_cart” on example.com',
+                extra: {host: 'example.com', review: 'value_withheld', tool: {
+                  origin: 'https://www.example.com',
+                  frame: {origin: 'https://<b>w</b>.example', path: '/c'},
+                  args: {id: '<img src=x onerror=alert(1)>', qty: 2, note: '{{tool_note}}'},
+                  secret_args: ['otp']}}}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
      confirmDraftSites: (args) => {
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
@@ -1320,6 +1327,22 @@ const PAGES = [
          '\u{1F9ED} If the page changes, it also looks for it by its role & name, ' +
          'data-testid, an attribute, text, position.');
      assert.strictEqual(doc.querySelectorAll('#edSteps .loc-note b, #edSteps .loc-note i').length, 0);
+     // A recorded site tool: what it gives the tool, its frame and what
+     // wasn't saved, as text; no field to type in.
+     const toolCard = Array.from(doc.querySelectorAll('#edSteps .estep')).find(
+         (c) => c.querySelector('.tool-args'));
+     assert(toolCard, 'a site-tool step');
+     assert.strictEqual(toolCard.querySelector('.tool-args').textContent,
+         'id = “<img src=x onerror=alert(1)>”; qty = 2; note = “{{tool_note}}”');
+     assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example/.test(toolCard.textContent));
+     assert(/1 value not saved/.test(toolCard.textContent));
+     assert(/asked for it at each run/.test(toolCard.querySelector('.review-note').textContent));
+     assert.strictEqual(toolCard.querySelectorAll('img, b, input.inp').length, 0);
+     assert(/Site tool/.test(toolCard.querySelector('.etype').textContent));
+     // Saving keeps the withheld value's variable.
+     window.syncVariables();
+     assert(Object.prototype.hasOwnProperty.call(window.editorState.variables, 'tool_note'),
+            'a tool argument\'s variable is kept');
      // A run's question: shown in the run's ticker as text; "Use it" and
      // "Stop the run" send the answer for that question from the click.
      window.showView('library');

@@ -872,6 +872,14 @@ std::string VisibleText(std::string_view s) {
   return Visible(s);
 }
 
+bool IsValidToolName(std::string_view name) {
+  return IsToolName(name);
+}
+
+bool IsValidArgumentName(std::string_view name) {
+  return IsArgumentName(name);
+}
+
 std::string ToolLabel(const SiteTool& tool) {
   if (tool.frame == 0)
     return tool.name;

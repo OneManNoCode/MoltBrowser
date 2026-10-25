@@ -40,7 +40,12 @@ source_set("automation") {
   deps = [
     "//base",
     "//chrome/browser:browser_public_dependencies",
+
+    # Site-tool steps: the runner lists and calls a page's tools with the
+    # web agent's SiteToolHost, while #molt-agent-site-tools is on.
+    "//chrome/browser/molt_ai/agents:features",
     "//chrome/browser/molt_ai/common",
+    "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     # Secret (password) steps are filled from the vault at replay; read-only.
     "//chrome/browser/molt_ai/vault",
@@ -66,7 +71,27 @@ source_set("automation") {
     ":ai_steps",
     ":automation_policy",
     ":run_questions",
+    ":tool_steps",
     "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# A site's WebMCP tool call kept as a workflow step: built from the call the
+# user approved while recording, read back with caps, the replay checks
+# (docs/design/AGENT_ACTIONS.md §3.5). Pure logic (base + url); fuzzed by
+# molt_automation_tool_steps_fuzzer.
+source_set("tool_steps") {
+  sources = [
+    "automation_tool_steps.cc",
+    "automation_tool_steps.h",
+  ]
+
+  deps = [ "//url" ]
+
+  public_deps = [
+    ":automation_policy",
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_tools",
   ]
 }
 
@@ -167,6 +192,7 @@ source_set("unit_tests") {
     "automation_locators_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
+    "automation_tool_steps_unittest.cc",
     "run_questions_unittest.cc",
   ]
   deps = [
@@ -175,6 +201,7 @@ source_set("unit_tests") {
     ":automation_policy",
     ":locators",
     ":run_questions",
+    ":tool_steps",
     "//base",
 
     # Every schema the runner builds must be accepted by the inference

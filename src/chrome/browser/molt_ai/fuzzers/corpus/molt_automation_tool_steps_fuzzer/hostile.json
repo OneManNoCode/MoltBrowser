@@ -1,0 +1,1 @@
+{"step": {"type": "call_tool", "target": "a b", "extra": {"host": "evil.example", "tool": {"origin": "https://shop.example", "args": {"__proto__": 1, "a": "‮{{x}}"}, "read_only": false, "form": false}}}, "tool": {"name": "x", "description": "\"</script>", "schema": "!"}, "call": {"origin": "javascript:alert(1)", "arguments": "[[[[]]]]"}}

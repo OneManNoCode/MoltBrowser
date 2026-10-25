@@ -133,6 +133,12 @@ Script AutomationRecorderTabHelper::StopRecording() {
   return s;
 }
 
+void AutomationRecorderTabHelper::RecordSiteToolCall(
+    const tool_steps::RecordedCall& call) {
+  if (rec_ && rec_->is_recording())
+    rec_->OnSiteToolCall(call);
+}
+
 WEB_CONTENTS_USER_DATA_KEY_IMPL(AutomationRecorderTabHelper);
 
 }  // namespace automation

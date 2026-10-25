@@ -91,6 +91,7 @@ std::string StepTypeToString(StepType t) {
     case StepType::SCREENSHOT:  return "screenshot";
     case StepType::RUN_JS:      return "run_js";
     case StepType::RUN_SCRIPT:  return "run_script";
+    case StepType::CALL_TOOL:   return "call_tool";
     case StepType::UNKNOWN:     return "unknown";
   }
   return "unknown";
@@ -117,6 +118,7 @@ StepType StepTypeFromString(const std::string& s) {
   if (s == "screenshot") return StepType::SCREENSHOT;
   if (s == "run_js")     return StepType::RUN_JS;
   if (s == "run_script") return StepType::RUN_SCRIPT;
+  if (s == "call_tool")  return StepType::CALL_TOOL;
   return StepType::UNKNOWN;
 }
 

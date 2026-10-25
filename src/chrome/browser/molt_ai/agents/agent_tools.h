@@ -269,6 +269,20 @@ std::string FrameText(std::string_view origin, std::string_view path);
 // closed early. ReadArguments()' shown values are in this form.
 std::string VisibleText(std::string_view s);
 
+// Where a listed document is, as the browser sees it: its origin
+// (url::Origin::Serialize()) and the path of its http(s) URL ("" for a
+// document without an address of its own). For finding a recorded tool's
+// frame again; never shown as is.
+struct FrameAddress {
+  std::string origin;
+  std::string path;
+};
+
+// Blink's rule for a tool name ([A-Za-z0-9_.-]{1,128}), and the agent's for
+// an argument name ([A-Za-z0-9_-]{1,64}, not starting with "-" or "__").
+bool IsValidToolName(std::string_view name);
+bool IsValidArgumentName(std::string_view name);
+
 // How the model, the step trace and the user name a tool: its name, and for
 // a frame's tool the browser's number of the frame ("search in frame 2").
 // Never page text but the name, which can't contain a space.

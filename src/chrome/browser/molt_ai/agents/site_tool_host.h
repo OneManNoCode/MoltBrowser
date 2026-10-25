@@ -64,6 +64,9 @@ class SiteToolHost {
     // The document of each frame number (agent_tools::SiteTool::frame);
     // [0] is the main document.
     std::vector<content::WeakDocumentPtr> documents;
+    // Where each of them is (its origin and path), in the same order: a
+    // recorded workflow finds its tool's frame by them.
+    std::vector<agent_tools::FrameAddress> frames;
   };
   using ListCallback = base::OnceCallback<void(Listing)>;
 

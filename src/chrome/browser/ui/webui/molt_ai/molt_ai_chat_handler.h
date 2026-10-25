@@ -37,6 +37,7 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/automation/automation_tool_steps.h"
 #include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/automation/agent_run_draft.h"
@@ -451,7 +452,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // proposal's document (SiteToolHost::ToolFrameIfCurrent()); else null.
   content::RenderFrameHost* ChatProposalToolFrame(const ChatProposal& proposal);
   // A site tool's call ended.
+  // |record|: the call as a recorded workflow step would keep it, for a
+  // tab being recorded (|tab|); the user approved it with their click.
   void OnChatToolCalled(std::string callback_id,
+                        molt_ai::automation::tool_steps::RecordedCall record,
+                        base::WeakPtr<content::WebContents> tab,
                         molt_ai::SiteToolHost::CallEnd end,
                         molt_ai::agent_tools::CallOutcome outcome);
   // Lists and calls site tools for the proposals (created on first use).
