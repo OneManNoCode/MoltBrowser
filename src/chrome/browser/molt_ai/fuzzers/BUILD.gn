@@ -256,6 +256,19 @@ fuzzer_test("molt_agent_run_draft_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# A step's fallback locators: the "locators" block of a .molt step, and the
+# page scripts' capture and probe reports.
+fuzzer_test("molt_automation_locators_fuzzer") {
+  sources = [ "molt_automation_locators_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:locators",
+  ]
+  dict = "dicts/automation_locators.dict"
+  seed_corpus = "corpus/molt_automation_locators_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 fuzzer_test("molt_automation_ai_steps_fuzzer") {
   sources = [ "molt_automation_ai_steps_fuzzer.cc" ]
   deps = [

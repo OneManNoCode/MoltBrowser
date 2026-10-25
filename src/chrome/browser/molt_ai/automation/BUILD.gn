@@ -118,6 +118,29 @@ source_set("automation_policy") {
   deps = [ "//url" ]
 
   public_deps = [
+    # Step::locators.
+    ":locators",
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# A step's fallback locators: captured from the element at record time,
+# probed and chosen from at replay (docs/design/AGENT_ACTIONS.md §3.4).
+# Pure logic (base + url) and the page scripts; fuzzed by
+# molt_automation_locators_fuzzer.
+source_set("locators") {
+  sources = [
+    "automation_locators.cc",
+    "automation_locators.h",
+  ]
+
+  deps = [
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+    "//url",
+  ]
+
+  public_deps = [
     "//base",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
@@ -129,6 +152,7 @@ source_set("unit_tests") {
   sources = [
     "agent_run_draft_unittest.cc",
     "automation_ai_steps_unittest.cc",
+    "automation_locators_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
   ]
@@ -136,6 +160,7 @@ source_set("unit_tests") {
     ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
+    ":locators",
     "//base",
 
     # Every schema the runner builds must be accepted by the inference

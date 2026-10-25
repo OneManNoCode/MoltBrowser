@@ -172,6 +172,8 @@ base::DictValue StepToDict(const Step& s) {
     for (const auto& sel : s.selector_fallbacks) l.Append(sel);
     d.Set("selector_fallbacks", std::move(l));
   }
+  if (s.locators)
+    d.Set("locators", locators::ToValue(*s.locators));
   if (!s.value.empty())
     d.Set("value", s.value);
   if (!s.store_as.empty())
@@ -196,6 +198,9 @@ Step StepFromDict(const base::DictValue& d) {
   s.type = StepTypeFromString(GetString(d, "type", "unknown"));
   s.target = GetString(d, "target", "");
   s.selector_fallbacks = GetStringList(d, "selector_fallbacks");
+  // Page data, perhaps from an imported file: checked and capped.
+  if (const base::Value* l = d.Find("locators"))
+    s.locators = locators::Parse(*l);
   s.value = GetString(d, "value", "");
   s.store_as = GetString(d, "store_as", "");
   s.transform = GetString(d, "transform", "");

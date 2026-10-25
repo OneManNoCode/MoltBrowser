@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_locators.h"
 
 namespace molt_ai {
 namespace automation {
@@ -71,8 +72,15 @@ struct Step {
 
   // Additional candidate selectors tried in order if `target` fails.
   // Recorded by the recorder (data-testid -> id -> name -> aria-label -> path)
-  // to give scripts resilience against page redesigns.
+  // to give scripts resilience against page redesigns. Used only by steps
+  // without |locators| (older recordings, studio steps).
   std::vector<std::string> selector_fallbacks;
+
+  // CLICK / TYPE: the recorded element's fallback locators and what it was
+  // (automation_locators.h), captured when the step was recorded or saved
+  // from an agent run. Optional ("locators" in the file); validated when
+  // read, and dropped whole if its root is malformed.
+  std::optional<locators::StepLocators> locators;
 
   // Action-specific value: text to type, JS code, prompt for AI step,
   // notification body, etc.
