@@ -1,0 +1,28 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webaudio/biquad_filter_handler.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webaudio/biquad_filter_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webaudio/biquad_filter_handler.cc b/third_party/blink/renderer/modules/webaudio/biquad_filter_handler.cc
+index 6b30a3f081d601a030281dcbbe5692a2f38fe232..4c872729c9f6879d00d110645557b08dfac40273 100644
+--- a/third_party/blink/renderer/modules/webaudio/biquad_filter_handler.cc
++++ b/third_party/blink/renderer/modules/webaudio/biquad_filter_handler.cc
+@@ -21,6 +21,7 @@
+ #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ #if defined(ARCH_CPU_X86_FAMILY)
+ #include <xmmintrin.h>
+@@ -108,7 +109,8 @@ bool HasConstantValues(base::span<float> values) {
+ double NormalizeFrequency(float frequency, double nyquist, float detune) {
+   const double normalized_frequency = frequency / nyquist;
+   // Detune in Cents multiplies the frequency by 2^(detune / 1200).
+-  return detune ? normalized_frequency * exp2(detune / 1200)
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  return detune ? normalized_frequency * gfx::molt_math::Exp2(detune / 1200)
+                 : normalized_frequency;
+ }
+ 

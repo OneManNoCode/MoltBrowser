@@ -1,0 +1,41 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+index 3a6e46a39f4a5687fa7a781d96433251f9dda581..8d76873c8dcb220aa5978120c28e6d5e3124900a 100644
+--- a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
++++ b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+@@ -37,6 +37,8 @@
+ #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+ #include "third_party/blink/renderer/platform/audio/vector_math.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
++#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
++#include "ui/gfx/geometry/molt_math.h"          // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -57,8 +59,9 @@ void ApplyWindow(base::span<float> p) {
+   const size_t n = p.size();
+   for (unsigned i = 0; i < n; ++i) {
+     const double x = static_cast<double>(i) / static_cast<double>(n);
+-    const double window =
+-        a0 - a1 * cos(kTwoPiDouble * x) + a2 * cos(kTwoPiDouble * 2.0 * x);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++    const double window = a0 - a1 * gfx::molt_math::Cos(kTwoPiDouble * x) +
++                          a2 * gfx::molt_math::Cos(kTwoPiDouble * 2.0 * x);
+     p[i] *= static_cast<float>(window);
+   }
+ }
+@@ -317,7 +320,8 @@ void RealtimeAnalyser::DoFFTAnalysis() {
+   DCHECK_GE(imag.size(), n);
+   for (size_t i = 0; i < n; ++i) {
+     std::complex<double> c(real[i], imag[i]);
+-    double scalar_magnitude = abs(c) * magnitude_scale;
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    double scalar_magnitude = gfx::molt_math::ComplexAbs(c) * magnitude_scale;
+     destination[i] = EnsureFinite(
+         static_cast<float>(k * destination[i] + (1 - k) * scalar_magnitude), 0);
+   }

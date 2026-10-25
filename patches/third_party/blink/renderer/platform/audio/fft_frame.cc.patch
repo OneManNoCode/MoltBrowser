@@ -1,0 +1,96 @@
+MoltBrowser patch for third_party/blink/renderer/platform/audio/fft_frame.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/audio/fft_frame.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/audio/fft_frame.cc b/third_party/blink/renderer/platform/audio/fft_frame.cc
+index 434f531e3d65f0954ce294d188c78dc68289882e..38092dfa305ae854eced574f04c62b7b34a8fe65 100644
+--- a/third_party/blink/renderer/platform/audio/fft_frame.cc
++++ b/third_party/blink/renderer/platform/audio/fft_frame.cc
+@@ -38,6 +38,8 @@
+ #include "third_party/blink/renderer/platform/audio/vector_math.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "third_party/fdlibm/ieee754.h"
++#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
++#include "ui/gfx/geometry/molt_math.h"          // MoltBrowser
+ 
+ #ifndef NDEBUG
+ #include <stdio.h>
+@@ -66,7 +68,11 @@ FFTFrame::FFTFrame(unsigned fft_size)
+ 
+ FFTFrame::FFTFrame(unsigned fft_size, bool allocate_buffers)
+     : fft_size_(CheckedFftSize(fft_size)),
+-      rust_fft_(blink::rust_fft::rustfft_new(fft_size_)) {
++      // MoltBrowser: in MoltNet, rustfft's scalar FFTs, which give the same
++      // results on every CPU (ui/gfx/geometry/molt_math.h's switch).
++      rust_fft_(gfx::molt_math::IsPortable()
++                    ? blink::rust_fft::rustfft_new_portable(fft_size_)
++                    : blink::rust_fft::rustfft_new(fft_size_)) {
+   if (allocate_buffers) {
+     CHECK(InitializeBuffers());
+   }
+@@ -182,8 +188,9 @@ void FFTFrame::InterpolateFrequencyComponents(const FFTFrame& frame1,
+     std::complex<double> c1(real1_span[i], imag1_span[i]);
+     std::complex<double> c2(real2_span[i], imag2_span[i]);
+ 
+-    double mag1 = abs(c1);
+-    double mag2 = abs(c2);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    double mag1 = gfx::molt_math::ComplexAbs(c1);
++    double mag2 = gfx::molt_math::ComplexAbs(c2);
+ 
+     // Interpolate magnitudes in decibels
+     double db_mag1 = 20.0 * fdlibm::log10(mag1);
+@@ -210,8 +217,9 @@ void FFTFrame::InterpolateFrequencyComponents(const FFTFrame& frame1,
+     double mag = fdlibm::pow(10.0, 0.05 * db_mag);
+ 
+     // Now, deal with phase
+-    double phase1 = arg(c1);
+-    double phase2 = arg(c2);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    double phase1 = gfx::molt_math::ComplexArg(c1);
++    double phase2 = gfx::molt_math::ComplexArg(c2);
+ 
+     double delta_phase1 = phase1 - last_phase1;
+     double delta_phase2 = phase2 - last_phase2;
+@@ -255,7 +263,8 @@ void FFTFrame::InterpolateFrequencyComponents(const FFTFrame& frame1,
+       phase_accum += kTwoPiDouble;
+     }
+ 
+-    std::complex<double> c = std::polar(mag, phase_accum);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    std::complex<double> c = gfx::molt_math::ComplexPolar(mag, phase_accum);
+ 
+     real[i] = static_cast<float>(c.real());
+     imag[i] = static_cast<float>(c.imag());
+@@ -278,8 +287,9 @@ double FFTFrame::ExtractAverageGroupDelay() {
+   // Calculate weighted average group delay
+   for (unsigned i = 0; i < packed_size; i++) {
+     std::complex<double> c(real[i], imag[i]);
+-    double mag = abs(c);
+-    double phase = arg(c);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    double mag = gfx::molt_math::ComplexAbs(c);
++    double phase = gfx::molt_math::ComplexArg(c);
+ 
+     double delta_phase = phase - last_phase;
+     last_phase = phase;
+@@ -329,12 +339,14 @@ void FFTFrame::AddConstantGroupDelay(double sample_frame_delay) {
+   // Add constant group delay
+   for (unsigned i = 1; i < packed_size; i++) {
+     std::complex<double> c(real[i], imag[i]);
+-    double mag = abs(c);
+-    double phase = arg(c);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    double mag = gfx::molt_math::ComplexAbs(c);
++    double phase = gfx::molt_math::ComplexArg(c);
+ 
+     phase += i * phase_adj;
+ 
+-    std::complex<double> c2 = std::polar(mag, phase);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++    std::complex<double> c2 = gfx::molt_math::ComplexPolar(mag, phase);
+ 
+     real[i] = static_cast<float>(c2.real());
+     imag[i] = static_cast<float>(c2.imag());

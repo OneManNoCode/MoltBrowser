@@ -11,6 +11,7 @@ third_party/skia/modules/skcms/src/skcms_public.h	# third_party/skia@886e42fda11
 third_party/skia/src/core/SkGraphics.cpp	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
 third_party/skia/src/opts/SkOpts_moltbrowser.cpp	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
 third_party/skia/src/opts/SkRasterPipeline_opts.h	# third_party/skia@886e42fda11610a56dd1b22e8697e27f9d1e34f2
+v8/src/base/DEPS	# v8@392e44423f46d75904da712fadea4c7d5d97967f
 v8/src/base/ieee754.cc	# v8@392e44423f46d75904da712fadea4c7d5d97967f
 v8/src/base/ieee754.h	# v8@392e44423f46d75904da712fadea4c7d5d97967f
 v8/src/flags/flag-definitions.h	# v8@392e44423f46d75904da712fadea4c7d5d97967f

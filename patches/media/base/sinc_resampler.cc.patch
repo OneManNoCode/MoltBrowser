@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/sinc_resampler.cc b/media/base/sinc_resampler.cc
-index 80cc3be61c5d7fc50cb138f5a06f9cd7d943ff29..0b0c54f98bffd0a08bfb52d96ee73fd4b6224043 100644
+index 80cc3be61c5d7fc50cb138f5a06f9cd7d943ff29..2c23a6bf7b59b4e439814e29721a615438ab205c 100644
 --- a/media/base/sinc_resampler.cc
 +++ b/media/base/sinc_resampler.cc
-@@ -88,6 +88,7 @@
+@@ -88,6 +88,8 @@
  #include "base/trace_event/trace_event.h"
  #include "build/build_config.h"
  #include "cc/base/math_util.h"
 +#include "media/base/molt_portable_media.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
  
  #if defined(ARCH_CPU_X86_FAMILY)
  #include <immintrin.h>
-@@ -128,6 +129,12 @@ static double SincScaleFactor(double io_ratio, size_t kernel_size) {
+@@ -128,6 +130,12 @@ static double SincScaleFactor(double io_ratio, size_t kernel_size) {
  
  // If we know the minimum architecture at compile time, avoid CPU detection.
  void SincResampler::InitializeCPUSpecificFeatures() {
@@ -29,3 +30,44 @@ index 80cc3be61c5d7fc50cb138f5a06f9cd7d943ff29..0b0c54f98bffd0a08bfb52d96ee73fd4
  #if defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
    convolve_proc_ = Convolve_NEON;
  #elif defined(ARCH_CPU_X86_FAMILY)
+@@ -232,16 +240,20 @@ void SincResampler::InitializeKernel() {
+ 
+       // Compute Blackman window, matching the offset of the sinc().
+       const float x = (i - subsample_offset) / signed_kernel_size;
+-      const float window =
+-          static_cast<float>(kA0 - kA1 * cos(2.0 * std::numbers::pi * x) +
+-                             kA2 * cos(4.0 * std::numbers::pi * x));
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++      const float window = static_cast<float>(
++          kA0 - kA1 * gfx::molt_math::Cos(2.0 * std::numbers::pi * x) +
++          kA2 * gfx::molt_math::Cos(4.0 * std::numbers::pi * x));
+       kernel_window_storage_[idx] = window;
+ 
+       // Compute the sinc with offset, then window the sinc() function and store
+       // at the correct offset.
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+       kernel_storage_[idx] = static_cast<float>(
+-          window * (pre_sinc ? sin(sinc_scale_factor * pre_sinc) / pre_sinc
+-                             : sinc_scale_factor));
++          window *
++          (pre_sinc
++               ? gfx::molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc
++               : sinc_scale_factor));
+     }
+   }
+ }
+@@ -265,9 +277,12 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
+       const float window = kernel_window_storage_[idx];
+       const float pre_sinc = kernel_pre_sinc_storage_[idx];
+ 
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+       kernel_storage_[idx] = static_cast<float>(
+-          window * (pre_sinc ? sin(sinc_scale_factor * pre_sinc) / pre_sinc
+-                             : sinc_scale_factor));
++          window *
++          (pre_sinc
++               ? gfx::molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc
++               : sinc_scale_factor));
+     }
+   }
+ }

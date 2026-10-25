@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/BUILD.gn b/media/base/BUILD.gn
-index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..ee292d4e8365e32775340b1a08352ac41bc4afcc 100644
+index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..18fcc4f7a9f6090bfe04e07af94238bf14088196 100644
 --- a/media/base/BUILD.gn
 +++ b/media/base/BUILD.gn
 @@ -274,6 +274,13 @@ source_set("base") {
@@ -22,7 +22,7 @@ index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..ee292d4e8365e32775340b1a08352ac4
      "multi_channel_resampler.cc",
      "multi_channel_resampler.h",
      "null_video_sink.cc",
-@@ -430,6 +437,9 @@ source_set("base") {
+@@ -430,11 +437,17 @@ source_set("base") {
      "//net",
      "//skia",
      "//third_party/libyuv",
@@ -32,7 +32,15 @@ index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..ee292d4e8365e32775340b1a08352ac4
      "//third_party/widevine/cdm:headers",
      "//ui/display",
      "//ui/events",
-@@ -667,6 +677,10 @@ source_set("unit_tests") {
+     "//ui/events:events_base",
+     "//ui/events:keyboard_hook",
++
++    # MoltBrowser: sinc_resampler.cc's kernel (gfx::molt_math).
++    "//ui/gfx/geometry",
+     "//url",
+   ]
+ 
+@@ -667,6 +680,10 @@ source_set("unit_tests") {
      "media_serializers_unittest.cc",
      "metadata_track_unittest.cc",
      "mime_util_unittest.cc",

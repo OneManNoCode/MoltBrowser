@@ -1,0 +1,35 @@
+MoltBrowser patch for third_party/blink/renderer/platform/transforms/affine_transform.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/transforms/affine_transform.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/transforms/affine_transform.h b/third_party/blink/renderer/platform/transforms/affine_transform.h
+index 87a77b65a474f6d07a6036672d996c273a8a8a05..d05596a4086e40ce3843e8a154e15dbad1225ca0 100644
+--- a/third_party/blink/renderer/platform/transforms/affine_transform.h
++++ b/third_party/blink/renderer/platform/transforms/affine_transform.h
+@@ -35,6 +35,7 @@
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "ui/gfx/geometry/double4.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace gfx {
+ class PointF;
+@@ -159,11 +160,14 @@ class PLATFORM_EXPORT AffineTransform {
+     return result;
+   }
+ 
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h), both.
+   [[nodiscard]] static constexpr AffineTransform MakeSkewX(double angle) {
+-    return AffineTransform(1, 0, std::tan(base::DegToRad(angle)), 1, 0, 0);
++    return AffineTransform(1, 0, gfx::molt_math::Tan(base::DegToRad(angle)), 1,
++                           0, 0);
+   }
+   [[nodiscard]] static constexpr AffineTransform MakeSkewY(double angle) {
+-    return AffineTransform(1, std::tan(base::DegToRad(angle)), 0, 1, 0, 0);
++    return AffineTransform(1, gfx::molt_math::Tan(base::DegToRad(angle)), 0, 1,
++                           0, 0);
+   }
+   [[nodiscard]] static constexpr AffineTransform Translation(double x,
+                                                              double y) {

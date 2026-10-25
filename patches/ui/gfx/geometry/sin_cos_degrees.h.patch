@@ -1,0 +1,40 @@
+MoltBrowser patch for ui/gfx/geometry/sin_cos_degrees.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/ui/gfx/geometry/sin_cos_degrees.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/ui/gfx/geometry/sin_cos_degrees.h b/ui/gfx/geometry/sin_cos_degrees.h
+index 4f41ed4907aac57f00aa2238220eabb32dc50980..375363f1c3ee78a0f3666e066ac848148d0388e4 100644
+--- a/ui/gfx/geometry/sin_cos_degrees.h
++++ b/ui/gfx/geometry/sin_cos_degrees.h
+@@ -13,6 +13,7 @@
+ #include <utility>
+ 
+ #include "base/numerics/angle_conversions.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace gfx {
+ 
+@@ -77,8 +78,9 @@ inline SinCos SinCosDegrees(double degrees) {
+     }
+ 
+     double rad = base::DegToRad(degrees);
+-    double s = std::sin(rad);
+-    double c = std::cos(rad);
++    // MoltBrowser: portable in MoltNet (molt_math.h).
++    double s = molt_math::Sin(rad);
++    double c = molt_math::Cos(rad);
+ 
+     // 45..135 and -135..-45 can be moved into the opposite areas
+     // simply by flipping the x and y axis (in conjunction with
+@@ -106,7 +108,8 @@ inline SinCos SinCosDegrees(double degrees) {
+   // Slow path for extreme cases.
+   degrees = std::fmod(degrees, 360.0);
+   double rad = base::DegToRad(degrees);
+-  return SinCos{std::sin(rad), std::cos(rad)};
++  // MoltBrowser: portable in MoltNet (molt_math.h).
++  return SinCos{molt_math::Sin(rad), molt_math::Cos(rad)};
+ }
+ 
+ }  // namespace gfx

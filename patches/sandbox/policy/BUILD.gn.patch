@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/sandbox/policy/BUILD.gn b/sandbox/policy/BUILD.gn
-index 6d3e33f52843ebf6892094f630ef0aa339d993fd..e662fecb9716d5f5e428c92a4948c2f2001d1de4 100644
+index 6d3e33f52843ebf6892094f630ef0aa339d993fd..f7e43a54c266c69972aae0738ef0a6dbfd83fb62 100644
 --- a/sandbox/policy/BUILD.gn
 +++ b/sandbox/policy/BUILD.gn
 @@ -88,6 +88,7 @@ component("policy") {
@@ -16,3 +16,11 @@ index 6d3e33f52843ebf6892094f630ef0aa339d993fd..e662fecb9716d5f5e428c92a4948c2f2
        "linux/sandbox_debug_handling_linux.cc",
        "linux/sandbox_debug_handling_linux.h",
        "linux/sandbox_linux.cc",
+@@ -152,6 +153,7 @@ component("policy") {
+   if (is_win) {
+     sources += [
+       "win/lpac_capability.h",
++      "win/molt_job_memory_limit.h",  # MoltBrowser
+       "win/sandbox_diagnostics.cc",
+       "win/sandbox_diagnostics.h",
+       "win/sandbox_warmup.cc",

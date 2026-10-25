@@ -1,0 +1,122 @@
+MoltBrowser patch for third_party/blink/renderer/platform/audio/biquad.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/audio/biquad.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/audio/biquad.cc b/third_party/blink/renderer/platform/audio/biquad.cc
+index eb154eded431bfba59694c650afd7fa2b08fdf84..4eac7b7c4826dc134bda5b3bd8a9a8c6cf8e5648 100644
+--- a/third_party/blink/renderer/platform/audio/biquad.cc
++++ b/third_party/blink/renderer/platform/audio/biquad.cc
+@@ -42,6 +42,8 @@
+ #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "third_party/fdlibm/ieee754.h"
++#include "ui/gfx/geometry/molt_complex_math.h"  // MoltBrowser
++#include "ui/gfx/geometry/molt_math.h"          // MoltBrowser
+ #if BUILDFLAG(IS_MAC)
+ #include <Accelerate/Accelerate.h>
+ #endif
+@@ -125,30 +127,35 @@ void Biquad::Process(base::span<const float> source, base::span<float> dest) {
+     // documented so it's not clear how to update them anyway.
+   } else {
+ #if BUILDFLAG(IS_MAC)
+-    // Set up filter state.  This is needed in case we're switching from
+-    // filtering with variable coefficients (i.e., with automations) to
+-    // fixed coefficients (without automations).
+-    input_buffer_[0] = x2_;
+-    input_buffer_[1] = x1_;
+-    output_buffer_[0] = y2_;
+-    output_buffer_[1] = y1_;
+-
+-    // Use vecLib if available
+-    ProcessFast(source, dest);
+-
+-    // Copy the last inputs and outputs to the filter memory variables.
+-    // This is needed because the next rendering quantum might be an
+-    // automation which needs the history to continue correctly.  Because
+-    // `source` and `dest` can be the same block of memory, we can't read from
+-    // `source` to get the last inputs.  Fortunately, `ProcessFast` has put the
+-    // last inputs in `input_buffer_[0]` and `input_buffer_[1]` and the last
+-    // outputs in `output_buffer_[0]` and `output_buffer_[1]`.
+-    x1_ = input_buffer_[1];
+-    x2_ = input_buffer_[0];
+-    y1_ = output_buffer_[1];
+-    y2_ = output_buffer_[0];
+-
+-#else
++    // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch) the loop
++    // below, as on every other platform: vDSP_deq22D keeps the filter's
++    // history in double precision and gives other samples.
++    if (!gfx::molt_math::IsPortable()) {
++      // Set up filter state.  This is needed in case we're switching from
++      // filtering with variable coefficients (i.e., with automations) to
++      // fixed coefficients (without automations).
++      input_buffer_[0] = x2_;
++      input_buffer_[1] = x1_;
++      output_buffer_[0] = y2_;
++      output_buffer_[1] = y1_;
++
++      // Use vecLib if available
++      ProcessFast(source, dest);
++
++      // Copy the last inputs and outputs to the filter memory variables.
++      // This is needed because the next rendering quantum might be an
++      // automation which needs the history to continue correctly.  Because
++      // `source` and `dest` can be the same block of memory, we can't read from
++      // `source` to get the last inputs.  Fortunately, `ProcessFast` has put
++      // the last inputs in `input_buffer_[0]` and `input_buffer_[1]` and the
++      // last outputs in `output_buffer_[0]` and `output_buffer_[1]`.
++      x1_ = input_buffer_[1];
++      x2_ = input_buffer_[0];
++      y1_ = output_buffer_[1];
++      y2_ = output_buffer_[0];
++      return;
++    }
++#endif
+     // Create local copies of member variables
+     double x1 = x1_;
+     double x2 = x2_;
+@@ -181,7 +188,6 @@ void Biquad::Process(base::span<const float> source, base::span<float> dest) {
+     x2_ = DenormalDisabler::FlushDenormalFloatToZero(x2);
+     y1_ = DenormalDisabler::FlushDenormalFloatToZero(y1);
+     y2_ = DenormalDisabler::FlushDenormalFloatToZero(y2);
+-#endif
+   }
+ }
+ 
+@@ -587,7 +593,9 @@ void Biquad::GetFrequencyResponse(base::span<const float> frequency,
+       std::complex<double> denominator =
+           std::complex<double>(1, 0) + (a1 + a2 * z) * z;
+       std::complex<double> response = numerator / denominator;
+-      mag_response[k] = static_cast<float>(abs(response));
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++      mag_response[k] =
++          static_cast<float>(gfx::molt_math::ComplexAbs(response));
+       phase_response[k] =
+           static_cast<float>(fdlibm::atan2(imag(response), real(response)));
+     }
+@@ -836,7 +844,8 @@ double Biquad::TailFrame(int coef_index, double max_frame) const {
+     double y = sqrt(-discrim) / 2;
+     std::complex<double> r1(x, y);
+     std::complex<double> r2(x, -y);
+-    double r = hypot(x, y);
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++    double r = gfx::molt_math::Hypot(x, y);
+ 
+     DCHECK(std::isfinite(r));
+ 
+@@ -844,8 +853,11 @@ double Biquad::TailFrame(int coef_index, double max_frame) const {
+     if (r == 1) {
+       tail_frame = max_frame;
+     } else {
+-      double c1 = abs((b0 * r1 * r1 + b1 * r1 + b2) / (r2 - r1));
+-      double c2 = abs((b0 * r2 * r2 + b1 * r2 + b2) / (r2 - r1));
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_complex_math.h).
++      double c1 =
++          gfx::molt_math::ComplexAbs((b0 * r1 * r1 + b1 * r1 + b2) / (r2 - r1));
++      double c2 =
++          gfx::molt_math::ComplexAbs((b0 * r2 * r2 + b1 * r2 + b2) / (r2 - r1));
+ 
+       DCHECK(std::isfinite(c1));
+       DCHECK(std::isfinite(c2));

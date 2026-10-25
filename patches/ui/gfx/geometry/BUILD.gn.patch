@@ -1,0 +1,53 @@
+MoltBrowser patch for ui/gfx/geometry/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/ui/gfx/geometry/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/ui/gfx/geometry/BUILD.gn b/ui/gfx/geometry/BUILD.gn
+index a5e3e1be9fb52bf0716e3e3aa0a7f586625d0f71..8061e5b6779caaf61bf63df05fd1c08d490e8bfa 100644
+--- a/ui/gfx/geometry/BUILD.gn
++++ b/ui/gfx/geometry/BUILD.gn
+@@ -29,6 +29,12 @@ component("geometry") {
+     "line_f.h",
+     "matrix3_f.cc",
+     "matrix3_f.h",
++
++    # MoltBrowser: the math functions of page-visible computations, portable
++    # in MoltNet renderers.
++    "molt_complex_math.h",
++    "molt_math.cc",
++    "molt_math.h",
+     "outsets.h",
+     "outsets_f.h",
+     "point.cc",
+@@ -76,7 +82,12 @@ component("geometry") {
+ 
+   defines = [ "IS_GEOMETRY_IMPL" ]
+ 
+-  deps = [ "//base" ]
++  deps = [
++    "//base",
++
++    # MoltBrowser: molt_math.cc.
++    "//third_party/llvm-libc:molt_portable_math",
++  ]
+ 
+   if (!is_debug) {
+     configs -= [ "//build/config/compiler:default_optimization" ]
+@@ -115,3 +126,15 @@ component("geometry_skia") {
+   ]
+   defines = [ "IS_GEOMETRY_SKIA_IMPL" ]
+ }
++
++# MoltBrowser: gfx::molt_math (in molt_ai_unittests).
++source_set("molt_math_unittests") {
++  testonly = true
++  sources = [ "molt_math_unittest.cc" ]
++  deps = [
++    ":geometry",
++    "//testing/gtest",
++    "//third_party/llvm-libc:molt_portable_math",
++  ]
++  visibility = [ "//chrome/browser/molt_ai/test:*" ]
++}

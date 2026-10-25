@@ -1,0 +1,39 @@
+MoltBrowser patch for third_party/blink/renderer/core/svg/svg_path_parser.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/svg/svg_path_parser.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/svg/svg_path_parser.cc b/third_party/blink/renderer/core/svg/svg_path_parser.cc
+index e26f155f4d0bc427da21111bc53d273f09abc269..48be7c4968824206eafa8b933219211362c94d2a 100644
+--- a/third_party/blink/renderer/core/svg/svg_path_parser.cc
++++ b/third_party/blink/renderer/core/svg/svg_path_parser.cc
+@@ -27,6 +27,7 @@
+ #include "third_party/blink/renderer/core/svg/svg_path_consumer.h"
+ #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -249,13 +250,15 @@ bool SVGPathNormalizer::DecomposeArcToCubic(
+     float start_theta = theta1 + i * theta_arc / segments;
+     float end_theta = theta1 + (i + 1) * theta_arc / segments;
+ 
+-    float t = (8 / 6.f) * tanf(0.25f * (end_theta - start_theta));
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++    float t =
++        (8 / 6.f) * gfx::molt_math::Tan(0.25f * (end_theta - start_theta));
+     if (!std::isfinite(t))
+       return false;
+-    float sin_start_theta = sinf(start_theta);
+-    float cos_start_theta = cosf(start_theta);
+-    float sin_end_theta = sinf(end_theta);
+-    float cos_end_theta = cosf(end_theta);
++    float sin_start_theta = gfx::molt_math::Sin(start_theta);
++    float cos_start_theta = gfx::molt_math::Cos(start_theta);
++    float sin_end_theta = gfx::molt_math::Sin(end_theta);
++    float cos_end_theta = gfx::molt_math::Cos(end_theta);
+ 
+     point1 = gfx::PointF(cos_start_theta - t * sin_start_theta,
+                          sin_start_theta + t * cos_start_theta);

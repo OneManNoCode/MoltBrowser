@@ -1,0 +1,54 @@
+MoltBrowser patch for third_party/llvm-libc/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/llvm-libc/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/llvm-libc/BUILD.gn b/third_party/llvm-libc/BUILD.gn
+index 1c036893d34693e2e5bb3af3487d495de8ace89b..db303fa8b54788fe6716dd667b65375a759a5b22 100644
+--- a/third_party/llvm-libc/BUILD.gn
++++ b/third_party/llvm-libc/BUILD.gn
+@@ -18,4 +18,43 @@ group("llvm-libc-shared") {
+ group("headers") {
+   visibility = [ "//v8:v8_libbase" ]
+   public_configs = [ ":config" ]
++
++  # MoltBrowser: V8's Math in MoltNet (--portable-math, ieee754.cc).
++  public_deps = [ ":molt_portable_math" ]
++}
++
++# MoltBrowser: llvm-libc's math built without the target's fused multiply-add
++# and rounding instructions, so that it gives the same results on every CPU
++# and OS (molt_portable_math.h). Pure functions; who calls them is decided
++# per process by V8's --portable-math and gfx::molt_math.
++config("molt_portable_math_config") {
++  visibility = [ ":*" ]
++  include_dirs = [ "src" ]
++}
++
++static_library("molt_portable_math") {
++  sources = [
++    "molt_portable_math.cc",
++    "molt_portable_math.h",
++  ]
++  configs -= [ "//build/config/compiler:chromium_code" ]
++  configs += [
++    "//build/config/compiler:no_chromium_code",
++    ":molt_portable_math_config",
++  ]
++  visibility = [
++    ":*",
++    "//ui/gfx/geometry:*",
++  ]
++}
++
++# Golden results that every platform must reproduce (in molt_ai_unittests).
++source_set("molt_portable_math_unittests") {
++  testonly = true
++  sources = [ "molt_portable_math_unittest.cc" ]
++  deps = [
++    ":molt_portable_math",
++    "//testing/gtest",
++  ]
++  visibility = [ "//chrome/browser/molt_ai/test:*" ]
+ }
