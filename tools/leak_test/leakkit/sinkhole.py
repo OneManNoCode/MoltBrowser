@@ -23,10 +23,14 @@ invoking user, inside the test namespace (`leaktest.py service fakedns` /
 
 Logs are JSON lines with a wall-clock `ts`. Everything a client sends is
 length-capped before it is logged; bodies are read and dropped, never
-logged.
+logged. The one thing taken from a body is the list of component IDs in
+the component updater's check (POST /service/update2/json), logged as
+`update_apps`, so the report can tell which components were registered.
 """
 
 import ipaddress
+import json
+import re
 import socket
 import ssl
 import struct
@@ -45,6 +49,9 @@ _LOG_HEADERS = ('host', 'user-agent', 'content-type', 'content-length',
 _REDACT = ('x-goog-api-key', 'cookie', 'authorization')
 _MAX_HEAD = 16384
 _MAX_BODY = 1 << 20
+UPDATE_CHECK_PATH = '/service/update2/json'
+_COMPONENT_ID = re.compile(r'^[a-p]{32}$')
+_MAX_APPS = 300
 
 
 class AddressPool(object):
@@ -220,19 +227,57 @@ def _read_head(stream):
     return data
 
 
-def _drain_body(stream, data, headers):
+def _drain_body(stream, data, headers, keep=False):
+    """Reads the request body (up to _MAX_BODY). Returns (Content-Length,
+    the body's bytes when `keep`, else b'')."""
     try:
         length = int(headers.get('content-length') or 0)
     except ValueError:
         length = 0
-    have = len(data.split(b'\r\n\r\n', 1)[1]) if b'\r\n\r\n' in data else 0
-    left = min(max(length - have, 0), _MAX_BODY)
+    length = max(length, 0)
+    body = data.split(b'\r\n\r\n', 1)[1] if b'\r\n\r\n' in data else b''
+    left = min(max(length - len(body), 0), _MAX_BODY)
+    kept = [body[:_MAX_BODY]] if keep else []
     while left > 0:
         chunk = stream.recv(min(left, 65536))
         if not chunk:
             break
         left -= len(chunk)
-    return length
+        if keep:
+            kept.append(chunk)
+    return length, b''.join(kept)[:min(length, _MAX_BODY)]
+
+
+def is_update_check(method, target):
+    return method == 'POST' and \
+        target.split('?', 1)[0].rstrip('/') == UPDATE_CHECK_PATH
+
+
+def update_app_ids(body, header=''):
+    """The component IDs an update check names, in order, each once: the
+    `appid` of every entry of the JSON body's request.apps (request.app in
+    the older protocol), then any others in the X-Goog-Update-AppId header
+    (a comma-separated copy). [] when neither has any."""
+    candidates = []
+    try:
+        doc = json.loads(body.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        doc = None
+    req = doc.get('request') if isinstance(doc, dict) else None
+    apps = req.get('apps', req.get('app')) if isinstance(req, dict) else None
+    if isinstance(apps, list):
+        for app in apps[:_MAX_APPS * 4]:
+            if isinstance(app, dict):
+                candidates.append(app.get('appid'))
+    candidates += str(header or '')[:_MAX_HEAD].split(',')
+    out = []
+    for appid in candidates:
+        appid = appid.strip() if isinstance(appid, str) else None
+        if appid and _COMPONENT_ID.match(appid) and appid not in out:
+            out.append(appid)
+            if len(out) >= _MAX_APPS:
+                break
+    return out
 
 
 _RESPONSE = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n'
@@ -281,7 +326,12 @@ def handle_connection(conn, ctx, log, port):
         method, target, headers = req
         item.update(method=_cap(method, 16), path=_cap(target, 300),
                     headers=logged_headers(headers))
-        item['body_length'] = _drain_body(stream, data, headers)
+        update_check = is_update_check(method, target)
+        item['body_length'], body = _drain_body(stream, data, headers,
+                                                keep=update_check)
+        if update_check:
+            item['update_apps'] = update_app_ids(
+                body, headers.get('x-goog-update-appid'))
         stream.sendall(_RESPONSE)
     except (ssl.SSLError, OSError, ValueError) as e:
         item['error'] = _cap(str(e), 200)

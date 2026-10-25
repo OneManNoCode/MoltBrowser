@@ -472,7 +472,9 @@ start-up tabs are the browser's own.
   through `--ignore-certificate-errors-spki-list` (the same key and flag as
   `run`'s test pages). It logs the server name, the HTTP method and path
   and a few headers (an API key or a cookie only by its length; never a
-  body), answers `503` and closes.
+  body), answers `503` and closes. From the component updater's check
+  (`POST /service/update2/json`) it keeps one thing besides: the IDs of
+  the components the check names (`update_apps`).
 * The firewall logs the first packet of every flow to the range (nflog,
   prefix `sinkhole`), so a connection to a port the sinkhole doesn't
   listen on is recorded too. Everything else is logged and dropped as in
@@ -494,6 +496,7 @@ refuses to start if the JSON doesn't match the doc).
 | `traffic.user_only` | a host the doc allows only after a user action the capture never takes |
 | `traffic.outside_its_step` | a step-bound host outside its step (the download check outside `download`) |
 | `traffic.unexpected_port` | a listed host on a port the doc doesn't list |
+| `traffic.components` | the component updater's check names a component from the doc's component table (section 6: off in MoltBrowser, or asked for only on demand, like the on-device model manifest); SKIP when no update check with readable IDs reached the sinkhole; the evidence lists every check's IDs |
 | `traffic.harness.escaped` | anything left the namespace |
 | `traffic.harness.capture`, `.steps`, `.update_check` | ERROR: the captures are empty, a step didn't run, or the update check never reached the sinkhole (the control that proves the capture works) |
 | `traffic.expected`, `traffic.not_seen`, `traffic.kit` | INFO: what was expected and seen, what the doc expects that this run didn't see, and the kit's own pages |

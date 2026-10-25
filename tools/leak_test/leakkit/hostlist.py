@@ -22,6 +22,12 @@ The doc carries a machine-readable table between two markers:
   Why     what sends it: the report quotes it as the likely source
   §       the doc section with the details
 
+A second table, between `<!-- components:begin -->` and
+`<!-- components:end -->`, lists the components the component updater's
+check must never name (| Component | ID | Why | § |, the ID being the
+32-letter component ID). The sinkhole reads the IDs out of each update
+check, and the report fails on any of these.
+
 `build()` turns the doc into docs/network_traffic_hosts.json, which the
 traffic capture reads (`leaktest.sh hosts --write` regenerates it,
 `--check` and the kit's tests fail when the two differ). Everything here is
@@ -35,6 +41,9 @@ import re
 
 SCHEMA = 'molt-network-traffic-hosts/1'
 BEGIN, END = '<!-- hosts:begin -->', '<!-- hosts:end -->'
+COMPONENTS_BEGIN = '<!-- components:begin -->'
+COMPONENTS_END = '<!-- components:end -->'
+COMPONENT_ID_RE = re.compile(r'^[a-p]{32}$')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -197,6 +206,61 @@ def parse_doc(text):
     return rows
 
 
+def parse_components(text):
+    """The component table between its markers, as a list of entries; []
+    when the doc has no such table."""
+    lines = text.split('\n')
+    if COMPONENTS_BEGIN not in lines:
+        return []
+    start = lines.index(COMPONENTS_BEGIN)
+    try:
+        end = lines.index(COMPONENTS_END, start)
+    except ValueError:
+        raise HostListError('%s without %s' % (COMPONENTS_BEGIN,
+                                               COMPONENTS_END))
+    rows = []
+    header = None
+    seen = {}
+    for i in range(start + 1, end):
+        lineno = i + 1
+        line = lines[i]
+        if not line.strip():
+            continue
+        cells = _split_row(line)
+        if cells is None:
+            raise HostListError('line %d: not a table row: %r' % (lineno,
+                                                                  line))
+        if header is None:
+            header = [c.lower() for c in cells]
+            if header != ['component', 'id', 'why', '§']:
+                raise HostListError('line %d: the header must be | '
+                                    'Component | ID | Why | § |' % lineno)
+            continue
+        if all(set(c) <= set('-: ') for c in cells):
+            continue
+        if len(cells) != 4:
+            raise HostListError('line %d: %d cells, want 4' % (lineno,
+                                                                len(cells)))
+        name = _plain(cells[0])
+        ids = re.findall(r'`([^`]*)`', cells[1])
+        if len(ids) != 1 or not COMPONENT_ID_RE.match(ids[0]):
+            raise HostListError('line %d: the ID must be one backticked '
+                                'component ID (32 letters a-p): %r' % (
+                                    lineno, cells[1]))
+        why = _plain(cells[2])
+        if not name or not why:
+            raise HostListError('line %d: Component and Why must not be '
+                                'empty' % lineno)
+        cid = ids[0]
+        if cid in seen:
+            raise HostListError('line %d: %s is already on line %d' % (
+                lineno, cid, seen[cid]))
+        seen[cid] = lineno
+        rows.append({'id': cid, 'name': name, 'why': why,
+                     'section': _plain(cells[3]), 'line': lineno})
+    return rows
+
+
 def build(doc_text):
     """The JSON document generated from the doc's text."""
     hosts = []
@@ -204,9 +268,14 @@ def build(doc_text):
         entry = dict(row)
         del entry['line']
         hosts.append(entry)
+    components = []
+    for row in parse_components(doc_text):
+        entry = dict(row)
+        del entry['line']
+        components.append(entry)
     return {'schema': SCHEMA, 'generated_from': DOC_REL,
             'regenerate': 'tools/leak_test/leaktest.sh hosts --write',
-            'hosts': hosts}
+            'hosts': hosts, 'components': components}
 
 
 def dumps(doc):
@@ -253,6 +322,12 @@ class HostList(object):
                 self.exact[e['host']] = e
         # The most specific suffix first.
         self.wild.sort(key=lambda e: -len(e['host']))
+        # Components the update check must not name, by ID.
+        self.components = {}
+        for c in doc.get('components') or []:
+            if isinstance(c, dict) and COMPONENT_ID_RE.match(
+                    str(c.get('id') or '')):
+                self.components[c['id']] = c
 
     @classmethod
     def load(cls, path=JSON_PATH):

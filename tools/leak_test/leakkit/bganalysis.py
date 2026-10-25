@@ -9,7 +9,9 @@ Inputs, all in the run directory:
   logs/fakedns.jsonl    the kit's resolver: each query and the sinkhole
                         address it answered with
   logs/sinkhole.jsonl   the sinkhole: each connection's address, port, TLS
-                        server name and HTTP request line
+                        server name and HTTP request line, and the
+                        component IDs each component update check names
+                        (checked against the doc's component table)
   capture/blocked.pcap  nflog group 1: the first packet of each flow to the
                         sinkhole ("sinkhole"), queries to the kit's resolver
                         ("dns-kit"), DNS sent anywhere else ("dns") and every
@@ -154,6 +156,14 @@ def _port(value):
     return port if 0 < port < 65536 else None
 
 
+def _item_host(item):
+    """The host a sinkhole log entry was for: its Host header, else its TLS
+    server name."""
+    headers = item.get('headers')
+    host = headers.get('host') if isinstance(headers, dict) else None
+    return str(host or item.get('sni') or '').split(':')[0][:255].lower()
+
+
 def classify(ev, hosts, canary_domain):
     """Sets ev.category, ev.reason and ev.entry."""
     host = (ev.host or '').lower().rstrip('.')
@@ -234,7 +244,17 @@ def collect(manifest, run_dir):
 
     sink_log = _read_jsonl(path(logs.get('sinkhole')))
     sink_by_flow = {}
+    update_checks = []
     for item in sink_log:
+        apps = item.get('update_apps')
+        if isinstance(apps, list):
+            ids = []
+            for a in apps[:400]:
+                if isinstance(a, str) and hostlist.COMPONENT_ID_RE.match(a) \
+                        and a not in ids:
+                    ids.append(a)
+            update_checks.append({'ts': _float(item.get('ts')),
+                                  'host': _item_host(item), 'apps': ids})
         key = (str(item.get('dst') or '')[:64], _port(item.get('port')),
                _port(item.get('peer_port')))
         sink_by_flow.setdefault(key, []).append(item)
@@ -329,7 +349,8 @@ def collect(manifest, run_dir):
                                'all': astats.as_dict()},
              'dns_queries': len(dns_log), 'sinkhole_connections':
              len(sink_log), 'escaped': sorted(escaped.values(),
-                                               key=lambda e: e['first'])}
+                                               key=lambda e: e['first']),
+             'update_checks': sorted(update_checks, key=lambda u: u['ts'])}
     return events, facts
 
 
@@ -341,7 +362,9 @@ def _attach(ev, item):
                        str(item.get('path') or '')[:200])
         if r not in ev.requests:
             ev.requests.append(r)
-    host = ((item.get('headers') or {}).get('host') or '').split(':')[0]
+    headers = item.get('headers')
+    host = str((headers.get('host') if isinstance(headers, dict) else None)
+               or '').split(':')[0][:255]
     if host and (not ev.host or _addr(ev.host) is not None):
         ev.host = host.lower()
     sni = item.get('sni')
@@ -470,6 +493,7 @@ def checks_for(manifest, events, facts, steps, hosts):
             'during the update_check step: the sinkhole or the browser\'s '
             'name resolution did not work, or the build is not MoltBrowser'],
         'NETWORK_TRAFFIC.md §5'))
+    checks.append(components_check(manifest, facts, steps, hosts))
     for cat in (FORBIDDEN, NOT_LISTED, USER_ONLY, WRONG_STEP, WRONG_PORT):
         bad = [e for e in events if e['category'] == cat]
         checks.append(_check(
@@ -497,6 +521,40 @@ def checks_for(manifest, events, facts, steps, hosts):
         'browser\'s background traffic)', INFO,
         [fmt_event(e) for e in page] or ['(none)']))
     return checks
+
+
+def components_check(manifest, facts, steps, hosts):
+    """No component NETWORK_TRAFFIC.md's component table lists may be named
+    by the component updater's check (the IDs the sinkhole read from each
+    update check's body)."""
+    t0 = manifest.get('t0') or 0.0
+    seen = facts.get('update_checks') or []
+    with_ids = [u for u in seen if u['apps']]
+    doc = 'NETWORK_TRAFFIC.md §6, the component table'
+    if not with_ids:
+        return _check(
+            'traffic.components', 'No component NETWORK_TRAFFIC.md says is '
+            'off is in an update check', SKIP,
+            ['no component update check with readable component IDs reached '
+             'the sinkhole (%d update check(s) seen); the component updater '
+             'checks about a minute after start' % len(seen)], doc)
+    bad, ok = [], []
+    for u in with_ids:
+        where = '[+%.1fs, %s] %s' % (u['ts'] - t0, steps.at(u['ts']) or
+                                     'before the first step',
+                                     u['host'] or 'update check')
+        listed = [a for a in u['apps'] if a in hosts.components]
+        for a in listed:
+            c = hosts.components[a]
+            bad.append('%s: %s (%s): %s (NETWORK_TRAFFIC.md §%s)' % (
+                where, c['name'], a, c['why'], c['section']))
+        ok.append('%s: %d component(s): %s' % (where, len(u['apps']),
+                                               ', '.join(u['apps'])))
+    return _check(
+        'traffic.components', 'No component NETWORK_TRAFFIC.md says is off '
+        'is in an update check', FAIL if bad else PASS, bad + ok,
+        doc + '; a component that must stay comes off the table, with the '
+        'reason; anything else is registered by mistake')
 
 
 def summarize(checks):

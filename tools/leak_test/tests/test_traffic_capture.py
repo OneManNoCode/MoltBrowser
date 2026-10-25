@@ -50,6 +50,21 @@ GOOD_DOC = '''# x
 <!-- hosts:end -->
 '''
 
+# Component IDs for the tests: 32 letters a-p, made up.
+ID_OFF = 'abcdefghijklmnopabcdefghijklmnop'
+ID_OFF2 = 'ponmlkjihgfedcbaponmlkjihgfedcba'
+ID_OK = 'aaaabbbbccccddddeeeeffffgggghhhh'
+ID_OK2 = 'iiiijjjjkkkkllllmmmmnnnnoooopppp'
+
+COMPONENTS_DOC = GOOD_DOC + '''
+<!-- components:begin -->
+| Component | ID | Why | § |
+|---|---|---|---|
+| A thing | `%s` | Off | 3 |
+| Another | `%s` | Not registered | 3 |
+<!-- components:end -->
+''' % (ID_OFF, ID_OFF2)
+
 
 def free_port(kind=socket.SOCK_STREAM):
     s = socket.socket(socket.AF_INET, kind)
@@ -103,6 +118,41 @@ class HostListParsing(unittest.TestCase):
                                                 '| Name | Ports |'))
         with self.assertRaises(hostlist.HostListError):
             hostlist.parse_doc('%s\n%s\n' % (hostlist.BEGIN, hostlist.END))
+
+    def test_components_table(self):
+        self.assertEqual(hostlist.build(GOOD_DOC)['components'], [])
+        doc = hostlist.build(COMPONENTS_DOC)
+        self.assertEqual([c['id'] for c in doc['components']],
+                         [ID_OFF, ID_OFF2])
+        self.assertEqual(doc['components'][0], {
+            'id': ID_OFF, 'name': 'A thing', 'why': 'Off', 'section': '3'})
+        hl = hostlist.HostList(doc)
+        self.assertEqual(sorted(hl.components), sorted([ID_OFF, ID_OFF2]))
+        self.assertEqual(hl.components[ID_OFF2]['name'], 'Another')
+        # A JSON from before the table: no components, no failure.
+        old = hostlist.build(GOOD_DOC)
+        del old['components']
+        self.assertEqual(hostlist.HostList(old).components, {})
+
+    def test_components_table_errors(self):
+        row = '| A thing | `%s` | Off | 3 |' % ID_OFF
+
+        def bad(new):
+            with self.assertRaises(hostlist.HostListError):
+                hostlist.parse_components(COMPONENTS_DOC.replace(row, new))
+        bad('| A thing | `%s` | Off | 3 |' % ID_OFF2)        # duplicate
+        bad('| A thing | `%sq` | Off | 3 |' % ID_OFF[:31])    # q is not a-p
+        bad('| A thing | `%s` | Off | 3 |' % ID_OFF[:30])     # too short
+        bad('| A thing | %s | Off | 3 |' % ID_OFF)            # no backticks
+        bad('| A thing | `%s` |  | 3 |' % ID_OFF)              # no Why
+        bad('| A thing | `%s` | Off |' % ID_OFF)                # 3 cells
+        bad('not a row')
+        with self.assertRaises(hostlist.HostListError):
+            hostlist.parse_components(COMPONENTS_DOC.replace(
+                '| Component | ID |', '| Name | ID |'))
+        with self.assertRaises(hostlist.HostListError):
+            hostlist.parse_components(COMPONENTS_DOC.replace(
+                hostlist.COMPONENTS_END, ''))
 
     def test_lookup(self):
         hl = hostlist.HostList(hostlist.build(GOOD_DOC))
@@ -196,6 +246,21 @@ class HostListMatchesTheDoc(unittest.TestCase):
             self.assertEqual(h.lookup(host)['expect'], hostlist.USER, host)
         self.assertEqual(h.lookup('api.github.com')['expect'],
                          hostlist.ALLOWED)
+
+    def test_component_table(self):
+        names = {c['name']: c['id'] for c in self.hosts.components.values()}
+        for name in ('On-device model manifest', 'Actor safety lists',
+                     'CAPTCHA providers',
+                     'Amount extraction heuristic regexes',
+                     'Commerce heuristics', 'Indigo', 'Dictation connector',
+                     'History search strings', 'On-device head suggest'):
+            self.assertIn(name, names)
+        # The well-known IDs of two of them, as a check on the table's
+        # transcription.
+        self.assertEqual(names['On-device head suggest'],
+                         'obedbbhbpmojnkanicioggnmelmoomoc')
+        self.assertEqual(names['On-device base model'],
+                         'fklghjjljmnfjoepjmlobpekiapffcja')
 
     def test_steps_are_the_captures_steps(self):
         for e in self.hosts.entries:
@@ -356,6 +421,33 @@ class SinkholeParsing(unittest.TestCase):
         self.assertIsNone(sinkhole.parse_head(b'\x16\x03\x01garbage'))
         self.assertIsNone(sinkhole.parse_head(b'GET /\r\n\r\n'))
 
+    def test_update_check_component_ids(self):
+        self.assertTrue(sinkhole.is_update_check(
+            'POST', '/service/update2/json?cup2key=1:2&cup2hreq=ab'))
+        self.assertFalse(sinkhole.is_update_check('GET',
+                                                  '/service/update2/json'))
+        self.assertFalse(sinkhole.is_update_check('POST', '/v1/things'))
+        body = json.dumps({'request': {'protocol': '4.0', 'apps': [
+            {'appid': ID_OK, 'version': '1.2'},
+            {'appid': ID_OFF, 'version': '0.0.0.0'},
+            {'appid': ID_OK},                               # duplicate
+            {'appid': 'not-an-id'}, {'appid': 5}, 'junk']}}).encode()
+        self.assertEqual(sinkhole.update_app_ids(body), [ID_OK, ID_OFF])
+        # The older protocol's "app", and the header's copy.
+        old = json.dumps({'request': {'app': [{'appid': ID_OK2}]}}).encode()
+        self.assertEqual(sinkhole.update_app_ids(old, '%s, %s' % (ID_OK2,
+                                                                  ID_OFF2)),
+                         [ID_OK2, ID_OFF2])
+        self.assertEqual(sinkhole.update_app_ids(b'', ID_OK), [ID_OK])
+        for junk in (b'', b'{', b'[1]', b'\xff\xfe', b'{"request": 3}',
+                     b'{"request": {"apps": {}}}', b'[' * 100000):
+            self.assertEqual(sinkhole.update_app_ids(junk), [], junk[:20])
+        many = json.dumps({'request': {'apps': [
+            {'appid': ''.join('abcdefghijklmnop'[(i >> s) & 15]
+                              for s in range(0, 128, 4))}
+            for i in range(1000)]}}).encode()
+        self.assertEqual(len(sinkhole.update_app_ids(many)), 300)
+
 
 @unittest.skipUnless(shutil.which('openssl'), 'needs openssl')
 class SinkholeServers(unittest.TestCase):
@@ -441,9 +533,12 @@ class SinkholeServers(unittest.TestCase):
         ctx.set_alpn_protocols(['h2', 'http/1.1'])
         raw = socket.create_connection(('127.0.0.1', tls_port), timeout=5)
         s = ctx.wrap_socket(raw, server_hostname='update.googleapis.com')
+        body = json.dumps({'request': {'@os': 'linux', 'apps': [
+            {'appid': ID_OK, 'version': '31.4.15.9'},
+            {'appid': ID_OFF, 'version': '0.0.0.0'}]}}).encode()
         s.sendall(b'POST /service/update2/json HTTP/1.1\r\nHost: '
                   b'update.googleapis.com\r\nX-Goog-Api-Key: dummytoken\r\n'
-                  b'Content-Length: 11\r\n\r\n{"a": true}')
+                  b'Content-Length: %d\r\n\r\n' % len(body) + body)
         resp = s.recv(4096)
         s.close()
         self.assertTrue(resp.startswith(b'HTTP/1.1 503'), resp)
@@ -461,14 +556,18 @@ class SinkholeServers(unittest.TestCase):
         self.assertEqual(tls['alpn'], 'http/1.1')
         self.assertEqual(tls['headers']['x-goog-api-key'],
                          '(10 bytes, not logged)')
-        self.assertEqual(tls['body_length'], 11)
+        self.assertEqual(tls['body_length'], len(body))
         self.assertEqual(tls['port'], tls_port)
         self.assertEqual(tls['dst'], '127.0.0.1')
-        self.assertNotIn('"a"', json.dumps(tls))
+        # Only the component IDs come out of the body.
+        self.assertEqual(tls['update_apps'], [ID_OK, ID_OFF])
+        self.assertNotIn('linux', json.dumps(tls))
+        self.assertNotIn('31.4.15.9', json.dumps(tls))
         self.assertEqual((plain['tls'], plain['path'],
                           plain['headers']['host']),
                          (False, '/time/1/current?cup2key=7',
                           'clients2.google.com'))
+        self.assertNotIn('update_apps', plain)
 
     def test_expired_certificate(self):
         d = os.path.join(self.tmp, 'expired')
@@ -659,10 +758,12 @@ def _phases():
              'end': T0 + b, 'data': {}} for n, a, b in plan]
 
 
-def make_capture(run_dir, events, escaped=False):
+def make_capture(run_dir, events, escaped=False, apps=None):
     """A recorded capture. events: (rel ts, name, port, sni, request) -
     a lookup of `name` followed, when port is set, by a connection to its
-    sinkhole address on that port, which the sinkhole logs."""
+    sinkhole address on that port, which the sinkhole logs. apps: {rel ts:
+    component IDs} for the update checks among them."""
+    apps = apps or {}
     os.makedirs(os.path.join(run_dir, 'logs'))
     os.makedirs(os.path.join(run_dir, 'capture'))
     pool = sinkhole.AddressPool()
@@ -694,6 +795,8 @@ def make_capture(run_dir, events, escaped=False):
                 method, path = request.split(' ', 1)
                 item.update(method=method, path=path,
                             headers={'host': sni or name})
+            if rel in apps:
+                item['update_apps'] = list(apps[rel])
             sink.append(item)
     if escaped:
         allp.append((T0 + 500, g.sll2(g.ip4(NS4, '93.184.216.34', 6, g.tcp(
@@ -750,6 +853,11 @@ CLEAN = [
     (885, 'api.github.com', 443, 'api.github.com',
      'GET /repos/OneManNoCode/MoltBrowser/releases/latest'),
 ]
+# The update check at +62 s names two components the doc doesn't list.
+CLEAN_APPS = {62: [ID_OK, ID_OK2]}
+# Real IDs from NETWORK_TRAFFIC.md's component table.
+MANIFEST_ID = 'ceofaddefefcbblgcgnibnonglccbfja'
+ACTOR_LISTS_ID = 'ninodabcejpeglfjbkhdplaoglpcbffj'
 
 
 class Analysis(unittest.TestCase):
@@ -761,9 +869,11 @@ class Analysis(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
-    def build(self, events, extra_blocked=(), escaped=False, name='run'):
+    def build(self, events, extra_blocked=(), escaped=False, name='run',
+              apps=None):
         run_dir = os.path.join(self.tmp, name)
-        blocked, allp = make_capture(run_dir, events, escaped=escaped)
+        blocked, allp = make_capture(run_dir, events, escaped=escaped,
+                                     apps=CLEAN_APPS if apps is None else apps)
         write_capture(run_dir, blocked, allp, extra_blocked)
         return run_dir, bganalysis.build(run_dir, self.hosts)
 
@@ -798,6 +908,43 @@ class Analysis(unittest.TestCase):
         self.assertIn('traffic.not_seen', checks)
         self.assertNotIn('update.googleapis.com', ' '.join(
             checks['traffic.not_seen']['evidence']))
+        comp = checks['traffic.components']
+        self.assertEqual(comp['status'], 'PASS')
+        self.assertIn('2 component(s): %s, %s' % (ID_OK, ID_OK2),
+                      ' '.join(comp['evidence']))
+
+    def test_components_the_doc_turns_off_fail(self):
+        events = CLEAN + [(400, 'update.googleapis.com', 443,
+                           'update.googleapis.com',
+                           'POST /service/update2/json?cup2key=2')]
+        run_dir, rep = self.build(events, apps={
+            62: [ID_OK, MANIFEST_ID], 400: [ACTOR_LISTS_ID, ID_OK2]})
+        self.assertEqual(rep['verdict'], 'FAIL')
+        comp = self.by_id(rep)['traffic.components']
+        self.assertEqual(comp['status'], 'FAIL')
+        text = '\n'.join(comp['evidence'])
+        self.assertIn('On-device model manifest (%s)' % MANIFEST_ID, text)
+        self.assertIn('Actor safety lists (%s)' % ACTOR_LISTS_ID, text)
+        self.assertIn('+62.', text)
+        self.assertIn('idle', text)
+        self.assertIn('update.googleapis.com', text)
+        # The hosts themselves are still as expected.
+        self.assertEqual(self.by_id(rep)['traffic.not_listed']['status'],
+                         'PASS')
+        self.assertIn('On-device model manifest',
+                      bganalysis.to_markdown(rep))
+
+    def test_no_component_ids_is_a_skip(self):
+        _, rep = self.build(CLEAN, apps={})
+        comp = self.by_id(rep)['traffic.components']
+        self.assertEqual(comp['status'], 'SKIP')
+        self.assertIn('0 update check(s) seen', comp['evidence'][0])
+        self.assertEqual(rep['verdict'], 'PASS')
+        # An update check whose body had no IDs counts as seen, still a skip.
+        _, rep = self.build(CLEAN, apps={62: []}, name='empty-ids')
+        comp = self.by_id(rep)['traffic.components']
+        self.assertEqual(comp['status'], 'SKIP')
+        self.assertIn('1 update check(s) seen', comp['evidence'][0])
 
     def test_failures_name_time_step_and_source(self):
         bad = CLEAN + [
@@ -880,6 +1027,9 @@ class Analysis(unittest.TestCase):
             (T0 + 6, g.nflog(b'\x45' + b'\x00' * 10, 'sinkhole'))])
         with open(os.path.join(run_dir, 'logs', 'sinkhole.jsonl'), 'a') as f:
             f.write('not json\n[1,2]\n{"ts": "x", "dst": 5, "port": "p"}\n')
+            f.write('{"update_apps": [1, "x", null, {"a": 1}, "%s"], '
+                    '"headers": "h", "sni": 7}\n{"update_apps": "no"}\n' %
+                    MANIFEST_ID)
         with open(os.path.join(run_dir, 'logs', 'fakedns.jsonl'), 'a') as f:
             f.write('{"qname": null}\n{"ts": 1, "qname": "%s"}\n' % (
                 'a' * 400))

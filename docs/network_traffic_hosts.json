@@ -1,4 +1,84 @@
 {
+ "components": [
+  {
+   "id": "ceofaddefefcbblgcgnibnonglccbfja",
+   "name": "On-device model manifest",
+   "section": "3",
+   "why": "Asked for only when a Chromium feature asks for an on-device model"
+  },
+  {
+   "id": "fklghjjljmnfjoepjmlobpekiapffcja",
+   "name": "On-device base model",
+   "section": "3",
+   "why": "Chromium's on-device model, named by the manifest; only for a feature that asks"
+  },
+  {
+   "id": "ninodabcejpeglfjbkhdplaoglpcbffj",
+   "name": "Actor safety lists",
+   "section": "3",
+   "why": "Gemini in Chrome's browser actor: not registered"
+  },
+  {
+   "id": "pficcddpglkpaaihklmahepgjmefdnom",
+   "name": "CAPTCHA providers",
+   "section": "3",
+   "why": "Read only for usage statistics: not registered"
+  },
+  {
+   "id": "hajigopbbjhghbfimgkfmpenfkclmohk",
+   "name": "Amount extraction heuristic regexes",
+   "section": "3",
+   "why": "Google Payments' buy-now-pay-later offers: not registered"
+  },
+  {
+   "id": "cocncanleafgejenidihemfflagifjic",
+   "name": "Commerce heuristics",
+   "section": "3",
+   "why": "The cart module of Google's New Tab Page: not registered"
+  },
+  {
+   "id": "kgejniifjbbpoocfeblcejfmmjffbfdb",
+   "name": "Indigo",
+   "section": "3",
+   "why": "Off (IndigoComponent override)"
+  },
+  {
+   "id": "kbglekiebdohdafflpmiejhbfdmjdbbe",
+   "name": "Dictation connector",
+   "section": "3",
+   "why": "Off (Dictation override)"
+  },
+  {
+   "id": "pkomkdjpmjfbkgjjmmaioegaojgdahkm",
+   "name": "History search strings",
+   "section": "3",
+   "why": "Off (HistoryEmbeddings override)"
+  },
+  {
+   "id": "obedbbhbpmojnkanicioggnmelmoomoc",
+   "name": "On-device head suggest",
+   "section": "3",
+   "why": "Off (OmniboxOnDeviceHeadProvider overrides)"
+  },
+  {
+   "id": "kabpfonokkamggpgbldambnmkliehlbh",
+   "name": "AI Mode eligibility",
+   "section": "3",
+   "why": "Off (AimEligibilityComponentExtension override)"
+  },
+  {
+   "id": "kpfeefaldebcckpkaeelpiecbjfpbmle",
+   "name": "Geolocation permission predictions",
+   "section": "3",
+   "why": "Off (PredictionModelComponentDelivery override)"
+  },
+  {
+   "id": "fmkegdflifakmolfcmpbohjhgpicfbol",
+   "name": "Notification permission predictions",
+   "section": "3",
+   "why": "Off (PredictionModelComponentDelivery override)"
+  }
+ ],
  "generated_from": "docs/NETWORK_TRAFFIC.md",
  "hosts": [
   {
@@ -10,7 +90,7 @@
    ],
    "section": "1",
    "steps": [],
-   "why": "Component updater: one combined update check for every registered component, about a minute after start and every 5 h; at start the on-device model manifest is also asked for"
+   "why": "Component updater: one combined update check for every registered component, about a minute after start and every 5 h (the components it must not name are in the table below)"
   },
   {
    "expect": "allowed",
@@ -168,7 +248,7 @@
    ],
    "section": "2",
    "steps": [],
-   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, the BundledSecuritySettingsSecureDnsV2 override)"
   },
   {
    "expect": "forbidden",
@@ -180,7 +260,7 @@
    ],
    "section": "2",
    "steps": [],
-   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, the BundledSecuritySettingsSecureDnsV2 override)"
   },
   {
    "expect": "forbidden",
@@ -192,7 +272,7 @@
    ],
    "section": "2",
    "steps": [],
-   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, the BundledSecuritySettingsSecureDnsV2 override)"
   },
   {
    "expect": "forbidden",
@@ -204,7 +284,7 @@
    ],
    "section": "2",
    "steps": [],
-   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, the BundledSecuritySettingsSecureDnsV2 override)"
   },
   {
    "expect": "forbidden",

@@ -41,10 +41,11 @@ No row has been confirmed by a traffic capture yet.
 | `translate.googleapis.com` | Translate's language list, and Google's page translation | **Off**: pages are translated on your device |
 | `content-autofill.googleapis.com` | Autofill form-type hints, on every page with a form | **Off** |
 | `www.gstatic.com` (translate model) | Model that decides when to offer Translate | **Off** |
-| `8.8.8.8`, `8.8.4.4` (Google Public DNS) | DNS check after a "site can't be reached" error | **Off** |
+| `8.8.8.8`, `8.8.4.4` (Google Public DNS) | DNS check after a "site can't be reached" error; Secure DNS's fallback | **Off** |
 | `connectivitycheck.gstatic.com` | Wi-Fi login-page (captive portal) check after certificate errors and timeouts | **Off** |
 | `passwordsleakcheck-pa.googleapis.com` | Checks whether a password you submit has leaked | **Off** |
-| Components for Google-only features (Indigo, Dictation, history search strings, on-device head suggest, the geolocation permission model) | Downloaded through the component updater for features MoltBrowser doesn't use | **Off** (changed in the Chromium 156 audit) |
+| Components for Google-only features (Indigo, Dictation, history search strings, on-device head suggest, the geolocation permission model, actor safety lists, CAPTCHA providers, amount-extraction regexes, commerce heuristics) | Downloaded through the component updater for features MoltBrowser doesn't use | **Off** (changed in the Chromium 156 audit) |
+| The on-device model manifest (through `update.googleapis.com`) | The list of Chromium's own on-device model files | **Only when a Chromium feature asks for an on-device model**; none does in a default profile (changed in the Chromium 156 audit) |
 | `duckduckgo.com` | Default search engine; suggestions while you type in the address bar (never for `@memory`, `@memory <words>` or `@ai <prompt>`, which stay on the device: `docs/design/SEMANTIC_SEARCH.md` §7; text starting with `?` is a web search and is sent) | **On** (only while you type) |
 | `api.github.com`, `github.com` | MoltBrowser update check | **On** |
 | `easylist.to`, `ublockorigin.github.io`, `raw.githubusercontent.com` | MoltShield ad- and tracker-blocking lists | **On** |
@@ -100,7 +101,8 @@ also an override, so that study is skipped (`AimEnabled` and
 turned on). No study touches a feature MoltBrowser overrides other than
 the ones the overrides are there for (`Aim3pEntrypoint`, `Indigo`,
 `Dictation`, `HistoryEmbeddingsV2Images`,
-`PredictionModelComponentDelivery`), and the testing config cannot change
+`PredictionModelComponentDelivery`, `OnDeviceModelBackgroundDownload`,
+`EnableOnDeviceWebSpeechSmallExpertModel`), and the testing config cannot change
 a pref, so the pref defaults below (DNS probes, captive portal, leak
 check) stand. The studies that do apply and make traffic are listed where
 their traffic is: Safe Browsing's V5 lists (section 1).
@@ -109,7 +111,7 @@ their traffic is: Safe Browsing's V5 lists (section 1).
 
 | Endpoint | Purpose | What's sent | When | MoltBrowser default | How to turn off | Confidence |
 |---|---|---|---|---|---|---|
-| `https://update.googleapis.com/service/update2/json` (falls back to `http://` on the same host) | Component updater: one combined update check for every registered component | JSON request containing OS, OS version, CPU architecture, CPU features (SSE/AVX), RAM in GB, browser version and channel, UI language, each component's ID and version, coarse day counters (`rd`/`ad`/`ping_freshness`) and random per-request IDs. No cookies and no account | 1 min after start, then every 5 h; an on-demand check for one component can come sooner | **On (needed for security).** Registered on every desktop start: CRLSet (certificate revocation), PKI Metadata (key-pinning list, Chrome Root Store updates; its Certificate Transparency list is unused, as CT is off without Chrome branding), Safety Tips, File Type Policies (download danger levels), SSL Error Assistant, Origin Trials keys, Crowd Deny, Trust Token keys, Related Website Sets, Privacy Sandbox attestations, Optimization Hints, Subresource Filter rules, MEI preload, hyphenation, IWA keys, zxcvbn password-strength data, actor safety lists, CAPTCHA providers, amount-extraction regexes and the WASM TTS engine. **At start, the on-device model manifest** (the list of Chromium's on-device model files) is also asked for on demand, at once (`optimization_guide_on_device_model_installer.cc`); no model file follows unless a Chromium feature asks for one, and MoltBrowser's web AI APIs never do (they run on MoltBrowser's own model, `docs/design/WEB_AI_APIS.md` §10.8). Components only Google features use are off (section 3). On-demand components (Screen AI, Live Caption, TranslateKit) come only when a feature asks for them; a TranslateKit or language pack installed before (by an earlier version, or by hand in `chrome://on-device-translation-internals`) is still registered for updates at startup. The exact list is **Capture** (it appears in the request) | `--disable-component-update`. **Not recommended:** revocation and root-store updates stop | **Source**: `chrome/browser/chrome_browser_main.cc:1961`; `components/component_updater/configurator_impl.cc:54-65`; `component_updater_url_constants.cc:18-21`; `components/update_client/protocol_serializer_json.cc`; `chrome/browser/component_updater/registration.cc:144-255`; manifest: `optimization_guide_on_device_model_installer.cc:453-476`, `manifest_broker/manifest_monitor.cc:73`, `chrome_browser_main_extra_parts_optimization_guide.cc:12` |
+| `https://update.googleapis.com/service/update2/json` (falls back to `http://` on the same host) | Component updater: one combined update check for every registered component | JSON request containing OS, OS version, CPU architecture, CPU features (SSE/AVX), RAM in GB, browser version and channel, UI language, each component's ID and version, coarse day counters (`rd`/`ad`/`ping_freshness`) and random per-request IDs. No cookies and no account | 1 min after start, then every 5 h; an on-demand check for one component can come sooner | **On (needed for security).** Registered on every desktop start: CRLSet (certificate revocation), PKI Metadata (key-pinning list, Chrome Root Store updates; its Certificate Transparency list is unused, as CT is off without Chrome branding), Safety Tips, File Type Policies (download danger levels), SSL Error Assistant, Origin Trials keys, Crowd Deny, Trust Token keys, Related Website Sets, Privacy Sandbox attestations, Optimization Hints, Subresource Filter rules, MEI preload, hyphenation, IWA keys, zxcvbn password-strength data and the WASM TTS engine. **The on-device model manifest** (the list of Chromium's own on-device model files) is asked for only when a Chromium feature first asks for an on-device model, never at start (changed in the 156 audit, section 3); MoltBrowser's web AI APIs never ask (they run on MoltBrowser's own model, `docs/design/WEB_AI_APIS.md` §10.8). Components only Google features use are off (section 3). On-demand components (Screen AI, Live Caption, TranslateKit) come only when a feature asks for them; a TranslateKit or language pack installed before (by an earlier version, or by hand in `chrome://on-device-translation-internals`) is still registered for updates at startup. The exact list is **Capture** (it appears in the request) | `--disable-component-update`. **Not recommended:** revocation and root-store updates stop | **Source**: `chrome/browser/chrome_browser_main.cc:1961`; `components/component_updater/configurator_impl.cc:54-65`; `component_updater_url_constants.cc:18-21`; `components/update_client/protocol_serializer_json.cc`; `src/chrome/browser/component_updater/registration.cc` (`RegisterComponentsForUpdate()`); manifest: `optimization_guide_on_device_model_installer.cc:453-476`, `src/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc` (`RequestManifest()`) |
 | Component download hosts named in the update response, usually `edgedl.me.gvt1.com`, `redirector.gvt1.com` and `dl.google.com` | Downloads a component's new version | A file request (the component's CRX or diff). The CRX is signed and checked | Only when a component has an update | On | As above | **Capture** for the exact hosts |
 | `http://clients2.google.com/time/1/current` | Network time. Lets certificate checks still work when the system clock is wrong. Also used to tell "your clock is wrong" apart from a real certificate error | Only a signed nonce (`cup2key`/`cup2hreq`). The response is signed, so it cannot be faked even over HTTP | At startup when no valid saved time exists (first run, after a reboot or clock change). Otherwise ~1.2% of checks made every 6 min, about once per 8 h of use. Also on certificate date errors | **On (needed for security).** Network time feeds certificate verification | `--disable-features=NetworkTimeServiceQuerying`, or the `BrowserNetworkTimeQueriesEnabled` policy | **Source**: `components/network_time/network_time_tracker.cc:62-96,155`; `chrome/browser/net/cert_verifier_service_time_updater.cc` |
 | `https://safebrowsing.googleapis.com/v5/hashLists:batchGet?...&key=dummytoken` (V4: `/v4/threatListUpdates:fetch`) | Safe Browsing list updates | Client name `chromium`, version, the list names with their (empty) states | 1–5 min after start. Each failure backs off 15–30 min, doubling up to 24 h. **At 156 the testing config's `SafeBrowsingLocalListsUseSBv5` study switches the lists to the V5 protocol** (same host) | **On, but no protection.** Without a valid key the lists never download, so Safe Browsing blocks nothing. See the [S17 memo](SAFE_BROWSING_DECISION.md) | Settings → Privacy and security → Security → *No protection* | **Source**: `components/safe_browsing/core/browser/db/v5_update_protocol_manager.cc:36-54,187-199`; `sb_protocol_manager_util.cc:42-43,180-193`; `core/common/features.cc:392-394`. **Capture**: confirm Google rejects the placeholder key |
@@ -149,7 +151,10 @@ their traffic is: Safe Browsing's V5 lists (section 1).
 | Dictation (Google's dictation; its connector is a component) | The testing config turns `Dictation` on. **Off** (an override, changed in the 156 audit); MoltBrowser's own voice input runs on whisper, on the device | **Source**: `chrome/browser/component_updater/dictation_connector_component_installer.cc:181-190` |
 | History embeddings (the history search strings component) | The testing config turns `HistoryEmbeddings` on, which registers the component at every start. **Off** (an override, changed in the 156 audit); MoltBrowser's `@memory` search is its own | **Source**: `chrome/browser/component_updater/registration.cc:164-166`; `chrome/browser/history_embeddings/history_embeddings_utils.cc:173-187` |
 | On-device head suggest (a model of popular Google queries, per locale) | Registered at every start whatever the search engine, but used only with Google as the default engine. **Off** (overrides, changed in the 156 audit) | **Source**: `components/component_updater/installer_policies/on_device_head_suggest_component_installer.cc:138-147`; `components/omnibox/browser/on_device_head_provider.cc:140-142` |
-| AI Mode eligibility component, Private Verification Tokens component | Their features are off by default and no study turns them on | **Source**: `chrome/browser/component_updater/aim_eligibility_component_installer.cc:167-182`; `private_verification_tokens_installer.cc:26-31` |
+| AI Mode eligibility component, Private Verification Tokens component | Their features are off by default and no study turns them on. The AI Mode one (`AimEligibilityComponentExtension`) is also an override since the 156 audit, so no study or new default can turn it on | **Source**: `chrome/browser/component_updater/aim_eligibility_component_installer.cc:167-182`; `private_verification_tokens_installer.cc:26-31` |
+| Actor safety lists, CAPTCHA providers, amount-extraction regexes, commerce heuristics (components) | Upstream registers them at every start, but only Google features read them: Gemini in Chrome's browser actor (the safety lists), usage statistics (the CAPTCHA list, read only by `CaptchaMetricsObserver`, and MoltBrowser sends none), Google Payments' buy-now-pay-later offers in Autofill (the regexes) and the cart module of Google's New Tab Page (commerce heuristics, registered only in the US; MoltBrowser's new tab page is `molt://home`). MoltBrowser's agent mode is its own and doesn't use the actor's lists. **Not registered** (changed in the 156 audit; `--enable-features=MoltGoogleOnlyComponents` registers them again) | **Source**: `src/chrome/browser/component_updater/registration.cc` (the `MoltBrowser:` hooks), `src/chrome/browser/molt_ai/privacy/molt_component_policy.h`. Readers: `chrome/browser/actor/execution_engine.cc:345`; `chrome/browser/page_load_metrics/observers/captcha_metrics_observer.cc`; `components/autofill/core/browser/payments/amount_extraction_manager.cc:133-200`; `chrome/browser/component_updater/commerce_heuristics_component_installer.cc:189-201`, `chrome/browser/new_tab_page/new_tab_page_util.cc:75-81` |
+| The on-device model manifest at start | Upstream asks the component updater for it (a registration, then an on-demand foreground check) as soon as the model broker is created after startup, whether or not anything will use an on-device model. **Now asked for only when a Chromium feature first asks the broker for a model** (changed in the 156 audit). What can still ask in MoltBrowser: Enhanced protection's on-device scam check, but only while `ClientSideDetectionServerModelForScamDetectionDesktop` is off, and the testing config turns it on, so in MoltBrowser's builds Enhanced protection uses Google's server model instead (section 3, above) and doesn't ask; Live Caption's expert speech model, only with its flag (`LiveCaptionSpeechRecognitionSmallExpertModel`, off by default); on-device Web Speech for conversations (`OnDeviceWebSpeechGeminiNano`, a flag, off); `chrome://on-device-internals` when you request a model there; and model validation (command-line switches only). Chromium's built-in AI APIs never reach it: MoltBrowser serves them from its own manager. A feature that asks gets the manifest as before, then the model files it needs | **Source**: `src/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc` (`RequestManifest()`) and `manifest_broker_state.cc` (the `MoltBrowser:` hooks); upstream: `chrome/browser/optimization_guide/chrome_browser_main_extra_parts_optimization_guide.cc:12`, `chrome/browser/component_updater/optimization_guide_on_device_model_installer.cc:364-372,453-476`. Askers: `chrome/browser/safe_browsing/client_side_detection_intelligent_scan_delegate_desktop.cc:358-372,430-445`; `chrome/browser/speech/speech_recognition_small_expert_model_installer.cc:95-140` |
+| On-device model downloads ahead of use; Web Speech on a small expert model | The testing config turns on `OnDeviceModelBackgroundDownload` (models for the Prompt, Writing Assistance and Summarize APIs downloaded ahead of use, on AC power with 50 GB free; at 156 nothing marks a desktop model for it yet) and `OnDeviceWebSpeechSmallExpertModel` (on-device Web Speech on a model from the broker, so a page's availability check alone would ask for the manifest). Both are off by default upstream. **Off** (overrides, changed in the 156 audit). On-device Web Speech uses Chromium's default speech engine, downloaded only when a page you have interacted with installs it | **Source**: `components/optimization_guide/core/optimization_guide_features.cc:141-160,465-470`; `manifest_broker/manifest_asset_manager.cc:319-331,593`; `chrome/browser/speech/on_device_speech_recognition_util.cc:27-42`; `third_party/blink/renderer/modules/speech/speech_recognition.cc:370-390` |
 | Safe Browsing hash-prefix real-time lookups (relay `ohttp-relay-safebrowsing-chrome.google.fastly-edge.com`, key `www.gstatic.com/ohttp_gateway/hpke_public_keys/v1/sbc_prod`) | Chrome-branded only | **Source**: `components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.cc:20-31,106-109`; `core/common/features.cc:360-375` |
 | Safe Browsing real-time URL checks, Enhanced protection pings, client-side scam detection with a server model (`safebrowsing.google.com`) | Enhanced protection is not the default | **Source** for scam detection: `chrome/browser/safe_browsing/client_side_detection_intelligent_scan_delegate_desktop.cc:299-305`; the rest **Likely** |
 | SCT auditing (`sctauditing-pa.googleapis.com`) | Certificate Transparency is enforced only in Chrome-branded builds, and auditing needs it | **Source**: `chrome/browser/ssl/sct_reporting_service.cc:217-235`; `chrome/browser/net/system_network_context_manager.cc:1156-1166`; `chrome/browser/browser_features.cc:44-49` |
@@ -184,8 +189,12 @@ not to Google (`net/dns/dns_transaction.h:32`). At 156, automatic mode can
 also fall back to Google Public DNS (`8.8.8.8`) over DoH, but only with the
 Bundled Security Settings' Secure DNS option, whose feature
 (`BundledSecuritySettingsSecureDnsV2`) is off by default and turned on by no
-study (`chrome/browser/net/stub_resolver_config_reader.cc:141-158,313-318`;
-`components/safe_browsing/core/common/features.cc:67-68`). **Source**.
+study. Since the 156 audit it is also one of MoltBrowser's overrides, so
+neither a study nor a future default can turn the fallback on; automatic
+mode only ever upgrades to your own provider
+(`chrome/browser/net/stub_resolver_config_reader.cc:141-158,313-318`;
+`components/safe_browsing/core/common/features.cc:67-68`;
+`src/chrome/browser/molt_ai/privacy/molt_feature_overrides.cc`). **Source**.
 
 ## 4. Non-Google hosts that are part of browsing defaults
 
@@ -241,7 +250,7 @@ here. Change a host above, change it here too.
 <!-- hosts:begin -->
 | Host | Ports | Expect | Why | § |
 |---|---|---|---|---|
-| `update.googleapis.com` | 443, 80 | allowed | Component updater: one combined update check for every registered component, about a minute after start and every 5 h; at start the on-device model manifest is also asked for | 1 |
+| `update.googleapis.com` | 443, 80 | allowed | Component updater: one combined update check for every registered component, about a minute after start and every 5 h (the components it must not name are in the table below) | 1 |
 | `*.gvt1.com` | 443, 80 | allowed | Component downloads named in an update response (`edgedl.me.gvt1.com`, `redirector.gvt1.com`) and spell-check dictionaries (`redirector.gvt1.com`, Linux) | 1 |
 | `dl.google.com` | 443, 80 | allowed | Component downloads named in an update response | 1 |
 | `clients2.google.com` | 80, 443 | allowed | Network time (`http://clients2.google.com/time/1/current`): at start without a saved time, now and then, and on certificate date errors; Chrome Web Store extension updates once one is installed | 1 |
@@ -255,7 +264,7 @@ here. Change a host above, change it here too.
 | `translate.googleapis.com`, `translate-pa.googleapis.com` | 443 | forbidden | Google Translate (language list, page and partial translation): off, Translate runs on the device | 2 |
 | `www.gstatic.com` | 443 | user | Profile avatar images, when you pick one; the Translate ranker model (off) and Safe Browsing's real-time lookup key (Chrome-branded only) live here too | 2 |
 | `connectivitycheck.gstatic.com` | 80, 443 | forbidden | Captive-portal check: off (pref) | 2 |
-| `8.8.8.8`, `8.8.4.4`, `2001:4860:4860::8888`, `2001:4860:4860::8844` | 53/udp, 53, 443 | forbidden | Google Public DNS: the DNS probe after a "site can't be reached" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2) | 2 |
+| `8.8.8.8`, `8.8.4.4`, `2001:4860:4860::8888`, `2001:4860:4860::8844` | 53/udp, 53, 443 | forbidden | Google Public DNS: the DNS probe after a "site can't be reached" error (off, pref), and Secure DNS's fallback (off, the BundledSecuritySettingsSecureDnsV2 override) | 2 |
 | `google.com` | 443, 80 | forbidden | The DNS probe's query name (sent to Google Public DNS, off); nothing else looks it up | 2 |
 | `duckduckgo.com` | 443 | user | Default search engine, and its suggestions while you type in the address bar | 4 |
 | `clientservices.googleapis.com` | 443, 80 | forbidden | Variations seed (Chrome-branded only) | 3 |
@@ -286,6 +295,33 @@ here. Change a host above, change it here too.
 | `check.torproject.org` | 443 | user | MoltNet's Verify (through Tor) | 5 |
 <!-- hosts:end -->
 
+**Components the update check must not name.** The component updater's
+check to `update.googleapis.com` names every component it asks about by
+its ID (the `appid` of each entry in the request). The capture's sinkhole
+reads those IDs, and the report fails if one of these is among them. Each
+is off in MoltBrowser (section 3); the on-device model manifest and the
+base model only come when a feature asks for an on-device model, which
+nothing in the capture does. The same build rules apply: change a row,
+then `leaktest.sh hosts --write`.
+
+<!-- components:begin -->
+| Component | ID | Why | § |
+|---|---|---|---|
+| On-device model manifest | `ceofaddefefcbblgcgnibnonglccbfja` | Asked for only when a Chromium feature asks for an on-device model | 3 |
+| On-device base model | `fklghjjljmnfjoepjmlobpekiapffcja` | Chromium's on-device model, named by the manifest; only for a feature that asks | 3 |
+| Actor safety lists | `ninodabcejpeglfjbkhdplaoglpcbffj` | Gemini in Chrome's browser actor: not registered | 3 |
+| CAPTCHA providers | `pficcddpglkpaaihklmahepgjmefdnom` | Read only for usage statistics: not registered | 3 |
+| Amount extraction heuristic regexes | `hajigopbbjhghbfimgkfmpenfkclmohk` | Google Payments' buy-now-pay-later offers: not registered | 3 |
+| Commerce heuristics | `cocncanleafgejenidihemfflagifjic` | The cart module of Google's New Tab Page: not registered | 3 |
+| Indigo | `kgejniifjbbpoocfeblcejfmmjffbfdb` | Off (IndigoComponent override) | 3 |
+| Dictation connector | `kbglekiebdohdafflpmiejhbfdmjdbbe` | Off (Dictation override) | 3 |
+| History search strings | `pkomkdjpmjfbkgjjmmaioegaojgdahkm` | Off (HistoryEmbeddings override) | 3 |
+| On-device head suggest | `obedbbhbpmojnkanicioggnmelmoomoc` | Off (OmniboxOnDeviceHeadProvider overrides) | 3 |
+| AI Mode eligibility | `kabpfonokkamggpgbldambnmkliehlbh` | Off (AimEligibilityComponentExtension override) | 3 |
+| Geolocation permission predictions | `kpfeefaldebcckpkaeelpiecbjfpbmle` | Off (PredictionModelComponentDelivery override) | 3 |
+| Notification permission predictions | `fmkegdflifakmolfcmpbohjhgpicfbol` | Off (PredictionModelComponentDelivery override) | 3 |
+<!-- components:end -->
+
 ## Changes made in this audit
 
 All of these change *defaults* only. A user (or `--enable-features` /
@@ -309,24 +345,64 @@ chrome://flags) can still turn each one back on.
      (the geolocation permission prediction model as a component);
      `OmniboxOnDeviceHeadProviderNonIncognito` and
      `OmniboxOnDeviceHeadProviderIncognito` (on-device head suggest, used
-     only with Google as the search engine).
+     only with Google as the search engine);
+     `AimEligibilityComponentExtension` (the AI Mode eligibility component,
+     already off; listed so nothing can turn it on).
+   - Also added in the 156 audit, on-device model downloads nothing
+     MoltBrowser ships asks for: `OnDeviceModelBackgroundDownload` (models
+     downloaded ahead of use) and `OnDeviceWebSpeechSmallExpertModel` (Web
+     Speech on a model from Google's broker, which a page's availability
+     check alone would ask for). Both are off upstream by default and on in
+     the testing config.
+   - `BundledSecuritySettingsSecureDnsV2` off (156 audit): Secure DNS's
+     automatic mode never falls back to Google Public DNS (`8.8.8.8`),
+     whatever a study or a future default says. It was already off; now
+     nothing can turn it on.
 2. **Default pref values**
    (`src/chrome/browser/molt_ai/privacy/molt_privacy_prefs.cc`):
    - `alternate_error_pages.enabled = false`: no DNS probe to Google Public
      DNS and no captive-portal check against gstatic.
    - `profile.password_manager_leak_detection = false`: no leak checks that
      only a Google API key could authenticate.
+3. **Components not registered** (156 audit; hooks in
+   `src/chrome/browser/component_updater/registration.cc`, the switch in
+   `src/chrome/browser/molt_ai/privacy/molt_component_policy.h`). Upstream
+   registers these at every start, and only Google features read them, so
+   they are no longer in the update check: the actor safety lists (Gemini
+   in Chrome's browser actor), CAPTCHA providers (usage statistics only),
+   the amount extraction regexes (Google Payments' buy-now-pay-later
+   offers) and commerce heuristics (the cart module of Google's New Tab
+   Page). The rest of `RegisterComponentsForUpdate()` was checked the same
+   way and stays: the security components (CRLSet, PKI Metadata, Safety
+   Tips, SSL Error Assistant, File Type Policies, Crowd Deny, Subresource
+   Filter rules), the web platform's data (Origin Trials keys, Related
+   Website Sets, Trust Token keys, Privacy Sandbox attestations, the list
+   of sites allowed to use those APIs, MEI preload, hyphenation, IWA
+   keys), zxcvbn, the WASM TTS engine, Optimization Hints
+   (also read by Chromium features such as the loading predictor and
+   compile hints), and the components that come only on demand or when a
+   flag turns them on. `--enable-features=MoltGoogleOnlyComponents`
+   registers the four again.
+4. **The on-device model manifest on demand** (156 audit; hooks in
+   `src/components/optimization_guide/core/model_execution/manifest_broker/`).
+   Upstream asks for it as soon as the model broker exists, shortly after
+   start. Now the broker asks for it when a feature first asks for an
+   on-device model: binding the broker, an eligibility check or a session,
+   an availability observer, or requesting a model in
+   `chrome://on-device-internals`. In a default profile nothing does, and
+   with the testing config's studies nothing MoltBrowser ships does either.
+   What can still ask is in section 3 (Live Caption's expert model with
+   its flag; Enhanced protection's on-device scam check if its server-model
+   study is ever off); those features get the manifest and their model as
+   before, a moment later. A model downloaded earlier stays on disk until a
+   feature asks again or on-device AI is turned off. Turning the request
+   off altogether would have been one line, but it would also take the
+   model away from those features for good; on demand keeps them working.
 
 **Left on deliberately:**
 - **Component updater and network time.** They carry security data
   (revocation, root store, safe file types, certificate times) and reveal
   little: your IP, OS and version, and component versions.
-- **The on-device model manifest at start.** It is a small component the
-  component updater asks for; Chromium features that run on Chromium's
-  on-device models take their model files through it (Live Caption's
-  speech model among them), and turning it off would need a hook in an
-  upstream file and break those features. No model file is downloaded
-  unless one of them asks; MoltBrowser's own AI never does.
 - **Spell-check dictionary downloads.** These are what make spell-check work
   on Linux.
 - **Safe Browsing's V5 list protocol.** The testing config's study switches
@@ -400,7 +476,7 @@ users actually run.
 
 | Time | Action | What it exercises |
 |---|---|---|
-| 0–10 min | Launch and leave idle on `molt://home` | Startup and idle: component updater (~1 min) and the on-device model manifest (at start), Safe Browsing (1–5 min), network time, spell-check (Linux), MoltShield lists (10 s), update check (30 s) |
+| 0–10 min | Launch and leave idle on `molt://home` | Startup and idle: component updater (~1 min; none of the components section 6 lists, and no on-device model manifest), Safe Browsing (1–5 min), network time, spell-check (Linux), MoltShield lists (10 s), update check (30 s) |
 | 10 min | Open `https://example.com` | First navigation |
 | +1 min | `https://github.com/login`, then submit fake credentials on a local test page with a password form (`python3 -m http.server`) | Autofill query (must be absent), leak check (must be absent) |
 | +1 min | `https://www.lemonde.fr`, then click Translate (with an on-device model) | Translate ranker, language list, `translate_a/element.js` and any `translate.googleapis.com` / `translate-pa.googleapis.com` request (all must be absent) |
@@ -438,13 +514,15 @@ active.
 
 - **Must not appear** in a default run: every host section 6 marks
   `forbidden` or `user` (the second only after the user action named
-  there), and any host not on this page.
+  there), and any host not on this page. The component updater's request
+  must not name a component section 6 lists.
 - **Expected**: the hosts section 6 marks `allowed`, and `sb-ssl.google.com`
   during the download (record the HTTP status of the Google ones; we
   expect 400/403 for `key=dummytoken`); `duckduckgo.com` only after typing.
 - **Overrides still yield to the user.** Relaunch with
   `--enable-features=AutofillServerCommunication`: the autofill query should
-  reappear.
+  reappear; with `--enable-features=MoltGoogleOnlyComponents` the four
+  Google-only components are back in the update request.
 
 Record the date and build next to each row above, and change its confidence
 to **Captured** with the date.
@@ -460,3 +538,10 @@ to **Captured** with the date.
 - A new feature that talks to a Google host without a key check belongs in
   `molt_feature_overrides.cc`, not in a `BASE_FEATURE` flip in an upstream
   file. The testing config can undo a flip; it cannot undo an override.
+- A component upstream registers unconditionally for a Google-only
+  feature is skipped in `registration.cc` behind
+  `ShouldRegisterGoogleOnlyComponents()`
+  (`src/chrome/browser/molt_ai/privacy/molt_component_policy.h`), and its
+  ID goes into section 6's component table so the capture checks for it.
+  Compute the ID from the installer's public key hash (the first 16 bytes,
+  each half-byte as a letter from `a` to `p`).
