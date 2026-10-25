@@ -42,6 +42,10 @@ class AutomationRecorderTabHelper
   // to disk). Returns an empty Script if not recording.
   Script StopRecording();
 
+  // A site's tool the user allowed the AI chat to call in this tab: a step
+  // of the recording, if it is on (AutomationRecorder::OnSiteToolCall()).
+  void RecordSiteToolCall(const tool_steps::RecordedCall& call);
+
   bool is_recording() const { return rec_ && rec_->is_recording(); }
 
   // ---- Global recording state (used by the toolbar Record button to

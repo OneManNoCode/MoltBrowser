@@ -21,6 +21,7 @@ import pin_models  # noqa: E402
 
 EMBEDDING_ID = 'qwen3-embedding-0.6b'
 VISION_ID = 'qwen3-vl-2b'
+AUDIO_ID = 'voxtral-mini-3b'
 REVISION = '0123456789abcdef0123456789abcdef01234567'
 SHA256 = 'ab' * 32
 PROJECTOR_SHA256 = 'cd' * 32
@@ -154,6 +155,7 @@ class PinModelsTest(unittest.TestCase):
     chat = entries(pin_models.REGISTRY)
     found = projectors(pin_models.REGISTRY)
     self.assertIn(VISION_ID, found)
+    self.assertIn(AUDIO_ID, found)
     # Every projector belongs to a model of the registry.
     for model_id, p in found.items():
       self.assertIn(model_id, chat)
@@ -162,14 +164,41 @@ class PinModelsTest(unittest.TestCase):
     # No other registry has projectors.
     self.assertEqual(projectors(pin_models.EMBEDDING_REGISTRY), {})
 
-  def test_vision_pin_is_all_or_nothing(self):
-    # Fail closed: the browser offers a vision model only when the model and
-    # its projector are both pinned (IsPinnedForVision()).
-    e = entries(pin_models.REGISTRY)[VISION_ID]
-    p = projectors(pin_models.REGISTRY)[VISION_ID]
-    parts = [e['revision'] != '', e['sha256'] != '', e['size'] != '0',
-             p['sha256'] != '', p['size'] != '0']
-    self.assertIn(parts, ([False] * 5, [True] * 5))
+  def test_projector_pin_is_all_or_nothing(self):
+    # Fail closed: the browser offers a model with a projector (sees images,
+    # hears audio) only when the model and its projector are both pinned
+    # (IsPinnedWithProjector()).
+    for model_id, p in projectors(pin_models.REGISTRY).items():
+      e = entries(pin_models.REGISTRY)[model_id]
+      parts = [e['revision'] != '', e['sha256'] != '', e['size'] != '0',
+               p['sha256'] != '', p['size'] != '0']
+      self.assertIn(parts, ([False] * 5, [True] * 5), model_id)
+
+  def test_pins_an_audio_model_with_its_projector(self):
+    # The same as a vision model: the model and its projector from one
+    # reply, and nothing else in the file changes.
+    registry = self.chat_registry()
+    e = entries(registry)[AUDIO_ID]
+    p = projectors(registry)[AUDIO_ID]
+    self.reply(e['repo'], e['file'], size=2467000000,
+               more=[(p['file'], PROJECTOR_SHA256, 677000000)])
+    with open(registry) as f:
+      before = f.read()
+    code, log = self.run_main('--registry', registry, '--from-json',
+                              self.replies, '--only', AUDIO_ID, '--write')
+    self.assertEqual(code, 0, log)
+    self.assertEqual(entries(registry)[AUDIO_ID]['sha256'], SHA256)
+    self.assertEqual(projectors(registry)[AUDIO_ID]['sha256'],
+                     PROJECTOR_SHA256)
+    self.assertEqual(projectors(registry)[AUDIO_ID]['size'], '677000000')
+    # The vision projector is untouched.
+    self.assertEqual(projectors(registry)[VISION_ID],
+                     projectors(pin_models.REGISTRY)[VISION_ID])
+    with open(registry) as f:
+      after = f.read()
+    changed = [(a, b) for a, b in zip(before.splitlines(), after.splitlines())
+               if a != b]
+    self.assertEqual(len(changed), 5, changed)
 
   def test_pins_a_vision_model_with_its_projector(self):
     registry = self.chat_registry()

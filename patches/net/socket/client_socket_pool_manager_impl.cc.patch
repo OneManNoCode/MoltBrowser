@@ -5,17 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool_manager_impl.cc b/net/socket/client_socket_pool_manager_impl.cc
-index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..5b4d8c7925e3a9dce47540a12de63ca1a1305507 100644
+index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..47a85d97ce1872879ae7f9569be09a7fa5f04bd0 100644
 --- a/net/socket/client_socket_pool_manager_impl.cc
 +++ b/net/socket/client_socket_pool_manager_impl.cc
-@@ -30,11 +30,25 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
+@@ -30,11 +30,26 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
      const CommonConnectJobParams& common_connect_job_params,
      const CommonConnectJobParams& websocket_common_connect_job_params,
      HttpNetworkSession::SocketPoolType pool_type,
 -    bool cleanup_on_ip_address_change)
 +    bool cleanup_on_ip_address_change,
 +    size_t molt_per_site_pool_size,
-+    MoltConnectionBudget* molt_connection_budget)
++    MoltConnectionBudget* molt_connection_budget,
++    uintptr_t molt_budget_owner)
      : common_connect_job_params_(common_connect_job_params),
        websocket_common_connect_job_params_(websocket_common_connect_job_params),
        pool_type_(pool_type),
@@ -24,19 +25,19 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..5b4d8c7925e3a9dce47540a12de63ca1
 +      molt_per_site_pool_size_(molt_per_site_pool_size) {
 +  // MoltBrowser: per-site pools for MoltNet's network context. As for a
 +  // proxy chain's pool below, with fixed limits per site, within the
-+  // session's connection budget.
++  // connection budget of MoltNet's Tor.
 +  if (molt_per_site_pool_size_ > 0) {
 +    molt_per_site_pools_ = std::make_unique<MoltPerSiteSocketPools>(
 +        molt_per_site_pool_size_, max_sockets_per_group(pool_type_),
 +        unused_idle_socket_timeout(pool_type_),
 +        pool_type_ == HttpNetworkSession::SocketPoolType::kWebSocket,
 +        &common_connect_job_params_, cleanup_on_ip_address_change_,
-+        molt_connection_budget);
++        molt_connection_budget, molt_budget_owner);
 +  }
    // |websocket_endpoint_lock_manager| must only be set for websocket
    // connections.
    DCHECK(!common_connect_job_params_.websocket_endpoint_lock_manager);
-@@ -51,6 +65,10 @@ void ClientSocketPoolManagerImpl::FlushSocketPoolsWithError(
+@@ -51,6 +66,10 @@ void ClientSocketPoolManagerImpl::FlushSocketPoolsWithError(
    for (const auto& it : socket_pools_) {
      it.second->FlushWithError(net_error, net_log_reason_utf8);
    }
@@ -47,7 +48,7 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..5b4d8c7925e3a9dce47540a12de63ca1
  }
  
  void ClientSocketPoolManagerImpl::CloseIdleSockets(
-@@ -58,6 +76,22 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
+@@ -58,6 +77,22 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
    for (const auto& it : socket_pools_) {
      it.second->CloseIdleSockets(net_log_reason_utf8);
    }
@@ -70,7 +71,7 @@ index 8b402f81cec89fb6a2bd7de67da59feb9ff920c5..5b4d8c7925e3a9dce47540a12de63ca1
  }
  
  ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPool(
-@@ -117,6 +151,10 @@ base::Value ClientSocketPoolManagerImpl::SocketPoolInfoToValue() const {
+@@ -117,6 +152,10 @@ base::Value ClientSocketPoolManagerImpl::SocketPoolInfoToValue() const {
      list.Append(
          socket_pool.second->GetInfoAsValue(proxy_chain.ToDebugString(), type));
    }

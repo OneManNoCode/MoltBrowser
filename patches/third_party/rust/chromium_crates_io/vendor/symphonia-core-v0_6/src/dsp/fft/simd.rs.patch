@@ -1,0 +1,68 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs b/third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs
+index aabb573004918a129bdd53fd17d55ac24a3867f0..0479bf894131192046faa9042d0192631f3f7a9a 100644
+--- a/third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs
++++ b/third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs
+@@ -11,10 +11,33 @@
+ //! radix-2 Cooley-Tukey algorithm.
+ 
+ use std::{f32, sync::Arc};
++// MoltBrowser: see `moltbrowser_set_portable_fft()`.
++use std::sync::atomic::{AtomicBool, Ordering};
+ 
+ use crate::dsp::complex::Complex;
+ use crate::dsp::fft::MAX_SIZE;
+ 
++// MoltBrowser: rustfft's default planner picks AVX and FMA, SSE4.1 or NEON
++// code for the CPU it runs on, and each rounds differently. Its scalar planner
++// gives the same results on every CPU.
++static PORTABLE_FFT: AtomicBool = AtomicBool::new(false);
++
++/// MoltBrowser: with `portable`, (I)FFTs created afterwards use rustfft's
++/// scalar code, whose results are the same on every CPU; without it (the
++/// default), the fastest code for this CPU.
++pub fn moltbrowser_set_portable_fft(portable: bool) {
++    PORTABLE_FFT.store(portable, Ordering::Relaxed);
++}
++
++// MoltBrowser: the planner every (I)FFT is created with.
++fn moltbrowser_plan(n: usize, direction: rustfft::FftDirection) -> Arc<dyn rustfft::Fft<f32>> {
++    if PORTABLE_FFT.load(Ordering::Relaxed) {
++        rustfft::FftPlannerScalar::<f32>::new().plan_fft(n, direction)
++    } else {
++        rustfft::FftPlanner::<f32>::new().plan_fft(n, direction)
++    }
++}
++
+ /// The complex Fast Fourier Transform (FFT).
+ pub struct Fft {
+     scratch: Box<[Complex<f32>]>,
+@@ -27,9 +50,8 @@ impl Fft {
+         assert!(n.is_power_of_two());
+         assert!(n <= MAX_SIZE);
+ 
+-        let mut planner = rustfft::FftPlanner::<f32>::new();
+-
+-        let fft = planner.plan_fft_forward(n);
++        // MoltBrowser: rustfft::FftPlanner, or the scalar one.
++        let fft = moltbrowser_plan(n, rustfft::FftDirection::Forward);
+ 
+         // Create a scratch buffer to
+         let scratch = vec![Default::default(); fft.get_inplace_scratch_len()].into_boxed_slice();
+@@ -73,9 +95,8 @@ impl Ifft {
+         assert!(n.is_power_of_two());
+         assert!(n <= MAX_SIZE);
+ 
+-        let mut planner = rustfft::FftPlanner::<f32>::new();
+-
+-        let ifft = planner.plan_fft_inverse(n);
++        // MoltBrowser: rustfft::FftPlanner, or the scalar one.
++        let ifft = moltbrowser_plan(n, rustfft::FftDirection::Inverse);
+ 
+         let scratch = vec![Default::default(); ifft.get_inplace_scratch_len()].into_boxed_slice();
+ 

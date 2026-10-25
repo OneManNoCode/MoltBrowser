@@ -26,6 +26,7 @@ Pin: Chromium 152.0.7977.169 (`92a6f151`). Upstream files below were read at tha
 7. **No caller changes in this phase** (none were needed; `PromptOptions` gained an optional `stop_sequences` field, §8). `BrowserAIRuntime` keeps its public API, including the blocking calls made from ThreadPool workers. So `MoltAIChatHandler`, `WebAgent`, `AutomationRunner` and `automation_background_browser` are untouched. Async variants and migrating callers to them is a later, optional step.
 8. **Upstream files patched:** `chrome/utility/services.cc` and `chrome/utility/BUILD.gn`, imported unchanged first and then patched. No sandbox policy files are expected to change.
 9. **Images (§10).** A vision-language model's projector is a second read-only handle, and the service receives raw RGB pixels within fixed bounds, never an image file: decoding stays in Chromium's own sandboxed decoders.
+10. **Audio (§13).** A projector may also have an audio encoder; the service receives 16 kHz mono 16-bit PCM within fixed bounds, never an audio file: pages' audio is decoded in their renderer.
 
 ```
 browser process (unsandboxed)                     utility process (kOnDeviceModelExecution)
@@ -929,10 +930,10 @@ ChatPrompt.user_images / ChatMessage.images
 
 ### 10.4 The model and its pins
 
-The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its projector in Q8_0 (`kVisionProjectors` in `browser_ai_runtime.cc`).
+The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its projector in Q8_0 (`kProjectors` in `browser_ai_runtime.cc`).
 
 - **Why this one.** A permissive licence, a size that runs next to the browser on 8 GB machines, strong text reading in screenshots and documents for its size (the main use: pages and agent screenshots), and a projector type the vendored llama.cpp supports (Qwen3-VL, with M-RoPE). Rejected: Qwen2.5-VL 3B (research-only licence), Gemma 3 (Gemma terms need acceptance), LFM2-VL (its own licence), SmolVLM2 (weaker at reading text), Qwen2.5-VL 7B (too big to sit next to the chat's model on most machines).
-- **Fail closed.** Its revision, both SHA-256s and both sizes are empty: until `tools/models/pin_models.py` fills all five from the same Hugging Face revision (it pins the projector from the model's own reply, and pins neither if the projector is missing), the model is not in the catalogue at all (`IsPinnedForVision()`). The repo and file names are marked to be confirmed when pinning.
+- **Fail closed.** Its revision, both SHA-256s and both sizes are empty: until `tools/models/pin_models.py` fills all five from the same Hugging Face revision (it pins the projector from the model's own reply, and pins neither if the projector is missing), the model is not in the catalogue at all (`IsPinnedWithProjector()`). The repo and file names are marked to be confirmed when pinning.
 - **Download (one unit).** The model and its projector are downloaded, verified, counted, sized and deleted together (`models/model_download_plan.*`, the chat handler's download flow in `molt_ai_chat_handler.cc`):
   - *Pins, fail closed.* Before any IO, `CheckUnit()` refuses a unit with a projector unless both files have a 40-hex revision, a well-formed SHA-256 and a size (`IsFullyPinned`), so even a registry mistake can't download an unpinned projector; a text-only model may still download unpinned, as "unverified", as before.
   - *Download.* `PlanModelDownload()` lists the files still to fetch, the weights first. Each gets its own `ModelDownloadJob` from `/resolve/<revision>/<file>` of the model's repo, with its own pinned SHA-256 and exact size: streamed into `<file>.partial`, hashed, and moved into place only once both match; a size or hash mismatch on either file discards that file's `.partial` and fails the download. Progress (`download-progress`) and the size the model pickers show cover the whole unit.
@@ -942,7 +943,7 @@ The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its proj
 
 ### 10.5 Not done
 
-- **Audio** (mtmd has it; nothing sends it) and **video**.
+- **Audio**: §13. **Video**: not planned.
 - **Images in the AI chat or in Agent mode's recorded workflows.** The runtime API takes them (`ChatPrompt::user_images`, `ChatMessage::images`); the Prompt API and the web agent's screenshots (AGENT_ACTIONS.md §2.6) are the only callers that send any.
 - **Mapping the projector** instead of copying it: clip reads tensors into its own buffers.
 - **KV reuse across images** (§10.1, 5).
@@ -974,15 +975,15 @@ The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its proj
 
 ## 11. GPU inference on Windows and Linux (Vulkan)
 
-Status: implemented behind the GN switch `molt_llama_vulkan` (October 2026), which stays **off** until it has been tested on real GPUs; on Windows it runs models on the CPU until the pre-lockdown step of §11.4 exists. The roadmap item "GPU inference on Windows and Linux" wants llama.cpp's Vulkan backend (ggml-vulkan) in the inference service, with the CPU as the fallback. macOS keeps Metal. §11.1–11.6 are the research; §11.7 is what was built, §11.8 how it was tested, §11.9 what is left; §11.10–11.12 are the lasting GPU failure record, the setting and the pipeline cache that belong with turning the switch on, and §11.13 how they were tested. Upstream files below were read at 152.0.7977.169; llama.cpp is the vendored b11641.
+Status: implemented behind the GN switch `molt_llama_vulkan` (October 2026), which stays **off** until it has been tested on real GPUs; on Windows the pre-lockdown step of §11.15 now loads the drivers, pending a Windows GPU machine. The roadmap item "GPU inference on Windows and Linux" wants llama.cpp's Vulkan backend (ggml-vulkan) in the inference service, with the CPU as the fallback. macOS keeps Metal. §11.1–11.6 are the research; §11.7 is what was built, §11.8 how it was tested, §11.9 what is left; §11.10–11.12 are the lasting GPU failure record, the setting and the pipeline cache that belong with turning the switch on, and §11.13 how they were tested; §11.14 cuts the shaders' size and §11.15 is the Windows pre-lockdown step. Upstream files below were read at 152.0.7977.169; llama.cpp is the vendored b11641.
 
 ### 11.1 Findings in one page
 
 1. **Build.** ggml-vulkan needs the Vulkan headers (`vulkan.hpp`), SPIRV-Headers (`spirv.hpp`), a host tool (`vulkan-shaders-gen`) and a GLSL compiler with glslc's command line. Chromium 152 has every input except glslc: `third_party/vulkan-headers`, `vulkan-loader`, `glslang` (with a `glslang_validator` executable), `spirv-tools` and `spirv-headers` are in DEPS; shaderc is not.
-2. **Shaders are built from source, not vendored**, with Chromium's own glslang and SPIRV-Tools through a small glslc-compatible host tool (§11.2). The output is about 40 MB of SPIR-V (§11.8), embedded in the binary, so the switch costs binary size, not only build time.
+2. **Shaders are built from source, not vendored**, with Chromium's own glslang and SPIRV-Tools through a small glslc-compatible host tool (§11.2). The output is about 40 MB of SPIR-V (§11.8); the build leaves out the weight types no catalogue model uses and compresses the rest, so the binary carries 2.6 MB (§11.14).
 3. **The loader is opened at run time.** ggml-vulkan uses `vkGetInstanceProcAddr` and `vkGetPhysicalDeviceFeatures2` as link-time symbols, which would make the whole browser binary depend on `libvulkan.so.1` / `vulkan-1.dll`. A local patch takes them from a loader opened at run time (§11.3).
 4. **Linux sandbox:** the seccomp policy already allows what Vulkan drivers need, but on desktop Linux the broker lets in only NVIDIA's driver. Mesa (every Intel and AMD GPU on a stock distro) needs a few broker additions, granted only to processes the browser launches for the GPU (§11.4).
-5. **Windows sandbox:** this sandbox type allows only Microsoft-signed DLLs once it locks down, so the Vulkan loader and the vendor driver must be loaded before that. Our service has no pre-lockdown step; adding one is an upstream content change that can only be designed with a Windows GPU at hand. Until then a Windows build with the switch on runs on the CPU (§11.4).
+5. **Windows sandbox:** this sandbox type allows only Microsoft-signed DLLs once it locks down, so the Vulkan loader and the vendor driver must be loaded before that. A pre-lockdown step in `utility_main.cc` does that for processes launched for the GPU (§11.15); it needs a Windows GPU machine to confirm.
 6. **Runtime:** a device policy in MoltBrowser code (software rasterizers, layered and virtual GPUs refused, a minimum of video memory), layers offloaded to fit the device's free memory, and the CPU as fallback when anything fails (§11.5).
 7. **Exceptions:** ggml-vulkan throws on device loss and on Vulkan errors by design, and `llama_decode` doesn't catch, so a lost GPU would terminate the service. Every llama.cpp call that can reach the GPU after load goes through wrappers built with exceptions (§11.6).
 8. **Crashes:** a GPU process that crashes or hangs doesn't count against the model (the crash-loop guard of §4.3); the browser reloads the model on the CPU and stops asking for the GPU (§11.5). A driver that fails three times within 30 days isn't used again until it changes (a lasting record in Local State, §11.10); `molt://ai-settings` can turn the GPU off and retry a turned-off driver (§11.11).
@@ -1037,7 +1038,7 @@ Status: implemented behind the GN switch `molt_llama_vulkan` (October 2026), whi
 
 - **Signed DLLs only after lockdown.** `GenerateConfigForSandboxedProcess` sets `MITIGATION_FORCE_MS_SIGNED_BINS` as a *delayed* mitigation for every type except ScreenAI, speech and the Media Foundation CDM (`sandbox_win.cc:505-510`); it takes effect at `LowerToken()` (`utility_main.cc:485`). MoltBrowser's own `vulkan-1.dll` isn't Microsoft-signed; vendor ICDs are signed by their vendors and WHQL-catalogued, and whether that passes the mitigation's check is unverified. Upstream avoids the question: its service creates Dawn devices in `PreSandboxInit`, before lockdown, keyed on its own service name, and `UtilityConfig.preload_libraries` (`PreLockdownSandboxHook`, `utility_main.cc:180`, filled by the PassKey-gated `ServiceProcessHost::Options::WithPreloadedLibraries`) loads named DLLs before lockdown.
 - **What a Windows GPU path needs:** a pre-lockdown step for our service (a `utility_sub_type` check in `utility_main.cc`, like webnn's at `:474`) that loads the loader, creates an instance and a device so the ICD and its dependencies are mapped, and keeps that instance alive so they stay mapped (`vkDestroyInstance` unloads the ICD; a later `LoadLibrary` of a module already mapped doesn't map a new image). Whether the ICD's registry reads and DriverStore files are reachable from this LPAC, and whether the D3DKMT adapter queries the loader uses for discovery work there, needs a Windows machine with a GPU. Windows builds are paused (CLAUDE.md), so it isn't built here.
-- **Until then:** without that step the loader or the ICD can't be loaded after lockdown (or the loader finds no usable device), so the backend isn't registered and the model loads on the CPU. A driver that crashes half-way is a GPU failure (§11.5), which moves the model to the CPU.
+- **Built since:** §11.15. Without that step the loader or the ICD can't be loaded after lockdown (or the loader finds no usable device), so the backend isn't registered and the model loads on the CPU. A driver that crashes half-way is a GPU failure (§11.5), which moves the model to the CPU.
 
 **macOS** is unchanged (Metal; the switch is refused there).
 
@@ -1114,7 +1115,7 @@ crash / hang / memory kill while on the GPU:
 
 **Sandbox (Linux):** `content/utility/on_device_model/on_device_model_sandbox_init.cc` (imported from 152, then hooked): `PreSandboxHook` passes its broker command set and file list through `MaybeAddMoltGpuInferencePermissions()` (`molt_gpu_inference_sandbox_linux.{h,cc}`, listed in that directory's imported BUILD.gn), which returns at once without `--molt-inference-gpu`. With it: read-only `/dev/dri`; read-write `/dev/dri/renderD128`–`137` and read-only `/sys/dev/char/<major>:<minor>/` for each present one; `intel_icd.json` and `radeon_icd.json` in both ICD directories; brokered `readlink`.
 
-**Windows:** nothing beyond the build. Without a pre-lockdown step the loader or the ICD can't load after lockdown, so the service reports `kNoDevice` and loads on the CPU.
+**Windows:** the pre-lockdown step of §11.15 (built later). Without it the loader or the ICD can't load after lockdown, so the service reports `kNoDevice` and loads on the CPU.
 
 ### 11.8 How it was tested
 
@@ -1158,10 +1159,10 @@ The machine this was built on has no Chromium checkout and no GPU: 4 cores, and 
 
 - **Real GPUs, before the switch goes on.** Nothing has run on a hardware GPU. To verify: NVIDIA's driver and Mesa's RADV and ANV on desktop Linux, in the real sandbox; speed against the CPU; load time and the first answer's time, with and without the pipeline cache (§11.12); a real device loss (a GPU reset) and a driver crash, and that each reaches the GPU record (§11.10). The load log line shows `gpu_status`, `gpu_layers` and the GPU's name; the device report logs its key.
 - **The broker grants, on NVIDIA, RADV and ANV hardware, before the switch goes on.** The list of §11.4 comes from reading upstream, libdrm and Mesa and from running libdrm and the drivers' device enumeration against a fake sysfs (§11.8), not from a run on a GPU. On each of the three, in the real sandbox: the device is found and created with exactly that list, a model runs, and nothing the driver needs is refused (a refusal may show only as a driver warning in the log); and a GPU behind a PCI bridge, and a machine with two GPUs, find theirs. Grant more only with the file named, never a directory recursively.
-- **Windows:** the pre-lockdown step of §11.4. Until it exists, Windows runs models on the CPU with the switch on.
+- **Windows:** the pre-lockdown step is built (§11.15); what it needs from a Windows GPU machine is listed there and in the checklist.
 - **The GPU record and the setting** are built (§11.10, §11.11). Left: the browser and settings-page tests in a Chromium build (§11.13), and on hardware, that a real driver crash at device creation, at the first decode and mid-answer is attributed to the reported driver. The blocklist is still empty until testing finds a broken driver; the record makes it less urgent (a broken driver costs at most three failures, then one a month).
 - **The pipeline cache** is built (§11.12), but lavapipe, the only driver here, keeps its compute pipelines out of `VkPipelineCache`, so the win was measured only with an emulated caching driver. On RADV, ANV and NVIDIA: the cache's size after a model's first answer (the 32 MiB cap assumes a few MiB), the first answer's time cold and warm, and whether a driver keeps pipelines created with `VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR` (ggml-vulkan sets it wherever `VK_KHR_pipeline_executable_properties` exists, only for a debug printout) out of its cache; if one does, drop the flag in MoltBrowser builds (lavapipe stored nothing with or without it).
-- **Binary size.** About 40 MB of SPIR-V in the one browser binary. Options: compress it and inflate it in the service on first use; leave out shader families for quantization types no catalog model uses; or ship it as a data file the service verifies.
+- **Binary size:** done, 2.6 MB instead of 40 MB (§11.14).
 - **Memory on integrated GPUs.** There device memory is system memory; whether the footprint watchdog (§8) sees it depends on the driver. Not measured. A memory kill on the GPU counts as a GPU failure, so the worst case is a reload on the CPU.
 - **Image encoding.** A device lost while the projector encodes an image is caught by mtmd (§11.6), so that request ends with `kDecodeFailed`; the next decode reports `kBackendFailed`.
 - **Not planned:** embeddings on the GPU (the embedding model's process never asks); one model split across GPUs.
@@ -1310,6 +1311,93 @@ lavapipe never stores compute pipelines in `VkPipelineCache` (its cache stays th
 - **Mutation checks:** 49 mutations of the new checks (the header check, the record's threshold, window, retries, probation, caps, eviction and sanitization, the cache files' naming and cap, `IsConsistentGpuStatus`, the session guard's reset, the turned-off verdict) against the std-only tests: 48 killed. The one that survives makes the record's age of a time ahead of the clock negative instead of zero, which every comparison treats alike. One more test was added for a survivor (no update retry against a version that wasn't recorded). Seven mutations of the settings section's script and markup (a name through `innerHTML`, shown without GPU inference, Off never sent, no retry, rows of the wrong shape, the radio not showing the saved value, an inline handler): all caught by the smoke test or the inline-handler check.
 
 **Needs a Chromium build:** the host's and the prefs' unit tests, the settings page in a real renderer (the activation check), Local State written and read back by the real `PrefService`, the mojom with the real generator in the real build, and the hardware of §11.9.
+
+### 11.14 Shader size
+
+Status: implemented (October 2026) behind the same switch; built and run in the stub GN root (§11.8) and on lavapipe; pending a compile in Chromium. §11.9 listed the binary size as left: about 40 MB of SPIR-V in the one browser binary.
+
+**Measured** (156's glslang 16.6.0, every shader family on): 1,569 variants, **40.2 MB of SPIR-V**, 174 MB of generated C++. Per family, before and after:
+
+| Family | Variants | SPIR-V | Kept | Kept SPIR-V | In the binary |
+|---|---|---|---|---|---|
+| `mul_mm` | 561 | 18.3 MB | 173 | 5.3 MB | 787 KB |
+| `mul_mat_vec` | 135 | 3.9 MB | 72 | 2.2 MB | 416 KB |
+| `mul_mat_vecq` | 90 | 3.7 MB | 42 | 1.4 MB | 275 KB |
+| `mul_mm_cm2` | 76 | 2.2 MB | 32 | 0.9 MB | 128 KB |
+| `mul_mmq` | 84 | 1.5 MB | 42 | 0.7 MB | 89 KB |
+| `copy_to_quant` | 52 | 1.0 MB | 27 | 0.4 MB | 48 KB |
+| `mul_mmq_cm1` | 26 | 0.9 MB | 14 | 0.5 MB | 87 KB |
+| `flash_attn` | 10 | 0.8 MB | 10 | 0.8 MB | 136 KB |
+| the other 147 | 535 | 7.9 MB | 368 | 3.9 MB | 652 KB |
+| **All 155** | **1,569** | **40.2 MB** | **780** | **16.1 MB** | **2.62 MB** |
+
+"In the binary" is the compiled objects' text and data (`size`); the family table adds 1.5 KB.
+
+**What was cut, and why each is safe:**
+
+1. **Weight types no catalogue model uses** (`_ggml_vk_dropped_types` in `src/third_party/llama_cpp/BUILD.gn`, 18 types): `q1_0`, `q2_0`, `q4_0`, `q4_1`, `q2_k`, `q3_k`, the nine `iq*` types, `nvfp4`, `tq1_0` and `tq2_0`; 789 variants, 24.1 MB. The catalogue's chat models are Q4_K_M files (Q4_K and Q6_K, with Q5_0, Q5_1, Q8_0 or F16 for tensors whose rows aren't a multiple of 256), gpt-oss is MXFP4, the embedding model and the projectors are Q8_0, F16 and F32, and KV caches are F16: all kept. A model with a left-out type still runs: `ggml_backend_vk_device_supports_op()` answers false for any op whose result or source has such a type, and llama.cpp's scheduler, weight placement and offload all ask it, so those ops (and their weights) stay on the CPU. Before pinning a model with another type, `tools/models/gguf_types.py` lists its file's types against the list (and fails on a left-out one); take the type out of the list then. The build checks that every listed type is one the generator knows and isn't F32 or F16.
+2. **Cooperative matrices: nothing cut.** `cm1` (`VK_KHR_cooperative_matrix`) is what NVIDIA (Turing and later), AMD (RDNA3, RADV and AMDVLK) and Intel (Arc, Xe2, ANV) expose; `cm2` (`VK_NV_cooperative_matrix2`) is NVIDIA's fastest path for prompt processing. ggml chooses per device at run time, so dropping either would make those GPUs slower, not unable; after the type cut they are 1.4 MB of SPIR-V and 215 KB in the binary.
+3. **Duplicates.** 117 groups of identical variants (2.8 MB): within a family, identical variants share their bytes in a block.
+4. **Compression.** brotli (Chromium's `//third_party/brotli`, quality 11, 16 MB window), per family, in blocks of up to 256 KB of whole variants (a larger variant gets its own block, at most 4 MB). Measured on all 1,569 variants:
+
+   | Scheme | Size |
+   |---|---|
+   | zlib, each variant | 13.3 MB |
+   | brotli, each distinct variant | 8.7 MB |
+   | brotli, one stream per family | 4.4 MB (but one pipeline would inflate up to 18 MB) |
+   | brotli, blocks of 128 KB / 256 KB / 512 KB / 2 MB | 6.6 / 5.95 / 5.3 / 4.8 MB |
+   | brotli with a dictionary per family | 6.7 to 7.7 MB |
+
+   256 KB keeps what one pipeline inflates small. Inflating every kept variant once took 0.64 s on one core (under a millisecond each), next to the driver's own compile of the same SPIR-V; pipelines are made on first use, so a model inflates only the variants it uses.
+
+**How** (README.chromium has the patch list):
+
+- The generator writes its `.cpp` files to `raw/` as before; a host tool, `ggml_vk_shader_pack` (`chromium/ggml_vk_shader_pack.cc`), rewrites each into the file that is compiled: a left-out variant's `_len` is 0, every other variant's `_data` is a 24-byte descriptor (magic `MVKZ`, family, block, offset, size, FNV-1a checksum of its SPIR-V), and the blocks follow. The symbol names don't change, so `ggml-vulkan.cpp`'s references don't either. The tool fails on any generator output it doesn't recognize, and inflates every block and checks every descriptor before writing. A second run writes the family table and the left-out list (`ggml-vulkan-shader-registry.cpp`).
+- `ggml-vulkan.cpp`, two blocks under `GGML_VULKAN_MOLTBROWSER`: `ggml_vk_create_pipeline_func()` inflates the variant before making the shader module (`ggml_vk_moltbrowser_unpack_shader()`), and `supports_op` asks `ggml_vk_moltbrowser_op_types_built()`.
+- The service checks each descriptor (magic, family, block, bounds, a size that is a multiple of 4 and at most 4 MB), the inflated block's size, the SPIR-V magic and the checksum. Anything else, and a left-out variant (which `supports_op` makes unreachable), throws inside ggml-vulkan, which `llama_guard` turns into `kBackendFailed` (§11.6): the model reloads on the CPU. The checksum guards against a packing bug, not an attacker (the data is in the binary).
+- Side effect: the generated C++ the build compiles drops from 174 MB to 13.4 MB (§11.8's `mul_mm.comp.cpp` alone was 79 MB and needed 2.4 GB of compiler memory).
+
+**Results unchanged, how it was checked:**
+
+- *Byte for byte.* Every one of the 780 kept variants inflates to exactly the bytes the generator wrote, and each of the 789 left out has a left-out type in its name (a scratch program over the build's output). So for every kept type the GPU runs exactly the shaders it ran before; no "before" run is needed to compare against.
+- *Unit tests* (`vulkan_shader_pack_unittest.cc`, 9, with the switch): descriptors round-trip and malformed ones are refused, the checksum, every block inflates, kept variants of several families inflate to SPIR-V, left-out ones are empty and refused, the left-out list are ggml types, and the op gate on kept and left-out types.
+- *CPU against lavapipe*, `LlamaEngine` built as the service builds it, tiny random-weight llama models whose matrices are all of one type, three greedy turns of 16 tokens each, and llama.cpp's last-token logits:
+
+  | Weights | On the GPU | Text, three turns | Logits: largest difference, cosine, top token |
+  |---|---|---|---|
+  | F32 | every layer | identical | 0.050, 0.9999982, same |
+  | Q4_K, Q5_K, Q6_K | every layer | identical | 0.008 / 0.010 / 0.018, at least 0.9999, same |
+  | F16, Q8_0, Q5_0, Q5_1 | every layer | the same first tokens, then apart at a near-tie | 0.35 to 0.58, at least 0.9997, same |
+  | Q4_0, Q4_1 (left out) | every layer, their products on the CPU | the same first tokens, then apart | 0.56 / 0.67, at least 0.9997, same |
+
+  The CPU multiplies quantized weights with 8-bit activations and the GPU doesn't, so a random model's greedy text parts where two tokens are nearly tied; the logits agree on every type, and on the types without a tie in the run the text is identical. The left-out types run, with their matrix products on the CPU.
+- *GN*: `gn gen --check` with the switch on and off; the build from scratch with `-j1`.
+
+**Needs a Chromium build:** the compile with the real toolchains, the browser binary's size with the switch on, and a catalogue model on a real GPU (§11.9).
+
+### 11.15 Windows: loading the GPU drivers before the sandbox locks down
+
+Status: implemented behind the same switch, which stays off in `configs/windows-x64.gn`; type-checked for Windows; pending a Windows machine with a GPU (Windows builds are paused, CLAUDE.md). §11.4 explains why: once this sandbox type locks down, only Microsoft-signed images may be mapped, and neither the Vulkan loader nor a GPU vendor's driver is one.
+
+**Where.** `content/utility/utility_main.cc` (imported from 156 unchanged, then hooked): after webnn's pre-sandbox step and before the token is lowered, a process whose sandbox type is `kOnDeviceModelExecution` calls `on_device_model::MaybeWarmMoltGpuInferenceDrivers()` (`content/utility/on_device_model/molt_gpu_inference_sandbox_win.cc`). It does nothing without `--molt-inference-gpu`, which the browser adds only to inference processes it launches for the GPU (§11.4), and nothing in a build without the switch (`molt_gpu_inference_buildflags.h`). The CPU path and every other utility process are unchanged.
+
+**What it does, and why each step:**
+
+1. *Layers out.* It clears the environment variables that name Vulkan layers or layer paths (`VK_INSTANCE_LAYERS`, `VK_LOADER_LAYERS_ENABLE`, `VK_LAYER_PATH`, `VK_ADD_LAYER_PATH`, `VK_IMPLICIT_LAYER_PATH`, `VK_ADD_IMPLICIT_LAYER_PATH`) and sets `VK_LOADER_LAYERS_DISABLE=~all~`. Overlays and capture tools register implicit layers in the registry, which this sandbox can read (unlike Linux, where their manifests aren't readable, §11.4); without this they would be loaded and pinned too. Loaders before 1.3.234 ignore the variable.
+2. *The loader from System32 only.* `LoadLibraryExW(L"vulkan-1.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)`: the loader the GPU driver installs, never one from the application directory, the current directory or `PATH`. ggml-vulkan later finds it already loaded (`GetModuleHandleW` first, `chromium/ggml-vulkan-moltbrowser.cpp`) and otherwise searches System32 only, too.
+3. *Instance, devices, pipelines* (`WarmUpVulkanDrivers()`, `molt_gpu_driver_warmup.cc`, platform-independent): an instance (Vulkan 1.0, no layers, no extensions); up to 16 physical devices; for each discrete or integrated GPU (never CPU, virtual or "other" types) a device with one compute queue, a 55-word compute shader (an empty `main`, compiled with glslang 16.6.0 for Vulkan 1.0), its pipeline layout and a compute pipeline. Creating the device loads the vendor's user-mode driver; creating a pipeline loads its shader compiler, which several drivers load only then.
+4. *Pin.* While all of that is alive, every module loaded since a snapshot taken before step 2 is pinned (`GetModuleHandleExW` with `GET_MODULE_HANDLE_EX_FLAG_PIN`): the loader, the drivers and what they loaded stay mapped for the life of the process. Then everything is destroyed in reverse order; without the pin, destroying the instance would unload the drivers.
+5. *One log line* for the checklist: `On-device AI GPU warm-up: instance 1, GPUs N, devices N, pipelines N, modules pinned M, not pinned 0`. With no loader, a warning, and the model runs on the CPU.
+
+After lockdown, ggml-vulkan's own instance loads the same modules, which are already mapped, so nothing new needs mapping.
+
+**What it allows, and what not.** The sandbox policy doesn't change: the LPAC, the token, the job and the mitigations are upstream's for this type. The step only maps, before lockdown, what the System32 Vulkan loader and the installed GPU drivers load for their own devices, in a process the browser launched for the GPU; one process per model, so they stay only as long as that model. No page or model input reaches it: the names and the shader are fixed, and it runs before the process serves any IPC. Anything the drivers load later is still refused (that load fails, which is a GPU failure, §11.5: the model moves to the CPU). Third-party layers are kept out.
+
+**Rejected:** `ServiceProcessHost::Options::WithPreloadedLibraries` (PassKey-gated, and it loads named DLLs, while the driver's names come from the registry at run time); turning the signed-binaries mitigation off for this type (a sandbox policy change in upstream code, for every model process); upstream's Dawn warm-up (D3D12 on Windows).
+
+**Checked here:** the warm-up function's unit tests (8, a fake Vulkan; GCC and ASan); a real run on lavapipe (instance, device and pipeline made, the callback run while they live, 38 new shared objects reported); and a Windows type check of `molt_gpu_inference_sandbox_win.cc` and the warm-up (Chromium's clang and libc++ on the mingw-w64 headers, stand-ins for the three `//base` declarations it uses, `-Werror` with Chromium's warnings, the switch on and off).
+
+**Only a Windows machine with a GPU can confirm** (the test plan is in `docs/BUILD_MACHINE_CHECKLIST.md`, items tagged "ai-finish"): that the driver files in the DriverStore are readable from this LPAC before lockdown; that the loader's adapter discovery (D3DKMT) and the drivers' registry reads work there; which modules each vendor loads at device and at pipeline creation, and whether any loads more later (a refused load after lockdown); that the pinned modules let ggml-vulkan's instance and devices come up after `LowerToken()`; that no non-Microsoft image is refused (Process Monitor: no `STATUS_INVALID_IMAGE_HASH`); NVIDIA, AMD and Intel, a laptop with two GPUs, and a machine without a Vulkan driver (the CPU).
 
 ## 12. CPU kernels for x86-64 CPUs without AVX2 (run-time choice)
 
@@ -1483,3 +1571,124 @@ This machine has no Chromium checkout. Its CPU has AVX2 and AVX-512, so every le
 - **AVX2 machines leave speed on the table (found, not changed).** Everything in ggml-cpu except the two files is built for SSE3, so on AVX2 machines the F32/F16 operations run their SSE3 paths and `ggml_cpu_has_avx2()` is 0, which turns weight repacking off on x64 (§12.1, point 2), and `cpu_repack_used` reports what was allowed, not what happened. Building more of ggml-cpu per level (upstream builds all of it) would change what AVX2 machines run and how much memory a model takes (repacked weights are anonymous memory, §2.5), so it needs its own measurements; it also raises the hazard of §12.5, since the other files are C++ with weak symbols.
 - **A `vnni` level** (AVX-512-VNNI or AVX-VNNI on top of `avx2`) is one more row in `_ggml_x86_levels` and `kLevels`; worth it only with repacking on. AMX stays out: its kernels live in `amx/`, not in the two files, they are compiled only with `__AMX_INT8__` and `__AVX512VNNI__`, and Linux must grant the AMX state (`arch_prctl(ARCH_REQ_XCOMP_PERM)`) before the sandbox (§2.3).
 - **When updating llama.cpp:** compare the two lists in `ggml-cpu-x86-variants.h` with what `arch/x86/quants.c` and `repack.cpp` define, check the level objects for weak symbols and data, and run `X86CpuKernelsTest` (README.chromium).
+
+## 13. Audio input
+
+Status: implemented (October 2026), pending a compile on the build machine. A model whose projector has an audio encoder (llama.cpp's multimodal library, `tools/mtmd`, already vendored for §10) hears audio clips. The first consumer is the Prompt API's audio input (WEB_AI_APIS.md §5.2). The catalogue's audio model (§13.4) isn't offered until it is pinned and checked, so no user sees the feature yet.
+
+### 13.1 Decisions
+
+1. **No audio decoding in the browser or the service.** Pages' audio is decoded and resampled by Blink in the renderer (an `AudioBuffer`, or a file in a `Blob` or `ArrayBuffer`), to the rate and channel count the session asks for: 16 kHz, one channel. The browser receives float samples and turns them into 16-bit PCM (clamped; NaN and infinities become silence); the service receives that PCM in a buffer, never an audio file. llama.cpp's helpers that decode files (`mtmd-helper`: miniaudio, ffmpeg) are not vendored.
+2. **Bounds** (`engine/audio_input.h`, checked in the browser before sending and again in the service, which treats a violation as a bad message):
+
+   | What | Bound |
+   |---|---|
+   | Format | 16 kHz, one channel, 16-bit samples (the browser refuses any other rate or channel count) |
+   | Length | 0.1 to 30 s (1,600 to 480,000 samples; the browser pads a shorter clip with silence) |
+   | Bytes | exactly 2 per sample |
+   | Clips per request | 4, history included |
+   | Where | user turns only (a clip on an assistant turn is a bad message) |
+
+   llama.cpp's Whisper preprocessing pads a clip with 30 s of silence and encodes whole 30-second windows, so a clip up to 29.99 s takes one window and the longest two.
+3. **The projector is the same second handle** as an image projector (§10.1, 3): a projector may have an image encoder, an audio encoder or both. The service loads it as before; `ModelDescription.audio` says whether it has an audio encoder taking 16 kHz (a projector with neither encoder is `kInvalidVisionProjector`). A service that reports `audio` without having been sent a projector is a protocol violation and is killed.
+4. **The service places the clips, as images.** A message's images and then its clips each get one media marker in front of its text, which `mtmd_tokenize_from_parts()` replaces in order; markers in untrusted text are neutralized, so page text can't move, duplicate or add a clip.
+5. **Positions.** Audio embeddings take one position per token (on M-RoPE models the same position in all four sections, mtmd-helper's layout).
+6. **No KV reuse across media; budget as images** (§10.1, 5 and 6): the new message's clips count with the system prompt, a history turn's go with it.
+7. **Status values.** `GenerationStatus.kAudioUnsupported` for audio sent to a model without an audio encoder (answered at once); the browser maps it to `GenerationResult::audio_unsupported` and fails such a request before sending when it already knows (`LoadedModelHearsAudio()`).
+8. **The catalogue knows what a projector takes** (`kProjectors` in `browser_ai_runtime.cc`: `images`, `audio`), for the model pickers and the Prompt API's availability; what a request may carry is what the loaded projector reports.
+9. **Only verified audio encoders run** (hardening). llama.cpp's audio projectors differ in how many tokens a window takes, so the service gives audio only to projectors on an allow-list (`AllowedAudioWindowTokens()`, `engine/audio_input.h`): a projector type and frame-stacking factor, each verified here to give a window exactly the tokens llama.cpp reserves for it. The list holds one entry, Voxtral with a stacking factor of 4 (375 tokens a window), the layout llama.cpp's converter writes.
+   - *From the file, in the service.* The projector's own header is read before llama.cpp loads it (`molt_llama::ReadProjectorFacts()`, through `llama_guard`: ggml's GGUF parser, every exception caught, the file rewound): its encoders, the audio projector type (as clip picks it) and the stacking factor. The browser's claim isn't consulted.
+   - *Off the list.* A projector whose only encoder is an audio encoder off the list isn't loaded at all: the model loads for text alone, and audio answers `kAudioUnsupported`. One that also has an image encoder loads for images, without audio.
+   - *At load.* Even on the list, audio is on only after a placeholder clip (no samples, nothing encoded) showed llama.cpp reserving the list's count for its window; otherwise the projector goes too and the model loads for text.
+   - *Per window.* Every audio window is checked against the same count before it is encoded, and clip's own check of its graph's output returns an error instead of ending the process (local patch, README.chromium), so a disagreement fails that request (`kDecodeFailed`) and nothing else.
+   - The same local patch has llama.cpp count a window in the order its graph builds it, for every Whisper-type projector, and runs Voxtral without pooling, as the original model does.
+
+### 13.2 The flow
+
+```
+browser                                              inference service
+-------                                              -----------------
+page audio (Blink, renderer): decode, mix to mono,
+  resample to 16 kHz (instance info)
+  -> on_device_model.mojom.AudioData (floats)
+ModelAudioFromPage: one channel at 16 kHz, frame
+  count = data, 1..480,000 samples; clamp, NaN -> 0,
+  16-bit, pad to 1,600  (runtime/model_audio.h)
+ChatPrompt.user_audio / ChatMessage.audio
+  -> ToServiceChat: <= 4 (new message's first,
+     then the newest history turns'), each checked
+  -> mojom.AudioInput {BigBuffer pcm} ------------->  MoltModelImpl: CheckAudio (bad message on
+                                                         any violation), kAudioUnsupported without
+                                                         an audio encoder, copies samples out
+                                                       LlamaEngine::Chat: count + budget with
+                                                         placeholders (silence of the length),
+                                                         neutralize markers, tokenize_from_parts,
+                                                         encode each 30-s window, decode embeddings
+```
+
+### 13.3 Threat model
+
+**Attackers:** a web page (it chooses the audio, its length and the text around it); a compromised renderer (any channel count, rate, frame count and sample values, and any data length); a malicious or odd projector (pinned download only, parsed in the sandbox).
+
+- **Parsers stay where they were.** Compressed audio is decoded in the renderer, the page's own sandboxed process; the browser handles only float samples (a shape check and a clamped conversion, no parser), and the service only 16-bit PCM within the bounds.
+- **The browser trusts no AudioData.** Channel count, rate and frame count must be exactly what the session asked for and match the data; non-finite samples become silence; at most 4 clips of at most 30 s per request, so the conversion is bounded (at most 1.9 million samples, after mojo already copied them). The fuzzers (§13.6) drive it with arbitrary shapes and values.
+- **The service trusts no buffer.** `CheckAudio()` checks count, role and every clip's byte length before anything is queued; a buffer that can't be mapped fails the request. `mtmd_bitmap_init_from_audio()` copies exactly the checked samples. The preprocessing (an FFT and a mel filter bank in `mtmd-audio.cpp`) is linear in the clip, at most two windows per clip.
+- **Exceptions and aborts.** The audio calls (`mtmd_support_audio`, `mtmd_get_audio_sample_rate`, `mtmd_bitmap_init_from_audio`, the encode of an audio chunk) and the projector header read are in the audited list at the top of `llama_engine.cc`. Only allow-listed encoders run (§13.1, 9), and a token-count disagreement is an error for the request, not the end of the process.
+- **Browser memory.** A clip held for a page is at most 0.96 MB and counts as an image against the per-site and total caps (WEB_AI_APIS.md §5.2).
+
+### 13.4 The model and its pins
+
+The registry gets **Voxtral Mini 3B (2507)** (Mistral AI, Apache 2.0) in Q4_K_M, with its projector (a Whisper-large-v3 encoder and a two-layer adapter) in Q8_0, from `ggml-org/Voxtral-Mini-3B-2507-GGUF` (repo and file names marked to be confirmed when pinning).
+
+- **Why this one.** A permissive licence; speech understanding (transcription, questions and summaries about what is said, several languages), not only transcription; a size that sits next to the browser on 8 GB machines; and a projector type the vendored llama.cpp has (`voxtral`). Families looked at (sizes and terms as published, to confirm when pinning):
+
+  | Family | Size | Terms | Why not |
+  |---|---|---|---|
+  | Voxtral Mini 3B | 3B + 0.6B encoder | Apache 2.0 | chosen |
+  | Voxtral Small | 24B | Apache 2.0 | too big next to the chat's model |
+  | Ultravox (Llama 3.x based) | 1B / 8B | Llama licence (acceptance) | terms; weaker at 1B |
+  | Qwen2-Audio | 7B | Apache 2.0 | too big for its quality next to the chat's model |
+  | Qwen2.5-Omni | 3B / 7B | 3B: research licence; 7B: Apache 2.0 | terms (3B), size (7B) |
+  | Qwen3-Omni | 30B-A3B | Apache 2.0 | too big |
+  | Qwen3-ASR, Granite Speech | 0.6B to 8B | Apache 2.0 | transcription and translation only, not questions about audio |
+  | Gemma 4 E2B / E4B | 2B / 4B effective | Gemma terms (acceptance) | terms; worth it later as one model that sees and hears (the catalogue's E4B entry is hidden until pinned) |
+  | LFM2-Audio | 1.5B | LFM licence | terms |
+  | MERaLiON, Music Flamingo, MiMo-Audio | various | various | regional, music or research models |
+
+- **Fail closed, twice.** Its revision, both SHA-256s and both sizes are empty: until `tools/models/pin_models.py --only voxtral-mini-3b --write` fills all five from one revision, it isn't in the catalogue (`IsPinnedWithProjector()`). Its entry is also hidden: after pinning, the owner unhides it by hand once the pinned files pass the audio check on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "ai-finish"), because the vendored llama.cpp's Voxtral path has run here only with test projectors (in the converter's layout, §13.6).
+- **Download** as one unit with its projector, exactly as §10.4.
+- **The pick for pages.** A page that asks for audio gets a downloaded model that hears audio when one has to be loaded (WEB_AI_APIS.md §5.2); the chat's model is never swapped out.
+
+### 13.5 Not done
+
+- **Audio in the AI chat** (a microphone button or an attached recording) and in Agent mode. The runtime API takes it (`ChatPrompt::user_audio`, `ChatMessage::audio`); the Prompt API is the only caller.
+- **Audio output** (speech), and **video**.
+- **Streaming audio** (clips are whole, at most 30 s).
+- **A model that sees and hears** (Gemma 4, Qwen2.5-Omni 7B): the plumbing allows both in one request; no catalogue model has both.
+- **Converting the samples on a worker.** The browser converts a request's clips on the UI thread, bounded as above; a worker, as for images, if profiling shows it.
+
+### 13.6 Tests
+
+**In the repository:**
+
+- `engine/audio_input_unittest.cc` (8, std-only): the bounds and byte lengths, the conversion (only one channel at 16 kHz with the data's frame count, clamping, NaN and infinities, rounding, padding to the minimum, the longest clip), the float conversion, and the allow-list (Voxtral at a factor of 4 only; other factors, other types, near names and embedded NULs refused).
+- `runtime/model_audio_unittest.cc` (3): a page's audio becoming a clip; validity and length in seconds; which clips a request sends (every split of up to 9 over three turns stays within 4 and takes the newest).
+- `runtime/inference_process_host_unittest.cc`: `audio` with the projector the browser sent is recorded; without one it is a violation.
+- The web AI tests for the Prompt API (WEB_AI_APIS.md §12) and `tools/models/pin_models_test.py` (the audio model and its projector pinned as one; every projector all-or-nothing).
+- Fuzzers (`docs/FUZZING.md`): `molt_audio_input_fuzzer` (the service's bounds and the browser's conversion on arbitrary shapes and values) and `molt_web_ai_conversation_fuzzer` (clips in a session's context, and a page's audio becoming a clip). Run here for 7 and 3 minutes and in smoke mode, without a finding.
+
+**Run outside the repository** (`LlamaEngine` and llama.cpp built by the stub GN root of §11.8, with a tiny random-weight llama model and a random-weight projector of llama.cpp's Voxtral type: Whisper encoder, frame stacking, two-layer adapter):
+
+| Case | Result, on the CPU and with the language model on lavapipe |
+|---|---|
+| A 1 s clip; a 0.1 s clip | loaded with `audio` and not `vision`; one window each; an answer |
+| Two clips; a clip in the history and one in the new message | two windows each; an answer |
+| 29.99 s and exactly 30 s | two windows (Whisper's padding); an answer |
+| 30 s and one sample, 0.1 s less one sample, five clips | refused (`kTokenizeFailed` from the engine; the service refuses them before as bad messages) |
+| A projector off the allow-list (Voxtral's type with a factor of 2; Ultravox's type with 8) | not loaded: the model answers text, every audio request `kAudioUnsupported` |
+
+The projector is the layout llama.cpp's converter writes (a factor of 4); one window takes 375 tokens. The answers start with the same tokens on the CPU and with the language model on lavapipe (random weights part them later at near-ties).
+
+**The count check** (llama.cpp's multimodal library directly, every window encoded, clips of 0.1 s, 1 s, 29.99 s and 30 s): the count llama.cpp reserves and the count its graph produces agree for the Voxtral layout (375 a window) and for the Ultravox layout with a factor of 8 (188 a window), and every window encodes. The safety nets were also run against a build whose count was made wrong on purpose: each encode failed as an error without ending the process, and the engine's load-time check turned audio off (the model answered text, audio requests `kAudioUnsupported`).
+
+**Needs the build machine:** a compile; the pinned Voxtral model with real speech (a question about a recording, a transcription, a 30 s clip, five clips refused) on the CPU and on a GPU, its speed and memory on 8 and 16 GB machines, and the token count of one window (the Prompt API's per-clip count assumes at most 375); the Prompt API with real audio in a page (WEB_AI_APIS.md §12).

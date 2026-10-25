@@ -18,16 +18,17 @@ constexpr MoltDownloadIsolation Choose(bool keep,
                                        bool has_isolation,
                                        bool on_frames_site,
                                        bool has_original,
-                                       bool has_frame) {
+                                       bool has_frame,
+                                       bool is_retry = false) {
   return MoltChooseDownloadIsolation(keep, has_isolation, on_frames_site,
-                                     has_original, has_frame);
+                                     has_original, has_frame, is_retry);
 }
 
 // Other profiles: every request as Chromium makes it.
 TEST(MoltNetDownloadIsolationTest, OtherProfilesAsChromium) {
-  for (int bits = 0; bits < 16; ++bits) {
+  for (int bits = 0; bits < 32; ++bits) {
     EXPECT_EQ(Choose(false, (bits & 1) != 0, (bits & 2) != 0,
-                     (bits & 4) != 0, (bits & 8) != 0),
+                     (bits & 4) != 0, (bits & 8) != 0, (bits & 16) != 0),
               kAsChromium);
   }
 }
@@ -68,6 +69,30 @@ TEST(MoltNetDownloadIsolationTest, NothingToGoByMeansOneOff) {
   // A request with an isolation and no frame to check it against keeps it.
   EXPECT_EQ(Choose(true, true, false, false, false), kAsChromium);
   EXPECT_EQ(Choose(true, true, false, true, false), kAsChromium);
+}
+
+// A retry from the download bubble (no frame) or the downloads page (that
+// page's frame) carries the isolation of the download it retries and keeps
+// it; the downloads page is never taken for the frame that started it.
+TEST(MoltNetDownloadIsolationTest, ARetryKeepsTheIsolationItCarries) {
+  for (bool on_frames_site : {false, true}) {
+    for (bool has_frame : {false, true}) {
+      EXPECT_EQ(Choose(true, /*has_isolation=*/true, on_frames_site, false,
+                       has_frame, /*is_retry=*/true),
+                kAsChromium);
+    }
+  }
+}
+
+// A retry of a download whose first request had no isolation: a one-off
+// one, neither the destination's nor the downloads page's (which every
+// retry from that page would share).
+TEST(MoltNetDownloadIsolationTest, ARetryWithoutIsolationIsOneOff) {
+  for (bool has_frame : {false, true}) {
+    EXPECT_EQ(Choose(true, /*has_isolation=*/false, false, false, has_frame,
+                     /*is_retry=*/true),
+              kTransient);
+  }
 }
 
 }  // namespace

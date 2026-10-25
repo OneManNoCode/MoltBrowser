@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/functional/bind.h"
 #include "base/supports_user_data.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_fonts.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom.h"
@@ -16,6 +18,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/child_process_id.h"
+#include "content/public/common/content_switches.h"
 #include "crypto/random.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -51,6 +55,22 @@ mojo::AssociatedRemote<mojom::FingerprintingConfiguration> ConfigurationFor(
   return configuration;
 }
 
+// The set, to a renderer launched before it was open (if the process still
+// exists; a relaunch asks for it again).
+void SendMoltNetFonts(content::ChildProcessId render_process_id,
+                      std::vector<base::File> files) {
+  content::RenderProcessHost* host =
+      content::RenderProcessHost::FromID(render_process_id);
+  if (!host) {
+    return;
+  }
+  mojo::AssociatedRemote<mojom::FingerprintingConfiguration> configuration =
+      ConfigurationFor(host);
+  if (configuration) {
+    configuration->SetMoltNetFonts(std::move(files));
+  }
+}
+
 }  // namespace
 
 const SessionSeed& GetSessionSeed(content::BrowserContext* context) {
@@ -74,6 +94,10 @@ RendererMode ModeForBrowserContext(content::BrowserContext* context) {
              : RendererMode::kFarble;
 }
 
+void InitializeAtBrowserStartup() {
+  StartLoadingMoltNetFontsAfterStartup();
+}
+
 void AppendRendererSwitches(content::RenderProcessHost* host,
                             base::CommandLine* command_line) {
   if (!host || !command_line) {
@@ -85,6 +109,19 @@ void AppendRendererSwitches(content::RenderProcessHost* host,
   }
   // Only the mode: the seed goes over the channel (InitializeRenderer).
   command_line->AppendSwitchASCII(switches::kMode, ModeToSwitchValue(mode));
+  if (mode == RendererMode::kUniform) {
+    // MoltNet: Skia's baseline raster code on every CPU, never its AVX2/FMA
+    // or AVX-512 variants (InitializeSkia reads it before anything else;
+    // third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.h).
+    command_line->AppendSwitch(::switches::kDisableSkiaRuntimeOpts);
+    // MoltNet's bundled fonts (molt_net_fonts.h): every MoltNet renderer
+    // takes its fonts from the set alone, unless this installation has none.
+    // RenderProcessWillLaunch (InitializeRenderer) ran just before, in the
+    // same task: it sent the files, or will send them once they are open.
+    if (MoltNetRenderersExpectFonts()) {
+      command_line->AppendSwitch(switches::kMoltNetFonts);
+    }
+  }
 }
 
 void InitializeRenderer(content::RenderProcessHost* host) {
@@ -104,6 +141,18 @@ void InitializeRenderer(content::RenderProcessHost* host) {
   }
   const SessionSeed& seed = GetSessionSeed(context);
   configuration->SetSessionSeed(std::vector<uint8_t>(seed.begin(), seed.end()));
+  // MoltNet's bundled fonts (molt_net_fonts.h): opened once, in the
+  // background, at startup or at the first renderer launch. A MoltNet
+  // renderer gets read-only duplicates now, ordered before any navigation,
+  // or as soon as the set is open; until then it has no fonts at all.
+  StartLoadingMoltNetFonts();
+  if (mode == RendererMode::kUniform) {
+    if (AreMoltNetFontsReady()) {
+      configuration->SetMoltNetFonts(DuplicateMoltNetFonts());
+    } else {
+      WhenMoltNetFontsReady(base::BindOnce(&SendMoltNetFonts, host->GetID()));
+    }
+  }
   // Shields decisions are per document and per worker, never per process
   // (molt_shields_delivery.h).
 }

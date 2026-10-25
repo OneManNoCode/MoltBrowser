@@ -382,6 +382,8 @@ back/forward, and a MoltNet window with Shields off.
 | `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
 | Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
+| WebAssembly relaxed SIMD, `Math.pow` and `Math.tanh`, colours read back in another colour space, images with a colour profile, decoded audio (`AudioData`); how much heap V8 gives a page | the CPU's vector extensions (relaxed SIMD's results, the code Skia, skcms, Symphonia, FFmpeg and the C library pick); the machine's memory | **one code path for every CPU**: relaxed SIMD off, V8's own `Math` code, portable colour and audio code; V8 configured as on a 4 GB machine ([details](#moltnet-cpu-features)) | `flag-definitions.h`, `function-body-decoder-impl.h`, `ieee754.cc`, `v8.cc`, `isolate_holder.cc`, `chrome_content_renderer_client.cc`; Skia, skcms, Symphonia, `molt_portable_media.cc` |
+| `Math`'s trigonometry, exponentials and logarithms on arm64; CSS math functions, `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas and SVG transforms and their interpolation; Web Audio's filters, analyser, oscillators, panners, compressor, convolution and resampling; WebRTC audio levels | the OS's C library (glibc, the Windows C runtime and macOS's differ, and pick FMA versions by CPU), V8's math code with fused multiply-adds on arm64, Web Audio's AVX, SSE, NEON and Accelerate code | **one portable math library and Web Audio's scalar code**: the same results on every CPU and OS ([details](#moltnet-portable-math)) | `molt_portable_math.cc`, `ui/gfx/geometry/molt_math.cc`, `ieee754.cc`; the call sites in Blink, `ui/gfx` and `media` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture` and `drawElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
@@ -389,7 +391,7 @@ back/forward, and a MoltNet window with Shields off.
 | WebGL limits (`getParameter` `MAX_*`, ranges, `MAX_VIEWPORT_DIMS`, ...), `getShaderPrecisionFormat`, `getInternalformatParameter(SAMPLES)` | real | **fixed baselines**, never above the real value ([details](#webgl-and-webgpu-in-moltnet-windows)) | `webgl_rendering_context_base.cc`, `webgl2_rendering_context_base.cc` |
 | WebGL extensions (`getSupportedExtensions`, `getExtension`) | real | **fixed allow-list of 23**, intersected with the GPU's | `webgl_rendering_context_base.cc`: `ExtensionSupportedAndAllowed` |
 | WebGPU `navigator.gpu.requestAdapter()` | real | **null** (no adapter) | `gpu.cc`: `RequestAdapterImpl` |
-| Installed fonts: CSS `font-family`, canvas text, `document.fonts.check()`, `local()` | per-OS allow-list + 1 in 16 of the others, per site | **per-OS allow-list** ([details](#fonts)) | `font_fallback_list.cc`, `font_selector.{h,cc}`, `css_font_selector_base.{h,cc}`, `local_font_face_source.cc` |
+| Installed fonts: CSS `font-family`, canvas text, `document.fonts.check()`, `local()` | per-OS allow-list + 1 in 16 of the others, per site | **none: MoltBrowser's bundled font set**, the same on every OS, generic families and fallback included (per-OS allow-list in a build without the set) ([details](#fonts)) | `font_fallback_list.cc`, `font_selector.{h,cc}`, `css_font_selector_base.{h,cc}`, `local_font_face_source.cc`; the bundled set: `font_platform_data.{h,cc}`, the platforms' `font_cache*` ([details](#moltnet-the-bundled-font-set)) |
 | `queryLocalFonts()` (after its permission prompt) | filtered like CSS | filtered like CSS | `font_access.cc`: `DidGetEnumerationResponse` |
 | Canvas `measureText()` (`TextMetrics`, the `ExtendedTextMetrics` methods), windows and workers | real | **rounded**: whole CSS pixels, a 64th to a 128th of the font size above 127px ([details](#text-metrics-moltnet)) | `base_rendering_context_2d.cc`: `measureText`; `text_metrics.{h,cc}` |
 | How glyphs are measured (canvas and layout), Linux | the desktop's hinting and the screen's scale factor | **unhinted with subpixel positioning** for everyone, as for `text-rendering: geometricPrecision` ([details](#text-metrics-moltnet)) | `font_platform_data.{h,cc}`: `QuerySystemRenderStyle` |
@@ -402,7 +404,7 @@ back/forward, and a MoltNet window with Shields off.
 | `mediaCapabilities.decodingInfo()` / `encodingInfo()` | the build's decoders, then the decode history and the GPU | video: the build's decoders, **smooth**, **not power efficient**; `"webrtc"` **unsupported** | `media_capabilities.cc`: `decodingInfo`, `encodingInfo`, `GetPerfInfo` |
 | WebCodecs: `isConfigSupported()` / `configure()` with `"prefer-hardware"`, the decoder or encoder used | the GPU's codecs | **software codecs only**; `"prefer-hardware"` unsupported | `gpu_factories_retriever.cc`, `video_decoder_broker.cc` |
 | `navigator.hardwareConcurrency` (window and workers) | per site, in [2, real] | **4** | `navigator_base.cc`: `hardwareConcurrency` |
-| `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **8**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
+| `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **4**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
 | `navigator.connection` (`effectiveType`, `rtt`, `downlink`, `saveData`; window and workers) and its `change` event; what Blink decides from the network quality (lazy-loading distances, the slow-network font and `document.write()` measures, media preload); request scheduling | the browser's estimate (`rtt` and `downlink` with a per-site factor) | **4g**, **200**, **1.6**, **false**, never changes; scheduling as on 4g ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.{h,cc}`: `SetUniformNetworkState`; network service: `network_context.cc` |
 | `screen.width/height/availWidth/availHeight` | real | viewport in CSS pixels rounded **down** to 200x100 steps, max 1400x900 | `screen.cc`: `GetRect` |
 | `screen.availLeft/availTop` | real | **0** | `screen.cc`: `GetRect` |
@@ -424,7 +426,7 @@ back/forward, and a MoltNet window with Shields off.
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
 | `navigator.storage.estimate()` quota | the usage + 10 GiB (the disk, rounded up to whole GiB, where it is smaller) | the usage + **10 GiB**, static in off-the-record profiles since Chromium 156 | none (upstream) |
-| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed**: 60 MiB per site (all its storage keys together), 600 MiB for all sites, nothing evicted for another site, 800 MiB of blobs ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor`; `quota_manager_impl.cc`: `UsageAndQuotaInfoGatherer`; `quota_temporary_storage_evictor.cc`: `OnGotEvictionRoundInfo` |
+| Storage limits a page reaches by writing: quota per site and for all sites (IndexedDB, Cache Storage, OPFS), blob memory | from the disk (regular profile) or the memory (Incognito) | **fixed** for each site: 60 MiB per site (all its storage keys together) whatever other sites store, 600 MiB that all sites can always store together, beyond which the machine's free memory decides, nothing evicted for another site; 200 MiB of blobs per renderer process (one site in one tab), 800 MiB together before the machine decides ([details](#moltnet-storage-limits)) | `storage_partition_impl.cc`: `GetQuotaSettings`; `chrome_blob_storage_context.cc`: `GetFor`; `quota_manager_impl.cc`: `UsageAndQuotaInfoGatherer`; `quota_temporary_storage_evictor.cc`: `OnGotEvictionRoundInfo`; `blob_memory_controller.cc`: `GetAvailableMemoryForBlobs`; `blob_registry_impl.cc`: `Register`, `RegisterFromStream` |
 | Third-party cookies, Shared Storage | the user's settings | third-party cookies **blocked** (as in Incognito); Shared Storage: removed upstream at 156 | `cookie_settings_factory.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
@@ -1591,7 +1593,7 @@ for everyone:
 | `pointer` / `any-pointer` media queries | `fine`; `coarse` in tablet mode; any-pointer `coarse` and `fine` on a touchscreen laptop | **`fine`** / **`fine`** | same |
 | `hover` / `any-hover` media queries | `hover`; `none` in tablet mode; any-hover `none` and `hover` | **`hover`** / **`hover`** | same |
 | Touch-event feature detection: `ontouchstart` and the other `ontouch*` attributes, `document.createEvent('TouchEvent')` | off on desktop, on with `--touch-events` | **off** | same |
-| `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **8** | `navigator_device_memory.cc` |
+| `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **4** | `navigator_device_memory.cc` |
 | `navigator.cpuPerformance` | the CPU's tier, 1 to 4 | **0** ("unknown") | browser, `GetCpuPerformanceTierOverride` |
 | `navigator.connection` | the browser's network-quality estimate | **4g**, rtt **200**, downlink **1.6** ([details](#moltnet-connection-and-network-quality)) | `network_state_notifier.cc` |
 | `navigator.userAgentData.getHighEntropyValues()` | the real platform version, architecture, bitness, WoW64, full versions and form factors | **blank** | `navigator_ua.cc` |
@@ -1728,13 +1730,16 @@ hides these values (with a `--user-agent` override): `platformVersion`,
 
 ### Device memory and CPU performance
 
-* `navigator.deviceMemory` is **8** in MoltNet windows and workers: below
-  that, sites start serving "lite" pages; it is at or below the RAM of
-  nearly every machine that runs MoltBrowser's on-device model; and it was
-  the most any desktop Chromium reported before the cap went up to 32
-  (crbug.com/454354290), so it is a common value. The `Device-Memory`
-  hints aren't sent at all (above). `performance.memory`'s heap limit is
-  this machine's too ([performance.memory](#moltnet-performancememory)).
+* `navigator.deviceMemory` is **4** in MoltNet windows and workers: the
+  4 GB machine every MoltNet renderer's V8 heap is configured as, whose
+  limit `performance.memory` reports
+  ([performance.memory](#moltnet-performancememory)), so that the two
+  describe one machine, as they do in Chromium (a page that compares them
+  sees a 4 GB machine, not an 8 GB one with a 4 GB machine's heap). 4 is
+  what Chromium reports on every machine with a little over 3 to 6 GB, it
+  is at or below the RAM of every machine MoltBrowser supports, and it is
+  well above the 1 GB at and below which sites are known to serve lighter
+  pages. The `Device-Memory` hints aren't sent at all (above).
 * `navigator.cpuPerformance` (stable at 152, on secure pages) reports a
   tier from 1 to 4 that content derives from the CPU model
   (`content::cpu_performance::GetTier`) and hands to each renderer at
@@ -2755,19 +2760,38 @@ meets (`media.gum`, `media.gum_overconstrained`: still waiting after
 `performance.memory` (windows only, non-standard) reports the JavaScript
 heap's size and limit; `performance.measureUserAgentSpecificMemory()`
 (cross-origin isolated windows, shared and service workers) breaks memory
-use down by context. In MoltNet windows the machine no longer shows in them:
+use down by context. Beneath both, V8 configures its heap from the
+machine's memory, and on Linux the renderer's data limit follows it too:
+a page that allocates until it runs out of memory, or watches when the
+garbage collector runs, measures the machine. In MoltNet windows the
+machine no longer shows in any of them:
 
-| What a page reads | Before, in MoltNet | Now |
+| What a page reads or measures | Chromium 156 | MoltNet |
 |---|---|---|
-| `jsHeapSizeLimit` | V8's heap limit, which V8 derives from the machine's memory (half of it, between 256 MiB and 4 GiB, for the old generation), to the byte: about 2.2 GB on a 4 GB machine, 4,395,630,592 from 8 GB on, and every value between for the sizes between | **3,760,000,000**: the 8 GB machine's limit `navigator.deviceMemory` describes, rounded as below |
+| How much JavaScript heap a page can fill before it runs out of memory, and when V8 collects garbage | V8's configuration for the machine's memory, in every isolate (windows, workers, worklets): an old generation of half the memory (256 MiB to 4 GiB), new-space areas of a 128th of it (2 to 32 MiB), and the heap's growth and initial size following the memory | **every isolate is configured as on a 4 GB machine**: an old generation of 2 GiB, new-space areas of 32 MiB, the 4 GB machine's growth and limits |
+| `jsHeapSizeLimit` | that configuration's limit, to the byte: 2,248,146,944 on a 4 GB machine, 4,395,630,592 from 8 GB on, and every value between for the sizes between | **2,330,000,000**: the 4 GB machine's limit, which V8 really has, rounded as below |
 | `usedJSHeapSize`, `totalJSHeapSize` | to the byte, refreshed every 50 ms (a renderer locked to a site, as on desktop) | rounded up to one of 100 sizes from 10 MB to 3.76 GB (three significant digits), refreshed once every 20 minutes |
-| `measureUserAgentSpecificMemory()` | byte counts per context, as precise as the heap's layout | every count rounded the same way (0 stays 0) |
+| `measureUserAgentSpecificMemory()` | byte counts per context, as precise as the heap's layout; which entries a context gets depends on the process model (a frame in this process that wasn't measured has none, a frame in another process an entry of 0 bytes, a context without canvas buffers no canvas entry) | every count rounded the same way (0 stays 0); **every context gets the same entries**, its JavaScript and its canvas memory (0 bytes where nothing was measured), and so do the shared and Blink memory |
+| On Linux, how much a renderer can reserve (`ArrayBuffer`s, WebAssembly memories, untouched) before an allocation fails | the renderer's data limit: 8 GiB on machines up to 16 GB, 16 or 32 GiB above (`kHigherRendererMemoryLimit` doubles them) | **8 GiB** on every machine |
+| On Windows, how much a renderer can commit before an allocation fails | the system's commit limit (RAM plus page file, less what everything else has committed): the renderer's job allows 1 TB | **8 GiB** on every machine that can commit that much (the renderer's job limit) |
+| When V8 collects garbage because the system is short of memory (seen through `FinalizationRegistry` callbacks and emptied `WeakRef`s, in every tab at once) | when the browser's memory coordinator signals pressure from the machine's free memory | **never** for that reason: V8 collects on its own heuristics for the 4 GB machine |
+| `navigator.deviceMemory` | the RAM rounded to a power of two | **4**, the same machine ([details](#device-memory-and-cpu-performance)) |
+| How many renderer processes the browser runs before a site's new frames go into one of the site's existing processes (two same-site tabs then share a main thread and a heap, which their scripts can time) | a number that follows the RAM: half of it in MiB over 85, at least 3 | **20** on every machine |
 
 Normal and Incognito windows keep Chromium's behaviour. The kill switch
 turns it off.
 
 ### What MoltNet does
 
+* **V8's heap.** gin configures every isolate of a MoltNet renderer as
+  for a machine of `moltnet::kV8HeapPhysicalMemory`, 4 GiB
+  (`gin::IsolateHolder::SetPhysicalMemoryForIsolates()`, called before V8
+  starts): V8 sizes the generations, its growth heuristics and the
+  initial heap from that number, whatever the machine has. 4 GB is the
+  smallest machine MoltBrowser supports (the README's Basic tier), so the
+  configuration never promises more than the smallest machine can back;
+  V8's sizes are limits, not reservations, so larger machines lose
+  nothing but the extra headroom.
 * `MemoryInfo` always reports the rounded, cached values Chromium reports
   when a renderer isn't locked to a site (`Precision::kBucketized`, the
   20-minute cache), whatever the caller asked for and whatever
@@ -2776,48 +2800,117 @@ turns it off.
   of Chromium's 100 sizes (`moltnet::QuantizedMemorySize`): Chromium
   computes the sizes in floating point at run time with the platform's
   math library, MoltNet uses the same values on every machine and thread.
-* `jsHeapSizeLimit` is V8's limit for an 8 GB machine at 156 (an old
-  generation of 4 GiB and three new-space areas of 32 MiB,
-  `moltnet::V8HeapSizeLimit`), rounded like the other two: the last size,
-  3,760,000,000, which every machine from 8 GB up also reads when
-  rounded.
-* `measureUserAgentSpecificMemory()` rounds every byte count it reports
-  the same way, before the totals are added up.
+* `jsHeapSizeLimit` is the limit V8 156 computes for the 4 GiB machine (an
+  old generation of 2 GiB and three new-space areas of 32 MiB, 2 GiB +
+  96 MiB, `moltnet::V8HeapSizeLimit`), rounded like the other two:
+  2,330,000,000.
+* `measureUserAgentSpecificMemory()` gives every entry of the browser's
+  measurement a JavaScript and a canvas size, and the measurement a shared
+  and a Blink size, 0 where there was none
+  (`molt_fingerprinting::MakeMemoryMeasurementUniform`), then rounds every
+  byte count the same way, before the totals are added up.
+* **The data limit (Linux).** The sandbox sets a MoltNet renderer's
+  `RLIMIT_DATA` to 8 GiB on every machine
+  (`sandbox::policy::molt::ProcessDataSizeLimit`), the limit Chromium
+  gives machines up to 16 GB. Reserving memory without touching it
+  reaches the limit in a fraction of a second, so the limit was a cheap
+  measurement of the machine.
+* **The commit limit (Windows).** The sandbox sets a MoltNet renderer's
+  job memory limit to 8 GiB on 64-bit Windows
+  (`sandbox::policy::molt_win::kMoltNetRendererJobMemoryLimit`), the
+  Linux data limit's size; Chromium's 1 TB job limit left the system's
+  commit limit, which follows the RAM, the page file and everything else
+  running, as the point where an allocation fails.
+* **Memory pressure.** The isolates of a MoltNet renderer ignore the
+  browser's memory-pressure signals
+  (`molt_fingerprinting::IgnoresSystemMemoryPressure()` in
+  `MemoryPressureNotificationToAllIsolates`): the browser derives them
+  from the machine's free memory and sends them to every renderer at once,
+  so the garbage collections they trigger showed the machine's memory
+  state, at the same moment in every tab. Blink still frees its own caches
+  on them.
+* **Renderer processes.** Chromium starts putting a site's new frames in
+  its existing processes once the browser has a number of renderers that
+  follows the RAM. MoltNet profiles use 20 on every machine
+  (`MoltNetShouldReuseProcess`, from
+  `ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost`): at or
+  below Chromium's own number on every machine MoltBrowser supports, so it
+  never shares later than Chromium would; site isolation still keeps
+  different sites in different processes.
 
 ### Which contexts
 
-The whole MoltNet renderer process: `performance.memory` exists only in
-windows, the memory measurement also in shared and service workers. The
-kill switch turns it off.
+The whole MoltNet renderer process: every isolate (windows, iframes,
+dedicated, shared and service workers, worklets) and, on Linux, the
+process's data limit; `performance.memory` exists only in windows, the
+memory measurement also in shared and service workers. The kill switch
+turns it off.
+
+### What it costs MoltNet users
+
+A page can fill 2 GiB of JavaScript heap instead of up to 4 GiB on a
+machine with 8 GB or more before its tab runs out of memory (very few
+pages come near either), and V8 collects garbage as it does on a 4 GB
+machine: a little more often on large machines, where Chromium lets the
+heap grow further between collections. On Linux machines with more than
+16 GB, a MoltNet renderer can reserve 8 GiB instead of 16 or 32 GiB, and
+on Windows commit 8 GiB however much the machine could. When the machine
+runs short of memory, MoltNet tabs' heaps shrink at V8's next ordinary
+collection rather than at once. Same-site MoltNet tabs share processes
+from 20 renderers on, where Chromium waits for more on machines with more
+than about 3.3 GiB of RAM (up to its cap of 82).
 
 ### Code
 
 | Where | What |
 |---|---|
-| `core/molt_fingerprinting/moltnet_memory_values.{h,cc}` | V8's heap limit for a machine's memory, the uniform limit, the fixed table of sizes; std-only (+ `moltnet_memory_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_memory_values.{h,cc}` | the 4 GiB machine, V8's heap limit for a machine's memory, the uniform limit, the fixed table of sizes; std-only (+ `moltnet_memory_values_unittest.cc`, in `:unit_tests`) |
 | `core/molt_fingerprinting/moltnet_memory.{h,cc}` | the Blink glue (+ `moltnet_memory_test.cc`) |
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `PinUniformMachineBeforeV8()`, which configures gin before V8 starts (+ `moltnet_cpu_test.cc`: the heap model is V8's, gin configures the fixed machine) |
+| `sandbox/policy/linux/molt_data_limit.h` | the data limit (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
+| `sandbox/policy/win/molt_job_memory_limit.h` | the Windows commit limit (+ `chrome/common/molt_ai/fingerprinting/molt_job_memory_limit_unittest.cc`, Windows only) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}` | the renderer process count (`kMoltNetRendererProcessLimit`, `MoltNetShouldReuseProcess`; + `molt_net_device_values_unittest.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`): `core/timing/memory_info.cc`
-(`MemoryInfo`'s constructor and `HeapSizeCache::Update`) and
+(`MemoryInfo`'s constructor and `HeapSizeCache::Update`),
 `core/timing/measure_memory/measure_memory_controller.cc`
-(`ConvertResult`). Both files are new in `src/`.
+(`MeasurementComplete`, `ConvertResult`),
+`gin/public/isolate_holder.h` and `gin/isolate_holder.cc`
+(`SetPhysicalMemoryForIsolates`, used by `getDefaultIsolateParams`, which
+every isolate's parameters come from), `sandbox/policy/linux/sandbox_linux.cc`
+(`LimitAddressSpace`), `sandbox/policy/win/sandbox_win.cc`
+(`GenerateConfigForSandboxedProcess`, after the renderer's job level),
+`sandbox/policy/BUILD.gn`, `core/workers/worker_backing_thread.cc`
+(`MemoryPressureNotificationToAllIsolates`) and
+`chrome/browser/chrome_content_browser_client.cc`
+(`ShouldTryToUseExistingProcessHost`). All are new in `src/`.
+The call comes from `PinUniformMachineBeforeV8()` ([CPU
+features](#moltnet-cpu-features)).
 
 ### Verification
 
 Standalone (no Chromium checkout): `moltnet_memory_values_unittest.cc` (4
-tests: the uniform limit, the limit V8 156's heap configuration gives 1 to
-64 GB, fractional and nonsense memory sizes, and the table's rounding at,
-between and beyond its sizes, Chromium's own test values included; the
-table was generated with Chromium's computation) passes with g++
-(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`). Every changed C++
-file, the tests included, compiles without errors against Chromium 156's
-real headers (`tools/compile_check`).
+tests: the uniform limit is the 4 GiB machine's, the limit V8 156's heap
+configuration gives 1 to 64 GB, fractional and nonsense memory sizes, and
+the table's rounding at, between and beyond its sizes, Chromium's own test
+values included; the table was generated with Chromium's computation)
+passes with g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`);
+`molt_data_limit_unittest.cc` (3 tests: the switch's names agree with
+chrome's, MoltNet renderers get 8 GiB whatever Chromium's tier and keep a
+smaller limit, other renderers and processes keep Chromium's) with g++
+(ASan/UBSan) against a `base::CommandLine` stand-in. A probe of the data
+limit (node under `prlimit`, untouched `ArrayBuffer`s) reaches 1 to 8 GiB
+limits in about 60 ms with 40 MB resident. Every changed C++ file, the
+tests included, compiles without errors against Chromium 156's real
+headers (`tools/compile_check`).
 
 **Needs the build machine:** `blink_unittests` (`MoltNetMemoryTest.*`,
 which reads `performance.memory` through a real `MemoryInfo` in a V8
-context, and the upstream `MemoryInfo` and measure-memory suites), and
-the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (a
-4 GB machine, workers). **Automated** by
+context and checks the measurement's entries, `MoltNetCpuTest.*`, which
+creates real isolates, and the upstream `MemoryInfo` and measure-memory
+suites), `chrome`'s `molt_ai_unittests` (`MoltDataLimitTest.*`), and the
+checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" and
+"fp-cpu" (a 4 GB machine, a large one, workers). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md): `jsHeapSizeLimit`
 (`perf.jsHeapSizeLimit`), the sizes rounded (`perf.heap_rounded`) and not
 refreshed after an allocation (`perf.heap_cached`).
@@ -2942,7 +3035,9 @@ for x86-64 and arm64 with Chromium's flags:
   level of x86-64 and on arm64.
 
 Video drawn into a canvas is read back through the canvas, whose
-readbacks are farbled like any drawing.
+readbacks are farbled like any drawing. A frame read back in another
+colour space (`copyTo({colorSpace: 'display-p3'})`) is converted by
+Skia's portable raster pipeline ([CPU features](#moltnet-cpu-features)).
 
 **Which contexts.** The whole MoltNet renderer process, windows, iframes
 and workers, set once when it starts (`Configure`, before any media object
@@ -3032,6 +3127,458 @@ in I420 (`pixels.video_frame_format`), and the bytes of a scaled VP8 frame
 (I420 and RGBA input) and of Opus at 48 and 44.1 kHz, compared between
 runs (`pixels.*`).
 
+## MoltNet: CPU features
+
+Some of what a page computes depends on the CPU it runs on: WebAssembly's
+relaxed SIMD instructions are defined to give implementation-specific
+results, and the browser's own code picks a code path for the CPU's
+vector extensions at run time (SSE4.1, AVX, AVX2, FMA, AVX-512 and VNNI
+on x86-64, NEON on Arm) in colour conversion, audio decoding and two
+`Math` functions. At 156 those results show which extensions the CPU has.
+In MoltNet windows they are computed the same way on every CPU:
+
+| What a page computes | Chromium 156 | MoltNet |
+|---|---|---|
+| WebAssembly relaxed SIMD (`relaxed_madd` and `nmadd`, `relaxed_swizzle`, `relaxed_trunc`, `relaxed_laneselect`, `relaxed_min` and `max`, `relaxed_q15mulr`, `relaxed_dot`) | always on (not behind a flag or a Blink feature): a fused multiply-add on CPUs with FMA, a separate multiply and add without; out-of-range lanes, NaN and rounding as x86 or Arm treat them; dot products with AVX-VNNI-INT8, AVX-VNNI or SSSE3 sequences | **off** (V8's new `--no-wasm-relaxed-simd`): a module that uses them fails validation (`WebAssembly.validate()` is false, compiling throws a `CompileError`) the same way on every machine, as on a browser without them; pages that detect it load the plain-SIMD build they ship for such browsers |
+| `Math.pow` (and `**`), `Math.tanh` | the C library's `pow` and `tanh` (`--use-std-math-pow` is on by default, `tanh` always calls `std::tanh`), which pick their code by CPU feature: glibc has FMA versions it uses on CPUs with FMA, the Windows C runtime FMA3 versions | **V8's own code**, like every other `Math` function: llvm-libc's `pow` and fdlibm's `tanh` (the one V8 used before it called `std::tanh`) over V8's `expm1` |
+| Colours a page reads back in another colour space (`getImageData({colorSpace})`, `VideoFrame.copyTo({colorSpace})`, Display P3 and Rec. 2020 images and video drawn into a canvas) and pixels Skia draws on the CPU | Skia's raster pipeline, blitters and swizzles in their SSE2, AVX2 + FMA or AVX-512 versions on x86-64 (the AVX2 and AVX-512 ones fuse multiply-adds; reciprocal estimates differ between Intel and AMD) and NEON on Arm (fused multiply-adds, its own estimates) | **one raster pipeline for every CPU** and no CPU-specific blitters: no fused multiply-add, exact division and square roots instead of estimates, exact half floats, SSE's rules for minimum, maximum, rounding and NaN everywhere; the same bytes on every x86-64 and arm64 CPU |
+| Images with a colour profile, decoded by Blink or WebCodecs' `ImageDecoder` | skcms in its baseline, AVX2 or AVX-512 version (the baseline converts half floats approximately, the others and NEON exactly) | **skcms's baseline code with exact half floats**: the same bytes on every x86-64 and arm64 CPU |
+| Decoded audio: WebCodecs `AudioDecoder` output (`AudioData`), and the samples `decodeAudioData()` and media elements decode | Symphonia (FLAC, MP3, PCM, Vorbis) computes Vorbis' inverse MDCT with rustfft's AVX + FMA, SSE4.1 or NEON code, whichever the CPU has; FFmpeg, which decodes what Symphonia declines, with its SSE, AVX, AVX2 + FMA or NEON code | **rustfft's scalar code and FFmpeg's C code**: the same samples on every x86-64 and arm64 CPU |
+
+`AudioBuffer`s (`decodeAudioData()`, `OfflineAudioContext`) are also
+farbled where a page reads them ([the noise](#the-noise)); `AudioData` and
+`VideoFrame.copyTo()` aren't.
+
+### What MoltNet does
+
+All of it is set once per MoltNet renderer, before V8 starts and before
+any image, frame or audio is decoded:
+`ChromeContentRendererClient::SetRuntimeFeaturesDefaultsBeforeBlinkInitialization()`
+calls `molt_ai::fingerprinting::ConfigureRendererProcessBeforeBlink()`,
+which for a MoltNet renderer calls
+`WebMoltFingerprinting::ConfigureBeforeBlinkInitialization()`, and
+`PinUniformMachineBeforeV8()` (`core/molt_fingerprinting/moltnet_cpu.h`):
+
+* gives V8 `--no-wasm-relaxed-simd --no-use-std-math-pow
+  --no-use-std-math-tanh --portable-math` (the last one: [portable
+  math](#moltnet-portable-math); `v8::V8::SetFlagsFromString`, before gin
+  initialises V8, so the flags hold for every isolate and are frozen with
+  the others);
+* configures every isolate for the 4 GB machine
+  ([performance.memory](#moltnet-performancememory));
+* turns on skcms's portable mode (`skcms_MoltBrowserEnablePortableMode()`:
+  `skcms_DisableRuntimeCPUDetection()` plus exact half floats in the
+  baseline code);
+* installs Skia's portable raster pipeline
+  (`SkGraphics::MoltBrowserUsePortableRasterPipeline()`, a translation unit
+  of its own, `SkOpts_moltbrowser.cpp`, built from the same
+  `SkRasterPipeline_opts.h` with `SKRP_MOLTBROWSER_PORTABLE` and
+  `-ffp-contract=off`), and x86-64's row blitter for pixels drawn with
+  alpha on every CPU ([portable math](#moltnet-portable-math));
+* turns on the portable math library for Blink's and Web Audio's math
+  (`gfx::molt_math::SetPortable(true)`, [portable
+  math](#moltnet-portable-math)).
+
+The browser adds `--disable-skia-runtime-opts` to MoltNet renderers'
+command lines (`molt_fingerprinting_browser.cc`), so Skia's CPU-specific
+blitters, bitmap samplers and swizzles are never installed either. The
+media process mode of [pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes)
+(`media::SetPortableMediaProcess()`) now also turns on Symphonia's
+portable FFT (`SymphoniaAudioDecoder` passes it to the Rust bridge's
+`set_portable_fft()` before it creates a decoder, which calls
+symphonia-core's `moltbrowser_set_portable_fft()`) and gives FFmpeg no CPU
+flags (`av_force_cpu_flags(0)`).
+
+**What was already the same.** Measured with Chromium 156's code, built
+with Chromium's compiler and flags for x86-64 and arm64:
+
+* V8's other `Math` functions (llvm-libc and fdlibm, compiled without
+  fused multiply-adds on x86-64): the same on every x86-64 CPU, and on
+  every arm64 CPU; [portable math](#moltnet-portable-math) makes the two
+  architectures agree.
+* MP3, FLAC and PCM decoding, in Symphonia and in FFmpeg (integer
+  arithmetic, or no FFT): the same samples on every CPU of both
+  architectures. Opus uses libopus's C kernels since [pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes).
+* skcms's AVX2 and AVX-512 code already gave the same bytes as its arm64
+  code; portable mode gives those bytes on every CPU.
+
+**Camera and screen frames.** Frames from a camera or a screen capture,
+which only exist after the user grants a permission, keep Chromium's path:
+where the platform delivers them in GPU memory, a page's read-back is
+converted on the GPU. Converting them on the CPU would add a readback and
+an upload to every frame of a call or a screen share (3 MB at 1080p,
+12 MB at 2160p).
+
+### Which contexts
+
+The whole MoltNet renderer process: windows, iframes, workers and
+worklets, from before V8 starts. Normal and Incognito windows are
+unchanged, and so are the GPU process (which rasterises accelerated
+canvases and composites pages on the GPU) and other renderers. The kill
+switch turns it off (no mode switch, no call).
+
+### What it costs MoltNet users
+
+Measured on one core of this VM (Xeon, 2.1 GHz, with AVX-512):
+
+| Work | Chromium 156 (AVX-512 / AVX2) | MoltNet |
+|---|---|---|
+| Skia: reading back an sRGB canvas (premultiplied to unpremultiplied 8-bit) | 0.7 / 1.1 ms per megapixel | 2.4 ms |
+| Skia: the same in Display P3, or a half-float P3 image to sRGB | 6 / 9 to 10 ms per megapixel | 26 to 30 ms |
+| skcms: an image with a P3 profile decoded to sRGB (8-bit or half floats) | 6 / 10 ms per megapixel | 19 to 22 ms |
+| Symphonia: 4 s of 48 kHz stereo Vorbis | 5.4 ms | 6.4 ms |
+| FFmpeg (fallback): the same Vorbis; FLAC | 5.2 ms; 6.9 ms | 7.3 ms; 7.9 ms |
+
+Skia's baseline code (what a CPU without AVX2 runs) takes 2.4 ms and 21 to
+22 ms per megapixel for the first two rows: the portable pipeline costs up
+to 36% more than that, for its exact divisions and conversions. A
+12-megapixel photo with a P3 profile takes about 0.23 s of a decoding
+thread instead of 0.07 to 0.12 s. Canvases Skia draws on the CPU (those
+created with `willReadFrequently`, and every canvas where the GPU doesn't
+rasterise) draw without AVX2 and AVX-512 blitters; accelerated canvases and
+the page itself are drawn on the GPU, as before. Audio still decodes
+hundreds of times faster than real time. WebAssembly code that would use
+relaxed SIMD (some machine-learning kernels) runs its plain-SIMD version,
+typically somewhat slower. `Math.pow` and `Math.tanh` cost about what the
+C library's versions cost.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `kMoltNetV8Flags`, `PinUniformMachineBeforeV8()` (+ `moltnet_cpu_test.cc`) |
+| `core/molt_fingerprinting/molt_fingerprinting.cc`, `public/web/web_molt_fingerprinting.h` | `WebMoltFingerprinting::ConfigureBeforeBlinkInitialization()` |
+| `chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.{h,cc}` | `ConfigureRendererProcessBeforeBlink()`: the mode from the command line |
+| `chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.cc` | `--disable-skia-runtime-opts` for MoltNet renderers |
+| `third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | the portable raster pipeline's translation unit |
+| `media/base/molt_portable_media.{h,cc}` | the media process mode: also FFmpeg's CPU flags |
+
+Upstream hooks (each marked `MoltBrowser:`; all new in `src/`):
+
+* V8: `src/flags/flag-definitions.h` (`wasm_relaxed_simd`,
+  `use_std_math_tanh`), `src/wasm/function-body-decoder-impl.h`
+  (`DECODE(Simd)`: a relaxed opcode fails validation without the flag),
+  `src/base/ieee754.{h,cc}` (`tanh`, `SetUseStdTanh`), `src/init/v8.cc`
+  (`V8::Initialize`: applies `use_std_math_tanh`).
+* `chrome/renderer/chrome_content_renderer_client.cc`
+  (`SetRuntimeFeaturesDefaultsBeforeBlinkInitialization`).
+* skcms: `skcms.cc`, `src/skcms_public.h`, `src/skcms_Transform.h`,
+  `src/Transform_inl.h` (`F_from_Half`, `Half_from_F`: exact in portable
+  mode).
+* Skia: `include/core/SkGraphics.h`, `src/core/SkGraphics.cpp`
+  (`MoltBrowserUsePortableRasterPipeline`), `src/opts/SkRasterPipeline_opts.h`
+  (the `SKRP_MOLTBROWSER_PORTABLE` variants: NEON minimum and maximum,
+  reciprocals, square roots and multiply-adds; SSE reciprocals, absolute
+  value, floor and ceiling; half floats; NaN; the low-precision pipeline's
+  minimum, maximum, division by 255 and floor), `skia/BUILD.gn`
+  (`SkOpts_moltbrowser.cpp` in `skia_opts`).
+* Symphonia: `third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs`
+  (`moltbrowser_set_portable_fft`, the planner every FFT is made with),
+  with the same change as a crate patch in
+  `third_party/rust/chromium_crates_io/patches/symphonia-core-v0_6/`, so
+  vendoring the crate again keeps it; `media/filters/symphonia_decoder_bridge.rs`
+  (`set_portable_fft`), `media/filters/symphonia_audio_decoder.cc`
+  (`ConfigureDecoder`).
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory), with
+Chromium 156's sources built with Chromium's clang and flags for x86-64
+(`-msse3`, the AVX2 and AVX-512 files with theirs) and arm64, run natively
+(a Xeon with AVX-512) and under qemu on emulated Core 2, Nehalem, Sandy
+Bridge, Haswell and EPYC (Zen 2) CPUs and arm64 Cortex-A72, Neoverse N1 and
+qemu's `max` CPU:
+
+* **Relaxed SIMD.** A probe of all 20 relaxed instructions with inputs
+  whose results the specification leaves open (Node 22's V8 12.4; 156's
+  V8 picks its code for them the same way, by FMA, AVX-VNNI and SSSE3
+  support): on x86-64 the multiply-adds differ between CPUs with
+  and without FMA and a dot product between Nehalem and later CPUs, and
+  arm64 differs from x86-64 in 13 of the 20. The decoder change needs the
+  build machine.
+* **`Math`.** V8 156's `src/base/ieee754.cc` with 21 functions over a
+  million arguments each: with MoltNet's flags, `pow` and `tanh` give the
+  same results on every CPU above, x86-64 and arm64; `std::pow` and
+  `std::tanh` (glibc 2.39), which Chromium calls, differ between the CPUs
+  with FMA and those without. fdlibm's `tanh` stays within 2.4 units in
+  the last place (glibc's: 2.2).
+* **Skia.** The raster pipeline and `SkConvertPixels` from Chromium 156's
+  Skia over 3075 cases (6 colour types, 7 colour spaces to sRGB, P3 and
+  Rec. 2020, premultiplied and not; the 22 blend modes; HSL, a colour
+  matrix, gamma, PQ and HLG curves): Chromium's code gives 5 different
+  results on x86-64 (its baseline, AVX2 and AVX-512 code, the first two
+  also differing between the Xeon and the emulated CPUs, whose reciprocal
+  estimates differ) and another on arm64; the portable pipeline the same
+  bytes on every CPU above.
+* **skcms.** 1890 transforms (7 source profiles, a table and CLUT one
+  among them, 3 destinations, 6 source and 5 destination formats, 3 alpha
+  modes): the baseline code gives other bytes than the AVX2, AVX-512 and
+  arm64 code; portable mode the same bytes on every CPU above, the ones
+  AVX2, AVX-512 and arm64 give. Its half-float conversion equals F16C's for
+  all 65,536 halves and all 2^32 floats.
+* **Audio.** Symphonia 0.6.1 as Chromium 156 vendors and configures it
+  (cargo, rustfft's AVX, SSE and NEON code on), on 4 s of Vorbis at 48 and
+  44.1 kHz, MP3 and FLAC: Vorbis gives 4 different results on the CPUs
+  above (AVX + FMA, SSE4.1, scalar on Core 2, NEON), the portable FFT one;
+  so do its inverse MDCTs at Vorbis' sizes. FFmpeg (Chromium 156's
+  configuration and source list, its x86 assembly with nasm): Vorbis gives
+  4 different results (C on Core 2 and Nehalem, AVX on Sandy Bridge, AVX2
+  + FMA, NEON), with `av_force_cpu_flags(0)` one, the same on x86-64 and
+  arm64. MP3 and FLAC gave the same samples everywhere in both.
+
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`: Skia's and skcms's files included, the arm64 side
+of Skia's and skcms's code without warnings in the harnesses' builds)
+except V8's, which it doesn't cover: `ieee754.cc` builds without warnings
+for x86-64 and arm64 (`-Wall -Wextra -Wshadow -Wshorten-64-to-32`) and is
+the one the `Math` comparison ran. The Rust bridge builds with the crates
+above and cxx (`cargo check`, no clippy warnings).
+**Needs the build machine:** compiling and linking (Rust included),
+`blink_unittests` (`MoltNetCpuTest.*`), `media_unittests` and V8's own
+tests, and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged
+"fp-cpu" (two machines of different CPU generations, an arm64 Mac).
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): relaxed SIMD
+fails validation (`cpu.wasm_relaxed_simd`); compared between runs, a hash
+of `Math` results (`cpu.math`), a frame read back in Display P3
+(`pixels.p3_readback`) and decoded Vorbis (`audio.decoded_vorbis`).
+
+## MoltNet: portable math
+
+Beyond the vector code of [CPU features](#moltnet-cpu-features), much of
+what a page computes goes through a math library: CSS's `sin()`, `pow()`
+and the other math functions, `DOMMatrix` and `SVGMatrix` rotations and
+skews, the matrices CSSOM's `toMatrix()` and a canvas's `getTransform()`
+return, transforms and their interpolation, Web Audio's filters,
+oscillators, panners and compressors, and V8's `Math`. At 156 Blink calls
+the C library of the OS for these (glibc on Linux, the Windows C runtime,
+macOS's libm), whose results differ from each other in the last bits, and
+glibc and the Windows runtime pick versions with fused multiply-adds on
+CPUs that have FMA. V8's own math code (llvm-libc) is compiled with fused
+multiply-adds on arm64 and without them on x86-64. Web Audio's vector
+math, its FFTs and a few of its loops pick AVX, SSE, NEON or Accelerate
+code, and a sum over a vector comes out differently with each lane count.
+In MoltNet windows all of it is computed one way:
+
+| What a page computes | Chromium 156 | MoltNet |
+|---|---|---|
+| `Math.sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `expm1`, `log`, `log1p`, `log2`, `log10`, `cbrt`, `pow` | llvm-libc, compiled without fused multiply-adds on x86-64 and with them on arm64 | **llvm-libc without fused multiply-adds on every CPU** (V8's new `--portable-math`): the same results on x86-64 and arm64 |
+| CSS math functions (`sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2()`, `pow()`, `exp()`, `log()`, `hypot()`, and through them `mod()`, `rem()` and `round()`); `DOMMatrix` and `SVGMatrix` rotations, skews and `rotateFromVector()`; CSSOM `CSSRotate` and `CSSSkew` `toMatrix()`; canvas `rotate()`, `arc()` and `ellipse()`; `rotate`, `skew` and 3D transforms and their interpolation; `offset-path: ray()`; SVG arcs, `transform` lists and numbers with exponents; `getPointAtLength()`; `aspect-ratio` and superellipse interpolation; `font-size: math`; pointer events' tilt and azimuth and altitude angles; `lab()`, `lch()`, `oklab()` and `oklch()` colours and colour interpolation; WebXR rays and projection matrices | the C library's functions | **`molt_portable_math`**: llvm-libc's functions compiled for MoltBrowser without fused multiply-adds, the same results on every CPU and OS |
+| Web Audio: `BiquadFilterNode` and `IIRFilterNode` `getFrequencyResponse()`, `AnalyserNode` data, oscillators and `PeriodicWave`, panners (HRTF included), `DynamicsCompressorNode` and its `reduction`, `ConvolverNode`, `DelayNode`, `AudioParam` automation, and the resampling `decodeAudioData()` does | the C library's functions; vector math in AVX, SSE, NEON or Accelerate code; FFTs with rustfft's AVX + FMA, SSE4.1 or NEON code; SSE2 and NEON loops in the oscillator, delay and `AudioParam` code; Accelerate's biquad on macOS | **the portable functions and Web Audio's scalar code**: plain loops in a fixed order and rustfft's scalar FFT, the same samples on every CPU and OS (farbled where a page reads samples, as before) |
+| WebRTC `audioLevel` (`getSynchronizationSources()`, `getContributingSources()`, encoded audio frames' metadata) | the C library's `pow` and `log10` | the portable functions |
+| Pixels drawn with alpha over other pixels on the CPU (Skia's `blit_row_s32a_opaque`) | x86-64's arithmetic, or NEON's, which rounds differently | **x86-64's arithmetic on Arm too** |
+
+### What MoltNet does
+
+* **One math library.** `third_party/llvm-libc/molt_portable_math.{h,cc}`
+  compiles llvm-libc's header-only math (the sources V8 and Chromium
+  already build) into a namespace of its own, with every fused
+  multiply-add path turned off (`__FMA__`, `__ARM_FEATURE_FMA` and
+  llvm-libc's `LIBC_TARGET_CPU_HAS_FMA*` undefined, which an `#error`
+  checks), no rounding-instruction shortcuts, contraction off and errno
+  and floating-point exceptions compiled out. Each function then executes
+  the same IEEE 754 operations on every CPU and OS, and so gives the same
+  result for the same argument; most are correctly rounded (llvm-libc's
+  accurate pass), so their results are also those of any correctly
+  rounded library. 17 double and 15 float functions.
+* **One switch.** `ui/gfx/geometry/molt_math.{h,cc}` (`gfx::molt_math`)
+  wraps each function: by default it is the C library's `std::` function,
+  with the same overloads and the same promotions of integer and mixed
+  arguments, so normal windows compute exactly what they computed before;
+  after `gfx::molt_math::SetPortable(true)` it is the portable one.
+  `PinUniformMachineBeforeV8()` makes that call in MoltNet renderers before
+  Blink starts ([CPU features](#moltnet-cpu-features)).
+  `molt_complex_math.h` adds `std::abs`, `std::arg` and `std::polar` of
+  complex numbers on the same switch (libc++'s formulas over the portable
+  `hypot`, `atan2`, `cos` and `sin`, its handling of NaN and infinities
+  included).
+* **V8.** `--portable-math`, added to `kMoltNetV8Flags`, makes
+  `base::ieee754` call the portable library for the functions in the first
+  row, on every architecture. V8's fdlibm functions (`sinh`, `cosh`,
+  `tanh`, `asinh`, `acosh`, `atanh`) were already the same on both.
+* **Blink** calls `gfx::molt_math::` where it called `std::` at the call
+  sites listed below.
+* **Web Audio** runs its scalar code on the same switch: `vector_math`
+  delegates to its scalar implementation, `FFTFrame` makes its FFTs with
+  rustfft's scalar planner (`rustfft_new_portable()` in the Rust bridge),
+  the oscillator's SSE2 and NEON kernels, `Delay`'s vector a-rate path and
+  `AudioParam`'s SSE loops (which compute in single precision where the
+  scalar code uses double) are skipped, and so is the biquad's Accelerate
+  path on macOS.
+* **Resampling.** `media::SincResampler`'s kernel, which
+  `decodeAudioData()` uses to convert a file to the context's rate, takes
+  its sines and cosines from the switch; its convolution already runs the
+  C code in MoltNet ([pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes)).
+* **Skia.** `SkGraphics::MoltBrowserUsePortableRasterPipeline()` also
+  installs a `blit_row_s32a_opaque` with x86-64's arithmetic (the
+  destination times 256 minus the source's alpha, shifted right by 8, a
+  saturating add), written with Skia's portable vectors.
+
+**What was already the same.** Measured with Chromium 156's code, built
+with Chromium's compiler and flags for x86-64 and arm64:
+
+* Chromium's `third_party/fdlibm`, which Web Audio already used for most
+  of its math, gives the same results on every CPU of both architectures.
+* Skia's other code that MoltNet renderers run (`blit_row_color32`, A8
+  mask blits, the swizzles and premultiplications, bilinear sampling,
+  memsets) gives the same bytes on every x86-64 CPU and on arm64.
+* rustfft computes its twiddle factors with the C library's double
+  `sin` and `cos` and rounds them to float, and so does Blink's bridge:
+  for every power-of-two size up to 2^17, the exact values lie at least
+  711 units in the last place (of a double) from a point where rounding to
+  float would change, so every C library gives the same float twiddles.
+* Of `vector_math`'s functions only the sum of squares (`Vsvesq`) differs
+  between AVX, SSE and NEON; the convolution, complex multiply, `Vsma`,
+  `Vmul` and the maximum give the same results on every CPU, and the
+  `WaveShaperNode` vector path gives the scalar path's.
+* `media::SincResampler`'s kernel from glibc's `sin` and `cos` equals the
+  portable one for all 220 combinations of 11 common sample rates and both
+  kernel sizes.
+* PFFFT is no longer used by Blink at 156: `FFTFrame` uses rustfft on
+  every platform.
+
+### Call sites
+
+Blink, each call marked `MoltBrowser:` (all files new in `src/`):
+
+* transforms and geometry: `platform/transforms/affine_transform.{h,cc}`
+  (rotations, `rotateFromVector`, skews: `SVGMatrix`, canvas and SVG
+  transforms), `rotation.cc` (3D rotation interpolation),
+  `platform/geometry/path.cc` (arcs and ellipses),
+  `calculation_expression_node.cc` and `math_functions.h` (CSS math
+  resolved at layout), `platform/graphics/path_traversal_state.cc`
+  (`getPointAtLength()`, text on a path), `core/geometry/dom_matrix.cc`;
+* CSS: `core/css/css_math_expression_node.cc`, `cssom/css_skew.cc`,
+  `resolver/style_builder_converter.cc` (`font-size: math`),
+  `core/style/style_ray.cc`, `core/animation/css_superellipse_interpolation_type.cc`,
+  `interpolable_aspect_ratio.cc`;
+* SVG: `core/svg/svg_transform.cc`, `svg_path_parser.cc` (arcs),
+  `svg_parser_utilities.cc` (exponents);
+* `core/events/pointer_event_util.cc`,
+  `modules/canvas/canvas2d/canvas_path.cc`, `modules/xr/xr_ray.cc`,
+  `xr_view_geometry.cc`;
+* Web Audio: `platform/audio/audio_utilities.cc`, `biquad.cc`,
+  `dynamics_compressor.cc`, `fft_frame.cc`, `iir_filter.cc`,
+  `vector_math.cc`, `delay.cc`, `rustfft_ffi.rs`;
+  `modules/webaudio/audio_param_handler.cc`, `biquad_filter_handler.cc`,
+  `biquad_filter_node.cc`, `oscillator_handler.cc`, `oscillator_node.cc`,
+  `panner_handler.cc`, `periodic_wave_handler.cc`, `realtime_analyser.cc`;
+* WebRTC: `platform/peerconnection/rtc_rtp_source.cc`,
+  `modules/peerconnection/peer_connection_util.cc`.
+
+Below Blink: `ui/gfx/geometry/sin_cos_degrees.h`, `transform.cc`,
+`quaternion.cc`, `matrix44.cc` (2D decomposition), `vector2d_f.cc`,
+`vector3d_f.cc`; `ui/gfx/color_conversions.cc` (Lab, LCH, OKLab, OKLCH);
+`media/base/sinc_resampler.cc`; Skia's `SkOpts_moltbrowser.cpp`. V8:
+`src/base/ieee754.{h,cc}`, `src/flags/flag-definitions.h`,
+`src/init/v8.cc` and `src/base/DEPS`.
+
+Calls whose result no page reads keep the C library: the browser's own
+input handling (overscroll, autoscroll), DevTools' overlay, metrics, the
+memory cache's heuristics and assertions, and calls whose result is exact
+(`log2` of a power-of-two size, a power of 2 or 10 with a small integer
+exponent). The 4-wide `PeriodicWave` lookups that only the skipped
+oscillator kernels call keep theirs too.
+
+### Which contexts
+
+The whole MoltNet renderer process, from before Blink and V8 start:
+windows, iframes, workers and worklets (the audio rendering thread
+included). Normal and Incognito windows, and every other process, keep the
+C library and the vector code. The kill switch turns it off (no mode
+switch, no call).
+
+### What it costs MoltNet users
+
+Measured on one core of this VM (Xeon, 2.1 GHz):
+
+| Work | Chromium 156 | MoltNet |
+|---|---|---|
+| One call: `sin`, `cos`; `tan`, `atan`; `exp`; `pow`; `atan2`; `hypot` (double) | glibc: 8; 12 to 17; 6; 18; 25; 6 ns | 22; 24 to 34; 21; 45; 34; 11 ns |
+| One call: `sinf`; `powf` | glibc: 6; 11 ns | 29; 20 ns |
+| A sum of squares over a 128-frame render quantum (2.7 ms at 48 kHz) | 15 ns (AVX) | 58 ns |
+| A 128-tap direct convolution of one render quantum | 1.0 µs (AVX) | 7.4 µs |
+| A 2048-point FFT | 2.6 µs (AVX + FMA) | 8.2 µs |
+
+A style or a matrix with math functions makes a few calls per value, so
+these stay in microseconds per page. `Math` on x86-64 runs the code it ran
+before (V8's llvm-libc build there already had no fused multiply-adds);
+on arm64 it runs without them, somewhat slower per call (not measured on
+arm64 hardware). Web Audio graphs spend more of each render quantum in
+their convolvers, analysers and FFTs, still a small part of it: a
+`ConvolverNode` with a long impulse response, the heaviest, does a few
+FFTs per quantum.
+
+### Code
+
+| Where | What |
+|---|---|
+| `third_party/llvm-libc/molt_portable_math.{h,cc}` | the portable functions (+ `molt_portable_math_unittest.cc`: exact values, known results, golden hashes of 32 functions over fixed arguments, which every CPU and OS must reproduce) |
+| `ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | the switch and the wrapped functions (+ `molt_math_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `--portable-math` in `kMoltNetV8Flags`; `SetPortable(true)` in `PinUniformMachineBeforeV8()` (+ `moltnet_cpu_test.cc`) |
+| `third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | the portable `blit_row_s32a_opaque` |
+
+Build files: `third_party/llvm-libc/BUILD.gn` (`molt_portable_math`, a
+dependency of the `:headers` group V8 uses), `ui/gfx/geometry/BUILD.gn`,
+`media/base/BUILD.gn` (`//ui/gfx/geometry` for the resampler),
+`chrome/browser/molt_ai/test/BUILD.gn` (the two unit tests in
+`molt_ai_unittests`).
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory), with
+Chromium 156's sources built with Chromium's clang and flags for x86-64
+(`-msse3`) and arm64, run natively (a Xeon with AVX-512) and under qemu on
+emulated Core 2, Nehalem, Sandy Bridge, Haswell and EPYC (Zen 2) CPUs and
+arm64 Cortex-A72, Neoverse N1 and qemu's `max` CPU:
+
+* **The library.** 32 functions over a million arguments each (small,
+  large, huge and random bit patterns): the same results on every CPU
+  above, in an x86-64 build with FMA enabled too; glibc 2.39 differs from
+  them for up to half of the arguments of a function. The unit test passes
+  on x86-64 (UBSan, ASan) and arm64.
+* **V8.** 156's `src/base/ieee754.cc` for x86-64 and arm64, 21 functions:
+  without the flag arm64 differs from x86-64 for `sin` and `tan` (68
+  arguments in a million), `atan` (4926) and `atan2` (1); with
+  `--portable-math` all 21 agree, and on x86-64 the results equal V8's
+  own.
+* **Blink's wrappers.** `molt_math_unittest.cc` passes on x86-64 (UBSan)
+  and arm64: off, every wrapper is the C library's function bit for bit
+  (promotions included); on, the portable one; the complex functions were
+  also compared with libc++'s for NaN, infinite and negative arguments.
+* **Web Audio.** `vector_math` with 156's SSE, AVX, NEON and scalar code
+  over five sizes and five alignments: the default gives three different
+  results (AVX, SSE, NEON), the portable mode one; rustfft as 156
+  configures it gives four (AVX + FMA, SSE4.1, scalar, NEON), the scalar
+  planner one; fdlibm one.
+* **Skia.** Its baseline row and mask blitters, swizzles, bilinear
+  sampling and memsets: one result on every x86-64 CPU, and arm64
+  differing only in `blit_row_s32a_opaque`; with the portable blitter
+  installed, one result on both.
+
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`; `fft_frame.cc` with the bridge header cxxbridge
+generates from the changed `rustfft_ffi.rs`), except four it doesn't
+cover: V8's `ieee754.cc` and `molt_portable_math.cc`, which build without
+warnings for x86-64 and arm64 in the harnesses above (`-Wall -Wextra
+-Wshadow -Wshorten-64-to-32`, `-Werror` for the library), V8's `v8.cc`
+(a one-line call) and the Windows sandbox hook.
+
+**Needs the build machine:** compiling and linking (V8 and the Rust
+bridge included), `molt_ai_unittests` (`MoltPortableMathTest.*`,
+`MoltMathTest.*`), `blink_unittests` (`MoltNetCpuTest.*` and the Web Audio
+suites), V8's own tests with `--portable-math`, and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-libm" (an x86-64 and an arm64
+machine, Windows and macOS). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md), compared between runs: `Math`'s
+trigonometry with arguments where the architectures differed
+(`cpu.math_cross_arch`), CSS math functions amplified with `mod()`,
+`rem()` and `round()` so their last bits show (`cpu.css_math`), `DOMMatrix`,
+`SVGMatrix`, CSSOM, canvas and SVG path values (`cpu.dommatrix`), and
+filter frequency responses and a compressor's reduction (`audio.math`).
+
 ## MoltNet: storage limits
 
 A page can't ask how much memory a machine has, but it can store data
@@ -3041,10 +3588,10 @@ storage in memory; its limits are now fixed, and each site's are its own:
 
 | Limit a page reaches by writing | Chromium 156, off the record | MoltNet |
 |---|---|---|
-| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds |
-| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile; each key's quota is checked on its own, so all keys together may use more | **600 MiB**, the most all sites may store together |
+| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds; always available to the site, whatever other sites store |
+| The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile; each key's quota is checked on its own, so all keys together may use more | **600 MiB** that all sites can always store together; beyond it a write succeeds while the machine keeps 1 GiB of memory available |
 | Eviction | every half hour (and five minutes after the profile starts), the least recently used data of any site, until all sites use less than 70% of the pool | **none**: a site that reaches its limit gets `QuotaExceededError`, and no site's data is removed to make room |
-| Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser), all sites together | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android; no disk | **800 MiB**; no disk |
+| Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser) | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android, for all sites together; no disk | **200 MiB per renderer process** (in MoltNet one site in one tab), whatever the others hold; 800 MiB that all can always hold together, beyond which the machine decides as for the quota; no disk |
 | `localStorage`, `sessionStorage` | 10 MiB per storage area, on every machine | unchanged |
 
 `navigator.storage.estimate()` has reported a fixed quota in off-the-record
@@ -3054,25 +3601,39 @@ the ones writes are checked against, so a page that writes until it gets
 Blob limits that Chromium can scale with memory pressure (an experiment,
 off by default at 156) stay fixed.
 
-**Why these values.** MoltNet reports 8 GB of memory, but the limits hold
-real data in the browser and storage processes, so they must be safe on
-the smallest machines MoltNet runs on. The totals are Chromium's own rules
-for a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
+**Why these values.** The limits hold real data in the browser and
+storage processes, so they must be safe on the smallest machines MoltNet
+runs on, which is also the machine MoltNet reports (4 GB of memory). The
+totals are Chromium's own rules for a 4 GiB machine, rounded down to 100 MiB: the pool at the low end of
 Incognito's range (15% of 4 GiB, 614 MiB) is 600 MiB, and blobs get a
 fifth of 4 GiB (819 MiB), Chromium's rule for 32-bit desktops and
-ChromeOS. The 600 MiB bound everything MoltNet's sites store, so the
-memory MoltNet's storage can take is the same whatever sites do. Each site
-gets a tenth of it: Chromium's third per storage key would let a page
-fill the pool from three keys (and more with its embedded frames, each a
-key of its own), at which point eviction would remove other sites' data.
-With a tenth for each site, all of its keys together, a site's writes
-fail only once it has used its own 60 MiB, or once ten other sites hold
-all of theirs; until then nothing another site stores changes how much a
-site may write, and since nothing is evicted, nothing it stores removes
-another site's data. On larger machines the limits are less than
-Incognito allows (on 8 GB, a pool of 1.2 to 1.6 GiB and 410 to 550 MiB per
-key) and far more than sites store in practice (a few MB of caches and
-databases).
+ChromeOS. Each site gets a tenth of the pool: Chromium's third per
+storage key would let a page fill the pool from three keys (and more with
+its embedded frames, each a key of its own), at which point eviction
+would remove other sites' data. With a tenth for each site, all of its
+keys together, a site's writes fail only once it has used its own 60 MiB,
+and since nothing is evicted, nothing it stores removes another site's
+data.
+
+A total that the sites' shares can fill, any fixed one, can be reached by
+a group of sites (ten at 60 MiB fill 600 MiB) and then refuse a write of
+an eleventh: one site of the group could tell that another site's writes
+fail. So the 600 MiB is a floor, not a total: all sites together can
+always store that much, and a write that takes them beyond it still
+succeeds while the machine would keep 1 GiB of memory available (the
+browser asks how much memory is available, off the browser's main
+threads, only when a write could cross the floor). What bounds the memory
+beyond the floor is then the machine's own: any program on it uses that
+memory up as well, and a site sees it fill only when the machine is
+short of memory, whoever used it. The 1 GiB reserve leaves the system and
+the browser room before the operating system starts reclaiming or ending
+processes on a small machine. The site's 60 MiB still bound what one site
+can take. Blobs follow the same rule per renderer process: 200 MiB each
+(a quarter of the 800 MiB, so no one process takes the total past it
+alone), 800 MiB that all can always hold together, the machine beyond.
+On larger machines the limits are less than Incognito allows (on 8 GB, a
+pool of 1.2 to 1.6 GiB and 410 to 550 MiB per key) and far more than
+sites store in practice (a few MB of caches and databases).
 
 **Which profiles.** Only MoltNet's storage partitions (its off-the-record
 profile, through `ModeForBrowserContext`); normal and Incognito profiles
@@ -3082,19 +3643,27 @@ kill switch turns it off.
 **What a page can still observe.** Its own site's limit: writing until
 `QuotaExceededError` finds 60 MiB for the site, the same on every machine,
 less what the site's other storage keys (its subdomains, what it embeds)
-already use. Nothing of what other sites store, unless ten other sites
-hold all 60 MiB each in the same identity; `navigator.storage.estimate()`
-reports the usage + 10 GiB, as in every off-the-record profile at 156.
+already use. Nothing of what other sites store: its 60 MiB are its own.
+Its renderer process's 200 MiB of blobs, the same way. Only when all sites
+together hold more than 600 MiB (or all processes more than 800 MiB of
+blobs), which takes more than ten sites (more than four processes) at
+their full share, does a write depend on the machine: it succeeds while the
+machine keeps 1 GiB free, so a page that gets there with a group of sites
+can tell roughly whether the machine has more memory than that to spare;
+`navigator.storage.estimate()` reports the usage + 10 GiB, as in every
+off-the-record profile at 156.
 
 **What it costs MoltNet users.** Offline web apps, in-browser editors and
 large downloads assembled in the page (`Blob`, OPFS) stop at 60 MiB per
-site and 800 MiB of blobs, with the same `QuotaExceededError` on every
-machine. Since nothing is evicted, an identity whose sites have stored
-600 MiB together gets `QuotaExceededError` on every site until a site's
-data is deleted (by the site, or with New Identity); MoltNet keeps nothing
-after the session anyway. Counting a site's usage needs every storage
-key's usage, which the quota system keeps in memory: one pass over the
-identity's keys per quota check.
+site and 200 MiB of blobs per tab's process, with the same
+`QuotaExceededError` (or broken blob) on every machine. Since nothing is
+evicted, data a site no longer needs stays until the site deletes it or
+New Identity; MoltNet keeps nothing after the session anyway. Counting a
+site's usage needs every storage key's usage, which the quota system keeps
+in memory: one pass over the identity's keys per quota check; a check
+that could cross the floor also asks the machine how much memory is
+available (on a worker thread for the quota, at most every 200 ms for
+blobs).
 
 **Code.** `chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`
 (the values and their derivation, + `molt_net_storage_values_unittest.cc`)
@@ -3111,12 +3680,25 @@ limits then leave alone). The site budget:
 `storage/browser/quota/molt_storage_budget_policy.h` (the rules, std-only,
 + `molt_net_storage_budget_policy_unittest.cc`) and `molt_storage_budget.h`
 (a site's usage from each storage key's), hooked into
-`storage/browser/quota/quota_settings.h` (the new `molt_per_site_quota`, 0
-everywhere else), `quota_manager_impl.cc` (`UsageAndQuotaInfoGatherer`
-counts every key's usage when there is a budget, and its `Completed()`
-leaves a key no more room than its site's budget and the total have left)
-and `quota_temporary_storage_evictor.cc` (`OnGotEvictionRoundInfo` evicts
-nothing for the pool when there is a budget).
+`storage/browser/quota/quota_settings.h` (the new `molt_per_site_quota`
+and `molt_memory_reserve`, 0 everywhere else), `quota_manager_impl.cc`
+(`UsageAndQuotaInfoGatherer` counts every key's usage when there is a
+budget, reads the machine's available memory on a worker thread when the
+site's room could cross the floor (`MoltOnGotAvailableMemory()`), and its
+`Completed()` leaves a key no more room than its site's share, within
+what is left of the floor or, beyond it, what the machine allows) and
+`quota_temporary_storage_evictor.cc` (`OnGotEvictionRoundInfo` evicts
+nothing for the pool when there is a budget). Blobs:
+`storage/browser/blob/molt_blob_budget_policy.h` (the rules, std-only, +
+`molt_net_blob_budget_policy_unittest.cc`), applied by
+`blob_memory_controller.{h,cc}` (memory counted per budget key, the new
+`BlobStorageLimits` fields `molt_per_key_memory` and
+`molt_memory_reserve`), with the key set by `blob_registry_impl.{h,cc}`
+and `blob_builder_from_stream.{h,cc}` from the registry's binding
+(`content/browser/blob_storage/blob_registry_wrapper.cc`: the renderer
+process) and used by `blob_storage_context.cc`; MoltNet's renderer
+processes each serve one tab (docs/MOLTNET_COMPLIANCE.md §2 *Renderer
+processes*).
 
 **Verification.** Standalone: the values and glue tests pass with g++
 (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions` and the strict
@@ -3137,14 +3719,23 @@ tests (a site's subdomains and embedded third parties share its budget
 and another site keeps all of its own; the total binds only with ten full
 sites; Incognito and unlimited keys keep Chromium's quota and count
 nothing more; the evictor evicts nothing for MoltNet's pool and still does
-for Incognito's), 8 mutants caught. Every changed C++ file compiles
+for Incognito's), 8 mutants caught. Round 24: the rules' unit tests (12
+tests, the floor and the machine) built standalone; the harness, with the
+machine's available memory read on a stand-in worker thread, 6 tests (a
+group of twenty sites at their share leaves a polite site all of its own;
+below the floor the machine isn't asked; beyond it the reserve holds and
+nothing of another site is removed), 14 mutants caught; the blob budget's
+harness (`BlobMemoryController`'s quota code as Chromium 156 has it and as
+hooked, verbatim), 9 tests, 23 mutants caught. Every changed C++ file compiles
 without errors against Chromium 156's real headers (`tools/compile_check`).
 **Needs the build machine:** compiling and linking, `molt_ai_unittests`
 (`MoltNetStorageTest.*`, `MoltNetStorageValuesTest.*`,
-`MoltNetStorageBudgetPolicyTest.*`), `storage_unittests`
-(`QuotaManagerImplTest.*`, `QuotaTemporaryStorageEvictorTest.*`, for
-Chromium's own behaviour, unchanged), and the checks tagged "fp-probes"
-and "moltnet-shared" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
+`MoltNetStorageBudgetPolicyTest.*`, `MoltNetBlobBudgetPolicyTest.*`),
+`storage_unittests` (`QuotaManagerImplTest.*`,
+`QuotaTemporaryStorageEvictorTest.*`, `BlobMemoryControllerTest.*`,
+`BlobStorageContextTest.*`, `BlobRegistryImplTest.*`, for Chromium's own
+behaviour, unchanged), and the checks tagged "fp-probes",
+"moltnet-shared" and "moltnet-shared2" in `docs/BUILD_MACHINE_CHECKLIST.md` (writing until
 `QuotaExceededError` with IndexedDB, Cache Storage and OPFS, a large blob,
 two sites' quotas, and no eviction after more than half an hour).
 **Automated** by [`tools/leak_test`](LEAK_TESTING.md): the quota the
@@ -3163,15 +3754,17 @@ So protected contexts only see some installed ("system") families:
 
 | Context | Installed families it can name |
 |---|---|
-| MoltNet window | the platform's **allow-list** only: the same for every MoltNet user on that OS |
+| MoltNet window | none: every font comes from MoltBrowser's **bundled font set**, the same on every OS ([below](#moltnet-the-bundled-font-set)); in a build without the set, the platform's **allow-list** only (the same for every MoltNet user on that OS) |
 | Normal / Incognito window, web site | the allow-list plus the site's **sample**: each other family name is in it with probability 1/16, decided by `PRF(site key, name)`, so stable within a site and session, unrelated across sites and sessions |
 | Normal / Incognito, a context with a random key (opaque top-level site, SVG image document, third-party shared worker, a context that started before the seed) | the allow-list only (a per-context random sample could be summed over many such contexts) |
 | Shields off (normal / Incognito), non-http(s) top-level site, protection off | every font, exactly as upstream |
 
-Never affected: generic families (`serif`, `sans-serif`, `monospace`,
-`cursive`, `fantasy`, `system-ui`, `math`, `-webkit-body`) and the fonts the
-user chose for them in settings, web fonts (`src: url()`, `FontFace` from
-data), and the per-character system fallback.
+Never affected outside MoltNet: generic families (`serif`, `sans-serif`,
+`monospace`, `cursive`, `fantasy`, `system-ui`, `math`, `-webkit-body`) and
+the fonts the user chose for them in settings, web fonts (`src: url()`,
+`FontFace` from data), and the per-character system fallback. Web fonts
+work in MoltNet too; generic families and fallback there use the bundled
+set.
 
 **How a lookup is decided** (`molt_fingerprinting/fonts.{h,cc}`, pure logic;
 `system_fonts.{h,cc}`, Blink glue). Names are compared after lower-casing
@@ -3269,9 +3862,9 @@ entry only costs compatibility: the page falls back to its next family).
   are not listed; users can't install system fonts).
 
 The lists were built from the vendors' published lists and default installs
-(no other browser's list or code was used); the Windows and macOS lists
-still need checking against fresh installs of each supported version
-(Follow-up 6).
+(no other browser's list or code was used). They are checked against fresh
+installs of each supported version with `tools/fonts/molt_font_inventory.py`
+([below](#checking-the-allow-lists-against-fresh-installs)).
 
 **Sample rate.** A site sees each non-listed installed family with
 probability p. Compatibility needs a large p, but the sample is a
@@ -3332,16 +3925,16 @@ document (MoltShield reloads the page).
 
 **Known gaps (fonts)**
 
-* **Per-character system fallback** (emoji, CJK, rare scripts): a page that
-  renders characters no listed font has gets them from whatever installed
-  font covers them, and can measure that. Out of scope, except emoji on
-  Linux in MoltNet ([Text metrics](#text-metrics-moltnet)).
-* **Text metrics and rendering**: in MoltNet windows glyphs are measured
-  alike on every machine of an OS and `measureText()` is rounded ([Text
-  metrics](#text-metrics-moltnet)); font versions still differ per OS
-  release. In normal windows `measureText()` values and glyph pixels are
-  not noised beyond the canvas noise; hinting, anti-aliasing and font
-  versions differ between machines.
+* **Per-character system fallback** (emoji, CJK, rare scripts) outside
+  MoltNet: a page that renders characters no listed font has gets them
+  from whatever installed font covers them, and can measure that. MoltNet
+  falls back within the bundled set
+  ([below](#moltnet-the-bundled-font-set)).
+* **Text metrics and rendering**: in MoltNet windows glyphs come from the
+  bundled set and are measured alike on every machine, and `measureText()`
+  is rounded ([Text metrics](#text-metrics-moltnet)). In normal windows
+  `measureText()` values and glyph pixels are not noised beyond the canvas
+  noise; hinting, anti-aliasing and font versions differ between machines.
 * **Font settings**: the fonts the user chose for the generic families
   (and the minimum font size) stay visible through generic families and
   unstyled text; a page that ships candidate fonts as web fonts can compare
@@ -3354,11 +3947,13 @@ document (MoltShield reloads the page).
   MoltNet windows don't use the user's settings ([settings from the
   regular profile](#moltnet-settings-from-the-regular-profile)) nor these
   defaults, which also follow the UI language and, for the fixed font on
-  Windows, the ClearType setting: they use fixed per-OS families, all on
-  the allow-list ([default fonts](#default-fonts-font-size-and-encoding)),
-  so every MoltNet user of an OS renders the generic families alike.
-* Users whose machine lacks an allow-listed font (removed by an
-  administrator, minimal Linux installs) remain distinguishable by that.
+  Windows, the ClearType setting: they use the bundled set's families, the
+  same on every OS ([below](#moltnet-the-bundled-font-set)); a build
+  without the set uses fixed per-OS families, all on the allow-list
+  ([default fonts](#default-fonts-font-size-and-encoding)).
+* Outside MoltNet, users whose machine lacks an allow-listed font (removed
+  by an administrator, minimal Linux installs) remain distinguishable by
+  that.
 * In normal windows, a sampled name that resolves to a hidden family costs a
   platform lookup that a page might time.
 * Code paths that build a `Font` without a font selector use `FontCache`
@@ -3398,11 +3993,214 @@ font-probing pages and suites (FingerprintJS, CreepJS font tests) in
 normal, Incognito and MoltNet windows, with Shields on and off; East Asian
 sites; design tools with `queryLocalFonts()`.
 
-[`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with `document.fonts.check()` in a MoltNet
-window and fails any visible family outside the Linux allow-list; on other
-OSes it records the visible set for `diff`. It also fails any `local()`
-face of a family outside every allow-list that loads, and compares the
-listed faces `local()` finds between runs.
+[`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with
+`document.fonts.check()` in a MoltNet window and fails any visible family
+outside the bundled set, on every OS; it fails unless every name of the
+set is visible and every generic keyword measures like the set's family
+for it, and `diff` compares the per-script fallback widths and the set's
+faces `local()` finds between runs, across machines and OSes. It also
+fails any `local()` face of a family outside every allow-list that loads,
+and compares the listed faces `local()` finds between runs.
+
+### MoltNet: the bundled font set
+
+Allow-lists keep MoltNet users of one OS alike only as far as their fonts
+are alike, and they aren't: font versions differ per OS release, and
+whatever a page renders that no listed font has (CJK, rare scripts,
+symbols, emoji) comes from whatever installed font covers it. So
+MoltBrowser ships one font set, and MoltNet renderers take every font from
+it, on Linux, Windows and macOS alike: families a page names, generic
+families, `system-ui`, per-character fallback, the last-resort font,
+`src: local()` and `queryLocalFonts()`. Nothing installed on the machine is
+used or looked up. Normal and Incognito windows are unchanged.
+
+Tor Browser takes the same approach on Linux (bundled Noto families and
+the metric-compatible Arimo, Tinos and Cousine). Its current list
+(`tor-browser-build`, `projects/fonts`) could not be retrieved when this
+set was put together, so the set was chosen from the Noto project's script
+coverage instead; comparing the two is a check for the next font update.
+
+**The set** (`tools/fonts/moltnet_fonts.json`, version 2026.10.1), all
+under the SIL Open Font License 1.1:
+
+| Files | Families | Size |
+|---|---|---|
+| Arimo, Tinos, Cousine (google/fonts, googlefonts/tinos) | metric-compatible with Arial, Times New Roman and Courier New: Latin, Greek, Cyrillic, Hebrew | 4.5 MB |
+| Noto (notofonts.github.io), unhinted, variable where Noto ships one | Noto Sans; Noto Naskh Arabic; Noto Sans Hebrew, Armenian, Georgian, Ethiopic, Devanagari, Bengali, Gujarati, Gurmukhi, Kannada, Malayalam, Oriya, Tamil, Telugu, Sinhala, Thai, Lao, Khmer, Myanmar, Thaana, Syriac, Cherokee, Canadian Aboriginal, Javanese, Ol Chiki, Adlam, Mongolian, NKo, Tifinagh, Yi; Noto Serif Tibetan; Noto Sans Symbols, Symbols 2 and Math | 7.8 MB |
+| Noto Sans CJK (noto-cjk), one variable collection, weights 100 to 900 | Noto Sans CJK JP, KR, SC, TC, HK | 32.7 MB |
+| Noto Color Emoji (noto-emoji), COLRv1 | Noto Color Emoji | 5.0 MB |
+
+47 files, 49,992,556 bytes (47.7 MiB); 27.2 MiB gzip -9, 18.7 MiB xz, as
+the installers carry it. Each file is pinned by repository, commit, path,
+size and SHA-256, with its faces (family, weight range, slope, names) and
+its licence; fonts are never committed to this repository.
+`scripts/bundle-fonts.sh` fetches them by those pins at build time
+(`tools/fonts/fetch_fonts.py`, cached by hash; a release build refuses a
+manifest with unpinned entries) and installs them with their licences:
+
+| Platform | Where |
+|---|---|
+| macOS | `MoltBrowser.app/Contents/Resources/molt_fonts/`; data, sealed by the app's signature like the other resources (no code signature of their own, nothing for notarization to check) |
+| Linux (.deb, .rpm, AppImage, Flatpak) | `/opt/moltbrowser/molt_fonts/` (the app directory in the AppImage and Flatpak) |
+| Windows (installer, portable ZIP) | `molt_fonts\` next to `moltbrowser.exe` |
+
+`release.sh` verifies the installed set against the manifest (missing,
+extra or changed files fail the release), and the SBOM lists the set and
+each font with its download location and SHA-256 ([SBOM](SBOM.md)).
+
+**What a MoltNet page sees.** The set's families, their other names, and
+aliases that keep pages written for the common families working:
+
+| Names | Family |
+|---|---|
+| Arial, Helvetica, Liberation Sans | Arimo |
+| Times New Roman, Times, MS Serif, Liberation Serif | Tinos |
+| Courier New, Courier, Liberation Mono | Cousine |
+
+| Generic | Family |
+|---|---|
+| text without `font-family`, `serif`, `cursive`, `fantasy`, `-webkit-body`, `-webkit-standard` | Tinos |
+| `sans-serif` | Arimo |
+| `monospace` | Cousine |
+| `system-ui`, `BlinkMacSystemFont` | Noto Sans |
+| `math` | Noto Sans Math |
+| any generic, for Han, kana, hangul and bopomofo text | Noto Sans CJK, by region: kana JP, hangul KR, bopomofo TC; Han by the content language (`ja` JP, `ko` KR, `zh-Hant`, `zh-TW` TC, `zh-HK`, `zh-MO`, `yue` HK, other `zh` SC; SC when the language names none) |
+
+`font: caption`, `menu`, `small-caption`, `status-bar` and the other system
+font keywords resolve as `caption` does (Windows' per-keyword fonts are not
+used), so they too come out alike. A character the requested fonts lack
+falls back through its script's list: the script's Noto family first; for
+punctuation, digits and symbols Arimo, Noto Sans, Symbols, Symbols 2, Math,
+the CJK family of the text's region, then Noto Color Emoji; emoji
+presentation takes Noto Color Emoji first, text presentation the symbol
+families first. Every list ends with every other family of the set, so a
+character the set has is always found and one it lacks is drawn as the
+last-resort font's missing glyph, on every machine the same.
+
+Faces are matched as CSS Fonts 4 says (the slope first, then the nearest
+weight in the documented direction); variable faces are instantiated at
+the requested weight, static ones synthesized bold or oblique the way Blink
+does on Linux. Every face is created from the file's bytes with Skia's own
+font backend (Fontations), on every OS, and laid out unhinted with
+subpixel positioning and anti-aliasing, without embedded bitmaps: the same
+scaler and settings whatever the OS, its version or the desktop's
+settings. `queryLocalFonts()` lists the set's faces.
+
+**Metrics.** What Blink derives from a font (ascent and descent, x-height,
+cap height, line gap, underline, average and maximum character width, glyph
+bounds and the glyph extents HarfBuzz positions marks with) is computed
+partly per OS upstream. With the set, MoltNet renderers take one path on
+every OS, the one Linux takes: the descent rule for subpixel positioning
+everywhere, the font's own x-height and average width and the maximum
+width from its bounds also on macOS and Windows, Skia's glyph bounds rather
+than path bounds on macOS, and no macOS ascent adjustment for Times,
+Helvetica and Courier. macOS takes HarfBuzz's advances for fonts with a
+`trak` table and no `sbix`; no font of the set has either
+(`tools/fonts/fonts_test.py` checks the files).
+`tools/fonts/metrics_check/run.py` runs that code, copied out of `src/`,
+built as Linux, Windows and macOS, over what Skia's Fontations backend
+reports for every face of the set (the `skrifa` version Chromium vendors,
+at 9 sizes and the faces' weights): the three OSes compute the same values
+in all 828 cases, and Linux the same as without the set.
+
+**How the files reach the renderer.** The browser opens the `molt_fonts`
+files once, on a background thread, when startup-critical work is done (or
+at the first renderer launch, if that comes first), checking each file's
+size and sfnt header against the table compiled into the browser
+(`molt_net_fonts_table.h`, generated from the manifest; the whole set or
+none). Every MoltNet renderer gets `--molt-net-fonts` on its command line,
+unless the browser knows the installation has no `molt_fonts` folder, and
+the files as read-only handles over the fingerprinting configuration
+channel (`FingerprintingConfiguration.SetMoltNetFonts`): before any
+document commits when the set is open, else as soon as it is (MoltNet's
+first window, a window restored at startup). The renderer maps them
+read-only (shared page cache: only the pages a renderer touches become
+resident) and checks each typeface's family against its own table
+(`moltnet_font_set_table.cc`, the same order; `molt_net_fonts_unittest.cc`
+checks the two agree). From the switch on, no font lookup reaches the
+system: until the files arrive, lookups find nothing and text uses an
+empty last-resort face; when they arrive, every thread that looked a font
+up (the main thread and workers, which have font caches of their own)
+invalidates its font cache, so documents and canvases look their fonts up
+again. Files that don't match the table (count, size, header) are refused
+together, leaving the set empty rather than partial, and a typeface whose
+family isn't the table's is not used. An installation without the set uses
+the per-OS allow-list as before.
+
+**Hooks** (each marked `MoltBrowser:`):
+
+| Upstream file | Function | What |
+|---|---|---|
+| `platform/fonts/font_platform_data.{h,cc}` | new `UniformFontSet` interface, `CreateUniformFontPlatformData`, `UniformFallbackFontForCharacter`, `UniformLastResortFontData`, `UniformRenderStyle`, `ApplyUniformRendering`; constructor and `CreateSkFont` (Linux) | the platform layer's entry to the set, and the fixed rendering |
+| `platform/fonts/skia/font_cache_skia.cc` | `CreateFontPlatformData` (not Windows), `GetLastResortFallbackFont` | families from the set; the last resort from the set |
+| `platform/fonts/linux/font_cache_linux.cc` | `PlatformFallbackFontForCharacter` | fallback from the set, never fontconfig |
+| `platform/fonts/win/font_cache_skia_win.cc` | `CreateFontPlatformData`, `PlatformFallbackFontForCharacter` | no DirectWrite matching or fallback |
+| `platform/fonts/win/font_platform_data_win.cc` | `CreateSkFont` | the fixed rendering |
+| `platform/fonts/mac/font_cache_mac.mm` | `CreateFontPlatformData`, `PlatformFallbackFontForCharacter`, `GetLastResortFallbackFont` | no Core Text matching or cascade |
+| `platform/fonts/mac/font_platform_data_mac.mm` | `CreateSkFont` | the fixed rendering |
+| `platform/fonts/font_cache.cc` | `GetFontPlatformData` | `system-ui` maps through the set, not the platform UI font |
+| `platform/fonts/font_selector.cc` | `FamilyNameFromSettings` | generic families from the set, not from settings |
+| `core/css/css_pending_system_font_value.cc` | `ResolveFontFamily`, `ResolveFontSize` | system font keywords alike on every OS |
+| `modules/font_access/font_access.cc` | `DidGetEnumerationResponse` | `queryLocalFonts()` lists the set |
+| `platform/fonts/font_metrics.cc` | `AscentDescentWithHacks` | the descent rule on every OS; no macOS ascent adjustment |
+| `platform/fonts/simple_font_data.cc` | `PlatformInit` | x-height, average and maximum width alike on every OS |
+| `platform/fonts/skia/skia_text_metrics.cc` | `SkFontGetGlyphExtentsForHarfBuzz`, `SkFontGetBoundsForGlyph`, `SkFontGetBoundsForGlyphs` | glyph bounds alike on every OS |
+| `chrome/browser/chrome_content_browser_client.cc` | `InitOnUIThread` | the browser opens the set after startup |
+
+MoltBrowser's own code: `core/molt_fingerprinting/moltnet_font_set.{h,cc}`
+(the rules, pure, with the generated `moltnet_font_set_table.cc`),
+`moltnet_fonts.{h,cc}` (the set in a renderer: mapped files, typefaces,
+`UniformFontSet`), `system_fonts.{h,cc}` (the set's names as the
+visibility list, `FontPlatform::kMoltNetBundled`); in the browser
+`molt_ai/fingerprinting/molt_net_fonts.{h,cc}`, the
+`--molt-net-fonts` switch and `SetMoltNetFonts` in
+`molt_fingerprinting.mojom`.
+
+**What it costs MoltNet users.** About 19 to 27 MiB more per download and
+48 MiB on disk. Text in MoltNet windows is drawn from the same fonts with
+the same settings on every OS, so it doesn't look native on Windows and
+macOS (no DirectWrite or Core Text rendering, no ClearType) nor follows
+the Linux desktop's hinting; it is unhinted, as on high-density screens. Pages that name an installed font
+the set lacks get the set's family for their generic fallback; scripts
+outside the set are drawn as missing glyphs unless the page brings a web
+font.
+
+**Verification.** No Chromium checkout needed: `tools/fonts/fonts_test.py`
+(39 tests: the font reader against hostile input, the manifest's rules,
+the generated tables up to date, fetching and installing from a fake
+server, pinning, the fresh-install inventory; with the fonts cached, every
+pinned face against the real files) and, with the C++ tests built
+standalone with g++ (ASan/UBSan) and clang, `moltnet_font_set_unittest.cc`
+(generic mapping, CJK regions, face matching, fallback order, unique
+names); `molt_moltnet_font_set_fuzzer` (names, language tags, scripts,
+weights; [FUZZING](FUZZING.md)); `tools/fonts/metrics_check/run.py` (the
+metric code of the three OSes on the real fonts, above; each of its six
+hooks, removed, makes the OSes disagree). Every changed C++ file compiles
+against Chromium 156's headers (`tools/compile_check`; the Windows and
+macOS files need those builds). Needs the build machine: `blink_unittests`
+(`MoltNetFontsTest.*`, with a worker that looked fonts up before the
+files came, `MoltNetFontSetTest.*`), `molt_ai_unittests`
+(`MoltNetFontsTest.*`, `MoltNetFontsDeliveryTest.*`,
+`MoltNetFontSetTest.*`), the checks tagged "fonts" in
+`docs/BUILD_MACHINE_CHECKLIST.md`, and the leak kit on each OS.
+
+### Checking the allow-lists against fresh installs
+
+`tools/fonts/molt_font_inventory.py` (Python 3.8+, standard library only,
+nothing installed) lists every font file of the machine it runs on, with
+its faces, family names (a variable font's per-instance names too),
+versions and SHA-256, compares them with that OS's allow-list (a copy of
+`font_allowlists.cc` generated into `tools/fonts/font_allowlists.json`)
+and writes `molt-fonts-<os>-<version>.json` and `.md`: listed families
+the install lacks, families it has that aren't listed, and the versions
+of the listed ones. It records no user or host name. A fresh Windows or
+macOS has no Python: there `collect_windows.ps1` (Windows PowerShell 5.1)
+or `collect_fonts.pl` (macOS's `/usr/bin/perl`) collects the same data
+and `molt_font_inventory.py import` analyses it on any other machine;
+`merge` sums up the installs of one OS. Run it on a fresh VM of every
+supported version (Windows 10 22H2 and 11, macOS 13, 14 and 15, the
+common Linux distributions) before installing anything else
+(`docs/BUILD_MACHINE_CHECKLIST.md`, "fonts").
 
 ## Text metrics (MoltNet)
 
@@ -3419,7 +4217,7 @@ windows are unchanged.
 |---|---|
 | Canvas `measureText()` | `width`, `actualBoundingBoxLeft/Right/Ascent/Descent`, `fontBoundingBoxAscent/Descent`, `alphabeticBaseline`, `hangingBaseline`, `ideographicBaseline` (shipped); `emHeightAscent/Descent`, `getSelectionRects()`, `getActualBoundingBox()`, `getIndexFromOffset()`, `getTextClusters()` (`ExtendedTextMetrics`: experimental, and an origin trial that accepts third-party tokens). Workers too (`OffscreenCanvas`) |
 | Element geometry | `offsetWidth`/`clientWidth`/`scrollWidth` (whole pixels); `getBoundingClientRect()`, `getClientRects()` and `Range` rects (64ths of a device pixel, scaled up by any transform); `ResizeObserver`, `IntersectionObserver`; `getComputedStyle()` of shrink-to-fit boxes; SVG `getComputedTextLength()`, `getSubStringLength()`, `getExtentOfChar()`, `getBBox()`; hit testing at fractional points (`elementFromPoint()`, `caretPositionFromPoint()`); where lines break; container queries on a box sized by its text |
-| `document.fonts.check()`, `local()`, `queryLocalFonts()` | which families exist: the allow-list in MoltNet ([Fonts](#fonts)) |
+| `document.fonts.check()`, `local()`, `queryLocalFonts()` | which families exist: the bundled set in MoltNet ([Fonts](#fonts)) |
 | Canvas pixels of text | farbled per site ([The noise](#the-noise)); a script that rounds or hashes coarsely sees through it |
 | Emoji | which code points come out as one colour glyph, and their advances and ink boxes |
 
@@ -3512,22 +4310,27 @@ emoji font; Noto Color Emoji is on the Linux allow-list, so pages could
 name it anyway. Where it isn't installed, upstream's fallback decides.
 Windows and macOS have one emoji font per release already.
 
+**4. One font set on every OS.** With the [bundled font
+set](#moltnet-the-bundled-font-set), MoltNet renderers take every font,
+emoji and fallback included, from the fonts MoltBrowser ships, render
+them with the same scaler (Skia's Fontations) and the same settings
+(unhinted, subpixel positioning, anti-aliased, no embedded bitmaps), and
+derive their metrics the same way ([Metrics](#moltnet-the-bundled-font-set))
+on Linux, Windows and macOS; 1 and 3 above then only matter for a build
+without the set.
+
 ### What is left
 
-* **Per OS** everything about text differs: fonts, emoji, rasteriser.
-  Tor Browser accepts per-OS buckets too.
-* **Per OS release** the font versions differ (Windows 10 and 11, each
-  macOS, each Linux distribution release), and with them metrics and
-  which emoji exist. Tor Browser avoids that on Linux by shipping its own
-  fonts; MoltBrowser doesn't (see the follow-ups).
-* **Per machine** of one OS release: fonts missing from the allow-list
-  (removed by an administrator, minimal installs); Windows with font
-  smoothing off (and possibly ClearType tuning, unverified); on Linux, no
-  Noto Color Emoji, and fontconfig's embedded-bitmap setting for fonts
-  with bitmap strikes; installed
-  fallback fonts for CJK, rare scripts and symbols (restricting fallback
-  to the allow-list would turn CJK into boxes on Linux, whose list has no
-  CJK font).
+* **Without the bundled set** (a build that doesn't ship it), text
+  differs per OS (fonts, emoji, rasteriser), per OS release (font
+  versions, and with them metrics and which emoji exist) and per machine
+  of one release: fonts missing from the allow-list, Windows with font
+  smoothing off, on Linux no Noto Color Emoji or fontconfig's
+  embedded-bitmap setting, and installed fallback fonts for CJK, rare
+  scripts and symbols. The [bundled font
+  set](#moltnet-the-bundled-font-set) takes all of these out of MoltNet
+  windows; the leak kit's `diff` across OSes checks the result on the
+  build machines.
 * **Element geometry is not rounded.** Layout reaches scripts through too
   many paths for rounding some of them to hold: rounding
   `getBoundingClientRect()` and `Range` rects would leave
@@ -4007,7 +4810,7 @@ after every New Identity:
 |---|---|---|
 | Text the renderer makes and pages read or measure: `validationMessage`, the file input's labels, the default `<details>` summary and button labels, date-field placeholders, the permission elements' labels, ... | `Platform::QueryLocalizedString` -> `ChromeContentClient::GetLocalizedString` -> the renderer's `ui::ResourceBundle`, i.e. the locale pak of `--lang` (on Linux, the one the zygote loaded) | **en-US**, the same text on every OS |
 | The default text locale: text without a `lang` attribute (the Han glyph variants of CJK text, hyphenation, line breaking, case mapping, the quotes of `<q>`), the date picker's language, the default caption track | `DefaultLanguage()` and `UserPreferredLanguages()` (`platform/language.cc`): `--lang` | **en-US** |
-| The fonts of the generic families, the minimum logical font size, the default encoding (`document.characterSet` of pages that don't declare one) | Chromium registers their defaults from the UI language's resources (`PrefsTabHelper::RegisterProfilePrefs`), and MoltNet's settings isolation pinned the registered default | **fixed per OS**: the OS's en-US defaults, each font resolved on the font allow-list; windows-1252 |
+| The fonts of the generic families, the minimum logical font size, the default encoding (`document.characterSet` of pages that don't declare one) | Chromium registers their defaults from the UI language's resources (`PrefsTabHelper::RegisterProfilePrefs`), and MoltNet's settings isolation pinned the registered default | **fixed**: the bundled font set's families on every OS (in a build without the set, the OS's en-US defaults, each font resolved on the font allow-list); the OS's en-US minimum size; windows-1252 |
 
 Normal and Incognito windows are unchanged: the UI language is the same on
 every site, so fixing it there would only make users look like other
@@ -4169,6 +4972,12 @@ script from the three `.grd` files, `components_locale_settings.grd` and
 edit); its en-US column is checked against the paks grit builds on each
 OS's build machine.
 
+With the [bundled font set](#moltnet-the-bundled-font-set), MoltNet
+renderers answer generic families from the set before these prefs are
+read (`FontSelector::FamilyNameFromSettings`), so the fonts in this table
+apply only to a build without the set; the minimum font size and the
+encoding apply either way.
+
 ### What a fixed language costs MoltNet users
 
 * Form validation bubbles, file inputs, the default `<details>` and button
@@ -4315,7 +5124,7 @@ new early returns or paths around the hook (none found).
 | `RTCPeerConnection.startDiagnosticLogging()` (`RTCDiagnosticLogging`, stable on desktop) | a random session id | the browser collects no logs (MoltNet keeps no WebRTC text logs) | logs only for origins an enterprise policy lists | none |
 | `PerformanceEntry.navigationId` always exposed; Event Timing dispatch as HTML specifies (`EventTimingMatchingHTML`) | ids per document, starting at a random 100 to 10000, steps of 7 | same | same | none |
 | WebGPU: compatibility mode, new features, limits and texture usage | the GPU | no adapter | real (not covered, see [known gaps](#known-gaps-and-attacks)) | none |
-| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the allow-list; `local()` is a lookup of a listed family and never uses the cache | allow-list + the site's sample, the same way | `local()` resolved through visible families ([Fonts](#fonts)) |
+| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the bundled set (a build without it: the allow-list); `local()` is a lookup of a visible family and never uses the cache | allow-list + the site's sample, the same way | `local()` resolved through visible families ([Fonts](#fonts)) |
 | New audio decoders (Symphonia, direct Opus) | `decodeAudioData()` results | the same for every user of a build; farbled when read | same | none |
 | Media clock coarsening (`kCoarseWallClockTimeSource`, on) | the media clock's precision | coarser | coarser | upstream hardening |
 | `drawElementImageToTexture` (WebGPU, HTML-in-canvas) | page content in a GPU texture | **off**: behind `CanvasDrawElement` (experimental); the `HTMLInCanvas` origin trial's tokens stay refused | same | none |
@@ -4598,6 +5407,11 @@ Honest list; anything not in the table above is not covered.
   conversion of read-back frames, and the CPU-specific kernels of libopus,
   libyuv's filtered scaling and the encoders' resampler, see [pixels and
   encoded bytes](#moltnet-pixels-and-encoded-bytes).)
+* (Closed: in MoltNet, WebAssembly relaxed SIMD, the CPU-specific code of
+  Skia, skcms and the audio decoders, `Math.pow` and `Math.tanh` from the
+  C library, and V8's heap configured from the machine's memory, see [CPU
+  features](#moltnet-cpu-features) and
+  [performance.memory](#moltnet-performancememory).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -4751,10 +5565,15 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.{h,cc}`, `moltnet_media.{h,cc}` | MoltNet's audio device, key systems, Media Capabilities table and WebCodecs codecs (pure, + `moltnet_media_values_unittest.cc`; glue, + `moltnet_media_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.{h,cc}`, `moltnet_audio_output.{h,cc}` | MoltNet's media playback clock and the ring it shares with Web Audio's (+ `moltnet_audio_sink_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | MoltNet's device list, `devicechange` and `getUserMedia()` before a permission (rules in `moltnet_media_values.h`; + `moltnet_media_devices_test.cc`) |
-| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}` | MoltNet's `performance.memory` and memory measurement (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}`; `src/sandbox/policy/linux/molt_data_limit.h` | MoltNet's `performance.memory`, memory measurement and the 4 GiB machine V8 is configured as (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`); the renderer's data limit on Linux (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
+| `src/third_party/llvm-libc/molt_portable_math.{h,cc}`; `src/ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | MoltNet's portable math: llvm-libc without fused multiply-adds (+ `molt_portable_math_unittest.cc`) and the process-wide switch Blink, `ui/gfx` and `media` call through (+ `molt_math_unittest.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.{h,cc}`; `src/third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | MoltNet's CPU features, set before V8 starts: V8's flags, the heap's machine, skcms's and Skia's portable code (+ `moltnet_cpu_test.cc`); Skia's portable raster pipeline |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
 | `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.{h,cc}`, `moltnet_font_set_table.cc`, `moltnet_fonts.{h,cc}` | MoltNet's bundled font set: its rules (pure, generated table, + `moltnet_font_set_unittest.cc`, `molt_moltnet_font_set_fuzzer.cc`) and the set in a renderer (+ `moltnet_fonts_test.cc`) |
+| `src/chrome/browser/molt_ai/fingerprinting/molt_net_fonts.{h,cc}`, `molt_net_fonts_table.h` | opens the bundled set's files in the browser and hands MoltNet renderers read-only duplicates (+ `molt_net_fonts_unittest.cc`) |
+| `tools/fonts/` | the set's pinned manifest, fetching, pinning, the generated tables, and the fresh-install font inventory (+ `fonts_test.py`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
 | `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
@@ -4827,6 +5646,15 @@ bytes: `media/renderers/default_decoder_factory.cc`,
 `media/base/BUILD.gn`, `third_party/opus/BUILD.gn`,
 `third_party/opus/src/celt/celt.c`, `celt/x86/x86cpu.c`,
 `celt/arm/pitch_neon_intr.c`, `celt/arm/celt_neon_intr.c`; MoltNet's
+CPU features and V8's heap: `v8/src/flags/flag-definitions.h`,
+`v8/src/wasm/function-body-decoder-impl.h`, `v8/src/base/ieee754.{h,cc}`,
+`v8/src/init/v8.cc`, `gin/public/isolate_holder.h`, `gin/isolate_holder.cc`,
+skcms's `skcms.cc`, `skcms_public.h`, `skcms_Transform.h`,
+`Transform_inl.h`, Skia's `SkGraphics.{h,cpp}`, `SkRasterPipeline_opts.h`,
+`skia/BUILD.gn`, symphonia-core's `src/dsp/fft/simd.rs` (and its crate
+patch), `media/filters/symphonia_decoder_bridge.rs`,
+`media/filters/symphonia_audio_decoder.cc`,
+`sandbox/policy/linux/sandbox_linux.cc`, `sandbox/policy/BUILD.gn`; MoltNet's
 storage limits:
 `content/browser/storage_partition_impl.cc`,
 `content/browser/blob_storage/chrome_blob_storage_context.cc`,
@@ -4878,19 +5706,14 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    there; closing the moment between a new zoom and the new size, which
    needs content to send both in one visual-properties update (a new
    content hook, see [Zoom](#zoom)).
-6. Fonts: the allow-lists are in (see [Fonts](#fonts)), and MoltNet's
-   generic-font settings are fixed per OS, from the allow-lists, whatever
-   the UI language ([default
-   fonts](#default-fonts-font-size-and-encoding)); still to do: check
-   the Windows and macOS lists against fresh installs of each supported
-   version (MoltNet's default fonts depend on them too). Text metrics in
-   MoltNet are done ([Text metrics](#text-metrics-moltnet): glyphs
-   measured alike on Linux, `measureText()` rounded, one emoji font on
-   Linux); left: shipping one font set and one emoji font with MoltBrowser
-   for MoltNet (Tor Browser's approach on Linux), which would make OS
-   releases and fallback alike too but means tens of megabytes of fonts
-   loaded into the sandboxed renderer, and checking whether Windows'
-   ClearType tuning changes DirectWrite's metrics. The WebGL parameter surface
+6. Fonts: the allow-lists are in (see [Fonts](#fonts)), and MoltNet takes
+   every font from a set MoltBrowser ships, the same on every OS ([the
+   bundled font set](#moltnet-the-bundled-font-set)); text metrics in
+   MoltNet are done ([Text metrics](#text-metrics-moltnet)). Still to do:
+   run `tools/fonts/molt_font_inventory.py` on fresh installs of each
+   supported Windows, macOS and Linux version and correct the allow-lists
+   (normal windows, and MoltNet in a build without the set); compare the
+   set with Tor Browser's at the next font update. The WebGL parameter surface
    and WebGPU in MoltNet are done (fixed WebGL baselines, no WebGPU
    adapter); left: a mobile look at the baselines if MoltNet comes to
    Android, and checking them against the WebGL reports of real Macs,
@@ -4924,4 +5747,8 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    repeat the comparisons of [pixels and encoded
    bytes](#moltnet-pixels-and-encoded-bytes) (every SIMD level of x86-64
    and arm64), and check that new decoder or frame-pool paths keep
-   MoltNet's video in software and in CPU memory.
+   MoltNet's video in software and in CPU memory. When V8, Skia, skcms,
+   Symphonia, rustfft or FFmpeg roll, repeat the comparisons of [CPU
+   features](#moltnet-cpu-features) and look for new instructions or code
+   paths picked by CPU feature (new relaxed instructions, new `SkOpts`
+   entries, new uses of the C library's math in V8).

@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from tests import pcapgen as g  # noqa: E402
+from leakkit import expectations as ex  # noqa: E402
 
 OUT = os.path.join(HERE, 'testdata', 'sample_run')
 T0 = 1760000000.0
@@ -52,7 +53,7 @@ GOOD_FP = {
     'tz.date_string_utc': True, 'intl.locale': 'en-US',
     'intl.number': '1,234,567.891', 'nav.language': 'en-US',
     'nav.languages': ['en-US'], 'hdr.accept-language': 'en-US',
-    'nav.hardwareConcurrency': 8, 'nav.deviceMemory': 8,
+    'nav.hardwareConcurrency': 8, 'nav.deviceMemory': 4,
     'nav.cpuPerformance': 0, 'nav.maxTouchPoints': 0,
     'nav.connection': {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
                        'saveData': False},
@@ -118,7 +119,7 @@ GOOD_FP = {
     'media.device_blank': True, 'media.gum': 'pending',
     'media.gum_overconstrained': 'pending', 'media.sink_default': 'resolved',
     'media.clock_running': True, 'media.clock_start_ms': 40,
-    'perf.jsHeapSizeLimit': 3760000000, 'perf.heap_rounded': True,
+    'perf.jsHeapSizeLimit': 2330000000, 'perf.heap_rounded': True,
     'perf.heap_cached': True,
     'eme.clearkey': 'NotSupportedError', 'eme.widevine': 'NotSupportedError',
     'eme.playready': 'NotSupportedError',
@@ -156,6 +157,18 @@ GOOD_FP = {
                            'Liberation Sans', 'LiberationSans-Bold',
                            'Liberation Serif Italic', 'Noto Sans',
                            'NotoSans-Bold'],
+    # MoltNet's bundled font set: every name visible, generics mapped,
+    # per-script fallback widths (sans-serif, serif, monospace) and local().
+    'fonts.moltnet_set': list(ex.MOLTNET_FONTS),
+    'fonts.generic_map': dict(ex.MOLTNET_GENERIC_MAP),
+    'fonts.fallback_widths': {'Arab': [61.54, 61.54, 61.54],
+                              'Hani': [128, 128, 128],
+                              'Emoji': [190.97, 190.97, 190.97]},
+    'fonts.local_bundled': ['Arimo-Regular', 'Arimo Italic', 'Tinos-Bold',
+                            'Tinos Bold Italic', 'Cousine-Regular',
+                            'NotoSans-Regular', 'Noto Naskh Arabic Regular',
+                            'NotoSansMath-Regular', 'NotoSansCJKjp-Thin',
+                            'Noto Color Emoji'],
     'storage.enforced_quota': 60 * 1024 ** 2,
     'pixels.video_frame_format': 'I420',
     'pixels.video_frame': {'format': 'I420',
@@ -163,6 +176,19 @@ GOOD_FP = {
                            'rgba': 'ee1de75109443c46529f39c1'},
     'pixels.encoded_opus_48k': {'chunks': 26, 'bytes': 4283,
                                 'hash': 'bbcab34ea3e06d12e5058b12'},
+    'cpu.wasm_relaxed_simd': False, 'cpu.wasm_simd': True,
+    'cpu.math': '5d0c1e7a92b4f3608e2d17c4',
+    'cpu.math_cross_arch': 'b81f0d6e2a94c3570e1d8f42',
+    'cpu.css_math': ['412', '287.25', '903.5', '78', '650.5', '233',
+                     '596', '138', '216', '936', '61', '440',
+                     '488.375deg', '311.25deg', '904.5deg', '127.75deg'],
+    'cpu.dommatrix': '6e3a90c1d2b7f4085a1c9e37',
+    'audio.math': {'response': 'c57e1a2b9d04f8361e7a0b5c',
+                   'reduction': -17.30476188659668},
+    'pixels.p3_readback': {'rgba': '3f9a61c2d84e0b7a5c1e9f20',
+                           'i420': 'a07b3e95c6d2148f0e6b7d31'},
+    'audio.decoded_vorbis': {'frames': 12288,
+                             'hash': '9c41e2b07d35a8f61e04c2b9'},
     'canvas.hash': '0123456789abcdef01234567',
 }
 
@@ -260,7 +286,7 @@ def manifest():
                           'in_consensus': True}],
                 'consensus_relays': 7000,
                 'tor_options': {'ConnLimit': '1000',
-                                'MaxClientCircuitsPending': '64'}}},
+                                'MaxClientCircuitsPending': '256'}}},
             {'name': 'identity', 'start': t(80), 'end': t(90), 'data': {
                 'regular_cookie_in_moltnet': False,
                 'cookie_after_close': False,

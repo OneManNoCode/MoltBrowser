@@ -1,0 +1,36 @@
+MoltBrowser patch for third_party/blink/renderer/platform/audio/delay.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/audio/delay.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/audio/delay.cc b/third_party/blink/renderer/platform/audio/delay.cc
+index 13b38eb0fde4352f55486d62f820230237787173..25d88099dcbe6b6de498dd5ad27a005ba6c01592 100644
+--- a/third_party/blink/renderer/platform/audio/delay.cc
++++ b/third_party/blink/renderer/platform/audio/delay.cc
+@@ -34,6 +34,7 @@
+ #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+ #include "third_party/blink/renderer/platform/audio/vector_math.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -163,9 +164,14 @@ void Delay::ProcessARate(base::span<const float> source,
+   CopyToCircularBuffer(buffer_.as_span(), write_index_, source,
+                        frames_to_process);
+ 
+-  size_t frames_processed;
+-  std::tie(frames_processed, write_index_) =
+-      ProcessARateVector(destination, frames_to_process);
++  size_t frames_processed = 0;
++  // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch), only the
++  // scalar code, which is the same on x86 and Arm; the SSE2 and NEON code
++  // computes the read positions in single precision.
++  if (!gfx::molt_math::IsPortable()) {
++    std::tie(frames_processed, write_index_) =
++        ProcessARateVector(destination, frames_to_process);
++  }
+ 
+   if (frames_processed < frames_to_process) {
+     write_index_ = ProcessARateScalar(frames_processed, write_index_,

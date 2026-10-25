@@ -133,6 +133,7 @@
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_keyed_service_factory.h"
 #include "chrome/browser/metrics/profile_metrics_service_factory.h"
 #include "chrome/browser/metrics/variations/google_groups_manager_factory.h"
+#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/keys/molt_os_crypt_startup.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
@@ -1183,6 +1184,9 @@ void ChromeBrowserMainExtraPartsProfiles::
   // MoltBrowser: which sites may use the on-device model through the
   // built-in AI APIs (registers its profile pref).
   molt_ai::web_ai::WebAISitePermissionsFactory::GetInstance();
+  // MoltBrowser: which frames of other sites may offer their tools to the
+  // agents, per page (registers its profile pref).
+  molt_ai::FrameToolPermissionsFactory::GetInstance();
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   metrics::DesktopProfileSessionDurationsServiceFactory::GetInstance();
 #endif

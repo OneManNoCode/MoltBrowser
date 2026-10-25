@@ -16,8 +16,8 @@ from /resolve/<revision>/<file> and rejects any file whose size or SHA-256
 differs. Chat models without a hash are downloaded as "unverified"; the
 memory search model is not offered at all until it is pinned (fail closed).
 
-A model that sees images also has a vision projector entry
-(kVisionProjectors in browser_ai_runtime.cc): its /*mmproj_sha256=*/ and
+A model that sees images or hears audio also has a projector entry
+(kProjectors in browser_ai_runtime.cc): its /*mmproj_sha256=*/ and
 /*mmproj_size=*/ are pinned from the same API reply, so from the same
 revision as the model. Both are pinned or neither: if the projector isn't
 in the reply, the model isn't pinned either. Such a model is offered only
@@ -67,8 +67,8 @@ ENTRY_RE = re.compile(
     r'/\*sha256=\*/"(?P<sha256>[^"]*)",\s*'
     r'/\*size=\*/(?P<size>\d+)ULL', re.S)
 
-# One vision projector entry: {"<model id>", "<file>",
-#   /*mmproj_sha256=*/"...", /*mmproj_size=*/NULL},
+# One projector entry: {"<model id>", "<file>",
+#   /*mmproj_sha256=*/"...", /*mmproj_size=*/NULL, /*images=*/..., ...},
 PROJECTOR_RE = re.compile(
     r'\{"(?P<id>[^"]+)",\s*'
     r'"(?P<file>[^"]+)",(?P<file_tail>[^\n]*)\n\s*'

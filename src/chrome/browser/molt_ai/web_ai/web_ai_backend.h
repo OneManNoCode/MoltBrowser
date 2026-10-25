@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "chrome/browser/molt_ai/runtime/model_audio.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_conversation.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
@@ -26,8 +27,9 @@ namespace molt_ai::web_ai {
 // One generation for a page. The text fields carry molt_ai::ChatPrompt's
 // trust labels: system_prompt and context_preamble are browser-authored;
 // context, history and user_message are page text (neutralized by the
-// inference service). Images are the page's too, and go with user turns
-// only, at most kMaxContextImages in all.
+// inference service). Images and audio clips are the page's too, and go
+// with user turns only, at most kMaxContextImages and kMaxContextAudio in
+// all.
 struct GenerationJob {
   GenerationJob();
   GenerationJob(GenerationJob&&);
@@ -47,6 +49,9 @@ struct GenerationJob {
   std::vector<std::vector<ModelImage>> history_images;
   std::string user_message;
   std::vector<ModelImage> user_images;
+  // Empty, or one entry per |history| entry: its audio clips.
+  std::vector<std::vector<ModelAudio>> history_audio;
+  std::vector<ModelAudio> user_audio;
 
   uint32_t max_output_tokens = 0;
   Sampling sampling = kDefaultSampling;
@@ -80,9 +85,12 @@ class WebAIBackend {
  public:
   using DeviceCallback = base::OnceCallback<void(DeviceFacts)>;
   // |context_tokens|: the loaded model's context window (0 if unknown).
-  // |sees_images|: the loaded model has its vision projector (image input).
-  using PrepareCallback = base::OnceCallback<
-      void(bool ok, uint32_t context_tokens, bool sees_images)>;
+  // |sees_images|: the loaded model has its vision projector (image input);
+  // |hears_audio|: its projector has an audio encoder (audio input).
+  using PrepareCallback = base::OnceCallback<void(bool ok,
+                                                  uint32_t context_tokens,
+                                                  bool sees_images,
+                                                  bool hears_audio)>;
   using ImagesCallback =
       base::OnceCallback<void(std::optional<std::vector<ModelImage>>)>;
   using ChunkCallback = base::RepeatingCallback<void(const std::string&)>;
@@ -109,9 +117,11 @@ class WebAIBackend {
   virtual bool WebApisSwitchOn();
 
   // Loads the model pages use (PickWebModel(), preferring one that sees
-  // images if |wants_images|) if none is loaded. Only called once the user
-  // allowed the site.
-  virtual void PrepareModel(bool wants_images, PrepareCallback callback) = 0;
+  // images if |wants_images| and hears audio if |wants_audio|) if none is
+  // loaded. Only called once the user allowed the site.
+  virtual void PrepareModel(bool wants_images,
+                            bool wants_audio,
+                            PrepareCallback callback) = 0;
 
   // Queues |job|. Text arrives through |on_chunk|, then |on_done| runs once.
   // Never calls back synchronously. Returns a non-zero id for Cancel().
@@ -133,9 +143,9 @@ class WebAIBackend {
   virtual void PrepareImages(std::vector<SkBitmap> bitmaps,
                              ImagesCallback callback) = 0;
 
-  // Model images held for pages, per site and in total
-  // (kMaxHeldImagesPerSite, kMaxHeldImagesTotal): false, and nothing held,
-  // over either cap.
+  // Model images (and audio clips, each counted as one image) held for
+  // pages, per site and in total (kMaxHeldImagesPerSite,
+  // kMaxHeldImagesTotal): false, and nothing held, over either cap.
   virtual bool TryHoldImages(const std::string& site_key, size_t count) = 0;
   virtual void ReleaseImages(const std::string& site_key, size_t count) = 0;
 };

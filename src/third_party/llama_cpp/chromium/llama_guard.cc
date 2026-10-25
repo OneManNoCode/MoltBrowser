@@ -130,6 +130,55 @@ uint32_t ReadLayerCount(FILE* file) noexcept {
   return layers;
 }
 
+ProjectorFacts::ProjectorFacts() = default;
+ProjectorFacts::~ProjectorFacts() = default;
+ProjectorFacts::ProjectorFacts(const ProjectorFacts&) = default;
+ProjectorFacts& ProjectorFacts::operator=(const ProjectorFacts&) = default;
+
+ProjectorFacts ReadProjectorFacts(FILE* file) noexcept {
+  ProjectorFacts facts;
+  if (!file || std::fseek(file, 0, SEEK_SET) != 0) return facts;
+  gguf_context* gguf = nullptr;
+  try {
+    gguf_init_params params;
+    params.no_alloc = true;
+    params.ctx = nullptr;
+    gguf = gguf_init_from_file_ptr(file, params);
+    if (gguf) {
+      auto get_bool = [gguf](const char* key) {
+        const int64_t k = gguf_find_key(gguf, key);
+        return k >= 0 && gguf_get_kv_type(gguf, k) == GGUF_TYPE_BOOL &&
+               gguf_get_val_bool(gguf, k);
+      };
+      auto get_string = [gguf](const char* key) {
+        const int64_t k = gguf_find_key(gguf, key);
+        if (k < 0 || gguf_get_kv_type(gguf, k) != GGUF_TYPE_STRING) {
+          return std::string();
+        }
+        const char* value = gguf_get_val_str(gguf, k);
+        return value ? std::string(value) : std::string();
+      };
+      facts.has_vision_encoder = get_bool("clip.has_vision_encoder");
+      facts.has_audio_encoder = get_bool("clip.has_audio_encoder");
+      facts.audio_projector_type = get_string("clip.projector_type");
+      if (facts.audio_projector_type.empty()) {
+        facts.audio_projector_type = get_string("clip.audio.projector_type");
+      }
+      const int64_t k =
+          gguf_find_key(gguf, "clip.audio.projector.stack_factor");
+      if (k >= 0 && gguf_get_kv_type(gguf, k) == GGUF_TYPE_UINT32) {
+        facts.audio_stack_factor = gguf_get_val_u32(gguf, k);
+      }
+      facts.read = true;
+    }
+  } catch (...) {
+    facts = ProjectorFacts();
+  }
+  if (gguf) gguf_free(gguf);
+  if (std::fseek(file, 0, SEEK_SET) != 0) facts = ProjectorFacts();
+  return facts;
+}
+
 GpuDevice::GpuDevice() = default;
 GpuDevice::~GpuDevice() = default;
 GpuDevice::GpuDevice(const GpuDevice&) = default;

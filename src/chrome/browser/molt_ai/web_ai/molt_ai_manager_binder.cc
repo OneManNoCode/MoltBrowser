@@ -183,11 +183,13 @@ class FrameEnvironment : public WebAIEnvironment {
   ContextFacts GetContextFacts(WebAIApi api) override {
     ContextFacts facts;
     facts.feature_enabled = IsApiFeatureEnabled(api);
-    // As upstream's AIManager: image input needs the multimodal feature.
+    // As upstream's AIManager: image and audio input need the multimodal
+    // feature.
     facts.image_input_enabled =
         api == WebAIApi::kLanguageModel &&
         base::FeatureList::IsEnabled(
             blink::features::kAIPromptAPIMultimodalInput);
+    facts.audio_input_enabled = facts.image_input_enabled;
     Profile* profile = Profile::FromBrowserContext(browser_context_);
     facts.moltnet = tor::IsMoltNetProfile(profile);
     // Translator runs on the same model as the other APIs, so the policies

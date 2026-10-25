@@ -1,0 +1,35 @@
+MoltBrowser patch for sandbox/policy/win/sandbox_win.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/sandbox/policy/win/sandbox_win.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/sandbox/policy/win/sandbox_win.cc b/sandbox/policy/win/sandbox_win.cc
+index b6eccdade4f4d6d72acc975b097843e7f64b003a..c04ce8d9efb6ecbb77edc7a8489a7adfee84403c 100644
+--- a/sandbox/policy/win/sandbox_win.cc
++++ b/sandbox/policy/win/sandbox_win.cc
+@@ -59,6 +59,7 @@
+ #include "sandbox/policy/sandbox_type.h"
+ #include "sandbox/policy/switches.h"
+ #include "sandbox/policy/win/lpac_capability.h"
++#include "sandbox/policy/win/molt_job_memory_limit.h"  // MoltBrowser
+ #include "sandbox/policy/win/sandbox_diagnostics.h"
+ #include "sandbox/win/src/app_container.h"
+ #include "sandbox/win/src/process_mitigations.h"
+@@ -576,6 +577,16 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
+     return result;
+   }
+ 
++#if defined(ARCH_CPU_64_BITS)
++  // MoltBrowser: a MoltNet renderer may commit the same memory on every
++  // machine, 8 GiB instead of 1 TB (win/molt_job_memory_limit.h).
++  if (sandbox_type == Sandbox::kRenderer &&
++      molt_win::IsMoltNetRenderer(cmd_line)) {
++    config->SetJobMemoryLimit(
++        static_cast<size_t>(molt_win::kMoltNetRendererJobMemoryLimit));
++  }
++#endif
++
+   if (sandbox_type == Sandbox::kGpu) {
+     config->SetLockdownDefaultDacl();
+     config->AddRestrictingRandomSid();

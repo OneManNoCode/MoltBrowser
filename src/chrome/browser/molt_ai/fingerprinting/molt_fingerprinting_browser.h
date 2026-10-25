@@ -39,16 +39,23 @@ class RenderProcessHost;
 
 namespace molt_ai::fingerprinting {
 
+// Called from ChromeContentBrowserClient::InitOnUIThread at browser startup:
+// opens MoltNet's bundled fonts in the background once startup-critical work
+// is done (molt_net_fonts.h).
+void InitializeAtBrowserStartup();
+
 // Called from ChromeContentBrowserClient::AppendExtraCommandLineSwitches for
 // renderer processes. Appends --molt-fingerprinting-mode for `host`'s
 // BrowserContext, unless the MoltFingerprintingProtection feature is
-// disabled. No-op for a null host.
+// disabled, and for MoltNet (kUniform) --disable-skia-runtime-opts and,
+// unless this installation has no bundled font set, --molt-net-fonts. No-op
+// for a null host.
 void AppendRendererSwitches(content::RenderProcessHost* host,
                             base::CommandLine* command_line);
 
 // Called from ChromeContentBrowserClient::RenderProcessWillLaunch (every
 // launch, relaunches included). Unless the mode is kOff, sends the session
-// seed.
+// seed; to a MoltNet renderer also the bundled fonts, now or once open.
 void InitializeRenderer(content::RenderProcessHost* host);
 
 // kUniform for the MoltNet (Tor) profile, kFarble for every other profile

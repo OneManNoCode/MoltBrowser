@@ -514,6 +514,41 @@ TEST(ChatActionsTest, ToolProposalsAlwaysAsk) {
             Verdict::kRefuse);
 }
 
+TEST(ChatActionsTest, AnotherSitesFrameToolNamesBothSitesAndKeepsSecrets) {
+  Observation o = SampleObservation();
+  agent_tools::SiteTool widget = ChatTool(
+      "search", R"({"properties":{"q":{"type":"string","maxLength":50}}})",
+      /*read_only=*/true, /*frame=*/2);
+  widget.cross_origin = true;
+  widget.frame_origin = "https://widget.example";
+  widget.frame_text = agent_tools::FrameText("https://widget.example", "/w");
+  std::vector<agent_tools::SiteTool> tools;
+  tools.push_back(std::move(widget));
+  AddChatSiteTools(std::move(tools), &o);
+  ASSERT_EQ(o.tools.size(), 1u);
+  const Scope scope = Scope::ForRequest(Shop(), "");
+  AgentAction call = ParseToolCall(
+      R"({"reason":"r","action":"CALL_TOOL","tool":"t1","arguments":{"q":"x"}})",
+      o);
+  EXPECT_EQ(DescribeProposal(call, o),
+            "Run https://widget.example's tool \"search\" in its frame "
+            "https://widget.example/w with q = \"x\"");
+  const Check c = CheckProposal(call, o, scope, Shop(), {});
+  EXPECT_EQ(c.verdict, Verdict::kAsk);
+  // Read-only or not, it asks, naming both sites.
+  EXPECT_EQ(c.message,
+            "Runs https://widget.example's tool \"search\" in its frame "
+            "https://widget.example/w on https://shop.example: it is another "
+            "site's tool");
+  // What looks like a secret never goes to it.
+  AgentAction secret = ParseToolCall(
+      R"({"reason":"r","action":"CALL_TOOL","tool":"t1",)"
+      R"("arguments":{"q":"my password is hunter2"}})",
+      o);
+  EXPECT_EQ(CheckProposal(secret, o, scope, Shop(), {}).verdict,
+            Verdict::kRefuse);
+}
+
 TEST(ChatActionsTest, ToolProposalsRunOnlyOnTheUsersClick) {
   const Observation o = WithTools();
   const Scope scope = Scope::ForRequest(Shop(), "");

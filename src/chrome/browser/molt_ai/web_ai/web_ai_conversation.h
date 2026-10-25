@@ -20,6 +20,9 @@
 //    newest, so the context keeps the pixels of the newest ones only; an
 //    older image still counts against the quota (it was part of the turn)
 //    until its turn is evicted.
+//  * Audio clips (audio input) the same way: with user turns, after their
+//    images, AudioInputTokens() each, the samples of the newest
+//    kMaxContextAudio kept.
 
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_CONVERSATION_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_CONVERSATION_H_
@@ -31,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include "chrome/browser/molt_ai/runtime/model_audio.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
 
 namespace molt_ai::web_ai {
@@ -40,6 +44,9 @@ enum class Role { kUser, kAssistant };
 // The most images a request shows the model (the inference service's
 // kMaxImagesPerRequest), and so the most a context keeps the pixels of.
 inline constexpr size_t kMaxContextImages = 4;
+// The most audio clips a request gives the model (the inference service's
+// kMaxAudioPerRequest), and so the most a context keeps the samples of.
+inline constexpr size_t kMaxContextAudio = 4;
 
 struct Turn {
   Turn();
@@ -54,14 +61,21 @@ struct Turn {
   // A user turn's images, in the page's order (shown to the model before
   // the text). May be emptied when newer images replace them (see above).
   std::vector<ModelImage> images;
-  // EstimateMessageTokens(text) plus kImageInputTokens per image the turn
-  // was made with.
+  // A user turn's audio clips, in the page's order (given to the model
+  // after the images, before the text). May be emptied when newer clips
+  // replace them, as images are.
+  std::vector<ModelAudio> audio;
+  // EstimateMessageTokens(text) plus kImageInputTokens per image and
+  // AudioInputTokens() per clip the turn was made with.
   uint32_t tokens = 0;
 };
 
 // A turn of |text| that will hold |image_count| images (counted now; the
-// pixels are added to Turn::images once they are ready).
-Turn MakeTurn(Role role, std::string text, size_t image_count = 0);
+// pixels are added to Turn::images once they are ready) and holds |audio|.
+Turn MakeTurn(Role role,
+              std::string text,
+              size_t image_count = 0,
+              std::vector<ModelAudio> audio = {});
 
 class Conversation {
  public:
@@ -81,6 +95,8 @@ class Conversation {
   const std::deque<Turn>& turns() const { return turns_; }
   // The images whose pixels the context keeps (at most kMaxContextImages).
   size_t image_count() const;
+  // The clips whose samples the context keeps (at most kMaxContextAudio).
+  size_t audio_count() const;
 
   struct Plan {
     // False: the system prompt and the new turns alone exceed the quota.
@@ -93,8 +109,9 @@ class Conversation {
   Plan PlanAdd(const std::vector<Turn>& added) const;
 
   // Commits |added|, evicting |plan.evict| turns first, then lets go of the
-  // pixels of all but the newest kMaxContextImages images. |plan| must come
-  // from PlanAdd(added) on the current state and fit.
+  // pixels of all but the newest kMaxContextImages images (and the samples
+  // of all but the newest kMaxContextAudio clips). |plan| must come from
+  // PlanAdd(added) on the current state and fit.
   void Add(const Plan& plan, std::vector<Turn> added);
 
   // Adds the model's reply, evicting the oldest turns (never the reply) if
@@ -103,9 +120,9 @@ class Conversation {
 
   // What the runtime gets for the context as it would be after
   // Add(plan, added): runs of turns with the same role merged (chat
-  // templates expect alternating roles; their images joined in order), and
-  // the trailing user turn as the new message. Only the newest
-  // kMaxContextImages images are in it (copies).
+  // templates expect alternating roles; their images and clips joined in
+  // order), and the trailing user turn as the new message. Only the newest
+  // kMaxContextImages images and kMaxContextAudio clips are in it (copies).
   struct Shape {
     Shape();
     Shape(Shape&&);
@@ -117,12 +134,17 @@ class Conversation {
     std::vector<std::vector<ModelImage>> history_images;
     std::string user_message;
     std::vector<ModelImage> user_images;
+    // Each history entry's audio clips: empty, or one entry per history
+    // entry.
+    std::vector<std::vector<ModelAudio>> history_audio;
+    std::vector<ModelAudio> user_audio;
   };
   Shape ShapeAfter(const Plan& plan, const std::vector<Turn>& added) const;
 
  private:
-  // Lets go of the pixels of all but the newest kMaxContextImages images.
-  void KeepNewestImages();
+  // Lets go of the pixels of all but the newest kMaxContextImages images,
+  // and of the samples of all but the newest kMaxContextAudio clips.
+  void KeepNewestMedia();
 
   uint32_t input_quota_;
   std::string system_prompt_;

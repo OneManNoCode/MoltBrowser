@@ -1,0 +1,34 @@
+MoltBrowser patch for ui/gfx/geometry/matrix44.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/ui/gfx/geometry/matrix44.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/ui/gfx/geometry/matrix44.cc b/ui/gfx/geometry/matrix44.cc
+index 4b8336c25cc2f08dae47c2a80ef35ca1b51132d7..035abf61bd0907b9c6fb17bc8e52d68ca57a6f13 100644
+--- a/ui/gfx/geometry/matrix44.cc
++++ b/ui/gfx/geometry/matrix44.cc
+@@ -13,6 +13,7 @@
+ #include "base/containers/span.h"
+ #include "base/containers/span_writer.h"
+ #include "ui/gfx/geometry/decomposed_transform.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace gfx {
+ 
+@@ -546,11 +547,12 @@ std::optional<DecomposedTransform> Matrix44::Decompose2d() const {
+   // sin(R) = 2*z*w
+   // But sin(2a) = 2 sin(a) cos(a)
+   // sin(R) = 2 sin(R/2) cos(R/2) = 2*z*w ==> w = cos(R/2)
+-  double angle = std::atan2(m12, m11);
++  // MoltBrowser: portable in MoltNet (molt_math.h).
++  double angle = molt_math::Atan2(m12, m11);
+   decomp.quaternion.set_x(0);
+   decomp.quaternion.set_y(0);
+-  decomp.quaternion.set_z(std::sin(0.5 * angle));
+-  decomp.quaternion.set_w(std::cos(0.5 * angle));
++  decomp.quaternion.set_z(molt_math::Sin(0.5 * angle));
++  decomp.quaternion.set_w(molt_math::Cos(0.5 * angle));
+ 
+   return decomp;
+ }

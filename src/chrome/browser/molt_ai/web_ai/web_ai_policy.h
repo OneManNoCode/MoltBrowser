@@ -5,8 +5,9 @@
 // (LanguageModel, Summarizer, Writer, Rewriter, Translator), backed by the
 // user's own on-device model: what availability() reports, what create()
 // does, how big a session may be, how page text is counted, which model
-// serves pages, and the per-site limits. Standard library only, so molt_ai_unittests tests it
-// without a browser. Design: docs/design/WEB_AI_APIS.md.
+// serves pages, and the per-site limits. Standard library only, so
+// molt_ai_unittests tests it without a browser. Design:
+// docs/design/WEB_AI_APIS.md.
 //
 // Fingerprinting: everything a page can read back from here is a small,
 // uniform set of values that doesn't depend on which model the user has.
@@ -17,10 +18,16 @@
 //  * inputQuota: one of two buckets (kSmallInputQuota, kLargeInputQuota).
 //  * Token counts: EstimateTokens(), from the text alone, never the model's
 //    tokenizer (whose counts would name the model); an image counts
-//    kImageInputTokens, whatever its size.
+//    kImageInputTokens, whatever its size; an audio clip
+//    AudioInputTokens() of its length.
 //  * Image input: availability() answers the same with or without it; only
 //    create(), on a site the user allowed, can fail because the model in
 //    use doesn't see images.
+//  * Audio input: a site the user hasn't allowed gets the text answer. A
+//    site the user allowed gets "unavailable" when no downloaded model
+//    hears audio: one bit more than text, and only for sites the user
+//    allowed. A build whose catalogue offers no model that hears audio
+//    answers "unavailable" to every site (the same for every user).
 
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_POLICY_H_
@@ -66,8 +73,8 @@ enum class UnavailableReason {
   kDisabled,
   // BuiltInAIAPIsEnabled or GenAILocalFoundationalModelSettings policy.
   kEnterprisePolicy,
-  // Audio input, tools, or other options the on-device models can't serve
-  // (image input with the multimodal-input feature off).
+  // Tools, or other options the on-device models can't serve (image or
+  // audio input with the multimodal-input feature off).
   kUnsupportedOptions,
   // A language tag that isn't a well-formed BCP 47 tag.
   kUnsupportedLanguage,
@@ -75,6 +82,9 @@ enum class UnavailableReason {
   kBlockedByUser,
   // This device can't run any on-device model (CPU, platform, RAM).
   kDeviceNotEligible,
+  // Audio input, and no model that hears audio is in the catalogue, or (on
+  // a site the user allowed) downloaded.
+  kNoAudioModel,
 };
 
 // Facts about the document or worker asking.
@@ -98,6 +108,8 @@ struct ContextFacts {
   // upstream's AIManager checks it). The same for every user with the same
   // flags; whether a model can see images is never part of availability().
   bool image_input_enabled = false;
+  // LanguageModel audio input: the same feature as image input.
+  bool audio_input_enabled = false;
 };
 
 // Facts about this device, from the on-device runtime and settings.json.
@@ -111,6 +123,11 @@ struct DeviceFacts {
   // settings.json "web_ai_apis" (default true): the user's switch for
   // these APIs.
   bool web_apis_enabled = false;
+  // The catalogue offers a model that hears audio: a fact of the build (its
+  // pinned models), the same for every user of it.
+  bool audio_model_offered = false;
+  // A downloaded model hears audio. Only a site the user allowed learns it.
+  bool audio_model_installed = false;
 };
 
 // The context may use the APIs at all (device and consent aside).
@@ -135,6 +152,8 @@ struct AvailabilityInput {
   bool options_supported = true;
   // Every language tag in the options is well formed.
   bool languages_supported = true;
+  // LanguageModel expectedInputs has "audio" (and audio input is enabled).
+  bool wants_audio = false;
   SiteConsent consent = SiteConsent::kAsk;
 };
 
@@ -271,9 +290,24 @@ bool IsUsableImageSource(int64_t width, int64_t height);
 // Model images held in the browser for pages (those of requests not
 // answered yet, and those kept in sessions' contexts), per site and in
 // total: at most 1.7 MB each (768 x 768 RGB), so about 82 MB for every page
-// together. A request over either cap fails.
+// together. A request over either cap fails. An audio clip counts as one
+// image against these caps (at most 0.96 MB: 30 s of 16 kHz 16-bit mono).
 inline constexpr size_t kMaxHeldImagesPerSite = 16;
 inline constexpr size_t kMaxHeldImagesTotal = 48;
+
+// ---------------------------------------------------------------------------
+// Audio input (LanguageModel expectedInputs "audio")
+// ---------------------------------------------------------------------------
+
+// What one audio clip counts against inputQuota: from its length alone (the
+// page knows it), whatever the model. At least kAudioInputMinTokens, else
+// kAudioInputTokensPerSecond per started second: never less than the
+// catalogue's audio model uses (it encodes a clip in 30-second windows of
+// 375 tokens, and a clip of exactly 30 s in two), so at most 750 for the
+// longest clip (engine/audio_input.h kMaxAudioSeconds).
+inline constexpr uint32_t kAudioInputMinTokens = 375;
+inline constexpr uint32_t kAudioInputTokensPerSecond = 25;
+uint32_t AudioInputTokens(uint32_t seconds);
 
 // ---------------------------------------------------------------------------
 // Counting page text
@@ -361,24 +395,33 @@ struct ModelCandidate {
   uint64_t ram_required_bytes = 0;
   // It has a vision projector (image input).
   bool sees_images = false;
+  // Its projector has an audio encoder (audio input).
+  bool hears_audio = false;
 };
 
 // The model a page's request runs on:
 //  1. the model already loaded (the chat's), so a page never swaps it, even
-//     for images it can't see;
+//     for images it can't see or audio it can't hear;
 //  2. else settings.json's default_model, if downloaded (and, when
-//     |wants_images|, if it sees images);
-//  3. else, when |wants_images|, the smallest downloaded model that sees
-//     images;
+//     |wants_images| or |wants_audio|, if it sees images or hears audio as
+//     wanted);
+//  3. else, when |wants_images| or |wants_audio|, the smallest downloaded
+//     model that does what is wanted;
 //  4. else the default, then the smallest downloaded model (by RAM, then
 //     id).
 // Empty if nothing is downloaded.
 std::string PickWebModel(std::string_view loaded_model_id,
                          std::string_view default_model_id,
                          const std::vector<ModelCandidate>& models,
-                         bool wants_images = false);
+                         bool wants_images = false,
+                         bool wants_audio = false);
 
 bool AnyModelInstalled(const std::vector<ModelCandidate>& models);
+
+// Some catalogue model hears audio (DeviceFacts::audio_model_offered);
+// some downloaded one does (DeviceFacts::audio_model_installed).
+bool AnyModelHearsAudio(const std::vector<ModelCandidate>& models);
+bool AnyInstalledModelHearsAudio(const std::vector<ModelCandidate>& models);
 
 // Some catalogue model needs no more than this device's RAM.
 bool AnyModelFits(const std::vector<ModelCandidate>& models,

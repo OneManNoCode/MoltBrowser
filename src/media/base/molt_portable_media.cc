@@ -11,6 +11,13 @@
 #include "build/build_config.h"
 #include "media/base/molt_portable_scale.h"
 #include "media/base/video_frame.h"
+#include "media/media_buildflags.h"
+
+#if BUILDFLAG(ENABLE_FFMPEG)
+extern "C" {
+#include <libavutil/cpu.h>
+}
+#endif
 
 // MoltBrowser's hook in third_party/opus/src/celt/celt.c.
 extern "C" void opus_moltbrowser_set_portable(int portable);
@@ -24,6 +31,11 @@ constinit std::atomic<bool> g_portable_media{false};
 void SetPortable(bool portable) {
   g_portable_media.store(portable, std::memory_order_relaxed);
   opus_moltbrowser_set_portable(portable ? 1 : 0);
+#if BUILDFLAG(ENABLE_FFMPEG)
+  // No CPU flags: FFmpeg's decoders use their C code. -1 detects the CPU's
+  // flags again, as at start-up.
+  av_force_cpu_flags(portable ? 0 : -1);
+#endif
 }
 
 }  // namespace

@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_fonts.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/font_access/font_metadata.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -146,6 +147,27 @@ void FontAccess::DidGetEnumerationResponse(
       // input into UTF8. This will still allow exact matches to occur.
       selection_utf8.insert(postscript_name.Utf8());
     }
+  }
+
+  // MoltBrowser: in MoltNet, the bundled set's faces, whatever the OS has
+  // (moltnet_fonts.h): the fonts its pages can use.
+  if (molt_fingerprinting::BundledFontsActive()) {
+    HeapVector<Member<FontMetadata>> bundled;
+    for (const auto& face : molt_fingerprinting::BundledFontFaces()) {
+      const std::string postscript_name(face.postscript_name);
+      if (has_postscript_name_filter &&
+          !selection_utf8.contains(postscript_name)) {
+        continue;
+      }
+      bundled.push_back(MakeGarbageCollected<FontMetadata>(FontEnumerationEntry{
+          .postscript_name = String::FromUtf8(face.postscript_name),
+          .full_name = String::FromUtf8(face.full_name),
+          .family = String::FromUtf8(face.family),
+          .style = String::FromUtf8(face.style),
+      }));
+    }
+    resolver->Resolve(std::move(bundled));
+    return;
   }
 
   base::span<const uint8_t> mapped_mem(mapping);

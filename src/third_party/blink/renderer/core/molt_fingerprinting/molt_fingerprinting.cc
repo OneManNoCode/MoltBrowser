@@ -26,7 +26,9 @@
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_device.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_fonts.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_network.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.h"
@@ -58,6 +60,14 @@
 namespace blink {
 
 // static
+void WebMoltFingerprinting::ConfigureBeforeBlinkInitialization(Mode mode) {
+  if (mode == Mode::kUniform) {
+    // V8 and the colour code run as on one fixed machine (moltnet_cpu.h).
+    molt_fingerprinting::PinUniformMachineBeforeV8();
+  }
+}
+
+// static
 void WebMoltFingerprinting::Configure(Mode mode) {
   molt_fingerprinting::Mode internal = molt_fingerprinting::Mode::kOff;
   switch (mode) {
@@ -78,6 +88,19 @@ void WebMoltFingerprinting::Configure(Mode mode) {
 void WebMoltFingerprinting::SetSessionSeed(
     base::span<const uint8_t> session_seed) {
   molt_fingerprinting::SetSessionSeed(session_seed);
+}
+
+// static
+void WebMoltFingerprinting::ExpectBundledFonts() {
+  // MoltNet only (moltnet_fonts.h).
+  if (molt_fingerprinting::GetMode() == molt_fingerprinting::Mode::kUniform) {
+    molt_fingerprinting::ExpectBundledFonts();
+  }
+}
+
+// static
+void WebMoltFingerprinting::SetBundledFontFiles(std::vector<base::File> files) {
+  molt_fingerprinting::SetBundledFontFiles(std::move(files));
 }
 
 namespace molt_fingerprinting {
@@ -611,6 +634,7 @@ void ResetForTesting() {
   g_configured.store(false);
   g_have_seed.store(false, std::memory_order_release);
   g_seed = {};
+  ResetBundledFontsForTesting();
 }
 
 std::optional<Farbler> FarblerFor(ExecutionContext* context) {

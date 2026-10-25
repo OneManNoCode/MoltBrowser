@@ -5,6 +5,8 @@
 // that must not go on the renderer's command line.
 module molt_ai.fingerprinting.mojom;
 
+import "mojo/public/mojom/base/file.mojom";
+
 // Renderer side, one per renderer process, channel-associated: messages are
 // ordered with the rest of the renderer's channel traffic, so what the
 // browser sends at RenderProcessWillLaunch arrives before any navigation
@@ -16,6 +18,14 @@ interface FingerprintingConfiguration {
   // launch. Anything but 32 bytes is ignored, and only the first seed
   // counts. Until it arrives, contexts that need a key get a random one.
   SetSessionSeed(array<uint8> seed);
+
+  // MoltNet's bundled fonts, sent once per launch right after the seed, and
+  // only to renderers launched with --molt-net-fonts: every file of the set,
+  // opened read-only by the browser, in the order of the generated table
+  // (molt_net_fonts_table.h, moltnet_font_set_table.cc). The renderer never
+  // opens a font file itself. A list of the wrong length, or a file of the
+  // wrong size, is refused and the renderer keeps finding no fonts.
+  SetMoltNetFonts(array<mojo_base.mojom.ReadOnlyFile> files);
 };
 
 // Renderer side, one per frame (RenderFrame), frame-associated: the browser

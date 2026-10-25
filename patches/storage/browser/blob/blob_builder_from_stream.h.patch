@@ -1,0 +1,29 @@
+MoltBrowser patch for storage/browser/blob/blob_builder_from_stream.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/blob/blob_builder_from_stream.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/blob/blob_builder_from_stream.h b/storage/browser/blob/blob_builder_from_stream.h
+index d269ee02c17b09fcfda01c14f30d980ffe892076..4f648f90851ec186202c984215be92ea2ef3cfeb 100644
+--- a/storage/browser/blob/blob_builder_from_stream.h
++++ b/storage/browser/blob/blob_builder_from_stream.h
+@@ -67,6 +67,10 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobBuilderFromStream {
+ 
+   void Abort();
+ 
++  // MoltBrowser: the budget key the blob's memory counts to
++  // (molt_blob_budget_policy.h); call before Start().
++  void MoltSetBudgetKey(uint64_t key) { molt_budget_key_ = key; }
++
+  private:
+   class WritePipeToFileHelper;
+   class WritePipeToFutureDataHelper;
+@@ -161,6 +165,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobBuilderFromStream {
+ 
+   std::vector<scoped_refptr<ShareableBlobDataItem>> items_;
+   uint64_t current_total_size_ = 0;
++  uint64_t molt_budget_key_ = 0;  // MoltBrowser
+   base::WeakPtr<BlobMemoryController::QuotaAllocationTask> pending_quota_task_;
+   base::WeakPtrFactory<BlobBuilderFromStream> weak_factory_{this};
+ };

@@ -1,0 +1,49 @@
+MoltBrowser patch for net/socket/ssl_client_socket_impl.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/ssl_client_socket_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
+index f586acfe0f086bda8db1244fb5c054d8d90b732e..979c581808d414c378cfd3b2d056d0a60c02658b 100644
+--- a/net/socket/ssl_client_socket_impl.cc
++++ b/net/socket/ssl_client_socket_impl.cc
+@@ -55,6 +55,7 @@
+ #include "net/log/net_log_event_type.h"
+ #include "net/log/net_log_values.h"
+ #include "net/net_buildflags.h"
++#include "net/socket/molt_connection_budget.h"  // MoltBrowser
+ #include "net/ssl/cert_compression.h"
+ #include "net/ssl/openssl_ssl_util.h"
+ #include "net/ssl/ssl_cert_request_info.h"
+@@ -1163,14 +1164,23 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
+   // information from the server.
+   UNSAFE_BUFFERS(base::span sct_list(sct_list_raw, sct_list_len));
+ 
++  CertVerifier::RequestParams verify_params(
++      server_cert_,
++      ech_name_override.empty() ? host_and_port_.host() : ech_name_override,
++      ssl_config_.GetCertVerifyFlags(),
++      std::string(base::as_string_view(ocsp_response)),
++      std::string(base::as_string_view(sct_list)));
++  // MoltBrowser: in MoltNet, the site of this connection, which the
++  // certificate fetches the verification needs count against
++  // (net/cert/molt_cert_fetch_site.h).
++  if (context_->molt_carries_cert_fetch_site()) {
++    if (const MoltBudgetSite site =
++            MoltBudgetSiteFor(ssl_config_.network_anonymization_key)) {
++      verify_params.MoltSetCertFetchSite(site->Serialize());
++    }
++  }
+   cert_verification_result_ = context_->cert_verifier()->Verify(
+-      CertVerifier::RequestParams(
+-          server_cert_,
+-          ech_name_override.empty() ? host_and_port_.host() : ech_name_override,
+-          ssl_config_.GetCertVerifyFlags(),
+-          std::string(base::as_string_view(ocsp_response)),
+-          std::string(base::as_string_view(sct_list))),
+-      &server_cert_verify_result_,
++      verify_params, &server_cert_verify_result_,
+       base::BindOnce(&SSLClientSocketImpl::OnVerifyComplete,
+                      base::Unretained(this)),
+       &cert_verifier_request_, net_log_);

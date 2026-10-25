@@ -1205,6 +1205,125 @@ class HelperScan:
         return self.packages
 
 
+# ------------------------------------------------- MoltNet's bundled fonts
+
+FONTS_DIR = 'molt_fonts'
+FONTS_MANIFEST = os.path.join('tools', 'fonts', 'moltnet_fonts.json')
+
+
+def _font_manifest_module():
+    """tools/fonts/manifest.py of this tool's own repository (the rules)."""
+    sys.path.insert(0, os.path.join(REPO_ROOT, 'tools', 'fonts'))
+    try:
+        import manifest as font_manifest  # noqa: E402
+    finally:
+        sys.path.pop(0)
+    return font_manifest
+
+
+def font_set_packages(repo, payload=None, release=False, warn=None):
+    """MoltNet's bundled font set, from tools/fonts/moltnet_fonts.json in
+    `repo`: one package per font file and one for the set (its manifest and
+    licence texts), each with the manifest's pinned SHA-256. Every platform
+    ships the set (scripts/bundle-fonts.sh checks the pins when it installs
+    it). With a payload that has the set, every installed file is checked
+    against its pin and listed; an unexpected file fails. [] if `repo` has
+    no manifest."""
+    path = os.path.join(repo, FONTS_MANIFEST)
+    if not os.path.isfile(path):
+        return []
+    mf = _font_manifest_module()
+    try:
+        data = mf.load(path)
+    except mf.ManifestError as e:
+        raise Error('%s: %s' % (path, e)) from e
+    pending = [e['install_name'] for _, e in mf.all_entries(data)
+               if mf.is_pending(e)]
+    if pending:
+        msg = '%s has unpinned entries: %s' % (FONTS_MANIFEST,
+                                               ', '.join(pending))
+        if release:
+            raise Error(msg + ' (a release must not ship unverified files)')
+        if warn:
+            warn(msg)
+    licenses = {e['install_name']: e for e in data['licenses']}
+    installed = None
+    if payload is not None:
+        d = os.path.join(payload.helpers_root, FONTS_DIR)
+        if os.path.isdir(d):
+            installed = d
+        elif warn:
+            warn('%s has no %s folder; the font set is listed from %s only'
+                 % (payload.label, FONTS_DIR, FONTS_MANIFEST))
+    seen = set()
+
+    def checked(rel, entry):
+        """The installed file `rel`, checked against `entry`'s pin."""
+        if installed is None:
+            return None
+        p = os.path.join(installed, *rel.split('/'))
+        if not os.path.isfile(p):
+            raise Error('%s is missing from %s' % (rel, installed))
+        actual = file_digests(p)['SHA256']
+        if entry is not None and actual != entry['sha256']:
+            raise Error('%s: SHA-256 %s does not match the pin %s'
+                        % (p, actual, entry['sha256']))
+        seen.add(rel)
+        return p
+
+    set_pkg = Package(
+        'fonts:set', 'MoltNet font set', data['version'], purpose='OTHER',
+        license_raw=' AND '.join(sorted({e['spdx'] for e in licenses.values()})),
+        homepage=REPO_URL,
+        source_info='Pinned in %s (sources at fixed commits, each file by '
+                    'size and SHA-256); installed by scripts/bundle-fonts.sh.'
+                    % FONTS_MANIFEST,
+        comment='The fonts MoltNet windows draw text with, the same files on '
+                'every OS: the manifest and the licence texts of the fonts '
+                'listed with it.')
+    pkgs = [set_pkg]
+    for rel, entry in [(mf.INSTALLED_MANIFEST, None)] + [
+            ('%s/%s' % (mf.LICENSE_DIR, e['install_name']), e)
+            for e in data['licenses'] if not mf.is_pending(e)]:
+        p = checked(rel, entry)
+        if p:
+            payload.add_files(set_pkg, [p])
+    for entry in data['files']:
+        if mf.is_pending(entry):
+            continue
+        source = data['sources'][entry['source']]
+        faces = entry['faces']
+        families = sorted({f['family'] for f in faces})
+        version = faces[0]['version'] if faces else ''
+        version = re.sub(r'^Version\s+', '', version).split(';')[0].strip()
+        lic = licenses[entry['license']]
+        pkg = Package(
+            'fonts:' + entry['install_name'],
+            '%s (%s)' % (', '.join(families), entry['install_name']),
+            version or None, purpose='OTHER', license_raw=lic['spdx'],
+            download=mf.source_url(source, entry['path']),
+            homepage='https://github.com/%s' % source['repo'],
+            file_name=entry['install_name'],
+            checksums={'SHA256': entry['sha256']},
+            source_info='%s at commit %s, pinned in %s.'
+                        % (source['repo'], source['commit'], FONTS_MANIFEST),
+            comment='Font file of the MoltNet font set; licence text: %s/%s.'
+                    % (mf.LICENSE_DIR, lic['install_name']))
+        p = checked(entry['install_name'], entry)
+        if p:
+            payload.add_files(pkg, [p])
+        pkgs.append(pkg)
+    if installed is not None:
+        extra = sorted(
+            os.path.relpath(p, installed).replace(os.sep, '/')
+            for p in list_files(installed, skip_hidden_meta=False))
+        extra = [r for r in extra if r not in seen]
+        if extra:
+            raise Error('%s holds files the font manifest doesn\'t pin: %s'
+                        % (installed, ', '.join(extra[:5])))
+    return pkgs
+
+
 def read_provenance(d):
     """D/.bundle-provenance.json (scripts/macho_bundle_deps.py --provenance)."""
     path = os.path.join(d, '.bundle-provenance.json')
@@ -1584,6 +1703,13 @@ def collect_components(args, warn):
                     'staging folder) to list the bundled helpers' % args.platform)
     else:
         coverage += ' Bundled helpers: none scanned (no --payload).'
+    fonts = font_set_packages(repo, Payload(args.payload) if args.payload
+                              else None, args.release, warn)
+    if fonts:
+        components.extend(fonts)
+        coverage += (' MoltNet font set: from %s (pins)%s.' % (
+            FONTS_MANIFEST, ', every installed file checked against its pin'
+            if args.payload else ''))
     if args.platform == 'linux':
         tor = linux_tor_dependency()
         components.append(tor)

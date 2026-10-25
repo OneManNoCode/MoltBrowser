@@ -91,6 +91,7 @@ std::string StepTypeToString(StepType t) {
     case StepType::SCREENSHOT:  return "screenshot";
     case StepType::RUN_JS:      return "run_js";
     case StepType::RUN_SCRIPT:  return "run_script";
+    case StepType::CALL_TOOL:   return "call_tool";
     case StepType::UNKNOWN:     return "unknown";
   }
   return "unknown";
@@ -117,6 +118,7 @@ StepType StepTypeFromString(const std::string& s) {
   if (s == "screenshot") return StepType::SCREENSHOT;
   if (s == "run_js")     return StepType::RUN_JS;
   if (s == "run_script") return StepType::RUN_SCRIPT;
+  if (s == "call_tool")  return StepType::CALL_TOOL;
   return StepType::UNKNOWN;
 }
 
@@ -172,6 +174,8 @@ base::DictValue StepToDict(const Step& s) {
     for (const auto& sel : s.selector_fallbacks) l.Append(sel);
     d.Set("selector_fallbacks", std::move(l));
   }
+  if (s.locators)
+    d.Set("locators", locators::ToValue(*s.locators));
   if (!s.value.empty())
     d.Set("value", s.value);
   if (!s.store_as.empty())
@@ -196,6 +200,9 @@ Step StepFromDict(const base::DictValue& d) {
   s.type = StepTypeFromString(GetString(d, "type", "unknown"));
   s.target = GetString(d, "target", "");
   s.selector_fallbacks = GetStringList(d, "selector_fallbacks");
+  // Page data, perhaps from an imported file: checked and capped.
+  if (const base::Value* l = d.Find("locators"))
+    s.locators = locators::Parse(*l);
   s.value = GetString(d, "value", "");
   s.store_as = GetString(d, "store_as", "");
   s.transform = GetString(d, "transform", "");
@@ -299,6 +306,7 @@ base::DictValue StepResultToDict(const StepResult& r) {
   if (!r.screenshot.empty()) d.Set("shot", r.screenshot);
   if (!r.description.empty()) d.Set("desc", r.description);
   if (!r.note.empty()) d.Set("note", r.note);
+  if (!r.found_by.empty()) d.Set("by", r.found_by);
   return d;
 }
 
@@ -311,6 +319,7 @@ StepResult StepResultFromDict(const base::DictValue& d) {
   r.screenshot = GetString(d, "shot", "");
   r.description = GetString(d, "desc", "");
   r.note = GetString(d, "note", "");
+  r.found_by = GetString(d, "by", "");
   return r;
 }
 

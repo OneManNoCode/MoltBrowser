@@ -1,0 +1,188 @@
+MoltBrowser patch for third_party/blink/renderer/platform/audio/vector_math.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/audio/vector_math.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/audio/vector_math.cc b/third_party/blink/renderer/platform/audio/vector_math.cc
+index 9a50d5214f7d11f038c8216e51764385ad67d8aa..25ba68bfed7986d3662945caa2749a788024e4d7 100644
+--- a/third_party/blink/renderer/platform/audio/vector_math.cc
++++ b/third_party/blink/renderer/platform/audio/vector_math.cc
+@@ -37,9 +37,10 @@
+ #include "third_party/blink/renderer/platform/audio/cpu/arm/vector_math_neon.h"
+ #elif defined(ARCH_CPU_X86_FAMILY)
+ #include "third_party/blink/renderer/platform/audio/cpu/x86/vector_math_x86.h"
+-#else
+-#include "third_party/blink/renderer/platform/audio/vector_math_scalar.h"
+ #endif
++// MoltBrowser: the scalar code on every platform, for MoltNet (below).
++#include "third_party/blink/renderer/platform/audio/vector_math_scalar.h"
++#include "ui/gfx/geometry/molt_math.h"
+ 
+ namespace blink::vector_math {
+ 
+@@ -53,10 +54,25 @@ namespace impl = x86;
+ #else
+ namespace impl = scalar;
+ #endif
++
++// MoltBrowser: in MoltNet renderers (gfx::molt_math's switch, set before
++// Blink starts), every function below runs the scalar code, on every
++// platform. The x86 code splits sums over SSE or AVX lanes (AVX picked at run
++// time), the Arm code over NEON lanes, so a sum of squares (Vsvesq,
++// ConvolverNode's normalisation) rounds differently on CPUs with and without
++// AVX and on Arm; on macOS every function is Apple's vDSP. The scalar code
++// adds in sample order, element by element, the same way on every CPU.
++bool UseScalar() {
++  return gfx::molt_math::IsPortable();
++}
+ }  // namespace
+ 
+ void PrepareFilterForConv(base::span<const float> filter,
+                           AudioFloatArray& prepared_filter) {
++  // MoltBrowser: the scalar Conv() doesn't use a prepared filter.
++  if (UseScalar()) {
++    return;
++  }
+   // Only contiguous convolution is implemented by all implementations.
+ #if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_MAC)
+   const float* filter_p = &filter.back();
+@@ -71,6 +87,12 @@ void Conv(base::span<const float> source,
+           const AudioFloatArray& prepared_filter) {
+   // Only contiguous convolution is implemented by all implementations.
+   const float* filter_p = &filter.back();
++  // MoltBrowser: see UseScalar(), here and below.
++  if (UseScalar()) {
++    scalar::Conv(source, filter_p, dest, frames_to_process, filter.size(),
++                 nullptr);
++    return;
++  }
+   impl::Conv(source, filter_p, dest, frames_to_process, filter.size(),
+              &prepared_filter);
+ }
+@@ -79,6 +101,12 @@ void Vadd(base::span<const float> source1,
+           base::span<const float> source2,
+           base::span<float> dest,
+           size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Vadd(source1.first(frames_to_process),
++                 source2.first(frames_to_process),
++                 dest.first(frames_to_process));
++    return;
++  }
+   impl::Vadd(source1.first(frames_to_process), source2.first(frames_to_process),
+              dest.first(frames_to_process));
+ }
+@@ -87,6 +115,12 @@ void Vsub(base::span<const float> source1,
+           base::span<const float> source2,
+           base::span<float> dest,
+           size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Vsub(source1.first(frames_to_process),
++                 source2.first(frames_to_process),
++                 dest.first(frames_to_process));
++    return;
++  }
+   impl::Vsub(source1.first(frames_to_process), source2.first(frames_to_process),
+              dest.first(frames_to_process));
+ }
+@@ -105,6 +139,10 @@ void Vclip(base::span<const float> source,
+   DCHECK_LE(low_threshold, high_threshold);
+ #endif
+ 
++  if (UseScalar()) {
++    scalar::Vclip(source, low_threshold, high_threshold, dest);
++    return;
++  }
+   impl::Vclip(source, low_threshold, high_threshold, dest);
+ }
+ 
+@@ -123,11 +161,19 @@ void Vclip(base::span<const float> source,
+   DCHECK_LE(low_threshold, high_threshold);
+ #endif
+ 
++  if (UseScalar()) {
++    scalar::Vclip(source.first(frames_to_process), low_threshold,
++                  high_threshold, dest.first(frames_to_process));
++    return;
++  }
+   impl::Vclip(source.first(frames_to_process), low_threshold, high_threshold,
+               dest.first(frames_to_process));
+ }
+ 
+ float Vmaxmgv(base::span<const float> source) {
++  if (UseScalar()) {
++    return scalar::Vmaxmgv(source);
++  }
+   return impl::Vmaxmgv(source);
+ }
+ 
+@@ -135,6 +181,12 @@ void Vmul(base::span<const float> source1,
+           base::span<const float> source2,
+           base::span<float> dest,
+           size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Vmul(source1.first(frames_to_process),
++                 source2.first(frames_to_process),
++                 dest.first(frames_to_process));
++    return;
++  }
+   impl::Vmul(source1.first(frames_to_process), source2.first(frames_to_process),
+              dest.first(frames_to_process));
+ }
+@@ -143,6 +195,11 @@ void Vsma(base::span<const float> source,
+           float scale,
+           base::span<float> dest,
+           size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Vsma(source.first(frames_to_process), scale,
++                 dest.first(frames_to_process));
++    return;
++  }
+   impl::Vsma(source.first(frames_to_process), scale,
+              dest.first(frames_to_process));
+ }
+@@ -151,6 +208,11 @@ void Vsmul(base::span<const float> source,
+            float scale,
+            base::span<float> dest,
+            size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Vsmul(source.first(frames_to_process), scale,
++                  dest.first(frames_to_process));
++    return;
++  }
+   impl::Vsmul(source.first(frames_to_process), scale,
+               dest.first(frames_to_process));
+ }
+@@ -159,11 +221,19 @@ void Vsadd(base::span<const float> source,
+            float addend,
+            base::span<float> dest,
+            size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Vsadd(source.first(frames_to_process), addend,
++                  dest.first(frames_to_process));
++    return;
++  }
+   impl::Vsadd(source.first(frames_to_process), addend,
+               dest.first(frames_to_process));
+ }
+ 
+ float Vsvesq(base::span<const float> source) {
++  if (UseScalar()) {
++    return scalar::Vsvesq(source);
++  }
+   return impl::Vsvesq(source);
+ }
+ 
+@@ -174,6 +244,11 @@ void Zvmul(base::span<const float> real1,
+            base::span<float> real_dest,
+            base::span<float> imag_dest,
+            size_t frames_to_process) {
++  if (UseScalar()) {
++    scalar::Zvmul(real1.data(), imag1.data(), real2.data(), imag2.data(),
++                  real_dest.data(), imag_dest.data(), frames_to_process);
++    return;
++  }
+   impl::Zvmul(real1.data(), imag1.data(), real2.data(), imag2.data(),
+               real_dest.data(), imag_dest.data(), frames_to_process);
+ }

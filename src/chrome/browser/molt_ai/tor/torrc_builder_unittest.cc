@@ -65,15 +65,21 @@ TEST(TorrcBuilderTest, StatesTorsSharedCapacity) {
   std::optional<std::string> torrc = BuildTorrc(BaseOptions(), nullptr);
   ASSERT_TRUE(torrc);
   EXPECT_TRUE(HasLine(*torrc, "ConnLimit 1000"));
-  EXPECT_TRUE(HasLine(*torrc, "MaxClientCircuitsPending 64"));
+  EXPECT_TRUE(HasLine(*torrc, "MaxClientCircuitsPending 256"));
   // Tor accepts at least ConnLimit - 32 connections; MoltNet's budget and a
   // fifth for Tor's own fit in that.
   EXPECT_LE(net::kMoltNetConnectionBudget + net::kMoltTorOwnConnections,
             kTorConnLimit - net::kMoltTorKeptFileDescriptors);
-  // No one site can fill Tor's pending-circuit limit.
-  EXPECT_LT(net::kMoltSocksHandshakesPerSite * kTorNewCircuitsPerConnection +
-                net::kMoltUnattributedSocksHandshakes,
+  // All of MoltNet's handshakes in progress together, each weighed by the
+  // circuits it can make Tor build, can't fill Tor's pending-circuit limit:
+  // room stays for Tor's own circuits.
+  EXPECT_LE(net::kMoltSocksHandshakeBudget +
+                net::kMoltUnattributedSocksHandshakes +
+                net::kMoltTorOwnPendingCircuits,
             kTorMaxClientCircuitsPending);
+  EXPECT_EQ(kTorNewCircuitsPerConnection, 3u);
+  // And it takes eleven sites at their full share to make another wait.
+  EXPECT_EQ(net::kMoltSitesToFillHandshakeBudget, 11u);
 }
 
 TEST(TorrcBuilderTest, ExitCountryAddsStrictNodesOnlyWhenSet) {

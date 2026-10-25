@@ -196,13 +196,15 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
   DCHECK(context_.client_socket_factory);
 
   // MoltBrowser: MoltNet's connection budget and SOCKS handshake limits,
-  // before the pools and connect jobs that use them.
+  // before the pools and connect jobs that use them. They are Tor's: every
+  // session with per-site pools shares them, each as an owner of its own.
   if (params.molt_per_site_socket_pool_size > 0) {
-    molt_connection_budget_ =
-        std::make_unique<MoltConnectionBudget>(kMoltNetConnectionBudget);
-    molt_socks_handshake_limiter_ =
-        std::make_unique<MoltSocksHandshakeLimiter>();
+    molt_tor_capacity_ = MoltTorCapacity::GetShared();
+    molt_socks_handshake_limiter_ = std::make_unique<MoltSocksHandshakeLimiter>(
+        molt_tor_capacity_, reinterpret_cast<uintptr_t>(this));
   }
+  MoltConnectionBudget* const molt_connection_budget =
+      molt_tor_capacity_ ? &molt_tor_capacity_->connection_budget() : nullptr;
 
   normal_socket_pool_manager_ = std::make_unique<ClientSocketPoolManagerImpl>(
       CreateCommonConnectJobParams(false /* for_websockets */),
@@ -211,7 +213,8 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
       // cleanup_on_ip_address_change
       !params.ignore_ip_address_changes,
       // MoltBrowser: per-site pools (MoltNet's network context).
-      params.molt_per_site_socket_pool_size, molt_connection_budget_.get());
+      params.molt_per_site_socket_pool_size, molt_connection_budget,
+      reinterpret_cast<uintptr_t>(this));
   websocket_socket_pool_manager_ =
       std::make_unique<ClientSocketPoolManagerImpl>(
           CreateCommonConnectJobParams(false /* for_websockets */),
@@ -220,7 +223,8 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
           // cleanup_on_ip_address_change
           !params.ignore_ip_address_changes,
           // MoltBrowser: per-site pools (MoltNet's network context).
-          params.molt_per_site_socket_pool_size, molt_connection_budget_.get());
+          params.molt_per_site_socket_pool_size, molt_connection_budget,
+          reinterpret_cast<uintptr_t>(this));
 
   if (params_.enable_http2) {
     next_protos_.push_back(NextProto::kProtoHTTP2);

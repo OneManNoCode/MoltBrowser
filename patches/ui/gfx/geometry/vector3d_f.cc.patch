@@ -1,0 +1,28 @@
+MoltBrowser patch for ui/gfx/geometry/vector3d_f.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/ui/gfx/geometry/vector3d_f.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/ui/gfx/geometry/vector3d_f.cc b/ui/gfx/geometry/vector3d_f.cc
+index cc4ae3a4ff2d60e65c873398774894dcc1559183..b333b3ab05e8f0d9867d6f64adbb6a6b976fe562 100644
+--- a/ui/gfx/geometry/vector3d_f.cc
++++ b/ui/gfx/geometry/vector3d_f.cc
+@@ -8,6 +8,7 @@
+ 
+ #include "base/numerics/angle_conversions.h"
+ #include "base/strings/stringprintf.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace {
+ const double kEpsilon = 1.0e-6;
+@@ -96,7 +97,8 @@ float AngleBetweenVectorsInDegrees(const gfx::Vector3dF& base,
+                                    const gfx::Vector3dF& other) {
+   // Clamp the resulting value to prevent potential NANs from floating point
+   // precision issues.
+-  return base::RadToDeg(std::acos(fmax(
++  // MoltBrowser: portable in MoltNet (molt_math.h).
++  return base::RadToDeg(molt_math::Acos(fmax(
+       fmin(gfx::DotProduct(base, other) / base.Length() / other.Length(), 1.f),
+       -1.f)));
+ }

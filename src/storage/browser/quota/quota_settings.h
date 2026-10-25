@@ -59,10 +59,13 @@ struct QuotaSettings {
   base::TimeDelta refresh_interval = base::TimeDelta::Max();
 
   // MoltBrowser: if > 0 (MoltNet), each top-level site's storage keys
-  // together may use at most this many bytes, all sites together at most
-  // `pool_size`, and nothing is evicted to bring the pool down
+  // together may use at most this many bytes, whatever the other sites
+  // store; all sites together may always use `pool_size`, and beyond it
+  // only what the machine has available above `molt_memory_reserve`; and
+  // nothing is evicted to bring the pool down
   // (storage/browser/quota/molt_storage_budget_policy.h).
   int64_t molt_per_site_quota = 0;
+  int64_t molt_memory_reserve = 0;
 };
 
 // Function type used to return the settings in response to a

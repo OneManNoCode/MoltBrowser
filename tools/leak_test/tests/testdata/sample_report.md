@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 167 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 170 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -234,7 +234,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - new_identity, session 1 -> 2: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
 - **PASS** Tor runs with the shared capacity MoltNet is sized for (ConnLimit, MaxClientCircuitsPending)
   - ConnLimit 1000 (expected 1000)
-  - MaxClientCircuitsPending 64 (expected 64)
+  - MaxClientCircuitsPending 256 (expected 256)
 - **SKIP** A Background Fetch goes to Tor with its site's SOCKS username (its site's circuit, not its destination's)
   - no Background Fetch request reached Tor (see the bgfetch tests' page results)
 - **SKIP** check.torproject.org says the MoltNet window uses Tor
@@ -267,12 +267,15 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | audio.script_processor_buffer is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | autoplay.mediaelement is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | cookies.third_party is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | cpu.wasm_relaxed_simd is uniform | FINGERPRINTING.md "MoltNet: CPU features" |
 | PASS | css.default_font_size is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
 | PASS | doc.characterSet_undeclared is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.playready is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | eme.widevine is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | fonts.generic_map is uniform | FINGERPRINTING.md "Fonts" |
 | PASS | fonts.local_hidden is uniform | FINGERPRINTING.md "Fonts" |
+| PASS | fonts.moltnet_set is uniform | FINGERPRINTING.md "Fonts" |
 | PASS | form.numberMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | form.validationMessage is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | hdr.accept-language is uniform | FINGERPRINTING.md "Surface covered" |
@@ -457,7 +460,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | INFO | Regular-window control: values that are already uniform outside MoltNet on this machine (their MoltNet check proves less here) |  |
 
 - **FAIL** fonts.visible is uniform
-  - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 19 allowed (not on the list: Ubuntu)
+  - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)
 - **FAIL** nav.hardwareConcurrency is uniform
   - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual 8, expected 4
 - **FAIL** win.innerWidth is uniform

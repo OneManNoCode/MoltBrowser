@@ -5,10 +5,157 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_memory_controller.cc b/storage/browser/blob/blob_memory_controller.cc
-index 8494b3ec3b0c98afafe3a37877dcafa69958ece0..7c8bc8c861e9f13727a1090b46fb3133de4d7980 100644
+index 8494b3ec3b0c98afafe3a37877dcafa69958ece0..84f02644443703b0827673feb749cab3b6afb9fa 100644
 --- a/storage/browser/blob/blob_memory_controller.cc
 +++ b/storage/browser/blob/blob_memory_controller.cc
-@@ -812,6 +812,15 @@ base::WeakPtr<BlobMemoryController> BlobMemoryController::GetWeakPtr() {
+@@ -40,6 +40,7 @@
+ #include "storage/browser/blob/blob_data_builder.h"
+ #include "storage/browser/blob/blob_data_item.h"
+ #include "storage/browser/blob/features.h"
++#include "storage/browser/blob/molt_blob_budget_policy.h"
+ #include "storage/browser/blob/shareable_blob_data_item.h"
+ #include "storage/browser/blob/shareable_file_reference.h"
+ 
+@@ -57,6 +58,14 @@ using MemoryAllocation = BlobMemoryController::MemoryAllocation;
+ using QuotaAllocationTask = BlobMemoryController::QuotaAllocationTask;
+ using DiskSpaceFuncPtr = BlobMemoryController::DiskSpaceFuncPtr;
+ 
++// MoltBrowser: how long a reading of the machine's available memory is used
++// (lowered by what blobs took since), and how it is read
++// (molt_blob_budget_policy.h).
++constexpr base::TimeDelta kMoltAvailableMemoryRefresh = base::Milliseconds(200);
++uint64_t MoltReadAvailablePhysicalMemory() {
++  return base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes();
++}
++
+ File::Error CreateBlobDirectory(const FilePath& blob_storage_dir) {
+   File::Error error = File::FILE_OK;
+   base::CreateDirectoryAndGetError(blob_storage_dir, &error);
+@@ -345,12 +354,16 @@ FileCreationInfo& FileCreationInfo::operator=(FileCreationInfo&&) = default;
+ MemoryAllocation::MemoryAllocation(
+     base::WeakPtr<BlobMemoryController> controller,
+     uint64_t item_id,
+-    size_t length)
+-    : controller_(std::move(controller)), item_id_(item_id), length_(length) {}
++    size_t length,
++    uint64_t molt_budget_key)
++    : controller_(std::move(controller)),
++      item_id_(item_id),
++      length_(length),
++      molt_budget_key_(molt_budget_key) {}
+ 
+ MemoryAllocation::~MemoryAllocation() {
+   if (controller_)
+-    controller_->RevokeMemoryAllocation(item_id_, length_);
++    controller_->RevokeMemoryAllocation(item_id_, length_, molt_budget_key_);
+ }
+ 
+ BlobMemoryController::QuotaAllocationTask::~QuotaAllocationTask() = default;
+@@ -586,7 +599,11 @@ BlobMemoryController::BlobMemoryController(
+           "BlobMemoryController",
+           GetBlobMemoryControllerTraits(),
+           this,
+-          base::AsyncMemoryConsumerRegistration::CheckUnregister::kDisabled) {}
++          base::AsyncMemoryConsumerRegistration::CheckUnregister::kDisabled) {
++  // MoltBrowser: how the machine's available memory is read
++  // (molt_blob_budget_policy.h).
++  molt_available_memory_function_ = &MoltReadAvailablePhysicalMemory;
++}
+ 
+ BlobMemoryController::~BlobMemoryController() = default;
+ 
+@@ -620,17 +637,20 @@ void BlobMemoryController::DisableFilePaging(base::File::Error reason) {
+ 
+ BlobMemoryController::Strategy BlobMemoryController::DetermineStrategy(
+     size_t preemptive_transported_bytes,
+-    uint64_t total_transportation_bytes) const {
++    uint64_t total_transportation_bytes,
++    uint64_t molt_budget_key) const {
+   if (total_transportation_bytes == 0)
+     return Strategy::NONE_NEEDED;
+-  if (!CanReserveQuota(total_transportation_bytes))
++  // MoltBrowser: the key's room (molt_blob_budget_policy.h), here and below.
++  if (!CanReserveQuota(total_transportation_bytes, molt_budget_key))
+     return Strategy::TOO_LARGE;
+ 
+   // Handle the case where we have all the bytes preemptively transported, and
+   // we can also fit them.
+   if (preemptive_transported_bytes == total_transportation_bytes &&
+       pending_memory_quota_tasks_.empty() &&
+-      preemptive_transported_bytes <= GetAvailableMemoryForBlobs()) {
++      preemptive_transported_bytes <=
++          GetAvailableMemoryForBlobs(molt_budget_key)) {
+     return Strategy::NONE_NEEDED;
+   }
+ 
+@@ -651,16 +671,19 @@ BlobMemoryController::Strategy BlobMemoryController::DetermineStrategy(
+   return Strategy::SHARED_MEMORY;
+ }
+ 
+-bool BlobMemoryController::CanReserveQuota(uint64_t size) const {
++bool BlobMemoryController::CanReserveQuota(uint64_t size,
++                                           uint64_t molt_budget_key) const {
+   // We check each size independently as a blob can't be constructed in both
+   // disk and memory.
+-  return size <= GetAvailableMemoryForBlobs() ||
++  // MoltBrowser: memory within the key's room (molt_blob_budget_policy.h).
++  return size <= GetAvailableMemoryForBlobs(molt_budget_key) ||
+          size <= GetAvailableFileSpaceForBlobs();
+ }
+ 
+ base::WeakPtr<QuotaAllocationTask> BlobMemoryController::ReserveMemoryQuota(
+     std::vector<scoped_refptr<ShareableBlobDataItem>> unreserved_memory_items,
+-    MemoryQuotaRequestCallback done_callback) {
++    MemoryQuotaRequestCallback done_callback,
++    uint64_t molt_budget_key) {
+   if (unreserved_memory_items.empty()) {
+     std::move(done_callback).Run(true);
+     return base::WeakPtr<QuotaAllocationTask>();
+@@ -679,6 +702,17 @@ base::WeakPtr<QuotaAllocationTask> BlobMemoryController::ReserveMemoryQuota(
+   uint64_t total_bytes_needed = unsafe_total_bytes_needed.ValueOrDie();
+   DCHECK_GT(total_bytes_needed, 0ull);
+ 
++  // MoltBrowser: with shares (molt_blob_budget_policy.h) nothing waits: the
++  // caller checked the key's room (CanReserveQuota(), as for any
++  // reservation), and nothing is paged to disk.
++  if (MoltUsesBlobBudget(limits_.molt_per_key_memory)) {
++    GrantMemoryAllocations(&unreserved_memory_items,
++                           static_cast<size_t>(total_bytes_needed),
++                           molt_budget_key);
++    std::move(done_callback).Run(true);
++    return base::WeakPtr<QuotaAllocationTask>();
++  }
++
+   // If we're currently waiting for blobs to page already, then we add
+   // ourselves to the end of the queue. Once paging is complete, we'll schedule
+   // more paging for any more pending blobs.
+@@ -691,7 +725,8 @@ base::WeakPtr<QuotaAllocationTask> BlobMemoryController::ReserveMemoryQuota(
+   // Store right away if we can.
+   if (total_bytes_needed <= GetAvailableMemoryForBlobs()) {
+     GrantMemoryAllocations(&unreserved_memory_items,
+-                           static_cast<size_t>(total_bytes_needed));
++                           static_cast<size_t>(total_bytes_needed),
++                           molt_budget_key);
+     MaybeScheduleEvictionUntilSystemHealthy(
+         base::MemoryLimit::NoPressureThreshold());
+     std::move(done_callback).Run(true);
+@@ -729,10 +764,14 @@ void BlobMemoryController::ShrinkMemoryAllocation(ShareableBlobDataItem* item) {
+ 
+   // Setting a new MemoryAllocation will delete and free the existing memory
+   // allocation, so here we only have to account for the new allocation.
++  // MoltBrowser: to the same budget key.
++  const uint64_t molt_budget_key = item->memory_allocation_->molt_budget_key_;
+   blob_memory_used_ += item->item()->length();
++  molt_memory_used_by_key_[molt_budget_key] +=
++      base::checked_cast<size_t>(item->item()->length());
+   item->set_memory_allocation(std::make_unique<MemoryAllocation>(
+       weak_factory_.GetWeakPtr(), item->item_id(),
+-      base::checked_cast<size_t>(item->item()->length())));
++      base::checked_cast<size_t>(item->item()->length()), molt_budget_key));
+   MaybeGrantPendingMemoryRequests();
+ }
+ 
+@@ -812,6 +851,15 @@ base::WeakPtr<BlobMemoryController> BlobMemoryController::GetWeakPtr() {
    return weak_factory_.GetWeakPtr();
  }
  
@@ -24,7 +171,7 @@ index 8494b3ec3b0c98afafe3a37877dcafa69958ece0..7c8bc8c861e9f13727a1090b46fb3133
  void BlobMemoryController::OnStorageLimitsCalculated(BlobStorageLimits limits) {
    DCHECK(limits.IsValid());
    if (manual_limits_set_)
-@@ -819,7 +828,8 @@ void BlobMemoryController::OnStorageLimitsCalculated(BlobStorageLimits limits) {
+@@ -819,7 +867,8 @@ void BlobMemoryController::OnStorageLimitsCalculated(BlobStorageLimits limits) {
    base_limits_ = limits;
    limits_ = limits;
  
@@ -34,7 +181,7 @@ index 8494b3ec3b0c98afafe3a37877dcafa69958ece0..7c8bc8c861e9f13727a1090b46fb3133
      size_t target_max_memory = base::ScaleByMemoryLimit(
          base_limits_.max_blob_in_memory_space, memory_limit());
      limits_.max_blob_in_memory_space =
-@@ -1039,7 +1049,8 @@ void BlobMemoryController::OnEvictionComplete(
+@@ -1039,7 +1088,8 @@ void BlobMemoryController::OnEvictionComplete(
  }
  
  void BlobMemoryController::OnUpdateMemoryLimit() {
@@ -44,7 +191,7 @@ index 8494b3ec3b0c98afafe3a37877dcafa69958ece0..7c8bc8c861e9f13727a1090b46fb3133
      return;
    }
    if (memory_limit() < base::MemoryLimit::ModeratePressureThreshold()) {
-@@ -1059,8 +1070,11 @@ void BlobMemoryController::OnReleaseMemory() {
+@@ -1059,8 +1109,11 @@ void BlobMemoryController::OnReleaseMemory() {
        return;
      }
      // Enforce the actual scaled target limit now
@@ -58,3 +205,87 @@ index 8494b3ec3b0c98afafe3a37877dcafa69958ece0..7c8bc8c861e9f13727a1090b46fb3133
      MaybeScheduleEvictionUntilSystemHealthy(
          base::MemoryLimit::NoPressureThreshold());
      return;
+@@ -1109,6 +1162,46 @@ size_t BlobMemoryController::GetAvailableMemoryForBlobs() const {
+   return limits_.max_blob_in_memory_space - memory_usage();
+ }
+ 
++// MoltBrowser: see the header.
++size_t BlobMemoryController::GetAvailableMemoryForBlobs(
++    uint64_t molt_budget_key) const {
++  const uint64_t per_key = limits_.molt_per_key_memory;
++  if (!MoltUsesBlobBudget(per_key)) {
++    return GetAvailableMemoryForBlobs();
++  }
++  const uint64_t key_used = MoltMemoryUsage(molt_budget_key);
++  const uint64_t total = memory_usage();
++  const uint64_t floor = limits_.max_blob_in_memory_space;
++  std::optional<uint64_t> available;
++  if (MoltBlobNeedsMemoryCheck(per_key, key_used, total, floor)) {
++    available = MoltAvailableMemory();
++  }
++  return base::saturated_cast<size_t>(MoltBlobRoom(
++      per_key, key_used, total, floor, available,
++      limits_.molt_memory_reserve));
++}
++
++size_t BlobMemoryController::MoltMemoryUsage(uint64_t molt_budget_key) const {
++  auto it = molt_memory_used_by_key_.find(molt_budget_key);
++  return it == molt_memory_used_by_key_.end() ? 0 : it->second;
++}
++
++std::optional<uint64_t> BlobMemoryController::MoltAvailableMemory() const {
++  const base::TimeTicks now = base::TimeTicks::Now();
++  if (!molt_available_memory_ ||
++      now - molt_available_memory_read_at_ >= kMoltAvailableMemoryRefresh) {
++    molt_available_memory_ = molt_available_memory_function_();
++    molt_available_memory_read_at_ = now;
++    molt_memory_used_at_read_ = memory_usage();
++  }
++  // What blobs took since the reading isn't available any more.
++  const size_t taken = memory_usage() > molt_memory_used_at_read_
++                           ? memory_usage() - molt_memory_used_at_read_
++                           : 0;
++  return *molt_available_memory_ > taken ? *molt_available_memory_ - taken
++                                         : 0;
++}
++
+ uint64_t BlobMemoryController::GetAvailableFileSpaceForBlobs() const {
+   if (!file_paging_enabled_)
+     return 0;
+@@ -1126,21 +1219,33 @@ uint64_t BlobMemoryController::GetAvailableFileSpaceForBlobs() const {
+ 
+ void BlobMemoryController::GrantMemoryAllocations(
+     std::vector<scoped_refptr<ShareableBlobDataItem>>* items,
+-    size_t total_bytes) {
++    size_t total_bytes,
++    uint64_t molt_budget_key) {
+   blob_memory_used_ += total_bytes;
++  // MoltBrowser: counted to its key too (molt_blob_budget_policy.h).
++  molt_memory_used_by_key_[molt_budget_key] += total_bytes;
+ 
+   for (auto& item : *items) {
+     item->set_state(ShareableBlobDataItem::QUOTA_GRANTED);
+     item->set_memory_allocation(std::make_unique<MemoryAllocation>(
+         weak_factory_.GetWeakPtr(), item->item_id(),
+-        base::checked_cast<size_t>(item->item()->length())));
++        base::checked_cast<size_t>(item->item()->length()), molt_budget_key));
+   }
+ }
+ 
+ void BlobMemoryController::RevokeMemoryAllocation(uint64_t item_id,
+-                                                  size_t length) {
++                                                  size_t length,
++                                                  uint64_t molt_budget_key) {
+   DCHECK_LE(length, blob_memory_used_);
+   blob_memory_used_ -= length;
++  // MoltBrowser: and from its key.
++  if (auto it = molt_memory_used_by_key_.find(molt_budget_key);
++      it != molt_memory_used_by_key_.end()) {
++    it->second -= std::min(it->second, length);
++    if (it->second == 0) {
++      molt_memory_used_by_key_.erase(it);
++    }
++  }
+ 
+   auto iterator = populated_memory_items_.Get(item_id);
+   if (iterator != populated_memory_items_.end()) {

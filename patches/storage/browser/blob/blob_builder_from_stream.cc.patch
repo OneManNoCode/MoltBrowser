@@ -1,0 +1,32 @@
+MoltBrowser patch for storage/browser/blob/blob_builder_from_stream.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/blob/blob_builder_from_stream.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/blob/blob_builder_from_stream.cc b/storage/browser/blob/blob_builder_from_stream.cc
+index dcf4838b166a97f9cae103aa077477ac2a345aa6..bd396413b1ce8fe852990ca475344dd3c4a323d3 100644
+--- a/storage/browser/blob/blob_builder_from_stream.cc
++++ b/storage/browser/blob/blob_builder_from_stream.cc
+@@ -399,8 +399,9 @@ void BlobBuilderFromStream::AllocateMoreMemorySpace(
+   if (!length_hint)
+     length_hint = kMemoryBlockSize;
+ 
+-  if (context_->memory_controller().GetAvailableMemoryForBlobs() <
+-      length_hint) {
++  // MoltBrowser: within the blob's budget key (molt_blob_budget_policy.h).
++  if (context_->memory_controller().GetAvailableMemoryForBlobs(
++          molt_budget_key_) < length_hint) {
+     OnError(Result::kMemoryAllocationFailed);
+     return;
+   }
+@@ -419,7 +420,8 @@ void BlobBuilderFromStream::AllocateMoreMemorySpace(
+           std::move(chunk_items),
+           base::BindOnce(&BlobBuilderFromStream::MemoryQuotaAllocated,
+                          base::Unretained(this), std::move(pipe),
+-                         std::move(progress_client), std::move(items_copy), 0));
++                         std::move(progress_client), std::move(items_copy), 0),
++          molt_budget_key_);
+ }
+ 
+ void BlobBuilderFromStream::MemoryQuotaAllocated(

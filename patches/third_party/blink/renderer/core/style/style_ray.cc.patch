@@ -1,0 +1,42 @@
+MoltBrowser patch for third_party/blink/renderer/core/style/style_ray.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/style/style_ray.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/style/style_ray.cc b/third_party/blink/renderer/core/style/style_ray.cc
+index 636f74e456002f8c0d02659238ed73225a807a2b..fe63f36aa7854067e8123d9bdca53026dcf73dc8 100644
+--- a/third_party/blink/renderer/core/style/style_ray.cc
++++ b/third_party/blink/renderer/core/style/style_ray.cc
+@@ -7,6 +7,7 @@
+ #include "base/numerics/angle_conversions.h"
+ #include "third_party/blink/renderer/core/style/basic_shapes.h"
+ #include "third_party/blink/renderer/platform/geometry/path.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ #include "ui/gfx/geometry/point_f.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/size_f.h"
+@@ -70,8 +71,9 @@ float CalculateDistanceToReferenceBoxSide(
+     return 0;
+   }
+   const float theta = base::DegToRad(angle);
+-  float cos_t = std::cos(theta);
+-  float sin_t = std::sin(theta);
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  float cos_t = gfx::molt_math::Cos(theta);
++  float sin_t = gfx::molt_math::Sin(theta);
+   // We are looking for % point, let's swap signs and lines
+   // so that we end up in situation like this:
+   //         (0, 0) #--------------%--# (box.width, 0)
+@@ -128,8 +130,9 @@ PointAndTangent StyleRay::PointAndNormalAtLength(
+     float length) const {
+   const float angle = Angle() - 90;
+   const float rad = base::DegToRad(angle);
+-  const float x = starting_point.x() + length * std::cos(rad);
+-  const float y = starting_point.y() + length * std::sin(rad);
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  const float x = starting_point.x() + length * gfx::molt_math::Cos(rad);
++  const float y = starting_point.y() + length * gfx::molt_math::Sin(rad);
+   return {{x, y}, angle};
+ }
+ 

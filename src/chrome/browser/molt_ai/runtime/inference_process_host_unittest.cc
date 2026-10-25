@@ -3,8 +3,8 @@
 //
 // InferenceProcessHost against a fake, in-process MoltInferenceService that
 // misbehaves on request: crash mid-stream, hang, flood, bad UTF-8, a bad
-// ModelDescription, vision claimed without a projector, cancel while queued,
-// browser-side stop sequences.
+// ModelDescription, vision or audio claimed without a projector, cancel while
+// queued, browser-side stop sequences.
 
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 
@@ -47,6 +47,8 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
     kHang,
     kBadDescription,
     kVision,
+    // A projector with an audio encoder (and no image encoder).
+    kAudio,
     // On the GPU (Vulkan), 33 layers.
     kGpu,
   };
@@ -107,7 +109,8 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
     LoadModelCallback callback = std::move(pending_load_);
     switch (load_behavior) {
       case LoadBehavior::kOk:
-      case LoadBehavior::kVision: {
+      case LoadBehavior::kVision:
+      case LoadBehavior::kAudio: {
         auto d = mojom::ModelDescription::New();
         d->architecture = "llama";
         d->backend = "cpu";
@@ -115,6 +118,7 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
         d->train_context_tokens = 4096;
         d->vocab_size = 32000;
         d->vision = load_behavior == LoadBehavior::kVision;
+        d->audio = load_behavior == LoadBehavior::kAudio;
         d->gpu_status = status_override.value_or(HonestCpuStatus());
         std::move(callback).Run(mojom::LoadModelStatus::kOk, std::move(d));
         break;
@@ -1011,6 +1015,7 @@ TEST_F(InferenceProcessHostTest, TextModelSentNoProjector) {
   ASSERT_TRUE(Finished(load.get()));
   EXPECT_EQ(load->outcome().kind, Kind::kOk);
   EXPECT_FALSE(load->outcome().vision);
+  EXPECT_FALSE(load->outcome().audio);
   ASSERT_TRUE(service().load_params());
   EXPECT_FALSE(service().load_params()->vision_projector.IsValid());
   EXPECT_EQ(service().load_params()->vision_projector_size, 0u);
@@ -1021,6 +1026,26 @@ TEST_F(InferenceProcessHostTest, ProjectorTheServiceDidNotUseIsNoVision) {
   ASSERT_TRUE(Finished(load.get()));
   EXPECT_EQ(load->outcome().kind, Kind::kOk);
   EXPECT_FALSE(load->outcome().vision);
+}
+
+TEST_F(InferenceProcessHostTest, AudioNeedsTheProjectorTheBrowserSent) {
+  next_load_behavior_ = FakeService::LoadBehavior::kAudio;
+  scoped_refptr<InferenceMailbox> load = Load(/*with_projector=*/true);
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_TRUE(load->outcome().audio);
+  EXPECT_FALSE(load->outcome().vision);
+  EXPECT_TRUE(bad_messages_.empty());
+}
+
+TEST_F(InferenceProcessHostTest, AudioWithoutAProjectorIsAViolation) {
+  next_load_behavior_ = FakeService::LoadBehavior::kAudio;
+  scoped_refptr<InferenceMailbox> load = Load();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+  EXPECT_FALSE(load->outcome().audio);
+  EXPECT_FALSE(host_->HasCurrentModelForTesting());
+  EXPECT_EQ(bad_messages_.size(), 1u);
 }
 
 TEST_F(InferenceProcessHostTest, VisionWithoutAProjectorIsAViolation) {

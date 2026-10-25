@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/socks_connect_job.cc b/net/socket/socks_connect_job.cc
-index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..7849832c76dbc7e2eaf8ef7ff0ab5610a9096061 100644
+index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..184689d7a5cb062494bb0423c87720ab6f030e86 100644
 --- a/net/socket/socks_connect_job.cc
 +++ b/net/socket/socks_connect_job.cc
 @@ -5,10 +5,17 @@
@@ -134,15 +134,16 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..7849832c76dbc7e2eaf8ef7ff0ab5610
        case STATE_TRANSPORT_CONNECT:
          DCHECK_EQ(OK, rv);
          rv = DoTransportConnect();
-@@ -150,6 +244,32 @@ int SOCKSConnectJob::DoLoop(int result) {
+@@ -150,6 +244,34 @@ int SOCKSConnectJob::DoLoop(int result) {
    return rv;
  }
  
 +// MoltBrowser: in a session with SOCKS handshake limits (MoltNet's), a job
-+// for MoltNet's local Tor waits for one of its site's slots before it
-+// connects: a handshake in progress is what can make Tor build a circuit,
-+// and every site shares Tor's limit on circuits being built. No timer runs
-+// while it waits (this job's starts after the connection to the proxy).
++// for MoltNet's local Tor waits for its site's slots before it connects: a
++// handshake in progress is what can make Tor build circuits (three at a
++// time for an onion service, else one), and every site shares Tor's limit
++// on circuits being built. No timer runs while it waits (this job's starts
++// after the connection to the proxy).
 +int SOCKSConnectJob::DoMoltHandshakeSlot() {
 +  next_state_ = STATE_MOLT_HANDSHAKE_SLOT_COMPLETE;
 +  MoltSocksHandshakeLimiter* limiter =
@@ -152,6 +153,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..7849832c76dbc7e2eaf8ef7ff0ab5610
 +  }
 +  molt_handshake_slot_ = limiter->Acquire(
 +      MoltBudgetSiteFor(socks_params_->network_anonymization_key()),
++      MoltSocksHandshakeWeight(socks_params_->destination().host()),
 +      priority(),
 +      base::BindOnce(&SOCKSConnectJob::OnIOComplete, base::Unretained(this),
 +                     OK));
@@ -167,7 +169,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..7849832c76dbc7e2eaf8ef7ff0ab5610
  int SOCKSConnectJob::DoTransportConnect() {
    DCHECK(!transport_connect_job_);
  
-@@ -176,9 +296,20 @@ int SOCKSConnectJob::DoSOCKSConnect() {
+@@ -176,9 +298,20 @@ int SOCKSConnectJob::DoSOCKSConnect() {
  
    // Add a SOCKS connection on top of the tcp socket.
    if (socks_params_->is_socks_v5()) {
@@ -189,7 +191,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..7849832c76dbc7e2eaf8ef7ff0ab5610
    } else {
      auto socks_socket = std::make_unique<SOCKSClientSocket>(
          transport_connect_job_->PassSocket(), socks_params_->destination(),
-@@ -194,6 +325,8 @@ int SOCKSConnectJob::DoSOCKSConnect() {
+@@ -194,6 +327,8 @@ int SOCKSConnectJob::DoSOCKSConnect() {
  }
  
  int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
@@ -198,7 +200,7 @@ index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..7849832c76dbc7e2eaf8ef7ff0ab5610
    if (!socks_params_->is_socks_v5())
      resolve_error_info_ = socks_socket_ptr_->GetResolveErrorInfo();
    if (result != OK) {
-@@ -206,11 +339,16 @@ int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
+@@ -206,11 +341,16 @@ int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
  }
  
  int SOCKSConnectJob::ConnectInternal() {

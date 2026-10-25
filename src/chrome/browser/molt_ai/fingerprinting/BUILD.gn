@@ -22,6 +22,7 @@ source_set("fingerprinting") {
   ]
   public_deps = [ "//chrome/common/molt_ai/fingerprinting" ]
   deps = [
+    ":net_fonts",
     ":shields_decision",
     "//base",
     "//chrome/browser/content_settings:content_settings_factory",
@@ -37,6 +38,18 @@ source_set("fingerprinting") {
     "//third_party/blink/public/common",
     "//url",
   ]
+}
+
+# MoltNet's bundled fonts: finding, checking and opening the files, and the
+# table generated from tools/fonts/moltnet_fonts.json (generate_tables.py).
+source_set("net_fonts") {
+  sources = [
+    "molt_net_fonts.cc",
+    "molt_net_fonts.h",
+    "molt_net_fonts_table.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [ "//content/public/browser" ]
 }
 
 # Whether a document or worker has Shields down, from a profile's content
@@ -167,6 +180,8 @@ source_set("unit_tests") {
   sources = [
     "molt_letterbox_unittest.cc",
     "molt_net_device_values_unittest.cc",
+    "molt_net_blob_budget_policy_unittest.cc",
+    "molt_net_fonts_unittest.cc",
     "molt_net_storage_budget_policy_unittest.cc",
     "molt_net_storage_unittest.cc",
     "molt_net_storage_values_unittest.cc",
@@ -175,6 +190,7 @@ source_set("unit_tests") {
   deps = [
     ":device_values",
     ":letterbox",
+    ":net_fonts",
     ":shields_decision",
     ":storage",
     ":storage_values",
@@ -183,6 +199,9 @@ source_set("unit_tests") {
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/sync_preferences:test_support",
+
+    # BrowserTaskEnvironment (molt_net_fonts_unittest.cc).
+    "//content/test:test_support",
     "//net",
     "//testing/gtest",
     "//third_party/blink/public/common",

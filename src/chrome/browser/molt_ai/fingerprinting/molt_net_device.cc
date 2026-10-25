@@ -5,6 +5,7 @@
 
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/cpu_performance.mojom-shared.h"
@@ -58,6 +59,22 @@ std::optional<int> MoltNetCpuPerformanceTier(content::BrowserContext* context) {
     return std::nullopt;
   }
   return kMoltNetCpuPerformanceTier;
+}
+
+bool MoltNetShouldReuseProcess(content::BrowserContext* context,
+                               size_t process_count_to_ignore) {
+  if (!IsMoltNet(context)) {
+    return false;
+  }
+  // The count content's limit compares (RenderProcessHostImpl::
+  // GetProcessCountForLimit): every host, less the embedder's ignored ones.
+  size_t count = 0;
+  for (auto it = content::RenderProcessHost::AllHostsIterator(); !it.IsAtEnd();
+       it.Advance()) {
+    ++count;
+  }
+  count = count > process_count_to_ignore ? count - process_count_to_ignore : 0;
+  return count >= kMoltNetRendererProcessLimit;
 }
 
 }  // namespace molt_ai::fingerprinting

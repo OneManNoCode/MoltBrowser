@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc b/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
-index 7a13fc9b24726dbe7943db4018886b624e58e1ef..1e0e2a06e0f3696dccb7ad693770fa4c4756524f 100644
+index 7a13fc9b24726dbe7943db4018886b624e58e1ef..2b4ba18f2621df3350d9b56d9be17f059b5868bd 100644
 --- a/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
 +++ b/third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.cc
 @@ -21,6 +21,7 @@
@@ -27,3 +27,13 @@ index 7a13fc9b24726dbe7943db4018886b624e58e1ef..1e0e2a06e0f3696dccb7ad693770fa4c
      bytes += entry->bytes();
    }
    auto* result = MemoryMeasurement::Create();
+@@ -376,6 +381,9 @@ void RecordWebMemoryUkm(ExecutionContext* execution_context,
+ 
+ void MeasureMemoryController::MeasurementComplete(
+     WebMemoryMeasurementPtr measurement) {
++  // MoltBrowser: in MoltNet every context gets the same entries, whatever
++  // the process model (moltnet_memory.h).
++  molt_fingerprinting::MakeMemoryMeasurementUniform(*measurement);
+   resolver_->Resolve(ConvertResult(measurement));
+   RecordWebMemoryUkm(resolver_->GetExecutionContext(), measurement);
+ }

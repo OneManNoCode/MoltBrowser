@@ -33,6 +33,24 @@ Turn ImageTurn(const std::string& text, const std::vector<uint32_t>& widths) {
   return t;
 }
 
+// A user turn with one clip per entry of |seconds| (silence of that many
+// whole seconds); the length tells the clips apart.
+Turn AudioTurn(const std::string& text, const std::vector<uint32_t>& seconds) {
+  std::vector<ModelAudio> clips;
+  for (uint32_t s : seconds) {
+    clips.emplace_back(std::vector<int16_t>(size_t{s} * 16000, 0));
+  }
+  return MakeTurn(Role::kUser, text, 0, std::move(clips));
+}
+
+std::vector<uint32_t> Seconds(const std::vector<ModelAudio>& clips) {
+  std::vector<uint32_t> seconds;
+  for (const ModelAudio& clip : clips) {
+    seconds.push_back(clip.Seconds());
+  }
+  return seconds;
+}
+
 std::vector<uint32_t> Widths(const std::vector<ModelImage>& images) {
   std::vector<uint32_t> widths;
   for (const ModelImage& image : images) {
@@ -312,6 +330,90 @@ TEST(WebAIConversationTest, NeverMoreThanFourImagesInAShape) {
             << a << " " << b << " " << n;
         EXPECT_EQ(s.user_images.size(), n);
       }
+    }
+  }
+}
+
+TEST(WebAIConversationTest, AudioCountsByLength) {
+  const Turn turn = AudioTurn("listen", {2, 20});
+  EXPECT_EQ(turn.tokens, EstimateMessageTokens("listen") + AudioInputTokens(2) +
+                             AudioInputTokens(20));
+  ASSERT_EQ(turn.audio.size(), 2u);
+  EXPECT_EQ(Seconds(turn.audio), (std::vector<uint32_t>{2, 20}));
+  // Images and audio in one turn: both counted.
+  std::vector<ModelAudio> clip;
+  clip.emplace_back(std::vector<int16_t>(16000, 0));
+  EXPECT_EQ(
+      MakeTurn(Role::kUser, "x", 1, std::move(clip)).tokens,
+      EstimateMessageTokens("x") + kImageInputTokens + AudioInputTokens(1));
+  // The longest clip doesn't fit the small quota with an image.
+  Conversation small(kSmallInputQuota);
+  std::vector<Turn> both;
+  both.push_back(AudioTurn("x", {30}));
+  both.back().tokens = AddTokens(both.back().tokens, kImageInputTokens);
+  EXPECT_FALSE(small.PlanAdd(both).fits);
+}
+
+TEST(WebAIConversationTest, TheContextKeepsTheNewestAudio) {
+  Conversation c(kLargeInputQuota * 4);
+  std::vector<Turn> first;
+  first.push_back(AudioTurn("a", {1, 2, 3}));
+  c.Add(c.PlanAdd(first), std::move(first));
+  c.AddReply("ok");
+  std::vector<Turn> second;
+  second.push_back(AudioTurn("b", {4, 5}));
+  c.Add(c.PlanAdd(second), std::move(second));
+  EXPECT_EQ(c.audio_count(), kMaxContextAudio);
+  EXPECT_EQ(c.image_count(), 0u);
+  EXPECT_EQ(Seconds(c.turns()[0].audio), (std::vector<uint32_t>{2, 3}));
+  EXPECT_EQ(Seconds(c.turns()[2].audio), (std::vector<uint32_t>{4, 5}));
+}
+
+TEST(WebAIConversationTest, ShapeSendsTheNewestAudioWithTheirTurns) {
+  Conversation c(kLargeInputQuota * 4);
+  std::vector<Turn> initial;
+  initial.push_back(AudioTurn("q1", {1}));
+  initial.push_back(MakeTurn(Role::kAssistant, "a1"));
+  initial.push_back(ImageTurn("q2", {50}));
+  initial.push_back(MakeTurn(Role::kAssistant, "a2"));
+  c.Add(c.PlanAdd(initial), std::move(initial));
+  std::vector<Turn> added;
+  added.push_back(AudioTurn("q3", {7, 8}));
+  const Conversation::Shape shape = c.ShapeAfter(c.PlanAdd(added), added);
+  ASSERT_EQ(shape.history.size(), 4u);
+  ASSERT_EQ(shape.history_audio.size(), 4u);
+  ASSERT_EQ(shape.history_images.size(), 4u);
+  EXPECT_EQ(Seconds(shape.user_audio), (std::vector<uint32_t>{7, 8}));
+  EXPECT_EQ(Seconds(shape.history_audio[0]), (std::vector<uint32_t>{1}));
+  EXPECT_TRUE(shape.history_audio[2].empty());
+  EXPECT_EQ(Widths(shape.history_images[2]), (std::vector<uint32_t>{50}));
+  EXPECT_TRUE(shape.user_images.empty());
+  // Text only: nothing about audio at all.
+  Conversation text(kLargeInputQuota);
+  std::vector<Turn> plain;
+  plain.push_back(MakeTurn(Role::kUser, "hi"));
+  const Conversation::Shape none = text.ShapeAfter(text.PlanAdd(plain), plain);
+  EXPECT_TRUE(none.history_audio.empty());
+  EXPECT_TRUE(none.user_audio.empty());
+}
+
+TEST(WebAIConversationTest, NeverMoreThanFourClipsInAShape) {
+  for (size_t a = 0; a <= 4; ++a) {
+    for (size_t n = 0; n <= 4; ++n) {
+      Conversation c(kLargeInputQuota * 8);
+      std::vector<Turn> initial;
+      initial.push_back(AudioTurn("a", std::vector<uint32_t>(a, 1)));
+      initial.push_back(MakeTurn(Role::kAssistant, "r"));
+      c.Add(c.PlanAdd(initial), std::move(initial));
+      std::vector<Turn> added;
+      added.push_back(AudioTurn("n", std::vector<uint32_t>(n, 2)));
+      const Conversation::Shape s = c.ShapeAfter(c.PlanAdd(added), added);
+      size_t total = s.user_audio.size();
+      for (const auto& clips : s.history_audio) {
+        total += clips.size();
+      }
+      EXPECT_EQ(total, std::min(a + n, kMaxContextAudio)) << a << " " << n;
+      EXPECT_EQ(s.user_audio.size(), n);
     }
   }
 }

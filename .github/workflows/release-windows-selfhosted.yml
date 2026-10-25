@@ -561,6 +561,30 @@ jobs:
           Copy-Item $whModelDl (Join-Path $whDst "ggml-tiny.en.bin") -Force
           Write-Host "Bundled whisper.cpp $whVer + tiny.en into whisper\"
 
+          # MoltNet's font set: <DIR_EXE>\molt_fonts\ (the only fonts MoltNet
+          # windows draw with). Every file and licence is pinned by URL and
+          # SHA-256 in tools/fonts/moltnet_fonts.json, the same pins
+          # scripts/bundle-fonts.sh uses on macOS and Linux.
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE "tools\fonts\moltnet_fonts.json"
+          $fontSet = Get-Content -Raw $manifestPath | ConvertFrom-Json
+          $fontDst = Join-Path $stage "molt_fonts"
+          New-Item -ItemType Directory -Force -Path (Join-Path $fontDst "LICENSES") | Out-Null
+          $fontEntries = @()
+          foreach ($e in $fontSet.licenses) { $fontEntries += ,@($e, (Join-Path $fontDst "LICENSES")) }
+          foreach ($e in $fontSet.files)    { $fontEntries += ,@($e, $fontDst) }
+          foreach ($pair in $fontEntries) {
+            $e = $pair[0]
+            if ($e.install_name -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$') { throw "Bad font install name $($e.install_name)" }
+            $src = $fontSet.sources.($e.source)
+            $path = ($e.path -split '/' | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
+            $url = "https://raw.githubusercontent.com/$($src.repo)/$($src.commit)/$path"
+            $cached = Join-Path $dl ("molt-font-" + $e.sha256)
+            Get-Pinned $url $cached $e.sha256.ToUpper()
+            Copy-Item $cached (Join-Path $pair[1] $e.install_name) -Force
+          }
+          Copy-Item $manifestPath (Join-Path $fontDst "moltnet_fonts.json") -Force
+          Write-Host "Bundled MoltNet font set $($fontSet.version) into molt_fonts\"
+
           $zip = Join-Path $env:GITHUB_WORKSPACE "MoltBrowser-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item -Force $zip }
           # Prefer 7-Zip: fast AND writes spec-compliant forward-slash entries

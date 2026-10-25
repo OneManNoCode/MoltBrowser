@@ -109,7 +109,7 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"Fonts\"",
    "evidence": [
-    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"DejaVu Sans\", \"Liberation Sans\", \"Arial\", \"Ubuntu\"], expected a subset of the 19 allowed (not on the list: Ubuntu)"
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"DejaVu Sans\", \"Liberation Sans\", \"Arial\", \"Ubuntu\"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)"
    ],
    "group": "uniformity",
    "id": "uniform.fonts.visible",
@@ -388,7 +388,7 @@
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Tor's capacity)",
    "evidence": [
     "ConnLimit 1000 (expected 1000)",
-    "MaxClientCircuitsPending 64 (expected 64)"
+    "MaxClientCircuitsPending 256 (expected 256)"
    ],
    "group": "identity",
    "id": "identity.tor_capacity",
@@ -849,6 +849,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: CPU features\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.cpu.wasm_relaxed_simd",
+   "status": "PASS",
+   "title": "cpu.wasm_relaxed_simd is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: settings from the regular profile\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"16px\", expected 16px"
@@ -906,12 +917,34 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"Fonts\"",
    "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"cursive\": true, \"fantasy\": true, \"math\": true, \"monospace\": true, \"sans-serif\": true, \"serif\": true, \"system-ui\": true}, expected {\"cursive\": true, \"fantasy\": true, \"math\": true, \"monospace\": true, \"sans-serif\": true, \"serif\": true, \"system-ui\": true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.fonts.generic_map",
+   "status": "PASS",
+   "title": "fonts.generic_map is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Fonts\"",
+   "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [], expected []"
    ],
    "group": "uniformity",
    "id": "uniform.fonts.local_hidden",
    "status": "PASS",
    "title": "fonts.local_hidden is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Fonts\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"Arimo\", \"Tinos\", \"Cousine\", \"Noto Sans\", \"Noto Naskh Arabic\", \"Noto Sans Hebrew\", \"Noto Sans Armenian\", \"Noto Sans Georgian\", \"Noto Sans Ethiopic\", \"Noto Sans, expected [\"Arimo\", \"Tinos\", \"Cousine\", \"Noto Sans\", \"Noto Naskh Arabic\", \"Noto Sans Hebrew\", \"Noto Sans Armenian\", \"Noto Sans Geo"
+   ],
+   "group": "uniformity",
+   "id": "uniform.fonts.moltnet_set",
+   "status": "PASS",
+   "title": "fonts.moltnet_set is uniform"
   },
   {
    "details": null,
@@ -1391,7 +1424,7 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
    "evidence": [
-    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 8, expected 8"
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 4, expected 4"
    ],
    "group": "uniformity",
    "id": "uniform.nav.deviceMemory",
@@ -1479,7 +1512,7 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: performance.memory\"",
    "evidence": [
-    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 3760000000, expected 3760000000"
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 2330000000, expected 2330000000"
    ],
    "group": "uniformity",
    "id": "uniform.perf.jsHeapSizeLimit",
@@ -3044,7 +3077,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 167,
+  "PASS": 170,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3075,6 +3108,14 @@
     "audio.cadence_interval_ms": 10,
     "audio.channel_count": 2,
     "audio.channel_count_3": "IndexSizeError",
+    "audio.decoded_vorbis": {
+     "frames": 12288,
+     "hash": "9c41e2b07d35a8f61e04c2b9"
+    },
+    "audio.math": {
+     "reduction": -17.30476188659668,
+     "response": "c57e1a2b9d04f8361e7a0b5c"
+    },
     "audio.max_channel_count": 2,
     "audio.output_latency": 0.024,
     "audio.output_timestamp_ok": true,
@@ -3087,11 +3128,72 @@
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
+    "cpu.css_math": [
+     "412",
+     "287.25",
+     "903.5",
+     "78",
+     "650.5",
+     "233",
+     "596",
+     "138",
+     "216",
+     "936",
+     "61",
+     "440",
+     "488.375deg",
+     "311.25deg",
+     "904.5deg",
+     "127.75deg"
+    ],
+    "cpu.dommatrix": "6e3a90c1d2b7f4085a1c9e37",
+    "cpu.math": "5d0c1e7a92b4f3608e2d17c4",
+    "cpu.math_cross_arch": "b81f0d6e2a94c3570e1d8f42",
+    "cpu.wasm_relaxed_simd": false,
+    "cpu.wasm_simd": true,
     "css.default_font_size": "16px",
     "doc.characterSet_undeclared": "windows-1252",
     "eme.clearkey": "NotSupportedError",
     "eme.playready": "NotSupportedError",
     "eme.widevine": "NotSupportedError",
+    "fonts.fallback_widths": {
+     "Arab": [
+      61.54,
+      61.54,
+      61.54
+     ],
+     "Emoji": [
+      190.97,
+      190.97,
+      190.97
+     ],
+     "Hani": [
+      128,
+      128,
+      128
+     ]
+    },
+    "fonts.generic_map": {
+     "cursive": true,
+     "fantasy": true,
+     "math": true,
+     "monospace": true,
+     "sans-serif": true,
+     "serif": true,
+     "system-ui": true
+    },
+    "fonts.local_bundled": [
+     "Arimo-Regular",
+     "Arimo Italic",
+     "Tinos-Bold",
+     "Tinos Bold Italic",
+     "Cousine-Regular",
+     "NotoSans-Regular",
+     "Noto Naskh Arabic Regular",
+     "NotoSansMath-Regular",
+     "NotoSansCJKjp-Thin",
+     "Noto Color Emoji"
+    ],
     "fonts.local_hidden": [],
     "fonts.local_listed": [
      "DejaVu Sans",
@@ -3103,6 +3205,63 @@
      "Liberation Serif Italic",
      "Noto Sans",
      "NotoSans-Bold"
+    ],
+    "fonts.moltnet_set": [
+     "Arimo",
+     "Tinos",
+     "Cousine",
+     "Noto Sans",
+     "Noto Naskh Arabic",
+     "Noto Sans Hebrew",
+     "Noto Sans Armenian",
+     "Noto Sans Georgian",
+     "Noto Sans Ethiopic",
+     "Noto Sans Devanagari",
+     "Noto Sans Bengali",
+     "Noto Sans Gujarati",
+     "Noto Sans Gurmukhi",
+     "Noto Sans Kannada",
+     "Noto Sans Malayalam",
+     "Noto Sans Oriya",
+     "Noto Sans Tamil",
+     "Noto Sans Telugu",
+     "Noto Sans Sinhala",
+     "Noto Sans Thai",
+     "Noto Sans Lao",
+     "Noto Sans Khmer",
+     "Noto Sans Myanmar",
+     "Noto Serif Tibetan",
+     "Noto Sans Thaana",
+     "Noto Sans Syriac",
+     "Noto Sans Cherokee",
+     "Noto Sans Canadian Aboriginal",
+     "Noto Sans Javanese",
+     "Noto Sans Ol Chiki",
+     "Noto Sans Adlam",
+     "Noto Sans Mongolian",
+     "Noto Sans NKo",
+     "Noto Sans Tifinagh",
+     "Noto Sans Yi",
+     "Noto Sans Symbols",
+     "Noto Sans Symbols 2",
+     "Noto Sans Math",
+     "Noto Sans CJK JP",
+     "Noto Sans CJK KR",
+     "Noto Sans CJK SC",
+     "Noto Sans CJK TC",
+     "Noto Sans CJK HK",
+     "Noto Color Emoji",
+     "Noto Sans Hebrew Light",
+     "Arial",
+     "Helvetica",
+     "Liberation Sans",
+     "Times New Roman",
+     "Times",
+     "MS Serif",
+     "Liberation Serif",
+     "Courier New",
+     "Courier",
+     "Liberation Mono"
     ],
     "fonts.visible": [
      "DejaVu Sans",
@@ -3199,7 +3358,7 @@
     },
     "nav.connection_changes": 0,
     "nav.cpuPerformance": 0,
-    "nav.deviceMemory": 8,
+    "nav.deviceMemory": 4,
     "nav.doNotTrack": null,
     "nav.globalPrivacyControl": true,
     "nav.hardwareConcurrency": 8,
@@ -3211,13 +3370,17 @@
     "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     "perf.heap_cached": true,
     "perf.heap_rounded": true,
-    "perf.jsHeapSizeLimit": 3760000000,
+    "perf.jsHeapSizeLimit": 2330000000,
     "perm.geolocation": "prompt",
     "perm.window-management": "denied",
     "pixels.encoded_opus_48k": {
      "bytes": 4283,
      "chunks": 26,
      "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.p3_readback": {
+     "i420": "a07b3e95c6d2148f0e6b7d31",
+     "rgba": "3f9a61c2d84e0b7a5c1e9f20"
     },
     "pixels.video_frame": {
      "format": "I420",

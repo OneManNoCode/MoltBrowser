@@ -86,6 +86,14 @@ const DRAFT_WORKFLOW = {
 };
 const draftConfirmCalls = [];
 
+// The Agent studio's "Forget" on an allowed frame ([main, frame] each).
+const frameToolForgets = [];
+// The Agent studio's run questions (answerRunQuestion [id, qid, allowed]).
+const questionAnswers = [];
+const QUESTION = {id: '42', step: 3, kind: 'weak_match',
+                  text: 'The step “Click “<b>Add</b>”” couldn’t find its element ' +
+                        'as recorded: the page has changed. Use it?'};
+
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
 
@@ -504,6 +512,53 @@ async function checkChatAgentPlan(window) {
 const agentRunReplies = [];
 const agentSaveCalls = [];
 let nextAgentSave = {success: false, error: 'not set'};
+// molt://ai-chat's FRAME_TOOLS chip (docs/design/AGENT_ACTIONS.md §2.7.14):
+// the browser's question as text; "Not now", "This session" and (only when
+// the browser offers it) "Always here" send that answer from the click,
+// once; the run goes on (no Deny).
+async function checkChatFrameTools(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const fire = (event, value) => window.cr.webUIListenerCallback(event, value);
+  const chips = () => Array.from(doc.querySelectorAll('#agentSteps .agent-confirm'));
+  const sent = () => window.__sendArgs.filter((c) => c[0] === 'webAgentFrameTools');
+  window.startWebAgent('Find a widget');
+  await tick();
+  fire('agent-confirm', {id: 4, action: 'FRAME_TOOLS', remember: true,
+                         message: 'https://<b>w</b>.example, a frame on ' +
+                                  'https://shop.example, offers 2 tools.'});
+  await tick();
+  let chip = chips().pop();
+  assert(chip, 'the question is shown');
+  assert(/Another site/.test(chip.querySelector('.agent-confirm-title').textContent));
+  assert.strictEqual(chip.querySelector('.agent-confirm-msg').textContent,
+                     'https://<b>w</b>.example, a frame on https://shop.example, ' +
+                     'offers 2 tools.');
+  assert.strictEqual(chip.querySelectorAll('b').length, 0, 'text only');
+  assert.deepStrictEqual(
+      Array.from(chip.querySelectorAll('button')).map((b) => b.textContent),
+      ['Not now', 'This session', 'Always here']);
+  const always = Array.from(chip.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Always here');
+  always.click();
+  always.click();
+  assert.deepStrictEqual(sent().map((c) => JSON.stringify(c[1])), ['[4,"always"]'],
+                         'one answer, from the click');
+  assert(!chip.parentNode, 'answered: gone');
+  // Without "Always" on offer (Incognito), and "Not now".
+  fire('agent-confirm', {id: 5, action: 'FRAME_TOOLS', message: 'x'});
+  await tick();
+  chip = chips().pop();
+  assert.deepStrictEqual(
+      Array.from(chip.querySelectorAll('button')).map((b) => b.textContent),
+      ['Not now', 'This session']);
+  chip.querySelector('[data-answer=not_now]').click();
+  assert.strictEqual(JSON.stringify(sent().pop()[1]), '[5,"not_now"]');
+  assert(!window.__sent.includes('webAgentConfirm'), 'not an Allow / Deny');
+  doc.getElementById('agentStopBtn').click();
+  await tick();
+}
+
 async function checkChatAgentSave(window) {
   const doc = window.document;
   const tick = () => new Promise((r) => setTimeout(r, 15));
@@ -1189,12 +1244,43 @@ const PAGES = [
        {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
         host: 'example.com', trigger: {type: 'manual'}},
        {id: 'd1', name: 'Buy socks', stepCount: 4, trust: 'casual', draft: true,
-        host: 'shop.example', trigger: {type: 'manual'}}]},
-     getRuns: {runs: []},
+        host: 'shop.example', trigger: {type: 'manual'}},
+       {id: 'q1', name: 'Waiting', stepCount: 2, trust: 'approved',
+        host: 'shop.example', trigger: {type: 'manual'},
+        question: {id: '7', step: 1, kind: 'site_tool',
+                   text: 'Run the site’s tool “<img src=x onerror=alert(1)>”?'}}]},
+     getRuns: {id: 'w1', runs: [{ts: 1, ok: true, durationMs: 5, stepsExecuted: 1,
+       totalSteps: 1, steps: [{index: 0, type: 'click', description: 'Click',
+       ok: true, durationMs: 1, foundBy: 'its <b>label</b> (a fallback)'}]}]},
+     answerRunQuestion: (args) => {
+       questionAnswers.push(JSON.stringify(args.slice(1)));
+       return {ok: true};
+     },
+     listFrameTools: {persistent: true, pairs: [
+       {main: 'https://shop.example', frame: 'https://<b>widget</b>.example',
+        always: true},
+       {main: 'https://news.example', frame: 'https://w.example', always: false}]},
+     forgetFrameTools: (args) => {
+       frameToolForgets.push(JSON.stringify(args.slice(1)));
+       return {ok: true};
+     },
      getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
-               {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
+               {type: 'click', target: '#buy', description: 'Click "Buy"',
+                locators: {origin: 'https://www.example.com', list: [
+                  {by: 'role', role: 'button', value: '<b>Buy</b>'},
+                  {by: 'attr', name: 'data-testid', value: 'x'},
+                  {by: 'attr', name: '<i>evil</i>', value: 'y'},
+                  {by: 'text', value: 'Buy'}, {by: 'path', value: 'html'},
+                  {by: '__proto__', value: 'z'}]}},
+               {type: 'call_tool', target: 'add_to_cart',
+                description: 'Run the site’s tool “add_to_cart” on example.com',
+                extra: {host: 'example.com', review: 'value_withheld', tool: {
+                  origin: 'https://www.example.com',
+                  frame: {origin: 'https://<b>w</b>.example', path: '/c'},
+                  args: {id: '<img src=x onerror=alert(1)>', qty: 2, note: '{{tool_note}}'},
+                  secret_args: ['otp']}}}]},
      promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
      confirmDraftSites: (args) => {
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
@@ -1289,6 +1375,94 @@ const PAGES = [
      await tick();
      assert(!/Draft from an AI agent run/.test(draftPanel.textContent), 'confirmed');
      assert(/Not trusted/.test(draftPanel.textContent), 'now an untrusted workflow');
+     // The fallback locators: by kind only, as text; junk named generically.
+     window.openEditor('w1');
+     await tick();
+     const loc = doc.querySelector('#edSteps .loc-note');
+     assert(loc, 'the step says what else it looks for');
+     assert.strictEqual(loc.textContent,
+         '\u{1F9ED} If the page changes, it also looks for it by its role & name, ' +
+         'data-testid, an attribute, text, position.');
+     assert.strictEqual(doc.querySelectorAll('#edSteps .loc-note b, #edSteps .loc-note i').length, 0);
+     // A recorded site tool: what it gives the tool, its frame and what
+     // wasn't saved, as text; no field to type in.
+     const toolCard = Array.from(doc.querySelectorAll('#edSteps .estep')).find(
+         (c) => c.querySelector('.tool-args'));
+     assert(toolCard, 'a site-tool step');
+     assert.strictEqual(toolCard.querySelector('.tool-args').textContent,
+         'id = “<img src=x onerror=alert(1)>”; qty = 2; note = “{{tool_note}}”');
+     assert(/In the page’s frame from https:\/\/<b>w<\/b>\.example/.test(toolCard.textContent));
+     assert(/1 value not saved/.test(toolCard.textContent));
+     assert(/asked for it at each run/.test(toolCard.querySelector('.review-note').textContent));
+     assert.strictEqual(toolCard.querySelectorAll('img, b, input.inp').length, 0);
+     assert(/Site tool/.test(toolCard.querySelector('.etype').textContent));
+     // Saving keeps the withheld value's variable.
+     window.syncVariables();
+     assert(Object.prototype.hasOwnProperty.call(window.editorState.variables, 'tool_note'),
+            'a tool argument\'s variable is kept');
+     // A run's question: shown in the run's ticker as text; "Use it" and
+     // "Stop the run" send the answer for that question from the click.
+     window.showView('library');
+     await window.loadLibrary();
+     await tick();
+     window.doRun('w1', {}, 'watch');
+     window.cr.webUIListenerCallback('run-question', {id: 'w1', question: QUESTION});
+     const wcard = doc.querySelector('#libList .card');
+     const rq = wcard.querySelector('.card-run .run-q');
+     assert(rq, 'the question in the ticker');
+     assert(rq.textContent.includes('Click “<b>Add</b>”'), 'as text');
+     assert(/step 4/.test(rq.textContent));
+     assert.strictEqual(rq.querySelectorAll('b').length, 0);
+     const use = Array.from(rq.querySelectorAll('button')).find((b) => b.textContent === 'Use it');
+     assert(use, '"Use it" for a weak match');
+     use.click();
+     assert.strictEqual(questionAnswers.pop(), '["w1","42",true]', 'sent from the click');
+     await tick();
+     assert(!wcard.querySelector('.card-run .run-q'), 'answered: gone');
+     window.cr.webUIListenerCallback('run-question', {id: 'w1', question: QUESTION});
+     Array.from(wcard.querySelectorAll('.card-run .run-q button')).find(
+         (b) => b.textContent === 'Stop the run').click();
+     assert.strictEqual(questionAnswers.pop(), '["w1","42",false]');
+     await tick();
+     // Junk questions show nothing.
+     window.cr.webUIListenerCallback('run-question', {id: 'w1', question: {id: 1, text: 7}});
+     window.cr.webUIListenerCallback('run-question', {id: 'w1'});
+     window.cr.webUIListenerCallback('run-complete', {id: 'w1', ok: true});
+     // The library card of a run that waits: its question, "Allow" for a
+     // site tool, as text.
+     const qcard = Array.from(doc.querySelectorAll('#libList .card')).find(
+         (c) => c.getAttribute('data-wf-id') === 'q1');
+     const cq = qcard.querySelector('.run-q');
+     assert(cq && /Needs your OK — step 2/.test(cq.textContent), 'the waiting card');
+     assert.strictEqual(cq.querySelectorAll('img').length, 0);
+     Array.from(cq.querySelectorAll('button')).find((b) => b.textContent === 'Allow').click();
+     assert.strictEqual(questionAnswers.pop(), '["q1","7",true]');
+     await tick();
+     // Other sites' tools the user allowed: listed as text, each with
+     // "Forget", which sends exactly that pair.
+     const ft = doc.getElementById('frameTools');
+     assert(ft, 'the allowed frames are listed');
+     const ftRows = ft.querySelectorAll('.ft-row');
+     assert.strictEqual(ftRows.length, 2);
+     assert.strictEqual(ftRows[0].querySelector('.ft-pair').textContent,
+                        'https://<b>widget</b>.example on https://shop.example');
+     assert.strictEqual(ftRows[0].querySelector('.ft-when').textContent, 'always');
+     assert.strictEqual(ftRows[1].querySelector('.ft-when').textContent, 'this session');
+     assert.strictEqual(ft.querySelectorAll('b').length, 0, 'origins stay text');
+     ftRows[1].querySelector('.ft-forget').click();
+     assert.strictEqual(frameToolForgets.pop(),
+                        '["https://news.example","https://w.example"]');
+     await tick();
+     assert.strictEqual(doc.querySelectorAll('#frameTools').length, 1,
+                        'listed again, once');
+     // The Runs view says how each element was found, as text.
+     window.openRuns('w1', 'W');
+     await tick();
+     const found = Array.from(doc.querySelectorAll('#runsList .rnstep-note')).find(
+         (n) => n.textContent.startsWith('Found by'));
+     assert(found && found.textContent === 'Found by its <b>label</b> (a fallback)');
+     assert.strictEqual(doc.querySelectorAll('#runsList b').length, 0);
+     window.showView('library');
      // Leave an empty editor for the click-everything pass below: it clicks
      // controls in DOM order, so a populated step list would see its later
      // buttons clicked after "Delete step" had already detached them.
@@ -1572,6 +1746,7 @@ const PAGES = [
      await checkChatPageActions(window);
      await checkChatFormFill(window);
      await checkChatAgentPlan(window);
+     await checkChatFrameTools(window);
      await checkChatAgentSave(window);
    }},
 ];
@@ -1665,9 +1840,13 @@ async function runPage(page) {
 
   const sent = [];
   window.__sent = sent;
+  // Every message with its arguments, for checks that need them.
+  const sendArgs = [];
+  window.__sendArgs = sendArgs;
   const responses = page.responses || {};
   window.chrome = {send(method, args) {
     sent.push(method);
+    sendArgs.push([method, args]);
     const id = args && args[0];
     if (typeof id !== 'string') return;
     let r = responses[method];

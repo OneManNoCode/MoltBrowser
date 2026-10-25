@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/platform/transforms/rotation.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/transforms/rotation.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/transforms/rotation.cc b/third_party/blink/renderer/platform/transforms/rotation.cc
+index 870402d0a9dafe14f94318007c63d9fde81519b0..ad9d3116622871ddc20fcecfd7c1f242be877247 100644
+--- a/third_party/blink/renderer/platform/transforms/rotation.cc
++++ b/third_party/blink/renderer/platform/transforms/rotation.cc
+@@ -23,6 +23,7 @@
+ 
+ #include "base/numerics/angle_conversions.h"
+ #include "third_party/blink/renderer/platform/geometry/blend.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ #include "ui/gfx/geometry/quaternion.h"
+ #include "ui/gfx/geometry/transform.h"
+ 
+@@ -50,7 +51,9 @@ gfx::Vector3dF NormalizeAxis(gfx::Vector3dF axis) {
+ 
+ Rotation ComputeRotation(Quaternion q) {
+   double cos_half_angle = q.w();
+-  double interpolated_angle = base::RadToDeg(2 * std::acos(cos_half_angle));
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  double interpolated_angle =
++      base::RadToDeg(2 * gfx::molt_math::Acos(cos_half_angle));
+   gfx::Vector3dF interpolated_axis =
+       NormalizeAxis(gfx::Vector3dF(q.x(), q.y(), q.z()));
+   return Rotation(interpolated_axis, interpolated_angle);

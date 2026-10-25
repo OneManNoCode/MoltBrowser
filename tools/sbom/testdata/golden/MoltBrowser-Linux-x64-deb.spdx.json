@@ -11,7 +11,7 @@
       "Organization: GenEye AI Labs Inc."
     ]
   },
-  "comment": "Chromium third-party components: every shipped component of //chrome:chrome, as listed by tools/licenses/licenses.py in the Chromium checkout, with versions from their README.chromium files. Bundled helpers: none scanned (no --payload).",
+  "comment": "Chromium third-party components: every shipped component of //chrome:chrome, as listed by tools/licenses/licenses.py in the Chromium checkout, with versions from their README.chromium files. Bundled helpers: none scanned (no --payload). MoltNet font set: from tools/fonts/moltnet_fonts.json (pins).",
   "packages": [
     {
       "SPDXID": "SPDXRef-Package-MoltBrowser",
@@ -198,6 +198,43 @@
       "sourceInfo": "//third_party/zlib in the Chromium checkout; revision 82b0e4ef9e6ed21b0bf7ae2bc5ef3d1bde4ab0d1"
     },
     {
+      "SPDXID": "SPDXRef-Package-fonts-set",
+      "name": "MoltNet font set",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "OFL-1.1",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "2026.10.1",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/OneManNoCode/MoltBrowser",
+      "sourceInfo": "Pinned in tools/fonts/moltnet_fonts.json (sources at fixed commits, each file by size and SHA-256); installed by scripts/bundle-fonts.sh.",
+      "comment": "The fonts MoltNet windows draw text with, the same files on every OS: the manifest and the licence texts of the fonts listed with it."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fonts-TestSans-VF.ttf",
+      "name": "Test Sans (TestSans-VF.ttf)",
+      "downloadLocation": "https://raw.githubusercontent.com/example/fonts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/fonts/TestSans%5Bwght%5D.ttf",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "OFL-1.1",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "2.001",
+      "supplier": "NOASSERTION",
+      "packageFileName": "TestSans-VF.ttf",
+      "homepage": "https://github.com/example/fonts",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6f2a776d7c29efbcec22baf068cc016b375f2d8b4f80dcf1b6271a906f9107ba"
+        }
+      ],
+      "sourceInfo": "example/fonts at commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, pinned in tools/fonts/moltnet_fonts.json.",
+      "comment": "Font file of the MoltNet font set; licence text: LICENSES/OFL-Test.txt."
+    },
+    {
       "SPDXID": "SPDXRef-Package-dep-tor",
       "name": "tor (distribution package)",
       "downloadLocation": "NOASSERTION",
@@ -256,6 +293,16 @@
       "spdxElementId": "SPDXRef-Package-MoltBrowser",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-tp-third-party-zlib-zlib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-fonts-set"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-fonts-TestSans-VF.ttf"
     },
     {
       "spdxElementId": "SPDXRef-Package-dep-tor",

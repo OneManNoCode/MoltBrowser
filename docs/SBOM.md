@@ -47,6 +47,11 @@ Each SBOM lists:
 
   Each helper also carries the version and the source-archive SHA-256 that
   the bundle scripts pin.
+- **MoltNet's bundled font set**: one package for the set (its manifest
+  version) and one per font file, each with its download location (the
+  pinned repository, commit and path), SHA-256 and licence (OFL-1.1). The
+  shipped `molt_fonts` folder is checked against the manifest file by
+  file (`release.sh` refuses a release without it).
 - **On Linux**, the distribution's `tor` package as an *optional dependency*
   (it is recommended, not bundled).
 
@@ -129,6 +134,8 @@ incomplete SBOM. It stops if any of these is true:
 - the checkout is not at the pinned Chromium;
 - a shipped file has no pin;
 - a shipped model or data file doesn't match its pinned SHA-256.
+- a shipped font file is missing, changed or not in
+  `tools/fonts/moltnet_fonts.json`.
 
 Where the data comes from:
 
@@ -142,6 +149,7 @@ Where the data comes from:
 | whisper.cpp and its model | `scripts/bundle-whisper.sh` (`WHISPER_TAG`, `EXPECTED_COMMIT_WHISPER_*`, `EXPECTED_SHA256_WHISPER_TINY_EN`) |
 | Bundled models | the model registry in `browser_ai_runtime.cc` (revision and sha256 pins) |
 | Windows helpers | the `$pins` table in `release-windows-selfhosted.yml` |
+| MoltNet's font set | `tools/fonts/moltnet_fonts.json` (source repositories and commits, per file path, size and SHA-256, licences); installed by `scripts/bundle-fonts.sh` |
 
 `molt_sbom.py generate --repo-only --platform macos|linux|windows` works
 from this repository alone. It lists the MoltBrowser-owned parts:
@@ -151,7 +159,8 @@ from this repository alone. It lists the MoltBrowser-owned parts:
 - the Rust crates MoltBrowser adds, with their dependencies resolved through
   the vendored `Cargo.lock` (listed as `DEPENDS_ON`, since the lock file
   can't say what links on which platform);
-- the helper pins.
+- the helper pins;
+- the font set's pins.
 
 It does not list Chromium's own third-party components; the release SBOMs
 do.

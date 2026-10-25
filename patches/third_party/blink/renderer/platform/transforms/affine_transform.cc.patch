@@ -1,0 +1,63 @@
+MoltBrowser patch for third_party/blink/renderer/platform/transforms/affine_transform.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/platform/transforms/affine_transform.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/transforms/affine_transform.cc b/third_party/blink/renderer/platform/transforms/affine_transform.cc
+index e4550b66ca97fe4d1fae89692dda4d674b9a566b..c6e6b66b7243e3af8d5a504c2b027f9964b9d26a 100644
+--- a/third_party/blink/renderer/platform/transforms/affine_transform.cc
++++ b/third_party/blink/renderer/platform/transforms/affine_transform.cc
+@@ -35,6 +35,7 @@
+ #include "third_party/skia/include/core/SkM44.h"
+ #include "third_party/skia/include/core/SkMatrix.h"
+ #include "ui/gfx/geometry/decomposed_transform.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ #include "ui/gfx/geometry/point.h"
+ #include "ui/gfx/geometry/point_conversions.h"
+ #include "ui/gfx/geometry/point_f.h"
+@@ -130,8 +131,9 @@ AffineTransform& AffineTransform::Rotate(double a) {
+ }
+ 
+ AffineTransform& AffineTransform::RotateRadians(double a) {
+-  double cos_angle = cos(a);
+-  double sin_angle = sin(a);
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  double cos_angle = gfx::molt_math::Cos(a);
++  double sin_angle = gfx::molt_math::Sin(a);
+   AffineTransform rot(cos_angle, sin_angle, -sin_angle, cos_angle, 0, 0);
+ 
+   PreConcat(rot);
+@@ -162,7 +164,8 @@ AffineTransform& AffineTransform::ScaleNonUniform(double sx, double sy) {
+ }
+ 
+ AffineTransform& AffineTransform::RotateFromVector(double x, double y) {
+-  return RotateRadians(atan2(y, x));
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  return RotateRadians(gfx::molt_math::Atan2(y, x));
+ }
+ 
+ AffineTransform& AffineTransform::FlipX() {
+@@ -186,15 +189,19 @@ AffineTransform& AffineTransform::Shear(double sx, double sy) {
+ }
+ 
+ AffineTransform& AffineTransform::Skew(double angle_x, double angle_y) {
+-  return Shear(tan(base::DegToRad(angle_x)), tan(base::DegToRad(angle_y)));
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  return Shear(gfx::molt_math::Tan(base::DegToRad(angle_x)),
++               gfx::molt_math::Tan(base::DegToRad(angle_y)));
+ }
+ 
+ AffineTransform& AffineTransform::SkewX(double angle) {
+-  return Shear(tan(base::DegToRad(angle)), 0);
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  return Shear(gfx::molt_math::Tan(base::DegToRad(angle)), 0);
+ }
+ 
+ AffineTransform& AffineTransform::SkewY(double angle) {
+-  return Shear(0, tan(base::DegToRad(angle)));
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  return Shear(0, gfx::molt_math::Tan(base::DegToRad(angle)));
+ }
+ 
+ gfx::PointF AffineTransform::MapPoint(const gfx::PointF& point) const {

@@ -151,10 +151,25 @@ class MoltNetRouting {
   // no longer the current MoltNet profile (ForgetMoltNetProfile()), so no
   // window opens in it. Closes no window and destroys nothing (it runs
   // inside settings notifications). Idempotent; only for MoltNet profiles.
+  // The refusal reaches the network contexts on a pipe of their own, after
+  // some of their pages' requests maybe: WhenIdentityRefuses() tells when
+  // it is in place (molt_net_identity_end_policy.h).
   static void EndIdentity(Profile* moltnet_profile);
 
   // Whether EndIdentity() ended |moltnet_profile|'s identity.
   static bool HasIdentityEnded(Profile* moltnet_profile);
+
+  // After EndIdentity(): runs |done(true)| once every network context of
+  // |moltnet_profile| refuses every request, each having answered
+  // LookUpProxyForURL with the refusal; asked again every
+  // kMoltNetEndProbeIntervalMs (molt_net_identity_end_policy.h). Its
+  // connections and host cache are then dropped again (FlushNetworkState()),
+  // after the refusal, so none that a request opened before it stays.
+  // |done(false)| (after the same flush) if kMoltNetEndProbeDeadlineMs passes
+  // first or the profile goes away.
+  using RefusalCallback = base::OnceCallback<void(bool confirmed)>;
+  static void WhenIdentityRefuses(Profile* moltnet_profile,
+                                  RefusalCallback done);
 
   // Runs |callback| with the MoltNet profile whenever EndIdentity() ends an
   // identity (first time only). ProxyConfigMonitor uses it to hand that
@@ -171,8 +186,9 @@ class MoltNetRouting {
                             uint16_t socks_port,
                             DoneCallback done);
 
-  // Closes every socket and clears the host cache of the MoltNet profile's
-  // NetworkContext (used by New Identity before the profile is destroyed).
+  // Closes every socket and clears the host cache of each network context of
+  // the MoltNet profile (every loaded storage partition's; used when an
+  // identity ends, before the profile is destroyed).
   static void FlushNetworkState(Profile* moltnet_profile);
 
   // Forgets |moltnet_profile| as the current MoltNet profile so the next

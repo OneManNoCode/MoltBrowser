@@ -1,0 +1,24 @@
+MoltBrowser patch for storage/browser/blob/blob_storage_constants.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/blob/blob_storage_constants.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/blob/blob_storage_constants.h b/storage/browser/blob/blob_storage_constants.h
+index e4438a73596af3491a52961f88c525e72016836d..affd2372735d77adc58b834aa338561254de97b6 100644
+--- a/storage/browser/blob/blob_storage_constants.h
++++ b/storage/browser/blob/blob_storage_constants.h
+@@ -96,6 +96,13 @@ struct COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageLimits {
+   // usually set using the "blob-transport-by-file-min-size" switch (see
+   // BlobMemoryController).
+   uint64_t override_file_transport_min_size = 0ull;
++
++  // MoltBrowser: each budget key's share of blob memory (0: Chromium's one
++  // limit for all), and the machine memory a blob beyond
++  // |max_blob_in_memory_space| must leave available
++  // (molt_blob_budget_policy.h).
++  uint64_t molt_per_key_memory = 0ull;
++  uint64_t molt_memory_reserve = 0ull;
+ };
+ 
+ enum class IPCBlobItemRequestStrategy {

@@ -43,13 +43,17 @@ namespace molt_ai {
 // Images (section 10 of the design) are checked when the request arrives:
 // outside engine/image_input.h's bounds, more than kMaxImagesPerRequest, or
 // on an assistant turn is a bad message; with no vision projector loaded
-// the request is answered at once with kImagesUnsupported.
+// the request is answered at once with kImagesUnsupported. Audio clips
+// (section 13) the same way: engine/audio_input.h's bounds,
+// kMaxAudioPerRequest, user turns only; kAudioUnsupported without an audio
+// encoder.
 class MoltModelImpl : public mojom::Model {
  public:
   // |on_disconnect| runs when the browser closes the Model pipe. |vision|:
-  // the engine has a vision projector.
+  // the engine has a vision projector; |audio|: an audio encoder.
   MoltModelImpl(base::SequenceBound<LlamaEngine> engine,
                 bool vision,
+                bool audio,
                 mojo::PendingReceiver<mojom::Model> receiver,
                 base::OnceClosure on_disconnect);
   ~MoltModelImpl() override;
@@ -92,6 +96,7 @@ class MoltModelImpl : public mojom::Model {
 
   base::SequenceBound<LlamaEngine> engine_;
   const bool vision_;
+  const bool audio_;
   mojo::Receiver<mojom::Model> receiver_;
   base::circular_deque<std::unique_ptr<Request>> queue_;
   std::unique_ptr<Request> running_;

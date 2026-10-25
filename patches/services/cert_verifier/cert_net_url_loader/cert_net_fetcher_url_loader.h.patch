@@ -5,24 +5,25 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h b/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
-index a0d74838d57580abcdaf652475307a76e851010c..eede5d32d58493aa5a571a35562db5ba169d2d31 100644
+index a0d74838d57580abcdaf652475307a76e851010c..174b1f72e5972a05fce087fd6c90e26c194505ec 100644
 --- a/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
 +++ b/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
-@@ -45,6 +45,13 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
+@@ -45,6 +45,14 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
            void(mojo::PendingReceiver<network::mojom::URLLoaderFactory>)>
            bind_new_url_loader_factory_cb);
  
 +  // MoltBrowser: if `isolate_each_fetch`, every fetch gets a one-off
-+  // network key of its own (net::IsolationInfo::CreateTransient()): it
-+  // shares no HTTP cache entry, connection or proxy identity with another
-+  // fetch, and identical fetches in flight at the same time are not merged.
++  // network key of its own, of the site its verification names if any
++  // (molt_cert_fetch_isolation.h): it shares no HTTP cache entry,
++  // connection or proxy identity with another fetch, and identical fetches
++  // in flight at the same time are not merged.
 +  // Must be called before SetURLLoaderFactoryAndReconnector().
 +  void SetIsolateEachFetch(bool isolate_each_fetch);
 +
    // Returns the default timeout value. Intended for test use only.
    static base::TimeDelta GetDefaultTimeoutForTesting();
  
-@@ -77,6 +84,9 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
+@@ -77,6 +85,9 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
    scoped_refptr<base::SequencedTaskRunner> task_runner_;
  
    std::unique_ptr<AsyncCertNetFetcherURLLoader> impl_;

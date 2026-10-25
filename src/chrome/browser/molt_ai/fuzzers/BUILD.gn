@@ -81,6 +81,7 @@ fuzzer_test("molt_web_ai_conversation_fuzzer") {
   sources = [ "molt_web_ai_conversation_fuzzer.cc" ]
   deps = [
     "//base",
+    "//chrome/browser/molt_ai/runtime:model_audio",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/web_ai:logic",
   ]
@@ -256,6 +257,48 @@ fuzzer_test("molt_agent_run_draft_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# A step's fallback locators: the "locators" block of a .molt step, and the
+# page scripts' capture and probe reports.
+fuzzer_test("molt_automation_locators_fuzzer") {
+  sources = [ "molt_automation_locators_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:locators",
+  ]
+  dict = "dicts/automation_locators.dict"
+  seed_corpus = "corpus/molt_automation_locators_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+# A workflow's site-tool step: the CALL_TOOL step of a .molt file, the tool
+# a page offers at replay, a call recorded from the chat.
+fuzzer_test("molt_automation_tool_steps_fuzzer") {
+  sources = [ "molt_automation_tool_steps_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_tools",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/automation:tool_steps",
+  ]
+  dict = "dicts/agent_tools.dict"
+  seed_corpus = "corpus/molt_automation_tool_steps_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+# Site tools in frames of other sites: the pairs a profile stored, answers
+# on top of them, the web agent's question, a call's arguments.
+fuzzer_test("molt_frame_tools_fuzzer") {
+  sources = [ "molt_frame_tools_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:frame_tools",
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+  ]
+  dict = "dicts/frame_tools.dict"
+  seed_corpus = "corpus/molt_frame_tools_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 fuzzer_test("molt_automation_ai_steps_fuzzer") {
   sources = [ "molt_automation_ai_steps_fuzzer.cc" ]
   deps = [
@@ -355,5 +398,6 @@ group("molt_fuzzers") {
     "//chrome/services/molt_ai/document_parser/fuzzers",
     "//chrome/services/molt_ai/inference/fuzzers",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_farbling_fuzzer",
+    "//third_party/blink/renderer/core/molt_fingerprinting:molt_moltnet_font_set_fuzzer",
   ]
 }

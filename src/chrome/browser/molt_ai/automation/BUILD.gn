@@ -40,8 +40,17 @@ source_set("automation") {
   deps = [
     "//base",
     "//chrome/browser:browser_public_dependencies",
+
+    # Site-tool steps: the runner lists and calls a page's tools with the
+    # web agent's SiteToolHost, while #molt-agent-site-tools is on.
+    "//chrome/browser/molt_ai/agents:features",
     "//chrome/browser/molt_ai/common",
+    "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+
+    # molt_net_profile_id.h (header-only IsMoltNetProfile()): a tool step in
+    # a frame of another site never runs in MoltNet.
+    "//chrome/browser/molt_ai/tor",
     # Secret (password) steps are filled from the vault at replay; read-only.
     "//chrome/browser/molt_ai/vault",
     "//chrome/browser/profiles:profile",
@@ -65,8 +74,40 @@ source_set("automation") {
     ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
+    ":run_questions",
+    ":tool_steps",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
+}
+
+# A site's WebMCP tool call kept as a workflow step: built from the call the
+# user approved while recording, read back with caps, the replay checks
+# (docs/design/AGENT_ACTIONS.md §3.5). Pure logic (base + url); fuzzed by
+# molt_automation_tool_steps_fuzzer.
+source_set("tool_steps") {
+  sources = [
+    "automation_tool_steps.cc",
+    "automation_tool_steps.h",
+  ]
+
+  deps = [ "//url" ]
+
+  public_deps = [
+    ":automation_policy",
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_tools",
+  ]
+}
+
+# What a running workflow asks the user (a weak fallback match, a site
+# tool that may change something), answered in the Agent studio. base only.
+source_set("run_questions") {
+  sources = [
+    "run_questions.cc",
+    "run_questions.h",
+  ]
+
+  public_deps = [ "//base" ]
 }
 
 # A successful web agent run saved as a draft workflow: which steps it keeps
@@ -118,6 +159,29 @@ source_set("automation_policy") {
   deps = [ "//url" ]
 
   public_deps = [
+    # Step::locators.
+    ":locators",
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# A step's fallback locators: captured from the element at record time,
+# probed and chosen from at replay (docs/design/AGENT_ACTIONS.md §3.4).
+# Pure logic (base + url) and the page scripts; fuzzed by
+# molt_automation_locators_fuzzer.
+source_set("locators") {
+  sources = [
+    "automation_locators.cc",
+    "automation_locators.h",
+  ]
+
+  deps = [
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+    "//url",
+  ]
+
+  public_deps = [
     "//base",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
@@ -129,13 +193,19 @@ source_set("unit_tests") {
   sources = [
     "agent_run_draft_unittest.cc",
     "automation_ai_steps_unittest.cc",
+    "automation_locators_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
+    "automation_tool_steps_unittest.cc",
+    "run_questions_unittest.cc",
   ]
   deps = [
     ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
+    ":locators",
+    ":run_questions",
+    ":tool_steps",
     "//base",
 
     # Every schema the runner builds must be accepted by the inference

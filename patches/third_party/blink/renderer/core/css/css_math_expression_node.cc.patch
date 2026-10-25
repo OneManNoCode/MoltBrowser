@@ -1,0 +1,103 @@
+MoltBrowser patch for third_party/blink/renderer/core/css/css_math_expression_node.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/css/css_math_expression_node.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/css/css_math_expression_node.cc b/third_party/blink/renderer/core/css/css_math_expression_node.cc
+index a868a299578f6fa36a2f52c769a794619dbc1abc..ff3fef57003961378ca6f9106115e088d44aa818 100644
+--- a/third_party/blink/renderer/core/css/css_math_expression_node.cc
++++ b/third_party/blink/renderer/core/css/css_math_expression_node.cc
+@@ -69,6 +69,7 @@
+ #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ #include "third_party/blink/renderer/platform/wtf/vector_traits.h"
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ #include "ui/gfx/geometry/sin_cos_degrees.h"
+ 
+ namespace blink {
+@@ -2144,7 +2145,8 @@ CSSMathExpressionNode* CSSMathExpressionOperation::CreateExponentialFunction(
+         std::optional<double> b = operands[1]->ComputeValueInCanonicalUnit();
+         CHECK(a.has_value());
+         CHECK(b.has_value());
+-        value = std::pow(a.value(), b.value());
++        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++        value = gfx::molt_math::Pow(a.value(), b.value());
+       } else {
+         return MakeGarbageCollected<CSSMathExpressionOperation>(
+             category, std::move(operands), CSSMathOperator::kPow,
+@@ -2174,7 +2176,8 @@ CSSMathExpressionNode* CSSMathExpressionOperation::CreateExponentialFunction(
+         for (const CSSMathExpressionNode* operand : operands) {
+           std::optional<double> a = operand->ComputeValueInCanonicalUnit();
+           DCHECK(a.has_value());
+-          value = std::hypot(value, a.value());
++          // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++          value = gfx::molt_math::Hypot(value, a.value());
+         }
+         unit_type = CSSPrimitiveValue::CanonicalUnit(
+             operands.front()->ResolvedUnitType());
+@@ -2200,9 +2203,10 @@ CSSMathExpressionNode* CSSMathExpressionOperation::CreateExponentialFunction(
+       double a = ValueAsNumber(operands[0], error);
+       if (operands.size() == 2) {
+         double b = ValueAsNumber(operands[1], error);
+-        value = std::log2(a) / std::log2(b);
++        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++        value = gfx::molt_math::Log2(a) / gfx::molt_math::Log2(b);
+       } else {
+-        value = std::log(a);
++        value = gfx::molt_math::Log(a);
+       }
+       break;
+     }
+@@ -2214,7 +2218,8 @@ CSSMathExpressionNode* CSSMathExpressionOperation::CreateExponentialFunction(
+             CSSMathType());
+       }
+       double a = ValueAsNumber(operands[0], error);
+-      value = std::exp(a);
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++      value = gfx::molt_math::Exp(a);
+       break;
+     }
+     default:
+@@ -3801,15 +3806,18 @@ double CSSMathExpressionOperation::EvaluateOperator(
+     }
+     case CSSMathOperator::kExp: {
+       DCHECK_EQ(operands.size(), 1u);
+-      return std::exp(operands.front());
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++      return gfx::molt_math::Exp(operands.front());
+     }
+     case CSSMathOperator::kLog: {
+       DCHECK_GE(operands.size(), 1u);
+       DCHECK_LE(operands.size(), 2u);
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+       if (operands.size() == 2) {
+-        return std::log2(operands.front()) / std::log2(operands.back());
++        return gfx::molt_math::Log2(operands.front()) /
++               gfx::molt_math::Log2(operands.back());
+       }
+-      return std::log(operands.front());
++      return gfx::molt_math::Log(operands.front());
+     }
+     case CSSMathOperator::kSqrt: {
+       DCHECK_EQ(operands.size(), 1u);
+@@ -3819,7 +3827,8 @@ double CSSMathExpressionOperation::EvaluateOperator(
+       DCHECK_GE(operands.size(), 1u);
+       double value = 0;
+       for (double operand : operands) {
+-        value = std::hypot(value, operand);
++        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++        value = gfx::molt_math::Hypot(value, operand);
+       }
+       return value;
+     }
+@@ -3853,7 +3862,8 @@ double CSSMathExpressionOperation::EvaluateOperator(
+     }
+     case CSSMathOperator::kPow: {
+       DCHECK_EQ(operands.size(), 2u);
+-      return std::pow(operands[0], operands[1]);
++      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++      return gfx::molt_math::Pow(operands[0], operands[1]);
+     }
+     case CSSMathOperator::kSin:
+     case CSSMathOperator::kCos:

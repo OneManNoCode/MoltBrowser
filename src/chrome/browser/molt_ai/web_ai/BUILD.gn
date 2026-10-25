@@ -32,9 +32,14 @@ source_set("logic") {
     "web_ai_translation.h",
   ]
 
-  # Images in a session's context (std-only).
-  public_deps = [ "//chrome/browser/molt_ai/runtime:model_image" ]
+  # Images and audio clips in a session's context (std-only).
+  public_deps = [
+    "//chrome/browser/molt_ai/runtime:model_audio",
+    "//chrome/browser/molt_ai/runtime:model_image",
+  ]
   deps = [
+    "//chrome/services/molt_ai/inference/engine:audio_input",
+
     # JsonQuote() for the texts of a page-translation batch (std-only).
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//chrome/services/molt_ai/inference/engine:image_input",
@@ -64,7 +69,10 @@ source_set("manager") {
     "//skia",
     "//third_party/blink/public/mojom:mojom_platform",
   ]
-  deps = [ "//chrome/services/molt_ai/inference/engine:stream_filters" ]
+  deps = [
+    "//chrome/services/molt_ai/inference/engine:audio_input",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
 }
 
 # A profile's answers and prompt pauses over a PrefService (or in memory).

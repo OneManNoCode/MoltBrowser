@@ -1,0 +1,13 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+[package]
+name = "skrifa_dump"
+version = "0.1.0"
+edition = "2021"
+
+# The skrifa version Chromium 156 vendors (third_party/rust/
+# chromium_crates_io/Cargo.toml), which Skia's Fontations backend uses for
+# metrics, advances and outlines.
+[dependencies]
+skrifa = "=0.46.2"

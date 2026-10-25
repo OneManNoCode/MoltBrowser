@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..51b48f2a97731dbd06e8f803cb8edf1dc8330b37 100644
+index 66e2d0450518803f1531470045ffadc1412c497f..f4cfec454996fb62d2e1e9d2362a9c7aed97d057 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -665,6 +665,34 @@ void RemoveInvalidationFilterCallback(
@@ -155,7 +155,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..51b48f2a97731dbd06e8f803cb8edf1d
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3344,6 +3418,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3344,6 +3418,32 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  
@@ -171,6 +171,17 @@ index 66e2d0450518803f1531470045ffadc1412c497f..51b48f2a97731dbd06e8f803cb8edf1d
 +            result.url_request_context->http_transaction_factory()
 +                ->GetSession()) {
 +      session->ssl_client_context()->MoltSendNoClientCertificates();
++    }
++  }
++  // MoltBrowser: MoltNet verifies each certificate for its own connection
++  // (molt_uncached_cert_verification); its verifications name their site,
++  // and the certificate fetches they need count against it
++  // (net/cert/molt_cert_fetch_site.h).
++  if (params_->molt_uncached_cert_verification) {
++    if (net::HttpNetworkSession* session =
++            result.url_request_context->http_transaction_factory()
++                ->GetSession()) {
++      session->ssl_client_context()->MoltCarryCertFetchSite();
 +    }
 +  }
 +

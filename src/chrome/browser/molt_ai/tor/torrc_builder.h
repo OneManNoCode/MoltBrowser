@@ -35,17 +35,34 @@ namespace tor {
 inline constexpr size_t kTorConnLimit = 1000;
 static_assert(kTorConnLimit == net::kMoltTorConnLimit);
 //  * MaxClientCircuitsPending: how many circuits Tor builds for streams at
-//    a time, for all sites together; a stream that needs a new circuit
-//    beyond it waits. Twice Tor's default (32), so that no one site can
-//    fill it: a site has at most kMoltSocksHandshakesPerSite handshakes in
-//    progress, and a connection needs at most three new circuits at a time
-//    (an onion service's descriptor, introduction and rendezvous circuits),
-//    with the one-off certificate fetches' handshakes on top.
-inline constexpr size_t kTorMaxClientCircuitsPending = 64;
-inline constexpr size_t kTorNewCircuitsPerConnection = 3;
-static_assert(net::kMoltSocksHandshakesPerSite * kTorNewCircuitsPerConnection +
-                  net::kMoltUnattributedSocksHandshakes <
+//    a time, for all sites together, its own preemptive and measurement
+//    circuits included; a stream that needs a new circuit beyond it waits.
+//    MoltNet's SOCKS handshakes in progress, each weighed by the circuits
+//    it can make Tor build at a time (three for an onion service: its
+//    descriptor, introduction and rendezvous circuits; else one), stay
+//    within kMoltSocksHandshakeBudget for all sites together, and the
+//    limit is set above that with room for Tor's own circuits, so neither
+//    a site nor a group of sites can fill it and keep another site's
+//    circuit from being built. Tor's default is 32; in normal browsing a
+//    handful are pending (one for each site starting at once), so the
+//    higher limit only matters while many sites start at the same time.
+inline constexpr size_t kTorMaxClientCircuitsPending =
+    net::kMoltTorMaxClientCircuitsPending;
+inline constexpr size_t kTorNewCircuitsPerConnection =
+    net::kMoltOnionHandshakeWeight;
+static_assert(net::kMoltSocksHandshakeBudget +
+                  net::kMoltUnattributedSocksHandshakes +
+                  net::kMoltTorOwnPendingCircuits <=
               kTorMaxClientCircuitsPending);
+// Tor accepts at most 1024.
+static_assert(kTorMaxClientCircuitsPending <= 1024);
+//  * The circuit build timeout stays Tor's own, learned from this client's
+//    build times (LearnCircuitBuildTimeout, on by default): a circuit that
+//    takes longer than most is given up for a new one within a few seconds,
+//    where a fixed timeout (60 seconds without learning) would keep a page
+//    waiting on a slow circuit. Tor Browser keeps it too. A circuit Tor
+//    keeps building to measure it after the timeout counts against
+//    MaxClientCircuitsPending, within the room left for Tor's own.
 
 // Pluggable transports MoltNet knows how to drive.
 enum class BridgeTransport {

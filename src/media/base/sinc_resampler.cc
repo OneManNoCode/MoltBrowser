@@ -89,6 +89,7 @@
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
 #include "media/base/molt_portable_media.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 #if defined(ARCH_CPU_X86_FAMILY)
 #include <immintrin.h>
@@ -239,16 +240,20 @@ void SincResampler::InitializeKernel() {
 
       // Compute Blackman window, matching the offset of the sinc().
       const float x = (i - subsample_offset) / signed_kernel_size;
-      const float window =
-          static_cast<float>(kA0 - kA1 * cos(2.0 * std::numbers::pi * x) +
-                             kA2 * cos(4.0 * std::numbers::pi * x));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      const float window = static_cast<float>(
+          kA0 - kA1 * gfx::molt_math::Cos(2.0 * std::numbers::pi * x) +
+          kA2 * gfx::molt_math::Cos(4.0 * std::numbers::pi * x));
       kernel_window_storage_[idx] = window;
 
       // Compute the sinc with offset, then window the sinc() function and store
       // at the correct offset.
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
       kernel_storage_[idx] = static_cast<float>(
-          window * (pre_sinc ? sin(sinc_scale_factor * pre_sinc) / pre_sinc
-                             : sinc_scale_factor));
+          window *
+          (pre_sinc
+               ? gfx::molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc
+               : sinc_scale_factor));
     }
   }
 }
@@ -272,9 +277,12 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
       const float window = kernel_window_storage_[idx];
       const float pre_sinc = kernel_pre_sinc_storage_[idx];
 
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
       kernel_storage_[idx] = static_cast<float>(
-          window * (pre_sinc ? sin(sinc_scale_factor * pre_sinc) / pre_sinc
-                             : sinc_scale_factor));
+          window *
+          (pre_sinc
+               ? gfx::molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc
+               : sinc_scale_factor));
     }
   }
 }

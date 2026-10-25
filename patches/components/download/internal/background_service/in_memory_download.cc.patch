@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/download/internal/background_service/in_memory_download.cc b/components/download/internal/background_service/in_memory_download.cc
-index 3bd11ee31de6032a46afe80c050e11f30309e3f8..1fc16a3b54f140059df708cdbcf6a864f316dbd5 100644
+index 3bd11ee31de6032a46afe80c050e11f30309e3f8..92445cddc8e13f3a630d4b99ef2160ffc872a887 100644
 --- a/components/download/internal/background_service/in_memory_download.cc
 +++ b/components/download/internal/background_service/in_memory_download.cc
 @@ -11,6 +11,7 @@
@@ -16,13 +16,17 @@ index 3bd11ee31de6032a46afe80c050e11f30309e3f8..1fc16a3b54f140059df708cdbcf6a864
  #include "net/base/load_flags.h"
  #include "net/traffic_annotation/network_traffic_annotation.h"
  #include "services/network/public/cpp/resource_request.h"
-@@ -231,6 +232,9 @@ void InMemoryDownloadImpl::SendRequest() {
+@@ -231,6 +232,13 @@ void InMemoryDownloadImpl::SendRequest() {
      request->site_for_cookies =
          request_params_.isolation_info->site_for_cookies();
    }
 +  // MoltBrowser: and the network isolation of the site that started it, not
-+  // its destination's (molt_registering_site_isolation.h).
++  // its destination's, with the fetch's credentials mode and initiator
++  // (molt_registering_site_isolation.h).
 +  MoltCarryRegisteringSiteIsolation(request_params_.isolation_info, *request);
++  MoltCarryFetchCredentialsAndInitiator(
++      request_params_.isolation_info, request_params_.credentials_mode,
++      request_params_.initiator, *request);
  
    url_chain_.push_back(request_params_.url);
  

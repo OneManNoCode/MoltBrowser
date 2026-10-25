@@ -14,6 +14,7 @@
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/services/molt_ai/inference/engine/audio_input.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
 #include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
@@ -33,6 +34,11 @@ static_assert(mojom::kMaxImageSide == kMaxImageSide);
 static_assert(mojom::kMinImageSide == kMinImageSide);
 static_assert(mojom::kMaxImageAspectRatio == kMaxImageAspectRatio);
 static_assert(mojom::kMaxImagesPerRequest == kMaxImagesPerRequest);
+// And on audio (engine/audio_input.h).
+static_assert(mojom::kAudioSampleRate == kAudioSampleRate);
+static_assert(mojom::kMinAudioSamples == kMinAudioSamples);
+static_assert(mojom::kMaxAudioSamples == kMaxAudioSamples);
+static_assert(mojom::kMaxAudioPerRequest == kMaxAudioPerRequest);
 // And the pipeline cache's (engine/gpu_pipeline_cache.h).
 static_assert(mojom::kMaxPipelineCacheBytes == kMaxPipelineCacheBytes);
 
@@ -78,8 +84,8 @@ std::optional<std::string> GrammarFor(
 }
 
 // Answers a request that can't run (a refused constraint, images for a
-// model without vision, an image buffer the service couldn't map) without
-// queueing it.
+// model without vision, audio for one without an audio encoder, a buffer
+// the service couldn't map) without queueing it.
 void AnswerAtOnce(
     mojo::PendingRemote<mojom::GenerationStreamer> pending_streamer,
     mojom::GenerationStatus status) {
@@ -120,6 +126,51 @@ const char* CheckImages(const mojom::ChatRequest& request, size_t* count) {
   return nullptr;
 }
 
+// The same for its audio clips (the length of each, how many, which
+// turns).
+const char* CheckAudio(const mojom::ChatRequest& request, size_t* count) {
+  size_t n = request.user_audio.size();
+  for (const mojom::ChatTurnPtr& turn : request.history) {
+    if (!turn->audio.empty() && turn->role != mojom::ChatRole::kUser) {
+      return "audio on an assistant turn";
+    }
+    n += turn->audio.size();
+  }
+  if (n > mojom::kMaxAudioPerRequest) return "too many audio clips";
+  auto check = [](const mojom::AudioInputPtr& audio) {
+    // An unmappable buffer reads as empty; StreamChat answers it apart.
+    return audio->pcm.storage_type() ==
+               mojo_base::BigBuffer::StorageType::kInvalidBuffer ||
+           CheckModelAudio(audio->pcm.size()) == AudioCheck::kOk;
+  };
+  for (const mojom::AudioInputPtr& audio : request.user_audio) {
+    if (!check(audio)) return "audio outside the bounds";
+  }
+  for (const mojom::ChatTurnPtr& turn : request.history) {
+    for (const mojom::AudioInputPtr& audio : turn->audio) {
+      if (!check(audio)) return "audio outside the bounds";
+    }
+  }
+  *count = n;
+  return nullptr;
+}
+
+bool AnyUnmappedAudio(const mojom::ChatRequest& request) {
+  auto unmapped = [](const mojom::AudioInputPtr& audio) {
+    return audio->pcm.storage_type() ==
+           mojo_base::BigBuffer::StorageType::kInvalidBuffer;
+  };
+  for (const mojom::AudioInputPtr& audio : request.user_audio) {
+    if (unmapped(audio)) return true;
+  }
+  for (const mojom::ChatTurnPtr& turn : request.history) {
+    for (const mojom::AudioInputPtr& audio : turn->audio) {
+      if (unmapped(audio)) return true;
+    }
+  }
+  return false;
+}
+
 bool AnyUnmappedImage(const mojom::ChatRequest& request) {
   auto unmapped = [](const mojom::ImageInputPtr& image) {
     return image->rgb.storage_type() ==
@@ -145,6 +196,21 @@ std::vector<EngineImage> ToEngineImages(
     out.emplace_back(image->width, image->height,
                      std::vector<uint8_t>(image->rgb.begin(),
                                           image->rgb.end()));
+  }
+  return out;
+}
+
+// The samples, copied out of the message (checked by CheckAudio(); 16-bit
+// in the host's byte order).
+std::vector<EngineAudio> ToEngineAudio(
+    const std::vector<mojom::AudioInputPtr>& audio) {
+  std::vector<EngineAudio> out;
+  out.reserve(audio.size());
+  for (const mojom::AudioInputPtr& clip : audio) {
+    std::vector<int16_t> samples(clip->pcm.size() / kAudioBytesPerSample);
+    std::copy_n(clip->pcm.data(), samples.size() * kAudioBytesPerSample,
+                reinterpret_cast<uint8_t*>(samples.data()));
+    out.emplace_back(std::move(samples));
   }
   return out;
 }
@@ -192,6 +258,8 @@ mojom::GenerationStatus ToMojo(EngineStatus status) {
       return mojom::GenerationStatus::kImagesUnsupported;
     case EngineStatus::kBackendFailed:
       return mojom::GenerationStatus::kBackendFailed;
+    case EngineStatus::kAudioUnsupported:
+      return mojom::GenerationStatus::kAudioUnsupported;
   }
   return mojom::GenerationStatus::kDecodeFailed;
 }
@@ -229,10 +297,12 @@ struct MoltModelImpl::Request {
 
 MoltModelImpl::MoltModelImpl(base::SequenceBound<LlamaEngine> engine,
                              bool vision,
+                             bool audio,
                              mojo::PendingReceiver<mojom::Model> receiver,
                              base::OnceClosure on_disconnect)
     : engine_(std::move(engine)),
       vision_(vision),
+      audio_(audio),
       receiver_(this, std::move(receiver)) {
   receiver_.set_disconnect_handler(std::move(on_disconnect));
 }
@@ -271,7 +341,18 @@ void MoltModelImpl::StreamChat(
                  mojom::GenerationStatus::kImagesUnsupported);
     return;
   }
-  if (n_images > 0 && AnyUnmappedImage(*request)) {
+  size_t n_audio = 0;
+  if (const char* error = CheckAudio(*request, &n_audio)) {
+    receiver_.ReportBadMessage(error);
+    return;
+  }
+  if (n_audio > 0 && !audio_) {
+    AnswerAtOnce(std::move(streamer),
+                 mojom::GenerationStatus::kAudioUnsupported);
+    return;
+  }
+  if ((n_images > 0 && AnyUnmappedImage(*request)) ||
+      (n_audio > 0 && AnyUnmappedAudio(*request))) {
     // The shared memory couldn't be mapped here (out of address space).
     AnswerAtOnce(std::move(streamer), mojom::GenerationStatus::kDecodeFailed);
     return;
@@ -283,6 +364,7 @@ void MoltModelImpl::StreamChat(
   r->chat.context = std::move(request->context);
   r->chat.user_message = std::move(request->user_message);
   r->chat.user_images = ToEngineImages(request->user_images);
+  r->chat.user_audio = ToEngineAudio(request->user_audio);
   r->chat.history.reserve(request->history.size());
   for (mojom::ChatTurnPtr& turn : request->history) {
     if (!TextFits(turn->content)) {
@@ -292,6 +374,7 @@ void MoltModelImpl::StreamChat(
     EngineChatTurn engine_turn(turn->role == mojom::ChatRole::kUser,
                                std::move(turn->content));
     engine_turn.images = ToEngineImages(turn->images);
+    engine_turn.audio = ToEngineAudio(turn->audio);
     r->chat.history.push_back(std::move(engine_turn));
   }
   std::optional<std::string> grammar = GrammarFor(params->constraint);

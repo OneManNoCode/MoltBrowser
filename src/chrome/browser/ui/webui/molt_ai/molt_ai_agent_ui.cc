@@ -33,6 +33,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
@@ -41,6 +42,7 @@
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/automation/run_questions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -63,6 +65,8 @@ using molt_ai::automation::AutomationScheduler;
 using molt_ai::automation::AutomationSecurity;
 using molt_ai::automation::AutomationSchedulerServiceFactory;
 using molt_ai::automation::AutomationStorage;
+using molt_ai::automation::RunQuestion;
+using molt_ai::automation::RunQuestions;
 using molt_ai::automation::RunScriptInBackgroundBrowser;
 using molt_ai::automation::Script;
 using molt_ai::automation::Step;
@@ -91,6 +95,7 @@ std::string StepIcon(StepType t) {
     case StepType::AI_DECIDE: return "🧠";
     case StepType::ASSERT: return "✅";
     case StepType::NOTIFY: return "🔔";
+    case StepType::CALL_TOOL: return "\U0001F9F0";  // toolbox
     default: return "•";
   }
 }
@@ -130,6 +135,22 @@ std::string ScheduleLabel(const Trigger& t) {
   }
 }
 
+// A question a run of |script_id| waits on (run_questions.h), for the
+// page: its id as a string (int64), the step, its kind and the browser's
+// text.
+std::optional<base::DictValue> QuestionDict(const std::string& script_id) {
+  std::optional<RunQuestion> q = RunQuestions::Get()->PendingFor(script_id);
+  if (!q) {
+    return std::nullopt;
+  }
+  base::DictValue d;
+  d.Set("id", base::NumberToString(q->id));
+  d.Set("step", q->step);
+  d.Set("kind", q->kind);
+  d.Set("text", q->text);
+  return d;
+}
+
 // Summary dict for the library list.
 base::DictValue WorkflowSummary(const Script& s) {
   base::DictValue d;
@@ -142,6 +163,10 @@ base::DictValue WorkflowSummary(const Script& s) {
   // the card offers "Review" instead of Run, trust and schedule.
   if (s.security.sites_unconfirmed) {
     d.Set("draft", true);
+  }
+  // A run waiting for the user's answer.
+  if (std::optional<base::DictValue> q = QuestionDict(s.id)) {
+    d.Set("question", std::move(*q));
   }
   // The site this workflow targets (first NAVIGATE step) → favicon + hostname
   // on the card so it's obvious at a glance which website it's for.
@@ -220,6 +245,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     bind("cancelRun", &AgentStudioHandler::HandleCancelRun);
     bind("promoteTrust", &AgentStudioHandler::HandlePromoteTrust);
     bind("confirmDraftSites", &AgentStudioHandler::HandleConfirmDraftSites);
+    bind("answerRunQuestion", &AgentStudioHandler::HandleAnswerRunQuestion);
+    bind("listFrameTools", &AgentStudioHandler::HandleListFrameTools);
+    bind("forgetFrameTools", &AgentStudioHandler::HandleForgetFrameTools);
   }
 
  private:
@@ -376,6 +404,47 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     ResolveDict(args, std::move(out));
   }
 
+  // The frames of other sites the user let offer their tools to the
+  // agents, per page (molt_ai/agents/frame_tool_permissions.h): [cb] ->
+  // {pairs: [{main, frame, always}], persistent}. Origins are the
+  // browser's; the page shows them as text.
+  void HandleListFrameTools(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    base::ListValue pairs;
+    molt_ai::FrameToolPermissions* permissions =
+        profile() ? molt_ai::FrameToolPermissions::Get(profile()) : nullptr;
+    if (permissions) {
+      for (const molt_ai::frame_tools::Pair& pair : permissions->List()) {
+        base::DictValue p;
+        p.Set("main", pair.main_origin);
+        p.Set("frame", pair.frame_origin);
+        p.Set("always", pair.grant == molt_ai::frame_tools::Grant::kAlways);
+        pairs.Append(std::move(p));
+      }
+    }
+    out.Set("pairs", std::move(pairs));
+    out.Set("persistent", permissions && permissions->persistent());
+    ResolveDict(args, std::move(out));
+  }
+
+  // [cb, main, frame] -> {ok}: forgets that pair (only ever takes a
+  // permission away, so it needs no click check).
+  void HandleForgetFrameTools(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    bool ok = false;
+    if (args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
+      if (molt_ai::FrameToolPermissions* permissions =
+              profile() ? molt_ai::FrameToolPermissions::Get(profile())
+                        : nullptr) {
+        ok = permissions->Remove(args[1].GetString(), args[2].GetString());
+      }
+    }
+    out.Set("ok", ok);
+    ResolveDict(args, std::move(out));
+  }
+
   void HandleDeleteWorkflow(const base::ListValue& args) {
     AllowJavascript();
     base::DictValue out;
@@ -460,6 +529,19 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     if (!IsJavascriptAllowed() || attempts <= 0) {
       return;
     }
+    // A question the run waits on: shown once, in the run's ticker. The run
+    // waits, so the poll does too (it doesn't count against the attempts).
+    if (std::optional<base::DictValue> q = QuestionDict(id)) {
+      const std::string* qid = q->FindString("id");
+      if (qid && shown_questions_[id] != *qid) {
+        shown_questions_[id] = *qid;
+        base::DictValue d;
+        d.Set("id", id);
+        d.Set("question", std::move(*q));
+        FireWebUIListener("run-question", base::Value(std::move(d)));
+      }
+      ++attempts;
+    }
     auto* st = storage();
     if (auto s = st ? st->Load(id) : std::nullopt) {
       if (s->stats.last_run_unix > before) {
@@ -522,6 +604,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
               sd.Set("ok", sr.ok);
               sd.Set("durationMs", sr.duration_ms);
               if (!sr.note.empty()) sd.Set("note", sr.note);
+              if (!sr.found_by.empty()) sd.Set("foundBy", sr.found_by);
               if (!sr.screenshot.empty()) sd.Set("shot", sr.screenshot);
               if (!sr.ok && failed < 0) failed = sr.index;
               steps.Append(std::move(sd));
@@ -581,7 +664,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         }
         draft.id = id;
         recorded_ids_.insert(id);
-        out.Set("draft", draft.ToJSON());
+        base::DictValue json = draft.ToJSON();
+        // The page reads {{variable}} defaults under "variables" (as
+        // getWorkflow gives them): a recorded site tool's withheld values.
+        if (const base::DictValue* dv = json.FindDict("default_variables")) {
+          json.Set("variables", dv->Clone());
+        }
+        out.Set("draft", std::move(json));
       }
     }
     base::DictValue st;
@@ -748,6 +837,40 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     ResolveDict(args, std::move(out));
   }
 
+  // A run's question (run_questions.h): [callback_id, workflow id,
+  // question id (a string), allowed]. Allowing is honoured only on a real
+  // click (the panel's transient user activation, consumed: one click
+  // answers one question); declining needs none. A question that is no
+  // longer open (answered, timed out, its run gone) changes nothing.
+  void HandleAnswerRunQuestion(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    out.Set("ok", false);
+    if (args.size() < 4 || !args[1].is_string() || !args[2].is_string()) {
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    const bool allowed = args[3].is_bool() && args[3].GetBool();
+    if (allowed) {
+      content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
+      if (!rfh || !rfh->ConsumeTransientUserActivation()) {
+        out.Set("error", "Click the button to answer");
+        ResolveDict(args, std::move(out));
+        return;
+      }
+    }
+    int64_t question_id = 0;
+    if (!base::StringToInt64(args[2].GetString(), &question_id) ||
+        !RunQuestions::Get()->Answer(question_id, args[1].GetString(),
+                                     allowed)) {
+      out.Set("error", "That question is no longer open.");
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    out.Set("ok", true);
+    ResolveDict(args, std::move(out));
+  }
+
   void HandleCancelRun(const base::ListValue& args) {
     AllowJavascript();
     // Background runs self-close on completion; there is no cross-process
@@ -773,6 +896,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
   // Draft ids minted by stopRecording in this panel and not yet saved (see
   // HandleSaveWorkflow: their first save starts APPROVED).
   std::set<std::string> recorded_ids_;
+
+  // The last question shown for each workflow's run (PollRunResult).
+  std::map<std::string, std::string> shown_questions_;
 
   base::WeakPtrFactory<AgentStudioHandler> weak_factory_{this};
 };
@@ -879,10 +1005,78 @@ var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your save
    honoured only on a real click, for exactly the sites shown). It is then
    an ordinary untrusted workflow. */
 var DRAFT_EXPLAIN='Made by the AI agent from one of your runs. Check its steps and confirm its sites before it can run.';
+/* ---- a run's question (the runner waits for the user) ----
+   The text is the browser's (page text in it already cleaned); shown as
+   text. Allowing must be a real click: the browser checks for it. */
+var QUESTION_LABELS={weak_match:'Use it',site_tool:'Allow'};
+function answerQuestion(id,q,allowed){
+  return sendWithPromise('answerRunQuestion',id,String(q.id),allowed===true).then(function(r){
+    if(!r||!r.ok){toast((r&&r.error)||'Couldn’t answer','err');return false;}
+    toast(allowed?'Answered — the run goes on':'The run stops at this step',allowed?'ok':'');
+    return true;
+  }).catch(function(){toast('Couldn’t answer','err');return false;});
+}
+function questionNode(id,q,after){
+  if(!q||typeof q.text!=='string')return null;
+  var label=QUESTION_LABELS.hasOwnProperty(q.kind)?QUESTION_LABELS[q.kind]:'Allow';
+  var box=h('div',{'class':'run-q'},[
+    h('div',{'class':'rq-h'},'Needs your OK'+(typeof q.step==='number'?(' — step '+(q.step+1)):'')),
+    h('div',{'class':'rq-m'},q.text.slice(0,600))
+  ]);
+  var btns=h('div',{'class':'trust-act'},[
+    h('button',{'class':'btn ghost',onClick:function(e){
+      e.stopPropagation();answerQuestion(id,q,false).then(function(ok){if(ok&&after)after();});
+    }},'Stop the run'),
+    h('button',{'class':'btn violet',onClick:function(e){
+      e.stopPropagation();
+      // Straight from the click: the browser checks for a user gesture.
+      answerQuestion(id,q,true).then(function(ok){if(ok&&after)after();});
+    }},label)
+  ]);
+  box.appendChild(btns);
+  return box;
+}
+/* The fallback locators of a step, by kind only (the values are page text
+   and stay out of the summary). */
+var LOCATOR_WORDS={role:'role & name',label:'label',text:'text',path:'position'};
+var LOCATOR_ATTRS=['id','name','data-testid','data-test','data-cy','data-qa','aria-label','placeholder','title','alt'];
+function locatorSummary(s){
+  var l=s&&s.locators&&Array.isArray(s.locators.list)?s.locators.list:null;
+  if(!l||!l.length)return '';
+  var words=[];
+  l.slice(0,8).forEach(function(x){
+    if(!x||typeof x.by!=='string')return;
+    var w=x.by==='attr'?(LOCATOR_ATTRS.indexOf(x.name)>=0?x.name:'an attribute')
+        :(LOCATOR_WORDS.hasOwnProperty(x.by)?LOCATOR_WORDS[x.by]:null);
+    if(w&&words.indexOf(w)<0)words.push(w);
+  });
+  return words.length?('If the page changes, it also looks for it by its '+words.join(', ')+'.'):'';
+}
 var REVIEW_NOTES={
   value_withheld:'The agent typed something here that looked private (a password, code, key or card number). It wasn’t saved: you’re asked for it at each run.',
-  secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.'
+  secret_field:'A card number or one-time code goes here. MoltBrowser never saves those, so a run stops at this step: remove it, or enter it yourself and run the rest.',
+  secret_argument:'This gives the site’s tool a card number or one-time code. MoltBrowser never saves those, so a run stops at this step: remove it, or do it yourself and run the rest.'
 };
+/* A recorded site-tool step: what it gives the tool (the values the user
+   approved when recording; withheld ones are asked at each run), as text. */
+function toolArgsNode(s){
+  var t=(s.extra&&typeof s.extra.tool==='object'&&s.extra.tool)||{};
+  var args=(t.args&&typeof t.args==='object'&&!Array.isArray(t.args))?t.args:{};
+  var parts=[];
+  Object.keys(args).slice(0,8).forEach(function(k){
+    var v=args[k];
+    var shown=typeof v==='string'?('“'+v.slice(0,120)+'”'):JSON.stringify(v);
+    parts.push(String(k).slice(0,64)+' = '+String(shown).slice(0,160));
+  });
+  var kids=[h('label',{},'What it gives the tool'),
+            h('div',{'class':'tool-args'},parts.length?parts.join('; '):'nothing')];
+  if(t.frame&&typeof t.frame.origin==='string'){
+    kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+t.frame.origin.slice(0,120)));
+  }
+  var secret=Array.isArray(t.secret_args)?t.secret_args.length:0;
+  if(secret){kids.push(h('div',{'class':'loc-note'},secret+' value'+(secret===1?'':'s')+' not saved'));}
+  return h('div',{'class':'efield'},kids);
+}
 function isTrusted(level){return !!level&&level!=='casual';}
 function siteOfSteps(steps){
   for(var i=0;i<(steps||[]).length;i++){
@@ -902,9 +1096,11 @@ function setTrust(id,level){
 }
 
 var STEP_EMOJI={navigate:'\u{1F310}',click:'\u{1F446}',type:'⌨️',scroll:'\u{1F4DC}',keypress:'⏎',
-  wait:'⏳',wait_for:'⏳',extract:'\u{1F4CB}',ai_decide:'\u{1F9E0}',ai_extract:'\u{1F9E0}',assert:'✅',notify:'\u{1F514}'};
+  wait:'⏳',wait_for:'⏳',extract:'\u{1F4CB}',ai_decide:'\u{1F9E0}',ai_extract:'\u{1F9E0}',assert:'✅',notify:'\u{1F514}',
+  call_tool:'\u{1F9F0}'};
 var STEP_LABEL={navigate:'Go to page',click:'Click',type:'Type text',scroll:'Scroll',keypress:'Press key',
-  wait:'Wait',wait_for:'Wait for',extract:'Extract',ai_decide:'AI decision',ai_extract:'AI extract',assert:'Check',notify:'Notify'};
+  wait:'Wait',wait_for:'Wait for',extract:'Extract',ai_decide:'AI decision',ai_extract:'AI extract',assert:'Check',notify:'Notify',
+  call_tool:'Site tool'};
 function emojiFor(t){return STEP_EMOJI[t]||'⚙️';}
 function labelFor(t){return STEP_LABEL[t]||t;}
 
@@ -1044,7 +1240,41 @@ $('backBtn').addEventListener('click',function(){
 function loadLibrary(){
   return sendWithPromise('listWorkflows').then(function(r){
     renderLibrary((r&&r.workflows)||[]);
-  }).catch(function(){renderLibrary([]);});
+  }).catch(function(){renderLibrary([]);}).then(loadFrameTools);
+}
+/* ---- other sites' tools the user allowed (per page) ----
+   A frame of another site offers its tools to the agent only once the user
+   allowed it on that page (the agent asks). Listed here so they can be
+   taken back; the origins are the browser's, shown as text. */
+function loadFrameTools(){
+  return sendWithPromise('listFrameTools').then(function(r){
+    renderFrameTools((r&&r.pairs)||[]);
+  }).catch(function(){renderFrameTools([]);});
+}
+function renderFrameTools(pairs){
+  var old=$('frameTools'); if(old&&old.parentNode) old.parentNode.removeChild(old);
+  if(!pairs.length) return;
+  var box=h('div',{'class':'frame-tools',id:'frameTools'},[
+    h('div',{'class':'ft-h'},'Other sites\u2019 tools you allowed'),
+    h('div',{'class':'ft-s'},'Frames of these sites may offer their tools to the agent on these pages. Every call still asks you first.')
+  ]);
+  pairs.forEach(function(p){
+    var forget=h('button',{'class':'btn ghost ft-forget'},'Forget');
+    forget.addEventListener('click',function(){
+      sendWithPromise('forgetFrameTools',String(p.main),String(p.frame))
+        .then(loadFrameTools,loadFrameTools);
+    });
+    box.appendChild(h('div',{'class':'ft-row'},[
+      h('div',{'class':'ft-pair'},[
+        h('span',{'class':'ft-frame'},String(p.frame||'')),
+        ' on ',
+        h('span',{'class':'ft-main'},String(p.main||''))
+      ]),
+      h('span',{'class':'ft-when'},p.always===true?'always':'this session'),
+      forget
+    ]));
+  });
+  $('libList').appendChild(box);
 }
 function renderLibrary(list){
   var box=$('libList');clear(box);libraryCards={};
@@ -1117,6 +1347,11 @@ function buildCard(wf){
   // run ticker region (hidden until a run targets this card)
   var runReg=h('div',{'class':'card-run'});
   card.appendChild(runReg);
+  // A run of it waits for the user's answer.
+  if(wf.question){
+    var qn=questionNode(wf.id,wf.question,function(){loadLibrary();});
+    if(qn)card.appendChild(qn);
+  }
 
   var actions=h('div',{'class':'card-actions'});
   if(wf.draft){
@@ -1248,6 +1483,9 @@ function renderRuns(sid,runs){
         h('span',{'class':'rnstep-badge '+(st.ok?'ok':'fail')},st.ok?'✓':'✗')
       ]));
       if(st.note){row.appendChild(h('div',{'class':'rnstep-note'},st.note));}
+      if(typeof st.foundBy==='string'&&st.foundBy){
+        row.appendChild(h('div',{'class':'rnstep-note'},'Found by '+st.foundBy.slice(0,120)));
+      }
       if(st.shot){
         var img=h('img',{'class':'rnshot',loading:'lazy',src:shotUrl(sid,st.shot),alt:'Screenshot after step '+(st.index+1)});
         img.addEventListener('click',function(){img.classList.toggle('big');});
@@ -1505,6 +1743,16 @@ function buildEditorStep(s,i){
     card.appendChild(h('div',{'class':'review-note'},['⚠ ',review]));
   }
 
+  // A site's tool: what it gives the tool, nothing to type here.
+  if(s.type==='call_tool'){
+    card.appendChild(toolArgsNode(s));
+    return card;
+  }
+
+  // The step's fallback locators (what kind only).
+  var loc=locatorSummary(s);
+  if(loc){card.appendChild(h('div',{'class':'loc-note'},['\u{1F9ED} ',loc]));}
+
   // Record-time reference: a thumbnail of exactly what was clicked when this
   // step was recorded, so it's obvious which element the step targets.
   if(s.extra && s.extra.ref_shot){
@@ -1602,14 +1850,18 @@ function renameVariable(i,oldName,raw){
   });
   renderEditorSteps();
 }
-/* Recompute the variables map from all step values (keeps defaults). */
+/* Recompute the variables map from all step values (keeps defaults),
+   a recorded site tool's withheld values included. */
 function syncVariables(){
   var found={};
+  function scan(v){
+    if(typeof v!=='string'||!v)return;var m;VAR_RE.lastIndex=0;
+    while((m=VAR_RE.exec(v))){var nm=m[1].trim();found[nm]=true;}
+  }
   editorState.steps.forEach(function(s){
-    ['target','value'].forEach(function(f){
-      var v=s[f];if(!v)return;var m;VAR_RE.lastIndex=0;
-      while((m=VAR_RE.exec(v))){var nm=m[1].trim();found[nm]=true;}
-    });
+    ['target','value'].forEach(function(f){scan(s[f]);});
+    var args=s.type==='call_tool'&&s.extra&&s.extra.tool&&s.extra.tool.args;
+    if(args&&typeof args==='object'){Object.keys(args).forEach(function(k){scan(args[k]);});}
   });
   var next={};
   Object.keys(found).forEach(function(nm){next[nm]=editorState.variables.hasOwnProperty(nm)?editorState.variables[nm]:'';});
@@ -1735,6 +1987,12 @@ cr.addWebUIListener('run-progress',function(d){
   activeRun.message=d.message||('Step '+(d.stepIndex+1)+' of '+d.total);activeRun.done=false;
   paintRun();
 });
+cr.addWebUIListener('run-question',function(d){
+  if(!d||!d.question||typeof d.question.text!=='string')return;
+  if(!activeRun||activeRun.id!==d.id)activeRun={id:d.id,stepIndex:0,total:0,message:'Running…'};
+  activeRun.question=d.question;activeRun.done=false;
+  paintRun();
+});
 cr.addWebUIListener('run-complete',function(d){
   if(!d)return;
   var fi=(typeof d.failedStepIndex==='number')?d.failedStepIndex:-1;
@@ -1785,6 +2043,14 @@ function tickerNode(){
       h('div',{'class':'run-done '+(ar.ok?'ok':'fail')},[(ar.ok?'✓':'✗'),' ',ar.message]),
       h('div',{'class':'pbar'},h('i',{style:'width:100%;background:'+(ar.ok?'var(--ok)':'var(--err)')})),
       trustAct
+    ]);
+  }
+  if(ar.question){
+    var rid2=ar.id;
+    return h('div',{},[
+      questionNode(rid2,ar.question,function(){
+        if(activeRun&&activeRun.id===rid2){activeRun.question=null;paintRun();}
+      })
     ]);
   }
   return h('div',{},[
@@ -2283,6 +2549,20 @@ button,input,textarea,select{font-family:inherit}
 .trust-panel .tp-s{margin-top:4px;font-size:11.5px;color:var(--faint)}
 .trust-panel .btn{margin-top:9px;width:100%;font-size:12px;padding:8px 10px}
 .trust-act{display:flex;gap:7px;margin-top:9px}
+.run-q{margin-top:9px;padding:8px 10px;border-radius:10px;border:1px solid rgba(167,139,250,0.4);
+  background:rgba(167,139,250,0.08)}
+.run-q .rq-h{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
+.run-q .rq-m{font-size:12px;margin-top:4px;word-break:break-word}
+.loc-note{margin:6px 2px 2px;font-size:11px;color:var(--muted)}
+.frame-tools{margin:14px 2px 6px;padding:10px 11px;border-radius:12px;border:1px solid var(--border)}
+.frame-tools .ft-h{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
+.frame-tools .ft-s{font-size:11.5px;color:var(--faint);margin-top:3px}
+.frame-tools .ft-row{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px}
+.frame-tools .ft-pair{flex:1;min-width:0;word-break:break-all}
+.frame-tools .ft-when{font-size:11px;color:var(--muted)}
+.frame-tools .ft-forget{font-size:11px;padding:4px 9px}
+.tool-args{font-size:12px;word-break:break-word;padding:6px 9px;border-radius:9px;
+  border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:12px;padding:8px 10px}
 /* drafts saved from an AI agent run: badge, review panel, step notes */
 .tbadge.draft{color:var(--warn)}

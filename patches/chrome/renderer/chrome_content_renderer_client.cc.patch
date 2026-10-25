@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index d460c0fb699d6a3e5ebf930ff9a8c7ea073a9b5f..2bc5fc92f9e8eb62ba20ee3f7225f4214efa5591 100644
+index d460c0fb699d6a3e5ebf930ff9a8c7ea073a9b5f..99b84fe19768e45381db117a486e26aef8c4163f 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
 @@ -63,6 +63,10 @@
@@ -45,3 +45,13 @@ index d460c0fb699d6a3e5ebf930ff9a8c7ea073a9b5f..2bc5fc92f9e8eb62ba20ee3f7225f421
    auto content_settings_delegate =
        std::make_unique<ChromeContentSettingsAgentDelegate>(render_frame);
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+@@ -1514,6 +1530,9 @@ void ChromeContentRendererClient::RunScriptsAtDocumentIdle(
+ 
+ void ChromeContentRendererClient::
+     SetRuntimeFeaturesDefaultsBeforeBlinkInitialization() {
++  // MoltBrowser: fingerprinting protection's settings that must precede V8.
++  molt_ai::fingerprinting::ConfigureRendererProcessBeforeBlink();
++
+   // The performance manager service interfaces are provided by the chrome
+   // embedder only.
+   blink::WebRuntimeFeatures::EnablePerformanceManagerInstrumentation(true);

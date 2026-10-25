@@ -1,0 +1,28 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webaudio/panner_handler.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webaudio/panner_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webaudio/panner_handler.cc b/third_party/blink/renderer/modules/webaudio/panner_handler.cc
+index 1c46560af72fb8bc1f3a5f3948e0a47963b85eac..150bff70b8fac18108da394edc73280c7be331cc 100644
+--- a/third_party/blink/renderer/modules/webaudio/panner_handler.cc
++++ b/third_party/blink/renderer/modules/webaudio/panner_handler.cc
+@@ -20,6 +20,7 @@
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -599,7 +600,8 @@ void PannerHandler::CalculateAzimuthElevation(
+   // value when one of the vectors has zero length.  We know here that
+   // `projected_source` and `listener_right` are "normalized", so the dot
+   // product is good enough.
+-  double azimuth = base::RadToDeg(acos(
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  double azimuth = base::RadToDeg(gfx::molt_math::Acos(
+       ClampTo(gfx::DotProduct(projected_source, listener_right), -1.0f, 1.0f)));
+   azimuth = EnsureFinite(azimuth);  // avoid illegal values
+ 

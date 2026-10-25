@@ -29,6 +29,7 @@
 #include "base/memory_coordinator/utils.h"
 #include "base/time/time.h"
 #include "storage/browser/blob/blob_storage_constants.h"
+#include "storage/browser/blob/molt_blob_budget_policy.h"
 
 namespace base {
 class TaskRunner;
@@ -82,7 +83,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   struct MemoryAllocation {
     MemoryAllocation(base::WeakPtr<BlobMemoryController> controller,
                      uint64_t item_id,
-                     size_t length);
+                     size_t length,
+                     uint64_t molt_budget_key = kMoltBlobBrowserKey);
 
     MemoryAllocation(const MemoryAllocation&) = delete;
     MemoryAllocation& operator=(const MemoryAllocation&) = delete;
@@ -97,6 +99,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
     base::WeakPtr<BlobMemoryController> controller_;
     uint64_t item_id_;
     size_t length_;
+    // MoltBrowser: the key it counts to (molt_blob_budget_policy.h).
+    uint64_t molt_budget_key_;
   };
 
   class QuotaAllocationTask {
@@ -135,11 +139,16 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   // given memory. |preemptive_transported_bytes| are the number of transport
   // bytes that are already populated for us, so we don't haved to request them
   // from the renderer.
-  Strategy DetermineStrategy(size_t preemptive_transported_bytes,
-                             uint64_t total_transportation_bytes) const;
+  // MoltBrowser: |molt_budget_key|, the key the blob counts to
+  // (molt_blob_budget_policy.h), here and below.
+  Strategy DetermineStrategy(
+      size_t preemptive_transported_bytes,
+      uint64_t total_transportation_bytes,
+      uint64_t molt_budget_key = kMoltBlobBrowserKey) const;
 
   // Checks to see if we can reserve quota (disk or memory) for the given size.
-  bool CanReserveQuota(uint64_t size) const;
+  bool CanReserveQuota(uint64_t size,
+                       uint64_t molt_budget_key = kMoltBlobBrowserKey) const;
 
   // Reserves quota for the given |unreserved_memory_items|. The items must be
   // bytes items in QUOTA_NEEDED state which we change to QUOTA_REQUESTED.
@@ -151,7 +160,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   //       CanReserveQuota before calling this.
   base::WeakPtr<QuotaAllocationTask> ReserveMemoryQuota(
       std::vector<scoped_refptr<ShareableBlobDataItem>> unreserved_memory_items,
-      MemoryQuotaRequestCallback done_callback);
+      MemoryQuotaRequestCallback done_callback,
+      uint64_t molt_budget_key = kMoltBlobBrowserKey);
 
   // Reserves quota for the given |unreserved_file_items|. The items must be
   // temporary file items (BlobDataBuilder::IsTemporaryFileItem returns true) in
@@ -201,6 +211,19 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
 
   size_t GetAvailableMemoryForBlobs() const;
   uint64_t GetAvailableFileSpaceForBlobs() const;
+
+  // MoltBrowser: what |molt_budget_key| may still get: its share's room, as
+  // molt_blob_budget_policy.h decides, when the limits set shares; else
+  // GetAvailableMemoryForBlobs().
+  size_t GetAvailableMemoryForBlobs(uint64_t molt_budget_key) const;
+  // MoltBrowser: the memory |molt_budget_key|'s blobs use.
+  size_t MoltMemoryUsage(uint64_t molt_budget_key) const;
+  // MoltBrowser: the machine's available memory, for tests.
+  using AvailableMemoryFuncPtr = uint64_t (*)();
+  void molt_set_testing_available_memory(AvailableMemoryFuncPtr function) {
+    molt_available_memory_function_ = function;
+    molt_available_memory_.reset();
+  }
 
   // The given callback will be called when we've finished calculating blob
   // storage limits. Usually limits are calculated at some point after startup,
@@ -264,8 +287,15 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
 
   void GrantMemoryAllocations(
       std::vector<scoped_refptr<ShareableBlobDataItem>>* items,
-      size_t total_bytes);
-  void RevokeMemoryAllocation(uint64_t item_id, size_t length);
+      size_t total_bytes,
+      uint64_t molt_budget_key = kMoltBlobBrowserKey);
+  void RevokeMemoryAllocation(uint64_t item_id,
+                              size_t length,
+                              uint64_t molt_budget_key = kMoltBlobBrowserKey);
+
+  // MoltBrowser: the machine's available memory, read at most every
+  // kMoltAvailableMemoryRefresh and lowered by what blobs took since.
+  std::optional<uint64_t> MoltAvailableMemory() const;
 
   // This is registered as a callback for file deletions on the file reference
   // of our paging files. We decrement the disk space used.
@@ -328,6 +358,14 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobMemoryController
   std::unordered_set<uint64_t> items_paging_to_file_;
 
   base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
+
+  // MoltBrowser: blob memory per budget key (molt_blob_budget_policy.h), and
+  // the last reading of the machine's available memory.
+  std::map<uint64_t, size_t> molt_memory_used_by_key_;
+  AvailableMemoryFuncPtr molt_available_memory_function_ = nullptr;
+  mutable std::optional<uint64_t> molt_available_memory_;
+  mutable base::TimeTicks molt_available_memory_read_at_;
+  mutable size_t molt_memory_used_at_read_ = 0;
 
   base::WeakPtrFactory<BlobMemoryController> weak_factory_{this};
 };

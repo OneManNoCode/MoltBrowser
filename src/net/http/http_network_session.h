@@ -19,6 +19,7 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"  // MoltBrowser
 #include "base/power_monitor/power_observer.h"
 #include "base/threading/thread_checker.h"
 #include "base/values.h"
@@ -53,8 +54,8 @@ class NetLog;
 #if BUILDFLAG(ENABLE_REPORTING)
 class NetworkErrorLoggingService;
 #endif
-class MoltConnectionBudget;       // MoltBrowser
 class MoltSocksHandshakeLimiter;  // MoltBrowser
+class MoltTorCapacity;            // MoltBrowser
 class NetworkAnonymizationKey;    // MoltBrowser
 class NetworkQualityEstimator;
 class ProxyDelegate;
@@ -362,11 +363,13 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   SSLClientSessionCache ssl_client_session_cache_;
   SSLClientContext ssl_client_context_;
   WebSocketEndpointLockManager websocket_endpoint_lock_manager_;
-  // MoltBrowser: MoltNet's connection budget and SOCKS handshake limits,
-  // made iff params.molt_per_site_socket_pool_size isn't 0
+  // MoltBrowser: the connection and SOCKS handshake budgets of MoltNet's
+  // Tor, which every session with per-site pools shares, and this session's
+  // view of the handshake budget; set iff
+  // params.molt_per_site_socket_pool_size isn't 0
   // (net/socket/molt_connection_budget.h). Before the socket pool managers,
   // which use them, so that they outlive them.
-  std::unique_ptr<MoltConnectionBudget> molt_connection_budget_;
+  scoped_refptr<MoltTorCapacity> molt_tor_capacity_;
   std::unique_ptr<MoltSocksHandshakeLimiter> molt_socks_handshake_limiter_;
   std::unique_ptr<ClientSocketPoolManager> normal_socket_pool_manager_;
   std::unique_ptr<ClientSocketPoolManager> websocket_socket_pool_manager_;

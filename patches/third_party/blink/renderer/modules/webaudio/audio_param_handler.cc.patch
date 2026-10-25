@@ -1,0 +1,72 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webaudio/audio_param_handler.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/webaudio/audio_param_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_param_handler.cc b/third_party/blink/renderer/modules/webaudio/audio_param_handler.cc
+index 2f4828436507e91b94e5466e4bb5e6407337f529..57f6ce399f0829816ed5a8685da76554153a0b0d 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_param_handler.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_param_handler.cc
+@@ -28,6 +28,7 @@
+ #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
+ #include "third_party/fdlibm/ieee754.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ #if defined(ARCH_CPU_X86_FAMILY)
+ #include <emmintrin.h>
+@@ -1833,7 +1834,10 @@ std::tuple<size_t, float, size_t> AudioParamHandler::ProcessLinearRamp(
+       delta_time <= std::numeric_limits<float>::min() ? 0 : 1 / delta_time;
+   const float value_delta = value2 - value1;
+ #if defined(ARCH_CPU_X86_FAMILY)
+-  if (fill_to_frame > write_index) {
++  // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch) the
++  // serial loop below, as on Arm: this SSE loop computes in single
++  // precision and gives other values than the serial one.
++  if (!gfx::molt_math::IsPortable() && fill_to_frame > write_index) {
+     // Minimize in-loop operations. Calculate starting value and increment.
+     // Next step: value += inc.
+     //  value = value1 +
+@@ -1868,7 +1872,7 @@ std::tuple<size_t, float, size_t> AudioParamHandler::ProcessLinearRamp(
+   // Update `value` with the last value computed so that the
+   // `.value` attribute of the AudioParam gets the correct linear
+   // ramp value, in case the following loop doesn't execute.
+-  if (write_index >= 1) {
++  if (!gfx::molt_math::IsPortable() && write_index >= 1) {
+     value = values[write_index - 1];
+   }
+ #endif
+@@ -2016,7 +2020,10 @@ std::tuple<size_t, float, size_t> AudioParamHandler::ProcessSetTarget(
+     write_index = fill_to_frame;
+   } else {
+ #if defined(ARCH_CPU_X86_FAMILY)
+-    if (fill_to_frame > write_index) {
++    // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch) the
++    // serial loop below, as on Arm: this SSE loop computes in single
++    // precision and gives other values than the serial one.
++    if (!gfx::molt_math::IsPortable() && fill_to_frame > write_index) {
+       // Resolve recursion by expanding constants to achieve a 4-step
+       // loop unrolling.
+       //
+@@ -2154,7 +2161,10 @@ std::tuple<size_t, float, size_t> AudioParamHandler::ProcessSetValueCurve(
+   // desired.
+   size_t k = 0;
+ #if defined(ARCH_CPU_X86_FAMILY)
+-  if (fill_to_frame > write_index) {
++  // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch) the
++  // serial loop below, as on Arm: this SSE loop computes in single
++  // precision and gives other values than the serial one.
++  if (!gfx::molt_math::IsPortable() && fill_to_frame > write_index) {
+     const __m128 v_curve_virtual_index = _mm_set_ps1(curve_virtual_index);
+     const __m128 v_curve_points_per_frame = _mm_set_ps1(curve_points_per_frame);
+     const __m128 v_number_of_curve_points_m1 =
+@@ -2213,7 +2223,7 @@ std::tuple<size_t, float, size_t> AudioParamHandler::ProcessSetValueCurve(
+     // Pass along k to the serial loop.
+     k = truncated_steps;
+   }
+-  if (write_index >= 1) {
++  if (!gfx::molt_math::IsPortable() && write_index >= 1) {
+     value = values[write_index - 1];
+   }
+ #endif

@@ -32,13 +32,23 @@ TEST(MoltNetStorageValuesTest, QuotaIsChromiumsOnTheReferenceMachine) {
                 100 * kMoltNetStorageMiB);
 }
 
-// Each site gets a tenth of what all may store together, so ten other
-// sites must hold their whole share before a site below its own is
-// refused; a storage key may use what its site may.
-TEST(MoltNetStorageValuesTest, EachSiteATenthOfTheTotal) {
+// Each site gets a tenth of what all can always store together; a storage
+// key may use what its site may.
+TEST(MoltNetStorageValuesTest, EachSiteATenthOfThePool) {
   EXPECT_EQ(kMoltNetQuotaPerSiteBytes, 60 * kMoltNetStorageMiB);
   EXPECT_EQ(kMoltNetQuotaPerSiteBytes * 10, kMoltNetQuotaPoolBytes);
   EXPECT_EQ(kMoltNetQuotaPerStorageKeyBytes, kMoltNetQuotaPerSiteBytes);
+}
+
+// Beyond the pool a write must leave the machine 1 GiB available: on the
+// reference machine the pool, the blob memory and the reserve still leave
+// half of it to the system, the browser and other applications.
+TEST(MoltNetStorageValuesTest, MemoryReserve) {
+  EXPECT_EQ(kMoltNetStorageMemoryReserveBytes, kGiB);
+  EXPECT_LE(kMoltNetQuotaPoolBytes +
+                static_cast<int64_t>(kMoltNetBlobMemoryBytes) +
+                kMoltNetStorageMemoryReserveBytes,
+            kMoltNetStorageReferenceMemory * 3 / 5);
 }
 
 TEST(MoltNetStorageValuesTest, NoMoreThanIncognitoOnBiggerMachines) {
@@ -64,6 +74,14 @@ TEST(MoltNetStorageValuesTest, BlobMemory) {
   EXPECT_LE(static_cast<int64_t>(kMoltNetBlobMemoryBytes) +
                 kMoltNetQuotaPoolBytes,
             kMoltNetStorageReferenceMemory / 2);
+}
+
+// One process's share: a quarter of what all hold below the machine check,
+// so no single process takes them past it alone; more than one big media
+// file or canvas recording needs.
+TEST(MoltNetStorageValuesTest, BlobShare) {
+  EXPECT_EQ(kMoltNetBlobMemoryPerKeyBytes, uint64_t{200} * 1024 * 1024);
+  EXPECT_EQ(kMoltNetBlobMemoryPerKeyBytes * 4, kMoltNetBlobMemoryBytes);
 }
 
 }  // namespace

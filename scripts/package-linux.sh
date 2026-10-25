@@ -102,6 +102,18 @@ cp "$BUILD_DIR/v8_context_snapshot.bin" "$STAGE_DIR/opt/moltbrowser/" 2>/dev/nul
 cp -r "$BUILD_DIR/locales" "$STAGE_DIR/opt/moltbrowser/" 2>/dev/null || true
 cp -r "$BUILD_DIR/resources" "$STAGE_DIR/opt/moltbrowser/" 2>/dev/null || true
 
+# MoltNet's font set (opt/moltbrowser/molt_fonts/, next to the executable):
+# the only fonts MoltNet windows draw with, the same files on every OS
+# (scripts/bundle-fonts.sh). Pinned and checked; a release can't ship
+# without it.
+if ! "$SCRIPT_DIR/bundle-fonts.sh" --dest "$STAGE_DIR/opt/moltbrowser"; then
+  if [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+    echo "ERROR: MoltNet font bundling failed; a release can't ship without it."
+    exit 1
+  fi
+  echo "WARNING: MoltNet font bundling failed; MoltNet will use the system's fonts."
+fi
+
 # Desktop entry
 mkdir -p "$STAGE_DIR/usr/share/applications"
 cat > "$STAGE_DIR/usr/share/applications/moltbrowser.desktop" << EOF
@@ -335,7 +347,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 moltbrowser /app/bin/moltbrowser
-      - cp -r *.pak locales resources /app/bin/ 2>/dev/null || true
+      - cp -r *.pak locales resources molt_fonts /app/bin/ 2>/dev/null || true
       - cp icudtl.dat v8_context_snapshot.bin /app/bin/ 2>/dev/null || true
       - install -Dm644 moltbrowser.desktop /app/share/applications/com.geneye.MoltBrowser.desktop
       - install -Dm644 moltbrowser.png /app/share/icons/hicolor/256x256/apps/com.geneye.MoltBrowser.png

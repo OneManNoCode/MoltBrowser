@@ -262,7 +262,7 @@ the report. Anything else is a leak.
 | New Identity | `moltnet.newIdentity`: a new browser context, the cookie gone, the canvas readback changed (new farbling seed); no page of the old identity left open, although it asked "Leave site?" with a user activation; a second New Identity right after the first opens its window only once Tor can have switched circuits again (at least 8 s later; Tor applies NEWNYM at most every 10 s); the same site's SOCKS5 credentials differ before and after each New Identity (`identity.session_circuits`); exit IP before/after if online | 7 |
 | Per-site circuits | the two onion sites' SOCKS5 connections carry different usernames, and every one carries one; two pages their servers sandbox (`Content-Security-Policy: sandbox`, opaque origins) on two sites use different usernames too (`identity.sandboxed_circuits`); the certificate fetches made for the two certificate tests use usernames of their own, none shared between the two sites and none a page used, and the second site's check makes a fetch of its own (`identity.cert_fetch_circuits`); a Background Fetch, which the browser's download service makes, uses the username of the site that started it (`identity.background_fetch_circuits`; SKIP if no Background Fetch reached Tor, for example because the permission was refused) | 8 |
 | The relays are real | the panel's guard, middle and exit fingerprints (`moltnet.getCircuit`) are in the consensus MoltNet's Tor downloaded | 10 |
-| Tor's shared capacity | the torrc MoltBrowser started its Tor with sets `ConnLimit 1000` and `MaxClientCircuitsPending 64`, the capacity MoltNet's connection limits are sized against (`identity.tor_capacity`). The limits themselves (each site's connections, the context's budget of 768, each site's 16 SOCKS handshakes, each site's keepalive requests) would take hundreds of connections or thousands of requests through Tor to reach, too slow and too uneven for a kit run: they are checked on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "moltnet-shared") | 10 |
+| Tor's shared capacity | the torrc MoltBrowser started its Tor with sets `ConnLimit 1000` and `MaxClientCircuitsPending 256`, the capacity MoltNet's connection and circuit budgets are sized against (`identity.tor_capacity`). The limits themselves (each site's connections, the Tor process's budget of 768, each site's 16 SOCKS handshake slots within Tor's 192, an onion address counting three, each site's keepalive requests, storage and blob memory) would take hundreds of connections or thousands of requests through Tor to reach, too slow and too uneven for a kit run: they are checked on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "moltnet-shared") | 10 |
 | On Tor | the panel's *Verify* and `check.torproject.org/api/ip` in the MoltNet tab (online) | 1 |
 | Fail-closed | the `tor` cgroup is killed; the next MoltNet navigation fails with a proxy/SOCKS error and nothing leaves directly | 5 |
 | No restore | a relaunch with the same profile shows no MoltNet page | 5 |
@@ -302,8 +302,11 @@ level, and in one browser launch per device scale factor
   asked for all of them), no `WEBGL_debug_renderer_info`, every WebGL 1/2
   limit at its baseline (or below it on a GPU that lacks it; never above),
   ranges, viewport, shader precision formats and sample counts, extensions
-  within the allow-list, no WebGPU adapter, installed fonts within the
-  OS's allow-list (Linux in the kit; other OSes are compared between runs),
+  within the allow-list, no WebGPU adapter, fonts only from MoltBrowser's
+  bundled font set on every OS (no other family visible, every name of the
+  set visible, each generic keyword measuring like the set's family for
+  it; per-script fallback widths and the set's `local()` faces compared
+  between runs, across OSes too),
   en-US form messages, `windows-1252` for undeclared pages, 16px default
   font size, no Do Not Track, GPC on, `window-management` denied and
   `getScreenDetails()` rejected, `persist()` false, autoplay
@@ -340,6 +343,24 @@ level, and in one browser launch per device scale factor
   limit is checked instead. What `isTypeSupported()` accepts and which
   listed faces `local()` finds follow the build and the OS and are
   compared between runs.
+* **CPU features** (once per launch): a WebAssembly module with a relaxed
+  SIMD instruction (`f32x4.relaxed_madd`) fails `WebAssembly.validate()`.
+  Compared between runs: a hash of 27 `Math` results (`Math.pow` and
+  `Math.tanh` among them), a 64 x 32 sRGB frame, as RGBA and as I420, read
+  back in Display P3 (`VideoFrame.copyTo()`), and a quarter second of
+  stereo Vorbis decoded by WebCodecs' `AudioDecoder` (`cpu.*`,
+  `pixels.p3_readback`, `audio.decoded_vorbis`). Recorded: whether a plain
+  SIMD module validates.
+* **Portable math** (once per launch), compared between runs: `Math`'s
+  `sin`, `tan`, `atan` and `atan2` at arguments where x86-64 and arm64
+  builds of V8's math code differed, and a sweep of 2000 more
+  (`cpu.math_cross_arch`); sixteen CSS math functions in registered
+  custom properties, each amplified with `mod()`, `rem()` or `round()` so
+  that its last bits show in the serialized value (`cpu.css_math`);
+  `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas `getTransform()` and
+  an SVG path's arcs (`cpu.dommatrix`); Biquad and IIR filter frequency
+  responses and a compressor's `reduction` after rendering a sawtooth
+  (`audio.math`).
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar

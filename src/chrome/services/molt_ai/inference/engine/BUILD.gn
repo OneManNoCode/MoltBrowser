@@ -52,6 +52,18 @@ source_set("image_input") {
   ]
 }
 
+# Audio input (docs/design/SANDBOXED_INFERENCE.md section 13): the bounds a
+# model audio clip must meet and how a page's decoded audio is brought
+# within them. Also linked by the browser
+# (//chrome/browser/molt_ai/runtime), which prepares the clips; the service
+# checks them again.
+source_set("audio_input") {
+  sources = [
+    "audio_input.cc",
+    "audio_input.h",
+  ]
+}
+
 # Token fitting and vector normalization for the embedding engine
 # (llama_embedding_engine.cc; docs/design/SEMANTIC_SEARCH.md).
 source_set("embedding_utils") {
@@ -97,6 +109,7 @@ source_set("cpu_kernels") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "audio_input_unittest.cc",
     "bounded_json_unittest.cc",
     "context_budget_unittest.cc",
     "cpu_kernels_unittest.cc",
@@ -110,6 +123,7 @@ source_set("unit_tests") {
     "stream_filters_unittest.cc",
   ]
   deps = [
+    ":audio_input",
     ":constrained_decoding",
     ":cpu_kernels",
     ":embedding_utils",

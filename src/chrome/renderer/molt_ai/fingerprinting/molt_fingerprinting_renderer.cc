@@ -4,9 +4,11 @@
 #include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/files/file.h"
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom.h"
@@ -52,6 +54,11 @@ class ConfigurationReceiver : public content::RenderThreadObserver,
     // Blink ignores anything but the first 32-byte seed.
     blink::WebMoltFingerprinting::SetSessionSeed(seed);
   }
+  void SetMoltNetFonts(std::vector<base::File> files) override {
+    // Blink takes them once, only if it expects them (--molt-net-fonts) and
+    // they match its table.
+    blink::WebMoltFingerprinting::SetBundledFontFiles(std::move(files));
+  }
 
  private:
   void Bind(mojo::PendingAssociatedReceiver<mojom::FingerprintingConfiguration>
@@ -62,12 +69,23 @@ class ConfigurationReceiver : public content::RenderThreadObserver,
   mojo::AssociatedReceiverSet<mojom::FingerprintingConfiguration> receivers_;
 };
 
-}  // namespace
-
-void ConfigureRendererProcess() {
-  const RendererMode mode = ModeFromSwitchValue(
+RendererMode ModeFromCommandLine() {
+  return ModeFromSwitchValue(
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kMode));
+}
+
+}  // namespace
+
+void ConfigureRendererProcessBeforeBlink() {
+  if (ModeFromCommandLine() == RendererMode::kUniform) {
+    blink::WebMoltFingerprinting::ConfigureBeforeBlinkInitialization(
+        blink::WebMoltFingerprinting::Mode::kUniform);
+  }
+}
+
+void ConfigureRendererProcess() {
+  const RendererMode mode = ModeFromCommandLine();
   if (mode == RendererMode::kOff) {
     return;
   }
@@ -79,6 +97,12 @@ void ConfigureRendererProcess() {
     // MoltNet: the strings pages can read in en-US, like the rest of what
     // kUniform pins (Blink can't reach the ResourceBundle they come from).
     PinMoltNetLocaleStrings();
+    // MoltNet's bundled fonts, when the browser has them: every font of
+    // this process comes from them, from now on.
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kMoltNetFonts)) {
+      blink::WebMoltFingerprinting::ExpectBundledFonts();
+    }
   }
   // Lives as long as the process; registering with the render thread exposes
   // the interface on the channel before any frame or worker exists.

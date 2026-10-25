@@ -1,0 +1,1 @@
+{"stored": [{"main": "https://shop.example", "frame": "https://widget.example", "since": 1700000000000}, {"main": "https://shop.example", "frame": "https://pay.example:8443", "since": 5}, {"main": "http://localhost:8080", "frame": "https://[::1]", "since": 0}]}

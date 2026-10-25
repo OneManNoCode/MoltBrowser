@@ -65,5 +65,20 @@ TEST(MoltNetBrowserDeviceValuesTest, CpuPerformanceTierIsUnknown) {
   EXPECT_EQ(kMoltNetCpuPerformanceTier, 0);
 }
 
+// MoltNet's renderer process limit is never above Chromium's on the machines
+// MoltBrowser supports (4 GB, of which firmware and graphics keep up to half a
+// GB, and more), so MoltNet never shares processes later than Chromium would.
+TEST(MoltNetBrowserDeviceValuesTest, ProcessLimitIsTheSmallestMachines) {
+  EXPECT_EQ(kMoltNetRendererProcessLimit, 20u);
+  for (size_t mib : {3584u, 3840u, 4096u, 8192u, 16384u, 65536u}) {
+    EXPECT_LE(kMoltNetRendererProcessLimit, ChromiumRendererProcessLimit(mib))
+        << mib;
+  }
+  // Content's own numbers (render_process_host_impl.cc's table).
+  EXPECT_EQ(ChromiumRendererProcessLimit(4096), 24u);
+  EXPECT_EQ(ChromiumRendererProcessLimit(16384), 96u);
+  EXPECT_EQ(ChromiumRendererProcessLimit(512), 3u);
+}
+
 }  // namespace
 }  // namespace molt_ai::fingerprinting

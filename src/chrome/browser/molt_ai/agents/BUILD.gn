@@ -48,6 +48,32 @@ source_set("agent_tools") {
   ]
 }
 
+# Site tools in frames of other sites: the (main origin, frame origin)
+# pairs the user allowed, as a profile keeps them, the web agent's
+# question, and what a call to such a frame may carry
+# (docs/design/AGENT_ACTIONS.md §2.7.14). Pure logic (base), so
+# molt_ai_unittests links it; fuzzed by molt_frame_tools_fuzzer. The
+# profile's service is //chrome/browser/molt_ai:molt_ai_agents
+# (frame_tool_permissions_service.*).
+source_set("frame_tools") {
+  sources = [
+    "frame_tools.cc",
+    "frame_tools.h",
+  ]
+
+  public_deps = [ "//base" ]
+
+  deps = [
+    ":agent_tools",
+    ":hidden_chars",
+    "//chrome/browser/molt_ai/security:agent_safety",
+
+    # TextLooksSecret() and LabelSuggestsSecret(), as drafts withhold
+    # secrets (pure).
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+  ]
+}
+
 # The characters that reorder, hide or break text, shown the same way in
 # everything the agents put before the user: site-tool approvals, the
 # plan, the chat's proposals and form fills. Std-only.
@@ -76,6 +102,8 @@ source_set("chat_actions") {
   ]
 
   deps = [
+    # No secret goes to another site's frame's tool.
+    ":frame_tools",
     ":hidden_chars",
     "//base",
   ]
@@ -162,6 +190,7 @@ source_set("unit_tests") {
     "agent_tools_unittest.cc",
     "agent_vision_unittest.cc",
     "chat_actions_unittest.cc",
+    "frame_tools_unittest.cc",
     "hidden_chars_unittest.cc",
   ]
   deps = [
@@ -171,6 +200,7 @@ source_set("unit_tests") {
     ":agent_tools",
     ":agent_vision",
     ":chat_actions",
+    ":frame_tools",
     ":hidden_chars",
     "//base",
     "//chrome/browser/molt_ai/runtime:model_image",

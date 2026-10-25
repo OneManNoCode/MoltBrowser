@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..51a20dea10162d9f28a0801941d28f45952fb20c 100644
+index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..cd5b02a4f5c2649f48c69b9d37361b86aa488057 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1110,6 +1110,35 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1110,6 +1110,41 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -38,6 +38,12 @@ index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..51a20dea10162d9f28a0801941d28f45
 +}
 +
 +bool ContentBrowserClient::ShouldKeepDownloadsWithTheirSite(BrowserContext*) {
++  return false;
++}
++
++bool ContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
++    BrowserContext*,
++    const GURL&) {
 +  return false;
 +}
 +

@@ -23,6 +23,8 @@ source_set("fingerprinting") {
 # session seed) or is per document (the Shields decision).
 mojom("mojom") {
   sources = [ "molt_fingerprinting.mojom" ]
+  # MoltNet's bundled fonts go as read-only files.
+  public_deps = [ "//mojo/public/mojom/base" ]
 }
 
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
@@ -33,4 +35,15 @@ source_set("unit_tests") {
     ":fingerprinting",
     "//testing/gtest",
   ]
+  if (is_linux || is_chromeos) {
+    # MoltNet renderers' data limit (sandbox/policy/linux/molt_data_limit.h).
+    sources += [ "molt_data_limit_unittest.cc" ]
+    deps += [ "//sandbox/policy" ]
+  }
+  if (is_win) {
+    # MoltNet renderers' job memory limit
+    # (sandbox/policy/win/molt_job_memory_limit.h).
+    sources += [ "molt_job_memory_limit_unittest.cc" ]
+    deps += [ "//sandbox/policy" ]
+  }
 }

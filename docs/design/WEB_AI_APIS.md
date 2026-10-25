@@ -106,6 +106,18 @@ at that revision with `upshow new`.
     site. Pages' images are scaled in the browser to 768 pixels and sent
     as raw pixels; each counts 576 tokens; the model sees the newest four;
     the images pages hold are capped per site and in total (§5.1).
+14. **Audio input, one bit more for allowed sites only.** `LanguageModel`
+    takes audio (`expectedInputs` `"audio"`, audio content in `prompt()`
+    and `append()`) when the model in use hears audio (its projector has
+    an audio encoder). A site the user hasn't allowed gets the text
+    answer; an allowed site gets `"unavailable"` when no downloaded model
+    hears audio (one bit about installed models, to sites the user
+    allowed, who already learn whether any model is installed). A build
+    whose catalogue has no such model answers `"unavailable"` to everyone.
+    Blink decodes and resamples the audio to 16 kHz mono in the renderer;
+    the browser checks it and sends 16-bit samples; at most 30 s a clip,
+    4 a request; a clip counts by its length; off in MoltNet like the
+    rest (§5.2).
 
 ```
 renderer (Blink, unchanged)                 browser process
@@ -274,6 +286,7 @@ images are scaled with `runtime/model_image_prep.h`. The settings section is
 | Options not supported (§5) or an invalid language tag | `"unavailable"` | fails |
 | The user blocked this site, or the prompt is paused for it (§4.2) | `"unavailable"` | fails |
 | The device can't run on-device inference, or no catalog model fits its RAM and none is downloaded | `"unavailable"` | fails |
+| Audio input (`expectedInputs` `"audio"`), and the catalogue has no model that hears audio, or the site is allowed and no downloaded model hears audio (§5.2) | `"unavailable"` | fails |
 | The site isn't allowed yet, or no model is downloaded | `"downloadable"` | needs user activation; shows the infobar |
 | Allowed and a model is downloaded | `"available"` | loads the model if needed and creates |
 
@@ -519,10 +532,10 @@ MoltBrowser owns. The pref won:
   modes (all seven of 156, at upstream's top-K and temperature for each),
   `expectedInputs`/`expectedOutputs` with type `"text"` and
   languages (one output language is passed to the model as an
-  instruction), `expectedInputs` with type `"image"` (§5.1). Not
-  supported, reported `"unavailable"` or failed: audio input, outputs
-  other than text, tools, `prefix` (assistant prefill), regex
-  `responseConstraint`, images in `initialPrompts`.
+  instruction), `expectedInputs` with type `"image"` (§5.1) and
+  `"audio"` (§5.2). Not supported, reported `"unavailable"` or failed:
+  outputs other than text, tools, `prefix` (assistant prefill), regex
+  `responseConstraint`, images or audio in `initialPrompts`.
 
 **Structured output: `responseConstraint`** (LanguageModel `prompt()` /
 `promptStreaming()`).
@@ -588,8 +601,8 @@ image element, a canvas, a `Blob`, ...) and sends a bitmap
   It changes only where it changes for everyone with the same browser:
   Blink's `AIPromptAPIMultimodalInput` feature off (on by default at 152)
   makes it `"unavailable"`, as upstream; MoltNet, workers, policies and
-  the switches as for text. Audio, tools and any output but text stay
-  `"unavailable"`.
+  the switches as for text. Tools and any output but text stay
+  `"unavailable"`; audio has its own rule (§5.2).
 - **Why.** Upstream answers from the model's capabilities, so on Chrome a
   page learns whether the (one, Google-supplied) model takes images. Here
   the model is the user's own choice, and "this user's model sees images"
@@ -674,6 +687,85 @@ constrained reply (§10.5-§10.7); `destroy()`, the page dropping the
 Translator, an `AbortSignal` and the document going away behave as for the
 writing APIs.
 
+### 5.2 Audio input
+
+A `LanguageModel` created with `expectedInputs: [{type: "audio"}]` takes
+audio clips in user messages: `prompt()`, `promptStreaming()`, `append()`
+and `measureInputUsage()`. Blink decodes the page's `AudioBuffer`, `Blob`
+or `ArrayBuffer` in the renderer, mixes it to mono and resamples it to the
+rate the session's instance info asks for, and sends float samples
+(`on_device_model.mojom.AudioData`); the browser never parses an audio
+file, and nothing in the inference service does either
+(SANDBOXED_INFERENCE.md §13).
+
+**Availability: one bit more than text, for allowed sites only.**
+
+| Site | Catalogue has a model that hears audio | One is downloaded | `availability()` with `"audio"` |
+|---|---|---|---|
+| any | no | - | `"unavailable"` (the same for every user of the build) |
+| not allowed yet | yes | either | the text answer (`"downloadable"` on a capable machine) |
+| allowed | yes | no | `"unavailable"` |
+| allowed | yes | yes | the text answer (`"available"`) |
+
+- **Why not the image rule** (§5.1, the text answer whatever the model):
+  a page asking for audio usually has nothing else to give the model, and
+  `"available"` followed by a `create()` that always fails is worse for it
+  than an honest `"unavailable"`. The bit ("a model that hears audio is
+  downloaded") goes only to sites the user allowed, which already learn
+  whether any model is downloaded (`"downloadable"` / `"available"`); to
+  every other site the answer doesn't depend on what is installed.
+  Rejected: the bit to every site (a fact about installed models to sites
+  the user never allowed); `"downloadable"` for an allowed site without a
+  model that hears audio (it promises a download only the user can
+  start).
+- The multimodal-input feature (`AIPromptAPIMultimodalInput`, as for
+  images) off: `"unavailable"`, as for unsupported options. MoltNet,
+  workers, policies and the switches as for text: the API is off.
+- The catalogue's model that hears audio (Voxtral Mini 3B,
+  SANDBOXED_INFERENCE.md §13.4) is offered only once pinned and checked,
+  so until then every site gets `"unavailable"` for audio.
+
+**create().** As for text: user activation, the infobar, the model. A
+site that isn't allowed yet gets the infobar; when no downloaded model
+hears audio, it offers the model picker (*Choose a model*) and
+`create()` fails, as for a site without any model. When a model has to be
+loaded, a downloaded one that hears audio is preferred; the loaded model
+is never swapped out for a page, so `create()` fails with the generic
+error when the chat's model can't hear audio. The session's instance info
+lists text and audio as its input types and asks Blink for 16 kHz, one
+channel (`audio_sample_rate_hz`, `audio_channel_count`).
+
+**Audio in a request.**
+
+- User messages only. Audio in an assistant message, or in a session
+  created without `"audio"`, fails the request with `kErrorInvalidRequest`
+  (`NotSupportedError`). Audio in `initialPrompts` fails `create()`.
+- At most 4 clips per call, each one channel at 16 kHz (what the session
+  asked Blink for), with a frame count that is its data's, and at most
+  30 s; anything else fails the request with the same error before any
+  other work. A clip shorter than 0.1 s is padded with silence.
+- The browser turns the samples into 16-bit PCM (clamped; NaN and
+  infinities become silence, `runtime/model_audio.h`), cheap and bounded
+  (at most 480,000 samples a clip), and sends them as a buffer; the
+  inference service checks them again.
+- **Quota.** A clip counts `max(375, 25 × seconds)` tokens
+  (`AudioInputTokens()`, seconds rounded up), from its length alone,
+  whatever the model: never less than the catalogue's model uses (it
+  encodes 30-second windows of 375 tokens, two for a clip of exactly
+  30 s). The small bucket (1024) holds one clip of up to 15 s with its
+  text; the large one several.
+- **What the model hears.** The newest four clips of the context, each
+  with its turn, after the turn's images and before its text; older ones
+  are dropped as images are (§5.1).
+- **Memory.** A clip held in the browser is at most 0.96 MB; it counts as
+  one image against the per-site (16) and total (48) caps of §5.1.
+
+| Case | Status | `prompt()` rejects with |
+|---|---|---|
+| Audio in a session created without `"audio"`, in an assistant message, a fifth clip, a clip not at 16 kHz mono, longer than 30 s, empty, or whose frame count isn't its data's | `kErrorInvalidRequest` | `NotSupportedError` |
+| Audio over the quota | `kErrorInputTooLarge` | `QuotaExceededError` |
+| Over the caps; the model in use no longer hears audio | `kErrorGenericFailure` | a generic error |
+
 ## 6. Sharing the model with the chat
 
 `RuntimeWebAIBackend` is process-wide and talks to the same
@@ -756,6 +848,10 @@ What a page can learn, per call:
   images; the scale, the per-image count and the caps are fixed. Only an
   allowed site can learn, from `create()` failing or from the model's
   answers, whether the model in use sees images.
+- **Audio input** (§5.2): to a site the user hasn't allowed, the answer
+  depends only on the build's catalogue (the same for every user of it).
+  An allowed site learns one more bit: whether a downloaded model hears
+  audio. The sample rate, the caps and the per-clip count are fixed.
 - **Structured output**: which schemas are enforced or refused is the
   same for every user and model. A refused schema fails before any token
   is generated. (A model whose vocabulary can't continue a grammar fails
@@ -1194,7 +1290,7 @@ new `create()`:
 
 In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
 
-- `web_ai_policy_unittest.cc` (27): the availability table, including an
+- `web_ai_policy_unittest.cc` (30): the availability table, including an
   exhaustive check of invariants over every input combination (an
   unallowed site never sees "available", MoltNet and workers always see
   "unavailable", ...), create actions, what keeps a session serving, the
@@ -1202,9 +1298,14 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   site's read, ageing by its own reads, cleared for all, forgotten when
   old), buckets, the estimator and its size shortcut, saturation, sampling
   clamps, language tags, model pick (with the preference for a model that
-  sees images), image sources (the 64-megapixel cap at its edges, hostile
-  sizes), and the scheduler (one at a time, foreground first, sites in
-  turn, caps, cancel, image holds per site and in total).
+  sees images or hears audio), image sources (the 64-megapixel cap at its
+  edges, hostile sizes), the audio rows (every consent with and without a
+  model that hears audio in the catalogue and on disk; over every
+  combination of the audio facts, a text answer never changes and a site
+  the user hasn't allowed never learns what is downloaded), the per-clip
+  count (never under the catalogue model's windows), and the scheduler
+  (one at a time, foreground first, sites in turn, caps, cancel, image
+  holds per site and in total).
 - `web_ai_site_permissions_unittest.cc` (23): key shapes, answers, the
   prompt's input protection (presses every 1 to 499 ms for a minute never
   counting, a pause then counting, the tab shown again, odd clocks), the
@@ -1221,11 +1322,13 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   renewed past the stored count's cap, no writes after shutdown.
 - `web_ai_prompts_unittest.cc` (10): every option → prompt mapping and
   reply budget.
-- `web_ai_conversation_unittest.cc` (15): quota accounting, whole-exchange
+- `web_ai_conversation_unittest.cc` (19): quota accounting, whole-exchange
   eviction, rollback; images: their fixed count (saturating), the context
   keeping the newest four (a turn its last ones) while the others still
   count, eviction, what a request sends (merged turns, newest first, never
-  more than four over every split of up to twelve).
+  more than four over every split of up to twelve); audio clips the same
+  way (counted by length, with images in one turn, the newest four kept
+  and sent).
 - `web_ai_translation_unittest.cc` (18): the language table (fixed,
   sorted, every code its own best fit, 380 supported pairs), best fit by
   language and by Chinese script and region, malformed and unsupported
@@ -1236,7 +1339,7 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   instruction (names the languages, never holds page text), the response
   schema accepted by the inference service's converter, and the cleanup
   (whitespace, quotation marks added or kept, empty replies).
-- `molt_ai_manager_unittest.cc` (90): the mojo surface over real pipes with
+- `molt_ai_manager_unittest.cc` (98): the mojo surface over real pipes with
   a fake runtime and a fake environment: availability per state, device
   facts asked for the page's own site, MoltNet never calling the runtime,
   policies, permissions policy as a bad message,
@@ -1259,7 +1362,7 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   Image input (16):
   - `availability()` with images is the text answer in every consent and
     model state, and asks no model; the multimodal feature off and MoltNet
-    make it `"unavailable"`; audio and image output stay unavailable;
+    make it `"unavailable"`; image output stays unavailable;
   - `create()` on a model that can't see images fails after consent and
     the load (which preferred a model that sees images); on one that can,
     the session lists text and image;
@@ -1273,6 +1376,29 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   - order kept while images are scaled; aborting meanwhile releases them;
   - the per-site cap (a generic failure; text still goes); the newest four
     images sent and kept; the quota; clones holding their copies.
+
+  Audio input (7):
+  - `availability()` with audio: the text answer for a site not yet
+    allowed whatever is downloaded, `"unavailable"` (the generic value) for
+    an allowed site without a model that hears audio and for every site
+    when the catalogue has none, options the models can't serve with the
+    multimodal feature off, off in MoltNet without asking the runtime, no
+    model loaded to answer;
+  - `create()`: the loaded model can't hear audio (generic failure, after
+    a load that preferred one that can); one that can (text and audio
+    input types, 16 kHz, one channel); a text session says nothing about
+    audio; a site not yet allowed without a model that hears audio gets
+    the infobar with the model picker, then the generic failure, nothing
+    loaded;
+  - a prompt with a clip reaches the job as 16-bit samples, counts by its
+    length, is held as one image, comes back with its turn in the history,
+    and is let go with the session;
+  - refusals before any work: another rate, two channels, over 30 s,
+    empty, a frame count that isn't the data's, a fifth clip, an assistant
+    message, a session without audio; exactly 30 s and a very short
+    (padded) clip accepted;
+  - `measureInputUsage()` counting a clip by its length and refusing one
+    it can't take.
 
   The Translator (23): availability follows the site's answer and depends
   only on the pair (every consent and model state against supported and
@@ -1358,6 +1484,13 @@ element, a canvas, a `Blob` and a huge photo; four images then a fifth;
 an image in an assistant message; `availability()` the same with a text
 model and a vision model; `create()` with images on a text model (the
 generic error after the infobar); an abort while images are scaled.
+For audio input (once the audio model is pinned and checked,
+SANDBOXED_INFERENCE.md §13.4): `prompt()` with an `AudioBuffer` (44.1 kHz
+stereo, resampled by Blink), a WAV and an MP3 `Blob` and an `ArrayBuffer`;
+a 31 s clip (refused) and a 30 s one; five clips; `availability()` for
+audio on a site not yet allowed, an allowed site with only a text model,
+and with the audio model downloaded; `create()` with audio when the chat's
+text model is loaded (the generic error); MoltNet.
 For the Translator: `availability()` and `create()` from a page whose
 first AI call is a Translator one (the document is found), from an iframe
 (with and without `allow="translator"`), from a worker (`"unavailable"`)
@@ -1390,8 +1523,14 @@ in every window, with Translate still detecting page languages.
   its sessions and cancels a running generation, but the page still holds
   the text it already received. A hand edit of `settings.json` reaches
   sessions only at the next device-facts read.
-- Regex `responseConstraint`, `prefix`, audio and tools are
-  unsupported; so are images in `initialPrompts`. Image input needs a
+- Regex `responseConstraint`, `prefix` and tools are
+  unsupported; so are images and audio in `initialPrompts`. Audio input
+  needs a model that hears audio, offered only once pinned and checked
+  (§5.2); an allowed site learns whether one is downloaded (§8); a clip
+  is counted from its length, which overestimates short clips (a clip
+  under 15 s counts a whole window); the clip conversion runs on the UI
+  thread (bounded: at most 4 × 480,000 samples a request, after mojo
+  already copied them); no audio in the AI chat. Image input needs a
   model with a vision projector: the registry's (§5.1) is offered only
   once pinned (the model picker then downloads it with its projector, as
   one unit: SANDBOXED_INFERENCE.md §10.4). A session created for

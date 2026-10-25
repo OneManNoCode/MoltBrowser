@@ -1,0 +1,30 @@
+MoltBrowser patch for media/filters/symphonia_decoder_bridge.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/filters/symphonia_decoder_bridge.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/filters/symphonia_decoder_bridge.rs b/media/filters/symphonia_decoder_bridge.rs
+index 4a7ea8b589c94ab33a6d4d6ceb8a961977006b78..4d54fc44fed698bfb3b0e160fd0c7fa83a18fea5 100644
+--- a/media/filters/symphonia_decoder_bridge.rs
++++ b/media/filters/symphonia_decoder_bridge.rs
+@@ -274,9 +274,19 @@ pub mod ffi {
+         /// most recent `decode()` call into `dst`. Used for planar
+         /// audio formats.
+         fn copy_decoded_channel(&self, channel: usize, dst: &mut [u8]) -> bool;
++
++        /// MoltBrowser: with `portable`, decoders initialized afterwards
++        /// compute their (I)FFTs with code whose results are the same on every
++        /// CPU (media/base/molt_portable_media.h).
++        fn set_portable_fft(portable: bool);
+     }
+ }
+ 
++// MoltBrowser: see `ffi::set_portable_fft`.
++fn set_portable_fft(portable: bool) {
++    symphonia::core::dsp::fft::moltbrowser_set_portable_fft(portable);
++}
++
+ /// Creates a default, empty `SymphoniaAudioBuffer`.
+ ///
+ /// This is used as a placeholder in error-case `SymphoniaDecodeResult` objects,

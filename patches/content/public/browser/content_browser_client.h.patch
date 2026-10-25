@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 6e730455c66df584a721a2b4720f25bf9844f16d..03dfd32c47237c473f009ebdcf3ce06c0b58cdbb 100644
+index 6e730455c66df584a721a2b4720f25bf9844f16d..8d577ab7ccd08304377d259303715e483de8f4da 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
 @@ -80,7 +80,9 @@
@@ -18,7 +18,7 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..03dfd32c47237c473f009ebdcf3ce06c
  #include "third_party/blink/public/common/mediastream/media_devices.h"
  #include "third_party/blink/public/common/tokens/tokens.h"
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
-@@ -1989,6 +1991,49 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1989,6 +1991,57 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  
@@ -64,6 +64,14 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..03dfd32c47237c473f009ebdcf3ce06c
 +  // their destination's (content/browser/download/molt_download_isolation.h).
 +  virtual bool ShouldKeepDownloadsWithTheirSite(
 +      BrowserContext* browser_context);
++
++  // MoltBrowser: true if `browser_context`'s renderer processes for
++  // `site_url` serve one BrowsingInstance each: a process that serves one
++  // is never reused for another
++  // (content/browser/renderer_host/molt_browsing_instance_processes_policy.h).
++  virtual bool ShouldKeepBrowsingInstancesInOwnProcesses(
++      BrowserContext* browser_context,
++      const GURL& site_url);
 +
    struct CONTENT_EXPORT WebSocketOptions {
      WebSocketOptions();

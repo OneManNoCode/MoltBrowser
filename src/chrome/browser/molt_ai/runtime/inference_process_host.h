@@ -114,6 +114,9 @@ struct InferenceOutcome {
   // A vision projector is loaded (image input). Only ever true when one was
   // sent.
   bool vision = false;
+  // The projector has an audio encoder (audio input). Only ever true when
+  // one was sent.
+  bool audio = false;
   // The GPU (Vulkan, design section 11): what became of it, and the layers
   // on it (backend "vulkan" only).
   mojom::GpuStatus gpu_status = mojom::GpuStatus::kNotRequested;

@@ -445,6 +445,9 @@ source_set("base") {
     "//ui/events",
     "//ui/events:events_base",
     "//ui/events:keyboard_hook",
+
+    # MoltBrowser: sinc_resampler.cc's kernel (gfx::molt_math).
+    "//ui/gfx/geometry",
     "//url",
   ]
 

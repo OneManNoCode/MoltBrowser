@@ -1,0 +1,60 @@
+# Copyright 2024 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+config("config") {
+  visibility = [ ":*" ]
+  include_dirs = [ "src" ]
+  defines = [ "LIBC_NAMESPACE=__llvm_libc_cr" ]
+}
+
+group("llvm-libc-shared") {
+  # llvm-libc is only used as a dependency of libc++.
+  visibility = [ "//buildtools/third_party/libc++" ]
+
+  public_configs = [ ":config" ]
+}
+
+group("headers") {
+  visibility = [ "//v8:v8_libbase" ]
+  public_configs = [ ":config" ]
+
+  # MoltBrowser: V8's Math in MoltNet (--portable-math, ieee754.cc).
+  public_deps = [ ":molt_portable_math" ]
+}
+
+# MoltBrowser: llvm-libc's math built without the target's fused multiply-add
+# and rounding instructions, so that it gives the same results on every CPU
+# and OS (molt_portable_math.h). Pure functions; who calls them is decided
+# per process by V8's --portable-math and gfx::molt_math.
+config("molt_portable_math_config") {
+  visibility = [ ":*" ]
+  include_dirs = [ "src" ]
+}
+
+static_library("molt_portable_math") {
+  sources = [
+    "molt_portable_math.cc",
+    "molt_portable_math.h",
+  ]
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [
+    "//build/config/compiler:no_chromium_code",
+    ":molt_portable_math_config",
+  ]
+  visibility = [
+    ":*",
+    "//ui/gfx/geometry:*",
+  ]
+}
+
+# Golden results that every platform must reproduce (in molt_ai_unittests).
+source_set("molt_portable_math_unittests") {
+  testonly = true
+  sources = [ "molt_portable_math_unittest.cc" ]
+  deps = [
+    ":molt_portable_math",
+    "//testing/gtest",
+  ]
+  visibility = [ "//chrome/browser/molt_ai/test:*" ]
+}

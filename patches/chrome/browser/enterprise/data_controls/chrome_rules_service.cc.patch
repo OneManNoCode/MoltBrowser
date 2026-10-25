@@ -1,0 +1,53 @@
+MoltBrowser patch for chrome/browser/enterprise/data_controls/chrome_rules_service.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/enterprise/data_controls/chrome_rules_service.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/enterprise/data_controls/chrome_rules_service.cc b/chrome/browser/enterprise/data_controls/chrome_rules_service.cc
+index b2fbc41ca6d29c6e4398ef5ee5dfa35feb88896e..a31e11318d1ff1c049cdc3c758c6e90dbdbaf868 100644
+--- a/chrome/browser/enterprise/data_controls/chrome_rules_service.cc
++++ b/chrome/browser/enterprise/data_controls/chrome_rules_service.cc
+@@ -10,6 +10,7 @@
+ #include "base/numerics/safe_conversions.h"
+ #include "chrome/browser/enterprise/data_protection/data_protection_clipboard_utils.h"
+ #include "chrome/browser/glic/host/guest_util.h"
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/prefs/pref_service.h"
+ 
+@@ -56,7 +57,9 @@ Verdict ChromeRulesService::GetPasteVerdict(
+ }
+ 
+ bool ChromeRulesService::incognito_profile() const {
+-  return profile_->IsIncognitoProfile();
++  // MoltBrowser: a rule's "incognito" condition covers MoltNet windows
++  // (molt_net_incognito_parity.h).
++  return molt_ai::tor::GetsIncognitoProtections(profile_);
+ }
+ 
+ ActionSource ChromeRulesService::GetAsActionSource(
+@@ -92,8 +95,9 @@ ActionSourceOrDestination ChromeRulesService::ExtractPasteActionContext(
+     action.url = *endpoint.data_transfer_endpoint()->GetURL();
+   }
+   if (endpoint.browser_context()) {
+-    action.incognito = Profile::FromBrowserContext(endpoint.browser_context())
+-                           ->IsIncognitoProfile();
++    // MoltBrowser: also for MoltNet (molt_net_incognito_parity.h).
++    action.incognito = molt_ai::tor::GetsIncognitoProtections(
++        Profile::FromBrowserContext(endpoint.browser_context()));
+     action.other_profile = endpoint.browser_context() != profile_;
+   }
+   if (endpoint.web_contents() && (glic::IsGlicGuest(endpoint.web_contents()) ||
+@@ -114,8 +118,9 @@ ActionSource ChromeRulesService::ExtractPasteActionContextSource(
+     action.url = *source.data_transfer_endpoint->GetURL();
+   }
+   if (source.browser_context) {
+-    action.incognito = Profile::FromBrowserContext(source.browser_context.get())
+-                           ->IsIncognitoProfile();
++    // MoltBrowser: also for MoltNet (molt_net_incognito_parity.h).
++    action.incognito = molt_ai::tor::GetsIncognitoProtections(
++        Profile::FromBrowserContext(source.browser_context.get()));
+     action.other_profile = source.browser_context.get() != profile_;
+   }
+   if (source.gemini_in_chrome) {

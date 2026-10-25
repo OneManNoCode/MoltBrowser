@@ -44,6 +44,38 @@ LINUX_FONTS = (
     'Courier',
 )
 
+# MoltNet's bundled font set (tools/fonts/moltnet_fonts.json; the generated
+# visibility list in moltnet_font_set_table.cc): every name a MoltNet page
+# may see, on every OS. The kit's tests check it against the manifest and
+# fp.js's copy.
+MOLTNET_FONTS = (
+    'Arimo', 'Tinos', 'Cousine', 'Noto Sans', 'Noto Naskh Arabic',
+    'Noto Sans Hebrew', 'Noto Sans Armenian', 'Noto Sans Georgian',
+    'Noto Sans Ethiopic', 'Noto Sans Devanagari', 'Noto Sans Bengali',
+    'Noto Sans Gujarati', 'Noto Sans Gurmukhi', 'Noto Sans Kannada',
+    'Noto Sans Malayalam', 'Noto Sans Oriya', 'Noto Sans Tamil',
+    'Noto Sans Telugu', 'Noto Sans Sinhala', 'Noto Sans Thai',
+    'Noto Sans Lao', 'Noto Sans Khmer', 'Noto Sans Myanmar',
+    'Noto Serif Tibetan', 'Noto Sans Thaana', 'Noto Sans Syriac',
+    'Noto Sans Cherokee', 'Noto Sans Canadian Aboriginal',
+    'Noto Sans Javanese', 'Noto Sans Ol Chiki', 'Noto Sans Adlam',
+    'Noto Sans Mongolian', 'Noto Sans NKo', 'Noto Sans Tifinagh',
+    'Noto Sans Yi', 'Noto Sans Symbols', 'Noto Sans Symbols 2',
+    'Noto Sans Math', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
+    'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Noto Sans CJK HK',
+    'Noto Color Emoji', 'Noto Sans Hebrew Light',
+    'Arial', 'Helvetica', 'Liberation Sans', 'Times New Roman', 'Times',
+    'MS Serif', 'Liberation Serif', 'Courier New', 'Courier',
+    'Liberation Mono',
+)
+# fp.js's fonts.generic_map: each generic keyword measures exactly like the
+# family the set maps it to (serif, cursive, fantasy: Tinos; sans-serif:
+# Arimo; monospace: Cousine; system-ui: Noto Sans; math: Noto Sans Math).
+MOLTNET_GENERIC_MAP = {
+    'serif': True, 'sans-serif': True, 'monospace': True, 'cursive': True,
+    'fantasy': True, 'system-ui': True, 'math': True,
+}
+
 # WebGL extension allow-list (webgl_uniform.cc, kAllowedExtensions).
 WEBGL_EXTENSIONS = (
     'ANGLE_instanced_arrays', 'EXT_blend_minmax', 'EXT_color_buffer_float',
@@ -141,6 +173,7 @@ S_MCLOCK = FP + ' "MoltNet: media playback clock"'
 S_MDEV = FP + ' "MoltNet: cameras, microphones and outputs"'
 S_MEM = FP + ' "MoltNet: performance.memory"'
 S_PIXELS = FP + ' "MoltNet: pixels and encoded bytes"'
+S_CPU = FP + ' "MoltNet: CPU features"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -166,10 +199,10 @@ MEDIA_DEVICE_ORDER = ['audioinput', 'videoinput', 'audiooutput']
 # getUserMedia() before a permission: asked about (still pending when the
 # probe gives up) or refused, never failed for want of a device.
 USER_MEDIA_ASKED = ['pending', 'NotAllowedError']
-# performance.memory.jsHeapSizeLimit in MoltNet: the 8 GB machine's limit
-# (4 GiB + 96 MiB) rounded to the last of the 100 sizes
-# (moltnet_memory_values.h).
-JS_HEAP_SIZE_LIMIT = 3760000000
+# performance.memory.jsHeapSizeLimit in MoltNet: the heap limit of the 4 GiB
+# machine every MoltNet isolate is configured as (2 GiB + 96 MiB), rounded
+# up to one of the 100 sizes (moltnet_memory_values.h).
+JS_HEAP_SIZE_LIMIT = 2330000000
 
 # Media Capabilities in MoltNet: a video the build decodes itself is smooth
 # and not power efficient; key systems and WebRTC are never supported.
@@ -194,7 +227,7 @@ MOLTNET_SITE_QUOTA = 60 * 1024 ** 2
 
 # What MoltBrowser's torrc sets for the capacity every MoltNet site shares
 # (chrome/browser/molt_ai/tor/torrc_builder.h).
-TOR_CAPACITY = {'ConnLimit': '1000', 'MaxClientCircuitsPending': '64'}
+TOR_CAPACITY = {'ConnLimit': '1000', 'MaxClientCircuitsPending': '256'}
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
@@ -245,7 +278,7 @@ FULL_RULES = (
     ('nav.languages', 'eq', ['en-US'], S_SURFACE),
     ('hdr.accept-language', 'eq', 'en-US', S_SURFACE),
     ('nav.hardwareConcurrency', 'eq', 4, S_SURFACE),
-    ('nav.deviceMemory', 'eq', 8, S_DEVICE),
+    ('nav.deviceMemory', 'eq', 4, S_DEVICE),
     ('nav.cpuPerformance', 'in', [0, None], S_DEVICE),
     ('nav.connection', 'eq', CONNECTION, S_NETQ),
     ('worker.connection', 'eq', CONNECTION, S_NETQ),
@@ -265,7 +298,12 @@ FULL_RULES = (
     ('webgl.extensions', 'subset', WEBGL_EXTENSIONS, S_WEBGL),
     ('webgl2.extensions', 'subset', WEBGL_EXTENSIONS, S_WEBGL),
     ('webgpu.adapter', 'in', [None, 'absent'], S_WEBGL),
-    ('fonts.visible', 'subset', 'per_os', S_FONTS),
+    # MoltNet takes every font from the bundled set: no other family is
+    # visible on any OS, every name of the set is, and the generic keywords
+    # map to the same families everywhere.
+    ('fonts.visible', 'subset', MOLTNET_FONTS, S_FONTS),
+    ('fonts.moltnet_set', 'eq', list(MOLTNET_FONTS), S_FONTS),
+    ('fonts.generic_map', 'eq', MOLTNET_GENERIC_MAP, S_FONTS),
     # measureText() at 16 and 48px, left-aligned: every value a whole pixel.
     ('text.metrics_whole', 'eq', True, S_TEXT),
     ('form.validationMessage', 'eq', 'Please fill out this field.', S_LANG),
@@ -348,6 +386,8 @@ FULL_RULES = (
     ('perf.heap_cached', 'eq', True, S_MEM),
     # <video> is decoded in software and its frames stay in CPU memory.
     ('pixels.video_frame_format', 'eq', 'I420', S_PIXELS),
+    # WebAssembly relaxed SIMD fails validation on every machine.
+    ('cpu.wasm_relaxed_simd', 'eq', False, S_CPU),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -396,6 +436,19 @@ DIFF_KEYS = (
     'pixels.webcodecs_frame', 'pixels.video_frame',
     'pixels.encoded_vp8_i420', 'pixels.encoded_vp8_rgba',
     'pixels.encoded_opus_48k', 'pixels.encoded_opus_44k',
+    # Math results, colours read back in Display P3 and decoded Vorbis
+    # samples are computed the same way on every CPU (FINGERPRINTING.md
+    # "MoltNet: CPU features").
+    'cpu.math', 'pixels.p3_readback', 'audio.decoded_vorbis',
+    # So are Math's trigonometry, CSS math functions, DOMMatrix and other
+    # transforms, and Web Audio's filter responses and compressor, with the
+    # same functions on every OS too (FINGERPRINTING.md "MoltNet: portable
+    # math").
+    'cpu.math_cross_arch', 'cpu.css_math', 'cpu.dommatrix', 'audio.math',
+    # Text in scripts the Latin families lack falls back through the bundled
+    # set's per-script lists, and local() finds the set's faces: the same on
+    # every machine and OS (FINGERPRINTING.md "Fonts").
+    'fonts.fallback_widths', 'fonts.local_bundled',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference
@@ -414,6 +467,7 @@ INFO_KEYS = {
     'nav.webdriver': 'navigator.webdriver under the kit\'s DevTools pipe',
     'mq.prefers_color_scheme_dark': 'dark while the dark toolbar is on '
                                     '(documented)',
+    'cpu.wasm_simd': 'WebAssembly.validate() of a plain SIMD module',
 }
 
 
@@ -424,7 +478,8 @@ FARBLED_KEYS = ('canvas.hash', 'canvas.hash_b', 'audio.hash')
 
 def font_allowlist(os_name):
     """The allow-list a protected context may see on `os_name`, or None
-    when the kit doesn't carry that OS's list (then only the diff checks)."""
+    when the kit doesn't carry that OS's list (then only the diff checks).
+    For the `subset` op's 'per_os'; MoltNet pages see MOLTNET_FONTS."""
     if os_name == 'Linux':
         return LINUX_FONTS
     return None

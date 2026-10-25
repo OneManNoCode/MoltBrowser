@@ -1,0 +1,28 @@
+MoltBrowser patch for media/filters/symphonia_audio_decoder.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/filters/symphonia_audio_decoder.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/filters/symphonia_audio_decoder.cc b/media/filters/symphonia_audio_decoder.cc
+index 8b4968b53d76e90b5ad9d8794486a702138651a5..18d7e919f28253f4bdca9900c0e6afee467f7a23 100644
+--- a/media/filters/symphonia_audio_decoder.cc
++++ b/media/filters/symphonia_audio_decoder.cc
+@@ -37,6 +37,7 @@
+ #include "media/base/limits.h"
+ #include "media/base/media_log.h"
+ #include "media/base/media_switches.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ #include "media/base/sample_format.h"
+ #include "media/base/timestamp_constants.h"
+ #include "media/filters/symphonia_decoder_bridge.rs.h"
+@@ -628,6 +629,9 @@ DecoderStatus SymphoniaAudioDecoder::ConfigureDecoder(
+   // Codec support is determined by the rust implementation, and will return
+   // an error as an initialization result if the codec is not supported.
+   const SymphoniaDecoderConfig symphonia_config = ToSymphoniaConfig(config);
++  // MoltBrowser: a portable media process decodes the same samples on every
++  // CPU (molt_portable_media.h).
++  set_portable_fft(IsPortableMediaProcess());
+   SymphoniaInitResult result = init_symphonia_decoder(symphonia_config);
+   // Record status for every initialization attempt.
+   base::UmaHistogramEnumeration("Media.Audio.Symphonia.InitStatus",

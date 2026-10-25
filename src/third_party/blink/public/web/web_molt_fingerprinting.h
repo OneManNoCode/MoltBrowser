@@ -4,6 +4,9 @@
 // Entry point for MoltBrowser's engine-level fingerprinting protection. The
 // embedder (chrome/renderer/molt_ai/fingerprinting/) calls, on the main
 // thread:
+//   * ConfigureBeforeBlinkInitialization() once, before blink::Initialize()
+//     (SetRuntimeFeaturesDefaultsBeforeBlinkInitialization), with the same
+//     mode, for what has to be set before V8 starts;
 //   * Configure() once at renderer start (RenderThreadStarted) with the
 //     profile's mode, which the browser put on the command line;
 //   * SetSessionSeed() with the profile's session seed, which the browser
@@ -21,9 +24,14 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "third_party/blink/public/platform/web_common.h"
+
+namespace base {
+class File;
+}  // namespace base
 
 namespace blink {
 
@@ -42,6 +50,12 @@ class BLINK_EXPORT WebMoltFingerprinting {
     kUniform,
   };
 
+  // Must be called before blink::Initialize(), which initialises V8, with
+  // the mode Configure() will get. Only kUniform does anything: V8 (flags,
+  // every isolate's heap) and image colour transforms run as on one fixed
+  // machine (core/molt_fingerprinting/moltnet_cpu.h). Needs no Blink object
+  // or thread; only the first kUniform call has an effect.
+  static void ConfigureBeforeBlinkInitialization(Mode mode);
   // Must be called on the main thread after blink::Initialize() and before
   // any script runs. Only the first call has an effect.
   static void Configure(Mode mode);
@@ -60,6 +74,15 @@ class BLINK_EXPORT WebMoltFingerprinting {
   static void SetDocumentShieldsDecision(WebLocalFrame* frame,
                                          bool shields_down,
                                          const std::string& top_level_site);
+  // MoltNet renderers whose browser has MoltNet's bundled fonts (it puts
+  // --molt-net-fonts on their command line): call on the main thread right
+  // after Configure(kUniform), before any frame or worker exists. From then
+  // on every font of the process comes from the bundled set, on every OS
+  // (core/molt_fingerprinting/moltnet_fonts.h). No effect in other modes.
+  static void ExpectBundledFonts();
+  // The bundled set's files, read-only, in the order of its table, as the
+  // browser sends them right after launch. Main thread; accepted once.
+  static void SetBundledFontFiles(std::vector<base::File> files);
   // For a document of `frame` the browser didn't commit (the initial empty
   // document, and later ones in a frame that never got a decision): takes
   // the decision of the parent frame's document, or else of the opener's,

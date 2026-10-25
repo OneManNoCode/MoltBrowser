@@ -1,0 +1,53 @@
+MoltBrowser patch for storage/browser/blob/blob_registry_impl.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/blob/blob_registry_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/blob/blob_registry_impl.cc b/storage/browser/blob/blob_registry_impl.cc
+index 40f62fb10b5ff7c87ebe9f7fa47d8411ef062e60..a5eefe1cd90763bf6eb5ee3db29a3ff846820006 100644
+--- a/storage/browser/blob/blob_registry_impl.cc
++++ b/storage/browser/blob/blob_registry_impl.cc
+@@ -71,6 +71,10 @@ class BlobRegistryImpl::BlobUnderConstruction {
+     builder_->set_content_disposition(content_disposition);
+   }
+ 
++  // MoltBrowser: the budget key of the registering renderer process
++  // (molt_blob_budget_policy.h).
++  void MoltSetBudgetKey(uint64_t key) { builder_->MoltSetBudgetKey(key); }
++
+   // Call this after constructing to kick of fetching of UUIDs of blobs
+   // referenced by this new blob. This (and any further methods) could end up
+   // deleting |this| by removing it from the blobs_under_construction_
+@@ -263,8 +267,9 @@ void BlobRegistryImpl::BlobUnderConstruction::StartTransportation(
+ 
+   const BlobMemoryController& memory_controller =
+       context()->memory_controller();
+-  MemoryStrategy memory_strategy =
+-      memory_controller.DetermineStrategy(shortcut_size, transport_memory_size);
++  // MoltBrowser: within the blob's budget key.
++  MemoryStrategy memory_strategy = memory_controller.DetermineStrategy(
++      shortcut_size, transport_memory_size, builder_->molt_budget_key());
+   if (memory_strategy == MemoryStrategy::TOO_LARGE) {
+     MarkAsBroken(BlobStatus::ERR_OUT_OF_MEMORY);
+     return;
+@@ -555,6 +560,8 @@ void BlobRegistryImpl::Register(
+   blobs_under_construction_[uuid] = std::make_unique<BlobUnderConstruction>(
+       this, uuid, content_type, content_disposition, std::move(element_entries),
+       receivers_.GetBadMessageCallback());
++  // MoltBrowser: the blob counts to the registering process's budget key.
++  blobs_under_construction_[uuid]->MoltSetBudgetKey(delegate->MoltBudgetKey());
+ 
+   std::unique_ptr<BlobDataHandle> handle = context_->AddFutureBlob(
+       uuid, content_type, content_disposition,
+@@ -584,6 +591,10 @@ void BlobRegistryImpl::RegisterFromStream(
+           context_, content_type, content_disposition,
+           base::BindOnce(&BlobRegistryImpl::StreamingBlobDone,
+                          base::Unretained(this), std::move(callback)));
++  // MoltBrowser: the blob counts to the registering process's budget key.
++  if (Delegate* delegate = receivers_.current_context().get()) {
++    blob_builder->MoltSetBudgetKey(delegate->MoltBudgetKey());
++  }
+   BlobBuilderFromStream* blob_builder_ptr = blob_builder.get();
+   blobs_being_streamed_.insert(std::move(blob_builder));
+   blob_builder_ptr->Start(expected_length, std::move(data),

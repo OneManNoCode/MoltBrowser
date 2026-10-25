@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool.h b/net/socket/client_socket_pool.h
-index 5db1b533d3c1cb995a98de856d31ccd786d1a12c..3c2e5f8ff4ba328789a406d38493b429e6fb2e6c 100644
+index 5db1b533d3c1cb995a98de856d31ccd786d1a12c..347da60d6ba2371e15081defc68c5107d04b45e4 100644
 --- a/net/socket/client_socket_pool.h
 +++ b/net/socket/client_socket_pool.h
-@@ -387,6 +387,25 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+@@ -387,6 +387,28 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
      socket_soft_cap_override_for_test_ = socket_soft_cap_override_for_test;
    }
  
@@ -30,11 +30,14 @@ index 5db1b533d3c1cb995a98de856d31ccd786d1a12c..3c2e5f8ff4ba328789a406d38493b429
 +  // pool. The pool's limit is then its soft cap exactly (no randomized
 +  // additional capacity).
 +  void MoltSetSocketGate(MoltSocketGate* gate);
++  // MoltBrowser: whether the pool has a gate (it is one of MoltNet's
++  // per-site pools).
++  bool MoltHasSocketGate() const { return molt_socket_gate_ != nullptr; }
 +
   protected:
    ClientSocketPool(size_t socket_soft_cap,
                     const ProxyChain& proxy_chain,
-@@ -462,6 +481,9 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+@@ -462,6 +484,9 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
    // If set, this overrides `socket_soft_cap_` for future calculations.
    std::optional<size_t> socket_soft_cap_override_for_test_ = std::nullopt;
  

@@ -55,6 +55,15 @@ const uint32 kMaxImageAspectRatio = 8;
 // Images in one request: the new message's and the history's together.
 const uint32 kMaxImagesPerRequest = 4;
 
+// Audio input (docs/design/SANDBOXED_INFERENCE.md section 13). The same
+// bounds as chrome/services/molt_ai/inference/engine/audio_input.h; a clip
+// outside them is a bad message.
+const uint32 kAudioSampleRate = 16000;
+const uint32 kMinAudioSamples = 1600;
+const uint32 kMaxAudioSamples = 480000;
+// Audio clips in one request: the new message's and the history's together.
+const uint32 kMaxAudioPerRequest = 4;
+
 // An image for the model: already decoded, scaled and padded by the browser
 // (Chromium's sandboxed image decoders; nothing in the service decodes a
 // compressed image), 8-bit RGB, row-major, no row padding. Untrusted
@@ -66,6 +75,16 @@ struct ImageInput {
   uint32 height;
   // Exactly width * height * 3 bytes.
   mojo_base.mojom.BigBuffer rgb;
+};
+
+// An audio clip for the model: already decoded by the page's renderer and
+// prepared by the browser (nothing in the service decodes a compressed
+// audio file), one channel at kAudioSampleRate. Untrusted content, like page
+// text: it may come from a web page.
+struct AudioInput {
+  // 16-bit signed samples in the host's byte order (little-endian), between
+  // kMinAudioSamples and kMaxAudioSamples of them.
+  mojo_base.mojom.BigBuffer pcm;
 };
 
 // What identifies a GPU's driver (docs/design/SANDBOXED_INFERENCE.md section
@@ -125,9 +144,9 @@ struct ModelLoadParams {
   // CPU weight repacking (use_extra_bufts). The service turns it off when
   // its sandbox memory limit is too small for it (cpu_repack_used says).
   bool allow_cpu_repack = true;
-  // The model's vision projector (a second GGUF, llama.cpp's "mmproj"), for
-  // image input; opened read-only like |weights|, not async. Null for a
-  // text-only model.
+  // The model's multimodal projector (a second GGUF, llama.cpp's "mmproj"),
+  // whose image encoder, audio encoder or both serve image and audio input;
+  // opened read-only like |weights|, not async. Null for a text-only model.
   mojo_base.mojom.ReadOnlyFile? vision_projector;
   // Its size as the browser saw it (0 without one); the service refuses a
   // file of another size.
@@ -183,8 +202,9 @@ enum LoadModelStatus {
   kOutOfMemory,
   // No usable compute backend.
   kBackendUnavailable,
-  // The vision projector isn't one llama.cpp can load for this model (not a
-  // projector, made for another model, wrong size, or unreadable).
+  // The projector isn't one llama.cpp can load for this model (not a
+  // projector, made for another model, wrong size, unreadable, or with
+  // neither an image encoder nor a usable audio encoder).
   kInvalidVisionProjector,
 };
 
@@ -200,6 +220,9 @@ struct ModelDescription {
   bool cpu_repack_used;
   // A vision projector is loaded: chat requests may carry images.
   bool vision = false;
+  // The projector has an audio encoder taking kAudioSampleRate: chat
+  // requests may carry audio. Never without a projector.
+  bool audio = false;
   // kOn exactly when backend is "vulkan", which requires use_gpu.
   GpuStatus gpu_status = kNotRequested;
   // Layers on the GPU, the output layer counting as one: in
@@ -278,6 +301,9 @@ struct ChatTurn {
   // A user turn's images, shown to the model before its text. On an
   // assistant turn they are a bad message.
   array<ImageInput> images;
+  // A user turn's audio clips, after its images and before its text. On an
+  // assistant turn they are a bad message.
+  array<AudioInput> audio;
 };
 
 // Mirrors molt_ai::ChatPrompt. The trust labels are the field names:
@@ -287,7 +313,10 @@ struct ChatTurn {
 // text into system_prompt. Images (user_images and the history's) are
 // untrusted too; a request with images needs a model with vision
 // (ModelDescription.vision), else it completes with kImagesUnsupported
-// before it is queued. At most kMaxImagesPerRequest images in all.
+// before it is queued. At most kMaxImagesPerRequest images in all. Audio
+// clips (user_audio and the history's) likewise: a model with audio
+// (ModelDescription.audio), else kAudioUnsupported; at most
+// kMaxAudioPerRequest.
 struct ChatRequest {
   string system_prompt;
   string context_preamble;
@@ -297,6 +326,8 @@ struct ChatRequest {
   mojo_base.mojom.BigString user_message;
   // The new message's images, shown before its text.
   array<ImageInput> user_images;
+  // The new message's audio clips, after its images and before its text.
+  array<AudioInput> user_audio;
 };
 
 // Agents and automation (BrowserAIRuntime::StreamPrompt / RunPrompt): no chat
@@ -339,6 +370,9 @@ enum GenerationStatus {
   // can't be used in this process any more: the browser ends it and loads
   // the model on the CPU next time.
   kBackendFailed,
+  // The request has audio and the model has no audio encoder. Nothing was
+  // generated.
+  kAudioUnsupported,
 };
 
 struct GenerationSummary {

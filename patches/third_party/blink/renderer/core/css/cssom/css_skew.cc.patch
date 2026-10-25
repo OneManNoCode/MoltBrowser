@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/blink/renderer/core/css/cssom/css_skew.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/css/cssom/css_skew.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/css/cssom/css_skew.cc b/third_party/blink/renderer/core/css/cssom/css_skew.cc
+index aa02470307355aa3becf236d50da4c4a940b0de3..6abf1ccb7f7efd3131531e2b5efa800daed8bb51 100644
+--- a/third_party/blink/renderer/core/css/cssom/css_skew.cc
++++ b/third_party/blink/renderer/core/css/cssom/css_skew.cc
+@@ -11,6 +11,7 @@
+ #include "third_party/blink/renderer/core/css/cssom/css_unit_value.h"
+ #include "third_party/blink/renderer/core/geometry/dom_matrix.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+@@ -71,8 +72,9 @@ DOMMatrix* CSSSkew::toMatrix(ExceptionState&) const {
+   DCHECK(ax);
+   DCHECK(ay);
+   DOMMatrix* result = DOMMatrix::Create();
+-  result->setM12(std::tan(ay->value()));
+-  result->setM21(std::tan(ax->value()));
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
++  result->setM12(gfx::molt_math::Tan(ay->value()));
++  result->setM21(gfx::molt_math::Tan(ax->value()));
+   return result;
+ }
+ 

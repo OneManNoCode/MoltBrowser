@@ -205,14 +205,16 @@ class MoltAIManager : public base::SupportsUserData::Data,
   // Each interface turns the decision into its own mojo answer.
   using AvailabilityCallback = base::OnceCallback<void(AvailabilityDecision)>;
 
-  // availability() for |api|.
+  // availability() for |api|. |wants_audio|: AvailabilityInput.
   void CheckAvailability(WebAIApi api,
                          bool options_supported,
                          bool languages_supported,
+                         bool wants_audio,
                          AvailabilityCallback callback);
   void OnAvailabilityDeviceFacts(WebAIApi api,
                                  bool options_supported,
                                  bool languages_supported,
+                                 bool wants_audio,
                                  AvailabilityCallback callback,
                                  DeviceFacts device);
 
@@ -228,7 +230,8 @@ class MoltAIManager : public base::SupportsUserData::Data,
   void OnCreateModelReady(uint64_t id,
                           bool ok,
                           uint32_t context_tokens,
-                          bool sees_images);
+                          bool sees_images,
+                          bool hears_audio);
   // Removes and returns request |id| if it is still wanted (its client is
   // connected); fails and drops it otherwise.
   std::unique_ptr<CreateRequest> TakeCreate(uint64_t id);

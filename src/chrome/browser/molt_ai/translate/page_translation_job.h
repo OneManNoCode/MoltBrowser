@@ -84,7 +84,10 @@ class PageTranslationJob {
  private:
   void OnDeviceFacts(web_ai::DeviceFacts facts);
   void OnExtracted(base::Value result);
-  void OnModelPrepared(bool ok, uint32_t context_tokens, bool sees_images);
+  void OnModelPrepared(bool ok,
+                       uint32_t context_tokens,
+                       bool sees_images,
+                       bool hears_audio);
   void SendBatch();
   void OnChunk(const std::string& text);
   void OnGenerationDone(web_ai::GenerationStatus status);

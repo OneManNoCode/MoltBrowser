@@ -20,9 +20,30 @@ include_rules = [
     "+media/base/video_encoder.h",
     # MoltNet's media pixels and encoded bytes (moltnet_pixels.h).
     "+media/base/molt_portable_media.h",
+    # measureUserAgentSpecificMemory()'s entries (moltnet_memory.h).
+    "+base/byte_size.h",
+    "+components/performance_manager/public/mojom/web_memory.mojom-blink.h",
+    "+components/performance_manager/public/mojom/web_memory.mojom-blink-forward.h",
 ]
 
 specific_include_rules = {
+  # MoltNet's bundled fonts, mapped from the read-only files the browser
+  # sends (moltnet_fonts.h).
+  "moltnet_fonts(_test)?\.(cc|h)": [
+    "+base/files/memory_mapped_file.h",
+    "+base/files/scoped_temp_dir.h",
+    "+base/files/file_util.h",
+    # Font caches of every thread that looked a font up before the files
+    # came are invalidated on that thread.
+    "+base/functional/callback.h",
+  ],
+  # The machine V8 and skcms run as in MoltNet, set before V8 starts
+  # (moltnet_cpu.h), as bindings/core/v8 and the image decoders reach them.
+  "moltnet_cpu(_test)?\.cc": [
+    "+gin/public/isolate_holder.h",
+    "+third_party/skia/include/core/SkGraphics.h",
+    "+third_party/skia/modules/skcms/skcms.h",
+  ],
   # MoltNet's audio clock (moltnet_audio_*): the media sinks, clock and
   # resampler Web Audio and media playback render through, as
   # platform/audio and modules/media/audio use them.

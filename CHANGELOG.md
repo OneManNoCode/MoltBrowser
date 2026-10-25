@@ -227,9 +227,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   within what MoltNet's Tor always accepts, and each site sets up at most
   16 Tor connections at a time; the torrc states Tor's connection and
   pending-circuit limits (`ConnLimit 1000`, `MaxClientCircuitsPending
-  64`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
+  256`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
   counted per site, apart from regular windows. Each site may store 60 MiB
-  (all its storage keys together), all sites 600 MiB, and MoltNet no
+  (all its storage keys together), all sites 600 MiB before the computer's
+  free memory decides, and MoltNet no
   longer evicts one site's data to make room for another's. Background
   Fetch requests, and downloads a page starts without navigating ("Save
   link as", "Save image as", a link with `download`), resumed downloads
@@ -237,6 +238,29 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the site they come from (Background Fetch in every private profile, as
   regular profiles already do), so a file saved from another site's link
   no longer carries that site's cookies (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening: more of what MoltNet's sites share is kept per site.
+  Each site's 60 MiB of storage stays available whatever other sites
+  store (beyond 600 MiB for all sites together the computer's free memory
+  decides), and each tab's page process may hold 200 MiB of blobs whatever
+  other tabs hold; MoltNet tabs (with the windows they open) no longer
+  share page processes, which takes more memory with many tabs open. Tor's
+  connection and circuit-building budgets are shared fairly by every site
+  and by an identity that is ending and its successor (an onion address
+  counts three circuits; the torrc now states `MaxClientCircuitsPending
+  256`). Certificate downloads count against the site that needed them,
+  synchronous requests count against their site's connection limit
+  but not its per-host one (once the site's limit is full they may go past
+  it by a few connections, from Tor's own margin), a
+  retried download keeps the network key of the site it came from, and
+  Background Fetch requests carry the page's credentials setting and
+  origin. When an identity ends,
+  its pages stop at once and its windows close once its connection
+  confirms that it refuses every request; nothing the old windows start
+  afterwards loads. MoltNet applies Incognito's Data Controls conditions,
+  doesn't open while `MandatoryExtensionsForIncognitoNavigation` is set
+  (MoltNet windows run no installed extensions), and on Windows reads
+  parental controls again each time a MoltNet window opens
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -299,6 +323,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   little softer on standard-density Linux screens. Element sizes aren't
   rounded, and font versions still differ between OS releases
   (`docs/FINGERPRINTING.md`, "Text metrics").
+- **MoltNet brings its own fonts.** MoltBrowser now ships one font set
+  (Arimo, Tinos, Cousine and Noto, with CJK and colour emoji; all under
+  the SIL Open Font License, about 48 MB) and MoltNet windows draw all
+  text with it, on macOS, Linux and Windows alike: the fonts pages can
+  name, the generic families, `system-ui` and the fallback for other
+  scripts and emoji, measured the same way on every OS. Nothing installed
+  on your computer is used there, so the fonts MoltNet pages get no longer
+  depend on the machine, its OS release or its operating system. Text in
+  MoltNet windows looks the same
+  everywhere rather than native; regular and incognito windows keep your
+  system's fonts
+  (`docs/FINGERPRINTING.md`, "MoltNet: the bundled font set").
 - **MoltNet's video and audio bytes are the same on every machine of an
   OS.** In MoltNet windows video plays with MoltBrowser's own software
   decoders instead of the graphics card's, video frames a page reads back
@@ -308,6 +344,31 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   processor, graphics card or video decoder. Video in MoltNet uses more
   CPU and battery, most at 4K (`docs/FINGERPRINTING.md`, "MoltNet: pixels
   and encoded bytes"); regular and incognito windows are unchanged.
+- **What MoltNet pages compute no longer depends on your processor or
+  memory.** In MoltNet windows WebAssembly's relaxed SIMD instructions are
+  off (pages use their plain SIMD code), `Math.pow` and `Math.tanh` use
+  V8's own code, colour conversion (canvas read-back in Display P3, images
+  with colour profiles) and audio decoding compute the same way on every
+  x86-64 and Arm processor, and V8's memory limits are those of a 4 GB
+  machine on every computer (`jsHeapSizeLimit` 2,330,000,000; on Linux,
+  the same memory limit for every page process). Pages in MoltNet can use
+  about 2 GB of JavaScript memory, and colour-managed images decode more
+  slowly (`docs/FINGERPRINTING.md`, "MoltNet: CPU features");
+  regular and incognito windows are unchanged.
+- **MoltNet's math is the same on every processor and system.** In MoltNet
+  windows CSS math functions, `DOMMatrix` and other transforms, canvas and
+  SVG geometry, `Math`'s trigonometry, Web Audio's filters, analyser,
+  oscillators, panners, compressor and convolution, and WebRTC audio
+  levels are computed with one portable math library and Web Audio's plain
+  (non-vector) code, so their results no longer differ between x86-64 and
+  Arm processors or between Windows, macOS and Linux.
+  `navigator.deviceMemory` is now 4, the machine V8's memory limits
+  describe; on Windows a MoltNet page process can commit 8 GB on every
+  machine, pages no longer collect garbage early when the system is short
+  of memory, and same-site MoltNet tabs start sharing processes at the
+  same count on every machine. Web Audio in MoltNet uses a little more CPU
+  (`docs/FINGERPRINTING.md`, "MoltNet: portable math"); regular and
+  incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
@@ -447,7 +508,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **MoltNet hides your touchscreen, memory, CPU and exact system.** MoltNet
   pages now all see the same mouse-and-keyboard desktop: no touch points, a
   fine pointer that can hover and no touch-event detection (your
-  touchscreen still works), 8 GB of memory and an unknown CPU class. Sites
+  touchscreen still works), 4 GB of memory and an unknown CPU class. Sites
   can no longer ask for your screen's pixel density, viewport, memory,
   network speed, exact OS version, CPU architecture or exact browser
   version through client hints: MoltNet only sends the basic browser,
@@ -529,7 +590,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   one camera and one output device, and asking for a camera or microphone
   the machine doesn't have shows the usual permission prompt instead of
   failing at once; and `performance.memory` reports rounded sizes,
-  refreshed every 20 minutes, with an 8 GB machine's heap limit. Media
+  refreshed every 20 minutes, with a 4 GB machine's heap limit. Media
   sound reaches your speakers a little later (about 60 ms at first,
   settling to 15 to 35 ms), and with Bluetooth headphones a video's sound
   trails its picture by the headset's delay. Regular and incognito windows
@@ -608,6 +669,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   compiled pipelines are kept between loads, checked before reuse and
   deleted with a model's data (`docs/design/SANDBOXED_INFERENCE.md`
   §11.10–11.12).
+- **Audio for the Prompt API, and a lighter GPU build.** Sites you allow
+  can give the Prompt API spoken audio (up to 30 seconds a clip, four per
+  request) once a model that hears audio is installed; the page's audio is
+  decoded in the page's own process and the model receives only plain
+  16 kHz samples, in its sandbox; sites you haven't allowed learn nothing
+  new. The GPU build's shaders shrink from 40 MB to 2.6 MB, and on Windows
+  the GPU drivers are now loaded before the model's sandbox locks down
+  (GPU inference stays off until tested on real GPUs)
+  (`docs/design/SANDBOXED_INFERENCE.md` §11.14, §11.15 and §13).
 - **On-device AI on older x86 processors.** Models no longer need AVX2:
   the best kernels the processor supports are picked when a model loads,
   AVX on Intel Sandy Bridge/Ivy Bridge and AMD Bulldozer-family chips,
@@ -727,6 +797,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   untrusted, so it won't submit forms until you trust it. Runs that used a
   site's own tool, and runs in MoltNet windows, can't be saved. Workflow
   runs also no longer save the values you type when you start them.
+- **Agent mode keeps up with changing sites, and replays site tools.** Each
+  recorded step also remembers its element by its role and name, label,
+  stable attributes, text and place on the page; when a site changes and
+  the recorded selector no longer finds it, the replay tries those in
+  order, never picking another kind of element, a page of another site, or
+  a password field for an ordinary step, and asks you before it uses a weak
+  match. The run's history shows what found each element. A site tool you
+  allow in the AI chat while recording becomes a step, replayed only if the
+  site still offers the same tool with compatible arguments, and asking you
+  unless it only reads or the workflow is trusted on that site; values that
+  look secret are asked at each run. A frame of another site can offer its
+  tools to the agent only after you allow that site on that page (for this
+  session, or always, removable in Agent mode); every call to one asks you
+  and names both sites, and MoltNet windows never use them.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

@@ -5,28 +5,37 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc b/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc
-index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06e4fdd9c7 100644
+index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..6e7b25d13c20136aff36d98a0a3c110ab747d014 100644
 --- a/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc
 +++ b/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc
-@@ -59,7 +59,9 @@
+@@ -59,7 +59,10 @@
  #include "services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h"
  
  #include <algorithm>
 +#include <cstdint>
  #include <memory>
 +#include <optional>
++#include <string>  // MoltBrowser
  #include <tuple>
  #include <utility>
  
-@@ -80,6 +82,7 @@
+@@ -80,12 +83,15 @@
  #include "base/timer/timer.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/remote.h"
 +#include "net/base/isolation_info.h"
  #include "net/base/load_flags.h"
  #include "net/cert/cert_net_fetcher.h"
++#include "net/cert/molt_cert_fetch_site.h"  // MoltBrowser
  #include "net/http/http_request_headers.h"
-@@ -141,10 +144,13 @@ class CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader {
+ #include "net/http/http_response_headers.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "net/url_request/redirect_info.h"
++#include "services/cert_verifier/cert_net_url_loader/molt_cert_fetch_isolation.h"  // MoltBrowser
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/url_loader_factory.mojom.h"
+@@ -141,10 +147,13 @@ class CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader {
    // Initializes AsyncCertNetFetcherURLLoader, binding the
    // PendingRemote<URLLoaderFactory> into a Remote<URLLoaderFactory> for
    // creating URLLoaders.
@@ -42,7 +51,7 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
  
    AsyncCertNetFetcherURLLoader(const AsyncCertNetFetcherURLLoader&) = delete;
    AsyncCertNetFetcherURLLoader& operator=(const AsyncCertNetFetcherURLLoader&) =
-@@ -195,6 +201,11 @@ class CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader {
+@@ -195,6 +204,11 @@ class CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader {
    // be used to bind a new URLLoaderFactory if the current one disconnects.
    BindNewURLLoaderFactoryCallback bind_new_url_loader_factory_cb_;
  
@@ -54,7 +63,7 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
    SEQUENCE_CHECKER(sequence_checker_);
  };
  
-@@ -327,6 +338,11 @@ struct CertNetFetcherURLLoader::RequestParams {
+@@ -327,6 +341,17 @@ struct CertNetFetcherURLLoader::RequestParams {
    // If set to a value == 0 then means "no timeout".
    base::TimeDelta timeout;
  
@@ -62,11 +71,17 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
 +  // each fetch: no other request's params compare equal, so no two fetches
 +  // share a Job, and the Job loads with a one-off network key.
 +  uint64_t isolated_fetch_id = 0;
++  // MoltBrowser: the site the verification that asked for this fetch names
++  // ("" for none; net/cert/molt_cert_fetch_site.h): an isolated fetch's
++  // one-off key is that site's (molt_cert_fetch_isolation.h). Not compared:
++  // isolated fetches never match another one anyway, and a fetcher that
++  // doesn't isolate them ignores it.
++  std::string molt_site;
 +
    // IMPORTANT: When adding fields to this structure, update operator<().
  };
  
-@@ -335,9 +351,10 @@ CertNetFetcherURLLoader::RequestParams::RequestParams()
+@@ -335,9 +360,10 @@ CertNetFetcherURLLoader::RequestParams::RequestParams()
  
  bool CertNetFetcherURLLoader::RequestParams::operator<(
      const RequestParams& other) const {
@@ -79,23 +94,25 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
  }
  
  namespace {
-@@ -526,6 +543,15 @@ void Job::StartURLLoader(network::mojom::URLLoaderFactory* factory) {
+@@ -526,6 +552,17 @@ void Job::StartURLLoader(network::mojom::URLLoaderFactory* factory) {
    // fetches to prevent deadlock.
    request->trusted_params = network::ResourceRequest::TrustedParams();
    request->trusted_params->disable_secure_dns = true;
-+  // MoltBrowser: an isolated fetch gets a fresh transient IsolationInfo. It
-+  // takes precedence over the factory's automatically assigned one (keyed
-+  // by the URL's own site), so this fetch shares no HTTP cache entry (none
-+  // is kept for transient keys), connection or proxy identity with any
-+  // other request.
++  // MoltBrowser: an isolated fetch gets a fresh one-off IsolationInfo: of
++  // the site its verification names, else derived from nothing
++  // (molt_cert_fetch_isolation.h). It takes precedence over the factory's
++  // automatically assigned one (keyed by the URL's own site), so this fetch
++  // shares no HTTP cache entry (none is kept for keys with a nonce),
++  // connection or proxy identity with any other request, and counts
++  // against its site's connection limits.
 +  if (request_params_->isolated_fetch_id) {
 +    request->trusted_params->isolation_info =
-+        net::IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
++        MoltCertFetchIsolationInfo(request_params_->molt_site);
 +  }
    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
    // Ensure that we bypass HSTS for all requests sent through
    // CertNetFetcherURLLoader, since AIA/CRL/OCSP requests must be in HTTP to
-@@ -609,10 +635,12 @@ CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::
+@@ -609,10 +646,12 @@ CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::
      AsyncCertNetFetcherURLLoader(
          mojo::PendingRemote<network::mojom::URLLoaderFactory>
              factory_pending_remote,
@@ -110,7 +127,7 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
  
  CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::
      ~AsyncCertNetFetcherURLLoader() {
-@@ -642,6 +670,11 @@ void CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::Fetch(
+@@ -642,6 +681,11 @@ void CertNetFetcherURLLoader::AsyncCertNetFetcherURLLoader::Fetch(
      scoped_refptr<RequestCore> request) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
  
@@ -122,7 +139,7 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
    // If there is an in-progress job that matches the request parameters use it.
    // Otherwise start a new job.
    Job* job = FindJob(*request_params);
-@@ -764,7 +797,14 @@ void CertNetFetcherURLLoader::SetURLLoaderFactoryAndReconnector(
+@@ -764,7 +808,14 @@ void CertNetFetcherURLLoader::SetURLLoaderFactoryAndReconnector(
          bind_new_url_loader_factory_cb) {
    CHECK(!impl_);
    impl_ = std::make_unique<AsyncCertNetFetcherURLLoader>(
@@ -138,3 +155,16 @@ index 8ec90db3dc8ba220d09efab1162e4bd35ae0a6b1..c8d724d4c1f9781430e1970977c6de06
  }
  
  // static
+@@ -852,6 +903,12 @@ CertNetFetcherURLLoader::DoFetch(
+   // Caller thread cannot be the same as the creation thread.
+   DCHECK(!task_runner_->RunsTasksInCurrentSequence());
+ 
++  // MoltBrowser: the site the verification running on this (the caller's)
++  // thread names, if any (net/cert/molt_cert_fetch_site.h).
++  if (const std::string* molt_site = net::MoltGetCertFetchSite()) {
++    request_params->molt_site = *molt_site;
++  }
++
+   auto request_core = base::MakeRefCounted<RequestCore>(task_runner_);
+ 
+   // If the fetcher has already been shutdown, DoFetchOnTaskRunner will

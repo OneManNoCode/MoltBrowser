@@ -1,0 +1,21 @@
+MoltBrowser patch for services/network/public/mojom/cert_verifier_service.mojom
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/services/network/public/mojom/cert_verifier_service.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/public/mojom/cert_verifier_service.mojom b/services/network/public/mojom/cert_verifier_service.mojom
+index eb31820e001ce013902e357a9fc848fc0bf93c1b..2405628389bc7f85e65ee8ab66f6c79b2d7ac77f 100644
+--- a/services/network/public/mojom/cert_verifier_service.mojom
++++ b/services/network/public/mojom/cert_verifier_service.mojom
+@@ -18,6 +18,10 @@ struct RequestParams {
+   int32 flags;
+   mojo_base.mojom.ByteString ocsp_response;
+   mojo_base.mojom.ByteString sct_list;
++  // MoltBrowser: the site whose connection the verification is for, which
++  // the certificate fetches it needs count against (MoltNet's network
++  // contexts only; net/cert/molt_cert_fetch_site.h). Null for none.
++  [MinVersion=1] string? molt_cert_fetch_site;
+ };
+ 
+ // Temporary config struct--this should eventually be deleted as the network
