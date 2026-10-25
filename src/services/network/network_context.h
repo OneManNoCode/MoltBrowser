@@ -55,6 +55,7 @@
 #include "services/network/cors/preflight_controller.h"
 #include "services/network/http_cache_data_counter.h"
 #include "services/network/http_cache_data_remover.h"
+#include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
 #include "services/network/logical_invalidation_store.h"
 #include "services/network/network_qualities_pref_delegate.h"
 #include "services/network/oblivious_http_request_handler.h"
@@ -672,6 +673,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   void LoaderDestroyed(const OriginatingProcessId& process_id);
   bool CanCreateLoader(const OriginatingProcessId& process_id);
 
+  // MoltBrowser: the MoltNet identity this context serves has ended. Runs in
+  // the task in which the context's refusal of every request is applied
+  // (ProxyConfigServiceMojo::MoltSetOnRefuseAll()) and takes kMoltEndSteps
+  // (services/network/molt_ended_identity_policy.h).
+  void MoltEndIdentity();
+  // MoltBrowser: whether this context still starts `entry`: everything
+  // until its identity has ended, then only what sends nothing.
+  bool MoltAdmits(MoltNetworkEntry entry) const {
+    return MoltEndedContextAdmits(entry, molt_identity_ended_);
+  }
+
   void set_max_loaders_per_process_for_testing(uint32_t count) {
     max_loaders_per_process_ = count;
   }
@@ -1154,6 +1166,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   // True once the destructor has been called. Used to guard against re-entrant
   // calls to DestroyURLLoaderFactory().
   bool is_destructing_ = false;
+
+  // MoltBrowser: see MoltEndIdentity().
+  bool molt_identity_ended_ = false;
 
   // True if the Prefetch() method is enabled.
   // TODO(ricea): Remove this when it is enabled by default.

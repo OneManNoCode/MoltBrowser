@@ -19,6 +19,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/log/net_log_with_source.h"
+#include "net/socket/molt_identity_end.h"  // MoltBrowser
 #include "net/socket/stream_socket.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
@@ -54,6 +55,13 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   // so SOCKSConnectJob passes the top-level site here for loopback SOCKS5
   // proxies (MoltNet's Tor). Each value must be 1..255 bytes.
   void SetUsernamePasswordAuth(std::string username, std::string password);
+
+  // MoltBrowser: the end of the MoltNet identity this socket's session
+  // serves (net/socket/molt_identity_end.h). Once it is marked, Write()
+  // refuses everything, whatever the layers above have queued.
+  void MoltSetIdentityEnd(scoped_refptr<MoltIdentityEnd> end) {
+    molt_identity_end_ = std::move(end);
+  }
 
   // StreamSocket implementation.
 
@@ -167,6 +175,9 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   // upstream behavior).
   std::string auth_username_;
   std::string auth_password_;
+
+  // MoltBrowser: see MoltSetIdentityEnd(); null outside MoltNet.
+  scoped_refptr<MoltIdentityEnd> molt_identity_end_;
 
   NetLogWithSource net_log_;
 

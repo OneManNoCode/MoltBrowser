@@ -516,6 +516,7 @@ source_set("unit_tests") {
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
+    "molt_net_end_ordering_unittest.cc",
     "molt_net_ended_identity_network_unittest.cc",
     "molt_net_http_cache_budget_policy_unittest.cc",
     "molt_net_http_cache_unittest.cc",
@@ -610,8 +611,10 @@ source_set("unit_tests") {
     "//services/network/public/cpp",
     "//services/network/public/cpp:buildflags",
     # An ended identity's network context stops everything with its refusal
-    # (ProxyConfigServiceMojo).
+    # (ProxyConfigServiceMojo) and starts nothing after it (NetworkContext,
+    # with the test cert verifier and URL loader client).
     "//services/network:network_service",
+    "//services/network:test_support",
     "//services/network/public/mojom",
     "//testing/gtest",
     "//third_party/blink/public/mojom:mojom_platform",

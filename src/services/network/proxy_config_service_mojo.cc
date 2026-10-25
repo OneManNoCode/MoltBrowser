@@ -51,16 +51,22 @@ void ProxyConfigServiceMojo::OnProxyConfigUpdated(
   // MoltBrowser: an ended MoltNet identity's refusal stops what its context
   // still has under way, now that new requests are refused
   // (molt_ended_identity_policy.h).
-  const net::ProxyConfig::ProxyRules& rules = config_.value().proxy_rules();
-  if (MoltStopsEverythingOnConfig(
-          !molt_on_refuse_all_.is_null(),
-          MoltIsRefuseAllProxyConfig(
-              rules.type == net::ProxyConfig::ProxyRules::Type::PROXY_LIST,
-              rules.single_proxies.IsEmpty(),
-              config_.value().HasAutomaticSettings()),
-          /*changed=*/true)) {
+  if (MoltStopsEverythingOnConfig(!molt_on_refuse_all_.is_null(),
+                                  MoltRefusesAll(),
+                                  /*changed=*/true)) {
     molt_on_refuse_all_.Run();
   }
+}
+
+// MoltBrowser: see the header.
+bool ProxyConfigServiceMojo::MoltRefusesAll() const {
+  if (config_pending_) {
+    return false;
+  }
+  const net::ProxyConfig::ProxyRules& rules = config_.value().proxy_rules();
+  return MoltIsRefuseAllProxyConfig(
+      rules.type == net::ProxyConfig::ProxyRules::Type::PROXY_LIST,
+      rules.single_proxies.IsEmpty(), config_.value().HasAutomaticSettings());
 }
 
 void ProxyConfigServiceMojo::FlushProxyConfig(

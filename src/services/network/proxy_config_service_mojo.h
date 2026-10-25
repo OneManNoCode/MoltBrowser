@@ -63,6 +63,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
     molt_on_refuse_all_ = std::move(callback);
   }
 
+  // MoltBrowser: whether the configuration applied now refuses every
+  // request (a network context made after its identity ended has it from
+  // the start).
+  bool MoltRefusesAll() const;
+
  private:
   // mojom::ProxyConfigClient implementation:
   void OnProxyConfigUpdated(

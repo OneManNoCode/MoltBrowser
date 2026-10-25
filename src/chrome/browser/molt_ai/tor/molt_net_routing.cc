@@ -97,11 +97,91 @@ const void* const kMoltNetProfileDataKey = &kMoltNetProfileDataKey;
 // Set on a MoltNet profile whose identity has ended (EndIdentity()).
 const void* const kMoltNetIdentityEndedKey = &kMoltNetIdentityEndedKey;
 
-base::RepeatingCallbackList<void(Profile*)>& IdentityEndedCallbacks() {
-  static base::NoDestructor<base::RepeatingCallbackList<void(Profile*)>>
-      callbacks;
+using IdentityEndedCallbackList = base::RepeatingCallbackList<void(
+    Profile*,
+    const MoltNetRouting::EndAckHolder&)>;
+
+IdentityEndedCallbackList& IdentityEndedCallbacks() {
+  static base::NoDestructor<IdentityEndedCallbackList> callbacks;
   return *callbacks;
 }
+
+// Set on a MoltNet profile whose identity has ended: how far the end has
+// reached its network contexts (MoltNetRouting::WhenNetworkHasEnd(),
+// molt_net_identity_end_policy.h: kWaitForNetwork).
+const void* const kMoltNetNetworkEndKey = &kMoltNetNetworkEndKey;
+
+class NetworkEnd : public base::SupportsUserData::Data {
+ public:
+  NetworkEnd() = default;
+  NetworkEnd(const NetworkEnd&) = delete;
+  NetworkEnd& operator=(const NetworkEnd&) = delete;
+  ~NetworkEnd() override = default;
+
+  static NetworkEnd* Of(Profile* profile) {
+    return static_cast<NetworkEnd*>(profile->GetUserData(kMoltNetNetworkEndKey));
+  }
+
+  // One more answer to wait for; run the closure when it comes (once).
+  base::OnceClosure Hold() {
+    ++outstanding_;
+    return base::BindOnce(&NetworkEnd::Answered, weak_factory_.GetWeakPtr());
+  }
+
+  // Every context has been sent the end: from now on it is done once they
+  // have all answered, or at the deadline.
+  void Start() {
+    started_ = true;
+    deadline_.Start(FROM_HERE, base::Milliseconds(kMoltNetEndProbeDeadlineMs),
+                    base::BindOnce(&NetworkEnd::OnDeadline,
+                                   weak_factory_.GetWeakPtr()));
+    MaybeDone();
+  }
+
+  void WhenDone(base::OnceClosure done) {
+    if (done_) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, std::move(done));
+      return;
+    }
+    waiters_.push_back(std::move(done));
+  }
+
+ private:
+  void Answered() {
+    --outstanding_;
+    MaybeDone();
+  }
+
+  void OnDeadline() {
+    deadline_passed_ = true;
+    LOG(WARNING) << "[MoltNet] an ended identity's network contexts didn't "
+                    "answer in time; going on with the end";
+    MaybeDone();
+  }
+
+  void MaybeDone() {
+    if (done_ || !started_ ||
+        !MoltNetEndReachedNetwork(outstanding_, deadline_passed_)) {
+      return;
+    }
+    done_ = true;
+    deadline_.Stop();
+    for (base::OnceClosure& waiter : waiters_) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, std::move(waiter));
+    }
+    waiters_.clear();
+  }
+
+  int outstanding_ = 0;
+  bool started_ = false;
+  bool deadline_passed_ = false;
+  bool done_ = false;
+  std::vector<base::OnceClosure> waiters_;
+  base::OneShotTimer deadline_;
+  base::WeakPtrFactory<NetworkEnd> weak_factory_{this};
+};
 
 // The proxy configuration an ended identity's network context gets. It
 // sends nothing; Chromium's tools want every configuration annotated.
@@ -619,14 +699,36 @@ void MoltNetRouting::EndIdentity(Profile* moltnet_profile) {
   }
   const bool first_time = !HasIdentityEnded(moltnet_profile);
   if (first_time) {
+    // kMarkEnded (molt_net_identity_end_policy.h).
     moltnet_profile->SetUserData(kMoltNetIdentityEndedKey,
                                  std::make_unique<base::SupportsUserData::Data>());
-    // Its network contexts get RefuseAllProxyConfig() now
-    // (ProxyConfigMonitor), before anything else happens to the identity.
-    IdentityEndedCallbacks().Notify(moltnet_profile);
+    // kSendToNetwork: its network contexts get RefuseAllProxyConfig() now
+    // (ProxyConfigMonitor), before anything else happens to the identity,
+    // and each answers once it has ended with it.
+    auto network_end = std::make_unique<NetworkEnd>();
+    NetworkEnd* const end = network_end.get();
+    moltnet_profile->SetUserData(kMoltNetNetworkEndKey, std::move(network_end));
+    IdentityEndedCallbacks().Notify(
+        moltnet_profile,
+        base::BindRepeating(&NetworkEnd::Hold, base::Unretained(end)));
+    end->Start();
   }
+  // Only stops new windows from opening in it.
   ForgetMoltNetProfile(moltnet_profile);
-  FlushNetworkState(moltnet_profile);
+}
+
+// static
+void MoltNetRouting::WhenNetworkHasEnd(Profile* moltnet_profile,
+                                       base::OnceClosure done) {
+  NetworkEnd* const end =
+      IsMoltNetProfile(moltnet_profile) ? NetworkEnd::Of(moltnet_profile)
+                                        : nullptr;
+  if (!end) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(done));
+    return;
+  }
+  end->WhenDone(std::move(done));
 }
 
 // static
