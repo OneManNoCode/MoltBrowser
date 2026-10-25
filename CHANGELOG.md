@@ -619,6 +619,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   compiled pipelines are kept between loads, checked before reuse and
   deleted with a model's data (`docs/design/SANDBOXED_INFERENCE.md`
   §11.10–11.12).
+- **Audio for the Prompt API, and a lighter GPU build.** Sites you allow
+  can give the Prompt API spoken audio (up to 30 seconds a clip, four per
+  request) once a model that hears audio is installed; the page's audio is
+  decoded in the page's own process and the model receives only plain
+  16 kHz samples, in its sandbox; sites you haven't allowed learn nothing
+  new. The GPU build's shaders shrink from 40 MB to 2.6 MB, and on Windows
+  the GPU drivers are now loaded before the model's sandbox locks down
+  (GPU inference stays off until tested on real GPUs)
+  (`docs/design/SANDBOXED_INFERENCE.md` §11.14, §11.15 and §13).
 - **On-device AI on older x86 processors.** Models no longer need AVX2:
   the best kernels the processor supports are picked when a model loads,
   AVX on Intel Sandy Bridge/Ivy Bridge and AMD Bulldozer-family chips,
