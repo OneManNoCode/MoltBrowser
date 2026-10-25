@@ -564,10 +564,14 @@ class Run(object):
         return env
 
     def launch_browser(self, label, extra_flags=(), dsf=None,
-                       policy_dir=None):
+                       policy_dir=None, natural=False):
+        # natural (the traffic capture): start as a user would, without
+        # --no-first-run and without a start URL, so that the first run and
+        # the start-up tabs are the browser's own.
         args = [self.opts.browser,
                 '--user-data-dir=' + self.path('profile'),
-                '--remote-debugging-pipe', '--no-first-run',
+                '--remote-debugging-pipe'] + (
+                    [] if natural else ['--no-first-run']) + [
                 '--no-default-browser-check', '--password-store=basic',
                 '--disable-search-engine-choice-screen',
                 '--ignore-certificate-errors-spki-list=' + self.spki]
@@ -584,7 +588,8 @@ class Run(object):
         if self.opts.control_tor:
             args.append('--proxy-server=socks5://127.0.0.1:%d' % CONTROL_SOCKS)
         args += list(extra_flags) + list(self.opts.browser_args)
-        args.append('about:blank')
+        if not natural:
+            args.append('about:blank')
         cmd_r, cmd_w = os.pipe()
         resp_r, resp_w = os.pipe()
         child_in = _high_fd(cmd_r)

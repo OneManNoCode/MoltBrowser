@@ -7,6 +7,8 @@
 #   sudo tools/leak_test/leaktest.sh run --browser /path/to/moltbrowser
 #   tools/leak_test/leaktest.sh report <run dir>
 #   tools/leak_test/leaktest.sh diff <run A>/report.json <run B>/report.json
+#   sudo tools/leak_test/leaktest.sh traffic --browser /path/to/moltbrowser
+#   tools/leak_test/leaktest.sh hosts [--write]
 #
 # Python runs isolated (-I): no user site-packages, no PYTHON* variables,
 # nothing imported from the current directory.

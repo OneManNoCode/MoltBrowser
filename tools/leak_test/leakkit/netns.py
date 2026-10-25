@@ -32,6 +32,7 @@ of the run (each step is recorded in the order it was made).
 """
 
 import errno
+import ipaddress
 import os
 import shutil
 import signal
@@ -65,11 +66,21 @@ def cgroup2_mount(mountinfo='/proc/self/mountinfo'):
     return None
 
 
-def netns_ruleset(cgroup_rel, cgroup_level, loopback_port):
+def netns_ruleset(cgroup_rel, cgroup_level, loopback_port, sinkhole=None):
     """The namespace's nftables ruleset. `cgroup_rel` is the run's "tor"
-    cgroup relative to /sys/fs/cgroup (nft resolves it there)."""
+    cgroup relative to /sys/fs/cgroup (nft resolves it there). `sinkhole`
+    (the traffic capture's address range, e.g. "198.18.0.0/15", routed to
+    the loopback) adds a rule that logs the first packet of every flow to
+    it (nflog group 1, prefix "sinkhole") before the loopback accept."""
     if "'" in cgroup_rel or '"' in cgroup_rel:
         raise ValueError('bad cgroup path')
+    sink = ''
+    if sinkhole is not None:
+        net = ipaddress.ip_network(sinkhole)
+        if net.version != 4:
+            raise ValueError('the sinkhole range must be IPv4')
+        sink = ('    ip daddr %s ct state new log group %d prefix "sinkhole" '
+                'counter accept\n' % (net, NFLOG_BLOCKED))
     return '''table inet moltleak {
   chain output {
     type filter hook output priority filter; policy drop;
@@ -77,7 +88,7 @@ def netns_ruleset(cgroup_rel, cgroup_level, loopback_port):
     socket cgroupv2 level %(level)d "%(cg)s" counter accept
     ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport 53 log group %(blk)d prefix "dns-kit" counter accept
     meta l4proto { tcp, udp } th dport { 53, 853, 5353, 5355 } log group %(blk)d prefix "dns" counter drop
-    oif "lo" tcp dport %(lport)d ct state new log group %(blk)d prefix "lo-canary" counter accept
+%(sink)s    oif "lo" tcp dport %(lport)d ct state new log group %(blk)d prefix "lo-canary" counter accept
     oif "lo" counter accept
     ct state established,related counter accept
     ip protocol igmp log group %(blk)d prefix "igmp" counter accept
@@ -87,7 +98,7 @@ def netns_ruleset(cgroup_rel, cgroup_level, loopback_port):
   }
 }
 ''' % {'level': cgroup_level, 'cg': cgroup_rel, 'tor': NFLOG_TOR,
-       'blk': NFLOG_BLOCKED, 'lport': int(loopback_port)}
+       'blk': NFLOG_BLOCKED, 'lport': int(loopback_port), 'sink': sink}
 
 
 def host_ruleset(table, veth_host, subnet):
@@ -174,7 +185,10 @@ class Sandbox(object):
 
     # ---- setup --------------------------------------------------------------
 
-    def setup(self, loopback_port):
+    def setup(self, loopback_port, sinkhole=None):
+        """`sinkhole`: the traffic capture's range (see netns_ruleset()),
+        routed to the namespace's loopback as local addresses, so that a
+        server listening on 0.0.0.0 there answers every one of them."""
         if not self.cg_mount:
             raise RuntimeError('cgroup v2 is not mounted; the kit tells Tor '
                                'apart by cgroup (see docs/LEAK_TESTING.md)')
@@ -219,6 +233,10 @@ class Sandbox(object):
             self.in_ns('sh', '-c', 'echo %s > /proc/sys/%s' % (value, knob),
                        check=False)
         self.in_ns('ip', 'link', 'set', 'lo', 'up')
+        if sinkhole is not None:
+            self.in_ns('ip', 'route', 'add', 'local',
+                       str(ipaddress.ip_network(sinkhole)), 'dev', 'lo')
+            self.net['sinkhole'] = str(ipaddress.ip_network(sinkhole))
         self.in_ns('ip', 'addr', 'add', self.net['ns_ipv4'] + '/30', 'dev',
                    self.veth_ns)
         self.in_ns('ip', '-6', 'addr', 'add', self.net['ns_ipv6'] + '/64',
@@ -235,7 +253,8 @@ class Sandbox(object):
         level = len(os.path.relpath(self.cgroup('tor'),
                                     self.cg_mount).split(os.sep))
         self.in_ns('nft', '-f', '-', input=netns_ruleset(rel, level,
-                                                         loopback_port))
+                                                         loopback_port,
+                                                         sinkhole))
         # forwarding + NAT on the host for Tor's traffic
         with open('/proc/sys/net/ipv4/ip_forward', 'r') as f:
             self.ip_forward_was = f.read().strip()

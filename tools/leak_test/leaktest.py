@@ -9,6 +9,11 @@
       (re)builds the report from a recorded run, no root needed
   tools/leak_test/leaktest.sh diff <run A>/report.json <run B>/report.json
       shows whether two runs (two machines, two OS locales) look the same
+  sudo tools/leak_test/leaktest.sh traffic --browser chromium/src/out/MoltBrowser-linux/chrome
+      captures a regular window's own traffic (first run, idle, a scripted
+      browse, restart, update check) against docs/NETWORK_TRAFFIC.md
+  tools/leak_test/leaktest.sh hosts [--write]
+      checks (or regenerates) docs/network_traffic_hosts.json from the doc
   tools/leak_test/leaktest.sh service ...
       the kit's own servers (started by `run`)
 
@@ -62,7 +67,45 @@ def cmd_run(args):
     return subprocess.call(cmd)
 
 
+def cmd_traffic(args):
+    from leakkit import bgcapture
+    opts = bgcapture.TrafficOptions(
+        browser=os.path.abspath(args.browser), out=args.out,
+        display=args.display, screen=_size(args.screen), locale=args.locale,
+        timezone=args.timezone, browser_args=args.browser_arg,
+        user=args.user, idle=args.idle, first_run_wait=args.first_run_wait,
+        restart_idle=args.restart_idle, update_wait=args.update_wait,
+        final_wait=args.final_wait, hosts=args.hosts,
+        skip_browse=args.skip_browse)
+    return bgcapture.run(opts)
+
+
+def cmd_hosts(args):
+    from leakkit import hostlist
+    if args.write:
+        print('wrote %s' % hostlist.write_json())
+        return 0
+    why = hostlist.check_files()
+    if why:
+        print(why)
+        return 1
+    print('%s matches %s' % (os.path.relpath(hostlist.JSON_PATH,
+                                             hostlist.REPO), hostlist.DOC_REL))
+    return 0
+
+
 def cmd_report(args):
+    from leakkit import bganalysis
+    if bganalysis.is_traffic_run(args.run_dir):
+        rep = bganalysis.write(args.run_dir)
+        print('verdict: %s  (%s)' % (rep['verdict'], ', '.join(
+            '%d %s' % (v, k) for k, v in sorted(rep['counts'].items()))))
+        for c in rep['checks']:
+            if c['status'] in ('FAIL', 'ERROR'):
+                print('  %-5s %s' % (c['status'], c['title']))
+        print('report: %s' % os.path.join(args.run_dir, 'report.md'))
+        print('json:   %s' % os.path.join(args.run_dir, 'report.json'))
+        return 0 if rep['verdict'] == 'PASS' else 1
     rep = reportlib.write(args.run_dir)
     print('verdict: %s  (%s)' % (rep['verdict'], ', '.join(
         '%d %s' % (v, k) for k, v in sorted(rep['counts'].items()))))
@@ -109,6 +152,13 @@ def cmd_service(args):
         services.run_loopback(args.port, args.log)
     elif args.kind == 'proxy':
         services.run_proxy(args.listen, args.port, args.log)
+    elif args.kind == 'fakedns':
+        from leakkit import sinkhole
+        sinkhole.run_fakedns(args.listen, args.port, args.log)
+    elif args.kind == 'sinkhole':
+        from leakkit import sinkhole
+        sinkhole.run_sinkhole(args.log, _list(args.ports, int), args.cert,
+                              args.key)
     return 0
 
 
@@ -175,6 +225,44 @@ def main(argv=None):
     r.add_argument('--no-seed-settings', action='store_true')
     r.set_defaults(fn=cmd_run)
 
+    t = sub.add_parser('traffic', help='capture a regular window\'s own '
+                       'traffic through a first run, idle time, a scripted '
+                       'browse, a restart and an update check, and compare '
+                       'it with docs/NETWORK_TRAFFIC.md (root)')
+    t.add_argument('--browser', required=True,
+                   help='the browser executable')
+    t.add_argument('--out', default=None,
+                   help='where run directories go (default ./moltleak-runs)')
+    t.add_argument('--display', choices=('auto', 'xvfb', 'current',
+                                         'headless'), default='auto')
+    t.add_argument('--screen', default='1920x1080')
+    t.add_argument('--locale', default=None)
+    t.add_argument('--timezone', default=None)
+    t.add_argument('--browser-arg', action='append', default=[],
+                   help='extra browser flag (repeatable; it changes what is '
+                   'measured)')
+    t.add_argument('--user', default=None,
+                   help='who runs the browser (default: $SUDO_USER)')
+    t.add_argument('--idle', type=int, default=600,
+                   help='seconds left idle after the first run (default 600)')
+    t.add_argument('--first-run-wait', type=int, default=45)
+    t.add_argument('--restart-idle', type=int, default=120)
+    t.add_argument('--update-wait', type=int, default=45)
+    t.add_argument('--final-wait', type=int, default=20)
+    t.add_argument('--skip-browse', action='store_true',
+                   help='leave out the scripted browse')
+    t.add_argument('--hosts', default=None,
+                   help='the allow-list (default '
+                   'docs/network_traffic_hosts.json)')
+    t.set_defaults(fn=cmd_traffic)
+
+    h = sub.add_parser('hosts', help='check (or --write) '
+                       'docs/network_traffic_hosts.json against the table in '
+                       'docs/NETWORK_TRAFFIC.md')
+    h.add_argument('--write', action='store_true')
+    h.add_argument('--check', action='store_true', help='(the default)')
+    h.set_defaults(fn=cmd_hosts)
+
     rep = sub.add_parser('report', help='build report.md/report.json from a '
                          'run directory')
     rep.add_argument('run_dir')
@@ -189,7 +277,8 @@ def main(argv=None):
 
     s = sub.add_parser('service', help='(internal) the kit\'s servers, '
                        'started by run')
-    s.add_argument('kind', choices=('pages', 'dns', 'loopback', 'proxy'))
+    s.add_argument('kind', choices=('pages', 'dns', 'loopback', 'proxy',
+                                    'fakedns', 'sinkhole'))
     s.add_argument('--config')
     s.add_argument('--log')
     s.add_argument('--listen', default='127.0.0.1')
@@ -197,6 +286,9 @@ def main(argv=None):
     s.add_argument('--http', action='append')
     s.add_argument('--https', action='append')
     s.add_argument('--https-clientauth', action='append')
+    s.add_argument('--ports', default='80,443')
+    s.add_argument('--cert')
+    s.add_argument('--key')
     s.set_defaults(fn=cmd_service)
 
     args = p.parse_args(argv)
