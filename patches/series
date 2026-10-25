@@ -47,6 +47,8 @@ chrome/browser/chrome_content_browser_client.h.patch
 chrome/browser/chrome_content_browser_client_receiver_bindings.cc.patch
 chrome/browser/client_hints/BUILD.gn.patch
 chrome/browser/client_hints/client_hints_factory.cc.patch
+chrome/browser/component_updater/BUILD.gn.patch
+chrome/browser/component_updater/registration.cc.patch
 chrome/browser/content_settings/cookie_settings_factory.cc.patch
 chrome/browser/content_settings/host_content_settings_map_factory.cc.patch
 chrome/browser/devtools/devtools_window.cc.patch
@@ -184,6 +186,9 @@ components/omnibox/browser/search_provider.cc.patch
 components/omnibox/common/omnibox_features.cc.patch
 components/omnibox_pedal_ui_strings.grdp.patch
 components/omnibox_strings.grdp.patch
+components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc.patch
+components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc.patch
+components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h.patch
 components/page_info_strings.grdp.patch
 components/password_manager_strings.grdp.patch
 components/payments_strings.grdp.patch

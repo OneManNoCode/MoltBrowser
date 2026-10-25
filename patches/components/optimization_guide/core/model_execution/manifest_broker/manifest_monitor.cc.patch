@@ -1,0 +1,50 @@
+MoltBrowser patch for components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc b/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc
+index 56fe802df22e99875209a6c039aee33f058ccf76..4bc5202e2e9a727111bd7a9921a211c889d7a98b 100644
+--- a/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc
++++ b/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.cc
+@@ -55,7 +55,8 @@ ManifestMonitor::ManifestMonitor(PrefService& local_state,
+                                  PerformanceClassifier& performance_classifier,
+                                  Delegate& delegate)
+     : performance_classifier_(performance_classifier),
+-      local_state_(local_state) {
++      local_state_(local_state),
++      delegate_(delegate) {  // MoltBrowser: kept for RequestManifest().
+   TRACE_EVENT("optimization_guide", "ManifestMonitor::ManifestMonitor",
+               perfetto::Flow::FromPointer(this));
+   pref_change_registrar_.Init(&local_state_.get());
+@@ -69,9 +70,8 @@ ManifestMonitor::ManifestMonitor(PrefService& local_state,
+       base::BindRepeating(&ManifestMonitor::OnInputsChanged,
+                           weak_ptr_factory_.GetWeakPtr()));
+ 
+-  manifest_ready_subscription_ =
+-      delegate.ListenForManifestReady(base::BindRepeating(
+-          &ManifestMonitor::OnManifestReady, weak_ptr_factory_.GetWeakPtr()));
++  // MoltBrowser: the manifest is asked for on first demand, by
++  // RequestManifest(), not at startup.
+ 
+   performance_classifier_->ListenForPerformanceClassAvailable(base::BindOnce(
+       &ManifestMonitor::OnInputsChanged, weak_ptr_factory_.GetWeakPtr()));
+@@ -89,6 +89,17 @@ void ManifestMonitor::SetCallback(base::RepeatingClosure on_manifest_changed) {
+   OnInputsChanged();
+ }
+ 
++// MoltBrowser: what the constructor did upstream, on first demand.
++void ManifestMonitor::RequestManifest() {
++  if (manifest_requested_) {
++    return;
++  }
++  manifest_requested_ = true;
++  manifest_ready_subscription_ =
++      delegate_->ListenForManifestReady(base::BindRepeating(
++          &ManifestMonitor::OnManifestReady, weak_ptr_factory_.GetWeakPtr()));
++}
++
+ void ManifestMonitor::OnDiskSpaceEvaluated(
+     std::optional<base::ByteSize> free_space) {
+   TRACE_EVENT("optimization_guide", "ManifestMonitor::OnDiskSpaceEvaluated",

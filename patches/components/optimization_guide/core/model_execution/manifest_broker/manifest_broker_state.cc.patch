@@ -1,0 +1,54 @@
+MoltBrowser patch for components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc b/components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc
+index 0cd4f8e7700c74e1ddf8f6234320cb435a66c3e9..5e7efb1d5b3169090fb483a0656d7ba549ae4fa6 100644
+--- a/components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc
++++ b/components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.cc
+@@ -103,6 +103,7 @@ void ManifestBrokerState::BindModelBroker(
+   if (!features::IsOnDeviceExecutionEnabled()) {
+     return;
+   }
++  manifest_monitor_.RequestManifest();  // MoltBrowser: first demand.
+   model_broker_impl_.BindBroker(std::move(receiver));
+ }
+ 
+@@ -145,6 +146,7 @@ void ManifestBrokerState::AddOnDeviceModelAvailabilityChangeObserver(
+   if (!features::IsOnDeviceExecutionEnabled()) {
+     return;
+   }
++  manifest_monitor_.RequestManifest();  // MoltBrowser: first demand.
+   model_broker_impl_.GetSolutionProvider(feature).AddObserver(observer);
+ }
+ 
+@@ -165,6 +167,8 @@ OnDeviceModelEligibilityReason ManifestBrokerState::GetOnDeviceModelEligibility(
+   TRACE_EVENT("optimization_guide",
+               "ManifestBrokerState::GetOnDeviceModelEligibility", "feature",
+               base::ToString(feature));
++  // MoltBrowser: first demand (StartSession() comes through here too).
++  manifest_monitor_.RequestManifest();
+   // TODO(holte): We many want to flush factory to avoid kUnknown responses,
+   // but we might not actually need to.  Things should be moving away from
+   // this interface already.
+@@ -192,6 +196,8 @@ void ManifestBrokerState::GetOnDeviceModelEligibilityAsync(
+ 
+ void ManifestBrokerState::EnsureInitialization(
+     ModelBrokerImpl::InitCallback callback) {
++  // MoltBrowser: first demand (initialization waits for the manifest).
++  manifest_monitor_.RequestManifest();
+   // Hurry the performance classifier.
+   performance_classifier_.EnsurePerformanceClassAvailable(base::DoNothing());
+   if (manifest_monitor_.manifest().has_value()) {
+@@ -337,6 +343,9 @@ void ManifestBrokerState::GetStateInfo(
+ 
+ void ManifestBrokerState::SetUseCaseRequested(const std::string& use_case,
+                                               bool requested) {
++  if (requested) {
++    manifest_monitor_.RequestManifest();  // MoltBrowser: first demand.
++  }
+   usage_tracker_.SetPriority(use_case,
+                              requested ? UsageTracker::Priority::kUserBlocking
+                                        : UsageTracker::Priority::kEvictable);
