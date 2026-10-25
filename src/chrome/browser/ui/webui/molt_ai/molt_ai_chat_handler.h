@@ -341,7 +341,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: []
   void HandleCancelWebAgent(const base::ListValue& args);
   // The user's Allow / Deny answer to an 'agent-confirm' event (the agent
-  // pauses on cross-origin navigation, form submits and sensitive fields).
+  // pauses on cross-origin navigation, form submits, sensitive fields and
+  // site tools). Allow counts only with the click's user activation.
   // Args: [request_id, allowed]
   void HandleWebAgentConfirm(const base::ListValue& args);
   // The user's answer to a FRAME_TOOLS 'agent-confirm' (a frame of another

@@ -6033,8 +6033,16 @@ void MoltAIChatHandler::HandleWebAgentConfirm(const base::ListValue& args) {
   } else {
     return;
   }
-  // Anything but an explicit boolean true is a denial.
-  const bool allowed = args[1].is_bool() && args[1].GetBool();
+  // Anything but an explicit boolean true is a denial, and so is an Allow
+  // without the click itself: the chat page's transient user activation,
+  // which its script can't make up (the click's activation reaches the
+  // browser before this message, as for runChatProposal). A denial stops
+  // the run.
+  bool allowed = args[1].is_bool() && args[1].GetBool();
+  if (allowed) {
+    content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
+    allowed = chat_frame && chat_frame->HasTransientUserActivation();
+  }
   web_agent_->ResolveConfirmation(request_id, allowed);
 }
 

@@ -719,7 +719,10 @@ prompt is byte for byte what it was.
   change something there, with id = "A1"; qty = 2`; a frame's tool names
   its frame: `Run the site's tool "add_to_cart" in the frame
   https://shop.example/widgets/cart on https://shop.example — ...`
-  (§2.7.12). Deny stops the run, as for any confirmation.
+  (§2.7.12). Deny stops the run, as for any confirmation. Allow, on this
+  chip as on every other one of the agent's, counts only with the chat
+  page's transient user activation when the answer reaches the browser
+  (the click itself); without it the answer is Deny.
 - **The answer.** At most 8192 UTF-16 units read, cleaned (`\r` dropped,
   other control characters but `\n` and `\t` made spaces, ends trimmed), at
   most 1500 characters, put first in the next observation (`TOOL RESULT
