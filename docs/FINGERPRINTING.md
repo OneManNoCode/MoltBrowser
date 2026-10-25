@@ -3558,6 +3558,14 @@ arm64 Cortex-A72, Neoverse N1 and qemu's `max` CPU:
   differing only in `blit_row_s32a_opaque`; with the portable blitter
   installed, one result on both.
 
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`; `fft_frame.cc` with the bridge header cxxbridge
+generates from the changed `rustfft_ffi.rs`), except four it doesn't
+cover: V8's `ieee754.cc` and `molt_portable_math.cc`, which build without
+warnings for x86-64 and arm64 in the harnesses above (`-Wall -Wextra
+-Wshadow -Wshorten-64-to-32`, `-Werror` for the library), V8's `v8.cc`
+(a one-line call) and the Windows sandbox hook.
+
 **Needs the build machine:** compiling and linking (V8 and the Rust
 bridge included), `molt_ai_unittests` (`MoltPortableMathTest.*`,
 `MoltMathTest.*`), `blink_unittests` (`MoltNetCpuTest.*` and the Web Audio
