@@ -315,6 +315,11 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
     UChar32 character,
     const SimpleFontData* font_data_to_substitute,
     FontFallbackPriority fallback_priority) {
+  // MoltBrowser: MoltNet's bundled fonts only, never CoreText's cascade.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::UniformFallbackFontForCharacter(
+        *uniform, font_description, character, fallback_priority);
+  }
   if (IsEmojiPresentationEmoji(fallback_priority)) {
     if (const SimpleFontData* emoji_font =
             GetFontData(font_description, AtomicString(kColorEmojiFontMac))) {
@@ -374,6 +379,11 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
 
 const SimpleFontData* FontCache::GetLastResortFallbackFont(
     const FontDescription& font_description) {
+  // MoltBrowser: MoltNet's bundled fonts, never a system font.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::UniformLastResortFontData(*uniform,
+                                                       font_description);
+  }
   // FIXME: Would be even better to somehow get the user's default font here.
   // For now we'll pick the default that the user would get without changing
   // any prefs.
@@ -396,6 +406,11 @@ const FontPlatformData* FontCache::CreateFontPlatformData(
     const FontFaceCreationParams& creation_params,
     float size,
     AlternateFontName alternate_name) {
+  // MoltBrowser: MoltNet's bundled fonts only (no CoreText matching).
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::CreateUniformFontPlatformData(
+        *uniform, font_description, creation_params, size, alternate_name);
+  }
   // CoreText restricts the access to the system dot prefixed fonts, so return
   // nullptr to use fallback font instead.
   if (IsSystemFontName(creation_params.Family())) {

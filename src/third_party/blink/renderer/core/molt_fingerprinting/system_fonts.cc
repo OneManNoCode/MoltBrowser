@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_fonts.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_family.h"
@@ -60,12 +61,20 @@ class MoltFontVisibilityState final
 const char MoltFontVisibilityState::kSupplementName[] =
     "MoltFontVisibilityState";
 
+// The list protected contexts of this process may name: MoltNet's bundled
+// set where this renderer has it (every font of the process comes from it,
+// moltnet_fonts.h), else the OS's allow-list.
+FontPlatform EffectiveFontPlatform() {
+  return BundledFontsActive() ? FontPlatform::kMoltNetBundled
+                              : CurrentFontPlatform();
+}
+
 FontVisibility ComputeVisibility(ExecutionContext* context) {
   const Mode mode = GetMode();
   if (mode == Mode::kOff) {
     return FontVisibility::All();
   }
-  const FontPlatform platform = CurrentFontPlatform();
+  const FontPlatform platform = EffectiveFontPlatform();
   if (!context) {
     // A selector whose document or worker is gone: fail closed.
     return FontVisibility::AllowList(platform);
@@ -129,7 +138,7 @@ TypefaceFamily FamilyOf(const SkTypeface& typeface) {
   result.id = id;
   result.hash = family.Hash();
   result.allow_listed =
-      IsAllowListedFamily(CurrentFontPlatform(), family, result.hash);
+      IsAllowListedFamily(EffectiveFontPlatform(), family, result.hash);
   result.named = !family.IsEmpty();
   cache->Put(result);
   return result;
@@ -298,6 +307,20 @@ const SimpleFontData* GetLocalFontFaceData(
 
 bool AllowEnumeratedFont(ExecutionContext* context, std::string_view family) {
   return SystemFontVisibility(context).IsFamilyVisible(FontName::Utf8(family));
+}
+
+CSSValueID UniformSystemFontKeyword(CSSValueID system_font_id) {
+  if (GetMode() != Mode::kUniform) {
+    return system_font_id;
+  }
+  switch (system_font_id) {
+    case CSSValueID::kMenu:
+    case CSSValueID::kSmallCaption:
+    case CSSValueID::kStatusBar:
+      return CSSValueID::kCaption;
+    default:
+      return system_font_id;
+  }
 }
 
 }  // namespace blink::molt_fingerprinting

@@ -47,7 +47,8 @@ class FontName;
 
 namespace moltnet {
 
-// --- The table (generated) ----------------------------------------------------
+// --- The table (generated)
+// ----------------------------------------------------
 
 // A file of the set, installed as molt_fonts/<install_name> (the browser
 // sends the files to MoltNet renderers in this order).
@@ -150,7 +151,8 @@ struct BundledFontTable {
 // The generated table (moltnet_font_set_table.cc).
 const BundledFontTable& GetBundledFontTable();
 
-// --- The rules -------------------------------------------------------------------
+// --- The rules
+// -------------------------------------------------------------------
 
 // Upper bound of FallbackFamilies()'s result: every family once.
 inline constexpr size_t kMaxFallbackFamilies = 255;

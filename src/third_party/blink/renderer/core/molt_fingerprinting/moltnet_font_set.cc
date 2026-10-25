@@ -114,12 +114,10 @@ uint8_t BundledFontSet::FamilyForGeneric(Generic generic,
       continue;
     }
     if (generic == Generic::kMonospace) {
-      return table_.cjk_monospace != kNoFamily ? table_.cjk_monospace
-                                               : latin;
+      return table_.cjk_monospace != kNoFamily ? table_.cjk_monospace : latin;
     }
-    const HanRegion region = cjk.by_locale
-                                 ? RegionForLocale(locale)
-                                 : static_cast<HanRegion>(cjk.region);
+    const HanRegion region = cjk.by_locale ? RegionForLocale(locale)
+                                           : static_cast<HanRegion>(cjk.region);
     return table_.cjk_regions[static_cast<size_t>(region)];
   }
   return latin;
@@ -225,8 +223,8 @@ HanRegion BundledFontSet::RegionForLocale(std::string_view locale) const {
       region = HanRegion::kSC;
       script_given = true;
     } else if (tag == "hk" || tag == "mo") {
-      // Hong Kong and Macau write Traditional Chinese with HK glyphs; zh-Hant-HK
-      // too.
+      // Hong Kong and Macau write Traditional Chinese with HK glyphs;
+      // zh-Hant-HK too.
       if (!script_given || region == HanRegion::kTC) {
         region = HanRegion::kHK;
       }
@@ -302,9 +300,9 @@ size_t BundledFontSet::FallbackFamilies(
     case Presentation::kText:
       break;
   }
-  const uint16_t key =
-      script >= 0 && script < kFallbackTextEmoji ? static_cast<uint16_t>(script)
-                                                 : uint16_t{kScriptCommon};
+  const uint16_t key = script >= 0 && script < kFallbackTextEmoji
+                           ? static_cast<uint16_t>(script)
+                           : uint16_t{kScriptCommon};
   if (!add_list(key) && key != kScriptCommon) {
     // A script without a list of its own: the common list, then every
     // family.

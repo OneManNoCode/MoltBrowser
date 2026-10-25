@@ -148,9 +148,8 @@ TEST(MoltNetFontSetTest, VisibilityListIsTheSet) {
   const base::span<const FontListEntry> list =
       FontListFor(FontPlatform::kMoltNetBundled);
   EXPECT_EQ(list.data(), GetBundledFontTable().visibility_list.data());
-  EXPECT_EQ(list.size(),
-            GetBundledFontTable().families.size() +
-                GetBundledFontTable().names.size());
+  EXPECT_EQ(list.size(), GetBundledFontTable().families.size() +
+                             GetBundledFontTable().names.size());
   for (const FontListEntry& entry : list) {
     const FontName name = FontName::Utf8(entry.name);
     EXPECT_EQ(FindInFontList(FontPlatform::kMoltNetBundled, name, name.Hash()),
@@ -167,8 +166,8 @@ TEST(MoltNetFontSetTest, VisibilityListIsTheSet) {
   // alias), so IsVisible() accepts every font of the set.
   for (const BundledFontFamily& family : GetBundledFontTable().families) {
     const FontName name = FontName::Utf8(family.name);
-    EXPECT_TRUE(IsAllowListedFamily(FontPlatform::kMoltNetBundled, name,
-                                    name.Hash()))
+    EXPECT_TRUE(
+        IsAllowListedFamily(FontPlatform::kMoltNetBundled, name, name.Hash()))
         << family.name;
   }
 
@@ -199,15 +198,13 @@ TEST(MoltNetFontSetTest, NamesResolveInEveryEncodingAndSpelling) {
   EXPECT_EQ(Resolve("  noto SANS cjk jp "), "Noto Sans CJK JP");
   EXPECT_EQ(Resolve("Noto Sans Hebrew Light"), "Noto Sans Hebrew");
   const std::u16string utf16 = u"Noto Color Emoji";
-  EXPECT_EQ(FamilyName(Set()
-                           .FamilyForName(FontName::Utf16(utf16))
-                           .value_or(0)),
+  EXPECT_EQ(FamilyName(Set().FamilyForName(FontName::Utf16(utf16)).value_or(0)),
             "Noto Color Emoji");
   const std::string latin1 = "TINOS";
-  EXPECT_EQ(FamilyName(Set()
-                           .FamilyForName(FontName::Latin1(base::as_byte_span(
-                               latin1)))
-                           .value_or(0)),
+  EXPECT_EQ(FamilyName(
+                Set()
+                    .FamilyForName(FontName::Latin1(base::as_byte_span(latin1)))
+                    .value_or(0)),
             "Tinos");
   EXPECT_EQ(Resolve("Segoe UI"), std::nullopt);
   EXPECT_EQ(Resolve(""), std::nullopt);
@@ -240,10 +237,14 @@ TEST(MoltNetFontSetTest, AliasesAndGenericKeywords) {
 // or MoltNet would differ between OSes.
 TEST(MoltNetFontSetTest, BlinkPlatformRewritesDontChangeTheResult) {
   const std::pair<std::string_view, std::string_view> kRewrites[] = {
-      {"Courier", "Courier New"},  {"MS Sans Serif", "Microsoft Sans Serif"},
-      {"MS Serif", "Times New Roman"}, {"Times", "Times New Roman"},
-      {"Courier New", "Courier"},  {"Arial", "Helvetica"},
-      {"Helvetica", "Arial"},      {"Times New Roman", "Times"},
+      {"Courier", "Courier New"},
+      {"MS Sans Serif", "Microsoft Sans Serif"},
+      {"MS Serif", "Times New Roman"},
+      {"Times", "Times New Roman"},
+      {"Courier New", "Courier"},
+      {"Arial", "Helvetica"},
+      {"Helvetica", "Arial"},
+      {"Times New Roman", "Times"},
   };
   for (const auto& [from, to] : kRewrites) {
     EXPECT_EQ(Resolve(from), Resolve(to)) << from << " -> " << to;
@@ -302,8 +303,8 @@ TEST(MoltNetFontSetTest, RegionForLocale) {
   EXPECT_EQ(set.RegionForLocale("yue-Hans"), HanRegion::kSC);
   // No region: the default.
   for (std::string_view other :
-       {"", "en", "en-US", "-", "--", "zhx", "z", "japanese", "ja2",
-        "\xff\xfe", "zh-verylongsubtag-HK"}) {
+       {"", "en", "en-US", "-", "--", "zhx", "z", "japanese", "ja2", "\xff\xfe",
+        "zh-verylongsubtag-HK"}) {
     const HanRegion region = set.RegionForLocale(other);
     if (other == "zh-verylongsubtag-HK") {
       EXPECT_EQ(region, HanRegion::kHK) << "an overlong subtag is skipped";
@@ -366,9 +367,9 @@ TEST(MoltNetFontSetTest, MatchFaceFollowsCssFontMatching) {
 
 TEST(MoltNetFontSetTest, FallbackStaysInTheSetAndFollowsTheScript) {
   const size_t family_count = GetBundledFontTable().families.size();
-  for (int script : {kCommon, kInherited, kArabic, kLatin, kHan, kKatakana,
-                     kHangul, kDevanagari, kThai, kHebrew, kGothic, -7,
-                     70000}) {
+  for (int script :
+       {kCommon, kInherited, kArabic, kLatin, kHan, kKatakana, kHangul,
+        kDevanagari, kThai, kHebrew, kGothic, -7, 70000}) {
     for (auto presentation : {BundledFontSet::Presentation::kText,
                               BundledFontSet::Presentation::kEmoji,
                               BundledFontSet::Presentation::kTextEmoji}) {
@@ -385,8 +386,7 @@ TEST(MoltNetFontSetTest, FallbackStaysInTheSetAndFollowsTheScript) {
   EXPECT_EQ(Fallback(kDevanagari, HanRegion::kSC)[0], "Noto Sans Devanagari");
   EXPECT_EQ(Fallback(kThai, HanRegion::kSC)[0], "Noto Sans Thai");
   EXPECT_EQ(Fallback(kHebrew, HanRegion::kSC)[0], "Noto Sans Hebrew");
-  const std::vector<std::string_view> latin =
-      Fallback(kLatin, HanRegion::kSC);
+  const std::vector<std::string_view> latin = Fallback(kLatin, HanRegion::kSC);
   EXPECT_EQ(latin[0], "Arimo");
   EXPECT_EQ(latin[1], "Noto Sans");
   // Han by the content's region, then the other regions.
@@ -409,9 +409,9 @@ TEST(MoltNetFontSetTest, FallbackStaysInTheSetAndFollowsTheScript) {
   EXPECT_EQ(common[4], "Noto Sans Math");
   EXPECT_EQ(common[5], "Noto Sans CJK KR");
   // Emoji: colour first; text-style emoji: symbols first, colour last.
-  EXPECT_EQ(
-      Fallback(kCommon, HanRegion::kSC, BundledFontSet::Presentation::kEmoji)[0],
-      "Noto Color Emoji");
+  EXPECT_EQ(Fallback(kCommon, HanRegion::kSC,
+                     BundledFontSet::Presentation::kEmoji)[0],
+            "Noto Color Emoji");
   const std::vector<std::string_view> text_emoji = Fallback(
       kCommon, HanRegion::kSC, BundledFontSet::Presentation::kTextEmoji);
   EXPECT_EQ(text_emoji[0], "Noto Sans Symbols 2");

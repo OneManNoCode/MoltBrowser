@@ -161,7 +161,9 @@ const FontPlatformData* FontCache::GetFontPlatformData(
 
 #if !BUILDFLAG(IS_MAC)
   if (creation_params.CreationType() == kCreateFontByFamily &&
-      creation_params.Family() == font_family_names::kSystemUi) {
+      creation_params.Family() == font_family_names::kSystemUi &&
+      // MoltBrowser: MoltNet's bundled fonts map system-ui themselves.
+      !FontPlatformData::GetUniformFontSet()) {
     return SystemFontPlatformData(font_description);
   }
 #endif

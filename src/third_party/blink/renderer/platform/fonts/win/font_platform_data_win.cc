@@ -74,6 +74,10 @@ SkFont FontPlatformData::CreateSkFont(const FontDescription*) const {
   }
 
   font.setEmbeddedBitmaps(!avoid_embedded_bitmaps_);
+  // MoltBrowser: MoltNet's bundled fonts render alike on every OS.
+  if (GetUniformFontSet()) {
+    ApplyUniformRendering(font);
+  }
   return font;
 }
 

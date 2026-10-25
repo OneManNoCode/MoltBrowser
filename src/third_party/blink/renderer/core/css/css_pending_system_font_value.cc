@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/css/parser/css_parser_fast_paths.h"
 #include "third_party/blink/renderer/core/layout/layout_theme_font_provider.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -23,12 +24,17 @@ CSSPendingSystemFontValue* CSSPendingSystemFontValue::Create(
 }
 
 const AtomicString& CSSPendingSystemFontValue::ResolveFontFamily() const {
-  return LayoutThemeFontProvider::SystemFontFamily(system_font_id_);
+  // MoltBrowser: in MoltNet the same on every OS (molt_fingerprinting).
+  return LayoutThemeFontProvider::SystemFontFamily(
+      molt_fingerprinting::UniformSystemFontKeyword(system_font_id_));
 }
 
 float CSSPendingSystemFontValue::ResolveFontSize(
     const Document* document) const {
-  return LayoutThemeFontProvider::SystemFontSize(system_font_id_, document);
+  // MoltBrowser: in MoltNet the same on every OS (molt_fingerprinting).
+  return LayoutThemeFontProvider::SystemFontSize(
+      molt_fingerprinting::UniformSystemFontKeyword(system_font_id_),
+      document);
 }
 
 String CSSPendingSystemFontValue::CustomCSSText() const {

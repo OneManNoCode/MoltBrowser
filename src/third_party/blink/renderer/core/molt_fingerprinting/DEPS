@@ -27,6 +27,13 @@ include_rules = [
 ]
 
 specific_include_rules = {
+  # MoltNet's bundled fonts, mapped from the read-only files the browser
+  # sends (moltnet_fonts.h).
+  "moltnet_fonts(_test)?\.cc": [
+    "+base/files/memory_mapped_file.h",
+    "+base/files/scoped_temp_dir.h",
+    "+base/files/file_util.h",
+  ],
   # The machine V8 and skcms run as in MoltNet, set before V8 starts
   # (moltnet_cpu.h), as bindings/core/v8 and the image decoders reach them.
   "moltnet_cpu(_test)?\.cc": [

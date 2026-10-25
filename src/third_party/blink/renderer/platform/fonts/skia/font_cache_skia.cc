@@ -147,6 +147,10 @@ const SimpleFontData* FontCache::FallbackOnStandardFontStyle(
 
 const SimpleFontData* FontCache::GetLastResortFallbackFont(
     const FontDescription& description) {
+  // MoltBrowser: MoltNet's bundled fonts, never a system font.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::UniformLastResortFontData(*uniform, description);
+  }
   const FontFaceCreationParams fallback_creation_params(
       GetFallbackFontFamily(description));
   const FontPlatformData* font_platform_data = GetFontPlatformData(
@@ -315,6 +319,12 @@ const FontPlatformData* FontCache::CreateFontPlatformData(
     const FontFaceCreationParams& creation_params,
     float font_size,
     AlternateFontName alternate_name) {
+  // MoltBrowser: MoltNet's bundled fonts only.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::CreateUniformFontPlatformData(
+        *uniform, font_description, creation_params, font_size,
+        alternate_name);
+  }
   std::string name;
 
   sk_sp<SkTypeface> typeface;

@@ -268,6 +268,10 @@ SkFont FontPlatformData::CreateSkFont(
       (font_description->FontSmoothing() == kAntialiased ||
        font_description->TextRendering() == kGeometricPrecision))
     skfont.setHinting(SkFontHinting::kNone);
+  // MoltBrowser: MoltNet's bundled fonts render alike on every OS.
+  if (GetUniformFontSet()) {
+    ApplyUniformRendering(skfont);
+  }
   return skfont;
 }
 

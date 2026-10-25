@@ -265,6 +265,12 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
     FontFallbackPriority fallback_priority) {
   TRACE_EVENT0("ui", "FontCache::PlatformFallbackFontForCharacter");
 
+  // MoltBrowser: MoltNet's bundled fonts only, in their own order.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::UniformFallbackFontForCharacter(
+        *uniform, font_description, character, fallback_priority);
+  }
+
   // First try the specified font with standard style & weight.
   if (!IsEmojiPresentationEmoji(fallback_priority) &&
       (font_description.Style() == kItalicSlopeValue ||
@@ -409,6 +415,13 @@ const FontPlatformData* FontCache::CreateFontPlatformData(
     float font_size,
     AlternateFontName alternate_font_name) {
   TRACE_EVENT0("ui", "FontCache::CreateFontPlatformData");
+
+  // MoltBrowser: MoltNet's bundled fonts only (no DirectWrite matching).
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::CreateUniformFontPlatformData(
+        *uniform, font_description, creation_params, font_size,
+        alternate_font_name);
+  }
 
   DCHECK_EQ(creation_params.CreationType(), kCreateFontByFamily);
   sk_sp<SkTypeface> typeface;

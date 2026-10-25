@@ -20,7 +20,9 @@
 
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 
-#include <atomic>  // MoltBrowser
+#include <atomic>   // MoltBrowser
+#include <string>   // MoltBrowser
+#include <utility>  // MoltBrowser
 
 #include "base/bit_cast.h"
 #include "base/compiler_specific.h"
@@ -44,6 +46,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkFont.h"
+#include "third_party/skia/include/core/SkString.h"  // MoltBrowser
 #include "third_party/skia/include/core/SkTypeface.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -85,6 +88,122 @@ const SimpleFontData* FontPlatformData::UniformEmojiFontData(  // MoltBrowser
   return family ? FontCache::Get().GetFontData(description,
                                                AtomicString(family))
                 : nullptr;
+}
+
+// MoltBrowser: MoltNet's bundled fonts (molt_fingerprinting/moltnet_fonts.h).
+namespace {
+std::atomic<const FontPlatformData::UniformFontSet*> g_uniform_font_set{
+    nullptr};
+}  // namespace
+
+// static
+void FontPlatformData::SetUniformFontSet(const UniformFontSet* set) {
+  g_uniform_font_set.store(set, std::memory_order_release);
+}
+
+// static
+const FontPlatformData::UniformFontSet* FontPlatformData::GetUniformFontSet() {
+  return g_uniform_font_set.load(std::memory_order_acquire);
+}
+
+// static
+const FontPlatformData* FontPlatformData::CreateUniformFontPlatformData(
+    const UniformFontSet& set,
+    const FontDescription& description,
+    const FontFaceCreationParams& creation_params,
+    float font_size,
+    AlternateFontName alternate_name) {
+  // Only names: never a fontconfig id or a file of the system.
+  if (creation_params.CreationType() != kCreateFontByFamily) {
+    return nullptr;
+  }
+  sk_sp<SkTypeface> typeface =
+      alternate_name == AlternateFontName::kLocalUniqueFace
+          ? set.MatchUniqueName(creation_params.Family())
+          : set.MatchFamily(creation_params.Family(), description);
+  if (!typeface) {
+    return nullptr;
+  }
+  // Synthetic bold and italic as font_cache_skia.cc decides them, on every
+  // OS.
+  const bool synthetic_bold =
+      (description.Weight() >
+           FontSelectionValue(200) +
+               FontSelectionValue(typeface->fontStyle().weight()) ||
+       description.IsSyntheticBold()) &&
+      description.GetFontSynthesisWeight() ==
+          FontDescription::kAutoFontSynthesisWeight;
+  const bool synthetic_italic =
+      ((description.Style() == kItalicSlopeValue && !typeface->isItalic()) ||
+       description.IsSyntheticItalic()) &&
+      description.GetFontSynthesisStyle() ==
+          FontDescription::kAutoFontSynthesisStyle;
+  SkString family;
+  typeface->getFamilyName(&family);
+  FontPlatformData* platform_data = MakeGarbageCollected<FontPlatformData>(
+      std::move(typeface), std::string(family.c_str(), family.size()),
+      font_size, synthetic_bold, synthetic_italic, description.TextRendering(),
+      description.ResolveFontFeatures(), description.Orientation());
+  platform_data->SetAvoidEmbeddedBitmaps(true);
+  return platform_data;
+}
+
+// static
+const SimpleFontData* FontPlatformData::UniformFallbackFontForCharacter(
+    const UniformFontSet& set,
+    const FontDescription& description,
+    UChar32 character,
+    FontFallbackPriority fallback_priority) {
+  const AtomicString family =
+      set.FallbackFamily(description, character, fallback_priority);
+  if (family.IsNull()) {
+    return nullptr;
+  }
+  return FontCache::Get().GetFontData(description, family,
+                                      AlternateFontName::kNoAlternate);
+}
+
+// static
+const SimpleFontData* FontPlatformData::UniformLastResortFontData(
+    const UniformFontSet& set,
+    const FontDescription& description) {
+  FontCache& font_cache = FontCache::Get();
+  if (const SimpleFontData* font_data = font_cache.GetFontData(
+          description, set.LastResortFamily(description),
+          AlternateFontName::kNoAlternate)) {
+    return font_data;
+  }
+  // The set's files haven't arrived (or were refused): a font without
+  // glyphs rather than one of the system's.
+  return font_cache.FontDataFromFontPlatformData(
+      MakeGarbageCollected<FontPlatformData>(
+          SkTypeface::MakeEmpty(), std::string(),
+          description.EffectiveFontSize(), false, false,
+          description.TextRendering(), ResolvedFontFeatures(),
+          description.Orientation()));
+}
+
+// static
+WebFontRenderStyle FontPlatformData::UniformRenderStyle() {
+  WebFontRenderStyle style;
+  style.use_bitmaps = 0;
+  style.use_auto_hint = 0;
+  style.use_hinting = 0;
+  style.hint_style = 0;  // SkFontHinting::kNone.
+  style.use_anti_alias = 1;
+  style.use_subpixel_rendering = 0;
+  style.use_subpixel_positioning = 1;
+  return style;
+}
+
+// static
+void FontPlatformData::ApplyUniformRendering(SkFont& font) {
+  font.setEdging(SkFont::Edging::kAntiAlias);
+  font.setHinting(SkFontHinting::kNone);
+  font.setForceAutoHinting(false);
+  font.setSubpixel(true);
+  font.setLinearMetrics(true);
+  font.setEmbeddedBitmaps(false);
 }
 
 FontPlatformData::FontPlatformData(HashTableDeletedValueType)
@@ -145,6 +264,12 @@ FontPlatformData::FontPlatformData(sk_sp<SkTypeface> typeface,
       orientation_(orientation),
       resolved_font_features_(std::move(resolved_font_features)) {
 #if !BUILDFLAG(IS_MAC)
+  // MoltBrowser: with MoltNet's bundled fonts, one fixed style on every OS,
+  // never the desktop's.
+  if (GetUniformFontSet()) {
+    style_ = UniformRenderStyle();
+    return;
+  }
   style_ = WebFontRenderStyle::GetDefault();
 #if !BUILDFLAG(IS_WIN)
   WebFontRenderStyle system_style;
@@ -318,6 +443,10 @@ SkFont FontPlatformData::CreateSkFont(const FontDescription*) const {
     font.setEdging(SkFont::Edging::kAlias);
   }
 
+  // MoltBrowser: MoltNet's bundled fonts render alike on every OS.
+  if (GetUniformFontSet()) {
+    ApplyUniformRendering(font);
+  }
   return font;
 }
 #endif  // !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_IOS)
