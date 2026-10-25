@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/platform/geometry/path_types.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
@@ -128,9 +129,11 @@ class SegmentVisitor {
     // https://drafts.csswg.org/css-shapes-2/#direction-agnostic-size:
     // The direction-agnostic size of a box is equal to the length of the
     // diagonal of the box, divided by sqrt(2).
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
     const float direction_agnostic_size = FloatValueForLength(
         segment.direction_agnostic_radius,
-        std::hypot(box_size.width(), box_size.height()) / std::numbers::sqrt2);
+        gfx::molt_math::Hypot(box_size.width(), box_size.height()) /
+            std::numbers::sqrt2);
     arc_data.SetArcRadiusX(
         FloatValueForLength(segment.radius.Width(), box_size.width()) +
         direction_agnostic_size);

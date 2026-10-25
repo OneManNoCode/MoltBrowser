@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/platform/geometry/path.h"
 #include "third_party/blink/renderer/platform/geometry/path_builder.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -81,7 +82,8 @@ float GetRoundedPolygonRadius(const RoundedPolygonEdge& incoming,
   // points INTO the vertex, negate it to get the outward direction.
   const double cos_interior =
       std::clamp(-gfx::DotProduct(incoming.unit, outgoing.unit), -1.0, 1.0);
-  const double interior_angle = std::acos(cos_interior);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const double interior_angle = gfx::molt_math::Acos(cos_interior);
 
   if (interior_angle <= std::numeric_limits<double>::epsilon() ||
       std::abs(interior_angle - kPiDouble) <=
@@ -89,7 +91,8 @@ float GetRoundedPolygonRadius(const RoundedPolygonEdge& incoming,
     return 0.0f;
   }
 
-  const double tan_half_interior = std::tan(interior_angle / 2.0);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const double tan_half_interior = gfx::molt_math::Tan(interior_angle / 2.0);
   if (!std::isfinite(tan_half_interior) ||
       tan_half_interior <= std::numeric_limits<double>::epsilon()) {
     return 0.0f;
@@ -123,7 +126,8 @@ float RadiusToCorner(const gfx::PointF& center,
 
   float dx = closest ? std::min(dx0, dx1) : std::max(dx0, dx1);
   float dy = closest ? std::min(dy0, dy1) : std::max(dy0, dy1);
-  return hypotf(dx, dy);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Hypot(dx, dy);
 }
 
 }  // namespace
@@ -139,7 +143,9 @@ float BasicShapeCircle::FloatValueForRadiusInBox(
   if (radius_.GetType() == BasicShapeRadius::kValue) {
     return FloatValueForLength(
         radius_.Value(),
-        hypotf(box_size.width(), box_size.height()) / sqrtf(2));
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+        gfx::molt_math::Hypot(box_size.width(), box_size.height()) /
+            sqrtf(2));
   }
 
   if (radius_.GetType() == BasicShapeRadius::kClosestCorner) {

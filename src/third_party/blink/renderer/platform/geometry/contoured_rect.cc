@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/format.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "ui/gfx/geometry/line_f.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/outsets_f.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/quad_f.h"
@@ -42,9 +43,11 @@ float CornerRectIntercept(float y,
                                                      corner_rect,
                                                      1 / curvature);
   }
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
   return corner_rect.width() *
-         std::pow(1 - std::pow(y / corner_rect.height(), curvature),
-                  1 / curvature);
+         gfx::molt_math::Pow(
+             1 - gfx::molt_math::Pow(y / corner_rect.height(), curvature),
+             1 / curvature);
 }
 }  // namespace
 
@@ -177,9 +180,13 @@ Corner ContouredRect::Corner::AlignedToOrigin(const Corner& origin,
   const float end_inset = edge_inset_end >= 0 && !v3().Length()
                               ? edge_inset_end
                               : end_radius - v3().Length();
-  const float superellipse_parameter = std::log2(origin.Curvature());
-  const float exponent = std::exp2(std::abs(superellipse_parameter));
-  const float convex_half_corner = std::pow(0.5f, 1.0f / exponent);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const float superellipse_parameter =
+      gfx::molt_math::Log2(origin.Curvature());
+  const float exponent =
+      gfx::molt_math::Exp2(std::abs(superellipse_parameter));
+  const float convex_half_corner =
+      gfx::molt_math::Pow(0.5f, 1.0f / exponent);
   const float half_corner = superellipse_parameter < 0
                                 ? 1.0f - convex_half_corner
                                 : convex_half_corner;
@@ -277,7 +284,9 @@ Corner ContouredRect::Corner::AlignedToOrigin(const Corner& origin,
 float ContouredRect::Corner::CurvatureForHalfCorner(float half_corner) {
   return half_corner >= 1   ? ContouredRect::CornerCurvature::kStraight
          : half_corner <= 0 ? ContouredRect::CornerCurvature::kNotch
-                            : std::log(0.5) / std::log(half_corner);
+                            // MoltBrowser: portable in MoltNet.
+                            : gfx::molt_math::Log(0.5) /
+                                  gfx::molt_math::Log(half_corner);
 }
 
 }  // namespace blink

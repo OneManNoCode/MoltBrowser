@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/insets_f.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d_f.h"
@@ -146,8 +147,9 @@ static float AdjustedRadiusDimension(float radius,
   const float ratio = radius / outset;
   //  3. Return <code>|radius| + |outset| * (1 - (1 - |ratio|)<sup>3</sup> *
   //     (1- |coverage|<sup>3</sup>))</code>.
-  return radius +
-         outset * (1 - std::pow(1 - ratio, 3) * (1 - std::pow(coverage, 3)));
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return radius + outset * (1 - gfx::molt_math::Pow(1 - ratio, 3) *
+                                    (1 - gfx::molt_math::Pow(coverage, 3)));
 }
 
 // From: https://drafts.csswg.org/css-backgrounds-3/#corner-shaping

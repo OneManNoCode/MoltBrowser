@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/geometry/vector2d_f.h"
@@ -43,14 +44,17 @@ std::array<gfx::Vector2dF, 3> ApproximateSuperellipseHalfCornerAsBezierCurve(
   // superellipse, flip the center and the outer point and apply the
   // equivalent convex formula (1/curvature).
   DCHECK_GE(curvature, 1);
-  const float s = std::log2(curvature);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const float s = gfx::molt_math::Log2(curvature);
   const float slope =
-      p[0] + (p[6] - p[0]) * 0.5 * (1 + std::tanh(p[5] * (s - p[1])));
-  const float base = 1 / (1 + std::exp(-slope * (0 - p[1])));
-  const float logistic = 1 / (1 + std::exp(-slope * (s - p[1])));
+      p[0] +
+      (p[6] - p[0]) * 0.5 * (1 + gfx::molt_math::Tanh(p[5] * (s - p[1])));
+  const float base = 1 / (1 + gfx::molt_math::Exp(-slope * (0 - p[1])));
+  const float logistic = 1 / (1 + gfx::molt_math::Exp(-slope * (s - p[1])));
 
   const float a = (logistic - base) / (1 - base);
-  const float b = p[2] * std::exp(-p[3] * std::pow(s, p[4]));
+  const float b =
+      p[2] * gfx::molt_math::Exp(-p[3] * gfx::molt_math::Pow(s, p[4]));
 
   // This is the superellipse formula at t=0.5 (45 degrees),
   // the middle of the corner.
@@ -161,7 +165,9 @@ std::optional<SkPath> CornerClipOutPath(const Corner& origin,
   const float end_inset = edge_inset_end >= 0 && !target.v3().Length()
                               ? edge_inset_end
                               : end_radius - target.v3().Length();
-  const float superellipse_parameter = std::log2(origin.Curvature());
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const float superellipse_parameter =
+      gfx::molt_math::Log2(origin.Curvature());
   const float inset_difference =
       std::clamp(end_inset - start_inset, -start_radius, end_radius);
   if (superellipse_parameter <= 0 &&

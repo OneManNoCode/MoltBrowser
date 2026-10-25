@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/insets_f.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/geometry/outsets_f.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -178,7 +179,8 @@ class PLATFORM_EXPORT ContouredRect {
     }
 
     static constexpr float HalfCornerForCurvature(float curvature) {
-      return std::pow(0.5, 1 / ClampCurvature(curvature));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      return gfx::molt_math::Pow(0.5, 1 / ClampCurvature(curvature));
     }
 
     static float CurvatureForHalfCorner(float half_corner);

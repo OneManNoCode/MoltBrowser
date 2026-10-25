@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -57,8 +58,9 @@ class Superellipse {
   constexpr double Parameter() const { return param_; }
 
   constexpr double Exponent() const {
-    return std::pow(2, ClampTo<float>(param_, -kHighCurvatureThreshold,
-                                      kHighCurvatureThreshold));
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    return gfx::molt_math::Pow(2, ClampTo<float>(param_, -kHighCurvatureThreshold,
+                                                 kHighCurvatureThreshold));
   }
 
   bool operator==(const Superellipse& other) const = default;
