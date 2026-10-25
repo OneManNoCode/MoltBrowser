@@ -301,6 +301,51 @@ def read_faces(data):
             for i, offset in enumerate(face_offsets(data))]
 
 
+def assemble(tag, tables):
+    """A one-face sfnt made of `tables` ({tag: bytes}), the face tag `tag`
+    (b"OTTO", b"\\x00\\x01\\x00\\x00", b"true"): how the no-install
+    collectors' raw tables are read back with read_face()."""
+    if tag not in (TAG_TRUETYPE, TAG_OTTO, TAG_TRUE):
+        raise SfntError("bad face tag %r" % tag)
+    if len(tables) > MAX_TABLES:
+        raise SfntError("%d tables" % len(tables))
+    tags = sorted(tables)
+    out = bytearray(tag + struct.pack(">HHHH", len(tags), 0, 0, 0))
+    offset = 12 + 16 * len(tags)
+    blobs = bytearray()
+    for t in tags:
+        name = t.encode("latin-1")
+        if len(name) != 4:
+            raise SfntError("bad table tag %r" % t)
+        blob = tables[t]
+        out += name + struct.pack(">III", 0, offset + len(blobs), len(blob))
+        blobs += blob + b"\0" * (-len(blob) % 4)
+    return bytes(out + blobs)
+
+
+# Style words a legacy (GDI / DirectWrite "Win32") family name leaves out.
+_RIBBI = frozenset(("regular", "bold", "italic", "oblique"))
+
+
+def legacy_family_names(face):
+    """The family names a system may list a face under besides its own: for
+    a variable font, one per named instance (the typographic family plus the
+    instance's non-RIBBI style words, as DirectWrite's legacy names do:
+    "Bahnschrift Light SemiCondensed")."""
+    family = face.get("typographic_family") or face.get("family")
+    if not family:
+        return []
+    names = []
+    for instance in face.get("instances", ()):
+        style = instance.get("subfamily") or ""
+        kept = [w for w in style.split() if w.lower() not in _RIBBI]
+        if kept:
+            name = "%s %s" % (family, " ".join(kept))
+            if name not in names:
+                names.append(name)
+    return names
+
+
 def _cmap_subtable(data, tables):
     """(format, data, offset) of the best Unicode cmap subtable: a full
     repertoire one (3,10 / 0,4 / 0,6, format 12) before a BMP one (3,1 /

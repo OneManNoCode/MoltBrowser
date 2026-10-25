@@ -28,6 +28,11 @@ name: Lint
 #     linux-repo job, which has dpkg-deb and rpmbuild)
 #   * the model pinning tool (tools/models/pin_models.py) parses both model
 #     registries and pins a copy offline; a half-filled pin fails (blocking)
+#   * the MoltNet font tooling (tools/fonts/): the font reader against
+#     hostile input, the pinned font manifest's rules, the generated Blink
+#     and browser tables and allow-list copy are current, fetching and
+#     installing from a fake server, and the fresh-install inventory with
+#     its Perl collector (blocking)
 #   * the MoltNet leak test kit (tools/leak_test/): capture reader,
 #     dissectors, classification, uniformity rules and report against a
 #     recorded sample run, its servers and DevTools pipe client; shellcheck
@@ -181,6 +186,18 @@ jobs:
           persist-credentials: false
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
+
+  fonts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tools/fonts/fonts_test.py (offline)
+        run: python3 -I tools/fonts/fonts_test.py -v
+      - name: The generated font tables match tools/fonts/moltnet_fonts.json
+        run: python3 -I tools/fonts/generate_tables.py
 
   compile-check-harness:
     # The harness's own logic, offline. The compile check itself needs hours

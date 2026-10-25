@@ -12,6 +12,7 @@ fonts are in the cache (MOLT_FONTS_CACHE, default build/cache/fonts), the
 pinned faces are also checked against them.
 """
 
+import base64
 import copy
 import hashlib
 import io
@@ -30,6 +31,7 @@ sys.path.insert(0, str(HERE))
 import fetch_fonts  # noqa: E402
 import generate_tables  # noqa: E402
 import manifest as mf  # noqa: E402
+import molt_font_inventory as mi  # noqa: E402
 import pin_fonts  # noqa: E402
 import sfnt  # noqa: E402
 
@@ -635,6 +637,309 @@ class PinTest(unittest.TestCase):
                                               offline=True))
             finally:
                 fetch_fonts.download = real
+
+
+# --- Fresh-install inventory -------------------------------------------------
+
+def _variable_face(family, instances):
+    """A variable face whose named instances are `instances` (subfamily
+    names), as Windows' Bahnschrift."""
+    names = [(3, 1, 0x409, 256 + i, s) for i, s in enumerate(instances)]
+    fvar = _fvar([("wght", 300, 400, 700)],
+                 [(256 + i, 0xFFFF, {"wght": 400}) for i in range(
+                     len(instances))])
+    return _face(family, names_extra=names, fvar=fvar)
+
+
+class InventoryTest(unittest.TestCase):
+    ALLOWLISTS = {"linux": [
+        {"name": "Alpha"}, {"name": "Beta Light SemiCondensed"},
+        {"name": "Delta"}, {"name": "Epsilon"}, {"name": "Missing Sans"},
+        {"name": "Helvetica", "alias_of": "Alpha"}]}
+
+    def make_tree(self, tmp):
+        """system/ (Alpha, Beta with instances, Gamma unlisted, a Type 1 file,
+        a broken .ttf), on-demand/ (Delta), user/ (Epsilon)."""
+        files = {
+            "system/alpha.ttf": build_font([_face("Alpha")]),
+            "system/sub/beta.ttf": build_font([_variable_face(
+                "Beta", ["Regular", "Bold", "Light SemiCondensed"])]),
+            "system/gamma.ttc": build_font([_face("Gamma"),
+                                            _face("Gamma", "Bold", 700)]),
+            "system/old.pfb": b"%!PS-AdobeFont-1.0",
+            "system/broken.ttf": b"\x00\x01\x00\x00\x00\x09",
+            "system/readme.txt": b"not a font",
+            "ondemand/delta.otf": build_font([_face("Delta", tag=b"OTTO")]),
+            "user/epsilon.ttf": build_font([_face("Epsilon")]),
+        }
+        for rel, data in files.items():
+            path = Path(tmp) / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        return [(str(Path(tmp) / "system"), "system"),
+                (str(Path(tmp) / "ondemand"), "on-demand"),
+                (str(Path(tmp) / "user"), "user")], files
+
+    def test_assemble_and_legacy_names(self):
+        tag, tables = _variable_face("Bahnschrift",
+                                     ["Regular", "Light SemiCondensed",
+                                      "Bold Italic", "SemiBold"])
+        whole = sfnt.read_faces(build_font([(tag, tables)]))[0]
+        wanted = {t: tables[t] for t in mi.RAW_TABLES if t in tables}
+        rebuilt = sfnt.read_face(sfnt.assemble(tag, wanted), 0)
+        for key in ("family", "full_name", "version", "weight", "axes",
+                    "instances", "font_revision"):
+            self.assertEqual(rebuilt[key], whole[key], key)
+        self.assertEqual(sfnt.legacy_family_names(whole),
+                         ["Bahnschrift Light SemiCondensed",
+                          "Bahnschrift SemiBold"])
+        with self.assertRaises(sfnt.SfntError):
+            sfnt.assemble(b"wOFF", wanted)
+        with self.assertRaises(sfnt.SfntError):
+            sfnt.assemble(tag, {"toolong": b""})
+
+    def test_registry_names(self):
+        self.assertEqual(mi.registry_family_names("Arial Bold (TrueType)"),
+                         ["Arial Bold"])
+        self.assertEqual(mi.registry_family_names(
+            "MS Sans Serif 8,10,12,14,18,24"), ["MS Sans Serif"])
+        self.assertEqual(mi.registry_family_names(
+            "Cambria & Cambria Math (TrueType)"), ["Cambria", "Cambria Math"])
+        self.assertEqual(mi.registry_family_names("Marlett"), ["Marlett"])
+
+    def test_redaction(self):
+        self.assertEqual(mi._redact("/home/u/.fonts/a.ttf", "/home/u"),
+                         "~/.fonts/a.ttf")
+        self.assertEqual(mi._redact("/home/user2/a.ttf", "/home/u"),
+                         "/home/user2/a.ttf")
+        self.assertEqual(mi._redact(r"C:\Users\U\AppData\a.ttf", r"C:\Users\U"),
+                         r"~\AppData\a.ttf")
+        self.assertEqual(mi._redact("/usr/share/fonts/a.ttf", "/"),
+                         "/usr/share/fonts/a.ttf")
+
+    def test_collect_and_compare(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots, files = self.make_tree(tmp)
+            inventory = mi.collect(plat="linux", roots=roots)
+            report = mi.compare(inventory, self.ALLOWLISTS)
+        self.assertEqual(len(inventory["fonts"]), 7)  # not readme.txt
+        self.assertEqual(report["listed_present"],
+                         ["Alpha", "Beta Light SemiCondensed"])
+        self.assertEqual(report["listed_missing"], ["Missing Sans"])
+        self.assertEqual(report["listed_on_demand_only"], ["Delta"])
+        self.assertEqual(report["listed_user_only"], ["Epsilon"])
+        self.assertEqual(report["aliases"], ["Helvetica"])
+        self.assertEqual(report["unlisted_families"],
+                         [{"family": "Gamma", "files": ["gamma.ttc"]}])
+        self.assertEqual(report["listed_versions"]["Alpha"], [{
+            "file": "alpha.ttf", "version": "Version 1.000",
+            "sha256": hashlib.sha256(files["system/alpha.ttf"]).hexdigest()}])
+        errors = {Path(u["path"]).name: u["error"]
+                  for u in report["unreadable_files"]}
+        self.assertEqual(set(errors), {"old.pfb", "broken.ttf"})
+        self.assertIn("not an OpenType font", errors["old.pfb"])
+        self.assertIn("unreadable font", errors["broken.ttf"])
+        self.assertEqual(len(report["warnings"]), 1)  # the user's font
+        text = mi.report_markdown(report)
+        self.assertIn("- Missing Sans", text)
+        self.assertIn("| Gamma | gamma.ttc |", text)
+
+    def test_registry_names_count_for_bitmap_fonts(self):
+        inventory = {"format": mi.INVENTORY_FORMAT,
+                     "os": {"platform": "windows", "label": "windows11-24H2"},
+                     "fonts": [{"path": r"C:\Windows\Fonts\sserife.fon",
+                                "location": "system",
+                                "registry_names": [
+                                    "MS Sans Serif 8,10,12,14,18,24"],
+                                "error": "not an OpenType font"}]}
+        report = mi.compare(inventory, {"windows": [
+            {"name": "MS Sans Serif"}, {"name": "Arial"}]})
+        self.assertEqual(report["listed_present"], ["MS Sans Serif"])
+        self.assertEqual(report["listed_missing"], ["Arial"])
+        self.assertEqual(report["unlisted_families"], [])
+
+    def raw_from_tree(self, roots):
+        """What the no-install collectors write, made here."""
+        fonts = []
+        for root, location in roots:
+            for path in sorted(Path(root).rglob("*")):
+                if not path.is_file() or not mi._is_font_name(path.name):
+                    continue
+                data = path.read_bytes()
+                item = {"path": str(path), "location": location,
+                        "size": len(data),
+                        "sha256": hashlib.sha256(data).hexdigest()}
+                try:
+                    faces = []
+                    for offset in sfnt.face_offsets(data):
+                        tables, tag = sfnt.table_directory(data, offset)
+                        faces.append({"tag": tag.hex(), "tables": {
+                            t: base64.b64encode(data[o:o + n]).decode()
+                            for t, (o, n) in tables.items()
+                            if t in mi.RAW_TABLES}})
+                    if path.suffix in (".ttf", ".otf", ".ttc"):
+                        item["faces"] = faces
+                    else:
+                        item["error"] = "not an OpenType font (not compared)"
+                except sfnt.SfntError as e:
+                    item["error"] = "unreadable font: %s" % e
+                fonts.append(item)
+        return {"format": mi.RAW_FORMAT, "collector": "test",
+                "collected": "2026-10-25T00:00:00Z",
+                "os": {"platform": "linux", "id": "test", "version_id": "1",
+                       "label": "test-1"},
+                "fonts": fonts}
+
+    def assert_same_faces(self, a, b):
+        fa = {Path(f["path"]).name: f.get("faces") for f in a["fonts"]}
+        fb = {Path(f["path"]).name: f.get("faces") for f in b["fonts"]}
+        self.assertEqual(fa, fb)
+
+    def test_import_raw_matches_collect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots, _ = self.make_tree(tmp)
+            collected = mi.collect(plat="linux", roots=roots)
+            imported = mi.import_raw(self.raw_from_tree(roots))
+        self.assertEqual(imported["os"]["label"], "test-1")
+        self.assert_same_faces(collected, imported)
+        self.assertEqual(mi.compare(imported, self.ALLOWLISTS)["listed_missing"],
+                         ["Missing Sans"])
+
+    @unittest.skipUnless(os.path.exists("/usr/bin/perl"), "no /usr/bin/perl")
+    def test_perl_collector_matches_collect(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            roots, _ = self.make_tree(tmp)
+            out = str(Path(tmp) / "raw.json")
+            argv = ["/usr/bin/perl", str(HERE / "collect_fonts.pl"),
+                    "--out", out]
+            for root, location in roots:
+                argv += ["--root", "%s=%s" % (root, location)]
+            result = subprocess.run(argv, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, check=False)
+            if b"Can't locate" in result.stderr:
+                self.skipTest("perl without core modules")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            imported = mi.import_raw(json.loads(Path(out).read_text()))
+            collected = mi.collect(plat="linux", roots=roots)
+        self.assert_same_faces(collected, imported)
+        sha = {Path(f["path"]).name: f.get("sha256") for f in collected["fonts"]}
+        self.assertEqual(
+            sha, {Path(f["path"]).name: f.get("sha256")
+                  for f in imported["fonts"]})
+
+    def test_import_raw_refuses_or_contains_bad_input(self):
+        for bad in (None, [], {"format": "x"},
+                    {"format": mi.RAW_FORMAT, "os": {"platform": "beos"}},
+                    {"format": mi.RAW_FORMAT, "os": {"platform": "mac"},
+                     "fonts": "x"}):
+            with self.assertRaises(mi.InventoryError):
+                mi.import_raw(bad)
+        with tempfile.TemporaryDirectory() as tmp:
+            roots, _ = self.make_tree(tmp)
+            seed = self.raw_from_tree(roots)
+        rng = random.Random(7)
+        junk = [None, 1, -1, "", "zz", "AAAA", [], {}, {"tag": 1},
+                {"tag": "00010000", "tables": {"name": "!!"}},
+                {"tag": "00010000", "tables": []}, 2 ** 70, "\u0000"]
+        for _ in range(400):
+            raw = copy.deepcopy(seed)
+            for _ in range(rng.randint(1, 4)):
+                item = rng.choice(raw["fonts"])
+                key = rng.choice(["path", "location", "size", "sha256",
+                                  "faces", "registry_names", "error"])
+                faces = item.get("faces")
+                if key == "faces" and isinstance(faces, list) and faces and \
+                        isinstance(faces[0], dict) and rng.random() < .7:
+                    face = rng.choice(faces)
+                    if isinstance(face.get("tables"), dict) and \
+                            face["tables"] and rng.random() < .5:
+                        t = rng.choice(sorted(face["tables"]))
+                        blob = bytearray(base64.b64decode(face["tables"][t]))
+                        if blob:
+                            blob[rng.randrange(len(blob))] = rng.randrange(256)
+                        face["tables"][t] = base64.b64encode(
+                            bytes(blob[:rng.randrange(len(blob) + 1)])).decode()
+                    else:
+                        face[rng.choice(["tag", "tables"])] = rng.choice(junk)
+                else:
+                    item[key] = rng.choice(junk)
+            inventory = mi.import_raw(raw)
+            mi.report_markdown(mi.compare(inventory, self.ALLOWLISTS))
+
+    def test_merge(self):
+        def report(label, missing, unlisted, version):
+            return {"format": mi.REPORT_FORMAT,
+                    "os": {"platform": "mac", "label": label},
+                    "listed_missing": missing, "listed_on_demand_only": [],
+                    "listed_user_only": [],
+                    "unlisted_families": [{"family": f, "files": []}
+                                          for f in unlisted],
+                    "listed_versions": {"Helvetica": [
+                        {"file": "Helvetica.ttc", "version": version,
+                         "sha256": "ab" * 32}]}}
+        text = mi.merge([report("macos-13.7", ["Old Font"], ["New", "Odd"],
+                                "17.0d1e1"),
+                         report("macos-15.1", [], ["New"], "18.0d1e1")])
+        self.assertIn("- Old Font: not on macos-13.7", text)
+        self.assertIn("- New\n", text)
+        self.assertNotIn("- Odd", text)
+        self.assertIn("- Helvetica: Helvetica.ttc 17.0d1e1", text)
+        with self.assertRaises(mi.InventoryError):
+            mi.merge([report("a", [], [], "1"),
+                      dict(report("b", [], [], "1"),
+                           os={"platform": "windows"})])
+
+    def test_command_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots, _ = self.make_tree(tmp)
+            raw = Path(tmp) / "raw.json"
+            # A BOM, as Windows PowerShell 5.1 may write.
+            raw.write_text("\ufeff" + json.dumps(self.raw_from_tree(roots)),
+                           encoding="utf-8")
+            lists = Path(tmp) / "lists.json"
+            lists.write_text(json.dumps({"lists": self.ALLOWLISTS}))
+            out = Path(tmp) / "out"
+            with contextlib_redirect():
+                self.assertEqual(mi.main(["import", str(raw), "--out-dir",
+                                          str(out), "--allowlists",
+                                          str(lists)]), 0)
+                written = out / "molt-fonts-test-1.json"
+                self.assertTrue((out / "molt-fonts-test-1.md").exists())
+                self.assertEqual(mi.main(["compare", str(written),
+                                          "--out-dir", str(out / "again"),
+                                          "--allowlists", str(lists)]), 0)
+                self.assertEqual(mi.main(["merge", str(written), str(
+                    out / "again" / "molt-fonts-test-1.json"), "--out",
+                    str(out / "merged.md")]), 0)
+                self.assertEqual(mi.main(["import", str(lists)]), 2)
+                self.assertEqual(mi.main(["compare", str(Path(tmp) / "no")]),
+                                 2)
+            doc = json.loads(written.read_text())
+            self.assertEqual(doc["listed_missing"], ["Missing Sans"])
+            self.assertEqual(doc["inventory"]["format"], mi.INVENTORY_FORMAT)
+
+    def test_repository_allowlists(self):
+        lists = mi.load_allowlists()
+        self.assertEqual(set(lists), {"windows", "mac", "linux", "android"})
+        for entries in lists.values():
+            self.assertTrue(entries)
+            for e in entries:
+                self.assertTrue(e["name"])
+
+
+class contextlib_redirect:
+    """Silences stdout and stderr."""
+    def __enter__(self):
+        import contextlib
+        self._stack = contextlib.ExitStack()
+        self._stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        self._stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+        return self
+
+    def __exit__(self, *exc):
+        self._stack.close()
+        return False
 
 
 if __name__ == "__main__":
