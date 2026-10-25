@@ -8,7 +8,9 @@
 // pool type. Each pool's limits are fixed, and with the process's
 // MoltConnectionBudget (molt_connection_budget.h: one for every session
 // that goes to MoltNet's Tor) every pool asks the budget before it opens a
-// socket. The pools start no backup connect jobs: those are for a lost
+// socket: the certificate-fetch pools a budget of their own, so that they
+// never wait behind the connections whose certificate checks wait for
+// them. The pools start no backup connect jobs: those are for a lost
 // connection attempt to the destination, and here every connection goes
 // to Tor on this machine; a second attempt would only be a second stream
 // for Tor to set up, outside the budget. Header-only: //net's sources are
@@ -44,9 +46,11 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   // The arguments a ClientSocketPoolManagerImpl gives the pool of a proxy
   // chain, except the limits: MoltPerSitePoolLimit() of
   // `per_site_pool_size` for each site's pool, and MoltPerSiteGroupLimit()
-  // of that and `max_sockets_per_group` per group. `budget` (may be null)
-  // outlives this; `budget_owner` identifies the session (the same for its
-  // normal and WebSocket pools).
+  // of that and `max_sockets_per_group` per group. `budget` and
+  // `cert_fetch_budget` (may be null: those pools aren't held back) outlive
+  // this: the certificate-fetch pools draw on `cert_fetch_budget`, the
+  // others on `budget`; `budget_owner` identifies the session (the same
+  // for its normal and WebSocket pools).
   MoltPerSiteSocketPools(size_t per_site_pool_size,
                          size_t max_sockets_per_group,
                          base::TimeDelta unused_idle_socket_timeout,
@@ -54,16 +58,21 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
                          const CommonConnectJobParams* common_connect_job_params,
                          bool cleanup_on_ip_address_change,
                          MoltConnectionBudget* budget = nullptr,
-                         uintptr_t budget_owner = 0)
+                         uintptr_t budget_owner = 0,
+                         MoltConnectionBudget* cert_fetch_budget = nullptr)
       : per_site_pool_size_(per_site_pool_size),
         max_sockets_per_group_(max_sockets_per_group),
         unused_idle_socket_timeout_(unused_idle_socket_timeout),
         is_for_websockets_(is_for_websockets),
         common_connect_job_params_(common_connect_job_params),
         cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
-        budget_(budget) {
+        budget_(budget),
+        cert_fetch_budget_(cert_fetch_budget) {
     if (budget_) {
       budget_->AddMember(this, budget_owner);
+    }
+    if (cert_fetch_budget_) {
+      cert_fetch_budget_->AddMember(&cert_fetch_member_, budget_owner);
     }
   }
 
@@ -74,30 +83,35 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
     if (budget_) {
       budget_->RemoveMember(this);
     }
-    // What the pools release while they go no longer concerns the budget.
+    if (cert_fetch_budget_) {
+      cert_fetch_budget_->RemoveMember(&cert_fetch_member_);
+    }
+    // What the pools release while they go no longer concerns the budgets.
     budget_ = nullptr;
+    cert_fetch_budget_ = nullptr;
     pools_.clear();
   }
 
   // The pool for requests of network key `network_anonymization_key`
-  // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or for a key
-  // with a nonce the site's pool for one-off keys (MoltUsesSiteOneOffPool());
-  // made on first use. Drops the site pools nothing has used for a while
-  // first, when it makes one.
+  // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or, for a
+  // request that may not start certificate downloads (`no_cert_fetches`:
+  // the certificate fetcher's own), that site's certificate-fetch pool
+  // (MoltUsesCertFetchPool()); made on first use. Drops the site pools
+  // nothing has used for a while first, when it makes one.
   ClientSocketPool* Get(const ProxyChain& proxy_chain,
-                        const NetworkAnonymizationKey& network_anonymization_key) {
+                        const NetworkAnonymizationKey& network_anonymization_key,
+                        bool no_cert_fetches = false) {
     const base::TimeTicks now = base::TimeTicks::Now();
     MoltBudgetSite site = MoltBudgetSiteFor(network_anonymization_key);
-    const bool one_off = MoltUsesSiteOneOffPool(
-        is_for_websockets_, site.has_value(),
-        network_anonymization_key.GetNonce().has_value());
-    Key key{proxy_chain, std::move(site), one_off};
+    const bool cert_fetch_pool =
+        MoltUsesCertFetchPool(is_for_websockets_, no_cert_fetches);
+    Key key{proxy_chain, std::move(site), cert_fetch_pool};
     auto it = pools_.find(key);
     if (it == pools_.end()) {
       DropUnusedPools(now);
       const size_t limit =
           MoltPerSitePoolLimit(per_site_pool_size_, is_for_websockets_,
-                               !key.site.has_value(), key.one_off);
+                               !key.site.has_value(), key.cert_fetch_pool);
       Entry entry;
       entry.pool = std::make_unique<TransportClientSocketPool>(
           limit, MoltPerSiteGroupLimit(limit, max_sockets_per_group_),
@@ -106,7 +120,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
       entry.pool->MoltSetSocketGate(this);
       entry.pool->MoltDisableBackupConnectJobs();
       entry.pool->MoltSetIgnoreLimitsOverflow(MoltIgnoreLimitsOverflowFor(
-          is_for_websockets_, !key.site.has_value(), key.one_off));
+          is_for_websockets_, !key.site.has_value(), key.cert_fetch_pool));
       entry.limit = limit;
       it = pools_.emplace(std::move(key), std::move(entry)).first;
     }
@@ -121,6 +135,9 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
     // Cancelled connect jobs leave room the pools don't report.
     if (budget_) {
       budget_->OnReleased();
+    }
+    if (cert_fetch_budget_) {
+      cert_fetch_budget_->OnReleased();
     }
   }
 
@@ -144,29 +161,91 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   size_t PoolCountForTesting() const { return pools_.size(); }
+  // The member the certificate-fetch pools are of their budget.
+  MoltConnectionBudget::Member& CertFetchMemberForTesting() {
+    return cert_fetch_member_;
+  }
 
   // ClientSocketPool::MoltSocketGate:
   bool MoltMayAllocate(const ClientSocketPool* pool) override {
-    if (!budget_) {
-      return true;
-    }
     for (const auto& [key, entry] : pools_) {
       if (entry.pool.get() == pool) {
-        return budget_->MayAllocate(this, key.site);
+        if (key.cert_fetch_pool) {
+          return !cert_fetch_budget_ ||
+                 cert_fetch_budget_->MayAllocate(&cert_fetch_member_,
+                                                 key.site);
+        }
+        return !budget_ || budget_->MayAllocate(this, key.site);
       }
     }
     return true;
   }
   void MoltOnReleased(const ClientSocketPool* pool) override {
-    if (budget_) {
-      budget_->OnReleased();
+    for (const auto& [key, entry] : pools_) {
+      if (entry.pool.get() == pool) {
+        if (MoltConnectionBudget* budget =
+                key.cert_fetch_pool ? cert_fetch_budget_ : budget_) {
+          budget->OnReleased();
+        }
+        return;
+      }
     }
   }
 
-  // MoltConnectionBudget::Member:
+  // MoltConnectionBudget::Member, for `budget`: every pool but the
+  // certificate-fetch pools.
   void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
                     size_t& within_limits) const override {
+    AddLoads(/*cert_fetch_pools=*/false, loads, within_limits);
+  }
+  bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
+    return HasStalledRequest(/*cert_fetch_pools=*/false, site);
+  }
+  void MoltRetryStalledRequests(const MoltBudgetSite& site) override {
+    RetryStalledRequests(/*cert_fetch_pools=*/false, site);
+  }
+  bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override {
+    return CloseOneIdleSocket(/*cert_fetch_pools=*/false, site);
+  }
+  bool MoltCloseIdleSessions(const MoltBudgetSite& site) override {
+    return CloseIdleSessions(/*cert_fetch_pools=*/false, site);
+  }
+
+ private:
+  // The certificate-fetch pools as a member of `cert_fetch_budget`.
+  class CertFetchMember : public MoltConnectionBudget::Member {
+   public:
+    explicit CertFetchMember(MoltPerSiteSocketPools* pools) : pools_(pools) {}
+    void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
+                      size_t& within_limits) const override {
+      pools_->AddLoads(/*cert_fetch_pools=*/true, loads, within_limits);
+    }
+    bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
+      return pools_->HasStalledRequest(/*cert_fetch_pools=*/true, site);
+    }
+    void MoltRetryStalledRequests(const MoltBudgetSite& site) override {
+      pools_->RetryStalledRequests(/*cert_fetch_pools=*/true, site);
+    }
+    bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override {
+      return pools_->CloseOneIdleSocket(/*cert_fetch_pools=*/true, site);
+    }
+    bool MoltCloseIdleSessions(const MoltBudgetSite& site) override {
+      return pools_->CloseIdleSessions(/*cert_fetch_pools=*/true, site);
+    }
+
+   private:
+    const raw_ptr<MoltPerSiteSocketPools> pools_;
+  };
+
+  // The budget members' work, for the certificate-fetch pools or for the
+  // others.
+  void AddLoads(bool cert_fetch_pools,
+                std::map<MoltBudgetSite, size_t>& loads,
+                size_t& within_limits) const {
     for (const auto& [key, entry] : pools_) {
+      if (key.cert_fetch_pool != cert_fetch_pools) {
+        continue;
+      }
       const size_t in_use = entry.pool->SocketsInUse();
       loads[key.site] += in_use;
       // Sockets past the pool's limit (requests that ignore the limits)
@@ -175,42 +254,42 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
       within_limits += std::min(in_use, entry.limit);
     }
   }
-  bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
-    for (const auto& [key, entry] : pools_) {
-      if (key.site == site && entry.pool->MoltHasStalledRequest()) {
+  bool HasStalledRequest(bool cert_fetch_pools,
+                         const MoltBudgetSite& site) const {
+    for (TransportClientSocketPool* pool : PoolsOf(site, cert_fetch_pools)) {
+      if (pool->MoltHasStalledRequest()) {
         return true;
       }
     }
     return false;
   }
-  void MoltRetryStalledRequests(const MoltBudgetSite& site) override {
-    for (TransportClientSocketPool* pool : PoolsOf(site)) {
+  void RetryStalledRequests(bool cert_fetch_pools, const MoltBudgetSite& site) {
+    for (TransportClientSocketPool* pool : PoolsOf(site, cert_fetch_pools)) {
       pool->MoltRetryStalledRequests();
     }
   }
-  bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override {
-    for (TransportClientSocketPool* pool : PoolsOf(site)) {
+  bool CloseOneIdleSocket(bool cert_fetch_pools, const MoltBudgetSite& site) {
+    for (TransportClientSocketPool* pool : PoolsOf(site, cert_fetch_pools)) {
       if (pool->MoltCloseOneIdleSocket()) {
         return true;
       }
     }
     return false;
   }
-  bool MoltCloseIdleSessions(const MoltBudgetSite& site) override {
+  bool CloseIdleSessions(bool cert_fetch_pools, const MoltBudgetSite& site) {
     bool any = false;
-    for (TransportClientSocketPool* pool : PoolsOf(site)) {
+    for (TransportClientSocketPool* pool : PoolsOf(site, cert_fetch_pools)) {
       any |= pool->MoltCloseIdleSessions();
     }
     return any;
   }
 
- private:
   // A pool: the proxy chain, the site it counts against, and whether it is
-  // that site's pool for one-off keys (MoltUsesSiteOneOffPool()).
+  // that site's certificate-fetch pool (MoltUsesCertFetchPool()).
   struct Key {
     ProxyChain proxy_chain;
     MoltBudgetSite site;
-    bool one_off = false;
+    bool cert_fetch_pool = false;
     friend bool operator==(const Key&, const Key&) = default;
     friend auto operator<=>(const Key&, const Key&) = default;
   };
@@ -221,14 +300,14 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
     base::TimeTicks last_handed_out;
   };
 
-  // `site`'s pools (per proxy chain, and its one-off keys'), collected
-  // first: what a pool does when asked doesn't change the map, but this
-  // doesn't rely on it.
-  std::vector<TransportClientSocketPool*> PoolsOf(
-      const MoltBudgetSite& site) const {
+  // `site`'s certificate-fetch pools, or its other pools (per proxy chain),
+  // collected first: what a pool does when asked doesn't change the map,
+  // but this doesn't rely on it.
+  std::vector<TransportClientSocketPool*> PoolsOf(const MoltBudgetSite& site,
+                                                  bool cert_fetch_pools) const {
     std::vector<TransportClientSocketPool*> pools;
     for (const auto& [key, entry] : pools_) {
-      if (key.site == site) {
+      if (key.site == site && key.cert_fetch_pool == cert_fetch_pools) {
         pools.push_back(entry.pool.get());
       }
     }
@@ -251,6 +330,8 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   const raw_ptr<const CommonConnectJobParams> common_connect_job_params_;
   const bool cleanup_on_ip_address_change_;
   raw_ptr<MoltConnectionBudget> budget_;
+  raw_ptr<MoltConnectionBudget> cert_fetch_budget_;
+  CertFetchMember cert_fetch_member_{this};
   std::map<Key, Entry> pools_;
 };
 

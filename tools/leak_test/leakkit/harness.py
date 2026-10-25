@@ -1253,6 +1253,19 @@ class Run(object):
     # must close the window anyway.
     HOLD_PAGE_JS = ("window.addEventListener('beforeunload', (e) => {"
                     "e.preventDefault(); e.returnValue = ''; }); true")
+    # Requests the browser holds for the page and sends only once it
+    # closes: a fetchLater() deferred for two minutes and a beacon on
+    # pagehide. The identity ends before its pages close, so neither may
+    # reach the kit's server (MOLTNET_COMPLIANCE.md §2 *After an identity
+    # ends*). %s is the nonce (a JSON string).
+    HELD_AFTER_END_JS = (
+        "(() => { const n = %s; const r = {fetch_later: typeof fetchLater "
+        "=== 'function'}; try { if (r.fetch_later) { fetchLater("
+        "location.origin + '/canary/' + n + '-later', {activateAfter: "
+        "120000}); } } catch (e) { r.error = String(e); } "
+        "addEventListener('pagehide', () => { navigator.sendBeacon("
+        "location.origin + '/canary/' + n + '-hide', 'x'); }); "
+        "return r; })()")
 
     def wait_new_moltnet_page(self, before, seconds=60):
         deadline = _now() + seconds
@@ -1277,6 +1290,13 @@ class Run(object):
                     sid, self.HOLD_PAGE_JS, user_gesture=True))
             except cdplib.CdpError as e:
                 data['hold_page'] = 'error: %s' % e
+            data['held_nonce'] = 'endheld%d' % int(_now() * 1000)
+            try:
+                data['held_setup'] = self.cdp.evaluate(
+                    sid, self.HELD_AFTER_END_JS % json.dumps(
+                        data['held_nonce']), user_gesture=True)
+            except cdplib.CdpError as e:
+                data['held_setup'] = {'error': str(e)}
             old = self.moltnet
             data['old_context'] = old[2]
             before = set(t['targetId'] for t in self.moltnet_pages())

@@ -2,7 +2,8 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // MoltBrowser: MoltNet's storage budget: what one site stores never changes
-// what another can store or keeps.
+// what another can store or keeps, and nothing a page can store depends on
+// the machine.
 //
 // At Chromium 156 a storage key's writes (IndexedDB, Cache Storage, the
 // origin-private file system, service worker scripts, Background Fetch)
@@ -24,15 +25,19 @@
 //    Storage Buckets API, still goes);
 //  * every top-level site's storage keys together (its own and those of what
 //    it embeds) may use molt_per_site_quota, whatever the other sites
-//    stored: there is no total for all sites that a group of sites could
-//    fill, and so none another site could find full;
-//  * the memory it all takes is bounded by the machine instead: all sites
-//    together may always store pool_size (the floor, which every machine
-//    MoltNet runs on holds), and beyond it a write may only take what the
-//    machine has available above molt_memory_reserve
-//    (MoltNeedsMemoryCheck(), MoltStorageQuota()). A write the machine has
-//    no room for fails, for the site that writes; nothing another site
-//    stored is removed.
+//    stored, and that is the only limit a write meets: there is no total
+//    for all sites that a group of sites could fill and another find full,
+//    and the machine's memory is never asked on a write, so whether one
+//    succeeds says nothing about other sites or the machine
+//    (MoltStorageQuota());
+//  * the memory it all takes is watched instead: once all sites together
+//    store more than pool_size (the floor, which every machine MoltNet runs
+//    on holds), each quota answered tells the embedder
+//    (QuotaSettings::molt_on_growth_beyond_floor), which checks the
+//    machine's memory apart from any write and ends the whole identity if
+//    the machine is short of memory (chrome/browser/molt_ai/tor/
+//    molt_net_memory_valve_policy.h). No write fails because of the total
+//    or the machine; nothing another site stored is removed.
 //
 // Std-only, so molt_ai_unittests and a standalone harness test it.
 
@@ -42,7 +47,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
-#include <optional>
 
 namespace storage {
 
@@ -64,62 +68,33 @@ constexpr int64_t MoltSiteRoom(int64_t site_usage, int64_t per_site_quota) {
   return std::max<int64_t>(0, per_site_quota - std::max<int64_t>(0, site_usage));
 }
 
-// Whether answering a storage key's quota needs the machine's available
-// memory: only where its site could take all sites' usage (`total_usage`)
-// beyond the floor (QuotaSettings::pool_size), never below it, so the
-// machine never shows in what MoltNet's sites can store while they hold
-// less than the floor together.
-constexpr bool MoltNeedsMemoryCheck(int64_t per_site_quota,
-                                    int64_t site_usage,
-                                    int64_t total_usage,
-                                    int64_t floor) {
-  if (!MoltUsesStorageBudget(per_site_quota)) {
-    return false;
-  }
-  const int64_t site_room = MoltSiteRoom(site_usage, per_site_quota);
-  const int64_t total = std::max<int64_t>(0, total_usage);
-  return site_room > 0 && total > floor - site_room;
-}
-
-// The room the machine leaves beyond what is stored: what it has available
-// (`available_memory`, nullopt: unknown) above `memory_reserve`. Unknown
-// means none.
-constexpr int64_t MoltMachineRoom(std::optional<int64_t> available_memory,
-                                  int64_t memory_reserve) {
-  if (!available_memory) {
-    return 0;
-  }
-  return std::max<int64_t>(0, *available_memory - memory_reserve);
-}
-
 // The quota a storage key (or one of its buckets) using `usage` gets, given
-// Chromium's `quota` for it, its top-level site's `site_usage` (all of the
-// site's storage keys) and all sites' `total_usage`: no more room than the
-// site's own share has left, and no more than all sites together may still
-// take: up to the floor always, beyond it what the machine can spare.
-// Chromium's quota where there is no budget.
+// Chromium's `quota` for it and its top-level site's `site_usage` (all of
+// the site's storage keys): no more room than the site's own share has
+// left. Nothing else: not other sites' usage, not the machine. Chromium's
+// quota where there is no budget.
 constexpr int64_t MoltStorageQuota(int64_t quota,
                                    int64_t usage,
                                    int64_t site_usage,
-                                   int64_t total_usage,
-                                   int64_t per_site_quota,
-                                   int64_t floor,
-                                   std::optional<int64_t> available_memory,
-                                   int64_t memory_reserve) {
+                                   int64_t per_site_quota) {
   if (!MoltUsesStorageBudget(per_site_quota)) {
     return quota;
   }
-  const int64_t site_room = MoltSiteRoom(site_usage, per_site_quota);
-  const int64_t below_floor =
-      std::max<int64_t>(0, floor - std::max<int64_t>(0, total_usage));
-  const int64_t all_room =
-      std::max(below_floor, MoltMachineRoom(available_memory, memory_reserve));
-  const int64_t room = std::min(site_room, all_room);
+  const int64_t room = MoltSiteRoom(site_usage, per_site_quota);
   const int64_t base = std::max<int64_t>(0, usage);
   const int64_t limited = base > std::numeric_limits<int64_t>::max() - room
                               ? std::numeric_limits<int64_t>::max()
                               : base + room;
   return std::min(quota, limited);
+}
+
+// Whether all sites' usage (`total_usage`) is past the floor
+// (QuotaSettings::pool_size), so the embedder is told to watch the
+// machine's memory (QuotaSettings::molt_on_growth_beyond_floor).
+constexpr bool MoltStorageBeyondFloor(int64_t per_site_quota,
+                                      int64_t total_usage,
+                                      int64_t floor) {
+  return MoltUsesStorageBudget(per_site_quota) && total_usage > floor;
 }
 
 }  // namespace storage

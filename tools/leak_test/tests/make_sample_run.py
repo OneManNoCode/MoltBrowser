@@ -317,6 +317,8 @@ def manifest():
                 'hold_page': True, 'old_pages_left': 0,
                 'second_result': {'running': True},
                 'second_after_first_s': 10.4, 'second_context': 'CTX4',
+                'held_nonce': 'endheld1760000091500',
+                'held_setup': {'fetch_later': True},
                 'session_marks': [t(92), t(96)]}},
             {'name': 'fail_closed', 'start': t(100), 'end': t(105), 'data': {
                 'killed': [4242], 'nav_error':

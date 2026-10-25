@@ -723,6 +723,17 @@ struct NetworkContextParams {
   // every other context's and site's
   // (services/network/molt_keepalive_partitions.h).
   [MinVersion=1] bool molt_per_site_keepalive_limits = false;
+  // If true, this context's in-memory HTTP cache keeps fixed limits per
+  // top-level site: a site's entries are evicted only for its own share or
+  // for going unused, never for another site's, and memory pressure evicts
+  // nothing (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
+  [MinVersion=1] bool molt_per_site_http_cache = false;
+  // If true, a new proxy configuration that refuses every request (what an
+  // ended MoltNet identity's context gets) also cancels every request of the
+  // context and closes every connection, in the same task, so that nothing
+  // it had under way is sent afterwards
+  // (services/network/molt_ended_identity_policy.h).
+  [MinVersion=1] bool molt_stop_all_when_refusing = false;
 };
 
 struct NetworkConditions {

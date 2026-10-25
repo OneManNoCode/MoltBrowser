@@ -248,11 +248,14 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
 
   // MoltBrowser: the pool requests of the top-level site
   // `network_anonymization_key` use: the site's own where the session has
-  // per-site pools (molt_per_site_socket_pool_size), else GetSocketPool().
+  // per-site pools (molt_per_site_socket_pool_size), for requests that may
+  // not start certificate downloads (`molt_no_cert_fetches`) its
+  // certificate-fetch pool, else GetSocketPool().
   ClientSocketPool* GetSocketPoolForSite(
       SocketPoolType pool_type,
       const ProxyChain& proxy_chain,
-      const NetworkAnonymizationKey& network_anonymization_key);
+      const NetworkAnonymizationKey& network_anonymization_key,
+      bool molt_no_cert_fetches = false);
 
   CertVerifier* cert_verifier() { return cert_verifier_; }
   ProxyResolutionService* proxy_resolution_service() {

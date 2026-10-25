@@ -431,6 +431,13 @@ FUZZERS = {
         dict="dicts/tor.dict",
         max_len=8192,
     ),
+    "molt_http_cache_site_fuzzer": dict(
+        dir=BROWSER,
+        sources=[],  # net/disk_cache/memory/molt_mem_backend_budget_policy.h
+        tier="std",
+        max_len=4096,
+        smoke_runs=500000,
+    ),
     # --- Fingerprinting protection (Blink, pure parts) --------------------
     "molt_farbling_fuzzer": dict(
         dir=FINGERPRINTING,

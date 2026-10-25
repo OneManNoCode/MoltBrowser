@@ -88,6 +88,7 @@
 #include "net/device_bound_sessions/session_service.h"
 #include "net/disk_cache/buildflags.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/disk_cache/memory/molt_mem_backend_budget_policy.h"  // MoltBrowser
 #include "net/dns/context_host_resolver.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -141,6 +142,7 @@
 #include "services/network/prefetch_matching_url_loader_factory.h"
 #include "services/network/prefetch_url_loader_client.h"
 #include "services/network/proxy_checking_host_resolver_request.h"
+#include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
 #include "services/network/proxy_config_service_mojo.h"
 #include "services/network/proxy_lookup_request.h"
 #include "services/network/proxy_resolving_socket_factory_mojo.h"
@@ -691,6 +693,28 @@ void MoltRestrictToBasicAndDigestAuth(net::HttpAuthPreferences& prefs) {
   // Negotiate is never offered; it wouldn't resolve the server's canonical
   // name either.
   prefs.set_negotiate_disable_cname_lookup(true);
+}
+
+// MoltBrowser: stops everything `context` still has under way: every URL
+// request is cancelled (the requests' delegates hear of it later, as for any
+// cancellation), then every connection, connection attempt and HTTP/2
+// session is closed (services/network/molt_ended_identity_policy.h).
+void MoltStopEverything(base::WeakPtr<NetworkContext> context) {
+  if (!context || !context->url_request_context()) {
+    return;
+  }
+  std::vector<base::WeakPtr<net::URLRequest>> requests;
+  for (const net::URLRequest* request :
+       *context->url_request_context()->url_requests()) {
+    // The context's own requests; cancelling one doesn't change them.
+    requests.push_back(const_cast<net::URLRequest*>(request)->GetWeakPtr());
+  }
+  for (const base::WeakPtr<net::URLRequest>& request : requests) {
+    if (request) {
+      request->Cancel();
+    }
+  }
+  context->CloseAllConnections(base::DoNothing());
 }
 
 }  // namespace
@@ -3145,10 +3169,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     params_->initial_proxy_config =
         net::ProxyConfigWithAnnotation::CreateDirect();
   }
-  builder.set_proxy_config_service(std::make_unique<ProxyConfigServiceMojo>(
+  auto proxy_config_service = std::make_unique<ProxyConfigServiceMojo>(
       std::move(params_->proxy_config_client_receiver),
       std::move(params_->initial_proxy_config),
-      std::move(params_->proxy_config_poller_client)));
+      std::move(params_->proxy_config_poller_client));
+  // MoltBrowser: kept to be told of an ended identity's refusal below; the
+  // context built here owns it.
+  ProxyConfigServiceMojo* const molt_proxy_config_service =
+      proxy_config_service.get();
+  builder.set_proxy_config_service(std::move(proxy_config_service));
   builder.set_pac_quick_check_enabled(params_->pac_quick_check_enabled);
 
   std::unique_ptr<PrefService> pref_service;
@@ -3430,6 +3459,22 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
             result.url_request_context->http_transaction_factory()
                 ->GetSession()) {
       session->ssl_client_context()->MoltSendNoClientCertificates();
+    }
+  }
+  // MoltBrowser: when MoltNet's identity ends, its refusal of every request
+  // also stops what the context still has under way
+  // (services/network/molt_ended_identity_policy.h).
+  if (params_->molt_stop_all_when_refusing) {
+    molt_proxy_config_service->MoltSetOnRefuseAll(base::BindRepeating(
+        &MoltStopEverything, weak_factory_.GetWeakPtr()));
+  }
+  // MoltBrowser: MoltNet's in-memory HTTP cache keeps limits per site
+  // (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
+  if (params_->molt_per_site_http_cache) {
+    if (net::HttpCache* cache =
+            result.url_request_context->http_transaction_factory()
+                ->GetCache()) {
+      cache->MoltSetPerSiteBudget(disk_cache::MoltNetHttpCacheBudget());
     }
   }
   // MoltBrowser: MoltNet verifies each certificate for its own connection

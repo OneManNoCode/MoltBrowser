@@ -40,9 +40,10 @@ TEST(MoltNetStorageValuesTest, EachSiteATenthOfThePool) {
   EXPECT_EQ(kMoltNetQuotaPerStorageKeyBytes, kMoltNetQuotaPerSiteBytes);
 }
 
-// Beyond the pool a write must leave the machine 1 GiB available: on the
-// reference machine the pool, the blob memory and the reserve still leave
-// half of it to the system, the browser and other applications.
+// Beyond a floor the machine must keep 1 GiB available or the identity
+// ends: on the reference machine the pool, the blob memory and the reserve
+// still leave two fifths of it to the system, the browser and other
+// applications.
 TEST(MoltNetStorageValuesTest, MemoryReserve) {
   EXPECT_EQ(kMoltNetStorageMemoryReserveBytes, kGiB);
   EXPECT_LE(kMoltNetQuotaPoolBytes +
@@ -76,7 +77,7 @@ TEST(MoltNetStorageValuesTest, BlobMemory) {
             kMoltNetStorageReferenceMemory / 2);
 }
 
-// One process's share: a quarter of what all hold below the machine check,
+// One process's share: a quarter of what all hold below the memory check,
 // so no single process takes them past it alone; more than one big media
 // file or canvas recording needs.
 TEST(MoltNetStorageValuesTest, BlobShare) {

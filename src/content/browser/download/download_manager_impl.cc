@@ -1877,9 +1877,14 @@ void DownloadManagerImpl::BeginDownloadInternal(
     bool is_new_download,
     const std::string& serialized_embedder_download_data) {
   // Check if the renderer is permitted to request the requested URL.
-  if (params->render_process_host_id() >= 0 &&
-      !DownloadRequestUtils::IsURLSafe(params->render_process_host_id(),
-                                       params->url())) {
+  // MoltBrowser: and nothing more is sent for a network identity that has
+  // ended (ContentBrowserClient::HasNetworkIdentityEnded()), not a resumed
+  // download either.
+  if (GetContentClient()->browser()->HasNetworkIdentityEnded(
+          browser_context_) ||
+      (params->render_process_host_id() >= 0 &&
+       !DownloadRequestUtils::IsURLSafe(params->render_process_host_id(),
+                                        params->url()))) {
     CreateInterruptedDownload(
         std::move(params),
         download::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST,

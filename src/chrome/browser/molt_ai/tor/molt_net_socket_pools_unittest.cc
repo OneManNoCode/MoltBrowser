@@ -91,7 +91,7 @@ TEST_F(MoltNetSocketPoolsTest, EachSiteHasItsOwnPool) {
                      type, Tor(),
                      net::NetworkAnonymizationKey::CreateCrossSite(
                          net::SchemefulSite(GURL("https://a.test")))));
-    // One-off keys no site can be named for (certificate fetches) share one
+    // One-off keys no site can be named for (derived from nothing) share one
     // small pool of their own.
     net::ClientSocketPool* one_off = session->GetSocketPoolForSite(
         type, Tor(), net::NetworkAnonymizationKey::CreateTransient());
@@ -163,11 +163,13 @@ TEST_F(MoltNetSocketPoolsTest, EachSitePoolHasTheFixedLimits) {
   EXPECT_FALSE(all.GetList().empty());
 }
 
-// A site's one-off keys (a certificate fetch for one of its connections:
-// the site and a nonce) get a small HTTP pool of the site's own, apart from
-// the site's main pool, whose slots its connections hold while their
-// certificate checks wait for those fetches.
-TEST_F(MoltNetSocketPoolsTest, ASitesOneOffKeysHaveAPoolOfTheirOwn) {
+// Certificate fetches (requests that may not start certificate downloads of
+// their own, as the certificate fetcher marks them) get small HTTP pools of
+// their own: the site's, and one for the keys of no site. A site's other
+// requests, its credentialless iframes' one-off keys among them, stay in its
+// main pool, whose slots its connections hold while their certificate checks
+// wait for those fetches; the keys of no site stay in theirs.
+TEST_F(MoltNetSocketPoolsTest, CertificateFetchesHaveAPoolOfTheirOwn) {
   std::unique_ptr<net::HttpNetworkSession> session = MakeSession(true);
   const net::SchemefulSite a(GURL("https://a.test"));
   auto one_off_key = [&] {
@@ -177,31 +179,45 @@ TEST_F(MoltNetSocketPoolsTest, ASitesOneOffKeysHaveAPoolOfTheirOwn) {
   net::ClientSocketPool* main = session->GetSocketPoolForSite(
       SocketPoolType::kNormal, Tor(), SiteKey("https://a.test"));
   net::ClientSocketPool* fetches = session->GetSocketPoolForSite(
-      SocketPoolType::kNormal, Tor(), one_off_key());
+      SocketPoolType::kNormal, Tor(), one_off_key(),
+      /*molt_no_cert_fetches=*/true);
   ASSERT_TRUE(fetches);
   EXPECT_NE(fetches, main);
-  // Every one-off key of the site shares it; another site's are apart, and
-  // so are the keys no site can be named for.
-  EXPECT_EQ(fetches, session->GetSocketPoolForSite(SocketPoolType::kNormal,
-                                                   Tor(), one_off_key()));
+  // A credentialless iframe's key (the site and a nonce) uses the main pool.
+  EXPECT_EQ(main, session->GetSocketPoolForSite(SocketPoolType::kNormal,
+                                                Tor(), one_off_key()));
+  // Every certificate fetch of the site shares the site's; another site's
+  // are apart, and so is the pool for the keys of no site.
+  EXPECT_EQ(fetches,
+            session->GetSocketPoolForSite(SocketPoolType::kNormal, Tor(),
+                                          one_off_key(), true));
   EXPECT_NE(fetches,
             session->GetSocketPoolForSite(
                 SocketPoolType::kNormal, Tor(),
                 net::NetworkAnonymizationKey::CreateFromParts(
                     net::SchemefulSite(GURL("https://b.test")), false,
-                    base::UnguessableToken::Create())));
-  EXPECT_NE(fetches,
-            session->GetSocketPoolForSite(
-                SocketPoolType::kNormal, Tor(),
-                net::NetworkAnonymizationKey::CreateTransient()));
+                    base::UnguessableToken::Create()),
+                true));
+  net::ClientSocketPool* unattributed = session->GetSocketPoolForSite(
+      SocketPoolType::kNormal, Tor(),
+      net::NetworkAnonymizationKey::CreateTransient());
+  net::ClientSocketPool* unattributed_fetches = session->GetSocketPoolForSite(
+      SocketPoolType::kNormal, Tor(),
+      net::NetworkAnonymizationKey::CreateTransient(), true);
+  EXPECT_NE(unattributed_fetches, unattributed);
+  EXPECT_NE(unattributed_fetches, fetches);
   const base::Value info =
       fetches->GetInfoAsValue("pool", "socks_socket_pool");
   ASSERT_TRUE(info.is_dict());
   EXPECT_EQ(info.GetDict().FindInt("socket_soft_cap"),
-            static_cast<int>(net::kMoltPerSiteOneOffPoolSize));
+            static_cast<int>(net::kMoltPerSiteCertFetchPoolSize));
+  const base::Value unattributed_info =
+      unattributed_fetches->GetInfoAsValue("pool", "socks_socket_pool");
+  EXPECT_EQ(unattributed_info.GetDict().FindInt("socket_soft_cap"),
+            static_cast<int>(net::kMoltUnattributedCertFetchPoolSize));
   // WebSockets keep one pool per site.
   EXPECT_EQ(session->GetSocketPoolForSite(SocketPoolType::kWebSocket, Tor(),
-                                          one_off_key()),
+                                          one_off_key(), true),
             session->GetSocketPoolForSite(SocketPoolType::kWebSocket, Tor(),
                                           SiteKey("https://a.test")));
 }
@@ -364,8 +380,14 @@ TEST_F(MoltNetSocketPoolsTest, SessionsShareTorsBudgets) {
       net::MoltTorCapacity::GetShared();
   EXPECT_EQ(capacity->handshake_budget().TotalInProgressForTesting(),
             net::kMoltSocksHandshakesPerSite + 1);
-  // Each session's normal and WebSocket pools.
+  // Each session's normal and WebSocket pools, in both parts of the
+  // connection budget: the certificate fetches' and the rest.
   EXPECT_EQ(capacity->connection_budget().MemberCountForTesting(), 4u);
+  EXPECT_EQ(capacity->cert_fetch_budget().MemberCountForTesting(), 4u);
+  EXPECT_EQ(capacity->connection_budget().budget(),
+            net::kMoltMainConnectionBudget);
+  EXPECT_EQ(capacity->cert_fetch_budget().budget(),
+            net::kMoltCertFetchConnectionBudget);
   slots.clear();
   EXPECT_EQ(capacity->handshake_budget().TotalInProgressForTesting(), 0u);
 }

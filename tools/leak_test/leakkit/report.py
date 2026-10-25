@@ -833,6 +833,40 @@ def _tor_capacity_check(phase):
                  PASS if ok else FAIL, ev, doc)
 
 
+def _held_after_end_check(manifest, server_log):
+    """What the old identity's page left for the browser to send once it
+    closed (the New Identity phase's fetchLater() and pagehide beacon) must
+    never reach the kit's server: the identity ends before its pages close.
+    """
+    check_id, group = 'identity.nothing_held_after_end', 'identity'
+    title = ('Nothing the browser holds for a page is sent after its '
+             'identity ends (fetchLater, a pagehide beacon)')
+    doc = 'MOLTNET_COMPLIANCE.md §2 After an identity ends'
+    phase = _phase(manifest, 'new_identity')
+    data = (phase or {}).get('data') or {}
+    nonce = data.get('held_nonce')
+    if not nonce:
+        return check(check_id, group, title, SKIP,
+                     ['the New Identity phase set up no held requests'], doc)
+    setup = data.get('held_setup')
+    ev = ['set up in the old page: %s' % json.dumps(setup, sort_keys=True)[
+        :200]]
+    hits = [r.get('path', '') for r in server_log
+            if '/canary/%s-' % nonce in r.get('path', '')]
+    if hits:
+        return check(check_id, group, title, FAIL, ev + [
+            'reached the kit\'s server after the identity ended: %s' % h
+            for h in hits[:4]], doc)
+    if not isinstance(setup, dict) or setup.get('error'):
+        return check(check_id, group, title, ERROR,
+                     ev + ['the old page could not set them up'], doc)
+    if not setup.get('fetch_later'):
+        ev.append('fetchLater() is not available in the page: only the '
+                  'pagehide beacon was checked')
+    ev.append('none reached the kit\'s server')
+    return check(check_id, group, title, PASS, ev, doc)
+
+
 def _phase_checks(manifest):
     out = [
         _phase_check(manifest, 'open_moltnet', 'moltnet.open', 'harness',
@@ -1313,6 +1347,7 @@ def build(run_dir):
     if manifest.get('target') == 'moltnet':
         checks += _circuit_checks(manifest, tr)
         checks += _policy_live_checks(manifest, tr)
+        checks.append(_held_after_end_check(manifest, server_log))
     uni, os_names = _uniformity_checks(manifest)
     checks += uni
     checks += _control_checks(manifest)

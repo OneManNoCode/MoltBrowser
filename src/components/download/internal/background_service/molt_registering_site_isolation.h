@@ -43,12 +43,16 @@
 #ifndef COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_REGISTERING_SITE_ISOLATION_H_
 #define COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_REGISTERING_SITE_ISOLATION_H_
 
+#include <cstdint>
 #include <optional>
 
 #include "net/base/isolation_info.h"
+#include "net/base/schemeful_site.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+#include "storage/browser/blob/molt_blob_budget_policy.h"
 #include "url/origin.h"
+#include "url/scheme_host_port.h"
 
 namespace download {
 
@@ -81,6 +85,27 @@ inline void MoltCarryFetchCredentialsAndInitiator(
   }
   request.credentials_mode = credentials_mode;
   request.request_initiator = initiator;
+}
+
+// The blob budget key a fetch's response is held under once downloaded
+// (BlobTaskProxy::SaveAsBlob()): the site that started the fetch (the
+// isolation's top-level site; for a page its server sandboxed, the site its
+// origin came from), so it counts against that site's own share of blob
+// memory, not the one the browser's other blobs share
+// (storage/browser/blob/molt_blob_budget_policy.h), from `keys`; the
+// browser's key for a request with no site.
+inline uint64_t MoltBlobBudgetKeyForFetch(
+    const std::optional<net::IsolationInfo>& isolation_info,
+    storage::MoltBlobSiteKeys& keys) {
+  if (!isolation_info || !isolation_info->top_frame_origin()) {
+    return storage::kMoltBlobBrowserKey;
+  }
+  const url::SchemeHostPort tuple =
+      isolation_info->top_frame_origin()->GetTupleOrPrecursorTupleIfOpaque();
+  if (!tuple.IsValid()) {
+    return storage::kMoltBlobBrowserKey;
+  }
+  return keys.KeyFor(net::SchemefulSite(tuple.GetURL()).Serialize());
 }
 
 }  // namespace download

@@ -128,6 +128,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_storage.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
 #include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
 #include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
@@ -138,6 +139,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
 #include "chrome/browser/molt_ai/tor/molt_net_ended_identity_throttle.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_language_policy.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_memory_valve.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_process_policy.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -7186,17 +7188,34 @@ std::optional<storage::QuotaSettings>
 ChromeContentBrowserClient::GetFixedQuotaSettings(
     content::BrowserContext* browser_context) {
   // MoltBrowser: the same storage limits for every MoltNet user
-  // (molt_ai/fingerprinting/molt_net_storage.h).
-  return molt_ai::fingerprinting::MoltNetQuotaSettings(
-      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+  // (molt_ai/fingerprinting/molt_net_storage.h), and past their floor the
+  // identity's memory valve hears of it (molt_ai/tor/molt_net_memory_valve.h).
+  std::optional<storage::QuotaSettings> settings =
+      molt_ai::fingerprinting::MoltNetQuotaSettings(
+          molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+  if (settings && browser_context) {
+    settings->molt_on_growth_beyond_floor =
+        molt_ai::tor::MoltNetMemoryValveCallback(
+            Profile::FromBrowserContext(browser_context),
+            molt_ai::fingerprinting::kMoltNetStorageMemoryReserveBytes);
+  }
+  return settings;
 }
 
 std::optional<storage::BlobStorageLimits>
 ChromeContentBrowserClient::GetFixedBlobStorageLimits(
     content::BrowserContext* browser_context) {
   // MoltBrowser: as GetFixedQuotaSettings(), for blobs.
-  return molt_ai::fingerprinting::MoltNetBlobStorageLimits(
-      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+  std::optional<storage::BlobStorageLimits> limits =
+      molt_ai::fingerprinting::MoltNetBlobStorageLimits(
+          molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
+  if (limits && browser_context) {
+    limits->molt_on_growth_beyond_floor =
+        molt_ai::tor::MoltNetMemoryValveCallback(
+            Profile::FromBrowserContext(browser_context),
+            molt_ai::fingerprinting::kMoltNetStorageMemoryReserveBytes);
+  }
+  return limits;
 }
 
 bool ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(
@@ -7206,6 +7225,23 @@ bool ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(
   // (molt_ai/tor/molt_net_network_context_policy.h).
   return browser_context &&
          molt_ai::tor::KeepDownloadsWithTheirSite(
+             molt_ai::tor::IsMoltNetProfile(
+                 Profile::FromBrowserContext(browser_context)));
+}
+
+bool ChromeContentBrowserClient::HasNetworkIdentityEnded(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: an ended MoltNet identity sends nothing more
+  // (molt_ai/tor/molt_net_identity_end_policy.h).
+  return molt_ai::tor::HasMoltNetIdentityEnded(browser_context);
+}
+
+bool ChromeContentBrowserClient::ShouldKeepDomStorageCachesPerSite(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: MoltNet's localStorage and sessionStorage caches are kept
+  // per site (molt_ai/tor/molt_net_network_context_policy.h).
+  return browser_context &&
+         molt_ai::tor::KeepDomStorageCachesPerSite(
              molt_ai::tor::IsMoltNetProfile(
                  Profile::FromBrowserContext(browser_context)));
 }

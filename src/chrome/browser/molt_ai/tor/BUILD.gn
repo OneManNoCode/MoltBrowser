@@ -184,7 +184,10 @@ source_set("process_policy") {
 # molt_net_window.cc and the ended-identity navigation throttle read it.
 # Header-only and std-only, so molt_ai_unittests tests it.
 source_set("identity_end_policy") {
-  sources = [ "molt_net_identity_end_policy.h" ]
+  sources = [
+    "molt_net_identity_end_policy.h",
+    "molt_net_memory_valve_policy.h",
+  ]
 }
 
 # No Autofill server traffic and no address metadata downloads for MoltNet
@@ -226,6 +229,11 @@ source_set("tor") {
     "molt_net_ended_identity_throttle.h",
     "molt_net_live_guard.cc",
     "molt_net_live_guard.h",
+
+    # Ends an identity when the computer runs short of memory while its
+    # sites store more than MoltNet's floors.
+    "molt_net_memory_valve.cc",
+    "molt_net_memory_valve.h",
 
     # Windows' parental controls, read again as a MoltNet window opens.
     "molt_net_parental_controls.cc",
@@ -505,13 +513,19 @@ source_set("unit_tests") {
   sources = [
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
+    "molt_net_dom_storage_site_policy_unittest.cc",
+    "molt_net_dom_storage_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
+    "molt_net_ended_identity_network_unittest.cc",
+    "molt_net_http_cache_budget_policy_unittest.cc",
+    "molt_net_http_cache_unittest.cc",
     "molt_net_identity_end_policy_unittest.cc",
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_keepalive_partitions_unittest.cc",
     "molt_net_language_policy_unittest.cc",
     "molt_net_live_policy_unittest.cc",
+    "molt_net_memory_valve_policy_unittest.cc",
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
@@ -552,6 +566,9 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
 
+    # The reserve the memory valve keeps (molt_net_memory_valve_policy.h).
+    "//chrome/browser/molt_ai/fingerprinting:storage_values",
+
     # Pref-name constants checked against the pinned list.
     "//chrome/browser/molt_ai/shield:prefs",
     "//chrome/common:constants",
@@ -569,6 +586,11 @@ source_set("unit_tests") {
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
     "//components/universal_optout",
+
+    # MoltNet's localStorage caches per site, with the storage service's
+    # LocalStorageImpl.
+    "//components/services/storage",
+    "//third_party/blink/public/common",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
 
@@ -577,6 +599,7 @@ source_set("unit_tests") {
     "//mojo/public/cpp/test_support:test_utils",
     "//net",
     "//net:test_support",
+    "//net/traffic_annotation:test_support",
 
     # The parameters MoltNet's network-context settings are written into.
     "//services/cert_verifier/public/mojom",
@@ -586,6 +609,9 @@ source_set("unit_tests") {
     # The ResourceRequest a Background Fetch request is built in.
     "//services/network/public/cpp",
     "//services/network/public/cpp:buildflags",
+    # An ended identity's network context stops everything with its refusal
+    # (ProxyConfigServiceMojo).
+    "//services/network:network_service",
     "//services/network/public/mojom",
     "//testing/gtest",
     "//third_party/blink/public/mojom:mojom_platform",

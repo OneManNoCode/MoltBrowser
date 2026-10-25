@@ -58,14 +58,6 @@ using MemoryAllocation = BlobMemoryController::MemoryAllocation;
 using QuotaAllocationTask = BlobMemoryController::QuotaAllocationTask;
 using DiskSpaceFuncPtr = BlobMemoryController::DiskSpaceFuncPtr;
 
-// MoltBrowser: how long a reading of the machine's available memory is used
-// (lowered by what blobs took since), and how it is read
-// (molt_blob_budget_policy.h).
-constexpr base::TimeDelta kMoltAvailableMemoryRefresh = base::Milliseconds(200);
-uint64_t MoltReadAvailablePhysicalMemory() {
-  return base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes();
-}
-
 File::Error CreateBlobDirectory(const FilePath& blob_storage_dir) {
   File::Error error = File::FILE_OK;
   base::CreateDirectoryAndGetError(blob_storage_dir, &error);
@@ -600,9 +592,6 @@ BlobMemoryController::BlobMemoryController(
           GetBlobMemoryControllerTraits(),
           this,
           base::AsyncMemoryConsumerRegistration::CheckUnregister::kDisabled) {
-  // MoltBrowser: how the machine's available memory is read
-  // (molt_blob_budget_policy.h).
-  molt_available_memory_function_ = &MoltReadAvailablePhysicalMemory;
 }
 
 BlobMemoryController::~BlobMemoryController() = default;
@@ -1169,16 +1158,8 @@ size_t BlobMemoryController::GetAvailableMemoryForBlobs(
   if (!MoltUsesBlobBudget(per_key)) {
     return GetAvailableMemoryForBlobs();
   }
-  const uint64_t key_used = MoltMemoryUsage(molt_budget_key);
-  const uint64_t total = memory_usage();
-  const uint64_t floor = limits_.max_blob_in_memory_space;
-  std::optional<uint64_t> available;
-  if (MoltBlobNeedsMemoryCheck(per_key, key_used, total, floor)) {
-    available = MoltAvailableMemory();
-  }
-  return base::saturated_cast<size_t>(MoltBlobRoom(
-      per_key, key_used, total, floor, available,
-      limits_.molt_memory_reserve));
+  return base::saturated_cast<size_t>(
+      MoltBlobRoom(per_key, MoltMemoryUsage(molt_budget_key)));
 }
 
 size_t BlobMemoryController::MoltMemoryUsage(uint64_t molt_budget_key) const {
@@ -1186,20 +1167,12 @@ size_t BlobMemoryController::MoltMemoryUsage(uint64_t molt_budget_key) const {
   return it == molt_memory_used_by_key_.end() ? 0 : it->second;
 }
 
-std::optional<uint64_t> BlobMemoryController::MoltAvailableMemory() const {
-  const base::TimeTicks now = base::TimeTicks::Now();
-  if (!molt_available_memory_ ||
-      now - molt_available_memory_read_at_ >= kMoltAvailableMemoryRefresh) {
-    molt_available_memory_ = molt_available_memory_function_();
-    molt_available_memory_read_at_ = now;
-    molt_memory_used_at_read_ = memory_usage();
+void BlobMemoryController::MoltNoteGrowth() const {
+  if (MoltBlobBeyondFloor(limits_.molt_per_key_memory, memory_usage(),
+                          limits_.max_blob_in_memory_space) &&
+      limits_.molt_on_growth_beyond_floor) {
+    limits_.molt_on_growth_beyond_floor.Run();
   }
-  // What blobs took since the reading isn't available any more.
-  const size_t taken = memory_usage() > molt_memory_used_at_read_
-                           ? memory_usage() - molt_memory_used_at_read_
-                           : 0;
-  return *molt_available_memory_ > taken ? *molt_available_memory_ - taken
-                                         : 0;
 }
 
 uint64_t BlobMemoryController::GetAvailableFileSpaceForBlobs() const {
@@ -1222,8 +1195,10 @@ void BlobMemoryController::GrantMemoryAllocations(
     size_t total_bytes,
     uint64_t molt_budget_key) {
   blob_memory_used_ += total_bytes;
-  // MoltBrowser: counted to its key too (molt_blob_budget_policy.h).
+  // MoltBrowser: counted to its key too, and past the floor the embedder
+  // hears of it (molt_blob_budget_policy.h).
   molt_memory_used_by_key_[molt_budget_key] += total_bytes;
+  MoltNoteGrowth();
 
   for (auto& item : *items) {
     item->set_state(ShareableBlobDataItem::QUOTA_GRANTED);

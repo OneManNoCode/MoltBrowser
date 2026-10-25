@@ -18,11 +18,18 @@
 #include "content/public/browser/navigation_throttle.h"
 
 namespace content {
+class BrowserContext;
 class NavigationThrottleRegistry;
 }  // namespace content
 
 namespace molt_ai {
 namespace tor {
+
+// Whether `browser_context` is a MoltNet profile whose identity has ended,
+// so the browser sends nothing more for its pages
+// (ContentBrowserClient::HasNetworkIdentityEnded(),
+// molt_net_identity_end_policy.h: MoltNetBrowserMaySendForPage()).
+bool HasMoltNetIdentityEnded(content::BrowserContext* browser_context);
 
 class MoltNetEndedIdentityThrottle : public content::NavigationThrottle {
  public:

@@ -60,12 +60,13 @@ struct QuotaSettings {
 
   // MoltBrowser: if > 0 (MoltNet), each top-level site's storage keys
   // together may use at most this many bytes, whatever the other sites
-  // store; all sites together may always use `pool_size`, and beyond it
-  // only what the machine has available above `molt_memory_reserve`; and
-  // nothing is evicted to bring the pool down
-  // (storage/browser/quota/molt_storage_budget_policy.h).
+  // store, and that is the only limit their writes meet; nothing is evicted
+  // to bring the pool down; and once all sites together use more than
+  // `pool_size`, `molt_on_growth_beyond_floor` runs (on the quota manager's
+  // sequence) with every quota answered, so the embedder can watch the
+  // machine's memory (storage/browser/quota/molt_storage_budget_policy.h).
   int64_t molt_per_site_quota = 0;
-  int64_t molt_memory_reserve = 0;
+  base::RepeatingClosure molt_on_growth_beyond_floor;
 };
 
 // Function type used to return the settings in response to a

@@ -741,6 +741,20 @@ void WaitForRetiredProfiles(base::FilePath path,
 
 }  // namespace
 
+// The machine is short of memory while the identity's sites store more than
+// MoltNet's floors (molt_net_memory_valve_policy.h): the identity ends as
+// for a setting the live check refuses, and the user is told why.
+void EndMoltNetIdentityForMemory(const base::FilePath& path,
+                                 const Profile::OTRProfileID& id) {
+  Profile* moltnet = LookUpMoltNetProfile(path, id);
+  if (!moltnet || MoltNetRouting::HasIdentityEnded(moltnet)) {
+    return;
+  }
+  LOG(WARNING) << "[MoltNet] the computer is short of memory: ending the "
+                  "MoltNet identity";
+  EndForChangedSettings(moltnet, std::string(kMoltNetEndedForMemoryMessage));
+}
+
 // static
 void MoltNetWindow::Open(Profile* from, const GURL& url, DoneCallback done) {
   OpenImpl(from, url, /*for_new_identity=*/false, std::move(done));

@@ -282,15 +282,18 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
     }
 
     // MoltBrowser: with MoltNet's budget, no more room than the site's own
-    // share has left, and beyond the floor no more than the machine can
-    // spare (molt_storage_budget_policy.h).
+    // share has left, whatever the other sites store; past the floor, the
+    // embedder hears of it (molt_storage_budget_policy.h).
     if (molt_usage_by_storage_key_) {
       quota = MoltStorageQuota(
           quota, usage_,
           MoltSiteUsage(*molt_usage_by_storage_key_, storage_key_),
-          molt_total_usage_, settings_.molt_per_site_quota,
-          settings_.pool_size, molt_available_memory_,
-          settings_.molt_memory_reserve);
+          settings_.molt_per_site_quota);
+      if (MoltStorageBeyondFloor(settings_.molt_per_site_quota,
+                                 molt_total_usage_, settings_.pool_size) &&
+          settings_.molt_on_growth_beyond_floor) {
+        settings_.molt_on_growth_beyond_floor.Run();
+      }
     }
 
     std::move(callback_).Run(usage_ >= 0
@@ -348,30 +351,6 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
     molt_total_usage_ = usage;
     molt_usage_by_storage_key_ =
         manager()->GetUsageTracker()->GetCachedStorageKeysUsage();
-    // Where this site could take all sites beyond the floor, the machine's
-    // available memory decides how far (read where blocking is allowed).
-    if (MoltNeedsMemoryCheck(
-            settings_.molt_per_site_quota,
-            MoltSiteUsage(*molt_usage_by_storage_key_, storage_key_),
-            molt_total_usage_, settings_.pool_size)) {
-      base::ThreadPool::PostTaskAndReplyWithResult(
-          FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-          base::BindOnce([] {
-            return base::saturated_cast<int64_t>(
-                base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes());
-          }),
-          base::BindOnce(&UsageAndQuotaInfoGatherer::MoltOnGotAvailableMemory,
-                         weak_factory_.GetWeakPtr(), std::move(callback)));
-      return;
-    }
-    std::move(callback).Run();
-  }
-
-  // MoltBrowser:
-  void MoltOnGotAvailableMemory(base::OnceClosure callback,
-                                int64_t available_memory) {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    molt_available_memory_ = available_memory;
     std::move(callback).Run();
   }
 
@@ -421,12 +400,10 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
   int64_t available_space_ = 0;
   int64_t total_space_ = 0;
   // MoltBrowser: all sites' usage, and each storage key's, for MoltNet's
-  // budget (unset without it), and the machine's available memory where it
-  // was asked for.
+  // budget (unset without it).
   int64_t molt_total_usage_ = 0;
   std::optional<std::map<blink::StorageKey, int64_t>>
       molt_usage_by_storage_key_;
-  std::optional<int64_t> molt_available_memory_;
   int64_t desired_storage_key_quota_ = 0;
   int64_t usage_ = 0;
   blink::mojom::UsageBreakdownPtr usage_breakdown_;

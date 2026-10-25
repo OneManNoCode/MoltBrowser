@@ -676,6 +676,10 @@
     "canvas_after": "44",
     "canvas_before": "33",
     "cookie_after": false,
+    "held_nonce": "endheld1760000091500",
+    "held_setup": {
+     "fetch_later": true
+    },
     "hold_page": true,
     "new_context": "CTX3",
     "old_context": "CTX2",

@@ -229,9 +229,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pending-circuit limits (`ConnLimit 1000`, `MaxClientCircuitsPending
   256`). Requests sent as a page closes (`sendBeacon()`, `keepalive`) are
   counted per site, apart from regular windows. Each site may store 60 MiB
-  (all its storage keys together), all sites 600 MiB before the computer's
-  free memory decides, and MoltNet no
-  longer evicts one site's data to make room for another's. Background
+  (all its storage keys together), whatever the other sites store, and
+  MoltNet no longer evicts one site's data to make room for another's. Background
   Fetch requests, and downloads a page starts without navigating ("Save
   link as", "Save image as", a link with `download`), resumed downloads
   and "Save page as", now go out with the network key and Tor circuit of
@@ -271,6 +270,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (opening a MoltNet window and New Identity don't need one); the font
   manifest's checks match whole values (security review of PRs #67-#69,
   `docs/SECURITY_REVIEWS.md`).
+- MoltNet hardening: still more of what MoltNet's sites share within an
+  identity is kept per site. Each site gets 10 MiB of the in-memory HTTP
+  cache whose entries only its own use (or 30 minutes unused) evicts, and
+  its `localStorage`/`sessionStorage` areas are purged from the storage
+  service's cache only by its own use. Certificate downloads get
+  connection pools and a part of the connection budget of their own, so
+  they never wait behind the connections that need them. A site's storage
+  and blob writes now depend only on its own share, never on other sites
+  or on the computer's free memory; if the computer runs short of memory
+  while MoltNet's pages store more than MoltNet keeps room for, MoltNet
+  ends the identity and says why. A Background Fetch's response counts
+  against the blob memory of the site that started it. Once an identity
+  ends, the browser sends nothing it was holding for its pages: no
+  keepalive request, beacon, `fetchLater`, Background Fetch, download or
+  saved page resource (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
