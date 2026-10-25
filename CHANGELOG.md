@@ -261,6 +261,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (MoltNet windows run no installed extensions), and on Windows reads
   parental controls again each time a MoltNet window opens
   (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening: still more of what MoltNet's sites share within an
+  identity is kept per site. Each site gets 10 MiB of the in-memory HTTP
+  cache whose entries only its own use (or 30 minutes unused) evicts, and
+  its `localStorage`/`sessionStorage` areas are purged from the storage
+  service's cache only by its own use. Certificate downloads get
+  connection pools and a part of the connection budget of their own, so
+  they never wait behind the connections that need them. A site's storage
+  and blob writes now depend only on its own share, never on other sites
+  or on the computer's free memory; if the computer runs short of memory
+  while MoltNet's pages store more than MoltNet keeps room for, MoltNet
+  ends the identity and says why. A Background Fetch's response counts
+  against the blob memory of the site that started it. Once an identity
+  ends, the browser sends nothing it was holding for its pages: no
+  keepalive request, beacon, `fetchLater`, Background Fetch, download or
+  saved page resource (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
