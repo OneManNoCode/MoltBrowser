@@ -245,10 +245,11 @@ int SOCKSConnectJob::DoLoop(int result) {
 }
 
 // MoltBrowser: in a session with SOCKS handshake limits (MoltNet's), a job
-// for MoltNet's local Tor waits for one of its site's slots before it
-// connects: a handshake in progress is what can make Tor build a circuit,
-// and every site shares Tor's limit on circuits being built. No timer runs
-// while it waits (this job's starts after the connection to the proxy).
+// for MoltNet's local Tor waits for its site's slots before it connects: a
+// handshake in progress is what can make Tor build circuits (three at a
+// time for an onion service, else one), and every site shares Tor's limit
+// on circuits being built. No timer runs while it waits (this job's starts
+// after the connection to the proxy).
 int SOCKSConnectJob::DoMoltHandshakeSlot() {
   next_state_ = STATE_MOLT_HANDSHAKE_SLOT_COMPLETE;
   MoltSocksHandshakeLimiter* limiter =
@@ -258,6 +259,7 @@ int SOCKSConnectJob::DoMoltHandshakeSlot() {
   }
   molt_handshake_slot_ = limiter->Acquire(
       MoltBudgetSiteFor(socks_params_->network_anonymization_key()),
+      MoltSocksHandshakeWeight(socks_params_->destination().host()),
       priority(),
       base::BindOnce(&SOCKSConnectJob::OnIOComplete, base::Unretained(this),
                      OK));

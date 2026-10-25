@@ -194,7 +194,7 @@ MOLTNET_SITE_QUOTA = 60 * 1024 ** 2
 
 # What MoltBrowser's torrc sets for the capacity every MoltNet site shares
 # (chrome/browser/molt_ai/tor/torrc_builder.h).
-TOR_CAPACITY = {'ConnLimit': '1000', 'MaxClientCircuitsPending': '64'}
+TOR_CAPACITY = {'ConnLimit': '1000', 'MaxClientCircuitsPending': '256'}
 
 # navigator.connection in MoltNet (moltnet_network_values.h).
 CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,

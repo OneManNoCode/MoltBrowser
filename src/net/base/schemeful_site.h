@@ -140,6 +140,15 @@ class NET_EXPORT SchemefulSite {
 
   bool opaque() const { return site_as_origin_.opaque(); }
 
+  // MoltBrowser: the tuple of the site's origin, or for an opaque site the
+  // one its origin was derived from (url::Origin::
+  // GetTupleOrPrecursorTupleIfOpaque()); invalid if there is none. MoltNet's
+  // per-site limits count a page its server sandboxed against the site it
+  // came from (net/socket/molt_connection_budget.h).
+  url::SchemeHostPort MoltGetTupleOrPrecursorTupleIfOpaque() const {
+    return site_as_origin_.GetTupleOrPrecursorTupleIfOpaque();
+  }
+
   bool has_registrable_domain_or_host() const {
     return !registrable_domain_or_host().empty();
   }

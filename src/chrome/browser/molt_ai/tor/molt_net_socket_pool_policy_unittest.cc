@@ -7,7 +7,6 @@
 
 #include <optional>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -108,113 +107,172 @@ TEST(MoltNetSocketPoolPolicyTest, PreemptsOnlyFromLargerSitesLargestFirst) {
   EXPECT_EQ(MoltPreemptionOrder(in_use, 62), (std::vector<size_t>{0, 4}));
 }
 
-TEST(MoltNetSocketPoolPolicyTest, OpaqueOriginPrecursor) {
-  using Result = std::optional<std::string_view>;
-  // url::Origin::GetDebugString() of opaque origins (Chromium 156).
-  EXPECT_EQ(MoltOpaqueOriginPrecursor(
-                "null [internally: (1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D) "
-                "derived from https://a.example]"),
-            Result("https://a.example"));
-  EXPECT_EQ(MoltOpaqueOriginPrecursor(
-                "null [internally: (nonce TBD) derived from "
-                "http://b.example:8080]"),
-            Result("http://b.example:8080"));
-  EXPECT_EQ(MoltOpaqueOriginPrecursor(
-                "null [internally: (ABC) derived from https://[::1]:8443]"),
-            Result("https://[::1]:8443"));
-  // Without the nonce (GetDebugString(false)).
-  EXPECT_EQ(MoltOpaqueOriginPrecursor(
-                "null [internally: derived from https://c.example]"),
-            Result("https://c.example"));
-  // Derived from nothing (one-off keys): no site.
-  EXPECT_EQ(MoltOpaqueOriginPrecursor("null [internally: (ABC) anonymous]"),
-            std::nullopt);
-  EXPECT_EQ(MoltOpaqueOriginPrecursor("null [internally: anonymous]"),
-            std::nullopt);
-  // Anything else: no site.
-  for (const char* bad : {
-           "",
-           "https://a.example",
-           "null",
-           "null [internally: (ABC) derived from https://a.example",
-           "x null [internally: (ABC) derived from https://a.example]",
-           "null [internally: (ABC) derived from ]",
-           "null [internally: (ABC) derived from a.example]",
-           "null [internally: (ABC) derived from ://a.example]",
-           "null [internally: (ABC) derived from https://]",
-           "null [internally: (ABC) derived from https://a b]",
-           "null [internally: (ABC) derived from https://a\tb]",
-       }) {
-    EXPECT_EQ(MoltOpaqueOriginPrecursor(bad), std::nullopt) << bad;
-  }
-  static_assert(MoltOpaqueOriginPrecursor(
-                    "null [internally: (A) derived from https://a.test]") ==
-                std::string_view("https://a.test"));
-}
-
 TEST(MoltNetSocketPoolPolicyTest, HandshakeLimits) {
   EXPECT_EQ(MoltSocksHandshakeLimit(false), 16u);
   EXPECT_EQ(MoltSocksHandshakeLimit(true), 8u);
+  EXPECT_EQ(kMoltSocksHandshakeBudget, 192u);
+  // Eleven other sites at their full share (and every unattributed slot)
+  // before a site below its share can wait, as for connections.
+  EXPECT_EQ(kMoltSitesToFillHandshakeBudget, 11u);
+  EXPECT_LE(10 * kMoltSocksHandshakesPerSite +
+                kMoltUnattributedSocksHandshakes +
+                kMoltSocksHandshakesPerSite,
+            kMoltSocksHandshakeBudget);
+  EXPECT_GT(11 * kMoltSocksHandshakesPerSite +
+                kMoltUnattributedSocksHandshakes +
+                kMoltSocksHandshakesPerSite,
+            kMoltSocksHandshakeBudget);
+  // Room for Tor's own circuits below its pending-circuit limit.
+  EXPECT_LE(kMoltSocksHandshakeBudget + kMoltUnattributedSocksHandshakes +
+                kMoltTorOwnPendingCircuits,
+            kMoltTorMaxClientCircuitsPending);
 }
 
-TEST(MoltNetSocketPoolPolicyTest, SlotQueueLimitsEachKeyOnItsOwn) {
-  MoltSlotQueue<std::string, int> queue;
-  for (int i = 0; i < 2; ++i) {
-    EXPECT_TRUE(queue.Acquire("a", 2, i, 0));
-  }
-  EXPECT_FALSE(queue.Acquire("a", 2, 2, 0));
-  EXPECT_FALSE(queue.Acquire("a", 2, 3, 0));
-  // Another key isn't held back by "a".
-  EXPECT_TRUE(queue.Acquire("b", 2, 10, 0));
-  EXPECT_EQ(queue.InUse("a"), 2u);
-  EXPECT_EQ(queue.Waiting("a"), 2u);
-  EXPECT_EQ(queue.InUse("b"), 1u);
-  // A slot given back goes to the oldest waiting one.
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(2));
-  EXPECT_EQ(queue.InUse("a"), 2u);
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(3));
-  EXPECT_EQ(queue.Release("a"), std::nullopt);
-  EXPECT_EQ(queue.InUse("a"), 1u);
-  EXPECT_EQ(queue.Release("a"), std::nullopt);
-  EXPECT_EQ(queue.InUse("a"), 0u);
+TEST(MoltNetSocketPoolPolicyTest, OnionHandshakesWeighTheirCircuits) {
+  EXPECT_TRUE(MoltIsOnionHost("abcdef.onion"));
+  EXPECT_TRUE(MoltIsOnionHost("www.abcdef.onion"));
+  EXPECT_TRUE(MoltIsOnionHost("ABCDEF.ONION"));
+  EXPECT_TRUE(MoltIsOnionHost("abcdef.onion."));
+  EXPECT_FALSE(MoltIsOnionHost(".onion"));
+  EXPECT_FALSE(MoltIsOnionHost("onion"));
+  EXPECT_FALSE(MoltIsOnionHost("a.onion.example"));
+  EXPECT_FALSE(MoltIsOnionHost("aonion"));
+  EXPECT_FALSE(MoltIsOnionHost("a.test"));
+  EXPECT_FALSE(MoltIsOnionHost("127.0.0.1"));
+  EXPECT_FALSE(MoltIsOnionHost(""));
+  EXPECT_FALSE(MoltIsOnionHost("."));
+  EXPECT_EQ(MoltSocksHandshakeWeight("x.onion"), 3u);
+  EXPECT_EQ(MoltSocksHandshakeWeight("x.test"), 1u);
+}
+
+using Granted = std::vector<int>;
+
+TEST(MoltNetSocketPoolPolicyTest, WeightedSlotsLimitEachKey) {
+  MoltWeightedSlots<std::string, int> slots(100);
+  EXPECT_EQ(slots.Acquire("a", 2, 1, 0, 0), Granted({0}));
+  EXPECT_EQ(slots.Acquire("a", 2, 1, 1, 0), Granted({1}));
+  EXPECT_EQ(slots.Acquire("a", 2, 1, 2, 0), Granted());
+  EXPECT_EQ(slots.Acquire("a", 2, 1, 3, 0), Granted());
+  // Another key isn't held back by "a" at its own limit.
+  EXPECT_EQ(slots.Acquire("b", 2, 1, 10, 0), Granted({10}));
+  EXPECT_EQ(slots.InUse("a"), 2u);
+  EXPECT_EQ(slots.Waiting("a"), 2u);
+  EXPECT_EQ(slots.Total(), 3u);
+  // A slot given back goes to the key's oldest waiting one.
+  EXPECT_EQ(slots.Release("a", 1), Granted({2}));
+  EXPECT_EQ(slots.Release("a", 1), Granted({3}));
+  EXPECT_EQ(slots.Release("a", 1), Granted());
+  EXPECT_EQ(slots.Release("a", 1), Granted());
+  EXPECT_EQ(slots.InUse("a"), 0u);
   // Nothing more to give back.
-  EXPECT_EQ(queue.Release("a"), std::nullopt);
-  EXPECT_EQ(queue.Release("zzz"), std::nullopt);
-  EXPECT_EQ(queue.Release("b"), std::nullopt);
-  EXPECT_EQ(queue.KeyCount(), 0u);
+  EXPECT_EQ(slots.Release("a", 1), Granted());
+  EXPECT_EQ(slots.Release("zzz", 1), Granted());
+  EXPECT_EQ(slots.Release("b", 1), Granted());
+  EXPECT_EQ(slots.KeyCount(), 0u);
+  EXPECT_EQ(slots.Total(), 0u);
 }
 
-TEST(MoltNetSocketPoolPolicyTest, SlotQueuePriorityThenArrival) {
-  MoltSlotQueue<std::string, int> queue;
-  EXPECT_TRUE(queue.Acquire("a", 1, 0, 0));
-  EXPECT_FALSE(queue.Acquire("a", 1, 1, 1));
-  EXPECT_FALSE(queue.Acquire("a", 1, 2, 3));
-  EXPECT_FALSE(queue.Acquire("a", 1, 3, 3));
-  EXPECT_FALSE(queue.Acquire("a", 1, 4, 1));
-  queue.SetPriority("a", 4, 5);
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(4));
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(2));
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(3));
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(1));
-  EXPECT_EQ(queue.Release("a"), std::nullopt);
-  EXPECT_EQ(queue.KeyCount(), 0u);
+TEST(MoltNetSocketPoolPolicyTest, WeightedSlotsCountWeights) {
+  MoltWeightedSlots<std::string, int> slots(100);
+  // Weight 3 within a limit of 16: five fit.
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_EQ(slots.Acquire("a", 16, 3, i, 0), Granted({i}));
+  }
+  EXPECT_EQ(slots.InUse("a"), 15u);
+  EXPECT_EQ(slots.Acquire("a", 16, 3, 5, 0), Granted());
+  // One of weight 1 would fit, but waits its turn behind the older one.
+  EXPECT_EQ(slots.Acquire("a", 16, 1, 6, 0), Granted());
+  EXPECT_EQ(slots.Release("a", 3), Granted({5, 6}));
+  EXPECT_EQ(slots.InUse("a"), 16u);
+  EXPECT_EQ(slots.Release("a", 3), Granted());
+  EXPECT_EQ(slots.InUse("a"), 13u);
+  // Weights are at least 1 and at most the key's limit.
+  MoltWeightedSlots<std::string, int> small(100);
+  EXPECT_EQ(small.Acquire("x", 2, 0, 1, 0), Granted({1}));
+  EXPECT_EQ(small.InUse("x"), 1u);
+  EXPECT_EQ(small.Acquire("y", 2, 9, 2, 0), Granted({2}));
+  EXPECT_EQ(small.InUse("y"), 2u);
 }
 
-TEST(MoltNetSocketPoolPolicyTest, SlotQueueCancel) {
-  MoltSlotQueue<std::string, int> queue;
-  EXPECT_TRUE(queue.Acquire("a", 1, 0, 0));
-  EXPECT_FALSE(queue.Acquire("a", 1, 1, 0));
-  EXPECT_FALSE(queue.Acquire("a", 1, 2, 0));
-  EXPECT_TRUE(queue.Cancel("a", 1));
-  EXPECT_FALSE(queue.Cancel("a", 1));
-  EXPECT_FALSE(queue.Cancel("b", 1));
-  EXPECT_EQ(queue.Release("a"), std::optional<int>(2));
-  EXPECT_EQ(queue.Release("a"), std::nullopt);
-  EXPECT_EQ(queue.KeyCount(), 0u);
-  // A key with only a cancelled waiter is gone too.
-  EXPECT_TRUE(queue.Acquire("c", 0, 7, 0) == false);
-  EXPECT_TRUE(queue.Cancel("c", 7));
-  EXPECT_EQ(queue.KeyCount(), 0u);
+// The budget for all keys together: keys at their full share can't make
+// another wait until the budget is used, and then the key holding the
+// fewest goes first, also before keys that asked earlier.
+TEST(MoltNetSocketPoolPolicyTest, WeightedSlotsShareTheBudgetFairly) {
+  MoltWeightedSlots<std::string, int> slots(10);
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(slots.Acquire("greedy1", 4, 1, i, 0), Granted({i}));
+    EXPECT_EQ(slots.Acquire("greedy2", 4, 1, 10 + i, 0), Granted({10 + i}));
+  }
+  // Two keys at their full share: the polite key still gets two.
+  EXPECT_EQ(slots.Acquire("polite", 4, 1, 20, 0), Granted({20}));
+  EXPECT_EQ(slots.Acquire("polite", 4, 1, 21, 0), Granted({21}));
+  EXPECT_EQ(slots.Total(), 10u);
+  // Full: the next waits.
+  EXPECT_EQ(slots.Acquire("polite", 4, 1, 22, 0), Granted());
+  EXPECT_EQ(slots.Acquire("newcomer", 4, 1, 30, 0), Granted());
+  // A freed slot goes to the waiting key holding the fewest.
+  EXPECT_EQ(slots.Release("greedy1", 1), Granted({30}));
+  EXPECT_EQ(slots.Release("greedy1", 1), Granted({22}));
+  // A key holding more doesn't go before one holding fewer that waits.
+  EXPECT_EQ(slots.Acquire("polite", 4, 1, 23, 0), Granted());
+  EXPECT_EQ(slots.Acquire("greedy2", 4, 1, 14, 0), Granted());
+  EXPECT_EQ(slots.Release("greedy2", 1), Granted({23}));
+  // greedy2 (3 in use) waits for the budget, polite is at its limit: a slot
+  // polite gives back goes to greedy2.
+  EXPECT_EQ(slots.Release("polite", 1), Granted({14}));
+  // A heavier request of a key holding fewer holds back lighter ones of
+  // keys holding more until there is room for it.
+  MoltWeightedSlots<std::string, int> w(6);
+  EXPECT_EQ(w.Acquire("big", 6, 1, 1, 0), Granted({1}));
+  EXPECT_EQ(w.Acquire("big", 6, 1, 2, 0), Granted({2}));
+  EXPECT_EQ(w.Acquire("big", 6, 1, 3, 0), Granted({3}));
+  EXPECT_EQ(w.Acquire("big", 6, 1, 4, 0), Granted({4}));
+  EXPECT_EQ(w.Acquire("onion", 6, 3, 5, 0), Granted());
+  EXPECT_EQ(w.Acquire("big", 6, 1, 6, 0), Granted());
+  EXPECT_EQ(w.Release("big", 1), Granted({5}));
+  EXPECT_EQ(w.Total(), 6u);
+}
+
+TEST(MoltNetSocketPoolPolicyTest, WeightedSlotsPriorityThenArrival) {
+  MoltWeightedSlots<std::string, int> slots(100);
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 0, 0), Granted({0}));
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 1, 1), Granted());
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 2, 3), Granted());
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 3, 3), Granted());
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 4, 1), Granted());
+  EXPECT_EQ(slots.SetPriority("a", 4, 5), Granted());
+  EXPECT_EQ(slots.Release("a", 1), Granted({4}));
+  EXPECT_EQ(slots.Release("a", 1), Granted({2}));
+  EXPECT_EQ(slots.Release("a", 1), Granted({3}));
+  EXPECT_EQ(slots.Release("a", 1), Granted({1}));
+  EXPECT_EQ(slots.Release("a", 1), Granted());
+  EXPECT_EQ(slots.KeyCount(), 0u);
+}
+
+TEST(MoltNetSocketPoolPolicyTest, WeightedSlotsCancel) {
+  MoltWeightedSlots<std::string, int> slots(100);
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 0, 0), Granted({0}));
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 1, 0), Granted());
+  EXPECT_EQ(slots.Acquire("a", 1, 1, 2, 0), Granted());
+  bool cancelled = false;
+  EXPECT_EQ(slots.Cancel("a", 1, &cancelled), Granted());
+  EXPECT_TRUE(cancelled);
+  EXPECT_EQ(slots.Cancel("a", 1, &cancelled), Granted());
+  EXPECT_FALSE(cancelled);
+  EXPECT_EQ(slots.Cancel("b", 1, &cancelled), Granted());
+  EXPECT_FALSE(cancelled);
+  EXPECT_EQ(slots.Release("a", 1), Granted({2}));
+  EXPECT_EQ(slots.Release("a", 1), Granted());
+  EXPECT_EQ(slots.KeyCount(), 0u);
+  // A waiter that held the budget for a key holding fewer is gone: the
+  // others may go.
+  MoltWeightedSlots<std::string, int> w(4);
+  EXPECT_EQ(w.Acquire("big", 4, 1, 1, 0), Granted({1}));
+  EXPECT_EQ(w.Acquire("big", 4, 1, 2, 0), Granted({2}));
+  EXPECT_EQ(w.Acquire("big", 4, 1, 3, 0), Granted({3}));
+  EXPECT_EQ(w.Acquire("onion", 4, 3, 4, 0), Granted());
+  EXPECT_EQ(w.Acquire("big", 4, 1, 5, 0), Granted());
+  EXPECT_EQ(w.Cancel("onion", 4), Granted({5}));
 }
 
 TEST(MoltNetSocketPoolPolicyTest, IsAConstantExpression) {
@@ -225,6 +283,8 @@ TEST(MoltNetSocketPoolPolicyTest, IsAConstantExpression) {
   static_assert(!MoltMayDropSitePool(false, 100));
   static_assert(MoltBudgetAdmits(1, 2, 0, std::nullopt));
   static_assert(MoltSocksHandshakeLimit(false) == kMoltSocksHandshakesPerSite);
+  static_assert(MoltIsOnionHost("a.onion"));
+  static_assert(MoltSocksHandshakeWeight("a.test") == kMoltHandshakeWeight);
 }
 
 }  // namespace

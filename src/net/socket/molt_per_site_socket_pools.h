@@ -5,14 +5,19 @@
 // (molt_per_site_socket_pool_policy.h says why). Owned by a
 // ClientSocketPoolManagerImpl whose session has
 // HttpNetworkSessionParams::molt_per_site_socket_pool_size set; one per
-// pool type. Each pool's limits are fixed, and with the session's
-// MoltConnectionBudget (molt_connection_budget.h) every pool asks the
-// budget before it opens a socket. Header-only: //net's sources are
+// pool type. Each pool's limits are fixed, and with the process's
+// MoltConnectionBudget (molt_connection_budget.h: one for every session
+// that goes to MoltNet's Tor) every pool asks the budget before it opens a
+// socket. The pools start no backup connect jobs: those are for a lost
+// connection attempt to the destination, and here every connection goes
+// to Tor on this machine; a second attempt would only be a second stream
+// for Tor to set up, outside the budget. Header-only: //net's sources are
 // Chromium's BUILD.gn, which MoltBrowser doesn't change.
 
 #ifndef NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 #define NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <utility>
@@ -38,14 +43,16 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   // chain, except the limits: MoltPerSitePoolLimit() of
   // `per_site_pool_size` for each site's pool, and MoltPerSiteGroupLimit()
   // of that and `max_sockets_per_group` per group. `budget` (may be null)
-  // outlives this.
+  // outlives this; `budget_owner` identifies the session (the same for its
+  // normal and WebSocket pools).
   MoltPerSiteSocketPools(size_t per_site_pool_size,
                          size_t max_sockets_per_group,
                          base::TimeDelta unused_idle_socket_timeout,
                          bool is_for_websockets,
                          const CommonConnectJobParams* common_connect_job_params,
                          bool cleanup_on_ip_address_change,
-                         MoltConnectionBudget* budget = nullptr)
+                         MoltConnectionBudget* budget = nullptr,
+                         uintptr_t budget_owner = 0)
       : per_site_pool_size_(per_site_pool_size),
         max_sockets_per_group_(max_sockets_per_group),
         unused_idle_socket_timeout_(unused_idle_socket_timeout),
@@ -54,7 +61,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
         cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
         budget_(budget) {
     if (budget_) {
-      budget_->AddMember(this);
+      budget_->AddMember(this, budget_owner);
     }
   }
 
@@ -89,6 +96,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
           unused_idle_socket_timeout_, proxy_chain, is_for_websockets_,
           common_connect_job_params_, cleanup_on_ip_address_change_);
       entry.pool->MoltSetSocketGate(this);
+      entry.pool->MoltDisableBackupConnectJobs();
       it = pools_.emplace(std::move(key), std::move(entry)).first;
     }
     it->second.last_handed_out = now;

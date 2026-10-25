@@ -242,6 +242,11 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
            higher_pools_.empty() && SocketsInUse() == 0;
   }
 
+  // MoltBrowser: no backup connect jobs for this pool (MoltNet's per-site
+  // pools, net/socket/molt_per_site_socket_pools.h). Called right after the
+  // pool is made, before any request.
+  void MoltDisableBackupConnectJobs() { connect_backup_jobs_enabled_ = false; }
+
   // MoltBrowser: for MoltNet's connection budget (net/socket/
   // molt_connection_budget.h), which may hold back this pool's new sockets
   // (MoltSetSocketGate()).

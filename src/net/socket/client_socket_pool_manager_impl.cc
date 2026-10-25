@@ -32,7 +32,8 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
     HttpNetworkSession::SocketPoolType pool_type,
     bool cleanup_on_ip_address_change,
     size_t molt_per_site_pool_size,
-    MoltConnectionBudget* molt_connection_budget)
+    MoltConnectionBudget* molt_connection_budget,
+    uintptr_t molt_budget_owner)
     : common_connect_job_params_(common_connect_job_params),
       websocket_common_connect_job_params_(websocket_common_connect_job_params),
       pool_type_(pool_type),
@@ -40,14 +41,14 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
       molt_per_site_pool_size_(molt_per_site_pool_size) {
   // MoltBrowser: per-site pools for MoltNet's network context. As for a
   // proxy chain's pool below, with fixed limits per site, within the
-  // session's connection budget.
+  // connection budget of MoltNet's Tor.
   if (molt_per_site_pool_size_ > 0) {
     molt_per_site_pools_ = std::make_unique<MoltPerSiteSocketPools>(
         molt_per_site_pool_size_, max_sockets_per_group(pool_type_),
         unused_idle_socket_timeout(pool_type_),
         pool_type_ == HttpNetworkSession::SocketPoolType::kWebSocket,
         &common_connect_job_params_, cleanup_on_ip_address_change_,
-        molt_connection_budget);
+        molt_connection_budget, molt_budget_owner);
   }
   // |websocket_endpoint_lock_manager| must only be set for websocket
   // connections.

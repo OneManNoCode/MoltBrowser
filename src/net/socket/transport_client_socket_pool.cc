@@ -1264,8 +1264,11 @@ void TransportClientSocketPool::AddIdleSocket(
 }
 
 void TransportClientSocketPool::CancelAllConnectJobs() {
+  // MoltBrowser: see RefreshGroup().
+  bool molt_removed_jobs = false;
   for (auto i = group_map_.begin(); i != group_map_.end();) {
     Group* group = &i->second;
+    molt_removed_jobs |= !group->jobs().empty();
     connecting_socket_count_ -= group->jobs().size();
     group->RemoveAllUnboundJobs();
 
@@ -1275,6 +1278,9 @@ void TransportClientSocketPool::CancelAllConnectJobs() {
     } else {
       ++i;
     }
+  }
+  if (molt_removed_jobs && MoltHasSocketGate()) {
+    UpdateExpandabilityAfterRelease();
   }
 }
 
@@ -1494,8 +1500,16 @@ TransportClientSocketPool::RefreshGroup(GroupMap::iterator it,
   CHECK(group);
   CleanupIdleSocketsInGroup(true /* force */, group, now, net_log_reason_utf8);
 
+  // MoltBrowser: cancelled connect jobs free socket slots too; in MoltNet's
+  // per-site pools, tell the pool's gate (the connection budget,
+  // molt_connection_budget.h), as closing an idle socket does. Other pools
+  // are left as they are.
+  const bool molt_removed_jobs = !group->jobs().empty();
   connecting_socket_count_ -= group->jobs().size();
   group->RemoveAllUnboundJobs();
+  if (molt_removed_jobs && MoltHasSocketGate()) {
+    UpdateExpandabilityAfterRelease();
+  }
 
   // Otherwise, prevent reuse of existing sockets.
   group->IncrementGeneration();

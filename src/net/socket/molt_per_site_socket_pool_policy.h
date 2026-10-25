@@ -28,21 +28,29 @@
 //    named for (certificate fetches) share one small pool of their own
 //    (MoltBudgetSiteFor() in molt_connection_budget.h).
 //
-//  * All of the context's connections to Tor together stay within a fixed
-//    budget (kMoltNetConnectionBudget), well inside what MoltNet's single
-//    Tor process can hold, so that cap can't become a channel between sites
+//  * All connections to Tor together stay within a fixed budget
+//    (kMoltNetConnectionBudget), well inside what MoltNet's single Tor
+//    process can hold, so that cap can't become a channel between sites
 //    either: the budget fits kMoltSitesToFillBudget sites' full shares, so
 //    a site below its own limits waits for the budget only while that many
 //    other sites are at theirs. When it is reached, the next freed
 //    connection goes to the waiting site that uses the fewest, and an idle
 //    connection of a site using more than the waiting one is closed for it
-//    (MoltPreemptionOrder()).
+//    (MoltPreemptionOrder()). The budget is Tor's, not a network context's:
+//    every MoltNet network context alive at the same time (the identity New
+//    Identity is ending and the next one) draws on the same one, and a
+//    site of one identity is a site of its own in it.
 //
-//  * Each site may have at most kMoltSocksHandshakesPerSite SOCKS handshakes
-//    in progress at a time: a handshake is what makes Tor build a circuit
-//    for a stream it can't put on an existing one, so this bounds the
-//    pending circuits one site can cause (Tor's MaxClientCircuitsPending is
-//    shared by every site; torrc_builder.h).
+//  * SOCKS handshakes in progress, which are what make Tor build circuits
+//    for streams it can't put on an existing one, are limited the same way
+//    (MoltWeightedSlots): each one weighs the circuits it can make Tor
+//    build at a time (MoltSocksHandshakeWeight(): 3 for an onion service,
+//    else 1), a site may have kMoltSocksHandshakesPerSite of weight in
+//    progress, and all sites together kMoltSocksHandshakeBudget, which fits
+//    kMoltSitesToFillHandshakeBudget sites' full shares and stays below
+//    Tor's MaxClientCircuitsPending with room for Tor's own circuits
+//    (torrc_builder.h). A freed slot goes to the waiting site with the
+//    fewest in progress first.
 //
 // Every other network context keeps Chromium's single pool per proxy chain.
 // Std-only, so molt_ai_unittests and standalone harnesses test it.
@@ -57,6 +65,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace net {
@@ -87,10 +96,32 @@ inline constexpr size_t kMoltTorOwnConnections = 200;
 static_assert(kMoltNetConnectionBudget + kMoltTorOwnConnections <=
               kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
 
-// SOCKS handshakes in progress at a time, per site and for the unattributed
-// one-off keys together.
+// SOCKS handshakes in progress at a time, by weight
+// (MoltSocksHandshakeWeight()): per site, for the keys no site can be named
+// for together, and for every MoltNet network context together (one Tor).
 inline constexpr size_t kMoltSocksHandshakesPerSite = 16;
 inline constexpr size_t kMoltUnattributedSocksHandshakes = 8;
+inline constexpr size_t kMoltSocksHandshakeBudget = 192;
+
+// The most circuits one SOCKS handshake can make Tor build at a time: an
+// onion service needs its descriptor fetched, then an introduction and a
+// rendezvous circuit; any other destination one circuit, when no open or
+// pending circuit can take the stream.
+inline constexpr size_t kMoltOnionHandshakeWeight = 3;
+inline constexpr size_t kMoltHandshakeWeight = 1;
+
+// Tor builds at most this many circuits at a time for all of its clients'
+// streams (MaxClientCircuitsPending, as MoltNet's torrc sets it), counting
+// the ones it builds on its own (preemptive circuits for predicted ports, up
+// to 14 kept unused, and circuits it keeps building to measure build times
+// after they exceed the timeout), for which kMoltTorOwnPendingCircuits stay
+// free.
+inline constexpr size_t kMoltTorMaxClientCircuitsPending = 256;
+inline constexpr size_t kMoltTorOwnPendingCircuits = 32;
+static_assert(kMoltSocksHandshakeBudget + kMoltUnattributedSocksHandshakes +
+                  kMoltTorOwnPendingCircuits <=
+              kMoltTorMaxClientCircuitsPending);
+static_assert(kMoltOnionHandshakeWeight <= kMoltUnattributedSocksHandshakes);
 
 // Whether requests through a proxy chain get a pool per site:
 // `per_site_pool_size` is the network context's setting (0: Chromium's one
@@ -135,10 +166,41 @@ constexpr bool MoltMayDropSitePool(bool pool_unused,
          seconds_since_handed_out >= kMoltUnusedSitePoolTimeoutSeconds;
 }
 
-// The SOCKS handshakes a site may have in progress at a time.
+// The weight of SOCKS handshakes a site may have in progress at a time.
 constexpr size_t MoltSocksHandshakeLimit(bool unattributed) {
   return unattributed ? kMoltUnattributedSocksHandshakes
                       : kMoltSocksHandshakesPerSite;
+}
+
+// Whether `host` (a SOCKS destination: a hostname, or an IP literal) is an
+// onion service's: it ends in ".onion", in any case, with or without the
+// final dot.
+constexpr bool MoltIsOnionHost(std::string_view host) {
+  if (!host.empty() && host.back() == '.') {
+    host.remove_suffix(1);
+  }
+  constexpr std::string_view kOnion = ".onion";
+  if (host.size() <= kOnion.size()) {
+    return false;
+  }
+  const std::string_view tail = host.substr(host.size() - kOnion.size());
+  for (size_t i = 0; i < kOnion.size(); ++i) {
+    char c = tail[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+    if (c != kOnion[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The weight of a SOCKS handshake to `host`: the circuits it can make Tor
+// build at a time.
+constexpr size_t MoltSocksHandshakeWeight(std::string_view host) {
+  return MoltIsOnionHost(host) ? kMoltOnionHandshakeWeight
+                               : kMoltHandshakeWeight;
 }
 
 // ---- The connection budget ----
@@ -164,6 +226,16 @@ inline constexpr size_t kMoltSitesToFillBudget =
     MoltSitesToFillBudget(kMoltNetConnectionBudget, kMoltPerSiteConnections,
                           kMoltUnattributedConnections);
 static_assert(kMoltSitesToFillBudget == 11);
+
+// The same for SOCKS handshakes. With weights the rule is unchanged: a site
+// holding at most its share less the weight w it asks for waits only while
+// the others hold more than the budget less w less what it holds, so more
+// than budget - share; one less than that is budget - (share - 1).
+inline constexpr size_t kMoltSitesToFillHandshakeBudget =
+    MoltSitesToFillBudget(kMoltSocksHandshakeBudget,
+                          kMoltSocksHandshakesPerSite,
+                          kMoltUnattributedSocksHandshakes);
+static_assert(kMoltSitesToFillHandshakeBudget == 11);
 
 // Whether a site using `site_in_use` connections may open one more while
 // the context has `total_in_use` open or opening (the site's own limits are
@@ -212,120 +284,83 @@ inline std::vector<size_t> MoltPreemptionOrder(std::span<const size_t> in_use,
   return order;
 }
 
-// ---- Which site a key counts against ----
-
-// The serialized origin an opaque origin was derived from, read from
-// url::Origin::GetDebugString() of that opaque origin:
-//   "null [internally: (<nonce>) derived from https://a.example]"
-// nullopt for one derived from nothing ("... anonymous]") or any other text.
-// Linear; only the strict shape is accepted.
-constexpr std::optional<std::string_view> MoltOpaqueOriginPrecursor(
-    std::string_view debug_string) {
-  constexpr std::string_view kPrefix = "null [internally:";
-  constexpr std::string_view kDerivedFrom = " derived from ";
-  if (!debug_string.starts_with(kPrefix) || !debug_string.ends_with("]")) {
-    return std::nullopt;
-  }
-  const size_t at = debug_string.find(kDerivedFrom, kPrefix.size());
-  if (at == std::string_view::npos) {
-    return std::nullopt;
-  }
-  const size_t start = at + kDerivedFrom.size();
-  const std::string_view tuple =
-      debug_string.substr(start, debug_string.size() - 1 - start);
-  // "<scheme>://<host>[:<port>]": no blanks or controls, a scheme.
-  const size_t scheme_end = tuple.find("://");
-  if (scheme_end == std::string_view::npos || scheme_end == 0 ||
-      scheme_end + 3 >= tuple.size()) {
-    return std::nullopt;
-  }
-  for (char c : tuple) {
-    const unsigned char uc = static_cast<unsigned char>(c);
-    if (uc <= 0x20 || uc == 0x7F) {
-      return std::nullopt;
-    }
-  }
-  return tuple;
-}
-
 // ---- SOCKS handshake slots ----
 
-// A fixed number of slots per key, given out in order of priority (higher
-// first), then of arrival. Ids are the caller's and unique per key.
+// Slots handed out by weight within a limit per key and a budget for all
+// keys together, as MoltConnectionBudget hands out connections: a key's
+// request is granted when its key has room for its weight and the budget
+// has too, and no key holding fewer slots is waiting for the budget (that
+// one goes first). Within a key, by priority (higher first), then by
+// arrival. Ids are the caller's and unique per key. Every call returns the
+// ids it granted, in the order granted (Acquire()'s own id among them if it
+// was granted at once).
 template <typename Key, typename Id>
-class MoltSlotQueue {
+class MoltWeightedSlots {
  public:
-  // Takes one of `key`'s `limit` slots for `id` (true), or queues `id` for
-  // the next one freed (false).
-  bool Acquire(const Key& key, size_t limit, Id id, int priority) {
+  explicit MoltWeightedSlots(size_t budget) : budget_(budget) {}
+
+  // Asks for `weight` of `key`'s `limit` slots (and of the budget) for
+  // `id`. A weight is at least 1 and at most the limit.
+  std::vector<Id> Acquire(const Key& key,
+                          size_t limit,
+                          size_t weight,
+                          Id id,
+                          int priority) {
     Entry& entry = entries_[key];
-    entry.limit = limit;
-    if (entry.in_use < entry.limit && entry.waiting.empty()) {
-      ++entry.in_use;
-      return true;
-    }
-    entry.waiting.push_back(Waiter{id, priority, next_seq_++});
-    return false;
+    entry.limit = std::max<size_t>(limit, 1);
+    const size_t w = std::clamp<size_t>(weight, 1, entry.limit);
+    entry.waiting.push_back(Waiter{id, w, priority, next_seq_++});
+    return Grant();
   }
 
-  // Gives one of `key`'s slots back; returns the queued id that holds it now,
-  // if any.
-  std::optional<Id> Release(const Key& key) {
+  // Gives back the `weight` that `key`'s granted id held.
+  std::vector<Id> Release(const Key& key, size_t weight) {
     auto it = entries_.find(key);
-    if (it == entries_.end() || it->second.in_use == 0) {
-      return std::nullopt;
+    if (it == entries_.end()) {
+      return {};
     }
     Entry& entry = it->second;
-    std::optional<Id> next;
-    if (!entry.waiting.empty() && entry.in_use <= entry.limit) {
-      auto best = std::min_element(
-          entry.waiting.begin(), entry.waiting.end(),
-          [](const Waiter& a, const Waiter& b) {
-            return a.priority != b.priority ? a.priority > b.priority
-                                            : a.seq < b.seq;
-          });
-      next = best->id;
-      entry.waiting.erase(best);
-    } else {
-      --entry.in_use;
-    }
-    if (entry.in_use == 0 && entry.waiting.empty()) {
-      entries_.erase(it);
-    }
-    return next;
+    const size_t w =
+        std::min(std::clamp<size_t>(weight, 1, entry.limit), entry.in_use);
+    entry.in_use -= w;
+    total_ -= std::min(w, total_);
+    return Grant();
   }
 
-  // Leaves the queue (true if `id` was queued).
-  bool Cancel(const Key& key, Id id) {
+  // Leaves the queue (`*cancelled`: whether `id` was queued). A waiter that
+  // held others back is gone, so others may be granted.
+  std::vector<Id> Cancel(const Key& key, Id id, bool* cancelled = nullptr) {
+    bool found_id = false;
     auto it = entries_.find(key);
-    if (it == entries_.end()) {
-      return false;
+    if (it != entries_.end()) {
+      std::vector<Waiter>& waiting = it->second.waiting;
+      auto found = std::find_if(waiting.begin(), waiting.end(),
+                                [&](const Waiter& w) { return w.id == id; });
+      if (found != waiting.end()) {
+        waiting.erase(found);
+        found_id = true;
+      }
     }
-    std::vector<Waiter>& waiting = it->second.waiting;
-    auto found = std::find_if(waiting.begin(), waiting.end(),
-                              [&](const Waiter& w) { return w.id == id; });
-    if (found == waiting.end()) {
-      return false;
+    if (cancelled) {
+      *cancelled = found_id;
     }
-    waiting.erase(found);
-    if (it->second.in_use == 0 && waiting.empty()) {
-      entries_.erase(it);
-    }
-    return true;
+    return found_id ? Grant() : std::vector<Id>();
   }
 
-  void SetPriority(const Key& key, Id id, int priority) {
+  std::vector<Id> SetPriority(const Key& key, Id id, int priority) {
     auto it = entries_.find(key);
     if (it == entries_.end()) {
-      return;
+      return {};
     }
     for (Waiter& waiter : it->second.waiting) {
       if (waiter.id == id) {
         waiter.priority = priority;
       }
     }
+    return Grant();
   }
 
+  // The weight `key` holds, and how many of its requests wait.
   size_t InUse(const Key& key) const {
     auto it = entries_.find(key);
     return it == entries_.end() ? 0 : it->second.in_use;
@@ -334,19 +369,86 @@ class MoltSlotQueue {
     auto it = entries_.find(key);
     return it == entries_.end() ? 0 : it->second.waiting.size();
   }
+  size_t Total() const { return total_; }
   size_t KeyCount() const { return entries_.size(); }
+  size_t budget() const { return budget_; }
 
  private:
   struct Waiter {
     Id id;
+    size_t weight;
     int priority;
     uint64_t seq;
   };
   struct Entry {
-    size_t limit = 0;
+    size_t limit = 1;
     size_t in_use = 0;
     std::vector<Waiter> waiting;
   };
+
+  static typename std::vector<Waiter>::iterator Best(
+      std::vector<Waiter>& waiting) {
+    return std::min_element(waiting.begin(), waiting.end(),
+                            [](const Waiter& a, const Waiter& b) {
+                              return a.priority != b.priority
+                                         ? a.priority > b.priority
+                                         : a.seq < b.seq;
+                            });
+  }
+
+  static uint64_t OldestSeq(const std::vector<Waiter>& waiting) {
+    uint64_t oldest = waiting.front().seq;
+    for (const Waiter& w : waiting) {
+      oldest = std::min(oldest, w.seq);
+    }
+    return oldest;
+  }
+
+  // Grants what can be granted: the keys that wait, the one holding the
+  // fewest first (then the one waiting longest). A key at its own limit
+  // doesn't hold the others back; one that the budget can't serve does.
+  std::vector<Id> Grant() {
+    std::vector<Id> granted;
+    while (true) {
+      std::vector<std::pair<std::pair<size_t, uint64_t>, Entry*>> order;
+      for (auto& [key, entry] : entries_) {
+        if (!entry.waiting.empty()) {
+          order.push_back({{entry.in_use, OldestSeq(entry.waiting)}, &entry});
+        }
+      }
+      std::sort(order.begin(), order.end(),
+                [](const auto& a, const auto& b) { return a.first < b.first; });
+      bool progressed = false;
+      bool blocked = false;
+      for (const auto& item : order) {
+        Entry& entry = *item.second;
+        auto best = Best(entry.waiting);
+        if (entry.in_use + best->weight > entry.limit) {
+          continue;
+        }
+        if (total_ + best->weight > budget_) {
+          blocked = true;
+          break;
+        }
+        entry.in_use += best->weight;
+        total_ += best->weight;
+        granted.push_back(best->id);
+        entry.waiting.erase(best);
+        progressed = true;
+        break;
+      }
+      if (!progressed || blocked) {
+        break;
+      }
+    }
+    std::erase_if(entries_, [](const auto& item) {
+      return item.second.in_use == 0 && item.second.waiting.empty();
+    });
+    return granted;
+  }
+
+  const size_t budget_;
+  size_t total_ = 0;
   std::map<Key, Entry> entries_;
   uint64_t next_seq_ = 0;
 };

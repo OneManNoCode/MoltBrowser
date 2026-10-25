@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "base/functional/callback_helpers.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
@@ -221,22 +223,22 @@ TEST_F(MoltNetSocketPoolsTest, OnlyMoltNetSessionsLimitHandshakes) {
 // Each site has its own handshake slots: a site at its limit waits, another
 // site doesn't, and a slot given back goes to the site's oldest waiting job.
 TEST_F(MoltNetSocketPoolsTest, HandshakeSlotsPerSite) {
-  net::MoltSocksHandshakeLimiter limiter;
+  net::MoltSocksHandshakeLimiter limiter(net::MoltTorCapacity::GetShared(), 1);
   const net::MoltBudgetSite a = net::SchemefulSite(GURL("https://a.test"));
   const net::MoltBudgetSite b = net::SchemefulSite(GURL("https://b.test"));
   std::vector<std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot>> slots;
   for (size_t i = 0; i < net::kMoltSocksHandshakesPerSite; ++i) {
-    slots.push_back(limiter.Acquire(a, net::MEDIUM, base::DoNothing()));
+    slots.push_back(limiter.Acquire(a, 1, net::MEDIUM, base::DoNothing()));
     EXPECT_TRUE(slots.back()->granted());
   }
   int granted = 0;
   std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> waiting =
-      limiter.Acquire(a, net::MEDIUM,
+      limiter.Acquire(a, 1, net::MEDIUM,
                       base::BindLambdaForTesting([&] { ++granted; }));
   EXPECT_FALSE(waiting->granted());
   // Another site isn't held back.
   std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> other =
-      limiter.Acquire(b, net::MEDIUM, base::DoNothing());
+      limiter.Acquire(b, 1, net::MEDIUM, base::DoNothing());
   EXPECT_TRUE(other->granted());
   // One of a's handshakes is done: the waiting one goes on (posted).
   slots.pop_back();
@@ -248,7 +250,7 @@ TEST_F(MoltNetSocketPoolsTest, HandshakeSlotsPerSite) {
   // A waiting job that goes away leaves the queue; one that has a slot gives
   // it back.
   std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> gone =
-      limiter.Acquire(a, net::MEDIUM, base::DoNothing());
+      limiter.Acquire(a, 1, net::MEDIUM, base::DoNothing());
   EXPECT_EQ(limiter.WaitingForTesting(a), 1u);
   gone.reset();
   EXPECT_EQ(limiter.WaitingForTesting(a), 0u);
@@ -259,11 +261,128 @@ TEST_F(MoltNetSocketPoolsTest, HandshakeSlotsPerSite) {
   std::vector<std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot>> one_off;
   for (size_t i = 0; i < net::kMoltUnattributedSocksHandshakes; ++i) {
     one_off.push_back(
-        limiter.Acquire(std::nullopt, net::MEDIUM, base::DoNothing()));
+        limiter.Acquire(std::nullopt, 1, net::MEDIUM, base::DoNothing()));
     EXPECT_TRUE(one_off.back()->granted());
   }
-  EXPECT_FALSE(
-      limiter.Acquire(std::nullopt, net::MEDIUM, base::DoNothing())->granted());
+  EXPECT_FALSE(limiter.Acquire(std::nullopt, 1, net::MEDIUM, base::DoNothing())
+                   ->granted());
+}
+
+// An onion service's handshake weighs the three circuits it can make Tor
+// build at a time: five fit in a site's share of sixteen.
+TEST_F(MoltNetSocketPoolsTest, OnionHandshakesWeighMore) {
+  net::MoltSocksHandshakeLimiter limiter(net::MoltTorCapacity::GetShared(), 1);
+  const net::MoltBudgetSite a = net::SchemefulSite(GURL("http://a.onion"));
+  const size_t onion = net::MoltSocksHandshakeWeight("xyz.onion");
+  EXPECT_EQ(onion, 3u);
+  EXPECT_EQ(net::MoltSocksHandshakeWeight("a.test"), 1u);
+  std::vector<std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot>> slots;
+  for (size_t i = 0; i < 5; ++i) {
+    slots.push_back(limiter.Acquire(a, onion, net::MEDIUM, base::DoNothing()));
+    EXPECT_TRUE(slots.back()->granted());
+  }
+  EXPECT_EQ(limiter.InProgressForTesting(a), 15u);
+  std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> sixth =
+      limiter.Acquire(a, onion, net::MEDIUM, base::DoNothing());
+  EXPECT_FALSE(sixth->granted());
+  // One done gives back its three.
+  slots.pop_back();
+  EXPECT_TRUE(sixth->granted());
+  EXPECT_EQ(limiter.InProgressForTesting(a), 15u);
+}
+
+// Every MoltNet session draws on the budgets of the one Tor (an identity
+// New Identity is ending and the next one), each of its sites as a site of
+// its own.
+TEST_F(MoltNetSocketPoolsTest, SessionsShareTorsBudgets) {
+  std::unique_ptr<net::HttpNetworkSession> old_identity = MakeSession(true);
+  std::unique_ptr<net::HttpNetworkSession> new_identity = MakeSession(true);
+  net::MoltSocksHandshakeLimiter* old_limiter =
+      old_identity->CreateCommonConnectJobParams(false)
+          .molt_socks_handshake_limiter;
+  net::MoltSocksHandshakeLimiter* new_limiter =
+      new_identity->CreateCommonConnectJobParams(false)
+          .molt_socks_handshake_limiter;
+  ASSERT_TRUE(old_limiter);
+  ASSERT_TRUE(new_limiter);
+  EXPECT_NE(old_limiter, new_limiter);
+  const net::MoltBudgetSite a = net::SchemefulSite(GURL("https://a.test"));
+  std::vector<std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot>> slots;
+  for (size_t i = 0; i < net::kMoltSocksHandshakesPerSite; ++i) {
+    slots.push_back(old_limiter->Acquire(a, 1, net::MEDIUM, base::DoNothing()));
+  }
+  // The same site in the next identity has a share of its own ...
+  EXPECT_EQ(new_limiter->InProgressForTesting(a), 0u);
+  slots.push_back(new_limiter->Acquire(a, 1, net::MEDIUM, base::DoNothing()));
+  EXPECT_TRUE(slots.back()->granted());
+  // ... of the one budget, with one connection budget for both too.
+  scoped_refptr<net::MoltTorCapacity> capacity =
+      net::MoltTorCapacity::GetShared();
+  EXPECT_EQ(capacity->handshake_budget().TotalInProgressForTesting(),
+            net::kMoltSocksHandshakesPerSite + 1);
+  // Each session's normal and WebSocket pools.
+  EXPECT_EQ(capacity->connection_budget().MemberCountForTesting(), 4u);
+  slots.clear();
+  EXPECT_EQ(capacity->handshake_budget().TotalInProgressForTesting(), 0u);
+}
+
+// Sites holding their full share of handshakes don't make a polite site
+// wait until eleven of them (and the keys no site can be named for) hold
+// it at once; then a freed slot goes to the waiting site with the fewest in
+// progress.
+TEST_F(MoltNetSocketPoolsTest, GreedySitesDontHoldBackAPoliteOne) {
+  net::MoltSocksHandshakeLimiter limiter(net::MoltTorCapacity::GetShared(), 1);
+  auto site = [](size_t i) {
+    return net::MoltBudgetSite(net::SchemefulSite(
+        GURL("https://greedy" + base::NumberToString(i) + ".test")));
+  };
+  std::vector<std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot>> held;
+  auto fill = [&](const net::MoltBudgetSite& s, size_t n) {
+    for (size_t j = 0; j < n; ++j) {
+      held.push_back(limiter.Acquire(s, 1, net::MEDIUM, base::DoNothing()));
+      ASSERT_TRUE(held.back()->granted());
+    }
+  };
+  for (size_t i = 0; i + 1 < net::kMoltSitesToFillHandshakeBudget; ++i) {
+    fill(site(i), net::kMoltSocksHandshakesPerSite);
+  }
+  fill(std::nullopt, net::kMoltUnattributedSocksHandshakes);
+  // Ten greedy sites and every unattributed slot: the polite site still has
+  // its whole share at once.
+  const net::MoltBudgetSite polite =
+      net::SchemefulSite(GURL("https://polite.test"));
+  std::vector<std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot>> mine;
+  for (size_t j = 0; j < net::kMoltSocksHandshakesPerSite; ++j) {
+    mine.push_back(limiter.Acquire(polite, 1, net::MEDIUM, base::DoNothing()));
+    EXPECT_TRUE(mine.back()->granted()) << j;
+  }
+  mine.clear();
+  // An eleventh: now the budget can be full.
+  fill(site(net::kMoltSitesToFillHandshakeBudget - 1),
+       net::kMoltSocksHandshakesPerSite);
+  for (size_t j = 0; j < 8; ++j) {
+    mine.push_back(limiter.Acquire(polite, 1, net::MEDIUM, base::DoNothing()));
+    EXPECT_TRUE(mine.back()->granted()) << j;
+  }
+  std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> polite_waits =
+      limiter.Acquire(polite, 1, net::MEDIUM, base::DoNothing());
+  EXPECT_FALSE(polite_waits->granted());
+  // A site with fewer in progress that arrives later goes first ...
+  const net::MoltBudgetSite newcomer =
+      net::SchemefulSite(GURL("https://newcomer.test"));
+  std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> newcomer_waits =
+      limiter.Acquire(newcomer, 1, net::MEDIUM, base::DoNothing());
+  EXPECT_FALSE(newcomer_waits->granted());
+  held.pop_back();
+  EXPECT_TRUE(newcomer_waits->granted());
+  EXPECT_FALSE(polite_waits->granted());
+  // ... and a greedy site doesn't get the next one before the polite site.
+  std::unique_ptr<net::MoltSocksHandshakeLimiter::Slot> greedy_waits =
+      limiter.Acquire(site(net::kMoltSitesToFillHandshakeBudget - 1), 1,
+                      net::MEDIUM, base::DoNothing());
+  held.pop_back();
+  EXPECT_TRUE(polite_waits->granted());
+  EXPECT_FALSE(greedy_waits->granted());
 }
 
 }  // namespace
