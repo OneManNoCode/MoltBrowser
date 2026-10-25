@@ -15,6 +15,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_NET_DEVICE_VALUES_H_
 #define CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_NET_DEVICE_VALUES_H_
 
+#include <cstddef>
 #include <cstdint>
 
 namespace molt_ai::fingerprinting {
@@ -67,6 +68,29 @@ inline constexpr int kMoltNetPrimaryHoverType = 2;
 // which pages must already handle (CPUs the tier tables don't know report
 // it). The real tier (1 to 4) comes from the CPU model.
 inline constexpr int kMoltNetCpuPerformanceTier = 0;
+
+// --- Renderer processes
+// --------------------------------------------------------
+
+// The number of renderer processes from which a MoltNet frame tries to share
+// an existing process of its site before starting a new one. Chromium starts
+// sharing from a number that follows the RAM (content's
+// GetMaxRendererProcessCount(): half the RAM in MiB over 85, at least 3), so
+// whether two same-site MoltNet tabs share a process, and so what their
+// scripts can observe of each other's load, depended on the machine. MoltNet
+// uses 20 on every machine: at or below Chromium's own number on every machine
+// MoltBrowser supports (4 GB gives 20 to 24, as the firmware and GPU keep
+// some of it), so it never shares later than Chromium would, and the
+// same-site sharing changes nothing for sites (site isolation still keeps
+// different sites in different processes).
+inline constexpr size_t kMoltNetRendererProcessLimit = 20;
+
+// Chromium's limit for a machine with `memory_mib` MiB of RAM on 64-bit
+// desktop, before its platform cap (the unit test's reference).
+constexpr size_t ChromiumRendererProcessLimit(size_t memory_mib) {
+  const size_t count = memory_mib / 2 / 85;
+  return count < 3 ? 3 : count;
+}
 
 }  // namespace molt_ai::fingerprinting
 

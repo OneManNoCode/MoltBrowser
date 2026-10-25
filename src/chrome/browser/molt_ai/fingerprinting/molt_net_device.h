@@ -43,6 +43,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_NET_DEVICE_H_
 #define CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_NET_DEVICE_H_
 
+#include <cstddef>
 #include <optional>
 
 namespace blink::web_pref {
@@ -71,6 +72,15 @@ void ApplyMoltNetInputPreferences(blink::web_pref::WebPreferences& prefs);
 // for MoltNet profiles, so navigator.cpuPerformance doesn't tell CPUs
 // apart; nullopt otherwise.
 std::optional<int> MoltNetCpuPerformanceTier(content::BrowserContext* context);
+
+// ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost: true for a
+// MoltNet profile once the browser has kMoltNetRendererProcessLimit renderer
+// processes or more (not counting `process_count_to_ignore`, the embedder's
+// GetProcessCountToIgnoreForLimit()), so its frames start sharing their
+// site's processes at the same count on every machine. Content's own,
+// RAM-based limit is never lower on a machine MoltBrowser supports.
+bool MoltNetShouldReuseProcess(content::BrowserContext* context,
+                               size_t process_count_to_ignore);
 
 }  // namespace molt_ai::fingerprinting
 

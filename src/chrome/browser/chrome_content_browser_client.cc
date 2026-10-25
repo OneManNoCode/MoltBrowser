@@ -2664,6 +2664,13 @@ bool ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost(
     return true;
   }
 
+  // MoltBrowser: MoltNet starts sharing its sites' processes at a fixed
+  // count, not one that follows the RAM (molt_net_device.h).
+  if (molt_ai::fingerprinting::MoltNetShouldReuseProcess(
+          browser_context, GetProcessCountToIgnoreForLimit())) {
+    return true;
+  }
+
   return false;
 }
 
