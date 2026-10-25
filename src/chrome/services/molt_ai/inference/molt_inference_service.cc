@@ -236,7 +236,7 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
                             nullptr);
     return;
   }
-  // Image input: the vision projector, read completely during the load.
+  // Image and audio input: the projector, read completely during the load.
   // (ReadOnlyFile? is a base::File; invalid means none.)
   ScopedStdioFile projector;
   if (params->vision_projector.IsValid()) {
@@ -360,10 +360,12 @@ void MoltInferenceService::OnLoaded(mojo::PendingReceiver<mojom::Model> model,
   description->vocab_size = result.description.vocab_size;
   description->cpu_repack_used = result.description.cpu_repack_used;
   description->vision = result.description.vision;
+  description->audio = result.description.audio;
   description->gpu_status = ToMojo(result.description.gpu_status);
   description->gpu_layers = result.description.gpu_layers;
   model_ = std::make_unique<MoltModelImpl>(
-      std::move(engine_), result.description.vision, std::move(model),
+      std::move(engine_), result.description.vision,
+      result.description.audio, std::move(model),
       base::BindOnce(&MoltInferenceService::OnModelDisconnected,
                      weak_factory_.GetWeakPtr()));
   std::move(callback).Run(mojom::LoadModelStatus::kOk,

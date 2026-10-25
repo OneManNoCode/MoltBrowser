@@ -35,6 +35,7 @@ source_set("inference") {
   ]
 
   deps = [
+    "//chrome/services/molt_ai/inference/engine:audio_input",
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//chrome/services/molt_ai/inference/engine:cpu_kernels",
     "//chrome/services/molt_ai/inference/engine:embedding_utils",
