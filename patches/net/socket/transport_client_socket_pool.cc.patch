@@ -1,0 +1,143 @@
+MoltBrowser patch for net/socket/transport_client_socket_pool.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/socket/transport_client_socket_pool.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/transport_client_socket_pool.cc b/net/socket/transport_client_socket_pool.cc
+index 13bcf4eb5058d00879b091928f6ebd9f47948334..d9f64afc5b9ecc4d011a6073f8b01dadf76b8d13 100644
+--- a/net/socket/transport_client_socket_pool.cc
++++ b/net/socket/transport_client_socket_pool.cc
+@@ -218,7 +218,9 @@ bool TransportClientSocketPool::IsStalled() const {
+   // `max_sockets_per_group_`, then the request is stalled on the group limit,
+   // which does not count.)
+   for (const auto& it : group_map_) {
+-    if (it.second.CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
++    // MoltBrowser: also a request that ignores its group's limit
++    // (MoltCanUseAdditionalSocketSlot()).
++    if (MoltCanUseAdditionalSocketSlot(it.second)) {
+       return true;
+     }
+   }
+@@ -429,8 +431,10 @@ int TransportClientSocketPool::RequestSocketInternal(
+     }
+   }
+ 
++  // MoltBrowser: with a gate, a request that ignores the limits waits for
++  // the pool's limit too, unless it may go past it (MoltRespectsPoolLimits()).
+   if (Expandability() == SocketPoolExpandability::kCapped &&
+-      request.respect_limits() == RespectLimits::ENABLED) {
++      MoltRespectsPoolLimits(request.respect_limits())) {
+     // NOTE(mmenke):  Wonder if we really need different code for each case
+     // here.  Only reason for them now seems to be preconnects.
+     if (idle_socket_count_ == 0) {
+@@ -1098,7 +1102,9 @@ void TransportClientSocketPool::CheckForStalledSocketGroups() {
+     if (Expandability() == SocketPoolExpandability::kCapped) {
+       if (idle_socket_count_ > 0) {
+         CloseOneIdleSocketExceptInGroup(nullptr);
+-      } else {
++      } else if (!MoltFindOverflowGroup(&top_group, &top_group_id)) {
++        // MoltBrowser: unless a request that ignores the limits may go past
++        // ours (MoltFindOverflowGroup()).
+         // We can't activate more sockets since we're already at our global
+         // limit.
+         return;
+@@ -1125,7 +1131,8 @@ bool TransportClientSocketPool::FindTopStalledGroup(Group** group,
+     Group* curr_group = &it.second;
+     if (!curr_group->has_unbound_requests())
+       continue;
+-    if (curr_group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
++    // MoltBrowser: also a request that ignores its group's limit.
++    if (MoltCanUseAdditionalSocketSlot(*curr_group)) {
+       has_stalled_group = true;
+       bool has_higher_priority =
+           !top_group ||
+@@ -1146,6 +1153,38 @@ bool TransportClientSocketPool::FindTopStalledGroup(Group** group,
+   return has_stalled_group;
+ }
+ 
++// MoltBrowser: as CanUseAdditionalSocketSlot(), and in a pool with a gate
++// (MoltNet's per-site pools) also a group with a request that ignores the
++// limits (LOAD_IGNORE_LIMITS: a synchronous XMLHttpRequest) and has no
++// connect job yet: it skips its group's limit, and waits only for the
++// pool's (MoltRespectsPoolLimits()). Serving the group serves it: its next
++// request is one that ignores the limits too, and the new job goes to the
++// first request without one.
++bool TransportClientSocketPool::MoltCanUseAdditionalSocketSlot(
++    const Group& group) const {
++  return group.CanUseAdditionalSocketSlot(max_sockets_per_group_) ||
++         (MoltHasSocketGate() && group.MoltIgnoreLimitsRequestWaits());
++}
++
++// MoltBrowser: at the pool's limit, a group with a request that ignores the
++// limits and has no connect job, when it may go past the limit
++// (MoltMayOverflow()). Serving it adds a connect job, so
++// CheckForStalledSocketGroups() stops once the overflow is used up.
++bool TransportClientSocketPool::MoltFindOverflowGroup(Group** group,
++                                                       GroupId* group_id) {
++  if (!MoltMayOverflow()) {
++    return false;
++  }
++  for (auto& it : group_map_) {
++    if (it.second.MoltIgnoreLimitsRequestWaits()) {
++      *group = &it.second;
++      *group_id = it.first;
++      return true;
++    }
++  }
++  return false;
++}
++
+ void TransportClientSocketPool::OnIPAddressChanged(
+     NetworkChangeNotifier::IPAddressChangeType change_type) {
+   DCHECK(cleanup_on_ip_address_change_);
+@@ -1199,8 +1238,9 @@ void TransportClientSocketPool::ProcessPendingRequest(const GroupId& group_id,
+   // If the group has no idle sockets, and can't make use of an additional slot,
+   // either because it's at the limit or because it's at the socket per group
+   // limit, then there's nothing to do.
++  // MoltBrowser: or a request that ignores its group's limit can't.
+   if (group->idle_sockets().empty() &&
+-      !group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
++      !MoltCanUseAdditionalSocketSlot(*group)) {
+     return;
+   }
+ 
+@@ -1264,8 +1304,11 @@ void TransportClientSocketPool::AddIdleSocket(
+ }
+ 
+ void TransportClientSocketPool::CancelAllConnectJobs() {
++  // MoltBrowser: see RefreshGroup().
++  bool molt_removed_jobs = false;
+   for (auto i = group_map_.begin(); i != group_map_.end();) {
+     Group* group = &i->second;
++    molt_removed_jobs |= !group->jobs().empty();
+     connecting_socket_count_ -= group->jobs().size();
+     group->RemoveAllUnboundJobs();
+ 
+@@ -1276,6 +1319,9 @@ void TransportClientSocketPool::CancelAllConnectJobs() {
+       ++i;
+     }
+   }
++  if (molt_removed_jobs && MoltHasSocketGate()) {
++    UpdateExpandabilityAfterRelease();
++  }
+ }
+ 
+ void TransportClientSocketPool::CancelAllRequestsWithError(int error) {
+@@ -1494,8 +1540,16 @@ TransportClientSocketPool::RefreshGroup(GroupMap::iterator it,
+   CHECK(group);
+   CleanupIdleSocketsInGroup(true /* force */, group, now, net_log_reason_utf8);
+ 
++  // MoltBrowser: cancelled connect jobs free socket slots too; in MoltNet's
++  // per-site pools, tell the pool's gate (the connection budget,
++  // molt_connection_budget.h), as closing an idle socket does. Other pools
++  // are left as they are.
++  const bool molt_removed_jobs = !group->jobs().empty();
+   connecting_socket_count_ -= group->jobs().size();
+   group->RemoveAllUnboundJobs();
++  if (molt_removed_jobs && MoltHasSocketGate()) {
++    UpdateExpandabilityAfterRelease();
++  }
+ 
+   // Otherwise, prevent reuse of existing sockets.
+   group->IncrementGeneration();

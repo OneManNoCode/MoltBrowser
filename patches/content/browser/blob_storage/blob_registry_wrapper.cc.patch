@@ -1,0 +1,60 @@
+MoltBrowser patch for content/browser/blob_storage/blob_registry_wrapper.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/blob_storage/blob_registry_wrapper.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/blob_storage/blob_registry_wrapper.cc b/content/browser/blob_storage/blob_registry_wrapper.cc
+index 5a5645067582908cff9fda55a270d590dd13be01..529a26f9afbf7cd2997bc6a62a2309b103a3329d 100644
+--- a/content/browser/blob_storage/blob_registry_wrapper.cc
++++ b/content/browser/blob_storage/blob_registry_wrapper.cc
+@@ -10,6 +10,7 @@
+ #include "content/public/browser/browser_thread.h"
+ #include "storage/browser/blob/blob_registry_impl.h"
+ #include "storage/browser/blob/blob_storage_context.h"
++#include "storage/browser/blob/molt_blob_budget_policy.h"
+ 
+ namespace content {
+ 
+@@ -17,11 +18,20 @@ namespace {
+ 
+ class BindingDelegate : public storage::BlobRegistryImpl::Delegate {
+  public:
+-  explicit BindingDelegate(
+-      ChildProcessSecurityPolicyImpl::Handle security_policy_handle)
+-      : security_policy_handle_(std::move(security_policy_handle)) {}
++  BindingDelegate(ChildProcessSecurityPolicyImpl::Handle security_policy_handle,
++                  ChildProcessId process_id)
++      : security_policy_handle_(std::move(security_policy_handle)),
++        molt_budget_key_(process_id.is_null()
++                             ? storage::kMoltBlobBrowserKey
++                             : static_cast<uint64_t>(
++                                   process_id.GetUnsafeValue())) {}
+   ~BindingDelegate() override = default;
+ 
++  // MoltBrowser: the renderer process's own budget key: process ids start
++  // at 1 and are never reused (storage/browser/blob/
++  // molt_blob_budget_policy.h).
++  uint64_t MoltBudgetKey() override { return molt_budget_key_; }
++
+   bool CanReadFile(const base::FilePath& file) override {
+     return security_policy_handle_.CanReadFile(file);
+   }
+@@ -31,6 +41,7 @@ class BindingDelegate : public storage::BlobRegistryImpl::Delegate {
+ 
+  private:
+   ChildProcessSecurityPolicyImpl::Handle security_policy_handle_;
++  const uint64_t molt_budget_key_;
+ };
+ 
+ }  // namespace
+@@ -55,7 +66,8 @@ void BlobRegistryWrapper::Bind(
+       std::move(receiver),
+       std::make_unique<BindingDelegate>(
+           ChildProcessSecurityPolicyImpl::GetInstance()->CreateHandle(
+-              process_id)));
++              process_id),
++          process_id));
+ }
+ 
+ BlobRegistryWrapper::~BlobRegistryWrapper() = default;

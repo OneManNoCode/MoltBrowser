@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/ssl_client_socket.h b/net/socket/ssl_client_socket.h
-index 4046a961c9ccfe9dc21bbdd275ee9d0e7f4f8979..d7ea812cc927b80f6cd6b568a23f1be5c8caae5b 100644
+index 4046a961c9ccfe9dc21bbdd275ee9d0e7f4f8979..ada41902885be2c12070ba09adad9c05f8ea99c9 100644
 --- a/net/socket/ssl_client_socket.h
 +++ b/net/socket/ssl_client_socket.h
-@@ -248,6 +248,16 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
+@@ -248,6 +248,25 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
      return ssl_client_auth_cache_.GetCachedServers();
    }
  
@@ -22,15 +22,26 @@ index 4046a961c9ccfe9dc21bbdd275ee9d0e7f4f8979..d7ea812cc927b80f6cd6b568a23f1be5
 +    molt_send_no_client_certificates_ = true;
 +  }
 +
++  // MoltBrowser: from now on each server certificate verification names
++  // the site of its connection, so that the certificate fetches it needs
++  // count against that site (net/cert/molt_cert_fetch_site.h). Set for
++  // MoltNet's network contexts only, right after they are built.
++  void MoltCarryCertFetchSite() { molt_carry_cert_fetch_site_ = true; }
++  bool molt_carries_cert_fetch_site() const {
++    return molt_carry_cert_fetch_site_;
++  }
++
    // Add an observer to be notified when configuration has changed.
    // RemoveObserver() must be called before |observer| is destroyed.
    void AddObserver(Observer* observer);
-@@ -280,6 +290,9 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
+@@ -280,6 +299,11 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
  
    SSLClientAuthCache ssl_client_auth_cache_;
  
 +  // MoltBrowser: see MoltSendNoClientCertificates().
 +  bool molt_send_no_client_certificates_ = false;
++  // MoltBrowser: see MoltCarryCertFetchSite().
++  bool molt_carry_cert_fetch_site_ = false;
 +
    base::ObserverList<Observer, true /* check_empty */> observers_;
  };

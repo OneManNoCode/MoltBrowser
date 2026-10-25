@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..32b45bd08520b74e2aecdac9b6cfd3d852a9c02a 100644
+index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..5eede0f8691b19ca8763ba1f739fab06a64f24b8 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -723,6 +723,19 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -723,6 +723,22 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner)
        override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
@@ -25,6 +25,9 @@ index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..32b45bd08520b74e2aecdac9b6cfd3d8
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
 +  bool ShouldKeepDownloadsWithTheirSite(
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
++  bool ShouldKeepBrowsingInstancesInOwnProcesses(
++      content::BrowserContext* browser_context,
++      const GURL& site_url) override;  // MoltBrowser
    content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
        content::RenderFrameHost* frame) override;
    void CreateWebSocket(

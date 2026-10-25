@@ -1,0 +1,29 @@
+MoltBrowser patch for chrome/browser/ui/webui/downloads/downloads_dom_handler.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/webui/downloads/downloads_dom_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/webui/downloads/downloads_dom_handler.cc b/chrome/browser/ui/webui/downloads/downloads_dom_handler.cc
+index 049825d73ca1d5df372b0ec8cad40bbf660b5bb0..39c428f3d4563e39f45e257072c59f526dd6ef0a 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_dom_handler.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_dom_handler.cc
+@@ -34,6 +34,7 @@
+ #include "chrome/browser/download/download_ui_safe_browsing_util.h"
+ #include "chrome/browser/download/download_warning_desktop_hats_utils.h"
+ #include "chrome/browser/download/drag_download_item.h"
++#include "chrome/browser/download/molt_retried_download_isolation.h"
+ #include "chrome/browser/download/offline_item_utils.h"
+ #include "chrome/browser/feature_engagement/non_iph_promo.h"
+ #include "chrome/browser/feature_engagement/tracker_factory.h"
+@@ -458,6 +459,10 @@ void DownloadsDOMHandler::RetryDownload(const std::string& id) {
+   dl_params->set_content_initiated(true);
+   dl_params->set_initiator(file->GetRequestInitiator());
+   dl_params->set_download_source(download::DownloadSource::RETRY);
++  // MoltBrowser: in MoltNet with the isolation of the download it retries,
++  // not the downloads page's (molt_retried_download_isolation.h).
++  MoltRetryDownloadWithItsSite(web_contents->GetBrowserContext(), file,
++                               *dl_params);
+ 
+   web_contents->GetBrowserContext()->GetDownloadManager()->DownloadUrl(
+       std::move(dl_params));

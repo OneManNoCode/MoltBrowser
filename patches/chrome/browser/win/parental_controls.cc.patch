@@ -1,0 +1,34 @@
+MoltBrowser patch for chrome/browser/win/parental_controls.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/win/parental_controls.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/win/parental_controls.cc b/chrome/browser/win/parental_controls.cc
+index 84e6d8af5f272b3531ca3efba7181ed2525a4da7..e42b5e9fb563b7ed61edb5902033744170231499 100644
+--- a/chrome/browser/win/parental_controls.cc
++++ b/chrome/browser/win/parental_controls.cc
+@@ -52,6 +52,14 @@ class WinParentalControlsValue {
+     return parental_controls_;
+   }
+ 
++  // MoltBrowser: as GetParentalControls(), without the histograms
++  // (MoltReadWinParentalControlsNow()).
++  static WinParentalControls ReadNow() {
++    std::optional<WinParentalControls> controls = GetParentalControlsFromApi();
++    UpdateParentalControlsFromRegistry(controls);
++    return controls.value_or(WinParentalControls());
++  }
++
+  private:
+   friend struct base::DefaultSingletonTraits<WinParentalControlsValue>;
+ 
+@@ -191,3 +199,8 @@ void InitializeWinParentalControls() {
+ const WinParentalControls& GetWinParentalControls() {
+   return WinParentalControlsValue::GetInstance()->parental_controls();
+ }
++
++// MoltBrowser: see parental_controls.h.
++WinParentalControls MoltReadWinParentalControlsNow() {
++  return WinParentalControlsValue::ReadNow();
++}
