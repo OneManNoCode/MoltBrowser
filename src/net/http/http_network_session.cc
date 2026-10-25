@@ -290,9 +290,10 @@ ClientSocketPool* HttpNetworkSession::GetSocketPool(
 ClientSocketPool* HttpNetworkSession::GetSocketPoolForSite(
     SocketPoolType pool_type,
     const ProxyChain& proxy_chain,
-    const NetworkAnonymizationKey& network_anonymization_key) {
+    const NetworkAnonymizationKey& network_anonymization_key,
+    bool molt_no_cert_fetches) {
   return GetSocketPoolManager(pool_type)->GetSocketPoolForSite(
-      proxy_chain, network_anonymization_key);
+      proxy_chain, network_anonymization_key, molt_no_cert_fetches);
 }
 
 base::Value HttpNetworkSession::SocketPoolInfoToValue() const {

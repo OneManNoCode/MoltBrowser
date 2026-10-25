@@ -28,12 +28,20 @@
 //    the site whose connection needed it (its one-off key has that site as
 //    top-level site, net/cert/molt_cert_fetch_site.h); the one-off keys no
 //    site can be named for share one small pool of their own
-//    (MoltBudgetSiteFor() in molt_connection_budget.h). A site's one-off
-//    keys (certificate fetches, credentialless iframes) get a small HTTP
-//    pool of the site's own, apart from its other requests
-//    (MoltUsesSiteOneOffPool()): a site's connections that wait for their
-//    certificate checks hold slots of its main pool, and the fetches those
-//    checks wait for must never need one of them.
+//    (MoltBudgetSiteFor() in molt_connection_budget.h).
+//
+//  * No pool waits on itself (MoltUsesCertFetchPool()). A connection whose
+//    certificate check downloads a certificate (AIA, OCSP, CRL) holds its
+//    slot until that download is done, so the downloads get pools of their
+//    own, one per site and one for the keys of no site, which nothing else
+//    uses: the certificate fetcher marks its requests as ones that may not
+//    start certificate downloads of their own
+//    (LOAD_DISABLE_CERT_NETWORK_FETCHES; they are plain HTTP anyway), and
+//    only requests so marked go there. So a pool's connections can wait
+//    only for a pool whose connections wait for nothing, whatever the
+//    sites do: a site's main pool, with its credentialless iframes' one-off
+//    keys, and the pool of the keys of no site depend on certificate-fetch
+//    pools, and those on nothing.
 //
 //  * All connections to Tor together stay within a fixed budget
 //    (kMoltNetConnectionBudget), well inside what MoltNet's single Tor
@@ -87,8 +95,10 @@ inline constexpr size_t kMoltPerSitePoolSize = 48;
 inline constexpr size_t kMoltPerSiteWebSocketPoolSize = 16;
 // The pool (per pool type) of the one-off keys no site can be named for.
 inline constexpr size_t kMoltUnattributedPoolSize = 8;
-// A site's pool for its one-off keys (HTTP only; MoltUsesSiteOneOffPool()).
-inline constexpr size_t kMoltPerSiteOneOffPoolSize = 4;
+// The certificate-fetch pools (HTTP only; MoltUsesCertFetchPool()): a
+// site's, and the one for the keys of no site.
+inline constexpr size_t kMoltPerSiteCertFetchPoolSize = 4;
+inline constexpr size_t kMoltUnattributedCertFetchPoolSize = 4;
 
 // How long a site's pool may sit unused before it is dropped.
 inline constexpr int64_t kMoltUnusedSitePoolTimeoutSeconds = 60;
@@ -137,12 +147,12 @@ static_assert(kMoltNetConnectionBudget + kMoltIgnoreLimitsOverflowTotal +
               kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
 
 // How far a site's pool may go past its limit for requests that ignore the
-// limits: its HTTP pool only (WebSockets never ignore them; a site's
-// one-off keys and the keys of no site keep their small pools).
+// limits: its HTTP pool only (WebSockets never ignore them; the keys of no
+// site and the certificate-fetch pools keep their small pools).
 constexpr size_t MoltIgnoreLimitsOverflowFor(bool for_websockets,
                                              bool unattributed,
-                                             bool site_one_off) {
-  return for_websockets || unattributed || site_one_off
+                                             bool cert_fetch_pool) {
+  return for_websockets || unattributed || cert_fetch_pool
              ? 0
              : kMoltIgnoreLimitsOverflow;
 }
@@ -193,33 +203,38 @@ constexpr bool MoltUsesPerSitePool(size_t per_site_pool_size,
   return per_site_pool_size > 0 && !proxy_chain_is_direct;
 }
 
-// Whether a request goes to its site's pool for one-off keys: an HTTP
-// request (`for_websockets` false) whose key names a site (`has_site`) and
-// carries a nonce (`has_nonce`): a certificate fetch for one of the site's
-// connections, or a credentialless iframe's request. Certificate fetches
-// need it: a site's connections waiting for their certificate checks hold
-// slots of the site's main pool until the fetches those checks start are
-// done, so with every slot held that way the fetches would wait for slots
-// that only they can free (until the fetcher's timeout failed the checks).
-constexpr bool MoltUsesSiteOneOffPool(bool for_websockets,
-                                      bool has_site,
-                                      bool has_nonce) {
-  return !for_websockets && has_site && has_nonce;
+// Whether a request goes to a certificate-fetch pool (its site's, or the
+// one for the keys of no site): an HTTP request (`for_websockets` false)
+// that may not start certificate downloads (`no_cert_fetches`: its load
+// flags have LOAD_DISABLE_CERT_NETWORK_FETCHES, as the certificate
+// fetcher's requests do in MoltNet). Such a request's connection never
+// waits for a certificate download, so it never waits for another
+// connection; every other request's may, for the downloads its check
+// starts, which therefore must never need a slot such connections hold:
+// with every slot of a pool held by connections waiting for their checks,
+// the downloads would wait for slots only they can free (until the
+// fetcher's timeout failed the checks).
+constexpr bool MoltUsesCertFetchPool(bool for_websockets,
+                                     bool no_cert_fetches) {
+  return !for_websockets && no_cert_fetches;
 }
 
 // The limit of one site's pool: `per_site_pool_size` (the context's
 // setting) for HTTP, less for WebSockets, for the one-off keys no site can
-// be named for (`unattributed`) and for a site's own one-off keys
-// (`site_one_off`, MoltUsesSiteOneOffPool()).
+// be named for (`unattributed`) and for the certificate-fetch pools
+// (`cert_fetch_pool`, MoltUsesCertFetchPool(): a site's, or, with
+// `unattributed`, the one for the keys of no site).
 constexpr size_t MoltPerSitePoolLimit(size_t per_site_pool_size,
                                       bool for_websockets,
                                       bool unattributed,
-                                      bool site_one_off = false) {
+                                      bool cert_fetch_pool = false) {
+  if (cert_fetch_pool) {
+    return std::min(per_site_pool_size,
+                    unattributed ? kMoltUnattributedCertFetchPoolSize
+                                 : kMoltPerSiteCertFetchPoolSize);
+  }
   if (unattributed) {
     return std::min(per_site_pool_size, kMoltUnattributedPoolSize);
-  }
-  if (site_one_off) {
-    return std::min(per_site_pool_size, kMoltPerSiteOneOffPoolSize);
   }
   if (for_websockets) {
     return std::min(per_site_pool_size, kMoltPerSiteWebSocketPoolSize);
@@ -287,9 +302,9 @@ constexpr size_t MoltSocksHandshakeWeight(std::string_view host) {
 // What one site may hold in MoltNet's context, and the unattributed pools.
 inline constexpr size_t kMoltPerSiteConnections =
     kMoltPerSitePoolSize + kMoltPerSiteWebSocketPoolSize +
-    kMoltPerSiteOneOffPoolSize;
+    kMoltPerSiteCertFetchPoolSize;
 inline constexpr size_t kMoltUnattributedConnections =
-    2 * kMoltUnattributedPoolSize;
+    2 * kMoltUnattributedPoolSize + kMoltUnattributedCertFetchPoolSize;
 
 // How many other sites must hold their full share (with every unattributed
 // connection in use too) before a site that is still below its own limits

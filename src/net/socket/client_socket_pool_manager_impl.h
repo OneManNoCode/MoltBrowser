@@ -60,7 +60,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
   // MoltBrowser:
   ClientSocketPool* GetSocketPoolForSite(
       const ProxyChain& proxy_chain,
-      const NetworkAnonymizationKey& network_anonymization_key) override;
+      const NetworkAnonymizationKey& network_anonymization_key,
+      bool molt_no_cert_fetches = false) override;
 
   // Creates a Value summary of the state of the socket pools.
   base::Value SocketPoolInfoToValue() const override;

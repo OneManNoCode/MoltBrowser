@@ -80,24 +80,25 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   // The pool for requests of network key `network_anonymization_key`
-  // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or for a key
-  // with a nonce the site's pool for one-off keys (MoltUsesSiteOneOffPool());
-  // made on first use. Drops the site pools nothing has used for a while
-  // first, when it makes one.
+  // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or, for a
+  // request that may not start certificate downloads (`no_cert_fetches`:
+  // the certificate fetcher's own), that site's certificate-fetch pool
+  // (MoltUsesCertFetchPool()); made on first use. Drops the site pools
+  // nothing has used for a while first, when it makes one.
   ClientSocketPool* Get(const ProxyChain& proxy_chain,
-                        const NetworkAnonymizationKey& network_anonymization_key) {
+                        const NetworkAnonymizationKey& network_anonymization_key,
+                        bool no_cert_fetches = false) {
     const base::TimeTicks now = base::TimeTicks::Now();
     MoltBudgetSite site = MoltBudgetSiteFor(network_anonymization_key);
-    const bool one_off = MoltUsesSiteOneOffPool(
-        is_for_websockets_, site.has_value(),
-        network_anonymization_key.GetNonce().has_value());
-    Key key{proxy_chain, std::move(site), one_off};
+    const bool cert_fetch_pool =
+        MoltUsesCertFetchPool(is_for_websockets_, no_cert_fetches);
+    Key key{proxy_chain, std::move(site), cert_fetch_pool};
     auto it = pools_.find(key);
     if (it == pools_.end()) {
       DropUnusedPools(now);
       const size_t limit =
           MoltPerSitePoolLimit(per_site_pool_size_, is_for_websockets_,
-                               !key.site.has_value(), key.one_off);
+                               !key.site.has_value(), key.cert_fetch_pool);
       Entry entry;
       entry.pool = std::make_unique<TransportClientSocketPool>(
           limit, MoltPerSiteGroupLimit(limit, max_sockets_per_group_),
@@ -106,7 +107,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
       entry.pool->MoltSetSocketGate(this);
       entry.pool->MoltDisableBackupConnectJobs();
       entry.pool->MoltSetIgnoreLimitsOverflow(MoltIgnoreLimitsOverflowFor(
-          is_for_websockets_, !key.site.has_value(), key.one_off));
+          is_for_websockets_, !key.site.has_value(), key.cert_fetch_pool));
       entry.limit = limit;
       it = pools_.emplace(std::move(key), std::move(entry)).first;
     }
@@ -206,11 +207,11 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
 
  private:
   // A pool: the proxy chain, the site it counts against, and whether it is
-  // that site's pool for one-off keys (MoltUsesSiteOneOffPool()).
+  // that site's certificate-fetch pool (MoltUsesCertFetchPool()).
   struct Key {
     ProxyChain proxy_chain;
     MoltBudgetSite site;
-    bool one_off = false;
+    bool cert_fetch_pool = false;
     friend bool operator==(const Key&, const Key&) = default;
     friend auto operator<=>(const Key&, const Key&) = default;
   };
@@ -221,7 +222,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
     base::TimeTicks last_handed_out;
   };
 
-  // `site`'s pools (per proxy chain, and its one-off keys'), collected
+  // `site`'s pools (per proxy chain, and its certificate fetches'), collected
   // first: what a pool does when asked doesn't change the map, but this
   // doesn't rely on it.
   std::vector<TransportClientSocketPool*> PoolsOf(

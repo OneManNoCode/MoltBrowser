@@ -87,10 +87,12 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
 // per-site pools (net/socket/molt_per_site_socket_pool_policy.h).
 ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPoolForSite(
     const ProxyChain& proxy_chain,
-    const NetworkAnonymizationKey& network_anonymization_key) {
+    const NetworkAnonymizationKey& network_anonymization_key,
+    bool molt_no_cert_fetches) {
   if (molt_per_site_pools_ &&
       MoltUsesPerSitePool(molt_per_site_pool_size_, proxy_chain.is_direct())) {
-    return molt_per_site_pools_->Get(proxy_chain, network_anonymization_key);
+    return molt_per_site_pools_->Get(proxy_chain, network_anonymization_key,
+                                     molt_no_cert_fetches);
   }
   return GetSocketPool(proxy_chain);
 }

@@ -562,6 +562,12 @@ void Job::StartURLLoader(network::mojom::URLLoaderFactory* factory) {
   if (request_params_->isolated_fetch_id) {
     request->trusted_params->isolation_info =
         MoltCertFetchIsolationInfo(request_params_->molt_site);
+    // And it may not start certificate downloads of its own (it is plain
+    // HTTP, so it never would): that marks it for its site's
+    // certificate-fetch connection pool, apart from the connections whose
+    // checks wait for it (net/socket/molt_per_site_socket_pool_policy.h:
+    // MoltUsesCertFetchPool()).
+    request->load_flags |= net::LOAD_DISABLE_CERT_NETWORK_FETCHES;
   }
   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   // Ensure that we bypass HSTS for all requests sent through
