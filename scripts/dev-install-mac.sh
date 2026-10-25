@@ -16,7 +16,7 @@
 #    it on demand (scripts/build-ggml-metallib.sh) and cache it at
 #    build/cache/ggml-metal-<hash of the Metal sources>.metallib, so a
 #    llama.cpp update never reuses a metallib built from other kernels.
-#  - tor/ocr/whisper/molt_models are packaging-time payloads, not build
+#  - tor/ocr/whisper/molt_models/molt_fonts are packaging-time payloads, not build
 #    outputs. A payload the out-dir app already has (scripts/build.sh bundles
 #    tor, whisper and tesseract) is the fresh one and is kept; only a missing
 #    one is carried over from the previously installed app.
@@ -35,7 +35,7 @@ echo "[1/7] Stage out-dir app"
 ditto "$OUT_APP" "$STAGE"
 
 echo "[2/7] Bundled payloads (fresh ones win; missing ones from the installed app)"
-for d in tor ocr whisper molt_models; do
+for d in tor ocr whisper molt_models molt_fonts; do
   if [ -n "$(ls -A "$STAGE/Contents/Resources/$d" 2>/dev/null)" ]; then
     echo "  = $d (fresh, from the out dir)"
     continue

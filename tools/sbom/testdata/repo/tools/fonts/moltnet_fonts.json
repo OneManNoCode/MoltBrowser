@@ -1,0 +1,83 @@
+{
+  "format": 1,
+  "version": "2026.10.1",
+  "sources": {
+    "test": {
+      "repo": "example/fonts",
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "licenses": [
+    {
+      "install_name": "OFL-Test.txt",
+      "source": "test",
+      "path": "OFL.txt",
+      "spdx": "OFL-1.1",
+      "size": 31,
+      "sha256": "2bb42f890962e2d093e1b8335a0db1c413143abe4383773d02c8c1cb456c1a60"
+    }
+  ],
+  "files": [
+    {
+      "install_name": "TestSans-VF.ttf",
+      "source": "test",
+      "path": "fonts/TestSans[wght].ttf",
+      "license": "OFL-Test.txt",
+      "size": 21,
+      "sha256": "6f2a776d7c29efbcec22baf068cc016b375f2d8b4f80dcf1b6271a906f9107ba",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Test Sans",
+          "family_names": [
+            "Test Sans"
+          ],
+          "postscript_name": "TestSans-Regular",
+          "full_name": "Test Sans Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.001"
+        }
+      ]
+    }
+  ],
+  "aliases": {},
+  "generic": {
+    "standard": "Test Sans",
+    "serif": "Test Sans",
+    "sans-serif": "Test Sans",
+    "monospace": "Test Sans",
+    "cursive": "Test Sans",
+    "fantasy": "Test Sans",
+    "math": "Test Sans",
+    "system-ui": "Test Sans"
+  },
+  "cjk": {
+    "regions": {
+      "JP": "Test Sans",
+      "KR": "Test Sans",
+      "SC": "Test Sans",
+      "TC": "Test Sans",
+      "HK": "Test Sans"
+    },
+    "default": "SC",
+    "scripts": {},
+    "monospace": null
+  },
+  "fallback": {
+    "Zyyy": [
+      "Test Sans"
+    ],
+    "emoji": [
+      "Test Sans"
+    ],
+    "text-emoji": [
+      "Test Sans"
+    ]
+  }
+}

@@ -231,6 +231,16 @@ for h in tor/tor whisper/whisper-cli ocr/tesseract; do
   fi
 done
 
+# MoltNet's font set (scripts/build.sh bundles it): without it MoltNet
+# windows would draw with macOS's own fonts. Every file must match its pin.
+if ! "$SCRIPT_DIR/bundle-fonts.sh" --verify "$APP_PATH/Contents/Resources"; then
+  echo ""
+  echo "  ❌ FATAL: $APP_PATH/Contents/Resources/molt_fonts is missing or"
+  echo "     doesn't match tools/fonts/moltnet_fonts.json. Run"
+  echo "     scripts/bundle-fonts.sh --app \"$APP_PATH\". DO NOT SHIP THIS BUILD."
+  exit 1
+fi
+
 # The Mach-O files of the helpers bundled in Resources/ (tor, tesseract,
 # whisper), NUL-separated.
 resource_helpers() {
