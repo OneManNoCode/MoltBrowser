@@ -527,6 +527,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `tor/molt_net_window.cc`, `tor/tor_control_connection.cc` (`poll()` on POSIX) | | #49 |
 | `update/update_manager.cc`, `vault/vault_store.cc` (`base::saturated_cast`) | | #41 |
 | every fuzzer target's `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
+| `agents/frame_tool_permissions.*` (a `ProfileKeyedServiceFactory`, `RegisterListPref`), `agents/site_tool_host.cc` (`RenderFrameHost::IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::kTools)`), `automation/automation_runner.cc` (fallback locators, the run's questions, CALL_TOOL steps), the new GN targets (`agents:frame_tools` → `automation:agent_run_draft`; `automation:locators`, `:tool_steps`, `:run_questions`; `automation` → `molt_ai_agents`), and the one-line hooks in `chrome_browser_main_extra_parts_profiles.cc`, `chrome_browsing_data_remover_delegate.cc` and `profile_resetter.cc` | type-checked against 156's headers only | agent-replay |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -704,6 +705,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity`, `MoltNetDownloadIsolationTest` (new), `MoltNetNetworkContextPolicyTest.DownloadsKeptWithTheirSiteInMoltNetOnly` | moltnet-shared |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
+  | `AutomationLocatorsTest`, `RunQuestionsTest`, `AutomationToolStepsTest`, `FrameToolsTest` (new), and the new cases of `AgentToolsTest` (frames of other sites, `consequentialHint`), `ChatActionsTest`, `AgentRunDraftTest` and `AutomationScriptTest` | agent-replay |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
   | `PromptUtilsTest`, `GemmaThoughtFilterTest`, `ThinkTagFilterTest` | #7, #8 |
   | `SanitizeHelperTextTest`, `Utf8Test` (OCR and voice output) | #14 |
@@ -829,7 +831,9 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
 
 - [ ] libFuzzer build of every target `tools/fuzz/molt_fuzz.py list` names
   (34 at #55; from #41 and the PRs that added fuzzers since: #44, #45, #47,
-  #48, #49, #53, #54) (verify the command):
+  #48, #49, #53, #54; agent-replay adds `molt_automation_locators_fuzzer`,
+  `molt_automation_tool_steps_fuzzer` and `molt_frame_tools_fuzzer`)
+  (verify the command):
   ```bash
   cd chromium/src
   gn gen out/libfuzzer --args='use_libfuzzer=true is_asan=true is_ubsan_security=true is_debug=false dcheck_always_on=true'
@@ -1029,6 +1033,48 @@ WEB_AI_APIS.md §12):
   - a `readOnlyHint: true` tool runs without asking; a form tool always
     asks; `toolautosubmit` submits, and without it the form stays filled and
     the step fails after 20 s.
+- [ ] Agent-mode replay on real sites (from agent-replay;
+  docs/design/AGENT_ACTIONS.md §3.4): record workflows on three real sites
+  (a shop's add-to-cart, a sign-in form with a saved password, a site
+  search), then break each recorded selector in DevTools (rename the id and
+  classes, move the element, wrap it in a new `<div>`) and replay:
+  - a step still finds its element by a strong locator; the Runs view says
+    "Found by its role & name (a fallback)" (or label, or attribute);
+  - with only the text or the position left, the studio asks "Use it?";
+    only a click answers; "Stop the run" stops it; no answer in 120 s fails
+    the step;
+  - never another kind of element (a link with the button's text), never a
+    password field for an ordinary step or the reverse, never a page of
+    another origin;
+  - a `.molt` file from v0.2.x imports and replays as before.
+- [ ] Site-tool steps on a WebMCP trial page (from agent-replay;
+  AGENT_ACTIONS.md §3.5): start recording, ask the chat to use a tool,
+  Allow: the step appears with what it gives the tool. Replay: a read-only
+  tool runs unasked; a tool that changes something asks unless the
+  workflow is trusted; a changed schema, a new required argument or a tool
+  that became a form stops the step with the reason; a secret-looking value
+  is asked at each run; a card or code argument isn't saved.
+- [ ] A WebMCP trial page with a cross-origin frame (from agent-replay;
+  AGENT_ACTIONS.md §2.7.14): the main page embeds `<iframe
+  src="https://<another origin>/tools.html" allow="tools">` whose document
+  registers a read-only tool, a tool that changes something, and a card
+  tool; a second frame without `allow="tools"`; a third nested inside the
+  first. Run the agent there:
+  - it asks once: "https://<frame origin>, a frame on https://<page
+    origin>, offers 2 tools ..." (the card tool isn't counted as offered
+    later, and the other frames never ask);
+  - "Not now": the run goes on without them, and doesn't ask again;
+  - "This session": TOOLS shows them "from https://<frame origin>"; every
+    call asks, the read-only one too, naming both sites; a call with a
+    password-looking argument is refused; the call runs in the frame's own
+    process (`chrome://process-internals`, out-of-process frame);
+  - "Always here": still allowed after a restart; the studio lists it and
+    "Forget" removes it; Clear browsing data → "Site settings" removes it;
+  - Incognito: no "Always here"; MoltNet window: no question and no frame
+    tools; the chat offers the frame's tool only once allowed, naming both
+    sites;
+  - recorded while the chat calls the frame's tool: the replay asks every
+    time, naming both sites.
 - [ ] Screenshots, once the vision model is pinned: password and card fields
   and `:autofill` previews masked; same-origin frames masked; a page with a
   frame of another origin (check a PDF `<embed>` too) stays text-only;

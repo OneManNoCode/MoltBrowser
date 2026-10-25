@@ -15,6 +15,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_RECORDER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_RECORDER_H_
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_tool_steps.h"
 #include "content/public/browser/web_contents_observer.h"
 
 namespace content {
@@ -69,6 +71,12 @@ class AutomationRecorder : public content::WebContentsObserver {
   // injected recorder JS posted via chrome.send.
   void OnStepFromInjectedJS(const base::DictValue& step_json);
 
+  // A site's tool the user allowed the AI chat to call in this tab
+  // (automation_tool_steps.h): recorded as a CALL_TOOL step if the call was
+  // on the page this tab shows. Values that look secret are kept as
+  // {{variables}} asked at each run.
+  void OnSiteToolCall(const tool_steps::RecordedCall& call);
+
  private:
   void InjectRecorderJS();
   void DeduplicateAndAppend(Step step);
@@ -86,6 +94,8 @@ class AutomationRecorder : public content::WebContentsObserver {
   bool is_recording_ = false;
   std::vector<Step> steps_;
   std::set<std::string> seen_hosts_;
+  // {{variables}} the recorded steps ask for (withheld tool arguments).
+  std::map<std::string, std::string> variables_;
   StepCapturedCallback on_step_captured_;
   base::RepeatingTimer poll_timer_;
 

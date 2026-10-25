@@ -96,8 +96,14 @@ source_set("molt_ai_agents") {
     "agents/agent_screenshot.cc",
     "agents/agent_screenshot.h",
 
-    # Lists and calls a page's site tools (its main document's and its
-    # same-origin frames'), for the web agent and the AI chat.
+    # Which frames of other sites the user let offer their tools on a page
+    # (a profile's service and its pref; frame_tools.h is the pure part).
+    "agents/frame_tool_permissions.cc",
+    "agents/frame_tool_permissions.h",
+
+    # Lists and calls a page's site tools (its main document's, its
+    # same-origin frames' and the allowed frames of other sites'), for the
+    # web agent, the AI chat and Agent mode.
     "agents/site_tool_host.cc",
     "agents/site_tool_host.h",
     "agents/web_agent.cc",
@@ -120,12 +126,18 @@ source_set("molt_ai_agents") {
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/profiles:profile",
     "//chrome/services/molt_ai/inference/engine:image_input",
+    "//components/keyed_service/core",
+    "//components/pref_registry",
+    "//components/prefs",
 
     # The compositor's copy of the tab's view.
     "//components/viz/common",
     "//content/public/browser",
     "//content/public/common",
     "//mojo/public/cpp/bindings",
+
+    # The `tools` permissions policy feature of a frame.
+    "//services/network/public/mojom",
     "//skia",
     "//ui/base",
     "//ui/gfx/geometry",
@@ -141,6 +153,12 @@ source_set("molt_ai_agents") {
     "//chrome/browser/molt_ai/agents:agent_plan",
     "//chrome/browser/molt_ai/agents:agent_prompt",
     "//chrome/browser/molt_ai/agents:agent_vision",
+
+    # FrameToolPermissions' answers (frame_tool_permissions.h).
+    "//chrome/browser/molt_ai/agents:frame_tools",
+
+    # WebAgent::Step::Element::locators, for drafts saved from a run.
+    "//chrome/browser/molt_ai/automation:locators",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]

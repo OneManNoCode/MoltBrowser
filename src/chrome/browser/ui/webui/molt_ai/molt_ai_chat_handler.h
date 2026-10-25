@@ -37,6 +37,7 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/automation/automation_tool_steps.h"
 #include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/automation/agent_run_draft.h"
@@ -340,9 +341,15 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: []
   void HandleCancelWebAgent(const base::ListValue& args);
   // The user's Allow / Deny answer to an 'agent-confirm' event (the agent
-  // pauses on cross-origin navigation, form submits and sensitive fields).
+  // pauses on cross-origin navigation, form submits, sensitive fields and
+  // site tools). Allow counts only with the click's user activation.
   // Args: [request_id, allowed]
   void HandleWebAgentConfirm(const base::ListValue& args);
+  // The user's answer to a FRAME_TOOLS 'agent-confirm' (a frame of another
+  // site offers tools): "not_now", or "session" / "always", which count
+  // only with the click's user activation.
+  // Args: [request_id, answer]
+  void HandleWebAgentFrameTools(const base::ListValue& args);
 
   // ---- Saving a successful agent run as a draft workflow ------------
   // (automation/agent_run_draft.h; molt_ai_chat_handler_agent_run.cc.)
@@ -451,7 +458,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // proposal's document (SiteToolHost::ToolFrameIfCurrent()); else null.
   content::RenderFrameHost* ChatProposalToolFrame(const ChatProposal& proposal);
   // A site tool's call ended.
+  // |record|: the call as a recorded workflow step would keep it, for a
+  // tab being recorded (|tab|); the user approved it with their click.
   void OnChatToolCalled(std::string callback_id,
+                        molt_ai::automation::tool_steps::RecordedCall record,
+                        base::WeakPtr<content::WebContents> tab,
                         molt_ai::SiteToolHost::CallEnd end,
                         molt_ai::agent_tools::CallOutcome outcome);
   // Lists and calls site tools for the proposals (created on first use).

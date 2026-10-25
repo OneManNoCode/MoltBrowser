@@ -727,6 +727,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   untrusted, so it won't submit forms until you trust it. Runs that used a
   site's own tool, and runs in MoltNet windows, can't be saved. Workflow
   runs also no longer save the values you type when you start them.
+- **Agent mode keeps up with changing sites, and replays site tools.** Each
+  recorded step also remembers its element by its role and name, label,
+  stable attributes, text and place on the page; when a site changes and
+  the recorded selector no longer finds it, the replay tries those in
+  order, never picking another kind of element, a page of another site, or
+  a password field for an ordinary step, and asks you before it uses a weak
+  match. The run's history shows what found each element. A site tool you
+  allow in the AI chat while recording becomes a step, replayed only if the
+  site still offers the same tool with compatible arguments, and asking you
+  unless it only reads or the workflow is trusted on that site; values that
+  look secret are asked at each run. A frame of another site can offer its
+  tools to the agent only after you allow that site on that page (for this
+  session, or always, removable in Agent mode); every call to one asks you
+  and names both sites, and MoltNet windows never use them.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

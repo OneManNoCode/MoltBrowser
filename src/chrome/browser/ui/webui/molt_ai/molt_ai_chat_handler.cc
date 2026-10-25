@@ -49,6 +49,7 @@
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
@@ -410,6 +411,10 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "webAgentConfirm",
       base::BindRepeating(&MoltAIChatHandler::HandleWebAgentConfirm,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "webAgentFrameTools",
+      base::BindRepeating(&MoltAIChatHandler::HandleWebAgentFrameTools,
                           base::Unretained(this)));
   // A successful run saved as a draft workflow
   // (molt_ai_chat_handler_agent_run.cc).
@@ -5931,6 +5936,8 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
         d.Set("id", req.id);
         d.Set("action", req.action);
         d.Set("message", req.message);
+        // FRAME_TOOLS: whether to offer "Always".
+        d.Set("remember", req.can_remember);
         self->FireWebUIListener("agent-confirm", base::Value(std::move(d)));
       },
       weak_this);
@@ -6026,7 +6033,45 @@ void MoltAIChatHandler::HandleWebAgentConfirm(const base::ListValue& args) {
   } else {
     return;
   }
-  // Anything but an explicit boolean true is a denial.
-  const bool allowed = args[1].is_bool() && args[1].GetBool();
+  // Anything but an explicit boolean true is a denial, and so is an Allow
+  // without the click itself: the chat page's transient user activation,
+  // which its script can't make up (the click's activation reaches the
+  // browser before this message, as for runChatProposal). A denial stops
+  // the run.
+  bool allowed = args[1].is_bool() && args[1].GetBool();
+  if (allowed) {
+    content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
+    allowed = chat_frame && chat_frame->HasTransientUserActivation();
+  }
   web_agent_->ResolveConfirmation(request_id, allowed);
+}
+
+// ------------------------------------------------------------------
+// HandleWebAgentFrameTools — the user's answer on a FRAME_TOOLS chip: a
+// frame of another site offers tools (molt_ai/agents/frame_tools.h).
+// JS calls: chrome.send('webAgentFrameTools', [request_id, answer])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleWebAgentFrameTools(const base::ListValue& args) {
+  if (!web_agent_ || args.size() < 2 || !args[1].is_string()) return;
+  int request_id = 0;
+  if (args[0].is_int()) {
+    request_id = args[0].GetInt();
+  } else if (args[0].is_double()) {
+    request_id = base::saturated_cast<int>(args[0].GetDouble());
+  } else {
+    return;
+  }
+  std::optional<molt_ai::frame_tools::Grant> grant =
+      molt_ai::frame_tools::ParseAnswer(args[1].GetString());
+  if (!grant) return;
+  // Allowing takes the click itself: the chat page's transient user
+  // activation, which its script can't make up. Without it the answer is
+  // "Not now" (the run goes on without that frame's tools).
+  if (*grant != molt_ai::frame_tools::Grant::kNone) {
+    content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
+    if (!chat_frame || !chat_frame->ConsumeTransientUserActivation()) {
+      grant = molt_ai::frame_tools::Grant::kNone;
+    }
+  }
+  web_agent_->ResolveFrameTools(request_id, *grant);
 }

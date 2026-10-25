@@ -5613,6 +5613,44 @@ function _stopRecording() {
     renderPlan(update);
   });
 
+  // A frame of another site on the page offers tools: the agent lists
+  // them only if the user allows that site on this page. "Not now" only
+  // leaves them out; the run goes on whatever the answer. The browser
+  // takes "This session" / "Always" only from the click itself.
+  function frameToolsChip(req, steps) {
+    var row = document.createElement('div');
+    row.className = 'agent-confirm';
+    row.innerHTML =
+      moltHTML('<div class="agent-confirm-title">Another site\'s tools</div>' +
+      '<div class="agent-confirm-msg"></div>' +
+      '<div class="agent-confirm-btns">' +
+        '<button class="agent-deny" data-answer="not_now">Not now</button>' +
+        '<button class="agent-allow" data-answer="session">This session' +
+        '</button>' +
+      '</div>');
+    row.querySelector('.agent-confirm-msg').textContent =
+        String(req.message || '').substring(0, 300);
+    if (req.remember === true) {
+      var always = document.createElement('button');
+      always.className = 'agent-allow';
+      always.setAttribute('data-answer', 'always');
+      always.textContent = 'Always here';
+      row.querySelector('.agent-confirm-btns').appendChild(always);
+    }
+    var answered = false;
+    row.querySelectorAll('button[data-answer]').forEach(function(b) {
+      b.addEventListener('click', function() {
+        if (answered) return;
+        answered = true;
+        if (row.parentNode) row.parentNode.removeChild(row);
+        chrome.send('webAgentFrameTools',
+                    [Number(req.id) || 0, b.getAttribute('data-answer')]);
+      });
+    });
+    steps.appendChild(row);
+    steps.scrollTop = steps.scrollHeight;
+  }
+
   // The agent paused on a sensitive action (leaving the task's sites,
   // submitting a form, a payment / one-time-code field). Nothing happens
   // until the user answers; Deny stops the run. Shown in every permission
@@ -5621,6 +5659,10 @@ function _stopRecording() {
     if (!agentRunning || !req) return;
     var steps = document.getElementById('agentSteps');
     if (!steps) return;
+    if (req.action === 'FRAME_TOOLS') {
+      frameToolsChip(req, steps);
+      return;
+    }
     var row = document.createElement('div');
     row.className = 'agent-confirm';
     row.innerHTML =

@@ -2,7 +2,7 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // Site tools for the web agent and the AI chat's proposals: the tools a
-// page registers with WebMCP (document.modelContext, Chromium 152;
+// page registers with WebMCP (document.modelContext, Chromium 156;
 // docs/design/AGENT_ACTIONS.md §2.7, §4.9).
 //
 // The agent reaches them through the web API itself, from its isolated
@@ -11,14 +11,26 @@
 // (ModelContext.executeTool()). Blink and the browser apply the platform's
 // rules (secure context, the `tools` permissions policy, origin checks); the
 // page can't see or patch the isolated world's calls. Isolated-world
-// scripts don't wait for promises in 152, so each script starts the work,
-// keeps its state in the isolated world, and a poll script reports it.
+// scripts don't wait for promises (156 still runs them with
+// PromiseResultOption::kDoNotWait), so each script starts the work, keeps
+// its state in the isolated world, and a poll script reports it.
+//
+// In 156 a listed tool's input schema is an object (getTools() parses the
+// JSON the page registered) and executeTool() takes the arguments as an
+// object, which Blink serializes again: the scripts turn the schema into
+// text with JSON.stringify and pass the browser's JSON through JSON.parse,
+// both in the isolated world.
 //
 // The documents listed are the main document and its frames of exactly the
-// same origin (ToolFrames(): never a cross-origin frame, nor a same-origin
-// one inside it, a fenced frame or another page). A tool is its frame and
-// its name; each listing marks its document in the isolated world, and a
-// call runs only in the document so marked (SiteTool::document).
+// same origin (ToolFrames(): never a same-origin frame inside a
+// cross-origin one, a fenced frame or another page), and a frame of
+// another site that the main document embeds only once the user has
+// allowed that frame's origin on the main document's
+// (CrossOriginToolFrames(), frame_tools.h): listed and called in that
+// frame's own isolated world, named with its origin wherever it shows, and
+// every call asks. A tool is its frame and its name; each listing marks
+// its document in the isolated world, and a call runs only in the document
+// so marked (SiteTool::document).
 //
 // Everything a page lists is untrusted:
 //  * a tool is offered only if its name is valid, its description isn't
@@ -104,6 +116,8 @@ inline constexpr size_t kMaxToolResultChars = 1500;
 // page looked at to find them.
 inline constexpr size_t kMaxToolFrames = 8;
 inline constexpr size_t kMaxPageFrames = 64;
+// Frames of other sites whose tools may be listed (or counted, to ask).
+inline constexpr size_t kMaxCrossOriginToolFrames = 4;
 // A frame's path as the user reads it in an approval.
 inline constexpr size_t kMaxShownFramePathChars = 120;
 // A document's mark (BuildToolListScript()): 1-64 of [A-Za-z0-9].
@@ -166,7 +180,13 @@ struct SiteTool {
   std::string description;
   std::vector<ToolArgument> arguments;
   // annotations.readOnlyHint === true: the page says it changes nothing.
+  // A call goes unasked only if it isn't also consequential (below), nor a
+  // form tool, nor a sensitive one (ToolCallEffects()).
   bool read_only = false;
+  // annotations.consequentialHint === true (156): the page says a call has
+  // consequences. A tool with it never counts as one that only reads,
+  // whatever readOnlyHint says.
+  bool consequential = false;
   // annotations.untrustedContentHint === true: its answers may hold
   // other people's content.
   bool untrusted_output = false;
@@ -183,6 +203,14 @@ struct SiteTool {
   // FrameText() of that frame, "" for the main document: every approval
   // of a call shows it.
   std::string frame_text;
+  // The frame is another site's (CrossOriginToolFrames()), listed because
+  // the user allowed |frame_origin| on the main document's origin: every
+  // call asks, whatever the tool's hints, and every label, approval and
+  // answer names that origin.
+  bool cross_origin = false;
+  // url::Origin::Serialize() of that frame's document; "" for the main
+  // document's origin.
+  std::string frame_origin;
   // The mark of the document that listed it (ToolList::document): a call
   // runs only in that same document.
   std::string document;
@@ -218,6 +246,10 @@ struct PageFrame {
   // its renderer is live, and it belongs to the page itself: not to a
   // fenced frame, a guest view or any other page nested in it.
   bool in_page = false;
+  // Its document is allowed the `tools` permissions policy feature (the
+  // default for the main document and same-origin frames; a cross-origin
+  // frame has it only if its embedder delegated it, allow="tools").
+  bool tools_policy = false;
 };
 
 // Whether |frame| may offer tools on a page whose main document has
@@ -242,6 +274,36 @@ std::vector<size_t> ToolFrames(const std::vector<PageFrame>& frames);
 // main document.
 bool IsToolFrameChain(const std::vector<PageFrame>& chain);
 
+// Whether |frame| is another site's frame whose tools may be listed once
+// the user allows its origin (frame_tools.h) on a page whose main document
+// has |main_origin| (an http(s) origin): it is in the page, has the `tools`
+// policy (the embedder delegated it), and its origin is an http(s) origin
+// other than |main_origin| (any difference: another site, subdomain,
+// scheme or port), never opaque.
+bool IsCrossOriginToolFrame(const PageFrame& frame,
+                            std::string_view main_origin);
+
+// The frames of other sites whose tools may be listed, as indices into
+// |frames| (as for ToolFrames()): each a direct child of a document
+// ToolFrames() lists (the main document, or one of its same-origin frames:
+// the main site put it there) for which IsCrossOriginToolFrame() holds, in
+// the order of their parents in ToolFrames() and then their own, at most
+// kMaxCrossOriginToolFrames. Never a frame inside another site's frame,
+// whatever its origin; nothing inside one is ever listed.
+std::vector<size_t> CrossOriginToolFrames(const std::vector<PageFrame>& frames);
+
+// Whether a tool of the last frame of |chain| may still be called when that
+// frame is another site's: every frame before it is an IsToolFrameChain()
+// chain from the main document, and the last is a child of the one before
+// for which IsCrossOriginToolFrame() holds.
+bool IsCrossOriginToolFrameChain(const std::vector<PageFrame>& chain);
+
+// Whether a tool listed in another site's frame may be offered at all: not
+// one that takes a payment card or a one-time code (card and code fields
+// belong to the page the user is on, never to a frame of another site the
+// agent would fill them in for).
+bool MayOfferCrossOriginTool(const SiteTool& tool);
+
 // A frame as the user reads it in an approval: |origin| then |path| (the
 // path of the frame's http(s) URL; the caller leaves out the query and
 // fragment), the path cut to kMaxShownFramePathChars characters,
@@ -256,9 +318,25 @@ std::string FrameText(std::string_view origin, std::string_view path);
 // closed early. ReadArguments()' shown values are in this form.
 std::string VisibleText(std::string_view s);
 
+// Where a listed document is, as the browser sees it: its origin
+// (url::Origin::Serialize()) and the path of its http(s) URL ("" for a
+// document without an address of its own). For finding a recorded tool's
+// frame again; never shown as is.
+struct FrameAddress {
+  std::string origin;
+  std::string path;
+};
+
+// Blink's rule for a tool name ([A-Za-z0-9_.-]{1,128}), and the agent's for
+// an argument name ([A-Za-z0-9_-]{1,64}, not starting with "-" or "__").
+bool IsValidToolName(std::string_view name);
+bool IsValidArgumentName(std::string_view name);
+
 // How the model, the step trace and the user name a tool: its name, and for
-// a frame's tool the browser's number of the frame ("search in frame 2").
-// Never page text but the name, which can't contain a space.
+// a frame's tool the browser's number of the frame ("search in frame 2"),
+// and for another site's frame that site's origin ("search in frame 2 from
+// https://widget.example"). Never page text but the name, which can't
+// contain a space.
 std::string ToolLabel(const SiteTool& tool);
 
 // ---------------------------------------------------------------------------
@@ -287,9 +365,17 @@ std::string BuildToolListScript(std::string_view request_id,
                                 std::string_view document_mark);
 // Reports it: {state: 'pending' | 'failed' | 'gone'} or {state: 'done',
 // origin, document (the mark), tools: [{name, description, schema,
-// readOnly, untrusted, form}]}, the tools the document itself registered
-// (same window and origin), at most kMaxListedTools.
+// readOnly, untrusted, consequential, form}]}, the tools the document
+// itself registered (same window and origin), at most kMaxListedTools.
+// |schema| is JSON.stringify() of the listed input schema (an object in
+// 156), or null without one; anything but an object reads as "!", which
+// ConvertInputSchema() refuses.
 std::string BuildToolListPollScript(std::string_view request_id);
+// Reports only how many tools the list found: {state: 'pending' | 'failed'
+// | 'gone'} or {state: 'done', origin, document, count}. For a frame of
+// another site the user hasn't allowed yet: the browser asks only if it
+// has tools, and learns nothing else of them.
+std::string BuildToolCountPollScript(std::string_view request_id);
 
 enum class ListState { kPending, kDone, kUnavailable, kFailed, kGone };
 
@@ -307,6 +393,7 @@ struct ListedTool {
   std::optional<std::string> input_schema;
   bool read_only = false;
   bool untrusted_output = false;
+  bool consequential = false;
   bool form_backed = false;
   // More than kMaxFormControls controls.
   bool form_overflow = false;
@@ -330,6 +417,15 @@ struct ToolList {
 // malformed result (a 'done' without an origin or a valid mark included)
 // is kFailed.
 ToolList ParseToolList(const base::Value& result);
+
+// The count poll's result: the state, and for kDone the origin and the
+// number of tools (at most kMaxListedTools).
+struct ToolCount {
+  ListState state = ListState::kFailed;
+  std::string origin;
+  size_t count = 0;
+};
+ToolCount ParseToolCount(const base::Value& result);
 
 // The tool as the agent may offer it, or nullopt (skipped): see the top
 // of this file.
@@ -404,10 +500,11 @@ ArgumentsError ReadArguments(const base::Value& arguments,
                              ToolArguments* out);
 
 // Whether a call asks the user first: unless the page annotated the tool
-// read-only, it isn't a <form> tool and it takes no payment card or
-// one-time code. |message| says what the user approves: the tool, the
-// site, the frame when the tool isn't the main document's, why it asks,
-// and every argument.
+// read-only, it isn't a <form> tool, it takes no payment card or
+// one-time code, and it isn't another site's frame's (that always asks).
+// |message| says what the user approves: the tool, the site, the frame
+// when the tool isn't the main document's (and, for another site's frame,
+// both sites), why it asks, and every argument.
 struct CallCheck {
   bool ask = false;
   std::string message;
@@ -417,20 +514,30 @@ CallCheck CheckToolCall(const SiteTool& tool,
                         std::string_view origin_text);
 
 // Why a call of |tool| may matter, in the browser's words ("it may change
-// something there", "it takes a payment card"); empty for a tool the page
-// says only reads. CheckToolCall() asks when it isn't empty.
+// something there", "it takes a payment card", "it is another site's
+// tool"); empty for a tool the page says only reads. CheckToolCall() asks
+// when it isn't empty. Never empty for another site's frame's tool.
 std::vector<std::string> ToolCallEffects(const SiteTool& tool);
 
-// Where the tool runs, for an approval: `on https://shop.example`, and for
-// a frame's tool `in the frame https://shop.example/w/cart on
-// https://shop.example`.
+// Where the tool runs, for an approval: `on https://shop.example`, for a
+// frame's tool `in the frame https://shop.example/w/cart on
+// https://shop.example`, and for another site's frame `in the frame
+// https://widget.example/cart (another site) on https://shop.example`.
 std::string ToolPlaceText(const SiteTool& tool, std::string_view origin_text);
 
+// What a call runs, for an approval: `the site's tool "add_to_cart"` and
+// ToolPlaceText(), or for another site's frame both sites:
+// `https://widget.example's tool "add_to_cart" in its frame
+// https://widget.example/cart on https://shop.example`.
+std::string ToolCallTitle(const SiteTool& tool, std::string_view origin_text);
+
 // Starts the call in the agent's isolated world: only in the document that
-// listed |tool| (its mark, SiteTool::document), at |origin|, after
+// listed |tool| (its mark, SiteTool::document), at |origin| (the tool's
+// document's: SiteTool::frame_origin for another site's frame), after
 // getTools() shows the same tool as |tool| was listed (description, input
-// schema, both annotations, form fields). The arguments go in as one JSON
-// string. Evaluates to 'started', 'document_changed', 'origin_changed',
+// schema, its three annotations, form fields). The arguments go in as one
+// JSON string, which the script parses into the object executeTool()
+// takes. Evaluates to 'started', 'document_changed', 'origin_changed',
 // 'unavailable' or 'error'.
 std::string BuildToolCallScript(std::string_view request_id,
                                 std::string_view origin,

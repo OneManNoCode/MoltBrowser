@@ -18,6 +18,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/isolated_world_ids.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -75,7 +76,56 @@ agent_tools::PageFrame FactsOf(content::RenderFrameHost* frame,
   // (their main frame is their own), not being unloaded or cached.
   f.in_page = frame->GetMainFrame() == main && frame->IsActive() &&
               frame->IsRenderFrameLive();
+  // A cross-origin frame has it only if its embedder delegated it.
+  f.tools_policy = frame->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kTools);
   return f;
+}
+
+// The frames from |frame| up to |main|, as agent_tools sees them, main
+// first; empty if |frame| isn't in |main|'s page or is deeper than
+// |max_depth| frames below it.
+std::vector<agent_tools::PageFrame> ChainOf(content::RenderFrameHost* frame,
+                                            content::RenderFrameHost* main,
+                                            size_t max_depth) {
+  std::vector<content::RenderFrameHost*> up;
+  for (content::RenderFrameHost* f = frame; f; f = f->GetParent()) {
+    up.push_back(f);
+    if (up.size() > max_depth + 1) {
+      return {};
+    }
+  }
+  if (up.back() != main) {
+    return {};  // under a fenced frame, a guest view or another page
+  }
+  std::vector<agent_tools::PageFrame> chain;
+  for (auto it = up.rbegin(); it != up.rend(); ++it) {
+    agent_tools::PageFrame f = FactsOf(*it, main);
+    if (!chain.empty()) {
+      f.parent = chain.size() - 1;
+    }
+    chain.push_back(std::move(f));
+  }
+  return chain;
+}
+
+// |tool_document| if a tool listed there as another site's frame's (at
+// |other_site|) may still run on |main_document|'s page at |origin|.
+content::RenderFrameHost* OtherSiteFrameIfCurrent(
+    const content::WeakDocumentPtr& main_document,
+    const content::WeakDocumentPtr& tool_document,
+    const url::Origin& origin,
+    std::string_view other_site) {
+  content::RenderFrameHost* main = CurrentMain(main_document, origin);
+  content::RenderFrameHost* frame = tool_document.AsRenderFrameHostIfValid();
+  if (!main || !frame || frame == main || !frame->IsActive() ||
+      other_site.empty() ||
+      frame->GetLastCommittedOrigin().Serialize() != other_site) {
+    return nullptr;
+  }
+  const std::vector<agent_tools::PageFrame> chain =
+      ChainOf(frame, main, agent_tools::kMaxToolFrames + 1);
+  return agent_tools::IsCrossOriginToolFrameChain(chain) ? frame : nullptr;
 }
 
 // How the user reads |frame|: its origin and path; a document without an
@@ -87,6 +137,15 @@ std::string TextOf(content::RenderFrameHost* frame,
       main_origin, url.SchemeIsHTTPOrHTTPS() ? url.path() : std::string_view());
 }
 
+agent_tools::FrameAddress AddressOf(content::RenderFrameHost* frame) {
+  const GURL& url = frame->GetLastCommittedURL();
+  agent_tools::FrameAddress a;
+  a.origin = frame->GetLastCommittedOrigin().Serialize();
+  if (url.SchemeIsHTTPOrHTTPS())
+    a.path = std::string(url.path());
+  return a;
+}
+
 }  // namespace
 
 SiteToolHost::Listing::Listing() = default;
@@ -94,14 +153,35 @@ SiteToolHost::Listing::~Listing() = default;
 SiteToolHost::Listing::Listing(Listing&&) = default;
 SiteToolHost::Listing& SiteToolHost::Listing::operator=(Listing&&) = default;
 
+SiteToolHost::OtherSites::OtherSites() = default;
+SiteToolHost::OtherSites::~OtherSites() = default;
+SiteToolHost::OtherSites::OtherSites(const OtherSites&) = default;
+SiteToolHost::OtherSites& SiteToolHost::OtherSites::operator=(
+    const OtherSites&) = default;
+SiteToolHost::OtherSites::OtherSites(OtherSites&&) = default;
+SiteToolHost::OtherSites& SiteToolHost::OtherSites::operator=(OtherSites&&) =
+    default;
+
 struct SiteToolHost::ListRun {
+  // A document to list (or only count).
+  struct Doc {
+    content::WeakDocumentPtr document;
+    // FrameText() of it ("" for the main document).
+    std::string frame_text;
+    // Its origin if it is another site's frame; else empty.
+    std::string other_site;
+    // Another site's frame the user hasn't allowed: count its tools only.
+    bool count_only = false;
+  };
+
   ListCallback done;
   content::WeakDocumentPtr main_document;
   url::Origin origin;
   base::TimeTicks deadline;
-  // FrameText() of each document of |listing.documents| ("" for [0]).
-  std::vector<std::string> frame_texts;
-  // The document being listed (an index into |listing.documents|).
+  // The documents listed, in |listing.documents| order (so a tool's frame
+  // number is its index here), then the ones only counted.
+  std::vector<Doc> docs;
+  // The document being listed (an index into |docs|).
   size_t next = 0;
   Listing listing;
 };
@@ -140,25 +220,33 @@ content::RenderFrameHost* SiteToolHost::ToolFrameIfCurrent(
   // The frames from it up to the main document, as they are now: each must
   // still count, as when it was listed (the document of a frame can't
   // outlive its parent's, but checking costs a few pointers).
-  std::vector<content::RenderFrameHost*> up;
-  for (content::RenderFrameHost* f = frame; f; f = f->GetParent()) {
-    up.push_back(f);
-    if (up.size() > agent_tools::kMaxToolFrames + 1) {
-      return nullptr;
-    }
-  }
-  if (up.back() != main) {
-    return nullptr;  // under a fenced frame, a guest view or another page
-  }
-  std::vector<agent_tools::PageFrame> chain;
-  for (auto it = up.rbegin(); it != up.rend(); ++it) {
-    agent_tools::PageFrame f = FactsOf(*it, main);
-    if (!chain.empty()) {
-      f.parent = chain.size() - 1;
-    }
-    chain.push_back(std::move(f));
-  }
+  const std::vector<agent_tools::PageFrame> chain =
+      ChainOf(frame, main, agent_tools::kMaxToolFrames);
   return agent_tools::IsToolFrameChain(chain) ? frame : nullptr;
+}
+
+// static
+content::RenderFrameHost* SiteToolHost::ToolFrameIfCurrent(
+    const content::WeakDocumentPtr& main_document,
+    const content::WeakDocumentPtr& tool_document,
+    const url::Origin& origin,
+    const agent_tools::SiteTool& tool) {
+  if (tool.cross_origin) {
+    return OtherSiteFrameIfCurrent(main_document, tool_document, origin,
+                                   tool.frame_origin);
+  }
+  return ToolFrameIfCurrent(main_document, tool_document, origin);
+}
+
+// static
+content::RenderFrameHost* SiteToolHost::FrameIfCurrent(
+    const PollTarget& target) {
+  if (!target.other_site.empty()) {
+    return OtherSiteFrameIfCurrent(target.main_document, target.document,
+                                   target.origin, target.other_site);
+  }
+  return ToolFrameIfCurrent(target.main_document, target.document,
+                            target.origin);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +255,14 @@ content::RenderFrameHost* SiteToolHost::ToolFrameIfCurrent(
 
 void SiteToolHost::List(content::WeakDocumentPtr main_document,
                         url::Origin origin,
+                        ListCallback done) {
+  List(std::move(main_document), std::move(origin), OtherSites(),
+       std::move(done));
+}
+
+void SiteToolHost::List(content::WeakDocumentPtr main_document,
+                        url::Origin origin,
+                        OtherSites other_sites,
                         ListCallback done) {
   auto run = std::make_unique<ListRun>();
   run->done = std::move(done);
@@ -205,20 +301,51 @@ void SiteToolHost::List(content::WeakDocumentPtr main_document,
                         : FrameIterationAction::kSkipChildren;
         });
     for (size_t index : agent_tools::ToolFrames(frames)) {
-      run->listing.documents.push_back(hosts[index]->GetWeakDocumentPtr());
-      run->frame_texts.push_back(
-          index == 0 ? std::string() : TextOf(hosts[index], main_origin));
+      ListRun::Doc doc;
+      doc.document = hosts[index]->GetWeakDocumentPtr();
+      doc.frame_text =
+          index == 0 ? std::string() : TextOf(hosts[index], main_origin);
+      run->listing.documents.push_back(doc.document);
+      run->listing.frames.push_back(AddressOf(hosts[index]));
+      run->docs.push_back(std::move(doc));
     }
+    // Frames of other sites the main site embeds: listed when the caller
+    // names their origin, else only counted if asked, else left alone.
+    std::vector<ListRun::Doc> counted;
+    for (size_t index : agent_tools::CrossOriginToolFrames(frames)) {
+      const std::string frame_origin =
+          hosts[index]->GetLastCommittedOrigin().Serialize();
+      const bool listed = std::find(other_sites.listed.begin(),
+                                    other_sites.listed.end(),
+                                    frame_origin) != other_sites.listed.end();
+      if (!listed && !other_sites.count_others) {
+        continue;
+      }
+      ListRun::Doc doc;
+      doc.document = hosts[index]->GetWeakDocumentPtr();
+      doc.frame_text = TextOf(hosts[index], frame_origin);
+      doc.other_site = frame_origin;
+      doc.count_only = !listed;
+      if (listed) {
+        run->listing.documents.push_back(doc.document);
+        run->listing.frames.push_back(AddressOf(hosts[index]));
+        run->docs.push_back(std::move(doc));
+      } else {
+        counted.push_back(std::move(doc));
+      }
+    }
+    run->docs.insert(run->docs.end(), std::make_move_iterator(counted.begin()),
+                     std::make_move_iterator(counted.end()));
   }
   ListNext(std::move(run));
 }
 
 void SiteToolHost::ListNext(std::unique_ptr<ListRun> run) {
-  while (run->next < run->listing.documents.size() &&
+  while (run->next < run->docs.size() &&
          base::TimeTicks::Now() < run->deadline) {
-    content::RenderFrameHost* frame =
-        ToolFrameIfCurrent(run->main_document,
-                           run->listing.documents[run->next], run->origin);
+    const ListRun::Doc& doc = run->docs[run->next];
+    content::RenderFrameHost* frame = FrameIfCurrent(PollTarget{
+        run->main_document, doc.document, run->origin, doc.other_site});
     if (!frame) {
       ++run->next;
       continue;
@@ -249,9 +376,18 @@ void SiteToolHost::OnListStarted(std::unique_ptr<ListRun> run,
     ListNext(std::move(run));
     return;
   }
-  PollTarget target{run->main_document, run->listing.documents[run->next],
-                    run->origin};
+  const ListRun::Doc& doc = run->docs[run->next];
+  PollTarget target{run->main_document, doc.document, run->origin,
+                    doc.other_site};
   const base::TimeTicks deadline = run->deadline;
+  if (doc.count_only) {
+    // How many tools, and nothing else of them.
+    Poll(agent_tools::BuildToolCountPollScript(request_id), std::move(target),
+         deadline,
+         base::BindOnce(&SiteToolHost::OnCounted, weak_factory_.GetWeakPtr(),
+                        std::move(run)));
+    return;
+  }
   Poll(agent_tools::BuildToolListPollScript(request_id), std::move(target),
        deadline,
        base::BindOnce(&SiteToolHost::OnListed, weak_factory_.GetWeakPtr(),
@@ -262,15 +398,49 @@ void SiteToolHost::OnListed(std::unique_ptr<ListRun> run,
                             PollEnd end,
                             base::Value result) {
   if (end == PollEnd::kSettled) {
+    const ListRun::Doc& doc = run->docs[run->next];
     const agent_tools::ToolList list = agent_tools::ParseToolList(result);
-    // Only the document asked (Poll() checked it), at the origin observed.
+    // Only the document asked (Poll() checked it), at the origin observed:
+    // the page's, or for another site's frame that frame's.
+    const std::string expected =
+        doc.other_site.empty() ? run->origin.Serialize() : doc.other_site;
     if (list.state == agent_tools::ListState::kDone &&
-        list.origin == run->origin.Serialize()) {
-      std::vector<agent_tools::SiteTool> tools = agent_tools::MakeSiteTools(
-          list, run->next, run->frame_texts[run->next]);
-      run->listing.tools.insert(run->listing.tools.end(),
-                                std::make_move_iterator(tools.begin()),
-                                std::make_move_iterator(tools.end()));
+        list.origin == expected) {
+      std::vector<agent_tools::SiteTool> tools =
+          agent_tools::MakeSiteTools(list, run->next, doc.frame_text);
+      for (agent_tools::SiteTool& tool : tools) {
+        if (!doc.other_site.empty()) {
+          tool.cross_origin = true;
+          tool.frame_origin = doc.other_site;
+          if (!agent_tools::MayOfferCrossOriginTool(tool)) {
+            continue;
+          }
+        }
+        run->listing.tools.push_back(std::move(tool));
+      }
+    }
+  }
+  ++run->next;
+  ListNext(std::move(run));
+}
+
+void SiteToolHost::OnCounted(std::unique_ptr<ListRun> run,
+                             PollEnd end,
+                             base::Value result) {
+  if (end == PollEnd::kSettled) {
+    const ListRun::Doc& doc = run->docs[run->next];
+    const agent_tools::ToolCount count = agent_tools::ParseToolCount(result);
+    if (count.state == agent_tools::ListState::kDone &&
+        count.origin == doc.other_site && count.count > 0) {
+      auto it = std::find_if(
+          run->listing.counted.begin(), run->listing.counted.end(),
+          [&](const Listing::Counted& c) { return c.origin == doc.other_site; });
+      if (it == run->listing.counted.end()) {
+        run->listing.counted.push_back({doc.other_site, count.count});
+      } else {
+        it->tools = std::min(it->tools + count.count,
+                             agent_tools::kMaxListedTools);
+      }
     }
   }
   ++run->next;
@@ -288,7 +458,7 @@ void SiteToolHost::Call(content::WeakDocumentPtr main_document,
                         const std::string& arguments_json,
                         CallCallback done) {
   content::RenderFrameHost* frame =
-      ToolFrameIfCurrent(main_document, tool_document, origin);
+      ToolFrameIfCurrent(main_document, tool_document, origin, tool);
   if (!frame) {
     // The document that listed the tool navigated, went away, or is no
     // longer a frame that counts: not run.
@@ -299,11 +469,15 @@ void SiteToolHost::Call(content::WeakDocumentPtr main_document,
   }
   auto run = std::make_unique<CallRun>();
   run->done = std::move(done);
+  // Another site's frame's tool runs at that frame's origin, in that frame.
+  std::string other_site = tool.cross_origin ? tool.frame_origin : std::string();
+  const std::string tool_origin =
+      tool.cross_origin ? tool.frame_origin : origin.Serialize();
   run->target = PollTarget{std::move(main_document), std::move(tool_document),
-                           origin};
+                           origin, std::move(other_site)};
   run->request_id = NextRequestId('c');
   const std::string script = agent_tools::BuildToolCallScript(
-      run->request_id, origin.Serialize(), tool, arguments_json);
+      run->request_id, tool_origin, tool, arguments_json);
   EvalInIsolatedWorld(frame, script,
                       base::BindOnce(&SiteToolHost::OnCallStarted,
                                      weak_factory_.GetWeakPtr(),
@@ -354,8 +528,7 @@ void SiteToolHost::Poll(std::string script,
                         PollTarget target,
                         base::TimeTicks deadline,
                         PollCallback done) {
-  content::RenderFrameHost* frame = ToolFrameIfCurrent(
-      target.main_document, target.document, target.origin);
+  content::RenderFrameHost* frame = FrameIfCurrent(target);
   if (!frame) {
     std::move(done).Run(PollEnd::kDocumentChanged, base::Value());
     return;
@@ -375,8 +548,7 @@ void SiteToolHost::OnPolled(std::string script,
                             base::Value result) {
   // An answer from a document that is no longer the one asked (or none,
   // because it went away) is not its answer.
-  if (!ToolFrameIfCurrent(target.main_document, target.document,
-                          target.origin)) {
+  if (!FrameIfCurrent(target)) {
     std::move(done).Run(PollEnd::kDocumentChanged, base::Value());
     return;
   }

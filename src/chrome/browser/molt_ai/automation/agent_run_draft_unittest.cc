@@ -244,6 +244,53 @@ TEST(AgentRunDraftTest, ConvertsTheStepsThatRanInOrder) {
   EXPECT_TRUE(loaded->security.sites_unconfirmed);
 }
 
+// The fallback locators captured right before each action go with its
+// step, if they were captured on the page the step acted on.
+TEST(AgentRunDraftTest, KeepsTheElementsFallbackLocators) {
+  locators::StepLocators button;
+  button.origin = kOrigin;
+  button.element = {"button", "", "button"};
+  locators::Locator role;
+  role.by = locators::By::kRole;
+  role.role = "button";
+  role.value = "Add to cart";
+  button.list = {role};
+  locators::StepLocators field = button;
+  field.element = {"input", "text", "textbox"};
+  locators::Locator label;
+  label.by = locators::By::kLabel;
+  label.value = "Size";
+  field.list = {label};
+  locators::StepLocators elsewhere = button;
+  elsewhere.origin = "https://evil.example";
+
+  RunStep click = Click("#add", "Add to cart");
+  click.elements[0].locators = button;
+  RunStep type = Type("#size", "Size", "42");
+  type.elements[0].locators = field;
+  RunStep other = Click("#buy", "Buy");
+  other.elements[0].locators = elsewhere;
+  RunStep none = Click("#more", "More");
+  Draft d = Build(MakeRun({Nav("https://shop.example/"), click, type, other,
+                           none}));
+  ASSERT_TRUE(d.script);
+  const std::vector<Step>& steps = d.script->steps;
+  ASSERT_EQ(steps.size(), 5u);
+  ASSERT_TRUE(steps[1].locators);
+  EXPECT_EQ(*steps[1].locators, button);
+  ASSERT_TRUE(steps[2].locators);
+  EXPECT_EQ(*steps[2].locators, field);
+  EXPECT_FALSE(steps[3].locators) << "captured on another origin";
+  EXPECT_FALSE(steps[4].locators);
+  // ... and survive saving (the caller assigns the id).
+  d.script->id = "agent_1";
+  std::optional<Script> back =
+      Script::FromJSONString(d.script->ToJSONString());
+  ASSERT_TRUE(back);
+  ASSERT_TRUE(back->steps[1].locators);
+  EXPECT_EQ(*back->steps[1].locators, button);
+}
+
 TEST(AgentRunDraftTest, SearchAndNavigationAreNavigations) {
   Draft d = Build(MakeRun({Search("cheap flights tokyo"),
                            Click("#r1", "Result one",

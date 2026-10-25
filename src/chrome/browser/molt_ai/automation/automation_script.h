@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_locators.h"
 
 namespace molt_ai {
 namespace automation {
@@ -56,6 +57,9 @@ enum class StepType {
   SCREENSHOT,
   RUN_JS,      // arbitrary JS in the active frame (Trusted only)
   RUN_SCRIPT,  // delegate to another saved Script by id (chain agents)
+  // A site's WebMCP tool the user approved while recording
+  // (automation_tool_steps.h): target = its name, extra["tool"] the rest.
+  CALL_TOOL,
 
   // Sentinel
   UNKNOWN,
@@ -71,8 +75,15 @@ struct Step {
 
   // Additional candidate selectors tried in order if `target` fails.
   // Recorded by the recorder (data-testid -> id -> name -> aria-label -> path)
-  // to give scripts resilience against page redesigns.
+  // to give scripts resilience against page redesigns. Used only by steps
+  // without |locators| (older recordings, studio steps).
   std::vector<std::string> selector_fallbacks;
+
+  // CLICK / TYPE: the recorded element's fallback locators and what it was
+  // (automation_locators.h), captured when the step was recorded or saved
+  // from an agent run. Optional ("locators" in the file); validated when
+  // read, and dropped whole if its root is malformed.
+  std::optional<locators::StepLocators> locators;
 
   // Action-specific value: text to type, JS code, prompt for AI step,
   // notification body, etc.
@@ -178,6 +189,9 @@ struct StepResult {
   // right after this step. Empty when no live surface was available.
   std::string screenshot;
   std::string note;            // e.g. "Clicked", "Selector did not match"
+  // CLICK / TYPE: how the element was found ("the recorded selector", "its
+  // label (a fallback)", ...; the runner's fixed words). Empty otherwise.
+  std::string found_by;
 };
 
 // One row in Stats::run_history. Capped to last N runs by the runner.

@@ -21,8 +21,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/unguessable_token.h"
+#include "chrome/browser/molt_ai/agents/agent_features.h"
+#include "chrome/browser/molt_ai/agents/frame_tools.h"
+#include "chrome/browser/molt_ai/automation/run_questions.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
+#include "chrome/browser/profiles/profile.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
@@ -89,11 +95,14 @@ const char kSelectorAcceptJSTemplate[] =
       } catch (e) { return 'none'; }
     })())JS";
 
-// Click a selector, returns true on success.
+// Click a selector, returns true on success. The second argument is the
+// runner's PinStatement(): for an element found by its fallback locators,
+// that it is the very element pinned.
 const char kClickSelectorJSTemplate[] =
     R"((() => {
       const el = document.querySelector(%s);
       if (!el) return false;
+      %s;
       el.scrollIntoView({block: 'center'});
       el.click();
       return true;
@@ -105,6 +114,7 @@ const char kTypeIntoJSTemplate[] =
     R"((() => {
       const el = document.querySelector(%s);
       if (!el) return false;
+      %s;
       el.scrollIntoView({block: 'center'});
       el.focus();
       const native = Object.getOwnPropertyDescriptor(
@@ -120,12 +130,14 @@ const char kTypeIntoJSTemplate[] =
 // Fill a saved (vault) password. Refuses unless the element is still a
 // type=password input on the expected host, checked in the same script as
 // the write so a swapped field or a navigation in between is caught.
-// Args: selector, expected location.hostname, password (x2).
+// Args: selector, expected location.hostname, the pin statement, password
+// (x2).
 const char kFillPasswordJSTemplate[] =
     R"((() => {
       const el = document.querySelector(%s);
       if (!el || el.type !== 'password' || location.hostname !== %s)
         return false;
+      %s;
       el.scrollIntoView({block: 'center'});
       el.focus();
       const native =
@@ -303,12 +315,44 @@ bool EncodePngAndWrite(const SkBitmap& bitmap, const base::FilePath& path) {
   return base::WriteFile(path, png.value());
 }
 
+// The step's recorded visible-text anchor ("Kids"), for the selector's
+// label check and text-match recovery. Old recordings have no extra.text:
+// the first quoted token of the description then (Click "Kids").
+std::string RawTextHintOf(const Step& s) {
+  std::string text_hint;
+  if (s.extra.is_dict()) {
+    if (auto* t = s.extra.GetDict().FindString("text"))
+      text_hint = *t;
+  }
+  if (text_hint.empty()) {
+    size_t a = s.description.find('"');
+    if (a != std::string::npos) {
+      size_t b = s.description.find('"', a + 1);
+      if (b != std::string::npos)
+        text_hint = s.description.substr(a + 1, b - a - 1);
+    }
+  }
+  return text_hint;
+}
+
 }  // namespace
 
 struct QueuedPrompt {
   std::string prompt;
   PromptOptions opts;
   base::OnceCallback<void(GenerationResult)> reply;
+};
+
+// The CALL_TOOL step being run: the step as read, then the tool as the page
+// offers it now, the documents to call it in and the arguments it gets.
+struct AutomationRunner::ToolCall {
+  tool_steps::ToolStep step;
+  base::TimeTicks list_deadline;
+  agent_tools::SiteTool live;
+  agent_tools::ToolArguments arguments;
+  content::WeakDocumentPtr main_document;
+  content::WeakDocumentPtr tool_document;
+  url::Origin origin;
 };
 
 // Observes the target tab after a click and fires |on_settled| once the
@@ -389,7 +433,9 @@ AutomationRunner::AutomationRunner(content::WebContents* target_contents,
       ai_runtime_(ai_runtime),
       storage_(storage) {}
 
-AutomationRunner::~AutomationRunner() = default;
+AutomationRunner::~AutomationRunner() {
+  WithdrawQuestion();
+}
 
 void AutomationRunner::Run(Script script,
                             StepProgressCallback on_step,
@@ -485,6 +531,12 @@ void AutomationRunner::ExecuteNextStep() {
   // Mark the start of this step for per-step timing (covers control-flow and
   // action steps, and resets on each retry attempt to time the winning try).
   step_start_ = base::TimeTicks::Now();
+  found_by_.clear();
+  pin_token_.clear();
+  WithdrawQuestion();
+  tool_call_.reset();
+  if (site_tools_)
+    site_tools_->Cancel();
 
   // Control-flow steps always run for stack management. Their effect
   // when in a not-taken branch is adjusted (e.g. nested IF pushes
@@ -571,6 +623,7 @@ void AutomationRunner::ExecuteNextStep() {
     case StepType::ASSERT:      DoAssert(s); break;
     case StepType::RUN_JS:      DoRunJS(s); break;
     case StepType::RUN_SCRIPT:  DoRunScript(s); break;
+    case StepType::CALL_TOOL:   DoCallTool(s); break;
     default:
       OnStepFinished(false, "Unknown step type");
       break;
@@ -629,7 +682,9 @@ bool AutomationRunner::PreflightStepPolicy(const Step& s,
       }
       return false;
     case StepType::KEYPRESS:
-      // Keys go to whatever page is focused; same site rule as a click.
+    case StepType::CALL_TOOL:
+      // Keys go to whatever page is focused; same site rule as a click. A
+      // site's tool runs on the page it is on: one of the workflow's sites.
       if (page_allowed)
         return true;
       *why = other_site;
@@ -645,6 +700,7 @@ void AutomationRunner::BlockStep(const std::string& reason,
     return;
   blocked_needs_trust_ = needs_trust;
   step_timeout_timer_.Stop();
+  WithdrawQuestion();
   // Drop any in-flight work of this step (see OnStepFinished).
   weak_factory_.InvalidateWeakPtrs();
   LOG(WARNING) << "[Automation] step " << current_index_
@@ -717,6 +773,7 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
   if (!is_running_)
     return;
   step_timeout_timer_.Stop();
+  WithdrawQuestion();
   // Abandon any OTHER in-flight async work from this (now finishing / timed-out)
   // step attempt so a late completion can't double-dispatch: a slow
   // selector-resolve returning AFTER the step already timed out and retried
@@ -738,6 +795,10 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
       // element into existence with exponential backoff — this is what makes a
       // click effectively "wait for the page / dynamic content".
       int effective_retries = s.retries;
+      // A site's tool is called once: a call that failed or timed out may
+      // still have done something, whatever the step's retries say.
+      if (s.type == StepType::CALL_TOOL)
+        effective_retries = 0;
       if (effective_retries == 0) {
         switch (s.type) {
           case StepType::CLICK:
@@ -796,6 +857,7 @@ void AutomationRunner::CaptureStepAndThen(bool succeeded,
   }
   sr.ok = succeeded;
   sr.note = note;
+  sr.found_by = found_by_;
   sr.duration_ms = (base::TimeTicks::Now() - step_start_).InMilliseconds();
 
   base::FilePath dir =
@@ -912,6 +974,7 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   // Stop the step timer and abandon any lingering per-step async work so a late
   // completion can't resurrect the finished run.
   step_timeout_timer_.Stop();
+  WithdrawQuestion();
   weak_factory_.InvalidateWeakPtrs();
   int duration_ms = (base::TimeTicks::Now() - start_time_).InMilliseconds();
   RunResult result;
@@ -1077,6 +1140,8 @@ void AutomationRunner::TryNextSelector(
                      base::Value v) {
                     if (!self) return;
                     if (v.is_string() && v.GetString() == "ok") {
+                      self->found_by_ = idx == 0 ? "the recorded selector"
+                                                 : "a fallback selector";
                       std::move(cb).Run(current);
                       return;
                     }
@@ -1090,9 +1155,17 @@ void AutomationRunner::TryNextSelector(
                   std::move(text_hint), sel, std::move(cb)));
 }
 
+std::string AutomationRunner::TextHintOf(const Step& s) const {
+  return Resolve(RawTextHintOf(s));  // {{variable}} substitution
+}
+
 void AutomationRunner::ResolveSelector(
     const Step& s,
     base::OnceCallback<void(const std::string&)> cb) {
+  if (s.locators && target_contents_) {
+    ResolveWithLocators(s, std::move(cb));
+    return;
+  }
   // Build the candidate ladder: primary target first, then recorded
   // fallbacks. Each is variable-substituted via Resolve().
   std::vector<std::string> candidates;
@@ -1101,23 +1174,7 @@ void AutomationRunner::ResolveSelector(
   for (const auto& f : s.selector_fallbacks)
     candidates.push_back(Resolve(f));
 
-  // Recorded visible-text anchor ("Kids") for text-match recovery. Old
-  // recordings have no extra.text — fall back to the first quoted token in the
-  // description (e.g. Click "Kids").
-  std::string text_hint;
-  if (s.extra.is_dict()) {
-    if (auto* t = s.extra.GetDict().FindString("text"))
-      text_hint = *t;
-  }
-  if (text_hint.empty()) {
-    size_t a = s.description.find('"');
-    if (a != std::string::npos) {
-      size_t b = s.description.find('"', a + 1);
-      if (b != std::string::npos)
-        text_hint = s.description.substr(a + 1, b - a - 1);
-    }
-  }
-  text_hint = Resolve(text_hint);  // {{variable}} substitution
+  std::string text_hint = TextHintOf(s);
 
   if (candidates.empty() && text_hint.empty()) {
     std::move(cb).Run("");
@@ -1126,6 +1183,233 @@ void AutomationRunner::ResolveSelector(
 
   TryNextSelector(std::move(candidates), 0, Resolve(s.description),
                   std::move(text_hint), std::move(cb));
+}
+
+// -----------------------------------------------------------------------------
+// Fallback locators (automation_locators.h)
+// -----------------------------------------------------------------------------
+
+void AutomationRunner::ResolveWithLocators(
+    const Step& s,
+    base::OnceCallback<void(const std::string&)> cb) {
+  // The recorded selector first (with the step's text anchor, as the
+  // ladder checks it), then each stored locator, all in one probe. The
+  // locators are page data from the file: they go into the script as
+  // JSON, and nothing in them is substituted.
+  const std::string selector =
+      s.target.empty() ? std::string() : Resolve(s.target);
+  std::vector<locators::Locator> order =
+      locators::ProbeOrder(selector, *s.locators);
+  const std::string probe_id = base::UnguessableToken::Create().ToString();
+  const std::string js =
+      locators::BuildProbeScript(probe_id, order, TextHintOf(s));
+  EvalJS(js, base::BindOnce(&AutomationRunner::OnLocatorProbe,
+                            weak_factory_.GetWeakPtr(), probe_id,
+                            std::move(order), *s.locators,
+                            Resolve(s.description), /*from_model=*/false,
+                            std::move(cb)));
+}
+
+void AutomationRunner::OnLocatorProbe(
+    std::string probe_id,
+    std::vector<locators::Locator> order,
+    locators::StepLocators recorded,
+    std::string description,
+    bool from_model,
+    base::OnceCallback<void(const std::string&)> cb,
+    base::Value report) {
+  const std::optional<locators::Probe> probe =
+      locators::ParseProbe(report, order.size());
+  // The browser's own view of the document probed (the main frame).
+  const std::string page_origin =
+      target_contents_ && target_contents_->GetPrimaryMainFrame()
+          ? target_contents_->GetPrimaryMainFrame()
+                ->GetLastCommittedOrigin()
+                .Serialize()
+          : std::string();
+  locators::Decision d;
+  if (probe)
+    d = locators::Decide(order, *probe, recorded, page_origin);
+
+  if (d.strength == locators::Strength::kNone) {
+    // Nothing of the recorded kind on the recorded origin. The on-device
+    // model may suggest a selector; it is checked as a locator would be,
+    // and acted on only once the user allows it.
+    if (!from_model && ai_runtime_ && !description.empty() &&
+        page_origin == recorded.origin) {
+      AskLLMForSelector(
+          description,
+          base::BindOnce(&AutomationRunner::OnLocatorModelSelector,
+                         weak_factory_.GetWeakPtr(), description,
+                         std::move(recorded), std::move(cb)));
+      return;
+    }
+    std::move(cb).Run(std::string());
+    return;
+  }
+
+  const locators::Candidate& candidate = probe->candidates[d.candidate];
+  if (d.strength == locators::Strength::kStrong && !from_model) {
+    std::string found_by = locators::Describe(order[d.locator]);
+    if (order[d.locator].by != locators::By::kSelector)
+      found_by += " (a fallback)";
+    PinLocated(std::move(probe_id), d.candidate, std::move(found_by),
+               std::move(cb));
+    return;
+  }
+  // Only a weak locator found it, strong ones disagree, or the model
+  // suggested it: the user decides.
+  const std::string found_by = from_model
+                                   ? std::string("the on-device AI's suggestion")
+                                   : locators::Describe(order[d.locator]);
+  const std::string question = locators::WeakMatchQuestion(
+      description, candidate, found_by,
+      from_model ? locators::Strength::kWeak : d.strength);
+  AskUser(kQuestionWeakMatch, question, /*needs_trust=*/false,
+          base::BindOnce(&AutomationRunner::OnWeakMatchAnswer,
+                         weak_factory_.GetWeakPtr(), std::move(probe_id),
+                         d.candidate, found_by + ", which you confirmed",
+                         std::move(cb)));
+}
+
+void AutomationRunner::OnLocatorModelSelector(
+    std::string description,
+    locators::StepLocators recorded,
+    base::OnceCallback<void(const std::string&)> cb,
+    const std::string& selector) {
+  // AskLLMForSelector set found_by_; it counts only once chosen below.
+  found_by_.clear();
+  if (selector.empty()) {
+    std::move(cb).Run(std::string());
+    return;
+  }
+  locators::Locator l;
+  l.by = locators::By::kSelector;
+  l.value = selector;
+  std::vector<locators::Locator> order = {std::move(l)};
+  const std::string probe_id = base::UnguessableToken::Create().ToString();
+  const std::string js = locators::BuildProbeScript(probe_id, order, "");
+  EvalJS(js, base::BindOnce(&AutomationRunner::OnLocatorProbe,
+                            weak_factory_.GetWeakPtr(), probe_id,
+                            std::move(order), std::move(recorded),
+                            std::move(description), /*from_model=*/true,
+                            std::move(cb)));
+}
+
+void AutomationRunner::OnWeakMatchAnswer(
+    std::string probe_id,
+    size_t candidate,
+    std::string found_by,
+    base::OnceCallback<void(const std::string&)> cb,
+    bool allowed) {
+  if (!allowed) {
+    BlockStep("Stopped: you didn't confirm the element this step should "
+              "use.");
+    return;
+  }
+  PinLocated(std::move(probe_id), candidate, std::move(found_by),
+             std::move(cb));
+}
+
+void AutomationRunner::PinLocated(
+    std::string probe_id,
+    size_t candidate,
+    std::string found_by,
+    base::OnceCallback<void(const std::string&)> cb) {
+  const std::string token = base::UnguessableToken::Create().ToString();
+  EvalJS(locators::BuildPinScript(probe_id, candidate, token),
+         base::BindOnce(
+             [](base::WeakPtr<AutomationRunner> self, std::string token,
+                std::string found_by,
+                base::OnceCallback<void(const std::string&)> cb,
+                base::Value v) {
+               if (!self)
+                 return;
+               // The selector is the browser's own, never the page's.
+               const std::string selector = locators::PinSelector(token);
+               if (selector.empty() || !v.is_string() ||
+                   v.GetString() != selector) {
+                 std::move(cb).Run(std::string());
+                 return;
+               }
+               self->pin_token_ = std::move(token);
+               self->found_by_ = found_by;
+               if (self->storage_) {
+                 self->storage_->AppendAudit(
+                     self->script_.id, "step_located",
+                     "step=" + base::NumberToString(self->current_index_ + 1) +
+                         " by=" + found_by);
+               }
+               std::move(cb).Run(selector);
+             },
+             weak_factory_.GetWeakPtr(), token, std::move(found_by),
+             std::move(cb)));
+}
+
+std::string AutomationRunner::PinStatement() const {
+  if (pin_token_.empty())
+    return "void 0";
+  return "if (!" + locators::PinnedCheck(pin_token_) +
+         ") return false; el.removeAttribute('data-molt-pick')";
+}
+
+// -----------------------------------------------------------------------------
+// Questions to the user (run_questions.h)
+// -----------------------------------------------------------------------------
+
+void AutomationRunner::AskUser(const std::string& kind,
+                               const std::string& text,
+                               bool needs_trust,
+                               base::OnceCallback<void(bool)> on_answer) {
+  WithdrawQuestion();
+  // The step waits for the user, longer than its own timeout allows.
+  step_timeout_timer_.Stop();
+  step_timeout_timer_.Start(
+      FROM_HERE, base::Seconds(kQuestionTimeoutSeconds),
+      base::BindOnce(&AutomationRunner::OnQuestionTimeout,
+                     weak_factory_.GetWeakPtr(), needs_trust));
+  EmitStepProgress(/*starting=*/true, /*succeeded=*/false,
+                   "Waiting for your answer");
+  question_id_ = RunQuestions::Get()->Ask(
+      script_.id, static_cast<int>(current_index_), kind, text,
+      base::BindOnce(&AutomationRunner::OnUserAnswer,
+                     weak_factory_.GetWeakPtr(), std::move(on_answer)));
+  if (storage_) {
+    storage_->AppendAudit(
+        script_.id, "question_asked",
+        kind + " step=" + base::NumberToString(current_index_ + 1));
+  }
+}
+
+void AutomationRunner::OnUserAnswer(base::OnceCallback<void(bool)> on_answer,
+                                    bool allowed) {
+  question_id_ = 0;
+  if (storage_) {
+    storage_->AppendAudit(script_.id,
+                          allowed ? "question_allowed" : "question_declined",
+                          "step=" + base::NumberToString(current_index_ + 1));
+  }
+  // The rest of the step gets its own time again.
+  if (current_index_ < script_.steps.size())
+    ArmStepTimeout(script_.steps[current_index_]);
+  std::move(on_answer).Run(allowed);
+}
+
+void AutomationRunner::OnQuestionTimeout(bool needs_trust) {
+  WithdrawQuestion();
+  BlockStep(needs_trust
+                ? std::string("Stopped: this step needed your OK in Agent "
+                              "mode, and nobody answered.") +
+                      kNeedsTrustAdvice
+                : std::string("Stopped: this step needed your OK in Agent "
+                              "mode, and nobody answered."),
+            needs_trust);
+}
+
+void AutomationRunner::WithdrawQuestion() {
+  if (question_id_)
+    RunQuestions::Get()->Withdraw(question_id_);
+  question_id_ = 0;
 }
 
 namespace {
@@ -1158,6 +1442,7 @@ void AutomationRunner::ResolveByText(
                    }
                    std::string sel = v.is_string() ? v.GetString() : "";
                    if (!sel.empty()) {
+                     self->found_by_ = "its text";
                      std::move(cb).Run(sel);
                      return;
                    }
@@ -1216,8 +1501,11 @@ void AutomationRunner::OnSelectorLLMReply(
   // One line of at most 200 characters from a {"selector": ...} object, or
   // nothing. It then goes through the same probe and policy checks as a
   // recorded selector.
-  std::move(cb).Run(
-      ai_steps::ParseSelectorReply(ToModelReply(std::move(r))).value_or(""));
+  const std::string selector =
+      ai_steps::ParseSelectorReply(ToModelReply(std::move(r))).value_or("");
+  if (!selector.empty())
+    found_by_ = "the on-device AI's suggestion";
+  std::move(cb).Run(selector);
 }
 
 void AutomationRunner::RunPromptAsync(
@@ -1378,8 +1666,9 @@ void AutomationRunner::OnClickProbed(const std::string& sel,
 }
 
 void AutomationRunner::ClickNow(const std::string& sel) {
-  std::string js =
-      base::StringPrintf(kClickSelectorJSTemplate, JSQuote(sel).c_str());
+  std::string js = base::StringPrintf(kClickSelectorJSTemplate,
+                                      JSQuote(sel).c_str(),
+                                      PinStatement().c_str());
   EvalJS(js, base::BindOnce(
                  [](base::WeakPtr<AutomationRunner> self, base::Value v) {
                    if (!self) return;
@@ -1453,8 +1742,9 @@ void AutomationRunner::OnTypeProbed(const std::string& sel,
 void AutomationRunner::TypeInto(const std::string& sel,
                                 const std::string& value) {
   std::string val_js = JSQuote(value);
-  std::string js = base::StringPrintf(kTypeIntoJSTemplate, JSQuote(sel).c_str(),
-                                      val_js.c_str(), val_js.c_str());
+  std::string js = base::StringPrintf(
+      kTypeIntoJSTemplate, JSQuote(sel).c_str(), PinStatement().c_str(),
+      val_js.c_str(), val_js.c_str());
   EvalJS(js, base::BindOnce(
                  [](base::WeakPtr<AutomationRunner> self, base::Value v) {
                    if (!self) return;
@@ -1517,10 +1807,9 @@ void AutomationRunner::OnVaultPassword(const std::string& sel,
     return;
   }
   std::string pw_js = JSQuote(*password);
-  std::string js = base::StringPrintf(kFillPasswordJSTemplate,
-                                      JSQuote(sel).c_str(),
-                                      JSQuote(host).c_str(), pw_js.c_str(),
-                                      pw_js.c_str());
+  std::string js = base::StringPrintf(
+      kFillPasswordJSTemplate, JSQuote(sel).c_str(), JSQuote(host).c_str(),
+      PinStatement().c_str(), pw_js.c_str(), pw_js.c_str());
   EvalJS(js, base::BindOnce(
                  [](base::WeakPtr<AutomationRunner> self, base::Value v) {
                    if (!self) return;
@@ -1921,6 +2210,235 @@ void AutomationRunner::DoRunJS(const Step& s) {
                                                      : "Ran JS -> " + store_as);
       },
       weak_factory_.GetWeakPtr(), s.store_as));
+}
+
+// -----------------------------------------------------------------------------
+// CALL_TOOL: a site's tool, recorded (automation_tool_steps.h)
+// -----------------------------------------------------------------------------
+
+namespace {
+
+// How long a tool step waits for the page to offer its tool, and in all
+// (the listing, the user's answer aside, and the call).
+constexpr base::TimeDelta kToolListWait = base::Seconds(10);
+constexpr base::TimeDelta kToolStepBudget = base::Seconds(45);
+constexpr base::TimeDelta kToolRelistDelay = base::Milliseconds(500);
+
+}  // namespace
+
+void AutomationRunner::DoCallTool(const Step& s) {
+  std::optional<tool_steps::ToolStep> step = tool_steps::ParseToolStep(s);
+  if (!step) {
+    BlockStep("This step's site tool can't be read: remove the step.");
+    return;
+  }
+  if (!step->secret_arguments.empty()) {
+    BlockStep(std::string(
+        tool_steps::CompatText(tool_steps::Compat::kSecretArgument)));
+    return;
+  }
+  if (!agent_features::AgentSiteToolsEnabled()) {
+    BlockStep("Site tools are turned off (chrome://flags/#molt-agent-site-"
+              "tools), so this step can't run.");
+    return;
+  }
+  if (!target_contents_) {
+    OnStepFinished(false, "No target tab");
+    return;
+  }
+  if (!site_tools_)
+    site_tools_ = std::make_unique<SiteToolHost>();
+  ExtendStepTimeout(kToolStepBudget);
+  tool_call_ = std::make_unique<ToolCall>();
+  tool_call_->step = std::move(*step);
+  tool_call_->list_deadline = base::TimeTicks::Now() + kToolListWait;
+  ListToolsForStep();
+}
+
+void AutomationRunner::ListToolsForStep() {
+  if (!tool_call_ || !target_contents_ ||
+      !target_contents_->GetPrimaryMainFrame()) {
+    OnStepFinished(false, "No target tab");
+    return;
+  }
+  content::RenderFrameHost* main = target_contents_->GetPrimaryMainFrame();
+  const url::Origin origin = main->GetLastCommittedOrigin();
+  // Only on the origin it was recorded on (the page may still be loading).
+  if (origin.Serialize() != tool_call_->step.origin) {
+    if (base::TimeTicks::Now() < tool_call_->list_deadline) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&AutomationRunner::ListToolsForStep,
+                         weak_factory_.GetWeakPtr()),
+          kToolRelistDelay);
+      return;
+    }
+    OnStepFinished(false, "Not run: the page isn't on " +
+                              tool_call_->step.origin + ".");
+    return;
+  }
+  // A tool recorded in a frame of another site: that frame's tools are
+  // listed (only the browser reads them, to find the tool); the call asks
+  // the user, naming both sites. Never in MoltNet.
+  SiteToolHost::OtherSites other_sites;
+  if (tool_steps::IsCrossOriginFrame(tool_call_->step)) {
+    if (tor::IsMoltNetProfile(Profile::FromBrowserContext(
+            target_contents_->GetBrowserContext()))) {
+      BlockStep("Not run: MoltNet windows never use another site's frame's "
+                "tools.");
+      return;
+    }
+    other_sites.listed.push_back(tool_call_->step.frame_origin);
+  }
+  content::WeakDocumentPtr main_document = main->GetWeakDocumentPtr();
+  site_tools_->List(
+      main_document, origin, std::move(other_sites),
+      base::BindOnce(&AutomationRunner::OnToolStepListed,
+                     weak_factory_.GetWeakPtr(), main_document));
+}
+
+void AutomationRunner::OnToolStepListed(content::WeakDocumentPtr main_document,
+                                        SiteToolHost::Listing listing) {
+  if (!tool_call_)
+    return;
+  const tool_steps::ToolStep& step = tool_call_->step;
+  const std::optional<size_t> index =
+      tool_steps::FindListedTool(step, listing.tools, listing.frames);
+  if (!index || listing.tools[*index].frame >= listing.documents.size()) {
+    // Not offered (yet): a page registers its tools as it loads.
+    if (base::TimeTicks::Now() < tool_call_->list_deadline) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&AutomationRunner::ListToolsForStep,
+                         weak_factory_.GetWeakPtr()),
+          kToolRelistDelay);
+      return;
+    }
+    OnStepFinished(false, "Not run: the page doesn't offer the site's tool "
+                          "\xE2\x80\x9C" + step.name + "\xE2\x80\x9D.");
+    return;
+  }
+  const agent_tools::SiteTool& live = listing.tools[*index];
+  // The recorded values, with this run's {{variables}} (asked in the run
+  // sheet) filled in; checked again against the tool as offered now.
+  base::DictValue arguments;
+  for (const auto [name, value] : step.arguments) {
+    if (value.is_string()) {
+      arguments.Set(name, Resolve(value.GetString()));
+    } else if (value.is_list()) {
+      base::ListValue list;
+      for (const base::Value& item : value.GetList()) {
+        list.Append(item.is_string() ? base::Value(Resolve(item.GetString()))
+                                     : item.Clone());
+      }
+      arguments.Set(name, std::move(list));
+    } else {
+      arguments.Set(name, value.Clone());
+    }
+  }
+  for (const auto [name, value] : arguments) {
+    const bool unfilled =
+        (value.is_string() &&
+         value.GetString().find("{{") != std::string::npos);
+    if (unfilled) {
+      BlockStep("Not run: this step needs a value you give at each run. "
+                "Run it from Agent mode and fill it in.");
+      return;
+    }
+  }
+  agent_tools::ToolArguments call_arguments;
+  const tool_steps::Compat compat =
+      tool_steps::CheckReplay(step, live, arguments, &call_arguments);
+  if (compat != tool_steps::Compat::kOk) {
+    BlockStep(std::string(tool_steps::CompatText(compat)));
+    return;
+  }
+  // Secrets stay on the page the workflow is on: never given to a frame of
+  // another site.
+  if (live.cross_origin &&
+      frame_tools::ArgumentsLookSecret(call_arguments.json)) {
+    BlockStep("Not run: what it would give another site's tool looks like a "
+              "password, a code or a card number.");
+    return;
+  }
+  tool_call_->live = live;
+  tool_call_->arguments = std::move(call_arguments);
+  tool_call_->main_document = main_document;
+  tool_call_->tool_document = listing.documents[live.frame];
+  tool_call_->origin = url::Origin::Create(GURL(step.origin));
+
+  const std::string page = target_contents_
+                               ? target_contents_->GetLastCommittedURL().spec()
+                               : std::string();
+  const bool approved_for_site = policy_.trust >= TrustLevel::APPROVED &&
+                                 security_.AllowNavigation(policy_, page);
+  if (tool_steps::ApprovalFor(step, live, approved_for_site) ==
+      tool_steps::Approval::kRun) {
+    CallToolStep();
+    return;
+  }
+  // The approval the web agent asks, in its words: the tool, the site (and
+  // frame), why, every argument.
+  const agent_tools::CallCheck check = agent_tools::CheckToolCall(
+      live, tool_call_->arguments.text, tool_call_->origin.Serialize());
+  AskUser(kQuestionSiteTool, check.message,
+          /*needs_trust=*/tool_steps::TrustWouldAllow(step, live),
+          base::BindOnce(&AutomationRunner::OnToolStepAnswer,
+                         weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::OnToolStepAnswer(bool allowed) {
+  if (!allowed) {
+    BlockStep("Stopped: you didn't allow the site's tool.");
+    return;
+  }
+  // The call may take up to agent_tools::kCallTimeoutMs.
+  ExtendStepTimeout(kToolStepBudget);
+  CallToolStep();
+}
+
+void AutomationRunner::CallToolStep() {
+  if (!tool_call_ || !site_tools_) {
+    OnStepFinished(false, "Not run: the step's call is gone.");
+    return;
+  }
+  // In the very document that listed the tool, if it still counts; the
+  // script checks its mark, the origin and that the page still lists the
+  // same tool. Once: never retried.
+  site_tools_->Call(tool_call_->main_document, tool_call_->tool_document,
+                    tool_call_->origin, tool_call_->live,
+                    tool_call_->arguments.json,
+                    base::BindOnce(&AutomationRunner::OnToolStepCalled,
+                                   weak_factory_.GetWeakPtr()));
+  if (storage_) {
+    storage_->AppendAudit(script_.id, "site_tool_called",
+                          "step=" + base::NumberToString(current_index_ + 1) +
+                              " tool=" + tool_call_->live.name);
+  }
+}
+
+void AutomationRunner::OnToolStepCalled(SiteToolHost::CallEnd end,
+                                        agent_tools::CallOutcome outcome) {
+  switch (end) {
+    case SiteToolHost::CallEnd::kTimedOut:
+      OnStepFinished(false, std::string(agent_tools::CallFailureNote(
+                                agent_tools::CallState::kTimedOut)));
+      return;
+    case SiteToolHost::CallEnd::kDocumentChanged:
+      // A <form> tool submitted its form: wait for that page, as after a
+      // click that navigates.
+      BeginClickSettle("The site's tool loaded another page");
+      return;
+    case SiteToolHost::CallEnd::kSettled:
+      break;
+  }
+  if (outcome.state != agent_tools::CallState::kDone) {
+    OnStepFinished(false,
+                   std::string(agent_tools::CallFailureNote(outcome.state)));
+    return;
+  }
+  // What the site answered is its text: not kept in the run's record.
+  OnStepFinished(true, "The site's tool answered");
 }
 
 // RUN_SCRIPT: chain agents. The step's `target` field is the id of a
