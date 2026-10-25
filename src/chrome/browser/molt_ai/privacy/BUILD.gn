@@ -7,7 +7,8 @@
 # password leak checks). Hooked from chrome/browser/profiles/profile_impl.cc.
 #
 # Default feature overrides (features that only talk to Google in a keyless
-# build). Hooked from chrome/browser/metrics/chrome_feature_list_creator.cc.
+# build, or download components only Google features use). Hooked from
+# chrome/browser/metrics/chrome_feature_list_creator.cc.
 # See docs/NETWORK_TRAFFIC.md.
 
 source_set("privacy") {
@@ -41,9 +42,14 @@ source_set("feature_overrides") {
   ]
 
   deps = [
+    "//chrome/browser/dictation:features",
+    "//chrome/common:chrome_features",
     "//components/autofill/core/common:features",
+    "//components/history_embeddings/core",
     "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
+    "//components/optimization_guide/core:prediction",
+    "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/translate/core/browser",
     "//third_party/blink/public/common",
   ]
@@ -59,9 +65,14 @@ source_set("unit_tests") {
     ":feature_overrides",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/dictation:features",
+    "//chrome/common:chrome_features",
     "//components/autofill/core/common:features",
+    "//components/history_embeddings/core",
     "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
+    "//components/optimization_guide/core:prediction",
+    "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/translate/core/browser",
     "//testing/gtest",
     "//third_party/blink/public/common",

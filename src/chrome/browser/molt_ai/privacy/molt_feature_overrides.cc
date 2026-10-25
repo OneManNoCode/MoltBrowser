@@ -6,9 +6,13 @@
 #include <functional>
 
 #include "base/containers/span.h"
+#include "chrome/browser/dictation/features.h"
+#include "chrome/common/chrome_features.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
+#include "components/history_embeddings/core/history_embeddings_features.h"
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
+#include "components/optimization_guide/core/delivery/prediction_model_component_configs.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
 #include "third_party/blink/public/common/features.h"
 
@@ -64,6 +68,39 @@ void AppendDefaultFeatureOverrides(
       // study that touches them skip.
       &omnibox::kAimEnabled,
       &omnibox::kAim3pEntrypoint,
+
+      // Components and model downloads that only serve Google features
+      // (Chromium 156 audit, docs/NETWORK_TRAFFIC.md "Changes made in this
+      // audit"). Each one adds a component to the component updater's check
+      // of update.googleapis.com and downloads it from Google's servers.
+      //
+      // Indigo: an AI image feature whose content script arrives as a
+      // component ("Indigo" study in the testing config, which also turns
+      // on its API client and Gemini entry point). Listing both makes the
+      // whole study skip.
+      &features::kIndigo,
+      &features::kIndigoComponent,
+      // Dictation: Google's dictation, whose connector arrives as a
+      // component ("Dictation" study). MoltBrowser's own voice input runs
+      // on whisper, on the device.
+      &dictation::kDictation,
+      // History embeddings ("HistoryEmbeddingsV2Images" study): registers
+      // the history search strings component at every start. MoltBrowser's
+      // @memory search is its own (docs/design/SEMANTIC_SEARCH.md).
+      &history_embeddings::kHistoryEmbeddings,
+      // Prediction models through the component updater
+      // ("PredictionModelComponentDelivery" study, target 20: the geolocation
+      // permission prediction model). Without it these models would come
+      // from optimizationguide-pa.googleapis.com, which needs a Google API
+      // key, so none is downloaded, as before Chromium 156.
+      &optimization_guide::kPredictionModelComponentDelivery,
+      // On-device head suggest: a model of popular Google queries, one per
+      // locale, registered as a component at every start whatever the
+      // search engine, but used only when Google is the default search
+      // engine (OnDeviceHeadProvider::IsOnDeviceHeadProviderAllowed()).
+      // MoltBrowser's default engine is DuckDuckGo.
+      &omnibox::kOnDeviceHeadProviderNonIncognito,
+      &omnibox::kOnDeviceHeadProviderIncognito,
   };
   AppendOverrides(kDisabledByDefault,
                   base::FeatureList::OVERRIDE_DISABLE_FEATURE, overrides);

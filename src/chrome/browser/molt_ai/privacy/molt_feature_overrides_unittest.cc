@@ -4,14 +4,19 @@
 #include "chrome/browser/molt_ai/privacy/molt_feature_overrides.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "base/feature_list.h"
 #include "base/test/scoped_feature_list.h"
+#include "chrome/browser/dictation/features.h"
+#include "chrome/common/chrome_features.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
+#include "components/history_embeddings/core/history_embeddings_features.h"
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
+#include "components/optimization_guide/core/delivery/prediction_model_component_configs.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
 #include "third_party/blink/public/common/features.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -98,6 +103,38 @@ TEST(MoltFeatureOverridesTest, DisablesKeylessGoogleRequests) {
   EXPECT_FALSE(base::FeatureList::IsEnabled(omnibox::kAim3pEntrypoint));
 }
 
+// Components and models that only serve Google features (Chromium 156
+// audit, docs/NETWORK_TRAFFIC.md).
+TEST(MoltFeatureOverridesTest, DisablesGoogleOnlyComponents) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(features::kIndigo));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(features::kIndigoComponent));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(dictation::kDictation));
+  EXPECT_FALSE(
+      base::FeatureList::IsEnabled(history_embeddings::kHistoryEmbeddings));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(
+      optimization_guide::kPredictionModelComponentDelivery));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(
+      omnibox::kOnDeviceHeadProviderNonIncognito));
+  EXPECT_FALSE(
+      base::FeatureList::IsEnabled(omnibox::kOnDeviceHeadProviderIncognito));
+  // No prediction model target is delivered as a component, so the
+  // permission and phishing models stay with the key-gated download path.
+  EXPECT_TRUE(optimization_guide::GetPredictionModelTargets().empty());
+}
+
+// History embeddings decides on "overridden" first, then on the country and
+// locale; the override must make it count as overridden (and off).
+TEST(MoltFeatureOverridesTest, HistoryEmbeddingsCountsAsOverriddenOff) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  std::optional<bool> state = base::FeatureList::GetStateIfOverridden(
+      history_embeddings::kHistoryEmbeddings);
+  ASSERT_TRUE(state.has_value());
+  EXPECT_FALSE(*state);
+}
+
 // --enable-features, which chrome://flags also writes, must still win.
 TEST(MoltFeatureOverridesTest, CommandLineStillWins) {
   base::test::ScopedFeatureList scoped_feature_list;
@@ -106,6 +143,14 @@ TEST(MoltFeatureOverridesTest, CommandLineStillWins) {
   EXPECT_TRUE(base::FeatureList::IsEnabled(
       autofill::features::debug::kAutofillServerCommunication));
   EXPECT_FALSE(base::FeatureList::IsEnabled(translate::kTranslateRankerQuery));
+}
+
+TEST(MoltFeatureOverridesTest, CommandLineCanTurnDictationBackOn) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(
+      BuildFeatureList(dictation::kDictation.name, ""));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(dictation::kDictation));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(features::kIndigoComponent));
 }
 
 // The field trial testing config skips any study whose features are already
