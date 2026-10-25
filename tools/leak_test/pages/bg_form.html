@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3. -->
+<!-- Traffic capture page (leakkit/bgcapture.py, step "form"): an address
+     form and a sign-in form, which Autofill classifies (and would ask its
+     server about) and the password manager offers to save. Nothing here
+     loads from anywhere but this server. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>moltleak: forms</title>
+</head>
+<body>
+<h1>Shipping address</h1>
+<form id="address" method="post" action="/t/{{NONCE}}/bg_done.html">
+  <p><label>Full name <input id="name" name="name" autocomplete="name"></label></p>
+  <p><label>Street address <input id="street" name="street" autocomplete="street-address"></label></p>
+  <p><label>City <input id="city" name="city" autocomplete="address-level2"></label></p>
+  <p><label>ZIP code <input id="zip" name="zip" autocomplete="postal-code"></label></p>
+  <p><label>Country <select id="country" name="country" autocomplete="country">
+    <option value="US">United States</option><option value="DE">Germany</option>
+    <option value="FR">France</option></select></label></p>
+  <p><label>Phone <input id="tel" name="tel" type="tel" autocomplete="tel"></label></p>
+  <p><button type="submit">Continue</button></p>
+</form>
+<h1>Sign in</h1>
+<form id="signin" method="post" action="/t/{{NONCE}}/bg_done.html">
+  <p><label>Email <input id="user" name="username" type="email" autocomplete="username"></label></p>
+  <p><label>Password <input id="pass" name="password" type="password" autocomplete="current-password"></label></p>
+  <p><button type="submit">Sign in</button></p>
+</form>
+</body>
+</html>

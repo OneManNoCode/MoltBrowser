@@ -707,6 +707,27 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `moltnet_fonts.cc` `base/files/memory_mapped_file.h` and its test
   `base/files/scoped_temp_dir.h` and `file_util.h`;
   `public/web/web_molt_fingerprinting.h` forward-declares `base::File`.
+  New in degoogle-kit: `//chrome/browser/molt_ai/privacy:feature_overrides`
+  (and its `:unit_tests`) now depends on `//chrome/browser/dictation:features`,
+  `//chrome/common:chrome_features`, `//components/history_embeddings/core`,
+  `//components/optimization_guide/core:prediction` and
+  `//components/optimization_guide/proto:optimization_guide_proto`, for the
+  features it turns off (the five headers type-check against 156's real
+  headers). If a visibility rule refuses one, or the standalone
+  `molt_ai_unittests` link grows too much, the alternative is to move
+  those entries into a second overrides source set that only
+  `//chrome/browser` links. Also degoogle-kit, after the follow-up:
+  `:feature_overrides` and `:unit_tests` add
+  `//components/optimization_guide/core:features`,
+  `//components/safe_browsing/core/common:features` and `//media`; the new
+  `//chrome/browser/molt_ai/privacy:component_policy` (`//base` only) is a
+  dep of `//chrome/browser/component_updater:impl` (its `BUILD.gn` is now
+  in `src/`, hooked); and `molt_ai_unittests` gains
+  `//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests` where
+  `use_on_device_model_service` is set, which links
+  `//components/optimization_guide/core:manifest_broker`. `gn check`
+  should accept all of them; a cycle through `component_updater:impl`
+  would mean `:component_policy` picked up a dep it must not have.
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -831,6 +852,19 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
   | `PromptUtilsTest`, `GemmaThoughtFilterTest`, `ThinkTagFilterTest` | #7, #8 |
   | `SanitizeHelperTextTest`, `Utf8Test` (OCR and voice output) | #14 |
+
+  `MoltFeatureOverridesTest` also has `DisablesGoogleOnlyComponents`,
+  `HistoryEmbeddingsCountsAsOverriddenOff` and
+  `CommandLineCanTurnDictationBackOn` (degoogle-kit): the components only
+  Google features use are off, history embeddings counts as overridden,
+  and `--enable-features` still wins. After the degoogle-kit follow-up
+  also `NoUnaskedOnDeviceModelDownloads` and
+  `NoSecureDnsFallbackToGooglePublicDns`, `MoltComponentPolicyTest` (the
+  four Google-only components are skipped unless
+  `MoltGoogleOnlyComponents` is on) and, on desktop, `MoltOnDeviceManifestTest`
+  (the on-device model manifest is not asked for at startup, and is asked
+  for once by each kind of demand: a session, an eligibility check, an
+  availability observer, binding the broker, requesting a use case).
 
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
@@ -1602,6 +1636,7 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
 - [ ] CPU features and V8's heap in MoltNet (fp-cpu). Run the leak kit (§8) on two x86-64 machines of different CPU generations (one without AVX2 and FMA if you have one, e.g. a pre-2013 Intel or a VM started with `-cpu Nehalem`; an Intel and an AMD one otherwise) and, on macOS, an Intel and an Apple silicon Mac: `cpu.wasm_relaxed_simd` is false, and `diff` shows no difference in `cpu.math`, `pixels.p3_readback` or `audio.decoded_vorbis`, also between the Intel and the Apple silicon Mac; in a regular window the same values may differ (FMA, AVX2, AVX-512, Arm). In MoltNet: a WebAssembly machine-learning demo that uses relaxed SIMD where it can (ONNX Runtime Web or TensorFlow.js with the WASM backend) still runs, with its SIMD build; a page with a 12-megapixel Display P3 photo (an iPhone HEIC converted to JPEG keeps its profile) shows it with the right colours, and note how much longer it takes to appear than in a regular window; a Vorbis file plays in `<audio>` and through `decodeAudioData()`. V8's heap: on a machine with 16 GB or more, a page that pushes 1 MB strings into an array until its tab runs out of memory stops at about 2 GB of JavaScript heap in MoltNet (about 4 GB in a regular window); `chrome://process-internals` or the task manager shows the renderer's memory. On Linux with more than 16 GB, `cat /proc/<renderer pid>/limits` shows a data limit of 8589934592 bytes for a MoltNet renderer (16 or 32 GiB for a regular one).
 - [ ] Portable math and the memory signals in MoltNet (fp-libm). Run the leak kit (§8) on an x86-64 and an arm64 machine (an Intel and an Apple silicon Mac, or Linux on both) and on Windows: `diff` shows no difference in `cpu.math_cross_arch`, `cpu.css_math`, `cpu.dommatrix` or `audio.math`, between the architectures and between the OSes too; in a regular window the same values may differ. `cpu.css_math` holds sixteen numbers and angles, none of them `0` (an expression the browser didn't accept shows the initial value). In MoltNet: a Web Audio demo with a `ConvolverNode` reverb, an `AnalyserNode` visualiser and HRTF panning plays without glitches on the slowest machine you have (compare its CPU use in the task manager with a regular window); a CSS animation that rotates and skews (`rotate3d`, `skew`) and a canvas drawing with arcs look as in a regular window. On 64-bit Windows: a page that allocates 1 GiB `ArrayBuffer`s until a `RangeError` stops at 8 GiB in MoltNet on a machine that can commit that much (a regular window goes on to the system's commit limit). In `chrome://process-internals`, MoltNet frames of one site start sharing renderers once there are 20, whatever the RAM. A page that registers a `FinalizationRegistry` callback for 1000 objects and waits sees no callbacks when the system is short of memory (test with a memory-pressure tool, or `chrome://memory-internals` on a debug build), only after V8's own collections.
 - [ ] Geometry, Skia's math and web fonts in MoltNet (fp-geometry). Run the leak kit (§8) on an x86-64 and an arm64 machine (an Intel and an Apple silicon Mac, or Linux on both), on Windows, and on an x86-64 machine without FMA if you have one (a VM started with `-cpu Nehalem`): `diff` shows no difference in `geom.hit_testing`, `geom.path_length`, `geom.shape_outside` or `geom.contrast_color`, between the architectures and between the OSes too; in a regular window the same values may differ. In MoltNet: a page with `shape-outside` around an image, a gradient and a `shape()`, a canvas drawing with arcs, rotated ellipses and dashed round-joined strokes, an SVG with `clip-path` and a `textPath`, and boxes with `corner-shape: superellipse()`, `squircle` and `scoop` look as in a regular window, and their clicks land where they look; a COLRv1 colour web font with rotated and skewed layers (Google Fonts' Nabla or a COLRv1 test font) and a variable font with VARC glyphs render as in a regular window; an HDR gain-map JPEG and an AVIF with a gain map, and an iPhone photo with an HDR headroom tag, show the same tone mapping in both. Note the time a page with 10,000 arcs and strokes on a canvas takes to draw in each (FINGERPRINTING.md "MoltNet: portable math" estimates no measurable difference; Skia's portable sine and power are about 2.5 times slower than the C library's).
+- [ ] Components on a fresh profile (degoogle-kit; NETWORK_TRAFFIC.md §1, §3). Start the build with a new `--user-data-dir`, wait two minutes, open `chrome://components`. *Expected:* the security components are listed (CRLSet, PKI Metadata, Safety Tips, File Type Policies, SSL Error Assistant, Origin Trials, ...), and **none** of Indigo, Dictation's connector, History Search Strings, On-device head suggest, or Optimization Guide Geolocation Permission Predictions; after the degoogle-kit follow-up also none of Actor Safety Lists, Captcha Providers, Amount Extraction Heuristic Regexes, Commerce Heuristics, or the Optimization Guide on-device model manifest (its entry appears only once a feature asks for an on-device model, for example after requesting a model in `chrome://on-device-internals`; verify that this brings it). With `--enable-features=Dictation` the Dictation entry comes back (the overrides yield), and with `--enable-features=MoltGoogleOnlyComponents` the four Google-only components do. `chrome://version` (`molt://version`) with `?show-variations-cmd`: the testing config's `Indigo`, `Dictation`, `HistoryEmbeddingsV2Images` and `PredictionModelComponentDelivery` studies are not active, nor (after the follow-up) `OnDeviceModelBackgroundDownload` and `EnableOnDeviceWebSpeechSmallExpertModel`. With Google chosen as the search engine, typing in the address bar still shows Google's server suggestions (on-device head suggestions are off).
 - [ ] Screen capture in MoltNet (fp-geometry). In a MoltNet window, a `getDisplayMedia()` demo page (e.g. WebRTC samples' getdisplaymedia) fails at once with `NotAllowedError: Permission denied by user` and no picker opens, also with "prefer current tab"; a video-call site's "share screen" button fails cleanly. `navigator.permissions.query({name: 'display-capture'})` gives `denied` in the console of the page and of a worker. In a regular and an Incognito window the same demo opens the picker and shares the chosen screen, window or tab.
 
 ### 7.4 MoltNet
@@ -2053,11 +2088,65 @@ Mac; use a real Linux host.
 
 ### 8.2 The full traffic capture (docs/NETWORK_TRAFFIC.md "How we'll verify")
 
-- [ ] On macOS arm64 first, then Linux: the packet capture, NetLog and
-  optional mitmproxy run in that section, on a fresh profile, without
+- [ ] On macOS arm64 (Linux has §8.3 for the hosts; run this there only for
+  request bodies): the packet capture, NetLog and optional mitmproxy run in
+  that section, on a fresh profile, without
   `--disable-field-trial-config`. *Expected:* every **Likely** and
   **Capture** row of its tables confirmed; no Google Translate, TranslateKit
-  or component download caused by a page (from #26, #34, #48).
+  or component download caused by a page (from #26, #34, #48); no host
+  that NETWORK_TRAFFIC.md §6 marks `forbidden` (degoogle-kit).
+
+### 8.3 The regular-window traffic capture (Linux) (degoogle-kit)
+
+The leak kit's `traffic` command (docs/LEAK_TESTING.md "Regular-window
+traffic capture"). Same machine and packages as §8.1, without `tor`; it
+needs no internet: nothing it does leaves the namespace, and the kit's
+sinkhole answers every request with a 503.
+
+- [ ] The kit's own tests, as root this time, so that the namespace test
+  runs too (it is skipped in CI):
+  `sudo python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test -v`.
+  *Expected:* all pass, `SinkholeInANamespace.test_capture_pipeline`
+  among them (not skipped).
+- [ ] `tools/leak_test/leaktest.sh hosts`. *Expected:*
+  `docs/network_traffic_hosts.json matches docs/NETWORK_TRAFFIC.md`.
+- [ ] The capture against the build, then against the installed `.deb`:
+  ```bash
+  sudo tools/leak_test/leaktest.sh traffic --browser chromium/src/out/MoltBrowser-linux/chrome --out ~/molt-v0.3.0/traffic-a
+  sudo tools/leak_test/leaktest.sh traffic --browser /opt/moltbrowser/moltbrowser --out ~/molt-v0.3.0/traffic-b
+  ```
+  About 17 minutes each (`--idle 600` is the 10-minute idle step).
+- [ ] What passing looks like: `verdict: PASS (0 FAIL, 0 ERROR, ...)`; the
+  harness checks pass, `traffic.harness.update_check` among them (it
+  proves the sinkhole saw MoltBrowser's update check to `api.github.com`);
+  `traffic.expected` lists at least `update.googleapis.com` (POST
+  `/service/update2/json`, about a minute after each launch),
+  `clients2.google.com` (GET `/time/1/current`, at the first run),
+  `safebrowsing.googleapis.com` (GET `/v5/hashLists:batchGet`),
+  `sb-ssl.google.com` during `download`, `api.github.com`, and the
+  MoltShield list hosts; on Linux `redirector.gvt1.com` during or after
+  `spellcheck`. `traffic.components` passes and lists the component IDs
+  of each update check: none from NETWORK_TRAFFIC.md §6's component table
+  (no actor safety lists, CAPTCHA providers, amount extraction regexes or
+  commerce heuristics, no on-device model manifest). If it is a SKIP, the
+  sinkhole couldn't read the IDs: send the `update.googleapis.com` lines
+  of `logs/sinkhole.jsonl` back with the report.
+- [ ] First-run questions: whether the first run opens a tab of its own
+  (the `first_run` step's `tabs` in report.json); whether the `cert_error`
+  step's expired certificate made the browser ask for network time
+  (`clients2.google.com` during `cert_error`); whether the `dns_error`
+  step's page showed `ERR_NAME_NOT_RESOLVED` (its step note); whether the
+  download step's `.exe` triggered the Safe Browsing check at all.
+- [ ] Triage every FAIL: the evidence gives the time, the step, the host,
+  the TLS server name, the request line and a likely source. A host
+  MoltBrowser needs goes into NETWORK_TRAFFIC.md (its section and the §6
+  table) with the reason, then `tools/leak_test/leaktest.sh hosts --write`
+  and `tools/leak_test/leaktest.sh report <run dir>`; anything else is
+  traffic to turn off (`molt_feature_overrides.cc` or a pref default) and
+  a reason to run the capture again.
+- [ ] Send back both runs' `report.json` (and `report.md`) with the build's
+  version, and the list of NETWORK_TRAFFIC.md rows the capture confirmed,
+  so that their confidence can become **Captured**.
 
 ## 9. Vulkan: the hardware matrix before the switch can go on
 
@@ -2336,6 +2425,10 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   (it's a pref default in `molt_privacy_prefs.cc` plus copy, so it needs a
   build). If D: on the build machine, confirm Safety Tips and lookalike
   warnings still show (from docs/SAFE_BROWSING_DECISION.md, ROADMAP.md).
+  The memo's "What changed at Chromium 156" has the current facts: list
+  updates on the V5 protocol, the real-time lookups' new relay host, and
+  what each option sends and touches at 156 (degoogle-kit). The §8.3
+  capture shows the Safe Browsing requests a build really makes.
 - [ ] **`.onion` as a secure context**, in MoltNet windows only: needs a
   browser-wide trust change plus mixed-content patches; until then
   `http://` onion sites show "Not secure" and some features stay off. Ship
