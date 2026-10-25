@@ -470,6 +470,7 @@ source_set("onion") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_background_fetch_request_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
     "molt_net_incognito_parity_policy_unittest.cc",
@@ -544,6 +545,9 @@ source_set("unit_tests") {
     "//services/cert_verifier/public/mojom",
     "//services/device/public/mojom",
     "//services/image_annotation/public/mojom",
+
+    # The ResourceRequest a Background Fetch request is built in.
+    "//services/network/public/cpp",
     "//services/network/public/cpp:buildflags",
     "//services/network/public/mojom",
     "//testing/gtest",

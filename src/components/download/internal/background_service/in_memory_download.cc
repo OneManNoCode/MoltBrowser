@@ -233,8 +233,12 @@ void InMemoryDownloadImpl::SendRequest() {
         request_params_.isolation_info->site_for_cookies();
   }
   // MoltBrowser: and the network isolation of the site that started it, not
-  // its destination's (molt_registering_site_isolation.h).
+  // its destination's, with the fetch's credentials mode and initiator
+  // (molt_registering_site_isolation.h).
   MoltCarryRegisteringSiteIsolation(request_params_.isolation_info, *request);
+  MoltCarryFetchCredentialsAndInitiator(
+      request_params_.isolation_info, request_params_.credentials_mode,
+      request_params_.initiator, *request);
 
   url_chain_.push_back(request_params_.url);
 
