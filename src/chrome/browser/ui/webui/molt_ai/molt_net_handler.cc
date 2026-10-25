@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
@@ -22,6 +23,7 @@
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -37,6 +39,10 @@ namespace {
 
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 using molt_ai::tor::MoltNetRouting;
+
+// What a change sent without a real click resolves with (next to the
+// unchanged status, so the popover shows what is really set).
+constexpr char kClickToChange[] = "Click the setting to change it.";
 
 net::NetworkTrafficAnnotationTag ExitCheckAnnotation() {
   return net::DefineNetworkTrafficAnnotation("moltnet_exit_check", R"(
@@ -107,6 +113,15 @@ MoltNetHandler::~MoltNetHandler() = default;
 Profile* MoltNetHandler::GetProfile() {
   content::WebContents* wc = web_ui()->GetWebContents();
   return wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
+}
+
+// MoltBrowser: the exit country, on/off and mode change where MoltNet
+// traffic goes, so each change needs, and uses up, one real click on this
+// page: a script in it can't make them, nor make one click do two. Opening a
+// MoltNet window and New Identity stay ungated: they only ever make browsing
+// more private and are harmless to repeat.
+bool MoltNetHandler::ConsumeClick() {
+  return molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost());
 }
 
 void MoltNetHandler::ResolveWithStatus(const std::string& callback_id,
@@ -187,6 +202,10 @@ void MoltNetHandler::HandleSetExitCountry(const base::ListValue& args) {
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
   const std::string callback_id = args[0].GetString();
+  if (!ConsumeClick()) {
+    ResolveWithStatus(callback_id, kClickToChange);
+    return;
+  }
   // Arg 1 is a lowercase ISO alpha-2 code, or "" for Auto/any. Session-only.
   std::string cc = (args.size() > 1 && args[1].is_string())
                        ? base::ToLowerASCII(args[1].GetString())
@@ -206,6 +225,10 @@ void MoltNetHandler::HandleToggle(const base::ListValue& args) {
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
   const std::string callback_id = args[0].GetString();
+  if (!ConsumeClick()) {
+    ResolveWithStatus(callback_id, kClickToChange);
+    return;
+  }
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
   if (mgr->IsRunning() || mgr->IsStarting()) {
     // Closes MoltNet windows (possibly the one hosting this popover; window
@@ -215,12 +238,17 @@ void MoltNetHandler::HandleToggle(const base::ListValue& args) {
     ResolveWithStatus(callback_id, std::string());
     return;
   }
+  // Opening the window takes no second click.
   HandleOpenWindow(args);
 }
 
 void MoltNetHandler::HandleSetMode(const base::ListValue& args) {
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
+  if (!ConsumeClick()) {
+    ResolveWithStatus(args[0].GetString(), kClickToChange);
+    return;
+  }
   const std::string mode = (args.size() > 1 && args[1].is_string())
                                ? args[1].GetString()
                                : std::string("multi_hop");

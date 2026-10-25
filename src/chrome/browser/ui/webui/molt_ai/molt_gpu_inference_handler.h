@@ -16,9 +16,10 @@
 // each resolving with the section state:
 //   {available, automatic, disabledBySwitch, offForSession,
 //    drivers: [{name, version, since, unidentified}], error?}
-// The two that change something check HasTransientUserActivation() on the
-// page's frame: the WebUI message pipe is frame-associated, so the click's
-// activation reaches the browser first. A script can't flip them.
+// The two that change something take the page frame's transient user
+// activation, consuming it (molt_ai::ConsumeUserClick()): the WebUI message
+// pipe is frame-associated, so the click's activation reaches the browser
+// first. A script can't flip them, nor make one click do both.
 //
 // The section's script is kGpuInferenceSettingsJs, appended to the page's
 // app.js; it builds DOM with createElement/textContent only (a GPU name came
@@ -49,8 +50,9 @@ class MoltGpuInferenceHandler : public content::WebUIMessageHandler {
   void HandleSetMode(const base::ListValue& args);
   void HandleRetry(const base::ListValue& args);
 
-  // The page's frame has a transient user activation (a real click).
-  bool HasUserClick();
+  // The page's frame has a transient user activation (a real click), which
+  // this consumes: one click, one change (molt_ai/common/molt_user_click.h).
+  bool ConsumeClick();
   void Resolve(const std::string& callback_id,
                std::optional<std::string> error);
 };

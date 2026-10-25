@@ -4,6 +4,73 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-25: PRs #67-#69 (October 2026)
+
+**Scope.** The code merged in pull requests #67 to #69 (rounds 22 to 24),
+in this order of priority:
+
+1. MoltNet's routing and isolation: the per-site socket pools, the
+   connection and SOCKS handshake budgets shared through Tor's capacity,
+   certificate fetches that carry their site, Background Fetch and download
+   isolation (retries included), the end of an identity (the navigation
+   throttle, the renderer shutdown, the refuse-all proxy configuration and
+   its confirmation) and New Identity, keepalive and blob limits per site,
+   one BrowsingInstance per renderer process, and the Incognito policies
+   MoltNet now follows.
+2. Memory safety and thread affinity in the new browser and network code:
+   budgets and counts, raw pointers to pools, gates and the shared Tor
+   capacity, the certificate-fetch thread-local, blob budget keys, the
+   per-thread font cache invalidation, and checks reachable from renderer
+   input.
+3. Agent mode: fallback locators (the probe, the pin, weak matches and the
+   question to the user), site-tool steps in recorded workflows, the tools of
+   frames of other sites (the per-pair permission, counting without
+   listing, the per-call question, the secret check on arguments), and the
+   new WebUI handlers.
+4. On-device AI: audio input for the Prompt API (the browser's checks, the
+   service's re-checks, the projector allow-list read from the GGUF header,
+   the local llama.cpp patch), the packed Vulkan shaders and the pipeline
+   cache data, and the Windows GPU warm-up before the sandbox locks down.
+5. MoltNet's bundled fonts: the read-only handles sent to renderers, the
+   manifest, fetch and pin scripts, the SFNT reader in `tools/fonts`, and
+   what happens when the set is missing, damaged or late.
+6. A check of the new uniform values against cheap consistency probes
+   (`navigator.deviceMemory` against the heap and data limits, the audio
+   clock against `performance.now()`, the bundled fonts against each OS's
+   text rendering).
+
+**Method.** Each candidate traced from its attacker (web page, a group of
+sites, a compromised WebUI script, an imported workflow, model or font
+file, local environment) through MoltBrowser's code, the vendored llama.cpp
+and the upstream Chromium 156 code at the pinned revision; fixes tested
+with standalone harnesses (system gtest, `-fno-exceptions`) and a mutant
+each new test catches, the Python tool tests, a libFuzzer run of every new
+parser's target, and the compile check against Chromium 156's headers.
+
+**Findings.** 7: 1 low, 6 informational. Fixed: the low and 1 of the
+informational.
+
+**Fixed.**
+
+- Every MoltBrowser page that takes a click as the user's approval
+  consumes the page's user activation (`molt_ai/common/molt_user_click.h`):
+  the AI chat's agent "Allow", running a confirmed chat proposal, saving
+  an agent run, the Agent studio's and the automation page's trust and
+  "Confirm sites" buttons, the GPU setting and its "Try the GPU again" on
+  `molt://ai-settings`, and the onion page's "Open in a MoltNet window",
+  as the answers to a run's questions and to another site's frame's tools
+  already did: one click allows at most one of these, whatever the page's
+  script sends after it.
+- The MoltNet popover's settings that decide where MoltNet traffic goes
+  (exit country, on/off, mode) each need, and use up, one real click on the
+  page, so a script there can't pin an exit country. Opening a MoltNet
+  window and New Identity only add privacy and stay ungated. The page
+  sends exactly one such message per click and none on load. The same
+  settings in `molt://ai-settings` (MoltNet switch, exit country, bridges)
+  and the AI chat handler's exit-country message follow the same rule.
+- The font manifest's checks match whole values (a value with a final
+  newline no longer passes).
+
 ## 2026-10-23: PRs #47-#52 (October 2026)
 
 **Scope.** The code merged in pull requests #47 to #52, in this order of

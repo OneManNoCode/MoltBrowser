@@ -22,6 +22,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/common/molt_user_click.h"
 
 namespace molt_ai {
 namespace chat_handler_helpers {
@@ -89,6 +90,12 @@ inline std::optional<std::string> BoundedStringArg(const base::ListValue& args,
   }
   return std::nullopt;
 }
+
+// ---- The user's click ----
+//
+// A message that allows something counts only with the click itself, and
+// uses it up: one click allows one thing (molt_ai/common/molt_user_click.h).
+using ::molt_ai::ConsumeUserClick;
 
 // ---- The chat's window ----
 //

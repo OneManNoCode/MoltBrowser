@@ -170,9 +170,10 @@ void MoltAIChatHandler::HandleSaveAgentRun(const base::ListValue& args) {
 
   // Only the user's own click on the button saves a run, never the page
   // script on its own (the click's activation reaches the browser first:
-  // the WebUI message pipe is frame-associated).
-  content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-  if (!rfh || !rfh->HasTransientUserActivation()) {
+  // the WebUI message pipe is frame-associated); one click, one save
+  // (ConsumeUserClick()).
+  if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
+          true, web_ui()->GetRenderFrameHost())) {
     reply("Click \xE2\x80\x9CSave as automation\xE2\x80\x9D to save the run.");
     return;
   }

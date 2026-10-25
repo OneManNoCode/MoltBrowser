@@ -28,11 +28,13 @@
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/web_ui.h"
 #include "url/gurl.h"
 
+using molt_ai::chat_handler_helpers::ConsumeUserClick;
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 // ------------------------------------------------------------------
@@ -220,6 +222,19 @@ void MoltAIChatHandler::HandleSetTorExitCountry(
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
   const std::string callback_id = args[0].GetString();
+  // MoltBrowser: the exit country decides where MoltNet traffic leaves Tor,
+  // so a change needs, and uses up, one real click on the page, as on the
+  // MoltNet popover and in Settings. (The chat page itself no longer sends
+  // this.)
+  if (!ConsumeUserClick(true, web_ui()->GetRenderFrameHost())) {
+    base::DictValue out;
+    out.Set("success", false);
+    out.Set("selected", molt_ai::tor::TorManager::Get()->GetExitCountry());
+    out.Set("error", "Click the setting to change it.");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
   std::string cc = (args.size() > 1 && args[1].is_string())
                        ? args[1].GetString()
                        : std::string();

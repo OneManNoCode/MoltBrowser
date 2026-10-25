@@ -459,6 +459,9 @@ source_set("onion") {
     ":protocol",
     ":tor",
     "//base",
+
+    # ConsumeUserClick() (onion_blocking_page.cc).
+    "//chrome/browser/molt_ai/common",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/infobars/content",
