@@ -261,11 +261,9 @@ class TrafficRun(harness.Run):
         return data
 
     def _download(self, sid):
-        try:
-            self.cdp.call('Browser.setDownloadBehavior', {
-                'behavior': 'allow', 'downloadPath': self.path('home')})
-        except cdplib.CdpError:
-            pass
+        # The browser's own download handling (into $HOME/Downloads, a
+        # directory of the run): DevTools' Browser.setDownloadBehavior would
+        # replace part of it, Safe Browsing's check perhaps included.
         return {'nav_error': self.cdp.navigate(sid, self.page_url(
             'download.html'), timeout=30)}
 
