@@ -123,6 +123,7 @@
 #include "content/browser/quota/quota_context.h"
 #include "content/browser/renderer_host/embedded_frame_sink_provider_impl.h"
 #include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
+#include "content/browser/renderer_host/molt_browsing_instance_processes.h"
 #include "content/browser/renderer_host/recently_destroyed_hosts.h"
 #include "content/browser/renderer_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -5123,6 +5124,14 @@ bool RenderProcessHostImpl::IsSuitableHost(
                           "NotSuitableHost: contains non-reusable site");
       return false;
     }
+  }
+
+  // MoltBrowser: in MoltNet a process serves one BrowsingInstance
+  // (molt_browsing_instance_processes.h).
+  if (!MoltMayServeBrowsingInstance(host, isolation_context, site_info)) {
+    TRACE_EVENT_INSTANT("navigation",
+                        "NotSuitableHost: another BrowsingInstance's");
+    return false;
   }
 
   // Finally, let the embedder decide if there are any last reasons to consider

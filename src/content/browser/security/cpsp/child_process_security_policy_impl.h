@@ -768,6 +768,14 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // child process.
   size_t BrowsingInstanceIdCountForTesting(ChildProcessId child_id);
 
+  // MoltBrowser: whether the process `child_id` serves, or served until the
+  // delayed cleanup of its ids, a BrowsingInstance other than
+  // `browsing_instance_id`
+  // (content/browser/renderer_host/molt_browsing_instance_processes.h).
+  bool MoltHostsOtherBrowsingInstance(
+      ChildProcessId child_id,
+      const BrowsingInstanceId& browsing_instance_id);
+
   void ClearRegisteredSchemeForTesting(const std::string& scheme);
   void ClearRegisteredSchemeForTesting_Cpp(const std::string& scheme);
 

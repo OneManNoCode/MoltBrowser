@@ -736,6 +736,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context) override;  // MoltBrowser
   bool ShouldKeepDownloadsWithTheirSite(
       content::BrowserContext* browser_context) override;  // MoltBrowser
+  bool ShouldKeepBrowsingInstancesInOwnProcesses(
+      content::BrowserContext* browser_context,
+      const GURL& site_url) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

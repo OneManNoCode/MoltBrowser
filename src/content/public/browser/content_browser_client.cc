@@ -1139,6 +1139,12 @@ bool ContentBrowserClient::ShouldKeepDownloadsWithTheirSite(BrowserContext*) {
   return false;
 }
 
+bool ContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
+    BrowserContext*,
+    const GURL&) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

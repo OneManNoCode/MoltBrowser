@@ -172,6 +172,13 @@ source_set("live_policy") {
   public_deps = [ ":proxy_policy" ]
 }
 
+# Which of MoltNet's renderer processes serve one BrowsingInstance each
+# (molt_net_process_policy.h); ChromeContentBrowserClient asks it.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("process_policy") {
+  sources = [ "molt_net_process_policy.h" ]
+}
+
 # When the end of a MoltNet identity counts as done: every network context
 # confirms the refusal (molt_net_identity_end_policy.h); molt_net_routing.cc,
 # molt_net_window.cc and the ended-identity navigation throttle read it.
@@ -239,6 +246,7 @@ source_set("tor") {
   public_deps = [
     ":autofill",
     ":identity_end_policy",
+    ":process_policy",
     ":incognito_parity_policy",
     ":language_policy",
     ":live_policy",
@@ -507,6 +515,7 @@ source_set("unit_tests") {
     "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
+    "molt_net_process_policy_unittest.cc",
     "molt_net_proxy_policy_unittest.cc",
     "molt_net_request_binders_unittest.cc",
     "molt_net_requests_policy_unittest.cc",
@@ -531,6 +540,7 @@ source_set("unit_tests") {
     ":partitioning_policy",
     ":pref_isolation",
     ":pref_isolation_policy",
+    ":process_policy",
     ":protocol",
     ":proxy_policy",
     ":request_binders",

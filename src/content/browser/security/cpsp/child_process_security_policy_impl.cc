@@ -2358,6 +2358,24 @@ size_t ChildProcessSecurityPolicyImpl::BrowsingInstanceIdCountForTesting(
   return 0;
 }
 
+// MoltBrowser: see the header.
+bool ChildProcessSecurityPolicyImpl::MoltHostsOtherBrowsingInstance(
+    ChildProcessId child_id,
+    const BrowsingInstanceId& browsing_instance_id) {
+  base::AutoLock lock(lock_);
+  auto* process_state = process_states_.GetProcessStateForQuery(child_id);
+  if (!process_state) {
+    return false;
+  }
+  for (const auto& entry :
+       process_state->browsing_instance_default_isolation_states()) {
+    if (entry.first != browsing_instance_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ChildProcessSecurityPolicyImpl::MatchesCommittedOriginForTesting(
     ChildProcessId child_id,
     const GURL& url,

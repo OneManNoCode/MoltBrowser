@@ -2034,6 +2034,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldKeepDownloadsWithTheirSite(
       BrowserContext* browser_context);
 
+  // MoltBrowser: true if `browser_context`'s renderer processes for
+  // `site_url` serve one BrowsingInstance each: a process that serves one
+  // is never reused for another
+  // (content/browser/renderer_host/molt_browsing_instance_processes_policy.h).
+  virtual bool ShouldKeepBrowsingInstancesInOwnProcesses(
+      BrowserContext* browser_context,
+      const GURL& site_url);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();
