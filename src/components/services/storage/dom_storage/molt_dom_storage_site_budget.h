@@ -46,8 +46,18 @@ class MoltDomStorageSiteBudget {
     }
     return true;
   }
-  void ShrankTo(std::string_view area, size_t new_bytes) {
-    totals_.ShrankTo(area, new_bytes);
+  // `area` of `site` holds `new_bytes`, no more than it is counted for, or
+  // is counted for the first time (a copy); past the floor, the valve hears
+  // of that.
+  void ShrankTo(std::string_view area,
+                std::string_view site,
+                size_t new_bytes) {
+    const size_t before = totals_.total();
+    totals_.ShrankTo(area, site, new_bytes);
+    if (growth_observer_ &&
+        MoltDomStorageGrowthNotifies(before, totals_.total())) {
+      growth_observer_->OnGrowthBeyondFloor();
+    }
   }
   void Forget(std::string_view area) { totals_.Forget(area); }
 

@@ -150,10 +150,22 @@ class MoltDomStorageSiteTotals {
     return true;
   }
 
-  // `area` holds `new_bytes` now, fewer than before.
-  void ShrankTo(std::string_view area, size_t new_bytes) {
+  // `area` of `site` holds `new_bytes` now, no more than it is counted for.
+  // An area not counted yet (a sessionStorage map copied for a tab, made
+  // with what the map it copies holds) is counted as it is, even past its
+  // site's share: the site's areas then grow no more until they shrink.
+  void ShrankTo(std::string_view area, std::string_view site,
+                size_t new_bytes) {
     auto it = areas_.find(area);
-    if (it == areas_.end() || new_bytes >= it->second.bytes) {
+    if (it == areas_.end()) {
+      if (new_bytes > 0) {
+        areas_.emplace(std::string(area), Area{std::string(site), new_bytes});
+        sites_[std::string(site)] += new_bytes;
+        total_ += new_bytes;
+      }
+      return;
+    }
+    if (new_bytes >= it->second.bytes) {
       return;
     }
     const size_t gone = it->second.bytes - new_bytes;

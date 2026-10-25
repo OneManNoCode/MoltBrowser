@@ -700,7 +700,9 @@ bool LocalStorageImpl::MoltMayGrowTo(const blink::StorageKey& storage_key,
 void LocalStorageImpl::MoltShrankTo(const blink::StorageKey& storage_key,
                                     size_t new_bytes) {
   if (molt_caches_per_site_) {
-    molt_site_budget_.ShrankTo(storage_key.Serialize(), new_bytes);
+    molt_site_budget_.ShrankTo(storage_key.Serialize(),
+                               storage_key.top_level_site().Serialize(),
+                               new_bytes);
   }
 }
 

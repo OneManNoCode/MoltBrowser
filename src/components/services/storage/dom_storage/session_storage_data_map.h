@@ -45,7 +45,9 @@ class SessionStorageDataMap final
     virtual bool MoltMayGrowTo(int64_t map_id,
                                const blink::StorageKey& storage_key,
                                size_t new_storage_used);
-    virtual void MoltShrankTo(int64_t map_id, size_t new_storage_used);
+    virtual void MoltShrankTo(int64_t map_id,
+                              const blink::StorageKey& storage_key,
+                              size_t new_storage_used);
     virtual base::TimeDelta MoltSiteCommitDelay(
         const blink::StorageKey& storage_key);
     virtual void MoltSiteCommitted(const blink::StorageKey& storage_key,

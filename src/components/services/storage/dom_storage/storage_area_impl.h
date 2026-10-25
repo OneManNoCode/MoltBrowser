@@ -69,7 +69,8 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
     // then on if so. A write it refuses fails as one past the area's own
     // limit does.
     virtual bool MoltMayGrowTo(size_t new_storage_used);
-    // The area holds `new_storage_used` bytes now, fewer than before.
+    // The area holds `new_storage_used` bytes now: fewer than before, or as
+    // many as the area it was forked from (counted as it is).
     virtual void MoltShrankTo(size_t new_storage_used);
     // The least delay before the area's next commit, for its site's rate.
     virtual base::TimeDelta MoltSiteCommitDelay();

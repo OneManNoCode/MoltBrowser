@@ -147,7 +147,9 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   bool MoltMayGrowTo(int64_t map_id,
                      const blink::StorageKey& storage_key,
                      size_t new_storage_used) override;
-  void MoltShrankTo(int64_t map_id, size_t new_storage_used) override;
+  void MoltShrankTo(int64_t map_id,
+                    const blink::StorageKey& storage_key,
+                    size_t new_storage_used) override;
   base::TimeDelta MoltSiteCommitDelay(
       const blink::StorageKey& storage_key) override;
   void MoltSiteCommitted(const blink::StorageKey& storage_key,

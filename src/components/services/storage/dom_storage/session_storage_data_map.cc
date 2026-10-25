@@ -17,7 +17,9 @@ bool SessionStorageDataMap::Listener::MoltMayGrowTo(int64_t,
                                                     size_t) {
   return true;
 }
-void SessionStorageDataMap::Listener::MoltShrankTo(int64_t, size_t) {}
+void SessionStorageDataMap::Listener::MoltShrankTo(int64_t,
+                                                   const blink::StorageKey&,
+                                                   size_t) {}
 base::TimeDelta SessionStorageDataMap::Listener::MoltSiteCommitDelay(
     const blink::StorageKey&) {
   return base::TimeDelta();
@@ -34,7 +36,7 @@ bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {
 }
 void SessionStorageDataMap::MoltShrankTo(size_t new_storage_used) {
   listener_->MoltShrankTo(map_locator_->map_id().value_or(-1),
-                          new_storage_used);
+                          map_locator_->storage_key(), new_storage_used);
 }
 base::TimeDelta SessionStorageDataMap::MoltSiteCommitDelay() {
   return listener_->MoltSiteCommitDelay(map_locator_->storage_key());

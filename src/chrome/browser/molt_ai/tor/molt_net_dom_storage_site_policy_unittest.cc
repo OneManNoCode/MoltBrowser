@@ -62,12 +62,12 @@ TEST(MoltNetDomStorageSitePolicyTest, OneTotalPerSite) {
   EXPECT_TRUE(totals.MayGrowTo("https://b.test", "https://b.test", kShare));
   EXPECT_EQ(totals.total(), 2 * kShare);
   // Shrinking makes room for the site's other areas.
-  totals.ShrankTo("https://a.test", kShare - 10);
+  totals.ShrankTo("https://a.test", "https://a.test", kShare - 10);
   EXPECT_TRUE(totals.MayGrowTo("https://x.a.test", "https://a.test", 10));
   EXPECT_FALSE(totals.MayGrowTo("https://x.a.test", "https://a.test", 11));
   // Staying as large is no growth.
   EXPECT_TRUE(totals.MayGrowTo("https://x.a.test", "https://a.test", 10));
-  totals.ShrankTo("https://x.a.test", 0);
+  totals.ShrankTo("https://x.a.test", "https://a.test", 0);
   EXPECT_EQ(totals.SiteBytes("https://a.test"), kShare - 10);
   // Forgetting an area (its data deleted) gives its bytes back.
   totals.Forget("https://a.test");
@@ -78,6 +78,37 @@ TEST(MoltNetDomStorageSitePolicyTest, OneTotalPerSite) {
   EXPECT_FALSE(other.MayGrowTo("m1", "https://c.test", kShare + 1));
   EXPECT_EQ(other.total(), 0u);
   EXPECT_EQ(other.SiteBytes("https://c.test"), 0u);
+}
+
+// A sessionStorage map copied for a tab counts as it is, made with what it
+// copies, even past the site's share: the site then grows no more until it
+// shrinks. Shrinking never counts what wasn't there.
+TEST(MoltNetDomStorageSitePolicyTest, ACopyCountsAsItIs) {
+  constexpr size_t kShare = kMoltDomStorageBytesPerSite;
+  MoltDomStorageSiteTotals totals;
+  ASSERT_TRUE(totals.MayGrowTo("1", "https://a.test", 6 * kMiB));
+  totals.ShrankTo("2", "https://a.test", 6 * kMiB);
+  EXPECT_EQ(totals.SiteBytes("https://a.test"), 12 * kMiB);
+  EXPECT_EQ(totals.total(), 12 * kMiB);
+  EXPECT_GT(totals.SiteBytes("https://a.test"), kShare);
+  EXPECT_FALSE(totals.MayGrowTo("3", "https://a.test", 1));
+  EXPECT_FALSE(totals.MayGrowTo("2", "https://a.test", 6 * kMiB + 1));
+  // Staying as large, or shrinking, is still allowed.
+  EXPECT_TRUE(totals.MayGrowTo("2", "https://a.test", 6 * kMiB));
+  totals.ShrankTo("2", "https://a.test", 4 * kMiB);
+  EXPECT_EQ(totals.SiteBytes("https://a.test"), 10 * kMiB);
+  EXPECT_TRUE(totals.MayGrowTo("3", "https://a.test", 100 * 1024));
+  // A counted area's site stays the one it was counted for.
+  totals.ShrankTo("2", "https://b.test", 3 * kMiB);
+  EXPECT_EQ(totals.SiteBytes("https://a.test"), 9 * kMiB + 100 * 1024);
+  EXPECT_EQ(totals.SiteBytes("https://b.test"), 0u);
+  // An empty copy isn't counted.
+  totals.ShrankTo("4", "https://c.test", 0);
+  EXPECT_EQ(totals.SiteBytes("https://c.test"), 0u);
+  totals.Forget("2");
+  totals.Forget("1");
+  totals.Forget("3");
+  EXPECT_EQ(totals.total(), 0u);
 }
 
 // Many subdomains together still hold one share.

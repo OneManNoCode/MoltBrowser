@@ -360,6 +360,10 @@ void StorageAreaImpl::Put(
   // know what its site's other areas hold.
   if (new_item_size > old_item_size &&
       !delegate_->MoltMayGrowTo(new_storage_used)) {
+    // The old value, moved out above, goes back: the write changes nothing.
+    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
+      keys_values_map_[key] = std::move(*old_value);
+    }
     for (const auto& observer : observers_) {
       observer->KeyChangeFailed(key, source.Clone());
     }
@@ -915,6 +919,8 @@ void StorageAreaImpl::OnForkStateLoaded(bool database_enabled,
   }
 
   CalculateStorageAndMemoryUsed();
+  // MoltBrowser: a copy counts as it is (molt_dom_storage_site_policy.h).
+  delegate_->MoltShrankTo(storage_used_);
   OnLoadComplete();
 }
 

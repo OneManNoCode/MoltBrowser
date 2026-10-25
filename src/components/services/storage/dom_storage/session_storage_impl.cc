@@ -868,9 +868,12 @@ bool SessionStorageImpl::MoltMayGrowTo(int64_t map_id,
 }
 
 void SessionStorageImpl::MoltShrankTo(int64_t map_id,
+                                      const blink::StorageKey& storage_key,
                                       size_t new_storage_used) {
   if (molt_caches_per_site_) {
-    molt_site_budget_.ShrankTo(base::NumberToString(map_id), new_storage_used);
+    molt_site_budget_.ShrankTo(base::NumberToString(map_id),
+                               storage_key.top_level_site().Serialize(),
+                               new_storage_used);
   }
 }
 
