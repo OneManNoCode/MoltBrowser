@@ -5,13 +5,14 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-index 352402767d777ae294ff428f8b43b7dc0c86d268..7c8adb78e424bda8237b45a35fd98a45d6fb1854 100644
+index 352402767d777ae294ff428f8b43b7dc0c86d268..98ea45865cc7289583f623c4e7f43a7d65c0d85b 100644
 --- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 +++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-@@ -133,6 +133,10 @@
+@@ -133,6 +133,11 @@
  #include "chrome/browser/media/webrtc/webrtc_event_log_manager_keyed_service_factory.h"
  #include "chrome/browser/metrics/profile_metrics_service_factory.h"
  #include "chrome/browser/metrics/variations/google_groups_manager_factory.h"
++#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 +#include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 +#include "chrome/browser/molt_ai/keys/molt_os_crypt_startup.h"
 +#include "chrome/browser/molt_ai/memory/memory_service_factory.h"
@@ -19,7 +20,7 @@ index 352402767d777ae294ff428f8b43b7dc0c86d268..7c8adb78e424bda8237b45a35fd98a45
  #include "chrome/browser/navigation_predictor/navigation_predictor_keyed_service_factory.h"
  #include "chrome/browser/navigation_predictor/preloading_model_keyed_service_factory.h"
  #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
-@@ -1166,6 +1170,19 @@ void ChromeBrowserMainExtraPartsProfiles::
+@@ -1166,6 +1171,22 @@ void ChromeBrowserMainExtraPartsProfiles::
  #if BUILDFLAG(IS_ANDROID)
    MerchantViewerDataManagerFactory::GetInstance();
  #endif
@@ -36,6 +37,9 @@ index 352402767d777ae294ff428f8b43b7dc0c86d268..7c8adb78e424bda8237b45a35fd98a45
 +  // MoltBrowser: which sites may use the on-device model through the
 +  // built-in AI APIs (registers its profile pref).
 +  molt_ai::web_ai::WebAISitePermissionsFactory::GetInstance();
++  // MoltBrowser: which frames of other sites may offer their tools to the
++  // agents, per page (registers its profile pref).
++  molt_ai::FrameToolPermissionsFactory::GetInstance();
  #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
    metrics::DesktopProfileSessionDurationsServiceFactory::GetInstance();
  #endif

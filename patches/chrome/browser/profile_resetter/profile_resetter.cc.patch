@@ -5,24 +5,28 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profile_resetter/profile_resetter.cc b/chrome/browser/profile_resetter/profile_resetter.cc
-index 8a44ad340c51c5285fd35c5b201996a645dc292c..1f4b7e7fbeaefc80d558bf235521a6882a747b29 100644
+index 8a44ad340c51c5285fd35c5b201996a645dc292c..3cf661438fded1f1e2a9826b943e9d658d1fe5d9 100644
 --- a/chrome/browser/profile_resetter/profile_resetter.cc
 +++ b/chrome/browser/profile_resetter/profile_resetter.cc
-@@ -24,6 +24,7 @@
+@@ -24,6 +24,8 @@
  #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
  #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
  #include "chrome/browser/google/google_brand.h"
++#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 +#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h"
  #include "chrome/browser/net/system_network_context_manager.h"
  #include "chrome/browser/profile_resetter/brandcode_config_fetcher.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -335,6 +336,10 @@ void ProfileResetter::ResetContentSettings() {
+@@ -335,6 +337,13 @@ void ProfileResetter::ResetContentSettings() {
          partition->ClearBluetoothAllowedDevicesMap();
        });
  
 +  // MoltBrowser: the built-in AI APIs' per-site answers and prompt pauses
 +  // are kept in a MoltBrowser pref, not in HostContentSettingsMap.
 +  molt_ai::web_ai::ResetWebAISitePermissions(profile_);
++  // MoltBrowser: the frames of other sites allowed to offer their tools to
++  // the agents, kept in a MoltBrowser pref too.
++  molt_ai::ResetFrameToolPermissions(profile_);
 +
    MarkAsDone(CONTENT_SETTINGS);
  }
