@@ -10,31 +10,75 @@
 // The refusal reaches the network service on a pipe of its own (the
 // profile's ProxyConfigClient, from ProxyConfigMonitor), which nothing
 // orders against the pipes pages send their requests on. Until it is
-// applied there, the identity's network contexts still route through Tor.
-// So the end is made synchronous with them:
-//   1. The identity is marked ended: its network contexts are sent the
-//      refusal (MoltNetRouting::RefuseAllProxyConfig()), and the browser
-//      refuses its navigations from now on (MoltNetEndedIdentityThrottle).
-//   2. Its renderer processes are ended at once, so its pages, frames and
-//      workers can't make another request.
-//   3. Every network context of the identity is asked how it would route a
-//      request (LookUpProxyForURL, on the context's own pipe), again every
-//      kMoltNetEndProbeIntervalMs, until each answers with the refusal.
-//   4. Only then are its connections and host cache dropped (on the same
-//      pipe as the answer, so after the refusal: nothing a request opened
-//      before it stays), its DevTools sessions detached, its windows closed,
-//      and the next step of New Identity taken.
-// If no answer confirms the refusal within kMoltNetEndProbeDeadlineMs (the
-// network service is gone or hung), the end carries on anyway: its pages
-// are stopped already, a network context the service makes again gets the
-// refusal from the start, and New Identity still waits for the profile, and
-// with it every network context of the identity, to be destroyed.
+// applied there, the identity's network contexts still route through Tor;
+// from the task in which it is applied, a context starts nothing and writes
+// nothing more to Tor, whatever pipe a request comes on
+// (services/network/molt_ended_identity_policy.h). So the end reaches the
+// network before anything else of the identity learns of it
+// (MoltNetEndStep, in this order):
+//   1. kMarkEnded: the browser refuses the identity's navigations and every
+//      request it holds for the identity's pages from now on
+//      (MoltNetEndedIdentityThrottle, MoltNetBrowserMaySendForPage()).
+//   2. kSendToNetwork: each network context of the identity is sent the
+//      refusal (MoltNetRouting::RefuseAllProxyConfig()) and, on the same
+//      pipe, FlushProxyConfig, whose answer comes once the refusal is
+//      applied and the context has ended with it.
+//   3. kWaitForNetwork: until every context has answered (or its pipe has
+//      closed: MoltNetEndReachedNetwork()), nothing else happens to the
+//      identity. Its pages keep running for that one round trip; whatever
+//      they send that the context handles after its end is refused, and
+//      what it handled before is stopped at the end.
+//   4. kStopPages: its renderer processes are ended.
+//   5. kConfirmRefusal: every network context of the identity is asked how
+//      it would route a request (LookUpProxyForURL, on the context's own
+//      pipe), again every kMoltNetEndProbeIntervalMs, until each answers
+//      with the refusal; then its connections and host cache are dropped
+//      once more.
+//   6. kCloseWindows: its DevTools sessions are detached, its windows
+//      closed, and the next step of New Identity taken.
+// If the network doesn't answer within kMoltNetEndProbeDeadlineMs (the
+// network service is gone or hung), each step carries on anyway: a network
+// context the service makes again gets the refusal from the start and
+// starts ended, and New Identity still waits for the profile, and with it
+// every network context of the identity, to be destroyed.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_IDENTITY_END_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_IDENTITY_END_POLICY_H_
 
+#include <array>
+
 namespace molt_ai {
 namespace tor {
+
+// The browser's steps in ending an identity, in order (see above).
+enum class MoltNetEndStep {
+  kMarkEnded,
+  kSendToNetwork,
+  kWaitForNetwork,
+  kStopPages,
+  kConfirmRefusal,
+  kCloseWindows,
+};
+inline constexpr std::array<MoltNetEndStep, 6> kMoltNetEndSteps = {
+    MoltNetEndStep::kMarkEnded,      MoltNetEndStep::kSendToNetwork,
+    MoltNetEndStep::kWaitForNetwork, MoltNetEndStep::kStopPages,
+    MoltNetEndStep::kConfirmRefusal, MoltNetEndStep::kCloseWindows,
+};
+
+// Whether `step` may happen before the identity's network has the end:
+// only those that tell nothing to anyone who could send for the identity.
+constexpr bool MoltNetEndStepMayPrecedeNetwork(MoltNetEndStep step) {
+  return step == MoltNetEndStep::kMarkEnded ||
+         step == MoltNetEndStep::kSendToNetwork;
+}
+
+// Whether the end has reached the identity's network: every network context
+// sent the end has answered (`acks_outstanding` 0; a context whose pipe
+// closed counts as having answered: it is gone), or the deadline passed.
+constexpr bool MoltNetEndReachedNetwork(int acks_outstanding,
+                                        bool deadline_passed) {
+  return acks_outstanding <= 0 || deadline_passed;
+}
 
 // How often the end asks again, and for how long (milliseconds). The
 // refusal normally arrives within one or two network-service tasks.
@@ -83,7 +127,7 @@ constexpr bool MoltNetNavigationMayProceed(bool is_moltnet_profile,
 // profile: a keepalive request, beacon, ping or fetchLater it starts,
 // retries or follows a redirect for (the page may be gone), a download or a
 // Save Page As resource, a Background Fetch request. None of an ended
-// MoltNet identity's, from the moment it ends (step 1 below), before its
+// MoltNet identity's, from the moment it ends (kMarkEnded), before its
 // renderers are stopped: a fetchLater the browser would send because its
 // page went away is dropped instead. What already reached the network
 // service is stopped there when the refusal is applied

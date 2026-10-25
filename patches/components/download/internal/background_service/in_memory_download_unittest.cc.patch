@@ -1,0 +1,124 @@
+MoltBrowser patch for components/download/internal/background_service/in_memory_download_unittest.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/download/internal/background_service/in_memory_download_unittest.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/background_service/in_memory_download_unittest.cc b/components/download/internal/background_service/in_memory_download_unittest.cc
+index 8ae11b69734fe720f5eefcd9303a6c0eed2ec95c..a82cdb8c007cb0ba33732761b99141233b112a06 100644
+--- a/components/download/internal/background_service/in_memory_download_unittest.cc
++++ b/components/download/internal/background_service/in_memory_download_unittest.cc
+@@ -5,6 +5,7 @@
+ #include "components/download/internal/background_service/in_memory_download.h"
+ 
+ #include <memory>
++#include <string>  // MoltBrowser
+ 
+ #include "base/byte_size.h"
+ #include "base/compiler_specific.h"
+@@ -17,12 +18,16 @@
+ #include "base/threading/thread.h"
+ #include "base/uuid.h"
+ #include "net/base/io_buffer.h"
++#include "net/base/isolation_info.h"     // MoltBrowser
++#include "net/cookies/site_for_cookies.h"  // MoltBrowser
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "services/network/test/test_url_loader_factory.h"
+ #include "storage/browser/blob/blob_reader.h"
++#include "storage/browser/blob/blob_storage_constants.h"  // MoltBrowser
+ #include "storage/browser/blob/blob_storage_context.h"
++#include "url/origin.h"  // MoltBrowser
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -149,6 +154,36 @@ class InMemoryDownloadTest : public testing::Test {
+     return &url_loader_factory_;
+   }
+ 
++  // MoltBrowser: blob memory in shares of `per_key` bytes, as in MoltNet
++  // (storage/browser/blob/molt_blob_budget_policy.h).
++  void MoltUseShares(size_t per_key) {
++    base::RunLoop run_loop;
++    io_thread_->task_runner()->PostTaskAndReply(
++        FROM_HERE, base::BindLambdaForTesting([&]() {
++          storage::BlobStorageLimits limits;
++          limits.max_blob_in_memory_space = 4 * 1024 * 1024;
++          limits.desired_max_disk_space = 0;
++          limits.effective_max_disk_space = 0;
++          limits.molt_per_key_memory = per_key;
++          blob_storage_context_->set_limits_for_testing(limits);
++        }),
++        run_loop.QuitClosure());
++    run_loop.Run();
++  }
++
++  // MoltBrowser: the blob memory every key uses together.
++  size_t MoltBlobMemoryUsed() {
++    size_t used = 0;
++    base::RunLoop run_loop;
++    io_thread_->task_runner()->PostTaskAndReply(
++        FROM_HERE, base::BindLambdaForTesting([&]() {
++          used = blob_storage_context_->memory_controller().memory_usage();
++        }),
++        run_loop.QuitClosure());
++    run_loop.Run();
++    return used;
++  }
++
+   // Verifies if data read from |blob| is identical as |expected|.
+   void VerifyBlobData(const std::string& expected,
+                       storage::BlobDataHandle* blob) {
+@@ -264,6 +299,51 @@ TEST_F(InMemoryDownloadTest, RedirectResponseHeaders) {
+   VerifyBlobData(kTestDownloadData, blob.get());
+ }
+ 
++// MoltBrowser: a Background Fetch request of a site.
++RequestParams MoltNetFetchParams() {
++  RequestParams request_params;
++  request_params.url = GURL("https://cdn.example/movie");
++  const url::Origin site = url::Origin::Create(GURL("https://a.example"));
++  request_params.isolation_info = net::IsolationInfo::Create(
++      net::IsolationInfo::RequestType::kOther, site, site,
++      net::SiteForCookies::FromOrigin(site));
++  return request_params;
++}
++
++// MoltBrowser: in MoltNet the response counts against the blob share of the
++// site that started the fetch as it arrives, and then becomes the blob,
++// counted once.
++TEST_F(InMemoryDownloadTest, MoltNetResponseWithinTheSitesShare) {
++  MoltUseShares(1024 * 1024);
++  RequestParams request_params = MoltNetFetchParams();
++  CreateDownload(request_params);
++  const std::string data(300 * 1024, 'x');
++  url_loader_factory()->AddResponse(request_params.url.spec(), data);
++
++  download()->Start();
++  delegate()->WaitForCompletion();
++  EXPECT_EQ(InMemoryDownload::State::COMPLETE, download()->state());
++  auto blob = download()->ResultAsBlob();
++  VerifyBlobData(data, blob.get());
++  EXPECT_EQ(MoltBlobMemoryUsed(), data.size());
++}
++
++// MoltBrowser: a response past its site's share fails before it is all in
++// memory, as one its share can't hold as a blob does, and nothing of it
++// stays counted.
++TEST_F(InMemoryDownloadTest, MoltNetResponsePastTheSitesShareFails) {
++  MoltUseShares(128 * 1024);
++  RequestParams request_params = MoltNetFetchParams();
++  CreateDownload(request_params);
++  url_loader_factory()->AddResponse(request_params.url.spec(),
++                                    std::string(2 * 1024 * 1024, 'x'));
++
++  download()->Start();
++  delegate()->WaitForCompletion();
++  EXPECT_EQ(InMemoryDownload::State::FAILED, download()->state());
++  EXPECT_EQ(MoltBlobMemoryUsed(), 0u);
++}
++
+ }  // namespace
+ 
+ }  // namespace download

@@ -564,10 +564,14 @@ class Run(object):
         return env
 
     def launch_browser(self, label, extra_flags=(), dsf=None,
-                       policy_dir=None):
+                       policy_dir=None, natural=False):
+        # natural (the traffic capture): start as a user would, without
+        # --no-first-run and without a start URL, so that the first run and
+        # the start-up tabs are the browser's own.
         args = [self.opts.browser,
                 '--user-data-dir=' + self.path('profile'),
-                '--remote-debugging-pipe', '--no-first-run',
+                '--remote-debugging-pipe'] + (
+                    [] if natural else ['--no-first-run']) + [
                 '--no-default-browser-check', '--password-store=basic',
                 '--disable-search-engine-choice-screen',
                 '--ignore-certificate-errors-spki-list=' + self.spki]
@@ -584,7 +588,8 @@ class Run(object):
         if self.opts.control_tor:
             args.append('--proxy-server=socks5://127.0.0.1:%d' % CONTROL_SOCKS)
         args += list(extra_flags) + list(self.opts.browser_args)
-        args.append('about:blank')
+        if not natural:
+            args.append('about:blank')
         cmd_r, cmd_w = os.pipe()
         resp_r, resp_w = os.pipe()
         child_in = _high_fd(cmd_r)
@@ -1267,6 +1272,67 @@ class Run(object):
         "location.origin + '/canary/' + n + '-hide', 'x'); }); "
         "return r; })()")
 
+    # Requests racing New Identity (MOLTNET_COMPLIANCE.md §2 *After an
+    # identity ends*): the old page keeps three fetches to the kit's server
+    # going, one after the other. The first one refused (the end cancels
+    # what is in flight and refuses what follows) makes the page start one
+    # request of each kind it can (fetch, a keepalive fetch, a beacon, an
+    # image, a WebSocket, a prefetch), whose paths carry the time it saw the
+    # refusal. None of them may reach the kit's server. The page says what
+    # it did on the console (`moltleak-race <nonce> <what> <json>`). %s is
+    # the nonce (a JSON string).
+    RACE_END_JS = (
+        "(() => { const n = %s; const o = location.origin; "
+        "const base = o + '/canary/' + n; "
+        "const ws = o.replace(/^http/, 'ws') + '/ws/' + n; "
+        "const say = (what, v) => console.log('moltleak-race ' + n + ' ' + "
+        "what + ' ' + JSON.stringify(v)); "
+        "let seq = 0; let done = false; "
+        "const after = (why) => { if (done) { return; } done = true; "
+        "const t = Date.now(); const p = base + 'after' + t + '-'; "
+        "const tried = []; "
+        "const go = (kind, f) => { try { f(); tried.push(kind); } "
+        "catch (e) { tried.push(kind + ': ' + e.name); } }; "
+        "go('fetch', () => { fetch(p + 'fetch', {cache: 'no-store'})"
+        ".catch(() => {}); }); "
+        "go('keepalive', () => { fetch(p + 'keepalive', {method: 'POST', "
+        "body: 'x', keepalive: true}).catch(() => {}); }); "
+        "go('beacon', () => { navigator.sendBeacon(p + 'beacon', 'x'); }); "
+        "go('image', () => { new Image().src = p + 'image'; }); "
+        "go('websocket', () => { const s = new WebSocket(ws + 'after' + t); "
+        "s.onerror = () => {}; }); "
+        "go('prefetch', () => { const l = document.createElement('link'); "
+        "l.rel = 'prefetch'; l.href = p + 'prefetch'; "
+        "document.head.appendChild(l); }); "
+        "say('after', {t: t, seq: seq, why: why, tried: tried}); }; "
+        "const loop = (lane) => { const s = ++seq; "
+        "fetch(base + '-race' + lane + '-' + s, {cache: 'no-store'}).then("
+        "() => { setTimeout(() => loop(lane), 10); }, "
+        "() => { after(lane + ':' + s); }); }; "
+        "for (let lane = 0; lane < 3; ++lane) { loop(lane); } "
+        "say('started', {t: Date.now()}); return {started: true}; })()")
+
+    def race_events(self, sid, nonce):
+        """What the racing page said on the console (RACE_END_JS)."""
+        prefix = 'moltleak-race %s ' % nonce
+        out = []
+        for e in self.cdp.events_since(0, 'Runtime.consoleAPICalled'):
+            if e.get('sessionId') != sid:
+                continue
+            args = (e.get('params') or {}).get('args') or []
+            text = args[0].get('value') if args else None
+            if not isinstance(text, str) or not text.startswith(prefix):
+                continue
+            what, _, rest = text[len(prefix):].partition(' ')
+            try:
+                value = json.loads(rest)
+            except ValueError:
+                value = {'raw': rest[:200]}
+            if isinstance(value, dict):
+                value['what'] = what
+                out.append(value)
+        return out[:20]
+
     def wait_new_moltnet_page(self, before, seconds=60):
         deadline = _now() + seconds
         while _now() < deadline:
@@ -1285,6 +1351,10 @@ class Run(object):
             res = self.read_identity(sid, bases['BASE_HTTP'], 'set=1')
             data['canvas_before'] = res.get('canvas')
             data['exit_before'] = (self.exit_ip(sid) or {}).get('IP')
+            if not self.opts.offline:
+                # The exit check left the page on check.torproject.org: the
+                # requests below go to the page's own server, the kit's.
+                self.read_identity(sid, bases['BASE_HTTP'], 'read=1')
             try:
                 data['hold_page'] = bool(self.cdp.evaluate(
                     sid, self.HOLD_PAGE_JS, user_gesture=True))
@@ -1297,6 +1367,12 @@ class Run(object):
                         data['held_nonce']), user_gesture=True)
             except cdplib.CdpError as e:
                 data['held_setup'] = {'error': str(e)}
+            data['race_nonce'] = 'endrace%d' % int(_now() * 1000)
+            try:
+                data['race_setup'] = self.cdp.evaluate(
+                    sid, self.RACE_END_JS % json.dumps(data['race_nonce']))
+            except cdplib.CdpError as e:
+                data['race_setup'] = {'error': str(e)}
             old = self.moltnet
             data['old_context'] = old[2]
             before = set(t['targetId'] for t in self.moltnet_pages())
@@ -1304,6 +1380,7 @@ class Run(object):
             data['result'] = self.molt_net_call('moltnet.newIdentity',
                                                 timeout=self.opts.open_timeout)
             first_done = _now()
+            data['race_events'] = self.race_events(sid, data['race_nonce'])
             found = self.wait_new_moltnet_page(before)
             if found:
                 self.moltnet = (found['targetId'],

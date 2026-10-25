@@ -1,0 +1,35 @@
+MoltBrowser patch for components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h b/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h
+index 1b468199d97783c8723cfde8da9974f04dbeac81..03e7082b45185f049c428bccd9baae0276837689 100644
+--- a/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h
++++ b/components/optimization_guide/core/model_execution/manifest_broker/manifest_monitor.h
+@@ -65,6 +65,13 @@ class ManifestMonitor {
+   // Returns a list of properties for the broker state info.
+   std::vector<mojom::BrokerPropertyInfoPtr> GetBrokerProperties() const;
+ 
++  // MoltBrowser: asks the delegate for the manifest, which in Chrome
++  // registers the manifest component and requests it from the component
++  // updater. The constructor no longer does this; ManifestBrokerState calls
++  // it when a feature first asks for an on-device model
++  // (docs/NETWORK_TRAFFIC.md). Only the first call does anything.
++  void RequestManifest();
++
+  private:
+   // This should be called once during initialization.
+   void OnDiskSpaceEvaluated(std::optional<base::ByteSize> free_space);
+@@ -86,6 +93,10 @@ class ManifestMonitor {
+   // Inputs:
+   const raw_ref<PerformanceClassifier> performance_classifier_;
+   const raw_ref<PrefService> local_state_;
++  // MoltBrowser: kept for RequestManifest(). ManifestBrokerState owns the
++  // delegate and declares it before this monitor, so it outlives it.
++  const raw_ref<Delegate> delegate_;
++  bool manifest_requested_ = false;
+   std::optional<base::ByteSize> free_space_;
+   std::optional<base::FilePath> manifest_dir_;
+ 

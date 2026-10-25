@@ -20,7 +20,7 @@
 <body>
 
 <h1>Privacy Policy</h1>
-<span class="date">Effective: October 15, 2026</span>
+<span class="date">Effective: October 25, 2026</span>
 
 <p>GenEye AI Labs Inc. ("we", "us") builds MoltBrowser with privacy as a core architectural principle, not just a policy. This document explains what data MoltBrowser collects (almost nothing) and how it handles your information.</p>
 
@@ -49,6 +49,7 @@
   <li><strong>AI model downloads</strong> — only when you choose to download an on-device model, from Hugging Face (<code>huggingface.co</code> and its download servers).</li>
   <li><strong>Search</strong> — the default search engine is DuckDuckGo. Your searches go to DuckDuckGo, and while you type in the address bar, what you type is sent to DuckDuckGo to show suggestions. You can change the search engine, or turn suggestions off, in Settings.</li>
   <li><strong>Cloud AI providers</strong> — only if you connect your own API key and send a message to a cloud model (for example OpenAI, Anthropic, Google Gemini, Mistral or OpenRouter). That message, plus any page, tab or attachment context you include, goes directly to the provider you chose under its privacy policy. MoltBrowser marks every message sent to a cloud provider.</li>
+  <li><strong>AI agents</strong> — when you give an agent a task that needs a web search, it searches Brave Search (<code>search.brave.com</code>) for you, like a search you type yourself.</li>
   <li><strong>MoltNet</strong> — when you open a MoltNet window, its traffic goes through the Tor network. If you click Verify in the MoltNet panel, MoltBrowser loads <code>check.torproject.org</code> through Tor to show the address websites see.</li>
   <li><strong>Chromium background services</strong> — MoltBrowser is built on Chromium, and some of Chromium's own services still contact Google, without cookies or account information:
     <ul>
@@ -56,8 +57,9 @@
       <li>the current time, used to check certificate dates if your computer's clock is wrong (<code>clients2.google.com</code>);</li>
       <li>Safe Browsing: list updates (<code>safebrowsing.googleapis.com</code>) and a check when you download a program, which includes that file's download address (<code>sb-ssl.google.com</code>). Without a Google API key these checks don't currently protect you; we are deciding whether to turn them off or replace them;</li>
       <li>spell-check dictionaries (<code>redirector.gvt1.com</code>), when a dictionary for your language is first needed;</li>
-      <li>the list of languages Translate supports (<code>translate.googleapis.com</code>), when Translate offers to translate a page.</li>
+      <li>address formats (<code>chromium-i18n.appspot.com</code>), only when Autofill fills in an address you saved and needs your country's format.</li>
     </ul>
+    Translate no longer contacts Google: pages are translated by your on-device model. When a website asks the browser to verify an email address, MoltBrowser looks up that address's domain with Cloudflare's DNS service (<code>cloudflare-dns.com</code>), not Google's.
     The full list, with what each request contains and how to turn it off, is in <a href="https://github.com/OneManNoCode/MoltBrowser/blob/main/docs/NETWORK_TRAFFIC.md">NETWORK_TRAFFIC.md</a>.</li>
   <li><strong>Chrome extensions</strong> — extensions you install may make their own requests under their own privacy policies.</li>
 </ul>

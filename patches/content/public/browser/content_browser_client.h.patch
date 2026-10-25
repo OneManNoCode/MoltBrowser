@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 6e730455c66df584a721a2b4720f25bf9844f16d..d38cf48aebcae99fc44cbf2c7c1da94fcc5fa25b 100644
+index 6e730455c66df584a721a2b4720f25bf9844f16d..9485f8c0af8ce1b3bbd1b6d0115e181e10df9480 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
 @@ -80,7 +80,9 @@
@@ -18,7 +18,7 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..d38cf48aebcae99fc44cbf2c7c1da94f
  #include "third_party/blink/public/common/mediastream/media_devices.h"
  #include "third_party/blink/public/common/tokens/tokens.h"
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
-@@ -1989,6 +1991,74 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1989,6 +1991,82 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  
@@ -88,6 +88,14 @@ index 6e730455c66df584a721a2b4720f25bf9844f16d..d38cf48aebcae99fc44cbf2c7c1da94f
 +  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
 +  // False: Chromium's limits for the whole partition.
 +  virtual bool ShouldKeepDomStorageCachesPerSite(
++      BrowserContext* browser_context);
++
++  // MoltBrowser: for a context whose DOM storage is kept per site (above),
++  // what runs when its localStorage or sessionStorage areas together grow
++  // past the floor
++  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h);
++  // null for none.
++  virtual base::RepeatingClosure GetDomStorageGrowthBeyondFloorCallback(
 +      BrowserContext* browser_context);
 +
    struct CONTENT_EXPORT WebSocketOptions {

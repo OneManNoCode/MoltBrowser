@@ -189,6 +189,22 @@ bool MoltNetRenderersExpectFonts() {
   return Loaded().state != LoadState::kAbsent;
 }
 
+std::optional<MoltNetFontsStatus> GetMoltNetFontsStatus() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  switch (Loaded().state) {
+    case LoadState::kReady:
+      return MoltNetFontsStatus::kReady;
+    case LoadState::kAbsent:
+      return MoltNetFontsStatus::kAbsent;
+    case LoadState::kBroken:
+      return MoltNetFontsStatus::kBroken;
+    case LoadState::kNotStarted:
+    case LoadState::kLoading:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
 std::vector<base::File> DuplicateMoltNetFonts() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const LoadedFonts& loaded = Loaded();

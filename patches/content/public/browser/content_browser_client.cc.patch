@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..56e49e8dfa6b058916069ee52c28f2df452dfb6b 100644
+index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..b0da6e6a10bfbe811274ee2571f99d7663df787e 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1110,6 +1110,50 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1110,6 +1110,55 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -54,6 +54,11 @@ index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..56e49e8dfa6b058916069ee52c28f2df
 +bool ContentBrowserClient::ShouldKeepDomStorageCachesPerSite(
 +    BrowserContext*) {
 +  return false;
++}
++
++base::RepeatingClosure
++ContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(BrowserContext*) {
++  return base::RepeatingClosure();
 +}
 +
  ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;

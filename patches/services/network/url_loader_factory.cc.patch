@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/url_loader_factory.cc b/services/network/url_loader_factory.cc
-index 541b9e627d41503f8b17984e15a7e6359d0df1ea..127f2975b827c3be1f41b773e5a130911533e30d 100644
+index 541b9e627d41503f8b17984e15a7e6359d0df1ea..9bce5745ec8663fa7294292b0f50b3c5440bbd07 100644
 --- a/services/network/url_loader_factory.cc
 +++ b/services/network/url_loader_factory.cc
 @@ -23,6 +23,8 @@
@@ -46,7 +46,23 @@ index 541b9e627d41503f8b17984e15a7e6359d0df1ea..127f2975b827c3be1f41b773e5a13091
    }
  }
  
-@@ -229,9 +239,8 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
+@@ -208,6 +218,15 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
+   // have been rejected at the CorsURLLoader layer.
+   DCHECK(!resource_request.trusted_params || params_->is_trusted);
+ 
++  // MoltBrowser: no request starts once this context's MoltNet identity has
++  // ended, whenever it was sent (services/network/molt_ended_identity_policy.h).
++  if (!context_->MoltAdmits(MoltNetworkEntry::kURLLoader)) {
++    URLLoaderCompletionStatus status(net::ERR_ABORTED);
++    status.completion_time = base::TimeTicks::Now();
++    mojo::Remote<mojom::URLLoaderClient>(std::move(client))->OnComplete(status);
++    return;
++  }
++
+   if (resource_request.web_bundle_token_params.has_value() &&
+       resource_request.destination !=
+           network::mojom::RequestDestination::kWebBundle) {
+@@ -229,9 +248,8 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
  
    base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder;
    if (context_->network_service()) {

@@ -319,6 +319,14 @@ def manifest():
                 'second_after_first_s': 10.4, 'second_context': 'CTX4',
                 'held_nonce': 'endheld1760000091500',
                 'held_setup': {'fetch_later': True},
+                'race_nonce': 'endrace1760000091600',
+                'race_setup': {'started': True},
+                'race_events': [
+                    {'what': 'started', 't': 1760000091610},
+                    {'what': 'after', 't': 1760000092045, 'seq': 7,
+                     'why': '1:5', 'tried': ['fetch', 'keepalive', 'beacon',
+                                             'image', 'websocket',
+                                             'prefetch']}],
                 'session_marks': [t(92), t(96)]}},
             {'name': 'fail_closed', 'start': t(100), 'end': t(105), 'data': {
                 'killed': [4242], 'nav_error':
@@ -543,6 +551,9 @@ def logs():
              'status': 204, 'host': ONION_A, 'method': 'GET',
              'scheme': 'http'},
             {'ts': t(18.31), 'path': '/canary/aia-kkkkkk1212.crt',
+             'status': 204, 'host': ONION_A, 'method': 'GET',
+             'scheme': 'http'},
+            {'ts': t(91.9), 'path': '/canary/endrace1760000091600-race1-5',
              'status': 204, 'host': ONION_A, 'method': 'GET',
              'scheme': 'http'}]),
         'logs/proxy.jsonl': jl([

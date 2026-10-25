@@ -1,0 +1,66 @@
+MoltBrowser patch for chrome/browser/component_updater/registration.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/component_updater/registration.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/component_updater/registration.cc b/chrome/browser/component_updater/registration.cc
+index 9cf5a226c7f7482430f92df85b149c551f18a690..4f68c1d1c2e95c1dc682f06fe200ece5e7353125 100644
+--- a/chrome/browser/component_updater/registration.cc
++++ b/chrome/browser/component_updater/registration.cc
+@@ -33,6 +33,7 @@
+ #include "chrome/browser/component_updater/subresource_filter_component_installer.h"
+ #include "chrome/browser/component_updater/trust_token_key_commitments_component_installer.h"
+ #include "chrome/browser/history_embeddings/history_embeddings_utils.h"
++#include "chrome/browser/molt_ai/privacy/molt_component_policy.h"  // MoltBrowser
+ #include "chrome/common/buildflags.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/chrome_paths.h"
+@@ -160,7 +161,10 @@ void RegisterComponentsForUpdate() {
+   RegisterPrivateVerificationTokensComponentIfEnabled(cus);
+   RegisterFirstPartySetsComponent(cus);
+   RegisterPrivacySandboxAttestationsComponent(cus);
+-  RegisterActorSafetyListsComponent(cus, base::OnceClosure());
++  // MoltBrowser: Google-only components (molt_component_policy.h).
++  if (molt_ai::privacy::ShouldRegisterGoogleOnlyComponents()) {
++    RegisterActorSafetyListsComponent(cus, base::OnceClosure());
++  }
+   if (history_embeddings::IsHistoryEmbeddingsFeatureEnabled()) {
+     RegisterHistorySearchStringsComponent(cus);
+   }
+@@ -210,7 +214,10 @@ void RegisterComponentsForUpdate() {
+   ManageScreenAIComponentRegistration(cus, g_browser_process->local_state());
+ #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+ 
+-  RegisterCommerceHeuristicsComponent(cus);
++  // MoltBrowser: Google-only components (molt_component_policy.h).
++  if (molt_ai::privacy::ShouldRegisterGoogleOnlyComponents()) {
++    RegisterCommerceHeuristicsComponent(cus);
++  }
+ 
+ #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+   // TODO(crbug.com/364795294): Support other platforms.
+@@ -226,7 +233,10 @@ void RegisterComponentsForUpdate() {
+ 
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+-  RegisterAmountExtractionHeuristicRegexesComponent(cus);
++  // MoltBrowser: Google-only components (molt_component_policy.h).
++  if (molt_ai::privacy::ShouldRegisterGoogleOnlyComponents()) {
++    RegisterAmountExtractionHeuristicRegexesComponent(cus);
++  }
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+         // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+ 
+@@ -234,7 +244,10 @@ void RegisterComponentsForUpdate() {
+   RegisterWasmTtsEngineComponent(cus, g_browser_process->local_state());
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+ 
+-  RegisterCaptchaProviderComponent(cus);
++  // MoltBrowser: Google-only components (molt_component_policy.h).
++  if (molt_ai::privacy::ShouldRegisterGoogleOnlyComponents()) {
++    RegisterCaptchaProviderComponent(cus);
++  }
+ 
+   MaybeRegisterPlatformRuntimeComponent(cus);
+ 

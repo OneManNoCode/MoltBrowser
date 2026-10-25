@@ -7246,6 +7246,20 @@ bool ChromeContentBrowserClient::ShouldKeepDomStorageCachesPerSite(
                  Profile::FromBrowserContext(browser_context)));
 }
 
+base::RepeatingClosure
+ChromeContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: as GetFixedQuotaSettings(), for localStorage and
+  // sessionStorage: past their floor the identity's memory valve hears of it
+  // (molt_ai/tor/molt_net_memory_valve.h).
+  if (!browser_context) {
+    return base::RepeatingClosure();
+  }
+  return molt_ai::tor::MoltNetMemoryValveCallback(
+      Profile::FromBrowserContext(browser_context),
+      molt_ai::fingerprinting::kMoltNetStorageMemoryReserveBytes);
+}
+
 bool ChromeContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
     content::BrowserContext* browser_context,
     const GURL& site_url) {

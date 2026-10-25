@@ -7,8 +7,14 @@
 # password leak checks). Hooked from chrome/browser/profiles/profile_impl.cc.
 #
 # Default feature overrides (features that only talk to Google in a keyless
-# build). Hooked from chrome/browser/metrics/chrome_feature_list_creator.cc.
+# build, or download components only Google features use). Hooked from
+# chrome/browser/metrics/chrome_feature_list_creator.cc.
+#
+# Components only Google features use, which Chromium registers at every
+# start: skipped from chrome/browser/component_updater/registration.cc.
 # See docs/NETWORK_TRAFFIC.md.
+
+import("//services/on_device_model/on_device_model.gni")
 
 source_set("privacy") {
   sources = [
@@ -41,11 +47,30 @@ source_set("feature_overrides") {
   ]
 
   deps = [
+    "//chrome/browser/dictation:features",
+    "//chrome/common:chrome_features",
     "//components/autofill/core/common:features",
+    "//components/history_embeddings/core",
     "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
+    "//components/optimization_guide/core:features",
+    "//components/optimization_guide/core:prediction",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+    "//components/safe_browsing/core/common:features",
     "//components/translate/core/browser",
+    "//media",
     "//third_party/blink/public/common",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Which Google-only components registration.cc skips. Depends on //base
+# only, for //chrome/browser/component_updater:impl.
+source_set("component_policy") {
+  sources = [
+    "molt_component_policy.cc",
+    "molt_component_policy.h",
   ]
 
   public_deps = [ "//base" ]
@@ -54,16 +79,50 @@ source_set("feature_overrides") {
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "molt_feature_overrides_unittest.cc" ]
+  sources = [
+    "molt_component_policy_unittest.cc",
+    "molt_feature_overrides_unittest.cc",
+  ]
   deps = [
+    ":component_policy",
     ":feature_overrides",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/dictation:features",
+    "//chrome/common:chrome_features",
     "//components/autofill/core/common:features",
+    "//components/history_embeddings/core",
     "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
+    "//components/optimization_guide/core:features",
+    "//components/optimization_guide/core:prediction",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+    "//components/safe_browsing/core/common:features",
     "//components/translate/core/browser",
+    "//media",
     "//testing/gtest",
     "//third_party/blink/public/common",
   ]
+}
+
+# The on-device model manifest is asked for on first demand, not at
+# startup (the "MoltBrowser:" hooks in
+# components/optimization_guide/core/model_execution/manifest_broker/).
+# Built where Chrome builds the manifest broker.
+if (use_on_device_model_service) {
+  source_set("on_device_manifest_unit_tests") {
+    testonly = true
+    sources = [ "molt_on_device_manifest_unittest.cc" ]
+    deps = [
+      "//base",
+      "//base/test:test_support",
+      "//components/optimization_guide/core:features",
+      "//components/optimization_guide/core:manifest_broker",
+      "//components/optimization_guide/public/mojom",
+      "//components/prefs:test_support",
+      "//mojo/public/cpp/bindings",
+      "//services/on_device_model/public/cpp",
+      "//testing/gtest",
+    ]
+  }
 }

@@ -425,6 +425,7 @@ read. Upstream files are whole copies under `src/`, each hook marked
 | `chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom` | the farbling seed over mojo | #10 |
 | `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_per_site_http_cache` and `[MinVersion=1] bool molt_stop_all_when_refusing`, set for MoltNet by `molt_net_network_context_policy.h` | moltnet-shared3 |
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` (new upstream copies) | a new method `MoltKeepCachesPerSite()` on both (not `[Stable]` interfaces, so no `[MinVersion]`): every C++ implementation needs it. `LocalStorageImpl` and `SessionStorageImpl` have it; a test fake or mock of either control elsewhere in the tree (none in the 156 files read) fails to compile until it gets an empty override | moltnet-shared3 |
+| `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` | a new interface `MoltDomStorageGrowthObserver` (`OnGrowthBeyondFloor()`) in `local_storage_control.mojom`, which `session_storage_control.mojom` now imports, and a new method `MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver>)` on both controls: as for `MoltKeepCachesPerSite()`, a test fake or mock of either control fails to compile until it gets an empty override | moltnet-shared4 |
 
 ### 4.2 `net/` and the network service (MoltNet circuits)
 
@@ -498,6 +499,12 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `components/download/internal/background_service/blob_task_proxy.{h,cc}` (new upstream copies), `in_memory_download.cc`, `molt_registering_site_isolation.h` | `SaveAsBlob()` gains a defaulted `uint64_t molt_budget_key` (`storage::kMoltBlobBrowserKey`), `SaveAsBlobOnIO()` a plain one, bound through `base::BindOnce`, and calls `BlobDataBuilder::MoltSetBudgetKey()`; `in_memory_download.cc` keeps one `storage::MoltBlobSiteKeys` for the browser (`base::NoDestructor`, under a `base::Lock`) and passes `MoltBlobBudgetKeyForFetch()` (`url::Origin::GetTupleOrPrecursorTupleIfOpaque()`, `url::SchemeHostPort::GetURL()`, `net::SchemefulSite::Serialize()`); `//components/download/internal/background_service` now includes `storage/browser/blob/molt_blob_budget_policy.h` and `net/base/schemeful_site.h` | moltnet-shared3 |
 | `chrome/browser/molt_ai/tor/molt_net_memory_valve.{h,cc}` (new), `molt_net_window.cc`, `molt_net_live_policy.h`, `chrome/browser/chrome_content_browser_client.cc`, `chrome/browser/molt_ai/fingerprinting/molt_net_storage.cc` | `MoltNetMemoryValve` (`base::RefCountedThreadSafe`, `std::atomic` members, `base::ThreadPool::PostTask()` with `MayBlock`, `base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes()`), kept per profile in `base::SupportsUserData`; `GetFixedQuotaSettings()` / `GetFixedBlobStorageLimits()` set the callback from `MoltNetMemoryValveCallback(Profile::FromBrowserContext(...), kMoltNetStorageMemoryReserveBytes)`; `EndMoltNetIdentityForMemory()` defined in `molt_net_window.cc` (`LookUpMoltNetProfile()`, `EndForChangedSettings()`) | moltnet-shared3 |
 | `components/services/storage/dom_storage/local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `session_storage_namespace_impl.{h,cc}` (new upstream copies), `molt_dom_storage_site_policy.h` (new, header-only, std-only, in no target's `sources`), `content/browser/dom_storage/dom_storage_context_wrapper.cc` (new upstream copy), `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | `MoltKeepCachesPerSite()` overrides; `LocalStorageImpl` gains a `base::RepeatingTimer` (`base/timer/timer.h`), `StorageAreaHolder` a `base::TimeTicks`; per-site purges compare `blink::StorageKey::top_level_site()` (`net::SchemefulSite`; `session_storage_namespace_impl.h` now includes `net/base/schemeful_site.h`), the session one reads `SessionStorageDataMap::map_locator().storage_key()`; `GetOrCreateStorageArea()`, `BindStorageArea()`, `BindNamespace()` and both `PurgeMemory()`s are hooked; the wrapper's `MaybeBind*Control()` ask the new virtual `ContentBrowserClient::ShouldKeepDomStorageCachesPerSite(BrowserContext*)` (default `false`; Chrome: `molt_ai::tor::KeepDomStorageCachesPerSite()`) | moltnet-shared3 |
+| `net/socket/molt_identity_end.h` (new, header-only, in no target's `sources`), `net/socket/socks5_client_socket.{h,cc}`, `socks_connect_job.cc`, `connect_job.h`, `net/http/http_network_session.{h,cc}` | `MoltIdentityEnd` (`base::RefCounted`, `Mark()`, `ended()`); `CommonConnectJobParams` gains `raw_ptr<MoltIdentityEnd> molt_identity_end` (forward-declared in `connect_job.h`); `HttpNetworkSession` holds a `scoped_refptr<MoltIdentityEnd>` (made when `molt_per_site_socket_pool_size > 0`), sets it in `CreateCommonConnectJobParams()` and gains `MoltEndIdentity()`; `SOCKSConnectJob::DoSOCKSConnect()` refuses once it is marked and hands the socket the signal (`base::WrapRefCounted()`); `SOCKS5ClientSocket` gains `MoltSetIdentityEnd(scoped_refptr<MoltIdentityEnd>)`, and `Write()` and `DoHandshakeWrite()` return `ERR_ABORTED` once it is marked. `connect_job.h` and `http_network_session.h` are widely included | moltnet-shared4 |
+| `services/network/network_context.{h,cc}` (`network_context.h` a new upstream copy), `url_loader_factory.cc`, `proxy_config_service_mojo.{h,cc}`, `molt_ended_identity_policy.h` | supersedes moltnet-shared3's `MoltStopEverything()` (gone): `NetworkContext::MoltEndIdentity()` takes `kMoltEndSteps` in order (the session's `MoltEndIdentity()`, `ResetURLLoaderFactories()`, `websocket_factory_.reset()` under `BUILDFLAG(ENABLE_WEBSOCKETS)`, `web_transports_` moved out and cleared, `url_requests()` cancelled through weak pointers, `CloseAllConnections()`); `MoltAdmits(MoltNetworkEntry) const` and `bool molt_identity_ended_`, and `network_context.h` includes `molt_ended_identity_policy.h`; entry checks at the top of `CreateWebSocket()` (`OnFailure()`), `CreateWebTransport()` (`OnHandshakeFailed()` with a `WebTransportError`), `ResolveHost()` (`OnComplete(ERR_ABORTED, ...)`), `CreateHostResolver()`, `PreconnectSockets()`, `Prefetch()` and `URLLoaderFactory::CreateLoaderAndStartWithSyncClient()` (`OnComplete(URLLoaderCompletionStatus(ERR_ABORTED))`); `ProxyConfigServiceMojo::MoltRefusesAll() const`, read by `MakeURLRequestContext()` to start a context ended (`MoltStartsEnded()`). `network_context.h` is widely included | moltnet-shared4 |
+| `chrome/browser/net/proxy_config_monitor.cc`, `chrome/browser/molt_ai/tor/molt_net_routing.{h,cc}`, `molt_net_window.cc`, `molt_net_identity_end_policy.h` | `MoltNetRouting::IdentityEndedCallback` gains a `const EndAckHolder&` (`base::RepeatingCallback<base::OnceClosure()>`); the monitor sends `FlushProxyConfig()` after the refusal, its callback wrapped in `mojo::WrapCallbackWithDefaultInvokeIfNotRun()` (`mojo/public/cpp/bindings/callback_helpers.h`); `MoltNetRouting::WhenNetworkHasEnd(Profile*, base::OnceClosure)` and a `NetworkEnd` (`base::SupportsUserData::Data`, a `base::OneShotTimer` for the 5-second deadline); `EndIdentity()` no longer calls `FlushNetworkState()`; `EndIdentityAndCloseWindows()` stops pages from `StopPagesThenConfirmRefusal()` | moltnet-shared4 |
+| `components/download/internal/common/download_utils.cc` (new upstream copy), `molt_fetch_credentials.h` (new, header-only, in no target's `sources`) | every profile: after `request->mode = network::mojom::RequestMode::kNavigate`, `MoltApplyDownloadCredentialsMode(params->credentials_mode(), *request)` (a credentials mode other than `kInclude` makes the request `kNoCors` with that mode; `kSameOrigin` without an initiator, `kOmit`) | moltnet-shared4 |
+| `storage/browser/blob/blob_storage_context.h` (new upstream copy), `blob_memory_controller.{h,cc}`, `molt_blob_budget_policy.h`, `components/download/internal/background_service/blob_task_proxy.{h,cc}`, `in_memory_download.{h,cc}` (`in_memory_download.h` a new upstream copy) | `BlobMemoryController::MoltHoldMemory(uint64_t, size_t)` returning `MoltBlobHold` (counts toward `blob_memory_used_`, the key's use and `MoltNoteGrowth()`) and `MoltReleaseHeldMemory()`, forwarded by two public `BlobStorageContext` methods; `BlobTaskProxy::MoltHoldMemory(uint64_t, size_t, MoltHoldCallback)` and `MoltReleaseHeldMemory()`, posted to the IO thread, the held key and bytes kept as members and released in the destructor and in `SaveAsBlobOnIO()`; `InMemoryDownloadImpl::OnDataReceived()` resumes only once the hold is answered (`MoltOnBufferHeld()`, a generation counter, `MoltContinueReading()` with the upstream tail), and a refused hold resets the loader and calls `OnComplete(false)`; `OnComplete(false)` and `Reset()` release (`MoltReleaseBuffer()`) | moltnet-shared4 |
+| `components/services/storage/dom_storage/storage_area_impl.{h,cc}`, `session_storage_data_map.{h,cc}` (new upstream copies), `local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `molt_dom_storage_site_policy.h`, `molt_dom_storage_site_budget.h` (new, header-only, in no target's `sources`), `content/browser/dom_storage/dom_storage_context_wrapper.cc`, `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | `StorageAreaImpl::Delegate` gains four virtuals with default bodies (`MoltMayGrowTo()`, `MoltShrankTo()`, `MoltSiteCommitDelay()`, `MoltSiteCommitted()`), called in `Put()` (a refused growth restores the moved-out old value, then `KeyChangeFailed`, never `ReportBadMessage`), `Delete()`, `DeleteAll()`, `ComputeCommitDelay()`, `CollectCommit()` and `OnForkStateLoaded()`; `SessionStorageDataMap::Listener` gains the same four with the map id and storage key; `LocalStorageImpl` and `SessionStorageImpl` hold a `MoltDomStorageSiteBudget` (`mojo::Remote<MoltDomStorageGrowthObserver>`, `base::TimeTicks`) and override `MoltSetGrowthObserver()`; the wrapper binds a self-owned `MoltDomStorageGrowthObserver` (`mojo::MakeSelfOwnedReceiver`) when the new virtual `ContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(BrowserContext*)` (default null; Chrome: the memory valve's callback) returns one | moltnet-shared4 |
 | `chrome/browser/download/bubble/download_bubble_ui_controller.cc`, `chrome/browser/ui/webui/downloads/downloads_dom_handler.cc` (new upstream copies), `chrome/browser/download/molt_retried_download_isolation.h` (new, header-only, in no target's `sources`), `content/browser/download/molt_download_isolation{,_policy}.h` | both `RetryDownload()`s call `MoltRetryDownloadWithItsSite()` (`DownloadItem::GetRequestInitiator()`, `GetIsolationInfo()`, `DownloadUrlParameters::set_initiator()`, `set_isolation_info()`, `set_update_first_party_url_on_redirect()`); content's helper reads `DownloadUrlParameters::download_source()` (`download::DownloadSource::RETRY`, `RETRY_FROM_BUBBLE`) | moltnet-shared2 |
 
 ### 4.3 Translate (page translation on the device)
@@ -588,6 +595,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `update/update_manager.cc`, `vault/vault_store.cc` (`base::saturated_cast`) | | #41 |
 | every fuzzer target's `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
 | `agents/frame_tool_permissions.*` (a `ProfileKeyedServiceFactory`, `RegisterListPref`), `agents/site_tool_host.cc` (`RenderFrameHost::IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::kTools)`), `automation/automation_runner.cc` (fallback locators, the run's questions, CALL_TOOL steps), the new GN targets (`agents:frame_tools` → `automation:agent_run_draft`; `automation:locators`, `:tool_steps`, `:run_questions`; `automation` → `molt_ai_agents`), and the one-line hooks in `chrome_browser_main_extra_parts_profiles.cc`, `chrome_browsing_data_remover_delegate.cc` and `profile_resetter.cc` | type-checked against 156's headers only | agent-replay |
+| `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -697,6 +705,19 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `:storage_values` as a public dep (Chrome's client reads the reserve).
   If `gn check` flags any of them, list the header in the target that
   includes it or add the dep.
+  New in moltnet-shared4: header-only files in no target's `sources`:
+  `net/socket/molt_identity_end.h` (by `//net`),
+  `components/download/internal/common/molt_fetch_credentials.h` (by
+  `//components/download/internal/common`) and
+  `components/services/storage/dom_storage/molt_dom_storage_site_budget.h`
+  (by `//components/services/storage`; it includes the generated
+  `local_storage_control.mojom.h`). `//chrome/browser/molt_ai/tor`'s unit
+  tests gained `//services/network:test_support`,
+  `//components/download/public/common:public` and `//storage/browser`;
+  `//chrome/browser/ui/webui/molt_ai` gained
+  `//chrome/browser/molt_ai/fingerprinting:net_fonts`. If `gn check`
+  flags any of them, list the header in the target that includes it or
+  add the dep.
   New in fonts: `//chrome/browser/molt_ai/fingerprinting:net_fonts` (the
   browser side of the bundled font set; `:fingerprinting` and the unit
   tests depend on it); `//chrome/common/molt_ai/fingerprinting`'s mojom
@@ -707,6 +728,27 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `moltnet_fonts.cc` `base/files/memory_mapped_file.h` and its test
   `base/files/scoped_temp_dir.h` and `file_util.h`;
   `public/web/web_molt_fingerprinting.h` forward-declares `base::File`.
+  New in degoogle-kit: `//chrome/browser/molt_ai/privacy:feature_overrides`
+  (and its `:unit_tests`) now depends on `//chrome/browser/dictation:features`,
+  `//chrome/common:chrome_features`, `//components/history_embeddings/core`,
+  `//components/optimization_guide/core:prediction` and
+  `//components/optimization_guide/proto:optimization_guide_proto`, for the
+  features it turns off (the five headers type-check against 156's real
+  headers). If a visibility rule refuses one, or the standalone
+  `molt_ai_unittests` link grows too much, the alternative is to move
+  those entries into a second overrides source set that only
+  `//chrome/browser` links. Also degoogle-kit, after the follow-up:
+  `:feature_overrides` and `:unit_tests` add
+  `//components/optimization_guide/core:features`,
+  `//components/safe_browsing/core/common:features` and `//media`; the new
+  `//chrome/browser/molt_ai/privacy:component_policy` (`//base` only) is a
+  dep of `//chrome/browser/component_updater:impl` (its `BUILD.gn` is now
+  in `src/`, hooked); and `molt_ai_unittests` gains
+  `//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests` where
+  `use_on_device_model_service` is set, which links
+  `//components/optimization_guide/core:manifest_broker`. `gn check`
+  should accept all of them; a cycle through `component_updater:impl`
+  would mean `:component_policy` picked up a dep it must not have.
 - [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
   `chrome/{browser,renderer,services}/molt_ai/` and Blink's
   `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
@@ -824,6 +866,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity`, `MoltNetDownloadIsolationTest` (new), `MoltNetNetworkContextPolicyTest.DownloadsKeptWithTheirSiteInMoltNetOnly` | moltnet-shared |
   | `MoltNetSocketPoolsTest` (now 11: `OnionHandshakesWeighMore`, `SessionsShareTorsBudgets`, `GreedySitesDontHoldBackAPoliteOne`, `ASitesOneOffKeysHaveAPoolOfTheirOwn`), `MoltNetCertFetchSiteTest` (new: the thread's site, a fetch's key in its site's pools, the site across the verifier service's mojo interface), `MoltNetBackgroundFetchRequestTest` (new), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (17: the weighted slots, a site's one-off pool, requests that ignore the limits), `MoltNetStorageBudgetPolicyTest` (rewritten: the floor and the machine), `MoltNetStorageValuesTest.{EachSiteATenthOfThePool,MemoryReserve,BlobShare}`, `MoltNetBlobBudgetPolicyTest` (new), `MoltNetProcessPolicyTest` (new), `MoltNetIdentityEndPolicyTest` (new), `MoltNetDownloadIsolationTest` (now 7: retries), `MoltNetLivePolicyTest.{ExtensionsRequiredInIncognitoRefuse,ParentalControlsReadAgain}`, `TorrcBuilderTest.StatesTorsSharedCapacity` (256) | moltnet-shared2 |
   | `MoltNetSocketPoolsTest.CertificateFetchesHaveAPoolOfTheirOwn` and the budget cases (both parts), `MoltNetHttpCacheTest` (new: Chromium's real `MemBackendImpl` with the budget), `MoltNetEndedIdentityNetworkTest` (new: Chromium's real `ProxyConfigServiceMojo`), `MoltNetDomStorageTest` (new: the real `LocalStorageImpl` in memory, mock time), `MoltNetStorageTest` (the callbacks null in the fingerprinting settings); built standalone only: `MoltNetSocketPoolPolicyTest` (the certificate-fetch pools and budget split), `MoltNetHttpCacheBudgetPolicyTest` (new), `MoltNetIdentityEndPolicyTest` and `MoltNetNetworkContextPolicyTest` (new cases), `MoltNetStorageBudgetPolicyTest` and `MoltNetBlobBudgetPolicyTest` (rewritten: share only, the floor, site keys), `MoltNetMemoryValvePolicyTest` (new), `MoltNetDomStorageSitePolicyTest` (new) | moltnet-shared3 |
+  | `MoltNetEndedIdentityNetworkTest` (new cases: the refusal's answer, a SOCKS5 socket's writes and handshake after the end), `MoltNetEndedContextTest` (new: Chromium's real `NetworkService` and `NetworkContext`), `MoltNetBackgroundFetchCredentialsTest` and `MoltNetBackgroundFetchCookiesTest` (new: `download::CreateResourceRequest()`, a regular profile's network context and an `EmbeddedTestServer`), `MoltNetBackgroundFetchBufferTest` (new: `BlobStorageContext` with shares), `MoltNetDomStorageTest` (new cases) and `MoltNetSessionStorageTest` (new: the real `SessionStorageImpl` in memory), `MoltNetFontsDeliveryTest.ThePanelKnowsWhatOpeningFound`; built standalone only: `MoltNetEndOrderingTest` (new: 3000 random pipe interleavings, about 12 s), `MoltNetIdentityEndPolicyTest`, `MoltNetBlobBudgetPolicyTest.HeldMemoryCountsLikeABlob`, `MoltNetDomStorageSitePolicyTest` (new cases). In `components_unittests`: `InMemoryDownloadTest.MoltNet*` | moltnet-shared4 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -831,6 +874,19 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
   | `PromptUtilsTest`, `GemmaThoughtFilterTest`, `ThinkTagFilterTest` | #7, #8 |
   | `SanitizeHelperTextTest`, `Utf8Test` (OCR and voice output) | #14 |
+
+  `MoltFeatureOverridesTest` also has `DisablesGoogleOnlyComponents`,
+  `HistoryEmbeddingsCountsAsOverriddenOff` and
+  `CommandLineCanTurnDictationBackOn` (degoogle-kit): the components only
+  Google features use are off, history embeddings counts as overridden,
+  and `--enable-features` still wins. After the degoogle-kit follow-up
+  also `NoUnaskedOnDeviceModelDownloads` and
+  `NoSecureDnsFallbackToGooglePublicDns`, `MoltComponentPolicyTest` (the
+  four Google-only components are skipped unless
+  `MoltGoogleOnlyComponents` is on) and, on desktop, `MoltOnDeviceManifestTest`
+  (the on-device model manifest is not asked for at startup, and is asked
+  for once by each kind of demand: a session, an eligibility check, an
+  availability observer, binding the broker, requesting a use case).
 
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
@@ -933,6 +989,11 @@ pass except where the table below says otherwise (verify the filters).
 | `storage_unittests` | `QuotaManagerImplTest.*:BlobMemoryControllerTest.*:BlobStorageContextTest.*:LocalStorageImplTest.*:SessionStorageImplTest.*:SessionStorageNamespaceImplTest.*` (the callbacks null and no caches per site: Chromium's behaviour) | moltnet-shared3 |
 | `content_unittests` | `KeepAliveURLLoader*:BackgroundFetchDelegateProxyTest.*:DownloadManagerImplTest.*:SaveFileManager*:DOMStorageContextWrapperTest.*:*StoragePartition*` (no embedder ends an identity or keeps caches per site there) | moltnet-shared3 |
 | `components_unittests` | `InMemoryDownloadTest.*:BlobTaskProxy*` (blobs without a site keep the browser's key) | moltnet-shared3 |
+| `net_unittests` | `SOCKS5ClientSocketTest.*:SOCKSConnectJobTest.*:HttpNetworkSession*:ConnectJobTest.*` (no identity-end signal outside MoltNet's sessions) | moltnet-shared4 |
+| `services_unittests` | `NetworkContextTest.*:URLLoaderFactoryTest.*:URLLoaderTest.*:ProxyConfigServiceMojo*:WebSocket*:WebTransport*` (the new field off: no context ends) | moltnet-shared4 |
+| `storage_unittests` | `BlobMemoryControllerTest.*:BlobStorageContextTest.*:LocalStorageImplTest.*:SessionStorageImplTest.*:SessionStorageDataMapTest.*:StorageAreaImplTest.*` (no shares, no caches per site: nothing held, no totals, Chromium's commit rate) | moltnet-shared4 |
+| `components_unittests` | `InMemoryDownloadTest.*:BlobTaskProxy*:*DownloadUtils*:DownloadItemImplTest.*` (without shares nothing is held; a download whose parameters keep `kInclude`, the default, is made as before) | moltnet-shared4 |
+| `content_unittests` | `BackgroundFetch*:DOMStorageContextWrapperTest.*:DOMStorage*` (no embedder callback outside MoltNet) | moltnet-shared4 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -957,6 +1018,12 @@ pass except where the table below says otherwise (verify the filters).
   `MoltKeepCachesPerSite()` (moltnet-shared3): a test fake or mock of
   `storage::mojom::LocalStorageControl` or `SessionStorageControl`; add
   an empty override (`void MoltKeepCachesPerSite() override {}`) there.
+- The same for `MoltSetGrowthObserver()` (moltnet-shared4): add
+  `void MoltSetGrowthObserver(mojo::PendingRemote<storage::mojom::MoltDomStorageGrowthObserver>) override {}`.
+- A regular profile's Background Fetch test that expects cookies on a
+  request whose fetch asked for `credentials: 'omit'` (moltnet-shared4):
+  the request now carries the fetch's mode in every profile, as the
+  site's own `fetch()` would; update the expectation.
 
 ### 5.4 The DCHECK pass
 
@@ -1010,6 +1077,20 @@ pass except where the table below says otherwise (verify the filters).
   completion), `URLRequest` (cancelled requests' delegates) or
   `ClientSocketPool` (the certificate-fetch member), and the new
   identity's window opens.
+- [ ] The same build, ends that race a page's requests (moltnet-shared4):
+  a MoltNet page that opens a WebSocket, a `fetch()` and an `<img>` every
+  10 ms, and one whose service worker runs a Background Fetch of a large
+  file while another site's does; New Identity while they run, three
+  times; then a page writing `localStorage` from ten subdomain iframes
+  and `sessionStorage` in a tab it opened with `window.open()`, until
+  writes fail. *Expected:* no `DCHECK` or `CHECK` in `NetworkContext`
+  (`url_loader_factories_`, `web_transports_`), `URLLoaderFactory`,
+  `WebSocketFactory`, `SOCKS5ClientSocket` (`next_state_`, a write
+  callback run twice), `SOCKSConnectJob`, `URLRequest`,
+  `BlobMemoryController` (`blob_memory_used_` after the held memory is
+  released), `InMemoryDownloadImpl`, `BlobTaskProxy` (released on the IO
+  thread), `StorageAreaImpl` (`storage_used_`, `map_state_` after a fork)
+  or `SessionStorageImpl`, and the new identity's window opens.
 
 ## 6. Fuzzers
 
@@ -1602,6 +1683,7 @@ checks most of this on Linux (§8); on macOS by hand, in a MoltNet window
 - [ ] CPU features and V8's heap in MoltNet (fp-cpu). Run the leak kit (§8) on two x86-64 machines of different CPU generations (one without AVX2 and FMA if you have one, e.g. a pre-2013 Intel or a VM started with `-cpu Nehalem`; an Intel and an AMD one otherwise) and, on macOS, an Intel and an Apple silicon Mac: `cpu.wasm_relaxed_simd` is false, and `diff` shows no difference in `cpu.math`, `pixels.p3_readback` or `audio.decoded_vorbis`, also between the Intel and the Apple silicon Mac; in a regular window the same values may differ (FMA, AVX2, AVX-512, Arm). In MoltNet: a WebAssembly machine-learning demo that uses relaxed SIMD where it can (ONNX Runtime Web or TensorFlow.js with the WASM backend) still runs, with its SIMD build; a page with a 12-megapixel Display P3 photo (an iPhone HEIC converted to JPEG keeps its profile) shows it with the right colours, and note how much longer it takes to appear than in a regular window; a Vorbis file plays in `<audio>` and through `decodeAudioData()`. V8's heap: on a machine with 16 GB or more, a page that pushes 1 MB strings into an array until its tab runs out of memory stops at about 2 GB of JavaScript heap in MoltNet (about 4 GB in a regular window); `chrome://process-internals` or the task manager shows the renderer's memory. On Linux with more than 16 GB, `cat /proc/<renderer pid>/limits` shows a data limit of 8589934592 bytes for a MoltNet renderer (16 or 32 GiB for a regular one).
 - [ ] Portable math and the memory signals in MoltNet (fp-libm). Run the leak kit (§8) on an x86-64 and an arm64 machine (an Intel and an Apple silicon Mac, or Linux on both) and on Windows: `diff` shows no difference in `cpu.math_cross_arch`, `cpu.css_math`, `cpu.dommatrix` or `audio.math`, between the architectures and between the OSes too; in a regular window the same values may differ. `cpu.css_math` holds sixteen numbers and angles, none of them `0` (an expression the browser didn't accept shows the initial value). In MoltNet: a Web Audio demo with a `ConvolverNode` reverb, an `AnalyserNode` visualiser and HRTF panning plays without glitches on the slowest machine you have (compare its CPU use in the task manager with a regular window); a CSS animation that rotates and skews (`rotate3d`, `skew`) and a canvas drawing with arcs look as in a regular window. On 64-bit Windows: a page that allocates 1 GiB `ArrayBuffer`s until a `RangeError` stops at 8 GiB in MoltNet on a machine that can commit that much (a regular window goes on to the system's commit limit). In `chrome://process-internals`, MoltNet frames of one site start sharing renderers once there are 20, whatever the RAM. A page that registers a `FinalizationRegistry` callback for 1000 objects and waits sees no callbacks when the system is short of memory (test with a memory-pressure tool, or `chrome://memory-internals` on a debug build), only after V8's own collections.
 - [ ] Geometry, Skia's math and web fonts in MoltNet (fp-geometry). Run the leak kit (§8) on an x86-64 and an arm64 machine (an Intel and an Apple silicon Mac, or Linux on both), on Windows, and on an x86-64 machine without FMA if you have one (a VM started with `-cpu Nehalem`): `diff` shows no difference in `geom.hit_testing`, `geom.path_length`, `geom.shape_outside` or `geom.contrast_color`, between the architectures and between the OSes too; in a regular window the same values may differ. In MoltNet: a page with `shape-outside` around an image, a gradient and a `shape()`, a canvas drawing with arcs, rotated ellipses and dashed round-joined strokes, an SVG with `clip-path` and a `textPath`, and boxes with `corner-shape: superellipse()`, `squircle` and `scoop` look as in a regular window, and their clicks land where they look; a COLRv1 colour web font with rotated and skewed layers (Google Fonts' Nabla or a COLRv1 test font) and a variable font with VARC glyphs render as in a regular window; an HDR gain-map JPEG and an AVIF with a gain map, and an iPhone photo with an HDR headroom tag, show the same tone mapping in both. Note the time a page with 10,000 arcs and strokes on a canvas takes to draw in each (FINGERPRINTING.md "MoltNet: portable math" estimates no measurable difference; Skia's portable sine and power are about 2.5 times slower than the C library's).
+- [ ] Components on a fresh profile (degoogle-kit; NETWORK_TRAFFIC.md §1, §3). Start the build with a new `--user-data-dir`, wait two minutes, open `chrome://components`. *Expected:* the security components are listed (CRLSet, PKI Metadata, Safety Tips, File Type Policies, SSL Error Assistant, Origin Trials, ...), and **none** of Indigo, Dictation's connector, History Search Strings, On-device head suggest, or Optimization Guide Geolocation Permission Predictions; after the degoogle-kit follow-up also none of Actor Safety Lists, Captcha Providers, Amount Extraction Heuristic Regexes, Commerce Heuristics, or the Optimization Guide on-device model manifest (its entry appears only once a feature asks for an on-device model, for example after requesting a model in `chrome://on-device-internals`; verify that this brings it). With `--enable-features=Dictation` the Dictation entry comes back (the overrides yield), and with `--enable-features=MoltGoogleOnlyComponents` the four Google-only components do. `chrome://version` (`molt://version`) with `?show-variations-cmd`: the testing config's `Indigo`, `Dictation`, `HistoryEmbeddingsV2Images` and `PredictionModelComponentDelivery` studies are not active, nor (after the follow-up) `OnDeviceModelBackgroundDownload` and `EnableOnDeviceWebSpeechSmallExpertModel`. With Google chosen as the search engine, typing in the address bar still shows Google's server suggestions (on-device head suggestions are off).
 - [ ] Screen capture in MoltNet (fp-geometry). In a MoltNet window, a `getDisplayMedia()` demo page (e.g. WebRTC samples' getdisplaymedia) fails at once with `NotAllowedError: Permission denied by user` and no picker opens, also with "prefer current tab"; a video-call site's "share screen" button fails cleanly. `navigator.permissions.query({name: 'display-capture'})` gives `denied` in the console of the page and of a worker. In a regular and an Incognito window the same demo opens the picker and shares the chosen screen, window or tab.
 
 ### 7.4 MoltNet
@@ -1888,6 +1970,41 @@ macOS, and for the manual steps everywhere:
     `chrome://tracing` memory-infra dump the LocalStorage cache size
     still includes A's areas; an Incognito window's cache behaves as
     Chromium's.
+- [ ] Shared state per site, round 26 (moltnet-shared4;
+  MOLTNET_COMPLIANCE.md §2 *After an identity ends*, *Fail-closed*, *Blob
+  memory*, *DOM storage totals*, *Downloads and Background Fetch*, §4
+  steps 7 and 21):
+  - Requests racing the end: a MoltNet page that starts a `fetch()`, a
+    WebSocket and an image to a test server every 10 ms (keep the
+    server's log with timestamps), *New Identity*: a
+    `chrome://net-export` log of the session shows no request of the old
+    identity's network context started after its proxy configuration
+    changed to the refusal, and no SOCKS write on its sockets after it;
+    the server sees none of them after that moment. Repeat ten times.
+  - Background Fetch's buffer: a service worker of site A fetches a
+    300 MB file with `backgroundFetch.fetch()`: it fails
+    (`failureReason` `fetch-error`) once about 200 MiB arrived, and a
+    `chrome://tracing` memory-infra dump shows the browser's blob memory
+    back down afterwards; one of 150 MB from A and one from site B, at
+    the same time, both complete. In a regular window the 300 MB fetch
+    completes.
+  - DOM storage totals: site A's page writes 3 MiB of `localStorage`
+    from each of five subdomain iframes: three stick, the fourth and
+    fifth don't (gone after a reload); site B's page still writes its
+    own 3 MiB from three iframes. A tab A opened with `window.open()`
+    gets a copy of A's 4 MiB of `sessionStorage`; once a page changes
+    either, the copy counts, and a third `sessionStorage` area of A then
+    takes about 2 MiB at most.
+  - Background Fetch's credentials in a regular profile: a site sets a
+    cookie, then its service worker starts `backgroundFetch.fetch(id,
+    new Request(url, {credentials: 'omit'}))` to its own server: the
+    server's log shows the request without a `Cookie` header; without
+    `credentials: 'omit'` it has the cookie.
+  - The fonts note: an installation without the bundled font set (move
+    `molt_fonts/`, next to the executable or in macOS's
+    `Contents/Resources/`, away; a test install only): MoltNet's panel
+    shows the note that this build has no bundled fonts, and MoltNet
+    windows still open; with the set back, no note.
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -1971,6 +2088,17 @@ Mac; use a real Linux host.
     kit's server. First-run question: whether the evidence says
     `fetch_later: true` (if not, `fetchLater()` isn't exposed in the
     page and only the beacon was checked).
+  - `identity.nothing_after_end_race` passes (moltnet-shared4): the old
+    page saw one of its racing requests refused after New Identity began,
+    then started a fetch, a keepalive fetch, a beacon, an image, a
+    WebSocket and a prefetch, and none reached the kit's server.
+    First-run questions: whether the evidence lists all six kinds as
+    started (a kind with an error name after it threw in the page), and
+    how many milliseconds after New Identity began the page saw the
+    refusal (a SKIP saying the page closed before it saw one means the
+    pages stopped before the network context's refusal reached the
+    page's requests; run it again, and if it stays, look at the order of
+    `EndIdentityAndCloseWindows()`).
   - `identity.tor_capacity` passes (moltnet-shared): the torrc the browser
     started Tor with states `ConnLimit 1000` and `MaxClientCircuitsPending
     256` (256 since moltnet-shared2). A SKIP saying the torrc wasn't found means the kit's Tor wrapper
@@ -2053,11 +2181,65 @@ Mac; use a real Linux host.
 
 ### 8.2 The full traffic capture (docs/NETWORK_TRAFFIC.md "How we'll verify")
 
-- [ ] On macOS arm64 first, then Linux: the packet capture, NetLog and
-  optional mitmproxy run in that section, on a fresh profile, without
+- [ ] On macOS arm64 (Linux has §8.3 for the hosts; run this there only for
+  request bodies): the packet capture, NetLog and optional mitmproxy run in
+  that section, on a fresh profile, without
   `--disable-field-trial-config`. *Expected:* every **Likely** and
   **Capture** row of its tables confirmed; no Google Translate, TranslateKit
-  or component download caused by a page (from #26, #34, #48).
+  or component download caused by a page (from #26, #34, #48); no host
+  that NETWORK_TRAFFIC.md §6 marks `forbidden` (degoogle-kit).
+
+### 8.3 The regular-window traffic capture (Linux) (degoogle-kit)
+
+The leak kit's `traffic` command (docs/LEAK_TESTING.md "Regular-window
+traffic capture"). Same machine and packages as §8.1, without `tor`; it
+needs no internet: nothing it does leaves the namespace, and the kit's
+sinkhole answers every request with a 503.
+
+- [ ] The kit's own tests, as root this time, so that the namespace test
+  runs too (it is skipped in CI):
+  `sudo python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test -v`.
+  *Expected:* all pass, `SinkholeInANamespace.test_capture_pipeline`
+  among them (not skipped).
+- [ ] `tools/leak_test/leaktest.sh hosts`. *Expected:*
+  `docs/network_traffic_hosts.json matches docs/NETWORK_TRAFFIC.md`.
+- [ ] The capture against the build, then against the installed `.deb`:
+  ```bash
+  sudo tools/leak_test/leaktest.sh traffic --browser chromium/src/out/MoltBrowser-linux/chrome --out ~/molt-v0.3.0/traffic-a
+  sudo tools/leak_test/leaktest.sh traffic --browser /opt/moltbrowser/moltbrowser --out ~/molt-v0.3.0/traffic-b
+  ```
+  About 17 minutes each (`--idle 600` is the 10-minute idle step).
+- [ ] What passing looks like: `verdict: PASS (0 FAIL, 0 ERROR, ...)`; the
+  harness checks pass, `traffic.harness.update_check` among them (it
+  proves the sinkhole saw MoltBrowser's update check to `api.github.com`);
+  `traffic.expected` lists at least `update.googleapis.com` (POST
+  `/service/update2/json`, about a minute after each launch),
+  `clients2.google.com` (GET `/time/1/current`, at the first run),
+  `safebrowsing.googleapis.com` (GET `/v5/hashLists:batchGet`),
+  `sb-ssl.google.com` during `download`, `api.github.com`, and the
+  MoltShield list hosts; on Linux `redirector.gvt1.com` during or after
+  `spellcheck`. `traffic.components` passes and lists the component IDs
+  of each update check: none from NETWORK_TRAFFIC.md §6's component table
+  (no actor safety lists, CAPTCHA providers, amount extraction regexes or
+  commerce heuristics, no on-device model manifest). If it is a SKIP, the
+  sinkhole couldn't read the IDs: send the `update.googleapis.com` lines
+  of `logs/sinkhole.jsonl` back with the report.
+- [ ] First-run questions: whether the first run opens a tab of its own
+  (the `first_run` step's `tabs` in report.json); whether the `cert_error`
+  step's expired certificate made the browser ask for network time
+  (`clients2.google.com` during `cert_error`); whether the `dns_error`
+  step's page showed `ERR_NAME_NOT_RESOLVED` (its step note); whether the
+  download step's `.exe` triggered the Safe Browsing check at all.
+- [ ] Triage every FAIL: the evidence gives the time, the step, the host,
+  the TLS server name, the request line and a likely source. A host
+  MoltBrowser needs goes into NETWORK_TRAFFIC.md (its section and the §6
+  table) with the reason, then `tools/leak_test/leaktest.sh hosts --write`
+  and `tools/leak_test/leaktest.sh report <run dir>`; anything else is
+  traffic to turn off (`molt_feature_overrides.cc` or a pref default) and
+  a reason to run the capture again.
+- [ ] Send back both runs' `report.json` (and `report.md`) with the build's
+  version, and the list of NETWORK_TRAFFIC.md rows the capture confirmed,
+  so that their confidence can become **Captured**.
 
 ## 9. Vulkan: the hardware matrix before the switch can go on
 
@@ -2336,6 +2518,10 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   (it's a pref default in `molt_privacy_prefs.cc` plus copy, so it needs a
   build). If D: on the build machine, confirm Safety Tips and lookalike
   warnings still show (from docs/SAFE_BROWSING_DECISION.md, ROADMAP.md).
+  The memo's "What changed at Chromium 156" has the current facts: list
+  updates on the V5 protocol, the real-time lookups' new relay host, and
+  what each option sends and touches at 156 (degoogle-kit). The §8.3
+  capture shows the Safe Browsing requests a build really makes.
 - [ ] **`.onion` as a secure context**, in MoltNet windows only: needs a
   browser-wide trust change plus mixed-content patches; until then
   `http://` onion sites show "Not secure" and some features stay off. Ship

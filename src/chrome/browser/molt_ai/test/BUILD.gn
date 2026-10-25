@@ -21,6 +21,7 @@
 # Filter to one suite: ./out/MoltBrowser/molt_ai_unittests \
 #                        --gtest_filter='PdfTextScraperTest.*'
 
+import("//services/on_device_model/on_device_model.gni")
 import("//testing/test.gni")
 import("//third_party/llama_cpp/llama_cpp.gni")
 
@@ -94,6 +95,12 @@ test("molt_ai_unittests") {
   if (!is_android && !is_ios) {
     deps +=
         [ "//content/utility/on_device_model:molt_gpu_driver_warmup_unittests" ]
+  }
+
+  # The on-device model manifest is asked for on first demand (where Chrome
+  # builds the manifest broker).
+  if (use_on_device_model_service) {
+    deps += [ "//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests" ]
   }
 
   # ggml-vulkan's packed shaders (GN switch molt_llama_vulkan).

@@ -168,6 +168,12 @@ int SOCKS5ClientSocket::Write(
   DCHECK(user_callback_.is_null());
   DCHECK(!callback.is_null());
 
+  // MoltBrowser: nothing more goes to Tor once the MoltNet identity this
+  // socket serves has ended (net/socket/molt_identity_end.h).
+  if (MoltIdentityHasEnded(molt_identity_end_.get())) {
+    return ERR_ABORTED;
+  }
+
   int rv = transport_socket_->Write(
       buf, buf_len,
       base::BindOnce(&SOCKS5ClientSocket::OnReadWriteComplete,
@@ -484,6 +490,13 @@ scoped_refptr<DrainableIOBuffer> SOCKS5ClientSocket::BuildHandshakeWriteBuffer()
 // Writes the SOCKS handshake data to the underlying socket connection.
 int SOCKS5ClientSocket::DoHandshakeWrite() {
   next_state_ = STATE_HANDSHAKE_WRITE_COMPLETE;
+
+  // MoltBrowser: no new stream through Tor once the MoltNet identity has
+  // ended (net/socket/molt_identity_end.h): the CONNECT request is what
+  // makes Tor open one.
+  if (MoltIdentityHasEnded(molt_identity_end_.get())) {
+    return ERR_ABORTED;
+  }
 
   if (!write_buf_) {
     write_buf_ = BuildHandshakeWriteBuffer();

@@ -54,6 +54,7 @@ class NetLog;
 #if BUILDFLAG(ENABLE_REPORTING)
 class NetworkErrorLoggingService;
 #endif
+class MoltIdentityEnd;            // MoltBrowser
 class MoltSocksHandshakeLimiter;  // MoltBrowser
 class MoltTorCapacity;            // MoltBrowser
 class NetworkAnonymizationKey;    // MoltBrowser
@@ -299,6 +300,12 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   void CloseAllConnections(int net_error, const char* net_log_reason_utf8);
   void CloseIdleConnections(const char* net_log_reason_utf8);
 
+  // MoltBrowser: the MoltNet identity this session serves has ended: from
+  // now on its SOCKS connections write nothing more to Tor and no new SOCKS
+  // handshake starts (net/socket/molt_identity_end.h). Nothing in a session
+  // without per-site pools (not MoltNet's).
+  void MoltEndIdentity();
+
   // Returns the original Params used to construct this session.
   const HttpNetworkSessionParams& params() const { return params_; }
   // Returns the original Context used to construct this session.
@@ -374,6 +381,10 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   // which use them, so that they outlive them.
   scoped_refptr<MoltTorCapacity> molt_tor_capacity_;
   std::unique_ptr<MoltSocksHandshakeLimiter> molt_socks_handshake_limiter_;
+  // MoltBrowser: the end of the MoltNet identity this session serves
+  // (MoltEndIdentity()); set iff params.molt_per_site_socket_pool_size
+  // isn't 0. Before the socket pool managers, whose connect jobs read it.
+  scoped_refptr<MoltIdentityEnd> molt_identity_end_;
   std::unique_ptr<ClientSocketPoolManager> normal_socket_pool_manager_;
   std::unique_ptr<ClientSocketPoolManager> websocket_socket_pool_manager_;
   QuicSessionPool quic_session_pool_;

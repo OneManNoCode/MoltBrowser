@@ -33,7 +33,8 @@ function flag(cc){ if(!cc||cc.length!==2) return '🌐';
 // |routing| is about THIS window: a MoltNet window is routed via Tor, a
 // regular window never is (MoltNet browsing happens in its own windows).
 var STATE={running:false,starting:false,busy:false,selected:'',mode:'direct',
-  routing:'not_routed',inMolt:false,proxyExt:false,error:'',countries:[]};
+  routing:'not_routed',inMolt:false,proxyExt:false,error:'',countries:[],
+  fonts:''};
 
 function statusText(){
   if(STATE.busy||STATE.starting) return 'Connecting to Tor…';
@@ -52,6 +53,14 @@ function whereText(){
   if(STATE.proxyExt) t+=' (This window\'s proxy is set by a policy or extension.)';
   return t;
 }
+// A build without MoltNet's bundled fonts still works, but its MoltNet
+// windows don't look like every other MoltNet user's: say so, without
+// blocking anything.
+function fontsText(){
+  if(STATE.fonts==='missing') return 'This build of MoltBrowser has no bundled fonts, so MoltNet windows use a fixed list of your system\'s fonts. They look less like other MoltNet users\' windows than with the fonts every release includes.';
+  if(STATE.fonts==='damaged') return 'MoltBrowser\'s bundled fonts are damaged, so MoltNet pages show no text. Reinstall MoltBrowser to repair them.';
+  return '';
+}
 function render(){
   var d=document.getElementById('dot'), st=document.getElementById('st'),
       sub=document.getElementById('sub');
@@ -61,6 +70,7 @@ function render(){
   sub.textContent=STATE.selected?flag(STATE.selected)+' '+STATE.selected.toUpperCase():'🌐 AUTO';
   document.getElementById('where').textContent=whereText();
   document.getElementById('err').textContent=STATE.error||'';
+  document.getElementById('fonts').textContent=fontsText();
   var on=STATE.running||STATE.starting||STATE.busy;
   var modes=document.getElementById('modes').children;
   for(var i=0;i<modes.length;i++){
@@ -84,6 +94,7 @@ function apply(s){ if(!s) return;
   STATE.running=!!s.running; STATE.starting=!!s.starting; STATE.selected=s.selected||'';
   if(s.mode) STATE.mode=s.mode; STATE.routing=s.routing||'not_routed';
   STATE.inMolt=!!s.in_moltnet_window; STATE.proxyExt=!!s.proxy_externally_controlled;
+  STATE.fonts=s.fonts||'';
   STATE.error=s.error||''; STATE.busy=false; render(); renderRoute(); }
 function loadCountries(){ sendWithPromise('moltnet.getExitCountries').then(function(r){
   STATE.countries=r.available||[]; if(r.selected!=null) STATE.selected=r.selected; render(); }); }
@@ -346,6 +357,8 @@ class MoltNetDataSource : public content::URLDataSource {
   .note{font-size:9.5px;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
   .note.warn{color:#ffb4b4;padding-top:0}
   .note.warn:empty{display:none}
+  .note.fonts{padding:0 18px 8px;font-size:10px;color:var(--muted)}
+  .note.fonts:empty{display:none}
   #where{padding:0 18px 8px;font-size:10.5px}
   .evlink{cursor:pointer;color:var(--muted)}
   .evlink:hover{color:var(--text)}
@@ -370,6 +383,7 @@ class MoltNetDataSource : public content::URLDataSource {
     </div>
     <div class="note" id="where"></div>
     <div class="note warn" id="err"></div>
+    <div class="note fonts" id="fonts" role="note"></div>
     <div class="divider"></div>
     <div class="scroll">
       <div id="routeWrap"></div>

@@ -282,6 +282,19 @@
    "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a72 After an identity ends",
    "evidence": [
+    "1 racing request(s) reached the kit's server",
+    "the old page saw a request refused 45 ms after New Identity began, then started: fetch, keepalive, beacon, image, websocket, prefetch",
+    "none of them reached the kit's server"
+   ],
+   "group": "identity",
+   "id": "identity.nothing_after_end_race",
+   "status": "PASS",
+   "title": "Requests a page starts as its identity ends are refused, whatever their kind (fetch, keepalive, beacon, image, WebSocket, prefetch)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 After an identity ends",
+   "evidence": [
     "set up in the old page: {\"fetch_later\": true}",
     "none reached the kit's server"
    ],
@@ -3164,7 +3177,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 178,
+  "PASS": 179,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3751,7 +3764,7 @@
   },
   {
    "automation": "automated",
-   "note": "new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits, nothing the browser held for the old page (fetchLater, a pagehide beacon) sent; the exit IP check needs the public internet",
+   "note": "new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits, nothing the browser held for the old page (fetchLater, a pagehide beacon) sent, none of the requests the old page starts as the identity ends sent; the exit IP check needs the public internet",
    "step": 7,
    "title": "New Identity"
   },

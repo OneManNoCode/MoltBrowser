@@ -1167,6 +1167,35 @@ size_t BlobMemoryController::MoltMemoryUsage(uint64_t molt_budget_key) const {
   return it == molt_memory_used_by_key_.end() ? 0 : it->second;
 }
 
+// MoltBrowser: see the header.
+MoltBlobHold BlobMemoryController::MoltHoldMemory(uint64_t molt_budget_key,
+                                                  size_t bytes) {
+  const MoltBlobHold hold = MoltBlobHoldFor(
+      limits_.molt_per_key_memory, MoltMemoryUsage(molt_budget_key), bytes);
+  if (hold != MoltBlobHold::kCounted) {
+    return hold;
+  }
+  blob_memory_used_ += bytes;
+  molt_memory_used_by_key_[molt_budget_key] += bytes;
+  MoltNoteGrowth();
+  return hold;
+}
+
+void BlobMemoryController::MoltReleaseHeldMemory(uint64_t molt_budget_key,
+                                                 size_t bytes) {
+  if (bytes == 0) {
+    return;
+  }
+  blob_memory_used_ -= std::min(blob_memory_used_, bytes);
+  if (auto it = molt_memory_used_by_key_.find(molt_budget_key);
+      it != molt_memory_used_by_key_.end()) {
+    it->second -= std::min(it->second, bytes);
+    if (it->second == 0) {
+      molt_memory_used_by_key_.erase(it);
+    }
+  }
+}
+
 void BlobMemoryController::MoltNoteGrowth() const {
   if (MoltBlobBeyondFloor(limits_.molt_per_key_memory, memory_usage(),
                           limits_.max_blob_in_memory_space) &&

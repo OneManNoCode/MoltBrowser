@@ -6,10 +6,17 @@
 #include <functional>
 
 #include "base/containers/span.h"
+#include "chrome/browser/dictation/features.h"
+#include "chrome/common/chrome_features.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
+#include "components/history_embeddings/core/history_embeddings_features.h"
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
+#include "components/optimization_guide/core/delivery/prediction_model_component_configs.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/public/common/features.h"
 
 namespace molt_ai {
@@ -64,6 +71,72 @@ void AppendDefaultFeatureOverrides(
       // study that touches them skip.
       &omnibox::kAimEnabled,
       &omnibox::kAim3pEntrypoint,
+
+      // Components and model downloads that only serve Google features
+      // (Chromium 156 audit, docs/NETWORK_TRAFFIC.md "Changes made in this
+      // audit"). Each one adds a component to the component updater's check
+      // of update.googleapis.com and downloads it from Google's servers.
+      //
+      // Indigo: an AI image feature whose content script arrives as a
+      // component ("Indigo" study in the testing config, which also turns
+      // on its API client and Gemini entry point). Listing both makes the
+      // whole study skip.
+      &features::kIndigo,
+      &features::kIndigoComponent,
+      // Dictation: Google's dictation, whose connector arrives as a
+      // component ("Dictation" study). MoltBrowser's own voice input runs
+      // on whisper, on the device.
+      &dictation::kDictation,
+      // History embeddings ("HistoryEmbeddingsV2Images" study): registers
+      // the history search strings component at every start. MoltBrowser's
+      // @memory search is its own (docs/design/SEMANTIC_SEARCH.md).
+      &history_embeddings::kHistoryEmbeddings,
+      // Prediction models through the component updater
+      // ("PredictionModelComponentDelivery" study, target 20: the geolocation
+      // permission prediction model). Without it these models would come
+      // from optimizationguide-pa.googleapis.com, which needs a Google API
+      // key, so none is downloaded, as before Chromium 156.
+      &optimization_guide::kPredictionModelComponentDelivery,
+      // On-device head suggest: a model of popular Google queries, one per
+      // locale, registered as a component at every start whatever the
+      // search engine, but used only when Google is the default search
+      // engine (OnDeviceHeadProvider::IsOnDeviceHeadProviderAllowed()).
+      // MoltBrowser's default engine is DuckDuckGo.
+      &omnibox::kOnDeviceHeadProviderNonIncognito,
+      &omnibox::kOnDeviceHeadProviderIncognito,
+      // The AI Mode eligibility component (a component extension). Off by
+      // default upstream and touched by no study at 156; listed so that
+      // neither can turn it on. Its registration then uninstalls it.
+      &omnibox::kAimEligibilityComponentExtension,
+
+      // On-device model downloads that nothing MoltBrowser ships asks for.
+      // The manifest of Chromium's on-device models is asked for only when
+      // a feature first asks the broker for a model (hooks in
+      // components/optimization_guide/core/model_execution/manifest_broker/);
+      // these two would ask without the user.
+      //
+      // Background download: the "OnDeviceModelBackgroundDownload" study
+      // lets the broker download models for the Prompt, Writing Assistance
+      // and Summarize APIs ahead of use, on AC power with 50 GB free. At 156
+      // nothing marks a desktop model for it yet; the override keeps it
+      // that way when something does. MoltBrowser serves those APIs from
+      // its own model (docs/design/WEB_AI_APIS.md).
+      &optimization_guide::features::kOnDeviceModelBackgroundDownload,
+      // On-device Web Speech on a small expert model, which comes from
+      // Google through the broker ("EnableOnDeviceWebSpeechSmallExpertModel"
+      // study; off by default upstream). A page's availability check alone
+      // would ask for the manifest. On-device Web Speech then uses
+      // Chromium's default speech engine, which is downloaded only when a
+      // page the user has interacted with installs it.
+      &media::kOnDeviceWebSpeechSmallExpertModel,
+
+      // Secure DNS's fallback to Google Public DNS (8.8.8.8) in automatic
+      // mode, part of the Bundled Security Settings. Off by default and
+      // touched by no study at 156; listed so that neither a study nor a
+      // future default can turn it on. With it off,
+      // StubResolverConfigReader::ShouldUseDohFallback() is false and
+      // automatic mode only upgrades to the user's own DNS provider.
+      &safe_browsing::kBundledSecuritySettingsSecureDnsV2,
   };
   AppendOverrides(kDisabledByDefault,
                   base::FeatureList::OVERRIDE_DISABLE_FEATURE, overrides);

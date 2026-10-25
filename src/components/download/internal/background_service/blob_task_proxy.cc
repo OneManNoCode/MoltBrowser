@@ -36,6 +36,8 @@ BlobTaskProxy::BlobTaskProxy(
 
 BlobTaskProxy::~BlobTaskProxy() {
   CHECK(io_task_runner_->BelongsToCurrentThread());
+  // MoltBrowser: nothing stays held for a download that went away.
+  MoltReleaseHeldMemoryOnIO();
 }
 
 void BlobTaskProxy::InitializeOnIO(BlobContextGetter blob_context_getter) {
@@ -60,6 +62,10 @@ void BlobTaskProxy::SaveAsBlobOnIO(std::unique_ptr<std::string> data,
                                    uint64_t molt_budget_key) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
 
+  // MoltBrowser: what was held for the download becomes the blob, counted
+  // as the blob from here on.
+  MoltReleaseHeldMemoryOnIO();
+
   // Build blob data. This has to do a copy into blob's internal storage.
   std::string blob_uuid = base::Uuid::GenerateRandomV4().AsLowercaseString();
   auto builder = std::make_unique<storage::BlobDataBuilder>(blob_uuid);
@@ -74,6 +80,53 @@ void BlobTaskProxy::SaveAsBlobOnIO(std::unique_ptr<std::string> data,
   auto cb = base::BindOnce(&BlobTaskProxy::BlobSavedOnIO,
                            weak_ptr_factory_.GetWeakPtr(), std::move(callback));
   blob_data_handle_->RunOnConstructionComplete(std::move(cb));
+}
+
+// MoltBrowser: see the header.
+void BlobTaskProxy::MoltHoldMemory(uint64_t molt_budget_key,
+                                   size_t bytes,
+                                   MoltHoldCallback done) {
+  // Unretained the raw pointer because owner on UI thread should destroy this
+  // object on IO thread.
+  io_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&BlobTaskProxy::MoltHoldMemoryOnIO,
+                     base::Unretained(this), molt_budget_key, bytes,
+                     std::move(done)));
+}
+
+void BlobTaskProxy::MoltReleaseHeldMemory() {
+  io_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&BlobTaskProxy::MoltReleaseHeldMemoryOnIO,
+                                base::Unretained(this)));
+}
+
+void BlobTaskProxy::MoltHoldMemoryOnIO(uint64_t molt_budget_key,
+                                       size_t bytes,
+                                       MoltHoldCallback done) {
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
+  storage::MoltBlobHold hold = storage::MoltBlobHold::kNotCounted;
+  if (blob_storage_context_) {
+    if (molt_held_bytes_ > 0 && molt_held_key_ != molt_budget_key) {
+      MoltReleaseHeldMemoryOnIO();
+    }
+    hold = blob_storage_context_->MoltHoldMemory(molt_budget_key, bytes);
+    if (hold == storage::MoltBlobHold::kCounted) {
+      molt_held_key_ = molt_budget_key;
+      molt_held_bytes_ += bytes;
+    }
+  }
+  main_task_runner_->PostTask(FROM_HERE,
+                              base::BindOnce(std::move(done), hold));
+}
+
+void BlobTaskProxy::MoltReleaseHeldMemoryOnIO() {
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
+  if (blob_storage_context_ && molt_held_bytes_ > 0) {
+    blob_storage_context_->MoltReleaseHeldMemory(molt_held_key_,
+                                                 molt_held_bytes_);
+  }
+  molt_held_bytes_ = 0;
 }
 
 void BlobTaskProxy::BlobSavedOnIO(BlobDataHandleCallback callback,

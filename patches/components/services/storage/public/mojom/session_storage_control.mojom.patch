@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/public/mojom/session_storage_control.mojom b/components/services/storage/public/mojom/session_storage_control.mojom
-index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..f177165e87dca31b29b56e9a414725f1f286bbd6 100644
+index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..6cead82274312bcc40c49648a58412491cd3d1ea 100644
 --- a/components/services/storage/public/mojom/session_storage_control.mojom
 +++ b/components/services/storage/public/mojom/session_storage_control.mojom
-@@ -76,6 +76,13 @@ interface SessionStorageControl {
+@@ -4,6 +4,7 @@
+ 
+ module storage.mojom;
+ 
++import "components/services/storage/public/mojom/local_storage_control.mojom";  // MoltBrowser
+ import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
+ import "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom";
+ import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
+@@ -76,6 +77,18 @@ interface SessionStorageControl {
    // next access to a StorageArea will reload data from the backing database.
    PurgeMemory();
  
@@ -16,8 +24,13 @@ index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..f177165e87dca31b29b56e9a414725f1
 +  // site: opening an area purges only unbound areas of its own site, by
 +  // per-site limits, never because of other sites
 +  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
-+  // PurgeMemory() does nothing then.
++  // PurgeMemory() does nothing then. Also keeps a total and a commit rate
++  // per site.
 +  MoltKeepCachesPerSite();
++
++  // MoltBrowser: with caches per site, `observer` hears when all areas
++  // together grow past the floor.
++  MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
 +
    // Creates a new namespace which can later be manipulated by other requests
    // on this interface.

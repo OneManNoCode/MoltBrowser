@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.cc b/components/services/storage/dom_storage/local_storage_impl.cc
-index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..e6fe9148ecf98e3e08d9c01e9478dcd1dfe4401c 100644
+index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c4810898f 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.cc
 +++ b/components/services/storage/dom_storage/local_storage_impl.cc
 @@ -31,7 +31,9 @@
@@ -27,7 +27,27 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..e6fe9148ecf98e3e08d9c01e9478dcd1
      // Don't delete ourselves, but do schedule an immediate commit. Possible
      // deletion will happen under memory pressure or when another localstorage
      // area is opened.
-@@ -159,11 +163,14 @@ class LocalStorageImpl::StorageAreaHolder final
+@@ -153,17 +157,34 @@ class LocalStorageImpl::StorageAreaHolder final
+   }
+ 
+   void DidCommit(DbStatus status) override { context_->OnCommitResult(status); }
++
++  // MoltBrowser: the per-site budget (molt_dom_storage_site_policy.h).
++  bool MoltMayGrowTo(size_t new_storage_used) override {
++    return context_->MoltMayGrowTo(storage_key_, new_storage_used);
++  }
++  void MoltShrankTo(size_t new_storage_used) override {
++    context_->MoltShrankTo(storage_key_, new_storage_used);
++  }
++  base::TimeDelta MoltSiteCommitDelay() override {
++    return context_->MoltSiteCommitDelay(storage_key_);
++  }
++  void MoltSiteCommitted(size_t bytes) override {
++    context_->MoltSiteCommitted(storage_key_, bytes);
++  }
+   void Bind(mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
+     has_bindings_ = true;
+     storage_area()->Bind(std::move(receiver));
    }
  
    bool has_bindings() const { return has_bindings_; }
@@ -42,7 +62,16 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..e6fe9148ecf98e3e08d9c01e9478dcd1
    bool has_written_access_meta_data_ = false;
    StorageAreaImpl area_;
  };
-@@ -313,6 +320,11 @@ void LocalStorageImpl::ShutDown() {
+@@ -227,6 +248,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+         /*new_observer=*/mojo::NullRemote(), std::move(callback));
+     found->second->storage_area()->ScheduleImmediateCommit();
+   } else if (database_) {
++    // MoltBrowser: what it held is gone (molt_dom_storage_site_policy.h).
++    molt_site_budget_.Forget(storage_key.Serialize());
+     std::vector<DomStorageDatabase::MapLocator> maps_to_delete;
+     maps_to_delete.emplace_back(storage_key);
+ 
+@@ -313,6 +336,11 @@ void LocalStorageImpl::ShutDown() {
  }
  
  void LocalStorageImpl::PurgeMemory() {
@@ -54,7 +83,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..e6fe9148ecf98e3e08d9c01e9478dcd1
    for (auto it = areas_.begin(); it != areas_.end();) {
      if (it->second->has_bindings()) {
        it->second->storage_area()->PurgeMemory();
-@@ -582,7 +594,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
+@@ -582,7 +610,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
      return found->second.get();
    }
  
@@ -69,10 +98,50 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..e6fe9148ecf98e3e08d9c01e9478dcd1
  
    auto holder = std::make_unique<StorageAreaHolder>(this, storage_key);
    StorageAreaHolder* holder_ptr = holder.get();
-@@ -648,6 +666,62 @@ void LocalStorageImpl::OnGotWriteMetaData(
+@@ -648,6 +682,102 @@ void LocalStorageImpl::OnGotWriteMetaData(
    std::move(callback).Run(std::move(result));
  }
  
++// MoltBrowser:
++void LocalStorageImpl::MoltSetGrowthObserver(
++    mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer) {
++  molt_site_budget_.SetGrowthObserver(std::move(observer));
++}
++
++// MoltBrowser: the area of `storage_key` counts to its top-level site.
++bool LocalStorageImpl::MoltMayGrowTo(const blink::StorageKey& storage_key,
++                                     size_t new_bytes) {
++  return !molt_caches_per_site_ ||
++         molt_site_budget_.MayGrowTo(storage_key.Serialize(),
++                                     storage_key.top_level_site().Serialize(),
++                                     new_bytes);
++}
++
++void LocalStorageImpl::MoltShrankTo(const blink::StorageKey& storage_key,
++                                    size_t new_bytes) {
++  if (molt_caches_per_site_) {
++    molt_site_budget_.ShrankTo(storage_key.Serialize(),
++                               storage_key.top_level_site().Serialize(),
++                               new_bytes);
++  }
++}
++
++base::TimeDelta LocalStorageImpl::MoltSiteCommitDelay(
++    const blink::StorageKey& storage_key) {
++  return molt_caches_per_site_
++             ? molt_site_budget_.CommitDelay(
++                   storage_key.top_level_site().Serialize())
++             : base::TimeDelta();
++}
++
++void LocalStorageImpl::MoltSiteCommitted(const blink::StorageKey& storage_key,
++                                         size_t bytes) {
++  if (molt_caches_per_site_) {
++    molt_site_budget_.Committed(storage_key.top_level_site().Serialize(),
++                                bytes);
++  }
++}
++
 +// MoltBrowser:
 +void LocalStorageImpl::MoltKeepCachesPerSite() {
 +  if (molt_caches_per_site_) {

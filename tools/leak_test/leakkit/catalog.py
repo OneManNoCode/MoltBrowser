@@ -327,7 +327,8 @@ COMPLIANCE_STEPS = (
     (7, 'New Identity', 'automated',
      'new profile, cookies gone, new canvas key, no old page left open, a '
      'second New Identity waits for Tor to switch circuits, nothing the '
-     'browser held for the old page (fetchLater, a pagehide beacon) sent; '
+     'browser held for the old page (fetchLater, a pagehide beacon) sent, '
+     'none of the requests the old page starts as the identity ends sent; '
      'the exit IP check needs the public internet'),
     (8, 'Per-site circuits', 'automated',
      'different SOCKS usernames per site (sandboxed pages included), a '

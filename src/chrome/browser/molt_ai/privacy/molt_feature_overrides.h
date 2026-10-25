@@ -3,7 +3,8 @@
 //
 // Features MoltBrowser turns off by default because their only effect in a
 // build without Google API keys is a request to a Google host that cannot
-// help the user (see docs/NETWORK_TRAFFIC.md for the full inventory), and
+// help the user, or a component download for a Google-only feature (see
+// docs/NETWORK_TRAFFIC.md for the full inventory), and
 // the few it turns on: Global Privacy Control, and the Writer and Rewriter
 // web APIs (served by the on-device model, docs/design/WEB_AI_APIS.md).
 //

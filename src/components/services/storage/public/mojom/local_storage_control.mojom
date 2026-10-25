@@ -9,6 +9,14 @@ import "components/services/storage/public/mojom/storage_usage_info.mojom";
 import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
 import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
 
+// MoltBrowser: told by the storage service when a partition's localStorage
+// or sessionStorage areas together grow past MoltNet's floor
+// (components/services/storage/dom_storage/molt_dom_storage_site_policy.h),
+// for the embedder's memory valve.
+interface MoltDomStorageGrowthObserver {
+  OnGrowthBeyondFloor();
+};
+
 // Controls the state of Local Storage within a partition. This is a privileged
 // interface and must not be brokered to untrusted clients.
 //
@@ -53,5 +61,10 @@ interface LocalStorageControl {
   // per-site limits, and unused areas are purged after a while unused, not
   // because of other sites (components/services/storage/dom_storage/
   // molt_dom_storage_site_policy.h). PurgeMemory() does nothing then.
+  // Also keeps a total and a commit rate per site.
   MoltKeepCachesPerSite();
+
+  // MoltBrowser: with caches per site, `observer` hears when all areas
+  // together grow past the floor.
+  MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
 };

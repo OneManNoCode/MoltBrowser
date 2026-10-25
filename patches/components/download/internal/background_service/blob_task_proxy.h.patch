@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/download/internal/background_service/blob_task_proxy.h b/components/download/internal/background_service/blob_task_proxy.h
-index 14df8a6ac0152e93b749dbda379d2f03d9319795..4a7858479c6eb552f15249c7e72ffaa061411513 100644
+index 14df8a6ac0152e93b749dbda379d2f03d9319795..90259b759329f14f6f7a37360ef1a62d23c5270a 100644
 --- a/components/download/internal/background_service/blob_task_proxy.h
 +++ b/components/download/internal/background_service/blob_task_proxy.h
 @@ -12,6 +12,7 @@
@@ -16,7 +16,7 @@ index 14df8a6ac0152e93b749dbda379d2f03d9319795..4a7858479c6eb552f15249c7e72ffaa0
  
  namespace storage {
  class BlobDataHandle;
-@@ -45,13 +46,17 @@ class BlobTaskProxy {
+@@ -45,13 +46,35 @@ class BlobTaskProxy {
    // Save blob data on UI thread. |callback| will be called on main thread after
    // blob construction completes.
    void SaveAsBlob(std::unique_ptr<std::string> data,
@@ -25,8 +25,26 @@ index 14df8a6ac0152e93b749dbda379d2f03d9319795..4a7858479c6eb552f15249c7e72ffaa0
 +                  // MoltBrowser: the budget key the blob counts to
 +                  // (molt_blob_budget_policy.h).
 +                  uint64_t molt_budget_key = storage::kMoltBlobBrowserKey);
++
++  // MoltBrowser: on the main thread. Counts |bytes| more of the data that
++  // will become the blob against |molt_budget_key|'s share while it is
++  // still being downloaded (storage::BlobStorageContext::MoltHoldMemory());
++  // |done| gets the result on the main thread. What this proxy holds is
++  // given up when SaveAsBlob() makes the blob from it, by
++  // MoltReleaseHeldMemory(), or with the proxy.
++  using MoltHoldCallback = base::OnceCallback<void(storage::MoltBlobHold)>;
++  void MoltHoldMemory(uint64_t molt_budget_key,
++                      size_t bytes,
++                      MoltHoldCallback done);
++  void MoltReleaseHeldMemory();
  
   private:
++  // MoltBrowser:
++  void MoltHoldMemoryOnIO(uint64_t molt_budget_key,
++                          size_t bytes,
++                          MoltHoldCallback done);
++  void MoltReleaseHeldMemoryOnIO();
++
    void InitializeOnIO(BlobContextGetter blob_context_getter);
  
    void SaveAsBlobOnIO(std::unique_ptr<std::string> data,
@@ -36,3 +54,15 @@ index 14df8a6ac0152e93b749dbda379d2f03d9319795..4a7858479c6eb552f15249c7e72ffaa0
  
    void BlobSavedOnIO(BlobDataHandleCallback callback,
                       storage::BlobStatus status);
+@@ -67,6 +90,11 @@ class BlobTaskProxy {
+   // BlobDataHandle that will be eventually passed to main thread.
+   std::unique_ptr<storage::BlobDataHandle> blob_data_handle_;
+ 
++  // MoltBrowser: what MoltHoldMemory() holds, and for which key; on
++  // |io_task_runner_|.
++  uint64_t molt_held_key_ = storage::kMoltBlobBrowserKey;
++  size_t molt_held_bytes_ = 0;
++
+   // Bounded to IO thread task runner.
+   base::WeakPtrFactory<BlobTaskProxy> weak_ptr_factory_{this};
+ };

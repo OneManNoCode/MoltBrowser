@@ -21,6 +21,7 @@
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/connect_job_params.h"
+#include "net/socket/molt_identity_end.h"  // MoltBrowser
 #include "net/socket/socks5_client_socket.h"
 #include "net/socket/socks_client_socket.h"
 #include "net/socket/transport_connect_job.h"
@@ -296,6 +297,12 @@ int SOCKSConnectJob::DoTransportConnectComplete(int result) {
 int SOCKSConnectJob::DoSOCKSConnect() {
   next_state_ = STATE_SOCKS_CONNECT_COMPLETE;
 
+  // MoltBrowser: no new stream through Tor once the session's MoltNet
+  // identity has ended (net/socket/molt_identity_end.h).
+  if (MoltIdentityHasEnded(common_connect_job_params()->molt_identity_end)) {
+    return ERR_ABORTED;
+  }
+
   // Add a SOCKS connection on top of the tcp socket.
   if (socks_params_->is_socks_v5()) {
     auto socks5_socket = std::make_unique<SOCKS5ClientSocket>(
@@ -310,6 +317,10 @@ int SOCKSConnectJob::DoSOCKSConnect() {
           TorIsolationPassword(
               common_connect_job_params()
                   ->molt_socks_isolation_password.get()));
+    }
+    // MoltBrowser: and refuses every write once that identity has ended.
+    if (MoltIdentityEnd* end = common_connect_job_params()->molt_identity_end) {
+      socks5_socket->MoltSetIdentityEnd(base::WrapRefCounted(end));
     }
     socket_ = std::move(socks5_socket);
   } else {

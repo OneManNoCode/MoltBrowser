@@ -20,6 +20,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/sequence_bound.h"
 #include "base/timer/timer.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "build/build_config.h"
@@ -96,6 +97,9 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
       std::vector<mojom::StoragePolicyUpdatePtr> policy_updates) override;
   void ForceKeepSessionState() override;
   void MoltKeepCachesPerSite() override;  // MoltBrowser
+  void MoltSetGrowthObserver(
+      mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
+      override;  // MoltBrowser
 
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -156,6 +160,13 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // areas pass the per-site limits; and the areas unused for long enough.
   void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
   void MoltSweepIdleAreas();
+  // MoltBrowser: the per-site budget, for `storage_key`'s area
+  // (molt_dom_storage_site_budget.h); everything goes without caches per
+  // site.
+  bool MoltMayGrowTo(const blink::StorageKey& storage_key, size_t new_bytes);
+  void MoltShrankTo(const blink::StorageKey& storage_key, size_t new_bytes);
+  base::TimeDelta MoltSiteCommitDelay(const blink::StorageKey& storage_key);
+  void MoltSiteCommitted(const blink::StorageKey& storage_key, size_t bytes);
 
   // These clear stale storage areas (not read/written to within 400 days) from
   // the database. See crbug.com/40281870 for more info.
@@ -224,6 +235,8 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // that purges the ones unused for long enough.
   bool molt_caches_per_site_ = false;
   base::RepeatingTimer molt_idle_sweep_;
+  // MoltBrowser: what each site's areas hold, and its commit rate.
+  MoltDomStorageSiteBudget molt_site_budget_;
 
   base::WeakPtrFactory<LocalStorageImpl> weak_ptr_factory_{this};
 };

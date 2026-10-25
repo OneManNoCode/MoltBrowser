@@ -10,6 +10,14 @@ a built MoltBrowser. One command produces `report.md` (for people) and
 It doesn't replace reading the code. It checks that what the code is meant
 to do is what the built browser does.
 
+The kit also captures a **regular** window's own background traffic and
+checks it against [NETWORK_TRAFFIC.md](NETWORK_TRAFFIC.md):
+`leaktest.sh traffic` ([below](#regular-window-traffic-capture)). Its
+network pieces (the sinkhole route, the firewall rule, the resolver, the
+sinkhole and the analysis of what tcpdump logged) have been run with the
+real kernel in a scratch namespace (`tests/test_traffic_capture.py`,
+root only); the first run with a browser is the build machine's.
+
 **Status.** The kit has not yet been run against a MoltBrowser build. Its
 analysis is tested against a recorded sample run and against real captures
 (`tools/leak_test/tests/`). The harness itself (namespace, firewall,
@@ -262,6 +270,7 @@ the report. Anything else is a leak.
 | Separate identity | a cookie set for the onion in the regular profile (DevTools `Storage.setCookies`) doesn't show in MoltNet; a MoltNet cookie is gone after its last window closed and MoltNet reopened in a new browser context; the onion site's SOCKS5 connections after MoltNet reopened carry credentials the earlier session didn't use, so new circuits (`identity.session_circuits`; the kit keeps a digest of each SOCKS password, never the password) | 6 |
 | New Identity | `moltnet.newIdentity`: a new browser context, the cookie gone, the canvas readback changed (new farbling seed); no page of the old identity left open, although it asked "Leave site?" with a user activation; a second New Identity right after the first opens its window only once Tor can have switched circuits again (at least 8 s later; Tor applies NEWNYM at most every 10 s); the same site's SOCKS5 credentials differ before and after each New Identity (`identity.session_circuits`); exit IP before/after if online | 7 |
 | Nothing held after the end | before New Identity the old page calls `fetchLater()` (deferred two minutes) and sends a beacon on `pagehide`: both are sent only once the page closes, after its identity ended, and neither may reach the kit's page server (`identity.nothing_held_after_end`; with no `fetchLater()` in the page, only the beacon) | 7 |
+| Nothing after the end, racing it | while New Identity runs, the old page keeps three fetches to the kit's server going, one after another; the first one refused (the end cancels what is in flight and refuses what follows) makes it start one request of each kind (fetch, keepalive fetch, beacon, image, WebSocket, prefetch) and say so on the console, which the harness reads over DevTools. None may reach the kit's server (`identity.nothing_after_end_race`). Not judged (SKIP) if the page saw a refusal before New Identity began (Tor or the server failing) or closed before it saw one. Online, the phase first takes the old page back to the kit's server from the exit check, so these and the held requests go to the kit | 7 |
 | Per-site circuits | the two onion sites' SOCKS5 connections carry different usernames, and every one carries one; two pages their servers sandbox (`Content-Security-Policy: sandbox`, opaque origins) on two sites use different usernames too (`identity.sandboxed_circuits`); the certificate fetches made for the two certificate tests use usernames of their own, none shared between the two sites and none a page used, and the second site's check makes a fetch of its own (`identity.cert_fetch_circuits`); a Background Fetch, which the browser's download service makes, uses the username of the site that started it (`identity.background_fetch_circuits`; SKIP if no Background Fetch reached Tor, for example because the permission was refused) | 8 |
 | The relays are real | the panel's guard, middle and exit fingerprints (`moltnet.getCircuit`) are in the consensus MoltNet's Tor downloaded | 10 |
 | Tor's shared capacity | the torrc MoltBrowser started its Tor with sets `ConnLimit 1000` and `MaxClientCircuitsPending 256`, the capacity MoltNet's connection and circuit budgets are sized against (`identity.tor_capacity`). The limits themselves (each site's connections, the Tor process's budget of 768, each site's 16 SOCKS handshake slots within Tor's 192, an onion address counting three, each site's keepalive requests, storage and blob memory) would take hundreds of connections or thousands of requests through Tor to reach, too slow and too uneven for a kit run: they are checked on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`, "moltnet-shared") | 10 |
@@ -404,6 +413,116 @@ shortcuts; checked with stock Chromium 141: 90% and 125% took effect) and
 reads the zoom back (`Page.getLayoutMetrics`). If the zoom didn't change,
 the level is reported as SKIP ("check this level by hand").
 
+## Regular-window traffic capture
+
+`leaktest.sh traffic` records what a **regular** MoltBrowser window
+contacts on its own, and checks it against
+[NETWORK_TRAFFIC.md](NETWORK_TRAFFIC.md). It needs no Tor and no internet:
+nothing it does leaves the machine.
+
+```bash
+sudo tools/leak_test/leaktest.sh traffic --browser chromium/src/out/MoltBrowser-linux/chrome
+#   ... about 17 minutes ...
+#   verdict: PASS  (0 FAIL, 0 ERROR, ...)
+#   report: ./moltleak-runs/20261025-153000-traffic-a1b2c3/report.md
+```
+
+It runs as `run` does (root for the namespace, the firewall and the
+captures; the browser and the servers as you) and needs the same packages,
+except `tor`.
+
+| Option | Default | What for |
+|---|---|---|
+| `--idle SECONDS` | 600 | how long the browser is left alone after its first run |
+| `--first-run-wait`, `--restart-idle`, `--update-wait`, `--final-wait` | 45, 120, 45, 20 | the other steps' lengths |
+| `--skip-browse` | | leave out the scripted browse |
+| `--hosts FILE` | `docs/network_traffic_hosts.json` | another allow-list |
+| `--display`, `--screen`, `--locale`, `--timezone`, `--browser-arg`, `--user`, `--out` | | as for `run` |
+
+**The steps.** A fresh profile (a directory of the run), launched as a user
+would: no `--no-first-run` and no start URL, so the first run and the
+start-up tabs are the browser's own.
+
+| Step | What happens |
+|---|---|
+| `first_run` | the first launch; waits 45 s |
+| `idle` | nothing for 10 minutes |
+| `home` | opens the new tab page |
+| `form` | fills a shipping-address form and a sign-in form with made-up values (DevTools `Input.insertText`) and submits the sign-in |
+| `translate` | opens a page in French (Translate offers itself; in MoltBrowser on the device) |
+| `spellcheck` | types misspelt words into a text area (on Linux the dictionary downloads the first time) |
+| `download` | downloads a small `.exe` (Safe Browsing's download check is expected here, and only here) |
+| `dns_error` | opens a name under `.invalid`, which the kit's resolver doesn't resolve (the error page's DNS probe must not happen) |
+| `cert_error` | opens a local page whose certificate expired in 2020 (network time may be asked; the captive-portal check must not happen) |
+| `shutdown`, `restart` | closes the browser, starts it again with the same profile, idle for 2 minutes |
+| `update_check` | opens `molt://ai-update`, which asks GitHub for the latest release |
+| `final` | waits for late requests, then closes the browser |
+
+**How nothing gets out.**
+
+* The kit's resolver (`leakkit/sinkhole.py`, `fakedns`) is the only one the
+  browser can use (the namespace's `resolv.conf` and `nsswitch.conf`, as for
+  `run`). It answers each name with an address of its own in
+  `198.18.0.0/15` (the benchmarking range), so a connection's address says
+  which name it was for. `AAAA`, `HTTPS` and every other record type get an
+  empty answer; names under `.invalid` get NXDOMAIN. Each query and answer is
+  logged.
+* That range is routed to the namespace's loopback as local addresses. The
+  sinkhole (`leakkit/sinkhole.py`, `sinkhole`) listens on ports 80 and 443
+  there and accepts TLS with the kit's test key, which the browser accepts
+  through `--ignore-certificate-errors-spki-list` (the same key and flag as
+  `run`'s test pages). It logs the server name, the HTTP method and path
+  and a few headers (an API key or a cookie only by its length; never a
+  body), answers `503` and closes. From the component updater's check
+  (`POST /service/update2/json`) it keeps one thing besides: the IDs of
+  the components the check names (`update_apps`).
+* The firewall logs the first packet of every flow to the range (nflog,
+  prefix `sinkhole`), so a connection to a port the sinkhole doesn't
+  listen on is recorded too. Everything else is logged and dropped as in
+  `run` (DNS to any other server, connections to an address the browser
+  had without asking the resolver, multicast joins). Nothing is allowed
+  out: a packet that leaves the namespace anyway fails the run
+  ("escaped").
+
+**The checks** (`leakkit/bganalysis.py`). Each lookup and connection is
+put in a step by its time and compared with
+[NETWORK_TRAFFIC.md section 6](NETWORK_TRAFFIC.md#6-machine-readable-host-list),
+through `docs/network_traffic_hosts.json` (`leakkit/hostlist.py`; the run
+refuses to start if the JSON doesn't match the doc).
+
+| Check | Fails when |
+|---|---|
+| `traffic.forbidden` | a host the doc marks `forbidden` was looked up or contacted |
+| `traffic.not_listed` | a host the doc doesn't list (also an mDNS join) |
+| `traffic.user_only` | a host the doc allows only after a user action the capture never takes |
+| `traffic.outside_its_step` | a step-bound host outside its step (the download check outside `download`) |
+| `traffic.unexpected_port` | a listed host on a port the doc doesn't list |
+| `traffic.components` | the component updater's check names a component from the doc's component table (section 6: off in MoltBrowser, or asked for only on demand, like the on-device model manifest); SKIP when no update check with readable IDs reached the sinkhole; the evidence lists every check's IDs |
+| `traffic.harness.escaped` | anything left the namespace |
+| `traffic.harness.capture`, `.steps`, `.update_check` | ERROR: the captures are empty, a step didn't run, or the update check never reached the sinkhole (the control that proves the capture works) |
+| `traffic.expected`, `traffic.not_seen`, `traffic.kit` | INFO: what was expected and seen, what the doc expects that this run didn't see, and the kit's own pages |
+
+Each failure names the time since the start, the step, the host, the port,
+the TLS server name and request line, and a likely source: the doc's own
+"Why" for a listed host, otherwise a guess from the host, the path and the
+step (a startup timer when it came within 75 s of a launch). `report.md`
+also has a timeline of everything. Send back `report.json` with the
+build's version.
+
+To triage a failure: if MoltBrowser needs it, add it to NETWORK_TRAFFIC.md
+(the detail section and the section 6 table, with the reason), run
+`tools/leak_test/leaktest.sh hosts --write`, and rebuild the report with
+`leaktest.sh report <run dir>`; otherwise turn it off
+(`molt_feature_overrides.cc`, a pref default) and run the capture again.
+
+**Limits.** Nothing answers, so the capture sees the first request of each
+service, not what an answer would lead to: no component or update
+download, no second request that depends on the first. It doesn't see
+request bodies (NETWORK_TRAFFIC.md's full capture with mitmproxy does).
+Unix-socket services (D-Bus, CUPS) act outside the namespace, as for `run`.
+It doesn't type into the address bar (DuckDuckGo's suggestions) or sign
+in, and it runs on Linux only.
+
 ## What is still manual
 
 | Step (MOLTNET_COMPLIANCE.md §4) | Status |
@@ -431,9 +550,10 @@ multiple monitors, and the fingerprinting suites named in FINGERPRINTING.md
   act from outside. The Incognito-parity steps that involve them stay manual.
 * The firewall drops what isn't Tor's, so the kit sees the **first** packet
   of a leak (a lookup, a SYN, a STUN request), not what would have followed.
-  NETWORK_TRAFFIC.md's full capture of background traffic, with NetLog and
-  request bodies, stays its own procedure. The kit's background list is
-  DNS-level.
+  The regular profile's background traffic is the traffic capture's job
+  (above), which sees server names and request lines; the background list
+  `run` uses is DNS-level (`leakkit/background.py`, kept in line with
+  NETWORK_TRAFFIC.md by the kit's tests).
 * A leak through a browser process that waits until after the run, or that
   needs a real user gesture the DevTools pipe can't give, is not seen.
 * `--ignore-certificate-errors-spki-list` (the kit's test certificate for
@@ -455,7 +575,9 @@ multiple monitors, and the fingerprinting suites named in FINGERPRINTING.md
 | `leakkit/catalog.py` | the network tests and the §4 step map |
 | `leakkit/expectations.py`, `uniformity.py` | promised values, comparison, run diff |
 | `leakkit/report.py` | report.json / report.md |
-| `pages/` | the test pages (templated per test) |
+| `leakkit/bgcapture.py`, `sinkhole.py` | the regular-window traffic capture: its steps, resolver and sinkhole |
+| `leakkit/bganalysis.py`, `hostlist.py` | its comparison with NETWORK_TRAFFIC.md and its report; the allow-list (`hosts [--write]`) |
+| `pages/` | the test pages (templated per test; `bg_*.html` for the capture) |
 | `tests/` | unit tests and the recorded sample run (`make_sample_run.py`) |
 
 The kit's own tests need no root and no browser. CI runs them
