@@ -26,6 +26,7 @@
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/color_palette.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace color_utils {
 
@@ -63,8 +64,12 @@ float Linearize(float component) {
   // The W3C link in the header uses 0.03928 here.  See
   // https://en.wikipedia.org/wiki/SRGB#Theory_of_the_transformation for
   // discussion of why we use this value rather than that one.
-  return (component <= 0.04045f) ? (component / 12.92f)
-                                 : pow((component + 0.055f) / 1.055f, 2.4f);
+  // MoltBrowser: portable in MoltNet renderers (ui/gfx/geometry/molt_math.h):
+  // pages read the contrast decisions this feeds (CSS contrast-color(), the
+  // validity of <geolocation> and <usermedia> elements).
+  return (component <= 0.04045f)
+             ? (component / 12.92f)
+             : gfx::molt_math::Pow((component + 0.055f) / 1.055f, 2.4f);
 }
 
 constexpr size_t kNumGoogleColors = 12;
