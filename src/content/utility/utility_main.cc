@@ -115,6 +115,8 @@
 #include "base/win/win_util.h"
 #include "base/win/windows_handle_util.h"
 #include "base/win/windows_version.h"
+// MoltBrowser: GPU inference's pre-lockdown step.
+#include "content/utility/on_device_model/molt_gpu_inference_sandbox_win.h"
 #include "content/utility/sandbox_delegate_data.mojom.h"
 #include "content/utility/webnn/webnn_sandbox_init.h"
 #include "sandbox/policy/win/sandbox_warmup.h"
@@ -485,6 +487,15 @@ int UtilityMain(MainFunctionParams parameters) {
   // initialized for WebNN Compiler Utility processes.
   if (utility_sub_type == webnn::mojom::WebNNCompilerService::Name_) {
     CHECK(webnn::PreSandboxInit());
+  }
+
+  // MoltBrowser: MoltBrowser's inference service launched for the GPU loads
+  // the Vulkan loader and GPU drivers now, while it still may
+  // (docs/design/SANDBOXED_INFERENCE.md section 11.15). Nothing without
+  // --molt-inference-gpu.
+  if (sandbox_type == sandbox::mojom::Sandbox::kOnDeviceModelExecution) {
+    on_device_model::MaybeWarmMoltGpuInferenceDrivers(
+        *parameters.command_line);
   }
 
   if (!sandbox::policy::IsUnsandboxedSandboxType(sandbox_type) &&
