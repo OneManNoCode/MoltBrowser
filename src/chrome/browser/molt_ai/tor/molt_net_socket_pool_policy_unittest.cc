@@ -34,10 +34,28 @@ TEST(MoltNetSocketPoolPolicyTest, FixedLimitsPerSite) {
   EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, true, true), 8u);
   EXPECT_EQ(MoltPerSitePoolLimit(4, true, false), 4u);
   EXPECT_EQ(MoltPerSitePoolLimit(4, false, true), 4u);
+  // A site's one-off keys (certificate fetches): a small pool of its own.
+  EXPECT_EQ(kMoltPerSiteOneOffPoolSize, 4u);
+  EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, false, false, true),
+            4u);
+  EXPECT_EQ(MoltPerSitePoolLimit(2, false, false, true), 2u);
+  EXPECT_EQ(MoltPerSitePoolLimit(kMoltPerSitePoolSize, false, false, false),
+            48u);
   // HTTP: 6 per group; WebSockets: 255, so the site's limit.
   EXPECT_EQ(MoltPerSiteGroupLimit(48, 6), 6u);
   EXPECT_EQ(MoltPerSiteGroupLimit(16, 255), 16u);
   EXPECT_EQ(MoltPerSiteGroupLimit(4, 6), 4u);
+}
+
+// Only HTTP requests of a key that names a site and carries a nonce (a
+// certificate fetch for one of the site's connections) go to the site's
+// one-off pool, so the fetches a site's certificate checks wait for never
+// wait for the slots those checks hold.
+TEST(MoltNetSocketPoolPolicyTest, ASitesOneOffKeysHaveTheirOwnPool) {
+  EXPECT_TRUE(MoltUsesSiteOneOffPool(false, true, true));
+  EXPECT_FALSE(MoltUsesSiteOneOffPool(false, true, false));
+  EXPECT_FALSE(MoltUsesSiteOneOffPool(false, false, true));
+  EXPECT_FALSE(MoltUsesSiteOneOffPool(true, true, true));
 }
 
 TEST(MoltNetSocketPoolPolicyTest, OnlyLongUnusedPoolsAreDropped) {
@@ -60,7 +78,7 @@ TEST(MoltNetSocketPoolPolicyTest, BudgetFitsTorAndManySites) {
   EXPECT_EQ(kMoltNetConnectionBudget, 768u);
   EXPECT_LE(kMoltNetConnectionBudget + kMoltTorOwnConnections,
             kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
-  EXPECT_EQ(kMoltPerSiteConnections, 64u);
+  EXPECT_EQ(kMoltPerSiteConnections, 68u);
   EXPECT_EQ(kMoltUnattributedConnections, 16u);
   EXPECT_EQ(kMoltSitesToFillBudget, 11u);
   // Ten sites at their share, every unattributed connection, and one site
@@ -280,6 +298,8 @@ TEST(MoltNetSocketPoolPolicyTest, IsAConstantExpression) {
   static_assert(!MoltUsesPerSitePool(0, false));
   static_assert(MoltPerSiteGroupLimit(48, 6) == 6);
   static_assert(MoltPerSitePoolLimit(48, true, false) == 16);
+  static_assert(MoltPerSitePoolLimit(48, false, false, true) == 4);
+  static_assert(MoltUsesSiteOneOffPool(false, true, true));
   static_assert(!MoltMayDropSitePool(false, 100));
   static_assert(MoltBudgetAdmits(1, 2, 0, std::nullopt));
   static_assert(MoltSocksHandshakeLimit(false) == kMoltSocksHandshakesPerSite);

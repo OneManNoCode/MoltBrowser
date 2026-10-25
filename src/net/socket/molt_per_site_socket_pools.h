@@ -17,6 +17,7 @@
 #ifndef NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 #define NET_SOCKET_MOLT_PER_SITE_SOCKET_POOLS_H_
 
+#include <compare>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -78,18 +79,24 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   // The pool for requests of network key `network_anonymization_key`
-  // through `proxy_chain`: its site's (MoltBudgetSiteFor()); made on first
-  // use. Drops the site pools nothing has used for a while first, when it
-  // makes one.
+  // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or for a key
+  // with a nonce the site's pool for one-off keys (MoltUsesSiteOneOffPool());
+  // made on first use. Drops the site pools nothing has used for a while
+  // first, when it makes one.
   ClientSocketPool* Get(const ProxyChain& proxy_chain,
                         const NetworkAnonymizationKey& network_anonymization_key) {
     const base::TimeTicks now = base::TimeTicks::Now();
-    Key key(proxy_chain, MoltBudgetSiteFor(network_anonymization_key));
+    MoltBudgetSite site = MoltBudgetSiteFor(network_anonymization_key);
+    const bool one_off = MoltUsesSiteOneOffPool(
+        is_for_websockets_, site.has_value(),
+        network_anonymization_key.GetNonce().has_value());
+    Key key{proxy_chain, std::move(site), one_off};
     auto it = pools_.find(key);
     if (it == pools_.end()) {
       DropUnusedPools(now);
-      const size_t limit = MoltPerSitePoolLimit(
-          per_site_pool_size_, is_for_websockets_, !key.second.has_value());
+      const size_t limit =
+          MoltPerSitePoolLimit(per_site_pool_size_, is_for_websockets_,
+                               !key.site.has_value(), key.one_off);
       Entry entry;
       entry.pool = std::make_unique<TransportClientSocketPool>(
           limit, MoltPerSiteGroupLimit(limit, max_sockets_per_group_),
@@ -126,8 +133,8 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
       // As ClientSocketPoolManagerImpl::SocketPoolInfoToValue() names a
       // proxy chain's pool (never direct here).
       list.Append(entry.pool->GetInfoAsValue(
-          key.first.ToDebugString() + " (per site)",
-          key.first.Last().is_socks() ? "socks_socket_pool"
+          key.proxy_chain.ToDebugString() + " (per site)",
+          key.proxy_chain.Last().is_socks() ? "socks_socket_pool"
                                       : "http_proxy_socket_pool"));
     }
   }
@@ -141,7 +148,7 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
     }
     for (const auto& [key, entry] : pools_) {
       if (entry.pool.get() == pool) {
-        return budget_->MayAllocate(this, key.second);
+        return budget_->MayAllocate(this, key.site);
       }
     }
     return true;
@@ -155,12 +162,12 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   // MoltConnectionBudget::Member:
   void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads) const override {
     for (const auto& [key, entry] : pools_) {
-      loads[key.second] += entry.pool->SocketsInUse();
+      loads[key.site] += entry.pool->SocketsInUse();
     }
   }
   bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
     for (const auto& [key, entry] : pools_) {
-      if (key.second == site && entry.pool->MoltHasStalledRequest()) {
+      if (key.site == site && entry.pool->MoltHasStalledRequest()) {
         return true;
       }
     }
@@ -188,19 +195,28 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
  private:
-  using Key = std::pair<ProxyChain, MoltBudgetSite>;
+  // A pool: the proxy chain, the site it counts against, and whether it is
+  // that site's pool for one-off keys (MoltUsesSiteOneOffPool()).
+  struct Key {
+    ProxyChain proxy_chain;
+    MoltBudgetSite site;
+    bool one_off = false;
+    friend bool operator==(const Key&, const Key&) = default;
+    friend auto operator<=>(const Key&, const Key&) = default;
+  };
   struct Entry {
     std::unique_ptr<TransportClientSocketPool> pool;
     base::TimeTicks last_handed_out;
   };
 
-  // `site`'s pools (one per proxy chain), collected first: what a pool does
-  // when asked doesn't change the map, but this doesn't rely on it.
+  // `site`'s pools (per proxy chain, and its one-off keys'), collected
+  // first: what a pool does when asked doesn't change the map, but this
+  // doesn't rely on it.
   std::vector<TransportClientSocketPool*> PoolsOf(
       const MoltBudgetSite& site) const {
     std::vector<TransportClientSocketPool*> pools;
     for (const auto& [key, entry] : pools_) {
-      if (key.second == site) {
+      if (key.site == site) {
         pools.push_back(entry.pool.get());
       }
     }

@@ -15,6 +15,7 @@
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
 #include "net/base/host_port_pair.h"
@@ -160,6 +161,49 @@ TEST_F(MoltNetSocketPoolsTest, EachSitePoolHasTheFixedLimits) {
   const base::Value all = session->SocketPoolInfoToValue();
   ASSERT_TRUE(all.is_list());
   EXPECT_FALSE(all.GetList().empty());
+}
+
+// A site's one-off keys (a certificate fetch for one of its connections:
+// the site and a nonce) get a small HTTP pool of the site's own, apart from
+// the site's main pool, whose slots its connections hold while their
+// certificate checks wait for those fetches.
+TEST_F(MoltNetSocketPoolsTest, ASitesOneOffKeysHaveAPoolOfTheirOwn) {
+  std::unique_ptr<net::HttpNetworkSession> session = MakeSession(true);
+  const net::SchemefulSite a(GURL("https://a.test"));
+  auto one_off_key = [&] {
+    return net::NetworkAnonymizationKey::CreateFromParts(
+        a, /*is_cross_site=*/false, base::UnguessableToken::Create());
+  };
+  net::ClientSocketPool* main = session->GetSocketPoolForSite(
+      SocketPoolType::kNormal, Tor(), SiteKey("https://a.test"));
+  net::ClientSocketPool* fetches = session->GetSocketPoolForSite(
+      SocketPoolType::kNormal, Tor(), one_off_key());
+  ASSERT_TRUE(fetches);
+  EXPECT_NE(fetches, main);
+  // Every one-off key of the site shares it; another site's are apart, and
+  // so are the keys no site can be named for.
+  EXPECT_EQ(fetches, session->GetSocketPoolForSite(SocketPoolType::kNormal,
+                                                   Tor(), one_off_key()));
+  EXPECT_NE(fetches,
+            session->GetSocketPoolForSite(
+                SocketPoolType::kNormal, Tor(),
+                net::NetworkAnonymizationKey::CreateFromParts(
+                    net::SchemefulSite(GURL("https://b.test")), false,
+                    base::UnguessableToken::Create())));
+  EXPECT_NE(fetches,
+            session->GetSocketPoolForSite(
+                SocketPoolType::kNormal, Tor(),
+                net::NetworkAnonymizationKey::CreateTransient()));
+  const base::Value info =
+      fetches->GetInfoAsValue("pool", "socks_socket_pool");
+  ASSERT_TRUE(info.is_dict());
+  EXPECT_EQ(info.GetDict().FindInt("socket_soft_cap"),
+            static_cast<int>(net::kMoltPerSiteOneOffPoolSize));
+  // WebSockets keep one pool per site.
+  EXPECT_EQ(session->GetSocketPoolForSite(SocketPoolType::kWebSocket, Tor(),
+                                          one_off_key()),
+            session->GetSocketPoolForSite(SocketPoolType::kWebSocket, Tor(),
+                                          SiteKey("https://a.test")));
 }
 
 TEST_F(MoltNetSocketPoolsTest, DirectConnectionsAndOtherContextsShare) {
