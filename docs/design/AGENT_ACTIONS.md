@@ -10,13 +10,16 @@ strictly. The page-facing checks are unchanged: `agent_safety` and
 With a model that sees images, the web agent's observations also carry a
 masked, tagged screenshot of the viewport (§2.6; threat model §5.1); the
 decision format doesn't change. On a page that offers WebMCP tools (in its
-main document or a frame of the same origin), the web agent can also call
+main document or a frame of the same origin, or a frame of another site
+the user allowed on that page, §2.7.14), the web agent can also call
 them, as one more action on an id, and the chat can propose one call that
 waits for the user's click (§2.7, §4.9; threat model §5.2). Before its first action the web agent has the model write a short
 plan, which every action then names a step of (§2.8; threat model §2.8.6).
 A run that ended with DONE can be saved as a draft Agent-mode workflow,
 which can't run until the user has reviewed it and confirmed its sites
-(§2.9; threat model §5.4).
+(§2.9; threat model §5.4). Agent-mode steps keep fallback locators for
+their element (§3.4), and a recording keeps the site-tool calls the user
+allowed while recording as steps (§3.5).
 
 | Decision | Code | Format |
 |---|---|---|
@@ -25,6 +28,8 @@ which can't run until the user has reviewed it and confirmed its sites
 | `ai_decide` step | `automation/automation_ai_steps.*`, `automation_runner.cc` | `{"decision": "SUCCESS" \| "FAIL"}` (§3.1) |
 | `ai_extract` step | same | the step's fields, or any object within caps (§3.2) |
 | Selector recovery (a recorded element is lost) | same | `{"selector": "..."}` (§3.3) |
+| A step's fallback locators (no model) | `automation/automation_locators.*`, `automation_runner.cc` | the step's `locators` block (§3.4) |
+| A recorded site-tool step (no model) | `automation/automation_tool_steps.*`, `automation_runner.cc` | a `call_tool` step (§3.5) |
 | The AI chat's page action | `agents/chat_actions.*`, `ui/webui/molt_ai/molt_ai_chat_handler_actions.cc` | one action object, a smaller set (§4) |
 | The chat's `/fill ai` and `/paste` | `ui/webui/molt_ai/molt_ai_chat_form_fill.*`, the same handler file | one FILL_FORM or DONE (§4.7) |
 
@@ -518,7 +523,8 @@ observation (`t1`, `t2`, ...) and arguments under a grammar.
 | `agents/agent_tools.{h,cc}` | pure: when to list, the list and call scripts and their parsers, which tools are offered, input schema conversion, the arguments' schema and their check, when a call asks, the TOOLS and TOOL RESULT text |
 | `agents/agent_actions.{h,cc}` | CALL_TOOL: `Observation::tools`, `AddSiteTools()`, the schema branch, `ParseAction()` |
 | `agents/agent_prompt.{h,cc}` | CALL_TOOL's rules, only when the page has tools |
-| `agents/site_tool_host.{h,cc}` | finding the frames whose tools count (§2.7.12), listing each document, calling a tool in the document that listed it, the polling; shared by the web agent and the chat (§4.9) |
+| `agents/site_tool_host.{h,cc}` | finding the frames whose tools count (§2.7.12, §2.7.14), listing each document, calling a tool in the document that listed it, the polling; shared by the web agent, the chat (§4.9) and Agent mode (§3.5) |
+| `agents/frame_tools.{h,cc}`, `agents/frame_tool_permissions.{h,cc}` | frames of other sites: the user's answers per (page origin, frame origin), the question, what a call may carry (§2.7.14) |
 | `agents/web_agent.{h,cc}` | listing at each observation, the call |
 | `agents/agent_features.{h,cc}`, `agent_about_flags.h` | `chrome://flags/#molt-agent-site-tools` |
 
@@ -583,7 +589,7 @@ at all:
 
 | Rule | Why |
 |---|---|
-| only a document's own tools (`window` its own, `origin` its own; no `fromOrigins`), from the main document and from frames of exactly its origin (§2.7.12) | the agent acts on the page it is on; a cross-origin frame's tool, or another origin's, is another site |
+| only a document's own tools (`window` its own, `origin` its own; no `fromOrigins`), from the main document and from frames of exactly its origin (§2.7.12), and from a frame of another site only once the user allowed it on this page (§2.7.14) | the agent acts on the page it is on; a cross-origin frame's tool, or another origin's, is another site, which the user decides on |
 | the name follows Blink's rule (`[A-Za-z0-9_.-]{1,128}`) | a renderer that sends anything else is not Blink |
 | a description of 1-4096 characters, not blank; an input schema of at most 8 KiB in the subset (§2.7.7) | |
 | a tool named like a password, with an argument named like one (`agent_safety::ClassifySelector`: `password`, `pwd`, `passwd`, ...), or a `<form toolname>` with a password field (by type or `autocomplete`), a file field or more than 64 controls: **never offered** | the agent never types a password (§2.1), and a declarative tool fills password fields (§2.7.1) |
@@ -760,7 +766,10 @@ whatever the agent does. The same holds for a same-origin frame's tools
 (§2.7.12) and for the chat's tool proposals (§4.9): the frame is the
 page's own document, loaded through the same context, listed and called
 in its own isolated world with the same scripts, and the chat decides
-with the on-device model only, in its own window.
+with the on-device model only, in its own window. A frame of another
+site never offers its tools in MoltNet windows (§2.7.14): MoltNet's
+profile has no frame-tool permissions at all, and the agent, the chat and
+Agent mode check the profile before they list one.
 
 #### 2.7.11 The switch
 
@@ -826,21 +835,13 @@ The user sees that region as the other site's (an ad, a widget), but an
 approval would present the tool as the main site's. The main document's
 own frames are the site's choice; these are a third party's.
 
-**Cross-origin frames: never**, even when they expose tools to the top
-origin. `exposedTo` is the frame's consent to the top page, not the
-user's to the frame: the user started the agent on the main site, and the
-run's scope is origins (§2). A third-party widget (an ad, a chat, a
-payment or social embed) would get to offer actions to the agent, and its
-descriptions and answers would reach the model as the page's. Turning it
-on would take: listing with `getTools({fromOrigins: [the frame's
-origin]})` (only what the frame exposed to the top) or in the frame's own
-world; the frame's origin joining the run's sites only when the user
-allows it (CONTINUE, as for a navigation there), and shown as its own site
-in TOOLS, the trace and every approval, never as the main site's; every
-call asking, read-only or not (the hint is a third party's word to a run
-the user didn't start there); in the chat, only an origin the user wrote;
-and a run on the build machine with out-of-process frames (a cross-origin
-frame has its own renderer and isolated world).
+**Cross-origin frames: only once the user allows them** (§2.7.14).
+`exposedTo` is the frame's consent to the top page, not the user's to the
+frame: the user started the agent on the main site, and the run's scope
+is origins (§2). A frame of another site that the main site embeds is
+listed only after the user allows that frame's origin on the main
+document's origin, is named with its own origin everywhere it shows, and
+every call of one of its tools asks, read-only or not.
 
 **Identity.** A tool is its frame and its name: names are unique per
 document only, so two frames may each have `search`. The browser numbers
@@ -933,6 +934,142 @@ tool listed without it could be called after the page set it, and its
 answer would reach the model without the site's warning that it may hold
 other people's content (§2.7.9). The comparison now covers every field the
 agent read when it listed the tool.
+
+#### 2.7.14 Frames of other sites
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run against a WebMCP trial page with a cross-origin frame
+(BUILD_MACHINE_CHECKLIST, "agent-replay"). Before, a frame of another site
+never offered its tools (§2.7.12). Now it can, on a page whose site embeds
+it, once the user has allowed that frame's origin on that page's origin.
+
+**What 156 has** (§2.7.1, §2.7.12): a frame of another origin can use
+WebMCP only if its embedder delegates the `tools` permissions policy
+(`allow="tools"`); its tools belong to its own document. Another
+document of the page sees them only if it names the frame's origin in
+`getTools({fromOrigins})` and the frame listed that document's origin in
+`exposedTo`, and then calls them through the browser, which routes the
+call to the frame. A script of the frame's own document (an isolated
+world included) sees them as a same-origin caller does.
+
+**Choices:**
+
+| Option | Taken? |
+|---|---|
+| list through the main document's world with `getTools({fromOrigins})`: only what the frame exposed to the main origin | no: the frame's names, descriptions and answers would pass through the main site's renderer, and `exposedTo` is the frame's consent to the main site's scripts, not the user's to the agent |
+| list and call in the frame's own isolated world (its own renderer, out of process), only after the user allows the pair | **yes**: nothing of one frame passes through the other's renderer; the browser reads each frame's answers itself; the user decides |
+| allow a frame origin everywhere ("trust widget.example") | no: a widget allowed on one page would offer tools on every page that embeds it, including one built to steer the model into it |
+| allow by site (eTLD+1) instead of origin | no: the agent's scope is origins everywhere (§2); subdomains of a site can be different parties (user content hosts) |
+
+**Which frames** (`agent_tools::CrossOriginToolFrames()`, pure): a direct
+child of the main document or of one of its same-origin tool frames
+(§2.7.12), so the main site itself put it there; in the page (active,
+live, not a fenced frame or a guest view); an http(s) origin other than
+the main document's (any difference: another site, a subdomain, a port,
+http vs https), never opaque; with the `tools` policy
+(`RenderFrameHost::IsFeatureEnabled(kTools)`), so the embedder delegated
+it; at most 4. Never a frame inside another site's frame, whatever its
+origin. At call time `IsCrossOriginToolFrameChain()` checks the same of
+the frames from the main document to it, as they are then.
+
+**The permission** is per (main origin, frame origin) pair, never global
+(`agents/frame_tools.*`, pure; `agents/frame_tool_permissions.*`, a
+profile's `KeyedService`):
+
+| Answer | Kept |
+|---|---|
+| Not now | for the rest of the run: the run doesn't ask about that pair again; the frame's tools stay out |
+| This session | in memory, until the browser quits |
+| Always here | in the regular profile's prefs (`molt_ai.agent.frame_tools_allowed`, a list, not synced): at most 256 pairs, 16 frame origins per main origin, read back only as canonical serialized origins; removed by the studio's "Forget", Clear browsing data ("Site settings", by either origin, in the time range) and a profile reset |
+
+Incognito and the Guest session have their own service, in memory only,
+starting empty, and are never offered "Always". MoltNet's profile has
+none: another site's frame's tools are never listed there.
+
+**The flow** in the web agent:
+
+```
+each observation: SiteToolHost::List(main document, origin, OtherSites)
+  OtherSites.listed = the frame origins allowed on this origin
+  OtherSites.count_others = true (there is someone to ask)
+  the main document and its same-origin frames      listed (§2.7.12)
+  allowed frames of other sites                     listed, in their own
+                                                    isolated world
+  the other candidate frames                        counted only:
+    BuildToolListScript, then BuildToolCountPollScript -> {count}
+    (names and descriptions never leave the frame's renderer)
+OnSiteToolsListed: counted frames with tools, not yet asked in this run
+  -> FRAME_TOOLS question, one per frame origin, the run waits:
+     "https://widget.example, a frame on https://shop.example, offers 3
+      tools. Let the agent see them on https://shop.example? It asks you
+      before each call."  [Not now] [This session] [Always here]
+  -> an answer that allows: listed again, with that frame
+  -> otherwise: the first listing as it was
+```
+
+"This session" and "Always here" count only with the click's transient
+user activation in the chat page (`ConsumeTransientUserActivation()`);
+without it the answer is "Not now". "Not now" never stops the run.
+
+**Once allowed**, the frame's tools are offered by the rules of §2.7.6,
+with these differences:
+
+- *Named with the frame's origin*, the browser's, never page text:
+  `search in frame 2 from https://widget.example` in TOOLS, the step trace
+  and the TOOL RESULT (`another site's tool ...; that site wrote it`).
+- *Every call asks*, read-only or not, and the approval names both sites:
+  `Run https://widget.example's tool "search" in its frame
+  https://widget.example/w on https://shop.example — it is another site's
+  tool, with q = "x"`. TOOLS shows such a tool as `[asks the user first]`.
+- *No secrets go to it*: a call whose arguments look like a secret
+  (`frame_tools::ArgumentsLookSecret()`: an argument named like a
+  password, PIN, card number, code or key; a value that looks like a
+  password, a key, a card number, a one-time code, an SSN or an IBAN,
+  hidden characters ignored) is refused with a fixed note, in the agent,
+  the chat and Agent mode alike.
+- *No card or code tools*: a tool of another site's frame that takes a
+  payment card or a one-time code is never offered
+  (`MayOfferCrossOriginTool()`).
+- *The same document*: a call runs only in the document that listed the
+  tool, at the frame's origin, the frames to it still counting, and the
+  script checks the document's mark, the frame's `location.origin` and
+  the tool as listed (§2.7.9, §2.7.13).
+
+**The chat** (§4.9) lists the frames the user allowed on the page and no
+others; it never asks, nor counts. Its proposals name both sites, always
+wait for the click (as every tool proposal does) and refuse secret-looking
+arguments.
+
+**Agent mode** (§3.5): a call the user allowed in the chat while recording
+becomes a step with its frame's origin and path. At replay the runner
+lists that frame's tools (only the browser reads them, to find the tool
+and check it), always asks, naming both sites, refuses secret-looking
+arguments, and never runs such a step in MoltNet. The pair needn't be
+allowed for this: the step's question is about the very call.
+
+**Judgement calls.**
+
+1. *Allowing a pair lists the tools; it never lets a call skip asking.*
+   A read-only hint from another site's frame is that site's word to a run
+   the user started elsewhere, and a call carries text the model wrote
+   from the main site's pages to the other site. Asking shows the user
+   exactly what goes there. This is stricter than "read-only runs unasked
+   once the pair is allowed", and it stays that way after "Always".
+2. *Counting before asking*: the question appears only when the frame
+   offers at least one tool, and a count is all the browser learns before
+   the user decides.
+3. *The run waits for the answer*, rather than asking on the side: an
+   answer arriving mid-step would change the TOOLS list under the model.
+4. *A frame's `exposedTo` isn't consulted.* It governs which other
+   documents of the page see the tool; the agent calls from the frame's
+   own document, as the browser's agent, and the user's answer is the
+   consent that matters here.
+
+**Upstream hooks** (one line each, marked `// MoltBrowser:`):
+`chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc`
+(builds the factory, which registers the pref),
+`chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc`
+("Site settings") and `chrome/browser/profile_resetter/profile_resetter.cc`.
 
 ### 2.8 Planner
 
@@ -1416,21 +1553,19 @@ workflow as stored; a workflow deleted meanwhile stays deleted.
 #### 2.9.4 Site tools (CALL_TOOL)
 
 A run in which a site's tool (WebMCP, §2.7) ran isn't saved; the agent bar
-says so. Adding a workflow step for it was the alternative, and the less
-safe one:
+says so. Recorded workflows now have site-tool steps (§3.5): the runner
+lists and calls tools, checks their schema again, and asks the user in
+the middle of a run. A draft still leaves them out, because what a
+recording keeps is a call the user chose and approved while recording,
+and a draft's would be the model's:
 
 - A tool is the page's code with the page's effects, defined by the page
-  when it is called; its name, description and schema can change between
-  runs, so "the same call" may not be the same action.
-- The agent asks the user before any tool that the page doesn't mark
-  read-only (`CheckToolCall`). The runner has no approval in the middle of
-  a run: such a step would always stop, or would need trust to run
-  silently, a new capability for a call the model chose.
-- Replay would need the listing, calling and polling of §2.7 inside the
-  runner, and a step type that every workflow tool (the studio's editor,
-  `molt://ai-automation`, the scheduler, imports) would have to understand.
+  when it is called; the agent picked the tool and its arguments from
+  page text, and the user approved a call (or none, for a read-only one)
+  without knowing it would become a workflow.
 - Its arguments are the model's and may carry what the user typed in the
-  goal, so they would need their own scrubbing.
+  goal, so they would need the draft's scrubbing (§2.9.3) for structured
+  values, which it doesn't have yet.
 
 A tool call that failed changed nothing the draft relies on and doesn't
 block the save.
@@ -1542,9 +1677,9 @@ available in MoltNet windows…" instead of a button.
 
 #### 2.9.9 Not done
 
-- **Fallback selectors.** The recorder stores several (`data-testid`,
-  `name`, `aria-label`, an id-anchored path); the agent's snapshot builds
-  one. Capturing more would take another page script per action.
+- **Fallback selectors** are done: a draft's element steps keep the
+  fallback locators the agent captured for the element it acted on, on
+  the same origin (§3.4).
 - **Opening the draft in the editor directly.** The studio opens on its
   library, where the new draft is first and badged.
 - **Checking the result at replay.** The agent's DONE text isn't stored, so
@@ -1653,6 +1788,156 @@ fail) asks for `{"selector": "..."}`, 1-200 characters. The reply must be
 that single key, one line, no control characters; ends are trimmed.
 Anything else is no selector (the step fails as before). A selector found
 this way still goes through the element probe and the workflow policy.
+
+### 3.4 Fallback locators
+
+Status: implemented (October 2026), pending a compile on the build machine
+and runs against real sites (BUILD_MACHINE_CHECKLIST, "agent-replay").
+When a site changes its markup, a recorded selector can stop finding its
+element. Each element step (click, type, select, a recorded password
+field) now keeps a small ordered set of **locators** for the same element,
+captured when it was recorded, and the runner tries them when the
+recorded selector finds nothing.
+
+| File | What |
+|---|---|
+| `automation/automation_locators.{h,cc}` | pure: the stored block, its caps and parser, the capture, probe and pin scripts and their parsers, the decision |
+| `automation/automation_script.*` | `Step::locators` (`"locators"` in a `.molt` file, optional) |
+| `automation/automation_recorder.cc` | the capture, in the recorder's page script, for each click and type |
+| `agents/web_agent.cc`, `automation/agent_run_draft.*` | the capture of the element an agent step acted on, kept in a draft (§2.9) |
+| `automation/automation_runner.cc` | probe, decide, pin, ask, log |
+| `automation/run_questions.*` | the run's questions to the user, answered in the studio |
+
+**The stored block:** `{"origin": "https://shop.example", "element":
+{"tag": "button", "type": "", "role": "button"}, "field": "password"
+(only for a credential, card or code field), "list": [{"by": "role",
+"role": "button", "value": "Add to cart"}, {"by": "label", ...}, {"by":
+"attr", "name": "data-testid", "value": "add"}, {"by": "text", ...},
+{"by": "path", "value": "main>div:nth-of-type(2)>button"}, ...]}`. At most
+8 locators; a value at most 120 characters, a path 512 bytes and 12 steps,
+a tag or role 32, an origin 256. Attributes: strong ones (`id`, `name`,
+`data-testid`, `data-test`, `data-cy`, `data-qa`) and weak ones
+(`aria-label`, `placeholder`, `title`, `alt`); an id with three or more
+digits (generated) isn't kept. The capture never reads a field's value
+(only a button input's label). Everything is page text: the parser checks
+every entry and drops a bad one alone, at most 32 entries looked at; a
+block that isn't well formed is dropped, never the step. Old `.molt`
+files have no block and load as before.
+
+**Matching** (`locators::Decide()`): the probe script lists, for each
+locator, the elements it finds (at most 5,000 nodes scanned, 32
+candidates, 8 matches a locator), with each element's kind and field
+class. An element counts only if:
+
+- it is **the same kind**: tag, the input type's class and role;
+- it is **the same field class**: a credential, card or code field only
+  for a step recorded on one, and never for any other step;
+- it is **on the recorded origin**: the probe reports the page's origin,
+  and the decision takes nothing unless both that and the tab's committed
+  origin are the block's; the action then runs only on the element pinned
+  in that same document (below), which a document loaded since doesn't
+  have.
+
+The first locator, in recorded order, that finds exactly one element that
+counts decides. A strong one (role and name, label, a strong attribute)
+is used, unless a later strong one finds a different element (a
+conflict, which asks). A weak one (text, path, a weak attribute) **asks
+the user** in the studio: "The step “Click "Add to cart"” couldn't find
+its element as recorded: the page has changed. The closest match is the
+button “Add to cart”, found by its text. Use it?" with "Use it" and "Stop
+the run"; 120 seconds, then the step fails. Only a real click answers
+(`ConsumeTransientUserActivation()`). A step without a block keeps the old
+ladder (recorded fallbacks, the text anchor, selector recovery) as before.
+
+**Acting on the element found:** the runner marks it in the agent's
+isolated world with an unguessable token (`data-molt-pick`, removed after
+the action), and the action script checks that the element it finds by
+that mark is the one the isolated world pinned, so a page can't move the
+mark to another element in between.
+
+**The log:** each step's result records what found its element (`"by"`:
+"the recorded selector", "its role & name (a fallback)", "the on-device
+AI's suggestion", ...), the Runs view shows it, and the audit log has a
+`step_located` entry. The editor says what else a step looks for ("If the
+page changes, it also looks for it by its role & name, data-testid,
+text."), by kind only, as text.
+
+### 3.5 Site-tool steps
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run against a page in the WebMCP trial (BUILD_MACHINE_CHECKLIST,
+"agent-replay"). A recording now keeps a site-tool call the user allowed
+during the recording as a step, and replay calls the tool again when it
+is still the same tool, on the same origin, and the workflow's policy
+allows it.
+
+| File | What |
+|---|---|
+| `automation/automation_tool_steps.{h,cc}` | pure: building the step from the call, reading it back with caps, finding the tool again, the compatibility check, when to ask |
+| `automation/automation_script.*` | `StepType::CALL_TOOL` (`"call_tool"`) |
+| `automation/automation_recorder*.cc` | the step, from a call the AI chat ran in the recorded tab |
+| `ui/webui/molt_ai/molt_ai_chat_handler_actions.cc` | hands the call that ran to the tab's recorder |
+| `automation/automation_runner.cc` | listing, the checks, the question, the call |
+| `ui/webui/molt_ai/molt_ai_agent_ui.cc` | the step in the editor and the run's question |
+
+**Recording.** The only way a site's tool runs in a tab is the AI chat's
+proposal and the user's click on it (§4.9). When that tab is being
+recorded and the call ran (it answered, or loaded another page), it
+becomes a step:
+
+```json
+{"type": "call_tool", "target": "add_to_cart",
+ "description": "Run the site's tool “add_to_cart” on shop.example",
+ "extra": {"host": "shop.example", "tool": {
+   "origin": "https://shop.example",
+   "frame": {"origin": "https://widget.example", "path": "/cart"},
+   "args": {"id": "A1", "qty": 2, "note": "{{tool_note}}"},
+   "secret_args": ["otp"], "read_only": false, "form": false}}}
+```
+
+`frame` only for a frame's tool, by origin and path (never its number);
+`read_only` is the page's hint as the browser read it (read-only and not
+consequential). **Secrets are never stored:** a card or code tool keeps
+none of its arguments, a card- or code-named argument is listed in
+`secret_args` without its value, and a value that looks secret
+(`agent_draft::TextLooksSecret()`), carries `{{` or is over a cap becomes
+a `{{tool_<name>}}` variable asked at each run, like a typed value a
+draft withholds (§2.9.3). Sign-in passwords stay vault references as
+before; a tool never takes one (§2.7.6). Nothing the tool answered is
+kept.
+
+**Replay** (`AutomationRunner::DoCallTool`):
+
+1. The step must read back (`ParseToolStep()`: every field checked, every
+   size capped; a `.molt` file may be imported) and `secret_args` must be
+   empty (else the step stops: "This step gives the site's tool a card
+   number or one-time code, which MoltBrowser never saves ...").
+2. The page must be on the recorded origin (waiting up to 10 s while it
+   loads), and the step policy must allow the page, as for a key press.
+3. The tool must be offered there again (`FindListedTool()`): by name, in
+   the main document, or in a frame of the recorded origin (at the
+   recorded path, else the only such frame with it); listed again every
+   500 ms for up to 10 s while the page registers its tools.
+4. It must be **compatible** (`CheckReplay()`): every recorded argument is
+   still an argument of the same kind, every argument it now requires was
+   recorded, the values (with the run's variables filled in) pass its
+   current bounds through `ReadArguments()`, and a tool that wasn't a
+   `<form>` tool hasn't become one. Else the step stops with the reason.
+5. **Asking** (`ApprovalFor()`): a tool the page marks read-only runs
+   unasked; one that may change something runs unasked only if the
+   workflow is Approved (or above) for that site; a card or code tool and
+   a tool of another site's frame always ask. The question is the web
+   agent's approval text (the tool, the site, the frame, why, every
+   argument), answered in the studio with a real click: "Allow" runs the
+   call, "Stop the run" stops the run, and no answer in 120 s fails the
+   step.
+6. The call runs once, in the document that listed the tool; a failed or
+   timed-out call is never retried, and the audit log has a
+   `site_tool_called` entry. A `<form>` tool that loads another page ends
+   the step once that page has settled.
+
+The editor shows what the step gives the tool, its frame and how many
+values weren't saved, as text, with no field to type into.
 
 ## 4. The AI chat's page actions
 
@@ -1962,7 +2247,10 @@ and confirmed like any other chat action.
 1. **Listing.** After the element snapshot of a typed request (never a
    form fill), with `#molt-agent-site-tools` on, `SiteToolHost` lists the
    tools of the observed document and of its frames of exactly the same
-   origin (§2.7.12), in the chat's own tab, with the web agent's scripts.
+   origin (§2.7.12), and of the frames of other sites the user allowed on
+   this page (§2.7.14; the chat never asks itself), in the chat's own
+   tab, with the web agent's scripts. A tool the user allows while the tab
+   is being recorded becomes a workflow step (§3.5).
    `chat_actions::AddChatSiteTools()` offers them by the web agent's
    rules (§2.7.6: which tools, the 8 cap, a name once per frame, schema
    conversion §2.7.7), each kept only if the chat's schema with it
@@ -2198,10 +2486,22 @@ choosing; a frame (or the main document) that navigates, or a frame host
 that gets a new document, between the listing and the call; a frame whose
 `name`, `title` or tool names try to pass for another's.
 
-- *Another site's tools never reach the model.* Only frames of exactly
-  the main document's origin count, and only if every frame above them
-  does; inner pages (fenced frames, guest views) and other pages
-  (prerendering) never do. `exposedTo` changes nothing.
+- *Another site's tools reach the model only once the user allowed that
+  frame's origin on this page* (§2.7.14), and then named as another
+  site's, every call asking and naming both sites. Before that, only a
+  count of its tools reaches the browser. Same-origin frames count only if
+  every frame above them does; inner pages (fenced frames, guest views)
+  and other pages (prerendering) never do. `exposedTo` changes nothing.
+- *A frame of another site* (an ad, a widget) can't get the main site's
+  secrets through a call (secret-looking arguments are refused), can't
+  take a card or a code (such tools aren't offered), can't skip the
+  question with a read-only hint, and can't keep its permission by
+  navigating: the permission is the pair of origins, and a frame that
+  moves to another origin is undecided again. What remains: the user may
+  allow a pair carelessly; once allowed, page text can steer the model to
+  that frame's tools, each call still asking; and the frame's answers
+  reach the model fenced and labelled as that site's, as misleading as it
+  chooses.
 - *A tool runs where it was listed.* The browser pins the document and
   re-checks the frame chain at call time; the script checks the
   document's unguessable mark, which a new document can't have and the
@@ -2314,12 +2614,13 @@ the draft is built to be harmless until a person has looked at it:
     page belongs to the chat's workstream this round.
   - *Other sites' images, videos and canvases* aren't masked (§5.1).
 - **Site tools (§2.7):**
-  - *Tools of cross-origin frames* (`exposedTo` / `fromOrigins`), and of
-    same-origin frames inside them: never listed. What turning it on would
-    take is in §2.7.12. Frames of exactly the main document's origin are
-    listed (§2.7.12); their elements are not (the snapshot is still the
-    main document's, so a frame's tools can be called, its buttons not
-    clicked).
+  - *Tools of cross-origin frames* are listed only once the user allows
+    the pair (§2.7.14); frames inside another site's frame, and the
+    same-origin frames inside them, never are. The chat never asks about
+    a frame itself: the web agent does. Frames of exactly the main
+    document's origin are listed (§2.7.12); no frame's elements are (the
+    snapshot is still the main document's, so a frame's tools can be
+    called, its buttons not clicked).
   - *A form tool's answer on the next page* (`application/ld+json`): the
     page is observed instead.
   - *`toolchange`*: not listened for, on purpose (§2.7.13); the list is
@@ -2333,9 +2634,10 @@ the draft is built to be harmless until a person has looked at it:
     the agent sees no tools there until the next document.
   - *Stopping a call that timed out*: in 152 `executeTool`'s signal only
     rejects the caller's promise; nothing reaches the tool.
-  - *Agent mode*: recorded workflows don't replay tools (§2.9.4). The
-    chat proposes one tool call per request (§4.9); it never sees the
-    answer, so it can't chain calls.
+  - *Agent mode*: recorded workflows replay the calls the user allowed
+    while recording (§3.5); drafts saved from agent runs leave them out
+    (§2.9.4). The chat proposes one tool call per request (§4.9); it never
+    sees the answer, so it can't chain calls.
   - *Turning WebMCP on for every page*, and a per-tool "always allow".
   - *A run against a real page in the trial*, and whether small models pick
     tools well, need the build machine.
@@ -2345,6 +2647,46 @@ the draft is built to be harmless until a person has looked at it:
 ## 7. Tests
 
 For the planner, see §2.8.7; for saved runs, §2.9.8.
+
+For fallback locators (§3.4), site-tool steps (§3.5) and frames of other
+sites (§2.7.14):
+
+- `automation/automation_locators_unittest.cc`: kinds and type classes,
+  the stored block's round trip, malformed blocks and entries (each
+  dropped alone), the caps, paths, capture reports and lists, every
+  decision (strong, weak, conflict, none, another kind, a credential field
+  for an ordinary step and the reverse, another origin), probe reports,
+  scripts quoting page data as JSON, labels cleaned, the question's text,
+  old and new `.molt` files.
+- `automation/run_questions_unittest.cc`: asking, answering only for the
+  workflow asked, withdrawing, the newest pending, the text cap.
+- `automation/automation_tool_steps_unittest.cc`: a recorded call becomes
+  a step; secrets never stored (card and code tools and arguments,
+  secret-looking values, template braces, over-cap values); calls that
+  aren't the tool's refused; frames by origin and path; malformed steps
+  refused; finding the tool (main document, its frame, another site's
+  frame only as such); compatibility (every `Compat` case); when to ask
+  (read-only, Approved, form, consequential, card, another site's frame).
+- `agents/frame_tools_unittest.cc`: pair origins (the serialized form
+  only); the permission matrix (per pair; another page, another frame, the
+  pair reversed, another subdomain, scheme or port: not allowed);
+  session and always; refusals; removal; the caps; the stored list read
+  back (each malformed entry dropped, duplicates, caps); the question; the
+  answers; secret-looking arguments.
+- `agents/agent_tools_unittest.cc`: which frames of other sites count
+  (embedded by the main site, the `tools` policy, another web origin, not
+  inside another site's frame, not out of the page, capped), the chain at
+  call time, labels, the approval naming both sites and always asking,
+  card and code tools never offered, the count poll.
+- `agents/chat_actions_unittest.cc`: a proposal of another site's frame's
+  tool names both sites, asks, and refuses a secret-looking argument.
+- Fuzzers: `molt_automation_locators_fuzzer`,
+  `molt_automation_tool_steps_fuzzer`, `molt_frame_tools_fuzzer`.
+- `tools/webui_checks`: `automation_locators_test.js` (the capture, probe
+  and pin scripts in jsdom on hostile pages), `agent_tools_test.js` (the
+  count poll), and the smoke test (the editor's locator note and tool
+  step, the run's question, "Found by", the studio's list of allowed
+  frames and "Forget", the chat's FRAME_TOOLS chip).
 
 **In `molt_ai_unittests`:**
 
