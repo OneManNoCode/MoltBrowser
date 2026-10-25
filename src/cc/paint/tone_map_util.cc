@@ -19,6 +19,7 @@
 #include "third_party/skia/include/effects/SkRuntimeEffect.h"
 #include "third_party/skia/include/private/SkHdrMetadata.h"
 #include "ui/gfx/color_space.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #include "ui/gfx/hdr_metadata.h"
 
 namespace cc {
@@ -106,7 +107,9 @@ ToneMapInfo ComputeToneMapInfo(const skcms_TransferFunction& fn,
   // linear, while ToneMapInfo headrooms are in log2 stops.
   if (metadata.extended_range) {
     info.baseline_headroom = info.min_headroom = info.max_headroom =
-        std::log2(std::max(metadata.extended_range->current_headroom, 1.f));
+        // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+        gfx::molt_math::Log2(
+            std::max(metadata.extended_range->current_headroom, 1.f));
     return info;
   }
 
@@ -115,7 +118,9 @@ ToneMapInfo ComputeToneMapInfo(const skcms_TransferFunction& fn,
   DCHECK(fn_type == skcms_TFType_PQ || fn_type == skcms_TFType_HLG);
   float peak_luminance = gfx::HDRMetadata::GetContentMaxLuminance(metadata);
   if (peak_luminance > hdr_reference_white) {
-    info.baseline_headroom = std::log2(peak_luminance / hdr_reference_white);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    info.baseline_headroom =
+        gfx::molt_math::Log2(peak_luminance / hdr_reference_white);
     info.max_headroom = info.baseline_headroom;
   }
   return info;
