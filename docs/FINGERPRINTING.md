@@ -2698,8 +2698,10 @@ Shields off, and the kill switch turns it off.
   any blocked, `NotAllowedError` (`PERMISSION_DENIED`); dismissed or
   ignored, `NotAllowedError` (`PERMISSION_DISMISSED`), as a request a
   device could meet ends. Before an answer, the two machines look the
-  same: a prompt, and a promise that waits for it. Screen capture and
-  other failures are unchanged.
+  same: a prompt, and a promise that waits for it. Other failures are
+  unchanged; screen, window and tab capture are refused outright in
+  MoltNet ([what a page reads back without
+  noise](#what-a-page-reads-back-without-noise)).
 * **`devicechange`** fires only for a page that may use the devices
   (Chromium's own rule behind `DeviceChangeRequiresPermission`, kept in
   MoltNet whatever the feature's state), so plugging in headphones or a
@@ -3472,6 +3474,22 @@ features](#moltnet-cpu-features)) and with the portable functions above,
 so the result is the same on every machine. (`ImageDecoder` frames are
 decoded pixels, not drawn ones: [pixels and encoded
 bytes](#moltnet-pixels-and-encoded-bytes).)
+
+MoltNet windows offer no screen, window or tab capture: with no WebRTC
+there, a capture has nowhere to go. `getDisplayMedia()` (with
+`preferCurrentTab` too), `getAllScreensMedia()` and `getUserMedia()`'s
+`chromeMediaSource` forms reject as a user's Cancel in the picker does,
+with `NotAllowedError` "Permission denied by user", and no picker opens;
+`navigator.permissions` reports `display-capture` as `denied` in windows
+and workers. The renderer answers without asking the browser
+(`UserMediaProcessor`, `core/molt_net/molt_net_renderer.h`), and the
+browser refuses such a request from a MoltNet profile before any handler
+sees it (`MediaCaptureDevicesDispatcher`,
+`chrome/browser/molt_ai/fingerprinting/molt_net_display_capture.h`). Like
+WebRTC this follows the profile, not the fingerprinting protection's
+switch; normal and Incognito windows are unchanged. (`CropTarget` and
+`RestrictionTarget` still make their tokens; with no capture they apply to
+nothing.)
 
 **What was already the same.** Measured with Chromium 156's code, built
 with Chromium's compiler and flags for x86-64 and arm64:

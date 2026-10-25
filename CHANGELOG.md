@@ -375,9 +375,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   web fonts' rotated layers and HDR gain maps that the browser draws or
   measures on the CPU use that library too, so where a click lands, a
   path's length and the text around a shape are the same on every
-  processor and system. Drawing speed is unchanged within measurement
-  (`docs/FINGERPRINTING.md`, "MoltNet: portable math"); regular and
-  incognito windows are unchanged.
+  processor and system. MoltNet windows also offer no screen, window or
+  tab capture (there is no WebRTC to send it over): `getDisplayMedia()`
+  is refused as if the user cancelled, without a picker, and the
+  `display-capture` permission reads "denied". Drawing speed is unchanged
+  within measurement (`docs/FINGERPRINTING.md`, "MoltNet: portable math");
+  regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
