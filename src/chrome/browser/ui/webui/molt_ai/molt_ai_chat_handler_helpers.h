@@ -90,6 +90,23 @@ inline std::optional<std::string> BoundedStringArg(const base::ListValue& args,
   return std::nullopt;
 }
 
+// ---- The user's click ----
+//
+// A message that allows something (an agent's "Allow", running a proposal
+// the user confirmed, changing a workflow's trust, confirming its sites,
+// saving a run) counts only with the click itself: the WebUI frame's
+// transient user activation, which its script can't make up (the click's
+// activation reaches the browser before the message: the WebUI pipe is
+// frame-associated). The activation is consumed, so one click allows one
+// thing: a script that sends several such messages after one click (on
+// the button, or anywhere else on the page) gets one of them through at
+// most. |frame| is the WebUI's RenderFrameHost (or null); anything with
+// ConsumeTransientUserActivation(). Nothing is consumed unless |allow|.
+template <typename Frame>
+[[nodiscard]] bool ConsumeUserClick(bool allow, Frame* frame) {
+  return allow && frame && frame->ConsumeTransientUserActivation();
+}
+
 // ---- The chat's window ----
 //
 // The window a chat acts in (its page actions and slash commands, the web

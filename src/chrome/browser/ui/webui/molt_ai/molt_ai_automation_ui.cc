@@ -477,9 +477,10 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     base::DictValue result;
     // Trust changes need a real click on the trust panel (the WebUI message
     // pipe is frame-associated, so the click's activation reaches the
-    // browser first), as in the agent studio.
-    content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
-    if (!rfh || !rfh->HasTransientUserActivation()) {
+    // browser first), as in the agent studio; one click, one change
+    // (ConsumeUserClick()).
+    if (!molt_ai::chat_handler_helpers::ConsumeUserClick(
+            true, web_ui()->GetRenderFrameHost())) {
       result.Set("success", false);
       result.Set("error", "Click the button to change trust");
       ResolveJavascriptCallback(base::Value(callback_id),

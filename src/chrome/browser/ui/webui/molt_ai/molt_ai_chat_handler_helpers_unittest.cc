@@ -227,6 +227,48 @@ TEST(ChatWindowTest, TheChatIsNeverItsOwnTarget) {
   EXPECT_EQ(ChatActionTarget(static_cast<int*>(nullptr), &chat), nullptr);
 }
 
+// A frame with transient user activation, as content::RenderFrameHost has
+// it: a click gives it, consuming takes it.
+struct FakeClickFrame {
+  bool active = false;
+  int consumed = 0;
+  void Click() { active = true; }
+  bool ConsumeTransientUserActivation() {
+    const bool was = active;
+    active = false;
+    consumed += was ? 1 : 0;
+    return was;
+  }
+};
+
+TEST(UserClickTest, AnAllowCountsOnlyWithTheClick) {
+  FakeClickFrame frame;
+  EXPECT_FALSE(ConsumeUserClick(true, &frame));
+  frame.Click();
+  EXPECT_TRUE(ConsumeUserClick(true, &frame));
+  EXPECT_FALSE(ConsumeUserClick(true, static_cast<FakeClickFrame*>(nullptr)));
+}
+
+TEST(UserClickTest, OneClickAllowsOneThing) {
+  FakeClickFrame frame;
+  frame.Click();
+  // A script that sends a second Allow after the user's one click (or an
+  // Allow after a click on something else, then another) gets one through.
+  EXPECT_TRUE(ConsumeUserClick(true, &frame));
+  EXPECT_FALSE(ConsumeUserClick(true, &frame));
+  EXPECT_EQ(frame.consumed, 1);
+  frame.Click();
+  EXPECT_TRUE(ConsumeUserClick(true, &frame));
+}
+
+TEST(UserClickTest, ADenialLeavesTheClick) {
+  FakeClickFrame frame;
+  frame.Click();
+  EXPECT_FALSE(ConsumeUserClick(false, &frame));
+  EXPECT_TRUE(frame.active);
+  EXPECT_EQ(frame.consumed, 0);
+}
+
 }  // namespace
 }  // namespace chat_handler_helpers
 }  // namespace molt_ai
