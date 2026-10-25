@@ -81,6 +81,7 @@ fuzzer_test("molt_web_ai_conversation_fuzzer") {
   sources = [ "molt_web_ai_conversation_fuzzer.cc" ]
   deps = [
     "//base",
+    "//chrome/browser/molt_ai/runtime:model_audio",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/web_ai:logic",
   ]

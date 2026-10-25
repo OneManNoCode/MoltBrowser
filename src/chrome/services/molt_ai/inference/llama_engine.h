@@ -18,6 +18,9 @@
 // Image input (section 10 of the design): with a vision projector loaded
 // (a second GGUF, through llama.cpp's multimodal library), user turns may
 // carry images as raw RGB pixels within engine/image_input.h's bounds.
+// Audio input (section 13): with a projector that has an audio encoder,
+// user turns may carry audio clips as 16 kHz mono 16-bit PCM within
+// engine/audio_input.h's bounds.
 //
 // Never logs prompt or response text (it doesn't log at all; llama.cpp's own
 // log goes through the service's llama_log_set callback).
@@ -82,8 +85,9 @@ struct EngineLoadParams {
   // Upper bound on n_ctx; 0 = none.
   uint32_t max_context_tokens = 0;
   bool allow_cpu_repack = true;
-  // Size of the vision projector file passed to Load() (0 = none); a file of
-  // another size is refused.
+  // Size of the projector file passed to Load() (0 = none); a file of
+  // another size is refused. It may hold an image encoder, an audio encoder
+  // or both.
   uint64_t vision_projector_size = 0;
   // This process's limit on anonymous memory (RLIMIT_DATA on Linux, the job
   // memory limit on Windows); 0 = none known (macOS).
@@ -164,8 +168,10 @@ enum class EngineLoadStatus {
   // An x86-64 CPU below every kernel level llama.cpp is built for
   // (x86-64-v2: SSE4.2, POPCNT; design section 12).
   kUnsupportedCpu,
-  // The vision projector isn't one llama.cpp's multimodal library can load
-  // for this model (wrong size, not a projector, made for another model).
+  // The projector isn't one llama.cpp's multimodal library can load for
+  // this model (wrong size, not a projector, made for another model), or it
+  // has neither an image encoder nor an audio encoder taking
+  // kAudioSampleRate.
   kInvalidVisionProjector,
 };
 
@@ -181,6 +187,9 @@ struct EngineModelDescription {
   std::string cpu_kernels;
   // A vision projector is loaded: user turns may carry images.
   bool vision = false;
+  // The projector has an audio encoder taking kAudioSampleRate: user turns
+  // may carry audio.
+  bool audio = false;
   EngineGpuStatus gpu_status = EngineGpuStatus::kNotRequested;
   // Layers on the Vulkan GPU, the output layer counting as one (0 = none).
   uint32_t gpu_layers = 0;
@@ -208,6 +217,22 @@ struct EngineImage {
   std::vector<uint8_t> rgb;
 };
 
+// An audio clip for the model: 16-bit mono PCM at kAudioSampleRate, decoded
+// by the page's renderer and bounded by the browser
+// (engine/audio_input.h); Chat() checks it again. Untrusted content, like
+// page text.
+struct EngineAudio {
+  EngineAudio();
+  explicit EngineAudio(std::vector<int16_t> samples);
+  ~EngineAudio();
+  EngineAudio(EngineAudio&&);
+  EngineAudio& operator=(EngineAudio&&);
+  EngineAudio(const EngineAudio&);
+  EngineAudio& operator=(const EngineAudio&);
+
+  std::vector<int16_t> samples;
+};
+
 struct EngineChatTurn {
   EngineChatTurn();
   EngineChatTurn(bool from_user, std::string content);
@@ -222,6 +247,9 @@ struct EngineChatTurn {
   // A user turn's images, shown to the model before its text. Never on an
   // assistant turn.
   std::vector<EngineImage> images;
+  // A user turn's audio clips, after its images and before its text. Never
+  // on an assistant turn.
+  std::vector<EngineAudio> audio;
 };
 
 // See ChatPrompt (browser_ai_runtime.h) / mojom ChatRequest: context, history
@@ -242,6 +270,9 @@ struct EngineChatRequest {
   // The new message's images, shown before its text. At most
   // kMaxImagesPerRequest images in the request, history included.
   std::vector<EngineImage> user_images;
+  // The new message's audio clips, after its images and before its text. At
+  // most kMaxAudioPerRequest clips in the request, history included.
+  std::vector<EngineAudio> user_audio;
 };
 
 struct EngineRawRequest {
@@ -287,6 +318,9 @@ enum class EngineStatus {
   // be used again; every later request fails the same way, and the browser
   // reloads the model on the CPU.
   kBackendFailed,
+  // The request has audio and the projector has no audio encoder (or none
+  // is loaded). Nothing was generated.
+  kAudioUnsupported,
 };
 
 struct EngineSummary {
@@ -377,6 +411,8 @@ class LlamaEngine {
   bool loaded() const;
   // A vision projector is loaded.
   bool vision() const;
+  // The projector has an audio encoder taking kAudioSampleRate.
+  bool audio() const;
 
   // The GPU's pipeline cache, when pipelines were compiled since the load
   // (they compile on first use, so after a generation) or since the last
@@ -386,8 +422,9 @@ class LlamaEngine {
 
   // Chat with the model's own template (StreamChat). |callbacks| run on this
   // thread before Chat() returns. A request with images needs vision()
-  // (kImagesUnsupported otherwise) and never reuses or leaves a reusable KV
-  // prefix.
+  // (kImagesUnsupported otherwise), one with audio needs audio()
+  // (kAudioUnsupported otherwise); either never reuses or leaves a reusable
+  // KV prefix.
   EngineSummary Chat(const EngineChatRequest& request,
                      const EngineGenerationParams& params,
                      const EngineCallbacks& callbacks);
@@ -415,8 +452,8 @@ class LlamaEngine {
                         const DecodeParams& params,
                         const EngineCallbacks& callbacks,
                         EngineSummary* summary);
-  // Evaluates a prompt with images into an empty KV cache. nullopt on
-  // success, else why it stopped.
+  // Evaluates a prompt with images or audio into an empty KV cache. nullopt
+  // on success, else why it stopped.
   std::optional<EngineStatus> EvalMediaPrompt(
       const MediaPrompt& media,
       const EngineCallbacks& callbacks);

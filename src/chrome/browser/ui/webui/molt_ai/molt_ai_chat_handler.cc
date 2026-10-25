@@ -2002,8 +2002,8 @@ bool RecordLicenseAcceptance(const base::FilePath& path,
   return true;
 }
 
-// The files of |info|'s download unit: the weights, then the vision
-// projector of a model that sees images, from the same repo and revision
+// The files of |info|'s download unit: the weights, then the projector of
+// a model that sees images or hears audio, from the same repo and revision
 // (molt_ai/models/model_download_plan.h).
 std::vector<molt_ai::models::ModelFileSpec> DownloadUnitFor(
     const molt_ai::ModelInfo& info) {
@@ -2017,7 +2017,7 @@ std::vector<molt_ai::models::ModelFileSpec> DownloadUnitFor(
   weights.sha256 = info.sha256;
   weights.size = static_cast<int64_t>(info.file_size_bytes);
   files.push_back(weights);
-  if (info.has_vision()) {
+  if (info.has_projector()) {
     molt_ai::models::ModelFileSpec projector = weights;
     projector.role = molt_ai::models::ModelFileRole::kVisionProjector;
     projector.filename = info.vision_projector_filename;

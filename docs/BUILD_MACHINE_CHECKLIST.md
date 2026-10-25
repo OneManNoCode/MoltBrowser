@@ -269,6 +269,21 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   ```
   Check both files independently the same way. The download flow fetches
   the pair as one unit since #40.
+- [ ] Audio model and its projector, pinned together (from ai-finish;
+  SANDBOXED_INFERENCE.md §13.4):
+  ```bash
+  python3 tools/models/pin_models.py --only voxtral-mini-3b                # dry run: model + mmproj
+  python3 tools/models/pin_models.py --only voxtral-mini-3b --write
+  ```
+  Check both files independently as above; the entry stays hidden
+  (`true` as its last field) until the audio check of §7.3 passes with
+  these files, then flip it to `false` by hand in the same PR as the pins.
+- [ ] Every pinned model's files have only weight types the Vulkan build
+  keeps (from ai-finish; SANDBOXED_INFERENCE.md §11.14):
+  `python3 tools/models/gguf_types.py <model>.gguf [<mmproj>.gguf]` exits 0
+  for each. A failure names the type: take it out of
+  `_ggml_vk_dropped_types` in `src/third_party/llama_cpp/BUILD.gn`, or the
+  model's operations on it run on the CPU with the GPU switch on.
 - [ ] Optional: the chat models, `python3 tools/models/pin_models.py` (dry
   run, then `--write`); hidden entries (`qwen3.5-4b`, `gemma4-e4b`) stay
   hidden. Set `HF_TOKEN` for gated repositories (from
@@ -276,7 +291,7 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 - [ ] `python3 tools/models/pin_models_test.py` passes (fails on a
   half-filled pin) and the `TODO(pin)` comments are gone (from #28, #38).
   *Recorded in* `src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc`
-  (`kModelRegistry`, `kVisionProjectors`) and
+  (`kModelRegistry`, `kProjectors`) and
   `src/chrome/browser/molt_ai/memory/embedding_model_registry.cc`.
 
 ### 2.5 The builder label
@@ -369,8 +384,8 @@ per attempt; a native x86_64 Linux box takes about 4 h (from
 Paused (CLAUDE.md). Windows-only items: `tor_control_connection.cc` on
 Windows (from #49), the LPAC process start from the NSIS install (from
 #15), the helper job object and deadline (from #16), PDFium under win32k
-lockdown (from #18), the Vulkan pre-lockdown step (from #52), Windows
-signing (§11). Once a runner exists again: give it `MOLT_BUILDER_ID` in its
+lockdown (from #18), the Vulkan pre-lockdown step (from #52; built by
+ai-finish, its test plan in §9), Windows signing (§11). Once a runner exists again: give it `MOLT_BUILDER_ID` in its
 `.env`, wipe its workspace once (the workflow's steps were reordered), and
 dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
 
@@ -510,6 +525,8 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `runtime/model_image_prep.cc` (real Skia, the data decoder), `molt_model_impl.cc`, `molt_inference_service.cc` (syntax-checked only) | | #38 |
 | `embedding_process_host`, `runtime:embedding_host`, `models:download` | | #28 |
 | `inference_process_host.cc` and its tests | | #15, #52, #53 |
+| `content/utility/utility_main.cc` (Windows block, before `LowerToken()`) and `content/utility/on_device_model/molt_gpu_inference_sandbox_win.cc`, `molt_gpu_driver_warmup.cc`, `molt_gpu_inference_buildflags` | the GPU warm-up hook; `utility_main.cc` couldn't be compile-checked (the real-header harness can't generate its ChromeOS mojoms); the Windows files were type-checked against mingw-w64 headers and stand-ins, so check `base::win::GetLoadedModulesSnapshot` and the `//base` includes with clang-cl | ai-finish |
+| `third_party/llama_cpp:ggml_vulkan` with the switch: the shader pack tool (`//third_party/brotli:enc` for the host, `:dec` in the service), the two `ggml-vulkan.cpp` blocks | built in a stub GN root only | ai-finish |
 
 ### 4.7 Blink and fingerprinting (MoltNet uniformity)
 
@@ -766,6 +783,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetSocketPoolsTest` (now 7: a site's pools for its first- and third-party keys and its sandboxed pages, fixed limits with no random room, the handshake slots on a real task environment), `MoltNetNetworkContextPolicyTest` (48 connections, keepalive limits), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (13, rewritten), `MoltNetKeepalivePartitionsTest`, `MoltNetStorageBudgetPolicyTest`, `MoltNetStorageValuesTest.EachSiteATenthOfTheTotal`, `TorrcBuilderTest.StatesTorsSharedCapacity`, `MoltNetDownloadIsolationTest` (new), `MoltNetNetworkContextPolicyTest.DownloadsKeptWithTheirSiteInMoltNetOnly` | moltnet-shared |
   | `MoltNetSocketPoolsTest` (now 11: `OnionHandshakesWeighMore`, `SessionsShareTorsBudgets`, `GreedySitesDontHoldBackAPoliteOne`, `ASitesOneOffKeysHaveAPoolOfTheirOwn`), `MoltNetCertFetchSiteTest` (new: the thread's site, a fetch's key in its site's pools, the site across the verifier service's mojo interface), `MoltNetBackgroundFetchRequestTest` (new), `MoltNetStorageTest.QuotaSettings`; built standalone only: `MoltNetSocketPoolPolicyTest` (17: the weighted slots, a site's one-off pool, requests that ignore the limits), `MoltNetStorageBudgetPolicyTest` (rewritten: the floor and the machine), `MoltNetStorageValuesTest.{EachSiteATenthOfThePool,MemoryReserve,BlobShare}`, `MoltNetBlobBudgetPolicyTest` (new), `MoltNetProcessPolicyTest` (new), `MoltNetIdentityEndPolicyTest` (new), `MoltNetDownloadIsolationTest` (now 7: retries), `MoltNetLivePolicyTest.{ExtensionsRequiredInIncognitoRefuse,ParentalControlsReadAgain}`, `TorrcBuilderTest.StatesTorsSharedCapacity` (256) | moltnet-shared2 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
+  | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `AutomationLocatorsTest`, `RunQuestionsTest`, `AutomationToolStepsTest`, `FrameToolsTest` (new), and the new cases of `AgentToolsTest` (frames of other sites, `consequentialHint`), `ChatActionsTest`, `AgentRunDraftTest` and `AutomationScriptTest` | agent-replay |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
@@ -1118,6 +1136,32 @@ WEB_AI_APIS.md §12):
   generation (from #26).
 - [ ] Once the vision model is pinned: `prompt()` with an image element, a
   canvas, a Blob, a huge photo, four images then a fifth (from #38).
+- [ ] **The audio check**, with the pinned audio model unhidden in a local
+  build (from ai-finish; WEB_AI_APIS.md §5.2, SANDBOXED_INFERENCE.md
+  §13.6). The model must pass this before its entry is unhidden in the
+  repository:
+  - download it from `molt://ai` (model and projector as one unit), allow a
+    test page, and `LanguageModel.create({expectedInputs: [{type:
+    "audio"}]})`;
+  - `prompt()` with a spoken question as a WAV `Blob`, an MP3 `Blob`, an
+    `ArrayBuffer` and a 44.1 kHz stereo `AudioBuffer`: a relevant answer
+    each time, and the inference process keeps running (a crash shows as
+    "the model stopped" and in the browser log; if it crashes, keep the
+    entry hidden and note the log);
+  - a 30 s clip answers, a 31 s clip and five clips reject with
+    `NotSupportedError`; `measureInputUsage()` of a 10 s clip with a short
+    question is about 380;
+  - the browser log's load line shows the projector loaded with audio on
+    (the pinned projector passed the service's own audio check at load: its
+    type and stacking factor on the allow-list, and 375 tokens reserved for
+    a window), and with `--v=1` the service's prompt token count for one
+    clip is 375 plus the text (the per-clip count assumes at most that);
+  - on the CPU, and with the Vulkan out dir of §9 on a GPU;
+  - `availability()` for audio: `"downloadable"` on a site not yet allowed
+    (with and without the model), `"unavailable"` on an allowed site with
+    only a text model, `"available"` with the audio model; `create()` with
+    audio while the chat's text model is loaded fails with the generic
+    error; MoltNet: unavailable.
 
 **The web agent** (from #35, #39, #45, #47, #54):
 
@@ -1914,10 +1958,19 @@ docs/design/SANDBOXED_INFERENCE.md §11.9 (from #52, #55).
   ```
   (`build.sh` passes `--target` to `autoninja` unquoted, so two targets
   work. In Docker, the `--config` path is `/moltbrowser/build/cache/...`.)
-  Expect about +42 MB of binary and a host build of glslang and
-  SPIRV-Tools. Then `gn check` on the real tree, and `molt_ai_unittests`
-  (`GpuOffloadTest`, `GpuFallbackGuardTest`, `InferenceProcessHostTest`,
-  `MoltGpuInferenceSandboxPolicyTest`).
+  Expect about +2.6 MB of shader data plus ggml-vulkan's code (it was
+  +42 MB before the shaders were cut, SANDBOXED_INFERENCE.md §11.14; record
+  the `chrome` binary's size with and without the switch) and a host build
+  of glslang and SPIRV-Tools. Then `gn check` on the real tree, and
+  `molt_ai_unittests` (`GpuOffloadTest`, `GpuFallbackGuardTest`,
+  `InferenceProcessHostTest`, `MoltGpuInferenceSandboxPolicyTest`, and
+  `VulkanShaderPackTest` from ai-finish).
+- [ ] The cut shaders change nothing (from ai-finish; §11.14): on each GPU
+  below, a Q4_K_M catalogue model and gpt-oss (MXFP4) give the same first
+  answer on the GPU as on the CPU for three prompts at temperature 0 (the
+  first tokens at least; a later tie may part them); the load log shows
+  `gpu_status` on and `gpu_layers` > 0; no "a shader variant this build
+  left out was requested" in the service's log.
 - [ ] On each GPU, in the real sandbox (from #52, #55). The load log line
   shows `gpu_status` and `gpu_layers`.
 
@@ -1933,9 +1986,29 @@ docs/design/SANDBOXED_INFERENCE.md §11.9 (from #52, #55).
   theirs (from #55).
 - [ ] Grant more broker files only by name, never a directory recursively
   (from #55).
-- [ ] Deferred: Windows needs the pre-lockdown step of §11.4 first (from #52).
+- [ ] Windows, once a runner exists again (from ai-finish; the test plan of
+  SANDBOXED_INFERENCE.md §11.15; only a Windows machine with a GPU can
+  answer these). Build with `molt_llama_vulkan = true` in its own out dir
+  (clang-cl), run with `--enable-logging=stderr`, and keep Process Monitor
+  and Process Explorer on the inference process:
+
+  | | NVIDIA | AMD | Intel |
+  |---|---|---|---|
+  | the warm-up line: `instance 1, GPUs n, devices n, pipelines n, modules pinned m, not pinned 0` | [ ] | [ ] | [ ] |
+  | before lockdown the loader reads the driver's registry keys and DriverStore files (Process Monitor: no ACCESS DENIED from `vulkan-1.dll` or the ICD) | [ ] | [ ] | [ ] |
+  | after `LowerToken()` no image load is refused (no `STATUS_INVALID_IMAGE_HASH`), and ggml-vulkan's own instance lists the GPU | [ ] | [ ] | [ ] |
+  | the model loads with `gpu_status` on and `gpu_layers` > 0, and answers; speed against the CPU | [ ] | [ ] | [ ] |
+  | which modules were pinned (Process Explorer): the loader, the driver, its shader compiler; none loaded later | [ ] | [ ] | [ ] |
+  | a TDR (`dxcap -forcetdr`) mid-answer: the GPU record, the model again on the CPU | [ ] | [ ] | [ ] |
+
+  Also: a laptop with two GPUs (both listed, the discrete one used); a
+  machine without a Vulkan driver (a warning, the model on the CPU, no
+  crash); an overlay that registers an implicit Vulkan layer (Steam, OBS,
+  RivaTuner) installed: its DLL is not in the inference process; without
+  `--molt-inference-gpu` (the CPU path) no `vulkan-1.dll` in the process.
 - [ ] Before turning it on: a lasting per-driver GPU record and a user
-  setting, a pipeline cache, and the binary-size options (from #52, §11.9).
+  setting, a pipeline cache (from #52, §11.9), and the shader cut
+  (ai-finish, §11.14) are built; the hardware rows above decide.
 
 ## 10. Packaging, signing and the draft release
 

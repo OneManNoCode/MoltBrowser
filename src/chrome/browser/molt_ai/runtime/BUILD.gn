@@ -40,6 +40,18 @@ source_set("model_image") {
   deps = [ "//chrome/services/molt_ai/inference/engine:image_input" ]
 }
 
+# Audio clips for the on-device model (docs/design/SANDBOXED_INFERENCE.md
+# section 13): ModelAudio, how a page's decoded audio becomes one, and how a
+# request's clips are chosen. Std-only, like :model_image. Nothing here or
+# in the inference service decodes a compressed audio file.
+source_set("model_audio") {
+  sources = [
+    "model_audio.cc",
+    "model_audio.h",
+  ]
+  deps = [ "//chrome/services/molt_ai/inference/engine:audio_input" ]
+}
+
 # Making model images: Skia scales a decoded bitmap down; image files are
 # decoded in Chromium's sandboxed data decoder process. Nothing here or in
 # the inference service decodes a compressed image itself.
@@ -98,6 +110,7 @@ source_set("unit_tests") {
     "gpu_driver_record_unittest.cc",
     "gpu_inference_prefs_unittest.cc",
     "inference_process_host_unittest.cc",
+    "model_audio_unittest.cc",
     "model_image_prep_unittest.cc",
     "model_image_unittest.cc",
     "stream_validator_unittest.cc",
@@ -106,12 +119,14 @@ source_set("unit_tests") {
     ":embedding_host",
     ":embedding_validator",
     ":gpu_driver_record",
+    ":model_audio",
     ":model_image",
     ":model_image_prep",
     ":stream_validator",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/services/molt_ai/inference/engine:audio_input",
     "//chrome/services/molt_ai/inference/engine:gpu_pipeline_cache",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/public/mojom",

@@ -113,6 +113,14 @@ AvailabilityDecision DecideAvailability(const AvailabilityInput& input) {
   if (!d.inference_supported || (!d.model_installed && !d.some_model_fits)) {
     return unavailable(UnavailableReason::kDeviceNotEligible);
   }
+  // Audio input: the same answer for every user of this build when its
+  // catalogue has no model that hears audio; then, only to a site the user
+  // allowed, whether one is downloaded.
+  if (input.wants_audio &&
+      (!d.audio_model_offered ||
+       (input.consent == SiteConsent::kAllowed && !d.audio_model_installed))) {
+    return unavailable(UnavailableReason::kNoAudioModel);
+  }
   // From here on the device can run a model. A site the user hasn't allowed
   // learns nothing more: "downloadable" whether or not a model is
   // installed. Blink asks for a user gesture before create() in that state,
@@ -197,6 +205,12 @@ CreateAction DecideCreateAction(const AvailabilityInput& input) {
 // ---------------------------------------------------------------------------
 // Sizes and counting
 // ---------------------------------------------------------------------------
+
+uint32_t AudioInputTokens(uint32_t seconds) {
+  // At most kMaxAudioSeconds in practice; saturating anyway.
+  const uint64_t tokens = uint64_t{seconds} * kAudioInputTokensPerSecond;
+  return std::max(kAudioInputMinTokens, Saturate(tokens));
+}
 
 LanguageModelLimits LanguageModelLimitsFor(uint32_t context_tokens) {
   const uint64_t large_needs = static_cast<uint64_t>(kLargeInputQuota) +
@@ -348,14 +362,16 @@ std::string LanguageNameForPrompt(std::string_view tag) {
 namespace {
 
 // The default if it is downloaded, else the smallest downloaded model
-// (by RAM, then id); among those that see images only if |need_images|.
+// (by RAM, then id); among those that see images only if |need_images|, and
+// that hear audio only if |need_audio|.
 const ModelCandidate* PickAmong(std::string_view default_model_id,
                                 const std::vector<ModelCandidate>& models,
-                                bool need_images) {
+                                bool need_images,
+                                bool need_audio) {
   const ModelCandidate* smallest = nullptr;
   for (const ModelCandidate& m : models) {
     if (!m.downloaded || m.model_id.empty() ||
-        (need_images && !m.sees_images)) {
+        (need_images && !m.sees_images) || (need_audio && !m.hears_audio)) {
       continue;
     }
     if (m.model_id == default_model_id) {
@@ -375,16 +391,18 @@ const ModelCandidate* PickAmong(std::string_view default_model_id,
 std::string PickWebModel(std::string_view loaded_model_id,
                          std::string_view default_model_id,
                          const std::vector<ModelCandidate>& models,
-                         bool wants_images) {
+                         bool wants_images,
+                         bool wants_audio) {
   if (!loaded_model_id.empty()) {
     return std::string(loaded_model_id);
   }
   const ModelCandidate* pick = nullptr;
-  if (wants_images) {
-    pick = PickAmong(default_model_id, models, /*need_images=*/true);
+  if (wants_images || wants_audio) {
+    pick = PickAmong(default_model_id, models, wants_images, wants_audio);
   }
   if (!pick) {
-    pick = PickAmong(default_model_id, models, /*need_images=*/false);
+    pick = PickAmong(default_model_id, models, /*need_images=*/false,
+                     /*need_audio=*/false);
   }
   return pick ? pick->model_id : std::string();
 }
@@ -392,6 +410,17 @@ std::string PickWebModel(std::string_view loaded_model_id,
 bool AnyModelInstalled(const std::vector<ModelCandidate>& models) {
   return std::any_of(models.begin(), models.end(),
                      [](const ModelCandidate& m) { return m.downloaded; });
+}
+
+bool AnyModelHearsAudio(const std::vector<ModelCandidate>& models) {
+  return std::any_of(models.begin(), models.end(),
+                     [](const ModelCandidate& m) { return m.hears_audio; });
+}
+
+bool AnyInstalledModelHearsAudio(const std::vector<ModelCandidate>& models) {
+  return std::any_of(models.begin(), models.end(), [](const ModelCandidate& m) {
+    return m.downloaded && m.hears_audio;
+  });
 }
 
 bool AnyModelFits(const std::vector<ModelCandidate>& models,

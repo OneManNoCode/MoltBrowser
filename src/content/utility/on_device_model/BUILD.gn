@@ -2,10 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/buildflag_header.gni")
 import("//services/on_device_model/on_device_model.gni")
+import("//third_party/llama_cpp/llama_cpp.gni")  # MoltBrowser
 
 source_set("on_device_model_sandbox_init") {
   sources = [
+    # MoltBrowser: the switch the browser adds for a GPU launch.
+    "molt_gpu_inference_switch.h",
     "on_device_model_sandbox_init.cc",
     "on_device_model_sandbox_init.h",
   ]
@@ -34,6 +38,19 @@ source_set("on_device_model_sandbox_init") {
       "//sandbox/linux:sandbox_services",
     ]
   }
+  if (is_win) {
+    # MoltBrowser: GPU inference's pre-lockdown step
+    # (docs/design/SANDBOXED_INFERENCE.md 11.15), called by
+    # content/utility/utility_main.cc.
+    sources += [
+      "molt_gpu_inference_sandbox_win.cc",
+      "molt_gpu_inference_sandbox_win.h",
+    ]
+    deps += [
+      ":molt_gpu_driver_warmup",
+      ":molt_gpu_inference_buildflags",
+    ]
+  }
   if (!is_fuchsia) {
     deps += [
       "//third_party/dawn/include/dawn:cpp_headers",
@@ -41,6 +58,36 @@ source_set("on_device_model_sandbox_init") {
       "//third_party/dawn/src/dawn/native",
     ]
   }
+}
+
+# MoltBrowser: whether this build has GPU inference (molt_llama_vulkan).
+buildflag_header("molt_gpu_inference_buildflags") {
+  header = "molt_gpu_inference_buildflags.h"
+  flags = [ "MOLT_GPU_INFERENCE=$molt_llama_vulkan" ]
+}
+
+# MoltBrowser: brings each GPU's Vulkan driver up before the sandbox locks
+# down (docs/design/SANDBOXED_INFERENCE.md 11.15). Standard library and the
+# Vulkan headers; the loader is passed in.
+source_set("molt_gpu_driver_warmup") {
+  sources = [
+    "molt_gpu_driver_warmup.cc",
+    "molt_gpu_driver_warmup.h",
+  ]
+  defines = [ "VK_NO_PROTOTYPES" ]
+  public_deps = [ "//third_party/vulkan-headers/src:vulkan_headers" ]
+}
+
+# MoltBrowser: part of //chrome/browser/molt_ai/test:molt_ai_unittests on
+# every desktop platform.
+source_set("molt_gpu_driver_warmup_unittests") {
+  testonly = true
+  sources = [ "molt_gpu_driver_warmup_unittest.cc" ]
+  defines = [ "VK_NO_PROTOTYPES" ]
+  deps = [
+    ":molt_gpu_driver_warmup",
+    "//testing/gtest",
+  ]
 }
 
 if (is_linux || is_chromeos) {

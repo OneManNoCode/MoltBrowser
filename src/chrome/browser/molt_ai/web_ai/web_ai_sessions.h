@@ -15,6 +15,11 @@
 // into model images on a worker as soon as it arrives; it starts only once
 // they are ready, so requests still run in order.
 //
+// Audio input (expectedInputs "audio"): Blink decodes and resamples a
+// page's audio to 16 kHz mono in the renderer; a request's clips are
+// checked and turned into 16-bit samples when it arrives (ToModelAudio(),
+// cheap and bounded), and held like images (each counts as one).
+//
 // Ending a request: the page aborting it (its responder pipe closes) cancels
 // the generation; destroy(), the page dropping the session, a navigation or
 // the frame going away (MoltAIManager destroyed) cancel everything.
@@ -57,6 +62,13 @@ namespace molt_ai::web_ai {
 // bitmap without pixels, so that half only guards against their change.
 bool IsUsableBitmapForModel(const SkBitmap& bitmap);
 
+// A page's audio clip (decoded and resampled by Blink, as GetInfo() asked:
+// one channel at 16 kHz) as the model takes it, or nullopt if it isn't
+// that, its frame count isn't its data's, or it is longer than 30 s
+// (runtime/model_audio.h).
+std::optional<ModelAudio> ToModelAudio(
+    const on_device_model::mojom::AudioData& audio);
+
 class WebAISession {
  public:
   WebAISession(MoltAIManager& manager, uint64_t id, WebAIApi api);
@@ -92,7 +104,7 @@ class WebAISession {
     // LanguageModel image input: the turn of |turns| each of the request's
     // images belongs to, in order. Until they are ready (|images_pending|)
     // the request can't start. |held_images| of the session's image hold
-    // are this request's.
+    // are this request's: its images and its audio clips (in |turns|).
     std::vector<size_t> image_turns;
     bool images_pending = false;
     size_t held_images = 0;
@@ -107,12 +119,15 @@ class WebAISession {
   // MoltAIManager::MayServe(), or if kMaxQueuedPerSession wait already).
   // |bitmaps|, one per entry of |request.image_turns|, are held and turned
   // into model images first (failing the request with a generic error over
-  // the image caps, and as an invalid request if they can't be used).
+  // the image caps, and as an invalid request if they can't be used). The
+  // audio clips in |request.turns| are held with them.
   void Enqueue(Request request, std::vector<SkBitmap> bitmaps = {});
 
-  // The images the session's context keeps (held with its requests').
+  // The images and audio clips the session's context keeps (held with its
+  // requests').
   virtual size_t ContextImages() const;
-  // Adds |count| to the session's image hold; false over the caps.
+  // Adds |count| to the session's image hold (images and audio clips);
+  // false over the caps.
   bool HoldImages(size_t count);
 
   // The request at the head of the queue starts. Returns the generation to
@@ -200,6 +215,9 @@ class LanguageModelSession : public WebAISession,
     // Created with expectedInputs "image" on a model that sees images:
     // user turns may hold images.
     bool image_input = false;
+    // Created with expectedInputs "audio" on a model that hears audio: user
+    // turns may hold audio clips.
+    bool audio_input = false;
   };
 
   LanguageModelSession(
@@ -213,8 +231,8 @@ class LanguageModelSession : public WebAISession,
   blink::mojom::AILanguageModelInstanceInfoPtr GetInfo() const;
   const Config& config() const { return config_; }
   const Conversation& conversation() const { return conversation_; }
-  // A clone holds the images of the context it was given; false over the
-  // caps (the clone can't be made).
+  // A clone holds the images and audio clips of the context it was given;
+  // false over the caps (the clone can't be made).
   bool HoldContextImages();
 
   // blink::mojom::AILanguageModel:

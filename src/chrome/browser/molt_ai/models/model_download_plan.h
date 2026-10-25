@@ -87,7 +87,7 @@ enum class PlanError {
   // or a stat list that doesn't match the files.
   kBadUnit,
   // A model with a projector whose files aren't all fully pinned. Such a
-  // model is not even offered (IsPinnedForVision() in the runtime); this
+  // model is not even offered (IsPinnedWithProjector() in the runtime); this
   // refuses it again, before any byte is fetched.
   kNotPinned,
   // A pinned SHA-256 that isn't 64 lowercase hex digits, or a pinned file

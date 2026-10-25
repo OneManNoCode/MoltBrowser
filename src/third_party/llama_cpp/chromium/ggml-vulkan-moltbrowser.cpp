@@ -12,12 +12,17 @@
 #include <dlfcn.h>
 #endif
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
+#include "third_party/brotli/include/brotli/decode.h"
 #include "third_party/llama_cpp/chromium/ggml-vulkan-moltbrowser.h"
+#include "third_party/llama_cpp/chromium/ggml-vulkan-shader-pack.h"
 #include "third_party/llama_cpp/ggml/src/ggml-vulkan/ggml-vulkan-common.h"
 
 #if !defined(VK_NO_PROTOTYPES)
@@ -35,7 +40,15 @@ PFN_vkGetInstanceProcAddr ggml_vk_moltbrowser_get_instance_proc_addr() {
   static const PFN_vkGetInstanceProcAddr proc =
       []() -> PFN_vkGetInstanceProcAddr {
 #if defined(_WIN32)
-    HMODULE module = ::LoadLibraryExW(L"vulkan-1.dll", nullptr, 0);
+    // The loader the pre-lockdown step loaded from System32 and pinned
+    // (content/utility/on_device_model/molt_gpu_inference_sandbox_win.h):
+    // once the sandbox has locked down, only a module already mapped can be
+    // used. Otherwise System32's, never one from another directory.
+    HMODULE module = ::GetModuleHandleW(L"vulkan-1.dll");
+    if (!module) {
+      module = ::LoadLibraryExW(L"vulkan-1.dll", nullptr,
+                                LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
     if (!module) return nullptr;
     return reinterpret_cast<PFN_vkGetInstanceProcAddr>(
         ::GetProcAddress(module, "vkGetInstanceProcAddr"));
@@ -200,4 +213,94 @@ extern "C" bool ggml_vk_moltbrowser_device_lost(int device) {
   } catch (...) {
     return false;
   }
+}
+
+// Declared in the MoltBrowser block of ggml-vulkan.cpp, which calls it from
+// ggml_vk_create_pipeline_func() for the one variant it compiles. The data is
+// part of this binary (ggml_vk_shader_pack wrote it at build time), so a
+// failure here is a build mistake or a variant the build left out; it
+// throws like a Vulkan error would, which the inference service's guard
+// turns into a GPU failure (the model then runs on the CPU).
+std::vector<uint32_t> ggml_vk_moltbrowser_unpack_shader(const void* data,
+                                                        size_t size) {
+  using ggml_vk_moltbrowser::kMaxBlockRawSize;
+  if (size == 0) {
+    throw std::runtime_error(
+        "ggml_vulkan: a shader variant this build left out was requested");
+  }
+  ggml_vk_moltbrowser::ShaderDescriptor d;
+  if (!ggml_vk_moltbrowser::DecodeDescriptor(data, size, &d) ||
+      d.family >= ggml_vk_moltbrowser_shader_family_count) {
+    throw std::runtime_error("ggml_vulkan: not a packed shader");
+  }
+  const ggml_vk_moltbrowser::PackedShaderFamily* family =
+      ggml_vk_moltbrowser_shader_families[d.family];
+  if (!family || !family->blocks || d.block >= family->block_count) {
+    throw std::runtime_error("ggml_vulkan: bad packed shader");
+  }
+  const ggml_vk_moltbrowser::PackedShaderBlock& block =
+      family->blocks[d.block];
+  if (block.raw_size > kMaxBlockRawSize || d.size > block.raw_size ||
+      d.offset > block.raw_size - d.size) {
+    throw std::runtime_error(std::string("ggml_vulkan: bad packed shader in ") +
+                             family->name);
+  }
+  std::vector<uint8_t> raw(block.raw_size);
+  size_t raw_size = raw.size();
+  if (BrotliDecoderDecompress(block.size, block.data, &raw_size, raw.data()) !=
+          BROTLI_DECODER_RESULT_SUCCESS ||
+      raw_size != block.raw_size ||
+      ggml_vk_moltbrowser::ShaderChecksum(raw.data() + d.offset, d.size) !=
+          d.checksum) {
+    throw std::runtime_error(
+        std::string("ggml_vulkan: packed shader doesn't inflate in ") +
+        family->name);
+  }
+  std::vector<uint32_t> spirv(d.size / sizeof(uint32_t));
+  std::memcpy(spirv.data(), raw.data() + d.offset, d.size);
+  return spirv;
+}
+
+namespace {
+
+// Whether this build has the shaders of each ggml type: false for the
+// weight types BUILD.gn left out (ggml_vk_moltbrowser_dropped_types, the
+// names ggml_type_name() gives, in lower case).
+const std::array<bool, GGML_TYPE_COUNT>& BuiltTypes() {
+  static const std::array<bool, GGML_TYPE_COUNT> built = [] {
+    std::array<bool, GGML_TYPE_COUNT> table;
+    table.fill(true);
+    for (int t = 0; t < GGML_TYPE_COUNT; ++t) {
+      const char* name = ggml_type_name(static_cast<ggml_type>(t));
+      if (!name) continue;
+      std::string lower(name);
+      for (char& c : lower) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+      }
+      for (const char* const* d = ggml_vk_moltbrowser_dropped_types; *d;
+           ++d) {
+        if (lower == *d) table[t] = false;
+      }
+    }
+    return table;
+  }();
+  return built;
+}
+
+bool TypeBuilt(ggml_type type) {
+  return type < 0 || type >= GGML_TYPE_COUNT || BuiltTypes()[type];
+}
+
+}  // namespace
+
+// Declared in the MoltBrowser block of ggml-vulkan.cpp, which asks it first
+// in ggml_backend_vk_device_supports_op(): an op on a left-out weight type,
+// as its result or any of its sources, stays on the CPU (llama.cpp then
+// keeps that weight in CPU memory too), so its shaders are never needed.
+bool ggml_vk_moltbrowser_op_types_built(const ggml_tensor* op) {
+  if (!TypeBuilt(op->type)) return false;
+  for (int i = 0; i < GGML_MAX_SRC; ++i) {
+    if (op->src[i] && !TypeBuilt(op->src[i]->type)) return false;
+  }
+  return true;
 }

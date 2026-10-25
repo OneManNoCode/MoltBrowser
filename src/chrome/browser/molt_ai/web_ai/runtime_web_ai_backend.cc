@@ -99,7 +99,8 @@ std::vector<ModelCandidate> Candidates(const BrowserAIRuntime& runtime) {
     c.model_id = info.model_id;
     c.downloaded = info.is_downloaded;
     c.ram_required_bytes = info.ram_required_bytes;
-    c.sees_images = info.has_vision();
+    c.sees_images = info.sees_images;
+    c.hears_audio = info.hears_audio;
     out.push_back(std::move(c));
   }
   return out;
@@ -111,11 +112,12 @@ int64_t NowMicroseconds() {
 }
 
 // Loads the model pages use if none is loaded (one that sees images, if
-// |wants_images| and one is downloaded). Worker thread (blocks while the
-// model loads).
+// |wants_images|, and hears audio, if |wants_audio|, and one is
+// downloaded). Worker thread (blocks while the model loads).
 bool EnsureModelLoaded(BrowserAIRuntime* runtime,
                        uint32_t* context_tokens,
-                       bool wants_images) {
+                       bool wants_images,
+                       bool wants_audio) {
   if (!runtime->GetLocalInferenceUnsupportedReason().empty()) {
     return false;
   }
@@ -123,7 +125,7 @@ bool EnsureModelLoaded(BrowserAIRuntime* runtime,
     runtime->RefreshModelStatus();
     const std::string model_id = PickWebModel(
         /*loaded_model_id=*/"", ReadWebAISettings().default_model,
-        Candidates(*runtime), wants_images);
+        Candidates(*runtime), wants_images, wants_audio);
     if (model_id.empty()) {
       return false;
     }
@@ -217,6 +219,8 @@ DeviceFacts RuntimeWebAIBackend::ReadDeviceFacts(BrowserAIRuntime* runtime) {
   facts.some_model_fits =
       AnyModelFits(models, runtime->GetHardwareCapability().total_ram_bytes);
   facts.web_apis_enabled = ReadWebAISettings().web_apis_enabled;
+  facts.audio_model_offered = AnyModelHearsAudio(models);
+  facts.audio_model_installed = AnyInstalledModelHearsAudio(models);
   return facts;
 }
 
@@ -271,6 +275,7 @@ void RuntimeWebAIBackend::OnDeviceFacts(const std::string& site_key,
 // ---- Model ----
 
 void RuntimeWebAIBackend::PrepareModel(bool wants_images,
+                                       bool wants_audio,
                                        PrepareCallback callback) {
   prepare_waiters_.push_back(std::move(callback));
   if (prepare_pending_) {
@@ -282,7 +287,7 @@ void RuntimeWebAIBackend::PrepareModel(bool wants_images,
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, kWorkerTraits,
       base::BindOnce(&RuntimeWebAIBackend::PrepareBlocking,
-                     base::Unretained(&runtime()), wants_images),
+                     base::Unretained(&runtime()), wants_images, wants_audio),
       base::BindOnce(&RuntimeWebAIBackend::OnModelPrepared,
                      weak_factory_.GetWeakPtr()));
 }
@@ -290,11 +295,13 @@ void RuntimeWebAIBackend::PrepareModel(bool wants_images,
 // static
 RuntimeWebAIBackend::PrepareResult RuntimeWebAIBackend::PrepareBlocking(
     BrowserAIRuntime* runtime,
-    bool wants_images) {
+    bool wants_images,
+    bool wants_audio) {
   PrepareResult result;
-  result.ok =
-      EnsureModelLoaded(runtime, &result.context_tokens, wants_images);
+  result.ok = EnsureModelLoaded(runtime, &result.context_tokens, wants_images,
+                                wants_audio);
   result.sees_images = result.ok && runtime->LoadedModelSeesImages();
+  result.hears_audio = result.ok && runtime->LoadedModelHearsAudio();
   return result;
 }
 
@@ -307,7 +314,7 @@ void RuntimeWebAIBackend::OnModelPrepared(PrepareResult result) {
   waiters.swap(prepare_waiters_);
   for (PrepareCallback& callback : waiters) {
     std::move(callback).Run(result.ok, result.context_tokens,
-                            result.sees_images);
+                            result.sees_images, result.hears_audio);
   }
 }
 
@@ -399,8 +406,12 @@ GenerationStatus RuntimeWebAIBackend::RunJob(
   for (const std::vector<ModelImage>& images : job.history_images) {
     wants_images = wants_images || !images.empty();
   }
+  bool wants_audio = !job.user_audio.empty();
+  for (const std::vector<ModelAudio>& clips : job.history_audio) {
+    wants_audio = wants_audio || !clips.empty();
+  }
   uint32_t context_tokens = 0;
-  if (!EnsureModelLoaded(runtime, &context_tokens, wants_images)) {
+  if (!EnsureModelLoaded(runtime, &context_tokens, wants_images, wants_audio)) {
     return GenerationStatus::kFailed;
   }
   if (runtime->IsRequestCancelled(request_id)) {
@@ -419,14 +430,19 @@ GenerationStatus RuntimeWebAIBackend::RunJob(
     ChatMessage message;
     message.role = role == Role::kUser ? "user" : "assistant";
     message.content = std::move(text);
-    // Images go with user turns only (the runtime ignores others').
+    // Images and audio go with user turns only (the runtime ignores
+    // others').
     if (role == Role::kUser && i < job.history_images.size()) {
       message.images = std::move(job.history_images[i]);
+    }
+    if (role == Role::kUser && i < job.history_audio.size()) {
+      message.audio = std::move(job.history_audio[i]);
     }
     chat.history.push_back(std::move(message));
   }
   chat.user_message = std::move(job.user_message);
   chat.user_images = std::move(job.user_images);
+  chat.user_audio = std::move(job.user_audio);
 
   PromptOptions options;
   options.max_tokens =

@@ -186,6 +186,8 @@ jobs:
           persist-credentials: false
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
+      - name: tools/models/gguf_types_test.py (GGUF types vs the Vulkan build)
+        run: python3 tools/models/gguf_types_test.py -v
 
   fonts:
     runs-on: ubuntu-latest

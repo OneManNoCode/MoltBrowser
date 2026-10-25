@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/runtime/model_audio.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
 
 namespace molt_ai {
@@ -62,7 +63,8 @@ struct ModelInfo {
                               // "Alibaba", "Google", "Mistral AI", "Microsoft",
                               // "OpenAI". Drives the brand icon in the picker.
 
-  // Image input: the model's vision projector, a second GGUF from the same
+  // Image and audio input: the model's projector (llama.cpp's "mmproj": an
+  // image encoder, an audio encoder or both), a second GGUF from the same
   // repo and revision; empty for a text-only model. A model with one is
   // offered only once both files are pinned (fail closed), counts as
   // downloaded only when both are on disk, and is loaded with both.
@@ -70,9 +72,14 @@ struct ModelInfo {
   std::string vision_projector_path;
   std::string vision_projector_sha256;
   size_t vision_projector_size_bytes = 0;
+  // What its projector's encoders take, as the registry says (the loaded
+  // model's own report decides what a request may carry:
+  // LoadedModelSeesImages(), LoadedModelHearsAudio()).
+  bool sees_images = false;
+  bool hears_audio = false;
 
   bool is_verified() const { return !sha256.empty(); }
-  bool has_vision() const { return !vision_projector_filename.empty(); }
+  bool has_projector() const { return !vision_projector_filename.empty(); }
 };
 
 // Whether a reasoning-capable model should think before answering.
@@ -98,6 +105,9 @@ struct ChatMessage {
   // A user turn's images (model_image.h), shown to the model before its
   // text; ignored on other roles. Untrusted, like page text.
   std::vector<ModelImage> images;
+  // A user turn's audio clips (model_audio.h), after its images and before
+  // its text; ignored on other roles. Untrusted, like page text.
+  std::vector<ModelAudio> audio;
 };
 
 // Structured chat request. The runtime owns the token budget, so it needs
@@ -119,7 +129,10 @@ struct ChatMessage {
 // most kMaxImagesPerRequest (engine/image_input.h, 4) are sent: the new
 // message's (more is an error), then the newest history turns' (older ones
 // are left out, their text kept). The new message's images are never
-// trimmed; a history turn's are dropped with it.
+// trimmed; a history turn's are dropped with it. Audio clips
+// (model_audio.h) the same way: |user_audio| and ChatMessage::audio, a
+// model with an audio encoder (GenerationResult::audio_unsupported
+// otherwise), at most kMaxAudioPerRequest (engine/audio_input.h, 4).
 struct ChatPrompt {
   std::string system_prompt;
   std::string context_preamble;
@@ -127,6 +140,7 @@ struct ChatPrompt {
   std::vector<ChatMessage> history;  // oldest first; "user" / "assistant"
   std::string user_message;
   std::vector<ModelImage> user_images;
+  std::vector<ModelAudio> user_audio;
 };
 
 // Prompt options
@@ -192,6 +206,9 @@ struct GenerationResult {
   // The prompt had images and the loaded model can't take them (no vision
   // projector); nothing was generated.
   bool images_unsupported = false;
+  // The prompt had audio and the loaded model can't take it (no audio
+  // encoder); nothing was generated.
+  bool audio_unsupported = false;
 };
 
 // GPU inference as molt://ai-settings shows it (design section 11.11).
@@ -374,6 +391,9 @@ class BrowserAIRuntime {
   // The loaded model takes images (its vision projector loaded); false if
   // none is loaded.
   bool LoadedModelSeesImages() const;
+  // The loaded model takes audio (its projector has an audio encoder);
+  // false if none is loaded.
+  bool LoadedModelHearsAudio() const;
 
   // ---- Hardware ----
 

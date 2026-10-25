@@ -47,7 +47,8 @@ ModelAvailabilityCheckResult ToMojo(const AvailabilityDecision& decision) {
   // reasons that follow from the request alone, the same for every user of
   // this build, get their own value. A policy, a device that can't run a
   // model, the switches, MoltNet and the user's block or a paused prompt
-  // all answer alike (WEB_AI_APIS.md §4.3).
+  // all answer alike (WEB_AI_APIS.md §4.3), and so does audio input without
+  // a model that hears it (what the user downloaded).
   switch (decision.reason) {
     case UnavailableReason::kUnsupportedOptions:
       return ModelAvailabilityCheckResult::
@@ -59,6 +60,7 @@ ModelAvailabilityCheckResult ToMojo(const AvailabilityDecision& decision) {
     case UnavailableReason::kEnterprisePolicy:
     case UnavailableReason::kBlockedByUser:
     case UnavailableReason::kDeviceNotEligible:
+    case UnavailableReason::kNoAudioModel:
       break;
   }
   return ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled;
@@ -124,22 +126,28 @@ bool WritingLanguagesValid(const OptionsPtr& options) {
 
 // What a LanguageModel's create options ask for.
 struct LanguageModelOptionCheck {
-  // Text (and, with the multimodal-input feature, images) in, text out, no
-  // tools.
+  // Text (and, with the multimodal-input feature, images and audio) in,
+  // text out, no tools.
   bool supported = true;
   bool languages_valid = true;
   // expectedInputs has "image": the session takes images, and create()
   // needs a model that sees them. availability() doesn't look at this: its
   // answer is the same with or without image input (WEB_AI_APIS.md §5.1).
   bool images = false;
+  // expectedInputs has "audio": the session takes audio, and create() needs
+  // a model that hears it. availability() looks at this
+  // (AvailabilityInput::wants_audio, WEB_AI_APIS.md §5.2).
+  bool audio = false;
   // The one output language asked for, if exactly one (by base language).
   std::string output_language;
 };
 
-// |image_input_enabled|: ContextFacts::image_input_enabled.
+// |context|: ContextFacts::image_input_enabled and audio_input_enabled.
 LanguageModelOptionCheck CheckLanguageModelOptions(
     const blink::mojom::AILanguageModelCreateOptionsPtr& options,
-    bool image_input_enabled) {
+    const ContextFacts& context) {
+  const bool image_input_enabled = context.image_input_enabled;
+  const bool audio_input_enabled = context.audio_input_enabled;
   LanguageModelOptionCheck check;
   if (!options) {
     return check;
@@ -148,7 +156,7 @@ LanguageModelOptionCheck CheckLanguageModelOptions(
     check.supported = false;
   }
   auto check_expected =
-      [&check, image_input_enabled](
+      [&check, image_input_enabled, audio_input_enabled](
           const std::optional<
               std::vector<blink::mojom::AILanguageModelExpectedPtr>>& list,
           bool inputs, std::vector<std::string>* languages) {
@@ -164,9 +172,13 @@ LanguageModelOptionCheck CheckLanguageModelOptions(
               expected->type ==
                   blink::mojom::AILanguageModelPromptType::kImage) {
             check.images = true;
+          } else if (inputs && audio_input_enabled &&
+                     expected->type ==
+                         blink::mojom::AILanguageModelPromptType::kAudio) {
+            check.audio = true;
           } else if (expected->type !=
                      blink::mojom::AILanguageModelPromptType::kText) {
-            // Audio, tool calls and results; any output but text.
+            // Tool calls and results; any output but text.
             check.supported = false;
             continue;
           }
@@ -436,14 +448,18 @@ class MoltAIManager::CreateRequest {
     Fail(AIManagerCreateClientError::kUnableToCreateSession, nullptr);
   }
   // The user allowed the site and the model is loaded: make the session.
-  // |sees_images|: the loaded model takes images.
+  // |sees_images|: the loaded model takes images; |hears_audio|: audio.
   virtual void Finish(MoltAIManager& manager,
                       uint32_t context_tokens,
-                      bool sees_images) = 0;
+                      bool sees_images,
+                      bool hears_audio) = 0;
 
   // The session will take images: a model that sees them is preferred
   // when one has to be loaded.
   virtual bool wants_images() const { return false; }
+  // The session will take audio: availability() looks at it, and a model
+  // that hears audio is preferred when one has to be loaded.
+  virtual bool wants_audio() const { return false; }
 
   WebAIApi api() const { return api_; }
   bool options_supported() const { return options_supported_; }
@@ -471,10 +487,12 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
         client_(std::move(client)),
         options_(std::move(options)),
         output_language_(check.output_language),
-        images_(check.images) {}
+        images_(check.images),
+        audio_(check.audio) {}
 
   bool IsWanted() const override { return client_.is_connected(); }
   bool wants_images() const override { return images_; }
+  bool wants_audio() const override { return audio_; }
 
   void Fail(AIManagerCreateClientError error,
             blink::mojom::QuotaErrorInfoPtr quota) override {
@@ -483,11 +501,14 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
 
   void Finish(MoltAIManager& manager,
               uint32_t context_tokens,
-              bool sees_images) override {
+              bool sees_images,
+              bool hears_audio) override {
     // Image input on a model that can't see images. Only a site the user
     // allowed gets this far, and it learns no more than its first prompt
     // with an image would tell it; availability() said the same either way.
-    if (images_ && !sees_images) {
+    // Audio input on a model that can't hear it: the model loaded isn't the
+    // one that hears audio (the chat's, loaded first).
+    if ((images_ && !sees_images) || (audio_ && !hears_audio)) {
       Fail(AIManagerCreateClientError::kUnableToCreateSession, nullptr);
       return;
     }
@@ -529,6 +550,7 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
     config.max_reply_tokens = limits.max_reply_tokens;
     config.system_prompt = BuildLanguageModelSystemPrompt(output_language_);
     config.image_input = images_;
+    config.audio_input = audio_;
 
     const uint64_t id = manager.ReserveSession();
     if (id == 0) {
@@ -549,6 +571,7 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
   blink::mojom::AILanguageModelCreateOptionsPtr options_;
   const std::string output_language_;
   const bool images_;
+  const bool audio_;
 };
 
 // Summarizer, Writer and Rewriter.
@@ -577,7 +600,8 @@ class MoltAIManager::WritingCreate : public CreateRequest {
 
   void Finish(MoltAIManager& manager,
               uint32_t context_tokens,
-              bool sees_images) override {
+              bool sees_images,
+              bool hears_audio) override {
     const uint64_t id = manager.ReserveSession();
     if (id == 0) {
       Fail(AIManagerCreateClientError::kUnableToCreateSession, nullptr);
@@ -631,6 +655,7 @@ class MoltAIManager::TranslatorCreate : public CreateRequest {
       case UnavailableReason::kUnsupportedOptions:
       case UnavailableReason::kBlockedByUser:
       case UnavailableReason::kDeviceNotEligible:
+      case UnavailableReason::kNoAudioModel:
         break;
     }
     FailWith(CreateTranslatorError::kFailedToCreateTranslator);
@@ -638,7 +663,8 @@ class MoltAIManager::TranslatorCreate : public CreateRequest {
 
   void Finish(MoltAIManager& manager,
               uint32_t context_tokens,
-              bool sees_images) override {
+              bool sees_images,
+              bool hears_audio) override {
     const uint64_t id = manager.ReserveSession();
     if (id == 0) {
       FailWith(CreateTranslatorError::kExceedsServiceCountLimitation);
@@ -739,6 +765,7 @@ bool MoltAIManager::MayServe(WebAIApi api) {
 void MoltAIManager::CheckAvailability(WebAIApi api,
                                       bool options_supported,
                                       bool languages_supported,
+                                      bool wants_audio,
                                       AvailabilityCallback callback) {
   const ContextFacts context = environment_->GetContextFacts(api);
   if (!IsContextEligible(context)) {
@@ -754,12 +781,13 @@ void MoltAIManager::CheckAvailability(WebAIApi api,
       site_key(),
       base::BindOnce(&MoltAIManager::OnAvailabilityDeviceFacts,
                      weak_factory_.GetWeakPtr(), api, options_supported,
-                     languages_supported, std::move(callback)));
+                     languages_supported, wants_audio, std::move(callback)));
 }
 
 void MoltAIManager::OnAvailabilityDeviceFacts(WebAIApi api,
                                               bool options_supported,
                                               bool languages_supported,
+                                              bool wants_audio,
                                               AvailabilityCallback callback,
                                               DeviceFacts device) {
   AvailabilityInput input;
@@ -767,6 +795,7 @@ void MoltAIManager::OnAvailabilityDeviceFacts(WebAIApi api,
   input.device = device;
   input.options_supported = options_supported;
   input.languages_supported = languages_supported;
+  input.wants_audio = wants_audio;
   input.consent = environment_->GetConsent();
   std::move(callback).Run(DecideAvailability(input));
 }
@@ -779,10 +808,10 @@ void MoltAIManager::CanCreateLanguageModel(
     return;
   }
   const LanguageModelOptionCheck check = CheckLanguageModelOptions(
-      options, environment_->GetContextFacts(WebAIApi::kLanguageModel)
-                   .image_input_enabled);
+      options, environment_->GetContextFacts(WebAIApi::kLanguageModel));
   CheckAvailability(
       WebAIApi::kLanguageModel, check.supported, check.languages_valid,
+      check.audio,
       base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
@@ -795,7 +824,7 @@ void MoltAIManager::CanCreateSummarizer(
   }
   CheckAvailability(
       WebAIApi::kSummarizer, /*options_supported=*/true,
-      WritingLanguagesValid(options),
+      WritingLanguagesValid(options), /*wants_audio=*/false,
       base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
@@ -808,7 +837,7 @@ void MoltAIManager::CanCreateWriter(
   }
   CheckAvailability(
       WebAIApi::kWriter, /*options_supported=*/true,
-      WritingLanguagesValid(options),
+      WritingLanguagesValid(options), /*wants_audio=*/false,
       base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
@@ -821,7 +850,7 @@ void MoltAIManager::CanCreateRewriter(
   }
   CheckAvailability(
       WebAIApi::kRewriter, /*options_supported=*/true,
-      WritingLanguagesValid(options),
+      WritingLanguagesValid(options), /*wants_audio=*/false,
       base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
@@ -874,8 +903,7 @@ void MoltAIManager::CreateLanguageModel(
     options = blink::mojom::AILanguageModelCreateOptions::New();
   }
   const LanguageModelOptionCheck check = CheckLanguageModelOptions(
-      options, environment_->GetContextFacts(WebAIApi::kLanguageModel)
-                   .image_input_enabled);
+      options, environment_->GetContextFacts(WebAIApi::kLanguageModel));
   // Requests that can never succeed fail before anyone is asked anything.
   std::string system_prompt;
   std::vector<Turn> turns;
@@ -1045,6 +1073,7 @@ void MoltAIManager::TranslationAvailable(
       ResolveTranslatorPair(source_lang->code, target_lang->code).has_value();
   CheckAvailability(
       WebAIApi::kTranslator, /*options_supported=*/true, supported,
+      /*wants_audio=*/false,
       base::BindOnce(&AnswerTranslationAvailability, std::move(callback)));
 }
 
@@ -1130,6 +1159,7 @@ void MoltAIManager::OnCreateDeviceFacts(uint64_t id, DeviceFacts device) {
   input.device = device;
   input.options_supported = request->options_supported();
   input.languages_supported = request->languages_supported();
+  input.wants_audio = request->wants_audio();
   input.consent = environment_->GetConsent();
   switch (DecideCreateAction(input)) {
     case CreateAction::kReject:
@@ -1137,16 +1167,18 @@ void MoltAIManager::OnCreateDeviceFacts(uint64_t id, DeviceFacts device) {
       return;
     case CreateAction::kAskUser:
     case CreateAction::kNeedsModel:
+      // Audio input without a model that hears it: the prompt offers the
+      // model picker too.
       environment_->RequestConsent(
-          /*needs_model=*/!device.model_installed,
+          /*needs_model=*/!device.model_installed ||
+              (request->wants_audio() && !device.audio_model_installed),
           base::BindOnce(&MoltAIManager::OnCreateConsent,
                          weak_factory_.GetWeakPtr(), id));
       return;
     case CreateAction::kCreate:
-      backend_->PrepareModel(
-          request->wants_images(),
-          base::BindOnce(&MoltAIManager::OnCreateModelReady,
-                         weak_factory_.GetWeakPtr(), id));
+      backend_->PrepareModel(request->wants_images(), request->wants_audio(),
+                             base::BindOnce(&MoltAIManager::OnCreateModelReady,
+                                            weak_factory_.GetWeakPtr(), id));
       return;
   }
 }
@@ -1161,24 +1193,26 @@ void MoltAIManager::OnCreateConsent(uint64_t id, SiteConsent consent) {
   input.device = request->device();
   input.options_supported = request->options_supported();
   input.languages_supported = request->languages_supported();
+  input.wants_audio = request->wants_audio();
   input.consent = consent;
   if (DecideCreateAction(input) != CreateAction::kCreate) {
-    // Blocked, closed without an answer, or allowed without a model yet
-    // (the prompt offered the model picker; the page can try again later).
+    // Blocked, closed without an answer, or allowed without a model (one
+    // that hears audio, for audio input) yet: the prompt offered the model
+    // picker; the page can try again later.
     TakeCreate(id)->Fail(AIManagerCreateClientError::kUnableToCreateSession,
                          nullptr);
     return;
   }
-  backend_->PrepareModel(
-      request->wants_images(),
-      base::BindOnce(&MoltAIManager::OnCreateModelReady,
-                     weak_factory_.GetWeakPtr(), id));
+  backend_->PrepareModel(request->wants_images(), request->wants_audio(),
+                         base::BindOnce(&MoltAIManager::OnCreateModelReady,
+                                        weak_factory_.GetWeakPtr(), id));
 }
 
 void MoltAIManager::OnCreateModelReady(uint64_t id,
                                        bool ok,
                                        uint32_t context_tokens,
-                                       bool sees_images) {
+                                       bool sees_images,
+                                       bool hears_audio) {
   if (!FindCreate(id)) {
     return;
   }
@@ -1195,7 +1229,7 @@ void MoltAIManager::OnCreateModelReady(uint64_t id,
                   nullptr);
     return;
   }
-  request->Finish(*this, context_tokens, sees_images);
+  request->Finish(*this, context_tokens, sees_images, hears_audio);
 }
 
 // ---- Sessions ----
@@ -1242,7 +1276,7 @@ void MoltAIManager::ForkLanguageModel(
   auto session = std::make_unique<LanguageModelSession>(
       *this, id, source.config(), source.conversation(),
       pending.InitWithNewPipeAndPassReceiver());
-  // Its copy of the context's images counts against the image caps.
+  // Its copy of the context's images and audio counts against the caps.
   if (!session->HoldContextImages()) {
     remote->OnError(AIManagerCreateClientError::kUnableToCreateSession,
                     nullptr);

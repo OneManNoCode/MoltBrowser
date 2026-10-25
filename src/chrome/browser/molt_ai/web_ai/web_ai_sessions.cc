@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/web_ai/molt_ai_manager.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
+#include "chrome/services/molt_ai/inference/engine/audio_input.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 
 namespace molt_ai::web_ai {
@@ -62,33 +63,43 @@ bool IsCompleteJson(const std::string& reply) {
   return base::JSONReader::Read(reply, base::JSON_PARSE_RFC).has_value();
 }
 
-// One prompt's text (not sanitized yet) and images.
+// One prompt's text (not sanitized yet), images and audio clips.
 struct PromptParts {
   std::string text;
   std::vector<const SkBitmap*> bitmaps;
+  std::vector<const on_device_model::mojom::AudioData*> audio;
 };
 
-// nullopt if |prompt| holds something the session can't take: audio, a
-// tool call or result, an assistant prefix, or an image unless
-// |images_allowed| and the turn is the user's (images reach the model with
-// user turns only).
+// nullopt if |prompt| holds something the session can't take: a tool call
+// or result, an assistant prefix, an image unless |images_allowed| and the
+// turn is the user's, or audio unless |audio_allowed| and the turn is the
+// user's (images and audio reach the model with user turns only).
 std::optional<PromptParts> SplitPrompt(
     const blink::mojom::AILanguageModelPromptPtr& prompt,
-    bool images_allowed) {
+    bool images_allowed,
+    bool audio_allowed) {
   if (!prompt || prompt->is_prefix) {
     return std::nullopt;
   }
+  const bool user =
+      prompt->role == blink::mojom::AILanguageModelPromptRole::kUser;
   PromptParts parts;
   for (const auto& content : prompt->content) {
     if (!content) {
       return std::nullopt;
     }
     if (content->is_bitmap()) {
-      if (!images_allowed ||
-          prompt->role != blink::mojom::AILanguageModelPromptRole::kUser) {
+      if (!images_allowed || !user) {
         return std::nullopt;
       }
       parts.bitmaps.push_back(&content->get_bitmap());
+      continue;
+    }
+    if (content->is_audio()) {
+      if (!audio_allowed || !user || !content->get_audio()) {
+        return std::nullopt;
+      }
+      parts.audio.push_back(content->get_audio().get());
       continue;
     }
     if (!content->is_text()) {
@@ -130,6 +141,13 @@ std::string NewConversationKey() {
 bool IsUsableBitmapForModel(const SkBitmap& bitmap) {
   return IsUsableImageSource(bitmap.width(), bitmap.height()) &&
          !bitmap.drawsNothing();
+}
+
+std::optional<ModelAudio> ToModelAudio(
+    const on_device_model::mojom::AudioData& audio) {
+  return ModelAudioFromPage(audio.channel_count, audio.sample_rate,
+                            audio.frame_count, audio.data.data(),
+                            audio.data.size());
 }
 
 // ---------------------------------------------------------------------------
@@ -197,15 +215,22 @@ void WebAISession::Enqueue(Request request, std::vector<SkBitmap> bitmaps) {
         ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
     return;
   }
-  if (!bitmaps.empty()) {
+  // Audio clips are held like images, each counting as one.
+  size_t held = bitmaps.size();
+  for (const Turn& turn : request.turns) {
+    held += turn.audio.size();
+  }
+  if (held > 0) {
     // Over the per-site or total image caps: a generic failure (never
     // kErrorRequestThrottled, which crash-reports in the renderer).
-    if (!HoldImages(bitmaps.size())) {
+    if (!HoldImages(held)) {
       request.responder->OnError(
           ModelStreamingResponseStatus::kErrorGenericFailure, nullptr);
       return;
     }
-    request.held_images = bitmaps.size();
+    request.held_images = held;
+  }
+  if (!bitmaps.empty()) {
     request.images_pending = true;
   }
   request.id = next_request_id_++;
@@ -499,6 +524,14 @@ blink::mojom::AILanguageModelInstanceInfoPtr LanguageModelSession::GetInfo()
     info->input_types->push_back(
         blink::mojom::AILanguageModelPromptType::kImage);
   }
+  if (config_.audio_input) {
+    info->input_types->push_back(
+        blink::mojom::AILanguageModelPromptType::kAudio);
+    // What Blink decodes and resamples a page's audio to: what the model
+    // takes (ToModelAudio() refuses anything else).
+    info->audio_sample_rate_hz = static_cast<int32_t>(kAudioSampleRate);
+    info->audio_channel_count = 1;
+  }
   info->sampling_mode = config_.sampling_mode;
   return info;
 }
@@ -561,9 +594,10 @@ void LanguageModelSession::Queue(
     return;
   }
   std::vector<SkBitmap> bitmaps;
+  size_t clips = 0;
   for (const auto& prompt : prompts) {
     std::optional<PromptParts> parts =
-        SplitPrompt(prompt, config_.image_input);
+        SplitPrompt(prompt, config_.image_input, config_.audio_input);
     // Only the first message of a session may be a system message, and only
     // when the session is created (Blink enforces both).
     if (!parts ||
@@ -584,11 +618,28 @@ void LanguageModelSession::Queue(
       request.image_turns.push_back(request.turns.size());
       bitmaps.push_back(*bitmap);
     }
+    // The same for audio: at most what one request gives the model, each
+    // clip one channel at 16 kHz and at most 30 s, as GetInfo() asked.
+    std::vector<ModelAudio> audio;
+    for (const on_device_model::mojom::AudioData* data : parts->audio) {
+      std::optional<ModelAudio> clip;
+      if (clips < kMaxContextAudio) {
+        clip = ToModelAudio(*data);
+      }
+      if (!clip) {
+        request.responder->OnError(
+            ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
+        return;
+      }
+      ++clips;
+      audio.push_back(std::move(*clip));
+    }
     request.turns.push_back(MakeTurn(
         prompt->role == blink::mojom::AILanguageModelPromptRole::kAssistant
             ? Role::kAssistant
             : Role::kUser,
-        molt_ai::ToDisplayText(parts->text), parts->bitmaps.size()));
+        molt_ai::ToDisplayText(parts->text), parts->bitmaps.size(),
+        std::move(audio)));
   }
   // A prompt must end with the user's turn for the model to answer.
   if (!append_only &&
@@ -631,6 +682,8 @@ std::optional<GenerationJob> LanguageModelSession::Begin(Request& request) {
   job.history_images = std::move(shape.history_images);
   job.user_message = std::move(shape.user_message);
   job.user_images = std::move(shape.user_images);
+  job.history_audio = std::move(shape.history_audio);
+  job.user_audio = std::move(shape.user_audio);
   job.max_output_tokens = config_.max_reply_tokens;
   job.sampling = config_.sampling;
   job.conversation_key = conversation_key_;
@@ -651,11 +704,11 @@ blink::mojom::ModelExecutionContextInfoPtr LanguageModelSession::Commit(
 }
 
 size_t LanguageModelSession::ContextImages() const {
-  return conversation_.image_count();
+  return conversation_.image_count() + conversation_.audio_count();
 }
 
 bool LanguageModelSession::HoldContextImages() {
-  return HoldImages(conversation_.image_count());
+  return HoldImages(ContextImages());
 }
 
 void LanguageModelSession::Fork(
@@ -682,7 +735,7 @@ void LanguageModelSession::MeasureInputUsage(
   uint32_t tokens = 0;
   for (const auto& prompt : prompts) {
     std::optional<PromptParts> parts =
-        SplitPrompt(prompt, config_.image_input);
+        SplitPrompt(prompt, config_.image_input, config_.audio_input);
     if (!parts) {
       std::move(callback).Run(std::nullopt);
       return;
@@ -690,6 +743,15 @@ void LanguageModelSession::MeasureInputUsage(
     tokens = AddTokens(tokens, EstimateMessageTokens(parts->text));
     for (size_t i = 0; i < parts->bitmaps.size(); ++i) {
       tokens = AddTokens(tokens, kImageInputTokens);
+    }
+    // A clip counts by its length (as prompt() would count it).
+    for (const on_device_model::mojom::AudioData* data : parts->audio) {
+      const std::optional<ModelAudio> clip = ToModelAudio(*data);
+      if (!clip) {
+        std::move(callback).Run(std::nullopt);
+        return;
+      }
+      tokens = AddTokens(tokens, AudioInputTokens(clip->Seconds()));
     }
   }
   std::move(callback).Run(tokens);
