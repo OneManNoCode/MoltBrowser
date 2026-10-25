@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -73,8 +74,11 @@ OscillatorNode::OscillatorNode(BaseAudioContext& context,
           kDefaultDetuneValue,
           V8AutomationRate::Enum::kARate,
           AudioParamHandler::AutomationRateMode::kVariable,
-          /*min_value=*/-1200 * log2f(std::numeric_limits<float>::max()),
-          /*max_value=*/1200 * log2f(std::numeric_limits<float>::max()))) {
+          // MoltBrowser: portable in MoltNet (molt_math.h).
+          /*min_value=*/-1200 *
+              gfx::molt_math::Log2(std::numeric_limits<float>::max()),
+          /*max_value=*/1200 *
+              gfx::molt_math::Log2(std::numeric_limits<float>::max()))) {
   SetHandler(
       OscillatorHandler::Create(*this, context.sampleRate(),
                                 frequency_->Handler(), detune_->Handler()));

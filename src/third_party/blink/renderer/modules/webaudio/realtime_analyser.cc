@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -57,8 +58,9 @@ void ApplyWindow(base::span<float> p) {
   const size_t n = p.size();
   for (unsigned i = 0; i < n; ++i) {
     const double x = static_cast<double>(i) / static_cast<double>(n);
-    const double window =
-        a0 - a1 * cos(kTwoPiDouble * x) + a2 * cos(kTwoPiDouble * 2.0 * x);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    const double window = a0 - a1 * gfx::molt_math::Cos(kTwoPiDouble * x) +
+                          a2 * gfx::molt_math::Cos(kTwoPiDouble * 2.0 * x);
     p[i] *= static_cast<float>(window);
   }
 }

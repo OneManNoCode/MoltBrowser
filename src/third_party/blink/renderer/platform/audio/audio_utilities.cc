@@ -31,17 +31,20 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/fdlibm/ieee754.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink::audio_utilities {
 
 float DecibelsToLinear(float decibels) {
-  return powf(10, 0.05f * decibels);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Pow(10.0f, 0.05f * decibels);
 }
 
 float LinearToDecibels(float linear) {
   DCHECK_GE(linear, 0);
 
-  return 20 * log10f(linear);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return 20 * gfx::molt_math::Log10(linear);
 }
 
 double DiscreteTimeConstantForSampleRate(double time_constant,

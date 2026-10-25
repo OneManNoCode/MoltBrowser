@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/platform/audio/fft_frame.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 #if defined(ARCH_CPU_X86_FAMILY)
 #include <xmmintrin.h>
@@ -45,7 +46,10 @@ PeriodicWaveHandler::PeriodicWaveHandler(float sample_rate)
   rate_scale_ = PeriodicWaveSize() / sample_rate_;
   // Compute the number of ranges needed to cover the entire frequency range,
   // assuming kNumberOfOctaveBands per octave.
-  number_of_ranges_ = 0.5 + kNumberOfOctaveBands * log2f(PeriodicWaveSize());
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  number_of_ranges_ =
+      0.5 + kNumberOfOctaveBands *
+                gfx::molt_math::Log2(static_cast<float>(PeriodicWaveSize()));
 }
 
 PeriodicWaveHandler::~PeriodicWaveHandler() {
@@ -85,7 +89,8 @@ void PeriodicWaveHandler::WaveDataForFundamentalFrequency(
   float ratio = fundamental_frequency > 0
                     ? fundamental_frequency / lowest_fundamental_frequency_
                     : 0.5;
-  float cents_above_lowest_frequency = log2f(ratio) * 1200;
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  float cents_above_lowest_frequency = gfx::molt_math::Log2(ratio) * 1200;
 
   // Add one to round-up to the next range just in time to truncate partials
   // before aliasing occurs.
@@ -264,7 +269,8 @@ unsigned PeriodicWaveHandler::NumberOfPartialsForRange(
   float cents_to_cull = range_index * cents_per_range_;
 
   // A value from 0 -> 1 representing what fraction of the partials to keep.
-  float culling_scale = pow(2, -cents_to_cull / 1200);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  float culling_scale = gfx::molt_math::Pow(2, -cents_to_cull / 1200);
 
   // The very top range will have all the partials culled.
   unsigned number_of_partials = culling_scale * MaxNumberOfPartials();

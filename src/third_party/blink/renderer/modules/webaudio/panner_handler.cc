@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -599,7 +600,8 @@ void PannerHandler::CalculateAzimuthElevation(
   // value when one of the vectors has zero length.  We know here that
   // `projected_source` and `listener_right` are "normalized", so the dot
   // product is good enough.
-  double azimuth = base::RadToDeg(acos(
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  double azimuth = base::RadToDeg(gfx::molt_math::Acos(
       ClampTo(gfx::DotProduct(projected_source, listener_right), -1.0f, 1.0f)));
   azimuth = EnsureFinite(azimuth);  // avoid illegal values
 

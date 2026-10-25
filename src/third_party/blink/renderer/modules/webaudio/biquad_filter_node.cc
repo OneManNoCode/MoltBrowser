@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -109,7 +110,9 @@ BiquadFilterNode::BiquadFilterNode(BaseAudioContext& context)
           V8AutomationRate::Enum::kARate,
           AudioParamHandler::AutomationRateMode::kVariable,
           kMinGainValue,
-          /*max_value=*/40 * log10f(std::numeric_limits<float>::max()))),
+          // MoltBrowser: portable in MoltNet (molt_math.h), here and below.
+          /*max_value=*/40 *
+              gfx::molt_math::Log10(std::numeric_limits<float>::max()))),
       detune_(AudioParam::Create(
           context,
           Uuid(),
@@ -117,8 +120,10 @@ BiquadFilterNode::BiquadFilterNode(BaseAudioContext& context)
           kDefaultDetuneValue,
           V8AutomationRate::Enum::kARate,
           AudioParamHandler::AutomationRateMode::kVariable,
-          /*min_value=*/-1200 * log2f(std::numeric_limits<float>::max()),
-          /*max_value=*/1200 * log2f(std::numeric_limits<float>::max()))) {
+          /*min_value=*/-1200 *
+              gfx::molt_math::Log2(std::numeric_limits<float>::max()),
+          /*max_value=*/1200 *
+              gfx::molt_math::Log2(std::numeric_limits<float>::max()))) {
   SetHandler(BiquadFilterHandler::Create(*this, context.sampleRate(),
                                          frequency_->Handler(), q_->Handler(),
                                          gain_->Handler(), detune_->Handler()));

@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/fdlibm/ieee754.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 #if BUILDFLAG(IS_MAC)
 #include <Accelerate/Accelerate.h>
 #endif
@@ -125,30 +126,35 @@ void Biquad::Process(base::span<const float> source, base::span<float> dest) {
     // documented so it's not clear how to update them anyway.
   } else {
 #if BUILDFLAG(IS_MAC)
-    // Set up filter state.  This is needed in case we're switching from
-    // filtering with variable coefficients (i.e., with automations) to
-    // fixed coefficients (without automations).
-    input_buffer_[0] = x2_;
-    input_buffer_[1] = x1_;
-    output_buffer_[0] = y2_;
-    output_buffer_[1] = y1_;
+    // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch) the loop
+    // below, as on every other platform: vDSP_deq22D keeps the filter's
+    // history in double precision and gives other samples.
+    if (!gfx::molt_math::IsPortable()) {
+      // Set up filter state.  This is needed in case we're switching from
+      // filtering with variable coefficients (i.e., with automations) to
+      // fixed coefficients (without automations).
+      input_buffer_[0] = x2_;
+      input_buffer_[1] = x1_;
+      output_buffer_[0] = y2_;
+      output_buffer_[1] = y1_;
 
-    // Use vecLib if available
-    ProcessFast(source, dest);
+      // Use vecLib if available
+      ProcessFast(source, dest);
 
-    // Copy the last inputs and outputs to the filter memory variables.
-    // This is needed because the next rendering quantum might be an
-    // automation which needs the history to continue correctly.  Because
-    // `source` and `dest` can be the same block of memory, we can't read from
-    // `source` to get the last inputs.  Fortunately, `ProcessFast` has put the
-    // last inputs in `input_buffer_[0]` and `input_buffer_[1]` and the last
-    // outputs in `output_buffer_[0]` and `output_buffer_[1]`.
-    x1_ = input_buffer_[1];
-    x2_ = input_buffer_[0];
-    y1_ = output_buffer_[1];
-    y2_ = output_buffer_[0];
-
-#else
+      // Copy the last inputs and outputs to the filter memory variables.
+      // This is needed because the next rendering quantum might be an
+      // automation which needs the history to continue correctly.  Because
+      // `source` and `dest` can be the same block of memory, we can't read from
+      // `source` to get the last inputs.  Fortunately, `ProcessFast` has put
+      // the last inputs in `input_buffer_[0]` and `input_buffer_[1]` and the
+      // last outputs in `output_buffer_[0]` and `output_buffer_[1]`.
+      x1_ = input_buffer_[1];
+      x2_ = input_buffer_[0];
+      y1_ = output_buffer_[1];
+      y2_ = output_buffer_[0];
+      return;
+    }
+#endif
     // Create local copies of member variables
     double x1 = x1_;
     double x2 = x2_;
@@ -181,7 +187,6 @@ void Biquad::Process(base::span<const float> source, base::span<float> dest) {
     x2_ = DenormalDisabler::FlushDenormalFloatToZero(x2);
     y1_ = DenormalDisabler::FlushDenormalFloatToZero(y1);
     y2_ = DenormalDisabler::FlushDenormalFloatToZero(y2);
-#endif
   }
 }
 
@@ -836,7 +841,8 @@ double Biquad::TailFrame(int coef_index, double max_frame) const {
     double y = sqrt(-discrim) / 2;
     std::complex<double> r1(x, y);
     std::complex<double> r2(x, -y);
-    double r = hypot(x, y);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    double r = gfx::molt_math::Hypot(x, y);
 
     DCHECK(std::isfinite(r));
 

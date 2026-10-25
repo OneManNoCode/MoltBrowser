@@ -24,6 +24,7 @@
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -35,7 +36,8 @@ constexpr unsigned kNumberOfOutputChannels = 1;
 // Convert the detune value (in cents) to a frequency scale multiplier:
 // 2^(d/1200)
 float DetuneToFrequencyMultiplier(float detune_value) {
-  return std::exp2(detune_value / 1200);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return gfx::molt_math::Exp2(detune_value / 1200);
 }
 
 // Clamp the frequency value to lie with Nyquist frequency. For NaN, arbitrarily
@@ -326,7 +328,8 @@ bool OscillatorHandler::CalculateSampleAccuratePhaseIncrements(
     float k = 1.0 / 1200;
     vector_math::Vsmul(detune_values, k, detune_values, frames_to_process);
     for (unsigned i = 0; i < frames_to_process; ++i) {
-      detune_values[i] = std::exp2(detune_values[i]);
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      detune_values[i] = gfx::molt_math::Exp2(detune_values[i]);
     }
 
     if (has_frequency_changes) {
@@ -504,11 +507,17 @@ double OscillatorHandler::ProcessKRate(int n,
   const float incr = frequency * rate_scale;
 
   if (incr >= kInterpolate2Point) {
-    int k;
+    int k = 0;
     double v_index = virtual_read_index;
 
-    std::tie(k, v_index) =
-        ProcessKRateVector(n, destination, v_index, frequency, rate_scale);
+    // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch) only the
+    // scalar code, which is the same on x86 and Arm: the SSE2 and NEON
+    // kernels start their single-precision read positions from double and
+    // single precision respectively.
+    if (!gfx::molt_math::IsPortable()) {
+      std::tie(k, v_index) =
+          ProcessKRateVector(n, destination, v_index, frequency, rate_scale);
+    }
 
     if (k < n) {
       // In typical cases, this won't be run because the number of frames is 128
@@ -651,8 +660,11 @@ double OscillatorHandler::ProcessARate(
     base::span<float> phase_increments) const {
   int frames_processed = 0;
 
-  std::tie(frames_processed, virtual_read_index) =
-      ProcessARateVector(n, destination, virtual_read_index, phase_increments);
+  // MoltBrowser: as in ProcessKRate(), only the scalar code in MoltNet.
+  if (!gfx::molt_math::IsPortable()) {
+    std::tie(frames_processed, virtual_read_index) = ProcessARateVector(
+        n, destination, virtual_read_index, phase_increments);
+  }
 
   virtual_read_index = ProcessARateScalar(frames_processed, n, destination,
                                           virtual_read_index, phase_increments);

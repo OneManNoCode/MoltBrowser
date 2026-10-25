@@ -40,6 +40,7 @@
 #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/fdlibm/ieee754.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -327,8 +328,10 @@ void DynamicsCompressor::Process(const AudioBus* source_bus,
 
       // Warp pre-compression gain to smooth out sharp exponential transition
       // points.
-      const float post_warp_compressor_gain = static_cast<float>(
-          sin(static_cast<double>(kPiOverTwoFloat * compressor_gain)));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      const float post_warp_compressor_gain =
+          static_cast<float>(gfx::molt_math::Sin(
+              static_cast<double>(kPiOverTwoFloat * compressor_gain)));
 
       // Calculate total gain using the linear post-gain.
       const float total_gain = linear_post_gain * post_warp_compressor_gain;
@@ -474,9 +477,11 @@ float DynamicsCompressor::KneeCurve(float x, float k) const {
     return x;
   }
 
-  return linear_threshold_ + (1 - static_cast<float>(exp(static_cast<double>(
-                                      -k * (x - linear_threshold_))))) /
-                                 k;
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return linear_threshold_ +
+         (1 - static_cast<float>(gfx::molt_math::Exp(
+                  static_cast<double>(-k * (x - linear_threshold_))))) /
+             k;
 }
 
 // Full compression curve with constant ratio after knee.

@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 #if defined(ARCH_CPU_X86_FAMILY)
 #include <xmmintrin.h>
@@ -108,7 +109,8 @@ bool HasConstantValues(base::span<float> values) {
 double NormalizeFrequency(float frequency, double nyquist, float detune) {
   const double normalized_frequency = frequency / nyquist;
   // Detune in Cents multiplies the frequency by 2^(detune / 1200).
-  return detune ? normalized_frequency * exp2(detune / 1200)
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  return detune ? normalized_frequency * gfx::molt_math::Exp2(detune / 1200)
                 : normalized_frequency;
 }
 
