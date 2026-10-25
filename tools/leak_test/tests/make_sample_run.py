@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from tests import pcapgen as g  # noqa: E402
+from leakkit import expectations as ex  # noqa: E402
 
 OUT = os.path.join(HERE, 'testdata', 'sample_run')
 T0 = 1760000000.0
@@ -156,6 +157,18 @@ GOOD_FP = {
                            'Liberation Sans', 'LiberationSans-Bold',
                            'Liberation Serif Italic', 'Noto Sans',
                            'NotoSans-Bold'],
+    # MoltNet's bundled font set: every name visible, generics mapped,
+    # per-script fallback widths (sans-serif, serif, monospace) and local().
+    'fonts.moltnet_set': list(ex.MOLTNET_FONTS),
+    'fonts.generic_map': dict(ex.MOLTNET_GENERIC_MAP),
+    'fonts.fallback_widths': {'Arab': [61.54, 61.54, 61.54],
+                              'Hani': [128, 128, 128],
+                              'Emoji': [190.97, 190.97, 190.97]},
+    'fonts.local_bundled': ['Arimo-Regular', 'Arimo Italic', 'Tinos-Bold',
+                            'Tinos Bold Italic', 'Cousine-Regular',
+                            'NotoSans-Regular', 'Noto Naskh Arabic Regular',
+                            'NotoSansMath-Regular', 'NotoSansCJKjp-Thin',
+                            'Noto Color Emoji'],
     'storage.enforced_quota': 60 * 1024 ** 2,
     'pixels.video_frame_format': 'I420',
     'pixels.video_frame': {'format': 'I420',

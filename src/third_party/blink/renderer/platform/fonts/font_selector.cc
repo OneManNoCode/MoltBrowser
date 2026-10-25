@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_fallback_list.h"
 #include "third_party/blink/renderer/platform/fonts/font_fallback_map.h"
 #include "third_party/blink/renderer/platform/fonts/font_family.h"
+#include "third_party/blink/renderer/platform/fonts/font_platform_data.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/fonts/generic_font_family_settings.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 
@@ -45,6 +46,11 @@ AtomicString FontSelector::FamilyNameFromSettings(
     // FontFallbackList::GetFontData. So that non-generic -webkit-standard has
     // been specified on the page. Don't treat it as <generic-family> keyword.
     return g_empty_atom;
+  }
+  // MoltBrowser: MoltNet's bundled fonts, the same on every OS, not the
+  // settings.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return uniform->GenericFamily(font_description, generic_family_name);
   }
 #if BUILDFLAG(IS_ANDROID)
   // Noto Sans Math provides mathematical glyphs on Android but it does not

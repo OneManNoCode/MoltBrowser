@@ -203,6 +203,15 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
       echo "[build] fallback will use system tesseract or be unavailable."
     }
     echo ""
+    # MoltNet's font set (Contents/Resources/molt_fonts): the only fonts
+    # MoltNet windows draw with, the same files on every OS.
+    echo "=== Bundling MoltNet fonts ==="
+    "$SCRIPT_DIR/bundle-fonts.sh" --app "$APP" || {
+      bundling_failed fonts
+      echo "[build] WARNING: font bundling failed. MoltNet windows will use"
+      echo "[build] macOS's own fonts (its allow-list) instead."
+    }
+    echo ""
   elif [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
     echo "[build] ERROR: no $APP to bundle the helpers into."
     exit 1

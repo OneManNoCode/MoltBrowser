@@ -44,6 +44,38 @@ LINUX_FONTS = (
     'Courier',
 )
 
+# MoltNet's bundled font set (tools/fonts/moltnet_fonts.json; the generated
+# visibility list in moltnet_font_set_table.cc): every name a MoltNet page
+# may see, on every OS. The kit's tests check it against the manifest and
+# fp.js's copy.
+MOLTNET_FONTS = (
+    'Arimo', 'Tinos', 'Cousine', 'Noto Sans', 'Noto Naskh Arabic',
+    'Noto Sans Hebrew', 'Noto Sans Armenian', 'Noto Sans Georgian',
+    'Noto Sans Ethiopic', 'Noto Sans Devanagari', 'Noto Sans Bengali',
+    'Noto Sans Gujarati', 'Noto Sans Gurmukhi', 'Noto Sans Kannada',
+    'Noto Sans Malayalam', 'Noto Sans Oriya', 'Noto Sans Tamil',
+    'Noto Sans Telugu', 'Noto Sans Sinhala', 'Noto Sans Thai',
+    'Noto Sans Lao', 'Noto Sans Khmer', 'Noto Sans Myanmar',
+    'Noto Serif Tibetan', 'Noto Sans Thaana', 'Noto Sans Syriac',
+    'Noto Sans Cherokee', 'Noto Sans Canadian Aboriginal',
+    'Noto Sans Javanese', 'Noto Sans Ol Chiki', 'Noto Sans Adlam',
+    'Noto Sans Mongolian', 'Noto Sans NKo', 'Noto Sans Tifinagh',
+    'Noto Sans Yi', 'Noto Sans Symbols', 'Noto Sans Symbols 2',
+    'Noto Sans Math', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
+    'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Noto Sans CJK HK',
+    'Noto Color Emoji', 'Noto Sans Hebrew Light',
+    'Arial', 'Helvetica', 'Liberation Sans', 'Times New Roman', 'Times',
+    'MS Serif', 'Liberation Serif', 'Courier New', 'Courier',
+    'Liberation Mono',
+)
+# fp.js's fonts.generic_map: each generic keyword measures exactly like the
+# family the set maps it to (serif, cursive, fantasy: Tinos; sans-serif:
+# Arimo; monospace: Cousine; system-ui: Noto Sans; math: Noto Sans Math).
+MOLTNET_GENERIC_MAP = {
+    'serif': True, 'sans-serif': True, 'monospace': True, 'cursive': True,
+    'fantasy': True, 'system-ui': True, 'math': True,
+}
+
 # WebGL extension allow-list (webgl_uniform.cc, kAllowedExtensions).
 WEBGL_EXTENSIONS = (
     'ANGLE_instanced_arrays', 'EXT_blend_minmax', 'EXT_color_buffer_float',
@@ -266,7 +298,12 @@ FULL_RULES = (
     ('webgl.extensions', 'subset', WEBGL_EXTENSIONS, S_WEBGL),
     ('webgl2.extensions', 'subset', WEBGL_EXTENSIONS, S_WEBGL),
     ('webgpu.adapter', 'in', [None, 'absent'], S_WEBGL),
-    ('fonts.visible', 'subset', 'per_os', S_FONTS),
+    # MoltNet takes every font from the bundled set: no other family is
+    # visible on any OS, every name of the set is, and the generic keywords
+    # map to the same families everywhere.
+    ('fonts.visible', 'subset', MOLTNET_FONTS, S_FONTS),
+    ('fonts.moltnet_set', 'eq', list(MOLTNET_FONTS), S_FONTS),
+    ('fonts.generic_map', 'eq', MOLTNET_GENERIC_MAP, S_FONTS),
     # measureText() at 16 and 48px, left-aligned: every value a whole pixel.
     ('text.metrics_whole', 'eq', True, S_TEXT),
     ('form.validationMessage', 'eq', 'Please fill out this field.', S_LANG),
@@ -408,6 +445,10 @@ DIFF_KEYS = (
     # same functions on every OS too (FINGERPRINTING.md "MoltNet: portable
     # math").
     'cpu.math_cross_arch', 'cpu.css_math', 'cpu.dommatrix', 'audio.math',
+    # Text in scripts the Latin families lack falls back through the bundled
+    # set's per-script lists, and local() finds the set's faces: the same on
+    # every machine and OS (FINGERPRINTING.md "Fonts").
+    'fonts.fallback_widths', 'fonts.local_bundled',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference
@@ -437,7 +478,8 @@ FARBLED_KEYS = ('canvas.hash', 'canvas.hash_b', 'audio.hash')
 
 def font_allowlist(os_name):
     """The allow-list a protected context may see on `os_name`, or None
-    when the kit doesn't carry that OS's list (then only the diff checks)."""
+    when the kit doesn't carry that OS's list (then only the diff checks).
+    For the `subset` op's 'per_os'; MoltNet pages see MOLTNET_FONTS."""
     if os_name == 'Linux':
         return LINUX_FONTS
     return None

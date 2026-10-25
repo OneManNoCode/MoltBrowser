@@ -156,6 +156,8 @@ InkBox RoundInkBox(double grid, const InkBox& box) {
 const char* UniformEmojiFamily(FontPlatform platform) {
   switch (platform) {
     case FontPlatform::kLinux:
+    // The bundled set's emoji font has the same family name.
+    case FontPlatform::kMoltNetBundled:
       return "Noto Color Emoji";
     case FontPlatform::kWindows:
     case FontPlatform::kMac:

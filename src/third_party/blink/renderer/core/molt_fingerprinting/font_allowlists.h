@@ -15,7 +15,16 @@
 
 namespace blink::molt_fingerprinting {
 
-enum class FontPlatform : uint8_t { kWindows, kMac, kLinux, kAndroid };
+// An OS's list, or kMoltNetBundled: the fonts MoltBrowser ships for MoltNet
+// (moltnet_font_set.h), the same on every OS. CurrentFontPlatform() is
+// always an OS; MoltNet renderers that have the bundled set use its list.
+enum class FontPlatform : uint8_t {
+  kWindows,
+  kMac,
+  kLinux,
+  kAndroid,
+  kMoltNetBundled,
+};
 
 struct FontListEntry {
   // UTF-8, as the OS spells it; compared in FontName's normalized form.

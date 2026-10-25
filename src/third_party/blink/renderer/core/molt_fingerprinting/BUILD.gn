@@ -36,6 +36,12 @@ source_set("farbling") {
     "moltnet_network_values.h",
     "moltnet_text_values.cc",
     "moltnet_text_values.h",
+
+    # MoltNet's bundled fonts: the rules and the table generated from
+    # tools/fonts/moltnet_fonts.json (tools/fonts/generate_tables.py).
+    "moltnet_font_set.cc",
+    "moltnet_font_set.h",
+    "moltnet_font_set_table.cc",
   ]
   public_deps = [ "//base" ]
   deps = [ "//crypto" ]
@@ -68,6 +74,7 @@ source_set("unit_tests") {
     "moltnet_memory_values_unittest.cc",
     "moltnet_network_values_unittest.cc",
     "moltnet_text_values_unittest.cc",
+    "moltnet_font_set_unittest.cc",
   ]
   deps = [
     ":farbling",
@@ -86,4 +93,17 @@ fuzzer_test("molt_farbling_fuzzer") {
   ]
   seed_corpus = "corpus/molt_farbling_fuzzer"
   libfuzzer_options = [ "max_len=8192" ]
+}
+
+# MoltNet's bundled font set rules on the family and local() names, language
+# tags, scripts and weights a page gives (docs/FUZZING.md). Reached from
+# //chrome/browser/molt_ai/fuzzers.
+fuzzer_test("molt_moltnet_font_set_fuzzer") {
+  sources = [ "molt_moltnet_font_set_fuzzer.cc" ]
+  deps = [
+    ":farbling",
+    "//base",
+  ]
+  seed_corpus = "corpus/molt_moltnet_font_set_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
 }

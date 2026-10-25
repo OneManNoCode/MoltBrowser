@@ -427,9 +427,21 @@ FUZZERS = {
         dir=FINGERPRINTING,
         sources=[f"{FINGERPRINTING}/farbling.cc",
                  f"{FINGERPRINTING}/fonts.cc",
-                 f"{FINGERPRINTING}/font_allowlists.cc"],
+                 f"{FINGERPRINTING}/font_allowlists.cc",
+                 f"{FINGERPRINTING}/moltnet_font_set.cc",
+                 f"{FINGERPRINTING}/moltnet_font_set_table.cc"],
         tier="stand_ins",
         max_len=8192,
+    ),
+    "molt_moltnet_font_set_fuzzer": dict(
+        dir=FINGERPRINTING,
+        sources=[f"{FINGERPRINTING}/farbling.cc",
+                 f"{FINGERPRINTING}/fonts.cc",
+                 f"{FINGERPRINTING}/font_allowlists.cc",
+                 f"{FINGERPRINTING}/moltnet_font_set.cc",
+                 f"{FINGERPRINTING}/moltnet_font_set_table.cc"],
+        tier="stand_ins",
+        max_len=4096,
     ),
     # --- In-app updates ---------------------------------------------------
     "molt_release_manifest_fuzzer": dict(

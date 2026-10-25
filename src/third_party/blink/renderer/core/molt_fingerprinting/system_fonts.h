@@ -42,6 +42,7 @@
 #include <string_view>
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/fonts.h"
 
 namespace blink {
@@ -97,6 +98,14 @@ CORE_EXPORT const SimpleFontData* GetLocalFontFaceData(
 // the browser enumerated it).
 CORE_EXPORT bool AllowEnumeratedFont(ExecutionContext* context,
                                      std::string_view family);
+
+// CSS system fonts (font: menu, caption, status-bar, ...). In MoltNet every
+// keyword resolves as `caption` does, which is the same on every OS (the
+// default GUI font at the default size, layout_theme_font_provider*.cc);
+// otherwise Windows' menu, small-caption and status-bar fonts (family and
+// size from the user's display settings and DPI) would show. Elsewhere the
+// keyword itself.
+CORE_EXPORT CSSValueID UniformSystemFontKeyword(CSSValueID system_font_id);
 
 }  // namespace molt_fingerprinting
 }  // namespace blink

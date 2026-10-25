@@ -102,6 +102,19 @@ WIN_PAYLOAD = {
     'whisper/ggml-tiny.en.bin': b'fake ggml-tiny.en.bin\n',
 }
 
+# MoltNet's font set, as scripts/bundle-fonts.sh installs it, for the
+# fixture repository's tools/fonts/moltnet_fonts.json (fake, tiny files).
+with open(os.path.join(TESTDATA, 'repo', 'tools', 'fonts',
+                       'moltnet_fonts.json'), 'rb') as _f:
+    FONTS_PAYLOAD = {
+        'molt_fonts/TestSans-VF.ttf': b'fake font: Test Sans\n',
+        'molt_fonts/LICENSES/OFL-Test.txt': b'fake SIL Open Font License 1.1\n',
+        'molt_fonts/moltnet_fonts.json': _f.read(),
+    }
+MAC_PAYLOAD.update({'Contents/Resources/' + rel: data
+                    for rel, data in FONTS_PAYLOAD.items()})
+WIN_PAYLOAD.update(FONTS_PAYLOAD)
+
 
 def write_tree(root, files):
     for rel, data in files.items():
@@ -512,6 +525,31 @@ class GenerateTest(SbomTestCase):
         self.assertEqual(code, 0, err)
         self.assertIn('warning: whisper model', err)
         self.assertValid(out.strip(), dmg)
+
+    def test_font_set_is_checked_against_its_pins(self):
+        dmg = self.fx.artifact('MoltBrowser-macOS-arm64.dmg')
+        app = self.fx.mac_app()
+        code, out, err = self.fx.generate('macos', [dmg], payload=app)
+        self.assertEqual(code, 0, err)
+        doc = self.assertValid(out.strip(), dmg)
+        names = {p['name']: p for p in doc['packages']}
+        font = names['Test Sans (TestSans-VF.ttf)']
+        self.assertEqual(font['versionInfo'], '2.001')
+        self.assertEqual(font['licenseDeclared'], 'OFL-1.1')
+        self.assertIn('raw.githubusercontent.com/example/fonts/' + 'b' * 40,
+                      font['downloadLocation'])
+        self.assertIn('MoltNet font set', names)
+        # A changed font, or a file the manifest doesn't pin, fails.
+        write_tree(app, {'Contents/Resources/molt_fonts/TestSans-VF.ttf':
+                         b'another font\n'})
+        code, _, err = self.fx.generate('macos', [dmg], payload=app)
+        self.assertEqual(code, 1)
+        self.assertIn('does not match the pin', err)
+        app = self.fx.mac_app()
+        write_tree(app, {'Contents/Resources/molt_fonts/Extra.ttf': b'x'})
+        code, _, err = self.fx.generate('macos', [dmg], payload=app)
+        self.assertEqual(code, 1)
+        self.assertIn('doesn\'t pin', err)
 
     def test_unknown_helper_file_fails(self):
         app = self.fx.mac_app()

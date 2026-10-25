@@ -68,6 +68,12 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
     UChar32 c,
     const SimpleFontData*,
     FontFallbackPriority fallback_priority) {
+  // MoltBrowser: MoltNet's bundled fonts only, in their own order, never
+  // fontconfig's.
+  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
+    return FontPlatformData::UniformFallbackFontForCharacter(
+        *uniform, font_description, c, fallback_priority);
+  }
   if (IsEmojiPresentationEmoji(fallback_priority)) {
     // MoltBrowser: MoltNet's emoji font first, when installed.
     if (const SimpleFontData* uniform =

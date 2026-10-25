@@ -58,6 +58,10 @@ namespace blink {
 
 class HarfBuzzFace;
 class SimpleFontData;  // MoltBrowser
+// MoltBrowser: UniformFontSet (font_cache.h, font_fallback_priority.h).
+class FontFaceCreationParams;
+enum class AlternateFontName;
+enum class FontFallbackPriority;
 
 class PLATFORM_EXPORT FontPlatformData
     : public GarbageCollected<FontPlatformData> {
@@ -157,6 +161,73 @@ class PLATFORM_EXPORT FontPlatformData
   // such family or it isn't installed.
   static const SimpleFontData* UniformEmojiFontData(
       const FontDescription& description);
+
+  // MoltBrowser: MoltNet's bundled fonts (molt_fingerprinting/
+  // moltnet_fonts.h). In a MoltNet renderer that has them, every font the
+  // process finds, by family, by unique name, by per-character fallback or
+  // as the last resort, comes from this set and from nothing else, on every
+  // OS: each platform's FontCache::CreateFontPlatformData,
+  // PlatformFallbackFontForCharacter and GetLastResortFallbackFont, and
+  // FontSelector::FamilyNameFromSettings, ask it first. Installed once on
+  // the main thread before any font is created; never destroyed; its
+  // methods may be called on any thread.
+  class UniformFontSet {
+   public:
+    // The typeface the family name `family` (a family of the set, another
+    // of its names, an alias such as Arial, or a generic keyword such as
+    // sans-serif or system-ui) asks for in the weight and slope of
+    // `description`, or null.
+    virtual sk_sp<SkTypeface> MatchFamily(
+        const AtomicString& family,
+        const FontDescription& description) const = 0;
+    // The face whose PostScript or full name is `name`, or null.
+    virtual sk_sp<SkTypeface> MatchUniqueName(
+        const AtomicString& name) const = 0;
+    // What FontSelector::FamilyNameFromSettings returns: the family of the
+    // set that `generic_family_name` (or `description`'s standard font)
+    // maps to for text in `description`'s script, or the empty atom for a
+    // generic family the settings don't map (system-ui).
+    virtual AtomicString GenericFamily(
+        const FontDescription& description,
+        const AtomicString& generic_family_name) const = 0;
+    // The family of the set to draw `character` with when no font of the
+    // page's list has it, or null when none of the set has it.
+    virtual AtomicString FallbackFamily(
+        const FontDescription& description,
+        UChar32 character,
+        FontFallbackPriority fallback_priority) const = 0;
+    // The family of the last-resort font for `description`.
+    virtual AtomicString LastResortFamily(
+        const FontDescription& description) const = 0;
+
+   protected:
+    virtual ~UniformFontSet() = default;
+  };
+  static void SetUniformFontSet(const UniformFontSet* set);
+  static const UniformFontSet* GetUniformFontSet();
+  // FontCache::CreateFontPlatformData with the set, the same on every OS.
+  static const FontPlatformData* CreateUniformFontPlatformData(
+      const UniformFontSet& set,
+      const FontDescription& description,
+      const FontFaceCreationParams& creation_params,
+      float font_size,
+      AlternateFontName alternate_name);
+  // FontCache::PlatformFallbackFontForCharacter with the set.
+  static const SimpleFontData* UniformFallbackFontForCharacter(
+      const UniformFontSet& set,
+      const FontDescription& description,
+      UChar32 character,
+      FontFallbackPriority fallback_priority);
+  // FontCache::GetLastResortFallbackFont with the set: never a system font,
+  // an empty one until the set's files have arrived.
+  static const SimpleFontData* UniformLastResortFontData(
+      const UniformFontSet& set,
+      const FontDescription& description);
+  // How every font is rasterised and measured with the set, on every OS:
+  // anti-aliased (not LCD), unhinted, subpixel positioned, linear metrics,
+  // no embedded bitmaps.
+  static WebFontRenderStyle UniformRenderStyle();
+  static void ApplyUniformRendering(SkFont& font);
 
  private:
 #if !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC)

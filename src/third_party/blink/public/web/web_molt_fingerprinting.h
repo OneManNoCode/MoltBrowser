@@ -24,9 +24,14 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "third_party/blink/public/platform/web_common.h"
+
+namespace base {
+class File;
+}  // namespace base
 
 namespace blink {
 
@@ -69,6 +74,15 @@ class BLINK_EXPORT WebMoltFingerprinting {
   static void SetDocumentShieldsDecision(WebLocalFrame* frame,
                                          bool shields_down,
                                          const std::string& top_level_site);
+  // MoltNet renderers whose browser has MoltNet's bundled fonts (it puts
+  // --molt-net-fonts on their command line): call on the main thread right
+  // after Configure(kUniform), before any frame or worker exists. From then
+  // on every font of the process comes from the bundled set, on every OS
+  // (core/molt_fingerprinting/moltnet_fonts.h). No effect in other modes.
+  static void ExpectBundledFonts();
+  // The bundled set's files, read-only, in the order of its table, as the
+  // browser sends them right after launch. Main thread; accepted once.
+  static void SetBundledFontFiles(std::vector<base::File> files);
   // For a document of `frame` the browser didn't commit (the initial empty
   // document, and later ones in a frame that never got a decision): takes
   // the decision of the parent frame's document, or else of the opener's,

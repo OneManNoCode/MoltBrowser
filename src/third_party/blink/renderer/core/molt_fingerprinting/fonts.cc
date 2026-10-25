@@ -74,6 +74,11 @@ const FontListIndex& IndexFor(FontPlatform platform) {
       static const FontListIndex index = BuildIndex(FontPlatform::kAndroid);
       return index;
     }
+    case FontPlatform::kMoltNetBundled: {
+      static const FontListIndex index =
+          BuildIndex(FontPlatform::kMoltNetBundled);
+      return index;
+    }
     case FontPlatform::kLinux:
       break;
   }

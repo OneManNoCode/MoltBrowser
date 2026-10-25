@@ -66,6 +66,17 @@ cp "$BUILD_DIR/v8_context_snapshot.bin" "$STAGE_DIR/" 2>/dev/null || true
 cp -r "$BUILD_DIR/locales" "$STAGE_DIR/" 2>/dev/null || true
 cp -r "$BUILD_DIR/resources" "$STAGE_DIR/" 2>/dev/null || true
 
+# MoltNet's font set (molt_fonts\ next to MoltBrowser.exe; the installer
+# copies the whole folder): the only fonts MoltNet windows draw with
+# (scripts/bundle-fonts.sh).
+if ! "$SCRIPT_DIR/bundle-fonts.sh" --dest "$STAGE_DIR"; then
+  if [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+    echo "ERROR: MoltNet font bundling failed; a release can't ship without it."
+    exit 1
+  fi
+  echo "WARNING: MoltNet font bundling failed; MoltNet will use the system's fonts."
+fi
+
 # Create portable zip
 ZIP_NAME="MoltBrowser-$VERSION-win-x64-portable.zip"
 echo "Creating $ZIP_NAME..."

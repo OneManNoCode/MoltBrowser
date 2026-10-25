@@ -391,7 +391,7 @@ back/forward, and a MoltNet window with Shields off.
 | WebGL limits (`getParameter` `MAX_*`, ranges, `MAX_VIEWPORT_DIMS`, ...), `getShaderPrecisionFormat`, `getInternalformatParameter(SAMPLES)` | real | **fixed baselines**, never above the real value ([details](#webgl-and-webgpu-in-moltnet-windows)) | `webgl_rendering_context_base.cc`, `webgl2_rendering_context_base.cc` |
 | WebGL extensions (`getSupportedExtensions`, `getExtension`) | real | **fixed allow-list of 23**, intersected with the GPU's | `webgl_rendering_context_base.cc`: `ExtensionSupportedAndAllowed` |
 | WebGPU `navigator.gpu.requestAdapter()` | real | **null** (no adapter) | `gpu.cc`: `RequestAdapterImpl` |
-| Installed fonts: CSS `font-family`, canvas text, `document.fonts.check()`, `local()` | per-OS allow-list + 1 in 16 of the others, per site | **per-OS allow-list** ([details](#fonts)) | `font_fallback_list.cc`, `font_selector.{h,cc}`, `css_font_selector_base.{h,cc}`, `local_font_face_source.cc` |
+| Installed fonts: CSS `font-family`, canvas text, `document.fonts.check()`, `local()` | per-OS allow-list + 1 in 16 of the others, per site | **none: MoltBrowser's bundled font set**, the same on every OS, generic families and fallback included (per-OS allow-list in a build without the set) ([details](#fonts)) | `font_fallback_list.cc`, `font_selector.{h,cc}`, `css_font_selector_base.{h,cc}`, `local_font_face_source.cc`; the bundled set: `font_platform_data.{h,cc}`, the platforms' `font_cache*` ([details](#moltnet-the-bundled-font-set)) |
 | `queryLocalFonts()` (after its permission prompt) | filtered like CSS | filtered like CSS | `font_access.cc`: `DidGetEnumerationResponse` |
 | Canvas `measureText()` (`TextMetrics`, the `ExtendedTextMetrics` methods), windows and workers | real | **rounded**: whole CSS pixels, a 64th to a 128th of the font size above 127px ([details](#text-metrics-moltnet)) | `base_rendering_context_2d.cc`: `measureText`; `text_metrics.{h,cc}` |
 | How glyphs are measured (canvas and layout), Linux | the desktop's hinting and the screen's scale factor | **unhinted with subpixel positioning** for everyone, as for `text-rendering: geometricPrecision` ([details](#text-metrics-moltnet)) | `font_platform_data.{h,cc}`: `QuerySystemRenderStyle` |
@@ -3754,15 +3754,17 @@ So protected contexts only see some installed ("system") families:
 
 | Context | Installed families it can name |
 |---|---|
-| MoltNet window | the platform's **allow-list** only: the same for every MoltNet user on that OS |
+| MoltNet window | none: every font comes from MoltBrowser's **bundled font set**, the same on every OS ([below](#moltnet-the-bundled-font-set)); in a build without the set, the platform's **allow-list** only (the same for every MoltNet user on that OS) |
 | Normal / Incognito window, web site | the allow-list plus the site's **sample**: each other family name is in it with probability 1/16, decided by `PRF(site key, name)`, so stable within a site and session, unrelated across sites and sessions |
 | Normal / Incognito, a context with a random key (opaque top-level site, SVG image document, third-party shared worker, a context that started before the seed) | the allow-list only (a per-context random sample could be summed over many such contexts) |
 | Shields off (normal / Incognito), non-http(s) top-level site, protection off | every font, exactly as upstream |
 
-Never affected: generic families (`serif`, `sans-serif`, `monospace`,
-`cursive`, `fantasy`, `system-ui`, `math`, `-webkit-body`) and the fonts the
-user chose for them in settings, web fonts (`src: url()`, `FontFace` from
-data), and the per-character system fallback.
+Never affected outside MoltNet: generic families (`serif`, `sans-serif`,
+`monospace`, `cursive`, `fantasy`, `system-ui`, `math`, `-webkit-body`) and
+the fonts the user chose for them in settings, web fonts (`src: url()`,
+`FontFace` from data), and the per-character system fallback. Web fonts
+work in MoltNet too; generic families and fallback there use the bundled
+set.
 
 **How a lookup is decided** (`molt_fingerprinting/fonts.{h,cc}`, pure logic;
 `system_fonts.{h,cc}`, Blink glue). Names are compared after lower-casing
@@ -3860,9 +3862,9 @@ entry only costs compatibility: the page falls back to its next family).
   are not listed; users can't install system fonts).
 
 The lists were built from the vendors' published lists and default installs
-(no other browser's list or code was used); the Windows and macOS lists
-still need checking against fresh installs of each supported version
-(Follow-up 6).
+(no other browser's list or code was used). They are checked against fresh
+installs of each supported version with `tools/fonts/molt_font_inventory.py`
+([below](#checking-the-allow-lists-against-fresh-installs)).
 
 **Sample rate.** A site sees each non-listed installed family with
 probability p. Compatibility needs a large p, but the sample is a
@@ -3923,16 +3925,16 @@ document (MoltShield reloads the page).
 
 **Known gaps (fonts)**
 
-* **Per-character system fallback** (emoji, CJK, rare scripts): a page that
-  renders characters no listed font has gets them from whatever installed
-  font covers them, and can measure that. Out of scope, except emoji on
-  Linux in MoltNet ([Text metrics](#text-metrics-moltnet)).
-* **Text metrics and rendering**: in MoltNet windows glyphs are measured
-  alike on every machine of an OS and `measureText()` is rounded ([Text
-  metrics](#text-metrics-moltnet)); font versions still differ per OS
-  release. In normal windows `measureText()` values and glyph pixels are
-  not noised beyond the canvas noise; hinting, anti-aliasing and font
-  versions differ between machines.
+* **Per-character system fallback** (emoji, CJK, rare scripts) outside
+  MoltNet: a page that renders characters no listed font has gets them
+  from whatever installed font covers them, and can measure that. MoltNet
+  falls back within the bundled set
+  ([below](#moltnet-the-bundled-font-set)).
+* **Text metrics and rendering**: in MoltNet windows glyphs come from the
+  bundled set and are measured alike on every machine, and `measureText()`
+  is rounded ([Text metrics](#text-metrics-moltnet)). In normal windows
+  `measureText()` values and glyph pixels are not noised beyond the canvas
+  noise; hinting, anti-aliasing and font versions differ between machines.
 * **Font settings**: the fonts the user chose for the generic families
   (and the minimum font size) stay visible through generic families and
   unstyled text; a page that ships candidate fonts as web fonts can compare
@@ -3945,11 +3947,13 @@ document (MoltShield reloads the page).
   MoltNet windows don't use the user's settings ([settings from the
   regular profile](#moltnet-settings-from-the-regular-profile)) nor these
   defaults, which also follow the UI language and, for the fixed font on
-  Windows, the ClearType setting: they use fixed per-OS families, all on
-  the allow-list ([default fonts](#default-fonts-font-size-and-encoding)),
-  so every MoltNet user of an OS renders the generic families alike.
-* Users whose machine lacks an allow-listed font (removed by an
-  administrator, minimal Linux installs) remain distinguishable by that.
+  Windows, the ClearType setting: they use the bundled set's families, the
+  same on every OS ([below](#moltnet-the-bundled-font-set)); a build
+  without the set uses fixed per-OS families, all on the allow-list
+  ([default fonts](#default-fonts-font-size-and-encoding)).
+* Outside MoltNet, users whose machine lacks an allow-listed font (removed
+  by an administrator, minimal Linux installs) remain distinguishable by
+  that.
 * In normal windows, a sampled name that resolves to a hidden family costs a
   platform lookup that a page might time.
 * Code paths that build a `Font` without a font selector use `FontCache`
@@ -3989,11 +3993,214 @@ font-probing pages and suites (FingerprintJS, CreepJS font tests) in
 normal, Incognito and MoltNet windows, with Shields on and off; East Asian
 sites; design tools with `queryLocalFonts()`.
 
-[`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with `document.fonts.check()` in a MoltNet
-window and fails any visible family outside the Linux allow-list; on other
-OSes it records the visible set for `diff`. It also fails any `local()`
-face of a family outside every allow-list that loads, and compares the
-listed faces `local()` finds between runs.
+[`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with
+`document.fonts.check()` in a MoltNet window and fails any visible family
+outside the bundled set, on every OS; it fails unless every name of the
+set is visible and every generic keyword measures like the set's family
+for it, and `diff` compares the per-script fallback widths and the set's
+faces `local()` finds between runs, across machines and OSes. It also
+fails any `local()` face of a family outside every allow-list that loads,
+and compares the listed faces `local()` finds between runs.
+
+### MoltNet: the bundled font set
+
+Allow-lists keep MoltNet users of one OS alike only as far as their fonts
+are alike, and they aren't: font versions differ per OS release, and
+whatever a page renders that no listed font has (CJK, rare scripts,
+symbols, emoji) comes from whatever installed font covers it. So
+MoltBrowser ships one font set, and MoltNet renderers take every font from
+it, on Linux, Windows and macOS alike: families a page names, generic
+families, `system-ui`, per-character fallback, the last-resort font,
+`src: local()` and `queryLocalFonts()`. Nothing installed on the machine is
+used or looked up. Normal and Incognito windows are unchanged.
+
+Tor Browser takes the same approach on Linux (bundled Noto families and
+the metric-compatible Arimo, Tinos and Cousine). Its current list
+(`tor-browser-build`, `projects/fonts`) could not be retrieved when this
+set was put together, so the set was chosen from the Noto project's script
+coverage instead; comparing the two is a check for the next font update.
+
+**The set** (`tools/fonts/moltnet_fonts.json`, version 2026.10.1), all
+under the SIL Open Font License 1.1:
+
+| Files | Families | Size |
+|---|---|---|
+| Arimo, Tinos, Cousine (google/fonts, googlefonts/tinos) | metric-compatible with Arial, Times New Roman and Courier New: Latin, Greek, Cyrillic, Hebrew | 4.5 MB |
+| Noto (notofonts.github.io), unhinted, variable where Noto ships one | Noto Sans; Noto Naskh Arabic; Noto Sans Hebrew, Armenian, Georgian, Ethiopic, Devanagari, Bengali, Gujarati, Gurmukhi, Kannada, Malayalam, Oriya, Tamil, Telugu, Sinhala, Thai, Lao, Khmer, Myanmar, Thaana, Syriac, Cherokee, Canadian Aboriginal, Javanese, Ol Chiki, Adlam, Mongolian, NKo, Tifinagh, Yi; Noto Serif Tibetan; Noto Sans Symbols, Symbols 2 and Math | 7.8 MB |
+| Noto Sans CJK (noto-cjk), one variable collection, weights 100 to 900 | Noto Sans CJK JP, KR, SC, TC, HK | 32.7 MB |
+| Noto Color Emoji (noto-emoji), COLRv1 | Noto Color Emoji | 5.0 MB |
+
+47 files, 49,992,556 bytes (47.7 MiB); 27.2 MiB gzip -9, 18.7 MiB xz, as
+the installers carry it. Each file is pinned by repository, commit, path,
+size and SHA-256, with its faces (family, weight range, slope, names) and
+its licence; fonts are never committed to this repository.
+`scripts/bundle-fonts.sh` fetches them by those pins at build time
+(`tools/fonts/fetch_fonts.py`, cached by hash; a release build refuses a
+manifest with unpinned entries) and installs them with their licences:
+
+| Platform | Where |
+|---|---|
+| macOS | `MoltBrowser.app/Contents/Resources/molt_fonts/`; data, sealed by the app's signature like the other resources (no code signature of their own, nothing for notarization to check) |
+| Linux (.deb, .rpm, AppImage, Flatpak) | `/opt/moltbrowser/molt_fonts/` (the app directory in the AppImage and Flatpak) |
+| Windows (installer, portable ZIP) | `molt_fonts\` next to `moltbrowser.exe` |
+
+`release.sh` verifies the installed set against the manifest (missing,
+extra or changed files fail the release), and the SBOM lists the set and
+each font with its download location and SHA-256 ([SBOM](SBOM.md)).
+
+**What a MoltNet page sees.** The set's families, their other names, and
+aliases that keep pages written for the common families working:
+
+| Names | Family |
+|---|---|
+| Arial, Helvetica, Liberation Sans | Arimo |
+| Times New Roman, Times, MS Serif, Liberation Serif | Tinos |
+| Courier New, Courier, Liberation Mono | Cousine |
+
+| Generic | Family |
+|---|---|
+| text without `font-family`, `serif`, `cursive`, `fantasy`, `-webkit-body`, `-webkit-standard` | Tinos |
+| `sans-serif` | Arimo |
+| `monospace` | Cousine |
+| `system-ui`, `BlinkMacSystemFont` | Noto Sans |
+| `math` | Noto Sans Math |
+| any generic, for Han, kana, hangul and bopomofo text | Noto Sans CJK, by region: kana JP, hangul KR, bopomofo TC; Han by the content language (`ja` JP, `ko` KR, `zh-Hant`, `zh-TW` TC, `zh-HK`, `zh-MO`, `yue` HK, other `zh` SC; SC when the language names none) |
+
+`font: caption`, `menu`, `small-caption`, `status-bar` and the other system
+font keywords resolve as `caption` does (Windows' per-keyword fonts are not
+used), so they too come out alike. A character the requested fonts lack
+falls back through its script's list: the script's Noto family first; for
+punctuation, digits and symbols Arimo, Noto Sans, Symbols, Symbols 2, Math,
+the CJK family of the text's region, then Noto Color Emoji; emoji
+presentation takes Noto Color Emoji first, text presentation the symbol
+families first. Every list ends with every other family of the set, so a
+character the set has is always found and one it lacks is drawn as the
+last-resort font's missing glyph, on every machine the same.
+
+Faces are matched as CSS Fonts 4 says (the slope first, then the nearest
+weight in the documented direction); variable faces are instantiated at
+the requested weight, static ones synthesized bold or oblique the way Blink
+does on Linux. Every face is created from the file's bytes with Skia's own
+font backend (Fontations), on every OS, and laid out unhinted with
+subpixel positioning and anti-aliasing, without embedded bitmaps: the same
+scaler and settings whatever the OS, its version or the desktop's
+settings. `queryLocalFonts()` lists the set's faces.
+
+**Metrics.** What Blink derives from a font (ascent and descent, x-height,
+cap height, line gap, underline, average and maximum character width, glyph
+bounds and the glyph extents HarfBuzz positions marks with) is computed
+partly per OS upstream. With the set, MoltNet renderers take one path on
+every OS, the one Linux takes: the descent rule for subpixel positioning
+everywhere, the font's own x-height and average width and the maximum
+width from its bounds also on macOS and Windows, Skia's glyph bounds rather
+than path bounds on macOS, and no macOS ascent adjustment for Times,
+Helvetica and Courier. macOS takes HarfBuzz's advances for fonts with a
+`trak` table and no `sbix`; no font of the set has either
+(`tools/fonts/fonts_test.py` checks the files).
+`tools/fonts/metrics_check/run.py` runs that code, copied out of `src/`,
+built as Linux, Windows and macOS, over what Skia's Fontations backend
+reports for every face of the set (the `skrifa` version Chromium vendors,
+at 9 sizes and the faces' weights): the three OSes compute the same values
+in all 828 cases, and Linux the same as without the set.
+
+**How the files reach the renderer.** The browser opens the `molt_fonts`
+files once, on a background thread, when startup-critical work is done (or
+at the first renderer launch, if that comes first), checking each file's
+size and sfnt header against the table compiled into the browser
+(`molt_net_fonts_table.h`, generated from the manifest; the whole set or
+none). Every MoltNet renderer gets `--molt-net-fonts` on its command line,
+unless the browser knows the installation has no `molt_fonts` folder, and
+the files as read-only handles over the fingerprinting configuration
+channel (`FingerprintingConfiguration.SetMoltNetFonts`): before any
+document commits when the set is open, else as soon as it is (MoltNet's
+first window, a window restored at startup). The renderer maps them
+read-only (shared page cache: only the pages a renderer touches become
+resident) and checks each typeface's family against its own table
+(`moltnet_font_set_table.cc`, the same order; `molt_net_fonts_unittest.cc`
+checks the two agree). From the switch on, no font lookup reaches the
+system: until the files arrive, lookups find nothing and text uses an
+empty last-resort face; when they arrive, every thread that looked a font
+up (the main thread and workers, which have font caches of their own)
+invalidates its font cache, so documents and canvases look their fonts up
+again. Files that don't match the table (count, size, header) are refused
+together, leaving the set empty rather than partial, and a typeface whose
+family isn't the table's is not used. An installation without the set uses
+the per-OS allow-list as before.
+
+**Hooks** (each marked `MoltBrowser:`):
+
+| Upstream file | Function | What |
+|---|---|---|
+| `platform/fonts/font_platform_data.{h,cc}` | new `UniformFontSet` interface, `CreateUniformFontPlatformData`, `UniformFallbackFontForCharacter`, `UniformLastResortFontData`, `UniformRenderStyle`, `ApplyUniformRendering`; constructor and `CreateSkFont` (Linux) | the platform layer's entry to the set, and the fixed rendering |
+| `platform/fonts/skia/font_cache_skia.cc` | `CreateFontPlatformData` (not Windows), `GetLastResortFallbackFont` | families from the set; the last resort from the set |
+| `platform/fonts/linux/font_cache_linux.cc` | `PlatformFallbackFontForCharacter` | fallback from the set, never fontconfig |
+| `platform/fonts/win/font_cache_skia_win.cc` | `CreateFontPlatformData`, `PlatformFallbackFontForCharacter` | no DirectWrite matching or fallback |
+| `platform/fonts/win/font_platform_data_win.cc` | `CreateSkFont` | the fixed rendering |
+| `platform/fonts/mac/font_cache_mac.mm` | `CreateFontPlatformData`, `PlatformFallbackFontForCharacter`, `GetLastResortFallbackFont` | no Core Text matching or cascade |
+| `platform/fonts/mac/font_platform_data_mac.mm` | `CreateSkFont` | the fixed rendering |
+| `platform/fonts/font_cache.cc` | `GetFontPlatformData` | `system-ui` maps through the set, not the platform UI font |
+| `platform/fonts/font_selector.cc` | `FamilyNameFromSettings` | generic families from the set, not from settings |
+| `core/css/css_pending_system_font_value.cc` | `ResolveFontFamily`, `ResolveFontSize` | system font keywords alike on every OS |
+| `modules/font_access/font_access.cc` | `DidGetEnumerationResponse` | `queryLocalFonts()` lists the set |
+| `platform/fonts/font_metrics.cc` | `AscentDescentWithHacks` | the descent rule on every OS; no macOS ascent adjustment |
+| `platform/fonts/simple_font_data.cc` | `PlatformInit` | x-height, average and maximum width alike on every OS |
+| `platform/fonts/skia/skia_text_metrics.cc` | `SkFontGetGlyphExtentsForHarfBuzz`, `SkFontGetBoundsForGlyph`, `SkFontGetBoundsForGlyphs` | glyph bounds alike on every OS |
+| `chrome/browser/chrome_content_browser_client.cc` | `InitOnUIThread` | the browser opens the set after startup |
+
+MoltBrowser's own code: `core/molt_fingerprinting/moltnet_font_set.{h,cc}`
+(the rules, pure, with the generated `moltnet_font_set_table.cc`),
+`moltnet_fonts.{h,cc}` (the set in a renderer: mapped files, typefaces,
+`UniformFontSet`), `system_fonts.{h,cc}` (the set's names as the
+visibility list, `FontPlatform::kMoltNetBundled`); in the browser
+`molt_ai/fingerprinting/molt_net_fonts.{h,cc}`, the
+`--molt-net-fonts` switch and `SetMoltNetFonts` in
+`molt_fingerprinting.mojom`.
+
+**What it costs MoltNet users.** About 19 to 27 MiB more per download and
+48 MiB on disk. Text in MoltNet windows is drawn from the same fonts with
+the same settings on every OS, so it doesn't look native on Windows and
+macOS (no DirectWrite or Core Text rendering, no ClearType) nor follows
+the Linux desktop's hinting; it is unhinted, as on high-density screens. Pages that name an installed font
+the set lacks get the set's family for their generic fallback; scripts
+outside the set are drawn as missing glyphs unless the page brings a web
+font.
+
+**Verification.** No Chromium checkout needed: `tools/fonts/fonts_test.py`
+(39 tests: the font reader against hostile input, the manifest's rules,
+the generated tables up to date, fetching and installing from a fake
+server, pinning, the fresh-install inventory; with the fonts cached, every
+pinned face against the real files) and, with the C++ tests built
+standalone with g++ (ASan/UBSan) and clang, `moltnet_font_set_unittest.cc`
+(generic mapping, CJK regions, face matching, fallback order, unique
+names); `molt_moltnet_font_set_fuzzer` (names, language tags, scripts,
+weights; [FUZZING](FUZZING.md)); `tools/fonts/metrics_check/run.py` (the
+metric code of the three OSes on the real fonts, above; each of its six
+hooks, removed, makes the OSes disagree). Every changed C++ file compiles
+against Chromium 156's headers (`tools/compile_check`; the Windows and
+macOS files need those builds). Needs the build machine: `blink_unittests`
+(`MoltNetFontsTest.*`, with a worker that looked fonts up before the
+files came, `MoltNetFontSetTest.*`), `molt_ai_unittests`
+(`MoltNetFontsTest.*`, `MoltNetFontsDeliveryTest.*`,
+`MoltNetFontSetTest.*`), the checks tagged "fonts" in
+`docs/BUILD_MACHINE_CHECKLIST.md`, and the leak kit on each OS.
+
+### Checking the allow-lists against fresh installs
+
+`tools/fonts/molt_font_inventory.py` (Python 3.8+, standard library only,
+nothing installed) lists every font file of the machine it runs on, with
+its faces, family names (a variable font's per-instance names too),
+versions and SHA-256, compares them with that OS's allow-list (a copy of
+`font_allowlists.cc` generated into `tools/fonts/font_allowlists.json`)
+and writes `molt-fonts-<os>-<version>.json` and `.md`: listed families
+the install lacks, families it has that aren't listed, and the versions
+of the listed ones. It records no user or host name. A fresh Windows or
+macOS has no Python: there `collect_windows.ps1` (Windows PowerShell 5.1)
+or `collect_fonts.pl` (macOS's `/usr/bin/perl`) collects the same data
+and `molt_font_inventory.py import` analyses it on any other machine;
+`merge` sums up the installs of one OS. Run it on a fresh VM of every
+supported version (Windows 10 22H2 and 11, macOS 13, 14 and 15, the
+common Linux distributions) before installing anything else
+(`docs/BUILD_MACHINE_CHECKLIST.md`, "fonts").
 
 ## Text metrics (MoltNet)
 
@@ -4010,7 +4217,7 @@ windows are unchanged.
 |---|---|
 | Canvas `measureText()` | `width`, `actualBoundingBoxLeft/Right/Ascent/Descent`, `fontBoundingBoxAscent/Descent`, `alphabeticBaseline`, `hangingBaseline`, `ideographicBaseline` (shipped); `emHeightAscent/Descent`, `getSelectionRects()`, `getActualBoundingBox()`, `getIndexFromOffset()`, `getTextClusters()` (`ExtendedTextMetrics`: experimental, and an origin trial that accepts third-party tokens). Workers too (`OffscreenCanvas`) |
 | Element geometry | `offsetWidth`/`clientWidth`/`scrollWidth` (whole pixels); `getBoundingClientRect()`, `getClientRects()` and `Range` rects (64ths of a device pixel, scaled up by any transform); `ResizeObserver`, `IntersectionObserver`; `getComputedStyle()` of shrink-to-fit boxes; SVG `getComputedTextLength()`, `getSubStringLength()`, `getExtentOfChar()`, `getBBox()`; hit testing at fractional points (`elementFromPoint()`, `caretPositionFromPoint()`); where lines break; container queries on a box sized by its text |
-| `document.fonts.check()`, `local()`, `queryLocalFonts()` | which families exist: the allow-list in MoltNet ([Fonts](#fonts)) |
+| `document.fonts.check()`, `local()`, `queryLocalFonts()` | which families exist: the bundled set in MoltNet ([Fonts](#fonts)) |
 | Canvas pixels of text | farbled per site ([The noise](#the-noise)); a script that rounds or hashes coarsely sees through it |
 | Emoji | which code points come out as one colour glyph, and their advances and ink boxes |
 
@@ -4103,22 +4310,27 @@ emoji font; Noto Color Emoji is on the Linux allow-list, so pages could
 name it anyway. Where it isn't installed, upstream's fallback decides.
 Windows and macOS have one emoji font per release already.
 
+**4. One font set on every OS.** With the [bundled font
+set](#moltnet-the-bundled-font-set), MoltNet renderers take every font,
+emoji and fallback included, from the fonts MoltBrowser ships, render
+them with the same scaler (Skia's Fontations) and the same settings
+(unhinted, subpixel positioning, anti-aliased, no embedded bitmaps), and
+derive their metrics the same way ([Metrics](#moltnet-the-bundled-font-set))
+on Linux, Windows and macOS; 1 and 3 above then only matter for a build
+without the set.
+
 ### What is left
 
-* **Per OS** everything about text differs: fonts, emoji, rasteriser.
-  Tor Browser accepts per-OS buckets too.
-* **Per OS release** the font versions differ (Windows 10 and 11, each
-  macOS, each Linux distribution release), and with them metrics and
-  which emoji exist. Tor Browser avoids that on Linux by shipping its own
-  fonts; MoltBrowser doesn't (see the follow-ups).
-* **Per machine** of one OS release: fonts missing from the allow-list
-  (removed by an administrator, minimal installs); Windows with font
-  smoothing off (and possibly ClearType tuning, unverified); on Linux, no
-  Noto Color Emoji, and fontconfig's embedded-bitmap setting for fonts
-  with bitmap strikes; installed
-  fallback fonts for CJK, rare scripts and symbols (restricting fallback
-  to the allow-list would turn CJK into boxes on Linux, whose list has no
-  CJK font).
+* **Without the bundled set** (a build that doesn't ship it), text
+  differs per OS (fonts, emoji, rasteriser), per OS release (font
+  versions, and with them metrics and which emoji exist) and per machine
+  of one release: fonts missing from the allow-list, Windows with font
+  smoothing off, on Linux no Noto Color Emoji or fontconfig's
+  embedded-bitmap setting, and installed fallback fonts for CJK, rare
+  scripts and symbols. The [bundled font
+  set](#moltnet-the-bundled-font-set) takes all of these out of MoltNet
+  windows; the leak kit's `diff` across OSes checks the result on the
+  build machines.
 * **Element geometry is not rounded.** Layout reaches scripts through too
   many paths for rounding some of them to hold: rounding
   `getBoundingClientRect()` and `Range` rects would leave
@@ -4598,7 +4810,7 @@ after every New Identity:
 |---|---|---|
 | Text the renderer makes and pages read or measure: `validationMessage`, the file input's labels, the default `<details>` summary and button labels, date-field placeholders, the permission elements' labels, ... | `Platform::QueryLocalizedString` -> `ChromeContentClient::GetLocalizedString` -> the renderer's `ui::ResourceBundle`, i.e. the locale pak of `--lang` (on Linux, the one the zygote loaded) | **en-US**, the same text on every OS |
 | The default text locale: text without a `lang` attribute (the Han glyph variants of CJK text, hyphenation, line breaking, case mapping, the quotes of `<q>`), the date picker's language, the default caption track | `DefaultLanguage()` and `UserPreferredLanguages()` (`platform/language.cc`): `--lang` | **en-US** |
-| The fonts of the generic families, the minimum logical font size, the default encoding (`document.characterSet` of pages that don't declare one) | Chromium registers their defaults from the UI language's resources (`PrefsTabHelper::RegisterProfilePrefs`), and MoltNet's settings isolation pinned the registered default | **fixed per OS**: the OS's en-US defaults, each font resolved on the font allow-list; windows-1252 |
+| The fonts of the generic families, the minimum logical font size, the default encoding (`document.characterSet` of pages that don't declare one) | Chromium registers their defaults from the UI language's resources (`PrefsTabHelper::RegisterProfilePrefs`), and MoltNet's settings isolation pinned the registered default | **fixed**: the bundled font set's families on every OS (in a build without the set, the OS's en-US defaults, each font resolved on the font allow-list); the OS's en-US minimum size; windows-1252 |
 
 Normal and Incognito windows are unchanged: the UI language is the same on
 every site, so fixing it there would only make users look like other
@@ -4760,6 +4972,12 @@ script from the three `.grd` files, `components_locale_settings.grd` and
 edit); its en-US column is checked against the paks grit builds on each
 OS's build machine.
 
+With the [bundled font set](#moltnet-the-bundled-font-set), MoltNet
+renderers answer generic families from the set before these prefs are
+read (`FontSelector::FamilyNameFromSettings`), so the fonts in this table
+apply only to a build without the set; the minimum font size and the
+encoding apply either way.
+
 ### What a fixed language costs MoltNet users
 
 * Form validation bubbles, file inputs, the default `<details>` and button
@@ -4906,7 +5124,7 @@ new early returns or paths around the hook (none found).
 | `RTCPeerConnection.startDiagnosticLogging()` (`RTCDiagnosticLogging`, stable on desktop) | a random session id | the browser collects no logs (MoltNet keeps no WebRTC text logs) | logs only for origins an enterprise policy lists | none |
 | `PerformanceEntry.navigationId` always exposed; Event Timing dispatch as HTML specifies (`EventTimingMatchingHTML`) | ids per document, starting at a random 100 to 10000, steps of 7 | same | same | none |
 | WebGPU: compatibility mode, new features, limits and texture usage | the GPU | no adapter | real (not covered, see [known gaps](#known-gaps-and-attacks)) | none |
-| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the allow-list; `local()` is a lookup of a listed family and never uses the cache | allow-list + the site's sample, the same way | `local()` resolved through visible families ([Fonts](#fonts)) |
+| `local()` faces memoised per process (`FontUniqueNameTypefaceCache`); `queryLocalFonts()` refused in inactive frames | installed fonts | the bundled set (a build without it: the allow-list); `local()` is a lookup of a visible family and never uses the cache | allow-list + the site's sample, the same way | `local()` resolved through visible families ([Fonts](#fonts)) |
 | New audio decoders (Symphonia, direct Opus) | `decodeAudioData()` results | the same for every user of a build; farbled when read | same | none |
 | Media clock coarsening (`kCoarseWallClockTimeSource`, on) | the media clock's precision | coarser | coarser | upstream hardening |
 | `drawElementImageToTexture` (WebGPU, HTML-in-canvas) | page content in a GPU texture | **off**: behind `CanvasDrawElement` (experimental); the `HTMLInCanvas` origin trial's tokens stay refused | same | none |
@@ -5353,6 +5571,9 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
 | `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.{h,cc}`, `moltnet_font_set_table.cc`, `moltnet_fonts.{h,cc}` | MoltNet's bundled font set: its rules (pure, generated table, + `moltnet_font_set_unittest.cc`, `molt_moltnet_font_set_fuzzer.cc`) and the set in a renderer (+ `moltnet_fonts_test.cc`) |
+| `src/chrome/browser/molt_ai/fingerprinting/molt_net_fonts.{h,cc}`, `molt_net_fonts_table.h` | opens the bundled set's files in the browser and hands MoltNet renderers read-only duplicates (+ `molt_net_fonts_unittest.cc`) |
+| `tools/fonts/` | the set's pinned manifest, fetching, pinning, the generated tables, and the fresh-install font inventory (+ `fonts_test.py`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
 | `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
@@ -5485,19 +5706,14 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    there; closing the moment between a new zoom and the new size, which
    needs content to send both in one visual-properties update (a new
    content hook, see [Zoom](#zoom)).
-6. Fonts: the allow-lists are in (see [Fonts](#fonts)), and MoltNet's
-   generic-font settings are fixed per OS, from the allow-lists, whatever
-   the UI language ([default
-   fonts](#default-fonts-font-size-and-encoding)); still to do: check
-   the Windows and macOS lists against fresh installs of each supported
-   version (MoltNet's default fonts depend on them too). Text metrics in
-   MoltNet are done ([Text metrics](#text-metrics-moltnet): glyphs
-   measured alike on Linux, `measureText()` rounded, one emoji font on
-   Linux); left: shipping one font set and one emoji font with MoltBrowser
-   for MoltNet (Tor Browser's approach on Linux), which would make OS
-   releases and fallback alike too but means tens of megabytes of fonts
-   loaded into the sandboxed renderer, and checking whether Windows'
-   ClearType tuning changes DirectWrite's metrics. The WebGL parameter surface
+6. Fonts: the allow-lists are in (see [Fonts](#fonts)), and MoltNet takes
+   every font from a set MoltBrowser ships, the same on every OS ([the
+   bundled font set](#moltnet-the-bundled-font-set)); text metrics in
+   MoltNet are done ([Text metrics](#text-metrics-moltnet)). Still to do:
+   run `tools/fonts/molt_font_inventory.py` on fresh installs of each
+   supported Windows, macOS and Linux version and correct the allow-lists
+   (normal windows, and MoltNet in a build without the set); compare the
+   set with Tor Browser's at the next font update. The WebGL parameter surface
    and WebGPU in MoltNet are done (fixed WebGL baselines, no WebGPU
    adapter); left: a mobile look at the baselines if MoltNet comes to
    Android, and checking them against the WebGL reports of real Macs,

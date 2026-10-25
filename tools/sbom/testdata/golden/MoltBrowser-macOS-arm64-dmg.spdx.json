@@ -11,7 +11,7 @@
       "Organization: GenEye AI Labs Inc."
     ]
   },
-  "comment": "Chromium third-party components: every shipped component of //chrome:chrome, as listed by tools/licenses/licenses.py in the Chromium checkout, with versions from their README.chromium files. Bundled helpers: scanned from MoltBrowser.app, every file with its SHA-1 and SHA-256.",
+  "comment": "Chromium third-party components: every shipped component of //chrome:chrome, as listed by tools/licenses/licenses.py in the Chromium checkout, with versions from their README.chromium files. Bundled helpers: scanned from MoltBrowser.app, every file with its SHA-1 and SHA-256. MoltNet font set: from tools/fonts/moltnet_fonts.json (pins), every installed file checked against its pin.",
   "packages": [
     {
       "SPDXID": "SPDXRef-Package-MoltBrowser",
@@ -409,6 +409,55 @@
       "licenseInfoFromFiles": [
         "NOASSERTION"
       ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fonts-set",
+      "name": "MoltNet font set",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "OFL-1.1",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "2026.10.1",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/OneManNoCode/MoltBrowser",
+      "sourceInfo": "Pinned in tools/fonts/moltnet_fonts.json (sources at fixed commits, each file by size and SHA-256); installed by scripts/bundle-fonts.sh.",
+      "comment": "The fonts MoltNet windows draw text with, the same files on every OS: the manifest and the licence texts of the fonts listed with it.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "0c8a0885b18020bed6d29a47104470a9ae378e2f"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fonts-TestSans-VF.ttf",
+      "name": "Test Sans (TestSans-VF.ttf)",
+      "downloadLocation": "https://raw.githubusercontent.com/example/fonts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/fonts/TestSans%5Bwght%5D.ttf",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "OFL-1.1",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "2.001",
+      "supplier": "NOASSERTION",
+      "packageFileName": "TestSans-VF.ttf",
+      "homepage": "https://github.com/example/fonts",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6f2a776d7c29efbcec22baf068cc016b375f2d8b4f80dcf1b6271a906f9107ba"
+        }
+      ],
+      "sourceInfo": "example/fonts at commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, pinned in tools/fonts/moltnet_fonts.json.",
+      "comment": "Font file of the MoltNet font set; licence text: LICENSES/OFL-Test.txt.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "56dc383947d04b9680ca95e4a18064fe5c395818"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
     }
   ],
   "files": [
@@ -715,6 +764,63 @@
         "NOASSERTION"
       ],
       "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-fonts-moltnet-fonts.json",
+      "fileName": "./MoltBrowser.app/Contents/Resources/molt_fonts/moltnet_fonts.json",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "9505976663833c3a7c56c13876321295d361edcc"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "27233d3456690d954cf190df9c9c6877c69bf3ddafc77bf94937a3aea27b70c3"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-fonts-LICENSES-OFL-Test.txt",
+      "fileName": "./MoltBrowser.app/Contents/Resources/molt_fonts/LICENSES/OFL-Test.txt",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "ba7b093c7a4ec167ed8caa0f692e5b6b9d465363"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "2bb42f890962e2d093e1b8335a0db1c413143abe4383773d02c8c1cb456c1a60"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-fonts-TestSans-VF.ttf",
+      "fileName": "./MoltBrowser.app/Contents/Resources/molt_fonts/TestSans-VF.ttf",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "56e9362df0da76597d2058452443df858503d655"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6f2a776d7c29efbcec22baf068cc016b375f2d8b4f80dcf1b6271a906f9107ba"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
     }
   ],
   "relationships": [
@@ -887,6 +993,31 @@
       "spdxElementId": "SPDXRef-Package-helper-model-tinyllama-1.1b",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-models-tinyllama-1.1b.gguf"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-fonts-set"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-fonts-set",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-fonts-moltnet-fonts.json"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-fonts-set",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-fonts-LICENSES-OFL-Test.txt"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-fonts-TestSans-VF.ttf"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-fonts-TestSans-VF.ttf",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-fonts-TestSans-VF.ttf"
     }
   ],
   "hasExtractedLicensingInfos": [

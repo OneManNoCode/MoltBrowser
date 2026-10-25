@@ -6039,6 +6039,9 @@ void ChromeContentBrowserClient::InitOnUIThread() {
       network_contexts_parent_directory_.push_back(pref_cache_dir);
     }
   }
+
+  // MoltBrowser: MoltNet's bundled fonts, opened once startup is done.
+  molt_ai::fingerprinting::InitializeAtBrowserStartup();
 }
 
 void ChromeContentBrowserClient::MaybeCopyDisableWebRtcEncryptionSwitch(

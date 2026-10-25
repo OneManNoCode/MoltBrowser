@@ -1,0 +1,1610 @@
+{
+  "format": 1,
+  "version": "2026.10.1",
+  "sources": {
+    "google-fonts": {
+      "repo": "google/fonts",
+      "commit": "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0"
+    },
+    "tinos": {
+      "repo": "googlefonts/tinos",
+      "commit": "3b4482a99b80ea5fc75f187b1be3120a3f5905b3"
+    },
+    "noto": {
+      "repo": "notofonts/notofonts.github.io",
+      "commit": "d3abdda968b38bb6eb0ec59f6f9f58b8c2139bca"
+    },
+    "noto-cjk": {
+      "repo": "notofonts/noto-cjk",
+      "commit": "f8d157532fbfaeda587e826d4cd5b21a49186f7c"
+    },
+    "noto-emoji": {
+      "repo": "googlefonts/noto-emoji",
+      "commit": "e20cbc2bbec1926686be9f9bee7d1d2cfa1fea0e"
+    }
+  },
+  "licenses": [
+    {
+      "install_name": "OFL-Arimo.txt",
+      "source": "google-fonts",
+      "path": "ofl/arimo/OFL.txt",
+      "spdx": "OFL-1.1",
+      "size": 4384,
+      "sha256": "11cce536cd2f3864d767003af5dcd739e2e15818cf2279b6175edeadd3960992"
+    },
+    {
+      "install_name": "OFL-Tinos.txt",
+      "source": "tinos",
+      "path": "OFL.txt",
+      "spdx": "OFL-1.1",
+      "size": 4383,
+      "sha256": "cb3382d4643e8b02c12e322c220a3c76a5020d667e4fd4e7c75e744cca6caa6b"
+    },
+    {
+      "install_name": "OFL-Cousine.txt",
+      "source": "google-fonts",
+      "path": "ofl/cousine/OFL.txt",
+      "spdx": "OFL-1.1",
+      "size": 4387,
+      "sha256": "b81c4d4dc0a9f72c9155e78187316e016e2012a8102468804173dc61468b906d"
+    },
+    {
+      "install_name": "OFL-Noto.txt",
+      "source": "noto",
+      "path": "fonts/LICENSE",
+      "spdx": "OFL-1.1",
+      "size": 4374,
+      "sha256": "f2095b08bed08b23a6fe26112fcd679a2bee3f002eef077eb05d215ed1051bd8"
+    },
+    {
+      "install_name": "OFL-NotoSansCJK.txt",
+      "source": "noto-cjk",
+      "path": "Sans/LICENSE",
+      "spdx": "OFL-1.1",
+      "size": 4301,
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+    },
+    {
+      "install_name": "OFL-NotoColorEmoji.txt",
+      "source": "noto-emoji",
+      "path": "2D/fonts/LICENSE",
+      "spdx": "OFL-1.1",
+      "size": 4301,
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+    }
+  ],
+  "files": [
+    {
+      "install_name": "Arimo-VF.ttf",
+      "source": "google-fonts",
+      "path": "ofl/arimo/Arimo[wght].ttf",
+      "license": "OFL-Arimo.txt",
+      "size": 496268,
+      "sha256": "e43898b143ec826ac8cb4034816458a7047fbe0836558de2a1f8c6223ae3e0ca",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Arimo",
+          "family_names": [
+            "Arimo"
+          ],
+          "postscript_name": "Arimo-Regular",
+          "full_name": "Arimo Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 1.341"
+        }
+      ]
+    },
+    {
+      "install_name": "Arimo-Italic-VF.ttf",
+      "source": "google-fonts",
+      "path": "ofl/arimo/Arimo-Italic[wght].ttf",
+      "license": "OFL-Arimo.txt",
+      "size": 543196,
+      "sha256": "a80fc54fd0233c1dfe298577c4d00f5ae81d5bb83510975e473c47e699b7f4ed",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Arimo",
+          "family_names": [
+            "Arimo"
+          ],
+          "postscript_name": "Arimo-Italic",
+          "full_name": "Arimo Italic",
+          "style": "Italic",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": true,
+          "version": "Version 1.341"
+        }
+      ]
+    },
+    {
+      "install_name": "Tinos-Regular.ttf",
+      "source": "google-fonts",
+      "path": "ofl/tinos/Tinos-Regular.ttf",
+      "license": "OFL-Tinos.txt",
+      "size": 521588,
+      "sha256": "60a0e8ef0c04dd5dd69ffe91025fa2ae5836cbd35600a82ba031977557e2cb61",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Tinos",
+          "family_names": [
+            "Tinos"
+          ],
+          "postscript_name": "Tinos-Regular",
+          "full_name": "Tinos Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 1.340; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Tinos-Bold.ttf",
+      "source": "google-fonts",
+      "path": "ofl/tinos/Tinos-Bold.ttf",
+      "license": "OFL-Tinos.txt",
+      "size": 597880,
+      "sha256": "393269dbab8899f938db19783eca5eac92eb431f7ae0ab45b8349ca895f1a06b",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Tinos",
+          "family_names": [
+            "Tinos"
+          ],
+          "postscript_name": "Tinos-Bold",
+          "full_name": "Tinos Bold",
+          "style": "Bold",
+          "weight": [
+            700,
+            700,
+            700
+          ],
+          "italic": false,
+          "version": "Version 1.340; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Tinos-Italic.ttf",
+      "source": "google-fonts",
+      "path": "ofl/tinos/Tinos-Italic.ttf",
+      "license": "OFL-Tinos.txt",
+      "size": 565016,
+      "sha256": "5942266ed398b155d7dc23e36833e7ec6be988f2439bdbeb8ef1bede808eaa91",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Tinos",
+          "family_names": [
+            "Tinos"
+          ],
+          "postscript_name": "Tinos-Italic",
+          "full_name": "Tinos Italic",
+          "style": "Italic",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": true,
+          "version": "Version 1.340; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Tinos-BoldItalic.ttf",
+      "source": "google-fonts",
+      "path": "ofl/tinos/Tinos-BoldItalic.ttf",
+      "license": "OFL-Tinos.txt",
+      "size": 578976,
+      "sha256": "a5de79f0fe863ea0954757acb3d47b3ccd0a930ce3dd5b97230cd3866790a06e",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Tinos",
+          "family_names": [
+            "Tinos"
+          ],
+          "postscript_name": "Tinos-BoldItalic",
+          "full_name": "Tinos Bold Italic",
+          "style": "Bold Italic",
+          "weight": [
+            700,
+            700,
+            700
+          ],
+          "italic": true,
+          "version": "Version 1.340; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Cousine-Regular.ttf",
+      "source": "google-fonts",
+      "path": "ofl/cousine/Cousine-Regular.ttf",
+      "license": "OFL-Cousine.txt",
+      "size": 296856,
+      "sha256": "1da22250675fc4c42fcf3a9736c44bc0570516105331443b663fd5cfbd1412fe",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Cousine",
+          "family_names": [
+            "Cousine"
+          ],
+          "postscript_name": "Cousine-Regular",
+          "full_name": "Cousine Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 1.241; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Cousine-Bold.ttf",
+      "source": "google-fonts",
+      "path": "ofl/cousine/Cousine-Bold.ttf",
+      "license": "OFL-Cousine.txt",
+      "size": 298048,
+      "sha256": "17c8a7245156d2253531c9e529474937b09d9f641c5ae7695c5e33f22822eef4",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Cousine",
+          "family_names": [
+            "Cousine"
+          ],
+          "postscript_name": "Cousine-Bold",
+          "full_name": "Cousine Bold",
+          "style": "Bold",
+          "weight": [
+            700,
+            700,
+            700
+          ],
+          "italic": false,
+          "version": "Version 1.241; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Cousine-Italic.ttf",
+      "source": "google-fonts",
+      "path": "ofl/cousine/Cousine-Italic.ttf",
+      "license": "OFL-Cousine.txt",
+      "size": 306880,
+      "sha256": "ea2a76ae3d0ece9cd59f0d30fdc08dd70e8f5f457beee5b0852a7b50c2286c7c",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Cousine",
+          "family_names": [
+            "Cousine"
+          ],
+          "postscript_name": "Cousine-Italic",
+          "full_name": "Cousine Italic",
+          "style": "Italic",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": true,
+          "version": "Version 1.241; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "Cousine-BoldItalic.ttf",
+      "source": "google-fonts",
+      "path": "ofl/cousine/Cousine-BoldItalic.ttf",
+      "license": "OFL-Cousine.txt",
+      "size": 308292,
+      "sha256": "848e858726fee0ae27b754e4cd6a2755209bf1428a8c91f747696d58c33906c3",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Cousine",
+          "family_names": [
+            "Cousine"
+          ],
+          "postscript_name": "Cousine-BoldItalic",
+          "full_name": "Cousine Bold Italic",
+          "style": "Bold Italic",
+          "weight": [
+            700,
+            700,
+            700
+          ],
+          "italic": true,
+          "version": "Version 1.241; ttfautohint (v1.8.4.16-eb64)"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSans-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSans/unhinted/slim-variable-ttf/NotoSans[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 712460,
+      "sha256": "fb53504de62e767a54695416123d68d67f71c9b69722175184ad56e7dd13547b",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans",
+          "family_names": [
+            "Noto Sans"
+          ],
+          "postscript_name": "NotoSans-Regular",
+          "full_name": "Noto Sans Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.015"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoNaskhArabic-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoNaskhArabic/unhinted/slim-variable-ttf/NotoNaskhArabic[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 254944,
+      "sha256": "6d5f74a8c0e1b0e54ae876f0a287690642a1a6c3e84bdcf68ff467f24d799edd",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Naskh Arabic",
+          "family_names": [
+            "Noto Naskh Arabic"
+          ],
+          "postscript_name": "NotoNaskhArabic-Regular",
+          "full_name": "Noto Naskh Arabic Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.021"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansHebrew-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansHebrew/unhinted/slim-variable-ttf/NotoSansHebrew[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 25296,
+      "sha256": "9d81d81ad592644487b03843da73a87b99cd28a2c4da4a096e1db8fbd14fda61",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Hebrew",
+          "family_names": [
+            "Noto Sans Hebrew",
+            "Noto Sans Hebrew Light"
+          ],
+          "postscript_name": "NotoSansHebrew-Light",
+          "full_name": "Noto Sans Hebrew Light",
+          "style": "Light",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 3.001"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansArmenian-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansArmenian/unhinted/slim-variable-ttf/NotoSansArmenian[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 32800,
+      "sha256": "e979dfaed56ddb4bfd05121958b25425eb7593253d64b6b3654c77c11c5cda94",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Armenian",
+          "family_names": [
+            "Noto Sans Armenian"
+          ],
+          "postscript_name": "NotoSansArmenian-Regular",
+          "full_name": "Noto Sans Armenian Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.008"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansGeorgian-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansGeorgian/unhinted/slim-variable-ttf/NotoSansGeorgian[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 56768,
+      "sha256": "42f4a8bf4fe0af8afd91ee3c19e81e14f1bc74ddbd9b6a59a4182f67a596adb4",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Georgian",
+          "family_names": [
+            "Noto Sans Georgian"
+          ],
+          "postscript_name": "NotoSansGeorgian-Regular",
+          "full_name": "Noto Sans Georgian Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.005"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansEthiopic-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansEthiopic/unhinted/slim-variable-ttf/NotoSansEthiopic[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 514676,
+      "sha256": "93f223089e300b983dbfd693c7be619e0e76565a70d639e71a4fe0bfd72cf66f",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Ethiopic",
+          "family_names": [
+            "Noto Sans Ethiopic"
+          ],
+          "postscript_name": "NotoSansEthiopic-Regular",
+          "full_name": "Noto Sans Ethiopic Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.102"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansDevanagari-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansDevanagari/unhinted/slim-variable-ttf/NotoSansDevanagari[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 275904,
+      "sha256": "bf99bf762743ff3259e73196852520ab0ffe8d384238bff3e4806a84b981e972",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Devanagari",
+          "family_names": [
+            "Noto Sans Devanagari"
+          ],
+          "postscript_name": "NotoSansDevanagari-Regular",
+          "full_name": "Noto Sans Devanagari Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.007"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansBengali-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansBengali/unhinted/slim-variable-ttf/NotoSansBengali[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 168884,
+      "sha256": "dc9defe97bb041876b6609e9029d9e1e228a686259acde2fe2a9f99d793ee17d",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Bengali",
+          "family_names": [
+            "Noto Sans Bengali"
+          ],
+          "postscript_name": "NotoSansBengali-Regular",
+          "full_name": "Noto Sans Bengali Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 3.011"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansGujarati-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansGujarati/unhinted/slim-variable-ttf/NotoSansGujarati[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 200416,
+      "sha256": "83d1bde74d64fb389f97a5e27b2699d8ee8bad4c15a02be347228e6c10011248",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Gujarati",
+          "family_names": [
+            "Noto Sans Gujarati"
+          ],
+          "postscript_name": "NotoSansGujarati-Regular",
+          "full_name": "Noto Sans Gujarati Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.106"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansGurmukhi-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansGurmukhi/unhinted/slim-variable-ttf/NotoSansGurmukhi[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 47780,
+      "sha256": "8a3096ee2166f6383501e2df7b368fce88cfa4068c8d75bcb6af07da353a00ea",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Gurmukhi",
+          "family_names": [
+            "Noto Sans Gurmukhi"
+          ],
+          "postscript_name": "NotoSansGurmukhi-Regular",
+          "full_name": "Noto Sans Gurmukhi Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.004"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansKannada-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansKannada/unhinted/slim-variable-ttf/NotoSansKannada[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 183432,
+      "sha256": "b6b11505d76eddf916667d73adfec19095ec777742444dc662dae81471461f4e",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Kannada",
+          "family_names": [
+            "Noto Sans Kannada"
+          ],
+          "postscript_name": "NotoSansKannada-Regular",
+          "full_name": "Noto Sans Kannada Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.006"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansMalayalam-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansMalayalam/unhinted/slim-variable-ttf/NotoSansMalayalam[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 131216,
+      "sha256": "94cddc94a03fa9a5e8d1784090ba97b267def6933d60762081eaa003751142c5",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Malayalam",
+          "family_names": [
+            "Noto Sans Malayalam"
+          ],
+          "postscript_name": "NotoSansMalayalam-Regular",
+          "full_name": "Noto Sans Malayalam Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.104"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansOriya-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansOriya/unhinted/slim-variable-ttf/NotoSansOriya[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 228748,
+      "sha256": "37f482d0179d0a50e3128d004f007ff1c1741ad5f6b0b2bcc7238b257ef1caa0",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Oriya",
+          "family_names": [
+            "Noto Sans Oriya"
+          ],
+          "postscript_name": "NotoSansOriya-Regular",
+          "full_name": "Noto Sans Oriya Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.007"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansTamil-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansTamil/unhinted/slim-variable-ttf/NotoSansTamil[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 78424,
+      "sha256": "37e151cdec4a8cfb15c432f7bb164a83b98df69419d47e50b35aa7073963716b",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Tamil",
+          "family_names": [
+            "Noto Sans Tamil"
+          ],
+          "postscript_name": "NotoSansTamil-Regular",
+          "full_name": "Noto Sans Tamil Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.004"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansTelugu-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansTelugu/unhinted/slim-variable-ttf/NotoSansTelugu[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 233352,
+      "sha256": "6c06de88b2d420d899543724a13765994191cd29860c6226efca098b51fec64b",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Telugu",
+          "family_names": [
+            "Noto Sans Telugu"
+          ],
+          "postscript_name": "NotoSansTelugu-Regular",
+          "full_name": "Noto Sans Telugu Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.005"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansSinhala-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansSinhala/unhinted/slim-variable-ttf/NotoSansSinhala[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 168048,
+      "sha256": "3fd7c6a61cb6dfb8a2ca7af5b4078bd24e9c8ad9b55839a0177277db6e4d1326",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Sinhala",
+          "family_names": [
+            "Noto Sans Sinhala"
+          ],
+          "postscript_name": "NotoSansSinhala-Regular",
+          "full_name": "Noto Sans Sinhala Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 3.000"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansThai-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansThai/unhinted/slim-variable-ttf/NotoSansThai[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 31912,
+      "sha256": "13f52f79b04f01f2751a81052a5dee2df639fd4e13f4ac30821ab45c8dd5f7e7",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Thai",
+          "family_names": [
+            "Noto Sans Thai"
+          ],
+          "postscript_name": "NotoSansThai-Regular",
+          "full_name": "Noto Sans Thai Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.002"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansLao-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansLao/unhinted/slim-variable-ttf/NotoSansLao[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 33976,
+      "sha256": "fc138d605aa998d8407789ee6a7f5554aae8b54f5cd98d66dd2c33e79d15b67e",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Lao",
+          "family_names": [
+            "Noto Sans Lao"
+          ],
+          "postscript_name": "NotoSansLao-Regular",
+          "full_name": "Noto Sans Lao Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.003"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansKhmer-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansKhmer/unhinted/slim-variable-ttf/NotoSansKhmer[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 119460,
+      "sha256": "56f89948a84cc0b01962ed6af573ac4ac885bd7bb6e7e40f9afc72a435728b70",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Khmer",
+          "family_names": [
+            "Noto Sans Khmer"
+          ],
+          "postscript_name": "NotoSansKhmer-Regular",
+          "full_name": "Noto Sans Khmer Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.004"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansMyanmar-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansMyanmar/unhinted/slim-variable-ttf/NotoSansMyanmar[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 232548,
+      "sha256": "e0b280aa3080aab922800c88fa9a2015a4bec3103bb8b70491a92e4a04f3a3a3",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Myanmar",
+          "family_names": [
+            "Noto Sans Myanmar"
+          ],
+          "postscript_name": "NotoSansMyanmar-Regular",
+          "full_name": "Noto Sans Myanmar Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.107"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSerifTibetan-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSerifTibetan/unhinted/slim-variable-ttf/NotoSerifTibetan[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 1117240,
+      "sha256": "6bf7286495b68da623b5575f3447c799549e04a159d1300f78c06becfa75838f",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Serif Tibetan",
+          "family_names": [
+            "Noto Serif Tibetan"
+          ],
+          "postscript_name": "NotoSerifTibetan-Regular",
+          "full_name": "Noto Serif Tibetan Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.103"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansThaana-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansThaana/unhinted/slim-variable-ttf/NotoSansThaana[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 28608,
+      "sha256": "0cb14c116ee846ed834941dd4acfabc5d023cc573f05ae8deb9d39d37d796114",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Thaana",
+          "family_names": [
+            "Noto Sans Thaana"
+          ],
+          "postscript_name": "NotoSansThaana-Regular",
+          "full_name": "Noto Sans Thaana Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 3.001"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansSyriac-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansSyriac/unhinted/slim-variable-ttf/NotoSansSyriac[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 85652,
+      "sha256": "9f3e31827c791915e7a6482ea308cef228d1b794201914be4c80db3aa55cbcc0",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Syriac",
+          "family_names": [
+            "Noto Sans Syriac"
+          ],
+          "postscript_name": "NotoSansSyriac-Regular",
+          "full_name": "Noto Sans Syriac Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 3.000"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansCherokee-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansCherokee/unhinted/slim-variable-ttf/NotoSansCherokee[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 134520,
+      "sha256": "6f110084d8067b90a91b4b79e56c26eb458f7866a1080112791f24a769026c34",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Cherokee",
+          "family_names": [
+            "Noto Sans Cherokee"
+          ],
+          "postscript_name": "NotoSansCherokee-Regular",
+          "full_name": "Noto Sans Cherokee Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.001"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansCanadianAboriginal-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansCanadianAboriginal/unhinted/slim-variable-ttf/NotoSansCanadianAboriginal[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 158200,
+      "sha256": "22b3bcd8c0018a8197758795097b5df09fd5275bb7dd50379602ae406a7d28b6",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Canadian Aboriginal",
+          "family_names": [
+            "Noto Sans Canadian Aboriginal"
+          ],
+          "postscript_name": "NotoSansCanadianAboriginal-Regular",
+          "full_name": "Noto Sans Canadian Aboriginal Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.004"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansJavanese-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansJavanese/unhinted/slim-variable-ttf/NotoSansJavanese[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 201196,
+      "sha256": "b6ef9b30b71ce70ab9cf61addc66a8cf320b132ba0807893e6601c035a54044d",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Javanese",
+          "family_names": [
+            "Noto Sans Javanese"
+          ],
+          "postscript_name": "NotoSansJavanese-Regular",
+          "full_name": "Noto Sans Javanese Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.005"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansOlChiki-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansOlChiki/unhinted/slim-variable-ttf/NotoSansOlChiki[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 25384,
+      "sha256": "4659acdc9e21925955838bd43ffa6319a6498f236338788e824f7ac5d99bbc1f",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Ol Chiki",
+          "family_names": [
+            "Noto Sans Ol Chiki"
+          ],
+          "postscript_name": "NotoSansOlChiki-Regular",
+          "full_name": "Noto Sans Ol Chiki Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.003"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansAdlam-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansAdlam/unhinted/slim-variable-ttf/NotoSansAdlam[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 98740,
+      "sha256": "fdd09f0d18d4b1e74f92195459e95d7d7d8c271a049e83dc7e1b60533c583f31",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Adlam",
+          "family_names": [
+            "Noto Sans Adlam"
+          ],
+          "postscript_name": "NotoSansAdlam-Regular",
+          "full_name": "Noto Sans Adlam Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 3.002"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansMongolian-Regular.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansMongolian/unhinted/ttf/NotoSansMongolian-Regular.ttf",
+      "license": "OFL-Noto.txt",
+      "size": 342708,
+      "sha256": "2986e50b7c66b7cbc42a0d82cc8143697a25ef56e134fe19adfd685c5f4ea57f",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Mongolian",
+          "family_names": [
+            "Noto Sans Mongolian"
+          ],
+          "postscript_name": "NotoSansMongolian-Regular",
+          "full_name": "Noto Sans Mongolian Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 3.103;fontc 1.0.0"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansNKo-Regular.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansNKo/unhinted/ttf/NotoSansNKo-Regular.ttf",
+      "license": "OFL-Noto.txt",
+      "size": 24608,
+      "sha256": "72107ca6885331147fb0ca4d7a71f96e6b3e989a75d66ef979a96966b28f8526",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans NKo",
+          "family_names": [
+            "Noto Sans NKo"
+          ],
+          "postscript_name": "NotoSansNKo-Regular",
+          "full_name": "Noto Sans NKo Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 2.004"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansTifinagh-Regular.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansTifinagh/unhinted/ttf/NotoSansTifinagh-Regular.ttf",
+      "license": "OFL-Noto.txt",
+      "size": 59124,
+      "sha256": "bfc82bcdf511b49a1579023610a7aeb98256b7d8dab5cb0c75d7a09eac2d5431",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Tifinagh",
+          "family_names": [
+            "Noto Sans Tifinagh"
+          ],
+          "postscript_name": "NotoSansTifinagh-Regular",
+          "full_name": "Noto Sans Tifinagh Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 2.006"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansYi-Regular.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansYi/unhinted/ttf/NotoSansYi-Regular.ttf",
+      "license": "OFL-Noto.txt",
+      "size": 182988,
+      "sha256": "ab2c82578a368ad99e08ec4b299303c7f16830768df7278605d382fa1d0ee14b",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Yi",
+          "family_names": [
+            "Noto Sans Yi"
+          ],
+          "postscript_name": "NotoSansYi-Regular",
+          "full_name": "Noto Sans Yi Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 2.002"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansSymbols-VF.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansSymbols/unhinted/slim-variable-ttf/NotoSansSymbols[wght].ttf",
+      "license": "OFL-Noto.txt",
+      "size": 239720,
+      "sha256": "63724daeff6755a45933b9a5e3a3b41df5df8fe925c0f4c991f2f68c08a4182d",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Symbols",
+          "family_names": [
+            "Noto Sans Symbols"
+          ],
+          "postscript_name": "NotoSansSymbols-Regular",
+          "full_name": "Noto Sans Symbols Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            700
+          ],
+          "italic": false,
+          "version": "Version 2.003"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansSymbols2-Regular.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansSymbols2/unhinted/ttf/NotoSansSymbols2-Regular.ttf",
+      "license": "OFL-Noto.txt",
+      "size": 671568,
+      "sha256": "c4a0a80f0041ce4be81e2478faad22776d23edb98ae3f0d19bd37044820ecf9d",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Symbols 2",
+          "family_names": [
+            "Noto Sans Symbols 2"
+          ],
+          "postscript_name": "NotoSansSymbols2-Regular",
+          "full_name": "Noto Sans Symbols 2 Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 2.008"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansMath-Regular.ttf",
+      "source": "noto",
+      "path": "fonts/NotoSansMath/unhinted/ttf/NotoSansMath-Regular.ttf",
+      "license": "OFL-Noto.txt",
+      "size": 657440,
+      "sha256": "b127e84699212b6b2ef50aff58e0ebebeec04ffe6db1b9eb9e209c8c3d97b4aa",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans Math",
+          "family_names": [
+            "Noto Sans Math"
+          ],
+          "postscript_name": "NotoSansMath-Regular",
+          "full_name": "Noto Sans Math Regular",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 3.000"
+        }
+      ]
+    },
+    {
+      "install_name": "NotoSansCJK-VF.otf.ttc",
+      "source": "noto-cjk",
+      "path": "Sans/Variable/OTC/NotoSansCJK-VF.otf.ttc",
+      "license": "OFL-NotoSansCJK.txt",
+      "size": 32682580,
+      "sha256": "d3d8256cdec8dbcb3552284bc6b20c734dd60c2ee9df83b5758e34807c4bac32",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Sans CJK JP",
+          "family_names": [
+            "Noto Sans CJK JP"
+          ],
+          "postscript_name": "NotoSansCJKjp-Thin",
+          "full_name": "Noto Sans CJK JP",
+          "style": "Thin",
+          "weight": [
+            100,
+            100,
+            900
+          ],
+          "italic": false,
+          "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603"
+        },
+        {
+          "index": 1,
+          "family": "Noto Sans CJK KR",
+          "family_names": [
+            "Noto Sans CJK KR"
+          ],
+          "postscript_name": "NotoSansCJKkr-Thin",
+          "full_name": "Noto Sans CJK KR",
+          "style": "Thin",
+          "weight": [
+            100,
+            100,
+            900
+          ],
+          "italic": false,
+          "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603"
+        },
+        {
+          "index": 2,
+          "family": "Noto Sans CJK SC",
+          "family_names": [
+            "Noto Sans CJK SC"
+          ],
+          "postscript_name": "NotoSansCJKsc-Thin",
+          "full_name": "Noto Sans CJK SC",
+          "style": "Thin",
+          "weight": [
+            100,
+            100,
+            900
+          ],
+          "italic": false,
+          "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603"
+        },
+        {
+          "index": 3,
+          "family": "Noto Sans CJK TC",
+          "family_names": [
+            "Noto Sans CJK TC"
+          ],
+          "postscript_name": "NotoSansCJKtc-Thin",
+          "full_name": "Noto Sans CJK TC",
+          "style": "Thin",
+          "weight": [
+            100,
+            100,
+            900
+          ],
+          "italic": false,
+          "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603"
+        },
+        {
+          "index": 4,
+          "family": "Noto Sans CJK HK",
+          "family_names": [
+            "Noto Sans CJK HK"
+          ],
+          "postscript_name": "NotoSansCJKhk-Thin",
+          "full_name": "Noto Sans CJK HK",
+          "style": "Thin",
+          "weight": [
+            100,
+            100,
+            900
+          ],
+          "italic": false,
+          "version": "Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603"
+        }
+      ]
+    },
+    {
+      "install_name": "Noto-COLRv1.ttf",
+      "source": "noto-emoji",
+      "path": "2D/fonts/Noto-COLRv1.ttf",
+      "license": "OFL-NotoColorEmoji.txt",
+      "size": 5038236,
+      "sha256": "b8e25ea68db82f9e4d0aee921f4420be2be39887bd5c893a2ad98710531f9d0c",
+      "faces": [
+        {
+          "index": 0,
+          "family": "Noto Color Emoji",
+          "family_names": [
+            "Noto Color Emoji"
+          ],
+          "postscript_name": "NotoColorEmoji",
+          "full_name": "Noto Color Emoji",
+          "style": "Regular",
+          "weight": [
+            400,
+            400,
+            400
+          ],
+          "italic": false,
+          "version": "Version 2.057;GOOG;noto-emoji:20260911:fc4ca365e7c20e78278ae702aa20434bfe704c8f"
+        }
+      ]
+    }
+  ],
+  "aliases": {
+    "Arial": "Arimo",
+    "Helvetica": "Arimo",
+    "Liberation Sans": "Arimo",
+    "Times New Roman": "Tinos",
+    "Times": "Tinos",
+    "MS Serif": "Tinos",
+    "Liberation Serif": "Tinos",
+    "Courier New": "Cousine",
+    "Courier": "Cousine",
+    "Liberation Mono": "Cousine"
+  },
+  "generic": {
+    "standard": "Tinos",
+    "serif": "Tinos",
+    "sans-serif": "Arimo",
+    "monospace": "Cousine",
+    "cursive": "Tinos",
+    "fantasy": "Tinos",
+    "math": "Noto Sans Math",
+    "system-ui": "Noto Sans"
+  },
+  "cjk": {
+    "regions": {
+      "JP": "Noto Sans CJK JP",
+      "KR": "Noto Sans CJK KR",
+      "SC": "Noto Sans CJK SC",
+      "TC": "Noto Sans CJK TC",
+      "HK": "Noto Sans CJK HK"
+    },
+    "default": "SC",
+    "scripts": {
+      "Hani": "locale",
+      "Hans": "SC",
+      "Hant": "locale",
+      "Hira": "JP",
+      "Kana": "JP",
+      "Hrkt": "JP",
+      "Jpan": "JP",
+      "Hang": "KR",
+      "Kore": "KR",
+      "Bopo": "TC"
+    },
+    "monospace": null
+  },
+  "fallback": {
+    "Latn": [
+      "Arimo",
+      "Noto Sans"
+    ],
+    "Grek": [
+      "Arimo",
+      "Noto Sans"
+    ],
+    "Cyrl": [
+      "Arimo",
+      "Noto Sans"
+    ],
+    "Arab": [
+      "Noto Naskh Arabic"
+    ],
+    "Hebr": [
+      "Noto Sans Hebrew",
+      "Arimo"
+    ],
+    "Armn": [
+      "Noto Sans Armenian"
+    ],
+    "Geor": [
+      "Noto Sans Georgian"
+    ],
+    "Ethi": [
+      "Noto Sans Ethiopic"
+    ],
+    "Deva": [
+      "Noto Sans Devanagari"
+    ],
+    "Beng": [
+      "Noto Sans Bengali"
+    ],
+    "Gujr": [
+      "Noto Sans Gujarati"
+    ],
+    "Guru": [
+      "Noto Sans Gurmukhi"
+    ],
+    "Knda": [
+      "Noto Sans Kannada"
+    ],
+    "Mlym": [
+      "Noto Sans Malayalam"
+    ],
+    "Orya": [
+      "Noto Sans Oriya"
+    ],
+    "Taml": [
+      "Noto Sans Tamil"
+    ],
+    "Telu": [
+      "Noto Sans Telugu"
+    ],
+    "Sinh": [
+      "Noto Sans Sinhala"
+    ],
+    "Thai": [
+      "Noto Sans Thai"
+    ],
+    "Laoo": [
+      "Noto Sans Lao"
+    ],
+    "Khmr": [
+      "Noto Sans Khmer"
+    ],
+    "Mymr": [
+      "Noto Sans Myanmar"
+    ],
+    "Tibt": [
+      "Noto Serif Tibetan"
+    ],
+    "Thaa": [
+      "Noto Sans Thaana"
+    ],
+    "Syrc": [
+      "Noto Sans Syriac"
+    ],
+    "Cher": [
+      "Noto Sans Cherokee"
+    ],
+    "Cans": [
+      "Noto Sans Canadian Aboriginal"
+    ],
+    "Java": [
+      "Noto Sans Javanese"
+    ],
+    "Olck": [
+      "Noto Sans Ol Chiki"
+    ],
+    "Adlm": [
+      "Noto Sans Adlam"
+    ],
+    "Mong": [
+      "Noto Sans Mongolian"
+    ],
+    "Nkoo": [
+      "Noto Sans NKo"
+    ],
+    "Tfng": [
+      "Noto Sans Tifinagh"
+    ],
+    "Yiii": [
+      "Noto Sans Yi"
+    ],
+    "Brai": [
+      "Noto Sans Symbols 2"
+    ],
+    "Hani": [
+      "@cjk"
+    ],
+    "Hira": [
+      "@cjk"
+    ],
+    "Kana": [
+      "@cjk"
+    ],
+    "Hang": [
+      "@cjk"
+    ],
+    "Bopo": [
+      "@cjk"
+    ],
+    "Zyyy": [
+      "Arimo",
+      "Noto Sans",
+      "Noto Sans Symbols",
+      "Noto Sans Symbols 2",
+      "Noto Sans Math",
+      "@cjk",
+      "Noto Color Emoji"
+    ],
+    "Zinh": [
+      "Arimo",
+      "Noto Sans"
+    ],
+    "emoji": [
+      "Noto Color Emoji"
+    ],
+    "text-emoji": [
+      "Noto Sans Symbols 2",
+      "Noto Sans Symbols",
+      "Noto Sans Math",
+      "Noto Sans",
+      "Noto Color Emoji"
+    ]
+  }
+}

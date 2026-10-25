@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.h"
 
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.h"
+
 namespace blink::molt_fingerprinting {
 
 namespace {
@@ -453,6 +455,9 @@ base::span<const FontListEntry> FontListFor(FontPlatform platform) {
       return kLinuxFonts;
     case FontPlatform::kAndroid:
       return kAndroidFonts;
+    case FontPlatform::kMoltNetBundled:
+      // Generated from tools/fonts/moltnet_fonts.json.
+      return moltnet::GetBundledFontTable().visibility_list;
   }
   return kLinuxFonts;
 }
