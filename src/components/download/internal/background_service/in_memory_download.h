@@ -236,6 +236,17 @@ class InMemoryDownloadImpl : public network::SimpleURLLoaderStreamConsumer,
   // Resets local states.
   void Reset();
 
+  // MoltBrowser: the response counts against the blob share of the site
+  // that started the fetch while it downloads
+  // (molt_registering_site_isolation.h). Reading goes on once a part is
+  // counted; past the share the download fails.
+  void MoltOnBufferHeld(int generation,
+                        base::OnceClosure resume,
+                        storage::MoltBlobHold hold);
+  void MoltContinueReading(base::OnceClosure resume);
+  // Gives up what the buffer holds (it is emptied).
+  void MoltReleaseBuffer();
+
   // Request parameters of the download.
   const RequestParams request_params_;
 
@@ -274,6 +285,12 @@ class InMemoryDownloadImpl : public network::SimpleURLLoaderStreamConsumer,
 
   // If |OnResponseStarted| is called.
   bool started_;
+
+  // MoltBrowser: whether the buffer is counted (until the blob storage says
+  // it counts nothing: not MoltNet), and which buffer a hold's answer is
+  // for (each Reset() starts a new one).
+  bool molt_counts_buffer_ = true;
+  int molt_buffer_generation_ = 0;
 
   // Bounded to main thread task runner.
   base::WeakPtrFactory<InMemoryDownloadImpl> weak_ptr_factory_{this};

@@ -41,6 +41,25 @@ TEST(MoltNetBlobBudgetPolicyTest, BeyondTheFloorTheEmbedderHears) {
   EXPECT_TRUE(storage::MoltBlobBeyondFloor(kShare, kFloor + 1, kFloor));
 }
 
+// What the browser holds for a site before it becomes a blob (a Background
+// Fetch's response as it downloads) counts like a blob: within the key's
+// room, refused past it; off MoltNet not counted.
+TEST(MoltNetBlobBudgetPolicyTest, HeldMemoryCountsLikeABlob) {
+  using storage::MoltBlobHold;
+  using storage::MoltBlobHoldFor;
+  EXPECT_EQ(MoltBlobHoldFor(0, 0, kShare), MoltBlobHold::kNotCounted);
+  EXPECT_EQ(MoltBlobHoldFor(0, 10 * kShare, kShare), MoltBlobHold::kNotCounted);
+  EXPECT_EQ(MoltBlobHoldFor(kShare, 0, kShare), MoltBlobHold::kCounted);
+  EXPECT_EQ(MoltBlobHoldFor(kShare, kShare - kMiB, kMiB),
+            MoltBlobHold::kCounted);
+  EXPECT_EQ(MoltBlobHoldFor(kShare, kShare - kMiB, kMiB + 1),
+            MoltBlobHold::kRefused);
+  EXPECT_EQ(MoltBlobHoldFor(kShare, kShare, 1), MoltBlobHold::kRefused);
+  EXPECT_EQ(MoltBlobHoldFor(kShare, 0, kShare + 1), MoltBlobHold::kRefused);
+  // Nothing more is always fine.
+  EXPECT_EQ(MoltBlobHoldFor(kShare, kShare, 0), MoltBlobHold::kCounted);
+}
+
 // The blobs the browser makes for a site count to that site's own key:
 // apart from every renderer process (positive 31-bit ids) and every other
 // site, by construction; the browser's own key for none.

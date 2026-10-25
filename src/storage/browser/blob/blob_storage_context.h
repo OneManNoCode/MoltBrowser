@@ -179,6 +179,16 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobStorageContext
     mutable_memory_controller()->DisableFilePaging(base::File::FILE_OK);
   }
 
+  // MoltBrowser: memory held for a site outside any blob, counted against
+  // its blob share (BlobMemoryController::MoltHoldMemory(),
+  // molt_blob_budget_policy.h).
+  MoltBlobHold MoltHoldMemory(uint64_t molt_budget_key, size_t bytes) {
+    return memory_controller_.MoltHoldMemory(molt_budget_key, bytes);
+  }
+  void MoltReleaseHeldMemory(uint64_t molt_budget_key, size_t bytes) {
+    memory_controller_.MoltReleaseHeldMemory(molt_budget_key, bytes);
+  }
+
  protected:
   friend class content::ChromeBlobStorageContext;
   friend class BlobBuilderFromStream;
