@@ -428,6 +428,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   MoltBrowser turned off, back on. Everything the browser still contacts on
   its own is listed in `docs/NETWORK_TRAFFIC.md`, and the privacy policy
   now names each host.
+- **Background traffic re-checked at Chromium 156, and testable.** The
+  browser no longer downloads components that only Google features use
+  (Indigo, Dictation's connector, the history search strings, on-device
+  head suggest, which works only with Google search, and the geolocation
+  permission model); `docs/NETWORK_TRAFFIC.md` is updated for 156,
+  including Safe Browsing's move to its V5 list protocol, and lists every
+  host in a table the leak kit reads. `leaktest.sh traffic` captures a
+  regular window's first run, idle time, a scripted browse, a restart and
+  an update check, with every request answered by a local sinkhole so
+  nothing leaves the machine, and fails on anything that table doesn't
+  allow, naming the time, the step and the likely source.
 - **Translate runs on your device.** "Translate this page" now uses your
   on-device AI model, like the web's Translator API: the page's text never
   leaves the device, Google's translate script and language list are never
