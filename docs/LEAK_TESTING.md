@@ -302,8 +302,11 @@ level, and in one browser launch per device scale factor
   asked for all of them), no `WEBGL_debug_renderer_info`, every WebGL 1/2
   limit at its baseline (or below it on a GPU that lacks it; never above),
   ranges, viewport, shader precision formats and sample counts, extensions
-  within the allow-list, no WebGPU adapter, installed fonts within the
-  OS's allow-list (Linux in the kit; other OSes are compared between runs),
+  within the allow-list, no WebGPU adapter, fonts only from MoltBrowser's
+  bundled font set on every OS (no other family visible, every name of the
+  set visible, each generic keyword measuring like the set's family for
+  it; per-script fallback widths and the set's `local()` faces compared
+  between runs, across OSes too),
   en-US form messages, `windows-1252` for undeclared pages, 16px default
   font size, no Do Not Track, GPC on, `window-management` denied and
   `getScreenDetails()` rejected, `persist()` false, autoplay
