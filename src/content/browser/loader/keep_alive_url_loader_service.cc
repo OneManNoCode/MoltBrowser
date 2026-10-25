@@ -8,6 +8,8 @@
 
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "content/public/browser/content_browser_client.h"  // MoltBrowser
+#include "content/public/common/content_client.h"           // MoltBrowser
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/trace_event/typed_macros.h"
@@ -240,6 +242,14 @@ class KeepAliveURLLoaderService::KeepAliveURLLoaderFactoriesBase {
       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
     CHECK(context);
+    // MoltBrowser: nothing more is sent for a network identity that has
+    // ended (ContentBrowserClient::HasNetworkIdentityEnded()): a request that
+    // reaches the browser after it is dropped (its client sees the pipe
+    // close).
+    if (GetContentClient()->browser()->HasNetworkIdentityEnded(
+            service_->storage_partition_->browser_context())) {
+      return nullptr;
+    }
     if (!resource_request.keepalive) {
       mojo::ReportBadMessage(
           "Unexpected `resource_request` in "

@@ -1145,6 +1145,10 @@ bool ContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
   return false;
 }
 
+bool ContentBrowserClient::HasNetworkIdentityEnded(BrowserContext*) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

@@ -13,6 +13,7 @@
 #include "base/feature_list.h"
 #include "base/features.h"
 #include "base/functional/bind.h"
+#include "base/task/single_thread_task_runner.h"  // MoltBrowser
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_base.h"
@@ -511,6 +512,19 @@ void KeepAliveURLLoader::StartInternal(bool is_retry) {
 
   GetContentClient()->browser()->OnKeepaliveRequestStarted(
       storage_partition_->browser_context());
+
+  // MoltBrowser: nothing more is sent for a network identity that has ended
+  // (ContentBrowserClient::HasNetworkIdentityEnded()): the request fails
+  // here, with no retry, instead of starting.
+  if (GetContentClient()->browser()->HasNetworkIdentityEnded(
+          &*browser_context_)) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&KeepAliveURLLoader::OnCompleteInternal,
+                       weak_ptr_factory_.GetWeakPtr(),
+                       network::URLLoaderCompletionStatus(net::ERR_ABORTED)));
+    return;
+  }
 
   // Asks the network service to create a URL loader with passed in params.
   url_loader_ = blink::ThrottlingURLLoader::CreateLoaderAndStart(
@@ -1182,6 +1196,13 @@ bool KeepAliveURLLoader::IsRendererConnected() const {
 net::Error KeepAliveURLLoader::WillFollowRedirect(
     const net::RedirectInfo& redirect_info) const {
   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M160);
+
+  // MoltBrowser: nothing more is sent for a network identity that has ended
+  // (ContentBrowserClient::HasNetworkIdentityEnded()).
+  if (GetContentClient()->browser()->HasNetworkIdentityEnded(
+          &*browser_context_)) {
+    return net::ERR_ABORTED;
+  }
 
   // TODO(crbug.com/40236167): Add logic to handle redirecting to extensions
   // from `ChromeContentRendererClient::IsSafeRedirectTarget()`.

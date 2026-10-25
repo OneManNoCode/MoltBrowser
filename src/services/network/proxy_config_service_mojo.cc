@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/observer_list.h"
+#include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
 
 namespace network {
 
@@ -46,6 +47,20 @@ void ProxyConfigServiceMojo::OnProxyConfigUpdated(
 
   for (auto& observer : observers_)
     observer.OnProxyConfigChanged(config_, CONFIG_VALID);
+
+  // MoltBrowser: an ended MoltNet identity's refusal stops what its context
+  // still has under way, now that new requests are refused
+  // (molt_ended_identity_policy.h).
+  const net::ProxyConfig::ProxyRules& rules = config_.value().proxy_rules();
+  if (MoltStopsEverythingOnConfig(
+          !molt_on_refuse_all_.is_null(),
+          MoltIsRefuseAllProxyConfig(
+              rules.type == net::ProxyConfig::ProxyRules::Type::PROXY_LIST,
+              rules.single_proxies.IsEmpty(),
+              config_.value().HasAutomaticSettings()),
+          /*changed=*/true)) {
+    molt_on_refuse_all_.Run();
+  }
 }
 
 void ProxyConfigServiceMojo::FlushProxyConfig(

@@ -248,8 +248,11 @@ void SaveFileManager::SaveURL(
   if (save_source == SaveFileCreateInfo::SAVE_FILE_FROM_NET) {
     CHECK(url.is_valid(), base::NotFatalUntil::M159);
     // Starts the actual download.
+    // MoltBrowser: nothing more is sent for a network identity that has
+    // ended (ContentBrowserClient::HasNetworkIdentityEnded()).
     if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
-            render_process_host_id, url)) {
+            render_process_host_id, url) ||
+        GetContentClient()->browser()->HasNetworkIdentityEnded(context)) {
       download::GetDownloadTaskRunner()->PostTask(
           FROM_HERE,
           base::BindOnce(&SaveFileManager::SaveFinished, this, save_item_id,

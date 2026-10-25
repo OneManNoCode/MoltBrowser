@@ -2042,6 +2042,14 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const GURL& site_url);
 
+  // MoltBrowser: true once `browser_context`'s network identity has ended
+  // (a MoltNet identity's, at New Identity): from then on the browser sends
+  // nothing more it holds for the context's pages, whatever stage it is at:
+  // no keepalive request, beacon or fetchLater is started or retried and no
+  // redirect followed for one, no download or Save Page As resource is
+  // requested, no Background Fetch request is started.
+  virtual bool HasNetworkIdentityEnded(BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

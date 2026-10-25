@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "content/public/browser/content_browser_client.h"  // MoltBrowser
+#include "content/public/common/content_client.h"           // MoltBrowser
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/background_fetch/background_fetch_job_controller.h"
@@ -149,6 +151,13 @@ void BackgroundFetchDelegateProxy::StartRequest(
   auto* delegate = GetDelegate();
   if (!delegate)
     return;
+  // MoltBrowser: nothing more is sent for a network identity that has ended
+  // (ContentBrowserClient::HasNetworkIdentityEnded()); the fetch goes with
+  // its profile.
+  if (GetContentClient()->browser()->HasNetworkIdentityEnded(
+          GetBrowserContext())) {
+    return;
+  }
 
   const blink::mojom::FetchAPIRequestPtr& fetch_request =
       request->fetch_request();

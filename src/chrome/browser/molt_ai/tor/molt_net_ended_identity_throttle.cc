@@ -27,6 +27,13 @@ Profile* ProfileOf(content::NavigationHandle& handle) {
 
 }  // namespace
 
+bool HasMoltNetIdentityEnded(content::BrowserContext* browser_context) {
+  Profile* profile =
+      browser_context ? Profile::FromBrowserContext(browser_context) : nullptr;
+  return !MoltNetBrowserMaySendForPage(profile && IsMoltNetProfile(profile),
+                                       MoltNetRouting::HasIdentityEnded(profile));
+}
+
 // static
 void MoltNetEndedIdentityThrottle::MaybeCreateAndAdd(
     content::NavigationThrottleRegistry& registry) {

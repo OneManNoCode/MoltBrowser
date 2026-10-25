@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "base/component_export.h"
+#include "base/functional/callback.h"  // MoltBrowser
 #include "base/observer_list.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -55,6 +56,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
       net::ProxyConfigWithAnnotation* config) override;
   void OnLazyPoll() override;
 
+  // MoltBrowser: `callback` runs whenever a new configuration that refuses
+  // every request (services/network/molt_ended_identity_policy.h) has been
+  // applied, after every observer has it, in the same task.
+  void MoltSetOnRefuseAll(base::RepeatingClosure callback) {
+    molt_on_refuse_all_ = std::move(callback);
+  }
+
  private:
   // mojom::ProxyConfigClient implementation:
   void OnProxyConfigUpdated(
@@ -69,6 +77,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ProxyConfigServiceMojo
   mojo::Receiver<mojom::ProxyConfigClient> receiver_{this};
 
   base::ObserverList<Observer>::Unchecked observers_;
+
+  // MoltBrowser: see MoltSetOnRefuseAll().
+  base::RepeatingClosure molt_on_refuse_all_;
 };
 
 }  // namespace network

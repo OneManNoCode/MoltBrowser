@@ -202,6 +202,15 @@ struct MoltNetNetworkContextSettings {
   // evicts nothing (net/disk_cache/memory/molt_mem_backend_budget_policy.h).
   bool per_site_http_cache = false;
 
+  // Ending an identity: the browser ends one by sending its network
+  // contexts a configuration that refuses every request; requests already
+  // under way would carry on (a body being sent, a redirect followed on an
+  // open connection). When true, that refusal also cancels every request of
+  // the context and closes its connections, in the same task, so nothing
+  // the identity started is sent after its context has the refusal
+  // (services/network/molt_ended_identity_policy.h).
+  bool stop_all_when_refusing = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -227,6 +236,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
                          : 0;
   settings.per_site_keepalive_limits = is_moltnet_profile;
   settings.per_site_http_cache = is_moltnet_profile;
+  settings.stop_all_when_refusing = is_moltnet_profile;
   return settings;
 }
 
@@ -327,6 +337,8 @@ void ApplyMoltNetNetworkContextSettings(
       settings.per_site_keepalive_limits;
   network_context_params.molt_per_site_http_cache =
       settings.per_site_http_cache;
+  network_context_params.molt_stop_all_when_refusing =
+      settings.stop_all_when_refusing;
 }
 
 }  // namespace molt_ai::tor

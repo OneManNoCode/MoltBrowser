@@ -7210,6 +7210,13 @@ bool ChromeContentBrowserClient::ShouldKeepDownloadsWithTheirSite(
                  Profile::FromBrowserContext(browser_context)));
 }
 
+bool ChromeContentBrowserClient::HasNetworkIdentityEnded(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: an ended MoltNet identity sends nothing more
+  // (molt_ai/tor/molt_net_identity_end_policy.h).
+  return molt_ai::tor::HasMoltNetIdentityEnded(browser_context);
+}
+
 bool ChromeContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
     content::BrowserContext* browser_context,
     const GURL& site_url) {
