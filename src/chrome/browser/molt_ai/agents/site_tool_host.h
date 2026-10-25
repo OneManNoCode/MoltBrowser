@@ -2,22 +2,29 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // SiteToolHost: lists and calls a page's site tools (WebMCP;
-// agent_tools.h, docs/design/AGENT_ACTIONS.md §2.7) for the web agent and
-// the AI chat's proposals.
+// agent_tools.h, docs/design/AGENT_ACTIONS.md §2.7) for the web agent, the
+// AI chat's proposals and Agent mode's tool steps.
 //
 // The documents are the page's main document and its frames of exactly the
-// same origin (agent_tools::ToolFrames(): never a cross-origin frame, a
-// same-origin frame inside one, a fenced frame, a guest view or another
-// page). Each is listed in its own isolated world (the agent's), with
-// agent_tools' scripts; isolated-world scripts don't wait for promises in
-// 152, so each request starts the work there and a poll script reports
-// it, every agent_tools::kPollIntervalMs, only while the document is still
-// the one asked (content::WeakDocumentPtr, plus the document's mark in the
-// scripts themselves).
+// same origin (agent_tools::ToolFrames(): never a same-origin frame inside
+// a cross-origin one, a fenced frame, a guest view or another page), and,
+// only when the caller names their origin (the user allowed it on this
+// page, frame_tools.h), frames of other sites that the main site embeds
+// (agent_tools::CrossOriginToolFrames()). The caller may also have the
+// other such frames' tools counted, never listed, to ask the user about
+// them. Each document is listed in its own isolated world (the agent's,
+// in that frame's own renderer), with agent_tools' scripts; isolated-world
+// scripts don't wait for promises, so each request starts the work there
+// and a poll script reports it, every agent_tools::kPollIntervalMs, only
+// while the document is still the one asked (content::WeakDocumentPtr,
+// plus the document's mark in the scripts themselves).
 //
 // A tool is its frame and its name: a call runs only in the very document
 // that listed it, still a frame of the same main document as
-// IsToolFrameChain() requires, at the same origin. The pure rules live in
+// IsToolFrameChain() (or, for another site's frame,
+// IsCrossOriginToolFrameChain()) requires, at the same origin. Nothing of
+// one frame is passed to another: each frame's scripts run in that frame,
+// and what they report comes to the browser. The pure rules live in
 // agent_tools; this class only finds the documents and keeps them.
 //
 // UI thread only.
@@ -67,14 +74,48 @@ class SiteToolHost {
     // Where each of them is (its origin and path), in the same order: a
     // recorded workflow finds its tool's frame by them.
     std::vector<agent_tools::FrameAddress> frames;
+
+    // Frames of other sites whose tools were only counted
+    // (OtherSites::count_others): each origin once, with how many tools
+    // its frames list (only origins with at least one).
+    struct Counted {
+      std::string origin;
+      size_t tools = 0;
+    };
+    std::vector<Counted> counted;
   };
   using ListCallback = base::OnceCallback<void(Listing)>;
 
+  // Which frames of other sites a listing covers (CrossOriginToolFrames()).
+  struct OtherSites {
+    OtherSites();
+    ~OtherSites();
+    OtherSites(const OtherSites&);
+    OtherSites& operator=(const OtherSites&);
+    OtherSites(OtherSites&&);
+    OtherSites& operator=(OtherSites&&);
+
+    // The origins (url::Origin::Serialize()) whose frames' tools are
+    // listed, as SiteTool::cross_origin tools.
+    std::vector<std::string> listed;
+    // Whether to count the tools of the other such frames (never listing
+    // them), so the caller can ask the user.
+    bool count_others = false;
+  };
+
   // Lists the tools of |main_document| (the primary main document of its
-  // tab, at |origin|) and of its same-origin frames, one document after
-  // the other, within agent_tools::kListTimeoutMs in all. |done| gets what
-  // was found: nothing if the main document is no longer its tab's, and
-  // only the documents that answered in time.
+  // tab, at |origin|) and of its same-origin frames, then of the frames of
+  // |other_sites|' origins (each tool marked SiteTool::cross_origin, a
+  // card or code tool left out: agent_tools::MayOfferCrossOriginTool()),
+  // then counts the others' tools if asked, one document after the other,
+  // within agent_tools::kListTimeoutMs in all. |done| gets what was found:
+  // nothing if the main document is no longer its tab's, and only the
+  // documents that answered in time.
+  void List(content::WeakDocumentPtr main_document,
+            url::Origin origin,
+            OtherSites other_sites,
+            ListCallback done);
+  // The same with no frame of another site.
   void List(content::WeakDocumentPtr main_document,
             url::Origin origin,
             ListCallback done);
@@ -89,6 +130,14 @@ class SiteToolHost {
       const content::WeakDocumentPtr& main_document,
       const content::WeakDocumentPtr& tool_document,
       const url::Origin& origin);
+  // The same for |tool|, listed in |tool_document|: for another site's
+  // frame (SiteTool::cross_origin), the document is at the tool's
+  // frame_origin, and the frames to it are an IsCrossOriginToolFrameChain().
+  static content::RenderFrameHost* ToolFrameIfCurrent(
+      const content::WeakDocumentPtr& main_document,
+      const content::WeakDocumentPtr& tool_document,
+      const url::Origin& origin,
+      const agent_tools::SiteTool& tool);
 
   enum class CallEnd {
     // |outcome| is the call's answer, or why it didn't run or failed.
@@ -105,8 +154,9 @@ class SiteToolHost {
   // Calls |tool|, listed in |tool_document| (Listing::documents[tool.frame])
   // of |main_document|'s page at |origin|, with |arguments_json| (written by
   // agent_tools::ReadArguments()). Not run (kSettled with kDocumentChanged)
-  // unless ToolFrameIfCurrent(); the script then checks the document's mark,
-  // its origin and that the page still lists the same tool.
+  // unless ToolFrameIfCurrent(..., tool); the script then checks the
+  // document's mark, its origin (the frame's own for another site's frame)
+  // and that the page still lists the same tool.
   void Call(content::WeakDocumentPtr main_document,
             content::WeakDocumentPtr tool_document,
             url::Origin origin,
@@ -130,7 +180,10 @@ class SiteToolHost {
     content::WeakDocumentPtr main_document;
     content::WeakDocumentPtr document;
     url::Origin origin;
+    // The document's origin when it is another site's frame; else empty.
+    std::string other_site;
   };
+  static content::RenderFrameHost* FrameIfCurrent(const PollTarget& target);
   void Poll(std::string script,
             PollTarget target,
             base::TimeTicks deadline,
@@ -146,6 +199,7 @@ class SiteToolHost {
                      std::string request_id,
                      base::Value result);
   void OnListed(std::unique_ptr<ListRun> run, PollEnd end, base::Value result);
+  void OnCounted(std::unique_ptr<ListRun> run, PollEnd end, base::Value result);
 
   void OnCallStarted(std::unique_ptr<CallRun> run, base::Value result);
   void OnCallPolled(std::unique_ptr<CallRun> run,

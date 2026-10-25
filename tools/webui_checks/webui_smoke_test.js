@@ -86,6 +86,8 @@ const DRAFT_WORKFLOW = {
 };
 const draftConfirmCalls = [];
 
+// The Agent studio's "Forget" on an allowed frame ([main, frame] each).
+const frameToolForgets = [];
 // The Agent studio's run questions (answerRunQuestion [id, qid, allowed]).
 const questionAnswers = [];
 const QUESTION = {id: '42', step: 3, kind: 'weak_match',
@@ -510,6 +512,53 @@ async function checkChatAgentPlan(window) {
 const agentRunReplies = [];
 const agentSaveCalls = [];
 let nextAgentSave = {success: false, error: 'not set'};
+// molt://ai-chat's FRAME_TOOLS chip (docs/design/AGENT_ACTIONS.md §2.7.14):
+// the browser's question as text; "Not now", "This session" and (only when
+// the browser offers it) "Always here" send that answer from the click,
+// once; the run goes on (no Deny).
+async function checkChatFrameTools(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const fire = (event, value) => window.cr.webUIListenerCallback(event, value);
+  const chips = () => Array.from(doc.querySelectorAll('#agentSteps .agent-confirm'));
+  const sent = () => window.__sendArgs.filter((c) => c[0] === 'webAgentFrameTools');
+  window.startWebAgent('Find a widget');
+  await tick();
+  fire('agent-confirm', {id: 4, action: 'FRAME_TOOLS', remember: true,
+                         message: 'https://<b>w</b>.example, a frame on ' +
+                                  'https://shop.example, offers 2 tools.'});
+  await tick();
+  let chip = chips().pop();
+  assert(chip, 'the question is shown');
+  assert(/Another site/.test(chip.querySelector('.agent-confirm-title').textContent));
+  assert.strictEqual(chip.querySelector('.agent-confirm-msg').textContent,
+                     'https://<b>w</b>.example, a frame on https://shop.example, ' +
+                     'offers 2 tools.');
+  assert.strictEqual(chip.querySelectorAll('b').length, 0, 'text only');
+  assert.deepStrictEqual(
+      Array.from(chip.querySelectorAll('button')).map((b) => b.textContent),
+      ['Not now', 'This session', 'Always here']);
+  const always = Array.from(chip.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Always here');
+  always.click();
+  always.click();
+  assert.deepStrictEqual(sent().map((c) => JSON.stringify(c[1])), ['[4,"always"]'],
+                         'one answer, from the click');
+  assert(!chip.parentNode, 'answered: gone');
+  // Without "Always" on offer (Incognito), and "Not now".
+  fire('agent-confirm', {id: 5, action: 'FRAME_TOOLS', message: 'x'});
+  await tick();
+  chip = chips().pop();
+  assert.deepStrictEqual(
+      Array.from(chip.querySelectorAll('button')).map((b) => b.textContent),
+      ['Not now', 'This session']);
+  chip.querySelector('[data-answer=not_now]').click();
+  assert.strictEqual(JSON.stringify(sent().pop()[1]), '[5,"not_now"]');
+  assert(!window.__sent.includes('webAgentConfirm'), 'not an Allow / Deny');
+  doc.getElementById('agentStopBtn').click();
+  await tick();
+}
+
 async function checkChatAgentSave(window) {
   const doc = window.document;
   const tick = () => new Promise((r) => setTimeout(r, 15));
@@ -1207,6 +1256,14 @@ const PAGES = [
        questionAnswers.push(JSON.stringify(args.slice(1)));
        return {ok: true};
      },
+     listFrameTools: {persistent: true, pairs: [
+       {main: 'https://shop.example', frame: 'https://<b>widget</b>.example',
+        always: true},
+       {main: 'https://news.example', frame: 'https://w.example', always: false}]},
+     forgetFrameTools: (args) => {
+       frameToolForgets.push(JSON.stringify(args.slice(1)));
+       return {ok: true};
+     },
      getWorkflow: (args) => args[1] === 'd1' ? DRAFT_WORKFLOW : {
        id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
        steps: [{type: 'navigate', target: 'https://www.example.com/'},
@@ -1381,6 +1438,23 @@ const PAGES = [
      Array.from(cq.querySelectorAll('button')).find((b) => b.textContent === 'Allow').click();
      assert.strictEqual(questionAnswers.pop(), '["q1","7",true]');
      await tick();
+     // Other sites' tools the user allowed: listed as text, each with
+     // "Forget", which sends exactly that pair.
+     const ft = doc.getElementById('frameTools');
+     assert(ft, 'the allowed frames are listed');
+     const ftRows = ft.querySelectorAll('.ft-row');
+     assert.strictEqual(ftRows.length, 2);
+     assert.strictEqual(ftRows[0].querySelector('.ft-pair').textContent,
+                        'https://<b>widget</b>.example on https://shop.example');
+     assert.strictEqual(ftRows[0].querySelector('.ft-when').textContent, 'always');
+     assert.strictEqual(ftRows[1].querySelector('.ft-when').textContent, 'this session');
+     assert.strictEqual(ft.querySelectorAll('b').length, 0, 'origins stay text');
+     ftRows[1].querySelector('.ft-forget').click();
+     assert.strictEqual(frameToolForgets.pop(),
+                        '["https://news.example","https://w.example"]');
+     await tick();
+     assert.strictEqual(doc.querySelectorAll('#frameTools').length, 1,
+                        'listed again, once');
      // The Runs view says how each element was found, as text.
      window.openRuns('w1', 'W');
      await tick();
@@ -1672,6 +1746,7 @@ const PAGES = [
      await checkChatPageActions(window);
      await checkChatFormFill(window);
      await checkChatAgentPlan(window);
+     await checkChatFrameTools(window);
      await checkChatAgentSave(window);
    }},
 ];
@@ -1765,9 +1840,13 @@ async function runPage(page) {
 
   const sent = [];
   window.__sent = sent;
+  // Every message with its arguments, for checks that need them.
+  const sendArgs = [];
+  window.__sendArgs = sendArgs;
   const responses = page.responses || {};
   window.chrome = {send(method, args) {
     sent.push(method);
+    sendArgs.push([method, args]);
     const id = args && args[0];
     if (typeof id !== 'string') return;
     let r = responses[method];

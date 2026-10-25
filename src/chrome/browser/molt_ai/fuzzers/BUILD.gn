@@ -284,6 +284,20 @@ fuzzer_test("molt_automation_tool_steps_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# Site tools in frames of other sites: the pairs a profile stored, answers
+# on top of them, the web agent's question, a call's arguments.
+fuzzer_test("molt_frame_tools_fuzzer") {
+  sources = [ "molt_frame_tools_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:frame_tools",
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+  ]
+  dict = "dicts/frame_tools.dict"
+  seed_corpus = "corpus/molt_frame_tools_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 fuzzer_test("molt_automation_ai_steps_fuzzer") {
   sources = [ "molt_automation_ai_steps_fuzzer.cc" ]
   deps = [

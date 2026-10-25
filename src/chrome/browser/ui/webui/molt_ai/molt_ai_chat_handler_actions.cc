@@ -38,13 +38,16 @@
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_form_fill.h"
@@ -365,11 +368,24 @@ void MoltAIChatHandler::OnChatActionSnapshot(
     }
   } else if (molt_ai::agent_features::AgentSiteToolsEnabled()) {
     // The page's site tools (WebMCP), as the web agent lists them: the
-    // document observed and its same-origin frames, never another site's.
+    // document observed and its same-origin frames, and the frames of
+    // other sites the user allowed on this page (asked by the web agent;
+    // the chat never asks, nor counts the others). None in MoltNet.
     content::WeakDocumentPtr document = decision->document;
     const url::Origin origin = decision->origin;
+    molt_ai::SiteToolHost::OtherSites other_sites;
+    content::RenderFrameHost* observed =
+        decision->document.AsRenderFrameHostIfValid();
+    if (observed && !molt_ai::tor::IsMoltNetProfile(Profile::FromBrowserContext(
+                        observed->GetBrowserContext()))) {
+      if (molt_ai::FrameToolPermissions* permissions =
+              molt_ai::FrameToolPermissions::Get(
+                  observed->GetBrowserContext())) {
+        other_sites.listed = permissions->AllowedFrames(origin);
+      }
+    }
     ChatSiteTools()->List(
-        std::move(document), origin,
+        std::move(document), origin, std::move(other_sites),
         base::BindOnce(&MoltAIChatHandler::OnChatActionToolsListed,
                        weak_ptr_factory_.GetWeakPtr(), std::move(decision)));
     return;
@@ -924,7 +940,7 @@ content::RenderFrameHost* MoltAIChatHandler::ChatProposalToolFrame(
   }
   return molt_ai::SiteToolHost::ToolFrameIfCurrent(
       proposal.document, proposal.tool_documents[tool->frame],
-      proposal.origin);
+      proposal.origin, *tool);
 }
 
 content::RenderFrameHost* MoltAIChatHandler::ChatProposalFrame(

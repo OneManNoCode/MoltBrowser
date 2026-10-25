@@ -379,6 +379,11 @@ std::optional<size_t> FindListedTool(
     const SiteTool& t = tools[i];
     if (t.name != step.name || t.frame >= frames.size())
       continue;
+    // Another site's frame only for a step recorded in one, at its origin.
+    if (t.cross_origin != IsCrossOriginFrame(step) ||
+        (t.cross_origin && t.frame_origin != step.frame_origin)) {
+      continue;
+    }
     if (!step.in_frame) {
       if (t.frame == 0)
         return i;  // a name is unique in its document
@@ -452,15 +457,17 @@ std::string_view CompatText(Compat compat) {
 Approval ApprovalFor(const ToolStep& step,
                      const SiteTool& live,
                      bool approved_for_site) {
-  if (IsCrossOriginFrame(step) || agent_safety::IsSensitive(live.sensitive))
+  if (IsCrossOriginFrame(step) || live.cross_origin ||
+      agent_safety::IsSensitive(live.sensitive)) {
     return Approval::kAsk;
+  }
   if (agent_tools::ToolCallEffects(live).empty())
     return Approval::kRun;  // the site says it only reads
   return approved_for_site ? Approval::kRun : Approval::kAsk;
 }
 
 bool TrustWouldAllow(const ToolStep& step, const SiteTool& live) {
-  return !IsCrossOriginFrame(step) &&
+  return !IsCrossOriginFrame(step) && !live.cross_origin &&
          !agent_safety::IsSensitive(live.sensitive);
 }
 

@@ -16,12 +16,16 @@
 // driving rules in molt_ai/security/agent_safety.h.
 //
 // Enforcement: AutomationRunner checks every NAVIGATE / CLICK / TYPE /
-// KEYPRESS step against EffectivePolicy(script) before (and, for the
-// element-level checks, right after resolving) the step. A denied step
-// fails the run with a message naming the rule; there is no in-run
-// approval prompt — "approval" is the user raising the script's trust
-// level via promoteTrust in molt://ai-automation. Saving or importing a
-// script never raises trust (ClampTrustForSave).
+// KEYPRESS / CALL_TOOL step against EffectivePolicy(script) before (and,
+// for the element-level checks, right after resolving) the step. A denied
+// step fails the run with a message naming the rule; the policy itself is
+// never widened in a run — "approval" is the user raising the script's
+// trust level via promoteTrust in molt://ai-automation. Two things ask the
+// user in the middle of a run instead (run_questions.h), and only ever for
+// that one step: an element found only by a weak fallback locator, and a
+// site-tool call the policy doesn't let run unasked
+// (docs/design/AGENT_ACTIONS.md §3.4, §3.5). Saving or importing a script
+// never raises trust (ClampTrustForSave).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_

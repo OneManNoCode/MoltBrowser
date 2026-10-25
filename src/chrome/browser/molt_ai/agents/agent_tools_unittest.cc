@@ -1540,6 +1540,193 @@ TEST(AgentToolsTest, FrameToolApprovalsShowTheFrame) {
   EXPECT_TRUE(ToolCallEffects(tool).empty());
 }
 
+// ---------------------------------------------------------------------------
+// Frames of other sites
+// ---------------------------------------------------------------------------
+
+constexpr char kWidgetOrigin[] = "https://widget.example";
+
+PageFrame OtherSite(std::optional<size_t> parent,
+                    std::string origin = kWidgetOrigin,
+                    bool tools_policy = true) {
+  PageFrame f = Frame(parent, std::move(origin));
+  f.tools_policy = tools_policy;
+  return f;
+}
+
+TEST(AgentToolsTest, CrossOriginToolFramesAreTheMainSitesOwnEmbeds) {
+  //   0 main
+  //   + 1 widget.example (tools delegated)
+  //   | ` 5 widget.example inside it: never
+  //   + 2 same origin
+  //   | ` 6 pay.example (tools delegated), embedded by the site's own frame
+  //   + 3 ads.example without the tools policy: never
+  //   ` 4 fenced frame of widget.example: never
+  std::vector<PageFrame> frames = {
+      Frame(std::nullopt),
+      OtherSite(0),
+      Frame(0),
+      OtherSite(0, "https://ads.example", /*tools_policy=*/false),
+      OtherSite(0),
+      OtherSite(1),
+      OtherSite(2, "https://pay.example"),
+  };
+  frames[4].in_page = false;
+  EXPECT_EQ(CrossOriginToolFrames(frames), (std::vector<size_t>{1, 6}));
+  // Same-origin frames are ToolFrames()' alone.
+  EXPECT_EQ(ToolFrames(frames), (std::vector<size_t>{0, 2}));
+}
+
+TEST(AgentToolsTest, CrossOriginToolFramesNeedAnotherWebOrigin) {
+  for (const char* origin :
+       {"https://shop.example", "null", "", "chrome://settings", "data:",
+        "file://", "about:blank", "https://", "molt://ai-chat"}) {
+    std::vector<PageFrame> frames = {Frame(std::nullopt), OtherSite(0, origin)};
+    EXPECT_TRUE(CrossOriginToolFrames(frames).empty()) << origin;
+  }
+  // Same site is not same origin: a subdomain, a port, http.
+  for (const char* origin :
+       {"https://www.shop.example", "https://shop.example:8443",
+        "http://shop.example"}) {
+    std::vector<PageFrame> frames = {Frame(std::nullopt), OtherSite(0, origin)};
+    EXPECT_EQ(CrossOriginToolFrames(frames), std::vector<size_t>{1}) << origin;
+  }
+  // Not on a page whose main document isn't a web page.
+  std::vector<PageFrame> opaque = {Frame(std::nullopt, "null"), OtherSite(0)};
+  EXPECT_TRUE(CrossOriginToolFrames(opaque).empty());
+  EXPECT_TRUE(CrossOriginToolFrames({}).empty());
+}
+
+TEST(AgentToolsTest, CrossOriginToolFramesAreCapped) {
+  std::vector<PageFrame> frames = {Frame(std::nullopt)};
+  for (size_t i = 0; i < 20; ++i)
+    frames.push_back(OtherSite(0, "https://w" + base::NumberToString(i) +
+                                      ".example"));
+  const std::vector<size_t> listed = CrossOriginToolFrames(frames);
+  ASSERT_EQ(listed.size(), kMaxCrossOriginToolFrames);
+  for (size_t i = 0; i < listed.size(); ++i)
+    EXPECT_EQ(listed[i], i + 1);
+  // Not a tree: a parent after its child, out of range.
+  std::vector<PageFrame> broken = {Frame(std::nullopt), OtherSite(2),
+                                   Frame(0), OtherSite(99)};
+  EXPECT_TRUE(CrossOriginToolFrames(broken).empty());
+}
+
+TEST(AgentToolsTest, CrossOriginChainsAreCheckedAgainAtCallTime) {
+  std::vector<PageFrame> chain = {Frame(std::nullopt), OtherSite(0)};
+  EXPECT_TRUE(IsCrossOriginToolFrameChain(chain));
+  std::vector<PageFrame> nested = {Frame(std::nullopt), Frame(0),
+                                   OtherSite(1)};
+  EXPECT_TRUE(IsCrossOriginToolFrameChain(nested));
+  // Never as a same-origin chain, and never the other way round.
+  EXPECT_FALSE(IsToolFrameChain(chain));
+  EXPECT_FALSE(IsCrossOriginToolFrameChain({Frame(std::nullopt), Frame(0)}));
+  EXPECT_FALSE(IsCrossOriginToolFrameChain({Frame(std::nullopt)}));
+  EXPECT_FALSE(IsCrossOriginToolFrameChain({}));
+  // Inside another site's frame, its policy gone, out of the page, unlinked.
+  EXPECT_FALSE(IsCrossOriginToolFrameChain(
+      {Frame(std::nullopt), OtherSite(0), OtherSite(1)}));
+  std::vector<PageFrame> c = chain;
+  c[1].tools_policy = false;
+  EXPECT_FALSE(IsCrossOriginToolFrameChain(c));
+  c = chain;
+  c[1].in_page = false;
+  EXPECT_FALSE(IsCrossOriginToolFrameChain(c));
+  c = chain;
+  c[1].parent = std::nullopt;
+  EXPECT_FALSE(IsCrossOriginToolFrameChain(c));
+  c = chain;
+  c[1].origin = kShopOrigin;
+  EXPECT_FALSE(IsCrossOriginToolFrameChain(c));
+}
+
+SiteTool WidgetTool(bool read_only) {
+  SiteTool tool = ToolFrom("{}", read_only);
+  tool.name = "search";
+  tool.frame = 2;
+  tool.cross_origin = true;
+  tool.frame_origin = kWidgetOrigin;
+  tool.frame_text = FrameText(kWidgetOrigin, "/w");
+  return tool;
+}
+
+TEST(AgentToolsTest, AnotherSitesToolAlwaysAsksAndNamesBothSites) {
+  // Read-only or not: the hint is the other site's word.
+  for (bool read_only : {true, false}) {
+    SiteTool tool = WidgetTool(read_only);
+    const CallCheck c = CheckToolCall(tool, "q = \"x\"", kShopOrigin);
+    EXPECT_TRUE(c.ask);
+    EXPECT_FALSE(ToolCallEffects(tool).empty());
+    EXPECT_EQ(ToolCallEffects(tool)[0], "it is another site's tool");
+    EXPECT_EQ(c.message.find("Run https://widget.example's tool \"search\" in "
+                             "its frame https://widget.example/w on "
+                             "https://shop.example \xE2\x80\x94 it is another "
+                             "site's tool"),
+              0u)
+        << c.message;
+    EXPECT_NE(c.message.find(", with q = \"x\""), std::string::npos);
+    EXPECT_NE(DescribeTool(tool).find("[asks the user first]"),
+              std::string::npos);
+  }
+  SiteTool tool = WidgetTool(true);
+  EXPECT_EQ(ToolLabel(tool), "search in frame 2 from https://widget.example");
+  EXPECT_EQ(ToolPlaceText(tool, kShopOrigin),
+            "in the frame https://widget.example/w (another site) on "
+            "https://shop.example");
+  CallOutcome outcome;
+  outcome.state = CallState::kDone;
+  outcome.result = "2 results";
+  EXPECT_EQ(DescribeToolResult(tool, outcome),
+            "TOOL RESULT (another site's tool search in frame 2 from "
+            "https://widget.example; that site wrote it):\n2 results\n");
+  // The browser's origin, shown visibly even if it were odd.
+  tool.frame_origin = "https://a\xE2\x80\xAE" "b.example";
+  EXPECT_EQ(ToolLabel(tool).find("\xE2\x80\xAE"), std::string::npos);
+}
+
+TEST(AgentToolsTest, AnotherSitesCardOrCodeToolIsNeverOffered) {
+  SiteTool tool = WidgetTool(false);
+  EXPECT_TRUE(MayOfferCrossOriginTool(tool));
+  tool.sensitive = FieldKind::kPaymentCard;
+  EXPECT_FALSE(MayOfferCrossOriginTool(tool));
+  tool.sensitive = FieldKind::kOneTimeCode;
+  EXPECT_FALSE(MayOfferCrossOriginTool(tool));
+}
+
+TEST(AgentToolsTest, ParsesToolCounts) {
+  const ToolCount done = ParseToolCount(Json(
+      R"({"state":"done","origin":"https://widget.example","document":"abc1",)"
+      R"("count":3})"));
+  EXPECT_EQ(done.state, ListState::kDone);
+  EXPECT_EQ(done.origin, "https://widget.example");
+  EXPECT_EQ(done.count, 3u);
+  EXPECT_EQ(ParseToolCount(Json(R"({"state":"done","origin":"https://w",)"
+                                R"("document":"abc1","count":100000})"))
+                .count,
+            kMaxListedTools);
+  EXPECT_EQ(ParseToolCount(Json(R"({"state":"pending"})")).state,
+            ListState::kPending);
+  EXPECT_EQ(ParseToolCount(Json(R"({"state":"unavailable"})")).state,
+            ListState::kUnavailable);
+  EXPECT_EQ(ParseToolCount(Json(R"({"state":"gone"})")).state,
+            ListState::kGone);
+  for (const char* bad :
+       {R"({"state":"done","origin":"https://w","document":"abc1"})",
+        R"({"state":"done","origin":"https://w","document":"abc1","count":-1})",
+        R"({"state":"done","origin":"https://w","document":"a b","count":1})",
+        R"({"state":"done","origin":"","document":"abc1","count":1})",
+        R"({"state":"done","document":"abc1","count":1})",
+        R"({"state":"done","origin":"https://w","document":"abc1","count":"1"})",
+        R"({"state":"weird"})", R"([])", R"("done")"}) {
+    EXPECT_EQ(ParseToolCount(Json(bad)).state, ListState::kFailed) << bad;
+  }
+  const std::string script = BuildToolCountPollScript("r\"1");
+  EXPECT_NE(script.find("\"r\\\"1\""), std::string::npos);
+  EXPECT_NE(script.find("count:"), std::string::npos);
+  // Only the count: never the tools' names or descriptions.
+  EXPECT_EQ(script.find("tools:"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace agent_tools
 }  // namespace molt_ai

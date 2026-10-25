@@ -355,8 +355,23 @@ TEST(AutomationToolStepsTest, FindsTheToolInItsFrame) {
   for (size_t f = 1; f <= 3; ++f) {
     tools.push_back(Tool("add_to_cart", kCartSchema));
     tools.back().frame = f;
+    tools.back().cross_origin = true;
+    tools.back().frame_origin = frames[f].origin;
   }
   EXPECT_EQ(FindListedTool(framed, tools, frames), 1u) << "at its path";
+  // Only as another site's frame's tool, listed as such.
+  std::vector<SiteTool> unmarked = tools;
+  for (SiteTool& t : unmarked)
+    t.cross_origin = false;
+  EXPECT_FALSE(FindListedTool(framed, unmarked, frames));
+  ToolStep own_frame = Recorded();
+  own_frame.in_frame = true;
+  own_frame.frame_origin = kOrigin;
+  own_frame.frame_path = "/w";
+  EXPECT_FALSE(FindListedTool(own_frame, tools, {{kOrigin, "/"},
+                                                 {kOrigin, "/w"},
+                                                 {kOrigin, "/w"},
+                                                 {kOrigin, "/w"}}));
   frames[2].path = "/moved";
   EXPECT_FALSE(FindListedTool(framed, tools, frames))
       << "two frames of the site, neither at the path";
@@ -463,6 +478,12 @@ TEST(AutomationToolStepsTest, AsksUnlessReadOnlyOrApproved) {
   EXPECT_FALSE(TrustWouldAllow(framed, changes));
   framed.frame_origin = kOrigin;
   EXPECT_EQ(ApprovalFor(framed, reads, false), Approval::kRun);
+  // A tool listed as another site's frame's asks too, whatever the step.
+  SiteTool other = reads;
+  other.cross_origin = true;
+  other.frame_origin = "https://widget.example";
+  EXPECT_EQ(ApprovalFor(step, other, true), Approval::kAsk);
+  EXPECT_FALSE(TrustWouldAllow(step, other));
 }
 
 }  // namespace

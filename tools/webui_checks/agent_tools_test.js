@@ -1,5 +1,6 @@
 // The web agent's site-tool scripts (agent_tools::BuildToolListScript,
-// BuildToolListPollScript, BuildToolCallScript, BuildToolCallPollScript in
+// BuildToolListPollScript, BuildToolCountPollScript, BuildToolCallScript,
+// BuildToolCallPollScript in
 // src/chrome/browser/molt_ai/agents/agent_tools.cc), run in jsdom against a
 // stand-in for Chromium 156's document.modelContext (WebMCP), which jsdom
 // doesn't have. In 156 getTools() gives each tool's inputSchema as an object
@@ -53,6 +54,9 @@ const listScript = (id, mark = MARK) =>
          [JSON.stringify(id), JSON.stringify(mark), FORM_HELPERS]);
 const listPoll = (id) =>
     fill(template('BuildToolListPollScript'), [JSON.stringify(id)]);
+// Another site's frame the user hasn't allowed: only how many tools.
+const countPoll = (id) =>
+    fill(template('BuildToolCountPollScript'), [JSON.stringify(id)]);
 // |tool| as SiteTool keeps it: the mark of the document that listed it
 // (|tool.doc|, MARK unless given), listed description, schema (the listed
 // text, or null), the read-only, untrusted-content and consequential hints,
@@ -172,6 +176,13 @@ const SEARCH_SCHEMA = JSON.stringify(SEARCH.inputSchema);
   assert.strictEqual(r.tools[1].readOnly, false);
   assert.strictEqual(r.tools[2].description.length, 4097);
   assert.strictEqual(r.tools[2].schema.length, 8193);
+  // The count poll reports how many, and nothing of the tools themselves.
+  r = p.run(countPoll('l2'));
+  assert.deepStrictEqual(Object.keys(r).sort(),
+                         ['count', 'document', 'origin', 'state']);
+  assert.strictEqual(r.count, 3);
+  assert.strictEqual(r.origin, ORIGIN);
+  assert.deepStrictEqual(p.run(countPoll('other')), {state: 'gone'});
   // A tool without a schema lists null; a schema that isn't an object
   // (152's string, or anything else) lists '!', which the browser refuses.
   p = page(ORIGIN, [{name: 'ping', description: 'Ping.'},

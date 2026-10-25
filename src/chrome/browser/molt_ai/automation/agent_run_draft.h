@@ -11,7 +11,8 @@
 //   * keeps only the steps that ran and succeeded, in order: NAVIGATE and
 //     SEARCH as navigations, CLICK, TYPE and each FILL_FORM field as the
 //     recorder's click / type steps (the observation's selector, the
-//     element's label as the runner's text anchor, the page's host),
+//     element's label as the runner's text anchor, the page's host, and
+//     the fallback locators the agent captured for it on that origin),
 //     SCROLL as a scroll; OBSERVE, REPLAN, DONE and ERROR change nothing on
 //     a page and are left out;
 //   * never stores a secret: a value the agent typed that looks like a
@@ -25,7 +26,9 @@
 //     reviewed it and confirmed its sites in the Agent studio, with a real
 //     click (AutomationSecurity::ConfirmDraftSites);
 //   * isn't made from a run that called a site's own tool (CALL_TOOL,
-//     WebMCP), which no workflow step can replay, or from a MoltNet run.
+//     WebMCP): a recording keeps such a call only when the user chose and
+//     approved it while recording (automation_tool_steps.h), and a draft's
+//     would be the model's; nor from a MoltNet run.
 // Nothing else of the run is kept: no page text, screenshot, plan or
 // model reasoning, and the goal only as the draft's name when it holds
 // nothing secret-looking.

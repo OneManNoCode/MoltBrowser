@@ -33,6 +33,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler.h"
@@ -245,6 +246,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     bind("promoteTrust", &AgentStudioHandler::HandlePromoteTrust);
     bind("confirmDraftSites", &AgentStudioHandler::HandleConfirmDraftSites);
     bind("answerRunQuestion", &AgentStudioHandler::HandleAnswerRunQuestion);
+    bind("listFrameTools", &AgentStudioHandler::HandleListFrameTools);
+    bind("forgetFrameTools", &AgentStudioHandler::HandleForgetFrameTools);
   }
 
  private:
@@ -398,6 +401,47 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         }
       }
     }
+    ResolveDict(args, std::move(out));
+  }
+
+  // The frames of other sites the user let offer their tools to the
+  // agents, per page (molt_ai/agents/frame_tool_permissions.h): [cb] ->
+  // {pairs: [{main, frame, always}], persistent}. Origins are the
+  // browser's; the page shows them as text.
+  void HandleListFrameTools(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    base::ListValue pairs;
+    molt_ai::FrameToolPermissions* permissions =
+        profile() ? molt_ai::FrameToolPermissions::Get(profile()) : nullptr;
+    if (permissions) {
+      for (const molt_ai::frame_tools::Pair& pair : permissions->List()) {
+        base::DictValue p;
+        p.Set("main", pair.main_origin);
+        p.Set("frame", pair.frame_origin);
+        p.Set("always", pair.grant == molt_ai::frame_tools::Grant::kAlways);
+        pairs.Append(std::move(p));
+      }
+    }
+    out.Set("pairs", std::move(pairs));
+    out.Set("persistent", permissions && permissions->persistent());
+    ResolveDict(args, std::move(out));
+  }
+
+  // [cb, main, frame] -> {ok}: forgets that pair (only ever takes a
+  // permission away, so it needs no click check).
+  void HandleForgetFrameTools(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    bool ok = false;
+    if (args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
+      if (molt_ai::FrameToolPermissions* permissions =
+              profile() ? molt_ai::FrameToolPermissions::Get(profile())
+                        : nullptr) {
+        ok = permissions->Remove(args[1].GetString(), args[2].GetString());
+      }
+    }
+    out.Set("ok", ok);
     ResolveDict(args, std::move(out));
   }
 
@@ -1196,7 +1240,41 @@ $('backBtn').addEventListener('click',function(){
 function loadLibrary(){
   return sendWithPromise('listWorkflows').then(function(r){
     renderLibrary((r&&r.workflows)||[]);
-  }).catch(function(){renderLibrary([]);});
+  }).catch(function(){renderLibrary([]);}).then(loadFrameTools);
+}
+/* ---- other sites' tools the user allowed (per page) ----
+   A frame of another site offers its tools to the agent only once the user
+   allowed it on that page (the agent asks). Listed here so they can be
+   taken back; the origins are the browser's, shown as text. */
+function loadFrameTools(){
+  return sendWithPromise('listFrameTools').then(function(r){
+    renderFrameTools((r&&r.pairs)||[]);
+  }).catch(function(){renderFrameTools([]);});
+}
+function renderFrameTools(pairs){
+  var old=$('frameTools'); if(old&&old.parentNode) old.parentNode.removeChild(old);
+  if(!pairs.length) return;
+  var box=h('div',{'class':'frame-tools',id:'frameTools'},[
+    h('div',{'class':'ft-h'},'Other sites\u2019 tools you allowed'),
+    h('div',{'class':'ft-s'},'Frames of these sites may offer their tools to the agent on these pages. Every call still asks you first.')
+  ]);
+  pairs.forEach(function(p){
+    var forget=h('button',{'class':'btn ghost ft-forget'},'Forget');
+    forget.addEventListener('click',function(){
+      sendWithPromise('forgetFrameTools',String(p.main),String(p.frame))
+        .then(loadFrameTools,loadFrameTools);
+    });
+    box.appendChild(h('div',{'class':'ft-row'},[
+      h('div',{'class':'ft-pair'},[
+        h('span',{'class':'ft-frame'},String(p.frame||'')),
+        ' on ',
+        h('span',{'class':'ft-main'},String(p.main||''))
+      ]),
+      h('span',{'class':'ft-when'},p.always===true?'always':'this session'),
+      forget
+    ]));
+  });
+  $('libList').appendChild(box);
 }
 function renderLibrary(list){
   var box=$('libList');clear(box);libraryCards={};
@@ -2476,6 +2554,13 @@ button,input,textarea,select{font-family:inherit}
 .run-q .rq-h{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
 .run-q .rq-m{font-size:12px;margin-top:4px;word-break:break-word}
 .loc-note{margin:6px 2px 2px;font-size:11px;color:var(--muted)}
+.frame-tools{margin:14px 2px 6px;padding:10px 11px;border-radius:12px;border:1px solid var(--border)}
+.frame-tools .ft-h{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
+.frame-tools .ft-s{font-size:11.5px;color:var(--faint);margin-top:3px}
+.frame-tools .ft-row{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px}
+.frame-tools .ft-pair{flex:1;min-width:0;word-break:break-all}
+.frame-tools .ft-when{font-size:11px;color:var(--muted)}
+.frame-tools .ft-forget{font-size:11px;padding:4px 9px}
 .tool-args{font-size:12px;word-break:break-word;padding:6px 9px;border-radius:9px;
   border:1px solid var(--border);background:rgba(255,255,255,0.03)}
 .trust-act .btn{flex:1;font-size:12px;padding:8px 10px}

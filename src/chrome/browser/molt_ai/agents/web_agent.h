@@ -54,14 +54,22 @@
 //   - A page that offers tools (WebMCP, document.modelContext) gets a TOOLS
 //     list in its observation and the model may CALL_TOOL one by id
 //     (agent_tools.h): the main document's own tools and those of its
-//     frames of exactly the same origin (never a cross-origin frame or a
-//     frame inside one), listed and called from the agent's isolated world
+//     frames of exactly the same origin (never a frame inside a
+//     cross-origin one), listed and called from the agent's isolated world
 //     on the page the run is in scope for (SiteToolHost); names,
 //     descriptions and answers are fenced page text; arguments are checked
 //     against the tool's (converted) schema; a call runs only in the very
 //     document that listed the tool, if it still lists the same tool, and
 //     one the page doesn't annotate read-only asks the user first (naming
 //     the frame when it isn't the main document's).
+//   - A frame of another site that the page embeds (with the `tools`
+//     policy delegated) has its tools listed only once the user allows
+//     that frame's origin on the page's origin (frame_tools.h): the run
+//     asks ("FRAME_TOOLS": Not now / This session / Always) when such a
+//     frame has tools, and "Not now" only leaves them out. Their tools
+//     are named with the frame's origin, every call asks (read-only or
+//     not) naming both sites, and a call whose arguments look like a
+//     secret is refused. Never in MoltNet.
 //   - A plan (agent_plan.h) is model output written from the goal and
 //     page text: it reaches the model fenced, never as the GOAL, and the
 //     user as text. It grants nothing: the browser never reads it for
@@ -87,6 +95,7 @@
 #include "chrome/browser/molt_ai/agents/agent_prompt.h"
 #include "chrome/browser/molt_ai/agents/agent_screenshot.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
+#include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/automation/automation_locators.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
@@ -164,12 +173,16 @@ class WebAgent : public content::WebContentsObserver {
   // denies it (see the safety model above).
   struct ConfirmRequest {
     int id = 0;
-    std::string action;   // NAVIGATE, CLICK, TYPE, FILL_FORM, CALL_TOOL or
-                          // CONTINUE
+    std::string action;   // NAVIGATE, CLICK, TYPE, FILL_FORM, CALL_TOOL,
+                          // CONTINUE or FRAME_TOOLS
     std::string message;  // e.g. "Open https://example.com"
+    // FRAME_TOOLS: whether "Always" may be offered (a profile that keeps
+    // answers).
+    bool can_remember = false;
   };
   // Called on the UI thread when the run pauses for approval. Answer with
-  // ResolveConfirmation(request.id, allowed).
+  // ResolveConfirmation(request.id, allowed), or for FRAME_TOOLS with
+  // ResolveFrameTools(request.id, grant).
   using ConfirmCallback = base::RepeatingCallback<void(const ConfirmRequest&)>;
 
   // The run's plan (agent_plan.h), for the UI. Its steps are model text:
@@ -215,6 +228,13 @@ class WebAgent : public content::WebContentsObserver {
   // resumes the paused action; deny stops the run. Stale or unknown ids
   // are ignored.
   void ResolveConfirmation(int request_id, bool allowed);
+
+  // The user's answer to a pending FRAME_TOOLS question: kNone ("Not now")
+  // leaves that frame's tools out for the rest of the run; kSession and
+  // kAlways allow its origin on the page's (FrameToolPermissions; the
+  // caller checked the click). The run goes on either way. Stale or
+  // unknown ids are ignored.
+  void ResolveFrameTools(int request_id, frame_tools::Grant grant);
 
   // content::WebContentsObserver:
   void DidStopLoading() override;
@@ -295,6 +315,14 @@ class WebAgent : public content::WebContentsObserver {
                          std::string observed_origin,
                          bool origin_allowed,
                          SiteToolHost::Listing listing);
+  // The frames of other sites a listing may cover on |main_origin|: those
+  // the user allowed there, and the others counted (to ask) unless this
+  // run already asked about them. None in MoltNet.
+  SiteToolHost::OtherSites OtherSitesFor(const url::Origin& main_origin) const;
+  // Asks about the next frame of frame_question_, or (none left) goes on
+  // with the observation, listing again if the user allowed one.
+  void AskNextFrameQuestion();
+  void OnFrameToolsRelisted(SiteToolHost::Listing listing);
   // The page state for the prompt, and the screenshot.
   void ContinueObservation(const StructuredPage& page,
                            content::WeakDocumentPtr document,
@@ -416,6 +444,29 @@ class WebAgent : public content::WebContentsObserver {
   // into the next observation; and the step's note.
   std::string tool_result_;
   std::string tool_call_note_;
+
+  // An observation paused on FRAME_TOOLS questions: what it goes on with,
+  // and the frames still to ask about.
+  struct FrameQuestion {
+    FrameQuestion();
+    ~FrameQuestion();
+
+    StructuredPage page;
+    content::WeakDocumentPtr document;
+    std::string observed_origin;
+    bool origin_allowed = false;
+    url::Origin main_origin;
+    // The listing before the questions (used as is if nothing is allowed).
+    SiteToolHost::Listing listing;
+    std::vector<SiteToolHost::Listing::Counted> to_ask;
+    // The frame origin of the question pending, and whether one was allowed.
+    std::string asking;
+    bool any_allowed = false;
+  };
+  std::unique_ptr<FrameQuestion> frame_question_;
+  int pending_frame_question_id_ = 0;
+  // "<main origin> <frame origin>" pairs this run asked about.
+  std::vector<std::string> frame_pairs_asked_;
 
   // The planner (#molt-agent-planner, read at Start()), the run's plan and
   // how far it got. |plan_needed_|: a plan is to be written before the next

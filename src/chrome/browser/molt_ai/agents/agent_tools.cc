@@ -853,6 +853,59 @@ bool IsToolFrameChain(const std::vector<PageFrame>& chain) {
   return true;
 }
 
+bool IsCrossOriginToolFrame(const PageFrame& frame,
+                            std::string_view main_origin) {
+  const auto is_web = [](std::string_view o) {
+    return o.starts_with("https://") || o.starts_with("http://");
+  };
+  // url::Origin::Serialize() of an http(s) origin has a host; an opaque
+  // one is "null". Any difference from the main origin counts as another
+  // site's frame (a subdomain, a port, http vs. https).
+  return frame.in_page && frame.tools_policy && is_web(main_origin) &&
+         is_web(frame.origin) && frame.origin.size() > 8 &&
+         frame.origin != main_origin;
+}
+
+std::vector<size_t> CrossOriginToolFrames(
+    const std::vector<PageFrame>& frames) {
+  std::vector<size_t> out;
+  const std::vector<size_t> own = ToolFrames(frames);
+  if (own.empty())
+    return out;
+  const std::string& main_origin = frames[0].origin;
+  // The direct children of the documents ToolFrames() lists, in its order
+  // and then their own: the frames the main site itself embeds.
+  std::vector<bool> is_own(frames.size(), false);
+  for (size_t i : own)
+    is_own[i] = true;
+  for (size_t parent : own) {
+    for (size_t i = 1; i < frames.size(); ++i) {
+      if (out.size() >= kMaxCrossOriginToolFrames)
+        return out;
+      if (frames[i].parent && *frames[i].parent == parent &&
+          *frames[i].parent < i && !is_own[i] &&
+          IsCrossOriginToolFrame(frames[i], main_origin)) {
+        out.push_back(i);
+      }
+    }
+  }
+  return out;
+}
+
+bool IsCrossOriginToolFrameChain(const std::vector<PageFrame>& chain) {
+  if (chain.size() < 2)
+    return false;
+  const std::vector<PageFrame> own(chain.begin(), chain.end() - 1);
+  const PageFrame& last = chain.back();
+  return IsToolFrameChain(own) && last.parent &&
+         *last.parent == chain.size() - 2 &&
+         IsCrossOriginToolFrame(last, chain[0].origin);
+}
+
+bool MayOfferCrossOriginTool(const SiteTool& tool) {
+  return !agent_safety::IsSensitive(tool.sensitive);
+}
+
 std::string FrameText(std::string_view origin, std::string_view path) {
   // An http(s) URL's path is never empty: no path is a document that took
   // its origin from its parent (about:blank, about:srcdoc, blob:).
@@ -883,7 +936,12 @@ bool IsValidArgumentName(std::string_view name) {
 std::string ToolLabel(const SiteTool& tool) {
   if (tool.frame == 0)
     return tool.name;
-  return tool.name + " in frame " + base::NumberToString(tool.frame);
+  std::string label =
+      tool.name + " in frame " + base::NumberToString(tool.frame);
+  // The browser's origin of another site's frame, never page text.
+  if (tool.cross_origin)
+    label += " from " + Visible(tool.frame_origin);
+  return label;
 }
 
 // ---------------------------------------------------------------------------
@@ -968,6 +1026,58 @@ std::string BuildToolListPollScript(std::string_view request_id) {
   }
 })())JS",
       JsString(request_id).c_str());
+}
+
+std::string BuildToolCountPollScript(std::string_view request_id) {
+  return base::StringPrintf(
+      R"JS((() => {
+  try {
+    const st = globalThis.__moltAgentToolList;
+    if (!st || st.id !== %s) return {state: 'gone'};
+    if (st.state !== 'done') return {state: st.state};
+    return {state: 'done', origin: st.origin, document: st.document,
+            count: Array.isArray(st.tools) ? st.tools.length : 0};
+  } catch (e) {
+    return {state: 'failed'};
+  }
+})())JS",
+      JsString(request_id).c_str());
+}
+
+ToolCount ParseToolCount(const base::Value& result) {
+  ToolCount count;
+  if (!result.is_dict())
+    return count;
+  const base::DictValue& d = result.GetDict();
+  const std::string* state = d.FindString("state");
+  if (!state)
+    return count;
+  if (*state == "pending") {
+    count.state = ListState::kPending;
+    return count;
+  }
+  if (*state == "unavailable") {
+    count.state = ListState::kUnavailable;
+    return count;
+  }
+  if (*state == "gone") {
+    count.state = ListState::kGone;
+    return count;
+  }
+  if (*state != "done")
+    return count;
+  const std::string* origin = d.FindString("origin");
+  const std::string* document = d.FindString("document");
+  const std::optional<int> n = d.FindInt("count");
+  if (!origin || origin->empty() || origin->size() > 512 ||
+      HasControlChars(*origin, /*allow_newlines=*/false) || !document ||
+      !IsDocumentMark(*document) || !n || *n < 0) {
+    return count;
+  }
+  count.state = ListState::kDone;
+  count.origin = *origin;
+  count.count = std::min(static_cast<size_t>(*n), kMaxListedTools);
+  return count;
 }
 
 ToolList ParseToolList(const base::Value& result) {
@@ -1164,7 +1274,7 @@ std::string BuildArgumentsSchema(const SiteTool& tool) {
 std::string DescribeTool(const SiteTool& tool) {
   std::string s = tool.ref + " " + ToolLabel(tool);
   if (tool.read_only && !tool.consequential && !tool.form_backed &&
-      tool.sensitive == FieldKind::kOrdinary) {
+      !tool.cross_origin && tool.sensitive == FieldKind::kOrdinary) {
     s += " [reads only]";
   } else {
     s += " [asks the user first]";
@@ -1264,6 +1374,11 @@ ArgumentsError ReadArguments(const base::Value& arguments,
 
 std::vector<std::string> ToolCallEffects(const SiteTool& tool) {
   std::vector<std::string> why;
+  // Another site's frame: its hints are that site's word to a run the user
+  // started on the main site, and what a call is given (written from the
+  // main site's pages) goes to the other site. Every call asks.
+  if (tool.cross_origin)
+    why.push_back("it is another site's tool");
   if (tool.form_backed)
     why.push_back("it fills a form there and may submit it");
   else if (!tool.read_only || tool.consequential)
@@ -1280,7 +1395,23 @@ std::string ToolPlaceText(const SiteTool& tool, std::string_view origin_text) {
   // user can tell it from the main document's.
   if (tool.frame == 0)
     return "on " + std::string(origin_text);
+  if (tool.cross_origin) {
+    return "in the frame " + tool.frame_text + " (another site) on " +
+           std::string(origin_text);
+  }
   return "in the frame " + tool.frame_text + " on " + std::string(origin_text);
+}
+
+std::string ToolCallTitle(const SiteTool& tool, std::string_view origin_text) {
+  // Both sites for another site's frame: whose tool it is (the browser's
+  // origin of the frame) and the page it is on.
+  if (tool.cross_origin) {
+    return Visible(tool.frame_origin) + "'s tool \"" + tool.name +
+           "\" in its frame " + tool.frame_text + " on " +
+           std::string(origin_text);
+  }
+  return "the site's tool \"" + tool.name + "\" " +
+         ToolPlaceText(tool, origin_text);
 }
 
 CallCheck CheckToolCall(const SiteTool& tool,
@@ -1289,8 +1420,7 @@ CallCheck CheckToolCall(const SiteTool& tool,
   const std::vector<std::string> why = ToolCallEffects(tool);
   CallCheck check;
   check.ask = !why.empty();
-  std::string message = "Run the site's tool \"" + tool.name + "\" " +
-                        ToolPlaceText(tool, origin_text);
+  std::string message = "Run " + ToolCallTitle(tool, origin_text);
   for (size_t i = 0; i < why.size(); ++i)
     message += (i ? " and " : " \xE2\x80\x94 ") + why[i];
   message += arguments_text.empty() ? std::string(", with no arguments")
@@ -1463,7 +1593,10 @@ std::string_view CallFailureNote(CallState state) {
 
 std::string DescribeToolResult(const SiteTool& tool,
                                const CallOutcome& outcome) {
-  std::string s = "TOOL RESULT (the page's tool " + ToolLabel(tool);
+  std::string s = tool.cross_origin
+                      ? "TOOL RESULT (another site's tool " + ToolLabel(tool) +
+                            "; that site wrote it"
+                      : "TOOL RESULT (the page's tool " + ToolLabel(tool);
   if (tool.untrusted_output)
     s += "; the site says it may contain other people's content";
   s += "):\n";

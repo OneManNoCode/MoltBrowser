@@ -23,9 +23,12 @@
 #include "base/task/thread_pool.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
+#include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/automation/run_questions.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
+#include "chrome/browser/profiles/profile.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
@@ -2274,9 +2277,22 @@ void AutomationRunner::ListToolsForStep() {
                               tool_call_->step.origin + ".");
     return;
   }
+  // A tool recorded in a frame of another site: that frame's tools are
+  // listed (only the browser reads them, to find the tool); the call asks
+  // the user, naming both sites. Never in MoltNet.
+  SiteToolHost::OtherSites other_sites;
+  if (tool_steps::IsCrossOriginFrame(tool_call_->step)) {
+    if (tor::IsMoltNetProfile(Profile::FromBrowserContext(
+            target_contents_->GetBrowserContext()))) {
+      BlockStep("Not run: MoltNet windows never use another site's frame's "
+                "tools.");
+      return;
+    }
+    other_sites.listed.push_back(tool_call_->step.frame_origin);
+  }
   content::WeakDocumentPtr main_document = main->GetWeakDocumentPtr();
   site_tools_->List(
-      main_document, origin,
+      main_document, origin, std::move(other_sites),
       base::BindOnce(&AutomationRunner::OnToolStepListed,
                      weak_factory_.GetWeakPtr(), main_document));
 }
@@ -2335,6 +2351,14 @@ void AutomationRunner::OnToolStepListed(content::WeakDocumentPtr main_document,
       tool_steps::CheckReplay(step, live, arguments, &call_arguments);
   if (compat != tool_steps::Compat::kOk) {
     BlockStep(std::string(tool_steps::CompatText(compat)));
+    return;
+  }
+  // Secrets stay on the page the workflow is on: never given to a frame of
+  // another site.
+  if (live.cross_origin &&
+      frame_tools::ArgumentsLookSecret(call_arguments.json)) {
+    BlockStep("Not run: what it would give another site's tool looks like a "
+              "password, a code or a card number.");
     return;
   }
   tool_call_->live = live;

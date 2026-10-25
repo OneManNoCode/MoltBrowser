@@ -7,7 +7,7 @@
 // run substitutes, and a call recorded from the AI chat (the page's tool,
 // the model's arguments). The input is JSON: {"step": {...a .molt step...},
 // "tool": {"name", "description", "schema", "readOnly", "consequential",
-// "form", "frame"}, "frames": [[origin, path], ...], "args": {...},
+// "form", "frame", "cross", "frame_origin"}, "frames": [[origin, path], ...], "args": {...},
 // "approved": bool, "call": {"origin", "arguments", "in_frame",
 // "frame_origin", "frame_path"}}; any part may be missing.
 //
@@ -15,7 +15,8 @@
 // writes back to a step that reads the same; a recorded call gives a step
 // that reads back, keeps no value of a card or code argument (nor any of a
 // card or code tool) and no value the policy withholds; a listed tool is
-// found only by its name, in a frame of the recorded origin; a compatible
+// found only by its name, in a frame of the recorded origin (another
+// site's frame's tool only for a step recorded in one); a compatible
 // call carries the browser's JSON of an object; a call runs unasked only
 // if the tool only reads or the workflow is approved, and never for a
 // card or code tool or another site's frame.
@@ -87,8 +88,13 @@ std::optional<agent_tools::SiteTool> ToolFrom(const base::Value* v) {
     }
   }
   std::optional<agent_tools::SiteTool> t = agent_tools::MakeSiteTool(l);
-  if (t)
+  if (t) {
     t->frame = static_cast<size_t>(std::max(0, d.FindInt("frame").value_or(0)));
+    // Listed in another site's frame (SiteToolHost sets these).
+    t->cross_origin = d.FindBool("cross").value_or(false);
+    if (const std::string* o = d.FindString("frame_origin"))
+      t->frame_origin = *o;
+  }
   return t;
 }
 
@@ -182,6 +188,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     } else {
       CHECK_EQ(tools[0].frame, 0u);
     }
+    // Another site's frame's tool only for a step recorded in one.
+    CHECK_EQ(tools[0].cross_origin, IsCrossOriginFrame(*t));
+    if (tools[0].cross_origin)
+      CHECK_EQ(tools[0].frame_origin, t->frame_origin);
   }
 
   base::DictValue args;
@@ -201,6 +211,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const bool approved = in.FindBool("approved").value_or(false);
   if (ApprovalFor(*t, *live, approved) == Approval::kRun) {
     CHECK(!IsCrossOriginFrame(*t));
+    CHECK(!live->cross_origin);
     CHECK(!agent_safety::IsSensitive(live->sensitive));
     CHECK(approved || agent_tools::ToolCallEffects(*live).empty());
   }

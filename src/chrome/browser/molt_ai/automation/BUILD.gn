@@ -47,6 +47,10 @@ source_set("automation") {
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+
+    # molt_net_profile_id.h (header-only IsMoltNetProfile()): a tool step in
+    # a frame of another site never runs in MoltNet.
+    "//chrome/browser/molt_ai/tor",
     # Secret (password) steps are filled from the vault at replay; read-only.
     "//chrome/browser/molt_ai/vault",
     "//chrome/browser/profiles:profile",

@@ -58,6 +58,7 @@
 #include "chrome/browser/media/media_engagement_service.h"
 #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
+#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
@@ -792,6 +793,10 @@ void ChromeBrowsingDataRemoverDelegate::RemoveEmbedderData(
     // (docs/design/WEB_AI_APIS.md).
     molt_ai::web_ai::ClearWebAISiteAnswers(profile_, delete_begin_, delete_end_,
                                            nullable_filter);
+    // MoltBrowser: the frames of other sites allowed to offer their tools
+    // to the agents (docs/design/AGENT_ACTIONS.md).
+    molt_ai::ClearFrameToolPermissions(profile_, delete_begin_, delete_end_,
+                                       nullable_filter);
 
     host_content_settings_map_->ClearSettingsForOneTypeWithPredicate(
         ContentSettingsType::PERMISSION_AUTOREVOCATION_DATA, delete_begin,

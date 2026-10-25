@@ -344,6 +344,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // pauses on cross-origin navigation, form submits and sensitive fields).
   // Args: [request_id, allowed]
   void HandleWebAgentConfirm(const base::ListValue& args);
+  // The user's answer to a FRAME_TOOLS 'agent-confirm' (a frame of another
+  // site offers tools): "not_now", or "session" / "always", which count
+  // only with the click's user activation.
+  // Args: [request_id, answer]
+  void HandleWebAgentFrameTools(const base::ListValue& args);
 
   // ---- Saving a successful agent run as a draft workflow ------------
   // (automation/agent_run_draft.h; molt_ai_chat_handler_agent_run.cc.)

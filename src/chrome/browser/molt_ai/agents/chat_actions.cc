@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
+#include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
@@ -45,6 +46,9 @@ constexpr char kPageMoved[] =
 constexpr char kDidNotWork[] = "It didn't work on this page.";
 constexpr char kToolGone[] =
     "That tool is no longer offered on this page. Ask again.";
+constexpr char kSecretToOtherSite[] =
+    "That tool belongs to another site's frame, and what it would be given "
+    "looks like a password, a code or a card number, so nothing was done.";
 
 // ---- Text -------------------------------------------------------------------
 
@@ -404,8 +408,14 @@ std::string DescribeProposal(const AgentAction& action,
       const agent_tools::SiteTool* tool = observation.FindTool(action.tool);
       if (!tool)
         break;
-      std::string s = "Run the site's tool \"" + tool->name + "\"";
-      if (tool->frame)
+      // Another site's frame's tool is named with that site.
+      std::string s =
+          tool->cross_origin
+              ? "Run " + agent_tools::VisibleText(tool->frame_origin) +
+                    "'s tool \"" + tool->name + "\" in its frame " +
+                    tool->frame_text
+              : "Run the site's tool \"" + tool->name + "\"";
+      if (tool->frame && !tool->cross_origin)
         s += " in the frame " + tool->frame_text;
       s += action.tool_arguments_text.empty()
                ? std::string(" with no arguments")
@@ -579,12 +589,19 @@ Check CheckProposal(const AgentAction& action,
       // again): that must be one of the chat's sites.
       if (!scope.Contains(page_origin))
         return refuse(kPageMoved);
+      // Secrets stay on the page the user is on: never given to a frame of
+      // another site.
+      if (tool->cross_origin &&
+          frame_tools::ArgumentsLookSecret(action.tool_arguments)) {
+        return refuse(kSecretToOtherSite);
+      }
       // Always asks, read-only or not: the choice of the tool and its
-      // arguments is model output written from page text.
+      // arguments is model output written from page text. Another site's
+      // frame's tool names both sites.
       const std::vector<std::string> effects =
           agent_tools::ToolCallEffects(*tool);
-      std::string message = "Runs the site's tool \"" + tool->name + "\" " +
-                            agent_tools::ToolPlaceText(*tool, page);
+      std::string message =
+          "Runs " + agent_tools::ToolCallTitle(*tool, page);
       if (effects.empty()) {
         message += " (the site says it only reads)";
       } else {

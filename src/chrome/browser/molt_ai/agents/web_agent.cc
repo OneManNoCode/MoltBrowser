@@ -17,6 +17,8 @@
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
+#include "chrome/browser/molt_ai/agents/frame_tool_permissions.h"
+#include "chrome/browser/molt_ai/agents/frame_tools.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
@@ -136,6 +138,9 @@ void WebAgent::Start(const std::string& goal,
   tool_documents_.clear();
   tool_result_.clear();
   tool_call_note_.clear();
+  frame_question_.reset();
+  pending_frame_question_id_ = 0;
+  frame_pairs_asked_.clear();
   goal_       = goal;
   step_cb_    = std::move(on_step);
   done_cb_    = std::move(on_done);
@@ -178,6 +183,7 @@ void WebAgent::Start(const std::string& goal,
 void WebAgent::Cancel() {
   cancelled_ = true;
   pending_confirm_.Reset();
+  frame_question_.reset();
   screenshotter_->Cancel();
   site_tools_->Cancel();
   weak_factory_.InvalidateWeakPtrs();
@@ -193,6 +199,28 @@ void WebAgent::ResolveConfirmation(int request_id, bool allowed) {
     return;
   }
   std::move(on_allow).Run();
+}
+
+void WebAgent::ResolveFrameTools(int request_id, frame_tools::Grant grant) {
+  if (cancelled_ || !frame_question_ || frame_question_->asking.empty() ||
+      request_id != pending_frame_question_id_) {
+    return;
+  }
+  pending_frame_question_id_ = 0;
+  const url::Origin frame_origin =
+      url::Origin::Create(GURL(frame_question_->asking));
+  frame_question_->asking.clear();
+  if (grant != frame_tools::Grant::kNone && web_contents_ &&
+      !tor::IsMoltNetProfile(Profile::FromBrowserContext(
+          web_contents_->GetBrowserContext()))) {
+    FrameToolPermissions* permissions =
+        FrameToolPermissions::Get(web_contents_->GetBrowserContext());
+    if (permissions &&
+        permissions->Allow(frame_question_->main_origin, frame_origin, grant)) {
+      frame_question_->any_allowed = true;
+    }
+  }
+  AskNextFrameQuestion();
 }
 
 // ----------------------------------------------------------------
@@ -753,6 +781,15 @@ void WebAgent::DoCallTool() {
     return;
   }
   action_tool_ = *tool;
+  // Credentials and other secrets stay on the page the user is on: never
+  // given to a frame of another site.
+  if (action_tool_.cross_origin &&
+      frame_tools::ArgumentsLookSecret(pending_action_.tool_arguments)) {
+    OnActionDone(false,
+                 "Not run: what it would give another site's tool looks like "
+                 "a password, a code or a card number.");
+    return;
+  }
   // DispatchAction set action_origin_: the page's origin, in scope.
   const agent_tools::CallCheck check = agent_tools::CheckToolCall(
       action_tool_, pending_action_.tool_arguments_text,
@@ -769,11 +806,11 @@ void WebAgent::DoCallTool() {
 void WebAgent::CallToolNow() {
   if (cancelled_) return;
   // In the very document that listed the tool (the main document observed,
-  // or one of its same-origin frames), if it is still there and still
-  // counts; the script then checks the document's mark, the origin
-  // (action_origin_, in scope) and that the page still lists the same
-  // tool, and passes the arguments the browser wrote
-  // (agent_tools::ReadArguments).
+  // one of its same-origin frames, or an allowed frame of another site),
+  // if it is still there and still counts; the script then checks the
+  // document's mark, the origin (action_origin_, in scope, or the other
+  // site's frame's) and that the page still lists the same tool, and
+  // passes the arguments the browser wrote (agent_tools::ReadArguments).
   const content::WeakDocumentPtr tool_document =
       action_tool_.frame < tool_documents_.size()
           ? tool_documents_[action_tool_.frame]
@@ -920,10 +957,11 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   facts.origin_allowed = origin_allowed;
   facts.snapshot_is_current = snapshot_is_current && IsCurrentDocument(document);
   if (agent_tools::ShouldListTools(facts)) {
-    // The main document's tools and its same-origin frames' (SiteToolHost).
+    // The main document's tools and its same-origin frames', the allowed
+    // frames of other sites', and how many the others have (SiteToolHost).
     content::WeakDocumentPtr listed = document;
     site_tools_->List(
-        std::move(listed), current,
+        std::move(listed), current, OtherSitesFor(current),
         base::BindOnce(&WebAgent::OnSiteToolsListed,
                        weak_factory_.GetWeakPtr(), page, std::move(document),
                        std::move(snapshot_origin), origin_allowed));
@@ -939,6 +977,31 @@ void WebAgent::OnSiteToolsListed(const StructuredPage& page,
                                  bool origin_allowed,
                                  SiteToolHost::Listing listing) {
   if (cancelled_) return;
+  // Frames of other sites with tools the user hasn't decided on: ask about
+  // each (the run waits), then go on, listing again if one was allowed.
+  if (IsCurrentDocument(document) && !listing.counted.empty() &&
+      confirm_cb_) {
+    auto question = std::make_unique<FrameQuestion>();
+    question->main_origin = url::Origin::Create(GURL(observed_origin));
+    for (SiteToolHost::Listing::Counted& counted : listing.counted) {
+      const std::string key = observed_origin + " " + counted.origin;
+      if (std::find(frame_pairs_asked_.begin(), frame_pairs_asked_.end(),
+                    key) == frame_pairs_asked_.end()) {
+        frame_pairs_asked_.push_back(key);
+        question->to_ask.push_back(std::move(counted));
+      }
+    }
+    if (!question->to_ask.empty()) {
+      question->page = page;
+      question->document = std::move(document);
+      question->observed_origin = std::move(observed_origin);
+      question->origin_allowed = origin_allowed;
+      question->listing = std::move(listing);
+      frame_question_ = std::move(question);
+      AskNextFrameQuestion();
+      return;
+    }
+  }
   // Only while the observed document is still the tab's (SiteToolHost
   // listed it and its same-origin frames at the origin its snapshot read).
   if (IsCurrentDocument(document)) {
@@ -954,6 +1017,77 @@ void WebAgent::OnSiteToolsListed(const StructuredPage& page,
   ContinueObservation(page, std::move(document), std::move(observed_origin),
                       origin_allowed);
 }
+
+SiteToolHost::OtherSites WebAgent::OtherSitesFor(
+    const url::Origin& main_origin) const {
+  SiteToolHost::OtherSites other_sites;
+  if (!web_contents_ || tor::IsMoltNetProfile(Profile::FromBrowserContext(
+                            web_contents_->GetBrowserContext()))) {
+    return other_sites;  // MoltNet: never another site's frame's tools
+  }
+  FrameToolPermissions* permissions =
+      FrameToolPermissions::Get(web_contents_->GetBrowserContext());
+  if (!permissions)
+    return other_sites;
+  other_sites.listed = permissions->AllowedFrames(main_origin);
+  // Count the others' tools only to ask, so not when there is no one to
+  // ask.
+  other_sites.count_others = !confirm_cb_.is_null();
+  return other_sites;
+}
+
+void WebAgent::AskNextFrameQuestion() {
+  if (cancelled_ || !frame_question_) return;
+  FrameQuestion& q = *frame_question_;
+  if (!q.to_ask.empty()) {
+    const SiteToolHost::Listing::Counted next = std::move(q.to_ask.front());
+    q.to_ask.erase(q.to_ask.begin());
+    q.asking = next.origin;
+    FrameToolPermissions* permissions =
+        web_contents_
+            ? FrameToolPermissions::Get(web_contents_->GetBrowserContext())
+            : nullptr;
+    pending_frame_question_id_ = ++next_confirm_id_;
+    ConfirmRequest req;
+    req.id = pending_frame_question_id_;
+    req.action = "FRAME_TOOLS";
+    req.message = frame_tools::QuestionText(q.observed_origin, next.origin,
+                                            next.tools);
+    req.can_remember = permissions && permissions->persistent();
+    confirm_cb_.Run(req);
+    return;
+  }
+  std::unique_ptr<FrameQuestion> done = std::move(frame_question_);
+  if (done->any_allowed && IsCurrentDocument(done->document)) {
+    // Listed again, with the frames now allowed (and nothing counted: this
+    // run has asked about every one of them).
+    SiteToolHost::OtherSites other_sites = OtherSitesFor(done->main_origin);
+    other_sites.count_others = false;
+    content::WeakDocumentPtr listed = done->document;
+    const url::Origin main_origin = done->main_origin;
+    frame_question_ = std::move(done);
+    site_tools_->List(std::move(listed), main_origin, std::move(other_sites),
+                      base::BindOnce(&WebAgent::OnFrameToolsRelisted,
+                                     weak_factory_.GetWeakPtr()));
+    return;
+  }
+  done->listing.counted.clear();
+  OnSiteToolsListed(done->page, std::move(done->document),
+                    std::move(done->observed_origin), done->origin_allowed,
+                    std::move(done->listing));
+}
+
+void WebAgent::OnFrameToolsRelisted(SiteToolHost::Listing listing) {
+  if (cancelled_ || !frame_question_) return;
+  std::unique_ptr<FrameQuestion> done = std::move(frame_question_);
+  listing.counted.clear();
+  OnSiteToolsListed(done->page, std::move(done->document),
+                    std::move(done->observed_origin), done->origin_allowed,
+                    std::move(listing));
+}
+
+WebAgent::FrameQuestion::FrameQuestion() = default;
+WebAgent::FrameQuestion::~FrameQuestion() = default;
 
 void WebAgent::ContinueObservation(const StructuredPage& page,
                                    content::WeakDocumentPtr document,
