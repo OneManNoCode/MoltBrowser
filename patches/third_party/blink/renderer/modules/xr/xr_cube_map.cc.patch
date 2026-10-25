@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/blink/renderer/modules/xr/xr_cube_map.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/xr/xr_cube_map.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/xr/xr_cube_map.cc b/third_party/blink/renderer/modules/xr/xr_cube_map.cc
+index 5fde5ffe5f976366074b387797c5f89cd5ae41b0..5f8af64ff2842d62ebdf37c8748dba95423626df 100644
+--- a/third_party/blink/renderer/modules/xr/xr_cube_map.cc
++++ b/third_party/blink/renderer/modules/xr/xr_cube_map.cc
+@@ -14,6 +14,7 @@
+ #include "third_party/blink/renderer/modules/webgl/webgl_texture.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_code.h"
+ #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace {
+ 
+@@ -27,8 +28,10 @@ float HalfFloatToFloat(const uint16_t input) {
+ // Linear to sRGB converstion as given in
+ // https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt
+ uint8_t LinearToSrgb(float cl) {
++  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+   float cs = std::clamp(
+-      cl < 0.0031308f ? 12.92f * cl : 1.055f * std::pow(cl, 0.41666f) - 0.055f,
++      cl < 0.0031308f ? 12.92f * cl
++                      : 1.055f * gfx::molt_math::Pow(cl, 0.41666f) - 0.055f,
+       0.0f, 1.0f);
+   return static_cast<uint8_t>(255.0f * cs + 0.5f);
+ }

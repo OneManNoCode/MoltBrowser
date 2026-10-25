@@ -1,0 +1,19 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs b/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs
+index bdb4662892e52f7b56b25e5b8438d17db3916d93..a3fc671f6c07c9c5d30947bbfbe3d09ff77fcf20 100644
+--- a/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs
++++ b/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs
+@@ -84,6 +84,8 @@ mod read;
+ mod table_provider;
+ mod table_ref;
+ pub mod tables;
++// MoltBrowser: portable glyph-transform math (see the module).
++pub mod moltbrowser_math;
+ #[cfg(feature = "experimental_traverse")]
+ pub mod traversal;
+ 

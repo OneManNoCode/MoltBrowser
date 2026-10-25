@@ -1,0 +1,33 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs b/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs
+index e6aa27975ab959997cf43401e0b52f38ddfff185..c9b40636322bfa8d5cc83b10903b06652d1df0dd 100644
+--- a/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs
++++ b/third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs
+@@ -409,7 +409,9 @@ impl DecomposedTransform {
+ 
+         // Python: t = t.rotate(self.rotation * math.pi)
+         if self.rotation != 0.0 {
+-            let (s, c) = (self.rotation * core::f32::consts::PI).sin_cos();
++            // MoltBrowser: portable in MoltNet (crate::moltbrowser_math).
++            let (s, c) =
++                crate::moltbrowser_math::sin_cos(self.rotation * core::f32::consts::PI);
+             transform *= Matrix::from_elements([c, s, -s, c, 0.0, 0.0]);
+         }
+ 
+@@ -422,8 +424,9 @@ impl DecomposedTransform {
+         if (self.skew_x, self.skew_y) != (0.0, 0.0) {
+             transform *= Matrix::from_elements([
+                 1.0,
+-                (self.skew_y * core::f32::consts::PI).tan(),
+-                (-self.skew_x * core::f32::consts::PI).tan(),
++                // MoltBrowser: portable in MoltNet (crate::moltbrowser_math).
++                crate::moltbrowser_math::tan(self.skew_y * core::f32::consts::PI),
++                crate::moltbrowser_math::tan(-self.skew_x * core::f32::consts::PI),
+                 1.0,
+                 0.0,
+                 0.0,

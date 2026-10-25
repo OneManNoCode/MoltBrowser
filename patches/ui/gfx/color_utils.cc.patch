@@ -1,0 +1,33 @@
+MoltBrowser patch for ui/gfx/color_utils.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/ui/gfx/color_utils.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/ui/gfx/color_utils.cc b/ui/gfx/color_utils.cc
+index c9a3bec6ae05654995092ab3f5b400fcceb9f3a1..7fdd9045c94469e480f3faf14ef35f1ed1fd8ea2 100644
+--- a/ui/gfx/color_utils.cc
++++ b/ui/gfx/color_utils.cc
+@@ -26,6 +26,7 @@
+ #include "build/build_config.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "ui/gfx/color_palette.h"
++#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
+ 
+ namespace color_utils {
+ 
+@@ -63,8 +64,12 @@ float Linearize(float component) {
+   // The W3C link in the header uses 0.03928 here.  See
+   // https://en.wikipedia.org/wiki/SRGB#Theory_of_the_transformation for
+   // discussion of why we use this value rather than that one.
+-  return (component <= 0.04045f) ? (component / 12.92f)
+-                                 : pow((component + 0.055f) / 1.055f, 2.4f);
++  // MoltBrowser: portable in MoltNet renderers (ui/gfx/geometry/molt_math.h):
++  // pages read the contrast decisions this feeds (CSS contrast-color(), the
++  // validity of <geolocation> and <usermedia> elements).
++  return (component <= 0.04045f)
++             ? (component / 12.92f)
++             : gfx::molt_math::Pow((component + 0.055f) / 1.055f, 2.4f);
+ }
+ 
+ constexpr size_t kNumGoogleColors = 12;

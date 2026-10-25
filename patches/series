@@ -2,6 +2,7 @@
 # Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 # Apply from chromium/src with: git apply -p1 <patch>
 base/threading/thread_restrictions.h.patch
+cc/paint/tone_map_util.cc.patch
 chrome/BUILD.gn.patch
 chrome/app/access_code_cast_strings.grdp.patch
 chrome/app/app-Info.plist.patch
@@ -67,6 +68,7 @@ chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc.patch
 chrome/browser/media/chrome_media_session_client.cc.patch
 chrome/browser/media/media_engagement_service.cc.patch
 chrome/browser/media/router/media_router_feature.cc.patch
+chrome/browser/media/webrtc/media_capture_devices_dispatcher.cc.patch
 chrome/browser/media/webrtc/webrtc_logging_controller.cc.patch
 chrome/browser/metrics/chrome_feature_list_creator.cc.patch
 chrome/browser/net/net_error_diagnostics_dialog_win.cc.patch
@@ -312,6 +314,7 @@ third_party/blink/renderer/core/animation/css_superellipse_interpolation_type.cc
 third_party/blink/renderer/core/animation/interpolable_aspect_ratio.cc.patch
 third_party/blink/renderer/core/css/css_font_selector_base.cc.patch
 third_party/blink/renderer/core/css/css_font_selector_base.h.patch
+third_party/blink/renderer/core/css/css_gradient_value.cc.patch
 third_party/blink/renderer/core/css/css_math_expression_node.cc.patch
 third_party/blink/renderer/core/css/css_pending_system_font_value.cc.patch
 third_party/blink/renderer/core/css/cssom/css_skew.cc.patch
@@ -344,7 +347,10 @@ third_party/blink/renderer/core/loader/frame_fetch_context.cc.patch
 third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc.patch
 third_party/blink/renderer/core/scroll/scrollable_area.cc.patch
 third_party/blink/renderer/core/scroll/scrollbar.cc.patch
+third_party/blink/renderer/core/style/basic_shapes.cc.patch
 third_party/blink/renderer/core/style/style_ray.cc.patch
+third_party/blink/renderer/core/style/style_shape.cc.patch
+third_party/blink/renderer/core/style/superellipse.h.patch
 third_party/blink/renderer/core/svg/svg_parser_utilities.cc.patch
 third_party/blink/renderer/core/svg/svg_path_parser.cc.patch
 third_party/blink/renderer/core/svg/svg_transform.cc.patch
@@ -395,6 +401,7 @@ third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc.patch
 third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc.patch
 third_party/blink/renderer/modules/webgpu/gpu.cc.patch
 third_party/blink/renderer/modules/webgpu/gpu_queue.cc.patch
+third_party/blink/renderer/modules/xr/xr_cube_map.cc.patch
 third_party/blink/renderer/modules/xr/xr_ray.cc.patch
 third_party/blink/renderer/modules/xr/xr_view_geometry.cc.patch
 third_party/blink/renderer/platform/audio/audio_destination.cc.patch
@@ -423,9 +430,17 @@ third_party/blink/renderer/platform/fonts/skia/skia_text_metrics.cc.patch
 third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc.patch
 third_party/blink/renderer/platform/fonts/win/font_platform_data_win.cc.patch
 third_party/blink/renderer/platform/geometry/calculation_expression_node.cc.patch
+third_party/blink/renderer/platform/geometry/contoured_rect.cc.patch
+third_party/blink/renderer/platform/geometry/contoured_rect.h.patch
+third_party/blink/renderer/platform/geometry/float_rounded_rect.cc.patch
 third_party/blink/renderer/platform/geometry/math_functions.h.patch
 third_party/blink/renderer/platform/geometry/path.cc.patch
+third_party/blink/renderer/platform/geometry/path_builder.cc.patch
+third_party/blink/renderer/platform/graphics/filters/fe_color_matrix.cc.patch
+third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc.patch
+third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc.patch
 third_party/blink/renderer/platform/graphics/path_traversal_state.cc.patch
+third_party/blink/renderer/platform/image-decoders/avif/avif_image_decoder.cc.patch
 third_party/blink/renderer/platform/language.cc.patch
 third_party/blink/renderer/platform/language.h.patch
 third_party/blink/renderer/platform/network/network_state_notifier.cc.patch
@@ -445,16 +460,23 @@ third_party/opus/src/celt/x86/x86cpu.c.patch
 third_party/rust/chromium_crates_io/Cargo.lock.patch
 third_party/rust/chromium_crates_io/Cargo.toml.patch
 third_party/rust/chromium_crates_io/gnrt_config.toml.patch
+third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/Cargo.toml.patch
+third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs.patch
+third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs.patch
+third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/color/instance.rs.patch
+third_party/rust/chromium_crates_io/vendor/skrifa-v0_46/src/outline/glyf/mod.rs.patch
 third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.rs.patch
 third_party/rust/chromium_crates_io/vendor/unicode-bidi-v0_3/Cargo.toml.patch
 third_party/rust/chromium_crates_io/vendor/unicode-bidi-v0_3/src/lib.rs.patch
 third_party/rust/getrandom/v0_4/BUILD.gn.patch
+third_party/rust/read_fonts/v0_43/BUILD.gn.patch
 third_party/rust/regex/v1/BUILD.gn.patch
 third_party/rust/regex/v1/README.chromium.patch
 third_party/rust/version_check/v0_9/BUILD.gn.patch
 third_party/rust/version_check/v0_9/README.chromium.patch
 tools/metrics/histograms/metadata/sql/histograms.xml.patch
 ui/gfx/color_conversions.cc.patch
+ui/gfx/color_utils.cc.patch
 ui/gfx/geometry/BUILD.gn.patch
 ui/gfx/geometry/matrix44.cc.patch
 ui/gfx/geometry/quaternion.cc.patch
