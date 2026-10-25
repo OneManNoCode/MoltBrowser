@@ -8,7 +8,8 @@
 //! `rustfft` crate, designed to be called from C++ WebAudio code.
 
 use rustfft::num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
+// MoltBrowser: FftPlannerScalar, see `rustfft_new_portable()`.
+use rustfft::{Fft, FftPlanner, FftPlannerScalar};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -18,6 +19,9 @@ type FftPair = (Arc<dyn Fft<f32>>, Arc<dyn Fft<f32>>);
 /// Global cache of FFT plans, mapping FFT size to its forward/inverse plan
 /// pair.
 static CACHE: OnceLock<RwLock<HashMap<usize, FftPair>>> = OnceLock::new();
+
+/// MoltBrowser: the plans of `rustfft_new_portable()`.
+static PORTABLE_CACHE: OnceLock<RwLock<HashMap<usize, FftPair>>> = OnceLock::new();
 
 /// Helper to retrieve the global cache, initializing it on first access.
 fn get_cache() -> &'static RwLock<HashMap<usize, FftPair>> {
@@ -29,17 +33,29 @@ fn get_cache() -> &'static RwLock<HashMap<usize, FftPair>> {
 ///
 /// This uses double-checked locking to minimize lock contention. Planning is
 /// done outside the write lock, allowing parallel planning for different sizes.
-fn get_fft(size: usize) -> FftPair {
-    let cache = get_cache();
+///
+/// MoltBrowser: with `portable`, the plans come from rustfft's scalar planner
+/// (and a cache of their own): `FftPlanner` picks AVX and FMA, SSE4.1 or NEON
+/// algorithms for the CPU it runs on, which round differently, while the
+/// scalar ones give the same results on every CPU.
+fn get_fft(size: usize, portable: bool) -> FftPair {
+    let cache = if portable {
+        PORTABLE_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+    } else {
+        get_cache()
+    };
 
     if let Some(pair) = cache.read().unwrap().get(&size) {
         return pair.clone();
     }
 
-    let mut planner = FftPlanner::new();
-    let forward = planner.plan_fft_forward(size);
-    let inverse = planner.plan_fft_inverse(size);
-    let pair = (forward, inverse);
+    let pair: FftPair = if portable {
+        let mut planner = FftPlannerScalar::new();
+        (planner.plan_fft_forward(size), planner.plan_fft_inverse(size))
+    } else {
+        let mut planner = FftPlanner::new();
+        (planner.plan_fft_forward(size), planner.plan_fft_inverse(size))
+    };
 
     let mut cache_write = cache.write().unwrap();
     cache_write.entry(size).or_insert(pair).clone()
@@ -80,9 +96,21 @@ pub struct RustFft {
 /// For even sizes, it initializes the `Even` strategy which uses a half-size
 /// FFT.
 pub fn rustfft_new(size: usize) -> Box<RustFft> {
+    // MoltBrowser: the CPU's fastest FFT code, as before.
+    rustfft_new_with(size, false)
+}
+
+/// MoltBrowser: like `rustfft_new()`, with FFTs whose results are the same on
+/// every CPU (rustfft's scalar algorithms). Blink's FFTFrame creates these in
+/// MoltNet renderers.
+pub fn rustfft_new_portable(size: usize) -> Box<RustFft> {
+    rustfft_new_with(size, true)
+}
+
+fn rustfft_new_with(size: usize, portable: bool) -> Box<RustFft> {
     if size.is_multiple_of(2) {
         let half_size = size / 2;
-        let (fft_forward, fft_inverse) = get_fft(half_size);
+        let (fft_forward, fft_inverse) = get_fft(half_size, portable);
         let complex_data = vec![Complex::new(0.0, 0.0); half_size];
         let scratch_len = std::cmp::max(
             fft_forward.get_inplace_scratch_len(),
@@ -117,7 +145,7 @@ pub fn rustfft_new(size: usize) -> Box<RustFft> {
             size,
         })
     } else {
-        let (fft_forward, fft_inverse) = get_fft(size);
+        let (fft_forward, fft_inverse) = get_fft(size, portable);
         let complex_data = vec![Complex::new(0.0, 0.0); size];
         let scratch_len = std::cmp::max(
             fft_forward.get_inplace_scratch_len(),
@@ -430,6 +458,8 @@ pub mod ffi {
     extern "Rust" {
         type RustFft;
         fn rustfft_new(size: usize) -> Box<RustFft>;
+        // MoltBrowser: see `rustfft_new_portable()` above.
+        fn rustfft_new_portable(size: usize) -> Box<RustFft>;
         fn do_fft(self: &mut RustFft, data: &[f32], real_data: &mut [f32], imag_data: &mut [f32]);
         fn do_inverse_fft(
             self: &mut RustFft,

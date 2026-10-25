@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/fdlibm/ieee754.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -66,7 +67,11 @@ FFTFrame::FFTFrame(unsigned fft_size)
 
 FFTFrame::FFTFrame(unsigned fft_size, bool allocate_buffers)
     : fft_size_(CheckedFftSize(fft_size)),
-      rust_fft_(blink::rust_fft::rustfft_new(fft_size_)) {
+      // MoltBrowser: in MoltNet, rustfft's scalar FFTs, which give the same
+      // results on every CPU (ui/gfx/geometry/molt_math.h's switch).
+      rust_fft_(gfx::molt_math::IsPortable()
+                    ? blink::rust_fft::rustfft_new_portable(fft_size_)
+                    : blink::rust_fft::rustfft_new(fft_size_)) {
   if (allocate_buffers) {
     CHECK(InitializeBuffers());
   }
