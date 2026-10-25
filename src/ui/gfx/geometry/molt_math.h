@@ -20,6 +20,9 @@
 #ifndef UI_GFX_GEOMETRY_MOLT_MATH_H_
 #define UI_GFX_GEOMETRY_MOLT_MATH_H_
 
+#include <concepts>
+#include <type_traits>
+
 #include "base/component_export.h"
 
 namespace gfx::molt_math {
@@ -63,6 +66,43 @@ COMPONENT_EXPORT(GEOMETRY) float Log2(float x);
 COMPONENT_EXPORT(GEOMETRY) float Log10(float x);
 COMPONENT_EXPORT(GEOMETRY) float Pow(float x, float y);
 COMPONENT_EXPORT(GEOMETRY) float Hypot(float x, float y);
+
+// The C++ library's promotions for the other argument types, so that a call
+// site can swap std::f for molt_math::F without changing what it computes:
+// an integer argument, or a float and a double, compute in double
+// (std::sin(1), std::pow(2.0f, 0.5)).
+#define MOLT_MATH_PROMOTE_1(Name)              \
+  template <typename T>                        \
+    requires std::integral<T>                  \
+  double Name(T x) {                           \
+    return Name(static_cast<double>(x));       \
+  }
+#define MOLT_MATH_PROMOTE_2(Name)                                        \
+  template <typename A, typename B>                                      \
+    requires std::is_arithmetic_v<A> && std::is_arithmetic_v<B> &&       \
+             (!std::is_same_v<A, B> || std::integral<A>)                 \
+  double Name(A x, B y) {                                                \
+    return Name(static_cast<double>(x), static_cast<double>(y));         \
+  }
+MOLT_MATH_PROMOTE_1(Sin)
+MOLT_MATH_PROMOTE_1(Cos)
+MOLT_MATH_PROMOTE_1(Tan)
+MOLT_MATH_PROMOTE_1(Asin)
+MOLT_MATH_PROMOTE_1(Acos)
+MOLT_MATH_PROMOTE_1(Atan)
+MOLT_MATH_PROMOTE_1(Exp)
+MOLT_MATH_PROMOTE_1(Exp2)
+MOLT_MATH_PROMOTE_1(Expm1)
+MOLT_MATH_PROMOTE_1(Log)
+MOLT_MATH_PROMOTE_1(Log2)
+MOLT_MATH_PROMOTE_1(Log10)
+MOLT_MATH_PROMOTE_1(Log1p)
+MOLT_MATH_PROMOTE_1(Cbrt)
+MOLT_MATH_PROMOTE_2(Atan2)
+MOLT_MATH_PROMOTE_2(Pow)
+MOLT_MATH_PROMOTE_2(Hypot)
+#undef MOLT_MATH_PROMOTE_1
+#undef MOLT_MATH_PROMOTE_2
 
 }  // namespace gfx::molt_math
 

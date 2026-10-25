@@ -63,6 +63,12 @@ TEST_F(MoltMathTest, OffIsTheCLibrary) {
         << x;
     EXPECT_EQ(Bits(Hypot(f, 2.5f)), Bits(std::hypot(f, 2.5f))) << x;
   }
+  // The C++ library's promotions: integers and mixed float and double
+  // arguments compute in double.
+  EXPECT_EQ(Bits(Sin(1)), Bits(std::sin(1)));
+  EXPECT_EQ(Bits(Pow(2.0f, 0.3)), Bits(std::pow(2.0f, 0.3)));
+  EXPECT_EQ(Bits(Pow(10, -5)), Bits(std::pow(10, -5)));
+  EXPECT_EQ(Bits(Atan2(1.0f, 3.0)), Bits(std::atan2(1.0f, 3.0)));
 }
 
 // On, every function is molt_portable_math's.
