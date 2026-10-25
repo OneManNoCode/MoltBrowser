@@ -172,6 +172,14 @@ source_set("live_policy") {
   public_deps = [ ":proxy_policy" ]
 }
 
+# When the end of a MoltNet identity counts as done: every network context
+# confirms the refusal (molt_net_identity_end_policy.h); molt_net_routing.cc,
+# molt_net_window.cc and the ended-identity navigation throttle read it.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("identity_end_policy") {
+  sources = [ "molt_net_identity_end_policy.h" ]
+}
+
 # No Autofill server traffic and no address metadata downloads for MoltNet
 # tabs and payment sheets (molt_net_autofill.h). Asked by
 # ChromeAutofillClient (//chrome/browser/ui) and ChromePaymentRequestDelegate
@@ -204,6 +212,11 @@ source_set("tor") {
     # Header-only: Chromium's Incognito protections for MoltNet; the
     # upstream hooks marked "MoltBrowser:" include it.
     "molt_net_incognito_parity.h",
+
+    # No navigation of an ended identity (registered in
+    # chrome_content_browser_client.cc).
+    "molt_net_ended_identity_throttle.cc",
+    "molt_net_ended_identity_throttle.h",
     "molt_net_live_guard.cc",
     "molt_net_live_guard.h",
     "molt_net_profile_id.h",
@@ -221,6 +234,7 @@ source_set("tor") {
 
   public_deps = [
     ":autofill",
+    ":identity_end_policy",
     ":incognito_parity_policy",
     ":language_policy",
     ":live_policy",
@@ -473,6 +487,7 @@ source_set("unit_tests") {
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
+    "molt_net_identity_end_policy_unittest.cc",
     "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_keepalive_partitions_unittest.cc",
@@ -497,6 +512,7 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":identity_end_policy",
     ":incognito_parity_policy",
     ":isolation_policy",
     ":language_policy",

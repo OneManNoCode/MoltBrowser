@@ -136,6 +136,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/molt_net_ended_identity_throttle.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_language_policy.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -5825,6 +5826,9 @@ void ChromeContentBrowserClient::CreateThrottlesForNavigation(
   // other throttle (some send the URL to a server) or the request can see
   // the onion name.
   molt_ai::tor::OnionNavigationThrottle::MaybeCreateAndAdd(registry);
+  // MoltNet: no navigation of an ended identity, before any other throttle
+  // (molt_ai/tor/molt_net_ended_identity_throttle.h).
+  molt_ai::tor::MoltNetEndedIdentityThrottle::MaybeCreateAndAdd(registry);
   CreateAndAddChromeThrottlesForNavigation(registry);
   // MoltShield: ad frames (collapsed) + cosmetic filtering. Never blocks
   // top-level documents.
