@@ -25,6 +25,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/runtime/model_audio.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_backend.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
@@ -34,6 +35,7 @@
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/functions.h"
+#include "services/on_device_model/public/mojom/on_device_model.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/ai/ai_common.mojom.h"
 #include "third_party/blink/public/mojom/ai/ai_language_model.mojom.h"
@@ -154,16 +156,19 @@ class FakeBackend : public WebAIBackend {
       std::move(callback).Run(facts);
     }
   }
-  void PrepareModel(bool wants_images, PrepareCallback callback) override {
+  void PrepareModel(bool wants_images,
+                    bool wants_audio,
+                    PrepareCallback callback) override {
     ++prepare_calls;
     last_prepare_wants_images = wants_images;
+    last_prepare_wants_audio = wants_audio;
     if (hold_prepare) {
       held_prepare.push_back(std::move(callback));
       return;
     }
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), prepare_ok,
-                                  context_tokens, sees_images));
+                                  context_tokens, sees_images, hears_audio));
   }
   uint64_t Generate(GenerationJob job,
                     ChunkCallback on_chunk,
@@ -269,6 +274,8 @@ class FakeBackend : public WebAIBackend {
   uint32_t context_tokens = 8192;
   // The loaded model has a vision projector.
   bool sees_images = true;
+  // The loaded model's projector has an audio encoder.
+  bool hears_audio = false;
   bool fail_images = false;
   bool drop_an_image = false;
   bool bad_images = false;
@@ -287,6 +294,7 @@ class FakeBackend : public WebAIBackend {
   std::vector<std::string> device_sites;
   int prepare_calls = 0;
   bool last_prepare_wants_images = false;
+  bool last_prepare_wants_audio = false;
   std::map<uint64_t, Pending> jobs;
   std::vector<uint64_t> cancelled;
   std::map<std::string, size_t> sessions;
@@ -534,6 +542,56 @@ blink::mojom::AILanguageModelCreateOptionsPtr ImageOptions() {
   return ExpectingInput(blink::mojom::AILanguageModelPromptType::kImage);
 }
 
+blink::mojom::AILanguageModelCreateOptionsPtr AudioOptions() {
+  return ExpectingInput(blink::mojom::AILanguageModelPromptType::kAudio);
+}
+
+// Audio as Blink sends it: |frames| samples of |value| at |rate| Hz on
+// |channels| channels (the data holds |frames| * |channels| samples).
+on_device_model::mojom::AudioDataPtr Audio(int32_t frames,
+                                           int32_t rate = 16000,
+                                           int32_t channels = 1,
+                                           float value = 0.25f) {
+  auto audio = on_device_model::mojom::AudioData::New();
+  audio->channel_count = channels;
+  audio->sample_rate = rate;
+  audio->frame_count = frames;
+  audio->data.assign(size_t(frames) * size_t(channels), value);
+  return audio;
+}
+
+// A message with |text|, then |clips|.
+blink::mojom::AILanguageModelPromptPtr AudioMessage(
+    AILanguageModelPromptRole role,
+    const std::string& text,
+    std::vector<on_device_model::mojom::AudioDataPtr> clips) {
+  std::vector<blink::mojom::AILanguageModelPromptContentPtr> content;
+  content.push_back(blink::mojom::AILanguageModelPromptContent::NewText(text));
+  for (auto& clip : clips) {
+    content.push_back(
+        blink::mojom::AILanguageModelPromptContent::NewAudio(std::move(clip)));
+  }
+  return blink::mojom::AILanguageModelPrompt::New(role, std::move(content),
+                                                  /*is_prefix=*/false);
+}
+
+std::vector<blink::mojom::AILanguageModelPromptPtr> UserWithAudio(
+    const std::string& text,
+    std::vector<on_device_model::mojom::AudioDataPtr> clips) {
+  std::vector<blink::mojom::AILanguageModelPromptPtr> prompts;
+  prompts.push_back(
+      AudioMessage(AILanguageModelPromptRole::kUser, text, std::move(clips)));
+  return prompts;
+}
+
+std::vector<blink::mojom::AILanguageModelPromptPtr> UserWithClip(
+    const std::string& text,
+    on_device_model::mojom::AudioDataPtr clip) {
+  std::vector<on_device_model::mojom::AudioDataPtr> clips;
+  clips.push_back(std::move(clip));
+  return UserWithAudio(text, std::move(clips));
+}
+
 std::vector<uint32_t> Widths(const std::vector<ModelImage>& images) {
   std::vector<uint32_t> widths;
   for (const ModelImage& image : images) {
@@ -687,6 +745,28 @@ class MoltAIManagerTest : public testing::Test {
   std::unique_ptr<LanguageModelClient> ImageLanguageModel() {
     env_.facts.image_input_enabled = true;
     return AllowedLanguageModel(ImageOptions());
+  }
+
+  // Audio input on, and a downloaded model that hears audio loads.
+  void HearingModel() {
+    env_.facts.audio_input_enabled = true;
+    backend_.facts.audio_model_offered = true;
+    backend_.facts.audio_model_installed = true;
+    backend_.hears_audio = true;
+  }
+
+  // A session that takes audio, for a site the user already allowed.
+  std::unique_ptr<LanguageModelClient> AudioLanguageModel() {
+    HearingModel();
+    return AllowedLanguageModel(AudioOptions());
+  }
+
+  void PromptWithClip(LanguageModelClient& client,
+                      on_device_model::mojom::AudioDataPtr clip,
+                      TestResponder& responder) {
+    client.session->Prompt(UserWithClip("What is said?", std::move(clip)),
+                           nullptr, responder.Remote());
+    RunUntilIdle();
   }
 
   void PromptWithImages(LanguageModelClient& client,
@@ -1050,6 +1130,215 @@ TEST_F(MoltAIManagerTest, BadImagesAreRefusedUnread) {
   RunUntilIdle();
   EXPECT_FALSE(one.error);
   EXPECT_EQ(backend_.image_batches, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Audio input (expectedInputs "audio", prompt() with audio)
+// ---------------------------------------------------------------------------
+
+TEST_F(MoltAIManagerTest, AudioInputAvailability) {
+  HearingModel();
+  // A site the user allowed, with a model that hears audio: as for text.
+  env_.consent = SiteConsent::kAllowed;
+  EXPECT_EQ(LanguageModelAvailability(AudioOptions()),
+            ModelAvailabilityCheckResult::kAvailable);
+  // None downloaded: the generic "unavailable" (what the user downloaded is
+  // never in the page-readable value).
+  backend_.facts.audio_model_installed = false;
+  EXPECT_EQ(LanguageModelAvailability(AudioOptions()),
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  // A site the user hasn't answered: the text answer, whatever is
+  // downloaded.
+  env_.consent = SiteConsent::kAsk;
+  for (bool installed : {false, true}) {
+    backend_.facts.audio_model_installed = installed;
+    EXPECT_EQ(LanguageModelAvailability(AudioOptions()),
+              LanguageModelAvailability());
+  }
+  // A catalogue without a model that hears audio: unavailable to every
+  // site.
+  backend_.facts.audio_model_offered = false;
+  backend_.facts.audio_model_installed = false;
+  EXPECT_EQ(LanguageModelAvailability(AudioOptions()),
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  // The multimodal feature off: options the models can't serve.
+  backend_.facts.audio_model_offered = true;
+  env_.facts.audio_input_enabled = false;
+  EXPECT_EQ(
+      LanguageModelAvailability(AudioOptions()),
+      ModelAvailabilityCheckResult::kUnavailableModelAdaptationNotAvailable);
+  // MoltNet: off, without asking the runtime.
+  env_.facts.audio_input_enabled = true;
+  env_.facts.moltnet = true;
+  const int device_calls = backend_.device_calls;
+  EXPECT_EQ(LanguageModelAvailability(AudioOptions()),
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  EXPECT_EQ(backend_.device_calls, device_calls);
+  // Answering loaded nothing.
+  EXPECT_EQ(backend_.prepare_calls, 0);
+}
+
+TEST_F(MoltAIManagerTest, CreateWithAudioNeedsAModelThatHearsIt) {
+  HearingModel();
+  env_.consent = SiteConsent::kAllowed;
+  // The model loaded can't hear audio (the chat's): the generic failure.
+  backend_.hears_audio = false;
+  auto deaf = CreateLanguageModel(AudioOptions());
+  EXPECT_EQ(backend_.prepare_calls, 1);
+  EXPECT_TRUE(backend_.last_prepare_wants_audio);
+  EXPECT_FALSE(backend_.last_prepare_wants_images);
+  EXPECT_EQ(deaf->error, AIManagerCreateClientError::kUnableToCreateSession);
+  EXPECT_EQ(manager_->session_count_for_testing(), 0u);
+  // One that hears it: the session says it takes audio, at 16 kHz mono.
+  backend_.hears_audio = true;
+  auto hearing = CreateLanguageModel(AudioOptions());
+  ASSERT_TRUE(hearing->session.is_bound());
+  EXPECT_EQ(*hearing->info->input_types,
+            (std::vector<blink::mojom::AILanguageModelPromptType>{
+                blink::mojom::AILanguageModelPromptType::kText,
+                blink::mojom::AILanguageModelPromptType::kAudio}));
+  EXPECT_EQ(hearing->info->audio_sample_rate_hz, 16000);
+  EXPECT_EQ(hearing->info->audio_channel_count, 1);
+  // Text sessions say nothing about audio.
+  auto text = CreateLanguageModel();
+  ASSERT_TRUE(text->session.is_bound());
+  EXPECT_FALSE(backend_.last_prepare_wants_audio);
+  EXPECT_FALSE(text->info->audio_sample_rate_hz.has_value());
+}
+
+TEST_F(MoltAIManagerTest, CreateWithAudioOffersTheModelPicker) {
+  HearingModel();
+  backend_.facts.audio_model_installed = false;
+  env_.consent = SiteConsent::kAsk;
+  env_.answer = SiteConsent::kAllowed;
+  auto client = CreateLanguageModel(AudioOptions());
+  // Asked, with the model picker (a text model is installed, but none that
+  // hears audio); then the generic failure, nothing loaded.
+  EXPECT_EQ(env_.prompts, 1);
+  EXPECT_TRUE(env_.last_needs_model);
+  EXPECT_EQ(client->error, AIManagerCreateClientError::kUnableToCreateSession);
+  EXPECT_EQ(backend_.prepare_calls, 0);
+}
+
+TEST_F(MoltAIManagerTest, PromptWithAudio) {
+  auto client = AudioLanguageModel();
+  TestResponder responder;
+  PromptWithClip(*client, Audio(16000), responder);
+  const uint64_t id = backend_.OnlyJob();
+  {
+    const GenerationJob& job = backend_.Job(id);
+    EXPECT_EQ(job.user_message, "What is said?");
+    ASSERT_EQ(job.user_audio.size(), 1u);
+    EXPECT_TRUE(job.user_audio[0].IsValid());
+    ASSERT_EQ(job.user_audio[0].samples.size(), 16000u);
+    EXPECT_EQ(job.user_audio[0].samples[0], 8192);
+    EXPECT_TRUE(job.history_audio.empty());
+    EXPECT_TRUE(job.user_images.empty());
+  }
+  // Held (as one image) while it runs, then in the context.
+  EXPECT_EQ(HeldImages(), 1u);
+  backend_.Reply(id, {"Hello."});
+  RunUntilIdle();
+  ASSERT_TRUE(responder.completed);
+  EXPECT_EQ(*responder.usage, EstimateMessageTokens("What is said?") +
+                                  AudioInputTokens(1) +
+                                  EstimateMessageTokens("Hello."));
+  EXPECT_EQ(HeldImages(), 1u);
+  // The next prompt gives it again, with its turn.
+  TestResponder second;
+  Prompt(*client, "Who said it?", second);
+  {
+    const GenerationJob& job = backend_.Job(backend_.OnlyJob());
+    ASSERT_EQ(job.history_audio.size(), 2u);
+    EXPECT_EQ(job.history_audio[0].size(), 1u);
+    EXPECT_TRUE(job.history_audio[1].empty());
+    EXPECT_TRUE(job.user_audio.empty());
+  }
+  client->session->Destroy();
+  RunUntilIdle();
+  EXPECT_EQ(HeldImages(), 0u);
+}
+
+TEST_F(MoltAIManagerTest, BadAudioIsRefusedUnread) {
+  auto client = AudioLanguageModel();
+  // Not what GetInfo() asked Blink for, a frame count that isn't the
+  // data's, longer than 30 s, empty.
+  std::vector<on_device_model::mojom::AudioDataPtr> bad;
+  bad.push_back(Audio(16000, /*rate=*/44100));
+  bad.push_back(Audio(16000, 16000, /*channels=*/2));
+  bad.push_back(Audio(480001));
+  bad.push_back(Audio(0));
+  auto mismatched = Audio(16000);
+  mismatched->frame_count = 15999;
+  bad.push_back(std::move(mismatched));
+  for (auto& clip : bad) {
+    TestResponder responder;
+    PromptWithClip(*client, std::move(clip), responder);
+    EXPECT_EQ(responder.error,
+              ModelStreamingResponseStatus::kErrorInvalidRequest);
+  }
+  // More than one request gives the model.
+  std::vector<on_device_model::mojom::AudioDataPtr> five;
+  for (int i = 0; i < 5; ++i) {
+    five.push_back(Audio(1600));
+  }
+  TestResponder too_many;
+  client->session->Prompt(UserWithAudio("x", std::move(five)), nullptr,
+                          too_many.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(too_many.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  // Audio in an assistant turn.
+  std::vector<on_device_model::mojom::AudioDataPtr> one;
+  one.push_back(Audio(1600));
+  std::vector<blink::mojom::AILanguageModelPromptPtr> prompts;
+  prompts.push_back(AudioMessage(AILanguageModelPromptRole::kAssistant, "hm",
+                                 std::move(one)));
+  prompts.push_back(Message(AILanguageModelPromptRole::kUser, "well?"));
+  TestResponder assistant;
+  client->session->Prompt(std::move(prompts), nullptr, assistant.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(assistant.error,
+            ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_TRUE(backend_.jobs.empty());
+  EXPECT_EQ(HeldImages(), 0u);
+  // Exactly 30 s, and a very short clip (padded by the browser), are fine.
+  TestResponder longest;
+  PromptWithClip(*client, Audio(480000), longest);
+  EXPECT_FALSE(longest.error);
+  backend_.Reply(backend_.OnlyJob(), {"ok"});
+  RunUntilIdle();
+  TestResponder short_clip;
+  PromptWithClip(*client, Audio(10), short_clip);
+  EXPECT_FALSE(short_clip.error);
+  EXPECT_EQ(backend_.Job(backend_.OnlyJob()).user_audio[0].samples.size(),
+            1600u);
+}
+
+TEST_F(MoltAIManagerTest, AudioNeedsASessionThatTakesIt) {
+  HearingModel();
+  auto client = AllowedLanguageModel();
+  TestResponder responder;
+  PromptWithClip(*client, Audio(16000), responder);
+  EXPECT_EQ(responder.error,
+            ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_TRUE(backend_.jobs.empty());
+  base::test::TestFuture<std::optional<uint32_t>> usage;
+  client->session->MeasureInputUsage(UserWithClip("hi", Audio(16000)),
+                                     usage.GetCallback());
+  EXPECT_FALSE(usage.Get());
+}
+
+TEST_F(MoltAIManagerTest, MeasureInputUsageCountsAudioByLength) {
+  auto client = AudioLanguageModel();
+  base::test::TestFuture<std::optional<uint32_t>> usage;
+  client->session->MeasureInputUsage(UserWithClip("hi", Audio(20 * 16000)),
+                                     usage.GetCallback());
+  ASSERT_TRUE(usage.Get());
+  EXPECT_EQ(*usage.Get(), EstimateMessageTokens("hi") + AudioInputTokens(20));
+  base::test::TestFuture<std::optional<uint32_t>> bad;
+  client->session->MeasureInputUsage(UserWithClip("hi", Audio(16000, 8000)),
+                                     bad.GetCallback());
+  EXPECT_FALSE(bad.Get());
 }
 
 // What a compromised renderer could send instead (the bitmap traits refuse

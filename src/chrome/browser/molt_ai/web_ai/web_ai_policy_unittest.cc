@@ -216,6 +216,128 @@ TEST(WebAIPolicyTest, ExhaustiveInvariants) {
 }
 
 // ---------------------------------------------------------------------------
+// Audio input (expectedInputs "audio")
+// ---------------------------------------------------------------------------
+
+// Ready(), asking for audio input, with a model that hears it.
+AvailabilityInput AudioReady() {
+  AvailabilityInput in = Ready();
+  in.context.audio_input_enabled = true;
+  in.device.audio_model_offered = true;
+  in.device.audio_model_installed = true;
+  in.wants_audio = true;
+  return in;
+}
+
+TEST(WebAIPolicyTest, AudioInputNeedsAModelThatHearsIt) {
+  // Allowed, and a downloaded model hears audio: as for text.
+  EXPECT_EQ(DecideAvailability(AudioReady()).availability,
+            Availability::kAvailable);
+  EXPECT_EQ(DecideCreateAction(AudioReady()), CreateAction::kCreate);
+
+  // Allowed, and none does: unavailable, with or without a text model.
+  for (bool text_model : {true, false}) {
+    AvailabilityInput in = AudioReady();
+    in.device.audio_model_installed = false;
+    in.device.model_installed = text_model;
+    const AvailabilityDecision d = DecideAvailability(in);
+    EXPECT_EQ(d.availability, Availability::kUnavailable);
+    EXPECT_EQ(d.reason, UnavailableReason::kNoAudioModel);
+    EXPECT_EQ(DecideCreateAction(in), CreateAction::kReject);
+  }
+
+  // A site the user hasn't answered gets the text answer, whatever is
+  // downloaded: create() asks first.
+  for (bool installed : {false, true}) {
+    AvailabilityInput in = AudioReady();
+    in.consent = SiteConsent::kAsk;
+    in.device.audio_model_installed = installed;
+    EXPECT_EQ(DecideAvailability(in).availability, Availability::kDownloadable);
+    EXPECT_EQ(DecideCreateAction(in), CreateAction::kAskUser);
+  }
+
+  // A build whose catalogue has no model that hears audio: unavailable to
+  // every site, answered or not.
+  for (SiteConsent consent : {SiteConsent::kAsk, SiteConsent::kAllowed}) {
+    AvailabilityInput in = AudioReady();
+    in.consent = consent;
+    in.device.audio_model_offered = false;
+    in.device.audio_model_installed = false;
+    EXPECT_EQ(DecideAvailability(in).reason, UnavailableReason::kNoAudioModel);
+  }
+
+  // Blocked, MoltNet, the feature off: as for text.
+  AvailabilityInput blocked = AudioReady();
+  blocked.consent = SiteConsent::kBlocked;
+  EXPECT_EQ(DecideAvailability(blocked).reason,
+            UnavailableReason::kBlockedByUser);
+  AvailabilityInput moltnet = AudioReady();
+  moltnet.context.moltnet = true;
+  EXPECT_EQ(DecideAvailability(moltnet).reason, UnavailableReason::kDisabled);
+}
+
+// Over every combination of the audio facts: they never change a text
+// answer, never change what a site the user hasn't allowed sees except
+// through the build's catalogue, and "available" for audio means a model
+// that hears it is downloaded.
+TEST(WebAIPolicyTest, AudioExhaustiveInvariants) {
+  for (int bits = 0; bits < (1 << 6); ++bits) {
+    for (SiteConsent consent :
+         {SiteConsent::kAsk, SiteConsent::kAllowed, SiteConsent::kBlocked}) {
+      AvailabilityInput in = Ready();
+      int b = 0;
+      in.device.model_installed = bits & (1 << b++);
+      in.device.some_model_fits = bits & (1 << b++);
+      in.device.audio_model_offered = bits & (1 << b++);
+      in.device.audio_model_installed = bits & (1 << b++);
+      in.wants_audio = bits & (1 << b++);
+      in.context.audio_input_enabled = bits & (1 << b++);
+      in.consent = consent;
+      const AvailabilityDecision d = DecideAvailability(in);
+      AvailabilityInput text = in;
+      text.wants_audio = false;
+      text.device.audio_model_offered = false;
+      text.device.audio_model_installed = false;
+      const AvailabilityDecision t = DecideAvailability(text);
+      if (!in.wants_audio) {
+        EXPECT_EQ(d.availability, t.availability);
+        EXPECT_EQ(d.reason, t.reason);
+        continue;
+      }
+      if (d.availability == Availability::kAvailable) {
+        EXPECT_TRUE(in.device.audio_model_installed);
+        EXPECT_EQ(DecideCreateAction(in), CreateAction::kCreate);
+      }
+      if (d.availability != t.availability) {
+        // Only ever "unavailable" for want of a model that hears audio.
+        EXPECT_EQ(d.availability, Availability::kUnavailable);
+        EXPECT_EQ(d.reason, UnavailableReason::kNoAudioModel);
+      }
+      if (in.consent != SiteConsent::kAllowed) {
+        AvailabilityInput flipped = in;
+        flipped.device.audio_model_installed = !in.device.audio_model_installed;
+        EXPECT_EQ(DecideAvailability(flipped).availability, d.availability);
+      }
+    }
+  }
+}
+
+TEST(WebAIPolicyTest, AudioInputTokens) {
+  EXPECT_EQ(AudioInputTokens(0), kAudioInputMinTokens);
+  EXPECT_EQ(AudioInputTokens(1), 375u);
+  EXPECT_EQ(AudioInputTokens(15), 375u);
+  EXPECT_EQ(AudioInputTokens(16), 400u);
+  EXPECT_EQ(AudioInputTokens(30), 750u);
+  EXPECT_EQ(AudioInputTokens(std::numeric_limits<uint32_t>::max()),
+            std::numeric_limits<uint32_t>::max());
+  // Never less than the catalogue's audio model uses: 375 tokens per
+  // started 30-second window, two for a clip of exactly 30 s.
+  for (uint32_t s = 1; s <= 30; ++s) {
+    EXPECT_GE(AudioInputTokens(s), 375u * (s / 30 + 1)) << s;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Device facts per site
 // ---------------------------------------------------------------------------
 
@@ -490,6 +612,29 @@ TEST(WebAIPolicyTest, PickWebModel) {
   // None sees images: the usual pick.
   EXPECT_EQ(PickWebModel("", "big", models, true), "big");
   EXPECT_EQ(PickWebModel("", "", models, true), "tiny");
+
+  // For audio: a model that hears it, if one is downloaded; never by
+  // swapping out the loaded one.
+  const std::vector<ModelCandidate> audio = {
+      {"big", true, 8ull << 30, false, false},
+      {"tiny", true, 1ull << 30, false, false},
+      {"vl", true, 4ull << 30, true, false},
+      {"voxtral", true, 6ull << 30, false, true},
+      {"voxtral-absent", false, 1ull << 20, false, true},
+  };
+  EXPECT_EQ(PickWebModel("chat-model", "voxtral", audio, false, true),
+            "chat-model");
+  EXPECT_EQ(PickWebModel("", "big", audio, false, true), "voxtral");
+  EXPECT_EQ(PickWebModel("", "", audio, false, true), "voxtral");
+  EXPECT_EQ(PickWebModel("", "", audio, true, false), "vl");
+  // Both, and no model does both: the usual pick (create() then fails).
+  EXPECT_EQ(PickWebModel("", "", audio, true, true), "tiny");
+  EXPECT_TRUE(AnyModelHearsAudio(audio));
+  EXPECT_TRUE(AnyInstalledModelHearsAudio(audio));
+  EXPECT_TRUE(AnyModelHearsAudio({{"voxtral-absent", false, 1, false, true}}));
+  EXPECT_FALSE(
+      AnyInstalledModelHearsAudio({{"voxtral-absent", false, 1, false, true}}));
+  EXPECT_FALSE(AnyModelHearsAudio(models));
 
   EXPECT_TRUE(AnyModelInstalled(models));
   EXPECT_FALSE(AnyModelInstalled({{"absent", false, 1}}));

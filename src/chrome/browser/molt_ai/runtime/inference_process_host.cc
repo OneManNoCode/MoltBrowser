@@ -277,7 +277,7 @@ class InferenceProcessHost::ModelProcess
   // The cap the browser sent; a described context above it is a lie.
   uint32_t max_context_tokens() const { return max_context_tokens_; }
   uint64_t footprint_limit_bytes() const { return footprint_limit_bytes_; }
-  // A process given no projector that claims vision is lying.
+  // A process given no projector that claims vision or audio is lying.
   bool vision_projector_sent() const { return vision_projector_sent_; }
   // Launched for the GPU; one not asked to use it that claims it is lying.
   bool gpu_requested() const { return gpu_requested_; }
@@ -589,21 +589,18 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   // A description is required with kOk and must be sane (it decides limits
   // and is shown in logs).
   if (!description ||
-      !IsValidModelDescription(description->architecture,
-                               description->backend,
-                               description->context_tokens,
-                               description->vocab_size,
-                               mojom::kMinDescribedContextTokens,
-                               p->max_context_tokens()) ||
-      (description->vision && !p->vision_projector_sent()) ||
-      !IsValidGpuDescription(
-          p->gpu_requested(), description->backend,
-          description->gpu_status == mojom::GpuStatus::kOn,
-          description->gpu_layers, mojom::kMaxGpuLayers) ||
-      !IsConsistentGpuStatus(
-          {p->gpu_requested(), p->gpu_device.has_value(),
-           p->gpu_answered && p->gpu_allowed},
-          ToReported(description->gpu_status))) {
+      !IsValidModelDescription(
+          description->architecture, description->backend,
+          description->context_tokens, description->vocab_size,
+          mojom::kMinDescribedContextTokens, p->max_context_tokens()) ||
+      ((description->vision || description->audio) &&
+       !p->vision_projector_sent()) ||
+      !IsValidGpuDescription(p->gpu_requested(), description->backend,
+                             description->gpu_status == mojom::GpuStatus::kOn,
+                             description->gpu_layers, mojom::kMaxGpuLayers) ||
+      !IsConsistentGpuStatus({p->gpu_requested(), p->gpu_device.has_value(),
+                              p->gpu_answered && p->gpu_allowed},
+                             ToReported(description->gpu_status))) {
     mojo::ReportBadMessage("invalid ModelDescription");
     p->load_mailbox = std::move(mailbox);  // failed by KillProcess
     KillProcess(p, InferenceOutcome::Kind::kViolation,
@@ -622,6 +619,7 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   outcome.vocab_size = description->vocab_size;
   outcome.cpu_repack_used = description->cpu_repack_used;
   outcome.vision = description->vision;
+  outcome.audio = description->audio;
   outcome.gpu_status = description->gpu_status;
   outcome.gpu_layers = description->gpu_layers;
   outcome.gpu_device = p->gpu_device;

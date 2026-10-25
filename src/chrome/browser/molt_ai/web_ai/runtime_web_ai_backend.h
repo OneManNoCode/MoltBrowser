@@ -14,7 +14,10 @@
 //    included), a reply budget and a small hidden-reasoning budget.
 //  * A page's images (Prompt API image input) are scaled to
 //    kWebImageMaxSide on a worker; the images pages hold are capped per
-//    site and in total (GenerationScheduler).
+//    site and in total (GenerationScheduler). A page's audio clips (audio
+//    input; decoded and resampled to 16 kHz mono by Blink in the renderer)
+//    are checked and turned into 16-bit samples (runtime/model_audio.h),
+//    and count as images against the same caps.
 //
 // UI thread only; the runtime's blocking calls run on ThreadPool workers.
 
@@ -65,7 +68,9 @@ class RuntimeWebAIBackend : public WebAIBackend {
   void GetDeviceFactsForSite(const std::string& site_key,
                              DeviceCallback callback) override;
   bool WebApisSwitchOn() override;
-  void PrepareModel(bool wants_images, PrepareCallback callback) override;
+  void PrepareModel(bool wants_images,
+                    bool wants_audio,
+                    PrepareCallback callback) override;
   uint64_t Generate(GenerationJob job,
                     ChunkCallback on_chunk,
                     DoneCallback on_done) override;
@@ -99,6 +104,7 @@ class RuntimeWebAIBackend : public WebAIBackend {
     bool ok = false;
     uint32_t context_tokens = 0;
     bool sees_images = false;
+    bool hears_audio = false;
   };
 
   RuntimeWebAIBackend();
@@ -121,7 +127,8 @@ class RuntimeWebAIBackend : public WebAIBackend {
   // Runs on a worker.
   static DeviceFacts ReadDeviceFacts(BrowserAIRuntime* runtime);
   static PrepareResult PrepareBlocking(BrowserAIRuntime* runtime,
-                                       bool wants_images);
+                                       bool wants_images,
+                                       bool wants_audio);
   static GenerationStatus RunJob(
       BrowserAIRuntime* runtime,
       GenerationJob job,

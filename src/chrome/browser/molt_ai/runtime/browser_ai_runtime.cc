@@ -79,8 +79,8 @@ constexpr base::TimeDelta kDefaultIdleUnload = base::Minutes(10);
 // Runtime overhead (compute buffers, a small KV cache, allocator slack) on
 // top of the GGUF weights when deciding whether a model fits right now.
 constexpr uint64_t kRuntimeOverheadBytes = 1024ULL * 1024 * 1024;
-// The vision encoder's compute buffers, on top of its projector's weights
-// (the service reserves the same, llama_engine.cc).
+// The projector's encoders' compute buffers (image, audio), on top of its
+// weights (the service reserves the same, llama_engine.cc).
 constexpr uint64_t kVisionOverheadBytes = 512ULL * 1024 * 1024;
 
 // A model is never allowed to need more than this share of physical RAM.
@@ -287,9 +287,10 @@ const ModelRegistryEntry kModelRegistry[] = {
     // section 10: pages' Prompt API images, agent screenshots later). Strong
     // at reading text in screenshots and documents for its size; supported
     // by the vendored llama.cpp's multimodal library (Qwen3-VL projector,
-    // M-RoPE). Loads with its vision projector (kVisionProjectors). Offered
+    // M-RoPE). Loads with its vision projector (kProjectors). Offered
     // only once the model and its projector are both pinned (fail closed,
-    // IsPinnedForVision()): until then it is not in the catalogue at all.
+    // IsPinnedWithProjector()): until then it is not in the catalogue at
+    // all.
     {"qwen3-vl-2b",
      "Qwen3-VL 2B (sees images)",
      "Qwen/Qwen3-VL-2B-Instruct-GGUF",  // TODO(pin): confirm repo name
@@ -301,6 +302,29 @@ const ModelRegistryEntry kModelRegistry[] = {
      2,
      "Q4_K_M",
      "Qwen",
+     "apache-2.0",
+     false},
+
+    // Mistral AI — Voxtral Mini 3B (2507), Apache 2.0: a small model that
+    // hears audio (a Whisper-style audio encoder in front of a 3B language
+    // model; audio input, docs/design/SANDBOXED_INFERENCE.md section 13:
+    // pages' Prompt API audio). Transcribes and answers questions about
+    // speech; supported by the vendored llama.cpp's multimodal library
+    // (Voxtral projector, 16 kHz). Loads with its projector (kProjectors).
+    // Offered only once the model and its projector are both pinned (fail
+    // closed, IsPinnedWithProjector()). The language model is 3B, the
+    // encoder adds about 0.6B more.
+    {"voxtral-mini-3b",
+     "Voxtral Mini 3B (hears audio)",
+     "ggml-org/Voxtral-Mini-3B-2507-GGUF",  // TODO(pin): confirm repo name
+     "Voxtral-Mini-3B-2507-Q4_K_M.gguf",  // TODO(pin): confirm file name
+     /*revision=*/"",
+     /*sha256=*/"",
+     /*size=*/0ULL,
+     6442450944ULL,           // 6GB RAM (conservative until measured)
+     3,
+     "Q4_K_M",
+     "Mistral AI",
      "apache-2.0",
      false},
 
@@ -323,30 +347,45 @@ const ModelRegistryEntry kModelRegistry[] = {
 constexpr size_t kModelRegistrySize =
     sizeof(kModelRegistry) / sizeof(kModelRegistry[0]);
 
-// Vision projectors (image input): the second GGUF a vision-language model
-// loads (llama.cpp's "mmproj"), from the model's repo at the model's pinned
-// revision; tools/models/pin_models.py pins both from the same revision. A
-// model listed here is offered only when its entry above AND its projector
-// are pinned (revision, both SHA-256s, both sizes): fail closed, like the
+// Projectors (image and audio input): the second GGUF a multimodal model
+// loads (llama.cpp's "mmproj": an image encoder, an audio encoder or both),
+// from the model's repo at the model's pinned revision;
+// tools/models/pin_models.py pins both from the same revision. A model
+// listed here is offered only when its entry above AND its projector are
+// pinned (revision, both SHA-256s, both sizes): fail closed, like the
 // memory search model (memory/embedding_model_registry.cc), because an
-// unpinned projector is untrusted model code's input.
-struct VisionProjectorEntry {
+// unpinned projector is untrusted model code's input. |images| and |audio|
+// say what the catalogue shows; what a request may carry is what the
+// loaded projector reports (InferenceOutcome).
+struct ProjectorEntry {
   const char* model_id;
   const char* filename;
   const char* sha256;      // lowercase hex; "" = not pinned
   size_t file_size_bytes;  // exact; 0 = not pinned
+  bool images;
+  bool audio;
 };
-const VisionProjectorEntry kVisionProjectors[] = {
+const ProjectorEntry kProjectors[] = {
     // Q8_0: about half the size of F16 for a negligible loss in a vision
     // encoder.
     {"qwen3-vl-2b",
      "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",  // TODO(pin): confirm file name
      /*mmproj_sha256=*/"",
-     /*mmproj_size=*/0ULL},
+     /*mmproj_size=*/0ULL,
+     /*images=*/true,
+     /*audio=*/false},
+    // Q8_0, like the vision projector: the audio encoder's weights at about
+    // half the size of F16.
+    {"voxtral-mini-3b",
+     "mmproj-Voxtral-Mini-3B-2507-Q8_0.gguf",  // TODO(pin): confirm file name
+     /*mmproj_sha256=*/"",
+     /*mmproj_size=*/0ULL,
+     /*images=*/false,
+     /*audio=*/true},
 };
 
-const VisionProjectorEntry* FindVisionProjector(const char* model_id) {
-  for (const VisionProjectorEntry& p : kVisionProjectors) {
+const ProjectorEntry* FindProjector(const char* model_id) {
+  for (const ProjectorEntry& p : kProjectors) {
     if (std::string_view(p.model_id) == model_id) return &p;
   }
   return nullptr;
@@ -361,9 +400,10 @@ bool IsLowerHex(const char* s, size_t length) {
   return true;
 }
 
-// Fail closed for vision models: the model and its projector both pinned.
-bool IsPinnedForVision(const ModelRegistryEntry& entry,
-                       const VisionProjectorEntry& projector) {
+// Fail closed for multimodal models: the model and its projector both
+// pinned.
+bool IsPinnedWithProjector(const ModelRegistryEntry& entry,
+                           const ProjectorEntry& projector) {
   return IsLowerHex(entry.revision, 40) && IsLowerHex(entry.sha256, 64) &&
          entry.file_size_bytes > 0 && IsLowerHex(projector.sha256, 64) &&
          projector.file_size_bytes > 0;
@@ -499,12 +539,44 @@ bool IsCompleteJson(const std::string& text) {
 constexpr char kImagesUnsupportedError[] =
     "The on-device model can't see images. Pick a model that can (\"sees "
     "images\") in the model menu.";
+constexpr char kAudioUnsupportedError[] =
+    "The on-device model can't hear audio. Pick a model that can (\"hears "
+    "audio\") in the model menu.";
 
 // The pixels, copied into the message (a shared-memory region when large).
 // The image was checked with ModelImage::IsValid().
 mojom::ImageInputPtr ToServiceImage(const ModelImage& image) {
   return mojom::ImageInput::New(image.width, image.height,
                                 mojo_base::BigBuffer(image.rgb));
+}
+
+// The samples, copied into the message (a shared-memory region when
+// large), 16-bit in the host's byte order. The clip was checked with
+// ModelAudio::IsValid().
+mojom::AudioInputPtr ToServiceAudio(const ModelAudio& audio) {
+  return mojom::AudioInput::New(
+      mojo_base::BigBuffer(base::as_byte_span(base::span(audio.samples))));
+}
+
+// The audio clips a request sends (PlanRequestAudio(): per history turn,
+// how many of its newest clips). nullopt if the new message alone has too
+// many, or a clip is out of bounds (a bad message for the service).
+std::optional<std::vector<size_t>> PlanAudio(
+    const ChatPrompt& chat,
+    const std::vector<const ChatMessage*>& turns) {
+  for (const ModelAudio& clip : chat.user_audio) {
+    if (!clip.IsValid()) return std::nullopt;
+  }
+  std::vector<size_t> counts;
+  counts.reserve(turns.size());
+  for (const ChatMessage* turn : turns) {
+    const bool user = turn->role == "user";
+    for (const ModelAudio& clip : turn->audio) {
+      if (user && !clip.IsValid()) return std::nullopt;
+    }
+    counts.push_back(user ? turn->audio.size() : 0);
+  }
+  return PlanRequestAudio(chat.user_audio.size(), counts);
 }
 
 // The images a request sends (PlanRequestImages(): per history turn, how
@@ -531,8 +603,9 @@ std::optional<std::vector<size_t>> PlanImages(
 
 // The trust labels stay structural: browser-authored text goes in
 // system_prompt / context_preamble only; page text, history and the user's
-// message keep their own fields so the service neutralizes them. Images go
-// with user turns only. nullptr if the images can't be sent (PlanImages()).
+// message keep their own fields so the service neutralizes them. Images and
+// audio go with user turns only. nullptr if the images or the audio can't
+// be sent (PlanImages(), PlanAudio()).
 mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
   auto r = mojom::ChatRequest::New();
   r->system_prompt = CapRequestText(chat.system_prompt);
@@ -541,7 +614,10 @@ mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
   r->user_message = CapRequestText(chat.user_message);
   std::vector<const ChatMessage*> turns;
   for (const ChatMessage& m : chat.history) {
-    if (m.content.empty() && (m.role != "user" || m.images.empty())) continue;
+    if (m.content.empty() &&
+        (m.role != "user" || (m.images.empty() && m.audio.empty()))) {
+      continue;
+    }
     if (m.role != "user" && m.role != "assistant") continue;
     turns.push_back(&m);
   }
@@ -553,6 +629,8 @@ mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
               turns.begin() + static_cast<std::ptrdiff_t>(from));
   const std::optional<std::vector<size_t>> sent = PlanImages(chat, turns);
   if (!sent) return nullptr;
+  const std::optional<std::vector<size_t>> sent_audio = PlanAudio(chat, turns);
+  if (!sent_audio) return nullptr;
   for (size_t i = 0; i < turns.size(); ++i) {
     std::vector<mojom::ImageInputPtr> images;
     const std::vector<ModelImage>& all = turns[i]->images;
@@ -560,13 +638,22 @@ mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
     for (size_t j = all.size() - (*sent)[i]; j < all.size(); ++j) {
       images.push_back(ToServiceImage(all[j]));
     }
+    std::vector<mojom::AudioInputPtr> audio;
+    const std::vector<ModelAudio>& clips = turns[i]->audio;
+    for (size_t j = clips.size() - (*sent_audio)[i]; j < clips.size(); ++j) {
+      audio.push_back(ToServiceAudio(clips[j]));
+    }
     r->history.push_back(mojom::ChatTurn::New(
         turns[i]->role == "user" ? mojom::ChatRole::kUser
                                  : mojom::ChatRole::kAssistant,
-        CapRequestText(turns[i]->content), std::move(images)));
+        CapRequestText(turns[i]->content), std::move(images),
+        std::move(audio)));
   }
   for (const ModelImage& image : chat.user_images) {
     r->user_images.push_back(ToServiceImage(image));
+  }
+  for (const ModelAudio& clip : chat.user_audio) {
+    r->user_audio.push_back(ToServiceAudio(clip));
   }
   return r;
 }
@@ -575,6 +662,14 @@ bool HasImages(const ChatPrompt& chat) {
   if (!chat.user_images.empty()) return true;
   for (const ChatMessage& m : chat.history) {
     if (m.role == "user" && !m.images.empty()) return true;
+  }
+  return false;
+}
+
+bool HasAudio(const ChatPrompt& chat) {
+  if (!chat.user_audio.empty()) return true;
+  for (const ChatMessage& m : chat.history) {
+    if (m.role == "user" && !m.audio.empty()) return true;
   }
   return false;
 }
@@ -607,9 +702,9 @@ std::string LoadError(const InferenceOutcome& outcome, const std::string& name) 
                  ": on-device AI found no way to run it on this device.";
         case mojom::LoadModelStatus::kInvalidVisionProjector:
           return "Couldn't load the part of " + name +
-                 " that sees images. Its vision file may be incomplete — "
-                 "try deleting and re-downloading the model from the model "
-                 "menu.";
+                 " that sees images or hears audio. That file may be "
+                 "incomplete — try deleting and re-downloading the model "
+                 "from the model menu.";
       }
       return "Couldn't load " + name + ".";
     case Kind::kProcessGone:
@@ -693,6 +788,9 @@ std::string GenerationError(const InferenceOutcome& outcome,
     case mojom::GenerationStatus::kImagesUnsupported:
       result->images_unsupported = true;
       return kImagesUnsupportedError;
+    case mojom::GenerationStatus::kAudioUnsupported:
+      result->audio_unsupported = true;
+      return kAudioUnsupportedError;
     case mojom::GenerationStatus::kCancelled:
       result->was_cancelled = true;
       return std::string();
@@ -834,8 +932,10 @@ struct BrowserAIRuntime::Impl {
   std::string loaded_crash_key;
   // The loaded model's context window (InferenceOutcome::context_tokens).
   uint32_t loaded_context_tokens = 0;
-  // Its vision projector is loaded (InferenceOutcome::vision).
+  // Its vision projector is loaded (InferenceOutcome::vision); its projector
+  // has an audio encoder (InferenceOutcome::audio).
   bool loaded_vision = false;
+  bool loaded_audio = false;
   int active_generations = 0;
   bool is_loading = false;
 
@@ -947,10 +1047,9 @@ struct BrowserAIRuntime::Impl {
     for (size_t i = 0; i < kModelRegistrySize; ++i) {
       const auto& entry = kModelRegistry[i];
       if (entry.hidden) continue;  // not offered until pinned
-      const VisionProjectorEntry* projector =
-          FindVisionProjector(entry.model_id);
-      if (projector && !IsPinnedForVision(entry, *projector)) {
-        continue;  // fail closed: a vision model only when fully pinned
+      const ProjectorEntry* projector = FindProjector(entry.model_id);
+      if (projector && !IsPinnedWithProjector(entry, *projector)) {
+        continue;  // fail closed: a multimodal model only when fully pinned
       }
       ModelInfo info;
       info.model_id = entry.model_id;
@@ -988,6 +1087,8 @@ struct BrowserAIRuntime::Impl {
             model_directory + "/" + projector->filename;
         info.vision_projector_sha256 = projector->sha256;
         info.vision_projector_size_bytes = projector->file_size_bytes;
+        info.sees_images = projector->images;
+        info.hears_audio = projector->audio;
       }
       info.is_downloaded = false;
       info.is_loaded = false;
@@ -1027,6 +1128,7 @@ struct BrowserAIRuntime::Impl {
     loaded_crash_key = crash_key;
     loaded_context_tokens = 0;
     loaded_vision = false;
+    loaded_audio = false;
     loaded_gpu_device.reset();
   }
 
@@ -1483,7 +1585,7 @@ RamCheck BrowserAIRuntime::CheckRamForModel(const std::string& model_id) const {
     for (const auto& [id, m] : impl_->models) {
       if (m.is_loaded && id != model_id) {
         reclaimable += m.file_size_bytes + kRuntimeOverheadBytes;
-        if (m.has_vision()) {
+        if (m.has_projector()) {
           reclaimable += m.vision_projector_size_bytes + kVisionOverheadBytes;
         }
       }
@@ -1498,7 +1600,7 @@ RamCheck BrowserAIRuntime::CheckRamForModel(const std::string& model_id) const {
   const uint64_t weights = info.file_size_bytes ? info.file_size_bytes
                                                 : info.ram_required_bytes;
   rc.needed_bytes = weights + kRuntimeOverheadBytes;
-  if (info.has_vision()) {
+  if (info.has_projector()) {
     // The projector is copied into memory (not mapped).
     rc.needed_bytes += info.vision_projector_size_bytes + kVisionOverheadBytes;
   }
@@ -1604,10 +1706,10 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
               "from the model menu.");
     return false;
   }
-  // Image input: the vision projector, opened the same way.
+  // Image and audio input: the projector, opened the same way.
   base::File projector;
   uint64_t projector_size = 0;
-  if (info.has_vision()) {
+  if (info.has_projector()) {
     projector = base::File(
         base::FilePath::FromUTF8Unsafe(info.vision_projector_path),
         base::File::FLAG_OPEN | base::File::FLAG_READ |
@@ -1617,10 +1719,11 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
         projector_info.is_directory || projector_info.size <= 0 ||
         static_cast<uint64_t>(projector_info.size) !=
             info.vision_projector_size_bytes) {
-      // Vision models are offered only when pinned, so the size is exact.
+      // Models with a projector are offered only when pinned, so the size
+      // is exact.
       set_error("Couldn't open the part of " + name +
-                " that sees images. Try deleting and re-downloading it from "
-                "the model menu.");
+                " that sees images or hears audio. Try deleting and "
+                "re-downloading it from the model menu.");
       return false;
     }
     projector_size = static_cast<uint64_t>(projector_info.size);
@@ -1793,6 +1896,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     if (impl_->loaded_model_id == model_id) {
       impl_->loaded_context_tokens = outcome.context_tokens;
       impl_->loaded_vision = outcome.vision;
+      impl_->loaded_audio = outcome.audio;
       if (outcome.gpu_status == mojom::GpuStatus::kOn) {
         impl_->loaded_gpu_device = outcome.gpu_device;
       }
@@ -1803,7 +1907,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
             << " backend=" << outcome.backend
             << " ctx=" << outcome.context_tokens
             << " repack=" << outcome.cpu_repack_used
-            << " vision=" << outcome.vision
+            << " vision=" << outcome.vision << " audio=" << outcome.audio
             << " gpu_status=" << static_cast<int>(outcome.gpu_status)
             << " gpu_layers=" << outcome.gpu_layers << " gpu=\""
             << (outcome.gpu_device ? outcome.gpu_device->name : std::string())
@@ -1863,6 +1967,11 @@ bool BrowserAIRuntime::LoadedModelSeesImages() const {
   return !impl_->loaded_model_id.empty() && impl_->loaded_vision;
 }
 
+bool BrowserAIRuntime::LoadedModelHearsAudio() const {
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
+  return !impl_->loaded_model_id.empty() && impl_->loaded_audio;
+}
+
 ModelInfo BrowserAIRuntime::GetModelInfo(const std::string& model_id) const {
   std::lock_guard<std::mutex> lock(impl_->models_mutex);
   auto it = impl_->models.find(model_id);
@@ -1890,7 +1999,7 @@ bool BrowserAIRuntime::DeleteModel(const std::string& model_id) {
   UnloadModel(model_id);
   std::error_code ec;
   std::filesystem::remove(info.file_path, ec);
-  if (info.has_vision()) {
+  if (info.has_projector()) {
     std::filesystem::remove(info.vision_projector_path, ec);
   }
   // The GPU's pipeline caches (design section 11.12) go with any model's
@@ -2034,21 +2143,27 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
     return result;
   }
 
-  // Image input (chat only): the loaded model must see images, and every
-  // image must be within the service's bounds (it would take anything else
-  // as a bad message).
+  // Image and audio input (chat only): the loaded model must see images and
+  // hear audio, and every image and clip must be within the service's
+  // bounds (it would take anything else as a bad message).
   mojom::ChatRequestPtr service_chat;
   if (is_chat) {
     service_chat = ToServiceChat(*chat);
     if (!service_chat) {
       result.error_message =
-          "An image couldn't be given to the on-device model.";
+          "An image or audio clip couldn't be given to the on-device model.";
       done();
       return result;
     }
     if (HasImages(*chat) && !LoadedModelSeesImages()) {
       result.images_unsupported = true;
       result.error_message = kImagesUnsupportedError;
+      done();
+      return result;
+    }
+    if (HasAudio(*chat) && !LoadedModelHearsAudio()) {
+      result.audio_unsupported = true;
+      result.error_message = kAudioUnsupportedError;
       done();
       return result;
     }
@@ -2227,7 +2342,7 @@ size_t BrowserAIRuntime::GetModelMemoryUsage() const {
 
 void BrowserAIRuntime::RefreshModelStatus() {
   // Stat the files without holding the registry lock. A model with a
-  // vision projector is downloaded only when both files are there, and a
+  // projector is downloaded only when both files are there, and a
   // pinned file only at its exact size (models::IsCompleteModelFile): a
   // download in progress (one file of two, a .partial) never counts.
   // (path, pinned size or 0) per file.
@@ -2240,7 +2355,7 @@ void BrowserAIRuntime::RefreshModelStatus() {
                       info.is_verified()
                           ? static_cast<int64_t>(info.file_size_bytes)
                           : 0}};
-      if (info.has_vision()) {
+      if (info.has_projector()) {
         files.emplace_back(
             info.vision_projector_path,
             static_cast<int64_t>(info.vision_projector_size_bytes));
