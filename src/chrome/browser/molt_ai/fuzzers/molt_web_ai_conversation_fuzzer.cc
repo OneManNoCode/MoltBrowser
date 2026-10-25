@@ -3,14 +3,18 @@
 //
 // A LanguageModel session's context (web_ai/web_ai_conversation.h) driven
 // the way a web page drives it: system prompts, prompt() calls with text
-// and images, replies, in any order and size; plus the writing-assistance
-// prompts (web_ai/web_ai_prompts.h) on page options and text, and how a
-// request's images are picked (runtime/model_image.h).
+// and images and audio clips, replies, in any order and size; plus the
+// writing-assistance prompts (web_ai/web_ai_prompts.h) on page options and
+// text, how a request's images and clips are picked (runtime/model_image.h,
+// runtime/model_audio.h), and how a page's decoded audio becomes a clip.
 //
 // Checks: input_usage() is the system prompt plus the turns' tokens and an
 // accepted Add() stays within the quota; after an eviction the history
 // starts with a user turn; the context keeps at most kMaxContextImages
-// images and a request shows at most that many; ShapeAfter() alternates
+// images and kMaxContextAudio clips and a request carries at most that
+// many; a clip counts AudioInputTokens() of its length; a page's audio
+// becomes a clip only as one channel at 16 kHz of at most 30 s, and every
+// clip made is valid; ShapeAfter() alternates
 // roles and ends with the user's message; the browser-authored parts of a
 // prompt (system prompt, context preamble) never depend on page text.
 
@@ -26,6 +30,7 @@
 #include <fuzzer/FuzzedDataProvider.h>
 
 #include "base/check.h"
+#include "chrome/browser/molt_ai/runtime/model_audio.h"
 #include "chrome/browser/molt_ai/runtime/model_image.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_conversation.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
@@ -37,6 +42,11 @@ namespace {
 // Pixels don't matter here; a small stand-in image per slot.
 ModelImage TinyImage(uint8_t tag) {
   return ModelImage(32, 32, std::vector<uint8_t>(1, tag));
+}
+
+// Samples don't matter here; the shortest clip, |extra| samples longer.
+ModelAudio TinyClip(size_t extra) {
+  return ModelAudio(std::vector<int16_t>(1600 + extra, 0));
 }
 
 uint32_t SumTokens(const Conversation& c) {
@@ -82,6 +92,61 @@ void CheckShape(const Conversation::Shape& shape,
   } else {
     CHECK(!PlanRequestImages(new_images, turn_images));
   }
+
+  // The same for audio clips.
+  CHECK(shape.history_audio.empty() ||
+        shape.history_audio.size() == shape.history.size());
+  size_t clips = shape.user_audio.size();
+  for (const auto& list : shape.history_audio) clips += list.size();
+  CHECK(clips <= kMaxContextAudio);
+  std::vector<size_t> turn_audio;
+  for (size_t i = std::min(plan.evict, c.turns().size()); i < c.turns().size();
+       ++i) {
+    turn_audio.push_back(c.turns()[i].audio.size());
+  }
+  size_t new_audio = 0;
+  for (const Turn& t : added) new_audio += t.audio.size();
+  std::optional<std::vector<size_t>> sent_audio =
+      PlanRequestAudio(new_audio, turn_audio);
+  if (new_audio <= kMaxContextAudio) {
+    CHECK(sent_audio && sent_audio->size() == turn_audio.size());
+    size_t total = new_audio;
+    size_t wanted = new_audio;
+    for (size_t i = 0; i < sent_audio->size(); ++i) {
+      CHECK((*sent_audio)[i] <= turn_audio[i]);
+      total += (*sent_audio)[i];
+      wanted += turn_audio[i];
+    }
+    CHECK(total == std::min(wanted, kMaxContextAudio));
+  } else {
+    CHECK(!sent_audio);
+  }
+}
+
+// A page's audio as Blink sends it, or as a compromised renderer could.
+void CheckPageAudio(FuzzedDataProvider* p) {
+  const bool honest = p->ConsumeBool();
+  const int64_t channels = honest ? 1 : p->ConsumeIntegralInRange<int64_t>(0, 2);
+  const int64_t rate = honest ? 16000 : p->ConsumeIntegral<int64_t>();
+  const size_t count = p->ConsumeIntegralInRange<size_t>(0, 20000);
+  const int64_t frames = honest || p->ConsumeBool()
+                             ? static_cast<int64_t>(count)
+                             : p->ConsumeIntegral<int64_t>();
+  std::vector<float> samples(count, 0.0f);
+  for (size_t i = 0; i < samples.size() && p->remaining_bytes() > 0;
+       i += p->ConsumeIntegralInRange<size_t>(1, 512)) {
+    samples[i] = p->ConsumeFloatingPoint<float>();
+  }
+  const std::optional<ModelAudio> clip = ModelAudioFromPage(
+      channels, rate, frames, samples.empty() ? nullptr : samples.data(),
+      samples.size());
+  CHECK(clip.has_value() == (channels == 1 && rate == 16000 && count > 0 &&
+                             frames == static_cast<int64_t>(count)));
+  if (clip) {
+    CHECK(clip->IsValid());
+    CHECK(clip->Seconds() >= 1 && clip->Seconds() <= 2);
+    CHECK(AudioInputTokens(clip->Seconds()) == kAudioInputMinTokens);
+  }
 }
 
 void DriveConversation(FuzzedDataProvider* p) {
@@ -109,7 +174,22 @@ void DriveConversation(FuzzedDataProvider* p) {
                                                              : Role::kAssistant;
           const size_t images =
               role == Role::kUser ? p->ConsumeIntegralInRange<size_t>(0, 6) : 0;
-          Turn t = MakeTurn(role, p->ConsumeRandomLengthString(8000), images);
+          const size_t clips =
+              role == Role::kUser ? p->ConsumeIntegralInRange<size_t>(0, 5) : 0;
+          std::vector<ModelAudio> audio;
+          uint32_t audio_tokens = 0;
+          for (size_t k = 0; k < clips; ++k) {
+            audio.push_back(TinyClip(p->ConsumeIntegralInRange<size_t>(0, 1)));
+            audio_tokens =
+                AddTokens(audio_tokens, AudioInputTokens(audio.back().Seconds()));
+          }
+          const std::string text = p->ConsumeRandomLengthString(8000);
+          Turn t = MakeTurn(role, text, images, std::move(audio));
+          CHECK(t.tokens ==
+                AddTokens(AddTokens(EstimateMessageTokens(text),
+                                    static_cast<uint32_t>(images) *
+                                        kImageInputTokens),
+                          audio_tokens));
           for (size_t k = 0; k < images; ++k) {
             t.images.push_back(TinyImage(static_cast<uint8_t>(k)));
           }
@@ -154,6 +234,7 @@ void DriveConversation(FuzzedDataProvider* p) {
     }
     CHECK(c.input_usage() == SumTokens(c));
     CHECK(c.image_count() <= kMaxContextImages);
+    CHECK(c.audio_count() <= kMaxContextAudio);
   }
 }
 
@@ -217,6 +298,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     molt_ai::web_ai::DriveConversation(&p);
   } else {
     molt_ai::web_ai::CheckPrompts(&p);
+    molt_ai::web_ai::CheckPageAudio(&p);
   }
   return 0;
 }

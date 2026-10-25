@@ -52,11 +52,13 @@ class FakeBackend : public web_ai::WebAIBackend {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), facts));
   }
-  void PrepareModel(bool wants_images, PrepareCallback callback) override {
+  void PrepareModel(bool wants_images,
+                    bool wants_audio,
+                    PrepareCallback callback) override {
     ++prepare_calls;
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), prepare_ok,
-                                  uint32_t{4096}, false));
+                                  uint32_t{4096}, false, false));
   }
   uint64_t Generate(GenerationJob job,
                     ChunkCallback on_chunk,

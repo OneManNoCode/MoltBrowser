@@ -1935,7 +1935,7 @@ TEST_F(MoltAIManagerTest, TakenBackWhileTheModelLoadsFailsCreate) {
   auto client = CreateLanguageModel();
   ASSERT_EQ(backend_.held_prepare.size(), 1u);
   env_.consent = SiteConsent::kAsk;
-  std::move(backend_.held_prepare[0]).Run(true, 8192, true);
+  std::move(backend_.held_prepare[0]).Run(true, 8192, true, false);
   RunUntilIdle();
   EXPECT_EQ(client->error, AIManagerCreateClientError::kUnableToCreateSession);
   EXPECT_FALSE(client->session.is_bound());
@@ -2126,7 +2126,7 @@ TEST_F(MoltAIManagerTurnedOffTest, TurnedOffWhileTheModelLoadsFailsCreate) {
     auto client = CreateLanguageModel();
     ASSERT_EQ(backend_.held_prepare.size(), 1u);
     Set(how, true);
-    std::move(backend_.held_prepare[0]).Run(true, 8192, true);
+    std::move(backend_.held_prepare[0]).Run(true, 8192, true, false);
     backend_.held_prepare.clear();
     RunUntilIdle();
     EXPECT_EQ(client->error,

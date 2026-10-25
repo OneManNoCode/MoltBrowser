@@ -130,6 +130,13 @@ FUZZERS = {
         max_len=4096,
         smoke_runs=100000,
     ),
+    "molt_audio_input_fuzzer": dict(
+        dir=INFERENCE,
+        sources=[f"{ENGINE}/audio_input.cc"],
+        tier="std",
+        max_len=8192,
+        smoke_runs=10000,
+    ),
     "molt_context_budget_fuzzer": dict(
         dir=INFERENCE,
         sources=[f"{ENGINE}/context_budget.cc"],
@@ -210,7 +217,9 @@ FUZZERS = {
         sources=[f"{MOLT_AI}/web_ai/web_ai_conversation.cc",
                  f"{MOLT_AI}/web_ai/web_ai_policy.cc",
                  f"{MOLT_AI}/web_ai/web_ai_prompts.cc",
+                 f"{MOLT_AI}/runtime/model_audio.cc",
                  f"{MOLT_AI}/runtime/model_image.cc",
+                 f"{ENGINE}/audio_input.cc",
                  f"{ENGINE}/image_input.cc"],
         tier="std",
         max_len=16384,

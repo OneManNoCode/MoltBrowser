@@ -91,14 +91,15 @@ void PageTranslationJob::OnExtracted(base::Value result) {
     return;
   }
   Progress();
-  backend_->PrepareModel(/*wants_images=*/false,
+  backend_->PrepareModel(/*wants_images=*/false, /*wants_audio=*/false,
                          base::BindOnce(&PageTranslationJob::OnModelPrepared,
                                         weak_factory_.GetWeakPtr()));
 }
 
 void PageTranslationJob::OnModelPrepared(bool ok,
                                          uint32_t context_tokens,
-                                         bool sees_images) {
+                                         bool sees_images,
+                                         bool hears_audio) {
   if (!ok) {
     Finish(JobEnd::kModelFailed);
     return;

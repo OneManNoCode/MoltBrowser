@@ -104,6 +104,16 @@ fuzzer_test("molt_image_input_fuzzer") {
   libfuzzer_options = [ "max_len=4096" ]
 }
 
+fuzzer_test("molt_audio_input_fuzzer") {
+  sources = [ "molt_audio_input_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:audio_input",
+  ]
+  seed_corpus = "corpus/molt_audio_input_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
 fuzzer_test("molt_context_budget_fuzzer") {
   sources = [ "molt_context_budget_fuzzer.cc" ]
   deps = [
@@ -130,6 +140,7 @@ fuzzer_test("molt_gpu_pipeline_cache_fuzzer") {
 group("fuzzers") {
   testonly = true
   deps = [
+    ":molt_audio_input_fuzzer",
     ":molt_bounded_json_fuzzer",
     ":molt_context_budget_fuzzer",
     ":molt_embedding_utils_fuzzer",
