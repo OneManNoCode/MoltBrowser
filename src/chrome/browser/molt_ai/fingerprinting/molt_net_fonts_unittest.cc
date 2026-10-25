@@ -13,7 +13,9 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/test/bind.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_fonts_table.h"
+#include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.h"
 
@@ -110,6 +112,101 @@ TEST(MoltNetFontsTest, OpensTheWholeSetOrNothing) {
   EXPECT_FALSE(OpenMoltNetFonts(base::FilePath()).has_value());
   EXPECT_FALSE(
       OpenMoltNetFonts(dir.GetPath().AppendASCII("nonexistent")).has_value());
+}
+
+TEST(MoltNetFontsTest, LoadTellsAnAbsentSetFromABrokenOne) {
+  base::ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  EXPECT_EQ(LoadMoltNetFonts(base::FilePath()).status,
+            MoltNetFontsStatus::kAbsent);
+  EXPECT_EQ(LoadMoltNetFonts(dir.GetPath().AppendASCII("molt_fonts")).status,
+            MoltNetFontsStatus::kAbsent);
+  // The folder is there: an installation with the set, damaged.
+  EXPECT_EQ(LoadMoltNetFonts(dir.GetPath()).status,
+            MoltNetFontsStatus::kBroken);
+  WriteSet(dir.GetPath());
+  MoltNetFontsLoad load = LoadMoltNetFonts(dir.GetPath());
+  EXPECT_EQ(load.status, MoltNetFontsStatus::kReady);
+  EXPECT_EQ(load.files.size(), std::size(kMoltNetFontFiles));
+}
+
+// Every MoltNet renderer expects the set unless the installation has none,
+// whenever it launches; the set follows as soon as it is open.
+class MoltNetFontsDeliveryTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    SetMoltNetFontsForTesting(std::nullopt);
+    ASSERT_TRUE(dir_.CreateUniqueTempDir());
+    WriteSet(dir_.GetPath());
+  }
+  void TearDown() override { SetMoltNetFontsForTesting(std::nullopt); }
+
+  MoltNetFontsCallback Record() {
+    return base::BindLambdaForTesting([this](std::vector<base::File> files) {
+      delivered_.push_back(files.size());
+    });
+  }
+
+  content::BrowserTaskEnvironment task_environment_;
+  base::ScopedTempDir dir_;
+  std::vector<size_t> delivered_;
+};
+
+TEST_F(MoltNetFontsDeliveryTest, RenderersLaunchedWhileOpeningGetItLater) {
+  const size_t count = std::size(kMoltNetFontFiles);
+  SetMoltNetFontsLoadingForTesting();
+  // The first MoltNet window, or one restored at startup: no timing decides
+  // its fonts.
+  EXPECT_TRUE(MoltNetRenderersExpectFonts());
+  EXPECT_FALSE(AreMoltNetFontsReady());
+  WhenMoltNetFontsReady(Record());
+  WhenMoltNetFontsReady(Record());
+  EXPECT_TRUE(delivered_.empty());
+  EXPECT_TRUE(DuplicateMoltNetFonts().empty());
+
+  FinishMoltNetFontsLoadForTesting(LoadMoltNetFonts(dir_.GetPath()));
+  EXPECT_EQ(delivered_, (std::vector<size_t>{count, count}));
+  EXPECT_TRUE(AreMoltNetFontsReady());
+  EXPECT_TRUE(MoltNetRenderersExpectFonts());
+
+  // Later renderers get it at once.
+  WhenMoltNetFontsReady(Record());
+  EXPECT_EQ(delivered_, (std::vector<size_t>{count, count, count}));
+  EXPECT_EQ(DuplicateMoltNetFonts().size(), count);
+}
+
+TEST_F(MoltNetFontsDeliveryTest, ADamagedSetIsNeverSent) {
+  SetMoltNetFontsLoadingForTesting();
+  WhenMoltNetFontsReady(Record());
+  FinishMoltNetFontsLoadForTesting(
+      MoltNetFontsLoad(MoltNetFontsStatus::kBroken, {}));
+  EXPECT_TRUE(delivered_.empty());
+  EXPECT_FALSE(AreMoltNetFontsReady());
+  // MoltNet renderers still take no font from the system.
+  EXPECT_TRUE(MoltNetRenderersExpectFonts());
+  WhenMoltNetFontsReady(Record());
+  EXPECT_TRUE(delivered_.empty());
+}
+
+TEST_F(MoltNetFontsDeliveryTest, AnInstallationWithoutTheSet) {
+  SetMoltNetFontsLoadingForTesting();
+  FinishMoltNetFontsLoadForTesting(
+      MoltNetFontsLoad(MoltNetFontsStatus::kAbsent, {}));
+  EXPECT_FALSE(MoltNetRenderersExpectFonts());
+  EXPECT_FALSE(AreMoltNetFontsReady());
+}
+
+TEST_F(MoltNetFontsDeliveryTest, OpensTheSetAfterStartup) {
+  StartLoadingMoltNetFontsAfterStartup();
+  task_environment_.RunUntilIdle();
+  // This test binary has no set next to it (or one it can't check).
+  EXPECT_EQ(MoltNetRenderersExpectFonts(),
+            base::DirectoryExists(GetMoltNetFontsDirectory()));
+  // Opened once: a later start changes nothing.
+  StartLoadingMoltNetFonts();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(MoltNetRenderersExpectFonts(),
+            base::DirectoryExists(GetMoltNetFontsDirectory()));
 }
 
 TEST(MoltNetFontsTest, Directory) {
