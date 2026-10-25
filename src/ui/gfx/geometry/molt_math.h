@@ -3,7 +3,8 @@
 //
 // MoltBrowser: the math functions of the computations a page can read back
 // (DOMMatrix, CSS math functions, transforms and their interpolation, canvas
-// transforms, Web Audio, ...), with one process-wide choice of library.
+// transforms, Web Audio and the resampler of decodeAudioData(), ...), with one
+// process-wide choice of library.
 //
 // By default each function is the C library's (std::sin and so on), exactly
 // what the call sites called before. In a process that called
