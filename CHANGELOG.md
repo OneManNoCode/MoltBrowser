@@ -261,6 +261,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (MoltNet windows run no installed extensions), and on Windows reads
   parental controls again each time a MoltNet window opens
   (`docs/MOLTNET_COMPLIANCE.md`).
+- **One click, one approval.** The agent's "Allow" in the AI chat, running
+  a confirmed chat proposal, saving an agent run, and changing a
+  workflow's trust or confirming its sites each use up the click that
+  allowed them, so one click can never approve two things; the font
+  manifest's checks match whole values (security review of PRs #67-#69,
+  `docs/SECURITY_REVIEWS.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
