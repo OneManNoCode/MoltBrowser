@@ -23,6 +23,7 @@ MoltNetProfileSettings MoltNetsOwnSettings() {
   settings.leak_controls_in_place = true;
   settings.blob_urls_partitioned = true;
   settings.incognito = MoltNetProfileSettings::Incognito::kStandard;
+  settings.extensions_required_in_incognito = false;
   return settings;
 }
 
@@ -146,14 +147,44 @@ TEST(MoltNetLivePolicyTest, IncognitoOffRefuses) {
             MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode);
 }
 
+// Extensions an administrator requires in Incognito can't run in MoltNet
+// windows: MoltNet doesn't open while any is required.
+TEST(MoltNetLivePolicyTest, ExtensionsRequiredInIncognitoRefuse) {
+  MoltNetProfileSettings settings = MoltNetsOwnSettings();
+  settings.extensions_required_in_incognito = true;
+  EXPECT_EQ(CheckMoltNetSettings(settings),
+            MoltNetSettingsCheck::kIncognitoRequiresExtensions);
+  // Incognito off is named first: MoltNet wouldn't open either way.
+  settings.incognito = MoltNetProfileSettings::Incognito::kOff;
+  EXPECT_EQ(CheckMoltNetSettings(settings),
+            MoltNetSettingsCheck::kIncognitoOff);
+  settings.incognito =
+      MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode;
+  EXPECT_EQ(CheckMoltNetSettings(settings),
+            MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode);
+  // Nobody filled it in: refused.
+  EXPECT_TRUE(MoltNetProfileSettings().extensions_required_in_incognito);
+  const std::string error =
+      MoltNetSettingsError(MoltNetSettingsCheck::kIncognitoRequiresExtensions);
+  EXPECT_NE(error.find("MandatoryExtensionsForIncognitoNavigation"),
+            std::string::npos);
+}
+
 TEST(MoltNetLivePolicyTest, IncognitoCheckAlone) {
-  // Before Tor starts, only Incognito's availability is known.
-  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kStandard),
+  // Before Tor starts, only Incognito's availability, and the extensions it
+  // requires, are known.
+  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kStandard,
+                                  false),
             MoltNetSettingsCheck::kOk);
-  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kOff),
+  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kStandard,
+                                  true),
+            MoltNetSettingsCheck::kIncognitoRequiresExtensions);
+  EXPECT_EQ(CheckMoltNetIncognito(MoltNetProfileSettings::Incognito::kOff,
+                                  false),
             MoltNetSettingsCheck::kIncognitoOff);
   EXPECT_EQ(CheckMoltNetIncognito(
-                MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode),
+                MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode,
+                false),
             MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode);
   // Nobody filled it in: refused.
   EXPECT_EQ(MoltNetProfileSettings().incognito,
@@ -210,7 +241,8 @@ TEST(MoltNetLivePolicyTest, EveryRefusalHasAMessage) {
         MoltNetSettingsCheck::kLeakControlsOverridden,
         MoltNetSettingsCheck::kBlobUrlsUnpartitioned,
         MoltNetSettingsCheck::kIncognitoOff,
-        MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode}) {
+        MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode,
+        MoltNetSettingsCheck::kIncognitoRequiresExtensions}) {
     const std::string error = MoltNetSettingsError(check);
     EXPECT_FALSE(error.empty());
     // Shown in a dialog: one sentence, plain text.

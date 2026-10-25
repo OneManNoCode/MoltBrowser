@@ -276,6 +276,10 @@ source_set("tor") {
     "//content/public/common",
     # Random SAFECOOKIE client nonces (crypto/random.h).
     "//crypto",
+
+    # ENABLE_EXTENSIONS_CORE: whether the build has the
+    # MandatoryExtensionsForIncognitoNavigation policy.
+    "//extensions/buildflags",
     "//mojo/public/cpp/bindings",
     "//net",
 

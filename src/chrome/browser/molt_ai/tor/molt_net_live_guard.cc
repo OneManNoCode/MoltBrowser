@@ -24,6 +24,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#include "extensions/buildflags/buildflags.h"
 
 namespace molt_ai::tor {
 
@@ -51,6 +52,11 @@ const char* const kWatchedPrefs[] = {
     // and an account becoming supervised). Parental controls and Isolated
     // Mode are read once per browser run, as Chromium reads them.
     policy::policy_prefs::kIncognitoModeAvailability,
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+    // Extensions required in Incognito
+    // (MandatoryExtensionsForIncognitoNavigation).
+    prefs::kMandatoryExtensionsForIncognitoNavigation,
+#endif
 };
 
 class Guard : public ProfileObserver {

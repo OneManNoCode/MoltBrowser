@@ -41,6 +41,7 @@
 #include "components/proxy_config/proxy_prefs.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/buildflags/buildflags.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "net/base/features.h"
 #include "net/base/net_errors.h"
@@ -262,6 +263,20 @@ MoltNetProfileSettings::Incognito ReadIncognito(const Profile* original) {
   return MoltNetProfileSettings::Incognito::kOff;
 }
 
+// Whether an administrator requires extensions in Incognito for
+// |original| (MandatoryExtensionsForIncognitoNavigation, a policy-only
+// list; molt_net_live_policy.h). Without extensions in the build there is
+// no such policy.
+bool ReadExtensionsRequiredInIncognito(const Profile* original) {
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+  return !original->GetPrefs()
+              ->GetList(prefs::kMandatoryExtensionsForIncognitoNavigation)
+              .empty();
+#else
+  return false;
+#endif
+}
+
 // What the settings check reads (molt_net_live_policy.h). With
 // |socks_port|, MoltNet's proxy must also point at that port.
 MoltNetProfileSettings ReadMoltNetSettings(
@@ -276,6 +291,8 @@ MoltNetProfileSettings ReadMoltNetSettings(
   settings.leak_controls_in_place = LeakPrefsInPlace(prefs);
   settings.blob_urls_partitioned = BlobUrlsPartitioned(prefs);
   settings.incognito = ReadIncognito(moltnet_profile->GetOriginalProfile());
+  settings.extensions_required_in_incognito =
+      ReadExtensionsRequiredInIncognito(moltnet_profile->GetOriginalProfile());
   return settings;
 }
 
@@ -540,7 +557,9 @@ std::string MoltNetRouting::IncognitoPolicyError(Profile* profile) {
     return "No profile";
   }
   return MoltNetSettingsError(
-      CheckMoltNetIncognito(ReadIncognito(profile->GetOriginalProfile())));
+      CheckMoltNetIncognito(
+          ReadIncognito(profile->GetOriginalProfile()),
+          ReadExtensionsRequiredInIncognito(profile->GetOriginalProfile())));
 }
 
 // static

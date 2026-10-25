@@ -61,6 +61,14 @@
 // controls and Isolated Mode are read once per browser run, as Chromium
 // reads them.
 //
+// An administrator can also require extensions in Incognito
+// (MandatoryExtensionsForIncognitoNavigation: Chromium blocks every
+// Incognito navigation while one of them isn't installed and allowed in
+// Incognito). MoltNet windows run no extension but MoltBrowser's own
+// component ones, so a required extension can never run there: while the
+// policy lists any extension, MoltNet doesn't open, and an open MoltNet
+// ends when it starts to (the live guard watches it too).
+//
 // Header-only and std-only, so molt_ai_unittests tests it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_LIVE_POLICY_H_
@@ -159,6 +167,9 @@ struct MoltNetProfileSettings {
     kReplacedByIsolatedMode,
   };
   Incognito incognito = Incognito::kOff;
+  // The MandatoryExtensionsForIncognitoNavigation policy lists an
+  // extension (see the top of this file).
+  bool extensions_required_in_incognito = true;
 };
 
 enum class MoltNetSettingsCheck {
@@ -175,6 +186,8 @@ enum class MoltNetSettingsCheck {
   kIncognitoOff,
   // Incognito is replaced by Enterprise Isolated Mode.
   kIncognitoReplacedByIsolatedMode,
+  // Incognito requires extensions, which MoltNet windows don't run.
+  kIncognitoRequiresExtensions,
 };
 
 constexpr MoltNetSettingsCheck CheckMoltNetSettings(
@@ -191,7 +204,9 @@ constexpr MoltNetSettingsCheck CheckMoltNetSettings(
   }
   switch (settings.incognito) {
     case MoltNetProfileSettings::Incognito::kStandard:
-      return MoltNetSettingsCheck::kOk;
+      return settings.extensions_required_in_incognito
+                 ? MoltNetSettingsCheck::kIncognitoRequiresExtensions
+                 : MoltNetSettingsCheck::kOk;
     case MoltNetProfileSettings::Incognito::kReplacedByIsolatedMode:
       return MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode;
     case MoltNetProfileSettings::Incognito::kOff:
@@ -200,10 +215,12 @@ constexpr MoltNetSettingsCheck CheckMoltNetSettings(
   return MoltNetSettingsCheck::kIncognitoOff;
 }
 
-// Whether Incognito's availability lets MoltNet open; for the check before
-// Tor starts, which needs only this (MoltNetRouting::IncognitoPolicyError()).
+// Whether Incognito's availability, and the extensions it requires, let
+// MoltNet open; for the check before Tor starts, which needs only this
+// (MoltNetRouting::IncognitoPolicyError()).
 constexpr MoltNetSettingsCheck CheckMoltNetIncognito(
-    MoltNetProfileSettings::Incognito incognito) {
+    MoltNetProfileSettings::Incognito incognito,
+    bool extensions_required_in_incognito) {
   MoltNetProfileSettings settings;
   settings.proxy = {.proxy_is_default = false,
                     .proxy_is_user_controlled = true,
@@ -212,6 +229,7 @@ constexpr MoltNetSettingsCheck CheckMoltNetIncognito(
   settings.leak_controls_in_place = true;
   settings.blob_urls_partitioned = true;
   settings.incognito = incognito;
+  settings.extensions_required_in_incognito = extensions_required_in_incognito;
   return CheckMoltNetSettings(settings);
 }
 
@@ -238,6 +256,10 @@ inline std::string MoltNetSettingsError(MoltNetSettingsCheck check) {
     case MoltNetSettingsCheck::kIncognitoReplacedByIsolatedMode:
       return "Your administrator replaced Incognito with Isolated Mode, and "
              "MoltNet windows follow it";
+    case MoltNetSettingsCheck::kIncognitoRequiresExtensions:
+      return "Incognito requires extensions "
+             "(MandatoryExtensionsForIncognitoNavigation), and MoltNet "
+             "windows run none";
   }
   return "MoltNet can't check its settings";
 }

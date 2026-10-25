@@ -5,6 +5,7 @@
 #include "chrome/browser/enterprise/data_controls/chrome_clipboard_context.h"
 
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_info.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/enterprise/data_controls/core/browser/prefs.h"
 #include "components/policy/core/common/policy_types.h"
@@ -86,8 +87,10 @@ ChromeClipboardContext::GetClipboardSource(
     } else {
       copied_text_source.set_context(SourceType::CLIPBOARD);
     }
-  } else if (Profile::FromBrowserContext(source.browser_context())
-                 ->IsIncognitoProfile()) {
+  } else if (molt_ai::tor::GetsIncognitoProtections(
+                 Profile::FromBrowserContext(source.browser_context()))) {
+    // MoltBrowser: text copied in a MoltNet window counts as Incognito's
+    // (molt_net_incognito_parity.h).
     copied_text_source.set_context(SourceType::INCOGNITO);
   } else {
     copied_text_source.set_context(SourceType::CLIPBOARD);
@@ -136,8 +139,9 @@ ChromeClipboardContext::GetClipboardSource(
     } else {
       copied_text_source.set_context(SourceType::CLIPBOARD);
     }
-  } else if (Profile::FromBrowserContext(source.browser_context.get())
-                 ->IsIncognitoProfile()) {
+  } else if (molt_ai::tor::GetsIncognitoProtections(
+                 Profile::FromBrowserContext(source.browser_context.get()))) {
+    // MoltBrowser: as above, so it carries no URL of the MoltNet page.
     copied_text_source.set_context(SourceType::INCOGNITO);
   } else if (source.browser_context.get() == destination.browser_context()) {
     copied_text_source.set_context(SourceType::SAME_PROFILE);

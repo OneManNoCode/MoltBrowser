@@ -10,6 +10,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "chrome/browser/enterprise/data_protection/data_protection_clipboard_utils.h"
 #include "chrome/browser/glic/host/guest_util.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
 
@@ -56,7 +57,9 @@ Verdict ChromeRulesService::GetPasteVerdict(
 }
 
 bool ChromeRulesService::incognito_profile() const {
-  return profile_->IsIncognitoProfile();
+  // MoltBrowser: a rule's "incognito" condition covers MoltNet windows
+  // (molt_net_incognito_parity.h).
+  return molt_ai::tor::GetsIncognitoProtections(profile_);
 }
 
 ActionSource ChromeRulesService::GetAsActionSource(
@@ -92,8 +95,9 @@ ActionSourceOrDestination ChromeRulesService::ExtractPasteActionContext(
     action.url = *endpoint.data_transfer_endpoint()->GetURL();
   }
   if (endpoint.browser_context()) {
-    action.incognito = Profile::FromBrowserContext(endpoint.browser_context())
-                           ->IsIncognitoProfile();
+    // MoltBrowser: also for MoltNet (molt_net_incognito_parity.h).
+    action.incognito = molt_ai::tor::GetsIncognitoProtections(
+        Profile::FromBrowserContext(endpoint.browser_context()));
     action.other_profile = endpoint.browser_context() != profile_;
   }
   if (endpoint.web_contents() && (glic::IsGlicGuest(endpoint.web_contents()) ||
@@ -114,8 +118,9 @@ ActionSource ChromeRulesService::ExtractPasteActionContextSource(
     action.url = *source.data_transfer_endpoint->GetURL();
   }
   if (source.browser_context) {
-    action.incognito = Profile::FromBrowserContext(source.browser_context.get())
-                           ->IsIncognitoProfile();
+    // MoltBrowser: also for MoltNet (molt_net_incognito_parity.h).
+    action.incognito = molt_ai::tor::GetsIncognitoProtections(
+        Profile::FromBrowserContext(source.browser_context.get()));
     action.other_profile = source.browser_context.get() != profile_;
   }
   if (source.gemini_in_chrome) {
