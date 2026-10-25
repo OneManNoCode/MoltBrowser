@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -163,9 +164,14 @@ void Delay::ProcessARate(base::span<const float> source,
   CopyToCircularBuffer(buffer_.as_span(), write_index_, source,
                        frames_to_process);
 
-  size_t frames_processed;
-  std::tie(frames_processed, write_index_) =
-      ProcessARateVector(destination, frames_to_process);
+  size_t frames_processed = 0;
+  // MoltBrowser: in MoltNet renderers (gfx::molt_math's switch), only the
+  // scalar code, which is the same on x86 and Arm; the SSE2 and NEON code
+  // computes the read positions in single precision.
+  if (!gfx::molt_math::IsPortable()) {
+    std::tie(frames_processed, write_index_) =
+        ProcessARateVector(destination, frames_to_process);
+  }
 
   if (frames_processed < frames_to_process) {
     write_index_ = ProcessARateScalar(frames_processed, write_index_,
