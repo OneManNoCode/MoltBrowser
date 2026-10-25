@@ -58,12 +58,28 @@ void PinNewModules(void* context) {
   }
 }
 
+// Vulkan layers stay out of the process: overlays and capture tools that
+// register implicit layers, and layers named through the environment. Only
+// the loader and the drivers are loaded (and pinned) here, and the
+// backend's own instance later sees the same environment. Loaders before
+// 1.3.234 ignore VK_LOADER_LAYERS_DISABLE.
+void KeepVulkanLayersOut() {
+  for (const wchar_t* name :
+       {L"VK_INSTANCE_LAYERS", L"VK_LOADER_LAYERS_ENABLE", L"VK_LAYER_PATH",
+        L"VK_ADD_LAYER_PATH", L"VK_IMPLICIT_LAYER_PATH",
+        L"VK_ADD_IMPLICIT_LAYER_PATH"}) {
+    ::SetEnvironmentVariableW(name, nullptr);
+  }
+  ::SetEnvironmentVariableW(L"VK_LOADER_LAYERS_DISABLE", L"~all~");
+}
+
 }  // namespace
 
 void MaybeWarmMoltGpuInferenceDrivers(const base::CommandLine& command_line) {
   if (!command_line.HasSwitch(kMoltInferenceGpuSwitch)) {
     return;
   }
+  KeepVulkanLayersOut();
   PinState state;
   state.before = LoadedModules();
 
