@@ -4,12 +4,16 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_fonts.h"
 
 #include <array>
+#include <atomic>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/test/bind.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/file_path_conversion.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/fonts.h"
@@ -19,8 +23,12 @@
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
+#include "third_party/blink/renderer/platform/scheduler/public/non_main_thread.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkFont.h"
 #include "third_party/skia/include/core/SkString.h"
@@ -166,6 +174,81 @@ TEST_F(MoltNetFontsTest, NothingFromTheSystemBeforeTheFiles) {
       description_, AtomicString(set_.family().c_str()));
   ASSERT_TRUE(font_data);
   EXPECT_EQ(FamilyOf(font_data), set_.family());
+}
+
+// On a worker thread: whether `family` is found in the worker's font cache.
+void LookUpOnWorker(const std::string* family,
+                    bool* found,
+                    base::WaitableEvent* done) {
+  FontDescription description;
+  description.SetComputedSize(16);
+  description.SetSpecifiedSize(16);
+  *found = FontCache::Get().GetFontData(description,
+                                        AtomicString(family->c_str())) !=
+           nullptr;
+  done->Signal();
+}
+
+TEST_F(MoltNetFontsTest, WorkersLookAgainWhenTheFilesArrive) {
+  ExpectBundledFonts();
+  std::unique_ptr<NonMainThread> worker = NonMainThread::CreateThread(
+      ThreadCreationParams(ThreadType::kTestThread).SetSupportsGC(true));
+  // A worker (OffscreenCanvas text, say) looks a font up before the files
+  // come, in its own font cache: nothing.
+  const std::string family = set_.family();
+  bool found = true;
+  base::WaitableEvent looked_up;
+  PostCrossThreadTask(
+      *worker->GetTaskRunner(), FROM_HERE,
+      CrossThreadBindOnce(&LookUpOnWorker, CrossThreadUnretained(&family),
+                          CrossThreadUnretained(&found),
+                          CrossThreadUnretained(&looked_up)));
+  looked_up.Wait();
+  EXPECT_FALSE(found);
+
+  // The files come (main thread): the worker's font cache is invalidated on
+  // the worker; the main thread made no lookup and is left alone.
+  base::WaitableEvent invalidated;
+  std::atomic<int> on_worker{0};
+  std::atomic<int> on_main{0};
+  SetFontsInvalidatedForTesting(base::BindLambdaForTesting([&] {
+    if (IsMainThread()) {
+      ++on_main;
+    } else {
+      ++on_worker;
+      invalidated.Signal();
+    }
+  }));
+  ASSERT_TRUE(SetBundledFontFiles(Files()));
+  invalidated.Wait();
+  EXPECT_EQ(on_worker.load(), 1);
+  EXPECT_EQ(on_main.load(), 0);
+
+  // The worker now finds the set's fonts.
+  base::WaitableEvent looked_up_again;
+  PostCrossThreadTask(
+      *worker->GetTaskRunner(), FROM_HERE,
+      CrossThreadBindOnce(&LookUpOnWorker, CrossThreadUnretained(&family),
+                          CrossThreadUnretained(&found),
+                          CrossThreadUnretained(&looked_up_again)));
+  looked_up_again.Wait();
+  EXPECT_TRUE(found);
+  SetFontsInvalidatedForTesting(base::RepeatingClosure());
+  worker.reset();
+}
+
+TEST_F(MoltNetFontsTest, TheMainThreadLooksAgainWhenTheFilesArrive) {
+  ExpectBundledFonts();
+  EXPECT_EQ(FontCache::Get().GetFontData(description_,
+                                         AtomicString(set_.family().c_str())),
+            nullptr);
+  int invalidations = 0;
+  SetFontsInvalidatedForTesting(
+      base::BindLambdaForTesting([&] { ++invalidations; }));
+  ASSERT_TRUE(SetBundledFontFiles(Files()));
+  // At once, on this thread.
+  EXPECT_EQ(invalidations, 1);
+  SetFontsInvalidatedForTesting(base::RepeatingClosure());
 }
 
 TEST_F(MoltNetFontsTest, RefusesFilesThatDontMatchTheTable) {

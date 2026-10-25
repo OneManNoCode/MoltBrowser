@@ -10,11 +10,14 @@
 // --molt-net-fonts on its command line) calls ExpectBundledFonts() at start:
 // from then on every font of the process comes from the set, on every OS:
 // family lookups, local() faces, per-character fallback and the last-resort
-// font (font_platform_data.h lists the hooks). The files arrive right after
-// launch, over the channel, as read-only handles (SetBundledFontFiles()):
-// the renderer never opens a font file itself, on any OS. Until they do (in
-// practice: never, as they come before any navigation), lookups find
-// nothing and text is drawn with an empty font, never a system one.
+// font (font_platform_data.h lists the hooks). The files arrive over the
+// channel as read-only handles (SetBundledFontFiles()): right after launch,
+// or, for a renderer launched while the browser was still opening them, as
+// soon as it has. The renderer never opens a font file itself, on any OS.
+// Until they arrive, lookups find nothing and text is drawn with an empty
+// font, never a system one; when they do, every thread that looked a font up
+// (the main thread and workers) has its font cache invalidated, on that
+// thread, so its documents and canvases look their fonts up again.
 //
 // Typefaces are made by Skia's Fontations backend from the mapped files, on
 // every OS (no CoreText, DirectWrite or fontconfig), so the same files are
@@ -29,6 +32,7 @@
 
 #include "base/containers/span.h"
 #include "base/files/file.h"
+#include "base/functional/callback.h"
 #include "third_party/blink/renderer/core/core_export.h"
 
 namespace blink::molt_fingerprinting {
@@ -48,9 +52,13 @@ CORE_EXPORT bool BundledFontsActive();
 
 // The set's files, in the order of the generated table (the browser sends
 // them so). Main thread. Accepted once, and only if every file has its
-// table's size and is a font; then fonts are looked up again. Returns
-// whether they were accepted.
+// table's size and is a font; then fonts are looked up again, on every
+// thread that looked one up before. Returns whether they were accepted.
 CORE_EXPORT bool SetBundledFontFiles(std::vector<base::File> files);
+
+// Tests: runs `callback` on each thread after it invalidated its font cache
+// because the files came (a null callback: nothing).
+CORE_EXPORT void SetFontsInvalidatedForTesting(base::RepeatingClosure callback);
 
 // queryLocalFonts() in MoltNet: the set's faces, the same on every OS.
 struct BundledFontFaceInfo {

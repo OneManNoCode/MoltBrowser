@@ -16,9 +16,14 @@
 #include <vector>
 
 #include "base/files/memory_mapped_file.h"
+#include "base/functional/bind.h"
+#include "base/functional/callback.h"
+#include "base/location.h"
 #include "base/logging.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/no_destructor.h"
 #include "base/synchronization/lock.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/thread_annotations.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/fonts.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.h"
@@ -26,6 +31,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_fallback_priority.h"
+#include "third_party/blink/renderer/platform/fonts/font_global_context.h"
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 #include "third_party/blink/renderer/platform/fonts/font_selection_types.h"
 #include "third_party/blink/renderer/platform/text/layout_locale.h"
@@ -64,6 +70,39 @@ static_assert(USCRIPT_COMMON == 0 && USCRIPT_INHERITED == 1 &&
 // weight of a variable family only makes the cache start over (fonts in use
 // keep their typeface).
 constexpr size_t kMaxTypefaces = 256;
+
+// Threads (the main thread, workers) whose font caches were used before the
+// files came, to be invalidated when they come. Bounded far above the
+// threads a renderer runs.
+using WaitingThreads = std::vector<scoped_refptr<base::SingleThreadTaskRunner>>;
+constexpr size_t kMaxWaitingThreads = 1024;
+
+base::Lock& TestingHookLock() {
+  static base::NoDestructor<base::Lock> lock;
+  return *lock;
+}
+
+base::RepeatingClosure& FontsInvalidatedForTesting() {
+  static base::NoDestructor<base::RepeatingClosure> callback;
+  return *callback;
+}
+
+// Runs on each thread that looked fonts up before the files came: its font
+// cache (and through its clients, the font selectors of its documents or
+// worker) looks again.
+void InvalidateThisThreadsFonts() {
+  if (FontGlobalContext::TryGet()) {
+    FontCache::Get().Invalidate();
+  }
+  base::RepeatingClosure hook;
+  {
+    base::AutoLock lock(TestingHookLock());
+    hook = FontsInvalidatedForTesting();
+  }
+  if (hook) {
+    hook.Run();
+  }
+}
 
 FontName ToFontName(const AtomicString& name) {
   if (name.empty()) {
@@ -105,7 +144,9 @@ class BundledFonts final : public FontPlatformData::UniformFontSet {
     table_.store(&table, std::memory_order_release);
   }
 
-  bool SetFiles(std::vector<base::File> files) {
+  // Accepts the files; `waiting` gets the threads that looked fonts up
+  // before they came (their font caches hold what they found: nothing).
+  bool SetFiles(std::vector<base::File> files, WaitingThreads* waiting) {
     const BundledFontTable& table = rules().table();
     if (ready_.load(std::memory_order_acquire)) {
       return false;
@@ -130,17 +171,15 @@ class BundledFonts final : public FontPlatformData::UniformFontSet {
       data.push_back(SkData::MakeWithoutCopy(file->data(), file->length()));
       mapped.push_back(std::move(file));
     }
-    {
-      base::AutoLock lock(lock_);
-      files_ = std::move(mapped);
-      data_ = std::move(data);
-    }
+    // Under the lock, so that every lookup that found nothing has recorded
+    // its thread before the list is taken.
+    base::AutoLock lock(lock_);
+    files_ = std::move(mapped);
+    data_ = std::move(data);
     ready_.store(true, std::memory_order_release);
+    waiting->swap(waiting_threads_);
+    waiting_threads_.clear();
     return true;
-  }
-
-  bool used_before_ready() const {
-    return used_before_ready_.load(std::memory_order_acquire);
   }
 
   void ResetForTesting() {
@@ -148,8 +187,8 @@ class BundledFonts final : public FontPlatformData::UniformFontSet {
     typefaces_.clear();
     data_.clear();
     files_.clear();
+    waiting_threads_.clear();
     ready_.store(false, std::memory_order_release);
-    used_before_ready_.store(false, std::memory_order_release);
   }
 
   // FontPlatformData::UniformFontSet:
@@ -292,16 +331,18 @@ class BundledFonts final : public FontPlatformData::UniformFontSet {
   }
 
   sk_sp<SkTypeface> Typeface(uint8_t face_index, uint16_t weight) const {
-    if (!ready_.load(std::memory_order_acquire)) {
-      used_before_ready_.store(true, std::memory_order_release);
-      return nullptr;
-    }
     const BundledFontTable& table = rules().table();
     const BundledFontFace& face = table.faces[face_index];
     if (!face.variable_weight) {
       weight = face.default_weight;
     }
     base::AutoLock lock(lock_);
+    if (!ready_.load(std::memory_order_acquire)) {
+      // Nothing yet: this thread's font caches must look again once the
+      // files come (a worker's as well as the main thread's).
+      RememberThisThreadLocked();
+      return nullptr;
+    }
     for (const CachedTypeface& cached : typefaces_) {
       if (cached.face == face_index && cached.weight == weight) {
         return cached.typeface;
@@ -337,15 +378,31 @@ class BundledFonts final : public FontPlatformData::UniformFontSet {
     return typeface;
   }
 
+  void RememberThisThreadLocked() const EXCLUSIVE_LOCKS_REQUIRED(lock_) {
+    if (!base::SingleThreadTaskRunner::HasCurrentDefault()) {
+      return;
+    }
+    for (const auto& runner : waiting_threads_) {
+      if (runner->RunsTasksInCurrentSequence()) {
+        return;
+      }
+    }
+    if (waiting_threads_.size() < kMaxWaitingThreads) {
+      waiting_threads_.push_back(
+          base::SingleThreadTaskRunner::GetCurrentDefault());
+    }
+  }
+
   // The generated table (another one in tests only).
   std::atomic<const BundledFontTable*> table_;
   mutable base::Lock lock_;
-  // Written once, before ready_.
+  // Written once, with ready_.
   std::vector<std::unique_ptr<base::MemoryMappedFile>> files_ GUARDED_BY(lock_);
   std::vector<sk_sp<SkData>> data_ GUARDED_BY(lock_);
   mutable std::vector<CachedTypeface> typefaces_ GUARDED_BY(lock_);
+  // Threads that looked a font up before the files came.
+  mutable WaitingThreads waiting_threads_ GUARDED_BY(lock_);
   std::atomic<bool> ready_{false};
-  mutable std::atomic<bool> used_before_ready_{false};
 };
 
 BundledFonts& Fonts() {
@@ -373,15 +430,26 @@ bool SetBundledFontFiles(std::vector<base::File> files) {
     return false;
   }
   BundledFonts& fonts = Fonts();
-  if (!fonts.SetFiles(std::move(files))) {
+  WaitingThreads waiting;
+  if (!fonts.SetFiles(std::move(files), &waiting)) {
     return false;
   }
-  if (fonts.used_before_ready()) {
-    // Lookups made before the files came found nothing (or the empty
-    // last-resort font); make the main thread's documents look again.
-    FontCache::Get().Invalidate();
+  // Lookups made before the files came found nothing (and text used the
+  // empty last-resort font): every thread that made one looks again, this
+  // one now, workers in their next task. A thread that has ended is skipped.
+  for (const scoped_refptr<base::SingleThreadTaskRunner>& runner : waiting) {
+    if (runner->RunsTasksInCurrentSequence()) {
+      InvalidateThisThreadsFonts();
+    } else {
+      runner->PostTask(FROM_HERE, base::BindOnce(&InvalidateThisThreadsFonts));
+    }
   }
   return true;
+}
+
+void SetFontsInvalidatedForTesting(base::RepeatingClosure callback) {
+  base::AutoLock lock(TestingHookLock());
+  FontsInvalidatedForTesting() = std::move(callback);
 }
 
 std::vector<BundledFontFaceInfo> BundledFontFaces() {
