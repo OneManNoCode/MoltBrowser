@@ -2698,8 +2698,10 @@ Shields off, and the kill switch turns it off.
   any blocked, `NotAllowedError` (`PERMISSION_DENIED`); dismissed or
   ignored, `NotAllowedError` (`PERMISSION_DISMISSED`), as a request a
   device could meet ends. Before an answer, the two machines look the
-  same: a prompt, and a promise that waits for it. Screen capture and
-  other failures are unchanged.
+  same: a prompt, and a promise that waits for it. Other failures are
+  unchanged; screen, window and tab capture are refused outright in
+  MoltNet ([what a page reads back without
+  noise](#what-a-page-reads-back-without-noise)).
 * **`devicechange`** fires only for a page that may use the devices
   (Chromium's own rule behind `DeviceChangeRequiresPermission`, kept in
   MoltNet whatever the feature's state), so plugging in headphones or a
@@ -3368,6 +3370,9 @@ In MoltNet windows all of it is computed one way:
 | Web Audio: `BiquadFilterNode` and `IIRFilterNode` `getFrequencyResponse()`, `AnalyserNode` data, oscillators and `PeriodicWave`, panners (HRTF included), `DynamicsCompressorNode` and its `reduction`, `ConvolverNode`, `DelayNode`, `AudioParam` automation, and the resampling `decodeAudioData()` does | the C library's functions; vector math in AVX, SSE, NEON or Accelerate code; FFTs with rustfft's AVX + FMA, SSE4.1 or NEON code; SSE2 and NEON loops in the oscillator, delay and `AudioParam` code; Accelerate's biquad on macOS | **the portable functions and Web Audio's scalar code**: plain loops in a fixed order and rustfft's scalar FFT, the same samples on every CPU and OS (farbled where a page reads samples, as before) |
 | WebRTC `audioLevel` (`getSynchronizationSources()`, `getContributingSources()`, encoded audio frames' metadata) | the C library's `pow` and `log10` | the portable functions |
 | Pixels drawn with alpha over other pixels on the CPU (Skia's `blit_row_s32a_opaque`) | x86-64's arithmetic, or NEON's, which rounds differently | **x86-64's arithmetic on Arm too** |
+| Geometry a page reads without pixels: `isPointInPath()` and `isPointInStroke()` on arcs, ellipses, curves, joins, caps and dashes; `elementFromPoint()` and the other hit tests over `clip-path` shapes, SVG shapes and `corner-shape` corners; SVG shapes' `getTotalLength()` and `getPointAtLength()`; `offset-path` positions on basic shapes and `shape()`; `IntersectionObserver` with `clip-path`; the lines text wraps around `shape-outside` (and `shape-margin`); CSS `contrast-color()` and the contrast checks of `<geolocation>` and `<usermedia>` | the C library's functions in Blink (rounded polygons, circle radii, superellipse corners, shape margins), `ui/gfx` (relative luminance) and Skia (its arcs, its stroker's cube roots, path operations) | **the portable functions**, Skia's through a switch of its own (`SkMoltBrowserMath`) |
+| Pixels the renderer draws on the CPU and a page reads without noise: `shape-outside` images, gradients and paths (see [below](#what-a-page-reads-back-without-noise)) | the C library's functions in blur kernels, gradient colour hints and Lab, OKLab, LCH and OKLCH interpolation, SVG filters' gamma tables, hue rotations and lights, path clipping, gain-map and HDR (PQ, HLG) images | **the portable functions** |
+| Web fonts' glyphs (Fontations): COLRv1 rotations and skews, variable composites (`VARC`), composite glyphs' scaled offsets | the C library's, through Rust's standard library | **the `libm` crate's** (portable Rust ports of musl's functions) |
 
 ### What MoltNet does
 
@@ -3415,6 +3420,76 @@ In MoltNet windows all of it is computed one way:
   installs a `blit_row_s32a_opaque` with x86-64's arithmetic (the
   destination times 256 minus the source's alpha, shifted right by 8, a
   saturating add), written with Skia's portable vectors.
+* **Skia's math.** Skia can't depend on `ui/gfx`, so it has a switch of
+  its own: `SkMoltBrowserMath` (`include/private/SkMoltBrowserMath.h`),
+  the C library's functions by default and the portable library's after
+  `SkGraphics::MoltBrowserUsePortableMath()`, which
+  `PinUniformMachineBeforeV8()` calls with the others. `SkScalar.h`'s
+  `SkScalarSin()`, `SkScalarCos()`, `SkScalarTan()`, `SkScalarASin()`,
+  `SkScalarACos()`, `SkScalarATan2()`, `SkScalarExp()`, `SkScalarLog()`,
+  `SkScalarLog2()` and `SkScalarPow()` go through it, and so does every
+  call of the C library whose result reaches a page: arcs (`arc()`,
+  `ellipse()`, `arcTo()`, rotations), the stroker's maximum-curvature
+  roots, `SkCubics` and path operations' cube roots, small blurs'
+  Gaussian kernels (`SkBlurEngine`, `SkGaussFilter`), gradients'
+  conversions to Lab and OKLab, gain-map metadata (ISO 21496-1, XMP,
+  Apple's maker note) and its shader, HDR tone mapping (`SkHdrAgtm`),
+  lighting, mipmap levels and text gamma. The same values as the C library
+  in normal windows, bit for bit; one out-of-line call per function.
+* **Web fonts.** Skia renders web fonts (and MoltNet's bundled set) with
+  Fontations, whose Rust crates compute COLRv1 rotations and skews,
+  variable composites' rotations and skews and composite glyphs' scaled
+  offsets with Rust's `sin`, `cos`, `tan` and `hypot`, the platform's C
+  library. They now go through `read_fonts::moltbrowser_math`: those by
+  default, the `libm` crate's (Rust ports of musl's functions: plain
+  arithmetic, the same on every CPU and OS) once set portable. Skia's
+  Fontations bridge sets it from `SkMoltBrowserMath` when it creates a
+  typeface. (The bundled Noto Color Emoji has no rotated or skewed
+  paints; web fonts can.)
+* **One more function.** `gfx::molt_math::Tanh(double)`, for the
+  superellipse corner's curve fit: llvm-libc has no double `tanh`, so the
+  portable one is Chromium's `third_party/fdlibm`, the code V8's
+  `Math.tanh` runs, the same on every CPU and OS.
+
+### What a page reads back without noise
+
+A page can read the pixels the browser draws only through APIs that
+farble them, always in MoltNet ([Surface covered](#surface-covered)):
+`getImageData()`, `toDataURL()`, `toBlob()` and `convertToBlob()`, WebGL's
+`readPixels()`, `VideoFrame`s made from a canvas, an `ImageBitmap`, an
+`<img>` or an SVG image, `captureStream()` frames and WebGPU's
+`copyExternalImageToTexture()`. Images a page draws into a canvas, and
+everything a canvas, WebGL or SVG image draws, reach it that way.
+
+One path carries pixels into what a page measures without noise:
+`shape-outside`. For an image (`url()`, an SVG image included), a
+gradient, `path()` or `shape()`, the renderer draws the float's shape on
+the CPU, compares its alpha with `shape-image-threshold`, and lays the text
+out around what is left; `getBoundingClientRect()` reads where the lines
+start. An SVG image can turn any colour into alpha
+(`feColorMatrix type="luminanceToAlpha"`), so every value that changes a
+pixel there, its colour as well as its alpha, can move a line. MoltNet's
+renderers draw these with the portable raster pipeline ([CPU
+features](#moltnet-cpu-features)) and with the portable functions above,
+so the result is the same on every machine. (`ImageDecoder` frames are
+decoded pixels, not drawn ones: [pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes).)
+
+MoltNet windows offer no screen, window or tab capture: with no WebRTC
+there, a capture has nowhere to go. `getDisplayMedia()` (with
+`preferCurrentTab` too), `getAllScreensMedia()` and `getUserMedia()`'s
+`chromeMediaSource` forms reject as a user's Cancel in the picker does,
+with `NotAllowedError` "Permission denied by user", and no picker opens;
+`navigator.permissions` reports `display-capture` as `denied` in windows
+and workers. The renderer answers without asking the browser
+(`UserMediaProcessor`, `core/molt_net/molt_net_renderer.h`), and the
+browser refuses such a request from a MoltNet profile before any handler
+sees it (`MediaCaptureDevicesDispatcher`,
+`chrome/browser/molt_ai/fingerprinting/molt_net_display_capture.h`). Like
+WebRTC this follows the profile, not the fingerprinting protection's
+switch; normal and Incognito windows are unchanged. (`CropTarget` and
+`RestrictionTarget` still make their tokens; with no capture they apply to
+nothing.)
 
 **What was already the same.** Measured with Chromium 156's code, built
 with Chromium's compiler and flags for x86-64 and arm64:
@@ -3466,21 +3541,66 @@ Blink, each call marked `MoltBrowser:` (all files new in `src/`):
   `biquad_filter_node.cc`, `oscillator_handler.cc`, `oscillator_node.cc`,
   `panner_handler.cc`, `periodic_wave_handler.cc`, `realtime_analyser.cc`;
 * WebRTC: `platform/peerconnection/rtc_rtp_source.cc`,
-  `modules/peerconnection/peer_connection_util.cc`.
+  `modules/peerconnection/peer_connection_util.cc`;
+* shapes and corners: `core/style/basic_shapes.cc` (rounded polygons'
+  radii, circles' `closest-side` and `farthest-side`), `style_shape.cc`
+  (`shape()`'s direction-agnostic sizes), `superellipse.h`
+  (`corner-shape` exponents), `platform/geometry/contoured_rect.{h,cc}`
+  (superellipse corners: half corners, curve intercepts, clip-outs),
+  `path_builder.cc` (the corner curve's Bezier fit),
+  `float_rounded_rect.cc` (`shape-margin` and shadow radii);
+* pixels the renderer draws on the CPU: `core/css/css_gradient_value.cc`
+  (colour hints, corner angles), `platform/graphics/filters/
+  fe_component_transfer.cc` (gamma tables), `fe_color_matrix.cc` (hue
+  rotation), `fe_lighting.cc` (distant lights),
+  `platform/image-decoders/avif/avif_image_decoder.cc` (gain maps),
+  `modules/xr/xr_cube_map.cc` (lighting cube maps).
 
 Below Blink: `ui/gfx/geometry/sin_cos_degrees.h`, `transform.cc`,
 `quaternion.cc`, `matrix44.cc` (2D decomposition), `vector2d_f.cc`,
 `vector3d_f.cc`; `ui/gfx/color_conversions.cc` (Lab, LCH, OKLab, OKLCH);
-`media/base/sinc_resampler.cc`; Skia's `SkOpts_moltbrowser.cpp`. V8:
-`src/base/ieee754.{h,cc}`, `src/flags/flag-definitions.h`,
-`src/init/v8.cc` and `src/base/DEPS`.
+`ui/gfx/color_utils.cc` (relative luminance); `cc/paint/tone_map_util.cc`
+(HDR headrooms); `media/base/sinc_resampler.cc`. Skia:
+`SkOpts_moltbrowser.cpp`; `include/core/SkScalar.h` (the macros),
+`src/core/SkGeometry.cpp` through them, `SkCubics.cpp`,
+`src/pathops/SkPathOpsCubic.cpp`, `src/core/SkBlurEngine.cpp`,
+`SkGaussFilter.cpp`, `src/shaders/gradients/SkGradientBaseShader.cpp`,
+`src/shaders/SkGainmapShader.cpp`, `src/codec/SkGainmapInfo.cpp`,
+`SkXmp.cpp`, `SkExif.cpp`, `SkHdrAgtm.cpp`, `SkHdrAgtmParse.cpp`,
+`src/ports/SkTypeface_fontations.cpp` and `fontations/src/ffi.rs`. Rust:
+`read-fonts` (`src/moltbrowser_math.rs`, `tables/varc.rs`) and `skrifa`
+(`color/instance.rs`, `outline/glyf/mod.rs`), with crate patches under
+`chromium_crates_io/patches/`. V8: `src/base/ieee754.{h,cc}`,
+`src/flags/flag-definitions.h`, `src/init/v8.cc` and `src/base/DEPS`.
 
 Calls whose result no page reads keep the C library: the browser's own
 input handling (overscroll, autoscroll), DevTools' overlay, metrics, the
 memory cache's heuristics and assertions, and calls whose result is exact
 (`log2` of a power-of-two size, a power of 2 or 10 with a small integer
-exponent). The 4-wide `PeriodicWave` lookups that only the skipped
-oscillator kernels call keep theirs too.
+exponent, `exp2` of a zero HDR headroom in an SDR target). The 4-wide
+`PeriodicWave` lookups that only the skipped oscillator kernels call keep
+theirs too. So do:
+
+* Blink's `TransformOperations::BlendedBoundsForBox()` (`atan2`): only its
+  tests call it at 156; what a page reads of an animated transform
+  (`getBoundingClientRect()`, `getComputedStyle()`) comes from the
+  interpolated transform, which is portable. The compositor's animations
+  (`ui/gfx/geometry/transform_operation(s).cc`) are pixels on screen only.
+* Auto dark mode's Lab conversion (`dark_mode_lab_color_space.h`): it runs
+  only with the force-dark flag, on what the page paints to the screen,
+  which no API reads back (canvas contents and read-back are not
+  dark-mode filtered).
+* Skia in the GPU process (GPU rasterization and accelerated canvases,
+  including `SkGeometry`'s angle measure for the GPU tessellator): what it
+  draws depends on the GPU anyway, and a page reads accelerated canvases
+  back through the farbled read-backs above.
+* Encoders' metadata: the serialization of gain-map and AGTM metadata
+  (`log2`, `atan`), which no MoltNet page reaches.
+* `ScreenDetailed.hdrHeadroom` (`getScreenDetails()` is denied in
+  MoltNet), `performance.memory`'s bucket table (MoltNet uses a fixed
+  one), and libwebrtc's audio levels (WebRTC is off in MoltNet).
+* Text: `shape_result_bloberizer.cc`'s synthetic-oblique skew is a
+  constant (`tan(15deg)` written out), not a call.
 
 ### Which contexts
 
@@ -3488,7 +3608,8 @@ The whole MoltNet renderer process, from before Blink and V8 start:
 windows, iframes, workers and worklets (the audio rendering thread
 included). Normal and Incognito windows, and every other process, keep the
 C library and the vector code. The kill switch turns it off (no mode
-switch, no call).
+switch, no call). Skia's switch and Fontations' are set by the same call,
+for the same processes; Skia in the GPU process keeps the C library.
 
 ### What it costs MoltNet users
 
@@ -3501,6 +3622,8 @@ Measured on one core of this VM (Xeon, 2.1 GHz):
 | A sum of squares over a 128-frame render quantum (2.7 ms at 48 kHz) | 15 ns (AVX) | 58 ns |
 | A 128-tap direct convolution of one render quantum | 1.0 µs (AVX) | 7.4 µs |
 | A 2048-point FFT | 2.6 µs (AVX + FMA) | 8.2 µs |
+| Skia, one call through its switch: `sinf`; `powf` | glibc: 6; 7 ns | 14; 18 ns |
+| Skia: an arc (`arcTo`); stroking a cubic with round joins; intersecting a curve with an oval (`Op`) | 0.25; 2.2; 24 µs | the same, within the noise |
 
 A style or a matrix with math functions makes a few calls per value, so
 these stay in microseconds per page. `Math` on x86-64 runs the code it ran
@@ -3509,7 +3632,9 @@ on arm64 it runs without them, somewhat slower per call (not measured on
 arm64 hardware). Web Audio graphs spend more of each render quantum in
 their convolvers, analysers and FFTs, still a small part of it: a
 `ConvolverNode` with a long impulse response, the heaviest, does a few
-FFTs per quantum.
+FFTs per quantum. Skia calls these functions a few times per arc, stroke,
+blur or gradient, against work that costs far more, and Fontations a few
+times per rotated or skewed colour-glyph layer.
 
 ### Code
 
@@ -3517,13 +3642,20 @@ FFTs per quantum.
 |---|---|
 | `third_party/llvm-libc/molt_portable_math.{h,cc}` | the portable functions (+ `molt_portable_math_unittest.cc`: exact values, known results, golden hashes of 32 functions over fixed arguments, which every CPU and OS must reproduce) |
 | `ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | the switch and the wrapped functions (+ `molt_math_unittest.cc`) |
-| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `--portable-math` in `kMoltNetV8Flags`; `SetPortable(true)` in `PinUniformMachineBeforeV8()` (+ `moltnet_cpu_test.cc`) |
+| `core/molt_fingerprinting/moltnet_cpu.{h,cc}` | `--portable-math` in `kMoltNetV8Flags`; `SetPortable(true)` and `SkGraphics::MoltBrowserUsePortableMath()` in `PinUniformMachineBeforeV8()` (+ `moltnet_cpu_test.cc`) |
 | `third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | the portable `blit_row_s32a_opaque` |
+| `third_party/skia/include/private/SkMoltBrowserMath.h`, `src/core/SkMoltBrowserMath.cpp` | Skia's switch and wrapped functions; `SkGraphics::MoltBrowserUsePortableMath()` turns it on (+ `skia/ext/skia_molt_math_unittest.cc`: off, the C library bit for bit; on, the portable functions; golden hashes of arcs, strokes, contains, contour lengths and path operations that every CPU and OS must reproduce) |
+| `third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/moltbrowser_math.rs` | the Rust switch for Fontations (`set_portable`, `sin`, `cos`, `sin_cos`, `tan`, `hypot`), with crate patches in `chromium_crates_io/patches/read-fonts-v0_43/` and `skrifa-v0_46/` |
 
 Build files: `third_party/llvm-libc/BUILD.gn` (`molt_portable_math`, a
-dependency of the `:headers` group V8 uses), `ui/gfx/geometry/BUILD.gn`,
+dependency of the `:headers` group V8 uses, visible to `//skia` too),
+`ui/gfx/geometry/BUILD.gn` (and `//third_party/fdlibm` for `Tanh`),
 `media/base/BUILD.gn` (`//ui/gfx/geometry` for the resampler),
-`chrome/browser/molt_ai/test/BUILD.gn` (the two unit tests in
+`skia/BUILD.gn` (`SkMoltBrowserMath` in `skia_core_and_effects`, which
+links `molt_portable_math`; `molt_math_unittests`),
+`third_party/rust/read_fonts/v0_43/BUILD.gn` (the module and the `libm`
+crate) and `chromium_crates_io/Cargo.lock`,
+`chrome/browser/molt_ai/test/BUILD.gn` (the three unit tests in
 `molt_ai_unittests`).
 
 ### Verification
@@ -3557,27 +3689,69 @@ arm64 Cortex-A72, Neoverse N1 and qemu's `max` CPU:
   sampling and memsets: one result on every x86-64 CPU, and arm64
   differing only in `blit_row_s32a_opaque`; with the portable blitter
   installed, one result on both.
+* **Skia's geometry and CPU drawing.** 500 of Skia 156's sources (core,
+  path operations, effects, image filters, SkSL, codecs' gain-map and HDR
+  code), with the worktree's copies and Chromium's Linux Skia defines,
+  and 19 probes: arcs, SVG arcs, rotations, `contains()` over fills and
+  over strokes with every join, cap and dashes, contour lengths and
+  tangents, path operations, cube roots, maximum-curvature roots;
+  antialiased paths clipped at the canvas edge, small blurs (mask and
+  image filters), Lab, OKLab, LCH and OKLCH gradients, lighting filters,
+  a gain map with an HDR base drawn for SDR and its ISO 21496-1 metadata,
+  PQ tone mapping and AGTM metadata. With the C library, arm64 differs
+  from x86-64 in six (SVG arcs, strokes, cube roots, gradients, lighting,
+  tone mapping) and a CPU without FMA from one with it in the cube roots;
+  with the switch on, all 19 are the same on a Xeon with AVX-512,
+  emulated Nehalem and Haswell, and arm64 Neoverse N1 and Cortex-A72.
+  `skia_molt_math_unittest.cc` passes on those and on an emulated Core 2.
+* **Blink's, `ui/gfx`'s and `cc`'s new call sites.** The hooked
+  expressions, with their argument types, over sweeps of inputs (rounded
+  polygons, circle radii, superellipse exponents, half corners,
+  intercepts and Bezier fits, shape margins, gradient hints and angles,
+  gamma tables, hue rotations, gain-map ratios, luminance, headrooms):
+  with glibc a CPU without FMA differs from one with it in two of three
+  groups; with the switch on, one result on the seven CPUs above.
+* **Fontations.** read-fonts and skrifa with the patches (built with
+  cargo for x86-64 and arm64): painting every COLRv1 glyph of Google's
+  COLRv1 test fonts (rotations, skews, sweeps, variable ones at six
+  locations) gives the same transforms on both architectures with the
+  switch on; the four functions over 200,000 arguments differ between
+  glibc on x86-64 and on arm64, and are the same with it on. Skia's
+  bridge type-checks with them; the Rust EXIF crate's tests pass.
 
 Every changed C++ file compiles against Chromium 156's real headers
 (`tools/compile_check`; `fft_frame.cc` with the bridge header cxxbridge
-generates from the changed `rustfft_ffi.rs`), except four it doesn't
-cover: V8's `ieee754.cc` and `molt_portable_math.cc`, which build without
-warnings for x86-64 and arm64 in the harnesses above (`-Wall -Wextra
--Wshadow -Wshorten-64-to-32`, `-Werror` for the library), V8's `v8.cc`
-(a one-line call) and the Windows sandbox hook.
+generates from the changed `rustfft_ffi.rs`, and `SkTypeface_fontations.cpp`
+and `SkExif.cpp` with the headers it generates from the changed `ffi.rs`
+and `rust/exif/FFI.rs`), except five it doesn't cover: V8's `ieee754.cc`
+and `molt_portable_math.cc`, which build without warnings for x86-64 and
+arm64 in the harnesses above (`-Wall -Wextra -Wshadow
+-Wshorten-64-to-32`, `-Werror` for the library), V8's `v8.cc` (a
+one-line call), the Windows sandbox hook and `avif_image_decoder.cc`
+(crabbyavif's header isn't available here; its hook is two calls of
+`gfx::molt_math::Exp2`).
 
 **Needs the build machine:** compiling and linking (V8 and the Rust
 bridge included), `molt_ai_unittests` (`MoltPortableMathTest.*`,
-`MoltMathTest.*`), `blink_unittests` (`MoltNetCpuTest.*` and the Web Audio
-suites), V8's own tests with `--portable-math`, and the checks in
-`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-libm" (an x86-64 and an arm64
-machine, Windows and macOS). **Automated** by
+`MoltMathTest.*`, `SkMoltBrowserMathTest.*`), `blink_unittests`
+(`MoltNetCpuTest.*` and the Web Audio suites), V8's own tests with
+`--portable-math`, and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-libm" and "fp-geometry" (an
+x86-64 and an arm64 machine, Windows and macOS). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md), compared between runs: `Math`'s
 trigonometry with arguments where the architectures differed
 (`cpu.math_cross_arch`), CSS math functions amplified with `mod()`,
 `rem()` and `round()` so their last bits show (`cpu.css_math`), `DOMMatrix`,
-`SVGMatrix`, CSSOM, canvas and SVG path values (`cpu.dommatrix`), and
-filter frequency responses and a compressor's reduction (`audio.math`).
+`SVGMatrix`, CSSOM, canvas and SVG path values (`cpu.dommatrix`),
+filter frequency responses and a compressor's reduction (`audio.math`),
+where `isPointInPath()` and `isPointInStroke()` edges lie on arcs,
+rotated ellipses and stroked curves (to a float ulp) and
+`elementFromPoint()` edges on `clip-path` shapes and `corner-shape`
+corners (to a layout unit) (`geom.hit_testing`), SVG shapes' lengths
+and points and `offset-path` positions (`geom.path_length`), text laid
+out around `shape-outside` gradients, an SVG image with filters, a
+rounded polygon and a margin-box with radii (`geom.shape_outside`), and
+`contrast-color()` around its threshold (`geom.contrast_color`).
 
 ## MoltNet: storage limits
 

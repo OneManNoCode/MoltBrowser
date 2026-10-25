@@ -445,6 +445,14 @@ DIFF_KEYS = (
     # same functions on every OS too (FINGERPRINTING.md "MoltNet: portable
     # math").
     'cpu.math_cross_arch', 'cpu.css_math', 'cpu.dommatrix', 'audio.math',
+    # So are the geometry pages read without pixels (isPointInPath and
+    # isPointInStroke edges, elementFromPoint over clip-path and corner-shape,
+    # path lengths and offset-path positions), the text laid out around
+    # shape-outside's images and gradients, which the renderer draws on the
+    # CPU, and contrast-color()'s choices (FINGERPRINTING.md "MoltNet:
+    # portable math").
+    'geom.hit_testing', 'geom.path_length', 'geom.shape_outside',
+    'geom.contrast_color',
     # Text in scripts the Latin families lack falls back through the bundled
     # set's per-script lists, and local() finds the set's faces: the same on
     # every machine and OS (FINGERPRINTING.md "Fonts").

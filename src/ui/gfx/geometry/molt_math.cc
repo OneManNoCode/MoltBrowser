@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cmath>
 
+#include "third_party/fdlibm/ieee754.h"
 #include "third_party/llvm-libc/molt_portable_math.h"
 
 namespace gfx::molt_math {
@@ -56,6 +57,10 @@ MOLT_MATH_1(double, Log1p, log1p)
 MOLT_MATH_2(double, Pow, pow)
 MOLT_MATH_2(double, Hypot, hypot)
 MOLT_MATH_1(double, Cbrt, cbrt)
+
+double Tanh(double x) {
+  return Portable() ? fdlibm::tanh(x) : std::tanh(x);
+}
 
 MOLT_MATH_1(float, Sin, sin)
 MOLT_MATH_1(float, Cos, cos)

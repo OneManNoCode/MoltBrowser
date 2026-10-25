@@ -3,7 +3,10 @@
 
 # MoltNet's per-process renderer state (blink::WebMoltNet), compiled into the
 # core component like every other core subdirectory. Read by
-# modules/peerconnection/rtc_peer_connection.cc.
+# modules/peerconnection/rtc_peer_connection.cc,
+# modules/mediastream/user_media_processor.cc (no screen, window or tab
+# capture) and core/molt_fingerprinting/moltnet_uniformity.cc (the
+# display-capture permission).
 blink_core_sources_molt_net = [
   "molt_net_renderer.cc",
   "molt_net_renderer.h",

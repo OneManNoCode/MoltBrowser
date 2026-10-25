@@ -40,6 +40,16 @@ public:
     static void MoltBrowserUsePortableRasterPipeline();
 
     /**
+     *  MoltBrowser: makes Skia's math functions (SkScalarSin() and the other
+     *  SkScalar.h macros, cubic roots, path operations, blur kernels,
+     *  gradient interpolation, gain maps, HDR tone mapping) the portable ones,
+     *  which give the same results on every CPU and OS
+     *  (include/private/SkMoltBrowserMath.h). Call once, before anything is
+     *  drawn or measured (MoltNet's renderers).
+     */
+    static void MoltBrowserUsePortableMath();
+
+    /**
      *  Return the max number of bytes that should be used by the font cache.
      *  If the cache needs to allocate more, it will purge previous entries.
      *  This max can be changed by calling SetFontCacheLimit().

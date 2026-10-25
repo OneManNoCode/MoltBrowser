@@ -40,6 +40,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
 #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
 #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
@@ -1243,6 +1244,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
         *current_request_info_->request()->GetTransferId(), &result, &response);
     GotOpenDevice(current_request_info_->request_id(), result,
                   std::move(response));
+  } else if (MoltNetRefusesDisplayCapture(
+                 current_request_info_->stream_controls()->audio.stream_type,
+                 current_request_info_->stream_controls()->video.stream_type)) {
+    // MoltBrowser: no screen, window or tab capture in MoltNet. Answered
+    // as the browser answers a user's Cancel in the picker, without asking
+    // it (core/molt_net/molt_net_renderer.h).
+    task_runner_->PostTask(
+        FROM_HERE,
+        BindOnce(&UserMediaProcessor::OnStreamGenerationFailed,
+                 WrapWeakPersistent(this), current_request_info_->request_id(),
+                 MediaStreamRequestResult::PERMISSION_DENIED_BY_USER));
   } else {
     // The browser replies to this request by invoking OnStreamsGenerated().
     GetMediaStreamDispatcherHost()->GenerateStreams(

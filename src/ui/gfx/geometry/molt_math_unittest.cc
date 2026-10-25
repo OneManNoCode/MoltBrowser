@@ -10,6 +10,7 @@
 #include <limits>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/fdlibm/ieee754.h"
 #include "third_party/llvm-libc/molt_portable_math.h"
 #include "ui/gfx/geometry/molt_complex_math.h"
 #include "ui/gfx/geometry/sin_cos_degrees.h"
@@ -60,6 +61,7 @@ TEST_F(MoltMathTest, OffIsTheCLibrary) {
         << x;
     EXPECT_EQ(Bits(Atan2(x, 3.0)), Bits(std::atan2(x, 3.0))) << x;
     EXPECT_EQ(Bits(Hypot(x, 4.5)), Bits(std::hypot(x, 4.5))) << x;
+    EXPECT_EQ(Bits(Tanh(x)), Bits(std::tanh(x))) << x;
     const float f = static_cast<float>(x);
     EXPECT_EQ(Bits(Sin(f)), Bits(std::sin(f))) << x;
     EXPECT_EQ(Bits(Pow(std::fabs(f), 0.7f)), Bits(std::pow(std::fabs(f), 0.7f)))
@@ -72,6 +74,7 @@ TEST_F(MoltMathTest, OffIsTheCLibrary) {
   EXPECT_EQ(Bits(Pow(2.0f, 0.3)), Bits(std::pow(2.0f, 0.3)));
   EXPECT_EQ(Bits(Pow(10, -5)), Bits(std::pow(10, -5)));
   EXPECT_EQ(Bits(Atan2(1.0f, 3.0)), Bits(std::atan2(1.0f, 3.0)));
+  EXPECT_EQ(Bits(Tanh(2)), Bits(std::tanh(2)));
 }
 
 // On, every function is molt_portable_math's.
@@ -99,6 +102,8 @@ TEST_F(MoltMathTest, OnIsPortable) {
         << x;
     EXPECT_EQ(Bits(Hypot(x, 4.5)), Bits(molt_portable_math::Hypot(x, 4.5)))
         << x;
+    // The double tanh comes from fdlibm, as V8's Math.tanh.
+    EXPECT_EQ(Bits(Tanh(x)), Bits(fdlibm::tanh(x))) << x;
     const float f = static_cast<float>(x);
     EXPECT_EQ(Bits(Sin(f)), Bits(molt_portable_math::Sin(f))) << x;
     EXPECT_EQ(Bits(Cos(f)), Bits(molt_portable_math::Cos(f))) << x;

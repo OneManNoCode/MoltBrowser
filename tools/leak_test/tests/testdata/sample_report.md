@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 170 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 177 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -60,6 +60,13 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | Built-in AI APIs and Translator (no component download): Translator is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | Certificate fetches (AIA; OCSP/CRL URLs in the certificate): nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (certificate fetches through Tor) |
 | PASS | Certificate fetches for a second site (the same AIA URL): nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8 |
+| PASS | Screen, window and tab capture are refused without a picker: getDisplayMedia() rejects with NotAllowedError | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: as a user's Cancel in the picker | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: at once (no picker waited for an answer) | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: getDisplayMedia({preferCurrentTab}) too | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: the display-capture permission reads "denied" | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: in a worker too | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
+| PASS | Screen, window and tab capture are refused without a picker: nothing outside Tor | FINGERPRINTING.md "MoltNet: portable math" (what a page reads back without noise) |
 | PASS | DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (other ways to look up a name) |
 | PASS | localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it) | MOLTNET_COMPLIANCE.md §2 (<-loopback>), §5.7 |
 | PASS | A MoltNet window loads an http:// onion site: the page loaded (no HTTPS-Only interstitial for http:// onion) | MOLTNET_COMPLIANCE.md §4 steps 1, 11 |
@@ -108,6 +115,18 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\x20null\\x20[internally:\\x20(44dd)\\x20anonymous]')
   - sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\x20null\\x20[internally:\\x20(66ff)\\x20anonymous]')
   - reached the kit's page server (through Tor): /canary/aia-kkkkkk1212.crt
+- **PASS** Screen, window and tab capture are refused without a picker: getDisplayMedia() rejects with NotAllowedError
+  - display_media.error = "NotAllowedError"
+- **PASS** Screen, window and tab capture are refused without a picker: as a user's Cancel in the picker
+  - display_media.message = "Permission denied by user"
+- **PASS** Screen, window and tab capture are refused without a picker: at once (no picker waited for an answer)
+  - display_media.ms = 3
+- **PASS** Screen, window and tab capture are refused without a picker: getDisplayMedia({preferCurrentTab}) too
+  - this_tab.error = "NotAllowedError"
+- **PASS** Screen, window and tab capture are refused without a picker: the display-capture permission reads "denied"
+  - perm = "denied"
+- **PASS** Screen, window and tab capture are refused without a picker: in a worker too
+  - worker_perm = "denied"
 - **PASS** DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor
   - sent to Tor inside SOCKS5: anchor-cccccc3333.moltleak.test:443 (username 'http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion')
 - **PASS** localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it)

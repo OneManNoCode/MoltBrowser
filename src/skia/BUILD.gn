@@ -1013,7 +1013,14 @@ skia_source_set("skia_core_and_effects") {
   sources += skia_effects_sources
   sources += skia_effects_imagefilter_sources
   sources += skia_pathops_sources
-  deps = []
+
+  # MoltBrowser: Skia's math functions on one process-wide switch, portable
+  # in MoltNet's renderers (SkGraphics::MoltBrowserUsePortableMath).
+  sources += [
+    "//third_party/skia/include/private/SkMoltBrowserMath.h",
+    "//third_party/skia/src/core/SkMoltBrowserMath.cpp",
+  ]
+  deps = [ "//third_party/llvm-libc:molt_portable_math" ]
   if (skia_support_gpu) {
     deps += [ "//gpu/config:workaround_list" ]
   }
@@ -1436,4 +1443,16 @@ if (!is_ios) {
 
 group("fuzzers") {
   deps = [ "//skia/tools/fuzzers" ]
+}
+
+# MoltBrowser: Skia's portable math switch (in molt_ai_unittests).
+source_set("molt_math_unittests") {
+  testonly = true
+  sources = [ "ext/skia_molt_math_unittest.cc" ]
+  deps = [
+    ":skia",
+    "//testing/gtest",
+    "//third_party/llvm-libc:molt_portable_math",
+  ]
+  visibility = [ "//chrome/browser/molt_ai/test:*" ]
 }
