@@ -26,7 +26,8 @@ group("headers") {
 # MoltBrowser: llvm-libc's math built without the target's fused multiply-add
 # and rounding instructions, so that it gives the same results on every CPU
 # and OS (molt_portable_math.h). Pure functions; who calls them is decided
-# per process by V8's --portable-math and gfx::molt_math.
+# per process by V8's --portable-math, gfx::molt_math and Skia's
+# SkMoltBrowserMath.
 config("molt_portable_math_config") {
   visibility = [ ":*" ]
   include_dirs = [ "src" ]
@@ -44,6 +45,7 @@ static_library("molt_portable_math") {
   ]
   visibility = [
     ":*",
+    "//skia:*",
     "//ui/gfx/geometry:*",
   ]
 }

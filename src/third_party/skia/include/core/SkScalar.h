@@ -10,6 +10,7 @@
 
 #include "include/private/SkAssert.h"
 #include "include/private/SkFloatingPoint.h"
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 
 #include <cmath>
 
@@ -40,17 +41,20 @@ typedef float SkScalar;
 #define SkScalarCopySign(x, y)      std::copysign(x, y)
 #define SkScalarMod(x, y)           std::fmod(x,y)
 #define SkScalarSqrt(x)             std::sqrt(x)
-#define SkScalarPow(b, e)           std::pow(b, e)
 
-#define SkScalarSin(radians)        ((float)std::sin(radians))
-#define SkScalarCos(radians)        ((float)std::cos(radians))
-#define SkScalarTan(radians)        ((float)std::tan(radians))
-#define SkScalarASin(val)           ((float)std::asin(val))
-#define SkScalarACos(val)           ((float)std::acos(val))
-#define SkScalarATan2(y, x)         ((float)std::atan2(y,x))
-#define SkScalarExp(x)              ((float)std::exp(x))
-#define SkScalarLog(x)              ((float)std::log(x))
-#define SkScalarLog2(x)             ((float)std::log2(x))
+// MoltBrowser: the C library's functions, or portable ones in MoltNet's
+// renderers (include/private/SkMoltBrowserMath.h).
+#define SkScalarPow(b, e)           SkMoltBrowserMath::Pow(b, e)
+
+#define SkScalarSin(radians)        ((float)SkMoltBrowserMath::Sin(radians))
+#define SkScalarCos(radians)        ((float)SkMoltBrowserMath::Cos(radians))
+#define SkScalarTan(radians)        ((float)SkMoltBrowserMath::Tan(radians))
+#define SkScalarASin(val)           ((float)SkMoltBrowserMath::Asin(val))
+#define SkScalarACos(val)           ((float)SkMoltBrowserMath::Acos(val))
+#define SkScalarATan2(y, x)         ((float)SkMoltBrowserMath::Atan2(y,x))
+#define SkScalarExp(x)              ((float)SkMoltBrowserMath::Exp(x))
+#define SkScalarLog(x)              ((float)SkMoltBrowserMath::Log(x))
+#define SkScalarLog2(x)             ((float)SkMoltBrowserMath::Log2(x))
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -7,6 +7,7 @@
 
 #include "include/core/SkGraphics.h"
 
+#include "include/private/SkMoltBrowserMath.h"  // MoltBrowser
 #include "src/core/SkBitmapProcState.h"
 #include "src/core/SkBlitMask.h"
 #include "src/core/SkBlitRow.h"
@@ -37,6 +38,10 @@ void Init_MoltBrowserPortable();
 
 void SkGraphics::MoltBrowserUsePortableRasterPipeline() {
     SkOpts::Init_MoltBrowserPortable();
+}
+
+void SkGraphics::MoltBrowserUsePortableMath() {
+    SkMoltBrowserMath::SetPortable(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
