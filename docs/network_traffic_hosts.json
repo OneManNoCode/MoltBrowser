@@ -1,0 +1,679 @@
+{
+ "generated_from": "docs/NETWORK_TRAFFIC.md",
+ "hosts": [
+  {
+   "expect": "allowed",
+   "host": "update.googleapis.com",
+   "ports": [
+    "443/tcp",
+    "80/tcp"
+   ],
+   "section": "1",
+   "steps": [],
+   "why": "Component updater: one combined update check for every registered component, about a minute after start and every 5 h; at start the on-device model manifest is also asked for"
+  },
+  {
+   "expect": "allowed",
+   "host": "*.gvt1.com",
+   "ports": [
+    "443/tcp",
+    "80/tcp"
+   ],
+   "section": "1",
+   "steps": [],
+   "why": "Component downloads named in an update response (edgedl.me.gvt1.com, redirector.gvt1.com) and spell-check dictionaries (redirector.gvt1.com, Linux)"
+  },
+  {
+   "expect": "allowed",
+   "host": "dl.google.com",
+   "ports": [
+    "443/tcp",
+    "80/tcp"
+   ],
+   "section": "1",
+   "steps": [],
+   "why": "Component downloads named in an update response"
+  },
+  {
+   "expect": "allowed",
+   "host": "clients2.google.com",
+   "ports": [
+    "80/tcp",
+    "443/tcp"
+   ],
+   "section": "1",
+   "steps": [],
+   "why": "Network time (http://clients2.google.com/time/1/current): at start without a saved time, now and then, and on certificate date errors; Chrome Web Store extension updates once one is installed"
+  },
+  {
+   "expect": "allowed",
+   "host": "safebrowsing.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "1",
+   "steps": [],
+   "why": "Safe Browsing list updates (V5 hashLists:batchGet, which the field-trial testing config turns on; else V4 threatListUpdates:fetch), with the placeholder key"
+  },
+  {
+   "expect": "step",
+   "host": "sb-ssl.google.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [
+    "download"
+   ],
+   "why": "Safe Browsing download check of a program or archive: the download URL, the referrer chain and the file's hash"
+  },
+  {
+   "expect": "user",
+   "host": "chromium-i18n.appspot.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Address formats (libaddressinput), when Autofill fills a saved address or the payment sheet needs them"
+  },
+  {
+   "expect": "user",
+   "host": "cloudflare-dns.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "DNS TXT lookup for a page's email verification request (MoltBrowser's resolver in place of dns.google)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "dns.google",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Chromium's DNS TXT resolver for email verification: MoltBrowser uses cloudflare-dns.com instead"
+  },
+  {
+   "expect": "forbidden",
+   "host": "content-autofill.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Autofill crowdsourcing: off (AutofillServerCommunication)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "passwordsleakcheck-pa.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Password leak check: off (pref)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "translate.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Google Translate (language list, page and partial translation): off, Translate runs on the device"
+  },
+  {
+   "expect": "forbidden",
+   "host": "translate-pa.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Google Translate (language list, page and partial translation): off, Translate runs on the device"
+  },
+  {
+   "expect": "user",
+   "host": "www.gstatic.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Profile avatar images, when you pick one; the Translate ranker model (off) and Safe Browsing's real-time lookup key (Chrome-branded only) live here too"
+  },
+  {
+   "expect": "forbidden",
+   "host": "connectivitycheck.gstatic.com",
+   "ports": [
+    "80/tcp",
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Captive-portal check: off (pref)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "8.8.8.8",
+   "ports": [
+    "53/udp",
+    "53/tcp",
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "8.8.4.4",
+   "ports": [
+    "53/udp",
+    "53/tcp",
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "2001:4860:4860::8888",
+   "ports": [
+    "53/udp",
+    "53/tcp",
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "2001:4860:4860::8844",
+   "ports": [
+    "53/udp",
+    "53/tcp",
+    "443/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "Google Public DNS: the DNS probe after a \"site can't be reached\" error (off, pref), and Secure DNS's fallback (off, BundledSecuritySettingsSecureDnsV2)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "google.com",
+   "ports": [
+    "443/tcp",
+    "80/tcp"
+   ],
+   "section": "2",
+   "steps": [],
+   "why": "The DNS probe's query name (sent to Google Public DNS, off); nothing else looks it up"
+  },
+  {
+   "expect": "user",
+   "host": "duckduckgo.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "4",
+   "steps": [],
+   "why": "Default search engine, and its suggestions while you type in the address bar"
+  },
+  {
+   "expect": "forbidden",
+   "host": "clientservices.googleapis.com",
+   "ports": [
+    "443/tcp",
+    "80/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Variations seed (Chrome-branded only)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "accounts.google.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Google sign-in and account cookies (sign-in is off)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "optimizationguide-pa.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Optimization Guide hints and models (need a Google API key)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "gemini.google.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Gemini in Chrome (needs a Google account)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "www.google.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "AI Mode eligibility and other Google Search features (need Google as the search engine)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "*.gvt2.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Domain Reliability beacons (need metrics consent)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "sctauditing-pa.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "SCT auditing (Certificate Transparency is off without Chrome branding)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "ohttp-relay-safebrowsing-chrome.google.fastly-edge.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Relay of Safe Browsing's hash-prefix real-time lookups (Chrome-branded only)"
+  },
+  {
+   "expect": "user",
+   "host": "safebrowsing.google.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Safe Browsing real-time URL checks and reports (Enhanced protection, extended reporting)"
+  },
+  {
+   "expect": "user",
+   "host": "mtalk.google.com",
+   "ports": [
+    "5228/tcp",
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Push messaging (GCM), once a site or an extension subscribes"
+  },
+  {
+   "expect": "user",
+   "host": "android.clients.google.com",
+   "ports": [
+    "5228/tcp",
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Push messaging (GCM), once a site or an extension subscribes"
+  },
+  {
+   "expect": "user",
+   "host": "fcm.googleapis.com",
+   "ports": [
+    "5228/tcp",
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Push messaging (GCM), once a site or an extension subscribes"
+  },
+  {
+   "expect": "forbidden",
+   "host": "webpermissionpredictions.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Permission predictions from Google's server (need \"Make searches and browsing better\")"
+  },
+  {
+   "expect": "forbidden",
+   "host": "versionhistory.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Outdated-version check (only with the RelaunchFastIfOutdated policy)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "chromewebstore.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Web Store information on installed extensions (needs Chrome's API key)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "phosphor-pa.googleapis.com",
+   "ports": [
+    "443/tcp",
+    "2498/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Private AI (needs Chrome's API key)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "proxy.g2.fastly-masque.net",
+   "ports": [
+    "443/tcp",
+    "2498/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Private AI (needs Chrome's API key)"
+  },
+  {
+   "expect": "user",
+   "host": "www.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Location for a site you allowed (Linux, Windows); password affiliation lookups (need a key)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "clients4.google.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Sync (no sign-in)"
+  },
+  {
+   "expect": "forbidden",
+   "host": "chromeskills.pa.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "Skills (needs a Google account)"
+  },
+  {
+   "expect": "user",
+   "host": "chrome-devtools-frontend.appspot.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "DevTools' remote front-end and AI assistance"
+  },
+  {
+   "expect": "user",
+   "host": "aida.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "3",
+   "steps": [],
+   "why": "DevTools' remote front-end and AI assistance"
+  },
+  {
+   "expect": "allowed",
+   "host": "api.github.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltBrowser update check, 30 s after launch and every 6 h (github.com: its fallback, and the update's download URL)"
+  },
+  {
+   "expect": "allowed",
+   "host": "github.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltBrowser update check, 30 s after launch and every 6 h (github.com: its fallback, and the update's download URL)"
+  },
+  {
+   "expect": "allowed",
+   "host": "objects.githubusercontent.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltBrowser update download and its signed manifest, when an update exists"
+  },
+  {
+   "expect": "allowed",
+   "host": "release-assets.githubusercontent.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltBrowser update download and its signed manifest, when an update exists"
+  },
+  {
+   "expect": "allowed",
+   "host": "easylist.to",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltShield filter lists, 10 s after the first run, then about once a day"
+  },
+  {
+   "expect": "allowed",
+   "host": "ublockorigin.github.io",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltShield filter lists, 10 s after the first run, then about once a day"
+  },
+  {
+   "expect": "allowed",
+   "host": "raw.githubusercontent.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltShield filter lists, 10 s after the first run, then about once a day"
+  },
+  {
+   "expect": "user",
+   "host": "secure.fanboy.co.nz",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltShield's optional Fanboy lists, once you turn them on"
+  },
+  {
+   "expect": "user",
+   "host": "huggingface.co",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "On-device model downloads you start"
+  },
+  {
+   "expect": "user",
+   "host": "*.huggingface.co",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "On-device model downloads you start"
+  },
+  {
+   "expect": "user",
+   "host": "*.hf.co",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "On-device model downloads you start"
+  },
+  {
+   "expect": "user",
+   "host": "api.openai.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "api.anthropic.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "generativelanguage.googleapis.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "api.mistral.ai",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "api.groq.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "api.deepseek.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "api.x.ai",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "api.perplexity.ai",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "openrouter.ai",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "Cloud AI chat with your own key"
+  },
+  {
+   "expect": "user",
+   "host": "search.brave.com",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "The agent's web search, when you give an agent a task"
+  },
+  {
+   "expect": "user",
+   "host": "check.torproject.org",
+   "ports": [
+    "443/tcp"
+   ],
+   "section": "5",
+   "steps": [],
+   "why": "MoltNet's Verify (through Tor)"
+  }
+ ],
+ "regenerate": "tools/leak_test/leaktest.sh hosts --write",
+ "schema": "molt-network-traffic-hosts/1"
+}
