@@ -34,8 +34,9 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
   // MoltBrowser: if `molt_per_site_pool_size` isn't 0, each site gets a pool
   // of its own for every proxy chain, with fixed limits derived from it, and
   // they all draw on `molt_connection_budget` if it isn't null (the one
-  // every MoltNet session shares; it outlives this manager), where
-  // `molt_budget_owner` identifies the session
+  // every MoltNet session shares; it outlives this manager), but the
+  // certificate-fetch pools, which draw on `molt_cert_fetch_budget` (the
+  // same), where `molt_budget_owner` identifies the session
   // (net/socket/molt_per_site_socket_pool_policy.h).
   ClientSocketPoolManagerImpl(
       const CommonConnectJobParams& common_connect_job_params,
@@ -44,7 +45,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
       bool cleanup_on_ip_address_change = true,
       size_t molt_per_site_pool_size = 0,
       MoltConnectionBudget* molt_connection_budget = nullptr,
-      uintptr_t molt_budget_owner = 0);
+      uintptr_t molt_budget_owner = 0,
+      MoltConnectionBudget* molt_cert_fetch_budget = nullptr);
 
   ClientSocketPoolManagerImpl(const ClientSocketPoolManagerImpl&) = delete;
   ClientSocketPoolManagerImpl& operator=(const ClientSocketPoolManagerImpl&) =

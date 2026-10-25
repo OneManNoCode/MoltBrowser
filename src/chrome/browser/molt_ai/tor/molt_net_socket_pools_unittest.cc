@@ -380,8 +380,14 @@ TEST_F(MoltNetSocketPoolsTest, SessionsShareTorsBudgets) {
       net::MoltTorCapacity::GetShared();
   EXPECT_EQ(capacity->handshake_budget().TotalInProgressForTesting(),
             net::kMoltSocksHandshakesPerSite + 1);
-  // Each session's normal and WebSocket pools.
+  // Each session's normal and WebSocket pools, in both parts of the
+  // connection budget: the certificate fetches' and the rest.
   EXPECT_EQ(capacity->connection_budget().MemberCountForTesting(), 4u);
+  EXPECT_EQ(capacity->cert_fetch_budget().MemberCountForTesting(), 4u);
+  EXPECT_EQ(capacity->connection_budget().budget(),
+            net::kMoltMainConnectionBudget);
+  EXPECT_EQ(capacity->cert_fetch_budget().budget(),
+            net::kMoltCertFetchConnectionBudget);
   slots.clear();
   EXPECT_EQ(capacity->handshake_budget().TotalInProgressForTesting(), 0u);
 }

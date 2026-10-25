@@ -205,6 +205,8 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
   }
   MoltConnectionBudget* const molt_connection_budget =
       molt_tor_capacity_ ? &molt_tor_capacity_->connection_budget() : nullptr;
+  MoltConnectionBudget* const molt_cert_fetch_budget =
+      molt_tor_capacity_ ? &molt_tor_capacity_->cert_fetch_budget() : nullptr;
 
   normal_socket_pool_manager_ = std::make_unique<ClientSocketPoolManagerImpl>(
       CreateCommonConnectJobParams(false /* for_websockets */),
@@ -214,7 +216,7 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
       !params.ignore_ip_address_changes,
       // MoltBrowser: per-site pools (MoltNet's network context).
       params.molt_per_site_socket_pool_size, molt_connection_budget,
-      reinterpret_cast<uintptr_t>(this));
+      reinterpret_cast<uintptr_t>(this), molt_cert_fetch_budget);
   websocket_socket_pool_manager_ =
       std::make_unique<ClientSocketPoolManagerImpl>(
           CreateCommonConnectJobParams(false /* for_websockets */),
@@ -224,7 +226,7 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
           !params.ignore_ip_address_changes,
           // MoltBrowser: per-site pools (MoltNet's network context).
           params.molt_per_site_socket_pool_size, molt_connection_budget,
-          reinterpret_cast<uintptr_t>(this));
+          reinterpret_cast<uintptr_t>(this), molt_cert_fetch_budget);
 
   if (params_.enable_http2) {
     next_protos_.push_back(NextProto::kProtoHTTP2);

@@ -15,7 +15,10 @@
 //    Identity is ending and the next one draw on the same budgets. Each
 //    session's sites count as sites of their own (MoltBudgetOwner).
 //  * MoltConnectionBudget: all per-site pools (normal and WebSocket, every
-//    session) together stay within kMoltNetConnectionBudget. A pool asks it
+//    session) together stay within kMoltNetConnectionBudget, in two parts:
+//    the certificate-fetch pools within kMoltCertFetchConnectionBudget,
+//    every other pool within kMoltMainConnectionBudget (a budget of each
+//    size in MoltTorCapacity). A pool asks its part
 //    before each new socket (ClientSocketPool::MoltSocketGate, hooked into
 //    ClientSocketPool::UpdateExpandabilityBeforeAllocation()); a refused
 //    pool's request waits in the pool as for the pool's own limit, and is
@@ -520,12 +523,18 @@ class MoltTorCapacity : public base::RefCounted<MoltTorCapacity> {
   }
 
   MoltTorCapacity()
-      : connection_budget_(kMoltNetConnectionBudget),
+      : connection_budget_(kMoltMainConnectionBudget),
+        cert_fetch_budget_(kMoltCertFetchConnectionBudget),
         handshake_budget_(kMoltSocksHandshakeBudget) {}
   MoltTorCapacity(const MoltTorCapacity&) = delete;
   MoltTorCapacity& operator=(const MoltTorCapacity&) = delete;
 
+  // Every per-site pool but the certificate-fetch pools draws on
+  // connection_budget(); those on cert_fetch_budget(), kept apart so that
+  // connections waiting for their certificate checks never hold back the
+  // downloads the checks wait for.
   MoltConnectionBudget& connection_budget() { return connection_budget_; }
+  MoltConnectionBudget& cert_fetch_budget() { return cert_fetch_budget_; }
   MoltSocksHandshakeBudget& handshake_budget() { return handshake_budget_; }
 
  private:
@@ -542,6 +551,7 @@ class MoltTorCapacity : public base::RefCounted<MoltTorCapacity> {
   }
 
   MoltConnectionBudget connection_budget_;
+  MoltConnectionBudget cert_fetch_budget_;
   MoltSocksHandshakeBudget handshake_budget_;
 };
 

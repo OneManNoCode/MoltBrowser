@@ -33,7 +33,8 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
     bool cleanup_on_ip_address_change,
     size_t molt_per_site_pool_size,
     MoltConnectionBudget* molt_connection_budget,
-    uintptr_t molt_budget_owner)
+    uintptr_t molt_budget_owner,
+    MoltConnectionBudget* molt_cert_fetch_budget)
     : common_connect_job_params_(common_connect_job_params),
       websocket_common_connect_job_params_(websocket_common_connect_job_params),
       pool_type_(pool_type),
@@ -48,7 +49,7 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
         unused_idle_socket_timeout(pool_type_),
         pool_type_ == HttpNetworkSession::SocketPoolType::kWebSocket,
         &common_connect_job_params_, cleanup_on_ip_address_change_,
-        molt_connection_budget, molt_budget_owner);
+        molt_connection_budget, molt_budget_owner, molt_cert_fetch_budget);
   }
   // |websocket_endpoint_lock_manager| must only be set for websocket
   // connections.

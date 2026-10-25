@@ -80,8 +80,8 @@ TEST(MoltNetSocketPoolPolicyTest, RequestsIgnoringLimitsGoPastByAFew) {
   EXPECT_TRUE(MoltIgnoreLimitsMayOverflow(51, 48, 4));
   EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(52, 48, 4));
   EXPECT_FALSE(MoltIgnoreLimitsMayOverflow(48, 48, 0));
-  EXPECT_EQ(kMoltOverflowingPools, 16u);
-  EXPECT_EQ(kMoltIgnoreLimitsOverflowTotal, 64u);
+  EXPECT_EQ(kMoltOverflowingPools, 15u);
+  EXPECT_EQ(kMoltIgnoreLimitsOverflowTotal, 60u);
   EXPECT_LE(kMoltIgnoreLimitsOverflowTotal + kMoltTorOwnConnectionsFloor,
             kMoltTorOwnConnections);
   EXPECT_LE(kMoltNetConnectionBudget + kMoltIgnoreLimitsOverflowTotal +
@@ -111,23 +111,42 @@ TEST(MoltNetSocketPoolPolicyTest, OnlyLongUnusedPoolsAreDropped) {
 
 // The budget is well inside what one Tor process always accepts, and it
 // takes eleven other sites at their full share to make a site below its
-// own limits wait for it.
+// own limits wait for it, in either part: the certificate fetches' and the
+// rest.
 TEST(MoltNetSocketPoolPolicyTest, BudgetFitsTorAndManySites) {
   EXPECT_EQ(kMoltNetConnectionBudget, 768u);
+  EXPECT_EQ(kMoltCertFetchConnectionBudget, 48u);
+  EXPECT_EQ(kMoltMainConnectionBudget, 720u);
+  EXPECT_EQ(kMoltMainConnectionBudget + kMoltCertFetchConnectionBudget,
+            kMoltNetConnectionBudget);
   EXPECT_LE(kMoltNetConnectionBudget + kMoltTorOwnConnections,
             kMoltTorConnLimit - kMoltTorKeptFileDescriptors);
+  EXPECT_EQ(kMoltPerSiteMainConnections, 64u);
+  EXPECT_EQ(kMoltUnattributedMainConnections, 16u);
   EXPECT_EQ(kMoltPerSiteConnections, 68u);
   EXPECT_EQ(kMoltUnattributedConnections, 20u);
   EXPECT_EQ(kMoltSitesToFillBudget, 11u);
-  // Ten sites at their share, every unattributed connection, and one site
-  // one below its share: still room.
-  EXPECT_LT(10 * kMoltPerSiteConnections + kMoltUnattributedConnections +
-                (kMoltPerSiteConnections - 1),
-            kMoltNetConnectionBudget);
+  EXPECT_EQ(kMoltSitesToFillCertFetchBudget, 11u);
+  // The main part: ten sites at their share, every unattributed
+  // connection, and one site one below its share: still room.
+  EXPECT_LT(10 * kMoltPerSiteMainConnections +
+                kMoltUnattributedMainConnections +
+                (kMoltPerSiteMainConnections - 1),
+            kMoltMainConnectionBudget);
   // Eleven: full.
-  EXPECT_GE(11 * kMoltPerSiteConnections + kMoltUnattributedConnections +
-                (kMoltPerSiteConnections - 1),
-            kMoltNetConnectionBudget);
+  EXPECT_GE(11 * kMoltPerSiteMainConnections +
+                kMoltUnattributedMainConnections +
+                (kMoltPerSiteMainConnections - 1),
+            kMoltMainConnectionBudget);
+  // The certificate fetches' part, the same.
+  EXPECT_LT(10 * kMoltPerSiteCertFetchPoolSize +
+                kMoltUnattributedCertFetchPoolSize +
+                (kMoltPerSiteCertFetchPoolSize - 1),
+            kMoltCertFetchConnectionBudget);
+  EXPECT_GE(11 * kMoltPerSiteCertFetchPoolSize +
+                kMoltUnattributedCertFetchPoolSize +
+                (kMoltPerSiteCertFetchPoolSize - 1),
+            kMoltCertFetchConnectionBudget);
   EXPECT_EQ(MoltSitesToFillBudget(100, 10, 0), 10u);
   EXPECT_EQ(MoltSitesToFillBudget(100, 10, 5), 9u);
 }
