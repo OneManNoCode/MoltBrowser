@@ -27,8 +27,8 @@ namespace blink::molt_fingerprinting::moltnet {
 // in bytes: 4 GiB, the smallest machine MoltBrowser supports (README,
 // "Hardware Requirements"). It is the configuration V8 already picks on that
 // machine, so a page can reach the heap limit there as on any other; larger
-// machines run as that one. (navigator.deviceMemory still says 8,
-// moltnet_device_values.h: it describes a typical desktop, not the heap.)
+// machines run as that one. navigator.deviceMemory describes the same machine
+// (moltnet::kDeviceMemory, 4).
 inline constexpr uint64_t kV8HeapPhysicalMemory = uint64_t{4} << 30;
 
 // v8::HeapStatistics::heap_size_limit() on a 64-bit desktop with

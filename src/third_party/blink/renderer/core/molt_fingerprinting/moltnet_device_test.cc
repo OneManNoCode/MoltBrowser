@@ -45,8 +45,8 @@ class MoltNetDeviceTest : public testing::Test {
   void SetUp() override {
     ResetForTesting();
     SetMoltNetDeviceForTesting(false);
-    // 4 GiB: reported as 4 on every platform.
-    ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(4096);
+    // 16 GiB: reported as 16 on desktop platforms, 8 on Android.
+    ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(16384);
   }
   void TearDown() override {
     SetMoltNetDeviceForTesting(false);
@@ -100,9 +100,11 @@ TEST_F(MoltNetDeviceTest, DeviceMemory) {
 TEST_F(MoltNetDeviceTest, NavigatorDeviceMemory) {
   Document& document = PageAskingForEveryHint();
   Navigator& navigator = *document.domWindow()->navigator();
-  EXPECT_EQ(navigator.deviceMemory(), 4.0f);
+  EXPECT_EQ(navigator.deviceMemory(),
+            ApproximatedDeviceMemory::GetApproximatedDeviceMemory());
+  EXPECT_NE(navigator.deviceMemory(), 4.0f);
   SetMoltNetDeviceForTesting(true);
-  EXPECT_EQ(navigator.deviceMemory(), 8.0f);
+  EXPECT_EQ(navigator.deviceMemory(), 4.0f);
 }
 
 TEST_F(MoltNetDeviceTest, WithholdsClientHints) {
