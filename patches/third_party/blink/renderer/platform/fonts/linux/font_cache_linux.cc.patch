@@ -5,12 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
-index 0880cdb41c42fbb99fd703134ee156910f60f98b..cc58a95463b9501eb9f4d1b76fdca4b29bbe0c52 100644
+index 0880cdb41c42fbb99fd703134ee156910f60f98b..cce4c35b1a6343788e0f189c865cca1ccd213d14 100644
 --- a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
 +++ b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
-@@ -69,6 +69,11 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
+@@ -68,7 +68,18 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
+     UChar32 c,
      const SimpleFontData*,
      FontFallbackPriority fallback_priority) {
++  // MoltBrowser: MoltNet's bundled fonts only, in their own order, never
++  // fontconfig's.
++  if (const auto* uniform = FontPlatformData::GetUniformFontSet()) {
++    return FontPlatformData::UniformFallbackFontForCharacter(
++        *uniform, font_description, c, fallback_priority);
++  }
    if (IsEmojiPresentationEmoji(fallback_priority)) {
 +    // MoltBrowser: MoltNet's emoji font first, when installed.
 +    if (const SimpleFontData* uniform =

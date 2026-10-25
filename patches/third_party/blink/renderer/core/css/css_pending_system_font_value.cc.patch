@@ -1,0 +1,38 @@
+MoltBrowser patch for third_party/blink/renderer/core/css/css_pending_system_font_value.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/core/css/css_pending_system_font_value.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/css/css_pending_system_font_value.cc b/third_party/blink/renderer/core/css/css_pending_system_font_value.cc
+index ac455c179c802d1dc9e82e78b1bf7c891ab242d8..beeb631ebd226befd880f034047f891d8bfab94f 100644
+--- a/third_party/blink/renderer/core/css/css_pending_system_font_value.cc
++++ b/third_party/blink/renderer/core/css/css_pending_system_font_value.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "third_party/blink/renderer/core/css/parser/css_parser_fast_paths.h"
+ #include "third_party/blink/renderer/core/layout/layout_theme_font_provider.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"  // MoltBrowser
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ 
+ namespace blink {
+@@ -23,12 +24,17 @@ CSSPendingSystemFontValue* CSSPendingSystemFontValue::Create(
+ }
+ 
+ const AtomicString& CSSPendingSystemFontValue::ResolveFontFamily() const {
+-  return LayoutThemeFontProvider::SystemFontFamily(system_font_id_);
++  // MoltBrowser: in MoltNet the same on every OS (molt_fingerprinting).
++  return LayoutThemeFontProvider::SystemFontFamily(
++      molt_fingerprinting::UniformSystemFontKeyword(system_font_id_));
+ }
+ 
+ float CSSPendingSystemFontValue::ResolveFontSize(
+     const Document* document) const {
+-  return LayoutThemeFontProvider::SystemFontSize(system_font_id_, document);
++  // MoltBrowser: in MoltNet the same on every OS (molt_fingerprinting).
++  return LayoutThemeFontProvider::SystemFontSize(
++      molt_fingerprinting::UniformSystemFontKeyword(system_font_id_),
++      document);
+ }
+ 
+ String CSSPendingSystemFontValue::CustomCSSText() const {
