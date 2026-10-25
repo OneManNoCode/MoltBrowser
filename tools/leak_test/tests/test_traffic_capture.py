@@ -483,6 +483,144 @@ class SinkholeServers(unittest.TestCase):
         self.assertNotEqual(support.spki_sha256_b64(cert), self.spki)
 
 
+_CLIENT = r'''
+import socket, ssl, struct, sys
+def query(name):
+    q = struct.pack('!HHHHHH', 7, 0x100, 1, 0, 0, 0)
+    for label in name.split('.'):
+        q += bytes([len(label)]) + label.encode()
+    q += b'\0\0\x01\0\x01'
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(5)
+    s.sendto(q, ('127.0.0.1', 53))
+    r = s.recv(512)
+    return socket.inet_ntoa(r[-4:])
+ip = query('update.googleapis.com')
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+t = ctx.wrap_socket(socket.create_connection((ip, 443), timeout=5),
+                    server_hostname='update.googleapis.com')
+t.sendall(b'POST /service/update2/json HTTP/1.1\r\nHost: '
+          b'update.googleapis.com\r\nContent-Length: 2\r\n\r\n{}')
+print(t.recv(100).split(b'\r\n')[0].decode())
+t.close()
+try:
+    socket.create_connection((query('mtalk.google.com'), 5228), timeout=3)
+except OSError as e:
+    print('5228:', type(e).__name__)
+'''
+
+
+@unittest.skipUnless(os.geteuid() == 0 and all(shutil.which(t) for t in (
+    'ip', 'nft', 'tcpdump', 'openssl')), 'needs root, ip, nft, tcpdump')
+class SinkholeInANamespace(unittest.TestCase):
+    """The capture's network pieces with the real kernel, in a scratch
+    namespace: the local route for the sinkhole range, the kit's firewall
+    rules (the Tor cgroup rules left out when cgroup v2 isn't there), the
+    resolver and the sinkhole, and the analysis of what tcpdump logged.
+    Root only, so it runs on the build machine (sudo), not in CI."""
+
+    def setUp(self):
+        self.ns = 'mlkt' + os.urandom(3).hex()
+        self.tmp = tempfile.mkdtemp()
+        self.procs = []
+        if subprocess.run(['ip', 'netns', 'add', self.ns],
+                          stderr=subprocess.DEVNULL).returncode != 0:
+            shutil.rmtree(self.tmp)
+            self.skipTest('cannot create a network namespace here')
+
+    def tearDown(self):
+        for p in self.procs:
+            if p.poll() is None:
+                p.terminate()
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+            p.stdout.close()
+            p.stderr.close()
+        subprocess.run(['ip', 'netns', 'del', self.ns])
+        shutil.rmtree(self.tmp)
+
+    def in_ns(self, *argv, **kw):
+        return subprocess.run(['ip', 'netns', 'exec', self.ns] + list(argv),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, **kw)
+
+    def spawn(self, *argv, ready=True):
+        p = subprocess.Popen(['ip', 'netns', 'exec', self.ns] + list(argv),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.procs.append(p)
+        if ready:
+            self.assertEqual(p.stdout.readline().strip(), b'ready')
+        return p
+
+    def test_capture_pipeline(self):
+        self.in_ns('ip', 'link', 'set', 'lo', 'up')
+        r = self.in_ns('ip', 'route', 'add', 'local', sinkhole.SINKHOLE_NET,
+                       'dev', 'lo')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        # The kit's rules without the Tor cgroup's two (nft resolves a
+        # cgroup path at load time; no Tor runs in a capture).
+        rules = netns.netns_ruleset('x/tor', 1, 47321,
+                                    sinkhole=sinkhole.SINKHOLE_NET)
+        rules = '\n'.join(line for line in rules.split('\n')
+                          if 'socket cgroupv2' not in line)
+        r = self.in_ns('nft', '-f', '-', input=rules)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        support.make_certs(self.tmp, ['localhost'], ['127.0.0.1'], {
+            'ca_issuers': ['http://a.moltleak.test/i'],
+            'ocsp': 'http://o.moltleak.test/',
+            'crl': 'http://c.moltleak.test/c'})
+        os.makedirs(os.path.join(self.tmp, 'logs'))
+        os.makedirs(os.path.join(self.tmp, 'capture'))
+        pcap = os.path.join(self.tmp, 'capture', 'blocked.pcap')
+        dump = self.spawn('tcpdump', '-i', 'nflog:1', '-n', '-U', '-s', '0',
+                          '-w', pcap, ready=False)
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            line = dump.stderr.readline()
+            if b'listening on' in line or not line:
+                break
+        self.spawn(sys.executable, '-I', ENTRY, 'service', 'fakedns',
+                   '--listen', '127.0.0.1', '--port', '53', '--log',
+                   os.path.join(self.tmp, 'logs', 'fakedns.jsonl'))
+        self.spawn(sys.executable, '-I', ENTRY, 'service', 'sinkhole',
+                   '--ports', '80,443', '--cert',
+                   os.path.join(self.tmp, 'server.crt'), '--key',
+                   os.path.join(self.tmp, 'server.key'), '--log',
+                   os.path.join(self.tmp, 'logs', 'sinkhole.jsonl'))
+        t0 = time.time()
+        out = self.in_ns(sys.executable, '-I', '-c', _CLIENT, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn('HTTP/1.1 503', out.stdout)
+        self.assertIn('5228: ConnectionRefusedError', out.stdout)
+        time.sleep(1)
+        dump.terminate()
+        dump.wait(timeout=5)
+        manifest = {'schema': bgcapture.SCHEMA, 't0': t0 - 1,
+                    'phases': [{'name': 'idle', 'start': t0 - 1,
+                                'end': time.time()}],
+                    'captures': {'blocked': 'capture/blocked.pcap'},
+                    'logs': {'dns': 'logs/fakedns.jsonl',
+                             'sinkhole': 'logs/sinkhole.jsonl'},
+                    'sinkhole': {'net': sinkhole.SINKHOLE_NET}}
+        events, facts, _ = bganalysis.analyze(manifest, self.tmp,
+                                              real_hosts())
+        got = {(e.kind, e.host, e.port): e for e in events}
+        tls = got[('tcp', 'update.googleapis.com', 443)]
+        self.assertEqual(tls.category, bganalysis.EXPECTED)
+        self.assertEqual(tls.sni, {'update.googleapis.com'})
+        self.assertIn('POST /service/update2/json', tls.requests)
+        # The firewall's first-packet log and the sinkhole's own log were
+        # matched into one connection.
+        self.assertEqual(tls.count, 1)
+        push = got[('tcp', 'mtalk.google.com', 5228)]
+        self.assertEqual(push.category, bganalysis.USER_ONLY)
+        self.assertEqual(facts['escaped'], [])
+
+
 class Firewall(unittest.TestCase):
 
     def test_sinkhole_rule(self):

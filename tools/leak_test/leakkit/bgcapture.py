@@ -286,9 +286,20 @@ class TrafficRun(harness.Run):
     def update_check(self):
         phase = self.step('update_check')
         try:
-            tid = self.cdp.call('Target.createTarget', {
-                'url': 'chrome://molt-ai-update/'})['targetId']
-            sid = self.cdp.attach(tid)
+            try:
+                tid = self.cdp.call('Target.createTarget', {
+                    'url': 'chrome://molt-ai-update/'})['targetId']
+                sid = self.cdp.attach(tid)
+            except cdplib.CdpClosed:
+                raise
+            except cdplib.CdpError:
+                # Some builds refuse to create a target at an internal URL
+                # (harness.open_molt_net_ui does the same).
+                tid = self.cdp.call('Target.createTarget',
+                                    {'url': 'about:blank'})['targetId']
+                sid = self.cdp.attach(tid)
+                phase['data']['nav_error'] = self.cdp.navigate(
+                    sid, 'chrome://molt-ai-update/', timeout=20)
             # The page asks for a check as it loads ("updateCheck").
             time.sleep(self.opts.update_wait)
             try:
