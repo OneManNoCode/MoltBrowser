@@ -22,6 +22,10 @@ bool UsesUniformMemoryInfo() {
   return IsUniform() || g_memory_for_testing.load(std::memory_order_relaxed);
 }
 
+bool IgnoresSystemMemoryPressure() {
+  return UsesUniformMemoryInfo();
+}
+
 size_t UniformJsHeapSizeLimit() {
   return static_cast<size_t>(
       moltnet::QuantizedMemorySize(moltnet::UniformJsHeapSizeLimit()));

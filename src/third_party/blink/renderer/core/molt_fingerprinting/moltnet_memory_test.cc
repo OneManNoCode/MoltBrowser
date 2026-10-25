@@ -64,6 +64,13 @@ TEST_F(MoltNetMemoryTest, Values) {
   EXPECT_EQ(UniformMemoryMeasurementBytes(38947298), 38947298u);
 }
 
+// The system's memory pressure doesn't reach MoltNet's isolates.
+TEST_F(MoltNetMemoryTest, SystemMemoryPressure) {
+  EXPECT_TRUE(IgnoresSystemMemoryPressure());
+  SetMoltNetMemoryForTesting(false);
+  EXPECT_FALSE(IgnoresSystemMemoryPressure());
+}
+
 // measureUserAgentSpecificMemory(): every context gets a JavaScript and a
 // canvas size, measured or not; the measured sizes are kept.
 TEST_F(MoltNetMemoryTest, MeasurementEntries) {

@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_idle_task_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
 #include "third_party/blink/renderer/core/inspector/worker_thread_debugger.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/workers/worker_backing_thread_startup_data.h"
 #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
 #include "third_party/blink/renderer/platform/heap/thread_state.h"
@@ -106,6 +107,10 @@ bool IsDenormalDisabledThreadType(ThreadType type) {
 
 // Wrapper functions defined in third_party/blink/public/web/blink.h
 void MemoryPressureNotificationToAllIsolates(v8::MemoryPressureLevel level) {
+  // MoltBrowser: not in MoltNet renderers (moltnet_memory.h).
+  if (molt_fingerprinting::IgnoresSystemMemoryPressure()) {
+    return;
+  }
   Thread::MainThread()
       ->Scheduler()
       ->ToMainThreadScheduler()
