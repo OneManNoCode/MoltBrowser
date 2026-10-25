@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder_stream.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -89,9 +90,10 @@ void Gamma(ComponentTransferLutType values,
            const ComponentTransferFunction& transfer_function) {
   for (unsigned i = 0; i < 256; ++i) {
     double exponent = transfer_function.exponent;
-    double val =
-        255.0 * (transfer_function.amplitude * pow((i / 255.0), exponent) +
-                 transfer_function.offset);
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+    double val = 255.0 * (transfer_function.amplitude *
+                              gfx::molt_math::Pow((i / 255.0), exponent) +
+                          transfer_function.offset);
     values[i] = ClampToU8(val);
   }
 }

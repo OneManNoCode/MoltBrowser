@@ -31,6 +31,7 @@
 #include "cc/paint/color_filter.h"
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder_stream.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -85,8 +86,9 @@ static void SaturateMatrix(float s,
 static void HueRotateMatrix(float hue,
                             base::span<float, kColorMatrixSize> matrix) {
   const float hue_radians = base::DegToRad(hue);
-  const float cos_hue = cosf(hue_radians);
-  const float sin_hue = sinf(hue_radians);
+  // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+  const float cos_hue = gfx::molt_math::Cos(hue_radians);
+  const float sin_hue = gfx::molt_math::Sin(hue_radians);
   matrix[0] = 0.213f + cos_hue * 0.787f - sin_hue * 0.213f;
   matrix[1] = 0.715f - cos_hue * 0.715f - sin_hue * 0.715f;
   matrix[2] = 0.072f - cos_hue * 0.072f + sin_hue * 0.928f;

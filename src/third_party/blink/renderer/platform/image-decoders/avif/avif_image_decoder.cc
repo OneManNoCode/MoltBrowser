@@ -36,6 +36,7 @@
 #include "third_party/skia/include/core/SkTypes.h"
 #include "third_party/skia/include/private/SkXmp.h"
 #include "ui/gfx/color_space.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 #if defined(ARCH_CPU_BIG_ENDIAN)
 #error Blink assumes a little-endian target.
@@ -1196,9 +1197,11 @@ bool AVIFImageDecoder::GetGainmapInfoAndData(
     DVLOG(1) << "Invalid gainmap metadata: a denominator value is zero";
     return false;
   }
-  const float base_headroom = std::exp2(
+  // MoltBrowser: the powers of 2 here and below are portable in MoltNet
+  // (ui/gfx/geometry/molt_math.h).
+  const float base_headroom = gfx::molt_math::Exp2(
       FractionToFloat(gain_map.baseHdrHeadroom.n, gain_map.baseHdrHeadroom.d));
-  const float alternate_headroom = std::exp2(FractionToFloat(
+  const float alternate_headroom = gfx::molt_math::Exp2(FractionToFloat(
       gain_map.alternateHdrHeadroom.n, gain_map.alternateHdrHeadroom.d));
   const bool base_is_hdr = base_headroom > alternate_headroom;
   out_gainmap_info.fDisplayRatioSdr =
@@ -1233,8 +1236,8 @@ bool AVIFImageDecoder::GetGainmapInfoAndData(
     const float max_log2 =
         FractionToFloat(UNSAFE_TODO(gain_map.gainMapMax[i]).n,
                         UNSAFE_TODO(gain_map.gainMapMax[i]).d);
-    out_gainmap_info.fGainmapRatioMin[i] = std::exp2(min_log2);
-    out_gainmap_info.fGainmapRatioMax[i] = std::exp2(max_log2);
+    out_gainmap_info.fGainmapRatioMin[i] = gfx::molt_math::Exp2(min_log2);
+    out_gainmap_info.fGainmapRatioMax[i] = gfx::molt_math::Exp2(max_log2);
 
     // Numerator and denominator intentionally swapped to get 1.0/gamma.
     out_gainmap_info.fGainmapGamma[i] =

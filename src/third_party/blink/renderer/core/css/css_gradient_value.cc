@@ -63,6 +63,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink::cssvalue {
 
@@ -369,8 +370,10 @@ static void ReplaceColorHintsWithColorStops(
     for (auto& new_stop : new_stops) {
       float point_relative_offset =
           (new_stop.offset - offset_left) / total_dist;
-      float weighting =
-          powf(point_relative_offset, logf(.5f) / logf(hint_relative_offset));
+      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      float weighting = gfx::molt_math::Pow(
+          point_relative_offset, gfx::molt_math::Log(.5f) /
+                                     gfx::molt_math::Log(hint_relative_offset));
       // Prevent crashes from huge gradient stops. See:
       // wpt/css/css-images/radial-gradient-transition-hint-crash.html
       if (std::isinf(weighting) || std::isnan(weighting)) {
@@ -1426,7 +1429,9 @@ std::unique_ptr<Gradient> CSSLinearGradientValue::CreateGradient(
             rise *= -1;
           }
           // Compute angle, and flip it back to "bearing angle" degrees.
-          float angle = 90 - base::RadToDeg(atan2(rise, run));
+          // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+          float angle =
+              90 - base::RadToDeg(gfx::molt_math::Atan2(rise, run));
           EndPointsFromAngle(angle, size, first_point, second_point,
                              gradient_type_);
         } else if (first_x_ || first_y_) {
