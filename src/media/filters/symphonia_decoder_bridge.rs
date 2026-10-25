@@ -274,7 +274,17 @@ pub mod ffi {
         /// most recent `decode()` call into `dst`. Used for planar
         /// audio formats.
         fn copy_decoded_channel(&self, channel: usize, dst: &mut [u8]) -> bool;
+
+        /// MoltBrowser: with `portable`, decoders initialized afterwards
+        /// compute their (I)FFTs with code whose results are the same on every
+        /// CPU (media/base/molt_portable_media.h).
+        fn set_portable_fft(portable: bool);
     }
+}
+
+// MoltBrowser: see `ffi::set_portable_fft`.
+fn set_portable_fft(portable: bool) {
+    symphonia::core::dsp::fft::moltbrowser_set_portable_fft(portable);
 }
 
 /// Creates a default, empty `SymphoniaAudioBuffer`.

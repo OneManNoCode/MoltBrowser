@@ -24,7 +24,14 @@
 //     filters, which round differently on x86 and Arm (VideoFrameConverter);
 //   * audio an encoder resamples or downmixes uses the plain C convolution
 //     and multiply-add instead of the AVX2/FMA, SSE or NEON ones
-//     (SincResampler, vector_math::FMAC).
+//     (SincResampler, vector_math::FMAC);
+//   * Symphonia (FLAC, MP3, PCM, Vorbis) computes its (I)FFTs with rustfft's
+//     scalar code instead of the AVX/FMA, SSE4.1 or NEON code picked for the
+//     CPU (SymphoniaAudioDecoder, symphonia-core's dsp/fft/simd.rs), so
+//     decoded Vorbis samples are the same on x86-64 and arm64;
+//   * FFmpeg's decoders, which take the codecs Symphonia and libopus don't,
+//     run their C code (av_force_cpu_flags(0)) instead of the SSE, AVX2/FMA
+//     or NEON code for the CPU.
 //
 // libyuv's colour conversions and libvpx's encoders and decoders needed no
 // change: they give the same bytes on every SIMD level of x86 and Arm

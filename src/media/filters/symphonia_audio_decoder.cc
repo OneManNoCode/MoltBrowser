@@ -37,6 +37,7 @@
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/base/sample_format.h"
 #include "media/base/timestamp_constants.h"
 #include "media/filters/symphonia_decoder_bridge.rs.h"
@@ -628,6 +629,9 @@ DecoderStatus SymphoniaAudioDecoder::ConfigureDecoder(
   // Codec support is determined by the rust implementation, and will return
   // an error as an initialization result if the codec is not supported.
   const SymphoniaDecoderConfig symphonia_config = ToSymphoniaConfig(config);
+  // MoltBrowser: a portable media process decodes the same samples on every
+  // CPU (molt_portable_media.h).
+  set_portable_fft(IsPortableMediaProcess());
   SymphoniaInitResult result = init_symphonia_decoder(symphonia_config);
   // Record status for every initialization attempt.
   base::UmaHistogramEnumeration("Media.Audio.Symphonia.InitStatus",
