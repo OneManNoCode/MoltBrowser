@@ -23,12 +23,15 @@ instruction-set-specific CPU kernels are built for three levels
 (docs/design/SANDBOXED_INFERENCE.md section 12). With the GN switch
 molt_llama_vulkan (llama_cpp.gni, off by default; Linux and Windows) the
 Vulkan backend is built too, its SPIR-V compiled at build time with the
-glslang and SPIRV-Tools Chromium pins
-(docs/design/SANDBOXED_INFERENCE.md section 11). Image input uses the
-multimodal library (tools/mtmd: the vision projector, image preprocessing
-and the projectors' graphs), built as :mtmd; the browser decodes images
-with Chromium's sandboxed decoders and the service receives raw RGB pixels
-(docs/design/SANDBOXED_INFERENCE.md section 10).
+glslang and SPIRV-Tools Chromium pins, the variants of weight types no
+catalogue model uses left out and the rest brotli-compressed
+(docs/design/SANDBOXED_INFERENCE.md sections 11 and 11.14). Image and
+audio input use the multimodal library (tools/mtmd: the projector, image
+and audio preprocessing and the projectors' graphs), built as :mtmd; the
+browser decodes images with Chromium's sandboxed decoders, a page's audio
+is decoded by its renderer, and the service receives raw RGB pixels and
+16 kHz mono 16-bit samples (docs/design/SANDBOXED_INFERENCE.md sections
+10 and 13).
 
 Only the directories the build uses were vendored: common/, ggml/,
 include/ and src/ from the tag above, and from tools/mtmd only the
@@ -91,8 +94,19 @@ Local Modifications:
       BUILD.gn enables still compiles with Chromium's glslang (upstream's
       CMake probes this at configure time), and that BUILD.gn's .comp list
       matches vulkan-shaders/ (update the list with every update).
+    ggml_vk_shader_pack.cc, ggml-vulkan-shader-pack.h: a host tool that
+      rewrites each shader family's generated .cpp: the variants of
+      _ggml_vk_dropped_types become empty (length 0), the others are laid
+      out in 256 KB blocks, brotli-compressed (quality 11), and each
+      variant's _data becomes a 24-byte descriptor (magic, family, block,
+      offset, size, FNV-1a checksum) with the same symbol names, so
+      ggml-vulkan.cpp's references are unchanged. Every block and
+      descriptor is round-tripped at build time; with --registry it writes
+      the table of families and the dropped list.
     ggml-vulkan-moltbrowser.{h,cpp}: opens the Vulkan loader at run time
-      (dlopen libvulkan.so.1 / LoadLibrary vulkan-1.dll) and reads the
+      (dlopen libvulkan.so.1; on Windows the vulkan-1.dll the service
+      loaded from System32 before its sandbox locked down, else
+      LoadLibraryExW with LOAD_LIBRARY_SEARCH_SYSTEM32) and reads the
       device properties the service's device policy and the browser's GPU
       record need (with the driver and pipeline-cache UUIDs); creates each
       device's VkPipelineCache from data the service sets before the device
@@ -100,8 +114,16 @@ Local Modifications:
       a lost device (vkGetFenceStatus) from one that ran out of memory
       (docs/design/SANDBOXED_INFERENCE.md sections 11.10 and 11.12). Only
       vulkan.hpp's result-returning overloads and C entry points, inside
-      try/catch.
-  vulkan-shaders-gen.cpp is unmodified. The backend is not registered with
+      try/catch. Also inflates a packed shader variant for
+      ggml_vk_create_pipeline_func() (ggml_vk_moltbrowser_unpack_shader:
+      checks the descriptor, inflates its block with brotli, checks the
+      checksum; throws on anything else, and for a left-out variant) and
+      tells supports_op whether an op's types have shaders
+      (ggml_vk_moltbrowser_op_types_built).
+  ggml_vulkan_checks.py also checks that every dropped type is one
+  vulkan-shaders-gen.cpp knows (and not f32/f16). vulkan-shaders-gen.cpp is
+  unmodified; its output goes to raw/ and the pack tool writes what is
+  compiled. The backend is not registered with
   ggml (no GGML_USE_VULKAN, so ggml-backend-reg.cpp doesn't bring it up);
   the service passes the chosen device explicitly.
 - chromium/llama_guard.{h,cc} (not upstream): the exception boundary for the
@@ -170,6 +192,16 @@ Local Modifications:
       marked "MoltBrowser". When updating: pipelines must still be created
       only there, and the cache must still be created before the first
       pipeline (pipelines compile on first use, during graph compute).
+    ggml/src/ggml-vulkan/ggml-vulkan.cpp: packed shaders, under
+      GGML_VULKAN_MOLTBROWSER (docs/design/SANDBOXED_INFERENCE.md section
+      11.14). ggml_vk_create_pipeline_func() inflates the variant it is
+      given (ggml_vk_moltbrowser_unpack_shader()) before creating the
+      shader module, and ggml_backend_vk_device_supports_op() returns false
+      for an op on a weight type the build left out
+      (ggml_vk_moltbrowser_op_types_built()), so it runs on the CPU. Two
+      small blocks, marked "MoltBrowser". When updating: shader modules
+      must still be created only there, and every new weight type must be
+      either kept or listed in _ggml_vk_dropped_types.
     ggml/src/ggml.c, ggml/src/ggml.cpp: with GGML_MOLTBROWSER_NO_BACKTRACE
       (set by BUILD.gn's :ggml_no_backtrace), ggml_print_backtrace() does
       nothing and no std::set_terminate handler is installed. Upstream

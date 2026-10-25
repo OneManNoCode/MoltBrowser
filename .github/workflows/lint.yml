@@ -181,6 +181,8 @@ jobs:
           persist-credentials: false
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
+      - name: tools/models/gguf_types_test.py (GGUF types vs the Vulkan build)
+        run: python3 tools/models/gguf_types_test.py -v
 
   compile-check-harness:
     # The harness's own logic, offline. The compile check itself needs hours

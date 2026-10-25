@@ -49,12 +49,13 @@ use_lld = true
 # Set DEPOT_TOOLS_WIN_TOOLCHAIN=0 to use locally installed VS
 
 # GPU inference for on-device AI (llama.cpp's Vulkan backend) is the GN
-# switch molt_llama_vulkan, off by default. It builds on Windows, but the
-# model's sandbox allows only Microsoft-signed DLLs once it locks down, and
-# the Vulkan loader and driver aren't loaded before that yet, so a Windows
-# build with it on runs models on the CPU. Leave it off here until that
-# pre-lockdown step exists. See docs/design/SANDBOXED_INFERENCE.md
-# section 11.4.
+# switch molt_llama_vulkan, off by default. The model's sandbox allows only
+# Microsoft-signed DLLs once it locks down; with the switch on, the service
+# launched for the GPU loads the Vulkan loader and the GPU drivers before
+# that (content/utility/on_device_model/molt_gpu_inference_sandbox_win.cc).
+# Leave it off here until that step has passed the Windows GPU test plan
+# (docs/BUILD_MACHINE_CHECKLIST.md, "ai-finish"). See
+# docs/design/SANDBOXED_INFERENCE.md sections 11.4 and 11.15.
 
 # PGO disabled (also implicit with is_official_build=false)
 chrome_pgo_phase = 0

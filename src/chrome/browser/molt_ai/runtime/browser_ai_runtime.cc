@@ -312,8 +312,10 @@ const ModelRegistryEntry kModelRegistry[] = {
     // speech; supported by the vendored llama.cpp's multimodal library
     // (Voxtral projector, 16 kHz). Loads with its projector (kProjectors).
     // Offered only once the model and its projector are both pinned (fail
-    // closed, IsPinnedWithProjector()). The language model is 3B, the
-    // encoder adds about 0.6B more.
+    // closed, IsPinnedWithProjector()) and the entry is unhidden by hand
+    // after the pinned files pass the audio check on the build machine
+    // (docs/BUILD_MACHINE_CHECKLIST.md, "ai-finish"). The language model is
+    // 3B, the encoder adds about 0.6B more.
     {"voxtral-mini-3b",
      "Voxtral Mini 3B (hears audio)",
      "ggml-org/Voxtral-Mini-3B-2507-GGUF",  // TODO(pin): confirm repo name
@@ -326,7 +328,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      "Q4_K_M",
      "Mistral AI",
      "apache-2.0",
-     false},
+     true},
 
     // OpenAI — gpt-oss 20B, Apache 2.0 open weights (native MXFP4 quant).
     {"gpt-oss-20b",

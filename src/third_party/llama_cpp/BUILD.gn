@@ -705,12 +705,14 @@ if (molt_llama_vulkan) {
   # (docs/design/SANDBOXED_INFERENCE.md section 11.14). The chat models are
   # Q4_K_M (Q4_K, Q5_K, Q6_K, Q8_0, and Q5_0 / Q5_1 / F16 where a row isn't
   # a multiple of 256: src/llama-quant.cpp), gpt-oss is MXFP4, the embedding
-  # model and the vision projector Q8_0, F16 and F32; KV caches are F16.
+  # model and the vision and audio projectors Q8_0, F16 and F32; KV caches
+  # are F16.
   # ggml_backend_vk_device_supports_op() keeps every op on these types on
   # the CPU (chromium/ggml-vulkan-moltbrowser.cpp), so a GGUF that has them
   # still runs, those ops on the CPU. Before pinning a model with another
-  # type, take the type out of this list (tools/models/gguf_types.py).
-  # About 20 MB of the 40 MB of SPIR-V.
+  # type, take the type out of this list (tools/models/gguf_types.py lists a
+  # GGUF's types against it). 789 of the 1569 variants: 24.1 MB of the
+  # 40.2 MB of SPIR-V.
   _ggml_vk_dropped_types = [
     "q1_0",
     "q2_0",
