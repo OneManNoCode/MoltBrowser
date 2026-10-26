@@ -213,6 +213,19 @@ TESTS = (
         'bgfetch_b', 'A Background Fetch, on another site',
         'bgfetch.html', origin='https_b', wait=3.0, timeout=60.0,
         doc='MOLTNET_COMPLIANCE.md §2 (Shared network state), §4 step 8'),
+    # A site's localStorage writes past its write allowance fail and revert
+    # (MoltNet's per-site write rate); a regular window keeps them all
+    # (regular_dom_storage_rate below).
+    LeakTest(
+        'dom_storage_rate', "localStorage writes past a site's write rate "
+                            'fail',
+        'domstorage.html', origin='https', wait=1.0, timeout=60.0,
+        doc='MOLTNET_COMPLIANCE.md §2 (DOM storage totals)',
+        assertions=[
+            ('burst_fits', 'eq', True, 'a burst of 1000 writes is kept'),
+            ('within_rate', 'eq', True, 'no more than the burst and what '
+             'refilled while the page wrote is kept'),
+            ('writes.kept', 'lt', 3000, 'not all 3000 writes are kept')]),
     LeakTest(
         'builtin_ai', 'Built-in AI APIs and Translator (no component '
                       'download)',
@@ -291,6 +304,12 @@ REGULAR_TESTS = (
         doc='MOLTNET_COMPLIANCE.md §1.9, §4 step 13',
         assertions=[('requests', 'all_fail', None,
                      'every request to the onion host fails')]),
+    LeakTest(
+        'regular_dom_storage_rate', 'Regular window: localStorage writes '
+                                    'are not rate-limited',
+        'domstorage.html', origin='local', target='regular', wait=1.0,
+        timeout=60.0, doc='MOLTNET_COMPLIANCE.md §2 (DOM storage totals)',
+        assertions=[('writes.kept', 'eq', 3000, 'all 3000 writes are kept')]),
 )
 
 ALL_TESTS = TESTS + REGULAR_TESTS
