@@ -94,6 +94,10 @@ source_set("side_panel") {
     "//url",
   ]
   deps = [
+    # MoltBrowser: the AI chat's and Agent mode's side panel web
+    # views (side_panel_helper.cc).
+    "//chrome/browser/molt_ai:molt_ai_side_panel_views",
+
     "//base:i18n",
     "//chrome/app:generated_resources",
     "//chrome/app:generated_resources_grit",

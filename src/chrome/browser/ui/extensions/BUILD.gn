@@ -185,6 +185,10 @@ source_set("impl") {
     "upload_extension_to_account_dialog.cc",
   ]
   deps = [
+    # MoltBrowser: MoltNet's isolation from the regular profile's
+    # extensions (extension_side_panel_manager.cc).
+    "//chrome/browser/molt_ai/tor:isolation",
+
     ":extension_post_install_dialog",
     ":extensions",
     "//chrome/browser/extensions",

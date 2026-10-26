@@ -49,6 +49,9 @@ static_library("media_router_feature") {
     "//extensions/buildflags",
   ]
   deps = [
+    # MoltBrowser: no Cast from MoltNet windows.
+    "//chrome/browser/molt_ai/tor:requests_policy",
+
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
     "//chrome/common:constants",

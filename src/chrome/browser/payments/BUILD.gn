@@ -24,6 +24,10 @@ source_set("impl") {
   public_deps = [ ":payments" ]
 
   deps = [
+    # MoltBrowser: no Autofill server traffic for MoltNet payment
+    # sheets.
+    "//chrome/browser/molt_ai/tor:autofill",
+
     "//base",
     "//components/payments/core",
     "//content/public/browser",

@@ -188,6 +188,9 @@ source_set("impl") {
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
 
   deps = [
+    # MoltBrowser: no Autofill server traffic for MoltNet tabs.
+    "//chrome/browser/molt_ai/tor:autofill",
+
     ":autofill",
     ":autofill_ai_ui_utils_impl",
     "//chrome/browser:browser_process",

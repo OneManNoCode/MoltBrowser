@@ -489,6 +489,11 @@ source_set("extensions") {
     "//chrome/browser/ui/toolbar",
   ]
   deps = [
+    # MoltBrowser: MoltNet's isolation from the regular profile's
+    # extensions (browser_extension_window_controller.cc,
+    # chrome_extension_function_details.cc).
+    "//chrome/browser/molt_ai/tor:isolation",
+
     "//base",
     "//chrome/app:command_ids",
     "//chrome/app/theme:chrome_unscaled_resources",
@@ -1808,6 +1813,10 @@ source_set("chrome_extensions_browser_client") {
   ]
 
   deps = [
+    # MoltBrowser: MoltNet's isolation from the regular
+    # profile's extensions.
+    "//chrome/browser/molt_ai/tor:isolation",
+
     "//chrome/browser:browser_process",
     "//chrome/browser/app_mode",
     "//chrome/browser/content_settings:content_settings_factory",

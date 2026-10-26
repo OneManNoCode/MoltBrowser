@@ -49,6 +49,11 @@ if (!is_android) {
     ]
 
     deps = [
+      # MoltBrowser: a profile reset also clears the per-site
+      # permissions of the agents' frame tools and of the web AI APIs.
+      "//chrome/browser/molt_ai:molt_ai_agents",
+      "//chrome/browser/molt_ai/web_ai",
+
       ":profile_reset_report_proto",
       ":profile_resetter",
       "//base",

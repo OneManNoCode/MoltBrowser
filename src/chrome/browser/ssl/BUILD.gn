@@ -118,6 +118,11 @@ source_set("impl") {
   ]
 
   deps = [
+    # MoltBrowser: no HTTPS upgrade for .onion (onion_util.h) and
+    # MoltNet's in-memory certificate exceptions.
+    "//chrome/browser/molt_ai/tor:isolation",
+    "//chrome/browser/molt_ai/tor:protocol",
+
     "//chrome/browser:browser_process",
     "//chrome/browser:browser_process_platform_part",
     "//chrome/browser/content_settings:content_settings_factory",

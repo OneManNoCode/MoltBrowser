@@ -47,6 +47,9 @@ source_set("impl") {
     "translate_page_action_controller.cc",
   ]
   deps = [
+    # MoltBrowser: the on-device translation footnote.
+    "//chrome/browser/molt_ai/translate:footnote_view",
+
     ":translate",
     "//chrome/app:generated_resources",
     "//chrome/app/theme:theme_resources",

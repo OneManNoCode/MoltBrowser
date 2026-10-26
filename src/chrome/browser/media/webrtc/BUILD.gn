@@ -135,6 +135,9 @@ source_set("webrtc") {
   ]
 
   deps = [
+    # MoltBrowser: MoltNet's display capture check.
+    "//chrome/browser/molt_ai/fingerprinting:display_capture",
+
     "//base:i18n",
     "//chrome/app:branded_strings",
     "//chrome/app:branded_strings_grit",

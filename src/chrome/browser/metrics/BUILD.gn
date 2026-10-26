@@ -272,6 +272,10 @@ source_set("impl") {
   ]
 
   deps = [
+    # MoltBrowser: the features MoltBrowser turns off
+    # (chrome_feature_list_creator.cc).
+    "//chrome/browser/molt_ai/privacy:feature_overrides",
+
     "//build/config/compiler:compiler_buildflags",
     "//chrome/browser:browser_process_platform_part",
     "//chrome/browser:chrome_browser_main",

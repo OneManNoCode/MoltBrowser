@@ -166,6 +166,12 @@ source_set("impl") {
   ]
 
   deps = [
+    # MoltBrowser: MoltNet's network context settings
+    # (profile_network_context_service.cc) and its proxy
+    # (proxy_config_monitor.cc).
+    "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/molt_ai/tor:network_context_policy",
+
     ":key_pinning_proto",
     "//base:build_time",
     "//chrome/browser:browser_features",

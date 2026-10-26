@@ -98,6 +98,9 @@ source_set("impl") {
   ]
 
   deps = [
+    # MoltBrowser: no phone passkeys from MoltNet windows.
+    "//chrome/browser/molt_ai/tor:requests_policy",
+
     "//base",
     "//chrome/browser/password_manager",
     "//chrome/browser/profiles:profile",

@@ -531,6 +531,10 @@ if (!is_android) {
     }
 
     deps = [
+      # MoltBrowser: what a MoltNet tab may not cause outside Tor
+      # (tab_features.cc).
+      "//chrome/browser/molt_ai/tor:requests_policy",
+
       ":tab_group",
       ":tab_model",
       ":tab_strip",
