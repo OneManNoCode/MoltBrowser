@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.cc b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-index 3314b24c0712085f29dd517888898120745a216f..b2fbe428b9b8ab4c064391d944266c7dd756ea68 100644
+index 3314b24c0712085f29dd517888898120745a216f..c4a24735310a884933c76b2959efc9aac731256b 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-@@ -10,6 +10,7 @@
+@@ -10,6 +10,8 @@
  
  #include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
 +#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
++#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
  #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
  
  namespace storage {
-@@ -132,6 +133,19 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
+@@ -132,6 +134,24 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
    }
  }
  
@@ -25,7 +26,12 @@ index 3314b24c0712085f29dd517888898120745a216f..b2fbe428b9b8ab4c064391d944266c7d
 +    const std::string& site) {
 +  auto it = storage_key_areas_.begin();
 +  while (it != storage_key_areas_.end()) {
-+    if (!it->second->IsBound() && MoltDomStorageSiteOf(it->first) == site) {
++    // Without a database, an area whose map holds an item stays: the item
++    // is nowhere else.
++    if (!it->second->IsBound() && MoltDomStorageSiteOf(it->first) == site &&
++        MoltDomStorageMayDropArea(
++            database_ != nullptr,
++            it->second->data_map()->storage_area()->molt_holds_items())) {
 +      it = storage_key_areas_.erase(it);
 +    } else {
 +      ++it;

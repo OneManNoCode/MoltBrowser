@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_data_map.h b/components/services/storage/dom_storage/session_storage_data_map.h
-index e1f242ec80fb2bb3cf597400589753786dbf2d4f..f1131c42d38c5b3ec669a04aaf9e7ab441805625 100644
+index e1f242ec80fb2bb3cf597400589753786dbf2d4f..635f8a824e51cea00d683bb51731e6524b41f882 100644
 --- a/components/services/storage/dom_storage/session_storage_data_map.h
 +++ b/components/services/storage/dom_storage/session_storage_data_map.h
-@@ -39,6 +39,19 @@ class SessionStorageDataMap final
+@@ -39,6 +39,21 @@ class SessionStorageDataMap final
                                     SessionStorageDataMap* map) = 0;
      virtual void OnDataMapDestruction(int64_t map_id) = 0;
      virtual void OnCommitResult(DbStatus status) = 0;
@@ -25,10 +25,12 @@ index e1f242ec80fb2bb3cf597400589753786dbf2d4f..f1131c42d38c5b3ec669a04aaf9e7ab4
 +        const blink::StorageKey& storage_key);
 +    virtual void MoltSiteCommitted(const blink::StorageKey& storage_key,
 +                                   size_t bytes);
++    virtual bool MoltMayWrite(const blink::StorageKey& storage_key,
++                              size_t bytes);
    };
  
    static scoped_refptr<SessionStorageDataMap> CreateFromDisk(
-@@ -78,6 +91,12 @@ class SessionStorageDataMap final
+@@ -78,6 +93,13 @@ class SessionStorageDataMap final
  
    void DidCommit(DbStatus status) override;
  
@@ -37,6 +39,7 @@ index e1f242ec80fb2bb3cf597400589753786dbf2d4f..f1131c42d38c5b3ec669a04aaf9e7ab4
 +  void MoltShrankTo(size_t new_storage_used) override;
 +  base::TimeDelta MoltSiteCommitDelay() override;
 +  void MoltSiteCommitted(size_t bytes) override;
++  bool MoltMayWrite(size_t bytes) override;
 +
   private:
    friend class base::RefCounted<SessionStorageDataMap>;

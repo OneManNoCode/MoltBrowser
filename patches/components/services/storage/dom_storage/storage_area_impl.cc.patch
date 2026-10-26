@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/storage_area_impl.cc b/components/services/storage/dom_storage/storage_area_impl.cc
-index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5cfb14104 100644
+index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..fff9e82e53cdabef5976932ce052c2651eff1839 100644
 --- a/components/services/storage/dom_storage/storage_area_impl.cc
 +++ b/components/services/storage/dom_storage/storage_area_impl.cc
-@@ -25,6 +25,16 @@ StorageAreaImpl::Delegate::GetMapUsageMetadataToCommit() {
+@@ -25,6 +25,19 @@ StorageAreaImpl::Delegate::GetMapUsageMetadataToCommit() {
  
  void StorageAreaImpl::Delegate::OnMapLoaded() {}
  
@@ -21,11 +21,54 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
 +  return base::TimeDelta();
 +}
 +void StorageAreaImpl::Delegate::MoltSiteCommitted(size_t) {}
++bool StorageAreaImpl::Delegate::MoltMayWrite(size_t) {
++  return true;
++}
 +
  bool StorageAreaImpl::s_aggressive_flushing_enabled_ = false;
  
  StorageAreaImpl::RateLimiter::RateLimiter(size_t desired_rate,
-@@ -345,6 +355,21 @@ void StorageAreaImpl::Put(
+@@ -267,6 +280,18 @@ void StorageAreaImpl::Put(
+     return;
+   }
+ 
++  // MoltBrowser: a write must fit its site's write rate, where the partition
++  // keeps one (molt_dom_storage_site_policy.h), also one that changes
++  // nothing, which observers still hear of. A write past it fails as one
++  // past the area's quota does, never as a bad message.
++  if (!delegate_->MoltMayWrite(key.size() + value.size())) {
++    for (const auto& observer : observers_) {
++      observer->KeyChangeFailed(key, source.Clone());
++    }
++    std::move(callback).Run(false);
++    return;
++  }
++
+   size_t old_item_size = 0;
+   size_t old_item_memory = 0;
+   size_t new_item_memory = 0;
+@@ -331,9 +356,20 @@ void StorageAreaImpl::Put(
+   size_t new_item_size = key.size() + value.size();
+   size_t new_storage_used = storage_used_ - old_item_size + new_item_size;
+ 
++  // MoltBrowser: a write refused below changes nothing. With keys and values
++  // cached, the old value was moved out of the map above; every early return
++  // from here on puts it back (Chromium 156 left the key mapped to an empty
++  // value when the area's quota refused the write, in every profile).
++  auto restore_old_value = [&] {
++    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
++      keys_values_map_[key] = std::move(*old_value);
++    }
++  };
++
+   // Only check quota if the size is increasing, this allows
+   // shrinking changes to pre-existing maps that are over budget.
+   if (new_item_size > old_item_size && new_storage_used > max_size_) {
++    restore_old_value();  // MoltBrowser
+     if (map_state_ == MapState::LOADED_KEYS_ONLY) {
+       receivers_.ReportBadMessage(
+           "The quota in browser cannot exceed when there is only one "
+@@ -345,6 +381,18 @@ void StorageAreaImpl::Put(
      }
      return;
    }
@@ -34,10 +77,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
 +  // know what its site's other areas hold.
 +  if (new_item_size > old_item_size &&
 +      !delegate_->MoltMayGrowTo(new_storage_used)) {
-+    // The old value, moved out above, goes back: the write changes nothing.
-+    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
-+      keys_values_map_[key] = std::move(*old_value);
-+    }
++    restore_old_value();
 +    for (const auto& observer : observers_) {
 +      observer->KeyChangeFailed(key, source.Clone());
 +    }
@@ -47,7 +87,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
  
    if (database_) {
      CreateCommitBatchIfNeeded();
-@@ -364,6 +389,10 @@ void StorageAreaImpl::Put(
+@@ -364,6 +412,10 @@ void StorageAreaImpl::Put(
  
    storage_used_ = new_storage_used;
    memory_used_ += new_item_memory - old_item_memory;
@@ -58,7 +98,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
    for (const auto& observer : observers_)
      observer->KeyChanged(key, value, old_value, source.Clone());
    std::move(callback).Run(true);
-@@ -445,6 +474,8 @@ void StorageAreaImpl::Delete(
+@@ -445,6 +497,8 @@ void StorageAreaImpl::Delete(
      if (commit_batch_)
        commit_batch_->changed_keys.insert(key);
    }
@@ -67,7 +107,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
  
    for (auto& observer : observers_)
      observer->KeyDeleted(key, old_value, source.Clone());
-@@ -496,6 +527,7 @@ void StorageAreaImpl::DeleteAll(
+@@ -496,6 +550,7 @@ void StorageAreaImpl::DeleteAll(
  
    storage_used_ = 0;
    memory_used_ = 0;
@@ -75,7 +115,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
    for (const auto& observer : observers_)
      observer->AllDeleted(/*was_nonempty=*/true, source.Clone());
    std::move(callback).Run();
-@@ -708,6 +740,9 @@ base::TimeDelta StorageAreaImpl::ComputeCommitDelay() const {
+@@ -708,6 +763,9 @@ base::TimeDelta StorageAreaImpl::ComputeCommitDelay() const {
        std::max(default_commit_delay_,
                 std::max(commit_rate_limiter_.ComputeDelayNeeded(elapsed_time),
                          data_rate_limiter_.ComputeDelayNeeded(elapsed_time)));
@@ -85,7 +125,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
    // TODO(mek): Rename histogram to match class name, or eliminate histogram
    // entirely.
    base::UmaHistogramLongTimes("LevelDBWrapper.CommitDelay", delay);
-@@ -779,6 +814,7 @@ StorageAreaImpl::CollectCommit() {
+@@ -779,6 +837,7 @@ StorageAreaImpl::CollectCommit() {
    }
  
    data_rate_limiter_.add_samples(data_size);
@@ -93,7 +133,7 @@ index 2c5cbeb7a0ccd919c26182134fce9d023bd7bbb9..29b56f6d4d3e5e7d5b76e36e62a0eaa5
  
    ++commit_batches_in_flight_;
    commit_batch_.reset();
-@@ -883,6 +919,8 @@ void StorageAreaImpl::OnForkStateLoaded(bool database_enabled,
+@@ -883,6 +942,8 @@ void StorageAreaImpl::OnForkStateLoaded(bool database_enabled,
    }
  
    CalculateStorageAndMemoryUsed();

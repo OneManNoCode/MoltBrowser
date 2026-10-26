@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/storage_area_impl.h b/components/services/storage/dom_storage/storage_area_impl.h
-index 46bae31d8d5a012cf5f1d14a65288ff356e8dfba..8148918cde170a3afa7d4bc0068f8f9014096fb2 100644
+index 46bae31d8d5a012cf5f1d14a65288ff356e8dfba..ffe0f9a78ab6b2fe245d02398ddea07cb9777cff 100644
 --- a/components/services/storage/dom_storage/storage_area_impl.h
 +++ b/components/services/storage/dom_storage/storage_area_impl.h
-@@ -62,6 +62,20 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
+@@ -62,6 +62,24 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
  
      virtual void DidCommit(DbStatus error) = 0;
      virtual void OnMapLoaded();
@@ -26,6 +26,24 @@ index 46bae31d8d5a012cf5f1d14a65288ff356e8dfba..8148918cde170a3afa7d4bc0068f8f90
 +    virtual base::TimeDelta MoltSiteCommitDelay();
 +    // The area handed a commit of `bytes` to the database.
 +    virtual void MoltSiteCommitted(size_t bytes);
++    // Whether a write of `bytes` (key and value) fits its site's write rate;
++    // taken from it if so. A write it refuses fails as one past the area's
++    // own limit does.
++    virtual bool MoltMayWrite(size_t bytes);
    };
  
    enum class CacheMode {
+@@ -127,6 +145,13 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
+ 
+   bool empty() const { return storage_used_ == 0; }
+ 
++  // MoltBrowser: whether the area holds any item, also one of zero bytes
++  // (molt_dom_storage_site_policy.h: an area without a database that holds
++  // one stays in the cache).
++  bool molt_holds_items() const {
++    return !keys_values_map_.empty() || !keys_only_map_.empty();
++  }
++
+   // If this ares is loaded and sending changes to the database.
+   bool initialized() const { return IsMapLoaded(); }
+ 
