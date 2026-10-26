@@ -19,6 +19,7 @@
 #include "third_party/rust/jxl/v0_7/wrapper/lib.rs.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkTypes.h"
+#include "ui/gfx/geometry/molt_math.h"  // MoltBrowser
 
 namespace blink {
 
@@ -57,7 +58,16 @@ JXLImageDecoder::JXLImageDecoder(AlphaOption alpha_option,
                    hbd_option,
                    color_behavior,
                    aux_image,
-                   max_decoded_bytes) {}
+                   max_decoded_bytes) {
+  // MoltBrowser: where Blink's math is portable (MoltNet's renderers, set
+  // before Blink starts: ui/gfx/geometry/molt_math.h), jxl-rs decodes with
+  // its scalar code and portable math too, so a JPEG XL image gives the same
+  // pixels on every CPU and OS rather than its SSE4.2, AVX2 + FMA, AVX-512 or
+  // NEON code's. A one-way switch for the process.
+  if (gfx::molt_math::IsPortable()) {
+    jxl_rs::jxl_rs_moltbrowser_set_portable();
+  }
+}
 
 JXLImageDecoder::~JXLImageDecoder() = default;
 

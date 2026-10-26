@@ -80,6 +80,11 @@ mod ffi {
         fn jxl_rs_decoder_create(pixel_limit: u64, premultiply_alpha: bool) -> Box<JxlRsDecoder>;
         fn jxl_rs_signature_check(data: &[u8]) -> bool;
 
+        /// MoltBrowser: from now on every decoder of this process runs
+        /// jxl-rs's scalar code and portable math, so an image decodes to
+        /// the same pixels on every CPU and OS (MoltNet's renderers).
+        fn jxl_rs_moltbrowser_set_portable();
+
         /// Set the output pixel format. Must be called after getting basic
         /// info.
         fn set_pixel_format(
@@ -265,6 +270,11 @@ fn jxl_rs_signature_check(data: &[u8]) -> bool {
             check_signature(&data[..data.len().min(12)]),
             ProcessingResult::Complete { result: Some(_) }
         )
+}
+
+// MoltBrowser: see the declaration in the bridge.
+fn jxl_rs_moltbrowser_set_portable() {
+    jxl::moltbrowser_set_portable(true);
 }
 
 impl JxlRsDecoder {
