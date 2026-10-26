@@ -110,6 +110,15 @@ TEST(MoltNetNetworkContextPolicyTest, DownloadsKeptWithTheirSiteInMoltNetOnly) {
   EXPECT_FALSE(KeepDownloadsWithTheirSite(false));
 }
 
+// Background Fetch is scheduled per site in MoltNet only.
+TEST(MoltNetNetworkContextPolicyTest, BackgroundFetchPerSiteInMoltNetOnly) {
+  static_assert(ScheduleBackgroundFetchesPerSite(/*is_moltnet_profile=*/true));
+  static_assert(
+      !ScheduleBackgroundFetchesPerSite(/*is_moltnet_profile=*/false));
+  EXPECT_TRUE(ScheduleBackgroundFetchesPerSite(true));
+  EXPECT_FALSE(ScheduleBackgroundFetchesPerSite(false));
+}
+
 bool IsUpperHex(const std::string& s) {
   for (char c : s) {
     if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {

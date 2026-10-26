@@ -21,6 +21,7 @@
 #include "components/download/internal/background_service/in_memory_download_driver.h"
 #include "components/download/internal/background_service/init_aware_background_download_service.h"
 #include "components/download/internal/background_service/logger_impl.h"
+#include "components/download/internal/background_service/molt_in_memory_download_limits.h"  // MoltBrowser
 #include "components/download/internal/background_service/model_impl.h"
 #include "components/download/internal/background_service/noop_store.h"
 #include "components/download/internal/background_service/proto/entry.pb.h"
@@ -141,6 +142,15 @@ std::unique_ptr<BackgroundDownloadService> BuildInMemoryDownloadService(
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
     URLLoaderFactoryGetterPtr url_loader_factory_getter) {
   auto config = Configuration::CreateFromFinch();
+  // MoltBrowser: Background Fetch, the only client off the record, decides
+  // when its downloads start; this service queues none of them
+  // (molt_in_memory_download_limits.h).
+  config->max_running_downloads =
+      MoltInMemoryDownloadLimit(config->max_running_downloads);
+  config->max_concurrent_downloads =
+      MoltInMemoryDownloadLimit(config->max_concurrent_downloads);
+  config->max_scheduled_downloads =
+      MoltInMemoryDownloadLimit(config->max_scheduled_downloads);
   auto download_factory =
       std::make_unique<InMemoryDownloadFactory>(io_task_runner);
   auto driver = std::make_unique<InMemoryDownloadDriver>(

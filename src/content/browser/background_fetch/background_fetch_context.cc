@@ -24,7 +24,9 @@
 #include "content/public/browser/background_fetch_delegate.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/content_browser_client.h"  // MoltBrowser
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_client.h"  // MoltBrowser
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -53,6 +55,13 @@ BackgroundFetchContext::BackgroundFetchContext(
   scheduler_ = std::make_unique<BackgroundFetchScheduler>(
       this, data_manager_.get(), registration_notifier_.get(), &delegate_proxy_,
       *devtools_context_, service_worker_context_);
+  // MoltBrowser: per-site scheduling, where the embedder asks (MoltNet;
+  // molt_background_fetch_site_policy.h).
+  if (storage_partition &&
+      GetContentClient()->browser()->ShouldScheduleBackgroundFetchesPerSite(
+          storage_partition->browser_context())) {
+    scheduler_->MoltSchedulePerSite();
+  }
 }
 
 BackgroundFetchContext::~BackgroundFetchContext() {

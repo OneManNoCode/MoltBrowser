@@ -514,6 +514,7 @@ source_set("unit_tests") {
     "molt_net_background_fetch_buffer_unittest.cc",
     "molt_net_background_fetch_credentials_unittest.cc",
     "molt_net_background_fetch_request_unittest.cc",
+    "molt_net_background_fetch_scheduling_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",

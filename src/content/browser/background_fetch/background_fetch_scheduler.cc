@@ -25,6 +25,12 @@ namespace content {
 
 namespace {
 
+// MoltBrowser: the site a registration is scheduled with: its storage key's
+// top-level site (molt_background_fetch_site_policy.h).
+std::string MoltSiteOf(const BackgroundFetchRegistrationId& registration_id) {
+  return registration_id.storage_key().top_level_site().Serialize();
+}
+
 // The maximum number of active registrations that can be processed
 // concurrently. The active registrations are from distinct origins.
 constexpr char kMaxActiveRegistrations[] = "max_active_registrations";
@@ -96,6 +102,10 @@ BackgroundFetchScheduler::RegistrationData::~RegistrationData() = default;
 bool BackgroundFetchScheduler::ScheduleDownload() {
   CHECK_LT(num_running_downloads_, max_running_downloads_,
            base::NotFatalUntil::M158);
+  // MoltBrowser: per site, where the embedder asks.
+  if (molt_sites_) {
+    return MoltScheduleDownload();
+  }
 
   // 1. Try to activate a registration from a different storage key.
   if (num_active_registrations_ < max_active_registrations_ &&
@@ -188,8 +198,16 @@ void BackgroundFetchScheduler::DidCompleteRequest(
     controller->MarkRequestAsComplete(std::move(request_info));
 
   --num_running_downloads_;
+  if (molt_sites_) {
+    molt_sites_->Finished(MoltSiteOf(registration_id));  // MoltBrowser
+  }
   if (num_running_downloads_ < max_running_downloads_)
     ScheduleDownload();
+  // MoltBrowser: per site, a freed slot can let more than one request start
+  // (another site's turn, or a registration of this site activated).
+  while (molt_sites_ && num_running_downloads_ < max_running_downloads_ &&
+         ScheduleDownload()) {
+  }
 }
 
 void BackgroundFetchScheduler::FinishJob(
@@ -218,6 +236,14 @@ void BackgroundFetchScheduler::FinishJob(
     completed_fetches_[it->first] = std::make_unique<RegistrationData>(
         registration_id, it->second->NewRegistrationData());
 
+    // MoltBrowser: the site's counts too, for a registration that was
+    // active.
+    if (molt_sites_ && active_controller) {
+      molt_sites_->Finished(MoltSiteOf(registration_id),
+                            it->second->pending_downloads());
+      molt_sites_->Deactivated(MoltSiteOf(registration_id));
+    }
+
     // Reset scheduler params.
     num_running_downloads_ -= it->second->pending_downloads();
     --num_active_registrations_;
@@ -228,6 +254,10 @@ void BackgroundFetchScheduler::FinishJob(
 
   if (num_running_downloads_ < max_running_downloads_)
     ScheduleDownload();
+  // MoltBrowser: as in DidCompleteRequest().
+  while (molt_sites_ && num_running_downloads_ < max_running_downloads_ &&
+         ScheduleDownload()) {
+  }
 }
 
 void BackgroundFetchScheduler::DidMarkForDeletion(
@@ -416,11 +446,20 @@ void BackgroundFetchScheduler::OnRegistrationLoadedAtStartup(
 
   ++num_active_registrations_;
   num_running_downloads_ += active_fetch_requests.size();
+  // MoltBrowser: a registration resumed at startup counts to its site.
+  if (molt_sites_) {
+    molt_sites_->Activated(MoltSiteOf(registration_id));
+    molt_sites_->Started(MoltSiteOf(registration_id),
+                         static_cast<int>(active_fetch_requests.size()));
+  }
 
   if (active_fetch_requests.empty()) {
     CHECK_LT(num_completed_requests, num_requests, base::NotFatalUntil::M158);
     // Start processing the next request.
     ++num_running_downloads_;
+    if (molt_sites_) {
+      molt_sites_->Started(MoltSiteOf(registration_id));  // MoltBrowser
+    }
     controller_ptr->PopNextRequest(
         base::BindOnce(&BackgroundFetchScheduler::DidStartRequest,
                        weak_ptr_factory_.GetWeakPtr()),
@@ -591,6 +630,84 @@ void BackgroundFetchScheduler::LogBackgroundFetchEventForDevTools(
 void BackgroundFetchScheduler::Shutdown() {
   event_dispatcher_.Shutdown();
   devtools_context_ = nullptr;
+}
+
+// MoltBrowser:
+void BackgroundFetchScheduler::MoltSchedulePerSite() {
+  if (molt_sites_) {
+    return;
+  }
+  molt_sites_ = std::make_unique<MoltBackgroundFetchSites>();
+  // The total for all sites; each site's own limits are the policy's.
+  max_running_downloads_ = kMoltBackgroundFetchRunningTotal;
+}
+
+// MoltBrowser: as ScheduleDownload(), per site
+// (molt_background_fetch_site_policy.h).
+bool BackgroundFetchScheduler::MoltScheduleDownload() {
+  // 1. Every pending registration whose site has room becomes active, in the
+  //    order they were made; as in Chromium, one per storage key at a time.
+  for (auto pending = controller_ids_.begin();
+       pending != controller_ids_.end();) {
+    const BackgroundFetchRegistrationId controller_id = *pending;
+    const std::string site = MoltSiteOf(controller_id);
+    bool storage_key_active = false;
+    for (BackgroundFetchJobController* controller : active_controllers_) {
+      if (controller->registration_id().storage_key() ==
+          controller_id.storage_key()) {
+        storage_key_active = true;
+        break;
+      }
+    }
+    auto job = job_controllers_.find(controller_id.unique_id());
+    if (job == job_controllers_.end()) {
+      pending = controller_ids_.erase(pending);
+      continue;
+    }
+    if (storage_key_active || !molt_sites_->MayActivate(site)) {
+      ++pending;
+      continue;
+    }
+    active_controllers_.push_front(job->second.get());
+    ++num_active_registrations_;
+    molt_sites_->Activated(site);
+    LogBackgroundFetchEventForDevTools(Event::kFetchScheduled, controller_id,
+                                       /* request_info= */ nullptr);
+    pending = controller_ids_.erase(pending);
+  }
+
+  // 2. One request starts: of the sites with one ready and room for it, the
+  //    one downloading the fewest, served least recently among equals; and
+  //    within it, the registration that has waited longest.
+  std::vector<std::string> ready;
+  for (BackgroundFetchJobController* controller : active_controllers_) {
+    if (controller->HasMoreRequests()) {
+      ready.push_back(MoltSiteOf(controller->registration_id()));
+    }
+  }
+  const std::optional<std::string> site = molt_sites_->PickNext(ready);
+  if (!site) {
+    return false;
+  }
+  for (auto it = active_controllers_.begin(); it != active_controllers_.end();
+       ++it) {
+    BackgroundFetchJobController* controller = *it;
+    if (!controller->HasMoreRequests() ||
+        MoltSiteOf(controller->registration_id()) != *site) {
+      continue;
+    }
+    ++num_running_downloads_;
+    molt_sites_->Started(*site);
+    controller->PopNextRequest(
+        base::BindOnce(&BackgroundFetchScheduler::DidStartRequest,
+                       weak_ptr_factory_.GetWeakPtr()),
+        base::BindOnce(&BackgroundFetchScheduler::DidCompleteRequest,
+                       weak_ptr_factory_.GetWeakPtr()));
+    active_controllers_.erase(it);
+    active_controllers_.push_back(controller);
+    return true;
+  }
+  return false;
 }
 
 }  // namespace content
