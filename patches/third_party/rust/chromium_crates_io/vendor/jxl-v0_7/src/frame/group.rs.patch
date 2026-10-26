@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
+index 3fba04a7b72e5f5d6f14cb8cdc97923c6ab0db2a..5dde894d125b5a6ebd9b54e5ab62a04bfb047cfa 100644
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
+@@ -6,7 +6,6 @@
+ use jxl_simd::{F32SimdVec, I32SimdVec, SimdDescriptor, SimdMask, simd_function};
+ use jxl_transforms::transform::*;
+ use jxl_transforms::transform_map::*;
+-use num_traits::Float;
+ 
+ use crate::bit_reader::BitReader;
+ use crate::entropy_coding::decode::{Histograms, SymbolReader};
+@@ -580,8 +579,9 @@ pub fn decode_vardct_group(
+     pixels: &mut Option<[Image<f32>; 3]>,
+     buffers: &mut VarDctBuffers,
+ ) -> Result<(), Error> {
+-    let x_dm_multiplier = (1.0 / (1.25)).powf(frame_header.x_qm_scale as f32 - 2.0);
+-    let b_dm_multiplier = (1.0 / (1.25)).powf(frame_header.b_qm_scale as f32 - 2.0);
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let x_dm_multiplier = crate::moltbrowser_math::powf(1.0 / (1.25), frame_header.x_qm_scale as f32 - 2.0);
++    let b_dm_multiplier = crate::moltbrowser_math::powf(1.0 / (1.25), frame_header.b_qm_scale as f32 - 2.0);
+ 
+     let block_group_rect = frame_header.block_group_rect(group);
+     debug!(?block_group_rect);

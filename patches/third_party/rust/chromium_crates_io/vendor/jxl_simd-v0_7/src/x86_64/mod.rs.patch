@@ -1,0 +1,21 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs b/third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs
+index 14bfd60d40811cb8f33865b684a5f58a3d35c6a0..0564614267527e0854228cc3971756e0b6416070 100644
+--- a/third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs
+@@ -29,6 +29,10 @@ macro_rules! simd_function {
+         $pub fn $dname($($arg: $ty),*) $(-> $ret)? {
+             #[allow(unused)]
+             use $crate::SimdDescriptor;
++            // MoltBrowser: the scalar code on every CPU when portable.
++            if $crate::moltbrowser_portable() {
++                return $name($crate::ScalarDescriptor::new().unwrap(), $($arg),*);
++            }
+             $crate::simd_function_body_avx512!($name($($arg: $ty),*) $(-> $ret)?; ($($arg),*));
+             $crate::simd_function_body_avx!($name($($arg: $ty),*) $(-> $ret)?; ($($arg),*));
+             $crate::simd_function_body_sse42!($name($($arg: $ty),*) $(-> $ret)?; ($($arg),*));

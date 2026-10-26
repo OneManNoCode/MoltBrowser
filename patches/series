@@ -304,6 +304,7 @@ media/base/video_encoder.h.patch
 media/base/video_frame_converter_internals.cc.patch
 media/filters/symphonia_audio_decoder.cc.patch
 media/filters/symphonia_decoder_bridge.rs.patch
+media/filters/wsola_internals.cc.patch
 media/gfx/mappable_shared_image_video_frame_pool.cc.patch
 media/gfx/paint_canvas_video_renderer.cc.patch
 media/renderers/default_decoder_factory.cc.patch
@@ -518,6 +519,7 @@ third_party/blink/renderer/platform/graphics/filters/fe_component_transfer.cc.pa
 third_party/blink/renderer/platform/graphics/filters/fe_lighting.cc.patch
 third_party/blink/renderer/platform/graphics/path_traversal_state.cc.patch
 third_party/blink/renderer/platform/image-decoders/avif/avif_image_decoder.cc.patch
+third_party/blink/renderer/platform/image-decoders/jxl/jxl_image_decoder.cc.patch
 third_party/blink/renderer/platform/language.cc.patch
 third_party/blink/renderer/platform/language.h.patch
 third_party/blink/renderer/platform/network/network_state_notifier.cc.patch
@@ -538,6 +540,17 @@ third_party/opus/src/celt/x86/x86cpu.c.patch
 third_party/rust/chromium_crates_io/Cargo.lock.patch
 third_party/rust/chromium_crates_io/Cargo.toml.patch
 third_party/rust/chromium_crates_io/gnrt_config.toml.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/Cargo.toml.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/api/color.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/quant_weights.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/lib.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/stages/xyb.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/aarch64/mod.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/lib.rs.patch
+third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/x86_64/mod.rs.patch
 third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/Cargo.toml.patch
 third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/lib.rs.patch
 third_party/rust/chromium_crates_io/vendor/read-fonts-v0_43/src/tables/varc.rs.patch
@@ -547,6 +560,8 @@ third_party/rust/chromium_crates_io/vendor/symphonia-core-v0_6/src/dsp/fft/simd.
 third_party/rust/chromium_crates_io/vendor/unicode-bidi-v0_3/Cargo.toml.patch
 third_party/rust/chromium_crates_io/vendor/unicode-bidi-v0_3/src/lib.rs.patch
 third_party/rust/getrandom/v0_4/BUILD.gn.patch
+third_party/rust/jxl/v0_7/BUILD.gn.patch
+third_party/rust/jxl/v0_7/wrapper/lib.rs.patch
 third_party/rust/read_fonts/v0_43/BUILD.gn.patch
 third_party/rust/regex/v1/BUILD.gn.patch
 third_party/rust/regex/v1/README.chromium.patch

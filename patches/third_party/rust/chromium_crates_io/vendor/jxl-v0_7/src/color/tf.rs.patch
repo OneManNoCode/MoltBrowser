@@ -1,0 +1,121 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
+index 94b963855a3f03ed47f95c45869d4144ddfbecd7..984ad7184cb1833108110615077eddc825fb8a09 100644
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
+@@ -204,10 +204,10 @@ pub fn linear_to_pq_precise(intensity_target: f32, samples: &mut [f32]) {
+         }
+ 
+         let a = s.abs() as f64;
+-        let xp = (a * mult).powf(PQ_M1);
++        let xp = crate::moltbrowser_math::powf(a * mult, PQ_M1); // MoltBrowser
+         let num = PQ_C1 + xp * PQ_C2;
+         let den = 1.0 + xp * PQ_C3;
+-        let e = (num / den).powf(PQ_M2);
++        let e = crate::moltbrowser_math::powf(num / den, PQ_M2); // MoltBrowser
+         *s = (e as f32).copysign(*s);
+     }
+ }
+@@ -225,10 +225,10 @@ pub fn pq_to_linear_precise(intensity_target: f32, samples: &mut [f32]) {
+         }
+ 
+         let a = s.abs() as f64;
+-        let xp = a.powf(PQ_M2.recip());
++        let xp = crate::moltbrowser_math::powf(a, PQ_M2.recip()); // MoltBrowser
+         let num = (xp - PQ_C1).max(0.0);
+         let den = PQ_C2 - PQ_C3 * xp;
+-        let y = (num / den).powf(PQ_M1.recip());
++        let y = crate::moltbrowser_math::powf(num / den, PQ_M1.recip()); // MoltBrowser
+         *s = ((y * mult) as f32).copysign(*s);
+     }
+ }
+@@ -369,7 +369,7 @@ fn hlg_ootf_inner_precise(exp: f64, [lr, lg, lb]: [f32; 3], [sr, sg, sb]: [&mut
+         let dg = *g as f64;
+         let db = *b as f64;
+         let mixed = dr.mul_add(lr, dg.mul_add(lg, db * lb));
+-        let mult = mixed.powf(exp);
++        let mult = crate::moltbrowser_math::powf(mixed, exp); // MoltBrowser
+         *r = (dr * mult) as f32;
+         *g = (dg * mult) as f32;
+         *b = (db * mult) as f32;
+@@ -398,7 +398,8 @@ pub fn hlg_scene_to_display_precise(
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f64 * 1.111f64.powf((intensity_display as f64 / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f64 * crate::moltbrowser_math::powf(1.111f64, crate::moltbrowser_math::log2(intensity_display as f64 / 1e3));
+     let gamma_sub_one = system_gamma - 1.0;
+     hlg_ootf_inner_precise(gamma_sub_one, luminance_rgb, samples_rgb);
+ }
+@@ -412,7 +413,8 @@ pub fn hlg_display_to_scene_precise(
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f64 * 1.111f64.powf((intensity_display as f64 / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f64 * crate::moltbrowser_math::powf(1.111f64, crate::moltbrowser_math::log2(intensity_display as f64 / 1e3));
+     let one_sub_gamma = 1.0 - system_gamma;
+     hlg_ootf_inner_precise(one_sub_gamma / system_gamma, luminance_rgb, samples_rgb);
+ }
+@@ -425,7 +427,8 @@ pub fn hlg_scene_to_display(
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f32 * 1.111f32.powf((intensity_display / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f32 * crate::moltbrowser_math::powf(1.111f32, crate::moltbrowser_math::log2(intensity_display / 1e3));
+     let gamma_sub_one = system_gamma - 1.0;
+     hlg_ootf_inner(gamma_sub_one, luminance_rgb, samples_rgb);
+ }
+@@ -439,7 +442,8 @@ pub fn hlg_display_to_scene(
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f32 * 1.111f32.powf((intensity_display / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f32 * crate::moltbrowser_math::powf(1.111f32, crate::moltbrowser_math::log2(intensity_display / 1e3));
+     let one_sub_gamma = 1.0 - system_gamma;
+     hlg_ootf_inner(one_sub_gamma / system_gamma, luminance_rgb, samples_rgb);
+ }
+@@ -454,7 +458,7 @@ pub fn scene_to_hlg_precise(samples: &mut [f32]) {
+             (3.0 * a).sqrt()
+         } else {
+             // TODO(tirr-c): maybe use mul_add?
+-            HLG_A * (12.0 * a - HLG_B).ln() + HLG_C
++            HLG_A * crate::moltbrowser_math::ln(12.0 * a - HLG_B) + HLG_C // MoltBrowser
+         };
+         *s = (y as f32).copysign(*s);
+     }
+@@ -469,7 +473,7 @@ pub fn hlg_to_scene_precise(samples: &mut [f32]) {
+         let y = if a <= 0.5 {
+             a * a / 3.0
+         } else {
+-            (((a - HLG_C) / HLG_A).exp() + HLG_B) / 12.0
++            (crate::moltbrowser_math::exp((a - HLG_C) / HLG_A) + HLG_B) / 12.0 // MoltBrowser
+         };
+         *s = (y as f32).copysign(*s);
+     }
+@@ -552,7 +556,7 @@ mod test {
+             *x = if a <= 0.0031308 {
+                 a * 12.92
+             } else {
+-                a.powf(1.0 / 2.4).mul_add(1.055, -0.055)
++                crate::moltbrowser_math::powf(a, 1.0 / 2.4).mul_add(1.055, -0.055) // MoltBrowser
+             }
+             .copysign(*x);
+         }
+@@ -565,7 +569,7 @@ mod test {
+             *x = if a <= 0.018 {
+                 a * 4.5
+             } else {
+-                a.powf(0.45).mul_add(1.099, -0.099)
++                crate::moltbrowser_math::powf(a, 0.45).mul_add(1.099, -0.099) // MoltBrowser
+             }
+             .copysign(*x);
+         }

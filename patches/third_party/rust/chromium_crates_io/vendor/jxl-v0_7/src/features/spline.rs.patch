@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
+index 1537b7ea0ada74a20ef7e2f49ac74f227032e102..652d7aedd4b31c9a5b0b0d2384ee3a4a77524a04 100644
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
+@@ -40,7 +40,7 @@ impl Point {
+         Point { x, y }
+     }
+     fn abs(&self) -> f32 {
+-        self.x.hypot(self.y)
++        crate::moltbrowser_math::hypot(self.x, self.y) // MoltBrowser
+     }
+ }
+ 
+@@ -690,7 +690,8 @@ impl Splines {
+             .max_by(|a, b| a.total_cmp(b))
+             .unwrap();
+         let max_distance =
+-            (-2.0 * sigma * sigma * (0.1f32.ln() * distance_exp - max_color.ln())).sqrt();
++            // MoltBrowser: portable in MoltNet (moltbrowser_math).
++            (-2.0 * sigma * sigma * (crate::moltbrowser_math::ln(0.1f32) * distance_exp - crate::moltbrowser_math::ln(max_color))).sqrt();
+         let segment = SplineSegment {
+             center_x: center.x,
+             center_y: center.y,
