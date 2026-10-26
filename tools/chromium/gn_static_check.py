@@ -328,10 +328,32 @@ class Interp(gnlib.Interp):
             s.set("target_name", tname)
             self.exec_block(block, s, ctx)
             if ctx.get("targets") is not None and isinstance(ttype, str):
-                ctx["targets"].append(gnlib.Target(ttype, tname, s,
-                                                   ctx["dir"]))
+                r = gnlib.Target(ttype, tname, s, ctx["dir"])
+                _snapshot(r)
+                ctx["targets"].append(r)
             return
-        return super().call_stmt(name, args, block, scope, ctx)
+        targets = ctx.get("targets")
+        n0 = len(targets) if targets is not None else 0
+        super().call_stmt(name, args, block, scope, ctx)
+        if targets is not None:
+            for r in targets[n0:]:
+                if not hasattr(r, "snap"):
+                    _snapshot(r)
+
+
+# Read through enclosing scopes, as gn does, when the target is defined: a
+# BUILD.gn's `visibility = [ ":*" ]` covers only the targets after it.
+SNAPSHOT_KEYS = ("visibility", "testonly", "check_includes")
+
+
+def _snapshot(r):
+    snap = {}
+    for k in SNAPSHOT_KEYS:
+        try:
+            snap[k] = r.scope.get(k)
+        except KeyError:
+            pass
+    r.snap = snap
 
 
 def make_interp(tree, platform, extra_args=None):
@@ -444,7 +466,8 @@ def norm_label(lab, base_dir):
     else:
         d, n = lab, None
     d = abspath(d, base_dir) if d else base_dir
-    if n is None:
+    if not n:
+        # "//a/b" and "//a/b:" both name //a/b:b.
         n = d.rstrip("/").rsplit("/", 1)[-1]
     return d + ":" + n
 
@@ -486,7 +509,8 @@ def label_matches(pattern, label):
 class GnTarget:
     __slots__ = ("label", "type", "sources", "public", "deps", "public_deps",
                  "visibility", "testonly", "check_includes",
-                 "allow_circular", "friend", "outputs", "path", "template")
+                 "allow_circular", "friend", "outputs", "path", "template",
+                 "data_deps")
 
     def __init__(self, label, ttype, path):
         self.label = label
@@ -503,6 +527,7 @@ class GnTarget:
         self.allow_circular = []
         self.friend = []
         self.outputs = []
+        self.data_deps = []
 
     def files(self):
         """[(file, is_public, is_generated)] as gn check's file map."""
@@ -534,26 +559,39 @@ def _bool(v, default):
     return v if isinstance(v, bool) else default
 
 
-def _fill(t, scope_get, path):
+def _fill(t, scope_get, path, nested_get=None):
+    nested_get = nested_get or scope_get
     t.sources = {abspath(s, path) for s in _strs(scope_get("sources"))}
     pub = scope_get("public")
     if isinstance(pub, list):
         t.public = {abspath(s, path) for s in _strs(pub)}
+    # A dependency on the target's own label names it in another toolchain
+    # (a host tool's wrapper group): not an edge in this one.
     t.deps = [x for x in (norm_label(d, path)
-                          for d in _strs(scope_get("deps"))) if x]
+                          for d in _strs(scope_get("deps")))
+              if x and x != t.label]
     t.public_deps = [x for x in (norm_label(d, path)
                                  for d in _strs(scope_get("public_deps")))
-                     if x]
-    vis = scope_get("visibility")
-    if isinstance(vis, list):
+                     if x and x != t.label]
+    # gn reads these through enclosing scopes too: a BUILD.gn's top-level
+    # `testonly = true` or `visibility = [...]` covers all its targets.
+    vis = nested_get("visibility")
+    if isinstance(vis, list) and _unknownish(vis):
+        t.visibility = None      # partly unknown: don't judge it
+    elif isinstance(vis, list):
         t.visibility = [x for x in (norm_pattern(v, path) for v in vis) if x]
     elif isinstance(vis, str):
         t.visibility = [x for x in [norm_pattern(vis, path)] if x]
-    t.testonly = _bool(scope_get("testonly"), False)
-    t.check_includes = _bool(scope_get("check_includes"), True)
+    t.testonly = _bool(nested_get("testonly"), False)
+    t.check_includes = _bool(nested_get("check_includes"), True)
     t.allow_circular = [x for x in (norm_label(d, path) for d in
                                     _strs(scope_get("allow_circular_includes_from")))
                         if x]
+    # data_deps naming another toolchain (a host tool) can't close a cycle
+    # in this one.
+    t.data_deps = [x for x in (norm_label(d, path)
+                               for d in _strs(scope_get("data_deps"))
+                               if "(" not in d) if x and x != t.label]
     t.friend = [x for x in (norm_pattern(v, path)
                             for v in _strs(scope_get("friend"))) if x]
 
@@ -617,7 +655,22 @@ def targets_of_file(raw, path):
         def get(k, r=r):
             return r.scope.vars.get(k)
 
-        _fill(t, get, r.path)
+        def nested(k, recs=recs):
+            # Innermost record first; each looks through its enclosing
+            # scopes (the invocation's reach the BUILD.gn's own).
+            for rr in reversed(recs):
+                snap = getattr(rr, "snap", None)
+                if snap is not None:
+                    if k in snap:
+                        return snap[k]
+                    continue
+                try:
+                    return rr.scope.get(k)
+                except KeyError:
+                    continue
+            return None
+
+        _fill(t, get, r.path, nested)
         if r.func in TESTONLY_TEMPLATES:
             t.testonly = True
         if r.func in GENERATING_TYPES:
@@ -658,18 +711,31 @@ def _typemap_deps(r, key):
     return pub, priv
 
 
+def _labels(r, key):
+    return [x for x in (norm_label(d, r.path)
+                        for d in _strs(r.scope.vars.get(key))) if x]
+
+
 def _mojom_variants(t, r, out):
     """The C++ targets mojom() defines (mojo/public/tools/bindings/
     mojom.gni), with the headers each owns: <name> (chromium variant),
-    <name>_blink and <name>_shared."""
+    <name>_blink, <name>_shared and the <variant>_headers groups."""
     get = r.scope.vars.get
     srcs = [abspath(s, r.path) for s in _strs(get("sources"))]
-    deps = t.deps + t.public_deps
+    deps = t.deps + t.public_deps           # mojom_cpp_deps
+    all_deps = deps + _labels(r, "mojom_source_deps") + \
+        _labels(r, "mojom_blink_source_deps")
     base = t.label
     vis = t.visibility
+    full = not (get("disallow_native_types") is True and
+                get("disallow_interfaces") is True)
+    bindings = "//mojo/public/cpp/bindings:" + (
+        "bindings" if full else "bindings_base")
     t.sources = set()
     t.public = None
     t.deps = []
+    shared_hdrs = [OUT + "/gen/" + s[2:] + e for s in srcs
+                   for e in MOJOM_VARIANTS["_shared"] if e.endswith(".h")]
     for suffix, exts in MOJOM_VARIANTS.items():
         lab = base + suffix
         v = t if suffix == "" else GnTarget(lab, "mojom" + suffix, t.path)
@@ -677,26 +743,40 @@ def _mojom_variants(t, r, out):
         v.testonly = t.testonly
         v.outputs = [OUT + "/gen/" + s[2:] + e for s in srcs for e in exts]
         if suffix == "_shared":
+            # <name>_shared (a group or component) forwards to the source
+            # set <name>_shared_cpp_sources, which lists the headers.
             v.visibility = None
-            v.public_deps = [d + "_shared" for d in deps] + [
-                "//mojo/public/cpp/bindings:bindings"]
+            src = GnTarget(lab + "_cpp_sources", "mojom_shared", t.path)
+            src.template = "mojom"
+            src.testonly = t.testonly
+            src.outputs = v.outputs
+            src.public_deps = [d + "_shared" for d in all_deps] + [bindings]
+            out.setdefault(src.label, src)
+            v.outputs = []
+            v.public_deps = [src.label]
             v.deps = []
         else:
-            if suffix == "_blink":
+            blink = suffix == "_blink"
+            if blink:
                 vb = get("visibility_blink")
                 v.visibility = [x for x in (norm_pattern(p, r.path)
                                             for p in _strs(vb)) if x] \
                     if isinstance(vb, list) else None
                 pub, priv = _typemap_deps(r, "blink_cpp_typemaps")
                 pub = pub + ["//mojo/public/cpp/bindings:wtf_support"]
+                over, comp = "overridden_deps_blink", "component_deps_blink"
             else:
                 v.visibility = vis
                 pub, priv = _typemap_deps(r, "cpp_typemaps")
-            v.public_deps = [d + suffix for d in deps] + [
-                base + "_shared", "//base:base",
-                "//mojo/public/cpp/bindings:bindings"] + pub
+                over, comp = "overridden_deps", "component_deps"
+            mdeps = [d + suffix for d in deps]
+            if get(over) is not None:
+                gone = {d + suffix for d in _labels(r, over)}
+                mdeps = [d for d in mdeps if d not in gone] + _labels(r, comp)
+            v.public_deps = mdeps + [base + "_shared", "//base:base",
+                                     bindings] + pub
             v.deps = priv
-            proxy = get("blink_cpp_proxy_target" if suffix == "_blink"
+            proxy = get("blink_cpp_proxy_target" if blink
                         else "cpp_proxy_target")
             proxy = norm_label(proxy, r.path) if isinstance(proxy, str) \
                 else None
@@ -713,18 +793,20 @@ def _mojom_variants(t, r, out):
                 v.outputs = []
                 v.public_deps = [proxy]
                 v.deps = []
+            # <variant>_headers: the generators' headers without the
+            # sources, and the same group of each mojom dependency.
+            hdr = GnTarget(lab + "_headers", "mojom_headers", t.path)
+            hdr.template = "mojom"
+            hdr.testonly = t.testonly
+            hdr.outputs = [OUT + "/gen/" + s[2:] + e for s in srcs
+                           for e in exts if e.endswith(".h")] + shared_hdrs
+            hdr.public_deps = [d + suffix + "_headers" for d in all_deps]
+            if blink:
+                hdr.public_deps.append(
+                    "//mojo/public/cpp/bindings:wtf_support")
+            out.setdefault(hdr.label, hdr)
         if suffix != "" and lab not in out:
             out[lab] = v
-    # mojom() also defines <name>_headers and <name>_blink_headers (groups
-    # whose public_deps are the generators, so the headers without the
-    # sources); dependents mostly use the three above.
-    for suffix in ("", "_blink"):
-        hdr = GnTarget(base + suffix + "_headers", "mojom_headers", t.path)
-        hdr.template = "mojom"
-        hdr.testonly = t.testonly
-        hdr.visibility = t.visibility
-        hdr.public_deps = [base + suffix]
-        out.setdefault(hdr.label, hdr)
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +904,62 @@ class Graph:
                 for f, pub, gen in t.files():
                     self.owners.setdefault(f, []).append((lab, pub, gen))
         return loaded
+
+    def cycles(self):
+        """Dependency cycles gn gen would refuse: strongly connected
+        components of the loaded targets over deps, public_deps and
+        data_deps, with more than one target (or a target depending on
+        itself). Each is a sorted list of labels."""
+        self.load_build()
+        nodes = [lab for bf in sorted(self.loaded) for lab in self.files[bf]]
+        known = set(nodes)
+
+        def succ(lab):
+            t = self.targets[lab]
+            return [d for d in t.public_deps + t.deps + t.data_deps
+                    if d in known]
+
+        index, low, on, stack, out = {}, {}, set(), [], []
+        counter = [0]
+        for root in nodes:
+            if root in index:
+                continue
+            work = [(root, iter(succ(root)))]
+            index[root] = low[root] = counter[0]
+            counter[0] += 1
+            stack.append(root)
+            on.add(root)
+            while work:
+                v, it = work[-1]
+                advanced = False
+                for w in it:
+                    if w not in index:
+                        index[w] = low[w] = counter[0]
+                        counter[0] += 1
+                        stack.append(w)
+                        on.add(w)
+                        work.append((w, iter(succ(w))))
+                        advanced = True
+                        break
+                    if w in on:
+                        low[v] = min(low[v], index[w])
+                if advanced:
+                    continue
+                work.pop()
+                if work:
+                    u = work[-1][0]
+                    low[u] = min(low[u], low[v])
+                if low[v] == index[v]:
+                    comp = []
+                    while True:
+                        w = stack.pop()
+                        on.discard(w)
+                        comp.append(w)
+                        if w == v:
+                            break
+                    if len(comp) > 1 or v in succ(v):
+                        out.append(sorted(comp))
+        return out
 
     def target(self, label):
         d = label.split(":", 1)[0]
@@ -1077,6 +1215,19 @@ def check_target_deps(graph, t, new_edges, new_circular, dot, findings):
                     "depends on %s, a crate vendored on the build machine "
                     "(scripts/vendor-rust-crates.sh)" % dep), graph.platform)
                 continue
+            name = dep.split(":", 1)[1]
+            maker = [x for x in graph.load_dir(ddir).values()
+                     if x.template and name.startswith(
+                         x.label.split(":", 1)[1] + "_")]
+            if maker:
+                # <name>_js, <name>__proc_macro, ...: a target a template
+                # defines next to its own, which this checker doesn't run.
+                findings.add(Finding(
+                    "deps", "warning", where,
+                    "depends on %s, which is not modelled (%s() %s may "
+                    "define it)" % (dep, maker[0].template, maker[0].label)),
+                    graph.platform)
+                continue
             findings.add(Finding(
                 "deps", "error", where,
                 "depends on %s, which is not defined" % dep,
@@ -1241,6 +1392,15 @@ def run(tree, overlay, platforms, only_files=None, extra_args=None,
                 listed.add(rel)
         for bf in bfiles:
             check_build_file(g, ug, overlay, bf, dot, findings)
+        if only_files is None:
+            for comp in g.cycles():
+                findings.add(Finding(
+                    "cycles", "error", comp[0],
+                    "dependency cycle: " + " -> ".join(
+                        cycle_path(g, comp)),
+                    "drop one of these deps (allow_circular_includes_from "
+                    "on an allowlisted target covers includes, not deps)"),
+                    p)
         for bf, err in sorted(g.errors.items()):
             if overlay.src.joinpath(bf[2:]).is_file():
                 findings.add(Finding("eval", "warning", bf,
@@ -1261,6 +1421,32 @@ def run(tree, overlay, platforms, only_files=None, extra_args=None,
                 "list it in the target that includes or compiles it"),
                 "all")
     return findings, stats
+
+
+def cycle_path(g, comp):
+    """One cycle through comp[0] inside the component, as labels."""
+    members = set(comp)
+    start = comp[0]
+    parent = {}
+    queue = [start]
+    while queue:
+        nxt = []
+        for lab in queue:
+            t = g.targets[lab]
+            for d in t.public_deps + t.deps + t.data_deps:
+                if d not in members:
+                    continue
+                if d == start:
+                    path = [lab]
+                    while path[-1] != start:
+                        path.append(parent[path[-1]])
+                    return [start] + list(reversed(path))[1:] + [start] \
+                        if len(path) > 1 else [start, start]
+                if d not in parent:
+                    parent[d] = lab
+                    nxt.append(d)
+        queue = nxt
+    return comp
 
 
 def check_build_file(g, ug, overlay, bf, dot, findings):
