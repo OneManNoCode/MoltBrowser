@@ -312,6 +312,19 @@ TEST(MoltNetDomStorageSitePolicyTest, TheControlTurnCountsAnEighth) {
   EXPECT_EQ(kMoltDomStorageControlWeight, 8);
 }
 
+// A change is notified a task an observer when it carries 64 KiB or more to
+// more than one observer, and, to keep the order, while split notifications
+// are still to be sent; else at once.
+TEST(MoltNetDomStorageSplitWorkTest, BigChangesToManyObserversAreSplit) {
+  EXPECT_FALSE(MoltDomStorageSplitsNotifications(1, 10 * 1024 * 1024, 0));
+  EXPECT_FALSE(MoltDomStorageSplitsNotifications(8, 64 * 1024 - 1, 0));
+  EXPECT_TRUE(MoltDomStorageSplitsNotifications(2, 64 * 1024, 0));
+  EXPECT_TRUE(MoltDomStorageSplitsNotifications(8, 10 * 1024 * 1024, 0));
+  // Any change while some are pending: also a small one, to one observer.
+  EXPECT_TRUE(MoltDomStorageSplitsNotifications(1, 0, 1));
+  EXPECT_FALSE(MoltDomStorageSplitsNotifications(0, 0, 0));
+}
+
 // A big map is freed a chunk a task: at most 1024 items, or once 1 MiB is
 // freed (one item at least); a small one at once.
 TEST(MoltNetDomStorageSplitWorkTest, MapsAreFreedInChunks) {

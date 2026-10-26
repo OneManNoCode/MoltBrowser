@@ -202,10 +202,17 @@ void StorageAreaImpl::MoltAskSplitRunner() {
   }
 }
 
+bool StorageAreaImpl::MoltSplitsNotifications(size_t payload_bytes) const {
+  return molt_split_runner_ &&
+         MoltDomStorageSplitsNotifications(observers_.size(), payload_bytes,
+                                           molt_pending_notifications_);
+}
+
 void StorageAreaImpl::MoltNotifyObservers(MoltNotify notify) {
   // Each observer in a task of its own, in the order of the changes: every
-  // notification of the area goes this way while it splits them.
+  // notification of the area goes this way while some are pending.
   for (auto it = observers_.begin(); it != observers_.end(); ++it) {
+    ++molt_pending_notifications_;
     molt_split_runner_->PostTask(
         FROM_HERE, base::BindOnce(&StorageAreaImpl::MoltNotifyObserver,
                                   weak_ptr_factory_.GetWeakPtr(), it.id(),
@@ -215,6 +222,7 @@ void StorageAreaImpl::MoltNotifyObservers(MoltNotify notify) {
 
 void StorageAreaImpl::MoltNotifyObserver(mojo::RemoteSetElementId id,
                                          MoltNotify notify) {
+  --molt_pending_notifications_;
   // An observer gone meanwhile hears nothing more.
   if (blink::mojom::StorageAreaObserver* observer = observers_.Get(id)) {
     notify.Run(observer);
@@ -394,7 +402,7 @@ void StorageAreaImpl::Put(
   // past the area's quota does, never as a bad message.
   MoltAskSplitRunner();
   if (!delegate_->MoltMayWrite(key.size() + value.size())) {
-    if (MoltSplitsNotifications()) {
+    if (MoltSplitsNotifications(key.size())) {
       MoltNotifyObservers(
           base::BindRepeating(&MoltSendKeyChangeFailed, key, source.Clone()));
     } else {
@@ -422,7 +430,7 @@ void StorageAreaImpl::Put(
           // the change request, as clients may rely on this acknowledgement for
           // caching behavior.
           // MoltBrowser: each observer in a task of its own, where split.
-          if (MoltSplitsNotifications()) {
+          if (MoltSplitsNotifications(key.size() + 2 * value.size())) {
             MoltNotifyObservers(base::BindRepeating(&MoltSendKeyUnchanged, key,
                                                     value, source.Clone()));
           } else {
@@ -465,7 +473,7 @@ void StorageAreaImpl::Put(
         // the change request, as clients may rely on this acknowledgement for
         // caching behavior.
         // MoltBrowser: each observer in a task of its own, where split.
-        if (MoltSplitsNotifications()) {
+        if (MoltSplitsNotifications(key.size() + 2 * value.size())) {
           MoltNotifyObservers(base::BindRepeating(&MoltSendKeyUnchanged, key,
                                                   value, source.Clone()));
         } else {
@@ -503,7 +511,7 @@ void StorageAreaImpl::Put(
       receivers_.ReportBadMessage(
           "The quota in browser cannot exceed when there is only one "
           "renderer.");
-    } else if (MoltSplitsNotifications()) {  // MoltBrowser
+    } else if (MoltSplitsNotifications(key.size())) {  // MoltBrowser
       MoltNotifyObservers(
           base::BindRepeating(&MoltSendKeyChangeFailed, key, source.Clone()));
       std::move(callback).Run(false);
@@ -522,7 +530,7 @@ void StorageAreaImpl::Put(
       !delegate_->MoltMayGrowTo(MoltDomStorageCountedBytes(
           new_storage_used, molt_item_count() + (molt_new_key ? 1 : 0)))) {
     restore_old_value();
-    if (MoltSplitsNotifications()) {
+    if (MoltSplitsNotifications(key.size())) {
       MoltNotifyObservers(
           base::BindRepeating(&MoltSendKeyChangeFailed, key, source.Clone()));
     } else {
@@ -559,7 +567,8 @@ void StorageAreaImpl::Put(
   }
   // MoltBrowser: each observer in a task of its own, where split; the
   // notifications hold one copy of the value for all of them.
-  if (MoltSplitsNotifications()) {
+  if (MoltSplitsNotifications(key.size() + value.size() +
+                              (old_value ? old_value->size() : 0))) {
     MoltNotifyObservers(base::BindRepeating(
         &MoltSendKeyChanged, key, value, std::move(old_value), source.Clone()));
   } else {
@@ -599,7 +608,7 @@ void StorageAreaImpl::Delete(
       // the change request, as clients may rely on this acknowledgement for
       // caching behavior.
       // MoltBrowser: each observer in a task of its own, where split.
-      if (MoltSplitsNotifications()) {
+      if (MoltSplitsNotifications(key.size())) {
         MoltNotifyObservers(base::BindRepeating(
             &MoltSendKeyDeleted, key, std::optional<std::vector<uint8_t>>(),
             source.Clone()));
@@ -642,7 +651,7 @@ void StorageAreaImpl::Delete(
       // the change request, as clients may rely on this acknowledgement for
       // caching behavior.
       // MoltBrowser: each observer in a task of its own, where split.
-      if (MoltSplitsNotifications()) {
+      if (MoltSplitsNotifications(key.size())) {
         MoltNotifyObservers(base::BindRepeating(
             &MoltSendKeyDeleted, key, std::optional<std::vector<uint8_t>>(),
             source.Clone()));
@@ -665,7 +674,7 @@ void StorageAreaImpl::Delete(
       MoltDomStorageCountedBytes(storage_used_, molt_item_count()));
 
   // MoltBrowser: each observer in a task of its own, where split.
-  if (MoltSplitsNotifications()) {
+  if (MoltSplitsNotifications(key.size() + old_value.size())) {
     MoltNotifyObservers(base::BindRepeating(
         &MoltSendKeyDeleted, key,
         std::optional<std::vector<uint8_t>>(std::move(old_value)),
@@ -706,7 +715,7 @@ void StorageAreaImpl::DeleteAll(
   MoltAskSplitRunner();  // MoltBrowser
   if (already_empty) {
     // MoltBrowser: each observer in a task of its own, where split.
-    if (MoltSplitsNotifications()) {
+    if (MoltSplitsNotifications(0)) {
       MoltNotifyObservers(base::BindRepeating(
           &MoltSendAllDeleted, /*was_nonempty=*/false, source.Clone()));
     } else {
@@ -736,7 +745,7 @@ void StorageAreaImpl::DeleteAll(
   memory_used_ = 0;
   delegate_->MoltShrankTo(0);  // MoltBrowser
   // MoltBrowser: each observer in a task of its own, where split.
-  if (MoltSplitsNotifications()) {
+  if (MoltSplitsNotifications(0)) {
     MoltNotifyObservers(base::BindRepeating(
         &MoltSendAllDeleted, /*was_nonempty=*/true, source.Clone()));
   } else {
@@ -792,7 +801,7 @@ void StorageAreaImpl::SetCacheMode(CacheMode cache_mode) {
   cache_mode_ = cache_mode;
   bool should_send_values = cache_mode == CacheMode::KEYS_ONLY_WHEN_POSSIBLE;
   // MoltBrowser: in order with the notifications, where they are split.
-  if (MoltSplitsNotifications()) {
+  if (MoltSplitsNotifications(0)) {
     MoltNotifyObservers(
         base::BindRepeating(&MoltSendShouldSendOldValue, should_send_values));
   } else {

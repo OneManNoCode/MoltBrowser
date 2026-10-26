@@ -476,10 +476,10 @@ TEST_F(MoltNetDomStorageTest, PerSitePartitionsRunOnThreadsOfTheirOwn) {
   EXPECT_EQ(threads.CountForTesting(), 0u);
 }
 
-// Kept per site, an area's observers each hear of a change in a task of
-// their own, in the order of the changes, and an observer gone meanwhile
-// hears nothing (molt_dom_storage_split_work.h). Chromium's order and
-// content, unchanged.
+// Kept per site, the observers of an area open in several tabs each hear of
+// a change carrying a big value in a task of their own, and of every later
+// change in order with it; an observer gone meanwhile hears nothing
+// (molt_dom_storage_split_work.h). Chromium's order and content, unchanged.
 TEST_F(MoltNetDomStorageTest, ObserversHearOfChangesInTasksOfTheirOwn) {
   storage_->MoltKeepCachesPerSite();
   const blink::StorageKey key = Key("https://a.test");
@@ -491,8 +491,8 @@ TEST_F(MoltNetDomStorageTest, ObserversHearOfChangesInTasksOfTheirOwn) {
     area->AddObserver(observers.back()->Bind());
   }
   area.FlushForTesting();
-  ASSERT_TRUE(Put(area.get(), 'k', 10));
-  ASSERT_TRUE(Put(area.get(), 'k', 20));
+  ASSERT_TRUE(Put(area.get(), 'k', 100 * 1024));
+  ASSERT_TRUE(Put(area.get(), 'k', 200 * 1024));
   {
     base::test::TestFuture<void> deleted;
     area->Delete({'k'}, std::nullopt, /*source=*/nullptr,
@@ -508,7 +508,8 @@ TEST_F(MoltNetDomStorageTest, ObserversHearOfChangesInTasksOfTheirOwn) {
   }
   task_environment_.RunUntilIdle();
   const std::vector<std::string> expected = {
-      "changed 10", "changed 20", "deleted 20", "changed 5", "cleared"};
+      "changed 102400", "changed 204800", "deleted 204800", "changed 5",
+      "cleared"};
   for (const auto& observer : observers) {
     EXPECT_EQ(observer->heard(), expected);
   }

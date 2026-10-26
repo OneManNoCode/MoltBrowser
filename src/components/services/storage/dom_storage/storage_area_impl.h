@@ -380,13 +380,15 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
   using MoltNotify =
       base::RepeatingCallback<void(blink::mojom::StorageAreaObserver*)>;
   void MoltAskSplitRunner();
-  bool MoltSplitsNotifications() const {
-    return molt_split_runner_ && !observers_.empty();
-  }
+  // Whether a change whose notifications carry `payload_bytes` is split
+  // (molt_dom_storage_split_work.h: MoltDomStorageSplitsNotifications()).
+  bool MoltSplitsNotifications(size_t payload_bytes) const;
   void MoltNotifyObservers(MoltNotify notify);
   void MoltNotifyObserver(mojo::RemoteSetElementId id, MoltNotify notify);
   scoped_refptr<base::SequencedTaskRunner> molt_split_runner_;
   bool molt_asked_split_runner_ = false;
+  // Split notifications posted and not yet sent.
+  size_t molt_pending_notifications_ = 0;
   raw_ptr<Delegate, DanglingUntriaged> delegate_;
   raw_ptr<AsyncDomStorageDatabase> database_;
 
