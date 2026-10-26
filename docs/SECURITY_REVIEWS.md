@@ -46,11 +46,12 @@ MoltNet changes, in this order of priority:
 frame, a site and a server working together, a group of sites, local
 user) through MoltBrowser's code and the upstream Chromium 156 code at the
 pinned revision, through to the network service's request, header and
-cookie decisions; fixes tested with a standalone harness (system gtest,
-g++ ASan/UBSan, clang `-fno-exceptions`) that compiles the new header
-against stand-ins with 156's shapes, with a mutant set each test catches,
-unit tests on Chromium's real download request and network context, and
-the compile check against Chromium 156's headers.
+cookie decisions; fixes tested with standalone harnesses (system gtest,
+g++ ASan/UBSan, clang `-fno-exceptions`) that compile the new header and
+the changed scheduler function verbatim against stand-ins with 156's
+shapes, with a mutant set each test catches, unit tests on Chromium's
+real download request and network context, and the compile check against
+Chromium 156's headers.
 
 **Findings.** 10: 1 medium, 2 low, 7 informational. Fixed: the medium and
 both low.
