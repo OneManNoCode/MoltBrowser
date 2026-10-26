@@ -18,17 +18,19 @@
 //
 //  * Each site's entries (those of the keys whose top-level site is the
 //    site: its own pages' and what they embed) may use per_site_bytes
-//    together. When a site's write takes it past that, its own least
-//    recently used entries are evicted, down to nine tenths of it, as
-//    Chromium does for the whole cache; never another site's.
+//    together, their keys included. When a site's write, or a new entry's
+//    key, takes it past that, its own least recently used entries are
+//    evicted, down to nine tenths of it, as Chromium does for the whole
+//    cache; never another site's. A new entry that still doesn't fit isn't
+//    made, as a write that doesn't fit isn't stored.
 //  * An entry not used for idle_expiry_seconds is dropped (on its next use,
 //    and by a sweep), whatever other sites do: so the cache holds what the
 //    sites in use now use, and room a site took is given back once it
 //    stops using it.
 //  * All sites together stay within total_bytes, which fits
-//    kMoltHttpCacheShares sites' full shares: a write that would take the
-//    cache past it isn't stored (the response is simply not cached); nothing
-//    is evicted for it. So a site's entries go only because of its own use,
+//    kMoltHttpCacheShares sites' full shares: a write or a new entry that
+//    would take the cache past it isn't stored (the response is simply not
+//    cached); nothing is evicted for it. So a site's entries go only because of its own use,
 //    and a site below its share can store new entries unless more than
 //    kMoltHttpCacheShares - 1 other sites have each used their whole share
 //    within the idle expiry.
@@ -149,6 +151,37 @@ constexpr bool MoltCacheWriteRefused(int64_t site_size,
                                      int64_t total_size,
                                      const MoltCacheSiteBudget& budget) {
   return site_size > budget.per_site_bytes || total_size > budget.total_bytes;
+}
+
+// A new entry's key counts against its site and the total like the data
+// written into it. Chromium makes an entry whatever its key's size, and
+// an entry stays in use, so it can't be evicted, while a request reads or
+// writes it, from before the request is sent until its response is
+// stored: a site holding many requests with long URLs open could take
+// itself past its share and the cache past its total with keys alone.
+// Before a new entry whose key takes `key_bytes`, for a site using
+// `site_size`: whether the site's own least recently used entries are
+// evicted first, as for a write that takes it past its share, and down to
+// what (`site_size` then counts the key too).
+constexpr bool MoltCacheSiteMakesRoomForEntry(int64_t site_size,
+                                              int64_t key_bytes,
+                                              const MoltCacheSiteBudget& budget) {
+  return MoltCacheSiteOverShare(site_size + key_bytes, budget);
+}
+constexpr int64_t MoltCacheSiteEntryEvictionTarget(
+    int64_t key_bytes,
+    const MoltCacheSiteBudget& budget) {
+  return MoltCacheSiteEvictionTarget(budget) - key_bytes;
+}
+// Whether the entry is not made (after the site's own evictions): as a
+// write is refused, the site past its share or the cache past its total
+// with the key counted. The response is then simply not cached.
+constexpr bool MoltCacheEntryRefused(int64_t site_size,
+                                     int64_t total_size,
+                                     int64_t key_bytes,
+                                     const MoltCacheSiteBudget& budget) {
+  return MoltCacheWriteRefused(site_size + key_bytes, total_size + key_bytes,
+                               budget);
 }
 
 // Whether an entry unused for `idle_seconds` is dropped.
