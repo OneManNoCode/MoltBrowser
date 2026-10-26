@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/disk_cache/memory/mem_backend_impl.cc b/net/disk_cache/memory/mem_backend_impl.cc
-index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6ca2126b5b 100644
+index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a4819a04d 100644
 --- a/net/disk_cache/memory/mem_backend_impl.cc
 +++ b/net/disk_cache/memory/mem_backend_impl.cc
 @@ -13,6 +13,7 @@
@@ -16,7 +16,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
  #include "base/logging.h"
  #include "base/memory_coordinator/memory_consumer.h"
  #include "base/memory_coordinator/memory_coordinator_features.h"
-@@ -115,6 +116,10 @@ std::unique_ptr<MemBackendImpl> MemBackendImpl::CreateBackend(
+@@ -115,17 +116,29 @@ std::unique_ptr<MemBackendImpl> MemBackendImpl::CreateBackend(
  }
  
  int64_t MemBackendImpl::MaxFileSize() const {
@@ -27,7 +27,37 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
    return max_size_ / 8;
  }
  
-@@ -145,6 +150,123 @@ bool MemBackendImpl::HasExceededStorageSize() const {
+ void MemBackendImpl::OnEntryInserted(MemEntryImpl* entry) {
+   lru_list_.Append(entry);
++  // MoltBrowser: and last in its site's list, with per-site limits.
++  if (MoltHasBudget()) {
++    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
++  }
+ }
+ 
+ void MemBackendImpl::OnEntryUpdated(MemEntryImpl* entry) {
+   // LinkedList<>::RemoveFromList() removes |entry| from |lru_list_|.
+   entry->RemoveFromList();
+   lru_list_.Append(entry);
++  // MoltBrowser: and in its site's list, with per-site limits.
++  if (MoltHasBudget()) {
++    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
++  }
+ }
+ 
+ void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
+@@ -133,6 +146,10 @@ void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
+     entries_.erase(entry->key());
+   // LinkedList<>::RemoveFromList() removes |entry| from |lru_list_|.
+   entry->RemoveFromList();
++  // MoltBrowser: and from its site's list, with per-site limits.
++  if (MoltHasBudget()) {
++    molt_sites_.Remove(MoltSiteOf(entry), entry->molt_site_link());
++  }
+ }
+ 
+ void MemBackendImpl::ModifyStorageSize(int32_t delta) {
+@@ -145,6 +162,121 @@ bool MemBackendImpl::HasExceededStorageSize() const {
    return current_size_ > current_max_size_;
  }
  
@@ -41,14 +71,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
 +  }
 +  const std::string site(MoltSiteOf(entry));
 +  current_size_ += delta;
-+  auto it = molt_site_size_.find(site);
-+  if (it == molt_site_size_.end()) {
-+    it = molt_site_size_.emplace(site, 0).first;
-+  }
-+  it->second += delta;
-+  if (it->second <= 0) {
-+    molt_site_size_.erase(it);
-+  }
++  molt_sites_.AddSize(site, delta);
 +  // Only the writing site's own entries make room for it; nothing is
 +  // evicted for the total.
 +  if (delta > 0 && MoltCacheSiteOverShare(MoltSiteSize(site), molt_budget_)) {
@@ -73,21 +96,17 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
 +}
 +
 +int64_t MemBackendImpl::MoltSiteSize(std::string_view site) const {
-+  auto it = molt_site_size_.find(site);
-+  return it == molt_site_size_.end() ? 0 : it->second;
++  return molt_sites_.SizeOf(site);
 +}
 +
 +void MemBackendImpl::MoltEvictSiteTill(std::string_view site, int64_t target) {
-+  // `site` may point into an entry that goes: keep a copy.
++  // `site` may point into an entry that goes: keep a copy. Only the site's
++  // own list is walked (molt_mem_backend_site_lru.h).
 +  const std::string own(site);
-+  base::LinkNode<MemEntryImpl>* node = lru_list_.head();
-+  while (MoltSiteSize(own) > target && node != lru_list_.end()) {
-+    MemEntryImpl* candidate = node->value();
-+    node = NextSkippingChildren(lru_list_, node);
-+    if (MoltSiteOf(candidate) == own && !candidate->InUse()) {
-+      candidate->Doom();
-+    }
-+  }
++  molt_sites_.EvictTill(
++      own, target,
++      [](const MemEntryImpl* candidate) { return !candidate->InUse(); },
++      [](MemEntryImpl* candidate) { candidate->Doom(); });
 +}
 +
 +bool MemBackendImpl::MoltMayCreateEntry(const std::string& key) {
@@ -111,11 +130,18 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
 +}
 +
 +void MemBackendImpl::MoltDropExpiredEntries() {
++  // |lru_list_| is in order of last use (an entry moves to its end when it
++  // is used, and its last use is then now), so the expired entries come
++  // first: the sweep stops at the first entry that hasn't expired, and
++  // costs what expires, not what the cache holds.
 +  base::LinkNode<MemEntryImpl>* node = lru_list_.head();
 +  while (node != lru_list_.end()) {
 +    MemEntryImpl* candidate = node->value();
++    if (!MoltIsExpired(candidate)) {
++      break;
++    }
 +    node = NextSkippingChildren(lru_list_, node);
-+    if (!candidate->InUse() && MoltIsExpired(candidate)) {
++    if (!candidate->InUse()) {
 +      candidate->Doom();
 +    }
 +  }
@@ -126,13 +152,15 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
 +    return;
 +  }
 +  molt_budget_ = budget;
-+  // Every entry so far counts against its site (normally there is none
-+  // yet: the budget is set when the backend is made).
-+  molt_site_size_.clear();
++  // Every entry so far counts against its site and is in its site's list,
++  // in the order of |lru_list_| (normally there is none yet: the budget is
++  // set when the backend is made).
++  molt_sites_.Clear();
 +  for (base::LinkNode<MemEntryImpl>* node = lru_list_.head();
 +       node != lru_list_.end(); node = node->next()) {
-+    molt_site_size_[std::string(MoltSiteOf(node->value()))] +=
-+        node->value()->GetStorageSize();
++    MemEntryImpl* entry = node->value();
++    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
++    molt_sites_.AddSize(MoltSiteOf(entry), entry->GetStorageSize());
 +  }
 +  max_size_ = base::saturated_cast<int32_t>(budget.total_bytes);
 +  current_max_size_ = max_size_;
@@ -151,7 +179,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
  void MemBackendImpl::SetPostCleanupCallback(base::OnceClosure cb) {
    DCHECK(post_cleanup_callback_.is_null());
    post_cleanup_callback_ = std::move(cb);
-@@ -185,6 +307,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
+@@ -185,6 +317,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
    if (it == entries_.end())
      return EntryResult::MakeError(net::ERR_FAILED);
  
@@ -165,7 +193,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
    it->second->Open();
  
    return EntryResult::MakeOpened(it->second);
-@@ -193,6 +322,12 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
+@@ -193,6 +332,12 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
  EntryResult MemBackendImpl::CreateEntry(const std::string& key,
                                          net::RequestPriority request_priority,
                                          EntryResultCallback callback) {
@@ -178,7 +206,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
    std::pair<EntryMap::iterator, bool> create_result =
        entries_.insert(EntryMap::value_type(key, nullptr));
    const bool did_insert = create_result.second;
-@@ -327,6 +462,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
+@@ -327,6 +472,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
  }
  
  void MemBackendImpl::SetMaxBytes(base::ByteSize max_bytes) {
@@ -189,7 +217,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
    max_size_ = base::saturated_cast<int32_t>(max_bytes.InBytes());
    if (base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
      current_max_size_ = CalculateTargetMemoryLimit();
-@@ -381,7 +520,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
+@@ -381,7 +530,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
  }
  
  void MemBackendImpl::OnUpdateMemoryLimit() {
@@ -200,7 +228,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6c
      return;
    }
    // IMPORTANT: Ensure no memory is released during this call.
-@@ -391,6 +532,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
+@@ -391,6 +542,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
  }
  
  void MemBackendImpl::OnReleaseMemory() {

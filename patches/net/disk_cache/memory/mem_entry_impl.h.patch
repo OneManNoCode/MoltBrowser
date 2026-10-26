@@ -1,0 +1,39 @@
+MoltBrowser patch for net/disk_cache/memory/mem_entry_impl.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/disk_cache/memory/mem_entry_impl.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/disk_cache/memory/mem_entry_impl.h b/net/disk_cache/memory/mem_entry_impl.h
+index 907accd790416f1ddf4176d38a9ffd70495995c3..b71df1f8ff4ea02ae2c0609470a9de317bfebc6e 100644
+--- a/net/disk_cache/memory/mem_entry_impl.h
++++ b/net/disk_cache/memory/mem_entry_impl.h
+@@ -21,6 +21,7 @@
+ #include "net/base/interval.h"
+ #include "net/base/net_export.h"
+ #include "net/disk_cache/disk_cache.h"
++#include "net/disk_cache/memory/molt_mem_backend_site_lru.h"  // MoltBrowser
+ #include "net/log/net_log_with_source.h"
+ 
+ namespace net {
+@@ -98,6 +99,11 @@ class NET_EXPORT_PRIVATE MemEntryImpl final
+   // Update an entry's position in the backend LRU list and set |last_used_|.
+   void UpdateStateOnUse();
+ 
++  // MoltBrowser: the entry's place in its site's least-recently-used list,
++  // kept by MemBackendImpl with per-site limits
++  // (molt_mem_backend_site_lru.h).
++  MoltCacheSiteLink<MemEntryImpl>& molt_site_link() { return molt_site_link_; }
++
+   // From disk_cache::Entry:
+   void Doom() override;
+   void Close() override;
+@@ -189,6 +195,8 @@ class NET_EXPORT_PRIVATE MemEntryImpl final
+   bool doomed_ = false;  // True if this entry was removed from the cache.
+ 
+   net::NetLogWithSource net_log_;
++
++  MoltCacheSiteLink<MemEntryImpl> molt_site_link_{this};  // MoltBrowser
+ };
+ 
+ }  // namespace disk_cache

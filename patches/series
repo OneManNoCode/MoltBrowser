@@ -207,6 +207,7 @@ components/security_interstitials_strings.grdp.patch
 components/send_tab_to_self_strings.grdp.patch
 components/services/storage/dom_storage/local_storage_impl.cc.patch
 components/services/storage/dom_storage/local_storage_impl.h.patch
+components/services/storage/dom_storage/session_storage_area_impl.cc.patch
 components/services/storage/dom_storage/session_storage_data_map.cc.patch
 components/services/storage/dom_storage/session_storage_data_map.h.patch
 components/services/storage/dom_storage/session_storage_impl.cc.patch
@@ -288,6 +289,7 @@ net/disk_cache/disk_cache.h.patch
 net/disk_cache/memory/mem_backend_impl.cc.patch
 net/disk_cache/memory/mem_backend_impl.h.patch
 net/disk_cache/memory/mem_entry_impl.cc.patch
+net/disk_cache/memory/mem_entry_impl.h.patch
 net/dns/host_resolver_manager.cc.patch
 net/http/http_cache.cc.patch
 net/http/http_cache.h.patch

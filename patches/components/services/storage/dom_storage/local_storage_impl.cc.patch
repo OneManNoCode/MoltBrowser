@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.cc b/components/services/storage/dom_storage/local_storage_impl.cc
-index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b2682fd86fc1 100644
+index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce29887935c9b98b4 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.cc
 +++ b/components/services/storage/dom_storage/local_storage_impl.cc
 @@ -31,7 +31,10 @@
@@ -28,7 +28,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
      // Don't delete ourselves, but do schedule an immediate commit. Possible
      // deletion will happen under memory pressure or when another localstorage
      // area is opened.
-@@ -153,17 +158,37 @@ class LocalStorageImpl::StorageAreaHolder final
+@@ -153,17 +158,40 @@ class LocalStorageImpl::StorageAreaHolder final
    }
  
    void DidCommit(DbStatus status) override { context_->OnCommitResult(status); }
@@ -49,6 +49,9 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
 +  bool MoltMayWrite(size_t bytes) override {
 +    return context_->MoltMayWrite(storage_key_, bytes);
 +  }
++  scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner() override {
++    return context_->MoltTaskRunnerFor(storage_key_);
++  }
    void Bind(mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
      has_bindings_ = true;
      storage_area()->Bind(std::move(receiver));
@@ -66,7 +69,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
    bool has_written_access_meta_data_ = false;
    StorageAreaImpl area_;
  };
-@@ -227,6 +252,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+@@ -227,6 +255,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
          /*new_observer=*/mojo::NullRemote(), std::move(callback));
      found->second->storage_area()->ScheduleImmediateCommit();
    } else if (database_) {
@@ -75,7 +78,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
      std::vector<DomStorageDatabase::MapLocator> maps_to_delete;
      maps_to_delete.emplace_back(storage_key);
  
-@@ -313,6 +340,11 @@ void LocalStorageImpl::ShutDown() {
+@@ -313,6 +343,11 @@ void LocalStorageImpl::ShutDown() {
  }
  
  void LocalStorageImpl::PurgeMemory() {
@@ -87,7 +90,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
    for (auto it = areas_.begin(); it != areas_.end();) {
      if (it->second->has_bindings()) {
        it->second->storage_area()->PurgeMemory();
-@@ -458,6 +490,13 @@ void LocalStorageImpl::InitiateConnection(
+@@ -458,6 +493,13 @@ void LocalStorageImpl::InitiateConnection(
    // subdirectory and weren't asked to stay in memory.
    in_memory_ = in_memory_only || storage_partition_directory_.empty() ||
                 !storage_partition_directory_.IsAbsolute();
@@ -101,7 +104,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
    const base::FilePath dir_to_open =
        in_memory_ ? base::FilePath() : storage_partition_directory_;
    // Recovery destroys the pre-existing on-disk database before reopening (which
-@@ -582,7 +621,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
+@@ -582,7 +624,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
      return found->second.get();
    }
  
@@ -116,7 +119,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
  
    auto holder = std::make_unique<StorageAreaHolder>(this, storage_key);
    StorageAreaHolder* holder_ptr = holder.get();
-@@ -599,6 +644,16 @@ void LocalStorageImpl::RetrieveStorageUsage(GetUsageCallback callback) {
+@@ -599,6 +647,16 @@ void LocalStorageImpl::RetrieveStorageUsage(GetUsageCallback callback) {
      std::vector<mojom::StorageUsageInfoPtr> result;
      base::Time now = base::Time::Now();
      for (const auto& it : areas_) {
@@ -133,7 +136,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
        result.emplace_back(mojom::StorageUsageInfo::New(it.first, 0, now));
      }
      std::move(callback).Run(std::move(result));
-@@ -648,6 +703,115 @@ void LocalStorageImpl::OnGotWriteMetaData(
+@@ -648,6 +706,124 @@ void LocalStorageImpl::OnGotWriteMetaData(
    std::move(callback).Run(std::move(result));
  }
  
@@ -184,6 +187,13 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
 +         molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
 +}
 +
++scoped_refptr<base::SequencedTaskRunner> LocalStorageImpl::MoltTaskRunnerFor(
++    const blink::StorageKey& storage_key) {
++  return molt_scheduler_
++             ? molt_scheduler_->RunnerFor(MoltDomStorageSiteOf(storage_key))
++             : nullptr;
++}
++
 +bool LocalStorageImpl::MoltMayDrop(StorageAreaHolder& holder) {
 +  return !holder.has_bindings() &&
 +         MoltDomStorageMayDropArea(database_ != nullptr,
@@ -196,6 +206,8 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..d032d74c4488c46114e57883b5a9b268
 +    return;
 +  }
 +  molt_caches_per_site_ = true;
++  molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
++      base::SequencedTaskRunner::GetCurrentDefault());
 +  molt_idle_sweep_.Start(
 +      FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
 +      base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,

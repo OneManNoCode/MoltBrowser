@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..c5df0d72c6c6cbfaedf2b8cd0ad56a2c932bfda6 100644
+index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..b77bab01f3a4fa3a1bb5106162a14e5b3b579900 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
 @@ -55,6 +55,7 @@
@@ -16,7 +16,7 @@ index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..c5df0d72c6c6cbfaedf2b8cd0ad56a2c
  #include "services/network/logical_invalidation_store.h"
  #include "services/network/network_qualities_pref_delegate.h"
  #include "services/network/oblivious_http_request_handler.h"
-@@ -672,6 +673,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -672,6 +673,21 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    void LoaderDestroyed(const OriginatingProcessId& process_id);
    bool CanCreateLoader(const OriginatingProcessId& process_id);
  
@@ -30,11 +30,15 @@ index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..c5df0d72c6c6cbfaedf2b8cd0ad56a2c
 +  bool MoltAdmits(MoltNetworkEntry entry) const {
 +    return MoltEndedContextAdmits(entry, molt_identity_ended_);
 +  }
++  // MoltBrowser: whether this context may make sockets outside its own HTTP
++  // network session, with a session of their own or none at all
++  // (services/network/molt_own_session_sockets_policy.h): not MoltNet's.
++  bool MoltAllowsOwnSessionSockets() const;
 +
    void set_max_loaders_per_process_for_testing(uint32_t count) {
      max_loaders_per_process_ = count;
    }
-@@ -1155,6 +1167,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -1155,6 +1171,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    // calls to DestroyURLLoaderFactory().
    bool is_destructing_ = false;
  
