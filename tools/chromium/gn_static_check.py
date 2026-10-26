@@ -4,32 +4,37 @@
 """A static `gn gen --check` for MoltBrowser's changes, without a checkout.
 
 It reads Chromium's BUILD.gn and .gni files at the pin (chromium_version.txt)
-with the src/ overlay applied, evaluates them for the desktop configs in
-configs/ (linux-x64, macos-arm64, windows-x64) with the GN interpreter of
-tools/compile_check (ccheck/gn.py), and applies GN's own rules to every file
-and every target MoltBrowser adds or changes:
+with the src/ overlay applied, evaluates them with the GN interpreter of
+tools/compile_check (ccheck/gn.py) for the desktop configs in configs/
+(linux-x64, macos-arm64, windows-x64; also with molt_llama_vulkan on, and
+as a component build), loads what `gn gen` would load (//BUILD.gn and every
+BUILD.gn a loaded target names, transitively), and applies GN's own rules to
+every file and every target MoltBrowser adds or changes:
 
   includes   `gn check`'s include rule. A quoted #include of a file that some
-             target lists (sources, public, or an action's outputs) must come
-             from a target that depends on it directly, or through a chain of
-             public_deps after the first step; the header must be public in
-             it (no `public` list, or listed there, or `friend` names the
-             includer); `allow_circular_includes_from` on the included
-             target permits the reverse direction; `check_includes = false`,
-             //.gn's `no_check_targets` and `// nogncheck` skip, as in gn.
-             Files are scanned as gn scans them (quoted includes only, until
-             ten lines with neither an include, a comment nor a directive).
+             loaded target lists (sources, public, or an action's outputs)
+             must come from a target that depends on it directly, or through
+             a chain of public_deps after the first step; the header must be
+             public in it (no `public` list, or listed there, or `friend`
+             names the includer); `allow_circular_includes_from` on the
+             included target permits the reverse direction;
+             `check_includes = false`, //.gn's `no_check_targets` and
+             `// nogncheck` skip, as in gn. Files are scanned as gn scans
+             them (quoted includes only, until more than ten lines with
+             neither an include, a comment, a directive nor a blank).
   deps       `gn gen`'s dependency rules for every dependency a MoltBrowser
              target (or a MoltBrowser line in an upstream BUILD.gn) adds: the
              target exists, its `visibility` lets the dependent in, a target
              that isn't testonly depends on no testonly one, an
              `allow_circular_includes_from` entry is a dependency and the
              target using it is on //.gn's allowlist.
+  cycles     dependency cycles (deps, public_deps, data_deps) in the loaded
+             graph that upstream's graph doesn't have.
   sources    every file a MoltBrowser target lists exists (in the tree, the
              overlay, or as an output of an action).
-  unlisted   MoltBrowser's own C++ files that no target lists on any
-             platform (gn check skips includes of such a file; list it where
-             it belongs so later edits don't trip).
+  unlisted   MoltBrowser's own C++ files that no target lists in any
+             configuration (gn check skips includes of such a file; list it
+             where it belongs so later edits don't trip).
 
 Of an upstream file MoltBrowser changed, only the includes MoltBrowser added
 are checked (the rest passed upstream's own gn check with the same targets).
@@ -38,38 +43,43 @@ What is approximated (the build machine's `gn gen --check` stays the
 authority, docs/BUILD_MACHINE_CHECKLIST.md "First build"):
   * GN conditions whose value comes from outside (exec_script, read_file,
     toolchain variables of other toolchains) are UNKNOWN and take their
-    "then" branch, as in compile_check; only the default toolchain is
-    modelled, and a dependency's "(toolchain)" suffix is dropped.
+    "then" branch, as in compile_check; a false assert() keeps a file out of
+    the build, unless it reads an UNKNOWN value. Only the default toolchain
+    is modelled: a dependency's "(toolchain)" suffix is dropped (data_deps
+    with one are left out), and a target's dependency on its own label in
+    another toolchain is not an edge.
   * An include resolves against the including file's directory, `//` and
     the generated-files root, as with Chromium's default include_dirs;
     other include_dirs (a third-party library's own) are not followed, so
     such includes are not checked.
-  * A file's owners are found in the BUILD.gn files of its directory and
-    its parents (and any other file read on the way); a target that lists a
-    file of an unrelated directory by absolute path may be missed.
   * Templates run (ccheck/gn.py `expand`) except the ones it leaves out;
-    for those this tool models the outputs that matter: mojom() (the
-    chromium, blink and shared variants' headers), rust_static_library()
-    cxx bindings, and the template's own sources and deps otherwise.
-  * Dependency cycles are not searched.
+    for those this tool models what matters: mojom() (the chromium, blink
+    and shared variants, their _headers, _shared_cpp_sources and proxy
+    targets, typemap and overridden deps), test() and fuzzer_test()
+    (testonly), rust_static_library() cxx bindings, and the invocation's
+    own sources and deps otherwise. A label such a template defines next
+    to its own (<name>_js, ...) is reported as a warning, not an error.
+  * The include rule was checked against upstream: every include of the
+    upstream copies of the files MoltBrowser changes, and of 15,000
+    upstream files in loaded targets, passes on every config (they pass
+    upstream's gn check).
 
 Usage:
-  tools/chromium/gn_static_check.py fetch            # stream 156's GN files once
-  tools/chromium/gn_static_check.py check [--platform linux,mac,win]
-                                          [--tree DIR] [--json OUT] [FILE...]
+  tools/chromium/gn_static_check.py fetch      # stream the pin's GN files once
+  tools/chromium/gn_static_check.py check [--platform CONFIGS] [--tree DIR]
+                                    [--warnings] [--json OUT] [FILE...]
   python3 tools/chromium/gn_static_check_test.py     # the checker's tests
 
 `check` exits 1 when it finds an error. FILE... (paths under src/) limits the
 include check to those files; by default every C++ file the overlay adds or
-changes is checked, and every target in an overlay BUILD.gn.
+changes is checked, and every target in an overlay BUILD.gn. CONFIGS is a
+comma-separated list of linux, mac or win, each optionally +vulkan and
++component (default: DEFAULT_CONFIGS below).
 """
 import argparse
-import fnmatch
-import hashlib
 import json
-import os
-import pickle
 import re
+import shutil
 import sys
 import tarfile
 import time
@@ -84,7 +94,6 @@ sys.path.insert(0, str(REPO_ROOT / "tools" / "compile_check"))
 import upstream as up  # noqa: E402
 from ccheck import gn as gnlib  # noqa: E402
 
-TOOL_VERSION = "1"
 DEFAULT_CACHE = REPO_ROOT / ".molt-gn-check-cache"
 BUCKET = ("https://commondatastorage.googleapis.com/"
           "chromium-browser-official/")
@@ -1496,7 +1505,6 @@ def fetch(version, dest, overlay_files, log=log, opener=None):
     writes paths.txt (every file in the tarball)."""
     dest = Path(dest)
     tmp = dest.with_name(dest.name + ".partial")
-    import shutil
     shutil.rmtree(tmp, ignore_errors=True)
     (tmp / "tree").mkdir(parents=True)
     url = BUCKET + "chromium-%s-lite.tar.xz" % version
