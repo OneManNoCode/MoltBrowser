@@ -6,7 +6,8 @@
 // off-the-record partition): what one site opens never purges another
 // site's areas, and a site's areas together hold one area's limit. And
 // sessionStorage's totals (SessionStorageImpl): a copy made for a tab
-// counts.
+// counts. And, in every profile, a write the area's quota refuses leaves
+// the old value in place (StorageAreaImpl::Put()).
 
 #include <memory>
 #include <optional>
@@ -15,14 +16,18 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
+#include "components/services/storage/dom_storage/db_status.h"
+#include "components/services/storage/dom_storage/dom_storage_database.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
+#include "components/services/storage/dom_storage/storage_area_impl.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -185,6 +190,65 @@ TEST_F(MoltNetDomStorageTest, ARefusedWriteChangesNothing) {
   const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
   ASSERT_EQ(data.size(), 1u);
   EXPECT_EQ(data[0]->value.size(), 6 * kMiB);
+}
+
+// Every profile: a write the area's own quota refuses changes nothing; the
+// value it would have replaced stays readable. (Chromium 156 moved the old
+// value out of the area's map before the quota check and left the key
+// mapped to an empty value.)
+TEST_F(MoltNetDomStorageTest, AQuotaRefusedWriteKeepsTheOldValue) {
+  constexpr size_t kMiB = 1024 * 1024;
+  const blink::StorageKey key = Key("https://a.test");
+  ASSERT_TRUE(Write(key, 6 * kMiB));
+  // Past the area's 10 MiB and 100 KiB, whatever the renderer checked.
+  EXPECT_FALSE(Write(key, 11 * kMiB));
+
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+  area->GetAll(mojo::NullRemote(), all.GetCallback());
+  const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value, std::vector<uint8_t>(6 * kMiB, 'v'));
+}
+
+// The same for a storage area on its own (as sessionStorage's maps use
+// it), with a small quota.
+class NoCommitsDelegate : public storage::StorageAreaImpl::Delegate {
+ public:
+  void OnNoBindings() override {}
+  void DidCommit(storage::DbStatus) override {}
+};
+
+TEST(MoltStorageAreaPutTest, AQuotaRefusedPutKeepsTheOldValue) {
+  base::test::TaskEnvironment task_environment;
+  NoCommitsDelegate delegate;
+  storage::StorageAreaImpl::Options options;
+  options.max_size = 100;
+  storage::StorageAreaImpl area(
+      /*database=*/nullptr,
+      base::MakeRefCounted<storage::DomStorageDatabase::SharedMapLocator>(
+          storage::DomStorageDatabase::MapLocator(Key("https://a.test"))),
+      &delegate, options);
+  area.InitializeAsEmpty();
+  mojo::Remote<blink::mojom::StorageArea> remote;
+  area.Bind(remote.BindNewPipeAndPassReceiver());
+
+  const std::vector<uint8_t> old_value(40, 'a');
+  base::test::TestFuture<bool> stored;
+  remote->Put({'k'}, old_value, std::nullopt, /*source=*/nullptr,
+              stored.GetCallback());
+  ASSERT_TRUE(stored.Take());
+  remote->Put({'k'}, std::vector<uint8_t>(120, 'b'), old_value,
+              /*source=*/nullptr, stored.GetCallback());
+  EXPECT_FALSE(stored.Take());
+
+  base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+  remote->GetAll(mojo::NullRemote(), all.GetCallback());
+  const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value, old_value);
+  EXPECT_EQ(area.storage_used(), 1u + 40u);
 }
 
 // Chromium 156: every subdomain has its own 10 MiB.

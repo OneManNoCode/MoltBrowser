@@ -341,9 +341,20 @@ void StorageAreaImpl::Put(
   size_t new_item_size = key.size() + value.size();
   size_t new_storage_used = storage_used_ - old_item_size + new_item_size;
 
+  // MoltBrowser: a write refused below changes nothing. With keys and values
+  // cached, the old value was moved out of the map above; every early return
+  // from here on puts it back (Chromium 156 left the key mapped to an empty
+  // value when the area's quota refused the write, in every profile).
+  auto restore_old_value = [&] {
+    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
+      keys_values_map_[key] = std::move(*old_value);
+    }
+  };
+
   // Only check quota if the size is increasing, this allows
   // shrinking changes to pre-existing maps that are over budget.
   if (new_item_size > old_item_size && new_storage_used > max_size_) {
+    restore_old_value();  // MoltBrowser
     if (map_state_ == MapState::LOADED_KEYS_ONLY) {
       receivers_.ReportBadMessage(
           "The quota in browser cannot exceed when there is only one "
@@ -360,10 +371,7 @@ void StorageAreaImpl::Put(
   // know what its site's other areas hold.
   if (new_item_size > old_item_size &&
       !delegate_->MoltMayGrowTo(new_storage_used)) {
-    // The old value, moved out above, goes back: the write changes nothing.
-    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
-      keys_values_map_[key] = std::move(*old_value);
-    }
+    restore_old_value();
     for (const auto& observer : observers_) {
       observer->KeyChangeFailed(key, source.Clone());
     }
