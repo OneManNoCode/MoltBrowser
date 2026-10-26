@@ -64,13 +64,25 @@ authority, docs/BUILD_MACHINE_CHECKLIST.md "First build"):
     upstream files in loaded targets, passes on every config (they pass
     upstream's gn check).
 
+Two presubmit checks run over the same overlay:
+  checkdeps    Chromium's own buildtools/checkdeps/checkdeps.py (from the
+               pin) over a copy of the tree's DEPS files with MoltBrowser's
+               on top, for every C++ file MoltBrowser adds and the includes
+               it adds to upstream files (Skia and V8 are their own
+               repositories with their own rules, and are left out).
+  blink-audit  Blink's audit_non_blink_usage.py check() (the overlay's copy,
+               with MoltBrowser's entries) over the lines MoltBrowser adds
+               under third_party/blink, as Blink's presubmit runs it.
+
 Usage:
   tools/chromium/gn_static_check.py fetch      # stream the pin's GN files once
   tools/chromium/gn_static_check.py check [--platform CONFIGS] [--tree DIR]
                                     [--warnings] [--json OUT] [FILE...]
+  tools/chromium/gn_static_check.py checkdeps [--json OUT]
+  tools/chromium/gn_static_check.py blink-audit [--json OUT]
   python3 tools/chromium/gn_static_check_test.py     # the checker's tests
 
-`check` exits 1 when it finds an error. FILE... (paths under src/) limits the
+Each command exits 1 when it finds an error. FILE... (paths under src/) limits the
 include check to those files; by default every C++ file the overlay adds or
 changes is checked, and every target in an overlay BUILD.gn. CONFIGS is a
 comma-separated list of linux, mac or win, each optionally +vulkan and
@@ -78,8 +90,10 @@ comma-separated list of linux, mac or win, each optionally +vulkan and
 """
 import argparse
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import time
@@ -1546,6 +1560,167 @@ def fetch(version, dest, overlay_files, log=log, opener=None):
 
 
 # ---------------------------------------------------------------------------
+# checkdeps: Chromium's own DEPS checker over the overlay
+
+CHECKDEPS_EXT = (".h", ".cc", ".cpp", ".m", ".mm")
+
+
+def checkdeps_plan(overlay):
+    """{rel: None (every include) or the set of includes MoltBrowser added}
+    for the C++ files checkdeps should see: what the overlay adds, and the
+    upstream files it changes (the vendored trees left out, as for the
+    include check)."""
+    plan = {}
+    for rel in overlay.files:
+        if not rel.endswith(CHECKDEPS_EXT):
+            continue
+        # The vendored trees, and DEPS subprojects (Skia, V8: their own
+        # repositories, which Chromium's checkdeps doesn't read).
+        if rel.startswith(OWN_EXCLUDE) and not rel.startswith(
+                "third_party/llama_cpp/chromium/"):
+            continue
+        text = overlay.text(rel)
+        if overlay.is_upstream(rel):
+            base = overlay.upstream_bytes(rel)
+            if base is not None:
+                base = base.decode("utf-8", "replace")
+                if base == text:
+                    continue
+                added = set(all_includes(text)) - set(all_includes(base))
+                if not added:
+                    continue
+                plan[rel] = added
+                continue
+        plan[rel] = None
+    return plan
+
+
+def run_checkdeps(tree_root, overlay, work, log=log):
+    """Runs the tree's buildtools/checkdeps/checkdeps.py over a copy of the
+    tree's DEPS files with the overlay's on top and the overlay's C++ files
+    (checkdeps reads only those). Returns (findings, number of files)."""
+    tree_root = Path(tree_root)
+    script = tree_root / "buildtools" / "checkdeps" / "checkdeps.py"
+    if not script.is_file():
+        raise RuntimeError("no %s (run fetch)" % script)
+    work = Path(work)
+    root = work / "src"
+    shutil.rmtree(work, ignore_errors=True)
+    root.mkdir(parents=True)
+    for p in tree_root.rglob("DEPS"):
+        if p.is_file():
+            dst = root / p.relative_to(tree_root)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(p, dst)
+    plan = checkdeps_plan(overlay)
+    for rel in list(overlay.files):
+        if rel.rsplit("/", 1)[-1] == "DEPS" or rel in plan:
+            dst = root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(overlay.src / rel, dst)
+    # checkdeps wants a repository root, and outside git it walks only the
+    # directories that have a .svn entry (instead of asking git ls-files).
+    for dirpath, dirnames, _ in os.walk(root):
+        if ".svn" not in dirnames:
+            os.mkdir(os.path.join(dirpath, ".svn"))
+        dirnames[:] = [x for x in dirnames if x != ".svn"]
+    out = work / "checkdeps.json"
+    r = subprocess.run([sys.executable, "-E", "-s", str(script),
+                        "--root", str(root), "--json", str(out), "-s"],
+                       cwd=str(work), capture_output=True, text=True)
+    if not out.is_file():
+        raise RuntimeError("checkdeps failed (%d): %s" % (
+            r.returncode, (r.stdout + r.stderr)[-2000:]))
+    findings = Findings()
+    for res in json.loads(out.read_text()):
+        rel = os.path.relpath(res["dependee_path"], str(root))
+        only = plan.get(rel)
+        for v in res["violations"]:
+            inc = v["include_path"]
+            if only is not None and inc not in only:
+                continue
+            rule = v.get("violated_rule") or ["", "", ""]
+            findings.add(Finding(
+                "checkdeps", "error", rel,
+                "includes \"%s\", which the DEPS rules there don't allow "
+                "(%s)" % (inc, " ".join(str(x) for x in rule if x)),
+                "add a +rule to the nearest MoltBrowser DEPS (or a "
+                "specific_include_rules entry for this file)"), "deps")
+    return findings, len(plan)
+
+
+# ---------------------------------------------------------------------------
+# Blink's audit_non_blink_usage.py over MoltBrowser's Blink lines
+
+BLINK_AUDIT = "third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py"
+
+
+def added_lines(overlay, rel):
+    """[(line number, line)] MoltBrowser adds to a file (every line of a
+    file it adds), as a presubmit's ChangedContents() gives them."""
+    import difflib
+    lines = overlay.text(rel).split("\n")
+    if not overlay.is_upstream(rel):
+        return [(i + 1, x) for i, x in enumerate(lines)]
+    base = overlay.upstream_bytes(rel)
+    if base is None:
+        return [(i + 1, x) for i, x in enumerate(lines)]
+    base = base.decode("utf-8", "replace").split("\n")
+    out = []
+    for op, _, _, j1, j2 in difflib.SequenceMatcher(
+            None, base, lines, autojunk=False).get_opcodes():
+        if op in ("replace", "insert"):
+            out += [(j + 1, lines[j]) for j in range(j1, j2)]
+    return out
+
+
+def run_blink_audit(overlay, upstream_read=None):
+    """Blink's presubmit check (audit_non_blink_usage.check()) over the
+    lines MoltBrowser adds in third_party/blink: the overlay's copy of the
+    script (with MoltBrowser's entries) if there is one, else upstream's."""
+    import importlib.util
+    import tempfile
+    src = overlay.src / BLINK_AUDIT
+    tmp = None
+    if not src.is_file():
+        data = upstream_read(BLINK_AUDIT) if upstream_read else None
+        if data is None:
+            raise RuntimeError("no %s" % BLINK_AUDIT)
+        tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        tmp.write(data)
+        tmp.close()
+        src = Path(tmp.name)
+    try:
+        spec = importlib.util.spec_from_file_location("molt_blink_audit",
+                                                      str(src))
+        audit = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(audit)
+    finally:
+        if tmp is not None:
+            os.unlink(tmp.name)
+    findings = Findings()
+    n = 0
+    for rel in overlay.files:
+        if not rel.startswith("third_party/blink/") or \
+                not rel.endswith((".cc", ".cpp", ".h", ".mm")):
+            continue
+        lines = added_lines(overlay, rel)
+        if not lines:
+            continue
+        n += 1
+        for bad in audit.check(rel, lines) or []:
+            findings.add(Finding(
+                "blink-audit", "warning" if bad.warning else "error",
+                "%s:%d" % (rel, bad.line),
+                "uses %s%s" % (bad.identifier,
+                               ": " + " ".join(bad.advice)
+                               if bad.advice else ""),
+                "follow the advice, or add a MoltBrowser entry to %s"
+                % BLINK_AUDIT), "blink")
+    return findings, n
+
+
+# ---------------------------------------------------------------------------
 # CLI
 
 
@@ -1585,18 +1760,24 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="stream the pinned release's GN files")
     f.add_argument("--version", help="default: chromium_version.txt")
-    c = sub.add_parser("check", help="run the checks")
-    c.add_argument("--tree", help="a fetched tree or a Chromium checkout "
-                   "(default: the fetched tree of the pin)")
+    c = sub.add_parser("check", help="run the GN checks")
+    d = sub.add_parser("checkdeps", help="run Chromium's checkdeps over "
+                       "the overlay's C++ files and DEPS rules")
+    b = sub.add_parser("blink-audit", help="run Blink's "
+                       "audit_non_blink_usage check over MoltBrowser's "
+                       "Blink lines")
+    for x in (c, d, b):
+        x.add_argument("--tree", help="a fetched tree or a Chromium "
+                       "checkout (default: the fetched tree of the pin)")
+        x.add_argument("--chromium-cache", default=str(up.DEFAULT_CACHE),
+                       help="tools/chromium/upstream.py's cache, for "
+                       "upstream copies the tree lacks")
+        x.add_argument("--json", help="write the findings here")
     c.add_argument("--platform", default=DEFAULT_CONFIGS,
                    help="configs to evaluate: linux, mac or win from "
                    "configs/, each optionally +vulkan (molt_llama_vulkan) "
                    "and +component (is_component_build) (default "
                    "%(default)s)")
-    c.add_argument("--chromium-cache", default=str(up.DEFAULT_CACHE),
-                   help="tools/chromium/upstream.py's cache, for upstream "
-                   "copies the tree lacks")
-    c.add_argument("--json", help="write the findings here")
     c.add_argument("--warnings", action="store_true",
                    help="print warnings too")
     c.add_argument("files", nargs="*", help="limit the include check to "
@@ -1610,18 +1791,34 @@ def main(argv=None):
         root = Path(a.tree)
         paths = None
     else:
-        d = default_tree_dir(a.cache, version)
-        if not (d / "tree").is_dir():
+        dd = default_tree_dir(a.cache, version)
+        if not (dd / "tree").is_dir():
             log("no fetched tree at %s: run `%s fetch` first, or pass "
-                "--tree" % (d, sys.argv[0]))
+                "--tree" % (dd, sys.argv[0]))
             return 2
-        root = d / "tree"
-        paths = load_paths(d / "paths.txt")
+        root = dd / "tree"
+        paths = load_paths(dd / "paths.txt")
     files = up.overlay_files()
     tree = Tree(root, up.OVERLAY_DIR, paths)
     upstream_tree = Tree(root, None, paths)
     ov = Overlay(up.OVERLAY_DIR, files, tree,
                  _upstream_reader(a.chromium_cache))
+    if a.cmd in ("checkdeps", "blink-audit"):
+        if a.cmd == "checkdeps":
+            findings, n = run_checkdeps(root, ov,
+                                        Path(a.cache) / "checkdeps")
+        else:
+            findings, n = run_blink_audit(
+                ov, _upstream_reader(a.chromium_cache))
+        for fd in findings.all():
+            print(fd)
+        errs = findings.errors()
+        print("%s: %d files, %d errors, %d warnings" % (
+            a.cmd, n, len(errs), len(findings.all()) - len(errs)))
+        if a.json:
+            Path(a.json).write_text(json.dumps(
+                [x.to_json() for x in findings.all()], indent=1))
+        return 1 if errs else 0
     platforms = [p.strip() for p in a.platform.split(",") if p.strip()]
     for p in platforms:
         try:

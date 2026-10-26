@@ -8,7 +8,8 @@ friend, allow_circular_includes_from, check_includes, no_check_targets,
 nogncheck, unlisted headers, files a configuration never loads, platform
 conditions, mojom() headers), gn gen's dependency rules (undefined labels,
 visibility, testonly, the circular-include allowlist), cycles, missing
-sources and the overlay's "only the includes MoltBrowser added" rule.
+sources, the overlay's "only the includes MoltBrowser added" rule, and the
+plumbing of the checkdeps and Blink-audit runs (with stand-in scripts).
 
 Run: python3 tools/chromium/gn_static_check_test.py -v
 """
@@ -512,6 +513,81 @@ source_set("molt") {
                          [("unlisted", "molt/unlisted.h")])
         # app.cc (its added includes), molt.cc, molt.h, unlisted.h.
         self.assertEqual(stats["include_files"], 4)
+
+
+FAKE_CHECKDEPS = r'''
+import json, os, sys
+root = sys.argv[sys.argv.index("--root") + 1]
+out = sys.argv[sys.argv.index("--json") + 1]
+assert os.path.isdir(os.path.join(root, ".svn"))
+res = []
+for rel in ("app/app.cc", "molt/molt.cc"):
+    path = os.path.join(root, rel)
+    if not os.path.isfile(path):
+        continue
+    res.append({"dependee_path": path, "violations": [
+        {"include_path": l.split('"')[1], "violated_rule": ["-", "x", "y"]}
+        for l in open(path) if l.startswith("#include")]})
+json.dump(res, open(out, "w"))
+'''
+
+FAKE_AUDIT = r'''
+import collections
+_Result = collections.namedtuple("_Result", "line identifier advice warning")
+def check(path, changed):
+    return [_Result(n, "std::regex", ["no"], False)
+            for n, l in changed if "std::regex" in l]
+'''
+
+
+class PresubmitTest(Base):
+    """checkdeps and the Blink audit see what MoltBrowser adds."""
+
+    def overlay_with(self, ov):
+        write_tree(self.overlay, ov)
+        tree = g.Tree(self.root, self.overlay)
+        return g.Overlay(self.overlay, sorted(ov), tree)
+
+    def test_checkdeps_plan_and_run(self):
+        (self.root / "app" / "app.cc").write_text(
+            '#include "base/base.h"\nint a;\n')
+        write_tree(self.root, {"buildtools/checkdeps/checkdeps.py":
+                               FAKE_CHECKDEPS, "DEPS": "include_rules=[]\n"})
+        ov = self.overlay_with({
+            "app/app.cc": '#include "base/base.h"\n#include "lib/lib.h"\n'
+                          'int a;\n',
+            "app/DEPS": 'include_rules = [ "+lib" ]\n',
+            "molt/molt.cc": '#include "base/base.h"\n',
+            "v8/molt.cc": '#include "base/base.h"\n',
+            "molt/molt.txt": "",
+        })
+        self.assertEqual(g.checkdeps_plan(ov),
+                         {"app/app.cc": {"lib/lib.h"}, "molt/molt.cc": None})
+        findings, n = g.run_checkdeps(self.root, ov, self.tmp / "work")
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted((f.where, f.message.split('"')[1])
+                                for f in findings.errors()),
+                         [("app/app.cc", "lib/lib.h"),
+                          ("molt/molt.cc", "base/base.h")])
+        work = self.tmp / "work" / "src"
+        self.assertTrue((work / "app" / "DEPS").is_file())
+        self.assertTrue((work / "DEPS").is_file())
+
+    def test_added_lines_and_blink_audit(self):
+        blink = "third_party/blink/renderer/core/"
+        (self.root / blink).mkdir(parents=True)
+        (self.root / blink / "a.cc").write_text("int a;\nint b;\n")
+        ov = self.overlay_with({
+            blink + "a.cc": "int a;\nstd::regex r;\nint b;\n",
+            blink + "new.h": "std::regex s;\n",
+            g.BLINK_AUDIT: FAKE_AUDIT,
+        })
+        self.assertEqual(g.added_lines(ov, blink + "a.cc"),
+                         [(2, "std::regex r;")])
+        findings, n = g.run_blink_audit(ov)
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted(f.where for f in findings.errors()),
+                         [blink + "a.cc:2", blink + "new.h:1"])
 
 
 class FetchTest(unittest.TestCase):
