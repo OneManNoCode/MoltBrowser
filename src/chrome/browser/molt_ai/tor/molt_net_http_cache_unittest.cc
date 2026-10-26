@@ -67,6 +67,13 @@ class MoltNetHttpCacheTest : public testing::Test {
     return rv;
   }
 
+  // Moves time on: the wall clock entries keep their times by, and the
+  // monotonic one MoltNet's expiry reads.
+  void Advance(base::TimeDelta delta) {
+    clock_.Advance(delta);
+    task_environment_.AdvanceClock(delta);
+  }
+
   bool Has(const std::string& key) {
     disk_cache::EntryResult result = backend_->OpenEntry(
         key, net::HIGHEST, disk_cache::EntryResultCallback());
@@ -114,7 +121,7 @@ TEST_F(MoltNetHttpCacheTest, GreedySiteEvictsOnlyItsOwnEntries) {
               kChunk);
   }
   for (int i = 0; i < 100; ++i) {
-    clock_.Advance(base::Seconds(1));
+    Advance(base::Seconds(1));
     ASSERT_EQ(Write(Key("https://greedy.test", "/" + std::to_string(i)),
                     kChunk),
               kChunk);
@@ -185,7 +192,7 @@ TEST_F(MoltNetHttpCacheTest, ANewEntryMakesRoomFromItsSitesOwnEntries) {
   UseBudget(disk_cache::MoltNetHttpCacheBudget());
   const int kChunk = 1024 * 1024 - 256;
   for (int i = 0; i < 10; ++i) {
-    clock_.Advance(base::Seconds(1));
+    Advance(base::Seconds(1));
     ASSERT_EQ(Write(Key("https://a.test", "/" + std::to_string(i)), kChunk),
               kChunk);
   }
@@ -208,15 +215,15 @@ TEST_F(MoltNetHttpCacheTest, UnusedEntriesExpire) {
   UseBudget(disk_cache::MoltNetHttpCacheBudget());
   ASSERT_EQ(Write(Key("https://a.test", "/old"), 100), 100);
   ASSERT_EQ(Write(Key("https://a.test", "/used"), 100), 100);
-  clock_.Advance(base::Minutes(20));
+  Advance(base::Minutes(20));
   EXPECT_TRUE(Has(Key("https://a.test", "/used")));
   ASSERT_EQ(Write(Key("https://a.test", "/used2"), 100), 100);
-  clock_.Advance(base::Minutes(15));
+  Advance(base::Minutes(15));
   EXPECT_FALSE(Has(Key("https://a.test", "/old")));
   EXPECT_TRUE(Has(Key("https://a.test", "/used2")));
   // The sweep frees them without a use.
   ASSERT_EQ(Write(Key("https://b.test", "/x"), 100), 100);
-  clock_.Advance(base::Minutes(31));
+  Advance(base::Minutes(31));
   task_environment_.FastForwardBy(base::Seconds(
       disk_cache::kMoltHttpCacheSweepIntervalSeconds));
   EXPECT_EQ(backend_->MoltSiteSizeForTesting("https://b.test"), 0);
@@ -232,9 +239,9 @@ TEST_F(MoltNetHttpCacheTest, TheSweepPassesEntriesInUse) {
   ASSERT_EQ(held.net_error(), net::OK);
   disk_cache::Entry* held_entry = held.ReleaseEntry();
   ASSERT_EQ(Write(Key("https://b.test", "/old"), 100), 100);
-  clock_.Advance(base::Minutes(29));
+  Advance(base::Minutes(29));
   ASSERT_EQ(Write(Key("https://c.test", "/new"), 100), 100);
-  clock_.Advance(base::Minutes(2));
+  Advance(base::Minutes(2));
   task_environment_.FastForwardBy(
       base::Seconds(disk_cache::kMoltHttpCacheSweepIntervalSeconds));
   EXPECT_EQ(backend_->MoltSiteSizeForTesting("https://b.test"), 0);
@@ -254,7 +261,7 @@ TEST_F(MoltNetHttpCacheTest, SparseDataCountsAgainstItsSite) {
   ASSERT_EQ(Write(Key("https://polite.test", "/0"), 4096), 4096);
   const int kChunk = 1024 * 1024;
   for (int i = 0; i < 12; ++i) {
-    clock_.Advance(base::Seconds(1));
+    Advance(base::Seconds(1));
     disk_cache::EntryResult result = backend_->CreateEntry(
         Key("https://greedy.test", "/media" + std::to_string(i)),
         net::HIGHEST, disk_cache::EntryResultCallback());
@@ -278,7 +285,7 @@ TEST_F(MoltNetHttpCacheTest, SparseDataCountsAgainstItsSite) {
 TEST_F(MoltNetHttpCacheTest, EntriesMadeBeforeTheLimitsAreInTheirSitesLists) {
   const int kChunk = 1024 * 1024 - 256;
   for (int i = 0; i < 9; ++i) {
-    clock_.Advance(base::Seconds(1));
+    Advance(base::Seconds(1));
     ASSERT_EQ(Write(Key("https://a.test", "/" + std::to_string(i)), kChunk),
               kChunk);
   }
@@ -288,7 +295,7 @@ TEST_F(MoltNetHttpCacheTest, EntriesMadeBeforeTheLimitsAreInTheirSitesLists) {
             kChunk + static_cast<int64_t>(
                          Key("https://b.test", "/0").size()));
   for (int i = 9; i < 12; ++i) {
-    clock_.Advance(base::Seconds(1));
+    Advance(base::Seconds(1));
     ASSERT_EQ(Write(Key("https://a.test", "/" + std::to_string(i)), kChunk),
               kChunk);
   }
@@ -317,19 +324,20 @@ class FakeEntry {
 
 TEST(MoltNetHttpCacheSiteLruTest, AnEvictionLooksOnlyAtItsSitesEntries) {
   disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
   std::vector<std::unique_ptr<FakeEntry>> others, own;
   for (int i = 0; i < 1000; ++i) {
     others.push_back(std::make_unique<FakeEntry>());
-    lru.Touch("https://other.test", others.back()->link());
+    lru.Touch("https://other.test", others.back()->link(), ++now_us);
     lru.AddSize("https://other.test", 10);
   }
   for (int i = 0; i < 10; ++i) {
     own.push_back(std::make_unique<FakeEntry>());
-    lru.Touch("https://a.test", own.back()->link());
+    lru.Touch("https://a.test", own.back()->link(), ++now_us);
     lru.AddSize("https://a.test", 10);
   }
   own[0]->in_use = true;
-  lru.Touch("https://a.test", own[5]->link());  // used again: last
+  lru.Touch("https://a.test", own[5]->link(), ++now_us);  // used again: last
   std::vector<const FakeEntry*> seen;
   std::vector<FakeEntry*> evicted;
   lru.EvictTill(
@@ -361,15 +369,16 @@ TEST(MoltNetHttpCacheSiteLruTest, AnEvictionLooksOnlyAtItsSitesEntries) {
 
 TEST(MoltNetHttpCacheSiteLruTest, AnEvictedEntrysChildrenArePassed) {
   disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
   auto parent = std::make_unique<FakeEntry>();
   std::vector<std::unique_ptr<FakeEntry>> children;
-  lru.Touch("https://a.test", parent->link());
+  lru.Touch("https://a.test", parent->link(), ++now_us);
   for (int i = 0; i < 3; ++i) {
     children.push_back(std::make_unique<FakeEntry>(parent.get()));
-    lru.Touch("https://a.test", children.back()->link());
+    lru.Touch("https://a.test", children.back()->link(), ++now_us);
   }
   auto next = std::make_unique<FakeEntry>();
-  lru.Touch("https://a.test", next->link());
+  lru.Touch("https://a.test", next->link(), ++now_us);
   lru.AddSize("https://a.test", 50);
   std::vector<const FakeEntry*> seen;
   lru.EvictTill(
@@ -391,10 +400,11 @@ TEST(MoltNetHttpCacheSiteLruTest, AnEvictedEntrysChildrenArePassed) {
 
 TEST(MoltNetHttpCacheSiteLruTest, ASiteWithNothingLeftIsForgotten) {
   disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
   FakeEntry a, b;
-  lru.Touch("https://a.test", a.link());
+  lru.Touch("https://a.test", a.link(), ++now_us);
   lru.AddSize("https://a.test", 10);
-  lru.Touch("https://b.test", b.link());
+  lru.Touch("https://b.test", b.link(), ++now_us);
   lru.AddSize("https://b.test", 10);
   EXPECT_EQ(lru.SiteCountForTesting(), 2u);
   lru.Remove("https://a.test", a.link());
@@ -405,6 +415,172 @@ TEST(MoltNetHttpCacheSiteLruTest, ASiteWithNothingLeftIsForgotten) {
   lru.Clear();
   EXPECT_EQ(lru.SiteCountForTesting(), 0u);
   EXPECT_FALSE(b.link().linked());
+}
+
+// The sweep goes site by site, a few entries a step: a step looks at one
+// site's entries only, at most kMoltCacheSweepStepEntries of them, from its
+// least recently used to its first that hasn't expired.
+TEST(MoltNetHttpCacheSiteLruTest, TheSweepGoesSiteBySiteInSteps) {
+  disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
+  std::vector<std::unique_ptr<FakeEntry>> a, b;
+  for (int i = 0; i < 150; ++i) {
+    a.push_back(std::make_unique<FakeEntry>());
+    lru.Touch("https://a.test", a.back()->link(), ++now_us);
+    lru.AddSize("https://a.test", 1);
+  }
+  b.push_back(std::make_unique<FakeEntry>());
+  lru.Touch("https://b.test", b.back()->link(), ++now_us);
+  lru.AddSize("https://b.test", 1);
+  b.push_back(std::make_unique<FakeEntry>());
+  lru.Touch("https://b.test", b.back()->link(), 1000);  // not expired
+  lru.AddSize("https://b.test", 1);
+  const auto expired = [](int64_t last_used_us) { return last_used_us < 500; };
+  std::vector<const FakeEntry*> looked;
+  std::vector<std::pair<std::string, FakeEntry*>> dropped;
+  auto drop_from = [&](const std::string& site) {
+    return [&, site](FakeEntry* entry) {
+      dropped.emplace_back(site, entry);
+      lru.Remove(site, entry->link());
+      lru.AddSize(site, -1);
+    };
+  };
+  EXPECT_FALSE(lru.sweeping());
+  lru.StartSweep();
+  ASSERT_TRUE(lru.sweeping());
+  // Three steps for a's 150 entries (64, 64, 22), then one for b's.
+  EXPECT_TRUE(lru.SweepStep(
+      disk_cache::kMoltCacheSweepStepEntries, expired,
+      [&](const FakeEntry* entry) {
+        looked.push_back(entry);
+        return true;
+      },
+      drop_from("https://a.test")));
+  EXPECT_EQ(looked.size(), disk_cache::kMoltCacheSweepStepEntries);
+  EXPECT_EQ(dropped.size(), disk_cache::kMoltCacheSweepStepEntries);
+  EXPECT_EQ(dropped.front().second, a[0].get());
+  EXPECT_TRUE(lru.SweepStep(disk_cache::kMoltCacheSweepStepEntries, expired,
+                            [](const FakeEntry*) { return true; },
+                            drop_from("https://a.test")));
+  EXPECT_EQ(dropped.size(), 2 * disk_cache::kMoltCacheSweepStepEntries);
+  // The last of a's: a is then forgotten, and the round goes on to b.
+  EXPECT_TRUE(lru.SweepStep(disk_cache::kMoltCacheSweepStepEntries, expired,
+                            [](const FakeEntry*) { return true; },
+                            drop_from("https://a.test")));
+  EXPECT_EQ(dropped.size(), 150u);
+  EXPECT_EQ(lru.SiteCountForTesting(), 1u);
+  // b's first entry has expired, its second hasn't: the round ends there.
+  EXPECT_FALSE(lru.SweepStep(disk_cache::kMoltCacheSweepStepEntries, expired,
+                             [](const FakeEntry*) { return true; },
+                             drop_from("https://b.test")));
+  EXPECT_EQ(dropped.size(), 151u);
+  EXPECT_EQ(dropped.back().second, b[0].get());
+  EXPECT_FALSE(lru.sweeping());
+  EXPECT_EQ(lru.SizeOf("https://b.test"), 1);
+}
+
+// A step that drops nothing (the entries it looks at are in use) ends its
+// site's turn, so a site holding many entries open can't keep the sweep on
+// it.
+TEST(MoltNetHttpCacheSiteLruTest, ASweepStepThatDropsNothingMovesOn) {
+  disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
+  std::vector<std::unique_ptr<FakeEntry>> a;
+  for (size_t i = 0; i < disk_cache::kMoltCacheSweepStepEntries + 1; ++i) {
+    a.push_back(std::make_unique<FakeEntry>());
+    a.back()->in_use = true;
+    lru.Touch("https://a.test", a.back()->link(), ++now_us);
+  }
+  FakeEntry b;
+  lru.Touch("https://b.test", b.link(), ++now_us);
+  lru.StartSweep();
+  int dropped = 0;
+  EXPECT_TRUE(lru.SweepStep(
+      disk_cache::kMoltCacheSweepStepEntries,
+      [](int64_t) { return true; },
+      [](const FakeEntry* entry) { return !entry->in_use; },
+      [&](FakeEntry*) { ++dropped; }));
+  EXPECT_EQ(dropped, 0);
+  EXPECT_FALSE(lru.SweepStep(
+      disk_cache::kMoltCacheSweepStepEntries,
+      [](int64_t) { return true; },
+      [](const FakeEntry* entry) { return !entry->in_use; },
+      [&](FakeEntry* entry) {
+        ++dropped;
+        lru.Remove("https://b.test", entry->link());
+      }));
+  EXPECT_EQ(dropped, 1);
+}
+
+// The table of sites is made with room for the cap: adding sites up to it
+// never rehashes it, and a site past it gets no room.
+TEST(MoltNetHttpCacheSiteLruTest, TheTableOfSitesHasRoomForTheCap) {
+  disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  lru.Reserve(disk_cache::kMoltCacheMaxSites, /*seed=*/12345);
+  const size_t buckets = lru.BucketCountForTesting();
+  EXPECT_GE(buckets, disk_cache::kMoltCacheMaxSites);
+  for (size_t i = 0; i < disk_cache::kMoltCacheMaxSites; ++i) {
+    const std::string site = "https://s" + std::to_string(i) + ".test";
+    ASSERT_TRUE(lru.HasRoomFor(site));
+    lru.AddSize(site, 1);
+  }
+  EXPECT_EQ(lru.BucketCountForTesting(), buckets);
+  EXPECT_FALSE(lru.HasRoomFor("https://late.test"));
+  EXPECT_TRUE(lru.HasRoomFor("https://s0.test"));
+  lru.AddSize("https://s0.test", -1);
+  EXPECT_TRUE(lru.HasRoomFor("https://late.test"));
+}
+
+// The cache's expiry reads a monotonic clock: entries expire 30 minutes of
+// it after their last use, also when the wall clock goes back meanwhile,
+// and the sweep finds them however the wall clock moved.
+TEST_F(MoltNetHttpCacheTest, ExpiryFollowsAMonotonicClock) {
+  UseBudget(disk_cache::MoltNetHttpCacheBudget());
+  ASSERT_EQ(Write(Key("https://a.test", "/old"), 100), 100);
+  clock_.Advance(-base::Hours(2));  // the wall clock goes back
+  ASSERT_EQ(Write(Key("https://b.test", "/new"), 100), 100);
+  task_environment_.FastForwardBy(base::Minutes(31));
+  EXPECT_EQ(backend_->MoltSiteSizeForTesting("https://a.test"), 0);
+  EXPECT_EQ(backend_->MoltSiteSizeForTesting("https://b.test"), 0);
+  // And forward: nothing used within 30 minutes of the monotonic clock
+  // expires.
+  ASSERT_EQ(Write(Key("https://c.test", "/x"), 100), 100);
+  clock_.Advance(base::Hours(5));
+  task_environment_.FastForwardBy(base::Minutes(2));
+  EXPECT_TRUE(Has(Key("https://c.test", "/x")));
+}
+
+// The sweep drops a site's many expired entries in steps, each a task of
+// its own, and other sites' entries in later steps.
+TEST_F(MoltNetHttpCacheTest, TheSweepDropsEntriesInStepsOfItsOwn) {
+  UseBudget(disk_cache::MoltNetHttpCacheBudget());
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_EQ(Write(Key("https://many.test", "/" + std::to_string(i)), 10),
+              10);
+  }
+  ASSERT_EQ(Write(Key("https://one.test", "/x"), 10), 10);
+  Advance(base::Minutes(31));
+  // The sweep's timer fires: its first step runs in the timer's task, the
+  // others in tasks of their own.
+  task_environment_.FastForwardBy(
+      base::Seconds(disk_cache::kMoltHttpCacheSweepIntervalSeconds));
+  EXPECT_EQ(backend_->MoltSiteSizeForTesting("https://many.test"), 0);
+  EXPECT_EQ(backend_->MoltSiteSizeForTesting("https://one.test"), 0);
+}
+
+// A site past the cap on sites gets no entry, as a write that doesn't fit;
+// once a site's entries are gone there is room again.
+TEST_F(MoltNetHttpCacheTest, ASitePastTheCapIsNotCached) {
+  UseBudget(disk_cache::MoltNetHttpCacheBudget());
+  for (size_t i = 0; i < disk_cache::kMoltCacheMaxSites; ++i) {
+    ASSERT_EQ(Write(Key("https://s" + std::to_string(i) + ".test", "/"), 1),
+              1);
+  }
+  EXPECT_EQ(Write(Key("https://late.test", "/"), 1),
+            net::ERR_INSUFFICIENT_RESOURCES);
+  EXPECT_EQ(Write(Key("https://s1.test", "/more"), 1), 1);
+  backend_->DoomAllEntries(net::CompletionOnceCallback());
+  EXPECT_EQ(Write(Key("https://late.test", "/"), 1), 1);
 }
 
 // Fixed limits: an entry's limit is the budget's, and memory-pressure
@@ -423,7 +599,7 @@ TEST_F(MoltNetHttpCacheTest, OtherContextsKeepChromiumsCache) {
   ASSERT_EQ(Write(Key("https://polite.test", "/0"), 1024 * 1024),
             1024 * 1024);
   for (int i = 0; i < 20; ++i) {
-    clock_.Advance(base::Seconds(1));
+    Advance(base::Seconds(1));
     Write(Key("https://greedy.test", "/" + std::to_string(i)), 1024 * 1024);
   }
   EXPECT_FALSE(Has(Key("https://polite.test", "/0")));
