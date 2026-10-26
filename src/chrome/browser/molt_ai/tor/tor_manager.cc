@@ -29,6 +29,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
+#include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/pluggable_transports.h"
 #include "chrome/browser/molt_ai/tor/tor_control_protocol.h"
 #include "chrome/browser/molt_ai/tor/torrc_builder.h"
@@ -780,6 +781,15 @@ void TorManager::Launch(base::OnceCallback<void(TorLaunchResult)> on_ready) {
     return;  // Coalesced into the in-flight launch.
   }
   launching_ = true;
+
+  // MoltNet's Tor never starts on a processor MoltNet refuses
+  // (molt_net_cpu_policy.h), whichever page or command asks.
+  if (const std::string& cpu_error = MoltNetCpuError(); !cpu_error.empty()) {
+    TorLaunchResult result;
+    result.error = cpu_error;
+    FinishLaunch(result);
+    return;
+  }
 
   const TorBinaryInfo tor = FindTorBinary();
   if (tor.path.empty()) {

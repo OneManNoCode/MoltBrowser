@@ -17,6 +17,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_fonts.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
+#include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
@@ -107,8 +108,9 @@ std::string FontsState() {
 //   proxy_externally_controlled, fonts[, error] }.
 // |routing| describes the window the popover is shown in, not the process:
 // a regular window is "not_routed" even while Tor runs for MoltNet windows.
-// |error| is set up front when there is no tor MoltNet can run, so the
-// popover says what to do ("Install the tor package" on Linux) before the
+// |error| is set up front when this computer's processor can't run MoltNet
+// (molt_net_cpu_policy.h) or there is no tor MoltNet can run, so the popover
+// says why, or what to do ("Install the tor package" on Linux), before the
 // user tries.
 base::DictValue StatusDict(Profile* profile) {
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
@@ -122,7 +124,11 @@ base::DictValue StatusDict(Profile* profile) {
   d.Set("in_moltnet_window", molt_ai::tor::IsMoltNetProfile(profile));
   d.Set("proxy_externally_controlled", status.proxy_externally_controlled);
   d.Set("fonts", FontsState());
-  if (!mgr->IsRunning() && !mgr->IsStarting()) {
+  if (const std::string& cpu = molt_ai::tor::MoltNetCpuError(); !cpu.empty()) {
+    // This processor can't run MoltNet (molt_net_cpu_policy.h): say so
+    // before the user tries, whatever else is missing.
+    d.Set("error", cpu);
+  } else if (!mgr->IsRunning() && !mgr->IsStarting()) {
     const std::string missing = mgr->FindTorBinary().error;
     if (!missing.empty()) {
       d.Set("error", missing);

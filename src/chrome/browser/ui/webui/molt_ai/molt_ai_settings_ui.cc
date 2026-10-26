@@ -42,6 +42,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_settings_handler.h"
 #include "base/functional/callback_helpers.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
@@ -342,12 +343,17 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // each action ends by re-querying the real state and broadcasting it
   // with FireWebUIListener, rather than resolving a per-call promise.
 
-  // Empty iff MoltNet has a tor it can run (bundled inside the .app on
-  // macOS / next to the executable on Windows, or on Linux a root-owned
-  // /usr/bin/tor from the tor package). Otherwise what the user should do,
-  // e.g. "Install the tor package" on Linux. This is exactly how the backend
-  // decides what it can launch.
+  // Empty iff this computer's processor can run MoltNet
+  // (molt_net_cpu_policy.h) and MoltNet has a tor it can run (bundled inside
+  // the .app on macOS / next to the executable on Windows, or on Linux a
+  // root-owned /usr/bin/tor from the tor package). Otherwise why, or what the
+  // user should do, e.g. "Install the tor package" on Linux. This is exactly
+  // how the backend decides what it can launch.
   std::string TorUnavailableReason() const {
+    if (const std::string& cpu = molt_ai::tor::MoltNetCpuError();
+        !cpu.empty()) {
+      return cpu;
+    }
     return molt_ai::tor::TorManager::Get()->FindTorBinary().error;
   }
 
