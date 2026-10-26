@@ -20,9 +20,21 @@ that include its output rest partly on a stand-in (the report lists them):
               <include> and <structure> name in it and its <part> files,
               numbered from a per-header base.
   build date  base/generated_build_date.h with a fixed date.
+  preloads    net/http/transport_security_state_static*.h: the real
+              .template the build's generator fills (every declaration
+              transport_security_state.cc compiles against), with
+              placeholder data where the generator writes the preload
+              list's Huffman tree and trie. The generator is a host tool
+              of //base (and //base's Rust JSON reader), which can't be
+              built here; the data doesn't change what a check sees.
 
 Real generators run here: .rs.h (cxx bridge headers) come from cxxbridge
-built from Chromium's vendored cxxbridge-cmd.
+built from Chromium's vendored cxxbridge-cmd, run the way
+third_party/rust/cxx/chromium_integration/run_cxxbridge.py runs it (with
+a --cfg for every line `rustc --print=cfg` gives for the platform's Rust
+target, so a bridge's #[cfg(target_family = "unix")] items are decided as
+in the build). A bridge header is remade when its .rs, the cfgs or
+cxxbridge change (cxx_stamps.json).
 """
 import hashlib
 import json
@@ -53,12 +65,13 @@ TOOLS = {}
 def handles_exclusively(name):
     """Names no GN action here could make (skip looking for one)."""
     return bool(GRIT_RE.search(name)) or name in WRITERS or \
-        name.endswith(".rs.h")
+        name.endswith(".rs.h") or _pattern_writer(name) is not None
 
 
 def handles(name):
     return bool(GRIT_RE.search(name)) or name in WRITERS or \
-        name.endswith((".rs.h", "_generated.h"))
+        name.endswith((".rs.h", "_generated.h")) or \
+        _pattern_writer(name) is not None
 
 
 def flatbuffer_header(tree, interp, name):
@@ -106,17 +119,157 @@ def flatbuffer_header(tree, interp, name):
     raise RuntimeError("no flatbuffer() target writes %s" % name)
 
 
+# The Rust target of each platform (build/config/rust.gni's
+# rust_abi_target).
+RUST_TARGETS = {"linux": "x86_64-unknown-linux-gnu",
+                "linux-vulkan": "x86_64-unknown-linux-gnu",
+                "linux-arm64": "aarch64-unknown-linux-gnu",
+                "win": "x86_64-pc-windows-msvc",
+                "mac": "aarch64-apple-darwin"}
+
+# What `rustc --print=cfg` says for x86_64-unknown-linux-gnu, for when no
+# rustc is installed (the cfgs a bridge can test change only with the
+# target).
+_LINUX_X64_CFG = """debug_assertions
+panic="unwind"
+target_abi=""
+target_arch="x86_64"
+target_endian="little"
+target_env="gnu"
+target_family="unix"
+target_feature="fxsr"
+target_feature="sse"
+target_feature="sse2"
+target_has_atomic="16"
+target_has_atomic="32"
+target_has_atomic="64"
+target_has_atomic="8"
+target_has_atomic="ptr"
+target_os="linux"
+target_pointer_width="64"
+target_vendor="unknown"
+unix
+"""
+
+CXX_STAMPS = "cxx_stamps.json"
+# Bump when the way bridge headers are made changes.
+CXX_DRIVER_VERSION = "2"
+
+
+def rustc_cfg(tree):
+    """The lines of `rustc --print=cfg --target=<the platform's>` (what
+    //build/rust/gni_impl:rustc_print_cfg writes), cached in the work
+    dir."""
+    plat = getattr(tree, "platform", None)
+    target = RUST_TARGETS[plat.name if plat else "linux"]
+    f = Path(tree.work) / "toolchain" / ("rustc-print-cfg-%s.txt" % target)
+    if not f.exists():
+        import shutil as _sh
+        rustc = _sh.which("rustc") or os.path.expanduser(
+            "~/.cargo/bin/rustc")
+        text = None
+        if os.path.exists(rustc):
+            r = subprocess.run([rustc, "--print=cfg", "--target=" + target],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout.strip():
+                text = r.stdout
+        if text is None:
+            if target != RUST_TARGETS["linux"]:
+                raise RuntimeError("rustc --print=cfg --target=%s failed "
+                                   "(is rustc installed?)" % target)
+            text = _LINUX_X64_CFG
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+    return [x.strip() for x in f.read_text().splitlines() if x.strip()]
+
+
+def _cxx_key(tree, src, exe, cfg):
+    h = hashlib.sha1(CXX_DRIVER_VERSION.encode())
+    h.update(tree.read(src) or b"-")
+    h.update(b"\0" + str(exe).encode() + b"\0")
+    try:
+        h.update(Path(exe).parent.parent.joinpath("version").read_bytes())
+    except OSError:
+        pass
+    h.update("\n".join(cfg).encode())
+    return h.hexdigest()
+
+
+def _load_cxx_stamps(tree):
+    try:
+        return json.loads((tree.state / CXX_STAMPS).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_cxx_stamps(tree, stamps):
+    Path(tree.state).mkdir(parents=True, exist_ok=True)
+    (tree.state / CXX_STAMPS).write_text(json.dumps(stamps, indent=1,
+                                                    sort_keys=True))
+
+
 def cxx_bridge_header(tree, interp, name):
     src = name[:-2]
     if not tree.exists(src):
         raise RuntimeError("%s not found" % src)
     tree.materialize([src])
     exe = TOOLS["cxxbridge"]()
-    r = subprocess.run([str(exe), str(tree.tree_dir / src), "--header"],
+    cfg = rustc_cfg(tree)
+    # run_cxxbridge.py: the source, then a --cfg per rustc cfg line.
+    r = subprocess.run([str(exe), str(tree.tree_dir / src)] +
+                       ["--cfg=" + c for c in cfg] + ["--header"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("cxxbridge: " + r.stderr[-1000:])
+    stamps = _load_cxx_stamps(tree)
+    stamps[name] = _cxx_key(tree, src, exe, cfg)
+    _save_cxx_stamps(tree, stamps)
     return r.stdout
+
+
+def refresh_cxx(tree, interp):
+    """Remakes every bridge header (gen/**/*.rs.h) whose .rs, cfgs or
+    cxxbridge changed since it was made, or that has no stamp (made before
+    stamps); removes the header of a .rs that is gone. Returns (remade,
+    removed)."""
+    gen_dir = Path(tree.gen_dir)
+    if not gen_dir.is_dir():
+        return [], []
+    headers = sorted(str(f.relative_to(gen_dir))
+                     for f in gen_dir.glob("**/*.rs.h"))
+    if not headers:
+        return [], []
+    stamps = _load_cxx_stamps(tree)
+    remade, removed = [], []
+    try:
+        exe = TOOLS["cxxbridge"]()
+        cfg = rustc_cfg(tree)
+    except (KeyError, RuntimeError) as e:
+        log("cxx: cannot check bridge headers: %s" % e)
+        return [], []
+    def drop(n):
+        (gen_dir / n).unlink()
+        st = _load_cxx_stamps(tree)
+        st.pop(n, None)
+        _save_cxx_stamps(tree, st)
+        removed.append(n)
+
+    for n in headers:
+        src = n[:-2]
+        if not tree.exists(src):
+            drop(n)
+            continue
+        if stamps.get(n) == _cxx_key(tree, src, exe, cfg):
+            continue
+        try:
+            text = cxx_bridge_header(tree, interp, n)  # stamps it
+            (gen_dir / n).write_text(text)
+            remade.append(n)
+        except RuntimeError as e:
+            log("cxx: %s: %s; removed" % (n, str(e).splitlines()[-1][:200]
+                                         if str(e) else e))
+            drop(n)
+    return remade, removed
 
 
 def _find_grit_target(tree, interp, name):
@@ -191,8 +344,11 @@ def webui_grit_header(tree, name, includers):
 
 GRIT_STAMPS = "grit_stamps.json"
 RESOURCE_IDS = "tools/gritsettings/default_resource_ids"
-# Bump when grit_headers.py changes what it writes.
-GRIT_DRIVER_VERSION = "1"
+# Bump when grit_headers.py changes what it writes, or to retry the
+# headers grit failed on (the failures are remembered per version: "2"
+# retries those of runs before the first-ids file was made reliably, "3"
+# those that failed on ninja's asserted output lists).
+GRIT_DRIVER_VERSION = "3"
 
 
 def _grd_closure(tree, path, seen=None):
@@ -253,13 +409,14 @@ def _grit_key(tree, gen_dir, args):
 
 def _load_stamps(tree):
     try:
-        return json.loads((tree.work / GRIT_STAMPS).read_text())
+        return json.loads((tree.state / GRIT_STAMPS).read_text())
     except (OSError, ValueError):
         return {}
 
 
 def _save_stamps(tree, stamps):
-    (tree.work / GRIT_STAMPS).write_text(json.dumps(stamps, indent=1,
+    Path(tree.state).mkdir(parents=True, exist_ok=True)
+    (tree.state / GRIT_STAMPS).write_text(json.dumps(stamps, indent=1,
                                                     sort_keys=True))
 
 
@@ -290,8 +447,9 @@ def ensure_resource_ids(tree, interp, gen_dir):
 # grit build options (with a value) that only matter for outputs other than
 # headers: the files ninja checks (expected outputs, depfile) and the tools
 # for .pak contents (brotli, the CSS minifier, the Android zip).
-_NINJA_ONLY = ("--assert-file-list", "--depfile", "--depdir", "--brotli",
-               "--css-minifier", "--android-output-zip")
+_NINJA_ONLY = ("--assert-file-list", "--assert-output-file-list",
+               "--assert-input-file-list", "--depfile", "--depdir",
+               "--brotli", "--css-minifier", "--android-output-zip")
 
 
 def _header_args(args):
@@ -462,9 +620,77 @@ def build_date(tree, interp):
             "#endif\n")
 
 
+TEMPLATE_PLACEHOLDER_RE = re.compile(r"\[\[([A-Z0-9_]+)\]\]")
+
+# The pins template's tags, as the generator writes them
+# (preloaded_state_generator.cc: ProcessSPKIHashes, ProcessPinsets,
+# ProcessPinEntries), with one made-up pinset for a host under .invalid
+# (a zero hash), so the declarations and their uses compile as they do.
+PINS_FILL = {
+    "SPKI_HASHES": "static constexpr SHA256HashValue "
+                   "kSPKIHash_CompileCheck = {\n  " + "0x00, " * 31 +
+                   "0x00};",
+    "ACCEPTABLE_CERTS": "static constexpr SHA256HashValue const * "
+                        "kCompileCheckAcceptableCerts[] = {\n"
+                        "    &kSPKIHash_CompileCheck,\n};",
+    "PINSETS": "static constexpr net::TransportSecurityStatePinsSource::"
+               "Pinset kCompileCheckPinset = "
+               "{kCompileCheckAcceptableCerts, {}};",
+    "HOST_PINS": "base::MakeFixedFlatMap<std::string_view, "
+                 "net::TransportSecurityStatePinsSource::HostPin>({\n"
+                 "  {\"compile-check.invalid\", {&kCompileCheckPinset, "
+                 "false}},\n})",
+}
+
+
+def preload_header(tree, interp, name):
+    """net/http/transport_security_state_static*.h from the .template its
+    GN action (a compiled_action() running transport_security_state_
+    generator) names, with placeholder data (see STAND-INS above)."""
+    from .gen_actions import find_action
+    act = find_action(tree, interp, name)
+    if act is None:
+        raise RuntimeError("no action writes %s" % name)
+    tmpl = None
+    for x in act.get("inputs") or []:
+        if isinstance(x, str) and x.endswith(".template"):
+            tmpl = interp.abspath(x, {"dir": act.path})[2:]
+    if tmpl is None:
+        raise RuntimeError("%s: no .template input" % act)
+    text = tree.read(tmpl)
+    if text is None:
+        raise RuntimeError("%s not found" % tmpl)
+    text = text.decode()
+
+    def fill(m):
+        # The generator's shape for the pins tags; else an array
+        # initializer after "[] = ", a number otherwise.
+        if m.group(1) in PINS_FILL:
+            return PINS_FILL[m.group(1)]
+        before = text[:m.start()].rstrip()
+        return "{0}" if before.endswith("[] =") else "0"
+
+    body = TEMPLATE_PLACEHOLDER_RE.sub(fill, text)
+    return ("// compile_check STAND-IN for %s: the real %s, placeholder "
+            "data.\n" % (name, tmpl)) + body
+
+
 WRITERS = {
     "base/generated_build_date.h": build_date,
 }
+
+# Writers for names matching a pattern.
+PATTERN_WRITERS = [
+    (re.compile(r"^net/http/transport_security_state_static[a-z0-9_]*\.h$"),
+     preload_header),
+]
+
+
+def _pattern_writer(name):
+    for rx, fn in PATTERN_WRITERS:
+        if rx.match(name):
+            return fn
+    return None
 
 
 def generate(tree, interp, gen_dir, names, includers=None):
@@ -481,6 +707,8 @@ def generate(tree, interp, gen_dir, names, includers=None):
                 text = flatbuffer_header(tree, interp, n)
             elif n in WRITERS:
                 text = WRITERS[n](tree, interp)
+            elif _pattern_writer(n) is not None:
+                text = _pattern_writer(n)(tree, interp, n)
             else:
                 continue
         except Exception as e:  # noqa: BLE001 - report, keep going

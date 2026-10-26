@@ -463,6 +463,9 @@ class Interp:
             return
         # A target, config or template invocation.
         tname = self.eval(args[0], scope, ctx) if args else ""
+        if name == "target" and len(args) >= 2 and isinstance(tname, str):
+            # target("source_set", "x") is source_set("x").
+            name, tname = tname, self.eval(args[1], scope, ctx)
         s = Scope(scope)
         # As gn: the type's set_defaults() values first (a source_set's
         # `configs` start as default_compiler_configs).
@@ -678,6 +681,19 @@ class Interp:
                 return OUT + "/gen"
             if what == "label_no_toolchain":
                 return d + ":" + n
+            if what in ("root_out_dir", "toolchain"):
+                # The default toolchain's outputs are at the root of the
+                # build directory, another's in a directory of its name.
+                dflt = self.globals.get("default_toolchain") \
+                    if self.globals.has("default_toolchain") else None
+                tc = v.split("(", 1)[1].rstrip(")") if "(" in v else (
+                    scope.get("current_toolchain")
+                    if scope.has("current_toolchain") else dflt)
+                if not isinstance(tc, str) or not isinstance(dflt, str):
+                    return UNKNOWN
+                if what == "toolchain":
+                    return tc
+                return OUT if tc == dflt else OUT + "/" + tc.rsplit(":", 1)[-1]
             return UNKNOWN
         if name in ("filter_include", "filter_exclude"):
             lst, pats = ev(0), ev(1)
@@ -923,8 +939,15 @@ declare_args() {
 }
 
 
-def make_interp(tree, args_file_text, extra_args=None):
-    """An Interp over the Chromium tree with BUILDCONFIG.gn already run."""
+def make_interp(tree, args_file_text, extra_args=None, platform=None):
+    """An Interp over the Chromium tree with BUILDCONFIG.gn already run, for
+    `platform` (platforms.Platform; tree.platform by default). Sets OUT to
+    that platform's build directory."""
+    global OUT
+    plat = platform or getattr(tree, "platform", None)
+    if plat is not None:
+        OUT = plat.out
+        extra_args = dict(plat.extra_args, **(extra_args or {}))
 
     def read(path):
         if not path.startswith("//"):
@@ -951,13 +974,16 @@ def make_interp(tree, args_file_text, extra_args=None):
     args.update(parse_args_file(args_file_text))
     args.update(extra_args or {})
     g = Scope()
-    for k, v in {"host_os": "linux", "host_cpu": "x64", "target_os": "linux",
-                 "target_cpu": "x64", "current_os": "linux",
-                 "current_cpu": "x64", "root_build_dir": OUT,
+    os_, cpu = "linux", "x64"
+    tc = "//build/toolchain/linux:clang_x64"
+    if plat is not None:
+        os_, cpu, tc = plat.gn_os, plat.gn_cpu, plat.toolchain
+    for k, v in {"host_os": "linux", "host_cpu": "x64", "target_os": os_,
+                 "target_cpu": cpu, "current_os": os_,
+                 "current_cpu": cpu, "root_build_dir": OUT,
                  "root_gen_dir": OUT + "/gen", "root_out_dir": OUT,
                  "python_path": "python3", "gn_version": 2300,
-                 "current_toolchain": "//build/toolchain/linux:clang_x64",
-                 "default_toolchain": "//build/toolchain/linux:clang_x64",
+                 "current_toolchain": tc, "default_toolchain": tc,
                  "host_toolchain": "//build/toolchain/linux:clang_x64",
                  }.items():
         g.set(k, v)

@@ -13,6 +13,7 @@ ones a build generates (mojom, buildflags, protos, grit, ...) and the rest
 import re
 from pathlib import Path
 
+from .config import scoped_include_dirs
 from .sources import log
 
 INCLUDE_RE = re.compile(
@@ -63,6 +64,11 @@ FALSE_ATOMS = {
     "PERFETTO_BUILDFLAG(PERFETTO_OS_NACL)",
     "PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)",
     "BUILDFLAG(USE_BLINK_V8_BINDING_TRACE)",
+    # config.STAND_IN_FLAGS: V8 is checked on Torque's instance types.
+    "V8_USE_METAGEN_INSTANCE_TYPES",
+    # The GN switch molt_llama_vulkan is off (platforms.py: linux-vulkan).
+    "BUILDFLAG(MOLT_LLAMA_VULKAN)", "BUILDFLAG(MOLT_GPU_INFERENCE)",
+    "defined(MOLT_LLAMA_VULKAN)", "defined(GGML_VULKAN_MOLTBROWSER)",
     "0", "false",
 }
 TRUE_ATOMS = {
@@ -77,20 +83,80 @@ TRUE_ATOMS = {
 _TOK_RE = re.compile(r"\s*(defined\s*\(\s*\w+\s*\)|defined\s+\w+|"
                      r"\w+\s*\(\s*\w+\s*\)|&&|\|\||!|\(|\)|[^\s()!&|]+)")
 
-
-def _atom(tok):
-    tok = re.sub(r"\s+", "", tok)
-    m = re.match(r"defined(\w+)$", tok)
-    if m:
-        tok = "defined(%s)" % m.group(1)
-    if tok in FALSE_ATOMS:
-        return False
-    if tok in TRUE_ATOMS:
-        return True
-    return None
+BUILDFLAG_DEF_RE = re.compile(
+    rb"^#define (PA_)?BUILDFLAG_INTERNAL_(\w+)\(\) \((\d)\)", re.M)
+_BUILDFLAG_TOK = re.compile(r"(PA_)?BUILDFLAG\((\w+)\)$")
 
 
-def eval_cond(expr):
+class Atoms:
+    """What the scan knows for certain: atoms true or false on the platform
+    (platforms.Platform's lists), and the value of every buildflag a
+    generated buildflag header defines (BUILDFLAG(USE_VAAPI) and its
+    friends, for the platform's GN args)."""
+
+    def __init__(self, true=None, false=None, buildflags=None):
+        self.true = TRUE_ATOMS if true is None else true
+        self.false = FALSE_ATOMS if false is None else false
+        self.buildflags = buildflags or {}
+
+    def value(self, tok):
+        tok = re.sub(r"\s+", "", tok)
+        m = re.match(r"defined(\w+)$", tok)
+        if m:
+            tok = "defined(%s)" % m.group(1)
+        if tok in self.false:
+            return False
+        if tok in self.true:
+            return True
+        m = _BUILDFLAG_TOK.match(tok)
+        if m:
+            return self.buildflags.get((m.group(1) or "") + m.group(2))
+        return None
+
+
+def read_buildflags(gen_dir):
+    """{name: bool} from the generated buildflag headers under gen_dir
+    (write_buildflag_header.py's `#define BUILDFLAG_INTERNAL_X() (1)`;
+    partition_alloc's PA_ variant keyed "PA_X"). A name two headers define
+    differently is left out (unknown)."""
+    out = {}
+    bad = set()
+    gen_dir = Path(gen_dir)
+    if not gen_dir.is_dir():
+        return out
+    for f in gen_dir.rglob("*.h"):
+        n = f.name
+        if not ("buildflag" in n or "features" in n or n.endswith(
+                "_flags.h") or "build_config" in n):
+            continue
+        try:
+            data = f.read_bytes()
+        except OSError:
+            continue
+        for m in BUILDFLAG_DEF_RE.finditer(data):
+            k = ((m.group(1) or b"") + m.group(2)).decode()
+            v = m.group(3) != b"0"
+            if k in out and out[k] != v:
+                bad.add(k)
+            out[k] = v
+    for k in bad:
+        out.pop(k, None)
+    return out
+
+
+_DEFAULT_ATOMS = None
+
+
+def _atom(tok, atoms=None):
+    global _DEFAULT_ATOMS
+    if atoms is None:
+        if _DEFAULT_ATOMS is None:
+            _DEFAULT_ATOMS = Atoms()
+        atoms = _DEFAULT_ATOMS
+    return atoms.value(tok)
+
+
+def eval_cond(expr, atoms=None):
     """Three-valued evaluation: True, False or None (unknown)."""
     expr = re.sub(r"/\*.*?\*/", " ", expr)
     expr = expr.split("//", 1)[0].strip()
@@ -118,7 +184,7 @@ def eval_cond(expr):
                 take()
             return v
         # Comparisons and arithmetic: unknown.
-        v = _atom(t)
+        v = _atom(t, atoms)
         while peek() not in (None, "&&", "||", ")"):
             take()
             v = None
@@ -156,7 +222,7 @@ def eval_cond(expr):
         return None
 
 
-def extract_includes(data):
+def extract_includes(data, atoms=None):
     """[(kind, name, is_angle)] for includes in live (not certainly-false)
     branches."""
     out = []
@@ -175,11 +241,13 @@ def extract_includes(data):
             rest = m.group(2).decode("latin-1").strip()
             if d in ("if", "ifdef", "ifndef"):
                 if d == "if":
-                    v = eval_cond(rest)
+                    v = eval_cond(rest, atoms)
                 elif d == "ifdef":
-                    v = _atom("defined(%s)" % rest.split()[0]) if rest else None
+                    v = _atom("defined(%s)" % rest.split()[0],
+                              atoms) if rest else None
                 else:
-                    a = _atom("defined(%s)" % rest.split()[0]) if rest else None
+                    a = _atom("defined(%s)" % rest.split()[0],
+                              atoms) if rest else None
                     v = None if a is None else (not a)
                 stack.append([active, v is True, v is not False])
                 active = active and v is not False
@@ -188,7 +256,7 @@ def extract_includes(data):
                     continue
                 top = stack[-1]
                 if d == "elif":
-                    v = eval_cond(rest)
+                    v = eval_cond(rest, atoms)
                 else:
                     v = None
                 if top[1]:
@@ -214,6 +282,63 @@ def extract_includes(data):
         if m:
             out.append((m.group(1).decode(), m.group(3).decode("latin-1"),
                         m.group(2) == b"<"))
+    return out
+
+
+def live_lines(data, atoms=None):
+    """[bool] per line of `data`: False where the line is in a branch that
+    is certainly not compiled (as extract_includes decides), else True."""
+    lines = data.split(b"\n")
+    out = []
+    stack = []
+    active = True
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        n = 1
+        # A directive continued on the next lines.
+        while line.endswith(b"\\") or line.endswith(b"\\\r"):
+            if i + n >= len(lines):
+                break
+            line = line.rstrip(b"\r")[:-1] + lines[i + n]
+            n += 1
+        m = COND_RE.match(line) if line.lstrip().startswith(b"#") else None
+        if not m:
+            out += [active] * n
+            i += n
+            continue
+        d = m.group(1).decode()
+        rest = m.group(2).decode("latin-1").strip()
+        out += [active] * n
+        if d in ("if", "ifdef", "ifndef"):
+            if d == "if":
+                v = eval_cond(rest, atoms)
+            elif d == "ifdef":
+                v = _atom("defined(%s)" % rest.split()[0],
+                          atoms) if rest else None
+            else:
+                a = _atom("defined(%s)" % rest.split()[0],
+                          atoms) if rest else None
+                v = None if a is None else (not a)
+            stack.append([active, v is True, v is not False])
+            active = active and v is not False
+        elif d in ("elif", "elifdef", "elifndef") and stack:
+            top = stack[-1]
+            v = eval_cond(rest, atoms) if d == "elif" else None
+            if top[1]:
+                top[2] = False
+            else:
+                top[2] = v is not False
+                if v is True:
+                    top[1] = True
+            active = top[0] and top[2]
+        elif d == "else" and stack:
+            top = stack[-1]
+            top[2] = not top[1]
+            active = top[0] and top[2]
+        elif d == "endif" and stack:
+            active = stack.pop()[0]
+        i += n
     return out
 
 
@@ -266,15 +391,44 @@ def classify_missing(name):
 
 
 class Scanner:
-    def __init__(self, tree, include_dirs, gen_dir):
+    def __init__(self, tree, include_dirs, gen_dir, atoms=None,
+                 system_dirs=()):
         """include_dirs: Chromium-relative dirs ("" = src root), in order.
         gen_dir: the generated-files root (searched like include dirs,
-        under the "gen/" prefix)."""
+        under the "gen/" prefix). atoms: what is certain on the platform
+        (Atoms; Linux x64's lists by default). system_dirs: absolute dirs
+        of the platform's system headers (the Windows SDK, the Mac
+        stand-ins): an angle include found there is the system's."""
         self.tree = tree
         self.include_dirs = include_dirs
         self.gen_dir = Path(gen_dir)
+        self.atoms = atoms
+        self.system_dirs = [Path(d) for d in system_dirs]
+        self._sys_cache = {}
         self.missing = {}      # name -> set(includer)
         self.resolved = {}     # file -> [resolved paths]
+
+    def _in_system(self, name):
+        if name not in self._sys_cache:
+            low = name.lower()
+            hit = False
+            for d in self.system_dirs:
+                if (d / name).is_file():
+                    hit = True
+                    break
+                # Windows headers are found case-insensitively.
+                if low != name and (d / low).is_file():
+                    hit = True
+                    break
+                # <Framework/Header.h> in a framework directory.
+                if "/" in name:
+                    fw, rest = name.split("/", 1)
+                    if (d / (fw + ".framework") / "Headers" /
+                            rest).is_file():
+                        hit = True
+                        break
+            self._sys_cache[name] = hit
+        return self._sys_cache[name]
 
     def _gen_exists(self, rel):
         return (self.gen_dir / rel).is_file()
@@ -287,7 +441,11 @@ class Scanner:
             kind, path = includer
             d = path.rsplit("/", 1)[0] if "/" in path else ""
             cands.append((kind, (d + "/" + name) if d else name))
-        for inc in self.include_dirs:
+        dirs = list(self.include_dirs)
+        if includer is not None:
+            dirs += [d for d in scoped_include_dirs(includer[1])
+                     if d not in dirs]
+        for inc in dirs:
             if inc.startswith("gen:"):
                 g = inc[4:]
                 cands.append(("gen", (g + "/" + name) if g else name))
@@ -331,13 +489,15 @@ class Scanner:
                 if data is None:
                     continue
                 edges = self.resolved.setdefault(key, [])
-                for kind, name, angle in extract_includes(data):
+                for kind, name, angle in extract_includes(data,
+                                                          self.atoms):
                     if angle and "/" not in name and "." not in name:
                         continue  # <vector> and friends
                     if kind == "include_next":
                         continue
-                    system = angle and (name.startswith(SYSTEM_PREFIXES) or
-                                        STD_NAMES.match(name))
+                    system = angle and bool(
+                        name.startswith(SYSTEM_PREFIXES) or
+                        STD_NAMES.match(name) or self._in_system(name))
                     r = self.resolve(name, key, angle)
                     if r is None and system:
                         # The sysroot's. (One the tree has, such as
