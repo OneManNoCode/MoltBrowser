@@ -4,7 +4,9 @@
 // An ended MoltNet identity's network context stops what it has under way
 // when its refusal is applied, and starts nothing after it
 // (services/network/molt_ended_identity_policy.h), on Chromium's real
-// ProxyConfigServiceMojo, NetworkContext and SOCKS5ClientSocket.
+// ProxyConfigServiceMojo, NetworkContext and SOCKS5ClientSocket. And
+// MoltNet's network context makes no sockets outside its own HTTP network
+// session (services/network/molt_own_session_sockets_policy.h).
 
 #include <memory>
 #include <optional>
@@ -15,6 +17,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/test/task_environment.h"
+#include "base/test/test_future.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/address_list.h"
@@ -22,6 +25,8 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_anonymization_key.h"
+#include "net/net_buildflags.h"
 #include "net/base/proxy_server.h"
 #include "net/base/test_completion_callback.h"
 #include "net/proxy_resolution/proxy_config.h"
@@ -32,18 +37,34 @@
 #include "net/socket/socks5_client_socket.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/molt_ended_identity_policy.h"
+#include "services/network/molt_own_session_sockets_policy.h"
 #include "services/network/network_context.h"
 #include "services/network/network_service.h"
 #include "services/network/proxy_config_service_mojo.h"
+#include "services/network/public/cpp/network_service_buildflags.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/proxy_config.mojom.h"
+#include "services/network/public/mojom/proxy_resolving_socket.mojom.h"
+#include "services/network/public/mojom/restricted_udp_socket.mojom.h"
+#include "services/network/public/mojom/socket_factory.mojom.h"
+#include "services/network/public/mojom/tcp_socket.mojom.h"
+#include "services/network/public/mojom/udp_socket.mojom.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/network/test/fake_test_cert_verifier_params_factory.h"
 #include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(IS_P2P_ENABLED)
+#include "services/network/public/mojom/p2p.mojom.h"
+#include "services/network/public/mojom/p2p_trusted.mojom.h"
+#endif
+
+#if BUILDFLAG(ENABLE_MDNS)
+#include "services/network/public/mojom/mdns_responder.mojom.h"
+#endif
 
 namespace network {
 namespace {
@@ -253,15 +274,19 @@ TEST(MoltNetEndedIdentityNetworkTest, AnEndedIdentityOpensNoStream) {
 // loader factory made afterwards; it still answers proxy lookups.
 class MoltNetEndedContextTest : public testing::Test {
  protected:
+  // A context with MoltNet's setting, or (`moltnet` false) without it.
   std::unique_ptr<NetworkContext> MakeContext(
-      net::ProxyConfigWithAnnotation initial) {
+      net::ProxyConfigWithAnnotation initial,
+      bool moltnet = true) {
+    proxy_config_client_.reset();
+    context_remote_.reset();
     auto params = mojom::NetworkContextParams::New();
     params->cert_verifier_params =
         FakeTestCertVerifierParamsFactory::GetCertVerifierParams();
     params->initial_proxy_config = std::move(initial);
     params->proxy_config_client_receiver =
         proxy_config_client_.BindNewPipeAndPassReceiver();
-    params->molt_stop_all_when_refusing = true;
+    params->molt_stop_all_when_refusing = moltnet;
     return std::make_unique<NetworkContext>(
         service_.get(), context_remote_.BindNewPipeAndPassReceiver(),
         std::move(params));
@@ -316,6 +341,148 @@ TEST_F(MoltNetEndedContextTest, AContextMadeAfterTheEndStartsEnded) {
   EXPECT_FALSE(context->MoltAdmits(MoltNetworkEntry::kURLLoader));
   EXPECT_EQ(Fetch(*context), net::ERR_ABORTED);
 }
+
+// ---- No sockets outside the context's own HTTP network session ----
+
+// Any of MoltNet's settings for its own session refuses them: the SOCKS
+// isolation password, per-site socket pools, the identity's end.
+TEST(MoltNetOwnSessionSocketsTest, AnyOfMoltNetsSessionSettingsRefuses) {
+  EXPECT_TRUE(MoltAllowsOwnSessionSockets(false, 0, false));
+  EXPECT_FALSE(MoltAllowsOwnSessionSockets(true, 0, false));
+  EXPECT_FALSE(MoltAllowsOwnSessionSockets(false, 48, false));
+  EXPECT_FALSE(MoltAllowsOwnSessionSockets(false, 0, true));
+  EXPECT_FALSE(MoltAllowsOwnSessionSockets(true, 48, true));
+}
+
+// MoltNet's context makes no ProxyResolvingClientSocketFactory: the
+// factory's pipe is closed. Another context makes one.
+TEST_F(MoltNetEndedContextTest, NoProxyResolvingSocketFactoryForMoltNet) {
+  for (bool moltnet : {true, false}) {
+    std::unique_ptr<NetworkContext> context = MakeContext(Tor(), moltnet);
+    EXPECT_EQ(context->MoltAllowsOwnSessionSockets(), !moltnet);
+    mojo::Remote<mojom::ProxyResolvingSocketFactory> factory;
+    context->CreateProxyResolvingSocketFactory(
+        factory.BindNewPipeAndPassReceiver());
+    factory.FlushForTesting();
+    EXPECT_EQ(factory.is_connected(), !moltnet) << moltnet;
+  }
+}
+
+// MoltNet's context makes no raw socket: the TCP and restricted UDP ones
+// answer ERR_ACCESS_DENIED, with no address and no data pipes; the UDP
+// socket's and the socket factory's pipes are closed. Another context binds
+// local sockets as before.
+TEST_F(MoltNetEndedContextTest, NoRawSocketsForMoltNet) {
+  const net::IPEndPoint loopback(net::IPAddress::IPv4Localhost(), 0);
+  const net::MutableNetworkTrafficAnnotationTag annotation(
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  for (bool moltnet : {true, false}) {
+    std::unique_ptr<NetworkContext> context = MakeContext(Tor(), moltnet);
+    const int expected = moltnet ? net::ERR_ACCESS_DENIED : net::OK;
+
+    mojo::Remote<mojom::TCPServerSocket> server;
+    auto options = mojom::TCPServerSocketOptions::New();
+    options->backlog = 1;
+    base::test::TestFuture<int32_t, const std::optional<net::IPEndPoint>&>
+        server_result;
+    context->CreateTCPServerSocket(loopback, std::move(options), annotation,
+                                   server.BindNewPipeAndPassReceiver(),
+                                   server_result.GetCallback());
+    EXPECT_EQ(server_result.Get<0>(), expected) << moltnet;
+    EXPECT_EQ(server_result.Get<1>().has_value(), !moltnet);
+
+    mojo::Remote<mojom::TCPBoundSocket> bound;
+    base::test::TestFuture<int32_t, const std::optional<net::IPEndPoint>&>
+        bound_result;
+    context->CreateTCPBoundSocket(loopback, annotation,
+                                  bound.BindNewPipeAndPassReceiver(),
+                                  bound_result.GetCallback());
+    EXPECT_EQ(bound_result.Get<0>(), expected) << moltnet;
+
+    mojo::Remote<mojom::RestrictedUDPSocket> restricted;
+    base::test::TestFuture<int32_t, const std::optional<net::IPEndPoint>&>
+        restricted_result;
+    context->CreateRestrictedUDPSocket(
+        loopback, mojom::RestrictedUDPSocketMode::BOUND, annotation,
+        mojom::RestrictedUDPSocketParams::New(),
+        restricted.BindNewPipeAndPassReceiver(), mojo::NullRemote(),
+        /*allow_multicast=*/false, /*allow_source_specific_multicast=*/false,
+        restricted_result.GetCallback());
+    EXPECT_EQ(restricted_result.Get<0>(), expected) << moltnet;
+
+    mojo::Remote<mojom::UDPSocket> udp;
+    context->CreateUDPSocket(udp.BindNewPipeAndPassReceiver(),
+                             mojo::NullRemote());
+    udp.FlushForTesting();
+    EXPECT_EQ(udp.is_connected(), !moltnet) << moltnet;
+
+    mojo::Remote<mojom::SocketFactory> factory;
+    context->CreateSocketFactory(factory.BindNewPipeAndPassReceiver());
+    factory.FlushForTesting();
+    EXPECT_EQ(factory.is_connected(), !moltnet) << moltnet;
+  }
+}
+
+// MoltNet's context connects no TCP socket anywhere, without trying: the
+// reply comes at once, with no data pipes.
+TEST_F(MoltNetEndedContextTest, NoConnectedSocketForMoltNet) {
+  std::unique_ptr<NetworkContext> context = MakeContext(Tor());
+  mojo::Remote<mojom::TCPConnectedSocket> socket;
+  base::test::TestFuture<int32_t, const std::optional<net::IPEndPoint>&,
+                         const std::optional<net::IPEndPoint>&,
+                         mojo::ScopedDataPipeConsumerHandle,
+                         mojo::ScopedDataPipeProducerHandle>
+      result;
+  context->CreateTCPConnectedSocket(
+      std::nullopt,
+      net::AddressList(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 9)),
+      /*tcp_connected_socket_options=*/nullptr,
+      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
+      socket.BindNewPipeAndPassReceiver(), mojo::NullRemote(),
+      result.GetCallback());
+  EXPECT_EQ(result.Get<0>(), net::ERR_ACCESS_DENIED);
+  EXPECT_FALSE(result.Get<1>().has_value());
+  EXPECT_FALSE(result.Get<2>().has_value());
+  EXPECT_FALSE(result.Get<3>().is_valid());
+  EXPECT_FALSE(result.Get<4>().is_valid());
+}
+
+#if BUILDFLAG(ENABLE_MDNS)
+// MoltNet's context answers no multicast DNS on the local network: the
+// responder's pipe is closed.
+TEST_F(MoltNetEndedContextTest, NoMdnsResponderForMoltNet) {
+  std::unique_ptr<NetworkContext> context = MakeContext(Tor());
+  mojo::Remote<mojom::MdnsResponder> responder;
+  context->CreateMdnsResponder(responder.BindNewPipeAndPassReceiver());
+  responder.FlushForTesting();
+  EXPECT_FALSE(responder.is_connected());
+}
+#endif  // BUILDFLAG(ENABLE_MDNS)
+
+#if BUILDFLAG(IS_P2P_ENABLED)
+// MoltNet's context binds a renderer's P2PSocketManager to one that reaches
+// nothing, and keeps the renderer's pipe open (it would ask again at once).
+TEST_F(MoltNetEndedContextTest, MoltNetsP2PSocketManagerReachesNothing) {
+  std::unique_ptr<NetworkContext> context = MakeContext(Tor());
+  mojo::PendingRemote<mojom::P2PTrustedSocketManagerClient> client;
+  mojo::PendingReceiver<mojom::P2PTrustedSocketManagerClient>
+      client_receiver = client.InitWithNewPipeAndPassReceiver();
+  mojo::Remote<mojom::P2PTrustedSocketManager> trusted;
+  mojo::Remote<mojom::P2PSocketManager> manager;
+  context->CreateP2PSocketManager(net::NetworkAnonymizationKey(),
+                                  std::move(client),
+                                  trusted.BindNewPipeAndPassReceiver(),
+                                  manager.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<const std::vector<net::IPAddress>&> addresses;
+  manager->GetHostAddress("example.com", std::nullopt, /*enable_mdns=*/false,
+                          addresses.GetCallback());
+  EXPECT_TRUE(addresses.Get().empty());
+  manager.FlushForTesting();
+  EXPECT_TRUE(manager.is_connected());
+  trusted.FlushForTesting();
+  EXPECT_FALSE(trusted.is_connected());
+}
+#endif  // BUILDFLAG(IS_P2P_ENABLED)
 
 }  // namespace
 }  // namespace network

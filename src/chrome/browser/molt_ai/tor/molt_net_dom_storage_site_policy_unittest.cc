@@ -4,11 +4,17 @@
 // MoltNet's localStorage / sessionStorage caches, totals, commit and write
 // rates per site, and its partitions without a database
 // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h,
-// std-only).
+// std-only); and the storage sequence taken in turn per site
+// (molt_dom_storage_fair_queue.h, std-only).
 
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 
+#include <cstdint>
+#include <map>
 #include <string>
+#include <vector>
+
+#include "components/services/storage/dom_storage/molt_dom_storage_fair_queue.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -44,6 +50,36 @@ TEST(MoltNetDomStorageSitePolicyTest, IdleExpiry) {
   EXPECT_TRUE(MoltDomStorageAreaExpired(kMoltDomStorageIdleExpirySeconds));
   EXPECT_EQ(kMoltDomStorageIdleExpirySeconds, 1800);
   EXPECT_EQ(kMoltDomStorageSweepIntervalSeconds, 60);
+}
+
+// What an area counts toward its site's total: its items' bytes, and what
+// each item and the area take in the storage service. An area holding
+// nothing counts nothing.
+TEST(MoltNetDomStorageSitePolicyTest, ItemsAndAreasCountWhatTheyTake) {
+  EXPECT_EQ(MoltDomStorageCountedBytes(0, 0), 0u);
+  EXPECT_EQ(MoltDomStorageCountedBytes(0, 1),
+            kMoltDomStorageItemOverheadBytes +
+                kMoltDomStorageAreaOverheadBytes);
+  EXPECT_EQ(MoltDomStorageCountedBytes(1000, 10),
+            1000 + 10 * kMoltDomStorageItemOverheadBytes +
+                kMoltDomStorageAreaOverheadBytes);
+  // A map node of 80 bytes and a 16-byte slot's rounding for each of the
+  // key's and the value's buffers; the area's objects.
+  EXPECT_EQ(kMoltDomStorageItemOverheadBytes, 112u);
+  EXPECT_EQ(kMoltDomStorageAreaOverheadBytes, 2048u);
+  // An area at Chromium's 10 MiB quota fits the site's total with up to
+  // about 900 items.
+  constexpr size_t kQuota = 10 * kMiB;
+  EXPECT_LE(MoltDomStorageCountedBytes(kQuota, 896),
+            kMoltDomStorageBytesPerSite);
+  EXPECT_GT(MoltDomStorageCountedBytes(kQuota, 897),
+            kMoltDomStorageBytesPerSite);
+  // Tiny items: about 94,000 at most, where their bytes alone would allow
+  // ten million.
+  EXPECT_LE(MoltDomStorageCountedBytes(0, 94000),
+            kMoltDomStorageBytesPerSite);
+  EXPECT_GT(MoltDomStorageCountedBytes(0, 95000),
+            kMoltDomStorageBytesPerSite);
 }
 
 // A site's areas together hold at most one area's own limit: a site of one
@@ -302,6 +338,204 @@ TEST(MoltNetDomStorageSitePolicyTest, WriteRateIsPerSite) {
     }
   }
   EXPECT_GT(refused, 0);
+}
+
+// ---- The storage sequence in turn per site ----
+
+using FairQueue = MoltDomStorageFairQueue<int>;
+
+// Runs the next task, charging it `cost` microseconds; the site it was for
+// ("" if none was ready).
+std::string RunNext(FairQueue& queue, int64_t cost, int* task = nullptr) {
+  std::string site;
+  int popped = 0;
+  if (!queue.Pop(&site, &popped)) {
+    return "";
+  }
+  queue.Charge(site, cost);
+  if (task) {
+    *task = popped;
+  }
+  return site;
+}
+
+// However many tasks a flooding site has queued, a site that had nothing
+// queued goes next.
+TEST(MoltNetDomStorageFairQueueTest, ASiteWithNothingQueuedGoesNext) {
+  FairQueue queue;
+  for (int i = 0; i < 10000; ++i) {
+    queue.Push("https://flood.test", i);
+  }
+  for (int i = 0; i < 100; ++i) {
+    ASSERT_EQ(RunNext(queue, 3), "https://flood.test");
+  }
+  queue.Push("https://polite.test", 0);
+  EXPECT_EQ(RunNext(queue, 50), "https://polite.test");
+  EXPECT_EQ(RunNext(queue, 3), "https://flood.test");
+}
+
+// Also when twenty sites flood with cheap tasks, all at the same virtual
+// time: a site using less than its share (here a twenty-first) waits for no
+// queued task of theirs.
+TEST(MoltNetDomStorageFairQueueTest, ManyFloodingSitesDontDelayAPoliteOne) {
+  FairQueue queue;
+  for (int s = 0; s < 20; ++s) {
+    for (int i = 0; i < 1000; ++i) {
+      queue.Push("https://flood" + std::to_string(s) + ".test", i);
+    }
+  }
+  for (int round = 0; round < 50; ++round) {
+    for (int i = 0; i < 40 + round % 7; ++i) {
+      ASSERT_NE(RunNext(queue, 1), "https://polite.test");
+    }
+    queue.Push("https://polite.test", round);
+    EXPECT_EQ(RunNext(queue, 1), "https://polite.test") << round;
+  }
+}
+
+// A site that used more than its share waits for the others to catch up:
+// its next task starts when its last one finished.
+TEST(MoltNetDomStorageFairQueueTest, ASiteThatUsedMoreWaits) {
+  FairQueue queue;
+  for (int s = 0; s < 4; ++s) {
+    for (int i = 0; i < 1000; ++i) {
+      queue.Push("https://flood" + std::to_string(s) + ".test", i);
+    }
+  }
+  queue.Push("https://dear.test", 0);
+  // The flooding sites' tasks take 1 microsecond, the dear site's 40.
+  auto run_next = [&queue]() {
+    std::string site;
+    int task = 0;
+    EXPECT_TRUE(queue.Pop(&site, &task));
+    queue.Charge(site, site == "https://dear.test" ? 40 : 1);
+    return site;
+  };
+  int before = 0;
+  while (run_next() != "https://dear.test") {
+    ++before;
+  }
+  // Each flooding site's first task, which became ready before it.
+  EXPECT_EQ(before, 4);
+  queue.Push("https://dear.test", 1);
+  int waited = 0;
+  while (run_next() != "https://dear.test") {
+    ++waited;
+  }
+  // For its 40 microseconds, 39 more of each flooding site's.
+  EXPECT_EQ(waited, 4 * 39);
+}
+
+// Sites with work queued share the sequence's time, whatever each task
+// costs: a site with dear tasks gets fewer of them.
+TEST(MoltNetDomStorageFairQueueTest, BusySitesShareTheTime) {
+  FairQueue queue;
+  for (int i = 0; i < 100000; ++i) {
+    queue.Push("https://cheap.test", i);
+    queue.Push("https://dear.test", i);
+  }
+  std::map<std::string, int64_t> time;
+  for (int i = 0; i < 20000; ++i) {
+    std::string site;
+    int task = 0;
+    ASSERT_TRUE(queue.Pop(&site, &task));
+    const int64_t cost = site == "https://dear.test" ? 100 : 2;
+    queue.Charge(site, cost);
+    time[site] += cost;
+  }
+  const int64_t cheap = time["https://cheap.test"];
+  const int64_t dear = time["https://dear.test"];
+  EXPECT_LE(cheap > dear ? cheap - dear : dear - cheap, 100);
+}
+
+// A site's tasks run in the order they were queued.
+TEST(MoltNetDomStorageFairQueueTest, ASitesTasksKeepTheirOrder) {
+  FairQueue queue;
+  for (int i = 0; i < 100; ++i) {
+    queue.Push("https://a.test", i);
+    queue.Push("https://b.test", 1000 + i);
+  }
+  std::map<std::string, std::vector<int>> order;
+  std::string site;
+  int task = 0;
+  while (queue.Pop(&site, &task)) {
+    order[site].push_back(task);
+    queue.Charge(site, 1 + task % 7);
+  }
+  ASSERT_EQ(order["https://a.test"].size(), 100u);
+  ASSERT_EQ(order["https://b.test"].size(), 100u);
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_EQ(order["https://a.test"][i], i);
+    EXPECT_EQ(order["https://b.test"][i], 1000 + i);
+  }
+}
+
+// A site that was idle gets no credit for it: it starts at the current
+// virtual time, and then shares the time like any busy site.
+TEST(MoltNetDomStorageFairQueueTest, AnIdleSiteGetsNoCredit) {
+  FairQueue queue;
+  for (int i = 0; i < 10000; ++i) {
+    queue.Push("https://busy.test", i);
+  }
+  for (int i = 0; i < 1000; ++i) {
+    RunNext(queue, 10);
+  }
+  for (int i = 0; i < 1000; ++i) {
+    queue.Push("https://back.test", i);
+  }
+  int back = 0;
+  for (int i = 0; i < 100; ++i) {
+    back += RunNext(queue, 10) == "https://back.test" ? 1 : 0;
+  }
+  EXPECT_GE(back, 49);
+  EXPECT_LE(back, 51);
+}
+
+// Tasks the clock says took no time still count: a site sending many cheap
+// messages doesn't go first forever.
+TEST(MoltNetDomStorageFairQueueTest, EveryTaskCounts) {
+  FairQueue queue;
+  for (int i = 0; i < 100; ++i) {
+    queue.Push("https://free.test", i);
+  }
+  for (int i = 0; i < 10; ++i) {
+    queue.Push("https://dear.test", i);
+  }
+  // The free site's tasks take no time by the clock, the dear site's 5
+  // microseconds.
+  int free_runs = 0;
+  int dear_runs = 0;
+  while (dear_runs < 3) {
+    std::string site;
+    int task = 0;
+    ASSERT_TRUE(queue.Pop(&site, &task));
+    const bool dear = site == "https://dear.test";
+    queue.Charge(site, dear ? 5 : 0);
+    ++(dear ? dear_runs : free_runs);
+  }
+  // Each free task counts a microsecond: five of them for each dear one.
+  EXPECT_GE(free_runs, 10);
+  EXPECT_LE(free_runs, 12);
+}
+
+// Nothing is kept for a site once its next task would start now anyway:
+// an idle site is remembered only until the virtual time passes when its
+// last task finished.
+TEST(MoltNetDomStorageFairQueueTest, IdleSitesAreForgotten) {
+  FairQueue queue;
+  for (int s = 0; s < 100; ++s) {
+    queue.Push("https://s" + std::to_string(s) + ".test", s);
+  }
+  while (!RunNext(queue, 5).empty()) {
+  }
+  // They all ran at the same virtual time and finished after it.
+  EXPECT_EQ(queue.SiteCountForTesting(), 100u);
+  queue.Push("https://late.test", 0);
+  queue.Push("https://late.test", 1);
+  RunNext(queue, 5);
+  RunNext(queue, 5);
+  EXPECT_EQ(queue.SiteCountForTesting(), 1u);
+  EXPECT_FALSE(queue.HasReadyTasks());
 }
 
 }  // namespace

@@ -6,10 +6,12 @@
 // off-the-record partition): what one site opens never purges another
 // site's areas, and a site's areas together hold one area's limit; the
 // partition keeps no database, so an area holding items is never purged;
-// a site's writes past its write rate fail, and another site's don't. And
-// sessionStorage's (SessionStorageImpl): a copy made for a tab counts, no
-// database, the write rate. And, in every profile, a write the area's quota
-// refuses leaves the old value in place (StorageAreaImpl::Put()).
+// a site's writes past its write rate fail, and another site's don't; a
+// site flooding its areas with messages doesn't make another site's read
+// wait for them. And sessionStorage's (SessionStorageImpl): a copy made for
+// a tab counts, no database, the write rate, the flood. And, in every
+// profile, a write the area's quota refuses leaves the old value in place
+// (StorageAreaImpl::Put()).
 
 #include <memory>
 #include <optional>
@@ -18,8 +20,12 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
+#include "base/location.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
@@ -30,6 +36,7 @@
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
+#include "components/services/storage/dom_storage/session_storage_namespace_impl.h"
 #include "components/services/storage/dom_storage/storage_area_impl.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
@@ -45,6 +52,37 @@ namespace {
 
 blink::StorageKey Key(const std::string& origin) {
   return blink::StorageKey::CreateFromStringForTesting(origin);
+}
+
+// A flood a page can send its storage areas: 1500 writes of a growing value
+// to `writes` (past its site's write allowance, the last 500 are refused)
+// and as many clear()s of `clears`. Then, in a task queued after the first
+// of them was read, a read of `polite`; once it is answered, `handled()`
+// tells how many of the writes the storage service had handled.
+size_t FloodThenRead(blink::mojom::StorageArea* writes,
+                     blink::mojom::StorageArea* clears,
+                     blink::mojom::StorageArea* polite,
+                     base::RepeatingCallback<size_t()> handled) {
+  for (size_t i = 1; i <= 1500; ++i) {
+    writes->Put({'k'}, std::vector<uint8_t>(i, 'v'), std::nullopt,
+                /*source=*/nullptr, base::DoNothing());
+    clears->DeleteAll(/*source=*/nullptr, mojo::NullRemote(),
+                      base::DoNothing());
+  }
+  size_t handled_at_read = 0;
+  base::RunLoop loop;
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindLambdaForTesting([&] {
+        polite->GetAll(
+            mojo::NullRemote(),
+            base::BindLambdaForTesting(
+                [&](std::vector<blink::mojom::KeyValuePtr>) {
+                  handled_at_read = handled.Run();
+                  loop.Quit();
+                }));
+      }));
+  loop.Run();
+  return handled_at_read;
 }
 
 class MoltNetDomStorageTest : public testing::Test {
@@ -103,6 +141,29 @@ class MoltNetDomStorageTest : public testing::Test {
 
   bool Cached(const blink::StorageKey& key) {
     return storage_->GetStorageAreaForTesting(key) != nullptr;
+  }
+
+  // How many writes of a flood (FloodThenRead()) the storage service had
+  // handled when another site's read was answered.
+  size_t FloodedWritesBeforeAPoliteRead() {
+    const blink::StorageKey flooded = Key("https://flood.test");
+    mojo::Remote<blink::mojom::StorageArea> writes, clears, polite;
+    storage_->BindStorageArea(flooded, writes.BindNewPipeAndPassReceiver());
+    storage_->BindStorageArea(Key("https://x.flood.test"),
+                              clears.BindNewPipeAndPassReceiver());
+    storage_->BindStorageArea(Key("https://polite.test"),
+                              polite.BindNewPipeAndPassReceiver());
+    writes.FlushForTesting();
+    clears.FlushForTesting();
+    polite.FlushForTesting();
+    return FloodThenRead(
+        writes.get(), clears.get(), polite.get(),
+        base::BindLambdaForTesting([&]() -> size_t {
+          // The last value handled is as long as its write's number.
+          const size_t used =
+              storage_->GetStorageAreaForTesting(flooded)->storage_used();
+          return used > 0 ? used - 1 : 0;
+        }));
   }
 
   base::test::TaskEnvironment task_environment_{
@@ -277,6 +338,20 @@ TEST_F(MoltNetDomStorageTest, CredentiallessFramesHaveTheirOwnAllowance) {
   EXPECT_FALSE(Put(framed.get(), 'x', 1));
 }
 
+// The storage service's sequence is taken in turn per site: however many
+// messages a site has sent its areas (writes, also refused ones, and
+// clear()s, to two of its areas), another site's read waits for at most
+// one of them.
+TEST_F(MoltNetDomStorageTest, AFloodingSiteDoesntDelayAnothersRead) {
+  storage_->MoltKeepCachesPerSite();
+  EXPECT_LE(FloodedWritesBeforeAPoliteRead(), 2u);
+}
+
+// Chromium 156: the read waits for every message sent before it.
+TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteAFloodDelaysEveryRead) {
+  EXPECT_EQ(FloodedWritesBeforeAPoliteRead(), 1500u);
+}
+
 // The bytes a site writes come out of its allowance too, also a value
 // written over and over at the same size.
 TEST_F(MoltNetDomStorageTest, ASitesWriteBytesAreLimited) {
@@ -327,6 +402,38 @@ TEST_F(MoltNetDomStorageTest, ASitesAreasShareOneTotal) {
   ASSERT_TRUE(deleted.Wait());
   task_environment_.RunUntilIdle();
   EXPECT_TRUE(Write(Key("https://s9.greedy.test"), kPart));
+}
+
+// The site's total counts what each item and area takes, not only the
+// items' bytes: a site with a full area has room for a few hundred tiny
+// items in another, not tens of thousands.
+TEST_F(MoltNetDomStorageTest, TinyItemsCountWhatTheyTake) {
+  storage_->MoltKeepCachesPerSite();
+  constexpr size_t kQuota = 10 * 1024 * 1024;
+  ASSERT_TRUE(Write(Key("https://a.test"), kQuota));
+  const size_t room =
+      storage::kMoltDomStorageBytesPerSite -
+      storage::MoltDomStorageCountedBytes(/*item_bytes=*/1 + kQuota, 1);
+  // Items with a key of 4 bytes and an empty value.
+  const size_t fit =
+      (room - storage::kMoltDomStorageAreaOverheadBytes) /
+      (4 + storage::kMoltDomStorageItemOverheadBytes);
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(Key("https://x.a.test"),
+                            area.BindNewPipeAndPassReceiver());
+  size_t stored = 0;
+  for (uint32_t i = 0; i < 2 * fit; ++i) {
+    base::test::TestFuture<bool> success;
+    area->Put({static_cast<uint8_t>(i), static_cast<uint8_t>(i >> 8), 'k',
+               'k'},
+              {}, std::nullopt, /*source=*/nullptr, success.GetCallback());
+    if (!success.Take()) {
+      break;
+    }
+    ++stored;
+  }
+  EXPECT_EQ(stored, fit);
+  EXPECT_LT(fit, 1000u);
 }
 
 // A write its site's total refuses changes nothing: the area still holds
@@ -541,6 +648,32 @@ TEST_F(MoltNetSessionStorageTest, ACopyCountsOnceChanged) {
   mojo::Remote<blink::mojom::StorageArea> other = Area(first, sub);
   EXPECT_FALSE(Put(other.get(), 'k', 3 * kMiB));
   EXPECT_TRUE(Put(other.get(), 'k', 2 * kMiB));
+}
+
+// sessionStorage's areas take the sequence in turn per site too.
+TEST_F(MoltNetSessionStorageTest, AFloodingSiteDoesntDelayAnothersRead) {
+  storage_->MoltKeepCachesPerSite();
+  const std::string tab = NewNamespace();
+  const std::string other_tab = NewNamespace();
+  const blink::StorageKey flooded = Key("https://flood.test");
+  mojo::Remote<blink::mojom::StorageArea> writes = Area(tab, flooded);
+  mojo::Remote<blink::mojom::StorageArea> clears =
+      Area(tab, Key("https://x.flood.test"));
+  mojo::Remote<blink::mojom::StorageArea> polite =
+      Area(other_tab, Key("https://polite.test"));
+  writes.FlushForTesting();
+  clears.FlushForTesting();
+  polite.FlushForTesting();
+  EXPECT_LE(FloodThenRead(writes.get(), clears.get(), polite.get(),
+                          base::BindLambdaForTesting([&]() -> size_t {
+                            storage::StorageAreaImpl* area =
+                                storage_->GetNamespaceForTesting(tab)
+                                    ->GetStorageAreaForTesting(flooded);
+                            return area && area->storage_used() > 0
+                                       ? area->storage_used() - 1
+                                       : 0;
+                          })),
+            2u);
 }
 
 // Chromium 156: the copy has its own 10 MiB, like every area.

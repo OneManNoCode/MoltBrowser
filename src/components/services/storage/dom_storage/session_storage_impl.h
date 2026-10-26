@@ -24,6 +24,7 @@
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/db_status.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_data_map.h"
 #include "components/services/storage/dom_storage/session_storage_metadata.h"
@@ -156,6 +157,10 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
                          size_t bytes) override;
   bool MoltMayWrite(const blink::StorageKey& storage_key,
                     size_t bytes) override;
+  // MoltBrowser: the task runner of `storage_key`'s site, with caches per
+  // site (molt_dom_storage_fair_scheduler.h); else null.
+  scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner(
+      const blink::StorageKey& storage_key) override;
 
   // SessionStorageNamespaceImpl::Delegate implementation:
   scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
@@ -207,6 +212,9 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   // one, the namespaces).
   MoltDomStorageSiteBudget molt_site_budget_;
   void MoltForgetMaps(const std::vector<DomStorageDatabase::MapLocator>& maps);
+  // MoltBrowser: with caches per site, the storage sequence taken in turn
+  // per site by the areas' pipes.
+  scoped_refptr<MoltDomStorageFairScheduler> molt_scheduler_;
 
   void OnReceiverDisconnected();
 

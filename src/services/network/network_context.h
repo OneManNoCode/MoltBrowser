@@ -683,6 +683,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   bool MoltAdmits(MoltNetworkEntry entry) const {
     return MoltEndedContextAdmits(entry, molt_identity_ended_);
   }
+  // MoltBrowser: whether this context may make sockets outside its own HTTP
+  // network session, with a session of their own or none at all
+  // (services/network/molt_own_session_sockets_policy.h): not MoltNet's.
+  bool MoltAllowsOwnSessionSockets() const;
 
   void set_max_loaders_per_process_for_testing(uint32_t count) {
     max_loaders_per_process_ = count;

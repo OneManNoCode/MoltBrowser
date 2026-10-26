@@ -175,6 +175,9 @@ class LocalStorageImpl::StorageAreaHolder final
   bool MoltMayWrite(size_t bytes) override {
     return context_->MoltMayWrite(storage_key_, bytes);
   }
+  scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner() override {
+    return context_->MoltTaskRunnerFor(storage_key_);
+  }
   void Bind(mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
     has_bindings_ = true;
     storage_area()->Bind(std::move(receiver));
@@ -750,6 +753,13 @@ bool LocalStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
          molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
 }
 
+scoped_refptr<base::SequencedTaskRunner> LocalStorageImpl::MoltTaskRunnerFor(
+    const blink::StorageKey& storage_key) {
+  return molt_scheduler_
+             ? molt_scheduler_->RunnerFor(MoltDomStorageSiteOf(storage_key))
+             : nullptr;
+}
+
 bool LocalStorageImpl::MoltMayDrop(StorageAreaHolder& holder) {
   return !holder.has_bindings() &&
          MoltDomStorageMayDropArea(database_ != nullptr,
@@ -762,6 +772,8 @@ void LocalStorageImpl::MoltKeepCachesPerSite() {
     return;
   }
   molt_caches_per_site_ = true;
+  molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
+      base::SequencedTaskRunner::GetCurrentDefault());
   molt_idle_sweep_.Start(
       FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
       base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,

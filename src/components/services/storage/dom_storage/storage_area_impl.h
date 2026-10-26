@@ -14,6 +14,8 @@
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"  // MoltBrowser
+#include "base/task/sequenced_task_runner.h"  // MoltBrowser
 #include "base/time/time.h"
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/db_status.h"
@@ -64,7 +66,9 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
     virtual void OnMapLoaded();
 
     // MoltBrowser: for partitions that keep totals and a commit rate per
-    // site (molt_dom_storage_site_policy.h); by default none.
+    // site (molt_dom_storage_site_policy.h); by default none. An area's
+    // size here is what it counts toward its site's total: its items' keys
+    // and values and what holding them takes (MoltDomStorageCountedBytes()).
     // Whether the area may grow to `new_storage_used` bytes; counted from
     // then on if so. A write it refuses fails as one past the area's own
     // limit does.
@@ -80,6 +84,11 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
     // taken from it if so. A write it refuses fails as one past the area's
     // own limit does.
     virtual bool MoltMayWrite(size_t bytes);
+    // The task runner the area's pipes (its receivers and its observers'
+    // remotes) are bound to: null for the storage sequence's own, or, where
+    // the partition takes the sequence in turn per site, the area's site's
+    // (molt_dom_storage_fair_scheduler.h).
+    virtual scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner();
   };
 
   enum class CacheMode {
@@ -150,6 +159,11 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
   // one stays in the cache).
   bool molt_holds_items() const {
     return !keys_values_map_.empty() || !keys_only_map_.empty();
+  }
+  // MoltBrowser: how many items the loaded map holds.
+  size_t molt_item_count() const {
+    return map_state_ == MapState::LOADED_KEYS_ONLY ? keys_only_map_.size()
+                                                    : keys_values_map_.size();
   }
 
   // If this ares is loaded and sending changes to the database.

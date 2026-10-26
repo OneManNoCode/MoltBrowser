@@ -125,12 +125,20 @@ int64_t MemBackendImpl::MaxFileSize() const {
 
 void MemBackendImpl::OnEntryInserted(MemEntryImpl* entry) {
   lru_list_.Append(entry);
+  // MoltBrowser: and last in its site's list, with per-site limits.
+  if (MoltHasBudget()) {
+    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
+  }
 }
 
 void MemBackendImpl::OnEntryUpdated(MemEntryImpl* entry) {
   // LinkedList<>::RemoveFromList() removes |entry| from |lru_list_|.
   entry->RemoveFromList();
   lru_list_.Append(entry);
+  // MoltBrowser: and in its site's list, with per-site limits.
+  if (MoltHasBudget()) {
+    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
+  }
 }
 
 void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
@@ -138,6 +146,10 @@ void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
     entries_.erase(entry->key());
   // LinkedList<>::RemoveFromList() removes |entry| from |lru_list_|.
   entry->RemoveFromList();
+  // MoltBrowser: and from its site's list, with per-site limits.
+  if (MoltHasBudget()) {
+    molt_sites_.Remove(MoltSiteOf(entry), entry->molt_site_link());
+  }
 }
 
 void MemBackendImpl::ModifyStorageSize(int32_t delta) {
@@ -160,14 +172,7 @@ void MemBackendImpl::ModifyStorageSize(const MemEntryImpl* entry,
   }
   const std::string site(MoltSiteOf(entry));
   current_size_ += delta;
-  auto it = molt_site_size_.find(site);
-  if (it == molt_site_size_.end()) {
-    it = molt_site_size_.emplace(site, 0).first;
-  }
-  it->second += delta;
-  if (it->second <= 0) {
-    molt_site_size_.erase(it);
-  }
+  molt_sites_.AddSize(site, delta);
   // Only the writing site's own entries make room for it; nothing is
   // evicted for the total.
   if (delta > 0 && MoltCacheSiteOverShare(MoltSiteSize(site), molt_budget_)) {
@@ -192,21 +197,17 @@ std::string_view MemBackendImpl::MoltSiteOf(const MemEntryImpl* entry) {
 }
 
 int64_t MemBackendImpl::MoltSiteSize(std::string_view site) const {
-  auto it = molt_site_size_.find(site);
-  return it == molt_site_size_.end() ? 0 : it->second;
+  return molt_sites_.SizeOf(site);
 }
 
 void MemBackendImpl::MoltEvictSiteTill(std::string_view site, int64_t target) {
-  // `site` may point into an entry that goes: keep a copy.
+  // `site` may point into an entry that goes: keep a copy. Only the site's
+  // own list is walked (molt_mem_backend_site_lru.h).
   const std::string own(site);
-  base::LinkNode<MemEntryImpl>* node = lru_list_.head();
-  while (MoltSiteSize(own) > target && node != lru_list_.end()) {
-    MemEntryImpl* candidate = node->value();
-    node = NextSkippingChildren(lru_list_, node);
-    if (MoltSiteOf(candidate) == own && !candidate->InUse()) {
-      candidate->Doom();
-    }
-  }
+  molt_sites_.EvictTill(
+      own, target,
+      [](const MemEntryImpl* candidate) { return !candidate->InUse(); },
+      [](MemEntryImpl* candidate) { candidate->Doom(); });
 }
 
 bool MemBackendImpl::MoltMayCreateEntry(const std::string& key) {
@@ -230,11 +231,18 @@ bool MemBackendImpl::MoltIsExpired(const MemEntryImpl* entry) const {
 }
 
 void MemBackendImpl::MoltDropExpiredEntries() {
+  // |lru_list_| is in order of last use (an entry moves to its end when it
+  // is used, and its last use is then now), so the expired entries come
+  // first: the sweep stops at the first entry that hasn't expired, and
+  // costs what expires, not what the cache holds.
   base::LinkNode<MemEntryImpl>* node = lru_list_.head();
   while (node != lru_list_.end()) {
     MemEntryImpl* candidate = node->value();
+    if (!MoltIsExpired(candidate)) {
+      break;
+    }
     node = NextSkippingChildren(lru_list_, node);
-    if (!candidate->InUse() && MoltIsExpired(candidate)) {
+    if (!candidate->InUse()) {
       candidate->Doom();
     }
   }
@@ -245,13 +253,15 @@ void MemBackendImpl::MoltSetPerSiteBudget(const MoltCacheSiteBudget& budget) {
     return;
   }
   molt_budget_ = budget;
-  // Every entry so far counts against its site (normally there is none
-  // yet: the budget is set when the backend is made).
-  molt_site_size_.clear();
+  // Every entry so far counts against its site and is in its site's list,
+  // in the order of |lru_list_| (normally there is none yet: the budget is
+  // set when the backend is made).
+  molt_sites_.Clear();
   for (base::LinkNode<MemEntryImpl>* node = lru_list_.head();
        node != lru_list_.end(); node = node->next()) {
-    molt_site_size_[std::string(MoltSiteOf(node->value()))] +=
-        node->value()->GetStorageSize();
+    MemEntryImpl* entry = node->value();
+    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
+    molt_sites_.AddSize(MoltSiteOf(entry), entry->GetStorageSize());
   }
   max_size_ = base::saturated_cast<int32_t>(budget.total_bytes);
   current_max_size_ = max_size_;
