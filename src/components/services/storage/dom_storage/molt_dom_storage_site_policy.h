@@ -219,6 +219,26 @@ inline std::string MoltDomStorageNamespaceGroup(std::string_view namespace_id) {
   return "^ns " + std::string(namespace_id);
 }
 
+// The control pipe carries the browser's messages for every site, so its
+// turn counts its tasks at an eighth of their time: it keeps up with the
+// browser while sites are busy (each of its tasks only reads a message and,
+// for one that names a storage key, queues the work in the key's site's
+// turn). Another site's message still waits for one of its tasks at most.
+inline constexpr int64_t kMoltDomStorageControlWeight = 8;
+
+// What a task of `group` that took `microseconds` (a microsecond at least)
+// counts in its turn (molt_dom_storage_fair_queue.h: Charge()), in eighths
+// of a microsecond: a site's or a namespace's tasks their whole time, the
+// control's an eighth of it. So a short control task counts less than any
+// site's, as its weight says.
+inline int64_t MoltDomStorageChargeFor(std::string_view group,
+                                       int64_t microseconds) {
+  const int64_t time = microseconds > 1 ? microseconds : 1;
+  return group == kMoltDomStorageControlGroup
+             ? time
+             : time * kMoltDomStorageControlWeight;
+}
+
 // ---- Totals per site ----
 
 // What all of a site's areas of one kind may hold together: one area's own

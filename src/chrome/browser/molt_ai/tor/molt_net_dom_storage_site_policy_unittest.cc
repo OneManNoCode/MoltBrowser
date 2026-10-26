@@ -299,6 +299,19 @@ TEST(MoltNetDomStorageSitePolicyTest, TurnsThatArentASitesHaveTheirOwnNames) {
   EXPECT_NE(MoltDomStorageNamespaceGroup("a"), MoltDomStorageNamespaceGroup("b"));
 }
 
+// The scheduler counts time in eighths of a microsecond: a site's or a
+// namespace's task its whole time (a microsecond at least), the control
+// pipe's turn an eighth of it.
+TEST(MoltNetDomStorageSitePolicyTest, TheControlTurnCountsAnEighth) {
+  EXPECT_EQ(MoltDomStorageChargeFor("https://a.test", 0), 8);
+  EXPECT_EQ(MoltDomStorageChargeFor("https://a.test", 1), 8);
+  EXPECT_EQ(MoltDomStorageChargeFor("https://a.test", 5), 40);
+  EXPECT_EQ(MoltDomStorageChargeFor(MoltDomStorageNamespaceGroup("x"), 5), 40);
+  EXPECT_EQ(MoltDomStorageChargeFor(kMoltDomStorageControlGroup, 0), 1);
+  EXPECT_EQ(MoltDomStorageChargeFor(kMoltDomStorageControlGroup, 5), 5);
+  EXPECT_EQ(kMoltDomStorageControlWeight, 8);
+}
+
 // A big map is freed a chunk a task: at most 1024 items, or once 1 MiB is
 // freed (one item at least); a small one at once.
 TEST(MoltNetDomStorageSplitWorkTest, MapsAreFreedInChunks) {
@@ -591,6 +604,34 @@ TEST(MoltNetDomStorageFairQueueTest, EveryTaskCounts) {
   // Each free task counts a microsecond: five of them for each dear one.
   EXPECT_GE(free_runs, 10);
   EXPECT_LE(free_runs, 12);
+}
+
+// With the scheduler's charges, the control pipe's turn, kept busy, runs
+// eight tasks for each of a busy site's of the same length; and a polite
+// site still waits for one task of either at most.
+TEST(MoltNetDomStorageFairQueueTest, TheControlTurnHasEightShares) {
+  FairQueue queue;
+  for (int i = 0; i < 2000; ++i) {
+    queue.Push(kMoltDomStorageControlGroup, i);
+    queue.Push("https://busy.test", i);
+  }
+  int control = 0;
+  int busy = 0;
+  for (int i = 0; i < 900; ++i) {
+    std::string site;
+    int task = 0;
+    ASSERT_TRUE(queue.Pop(&site, &task));
+    queue.Charge(site, MoltDomStorageChargeFor(site, 10));
+    ++(site == kMoltDomStorageControlGroup ? control : busy);
+  }
+  EXPECT_GE(control, 790);
+  EXPECT_LE(control, 810);
+  EXPECT_EQ(control + busy, 900);
+  queue.Push("https://polite.test", 0);
+  std::string site;
+  int task = 0;
+  ASSERT_TRUE(queue.Pop(&site, &task));
+  EXPECT_EQ(site, "https://polite.test");
 }
 
 // Nothing is kept for a site once its next task would start now anyway:

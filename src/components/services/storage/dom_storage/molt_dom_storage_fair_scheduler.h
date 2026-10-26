@@ -16,6 +16,12 @@
 // it takes. Everything still runs on the storage sequence, in the order
 // mojo posted it for each site; only the order between sites changes.
 //
+// How long a task took is the time the thread spent running it (its
+// processor time, base::ThreadTicks, where the platform has it): a task
+// during which the operating system ran other threads (a busy machine)
+// isn't charged that time, which would make its site look as if it had
+// used more than its share and keep it waiting behind busy sites.
+//
 // Header-only (with out-of-class inline definitions), so the storage
 // service's hooks need no new build target.
 
@@ -36,6 +42,7 @@
 #include "base/thread_annotations.h"
 #include "base/time/time.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_fair_queue.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 
 namespace storage {
 
@@ -69,7 +76,12 @@ class MoltDomStorageFairScheduler
   void RunNext();
   void PostRunNext();
 
+  // How long a task ran: the thread's processor time where the platform
+  // has it, else the clock's.
+  static int64_t NowMicroseconds(bool thread_ticks);
+
   const scoped_refptr<base::SequencedTaskRunner> sequence_;
+  const bool thread_ticks_;
   base::Lock lock_;
   MoltDomStorageFairQueue<base::OnceClosure> queue_ GUARDED_BY(lock_);
   // Whether a RunNext() is posted or running.
@@ -107,7 +119,20 @@ class MoltDomStorageSiteTaskRunner : public base::SequencedTaskRunner {
 
 inline MoltDomStorageFairScheduler::MoltDomStorageFairScheduler(
     scoped_refptr<base::SequencedTaskRunner> sequence)
-    : sequence_(std::move(sequence)) {}
+    : sequence_(std::move(sequence)),
+      thread_ticks_(base::ThreadTicks::IsSupported()) {
+  if (thread_ticks_) {
+    base::ThreadTicks::WaitUntilInitialized();
+  }
+}
+
+// static
+inline int64_t MoltDomStorageFairScheduler::NowMicroseconds(
+    bool thread_ticks) {
+  return thread_ticks
+             ? (base::ThreadTicks::Now() - base::ThreadTicks()).InMicroseconds()
+             : (base::TimeTicks::Now() - base::TimeTicks()).InMicroseconds();
+}
 
 inline MoltDomStorageFairScheduler::~MoltDomStorageFairScheduler() = default;
 
@@ -152,14 +177,15 @@ inline void MoltDomStorageFairScheduler::RunNext() {
       return;
     }
   }
-  const base::TimeTicks start = base::TimeTicks::Now();
+  const int64_t start = NowMicroseconds(thread_ticks_);
   std::move(task).Run();
-  const int64_t microseconds =
-      (base::TimeTicks::Now() - start).InMicroseconds();
+  const int64_t microseconds = NowMicroseconds(thread_ticks_) - start;
   bool more = false;
   {
     base::AutoLock lock(lock_);
-    queue_.Charge(site, microseconds);
+    // In eighths of a microsecond; the control's turn counts its tasks at
+    // an eighth of their time (molt_dom_storage_site_policy.h).
+    queue_.Charge(site, MoltDomStorageChargeFor(site, microseconds));
     more = queue_.HasReadyTasks();
     run_posted_ = more;
   }
