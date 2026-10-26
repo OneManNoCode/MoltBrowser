@@ -2406,6 +2406,17 @@ void NetworkContext::ResolveHost(
                      /*alternative_endpoints=*/{});
     return;
   }
+  // MoltBrowser: nor ever for MoltNet's context, which looks up no name
+  // itself (its connections' names go to Tor in the SOCKS5 request), with
+  // any source or flag (molt_own_session_sockets_policy.h).
+  if (!MoltAllowsOwnSessionSockets()) {
+    mojo::Remote<mojom::ResolveHostClient>(std::move(response_client))
+        ->OnComplete(net::ERR_ACCESS_DENIED,
+                     net::ResolveErrorInfo(net::ERR_ACCESS_DENIED),
+                     /*resolved_addresses=*/{},
+                     /*alternative_endpoints=*/{});
+    return;
+  }
   // Dns request is disallowed if network access is disabled for the partition
   // nonce or the network_restrictions_id.
   // TODO(crbug.com/447954811): For Connection Allowlist DNS lookups, define a
@@ -2458,6 +2469,11 @@ void NetworkContext::CreateHostResolver(
   // MoltBrowser: none after this context's MoltNet identity has ended (the
   // caller's pipe closes unanswered).
   if (!MoltAdmits(MoltNetworkEntry::kHostResolution)) {
+    return;
+  }
+  // MoltBrowser: nor ever for MoltNet's context, which looks up no name
+  // itself (molt_own_session_sockets_policy.h); the caller's pipe closes.
+  if (!MoltAllowsOwnSessionSockets()) {
     return;
   }
   net::HostResolver* internal_resolver = url_request_context_->host_resolver();

@@ -11,13 +11,19 @@ if (is_android) {
   import("//third_party/jni_zero/jni_zero.gni")
 }
 
-# MoltBrowser: the credentials mode a Background Fetch request carries
-# (header-only), for :internal and MoltBrowser's own tests.
+# MoltBrowser: the credentials mode a Background Fetch request carries, and
+# what the request that resumes one carries (header-only), for :internal and
+# MoltBrowser's own tests.
 source_set("molt_fetch_credentials") {
-  sources = [ "molt_fetch_credentials.h" ]
+  sources = [
+    "molt_fetch_credentials.h",
+    "molt_resumed_fetch.h",
+  ]
   public_deps = [
+    "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
+    "//url",
   ]
 }
 

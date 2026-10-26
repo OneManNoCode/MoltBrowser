@@ -6,7 +6,8 @@
 // (services/network/molt_ended_identity_policy.h), on Chromium's real
 // ProxyConfigServiceMojo, NetworkContext and SOCKS5ClientSocket. And
 // MoltNet's network context makes no sockets outside its own HTTP network
-// session (services/network/molt_own_session_sockets_policy.h).
+// session and looks up no name itself
+// (services/network/molt_own_session_sockets_policy.h).
 
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
@@ -29,6 +31,9 @@
 #include "net/net_buildflags.h"
 #include "net/base/proxy_server.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/public/host_resolver_results.h"
+#include "net/dns/public/host_resolver_source.h"
+#include "net/dns/public/resolve_error_info.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_config_service.h"
 #include "net/proxy_resolution/proxy_config_with_annotation.h"
@@ -43,6 +48,7 @@
 #include "services/network/proxy_config_service_mojo.h"
 #include "services/network/public/cpp/network_service_buildflags.h"
 #include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/mojom/host_resolver.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/proxy_config.mojom.h"
 #include "services/network/public/mojom/proxy_resolving_socket.mojom.h"
@@ -445,6 +451,71 @@ TEST_F(MoltNetEndedContextTest, NoConnectedSocketForMoltNet) {
   EXPECT_FALSE(result.Get<2>().has_value());
   EXPECT_FALSE(result.Get<3>().is_valid());
   EXPECT_FALSE(result.Get<4>().is_valid());
+}
+
+// Records a ResolveHost() answer.
+class ResolveHostAnswer : public mojom::ResolveHostClient {
+ public:
+  mojo::PendingRemote<mojom::ResolveHostClient> Remote() {
+    return receiver_.BindNewPipeAndPassRemote();
+  }
+  int Wait() {
+    run_loop_.Run();
+    return result_;
+  }
+
+  // mojom::ResolveHostClient:
+  void OnComplete(int32_t result,
+                  const net::ResolveErrorInfo&,
+                  const net::AddressList&,
+                  const std::vector<net::HostResolverEndpointResult>&) override {
+    result_ = result;
+    run_loop_.Quit();
+  }
+  void OnTextResults(const std::vector<std::string>&) override {}
+  void OnHostnameResults(const std::vector<net::HostPortPair>&) override {}
+
+ private:
+  mojo::Receiver<mojom::ResolveHostClient> receiver_{this};
+  base::RunLoop run_loop_;
+  int result_ = net::ERR_IO_PENDING;
+};
+
+// MoltNet's context looks up no name itself, from any source: ResolveHost()
+// answers ERR_ACCESS_DENIED and CreateHostResolver()'s pipe is closed.
+// Another context resolves `localhost` (locally) and keeps the pipe.
+TEST_F(MoltNetEndedContextTest, NoNameLookupForMoltNet) {
+  const std::optional<net::HostResolverSource> sources[] = {
+      std::nullopt, net::HostResolverSource::ANY,
+      net::HostResolverSource::SYSTEM, net::HostResolverSource::DNS,
+      net::HostResolverSource::LOCAL_ONLY,
+      net::HostResolverSource::MULTICAST_DNS};
+  for (bool moltnet : {true, false}) {
+    std::unique_ptr<NetworkContext> context = MakeContext(Tor(), moltnet);
+    for (const std::optional<net::HostResolverSource>& source : sources) {
+      if (!moltnet && source != std::nullopt) {
+        continue;
+      }
+      mojom::ResolveHostParametersPtr params;
+      if (source) {
+        params = mojom::ResolveHostParameters::New();
+        params->source = *source;
+      }
+      ResolveHostAnswer answer;
+      context->ResolveHost(mojom::HostResolverHost::NewHostPortPair(
+                               net::HostPortPair("localhost", 80)),
+                           net::NetworkAnonymizationKey::CreateTransient(),
+                           std::move(params), answer.Remote());
+      EXPECT_EQ(answer.Wait(), moltnet ? net::ERR_ACCESS_DENIED : net::OK)
+          << moltnet;
+    }
+
+    mojo::Remote<mojom::HostResolver> resolver;
+    context->CreateHostResolver(std::nullopt,
+                                resolver.BindNewPipeAndPassReceiver());
+    resolver.FlushForTesting();
+    EXPECT_EQ(resolver.is_connected(), !moltnet) << moltnet;
+  }
 }
 
 #if BUILDFLAG(ENABLE_MDNS)
