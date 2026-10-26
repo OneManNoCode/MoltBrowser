@@ -207,6 +207,8 @@ source_set("unit_tests") {
     "molt_net_blob_budget_policy_unittest.cc",
     "molt_net_fonts_unittest.cc",
     "molt_net_storage_budget_policy_unittest.cc",
+    "molt_net_storage_site_usage_policy_unittest.cc",
+    "molt_net_storage_site_usage_unittest.cc",
     "molt_net_storage_unittest.cc",
     "molt_net_storage_values_unittest.cc",
     "molt_shields_decision_unittest.cc",
@@ -235,5 +237,14 @@ source_set("unit_tests") {
     # (std + //base + //crypto only).
     "//third_party/blink/renderer/core/molt_fingerprinting:farbling",
     "//url",
+
+    # MoltNet's storage budget with the real quota manager and a mock quota
+    # client (molt_net_storage_site_usage_unittest.cc).
+    "//components/services/storage/public/cpp",
+    "//components/services/storage/public/cpp/buckets",
+    "//mojo/public/cpp/bindings",
+    "//storage/browser",
+    "//storage/browser:test_support",
+    "//third_party/blink/public/mojom:mojom_platform",
   ]
 }

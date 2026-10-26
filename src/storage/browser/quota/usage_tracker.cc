@@ -107,6 +107,14 @@ void UsageTracker::UpdateBucketUsageCache(QuotaClientType client_type,
                                           std::optional<int64_t> delta) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  // MoltBrowser: a change the cache can't take in (of a bucket whose usage
+  // isn't cached, or of unknown size) makes the storage key's usage stale
+  // for its site's count (molt_storage_budget.h).
+  if (molt_counting_ && (!delta.has_value() ||
+                         !GetClient(client_type).MoltHasCachedUsage(bucket))) {
+    molt_stale_.Mark(bucket.storage_key.top_level_site(), bucket.storage_key);
+  }
+
   GetClient(client_type).UpdateBucketUsageCache(bucket, delta);
 }
 
@@ -170,6 +178,12 @@ void UsageTracker::SetUsageCacheEnabled(QuotaClientType client_type,
                                         const blink::StorageKey& storage_key,
                                         bool enabled) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // MoltBrowser: a storage key whose cache comes back on is counted again
+  // (molt_storage_budget.h).
+  if (molt_counting_ && enabled) {
+    molt_stale_.Mark(storage_key.top_level_site(), storage_key);
+  }
 
   GetClient(client_type).SetUsageCacheEnabled(storage_key, enabled);
 }
@@ -350,6 +364,68 @@ void UsageTracker::FinallySendBucketUsageWithBreakdown(
 
   for (auto& callback : pending_callbacks)
     std::move(callback).Run(info->usage, info->usage_breakdown->Clone());
+}
+
+// MoltBrowser:
+void UsageTracker::MoltRefreshSiteUsage(const net::SchemefulSite& site,
+                                        base::OnceClosure callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!molt_counting_) {
+    molt_counting_ = true;
+    for (const auto& [client_type, client_tracker] : client_tracker_map_) {
+      client_tracker->MoltCountSites();
+    }
+  }
+  if (!molt_counted_everything_) {
+    GetGlobalUsage(base::BindOnce(&UsageTracker::MoltDidCountEverything,
+                                  weak_factory_.GetWeakPtr(),
+                                  std::move(callback)));
+    return;
+  }
+
+  const std::vector<blink::StorageKey> stale = molt_stale_.Take(site);
+  if (stale.empty()) {
+    std::move(callback).Run();
+    return;
+  }
+  base::RepeatingClosure barrier =
+      base::BarrierClosure(stale.size(), std::move(callback));
+  for (const blink::StorageKey& storage_key : stale) {
+    GetStorageKeyUsageWithBreakdown(
+        storage_key,
+        base::BindOnce([](base::RepeatingClosure barrier, int64_t,
+                          blink::mojom::UsageBreakdownPtr) { barrier.Run(); },
+                       barrier));
+  }
+}
+
+void UsageTracker::MoltDidCountEverything(base::OnceClosure callback,
+                                          int64_t usage,
+                                          int64_t /*unlimited_usage*/) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // A failed pass (the quota database's error) is tried again next time.
+  if (usage >= 0) {
+    molt_counted_everything_ = true;
+  }
+  std::move(callback).Run();
+}
+
+int64_t UsageTracker::MoltSiteUsage(const net::SchemefulSite& site) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  int64_t usage = 0;
+  for (const auto& [client_type, client_tracker] : client_tracker_map_) {
+    usage += client_tracker->MoltSiteUsage(site);
+  }
+  return usage;
+}
+
+int64_t UsageTracker::MoltTotalUsage() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  int64_t usage = 0;
+  for (const auto& [client_type, client_tracker] : client_tracker_map_) {
+    usage += client_tracker->MoltCachedUsage();
+  }
+  return usage;
 }
 
 ClientUsageTracker& UsageTracker::GetClient(QuotaClientType type) {

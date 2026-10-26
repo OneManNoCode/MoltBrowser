@@ -22,6 +22,9 @@
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "components/services/storage/public/mojom/quota_client.mojom.h"
+#include "net/base/schemeful_site.h"                // MoltBrowser
+#include "storage/browser/quota/molt_storage_budget.h"  // MoltBrowser
+#include "third_party/blink/public/common/storage_key/storage_key.h"  // MoltBrowser
 #include "storage/browser/quota/quota_callbacks.h"
 #include "storage/browser/quota/quota_client_type.h"
 #include "storage/browser/quota/quota_manager_impl.h"
@@ -113,7 +116,22 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
                             const blink::StorageKey& storage_key,
                             bool enabled);
 
+  // MoltBrowser: for MoltNet's storage budget (molt_storage_budget.h). Asks
+  // again for the usage of `site`'s stale storage keys, then runs
+  // `callback`; the first time, counts the cache per site from then on and
+  // asks for every bucket's usage instead. MoltSiteUsage() and
+  // MoltTotalUsage() then read the counts, costing a lookup per client.
+  void MoltRefreshSiteUsage(const net::SchemefulSite& site,
+                            base::OnceClosure callback);
+  int64_t MoltSiteUsage(const net::SchemefulSite& site) const;
+  int64_t MoltTotalUsage() const;
+
  private:
+  // MoltBrowser:
+  void MoltDidCountEverything(base::OnceClosure callback,
+                              int64_t usage,
+                              int64_t unlimited_usage);
+
   struct AccumulateInfo;
   friend class ClientUsageTracker;
 
@@ -153,6 +171,13 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
       storage_key_usage_callbacks_;
   std::map<BucketLocator, std::vector<UsageWithBreakdownCallback>>
       bucket_usage_callbacks_;
+
+  // MoltBrowser: whether the clients count their cache per site, whether
+  // every bucket's usage has been asked for since, and the storage keys
+  // whose usage changed in a way the cache couldn't take in.
+  bool molt_counting_ = false;
+  bool molt_counted_everything_ = false;
+  MoltStaleStorageKeys<net::SchemefulSite, blink::StorageKey> molt_stale_;
 
   base::WeakPtrFactory<UsageTracker> weak_factory_{this};
 };
