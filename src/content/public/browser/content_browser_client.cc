@@ -1159,6 +1159,11 @@ ContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(BrowserContext*) {
   return base::RepeatingClosure();
 }
 
+bool ContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(
+    BrowserContext*) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

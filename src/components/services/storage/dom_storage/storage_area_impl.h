@@ -76,6 +76,10 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
     virtual base::TimeDelta MoltSiteCommitDelay();
     // The area handed a commit of `bytes` to the database.
     virtual void MoltSiteCommitted(size_t bytes);
+    // Whether a write of `bytes` (key and value) fits its site's write rate;
+    // taken from it if so. A write it refuses fails as one past the area's
+    // own limit does.
+    virtual bool MoltMayWrite(size_t bytes);
   };
 
   enum class CacheMode {
@@ -140,6 +144,13 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
   size_t memory_used() const { return memory_used_; }
 
   bool empty() const { return storage_used_ == 0; }
+
+  // MoltBrowser: whether the area holds any item, also one of zero bytes
+  // (molt_dom_storage_site_policy.h: an area without a database that holds
+  // one stays in the cache).
+  bool molt_holds_items() const {
+    return !keys_values_map_.empty() || !keys_only_map_.empty();
+  }
 
   // If this ares is loaded and sending changes to the database.
   bool initialized() const { return IsMapLoaded(); }

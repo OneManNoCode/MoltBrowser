@@ -28,8 +28,26 @@
 //    limit for all sites;
 //  * the low-end-device rule (purge on every open) and PurgeMemory() (which
 //    drops every site's caches) don't apply.
-// A purged area loses nothing: its data is in the partition's database (in
-// memory for MoltNet) and is read again when a page opens it.
+// A purged area loses nothing: its data is in the partition's database and
+// is read again when a page opens it. A partition that keeps DOM storage per
+// site in memory (MoltNet's) keeps no database
+// (MoltDomStorageKeepsNoDatabase()): there, an area is purged only if it
+// holds no item (MoltDomStorageMayDropArea()), and nothing is read back.
+//
+// No database: Chromium's partitions in memory keep each kind's areas in an
+// in-memory database on a sequence of its own, which every area commits
+// its changes to and reads its items from when it opens. A site's first
+// read of an area then waited for every commit queued before it, other
+// sites' included; per-site commit rates bound each site's commits, but
+// not those of many sites together. The database there only holds a second
+// copy of what the areas hold, read again for an area purged from the
+// cache, so a partition kept per site in memory runs without one (the
+// storage service's own mode for a database that can't be opened: an area
+// starts empty and holds its items itself, its cache mode keys and values)
+// and keeps every area holding an item: opening an area never waits on
+// anything another site queued, and there are no commits at all. What the
+// areas hold is still bounded by each site's total, and counted once
+// instead of twice.
 //
 // The same partitions also keep, per site:
 //  * a total for what the site's areas hold (MoltDomStorageSiteTotals):
@@ -48,7 +66,19 @@
 //    catches up with), and all areas share one database sequence. Here all
 //    of a site's areas together commit at that rate
 //    (MoltDomStorageSiteCommitDelayMs()), so a site with many subdomains
-//    can't keep the sequence busy for other sites more than one area could.
+//    can't keep the sequence busy for other sites more than one area could
+//    (for a partition with a database; MoltNet's has none);
+//  * one write rate (MoltDomStorageMayWrite()): every write a page sends is
+//    work on the storage service's sequence, which all sites' storage
+//    operations share (the change, and a notification carrying the value to
+//    every renderer with the area open), and Chromium takes as many as a
+//    page sends. Here a site's writes, of each kind, come out of a
+//    token bucket: kMoltDomStorageSiteWritesBurst writes and
+//    kMoltDomStorageSiteWriteBytesBurst bytes, refilled at
+//    kMoltDomStorageSiteWritesPerSecond and
+//    kMoltDomStorageSiteWriteBytesPerSecond. A write past it fails as one
+//    past the area's limit does (never as a bad message): for localStorage
+//    the page's value reverts.
 //
 // "Site" above is the group an area counts to (MoltDomStorageGroupKindFor()):
 // its storage key's top-level site, except for a key that doesn't name
@@ -103,6 +133,24 @@ constexpr bool MoltDomStorageAreaExpired(int64_t unused_seconds) {
 
 static_assert(kMoltDomStorageSweepIntervalSeconds <
               kMoltDomStorageIdleExpirySeconds);
+
+// ---- No database ----
+
+// Whether a partition's localStorage or sessionStorage runs without a
+// database: one that keeps DOM storage per site (`caches_per_site`) and in
+// memory (`in_memory`), so a database would only hold a second copy of
+// what the areas hold. An on-disk partition always keeps its database.
+constexpr bool MoltDomStorageKeepsNoDatabase(bool caches_per_site,
+                                             bool in_memory) {
+  return caches_per_site && in_memory;
+}
+
+// Whether an unused area may leave the cache: with a database, always (its
+// items are read again from there); without one, only if it holds no item
+// (also none of zero bytes), since its items are nowhere else.
+constexpr bool MoltDomStorageMayDropArea(bool has_database, bool holds_items) {
+  return has_database || !holds_items;
+}
 
 // ---- The group an area counts to ----
 
@@ -298,6 +346,75 @@ struct MoltDomStorageSiteRate {
   int64_t commits = 0;
   int64_t bytes = 0;
 };
+
+// ---- One write rate per site ----
+
+// What a site's areas of one kind may take in writes (Put()s), as a token
+// bucket: up to the burst at once, refilled at the rate. Chosen for what
+// real pages do with localStorage, which is synchronous and small: a few to
+// a few hundred keys written as a page loads (consent and analytics ids,
+// feature flags, cached settings), state saved on each change while a user
+// types or plays (tens of writes a second at most; a game saving every
+// frame, 60), and rarely more than a few hundred KiB in all (pages that
+// keep more use IndexedDB). The bytes' burst is one area's whole limit, so
+// a page can always fill its storage at once.
+inline constexpr int64_t kMoltDomStorageSiteWritesBurst = 1000;
+inline constexpr int64_t kMoltDomStorageSiteWritesPerSecond = 100;
+inline constexpr int64_t kMoltDomStorageSiteWriteBytesBurst =
+    static_cast<int64_t>(kMoltDomStorageBytesPerSite);
+inline constexpr int64_t kMoltDomStorageSiteWriteBytesPerSecond =
+    1024 * 1024;
+
+// A site's write allowance. Tokens are kept in thousandths, so that a
+// millisecond refills a whole number of them: a rate of N a second refills
+// N thousandths a millisecond. Full when made.
+struct MoltDomStorageWriteAllowance {
+  int64_t at_ms = 0;
+  int64_t writes_milli = kMoltDomStorageSiteWritesBurst * 1000;
+  int64_t bytes_milli = kMoltDomStorageSiteWriteBytesBurst * 1000;
+};
+
+// Refills `allowance` up to `now_ms` (milliseconds on the caller's
+// monotonic clock), then whether a write of `bytes` (its key and value)
+// fits: one write and its bytes, taken if so. A refused write takes
+// nothing. A write larger than the bytes' burst (which the area's own
+// limit refuses anyway) costs the burst.
+constexpr bool MoltDomStorageMayWrite(MoltDomStorageWriteAllowance& allowance,
+                                      int64_t now_ms,
+                                      uint64_t bytes) {
+  constexpr int64_t kWritesFull = kMoltDomStorageSiteWritesBurst * 1000;
+  constexpr int64_t kBytesFull = kMoltDomStorageSiteWriteBytesBurst * 1000;
+  // Long enough to fill both from empty; capping it keeps the products
+  // below in range.
+  constexpr int64_t kFillMs =
+      kMoltDomStorageSiteWriteBytesBurst * 1000 /
+          kMoltDomStorageSiteWriteBytesPerSecond +
+      kMoltDomStorageSiteWritesBurst * 1000 /
+          kMoltDomStorageSiteWritesPerSecond +
+      1;
+  if (now_ms > allowance.at_ms) {
+    const int64_t elapsed =
+        now_ms - allowance.at_ms < kFillMs ? now_ms - allowance.at_ms : kFillMs;
+    const int64_t writes =
+        allowance.writes_milli + elapsed * kMoltDomStorageSiteWritesPerSecond;
+    const int64_t bytes_left = allowance.bytes_milli +
+                               elapsed * kMoltDomStorageSiteWriteBytesPerSecond;
+    allowance.writes_milli = writes < kWritesFull ? writes : kWritesFull;
+    allowance.bytes_milli = bytes_left < kBytesFull ? bytes_left : kBytesFull;
+    allowance.at_ms = now_ms;
+  }
+  const int64_t cost =
+      (bytes < static_cast<uint64_t>(kMoltDomStorageSiteWriteBytesBurst)
+           ? static_cast<int64_t>(bytes)
+           : kMoltDomStorageSiteWriteBytesBurst) *
+      1000;
+  if (allowance.writes_milli < 1000 || allowance.bytes_milli < cost) {
+    return false;
+  }
+  allowance.writes_milli -= 1000;
+  allowance.bytes_milli -= cost;
+  return true;
+}
 
 }  // namespace storage
 

@@ -4,9 +4,9 @@
 // MoltBrowser: a partition's per-site DOM storage budget (one for its
 // localStorage, one for its sessionStorage), for partitions that keep caches
 // per site (MoltNet's): what each site's areas hold together, its commit
-// rate, and the memory valve's growth signal past the floor. The rules are
-// in molt_dom_storage_site_policy.h; LocalStorageImpl and SessionStorageImpl
-// apply them through StorageAreaImpl::Delegate.
+// rate, its write rate, and the memory valve's growth signal past the
+// floor. The rules are in molt_dom_storage_site_policy.h; LocalStorageImpl
+// and SessionStorageImpl apply them through StorageAreaImpl::Delegate.
 
 #ifndef COMPONENTS_SERVICES_STORAGE_DOM_STORAGE_MOLT_DOM_STORAGE_SITE_BUDGET_H_
 #define COMPONENTS_SERVICES_STORAGE_DOM_STORAGE_MOLT_DOM_STORAGE_SITE_BUDGET_H_
@@ -73,6 +73,19 @@ class MoltDomStorageSiteBudget {
     rate.bytes += static_cast<int64_t>(bytes);
   }
 
+  // Whether a write of `bytes` to an area of `site` fits the site's write
+  // allowance (taken if so).
+  bool MayWrite(std::string_view site, size_t bytes) {
+    const int64_t now = NowMs();
+    auto it = writes_.find(site);
+    if (it == writes_.end()) {
+      it = writes_
+               .emplace(std::string(site), MoltDomStorageWriteAllowance{now})
+               .first;
+    }
+    return MoltDomStorageMayWrite(it->second, now, bytes);
+  }
+
   void SetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer) {
     growth_observer_.reset();
@@ -96,6 +109,7 @@ class MoltDomStorageSiteBudget {
 
   MoltDomStorageSiteTotals totals_;
   std::map<std::string, MoltDomStorageSiteRate, std::less<>> rates_;
+  std::map<std::string, MoltDomStorageWriteAllowance, std::less<>> writes_;
   mojo::Remote<mojom::MoltDomStorageGrowthObserver> growth_observer_;
 };
 

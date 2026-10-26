@@ -2067,6 +2067,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual base::RepeatingClosure GetDomStorageGrowthBeyondFloorCallback(
       BrowserContext* browser_context);
 
+  // MoltBrowser: whether `browser_context`'s Background Fetch is scheduled
+  // per top-level site: each site gets the limits Chromium gives a whole
+  // partition, and one site's fetches never keep another's from starting
+  // (content/browser/background_fetch/molt_background_fetch_site_policy.h).
+  // False: Chromium's limits for the whole partition.
+  virtual bool ShouldScheduleBackgroundFetchesPerSite(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

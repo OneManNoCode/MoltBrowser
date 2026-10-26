@@ -154,6 +154,8 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
       const blink::StorageKey& storage_key) override;
   void MoltSiteCommitted(const blink::StorageKey& storage_key,
                          size_t bytes) override;
+  bool MoltMayWrite(const blink::StorageKey& storage_key,
+                    size_t bytes) override;
 
   // SessionStorageNamespaceImpl::Delegate implementation:
   scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
@@ -196,11 +198,13 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
 
   // MoltBrowser: with caches per site (molt_dom_storage_site_policy.h),
   // purges the unbound areas of `storage_key`'s top-level site, in every
-  // namespace, if that site's maps pass the per-site limits.
+  // namespace, if that site's maps pass the per-site limits. Without a
+  // database, only areas whose maps hold no item.
   void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
   bool molt_caches_per_site_ = false;
-  // MoltBrowser: what each site's maps hold, and its commit rate. A map is
-  // forgotten when its data leaves the database.
+  // MoltBrowser: what each site's maps hold, its commit rate and its write
+  // rate. A map is forgotten when its data leaves the database (or, without
+  // one, the namespaces).
   MoltDomStorageSiteBudget molt_site_budget_;
   void MoltForgetMaps(const std::vector<DomStorageDatabase::MapLocator>& maps);
 

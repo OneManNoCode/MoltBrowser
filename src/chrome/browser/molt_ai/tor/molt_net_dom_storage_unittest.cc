@@ -4,9 +4,12 @@
 // MoltNet's localStorage caches and totals per site, with the real storage
 // service implementation (LocalStorageImpl, in memory as for an
 // off-the-record partition): what one site opens never purges another
-// site's areas, and a site's areas together hold one area's limit. And
-// sessionStorage's totals (SessionStorageImpl): a copy made for a tab
-// counts.
+// site's areas, and a site's areas together hold one area's limit; the
+// partition keeps no database, so an area holding items is never purged;
+// a site's writes past its write rate fail, and another site's don't. And
+// sessionStorage's (SessionStorageImpl): a copy made for a tab counts, no
+// database, the write rate. And, in every profile, a write the area's quota
+// refuses leaves the old value in place (StorageAreaImpl::Put()).
 
 #include <memory>
 #include <optional>
@@ -15,16 +18,21 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "base/uuid.h"
+#include "components/services/storage/dom_storage/db_status.h"
+#include "components/services/storage/dom_storage/dom_storage_database.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
+#include "components/services/storage/dom_storage/storage_area_impl.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
+#include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -51,16 +59,33 @@ class MoltNetDomStorageTest : public testing::Test {
     task_environment_.RunUntilIdle();
   }
 
-  // Opens `key`'s area, writes to it, and leaves it unused.
+  // Opens `key`'s area and leaves it unused, holding nothing.
   void OpenAndLeave(const blink::StorageKey& key) {
     mojo::Remote<blink::mojom::StorageArea> area;
     storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
-    base::test::TestFuture<bool> success;
-    area->Put({'k'}, {'v'}, std::nullopt, /*source=*/nullptr,
-              success.GetCallback());
-    EXPECT_TRUE(success.Take());
+    area.FlushForTesting();
     area.reset();
     task_environment_.RunUntilIdle();
+  }
+
+  // Writes `bytes` under the key `name` of an open area; whether it was
+  // stored.
+  static bool Put(blink::mojom::StorageArea* area,
+                  uint8_t name,
+                  size_t bytes) {
+    base::test::TestFuture<bool> success;
+    area->Put({name}, std::vector<uint8_t>(bytes, 'v'), std::nullopt,
+              /*source=*/nullptr, success.GetCallback());
+    return success.Take();
+  }
+
+  // What `key`'s area holds.
+  std::vector<blink::mojom::KeyValuePtr> ReadAll(const blink::StorageKey& key) {
+    mojo::Remote<blink::mojom::StorageArea> area;
+    storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+    base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+    area->GetAll(mojo::NullRemote(), all.GetCallback());
+    return all.Take();
   }
 
   // Writes `bytes` under one key of `key`'s area; whether it was stored.
@@ -130,8 +155,8 @@ TEST_F(MoltNetDomStorageTest, ASitePurgesItsOwn) {
   EXPECT_TRUE(Cached(other));
 }
 
-// An unused area leaves the cache after 30 minutes unused, whatever other
-// sites do; one a page has open never does.
+// An unused area that holds nothing leaves the cache after 30 minutes
+// unused, whatever other sites do; one a page has open never does.
 TEST_F(MoltNetDomStorageTest, IdleAreasExpire) {
   storage_->MoltKeepCachesPerSite();
   const blink::StorageKey idle = Key("https://idle.test");
@@ -147,6 +172,139 @@ TEST_F(MoltNetDomStorageTest, IdleAreasExpire) {
   EXPECT_FALSE(Cached(idle));
   task_environment_.FastForwardBy(base::Hours(3));
   EXPECT_TRUE(Cached(open));
+}
+
+// MoltNet's partition keeps no database: opening an area waits on nothing
+// another site queued. So an area holding items (also one of zero bytes)
+// stays in the cache, past its site's limits and however long unused, and
+// keeps them; one holding nothing still goes. What the partition stores is
+// what its areas hold.
+TEST_F(MoltNetDomStorageTest, WithoutADatabaseAreasHoldingItemsStay) {
+  storage_->MoltKeepCachesPerSite();
+  const blink::StorageKey kept = Key("https://kept.a.test");
+  const blink::StorageKey zero = Key("https://zero.a.test");
+  const blink::StorageKey empty = Key("https://empty.a.test");
+  ASSERT_TRUE(Write(kept, 10));
+  EXPECT_EQ(storage_->GetDatabaseForTesting(), nullptr);
+  {
+    mojo::Remote<blink::mojom::StorageArea> area;
+    storage_->BindStorageArea(zero, area.BindNewPipeAndPassReceiver());
+    base::test::TestFuture<bool> success;
+    area->Put({}, {}, std::nullopt, /*source=*/nullptr, success.GetCallback());
+    ASSERT_TRUE(success.Take());
+  }
+  OpenAndLeave(empty);
+  for (size_t i = 0; i <= storage::kMoltDomStorageAreasPerSite + 1; ++i) {
+    OpenAndLeave(Key(base::StringPrintf("https://s%zu.a.test", i)));
+  }
+  EXPECT_FALSE(Cached(empty));
+  task_environment_.FastForwardBy(base::Hours(3));
+  EXPECT_TRUE(Cached(kept));
+  EXPECT_TRUE(Cached(zero));
+  const std::vector<blink::mojom::KeyValuePtr> data = ReadAll(kept);
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value, std::vector<uint8_t>(10, 'v'));
+  EXPECT_EQ(ReadAll(zero).size(), 1u);
+
+  base::test::TestFuture<std::vector<storage::mojom::StorageUsageInfoPtr>>
+      usage;
+  storage_->GetUsage(usage.GetCallback());
+  const std::vector<storage::mojom::StorageUsageInfoPtr> infos = usage.Take();
+  ASSERT_EQ(infos.size(), 2u);
+  for (const storage::mojom::StorageUsageInfoPtr& info : infos) {
+    EXPECT_EQ(info->total_size_bytes, info->storage_key == kept ? 11 : 0);
+  }
+}
+
+// Chromium 156: an in-memory partition keeps its areas' items in a database
+// too.
+TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteThereIsADatabase) {
+  ASSERT_TRUE(Write(Key("https://a.test"), 10));
+  EXPECT_NE(storage_->GetDatabaseForTesting(), nullptr);
+}
+
+// A site's writes come out of its write allowance: past it they fail, as a
+// write past the area's quota does, while another site's writes at the
+// same time all go; the allowance refills with time.
+TEST_F(MoltNetDomStorageTest, AGreedySitesWritesDontDelayAnothers) {
+  storage_->MoltKeepCachesPerSite();
+  mojo::Remote<blink::mojom::StorageArea> greedy;
+  storage_->BindStorageArea(Key("https://greedy.test"),
+                            greedy.BindNewPipeAndPassReceiver());
+  mojo::Remote<blink::mojom::StorageArea> polite;
+  storage_->BindStorageArea(Key("https://polite.test"),
+                            polite.BindNewPipeAndPassReceiver());
+  for (int64_t i = 0; i < storage::kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(Put(greedy.get(), static_cast<uint8_t>(i), 1));
+  }
+  EXPECT_FALSE(Put(greedy.get(), 'x', 1));
+  // A subdomain is the same site.
+  mojo::Remote<blink::mojom::StorageArea> sub;
+  storage_->BindStorageArea(Key("https://sub.greedy.test"),
+                            sub.BindNewPipeAndPassReceiver());
+  EXPECT_FALSE(Put(sub.get(), 'x', 1));
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_TRUE(Put(polite.get(), static_cast<uint8_t>(i), 1));
+  }
+  task_environment_.FastForwardBy(base::Seconds(1));
+  for (int64_t i = 0; i < storage::kMoltDomStorageSiteWritesPerSecond; ++i) {
+    EXPECT_TRUE(Put(greedy.get(), 'y', static_cast<size_t>(i % 7)));
+  }
+  EXPECT_FALSE(Put(greedy.get(), 'z', 1));
+}
+
+// The write allowance follows the same groups as the totals: a
+// credentialless iframe's writes come out of its page's nonce's allowance,
+// not out of its own site's, nor the other way round.
+TEST_F(MoltNetDomStorageTest, CredentiallessFramesHaveTheirOwnAllowance) {
+  storage_->MoltKeepCachesPerSite();
+  const url::Origin tracker = url::Origin::Create(GURL("https://t.test"));
+  mojo::Remote<blink::mojom::StorageArea> own;
+  storage_->BindStorageArea(Key("https://t.test"),
+                            own.BindNewPipeAndPassReceiver());
+  for (int64_t i = 0; i < storage::kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(Put(own.get(), static_cast<uint8_t>(i), 1));
+  }
+  EXPECT_FALSE(Put(own.get(), 'x', 1));
+  mojo::Remote<blink::mojom::StorageArea> framed;
+  storage_->BindStorageArea(
+      blink::StorageKey::CreateWithNonce(tracker,
+                                         base::UnguessableToken::Create()),
+      framed.BindNewPipeAndPassReceiver());
+  for (int64_t i = 0; i < storage::kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(Put(framed.get(), static_cast<uint8_t>(i), 1));
+  }
+  EXPECT_FALSE(Put(framed.get(), 'x', 1));
+}
+
+// The bytes a site writes come out of its allowance too, also a value
+// written over and over at the same size.
+TEST_F(MoltNetDomStorageTest, ASitesWriteBytesAreLimited) {
+  storage_->MoltKeepCachesPerSite();
+  constexpr size_t kMiB = 1024 * 1024;
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(Key("https://a.test"),
+                            area.BindNewPipeAndPassReceiver());
+  EXPECT_TRUE(Put(area.get(), 'k', 4 * kMiB));
+  EXPECT_TRUE(Put(area.get(), 'k', 4 * kMiB));
+  EXPECT_FALSE(Put(area.get(), 'k', 4 * kMiB));
+  // What it holds is unchanged.
+  const std::vector<blink::mojom::KeyValuePtr> data =
+      ReadAll(Key("https://a.test"));
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value.size(), 4 * kMiB);
+  task_environment_.FastForwardBy(base::Seconds(2));
+  EXPECT_TRUE(Put(area.get(), 'k', 4 * kMiB));
+}
+
+// Chromium 156: as many writes as a page sends.
+TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteWritesAreNotLimited) {
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(Key("https://a.test"),
+                            area.BindNewPipeAndPassReceiver());
+  for (int64_t i = 0; i < 2 * storage::kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(Put(area.get(), static_cast<uint8_t>(i), 1));
+  }
 }
 
 // With caches per site, a site's subdomains share one area's limit; another
@@ -188,6 +346,101 @@ TEST_F(MoltNetDomStorageTest, ARefusedWriteChangesNothing) {
   const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
   ASSERT_EQ(data.size(), 1u);
   EXPECT_EQ(data[0]->value.size(), 6 * kMiB);
+}
+
+// sessionStorage in MoltNet's partition: no database, and a map holding
+// items stays when its site's unused areas are purged.
+TEST_F(MoltNetDomStorageTest, SessionStorageWithoutADatabaseKeepsItsItems) {
+  storage::SessionStorageImpl session(
+      base::FilePath(), storage::SessionStorageImpl::BackingMode::kNoDisk,
+      base::DoNothing(), mojo::NullReceiver());
+  session.MoltKeepCachesPerSite();
+  const std::string ns = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session.CreateNamespace(ns);
+  const blink::StorageKey kept = Key("https://kept.a.test");
+  {
+    mojo::Remote<blink::mojom::StorageArea> area;
+    session.BindStorageArea(kept, ns, area.BindNewPipeAndPassReceiver());
+    ASSERT_TRUE(Put(area.get(), 'k', 10));
+  }
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(session.GetDatabaseForTesting(), nullptr);
+  for (size_t i = 0; i <= storage::kMoltDomStorageAreasPerSite + 1; ++i) {
+    mojo::Remote<blink::mojom::StorageArea> area;
+    session.BindStorageArea(Key(base::StringPrintf("https://s%zu.a.test", i)),
+                            ns, area.BindNewPipeAndPassReceiver());
+    area.FlushForTesting();
+    area.reset();
+    task_environment_.RunUntilIdle();
+  }
+  mojo::Remote<blink::mojom::StorageArea> again;
+  session.BindStorageArea(kept, ns, again.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+  again->GetAll(mojo::NullRemote(), all.GetCallback());
+  const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value, std::vector<uint8_t>(10, 'v'));
+  again.reset();
+  task_environment_.RunUntilIdle();
+}
+
+// Every profile: a write the area's own quota refuses changes nothing; the
+// value it would have replaced stays readable. (Chromium 156 moved the old
+// value out of the area's map before the quota check and left the key
+// mapped to an empty value.)
+TEST_F(MoltNetDomStorageTest, AQuotaRefusedWriteKeepsTheOldValue) {
+  constexpr size_t kMiB = 1024 * 1024;
+  const blink::StorageKey key = Key("https://a.test");
+  ASSERT_TRUE(Write(key, 6 * kMiB));
+  // Past the area's 10 MiB and 100 KiB, whatever the renderer checked.
+  EXPECT_FALSE(Write(key, 11 * kMiB));
+
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+  area->GetAll(mojo::NullRemote(), all.GetCallback());
+  const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value, std::vector<uint8_t>(6 * kMiB, 'v'));
+}
+
+// The same for a storage area on its own (as sessionStorage's maps use
+// it), with a small quota.
+class NoCommitsDelegate : public storage::StorageAreaImpl::Delegate {
+ public:
+  void OnNoBindings() override {}
+  void DidCommit(storage::DbStatus) override {}
+};
+
+TEST(MoltStorageAreaPutTest, AQuotaRefusedPutKeepsTheOldValue) {
+  base::test::TaskEnvironment task_environment;
+  NoCommitsDelegate delegate;
+  storage::StorageAreaImpl::Options options;
+  options.max_size = 100;
+  storage::StorageAreaImpl area(
+      /*database=*/nullptr,
+      base::MakeRefCounted<storage::DomStorageDatabase::SharedMapLocator>(
+          storage::DomStorageDatabase::MapLocator(Key("https://a.test"))),
+      &delegate, options);
+  area.InitializeAsEmpty();
+  mojo::Remote<blink::mojom::StorageArea> remote;
+  area.Bind(remote.BindNewPipeAndPassReceiver());
+
+  const std::vector<uint8_t> old_value(40, 'a');
+  base::test::TestFuture<bool> stored;
+  remote->Put({'k'}, old_value, std::nullopt, /*source=*/nullptr,
+              stored.GetCallback());
+  ASSERT_TRUE(stored.Take());
+  remote->Put({'k'}, std::vector<uint8_t>(120, 'b'), old_value,
+              /*source=*/nullptr, stored.GetCallback());
+  EXPECT_FALSE(stored.Take());
+
+  base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+  remote->GetAll(mojo::NullRemote(), all.GetCallback());
+  const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
+  ASSERT_EQ(data.size(), 1u);
+  EXPECT_EQ(data[0]->value, old_value);
+  EXPECT_EQ(area.storage_used(), 1u + 40u);
 }
 
 // A credentialless iframe's areas (a storage key with a nonce, whose

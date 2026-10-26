@@ -172,6 +172,9 @@ class LocalStorageImpl::StorageAreaHolder final
   void MoltSiteCommitted(size_t bytes) override {
     context_->MoltSiteCommitted(storage_key_, bytes);
   }
+  bool MoltMayWrite(size_t bytes) override {
+    return context_->MoltMayWrite(storage_key_, bytes);
+  }
   void Bind(mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
     has_bindings_ = true;
     storage_area()->Bind(std::move(receiver));
@@ -487,6 +490,13 @@ void LocalStorageImpl::InitiateConnection(
   // subdirectory and weren't asked to stay in memory.
   in_memory_ = in_memory_only || storage_partition_directory_.empty() ||
                !storage_partition_directory_.IsAbsolute();
+  // MoltBrowser: a partition that keeps DOM storage per site in memory keeps
+  // no database; its areas hold their items themselves, and opening one
+  // never waits on the database's sequence (molt_dom_storage_site_policy.h).
+  if (MoltDomStorageKeepsNoDatabase(molt_caches_per_site_, in_memory_)) {
+    OnConnectionFinished();
+    return;
+  }
   const base::FilePath dir_to_open =
       in_memory_ ? base::FilePath() : storage_partition_directory_;
   // Recovery destroys the pre-existing on-disk database before reopening (which
@@ -634,6 +644,16 @@ void LocalStorageImpl::RetrieveStorageUsage(GetUsageCallback callback) {
     std::vector<mojom::StorageUsageInfoPtr> result;
     base::Time now = base::Time::Now();
     for (const auto& it : areas_) {
+      // MoltBrowser: without a database on purpose, the areas holding items
+      // are what is stored (molt_dom_storage_site_policy.h).
+      if (molt_caches_per_site_) {
+        StorageAreaImpl* area = it.second->storage_area();
+        if (area->molt_holds_items()) {
+          result.emplace_back(mojom::StorageUsageInfo::New(
+              it.first, area->storage_used(), now));
+        }
+        continue;
+      }
       result.emplace_back(mojom::StorageUsageInfo::New(it.first, 0, now));
     }
     std::move(callback).Run(std::move(result));
@@ -724,6 +744,18 @@ void LocalStorageImpl::MoltSiteCommitted(const blink::StorageKey& storage_key,
   }
 }
 
+bool LocalStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
+                                    size_t bytes) {
+  return !molt_caches_per_site_ ||
+         molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
+}
+
+bool LocalStorageImpl::MoltMayDrop(StorageAreaHolder& holder) {
+  return !holder.has_bindings() &&
+         MoltDomStorageMayDropArea(database_ != nullptr,
+                                   holder.storage_area()->molt_holds_items());
+}
+
 // MoltBrowser:
 void LocalStorageImpl::MoltKeepCachesPerSite() {
   if (molt_caches_per_site_) {
@@ -749,7 +781,7 @@ void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
     }
     ++site_areas;
     site_cache_bytes += holder->storage_area()->memory_used();
-    if (!holder->has_bindings()) {
+    if (MoltMayDrop(*holder)) {
       ++site_unused_areas;
     }
   }
@@ -758,8 +790,7 @@ void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
     return;
   }
   for (auto it = areas_.begin(); it != areas_.end();) {
-    if (!it->second->has_bindings() &&
-        MoltDomStorageSiteOf(it->first) == site) {
+    if (MoltMayDrop(*it->second) && MoltDomStorageSiteOf(it->first) == site) {
       it = areas_.erase(it);
     } else {
       ++it;
@@ -771,7 +802,7 @@ void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
 void LocalStorageImpl::MoltSweepIdleAreas() {
   const base::TimeTicks now = base::TimeTicks::Now();
   for (auto it = areas_.begin(); it != areas_.end();) {
-    if (!it->second->has_bindings() &&
+    if (MoltMayDrop(*it->second) &&
         MoltDomStorageAreaExpired(
             (now - it->second->molt_unused_since()).InSeconds())) {
       it = areas_.erase(it);

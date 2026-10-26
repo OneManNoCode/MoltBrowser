@@ -507,6 +507,9 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `components/services/storage/dom_storage/storage_area_impl.{h,cc}`, `session_storage_data_map.{h,cc}` (new upstream copies), `local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `molt_dom_storage_site_policy.h`, `molt_dom_storage_site_budget.h` (new, header-only, in no target's `sources`), `content/browser/dom_storage/dom_storage_context_wrapper.cc`, `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}` | `StorageAreaImpl::Delegate` gains four virtuals with default bodies (`MoltMayGrowTo()`, `MoltShrankTo()`, `MoltSiteCommitDelay()`, `MoltSiteCommitted()`), called in `Put()` (a refused growth restores the moved-out old value, then `KeyChangeFailed`, never `ReportBadMessage`), `Delete()`, `DeleteAll()`, `ComputeCommitDelay()`, `CollectCommit()` and `OnForkStateLoaded()`; `SessionStorageDataMap::Listener` gains the same four with the map id and storage key; `LocalStorageImpl` and `SessionStorageImpl` hold a `MoltDomStorageSiteBudget` (`mojo::Remote<MoltDomStorageGrowthObserver>`, `base::TimeTicks`) and override `MoltSetGrowthObserver()`; the wrapper binds a self-owned `MoltDomStorageGrowthObserver` (`mojo::MakeSelfOwnedReceiver`) when the new virtual `ContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(BrowserContext*)` (default null; Chrome: the memory valve's callback) returns one | moltnet-shared4 |
 | `chrome/browser/download/bubble/download_bubble_ui_controller.cc`, `chrome/browser/ui/webui/downloads/downloads_dom_handler.cc` (new upstream copies), `chrome/browser/download/molt_retried_download_isolation.h` (new, header-only, in no target's `sources`), `content/browser/download/molt_download_isolation{,_policy}.h` | both `RetryDownload()`s call `MoltRetryDownloadWithItsSite()` (`DownloadItem::GetRequestInitiator()`, `GetIsolationInfo()`, `DownloadUrlParameters::set_initiator()`, `set_isolation_info()`, `set_update_first_party_url_on_redirect()`); content's helper reads `DownloadUrlParameters::download_source()` (`download::DownloadSource::RETRY`, `RETRY_FROM_BUBBLE`) | moltnet-shared2 |
 | `net/disk_cache/memory/mem_backend_impl.{h,cc}`, `molt_mem_backend_budget_policy.h`; `components/services/storage/dom_storage/local_storage_impl.cc`, `session_storage_impl.cc`, `session_storage_namespace_impl.{h,cc}`, `molt_dom_storage_site.h` (new, header-only, in no target's `sources`, like `molt_dom_storage_site_policy.h`), `molt_dom_storage_site_policy.h`; `storage/browser/quota/molt_storage_budget.h` | `MemBackendImpl::CreateEntry()` refuses (`ERR_INSUFFICIENT_RESOURCES`) an entry `MoltMayCreateEntry()` refuses (with a budget only; `HttpCache::Transaction` then bypasses the cache); the DOM storage budget functions and per-site purges name a key's group with `MoltDomStorageSiteOf()` instead of `top_level_site().Serialize()`, and `SessionStorageNamespaceImpl::MoltPurgeUnboundAreasOfSite()` now takes that `const std::string&` (it no longer reads `net::SchemefulSite`); `MoltSiteUsage()` compares keys with `MoltSameBudgetSite()` (a key with a nonce only with its nonce's) | redteam2 (round 27) |
+| `components/services/storage/dom_storage/storage_area_impl.{h,cc}`, `local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `session_storage_data_map.{h,cc}`, `session_storage_namespace_impl.{h,cc}`, `molt_dom_storage_site_policy.h`, `molt_dom_storage_site_budget.h` | every profile: `StorageAreaImpl::Put()` gains a lambda `restore_old_value` (captures by reference) called before each early return after the old value is moved out, the upstream quota refusal included; MoltNet: a fifth `StorageAreaImpl::Delegate` virtual `MoltMayWrite(size_t)` (default body, checked in `Put()` right after the map is loaded, refusal = `KeyChangeFailed` + `false`) and a public inline `molt_holds_items()` (reads both maps); `SessionStorageDataMap::Listener::MoltMayWrite()`; `LocalStorageImpl::InitiateConnection()` and `SessionStorageImpl::InitiateConnection()` call `OnConnectionFinished()` and return before opening a database when `MoltDomStorageKeepsNoDatabase()` (so `database_` stays null: the storage service's existing no-database mode); `LocalStorageImpl::MoltMayDrop(StorageAreaHolder&)` (private, the nested class forward-declared in the header); `RetrieveStorageUsage()`'s no-database branch reports `storage_used()` for MoltNet; `MoltDomStorageSiteBudget::MayWrite()` keeps a `std::map<std::string, MoltDomStorageWriteAllowance, std::less<>>` | moltnet-shared5 |
+| `storage/browser/quota/client_usage_tracker.{h,cc}`, `usage_tracker.{h,cc}` (new upstream copies), `quota_manager_impl.cc`, `molt_storage_budget.h`, `molt_storage_usage_counts.h` (new, header-only, std-only, in no target's `sources`) | `molt_storage_budget.h` now defines `MoltBudgetSite` (an `std::optional<base::UnguessableToken>` and an `std::optional<net::SchemefulSite>`, `operator==` defaulted, `operator<` hand-written) and `MoltBudgetSiteOf()`, includes `base/unguessable_token.h` and `net/base/schemeful_site.h`, and is now included by `client_usage_tracker.h` and `usage_tracker.h` (widely included in `//storage`); `ClientUsageTracker` gains `MoltCountSites()`, `MoltSiteUsage()`, `MoltCachedUsage()`, `MoltHasCachedUsage()` (`std::map::contains` with `CompareBucketLocators`) and a private `MoltCountChange()` called from `UpdateBucketUsageCache()`, `DeleteBucketCache()` (an `if` with initializer), `SetUsageCacheEnabled()` and `CacheBucketUsage()`; `UsageTracker` gains `MoltRefreshSiteUsage()` (a `base::BarrierClosure` over `GetStorageKeyUsageWithBreakdown()`, a lambda taking `blink::mojom::UsageBreakdownPtr`), `MoltDidCountEverything()` (bound to `GetGlobalUsage()` with `weak_factory_`), `MoltSiteUsage()`, `MoltTotalUsage()` and three members; `UsageAndQuotaInfoGatherer` drops moltnet-shared's `MoltOnGotGlobalUsage()` and its two members for a `bool`, calls the private `QuotaManagerImpl::EnsureDatabaseOpened()` (the gatherer is a nested class) and reads the counts in `Completed()` | moltnet-shared5 |
+| `content/browser/background_fetch/background_fetch_scheduler.{h,cc}`, `background_fetch_context.cc`, `components/download/content/factory/download_service_factory_helper.cc` (new upstream copies), `content/browser/background_fetch/molt_background_fetch_site_policy.h`, `components/download/internal/background_service/molt_in_memory_download_limits.h` (new, header-only, std-only, in no target's `sources`), `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}`, `chrome/browser/molt_ai/tor/molt_net_network_context_policy.h` | `BackgroundFetchScheduler` gains a public `MoltSchedulePerSite()`, a private `MoltScheduleDownload()` (erases from `controller_ids_` and `active_controllers_` while iterating, `base::circular_deque::erase()`'s returned iterator) and a `std::unique_ptr<MoltBackgroundFetchSites>`; `ScheduleDownload()`, `DidCompleteRequest()`, `FinishJob()` and `OnRegistrationLoadedAtStartup()` are hooked; the scheduler's `.cc` includes `components/services/storage/dom_storage/molt_dom_storage_site.h` (header-only, blink's `StorageKey`, so a registration groups as DOM storage does; `//content/browser` already depends on `//components/services/storage`; if `gn check` objects to a header in no target, list it in that source set); the context's constructor asks the new virtual `ContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(BrowserContext*)` (default `false`; Chrome: `molt_ai::tor::ScheduleBackgroundFetchesPerSite()`); `BuildInMemoryDownloadService()` raises the three `Configuration` limits with `MoltInMemoryDownloadLimit()` | moltnet-shared5 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -719,6 +722,22 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   `//chrome/browser/molt_ai/fingerprinting:net_fonts`. If `gn check`
   flags any of them, list the header in the target that includes it or
   add the dep.
+  New in moltnet-shared5: header-only files in no target's `sources`:
+  `content/browser/background_fetch/molt_background_fetch_site_policy.h`
+  (by `//content/browser`),
+  `components/download/internal/background_service/molt_in_memory_download_limits.h`
+  (by `//components/download/content/factory`) and
+  `storage/browser/quota/molt_storage_usage_counts.h` (by `//storage/browser`,
+  through `molt_storage_budget.h`, which `client_usage_tracker.h` and
+  `usage_tracker.h` now include; it includes `net/base/schemeful_site.h`
+  and `base/unguessable_token.h`). `//chrome/browser/molt_ai/fingerprinting`'s
+  unit tests gained `//storage/browser`, `//storage/browser:test_support`
+  (`MockQuotaClient`), `//components/services/storage/public/cpp`,
+  `//components/services/storage/public/cpp/buckets`,
+  `//mojo/public/cpp/bindings` and
+  `//third_party/blink/public/mojom:mojom_platform`. If `gn check` flags
+  any of them, list the header in the target that includes it or add the
+  dep.
   New in fonts: `//chrome/browser/molt_ai/fingerprinting:net_fonts` (the
   browser side of the bundled font set; `:fingerprinting` and the unit
   tests depend on it); `//chrome/common/molt_ai/fingerprinting`'s mojom
@@ -869,6 +888,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetSocketPoolsTest.CertificateFetchesHaveAPoolOfTheirOwn` and the budget cases (both parts), `MoltNetHttpCacheTest` (new: Chromium's real `MemBackendImpl` with the budget), `MoltNetEndedIdentityNetworkTest` (new: Chromium's real `ProxyConfigServiceMojo`), `MoltNetDomStorageTest` (new: the real `LocalStorageImpl` in memory, mock time), `MoltNetStorageTest` (the callbacks null in the fingerprinting settings); built standalone only: `MoltNetSocketPoolPolicyTest` (the certificate-fetch pools and budget split), `MoltNetHttpCacheBudgetPolicyTest` (new), `MoltNetIdentityEndPolicyTest` and `MoltNetNetworkContextPolicyTest` (new cases), `MoltNetStorageBudgetPolicyTest` and `MoltNetBlobBudgetPolicyTest` (rewritten: share only, the floor, site keys), `MoltNetMemoryValvePolicyTest` (new), `MoltNetDomStorageSitePolicyTest` (new) | moltnet-shared3 |
   | `MoltNetEndedIdentityNetworkTest` (new cases: the refusal's answer, a SOCKS5 socket's writes and handshake after the end), `MoltNetEndedContextTest` (new: Chromium's real `NetworkService` and `NetworkContext`), `MoltNetBackgroundFetchCredentialsTest` and `MoltNetBackgroundFetchCookiesTest` (new: `download::CreateResourceRequest()`, a regular profile's network context and an `EmbeddedTestServer`), `MoltNetBackgroundFetchBufferTest` (new: `BlobStorageContext` with shares), `MoltNetDomStorageTest` (new cases) and `MoltNetSessionStorageTest` (new: the real `SessionStorageImpl` in memory), `MoltNetFontsDeliveryTest.ThePanelKnowsWhatOpeningFound`; built standalone only: `MoltNetEndOrderingTest` (new: 3000 random pipe interleavings, about 12 s), `MoltNetIdentityEndPolicyTest`, `MoltNetBlobBudgetPolicyTest.HeldMemoryCountsLikeABlob`, `MoltNetDomStorageSitePolicyTest` (new cases). In `components_unittests`: `InMemoryDownloadTest.MoltNet*` | moltnet-shared4 |
   | `MoltNetStorageGroupsTest` (new: real storage keys, a credentialless frame's key counts with its nonce, opaque top-level sites apart, the quota share), `MoltNetDomStorageTest.CredentiallessFramesCountWithTheirNonce`, `MoltNetHttpCacheTest.KeysOfEntriesHeldOpenCountAgainstTheSite` and `ANewEntryMakesRoomFromItsSitesOwnEntries` (new); built standalone only: `MoltNetHttpCacheBudgetPolicyTest.ANewEntrysKeyCountsLikeData`, `MoltNetDomStorageSitePolicyTest.GroupsOfKeysThatDontNameTheirSite` and `ForgettingAClearedAreaLast` | redteam2 (round 27) |
+  | `MoltNetDomStorageTest` (new cases: no database, areas holding items stay, `GetUsage()`, a greedy site's writes refused while another's go, write bytes, credentialless frames' allowance, a quota-refused write keeps the old value in a regular profile), `MoltStorageAreaPutTest` (new: `StorageAreaImpl` on its own), `MoltNetStorageSiteUsageTest` (new: Chromium's real `QuotaManagerImpl`, off the record, with a `MockQuotaClient`: a site's keys share its share, cached changes counted with no client call, a polite site's check asks for none of a greedy site's new buckets, credentialless frames count with their nonce, the floor), `MoltNetNetworkContextPolicyTest.BackgroundFetchPerSiteInMoltNetOnly`; built standalone only: `MoltNetDomStorageSitePolicyTest` (new cases: no database, the write allowance), `MoltNetStorageSiteUsageTest` in `molt_net_storage_site_usage_policy_unittest.cc` (the counting templates), `MoltNetBackgroundFetchSchedulingTest` (new) | moltnet-shared5 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -996,6 +1016,10 @@ pass except where the table below says otherwise (verify the filters).
 | `storage_unittests` | `BlobMemoryControllerTest.*:BlobStorageContextTest.*:LocalStorageImplTest.*:SessionStorageImplTest.*:SessionStorageDataMapTest.*:StorageAreaImplTest.*` (no shares, no caches per site: nothing held, no totals, Chromium's commit rate) | moltnet-shared4 |
 | `components_unittests` | `InMemoryDownloadTest.*:BlobTaskProxy*:*DownloadUtils*:DownloadItemImplTest.*` (without shares nothing is held; a download whose parameters keep `kInclude`, the default, is made as before) | moltnet-shared4 |
 | `content_unittests` | `BackgroundFetch*:DOMStorageContextWrapperTest.*:DOMStorage*` (no embedder callback outside MoltNet) | moltnet-shared4 |
+| `storage_unittests` | `StorageAreaImplTest.*:LocalStorageImplTest.*:SessionStorageImplTest.*:SessionStorageNamespaceImplTest.*:SessionStorageDataMapTest.*` (no caches per site: a database as before, every write taken; a write refused for an area's quota now keeps the old value in every profile) | moltnet-shared5 |
+| `storage_unittests` | `UsageTrackerTest.*:ClientUsageTracker*:QuotaManagerImplTest.*` (without MoltNet's budget nothing is counted per site and the quota answer is Chromium's) | moltnet-shared5 |
+| `content_unittests` | `BackgroundFetchSchedulerTest.*:BackgroundFetchJobControllerTest.*:BackgroundFetch*` (the test embedder doesn't ask for per-site scheduling: Chromium's 2 and 2) | moltnet-shared5 |
+| `components_unittests` | `DownloadServiceControllerImplTest.*:*InMemoryDownload*` (the controller's tests build their own `Configuration`; only `BuildInMemoryDownloadService()` raises the limits) | moltnet-shared5 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1022,6 +1046,10 @@ pass except where the table below says otherwise (verify the filters).
   an empty override (`void MoltKeepCachesPerSite() override {}`) there.
 - The same for `MoltSetGrowthObserver()` (moltnet-shared4): add
   `void MoltSetGrowthObserver(mojo::PendingRemote<storage::mojom::MoltDomStorageGrowthObserver>) override {}`.
+- An upstream `StorageAreaImplTest`, `LocalStorageImplTest` or
+  `SessionStorageImplTest` case that expects a key to read back empty
+  after a write its area's quota refused (moltnet-shared5): the old value
+  now stays, in every profile; update the expectation.
 - A regular profile's Background Fetch test that expects cookies on a
   request whose fetch asked for `credentials: 'omit'` (moltnet-shared4):
   the request now carries the fetch's mode in every profile, as the
@@ -2007,6 +2035,35 @@ macOS, and for the manual steps everywhere:
     `Contents/Resources/`, away; a test install only): MoltNet's panel
     shows the note that this build has no bundled fonts, and MoltNet
     windows still open; with the set back, no note.
+- [ ] Shared work per site, round 27 (moltnet-shared5;
+  MOLTNET_COMPLIANCE.md §2 *Downloads and Background Fetch*, *DOM storage
+  caches*, *DOM storage totals*, *Storage*):
+  - Background Fetch: a test server that sends a 100 MB file at 10 KB/s.
+    Site A's service worker (and one of a subdomain of A) each start a
+    `backgroundFetch.fetch()` of it; then site B's service worker fetches
+    a small file: B's fetch completes within seconds
+    (`backgroundfetchsuccess`) while A's are still downloading. In a
+    regular window the same B fetch waits until one of A's finishes (or
+    is aborted). `chrome://background-service-internals` (Background
+    Fetch, recording on) shows each registration's "Background Fetch
+    started" in that order.
+  - DOM storage without a database: in a MoltNet window, a page writes a
+    few `localStorage` items on 20 subdomains of one site (iframes), then
+    opens 20 more subdomains that store nothing; reload the first page
+    after 40 minutes: its items are all there. A `chrome://tracing`
+    memory-infra dump of the session shows no `site_storage/localstorage`
+    database (`/leveldb` or `/sqlite`) for the MoltNet partition (a
+    regular window's partition has one).
+  - The write allowance: a MoltNet page runs
+    `for (let i = 0; i < 3000; ++i) localStorage.setItem('k' + i, 'v')`;
+    after a second `localStorage.length` is about 1000 (a regular window:
+    3000); a page of another site, loaded at the same time, writes its own
+    1000. The leak kit's `dom_storage_rate` checks the same.
+  - Quota checks: a page of site A embeds iframes of 500 of its own
+    subdomains (a test server with wildcard DNS, reached through Tor) that
+    each write 10 KB to IndexedDB; meanwhile a page of site C times
+    `navigator.storage.estimate()` 100 times: the times stay as they are
+    with A idle, and A's own estimate reports its 5 MB.
 - [ ] Autofill in MoltNet (moltnet-live; §4 step 20): start with
   `--enable-features=AutofillServerCommunication` and Tor's log at
   `SafeLogging 0` + `Log info`. A MoltNet page with an address form and a
@@ -2090,6 +2147,11 @@ Mac; use a real Linux host.
     kit's server. First-run question: whether the evidence says
     `fetch_later: true` (if not, `fetchLater()` isn't exposed in the
     page and only the beacon was checked).
+  - `dom_storage_rate` passes (moltnet-shared5): of 3000 `localStorage`
+    writes the burst (1000) is kept and no more than what refilled while
+    the page wrote; `regular_dom_storage_rate` keeps all 3000. First-run
+    question: the evidence's `writes.seconds` (how long the loop took; if
+    it is more than a few seconds the margin may be too small).
   - `identity.nothing_after_end_race` passes (moltnet-shared4): the old
     page saw one of its racing requests refused after New Identity began,
     then started a fetch, a keepalive fetch, a beacon, an image, a
