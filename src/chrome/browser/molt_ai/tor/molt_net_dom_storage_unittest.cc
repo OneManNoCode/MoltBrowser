@@ -13,6 +13,8 @@
 // profile, a write the area's quota refuses leaves the old value in place
 // (StorageAreaImpl::Put()).
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,14 +24,19 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
+#include "base/threading/sequence_bound.h"
+#include "base/threading/thread.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/unguessable_token.h"
 #include "base/uuid.h"
 #include "components/services/storage/dom_storage/db_status.h"
@@ -545,6 +552,173 @@ TEST_F(MoltNetDomStorageTest, AClearOfManyItemsIsFreedInChunks) {
   // refilled).
   task_environment_.FastForwardBy(base::Seconds(20));
   EXPECT_TRUE(Write(key, 10 * 1024 * 1024));
+}
+
+// ---- A timing check, for the build machine ----
+//
+// The real storage classes, timed (BUILD_MACHINE_CHECKLIST §5.1,
+// moltnet-shared7): a polite page's reads of its area every 10 ms while
+// other pages flood their areas with writes and clear()s. Disabled by
+// default (it takes about 15 seconds and measures the machine); run with
+//   --gtest_also_run_disabled_tests --gtest_filter='*DomStorageTiming*'
+
+// A page flooding an area from a sequence of its own: writes and clear()s,
+// as fast as the storage service answers them, at most 20,000 unanswered.
+class DomStorageFlooder {
+ public:
+  explicit DomStorageFlooder(
+      mojo::PendingRemote<blink::mojom::StorageArea> area)
+      : area_(std::move(area)) {
+    timer_.Start(FROM_HERE, base::Milliseconds(1),
+                 base::BindRepeating(&DomStorageFlooder::Burst,
+                                     base::Unretained(this)));
+  }
+
+ private:
+  void Burst() {
+    for (int i = 0; i < 1000 && unanswered_ < 20000; ++i, ++sent_) {
+      ++unanswered_;
+      if (sent_ % 2) {
+        area_->DeleteAll(/*source=*/nullptr, mojo::NullRemote(),
+                         base::BindOnce(&DomStorageFlooder::Answered,
+                                        base::Unretained(this)));
+      } else {
+        area_->Put({static_cast<uint8_t>(sent_ % 8), 'k'},
+                   std::vector<uint8_t>(16, 'v'), std::nullopt,
+                   /*source=*/nullptr,
+                   base::BindOnce(&DomStorageFlooder::PutAnswered,
+                                  base::Unretained(this)));
+      }
+    }
+  }
+  void Answered() { --unanswered_; }
+  void PutAnswered(bool) { --unanswered_; }
+
+  mojo::Remote<blink::mojom::StorageArea> area_;
+  base::RepeatingTimer timer_;
+  uint64_t sent_ = 0;
+  int unanswered_ = 0;
+};
+
+struct DomStorageReadTimes {
+  int64_t p50_us = 0;
+  int64_t p99_us = 0;
+};
+
+// A read (GetAll()) of `area` every 10 ms for `duration`, timed.
+DomStorageReadTimes TimeDomStorageReads(blink::mojom::StorageArea* area,
+                                        base::TimeDelta duration) {
+  std::vector<int64_t> us;
+  const base::TimeTicks end = base::TimeTicks::Now() + duration;
+  while (base::TimeTicks::Now() < end) {
+    base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+    const base::TimeTicks start = base::TimeTicks::Now();
+    area->GetAll(mojo::NullRemote(), all.GetCallback());
+    EXPECT_EQ(all.Take().size(), 1u);
+    us.push_back((base::TimeTicks::Now() - start).InMicroseconds());
+    base::RunLoop pause;
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, pause.QuitClosure(), base::Milliseconds(10));
+    pause.Run();
+  }
+  std::sort(us.begin(), us.end());
+  return {us[us.size() / 2], us[us.size() * 99 / 100]};
+}
+
+// An area of `key` bound through `control`, holding one item.
+mojo::Remote<blink::mojom::StorageArea> PoliteArea(
+    storage::mojom::LocalStorageControl* control,
+    const blink::StorageKey& key) {
+  mojo::Remote<blink::mojom::StorageArea> area;
+  control->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<bool> stored;
+  area->Put({'p'}, std::vector<uint8_t>(64, 'p'), std::nullopt,
+            /*source=*/nullptr, stored.GetCallback());
+  EXPECT_TRUE(stored.Take());
+  return area;
+}
+
+// Two partitions as the storage service hosts them: a regular one on the
+// storage service's sequence, and either another one on that same sequence
+// (Chromium 156, and MoltNet's before) or MoltNet's on a thread of its own.
+// Two regular pages flood; then two MoltNet pages flood. The polite page
+// is in the other partition each time.
+TEST(MoltNetDomStorageTimingTest, DISABLED_PartitionsDontDelayEachOther) {
+  base::test::TaskEnvironment task_environment;
+  base::Thread storage_sequence("storage service");
+  ASSERT_TRUE(storage_sequence.Start());
+  auto on_sequence = [&](mojo::PendingReceiver<
+                         storage::mojom::LocalStorageControl> receiver) {
+    return base::SequenceBound<storage::LocalStorageImpl>(
+        storage_sequence.task_runner(), base::FilePath(),
+        base::NullCallback(), std::move(receiver));
+  };
+  for (bool own_thread : {false, true}) {
+    mojo::Remote<storage::mojom::LocalStorageControl> regular, moltnet;
+    auto regular_storage = on_sequence(regular.BindNewPipeAndPassReceiver());
+    storage::MoltDomStorageOwnThreads threads;
+    base::SequenceBound<storage::LocalStorageImpl> shared_moltnet;
+    if (own_thread) {
+      threads.BindLocalStorageControl(moltnet.BindNewPipeAndPassReceiver());
+    } else {
+      shared_moltnet = on_sequence(moltnet.BindNewPipeAndPassReceiver());
+      moltnet->MoltKeepCachesPerSite();
+    }
+    mojo::Remote<blink::mojom::StorageArea> moltnet_polite =
+        PoliteArea(moltnet.get(), Key("https://polite.onion"));
+    mojo::Remote<blink::mojom::StorageArea> regular_polite =
+        PoliteArea(regular.get(), Key("https://polite.test"));
+
+    const DomStorageReadTimes quiet =
+        TimeDomStorageReads(moltnet_polite.get(), base::Seconds(1));
+    DomStorageReadTimes moltnet_under_flood, regular_under_flood;
+    {
+      std::vector<base::SequenceBound<DomStorageFlooder>> flood;
+      for (int i = 0; i < 2; ++i) {
+        mojo::PendingRemote<blink::mojom::StorageArea> area;
+        regular->BindStorageArea(
+            Key(base::StringPrintf("https://flood%d.test", i)),
+            area.InitWithNewPipeAndPassReceiver());
+        flood.emplace_back(base::ThreadPool::CreateSequencedTaskRunner({}),
+                           std::move(area));
+      }
+      moltnet_under_flood =
+          TimeDomStorageReads(moltnet_polite.get(), base::Seconds(3));
+    }
+    const DomStorageReadTimes regular_quiet =
+        TimeDomStorageReads(regular_polite.get(), base::Seconds(1));
+    {
+      std::vector<base::SequenceBound<DomStorageFlooder>> flood;
+      for (int i = 0; i < 2; ++i) {
+        mojo::PendingRemote<blink::mojom::StorageArea> area;
+        moltnet->BindStorageArea(
+            Key(base::StringPrintf("https://flood%d.onion", i)),
+            area.InitWithNewPipeAndPassReceiver());
+        flood.emplace_back(base::ThreadPool::CreateSequencedTaskRunner({}),
+                           std::move(area));
+      }
+      regular_under_flood =
+          TimeDomStorageReads(regular_polite.get(), base::Seconds(3));
+    }
+    LOG(INFO) << (own_thread ? "MoltNet on its own thread"
+                             : "MoltNet on the storage sequence")
+              << ": MoltNet's reads p50/p99 " << quiet.p50_us << "/"
+              << quiet.p99_us << " us quiet, " << moltnet_under_flood.p50_us
+              << "/" << moltnet_under_flood.p99_us
+              << " us while regular pages flood; the regular page's "
+              << regular_quiet.p50_us << "/" << regular_quiet.p99_us
+              << " us quiet, " << regular_under_flood.p50_us << "/"
+              << regular_under_flood.p99_us << " us while MoltNet pages flood";
+    if (own_thread) {
+      // Neither side's flood shows in the other's reads (the machine's own
+      // noise aside).
+      EXPECT_LE(moltnet_under_flood.p50_us, 2 * quiet.p50_us + 500);
+      EXPECT_LE(regular_under_flood.p50_us, 2 * regular_quiet.p50_us + 500);
+    }
+    // Let the floods' last answers and the partitions go.
+    task_environment.RunUntilIdle();
+  }
+  storage_sequence.Stop();
 }
 
 // Chromium 156: an in-memory partition keeps its areas' items in a database
