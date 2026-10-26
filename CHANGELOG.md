@@ -314,6 +314,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   `localStorage` or `sessionStorage` write the browser refuses for the
   area's limit leaves the stored value as it was
   (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening, per site: making room in a site's share of the
+  in-memory HTTP cache looks only at that site's own entries; the storage
+  service handles each site's `localStorage` and `sessionStorage` messages
+  in turn, so a page sending many (also refused writes and `clear()`)
+  doesn't make another site's reads wait; a site's `localStorage` and
+  `sessionStorage` totals count what each item and area takes in memory;
+  and MoltNet's network context makes no sockets with a connection setup
+  of their own, outside its per-site pools and Tor circuit isolation
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
