@@ -4,6 +4,8 @@
 
 #include "content/browser/background_fetch/background_fetch_scheduler.h"
 
+#include <set>  // MoltBrowser
+
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/field_trial_params.h"
@@ -240,11 +242,12 @@ void BackgroundFetchScheduler::FinishJob(
         registration_id, it->second->NewRegistrationData());
 
     // MoltBrowser: the site's counts too, for a registration that was
-    // active.
+    // active; a pending one may become active now.
     if (molt_sites_ && active_controller) {
       molt_sites_->Finished(MoltSiteOf(registration_id),
                             it->second->pending_downloads());
       molt_sites_->Deactivated(MoltSiteOf(registration_id));
+      molt_pending_changed_ = true;
     }
 
     // Reset scheduler params.
@@ -411,6 +414,7 @@ void BackgroundFetchScheduler::OnRegistrationCreated(
            base::NotFatalUntil::M158);
   job_controllers_[registration_id.unique_id()] = std::move(controller);
   controller_ids_.push_back(registration_id);
+  molt_pending_changed_ = true;  // MoltBrowser
 
   // Schedule as much as possible.
   while (num_running_downloads_ < max_running_downloads_) {
@@ -650,33 +654,42 @@ void BackgroundFetchScheduler::MoltSchedulePerSite() {
 bool BackgroundFetchScheduler::MoltScheduleDownload() {
   // 1. Every pending registration whose site has room becomes active, in the
   //    order they were made; as in Chromium, one per storage key at a time.
-  for (auto pending = controller_ids_.begin();
-       pending != controller_ids_.end();) {
-    const BackgroundFetchRegistrationId controller_id = *pending;
-    const std::string site = MoltSiteOf(controller_id);
-    bool storage_key_active = false;
+  //    Only after a registration was made or one finished (nothing else
+  //    lets one become active), so a site keeping many registrations
+  //    pending doesn't make every request's start and end look at them all;
+  //    the active storage keys are a set, and a pending registration's site
+  //    is worked out only once its key may be.
+  if (molt_pending_changed_) {
+    molt_pending_changed_ = false;
+    std::set<blink::StorageKey> active_key_set;
     for (BackgroundFetchJobController* controller : active_controllers_) {
-      if (controller->registration_id().storage_key() ==
-          controller_id.storage_key()) {
-        storage_key_active = true;
-        break;
+      active_key_set.insert(controller->registration_id().storage_key());
+    }
+    for (auto pending = controller_ids_.begin();
+         pending != controller_ids_.end();) {
+      const BackgroundFetchRegistrationId& controller_id = *pending;
+      auto job = job_controllers_.find(controller_id.unique_id());
+      if (job == job_controllers_.end()) {
+        pending = controller_ids_.erase(pending);
+        continue;
       }
-    }
-    auto job = job_controllers_.find(controller_id.unique_id());
-    if (job == job_controllers_.end()) {
+      if (active_key_set.contains(controller_id.storage_key())) {
+        ++pending;
+        continue;
+      }
+      const std::string site = MoltSiteOf(controller_id);
+      if (!molt_sites_->MayActivate(site)) {
+        ++pending;
+        continue;
+      }
+      active_controllers_.push_front(job->second.get());
+      active_key_set.insert(controller_id.storage_key());
+      ++num_active_registrations_;
+      molt_sites_->Activated(site);
+      LogBackgroundFetchEventForDevTools(Event::kFetchScheduled, controller_id,
+                                         /* request_info= */ nullptr);
       pending = controller_ids_.erase(pending);
-      continue;
     }
-    if (storage_key_active || !molt_sites_->MayActivate(site)) {
-      ++pending;
-      continue;
-    }
-    active_controllers_.push_front(job->second.get());
-    ++num_active_registrations_;
-    molt_sites_->Activated(site);
-    LogBackgroundFetchEventForDevTools(Event::kFetchScheduled, controller_id,
-                                       /* request_info= */ nullptr);
-    pending = controller_ids_.erase(pending);
   }
 
   // 2. One request starts: of the sites with one ready and room for it, the
