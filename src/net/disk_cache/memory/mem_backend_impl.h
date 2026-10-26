@@ -172,11 +172,17 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
   // are evicted to make room for the key if needed; false if it still
   // doesn't fit in the site's share or the total.
   bool MoltMayCreateEntry(const std::string& key);
-  // Whether |entry| has gone unused for the budget's idle expiry.
-  bool MoltIsExpired(const MemEntryImpl* entry) const;
-  // Dooms every expired entry that isn't in use; stops at the first entry
-  // of |lru_list_| that hasn't expired.
-  void MoltDropExpiredEntries();
+  // Now on the monotonic clock, in microseconds: what orders the per-site
+  // lists and what expiry reads (molt_mem_backend_site_lru.h).
+  static int64_t MoltNowUs();
+  // Whether an entry last used at |last_used_us|, or |entry|, has gone
+  // unused for the budget's idle expiry.
+  bool MoltIsExpiredSince(int64_t last_used_us) const;
+  bool MoltIsExpired(MemEntryImpl* entry);
+  // The sweep for unused entries: every interval a round over the sites,
+  // in steps of a few entries of one site, each step a task of its own.
+  void MoltStartSweep();
+  void MoltSweepStep();
 
   // base::MemoryConsumer.
   void OnUpdateMemoryLimit() override;

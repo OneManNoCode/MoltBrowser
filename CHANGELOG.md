@@ -332,6 +332,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   looks up no host name itself; only Tor resolves names for MoltNet. A
   site with many Background Fetches waiting no longer adds to the work
   other sites' fetches cause in MoltNet.
+- MoltNet hardening, storage isolation: each MoltNet identity's
+  `localStorage` and `sessionStorage` run on threads of their own in the
+  storage service, so regular windows' storage work and MoltNet's never
+  wait for each other; the browser's storage messages for a page (binding
+  areas, deleting a site's data) are handled in that page's site's turn;
+  a change to a big value open in several tabs, or a clear of many items,
+  is split into short tasks; and the in-memory HTTP cache sweeps unused
+  entries site by site, in small steps, on a monotonic clock
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

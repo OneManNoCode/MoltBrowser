@@ -152,6 +152,19 @@ constexpr bool MoltDomStorageMayDropArea(bool has_database, bool holds_items) {
   return has_database || !holds_items;
 }
 
+// Whether an area is dropped as soon as it is left unused (no page has it
+// open), if it holds nothing: kept per site without a database. Such an area
+// holds nothing another opening of it wouldn't, so the cache holds exactly
+// the areas in use and those holding items: there is nothing to purge when
+// an area is opened and nothing to sweep, either of which would look at
+// every site's areas (what they cost would depend on the other sites), and
+// whether an area was purged says nothing about other sites. The drop is a
+// task in the area's site's turn.
+constexpr bool MoltDomStorageDropsUnusedArea(bool caches_per_site,
+                                             bool has_database) {
+  return caches_per_site && !has_database;
+}
+
 // ---- The group an area counts to ----
 
 enum class MoltDomStorageGroupKind {
@@ -190,6 +203,40 @@ inline std::string MoltDomStorageGroupName(MoltDomStorageGroupKind kind,
       return "^key " + std::string(value);
   }
   return "^key " + std::string(value);
+}
+
+// ---- Turns that aren't a site's ----
+
+// On the storage sequence of a partition kept per site, two more kinds of
+// pipe take turns of their own, as a site does
+// (molt_dom_storage_fair_queue.h): the partition's control pipe (the
+// browser's messages; one that names a storage key is then handled in its
+// site's turn: molt_dom_storage_own_thread.h), and each sessionStorage
+// namespace's pipes (a tab's renderers' Clone() calls). Their names start
+// with the prefix of the groups above, which no serialized site starts with.
+inline constexpr char kMoltDomStorageControlGroup[] = "^control";
+inline std::string MoltDomStorageNamespaceGroup(std::string_view namespace_id) {
+  return "^ns " + std::string(namespace_id);
+}
+
+// The control pipe carries the browser's messages for every site, so its
+// turn counts its tasks at an eighth of their time: it keeps up with the
+// browser while sites are busy (each of its tasks only reads a message and,
+// for one that names a storage key, queues the work in the key's site's
+// turn). Another site's message still waits for one of its tasks at most.
+inline constexpr int64_t kMoltDomStorageControlWeight = 8;
+
+// What a task of `group` that took `microseconds` (a microsecond at least)
+// counts in its turn (molt_dom_storage_fair_queue.h: Charge()), in eighths
+// of a microsecond: a site's or a namespace's tasks their whole time, the
+// control's an eighth of it. So a short control task counts less than any
+// site's, as its weight says.
+inline int64_t MoltDomStorageChargeFor(std::string_view group,
+                                       int64_t microseconds) {
+  const int64_t time = microseconds > 1 ? microseconds : 1;
+  return group == kMoltDomStorageControlGroup
+             ? time
+             : time * kMoltDomStorageControlWeight;
 }
 
 // ---- Totals per site ----

@@ -35,6 +35,9 @@ scoped_refptr<base::SequencedTaskRunner>
 SessionStorageDataMap::Listener::MoltTaskRunner(const blink::StorageKey&) {
   return nullptr;
 }
+void SessionStorageDataMap::Listener::MoltAreaUnbound(
+    const std::string& namespace_id,
+    const blink::StorageKey& storage_key) {}
 
 // MoltBrowser: the map's budget is its listener's.
 bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {

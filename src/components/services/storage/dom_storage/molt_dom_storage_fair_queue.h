@@ -61,8 +61,10 @@
 
 namespace storage {
 
-// The least a task counts, in microseconds: a site's tasks always move its
-// virtual time on, however fast the clock says they were.
+// The least a task counts, in the caller's units of time (the scheduler's:
+// eighths of a microsecond, molt_dom_storage_site_policy.h:
+// MoltDomStorageChargeFor()): a site's tasks always move its virtual time
+// on, however fast the clock says they were.
 inline constexpr int64_t kMoltDomStorageMinTaskMicroseconds = 1;
 
 template <typename Task>
@@ -110,7 +112,8 @@ class MoltDomStorageFairQueue {
     return true;
   }
 
-  // The task Pop() gave for `site` took `microseconds`.
+  // The task Pop() gave for `site` took `microseconds` (or whatever units
+  // the caller counts time in).
   void Charge(std::string_view site, int64_t microseconds) {
     auto it = sites_.find(site);
     if (it == sites_.end() || !it->second.serving) {

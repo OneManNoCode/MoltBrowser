@@ -126,8 +126,11 @@ class LocalStorageImpl::StorageAreaHolder final
 
   void OnNoBindings() override {
     has_bindings_ = false;
-    // MoltBrowser: for the idle sweep (molt_dom_storage_site_policy.h).
+    // MoltBrowser: for the idle sweep (molt_dom_storage_site_policy.h); and,
+    // kept per site without a database, an area left unused and empty goes
+    // in its site's turn.
     molt_unused_since_ = base::TimeTicks::Now();
+    context_->MoltAreaUnused(storage_key_);
     // Don't delete ourselves, but do schedule an immediate commit. Possible
     // deletion will happen under memory pressure or when another localstorage
     // area is opened.
@@ -254,6 +257,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
         /*source=*/nullptr,
         /*new_observer=*/mojo::NullRemote(), std::move(callback));
     found->second->storage_area()->ScheduleImmediateCommit();
+    // MoltBrowser: an unused area left empty goes (molt_dom_storage_site_policy.h).
+    MoltAreaUnused(storage_key);
   } else if (database_) {
     // MoltBrowser: what it held is gone (molt_dom_storage_site_policy.h).
     molt_site_budget_.Forget(storage_key.Serialize());
@@ -497,6 +502,9 @@ void LocalStorageImpl::InitiateConnection(
   // no database; its areas hold their items themselves, and opening one
   // never waits on the database's sequence (molt_dom_storage_site_policy.h).
   if (MoltDomStorageKeepsNoDatabase(molt_caches_per_site_, in_memory_)) {
+    // Nor any sweep: unused areas that hold nothing go as they are left
+    // (MoltAreaUnused()), and the others stay.
+    molt_idle_sweep_.Stop();
     OnConnectionFinished();
     return;
   }
@@ -625,9 +633,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
   }
 
   // MoltBrowser: with caches per site, only this site's unused areas, by its
-  // own limits (molt_dom_storage_site_policy.h).
+  // own limits (molt_dom_storage_site_policy.h); without a database there is
+  // none to purge (an unused area that holds nothing is gone already:
+  // MoltAreaUnused()).
   if (molt_caches_per_site_) {
-    MoltPurgeUnusedAreasOfSite(storage_key);
+    if (database_) {
+      MoltPurgeUnusedAreasOfSite(storage_key);
+    }
   } else {
     PurgeUnusedAreasIfNeeded();
   }
@@ -768,16 +780,47 @@ bool LocalStorageImpl::MoltMayDrop(StorageAreaHolder& holder) {
 
 // MoltBrowser:
 void LocalStorageImpl::MoltKeepCachesPerSite() {
+  MoltKeepCachesPerSiteOn(nullptr);
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltKeepCachesPerSiteOn(
+    scoped_refptr<MoltDomStorageFairScheduler> scheduler) {
   if (molt_caches_per_site_) {
     return;
   }
   molt_caches_per_site_ = true;
-  molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
-      base::SequencedTaskRunner::GetCurrentDefault());
+  molt_scheduler_ =
+      scheduler ? std::move(scheduler)
+                : base::MakeRefCounted<MoltDomStorageFairScheduler>(
+                      base::SequencedTaskRunner::GetCurrentDefault());
   molt_idle_sweep_.Start(
       FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
       base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,
                           base::Unretained(this)));
+}
+
+// MoltBrowser: kept per site without a database, an area left unused that
+// holds nothing goes, in its site's turn (molt_dom_storage_site_policy.h:
+// MoltDomStorageDropsUnusedArea()), so that no purge or sweep over every
+// site's areas is needed.
+void LocalStorageImpl::MoltAreaUnused(const blink::StorageKey& storage_key) {
+  if (!MoltDomStorageDropsUnusedArea(molt_caches_per_site_,
+                                     database_ != nullptr)) {
+    return;
+  }
+  scoped_refptr<base::SequencedTaskRunner> runner =
+      MoltTaskRunnerFor(storage_key);
+  runner->PostTask(FROM_HERE,
+                   base::BindOnce(&LocalStorageImpl::MoltDropIfUnused,
+                                  weak_ptr_factory_.GetWeakPtr(), storage_key));
+}
+
+void LocalStorageImpl::MoltDropIfUnused(const blink::StorageKey& storage_key) {
+  auto found = areas_.find(storage_key);
+  if (found != areas_.end() && MoltMayDrop(*found->second)) {
+    areas_.erase(found);
+  }
 }
 
 // MoltBrowser:

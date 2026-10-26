@@ -101,6 +101,11 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;  // MoltBrowser
+  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
+  // through `scheduler` (one for the whole partition, which its host shares:
+  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
+  void MoltKeepCachesPerSiteOn(
+      scoped_refptr<MoltDomStorageFairScheduler> scheduler);
 
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -162,6 +167,10 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // Without a database, only areas that hold no item.
   void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
   void MoltSweepIdleAreas();
+  // MoltBrowser: kept per site without a database, `storage_key`'s area,
+  // left unused, goes in its site's turn if it holds nothing.
+  void MoltAreaUnused(const blink::StorageKey& storage_key);
+  void MoltDropIfUnused(const blink::StorageKey& storage_key);
   bool MoltMayDrop(StorageAreaHolder& holder);
   // MoltBrowser: the per-site budget, for `storage_key`'s area
   // (molt_dom_storage_site_budget.h); everything goes without caches per

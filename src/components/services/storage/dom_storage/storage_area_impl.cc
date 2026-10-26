@@ -13,9 +13,76 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"  // MoltBrowser
 #include "third_party/abseil-cpp/absl/strings/str_format.h"
 
 namespace storage {
+
+namespace {
+
+// MoltBrowser: one observer's notifications, sent from a task of their own
+// (molt_dom_storage_split_work.h); each holds its values once for all the
+// observers.
+void MoltSendKeyChanged(const std::vector<uint8_t>& key,
+                        const std::vector<uint8_t>& new_value,
+                        const std::optional<std::vector<uint8_t>>& old_value,
+                        const blink::mojom::StorageAreaSourcePtr& source,
+                        blink::mojom::StorageAreaObserver* observer) {
+  observer->KeyChanged(key, new_value, old_value, source.Clone());
+}
+void MoltSendKeyUnchanged(const std::vector<uint8_t>& key,
+                          const std::vector<uint8_t>& value,
+                          const blink::mojom::StorageAreaSourcePtr& source,
+                          blink::mojom::StorageAreaObserver* observer) {
+  observer->KeyChanged(key, value, value, source.Clone());
+}
+void MoltSendKeyChangeFailed(const std::vector<uint8_t>& key,
+                             const blink::mojom::StorageAreaSourcePtr& source,
+                             blink::mojom::StorageAreaObserver* observer) {
+  observer->KeyChangeFailed(key, source.Clone());
+}
+void MoltSendKeyDeleted(const std::vector<uint8_t>& key,
+                        const std::optional<std::vector<uint8_t>>& old_value,
+                        const blink::mojom::StorageAreaSourcePtr& source,
+                        blink::mojom::StorageAreaObserver* observer) {
+  observer->KeyDeleted(key, old_value, source.Clone());
+}
+void MoltSendAllDeleted(bool was_nonempty,
+                        const blink::mojom::StorageAreaSourcePtr& source,
+                        blink::mojom::StorageAreaObserver* observer) {
+  observer->AllDeleted(was_nonempty, source.Clone());
+}
+void MoltSendShouldSendOldValue(bool should_send,
+                                blink::mojom::StorageAreaObserver* observer) {
+  observer->ShouldSendOldValueOnMutations(should_send);
+}
+
+// MoltBrowser: frees `map` a chunk a task on `runner`
+// (molt_dom_storage_split_work.h).
+template <typename Map>
+void MoltFreeChunks(scoped_refptr<base::SequencedTaskRunner> runner, Map map) {
+  if (!MoltDomStorageFreeChunk(map)) {
+    return;
+  }
+  base::SequencedTaskRunner* const next = runner.get();
+  next->PostTask(FROM_HERE, base::BindOnce(&MoltFreeChunks<Map>,
+                                           std::move(runner), std::move(map)));
+}
+
+// MoltBrowser: frees `map`, which holds `bytes`: on `runner`, a chunk a
+// task, if it is big and there is one; else here, at once.
+template <typename Map>
+void MoltFreeInTurns(const scoped_refptr<base::SequencedTaskRunner>& runner,
+                     Map map,
+                     size_t bytes) {
+  if (!runner || !MoltDomStorageFreesInChunks(map.size(), bytes)) {
+    return;
+  }
+  runner->PostTask(FROM_HERE,
+                   base::BindOnce(&MoltFreeChunks<Map>, runner, std::move(map)));
+}
+
+}  // namespace
 
 StorageAreaImpl::Delegate::~Delegate() = default;
 
@@ -120,6 +187,46 @@ StorageAreaImpl::~StorageAreaImpl() {
   if (database_) {
     database_->RemoveCommitter(this);
   }
+  // MoltBrowser: a big map is freed a chunk a task in the site's turn, where
+  // the partition takes its sequence in turn (molt_dom_storage_split_work.h).
+  MoltFreeInTurns(molt_split_runner_, std::move(keys_values_map_),
+                  memory_used_);
+  MoltFreeInTurns(molt_split_runner_, std::move(keys_only_map_), memory_used_);
+}
+
+// MoltBrowser:
+void StorageAreaImpl::MoltAskSplitRunner() {
+  if (!molt_asked_split_runner_) {
+    molt_asked_split_runner_ = true;
+    molt_split_runner_ = delegate_->MoltTaskRunner();
+  }
+}
+
+bool StorageAreaImpl::MoltSplitsNotifications(size_t payload_bytes) const {
+  return molt_split_runner_ &&
+         MoltDomStorageSplitsNotifications(observers_.size(), payload_bytes,
+                                           molt_pending_notifications_);
+}
+
+void StorageAreaImpl::MoltNotifyObservers(MoltNotify notify) {
+  // Each observer in a task of its own, in the order of the changes: every
+  // notification of the area goes this way while some are pending.
+  for (auto it = observers_.begin(); it != observers_.end(); ++it) {
+    ++molt_pending_notifications_;
+    molt_split_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&StorageAreaImpl::MoltNotifyObserver,
+                                  weak_ptr_factory_.GetWeakPtr(), it.id(),
+                                  notify));
+  }
+}
+
+void StorageAreaImpl::MoltNotifyObserver(mojo::RemoteSetElementId id,
+                                         MoltNotify notify) {
+  --molt_pending_notifications_;
+  // An observer gone meanwhile hears nothing more.
+  if (blink::mojom::StorageAreaObserver* observer = observers_.Get(id)) {
+    notify.Run(observer);
+  }
 }
 
 void StorageAreaImpl::InitializeAsEmpty() {
@@ -136,6 +243,7 @@ void StorageAreaImpl::Bind(
     mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
   // MoltBrowser: on the site's runner, where the partition has one.
   receivers_.Add(this, std::move(receiver), delegate_->MoltTaskRunner());
+  MoltAskSplitRunner();
   // If the number of bindings is more than 1, then the |client_old_value| sent
   // by the clients need not be valid due to races on updates from multiple
   // clients. So, cache the values in the service. Setting cache mode back to
@@ -270,6 +378,7 @@ void StorageAreaImpl::AddObserver(
   if (cache_mode_ == CacheMode::KEYS_AND_VALUES)
     observer_remote->ShouldSendOldValueOnMutations(false);
   observers_.Add(std::move(observer_remote));
+  MoltAskSplitRunner();  // MoltBrowser
 }
 
 void StorageAreaImpl::Put(
@@ -291,9 +400,15 @@ void StorageAreaImpl::Put(
   // keeps one (molt_dom_storage_site_policy.h), also one that changes
   // nothing, which observers still hear of. A write past it fails as one
   // past the area's quota does, never as a bad message.
+  MoltAskSplitRunner();
   if (!delegate_->MoltMayWrite(key.size() + value.size())) {
-    for (const auto& observer : observers_) {
-      observer->KeyChangeFailed(key, source.Clone());
+    if (MoltSplitsNotifications(key.size())) {
+      MoltNotifyObservers(
+          base::BindRepeating(&MoltSendKeyChangeFailed, key, source.Clone()));
+    } else {
+      for (const auto& observer : observers_) {
+        observer->KeyChangeFailed(key, source.Clone());
+      }
     }
     std::move(callback).Run(false);
     return;
@@ -314,8 +429,14 @@ void StorageAreaImpl::Put(
           // NOTE: Even though the key is not changing, we have to acknowledge
           // the change request, as clients may rely on this acknowledgement for
           // caching behavior.
-          for (const auto& observer : observers_)
-            observer->KeyChanged(key, value, value, source.Clone());
+          // MoltBrowser: each observer in a task of its own, where split.
+          if (MoltSplitsNotifications(key.size() + 2 * value.size())) {
+            MoltNotifyObservers(base::BindRepeating(&MoltSendKeyUnchanged, key,
+                                                    value, source.Clone()));
+          } else {
+            for (const auto& observer : observers_)
+              observer->KeyChanged(key, value, value, source.Clone());
+          }
           std::move(callback).Run(true);  // Key already has this value.
           return;
         }
@@ -351,8 +472,14 @@ void StorageAreaImpl::Put(
         // NOTE: Even though the key is not changing, we have to acknowledge
         // the change request, as clients may rely on this acknowledgement for
         // caching behavior.
-        for (const auto& observer : observers_)
-          observer->KeyChanged(key, value, value, source.Clone());
+        // MoltBrowser: each observer in a task of its own, where split.
+        if (MoltSplitsNotifications(key.size() + 2 * value.size())) {
+          MoltNotifyObservers(base::BindRepeating(&MoltSendKeyUnchanged, key,
+                                                  value, source.Clone()));
+        } else {
+          for (const auto& observer : observers_)
+            observer->KeyChanged(key, value, value, source.Clone());
+        }
         std::move(callback).Run(true);  // Key already has this value.
         return;
       }
@@ -384,6 +511,10 @@ void StorageAreaImpl::Put(
       receivers_.ReportBadMessage(
           "The quota in browser cannot exceed when there is only one "
           "renderer.");
+    } else if (MoltSplitsNotifications(key.size())) {  // MoltBrowser
+      MoltNotifyObservers(
+          base::BindRepeating(&MoltSendKeyChangeFailed, key, source.Clone()));
+      std::move(callback).Run(false);
     } else {
       for (const auto& observer : observers_)
         observer->KeyChangeFailed(key, source.Clone());
@@ -399,8 +530,13 @@ void StorageAreaImpl::Put(
       !delegate_->MoltMayGrowTo(MoltDomStorageCountedBytes(
           new_storage_used, molt_item_count() + (molt_new_key ? 1 : 0)))) {
     restore_old_value();
-    for (const auto& observer : observers_) {
-      observer->KeyChangeFailed(key, source.Clone());
+    if (MoltSplitsNotifications(key.size())) {
+      MoltNotifyObservers(
+          base::BindRepeating(&MoltSendKeyChangeFailed, key, source.Clone()));
+    } else {
+      for (const auto& observer : observers_) {
+        observer->KeyChangeFailed(key, source.Clone());
+      }
     }
     std::move(callback).Run(false);
     return;
@@ -429,8 +565,16 @@ void StorageAreaImpl::Put(
     delegate_->MoltShrankTo(
         MoltDomStorageCountedBytes(storage_used_, molt_item_count()));
   }
-  for (const auto& observer : observers_)
-    observer->KeyChanged(key, value, old_value, source.Clone());
+  // MoltBrowser: each observer in a task of its own, where split; the
+  // notifications hold one copy of the value for all of them.
+  if (MoltSplitsNotifications(key.size() + value.size() +
+                              (old_value ? old_value->size() : 0))) {
+    MoltNotifyObservers(base::BindRepeating(
+        &MoltSendKeyChanged, key, value, std::move(old_value), source.Clone()));
+  } else {
+    for (const auto& observer : observers_)
+      observer->KeyChanged(key, value, old_value, source.Clone());
+  }
   std::move(callback).Run(true);
 }
 
@@ -455,6 +599,7 @@ void StorageAreaImpl::Delete(
   if (database_)
     CreateCommitBatchIfNeeded();
 
+  MoltAskSplitRunner();  // MoltBrowser
   std::vector<uint8_t> old_value;
   if (map_state_ == MapState::LOADED_KEYS_ONLY) {
     KeysOnlyMap::const_iterator found = keys_only_map_.find(key);
@@ -462,8 +607,15 @@ void StorageAreaImpl::Delete(
       // NOTE: Even though the key is not changing, we have to acknowledge
       // the change request, as clients may rely on this acknowledgement for
       // caching behavior.
-      for (const auto& observer : observers_)
-        observer->KeyDeleted(key, std::nullopt, source.Clone());
+      // MoltBrowser: each observer in a task of its own, where split.
+      if (MoltSplitsNotifications(key.size())) {
+        MoltNotifyObservers(base::BindRepeating(
+            &MoltSendKeyDeleted, key, std::optional<std::vector<uint8_t>>(),
+            source.Clone()));
+      } else {
+        for (const auto& observer : observers_)
+          observer->KeyDeleted(key, std::nullopt, source.Clone());
+      }
       std::move(callback).Run();
       return;
     }
@@ -498,8 +650,15 @@ void StorageAreaImpl::Delete(
       // NOTE: Even though the key is not changing, we have to acknowledge
       // the change request, as clients may rely on this acknowledgement for
       // caching behavior.
-      for (const auto& observer : observers_)
-        observer->KeyDeleted(key, std::nullopt, source.Clone());
+      // MoltBrowser: each observer in a task of its own, where split.
+      if (MoltSplitsNotifications(key.size())) {
+        MoltNotifyObservers(base::BindRepeating(
+            &MoltSendKeyDeleted, key, std::optional<std::vector<uint8_t>>(),
+            source.Clone()));
+      } else {
+        for (const auto& observer : observers_)
+          observer->KeyDeleted(key, std::nullopt, source.Clone());
+      }
       std::move(callback).Run();
       return;
     }
@@ -514,8 +673,16 @@ void StorageAreaImpl::Delete(
   delegate_->MoltShrankTo(
       MoltDomStorageCountedBytes(storage_used_, molt_item_count()));
 
-  for (auto& observer : observers_)
-    observer->KeyDeleted(key, old_value, source.Clone());
+  // MoltBrowser: each observer in a task of its own, where split.
+  if (MoltSplitsNotifications(key.size() + old_value.size())) {
+    MoltNotifyObservers(base::BindRepeating(
+        &MoltSendKeyDeleted, key,
+        std::optional<std::vector<uint8_t>>(std::move(old_value)),
+        source.Clone()));
+  } else {
+    for (auto& observer : observers_)
+      observer->KeyDeleted(key, old_value, source.Clone());
+  }
   std::move(callback).Run();
 }
 
@@ -545,9 +712,16 @@ void StorageAreaImpl::DeleteAll(
   if (new_observer)
     AddObserver(std::move(new_observer));
 
+  MoltAskSplitRunner();  // MoltBrowser
   if (already_empty) {
-    for (const auto& observer : observers_)
-      observer->AllDeleted(/*was_nonempty=*/false, source.Clone());
+    // MoltBrowser: each observer in a task of its own, where split.
+    if (MoltSplitsNotifications(0)) {
+      MoltNotifyObservers(base::BindRepeating(
+          &MoltSendAllDeleted, /*was_nonempty=*/false, source.Clone()));
+    } else {
+      for (const auto& observer : observers_)
+        observer->AllDeleted(/*was_nonempty=*/false, source.Clone());
+    }
     std::move(callback).Run();
     return;
   }
@@ -559,14 +733,25 @@ void StorageAreaImpl::DeleteAll(
     commit_batch_->changed_keys.clear();
   }
 
+  // MoltBrowser: a big map is freed a chunk a task in the site's turn,
+  // where split (molt_dom_storage_split_work.h).
+  MoltFreeInTurns(molt_split_runner_, std::move(keys_only_map_), memory_used_);
+  MoltFreeInTurns(molt_split_runner_, std::move(keys_values_map_),
+                  memory_used_);
   keys_only_map_.clear();
   keys_values_map_.clear();
 
   storage_used_ = 0;
   memory_used_ = 0;
   delegate_->MoltShrankTo(0);  // MoltBrowser
-  for (const auto& observer : observers_)
-    observer->AllDeleted(/*was_nonempty=*/true, source.Clone());
+  // MoltBrowser: each observer in a task of its own, where split.
+  if (MoltSplitsNotifications(0)) {
+    MoltNotifyObservers(base::BindRepeating(
+        &MoltSendAllDeleted, /*was_nonempty=*/true, source.Clone()));
+  } else {
+    for (const auto& observer : observers_)
+      observer->AllDeleted(/*was_nonempty=*/true, source.Clone());
+  }
   std::move(callback).Run();
 }
 
@@ -615,8 +800,14 @@ void StorageAreaImpl::SetCacheMode(CacheMode cache_mode) {
   }
   cache_mode_ = cache_mode;
   bool should_send_values = cache_mode == CacheMode::KEYS_ONLY_WHEN_POSSIBLE;
-  for (auto& observer : observers_)
-    observer->ShouldSendOldValueOnMutations(should_send_values);
+  // MoltBrowser: in order with the notifications, where they are split.
+  if (MoltSplitsNotifications(0)) {
+    MoltNotifyObservers(
+        base::BindRepeating(&MoltSendShouldSendOldValue, should_send_values));
+  } else {
+    for (auto& observer : observers_)
+      observer->ShouldSendOldValueOnMutations(should_send_values);
+  }
 
   // If the |keys_only_map_| is loaded and desired state needs values, no point
   // keeping around the map since the next change would require reload. On the

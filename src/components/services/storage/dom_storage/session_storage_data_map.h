@@ -56,6 +56,10 @@ class SessionStorageDataMap final
                               size_t bytes);
     virtual scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner(
         const blink::StorageKey& storage_key);
+    // The area of `storage_key` in namespace `namespace_id` was left
+    // unbound.
+    virtual void MoltAreaUnbound(const std::string& namespace_id,
+                                 const blink::StorageKey& storage_key);
   };
 
   static scoped_refptr<SessionStorageDataMap> CreateFromDisk(

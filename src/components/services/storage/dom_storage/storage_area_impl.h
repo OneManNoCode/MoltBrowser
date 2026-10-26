@@ -16,6 +16,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"  // MoltBrowser
 #include "base/task/sequenced_task_runner.h"  // MoltBrowser
+#include "mojo/public/cpp/bindings/remote_set.h"  // MoltBrowser
 #include "base/time/time.h"
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/db_status.h"
@@ -370,6 +371,24 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
   scoped_refptr<DomStorageDatabase::SharedMapLocator> map_locator_;
 
   mojo::RemoteSet<blink::mojom::StorageAreaObserver> observers_;
+
+  // MoltBrowser: where the partition takes its sequence in turn per site,
+  // the area's site's runner (asked of the delegate once, when the area is
+  // first bound, observed or changed): each observer's notification is then
+  // a task of its own there, and a big map is freed a chunk a task
+  // (molt_dom_storage_split_work.h). Null: at once, as Chromium does.
+  using MoltNotify =
+      base::RepeatingCallback<void(blink::mojom::StorageAreaObserver*)>;
+  void MoltAskSplitRunner();
+  // Whether a change whose notifications carry `payload_bytes` is split
+  // (molt_dom_storage_split_work.h: MoltDomStorageSplitsNotifications()).
+  bool MoltSplitsNotifications(size_t payload_bytes) const;
+  void MoltNotifyObservers(MoltNotify notify);
+  void MoltNotifyObserver(mojo::RemoteSetElementId id, MoltNotify notify);
+  scoped_refptr<base::SequencedTaskRunner> molt_split_runner_;
+  bool molt_asked_split_runner_ = false;
+  // Split notifications posted and not yet sent.
+  size_t molt_pending_notifications_ = 0;
   raw_ptr<Delegate, DanglingUntriaged> delegate_;
   raw_ptr<AsyncDomStorageDatabase> database_;
 
