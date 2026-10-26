@@ -321,8 +321,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   doesn't make another site's reads wait; a site's `localStorage` and
   `sessionStorage` totals count what each item and area takes in memory;
   and MoltNet's network context makes no sockets with a connection setup
-  of their own, outside its per-site pools and Tor circuit isolation
-  (`docs/MOLTNET_COMPLIANCE.md`).
+  of their own, outside its per-site pools and Tor circuit isolation, and
+  no raw TCP, UDP or multicast DNS sockets (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
