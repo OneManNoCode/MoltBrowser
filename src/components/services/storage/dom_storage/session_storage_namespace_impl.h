@@ -159,7 +159,8 @@ class SessionStorageNamespaceImpl final
   // Removes any StorageAreas bound in |OpenArea| that are no longer bound.
   void PurgeUnboundAreas();
   // MoltBrowser: the same, for the areas of storage keys whose top-level site
-  // is `site` only (molt_dom_storage_site_policy.h).
+  // is `site` only, and without a database only areas whose maps hold no
+  // item (molt_dom_storage_site_policy.h).
   void MoltPurgeUnboundAreasOfSite(const net::SchemefulSite& site);
 
   // Removes data for the given StorageKey from this namespace. If there is no

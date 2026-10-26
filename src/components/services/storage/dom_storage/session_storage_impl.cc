@@ -697,6 +697,13 @@ void SessionStorageImpl::InitiateConnection(
   // weren't asked to stay in memory.
   in_memory_ = in_memory_only || backing_mode_ == BackingMode::kNoDisk ||
                storage_partition_directory_.empty();
+  // MoltBrowser: a partition that keeps DOM storage per site in memory keeps
+  // no database; its maps hold their items themselves, and opening one never
+  // waits on the database's sequence (molt_dom_storage_site_policy.h).
+  if (MoltDomStorageKeepsNoDatabase(molt_caches_per_site_, in_memory_)) {
+    OnConnectionFinished();
+    return;
+  }
   const base::FilePath dir_to_open =
       in_memory_ ? base::FilePath() : storage_partition_directory_;
 
@@ -894,6 +901,13 @@ void SessionStorageImpl::MoltSiteCommitted(
   }
 }
 
+bool SessionStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
+                                      size_t bytes) {
+  return !molt_caches_per_site_ ||
+         molt_site_budget_.MayWrite(storage_key.top_level_site().Serialize(),
+                                    bytes);
+}
+
 void SessionStorageImpl::MoltForgetMaps(
     const std::vector<DomStorageDatabase::MapLocator>& maps) {
   for (const DomStorageDatabase::MapLocator& map : maps) {
@@ -916,7 +930,10 @@ void SessionStorageImpl::MoltPurgeUnusedAreasOfSite(
     }
     ++site_maps;
     site_cache_bytes += data_map->storage_area()->memory_used();
-    if (data_map->binding_count() == 0) {
+    if (data_map->binding_count() == 0 &&
+        MoltDomStorageMayDropArea(
+            database_ != nullptr,
+            data_map->storage_area()->molt_holds_items())) {
       ++site_unused_maps;
     }
   }

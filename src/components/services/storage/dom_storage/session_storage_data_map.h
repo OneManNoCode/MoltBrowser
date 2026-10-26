@@ -52,6 +52,8 @@ class SessionStorageDataMap final
         const blink::StorageKey& storage_key);
     virtual void MoltSiteCommitted(const blink::StorageKey& storage_key,
                                    size_t bytes);
+    virtual bool MoltMayWrite(const blink::StorageKey& storage_key,
+                              size_t bytes);
   };
 
   static scoped_refptr<SessionStorageDataMap> CreateFromDisk(
@@ -96,6 +98,7 @@ class SessionStorageDataMap final
   void MoltShrankTo(size_t new_storage_used) override;
   base::TimeDelta MoltSiteCommitDelay() override;
   void MoltSiteCommitted(size_t bytes) override;
+  bool MoltMayWrite(size_t bytes) override;
 
  private:
   friend class base::RefCounted<SessionStorageDataMap>;

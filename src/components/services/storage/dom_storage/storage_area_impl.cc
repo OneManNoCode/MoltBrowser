@@ -34,6 +34,9 @@ base::TimeDelta StorageAreaImpl::Delegate::MoltSiteCommitDelay() {
   return base::TimeDelta();
 }
 void StorageAreaImpl::Delegate::MoltSiteCommitted(size_t) {}
+bool StorageAreaImpl::Delegate::MoltMayWrite(size_t) {
+  return true;
+}
 
 bool StorageAreaImpl::s_aggressive_flushing_enabled_ = false;
 
@@ -274,6 +277,18 @@ void StorageAreaImpl::Put(
                        key, value, client_old_value, std::move(source),
                        std::move(callback)),
         AccessMode::ReadWrite));
+    return;
+  }
+
+  // MoltBrowser: a write must fit its site's write rate, where the partition
+  // keeps one (molt_dom_storage_site_policy.h), also one that changes
+  // nothing, which observers still hear of. A write past it fails as one
+  // past the area's quota does, never as a bad message.
+  if (!delegate_->MoltMayWrite(key.size() + value.size())) {
+    for (const auto& observer : observers_) {
+      observer->KeyChangeFailed(key, source.Clone());
+    }
+    std::move(callback).Run(false);
     return;
   }
 
