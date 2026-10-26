@@ -119,13 +119,18 @@ source_set("web_ai") {
   ]
   deps = [
     "//base",
+
+    # g_browser_process (molt_ai_manager_binder.cc).
+    "//chrome/browser:browser_process",
+
+    # CreateConfirmInfoBar() (web_ai_consent.cc).
+    "//chrome/browser/infobars",
     "//chrome/browser/molt_ai:molt_ai_runtime",
 
     # A page's images, scaled for the model on a worker.
     "//chrome/browser/molt_ai/runtime:model_image_prep",
 
-    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
-    "//chrome/browser/molt_ai/tor",
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()).
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/infobars/content",
@@ -152,12 +157,6 @@ source_set("web_ai") {
     # pref_names.h only (prefs::kTranslatorAPIAllowed).
     deps += [ "//components/on_device_translation:public" ]
   }
-
-  # g_browser_process (browser_process.h) and CreateConfirmInfoBar
-  # (//chrome/browser/infobars) live in targets that depend on this one
-  # through //chrome/browser/molt_ai, so they can't be declared here without
-  # a cycle; the symbols resolve when chrome links (as in tor:onion; this
-  # tree doesn't run `gn check`).
 }
 
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.

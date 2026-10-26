@@ -48,6 +48,15 @@ source_set("molt_ai") {
     "//base",
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/bookmarks",
+
+    # The chat's per-site settings (HostContentSettingsMapFactory).
+    "//chrome/browser/content_settings:content_settings_factory",
+
+    # The vault's re-authentication on macOS and Windows.
+    "//chrome/browser/device_reauth",
+
+    # The updater's restart (application_lifetime.h).
+    "//chrome/browser/lifetime",
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_import",
     "//chrome/browser/molt_ai:molt_ai_runtime",
@@ -71,16 +80,36 @@ source_set("molt_ai") {
     # Whether the installation has MoltNet's bundled fonts (molt_net_handler.cc).
     "//chrome/browser/molt_ai/fingerprinting:net_fonts",
     "//chrome/browser/molt_ai/keys",
+
+    # The chat's saved conversations are encrypted with molt_os_crypt.
+    "//chrome/browser/molt_ai/keys:os_crypt",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/models:download",
+
+    # The chat's image and voice input.
+    "//chrome/browser/molt_ai/ocr",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/profile",
     "//chrome/browser/molt_ai/shield:settings_handler",
     "//chrome/browser/molt_ai/vault",
+    "//chrome/browser/molt_ai/voice",
 
     # "Sites using on-device AI" on molt://ai-settings.
     "//chrome/browser/molt_ai/web_ai",
+
+    # The password import (ProfilePasswordStoreFactory).
+    "//chrome/browser/password_manager/factories",
     "//chrome/browser/profiles:profile",
+
+    # Tabs, windows and the side panel the chat and the agent studio open
+    # and read (browser.h, browser_tabstrip.h, browser_commands.h, ...).
+    "//chrome/browser/ui",
+    "//chrome/browser/ui:browser_commands",
+    "//chrome/browser/ui:simple_message_box_headers",
+    "//chrome/browser/ui/navigator",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/tabs:tab_enums",
+    "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/common",
     "//components/bookmarks/browser",
     "//components/device_reauth",
@@ -88,6 +117,9 @@ source_set("molt_ai") {
     # molt://memory/?q= (the @memory shortcut's query parser).
     "//components/omnibox/browser:molt_memory_query",
     "//components/password_manager/core/browser",
+
+    # MoltNet's proxy settings (molt_ai_chat_handler.cc).
+    "//components/proxy_config",
     "//components/url_formatter",
     "//content/public/browser",
     "//net",
