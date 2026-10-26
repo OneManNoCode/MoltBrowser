@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_registry_impl.cc b/storage/browser/blob/blob_registry_impl.cc
-index 40f62fb10b5ff7c87ebe9f7fa47d8411ef062e60..a5eefe1cd90763bf6eb5ee3db29a3ff846820006 100644
+index 40f62fb10b5ff7c87ebe9f7fa47d8411ef062e60..cbd26f34b7d35f18c3bf36d9d84cf3d96a21156c 100644
 --- a/storage/browser/blob/blob_registry_impl.cc
 +++ b/storage/browser/blob/blob_registry_impl.cc
 @@ -71,6 +71,10 @@ class BlobRegistryImpl::BlobUnderConstruction {
@@ -31,7 +31,19 @@ index 40f62fb10b5ff7c87ebe9f7fa47d8411ef062e60..a5eefe1cd90763bf6eb5ee3db29a3ff8
    if (memory_strategy == MemoryStrategy::TOO_LARGE) {
      MarkAsBroken(BlobStatus::ERR_OUT_OF_MEMORY);
      return;
-@@ -555,6 +560,8 @@ void BlobRegistryImpl::Register(
+@@ -491,6 +496,11 @@ bool BlobRegistryImpl::BlobUnderConstruction::ContainsCycles(
+ }
+ #endif
+ 
++// MoltBrowser: the browser's budget key unless a delegate says otherwise.
++uint64_t BlobRegistryImpl::Delegate::MoltBudgetKey() {
++  return kMoltBlobBrowserKey;
++}
++
+ BlobRegistryImpl::BlobRegistryImpl(base::WeakPtr<BlobStorageContext> context)
+     : context_(std::move(context)) {}
+ 
+@@ -555,6 +565,8 @@ void BlobRegistryImpl::Register(
    blobs_under_construction_[uuid] = std::make_unique<BlobUnderConstruction>(
        this, uuid, content_type, content_disposition, std::move(element_entries),
        receivers_.GetBadMessageCallback());
@@ -40,7 +52,7 @@ index 40f62fb10b5ff7c87ebe9f7fa47d8411ef062e60..a5eefe1cd90763bf6eb5ee3db29a3ff8
  
    std::unique_ptr<BlobDataHandle> handle = context_->AddFutureBlob(
        uuid, content_type, content_disposition,
-@@ -584,6 +591,10 @@ void BlobRegistryImpl::RegisterFromStream(
+@@ -584,6 +596,10 @@ void BlobRegistryImpl::RegisterFromStream(
            context_, content_type, content_disposition,
            base::BindOnce(&BlobRegistryImpl::StreamingBlobDone,
                           base::Unretained(this), std::move(callback)));

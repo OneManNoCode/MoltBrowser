@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_registry_impl.h b/storage/browser/blob/blob_registry_impl.h
-index 7e1f9fe8d1e2aea924b3aedf4a02fc50919afb6d..647490a8c1f9b117a8bb7ef76657b7cb544fcf16 100644
+index 7e1f9fe8d1e2aea924b3aedf4a02fc50919afb6d..8350736e10a805fdaeca23512471406cc3dbd84f 100644
 --- a/storage/browser/blob/blob_registry_impl.h
 +++ b/storage/browser/blob/blob_registry_impl.h
 @@ -5,6 +5,7 @@
@@ -30,7 +30,7 @@ index 7e1f9fe8d1e2aea924b3aedf4a02fc50919afb6d..647490a8c1f9b117a8bb7ef76657b7cb
      virtual bool CanAccessDataForOrigin(const url::Origin& origin) = 0;
 +    // MoltBrowser: the budget key the blobs registered here count to
 +    // (molt_blob_budget_policy.h); the browser's by default.
-+    virtual uint64_t MoltBudgetKey() { return kMoltBlobBrowserKey; }
++    virtual uint64_t MoltBudgetKey();
    };
  
    explicit BlobRegistryImpl(base::WeakPtr<BlobStorageContext> context);
