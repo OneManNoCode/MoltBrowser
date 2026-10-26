@@ -40,6 +40,7 @@
 #include <string>
 #include <utility>
 
+#include "base/memory/raw_ptr.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -64,7 +65,7 @@ class MoltScopedCertFetchSite {
 
  private:
   const std::string site_;
-  const std::string* const previous_;
+  const raw_ptr<const std::string> previous_;
 };
 
 }  // namespace net

@@ -69,6 +69,9 @@ inline constexpr int kMoltBackgroundFetchRunningTotal =
 // serialized.
 class MoltBackgroundFetchSites {
  public:
+  MoltBackgroundFetchSites();
+  ~MoltBackgroundFetchSites();
+
   // Whether a pending registration of `site` may become active.
   bool MayActivate(std::string_view site) const {
     return Find(site).active < kMoltBackgroundFetchActivePerSite;
@@ -175,6 +178,9 @@ class MoltBackgroundFetchSites {
   int total_running_ = 0;
   uint64_t serves_ = 0;
 };
+
+inline MoltBackgroundFetchSites::MoltBackgroundFetchSites() = default;
+inline MoltBackgroundFetchSites::~MoltBackgroundFetchSites() = default;
 
 }  // namespace content
 

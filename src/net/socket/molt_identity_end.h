@@ -31,7 +31,7 @@ namespace net {
 
 class MoltIdentityEnd : public base::RefCounted<MoltIdentityEnd> {
  public:
-  MoltIdentityEnd() = default;
+  MoltIdentityEnd();
   MoltIdentityEnd(const MoltIdentityEnd&) = delete;
   MoltIdentityEnd& operator=(const MoltIdentityEnd&) = delete;
 
@@ -41,10 +41,13 @@ class MoltIdentityEnd : public base::RefCounted<MoltIdentityEnd> {
 
  private:
   friend class base::RefCounted<MoltIdentityEnd>;
-  ~MoltIdentityEnd() = default;
+  ~MoltIdentityEnd();
 
   bool ended_ = false;
 };
+
+inline MoltIdentityEnd::MoltIdentityEnd() = default;
+inline MoltIdentityEnd::~MoltIdentityEnd() = default;
 
 // Whether `end` (null: a session that isn't MoltNet's) has been marked.
 inline bool MoltIdentityHasEnded(const MoltIdentityEnd* end) {

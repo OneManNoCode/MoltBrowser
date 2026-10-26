@@ -26,10 +26,11 @@ namespace storage {
 
 class MoltDomStorageSiteBudget {
  public:
-  MoltDomStorageSiteBudget() = default;
+  MoltDomStorageSiteBudget();
   MoltDomStorageSiteBudget(const MoltDomStorageSiteBudget&) = delete;
   MoltDomStorageSiteBudget& operator=(const MoltDomStorageSiteBudget&) =
       delete;
+  ~MoltDomStorageSiteBudget();
 
   // Whether `area` of `site` may grow to `new_bytes` (counted if so); past
   // the floor, the valve hears of the growth.
@@ -112,6 +113,9 @@ class MoltDomStorageSiteBudget {
   std::map<std::string, MoltDomStorageWriteAllowance, std::less<>> writes_;
   mojo::Remote<mojom::MoltDomStorageGrowthObserver> growth_observer_;
 };
+
+inline MoltDomStorageSiteBudget::MoltDomStorageSiteBudget() = default;
+inline MoltDomStorageSiteBudget::~MoltDomStorageSiteBudget() = default;
 
 }  // namespace storage
 

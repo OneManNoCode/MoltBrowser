@@ -4,6 +4,7 @@
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
 
 #include "base/command_line.h"
+#include "base/memory/raw_ptr_exclusion.h"
 
 namespace molt_shield {
 
@@ -20,7 +21,8 @@ BASE_FEATURE(kMoltShieldRemoveParam, base::FEATURE_ENABLED_BY_DEFAULT);
 namespace {
 
 struct Hook {
-  const base::Feature* feature;
+  // RAW_PTR_EXCLUSION: #global-scope, in the constexpr table below.
+  RAW_PTR_EXCLUSION const base::Feature* feature;
   const char* flag_name;
 };
 

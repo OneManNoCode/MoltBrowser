@@ -586,9 +586,6 @@ bool IsLongToken(std::string_view t) {
 // ---- Building the draft ------------------------------------------------------
 
 struct Builder {
-  explicit Builder(const Run& r) : run(r) {}
-
-  const Run& run;
   std::vector<std::string> goal_secrets;
   bool goal_unscanned = false;  // too long to scan: withhold every value
   std::set<std::string> variables;
@@ -857,7 +854,7 @@ struct Builder {
     return Refuse(Refusal::kUnusableStep);
   }
 
-  std::string NameFor() const {
+  std::string NameFor(const Run& run) const {
     std::string first_host;
     for (const Step& s : script.steps) {
       if (s.type == StepType::NAVIGATE) {
@@ -1168,7 +1165,7 @@ Draft BuildDraft(const Run& run,
       return refuse(Refusal::kUsedSiteTool);
   }
 
-  Builder b(run);
+  Builder b;
   b.goal_secrets = GoalSecretTokens(run.goal);
   // A goal too long to scan, or full of secrets: every value is asked.
   b.goal_unscanned = run.goal.size() > kMaxGoalScanBytes ||
@@ -1196,7 +1193,7 @@ Draft BuildDraft(const Run& run,
 
   Script& s = b.script;
   s.id.clear();
-  s.name = b.NameFor();
+  s.name = b.NameFor(run);
   s.version = 1;
   s.created_at_unix = now_unix;
   s.trigger = Trigger();  // manual: a draft is never scheduled

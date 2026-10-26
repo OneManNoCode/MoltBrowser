@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/brotli/include/brotli/decode.h"
 #include "third_party/llama_cpp/chromium/ggml-vulkan-shader-pack.h"
@@ -224,7 +225,7 @@ class VulkanShaderPackOpTest : public testing::Test {
     return ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, 256, 4);
   }
 
-  ggml_context* ctx_ = nullptr;
+  MOLT_RAW_PTR_EXCLUSION ggml_context* ctx_ = nullptr;
 };
 
 TEST_F(VulkanShaderPackOpTest, OpsOnKeptTypesMayRunOnTheGpu) {

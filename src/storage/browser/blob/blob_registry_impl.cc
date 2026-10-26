@@ -496,6 +496,11 @@ bool BlobRegistryImpl::BlobUnderConstruction::ContainsCycles(
 }
 #endif
 
+// MoltBrowser: the browser's budget key unless a delegate says otherwise.
+uint64_t BlobRegistryImpl::Delegate::MoltBudgetKey() {
+  return kMoltBlobBrowserKey;
+}
+
 BlobRegistryImpl::BlobRegistryImpl(base::WeakPtr<BlobStorageContext> context)
     : context_(std::move(context)) {}
 
