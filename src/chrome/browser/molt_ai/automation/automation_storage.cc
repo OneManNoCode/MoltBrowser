@@ -16,6 +16,7 @@
 #include "base/path_service.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 
@@ -46,7 +47,11 @@ bool IsValidScriptId(const std::string& id) {
 std::string NowISO8601() {
   std::time_t t = std::time(nullptr);
   std::tm gmt;
+#if BUILDFLAG(IS_WIN)
+  gmtime_s(&gmt, &t);
+#else
   gmtime_r(&t, &gmt);
+#endif
   char buf[32];
   std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &gmt);
   return std::string(buf);

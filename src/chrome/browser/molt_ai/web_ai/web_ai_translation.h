@@ -30,6 +30,7 @@
 
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_prompts.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 
 namespace molt_ai::web_ai {
 
@@ -82,8 +83,8 @@ inline constexpr TranslatorLanguage kTranslatorLanguages[] = {
 const TranslatorLanguage* FindTranslatorLanguage(std::string_view tag);
 
 struct TranslatorPair {
-  const TranslatorLanguage* source = nullptr;
-  const TranslatorLanguage* target = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const TranslatorLanguage* source = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const TranslatorLanguage* target = nullptr;
 };
 
 // Both tags have an entry, and different ones (English to English isn't a

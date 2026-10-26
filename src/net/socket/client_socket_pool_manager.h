@@ -83,9 +83,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
   virtual ClientSocketPool* GetSocketPoolForSite(
       const ProxyChain& proxy_chain,
       const NetworkAnonymizationKey& network_anonymization_key,
-      bool molt_no_cert_fetches = false) {
-    return GetSocketPool(proxy_chain);
-  }
+      bool molt_no_cert_fetches = false);
 
   // Creates a Value summary of the state of the socket pools.
   virtual base::Value SocketPoolInfoToValue() const = 0;

@@ -1039,6 +1039,29 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   non-Blink-usage audit. Every MoltBrowser header is now listed in its
   build target, the targets and include rules declare what they use, and
   the build-machine checklist starts with one ordered first-build list.
+- **Compile check on every platform** (`tools/compile_check/`): it now
+  type-checks every C, C++ and Objective-C++ file MoltBrowser adds or
+  changes, and the changed headers no source includes, on each platform
+  that builds it: Linux x64 and arm64, Windows x64 (clang-cl against the
+  Windows SDK; MoltBrowser's own sources are compiled there too), macOS
+  arm64 (Darwin's libc headers, stand-ins for the Apple frameworks), and
+  Linux with the Vulkan switch `molt_llama_vulkan` on. A hook in another
+  platform's `#if` branch is compiled for that platform, and Chromium's
+  clang plugins run with each platform's arguments, their findings in
+  MoltBrowser's code reported on their own. It also makes what it
+  couldn't before: cxx bridge headers with the target's Rust cfgs,
+  protobuf's well-known types, the proto_extras plugin's headers, V8's
+  Torque and bytecode lists, grit headers for every `.grd` that has one,
+  and mojom bindings parsed per target and platform. At 156, 1342 of 1383
+  file-and-platform rows are checked against real headers, 36 partly on
+  stand-ins and 5 not (Mac files that need Apple frameworks with no
+  stand-in, and an iOS file). Code it flagged now builds the same way
+  everywhere: the browser importer and the Firefox bookmark reader build
+  their paths with `AppendASCII`, the automation scheduler and storage
+  use the Windows time functions on Windows, the MoltNet budget, pool,
+  storage and Background Fetch classes define their special members out
+  of the class body, and pointer fields are `raw_ptr` or marked as
+  exclusions, as the plugins ask.
 - Consistency hardening: the site tools' approvals, the agent's plan, the
   chat's proposals and form fills, and saved agent runs (their step labels
   and the secret checks that read them) share one list of the characters

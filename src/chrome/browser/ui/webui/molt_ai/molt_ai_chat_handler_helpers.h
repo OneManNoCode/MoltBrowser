@@ -21,6 +21,7 @@
 
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/molt_user_click.h"
 
@@ -116,7 +117,7 @@ using ::molt_ai::ConsumeUserClick;
 // profiles), checked on the window found.
 template <typename Window>
 struct ChatWindowChoice {
-  Window* window = nullptr;
+  raw_ptr<Window> window = nullptr;
   // The chat's window was found but is across MoltNet's boundary.
   bool crossed_moltnet = false;
 };

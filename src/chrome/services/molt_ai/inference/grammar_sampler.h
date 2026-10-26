@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "chrome/services/molt_ai/inference/engine/grammar_tokens.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 #include "third_party/llama_cpp/include/llama.h"
 
 namespace molt_ai {
@@ -53,7 +54,7 @@ class GrammarVocab {
  private:
   explicit GrammarVocab(const llama_vocab* vocab);
 
-  const llama_vocab* const vocab_;
+  MOLT_RAW_PTR_EXCLUSION const llama_vocab* const vocab_;
   std::vector<GrammarToken> classes_;
   // Pieces of kAllowed tokens, back to back; offsets_[t]..offsets_[t + 1].
   std::vector<uint32_t> offsets_;
@@ -92,8 +93,8 @@ class GrammarSampler {
   // The bans and the UTF-8 check only.
   bool Admissible(llama_token token) const;
 
-  const GrammarVocab* const vocab_;
-  llama_sampler* const grammar_;
+  MOLT_RAW_PTR_EXCLUSION const GrammarVocab* const vocab_;
+  MOLT_RAW_PTR_EXCLUSION llama_sampler* const grammar_;
   Utf8Prefix utf8_;
   // The token the last Sample() checked and returned, if Accept() may take
   // it; -1 otherwise.

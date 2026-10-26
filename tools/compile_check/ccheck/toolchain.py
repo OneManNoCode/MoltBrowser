@@ -85,18 +85,22 @@ def llvm_commit(work):
     return m.group(1) if m else None
 
 
-def sysroot_dir(work):
-    return Path(work) / "toolchain" / "sysroot"
+SYSROOTS = {"x64": ("bullseye_amd64", "sysroot"),
+            "arm64": ("bullseye_arm64", "sysroot-arm64")}
 
 
-def ensure_sysroot(work, tree):
+def sysroot_dir(work, cpu="x64"):
+    return Path(work) / "toolchain" / SYSROOTS[cpu][1]
+
+
+def ensure_sysroot(work, tree, cpu="x64"):
     """The Debian sysroot Chromium's Linux build compiles against
     (build/linux/sysroot_scripts/sysroots.json), checked by its sha256."""
     import hashlib
     import json
     meta = json.loads(tree.read(
-        "build/linux/sysroot_scripts/sysroots.json"))["bullseye_amd64"]
-    d = sysroot_dir(work)
+        "build/linux/sysroot_scripts/sysroots.json"))[SYSROOTS[cpu][0]]
+    d = sysroot_dir(work, cpu)
     stamp = d / ".stamp"
     if stamp.exists() and stamp.read_text() == meta["Sha256Sum"]:
         return d

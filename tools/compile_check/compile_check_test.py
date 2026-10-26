@@ -3,12 +3,16 @@
 # Licensed under GPLv3. See LICENSE file.
 """Tests for the compile check's own logic, offline (no Chromium, no
 network): the GN reader's set_defaults and `configs -=`, each file's
-exception/RTTI flags from its GN target, mojom freshness, the tarball
-source, grit header freshness, where subprojects came from, and the
+exception/RTTI flags and own configs from its GN target, mojom freshness
+and the parser bisection, the tarball source, grit header freshness, cxx
+bridge headers' cfgs and freshness, where subprojects came from, the
+platforms (which files, their atoms, buildflags in the scan, the compile
+command of each platform and language), the Windows SDK's layout, and the
 report's stand-in labels.
 
 Run: python3 tools/compile_check/compile_check_test.py -v
 """
+import base64
 import hashlib
 import io
 import json
@@ -25,8 +29,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import compile_check  # noqa: E402
-from ccheck import check, gen_actions, gen_misc, gen_mojom, gn  # noqa: E402
-from ccheck import gnconfigs, sources, tarball  # noqa: E402
+from ccheck import check, config, gen_actions, gen_misc, gen_mojom  # noqa
+from ccheck import gn, gnconfigs, platforms, scan, sdks, sources  # noqa
+from ccheck import tarball, targets  # noqa: E402
 
 BUILDCONFIG = """
 default_compiler_configs = [
@@ -81,6 +86,9 @@ class FakeTree:
     def overlay_set(self):
         return set()
 
+    def glob_upstream(self, prefix):
+        return [p for p in self.files if p.startswith(prefix)]
+
 
 def make_interp(files):
     def read(path):
@@ -114,6 +122,24 @@ source_set("exc") {
         # The defaults are copied, not shared between targets.
         self.assertIsNot(ts["plain"].get("configs"),
                          ts["exc"].get("configs"))
+
+    def test_target_function(self):
+        files = {"a/BUILD.gn": """
+template("wrapped") {
+  target("source_set", target_name) {
+    forward_variables_from(invoker, "*")
+    configs += [ ":extra" ]
+  }
+}
+wrapped("w") { sources = [ "w.cc" ] }
+"""}
+        it = make_interp(files)
+        ts = [t for t in it.run_file("//a/BUILD.gn", expand=True)
+              if t.func == "source_set"]
+        self.assertEqual([t.name for t in ts], ["w"])
+        self.assertIn(":extra", ts[0].get("configs"))
+        self.assertIn("//build/config/compiler:no_rtti",
+                      ts[0].get("configs"))
 
 
 class LanguageFlagsTest(unittest.TestCase):
@@ -532,6 +558,848 @@ class ReportTest(unittest.TestCase):
                                       "third_party/webrtc (near)"))
         finally:
             shutil.rmtree(tmp)
+
+
+class PlatformsTest(unittest.TestCase):
+    def test_platform_of_a_file(self):
+        of = platforms.of
+        self.assertEqual(of("chrome/browser/molt_ai/x.cc"), "linux")
+        self.assertEqual(of("sandbox/policy/win/sandbox_win.cc"), "win")
+        self.assertEqual(of("chrome/browser/net/x_dialog_win.cc"), "win")
+        self.assertEqual(of("chrome/browser/x_win_unittest.cc"), "win")
+        self.assertEqual(of("chrome/browser/app_controller_mac.mm"), "mac")
+        self.assertEqual(of("third_party/blink/renderer/platform/fonts/mac/"
+                            "font_cache_mac.mm"), "mac")
+        self.assertEqual(of("components/remote_cocoa/app_shim/x.mm"), "mac")
+        self.assertEqual(of("third_party/opus/src/celt/arm/"
+                            "celt_neon_intr.c"), "linux-arm64")
+        self.assertEqual(of("third_party/opus/src/celt/x86/x86cpu.c"),
+                         "linux")
+        self.assertEqual(of("third_party/opus/src/celt/celt.c"), "linux")
+        self.assertIsNone(of("chrome/browser/molt_ai/ios/View.mm"))
+        self.assertIsNone(of("chrome/browser/x_android.cc"))
+        self.assertIsNone(of("chrome/browser/ash/x.cc"))
+        # "crash/" is not ChromeOS's ash/.
+        self.assertEqual(of("components/crash/x.cc"), "linux")
+        self.assertIn("ios", platforms.not_modeled(
+            "chrome/browser/molt_ai/ios/View.mm"))
+
+    def test_language(self):
+        self.assertEqual(platforms.language("a.c"), "c")
+        self.assertEqual(platforms.language("a.cc"), "c++")
+        self.assertEqual(platforms.language("a.cpp"), "c++")
+        self.assertEqual(platforms.language("a.mm"), "objective-c++")
+        self.assertEqual(platforms.language("a.m"), "objective-c")
+
+    def test_linux_atoms_are_the_scanners(self):
+        lin = platforms.get("linux")
+        self.assertEqual(lin.true_atoms, scan.TRUE_ATOMS)
+        self.assertEqual(lin.false_atoms, scan.FALSE_ATOMS)
+        for name in platforms.all_names():
+            p = platforms.get(name)
+            self.assertFalse(p.true_atoms & p.false_atoms, name)
+        win = platforms.get("win")
+        self.assertIn("BUILDFLAG(IS_WIN)", win.true_atoms)
+        self.assertIn("BUILDFLAG(IS_POSIX)", win.false_atoms)
+        mac = platforms.get("mac")
+        self.assertIn("BUILDFLAG(IS_APPLE)", mac.true_atoms)
+        self.assertIn("defined(__aarch64__)", mac.true_atoms)
+        self.assertEqual(mac.mojom_features, ("is_posix", "is_mac",
+                                              "is_apple"))
+        self.assertEqual(win.mojom_features, ("is_win",))
+        self.assertEqual(platforms.get("linux-arm64").out_rel,
+                         "out/cc-linux-arm64")
+
+    def test_state_dirs(self):
+        w = Path("/w")
+        self.assertEqual(platforms.get("linux").state_dir(w), w)
+        self.assertEqual(platforms.get("win").state_dir(w),
+                         w / "platform-win")
+
+
+class ScanAtomsTest(unittest.TestCase):
+    SRC = (b"#if BUILDFLAG(USE_VAAPI)\n#include \"a.h\"\n"
+           b"#if BUILDFLAG(ENABLE_OOP_VIDEO_DECODER)\n#include \"b.h\"\n"
+           b"#endif\n#endif\n#if PA_BUILDFLAG(USE_X)\n#include \"c.h\"\n"
+           b"#endif\n#if BUILDFLAG(IS_WIN)\n#include \"w.h\"\n#endif\n")
+
+    def names(self, atoms=None):
+        return [n for _, n, _ in scan.extract_includes(self.SRC, atoms)]
+
+    def test_unknown_buildflags_are_followed(self):
+        self.assertEqual(self.names(), ["a.h", "b.h", "c.h"])
+
+    def test_generated_buildflags_decide(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "media").mkdir()
+            (tmp / "media" / "media_buildflags.h").write_text(
+                "#define BUILDFLAG_INTERNAL_USE_VAAPI() (1)\n"
+                "#define BUILDFLAG_INTERNAL_ENABLE_OOP_VIDEO_DECODER() (0)\n")
+            (tmp / "pa").mkdir()
+            (tmp / "pa" / "buildflags.h").write_text(
+                "#define PA_BUILDFLAG_INTERNAL_USE_X() (0)\n")
+            # Two headers that disagree: unknown.
+            (tmp / "x_features.h").write_text(
+                "#define BUILDFLAG_INTERNAL_SPLIT() (1)\n")
+            (tmp / "y_features.h").write_text(
+                "#define BUILDFLAG_INTERNAL_SPLIT() (0)\n")
+            flags = scan.read_buildflags(tmp)
+            self.assertEqual(flags, {"USE_VAAPI": True,
+                                     "ENABLE_OOP_VIDEO_DECODER": False,
+                                     "PA_USE_X": False})
+            win = platforms.get("win")
+            atoms = scan.Atoms(win.true_atoms, win.false_atoms, flags)
+            self.assertEqual(self.names(atoms), ["a.h", "w.h"])
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_system_headers_of_the_platform(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "um").mkdir()
+            (tmp / "um" / "Windows.h").write_text("")
+            (tmp / "um" / "windows.h").symlink_to("Windows.h")
+            fw = tmp / "Frameworks" / "CoreText.framework" / "Headers"
+            fw.mkdir(parents=True)
+            (fw / "CoreText.h").write_text("")
+            sc = scan.Scanner(FakeTree({}), [], tmp / "gen",
+                              system_dirs=[tmp / "um", tmp / "Frameworks"])
+            self.assertTrue(sc._in_system("windows.h"))
+            self.assertTrue(sc._in_system("WINDOWS.H"))
+            self.assertTrue(sc._in_system("CoreText/CoreText.h"))
+            self.assertFalse(sc._in_system("AppKit/AppKit.h"))
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_scoped_include_dirs(self):
+        self.assertIn("v8", config.scoped_include_dirs("v8/src/init/v8.cc"))
+        self.assertIn("third_party/llvm-libc/src", config.scoped_include_dirs(
+            "third_party/llvm-libc/src/shared/math.h"))
+        self.assertEqual(config.scoped_include_dirs("base/x.h"), [])
+        tree = FakeTree({"v8/src/base/a.h": "", "third_party/skia/src/a.h": "",
+                         "v8/src/init/v8.cc": ""})
+        sc = scan.Scanner(tree, ["", "third_party/skia"], Path("/nonexistent"))
+        # "src/base/a.h" from V8's own file: V8's root; from anyone else:
+        # nowhere (V8's root is not searched for them).
+        self.assertEqual(sc.resolve("src/base/a.h", ("src", "v8/src/x.cc"),
+                                    False), ("src", "v8/src/base/a.h"))
+        self.assertIsNone(sc.resolve("src/base/a.h", ("src", "cc/x.cc"),
+                                     False))
+        self.assertEqual(sc.resolve("src/a.h", ("src", "v8/src/x.cc"),
+                                    True), ("src", "third_party/skia/src/a.h"))
+
+
+class MojomParseOrderTest(unittest.TestCase):
+    def test_own_features_import_order_and_failures(self):
+        deps = {"base.mojom": [], "a.mojom": ["base.mojom"],
+                "arc.mojom": [], "uses_arc.mojom": ["arc.mojom"],
+                "b.mojom": ["a.mojom", "base.mojom"]}
+        feats = {"a.mojom": frozenset({"is_linux", "use_x"})}
+        calls = []
+
+        def parse(group, f):
+            calls.append((tuple(group), tuple(sorted(f))))
+            for p in group:
+                # Each file's imports are parsed before it.
+                for d in deps[p]:
+                    self.assertTrue(any(d in g for g, _ in calls[:-1]), p)
+            if "arc.mojom" in group:
+                return "Extensible enum must specify a [Default]"
+            return None
+
+        done, failed = gen_mojom.parse_in_order(
+            deps, lambda p: feats.get(p, frozenset({"is_linux"})), parse)
+        self.assertEqual(done, {"base.mojom", "a.mojom", "b.mojom"})
+        self.assertEqual(sorted(failed), ["arc.mojom", "uses_arc.mojom"])
+        self.assertIn("arc.mojom", failed["uses_arc.mojom"])
+        # a.mojom is parsed with its own target's features only.
+        self.assertIn((("a.mojom",), ("is_linux", "use_x")), calls)
+        self.assertFalse(any("use_x" in f for g, f in calls
+                             if "b.mojom" in g))
+
+    def test_one_bad_file_in_a_batch(self):
+        deps = {"x.mojom": [], "y.mojom": [], "z.mojom": []}
+
+        def parse(group, f):
+            return "bad" if "y.mojom" in group else None
+
+        done, failed = gen_mojom.parse_in_order(
+            deps, lambda p: frozenset(), parse)
+        self.assertEqual(done, {"x.mojom", "z.mojom"})
+        self.assertEqual(failed, {"y.mojom": "bad"})
+
+
+class CxxBridgeTest(unittest.TestCase):
+    """Bridge headers are made with the platform's cfgs and remade when the
+    .rs changes."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.files = {"base/files/file_path.rs": "#[cxx::bridge] mod ffi {}"}
+        self.tree = FakeTree(self.files, root=str(self.tmp / "src"))
+        self.tree.work = self.tmp
+        self.tree.state = self.tmp
+        self.tree.gen_dir = self.tmp / "gen"
+        self.tree.platform = platforms.get("linux")
+        self.tree.materialize = lambda paths: None
+        (self.tmp / "src" / "base" / "files").mkdir(parents=True)
+        (self.tmp / "src" / "base" / "files" / "file_path.rs").write_text(
+            self.files["base/files/file_path.rs"])
+        # A cxxbridge that writes its arguments as the header.
+        exe = self.tmp / "bin" / "cxxbridge"
+        exe.parent.mkdir()
+        exe.write_text("#!/bin/sh\necho \"// $*\"\n")
+        exe.chmod(0o755)
+        (self.tmp / "toolchain").mkdir()
+        (self.tmp / "toolchain" / "rustc-print-cfg-x86_64-unknown-linux-gnu"
+         ".txt").write_text('target_family="unix"\nunix\n')
+        self.old_tools = dict(gen_misc.TOOLS)
+        gen_misc.TOOLS["cxxbridge"] = lambda: exe
+
+    def tearDown(self):
+        gen_misc.TOOLS.clear()
+        gen_misc.TOOLS.update(self.old_tools)
+        shutil.rmtree(self.tmp)
+
+    def test_cfgs_and_freshness(self):
+        name = "base/files/file_path.rs.h"
+        text = gen_misc.cxx_bridge_header(self.tree, None, name)
+        self.assertIn('--cfg=target_family="unix"', text)
+        self.assertIn("--cfg=unix", text)
+        self.assertTrue(text.rstrip().endswith("--header"))
+        out = self.tree.gen_dir / name
+        out.parent.mkdir(parents=True)
+        out.write_text(text)
+        self.assertEqual(gen_misc.refresh_cxx(self.tree, None), ([], []))
+        self.tree.files["base/files/file_path.rs"] += "\n// changed"
+        self.assertEqual(gen_misc.refresh_cxx(self.tree, None),
+                         ([name], []))
+        # A header from before stamps is remade once.
+        other = self.tree.gen_dir / "base" / "old.rs.h"
+        other.write_text("old")
+        self.tree.files["base/old.rs"] = "x"
+        self.assertEqual(gen_misc.refresh_cxx(self.tree, None),
+                         (["base/old.rs.h"], []))
+        # A bridge that is gone takes its header with it.
+        del self.tree.files["base/old.rs"]
+        self.assertEqual(gen_misc.refresh_cxx(self.tree, None),
+                         ([], ["base/old.rs.h"]))
+        self.assertFalse(other.exists())
+
+
+class CompileCommandTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.work = self.tmp / "work"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def tree(self, plat, system_dirs=()):
+        t = sources.SourceTree(self.work, self.tmp / "cache",
+                               overlay=self.tmp, platform=plat)
+        t.system_dirs = list(system_dirs)
+        return t
+
+    def cmd(self, plat, target, lang=None, system_dirs=()):
+        return check.compile_command(self.tree(plat, system_dirs), self.work,
+                                     target, lang=lang)
+
+    def test_linux_cxx_and_c(self):
+        c = self.cmd("linux", "chrome/browser/a.cc")
+        self.assertTrue(c[0].endswith("/clang++"))
+        self.assertIn("-std=c++23", c)
+        self.assertIn("-fno-exceptions", c)
+        self.assertTrue(any("find-bad-constructs" in x for x in c))
+        c = self.cmd("linux", "third_party/opus/src/celt/celt.c")
+        self.assertTrue(c[0].endswith("/clang"))
+        self.assertIn("-std=c11", c)
+        for flag in ("-std=c++23", "-fno-exceptions", "-nostdinc++"):
+            self.assertNotIn(flag, c)
+        self.assertFalse(any("plugin" in x for x in c))
+        self.assertFalse(any("libc++" in x and "src/include" in x
+                             for x in c))
+
+    def test_arm64(self):
+        c = self.cmd("linux-arm64", "third_party/opus/src/celt/arm/x.c")
+        self.assertIn("--target=aarch64-linux-gnu", c)
+        self.assertNotIn("-msse3", c)
+
+    def test_windows(self):
+        sdk = [self.tmp / "msvc", self.tmp / "um"]
+        c = self.cmd("win", "sandbox/policy/win/sandbox_win.cc",
+                     lang={"rtti": True}, system_dirs=sdk)
+        self.assertTrue(c[0].endswith("/clang-cl"))
+        self.assertIn("/Zs", c)
+        self.assertIn("/std:c++23preview", c)
+        self.assertIn("/GR", c)
+        self.assertNotIn("/GR-", c)
+        self.assertIn("-DUNICODE", c)
+        self.assertIn("-D_WIN32_WINNT=0x0A00", c)
+        self.assertIn("/imsvc" + str(self.tmp / "msvc"), c)
+        self.assertIn("-ivfsoverlay", c)
+        self.assertNotIn("-DUSE_UDEV", c)
+        self.assertFalse(any(x.startswith("--sysroot") for x in c))
+
+    def test_mac(self):
+        c = self.cmd("mac", "chrome/browser/a_mac.mm")
+        self.assertTrue(c[0].endswith("/clang++"))
+        self.assertIn("--target=arm64-apple-macos", c)
+        self.assertIn("-fobjc-arc", c)
+        self.assertIn("-isysroot", c)
+        self.assertIn("-DWEBRTC_MAC", c)
+        self.assertNotIn("-DWEBRTC_LINUX", c)
+        self.assertNotIn("-msse3", c)
+
+    def test_own_and_scoped_flags(self):
+        c = self.cmd("linux", "v8/src/base/ieee754.cc",
+                     lang={"flags": ["-DOWN=1"],
+                           "scoped": ["third_party/llvm-libc/src"]})
+        self.assertIn("-DOWN=1", c)
+        self.assertTrue(any(x.endswith("third_party/llvm-libc/src")
+                            for x in c))
+
+    def test_diagnostics_both_styles(self):
+        d = check.parse_diags(
+            "a/b.cc:12:3: error: no member\n"
+            "x\\y.h(7,9): warning: unused\n"
+            "In file included from a.cc:1:\n")
+        self.assertEqual([(x["file"], x["line"], x["kind"]) for x in d],
+                         [("a/b.cc", 12, "error"), ("x\\y.h", 7, "warning")])
+
+
+class ExtraPlatformsTest(unittest.TestCase):
+    OLD = (b"#include \"a.h\"\n"
+           b"void F() {\n"
+           b"#if BUILDFLAG(IS_WIN)\n"
+           b"  LowerToken();\n"
+           b"#endif\n"
+           b"#if BUILDFLAG(IS_APPLE)\n"
+           b"  Apple();\n"
+           b"#else\n"
+           b"  Other();\n"
+           b"#endif\n"
+           b"}\n")
+
+    def test_live_lines_follow_continuations(self):
+        src = (b"#if defined(X) && \\\n    BUILDFLAG(IS_WIN)\nw\n#endif\nz")
+        lin = platforms.get("linux")
+        self.assertEqual(scan.live_lines(src, scan.Atoms(
+            lin.true_atoms, lin.false_atoms)),
+            [True, True, False, False, True])
+
+    def test_hook_in_the_windows_block(self):
+        new = self.OLD.replace(b"  LowerToken();\n",
+                               b"  MoltWarmUp();  // MoltBrowser\n"
+                               b"  LowerToken();\n")
+        self.assertEqual(targets.extra_platforms(
+            "content/utility/utility_main.cc", new, self.OLD), ["win"])
+
+    def test_hook_in_the_apple_branch(self):
+        new = self.OLD.replace(b"  Apple();\n", b"  Apple(molt);\n")
+        self.assertEqual(targets.extra_platforms("a/font_metrics.cc", new,
+                                                 self.OLD), ["mac"])
+
+    def test_hook_in_the_non_apple_branch_is_linux_s(self):
+        new = self.OLD.replace(b"  Other();\n", b"  Other(molt);\n")
+        self.assertEqual(targets.extra_platforms("a/x.cc", new, self.OLD),
+                         [])
+
+    def test_new_file_and_mac_file(self):
+        self.assertEqual(targets.extra_platforms("a/new.cc", self.OLD, None),
+                         ["mac", "win"])
+        # Only macOS builds a .mm file; nor does Windows a POSIX one.
+        self.assertEqual(targets.extra_platforms("a/x_mac.mm", self.OLD,
+                                                 None), [])
+        self.assertEqual(targets.extra_platforms("a/x_posix.cc", self.OLD,
+                                                 None), ["mac"])
+        self.assertEqual(targets.changed_lines(b"a\nb\nc", b"a\nc"), {1})
+
+    def test_vulkan_switch_variant(self):
+        old = (b"void F() {\n#if BUILDFLAG(MOLT_LLAMA_VULKAN)\n  G();\n"
+               b"#endif\n}\n")
+        new = old.replace(b"  G();\n", b"  G(1);\n")
+        self.assertEqual(targets.extra_platforms(
+            "chrome/browser/molt_ai/runtime/r.cc", new, old),
+            ["linux-vulkan"])
+        self.assertEqual(platforms.of(
+            "third_party/llama_cpp/chromium/ggml-vulkan-moltbrowser.cpp"),
+            "linux-vulkan")
+        self.assertEqual(platforms.of(
+            "third_party/llama_cpp/chromium/ggml_vk_glslc.cc"),
+            "linux-vulkan")
+        self.assertEqual(platforms.of(
+            "third_party/llama_cpp/chromium/llama_guard.cc"), "linux")
+        v = platforms.get("linux-vulkan")
+        self.assertEqual(v.extra_args, {"molt_llama_vulkan": True})
+        self.assertNotEqual(v.out_rel, platforms.get("linux").out_rel)
+        self.assertTrue(platforms.may_build("a/x_linux.cc", "linux-vulkan"))
+
+    def test_headers_follow_the_rules(self):
+        self.assertEqual(platforms.of("chrome/browser/app_controller_mac.h"),
+                         "mac")
+        self.assertEqual(platforms.language(
+            "chrome/browser/app_controller_mac.h"), "objective-c++")
+        self.assertEqual(platforms.of("a/b_win.h"), "win")
+        self.assertEqual(platforms.language("a/b.h"), "c++")
+        self.assertFalse(platforms.may_build("a/b_posix.h", "win"))
+        tree = sources.SourceTree(Path("/w"), Path("/c"), overlay=Path("/o"))
+        tree.platform = platforms.get("mac")
+        c = check.compile_command(tree, Path("/w"), "a/x_mac.h")
+        self.assertEqual(c[-3:-1], ["-x", "objective-c++-header"])
+        c = check.compile_command(sources.SourceTree(
+            Path("/w"), Path("/c"), overlay=Path("/o")), Path("/w"), "a/x.h")
+        self.assertEqual(c[-3:-1], ["-x", "c++-header"])
+
+    def test_textual_header_through_its_includer(self):
+        tree = FakeTree({
+            "m/skcms/skcms.cc": '#include "src/Transform_inl.h"\n',
+            "m/skcms/other.cc": "int x;\n",
+            "m/skcms/src/Transform_inl.h": "// no guard\n"})
+        self.assertTrue(targets.TEXTUAL_HEADER_RE.search(
+            "m/skcms/src/Transform_inl.h"))
+        self.assertFalse(targets.TEXTUAL_HEADER_RE.search("m/a.h"))
+        self.assertEqual(targets.includer_of(tree,
+                                             "m/skcms/src/Transform_inl.h"),
+                         "m/skcms/skcms.cc")
+        r = {"target": "m/skcms/src/Transform_inl.h",
+             "via": "m/skcms/skcms.cc", "platform": "linux", "diags": []}
+        self.assertEqual(compile_check.classify(r, {}, Path("/x"))[:2],
+                         ("checked", "through m/skcms/skcms.cc"))
+        self.assertEqual(platforms.of(
+            "components/remote_cocoa/app_shim/x_bridge.h"), "mac")
+
+    def test_platform_dirs_in_scoped_include_dirs(self):
+        try:
+            config.set_platform(platforms.get("win"))
+            self.assertIn(
+                "third_party/ffmpeg/chromium/config/Chromium/win/x64",
+                config.scoped_include_dirs(
+                    "media/base/molt_portable_media.cc"))
+        finally:
+            config.set_platform(platforms.get("linux"))
+        self.assertIn("third_party/ffmpeg/chromium/config/Chromium/linux/x64",
+                      config.scoped_include_dirs("third_party/ffmpeg/a.h"))
+
+    def test_may_build(self):
+        self.assertTrue(platforms.may_build("a/x.cc", "win"))
+        self.assertFalse(platforms.may_build("a/x_posix.cc", "win"))
+        self.assertTrue(platforms.may_build("a/x_posix.cc", "mac"))
+        self.assertFalse(platforms.may_build("a/linux/x.cc", "mac"))
+        self.assertFalse(platforms.may_build("a/x_linux_unittest.cc", "win"))
+        self.assertFalse(platforms.may_build("a/x_win.cc", "linux"))
+        self.assertFalse(platforms.may_build("a/x_android.cc", "linux"))
+        self.assertTrue(platforms.may_build("a/arm/x_neon.c", "mac"))
+
+    def test_own_sources_also_on_windows_if_built(self):
+        class Tree:
+            def upstream_entry(self, p):
+                return None  # every file is MoltBrowser's own
+        tmp = Path(tempfile.mkdtemp())
+        old_src = targets.SRC
+        try:
+            for f in ("m/own.cc", "m/own_posix.cc", "m/own_win.cc"):
+                (tmp / f).parent.mkdir(parents=True, exist_ok=True)
+                (tmp / f).write_bytes(b"int x;\n")
+            targets.SRC = tmp
+            pairs = targets.platform_targets(
+                Tree(), ["m/own.cc", "m/own_posix.cc", "m/own_win.cc"])
+        finally:
+            targets.SRC = old_src
+            shutil.rmtree(tmp)
+        self.assertEqual(pairs, [("m/own.cc", "linux"),
+                                 ("m/own.cc", "win", "if_built"),
+                                 ("m/own_posix.cc", "linux"),
+                                 ("m/own_win.cc", "win")])
+        self.assertEqual(targets.if_built(pairs), {"win": {"m/own.cc"}})
+        groups, _ = compile_check.group_targets(pairs)
+        self.assertEqual(groups, {"linux": ["m/own.cc", "m/own_posix.cc"],
+                                  "win": ["m/own.cc", "m/own_win.cc"]})
+
+
+class GenCandidatesTest(unittest.TestCase):
+    def test_library_generated_roots(self):
+        c = compile_check._gen_candidates(
+            "torque-generated/instance-types.h", "linux",
+            ["v8/src/objects/instance-types-gen.h"])
+        self.assertIn("v8/torque-generated/instance-types.h", c)
+        self.assertIn("v8/src/objects/torque-generated/instance-types.h", c)
+        c = compile_check._gen_candidates(
+            "ggml-vulkan-shaders.hpp", "linux-vulkan",
+            ["third_party/llama_cpp/ggml/src/ggml-vulkan/"
+             "ggml-vulkan-common.h"])
+        self.assertIn("third_party/llama_cpp/ggml-vulkan/"
+                      "ggml-vulkan-shaders.hpp", c)
+
+    def test_label_root_out_dir(self):
+        files = {"BUILD.gn": """
+group("g") {
+  data = [
+    get_label_info(":p($host_toolchain)", "root_out_dir"),
+    get_label_info(":p(//build/toolchain/win:x)", "root_out_dir"),
+    get_label_info(":p", "toolchain"),
+  ]
+}
+"""}
+        it = make_interp(files)
+        tc = "//build/toolchain/linux:clang_x64"
+        for k in ("default_toolchain", "current_toolchain", "host_toolchain"):
+            it.globals.set(k, tc)
+        g = [t for t in it.run_file("//BUILD.gn") if t.name == "g"][0]
+        self.assertEqual(g.get("data"), [
+            gn.OUT, gn.OUT + "/x", "//build/toolchain/linux:clang_x64"])
+
+
+class MojomImportsTest(unittest.TestCase):
+    TEXT = ('import "a.mojom";\n'
+            '[EnableIf=is_chromeos]\nimport "cros.mojom";\n'
+            '[EnableIfNot=is_win]\n  import "not_win.mojom";\n'
+            '[EnableIf=is_win]\nimport "win.mojom";\n')
+
+    def test_conditional_imports(self):
+        self.assertEqual(gen_mojom.imports_of(self.TEXT),
+                         ["a.mojom", "cros.mojom", "not_win.mojom",
+                          "win.mojom"])
+        self.assertEqual(gen_mojom.imports_of(self.TEXT, {"is_win"}),
+                         ["a.mojom", "win.mojom"])
+        self.assertEqual(gen_mojom.imports_of(self.TEXT,
+                                              {"is_linux", "is_posix"}),
+                         ["a.mojom", "not_win.mojom"])
+
+    def test_closure_follows_the_kept_imports(self):
+        files = {"r.mojom": self.TEXT.encode(), "a.mojom": b"",
+                 "win.mojom": b"", "not_win.mojom": b"",
+                 "cros.mojom": b'import "missing.mojom";\n'}
+        tree = FakeTree({k: v.decode() for k, v in files.items()})
+        got = gen_mojom.import_closure(tree, "/nonexistent", ["r.mojom"],
+                                       feats_of=lambda p: {"is_win"})
+        self.assertEqual(sorted(got), ["a.mojom", "r.mojom", "win.mojom"])
+
+
+class GritArgsTest(unittest.TestCase):
+    def test_ninja_only_options_dropped(self):
+        args = ["-i", "x.grd", "build", "--assert-output-file-list",
+                "obj/x_expected_outputs.txt", "--depfile", "x.d",
+                "--assert-input-file-list=y", "-o", "gen"]
+        self.assertEqual(gen_misc._header_args(args),
+                         ["-i", "x.grd", "build", "-o", "gen"])
+
+
+class SaveResultsTest(unittest.TestCase):
+    def test_platform_runs_keep_the_others(self):
+        import argparse
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            def r(t, p):
+                return {"target": t, "platform": p, "diags": []}
+            (tmp / "check.json").write_text(json.dumps([
+                r("a.cc", "linux"), r("a.cc", "win"), r("b.cc", "win"),
+                r("c_android.cc", None)]))
+            args = argparse.Namespace(work=tmp, platforms=["win"])
+            compile_check.save_results(args, [r("a.cc", "win")], False)
+            got = sorted((x["target"], x["platform"] or "") for x in
+                         json.loads((tmp / "check.json").read_text()))
+            self.assertEqual(got, [("a.cc", "linux"), ("a.cc", "win"),
+                                   ("c_android.cc", "")])
+            args = argparse.Namespace(work=tmp, platforms=None)
+            compile_check.save_results(args, [r("a.cc", "linux")], True)
+            got = sorted((x["target"], x["platform"] or "") for x in
+                         json.loads((tmp / "check.json").read_text()))
+            self.assertEqual(got, [("a.cc", "linux"), ("c_android.cc", "")])
+        finally:
+            shutil.rmtree(tmp)
+
+
+class TargetGroupsTest(unittest.TestCase):
+    def test_vendored(self):
+        self.assertTrue(targets.is_vendored(
+            "third_party/llama_cpp/ggml/src/ggml.c"))
+        self.assertFalse(targets.is_vendored(
+            "third_party/llama_cpp/chromium/llama_guard.cc"))
+        self.assertTrue(targets.is_vendored(
+            "third_party/rust/chromium_crates_io/vendor/x/main.cpp"))
+
+    def test_grouping(self):
+        groups, skipped = compile_check.group_targets([
+            "a.cc", "b_win.cc", "c.mm", "d/arm/e.c", "f_android.cc"])
+        self.assertEqual(groups, {"linux": ["a.cc"], "win": ["b_win.cc"],
+                                  "mac": ["c.mm"],
+                                  "linux-arm64": ["d/arm/e.c"]})
+        self.assertEqual(list(skipped), ["f_android.cc"])
+        self.assertEqual(compile_check.ordered(groups),
+                         ["linux", "linux-arm64", "mac", "win"])
+
+
+class OwnFlagsTest(unittest.TestCase):
+    def test_target_configs_and_template_expansion(self):
+        gen_actions._build_texts = None
+        files = {
+            "build/config/compiler/BUILD.gn": COMPILER_BUILD,
+            "lib/BUILD.gn": """
+config("private") {
+  defines = [ "OPUS_BUILD" ]
+  include_dirs = [ "src/celt" ]
+  cflags_c = [ "-Wno-c-only" ]
+  cflags_cc = [ "-Wno-cc-only" ]
+}
+template("wrapped_source_set") {
+  source_set(target_name) {
+    forward_variables_from(invoker, "*")
+    configs += [ ":private" ]
+  }
+}
+source_set("plain") {
+  sources = [ "plain.c" ]
+  defines = [ "OWN=1" ]
+  configs += [ ":private", "//build/config/compiler:exceptions" ]
+}
+wrapped_source_set("wrapped") { sources = [ "w.cc" ] }
+""",
+        }
+        tree = FakeTree(files)
+        interp = make_interp(files)
+        f = gnconfigs.target_flags(tree, interp, ["lib/plain.c",
+                                                  "lib/w.cc"])
+        plain = f["lib/plain.c"]["flags"]
+        self.assertIn("-DOWN=1", plain)
+        self.assertIn("-DOPUS_BUILD", plain)
+        self.assertIn("-I" + str(Path("/nonexistent/src/lib/src/celt")),
+                      plain)
+        self.assertIn("-Wno-c-only", plain)
+        self.assertNotIn("-Wno-cc-only", plain)
+        # The compiler's own configs are config.py's business.
+        self.assertNotIn("-fexceptions", plain)
+        self.assertTrue(f["lib/plain.c"]["exceptions"])
+        w = f["lib/w.cc"]["flags"]
+        self.assertIn("-DOPUS_BUILD", w)
+        self.assertIn("-Wno-cc-only", w)
+
+
+class WindowsSdkTest(unittest.TestCase):
+    def test_aliases_overlay_and_safe_extract(self):
+        import zipfile
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            nupkg = tmp / "p.nupkg"
+            with zipfile.ZipFile(nupkg, "w") as z:
+                z.writestr("c/Include/v/um/Windows.h", "w")
+                z.writestr("c/Include/v/um/sub/X.h", "x")
+                z.writestr("c/Include/v/cppwinrt/a.h", "skip")
+                z.writestr("c/Include/v/../../escape.h", "no")
+                z.writestr("other/b.h", "no")
+            out = tmp / "sdk"
+            self.assertEqual(sdks._extract(nupkg, "c/Include/v/", out,
+                                           only=["um"]), 2)
+            self.assertFalse((tmp / "escape.h").exists())
+            self.assertFalse((out / "cppwinrt").exists())
+            self.assertEqual(sdks.add_lowercase_aliases(out), 2)
+            self.assertEqual((out / "um" / "windows.h").read_text(), "w")
+            self.assertEqual((out / "um" / "sub" / "x.h").read_text(), "x")
+            ov = sdks.write_case_insensitive_overlay([out / "um"],
+                                                     tmp / "o.yaml")
+            data = json.loads(Path(ov).read_text())
+            self.assertEqual(data["case-sensitive"], "false")
+            names = [e["name"] for e in data["roots"][0]["contents"]]
+            # The aliases are left out (the overlay is case-insensitive).
+            self.assertEqual(sorted(names), ["Windows.h", "sub"])
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_pinned_packages(self):
+        for pkg, ver, sha, prefix, sub in sdks.WIN_PACKAGES:
+            self.assertEqual(len(base64.b64decode(sha)), 64, pkg)
+        self.assertIn(sdks.WIN_SDK_VERSION, sdks.WIN_PACKAGES[0][3])
+        self.assertEqual(len(sdks.ZIG_WHEEL[1]), 64)
+
+
+class WindowsAlignedNewTest(unittest.TestCase):
+    def test_added_once_before_the_end(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            f = tmp / "vcruntime_new.h"
+            f.write_text('struct nothrow_t {};\n#pragma pop_macro("new")\n')
+            self.assertTrue(sdks.add_aligned_new(f))
+            self.assertFalse(sdks.add_aligned_new(f))
+            text = f.read_text()
+            self.assertEqual(text.count("std::align_val_t _Al,\n"
+                                        "                                     "
+                                        "        std::nothrow_t const&"), 1)
+            self.assertLess(text.index("#ifdef __cpp_aligned_new"),
+                            text.index('#pragma pop_macro("new")'))
+        finally:
+            shutil.rmtree(tmp)
+
+
+class GeneratedStandInsTest(unittest.TestCase):
+    def test_preload_header_from_its_template(self):
+        tmpl = ("static constexpr uint8_t kHSTSHuffmanTree[] = "
+                "[[HUFFMAN_TREE]];\n"
+                "static constexpr unsigned kPreloadedHSTSBits = "
+                "[[HSTS_TRIE_BITS]];\n")
+        files = {"net/http/BUILD.gn": """
+action("generate_transport_security_state") {
+  script = "run.py"
+  inputs = [ "transport_security_state_static.json",
+             "transport_security_state_static.template" ]
+  outputs = [ "$target_gen_dir/transport_security_state_static.h" ]
+  args = []
+}
+""", "net/http/transport_security_state_static.template": tmpl}
+        gen_actions._build_texts = None
+        tree = FakeTree(files)
+        interp = make_interp(files)
+        name = "net/http/transport_security_state_static.h"
+        self.assertTrue(gen_misc.handles_exclusively(name))
+        text = gen_misc.preload_header(tree, interp, name)
+        self.assertTrue(text.startswith("// compile_check STAND-IN"))
+        self.assertIn("kHSTSHuffmanTree[] = {0};", text)
+        self.assertIn("kPreloadedHSTSBits = 0;", text)
+        self.assertNotIn("[[", text)
+
+    def test_pins_header_in_the_generators_shape(self):
+        tmpl = ("[[SPKI_HASHES]]\n\n[[ACCEPTABLE_CERTS]]\n\n[[PINSETS]]\n"
+                "static constexpr auto kHostPins = [[HOST_PINS]];\n")
+        files = {"net/http/BUILD.gn": """
+action("generate_transport_security_state_pins") {
+  script = "run.py"
+  inputs = [ "transport_security_state_static_pins.template" ]
+  outputs = [ "$target_gen_dir/transport_security_state_static_pins.h" ]
+  args = []
+}
+""", "net/http/transport_security_state_static_pins.template": tmpl}
+        gen_actions._build_texts = None
+        text = gen_misc.preload_header(
+            FakeTree(files), make_interp(files),
+            "net/http/transport_security_state_static_pins.h")
+        self.assertIn("kSPKIHash_CompileCheck = {", text)
+        self.assertIn("&kSPKIHash_CompileCheck,", text)
+        self.assertIn("kCompileCheckPinset = {kCompileCheckAcceptableCerts, "
+                      "{}};", text)
+        self.assertIn("kHostPins = base::MakeFixedFlatMap<std::string_view, "
+                      "net::TransportSecurityStatePinsSource::HostPin>({",
+                      text)
+        self.assertEqual(text.count("0x00"), 32)
+
+    def test_report_names_generated_and_flag_stand_ins(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            gen = tmp / "gen"
+            (gen / "net/http").mkdir(parents=True)
+            (gen / "net/http/tss.h").write_text(
+                "// compile_check STAND-IN for net/http/tss.h\n")
+            mark = "src:" + config.STAND_IN_FLAGS["v8/"][1]
+            graph = {"src:net/x.cc": ["gen:net/http/tss.h"],
+                     "src:v8/src/init/v8.cc": [mark]}
+            st = compile_check.classify({"target": "net/x.cc", "diags": []},
+                                        graph, gen)
+            self.assertEqual(st[:2], ("partly on stand-ins",
+                                      "tss.h stand-in"))
+            st = compile_check.classify(
+                {"target": "v8/src/init/v8.cc", "diags": []}, graph, gen)
+            self.assertEqual(st[0], "partly on stand-ins")
+            self.assertIn("Torque", st[1])
+        finally:
+            shutil.rmtree(tmp)
+        tree = FakeTree({})
+        c = check.compile_command(sources.SourceTree(
+            Path("/w"), Path("/c"), overlay=Path("/o")), Path("/w"),
+            "v8/src/init/v8.cc")
+        self.assertIn("-DV8_USE_METAGEN_INSTANCE_TYPES=0", c)
+        self.assertIn("V8_USE_METAGEN_INSTANCE_TYPES", scan.FALSE_ATOMS)
+
+
+class SkippedReportTest(unittest.TestCase):
+    def test_skipped_and_sdk_stand_ins(self):
+        r = {"target": "x_android.cc", "skipped": "built for android only",
+             "diags": []}
+        self.assertEqual(compile_check.classify(r, {}, Path("/x")),
+                         ("not checked", "built for android only", []))
+        ok = {"target": "a.mm", "diags": []}
+        st = compile_check.classify(ok, {}, Path("/x"), {},
+                                    sdks.stand_in_label("mac"))
+        self.assertEqual(st[0], "partly on stand-ins")
+        self.assertIn("Apple framework", st[1])
+        self.assertIsNone(sdks.stand_in_label("win"))
+
+    def test_apple_declarations_the_stand_ins_lack(self):
+        def res(platform, *msgs):
+            return {"target": "a/x.mm", "platform": platform,
+                    "diags": [{"kind": "error", "file": "a/x.mm", "line": 1,
+                               "msg": m} for m in msgs]}
+        r = res("mac", "use of undeclared identifier 'NSMenu'",
+                "no type or protocol named 'NSTextInputClient'",
+                "unknown type name 'NSApplication'",
+                "no visible @interface for 'NSWindow' declares the selector "
+                "'toggleFullScreen:'", "use of undeclared identifier 'x'")
+        st = compile_check.classify(r, {}, Path("/x"))
+        self.assertEqual(st[:2], ("not checked", "needs macOS SDK "
+                                  "declarations mac_stand_ins/ lacks: "
+                                  "NSMenu, NSTextInputClient, NSApplication, "
+                                  "NSWindow"))
+        # Elsewhere (and for other errors) they stay errors.
+        st = compile_check.classify(res("linux", "use of undeclared "
+                                        "identifier 'NSMenu'"), {},
+                                    Path("/x"))
+        self.assertEqual(st[0], "ERRORS")
+        st = compile_check.classify(res("mac", "use of undeclared "
+                                        "identifier 'kMolt'"), {},
+                                    Path("/x"))
+        self.assertEqual(st[0], "ERRORS")
+
+    def test_plugin_diagnostics_in_moltbrowser_code(self):
+        def res(path):
+            return {"target": "a/x.cc", "platform": "linux", "diags": [
+                {"kind": "warning", "file": path, "line": 3,
+                 "msg": "[chromium-style] Complex constructor has an "
+                        "inlined body."}]}
+        # A src/ file (MoltBrowser's) ...
+        st = compile_check.classify(res("net/socket/molt_identity_end.h"),
+                                    {}, Path("/x"))
+        self.assertEqual(st[:2], ("PLUGIN", "1 [chromium-style] "
+                                  "diagnostic(s) in MoltBrowser code"))
+        # ... not Chromium's own.
+        st = compile_check.classify(res("base/not_in_the_overlay.h"), {},
+                                    Path("/x"))
+        self.assertEqual(st[0], "checked")
+
+    def test_plugin_flags_per_platform(self):
+        lin = config.plugin_flags("linux", "/r")
+        self.assertIn("check-ipc", lin)
+        self.assertNotIn("check-raw-ptr-fields", lin)
+        self.assertNotIn("check-ipc", config.plugin_flags("mac", "/r"))
+        win = config.plugin_flags("win", "/r")
+        self.assertIn("check-raw-ptr-fields", win)
+        self.assertIn("raw-ptr-exclude-path=/r/third_party/dawn/", win)
+        self.assertIn("check-raw-ref-fields",
+                      config.plugin_flags("linux", "/r", dev=True))
+        self.assertEqual(win.count("-Xclang") * 2, len(win))
+
+    def test_why_a_header_is_missing(self):
+        def missing(name, platform, gn_target="//a:a"):
+            return {"target": "a/x.cc", "platform": platform,
+                    "gn_target": gn_target,
+                    "diags": [{"kind": "fatal error", "file": "a/x.cc",
+                               "line": 1,
+                               "msg": "'%s' file not found" % name}]}
+        fails = {"a/b.mojom": "mojom parser: bad enum"}
+        st = compile_check.classify(missing("a/b.mojom-shared.h", "win"),
+                                    {}, Path("/x"), failures=fails)
+        self.assertEqual(st[:2], ("not checked", "header not available "
+                                  "here: a/b.mojom-shared.h (mojom parser: "
+                                  "bad enum)"))
+        st = compile_check.classify(missing(
+            "AuthenticationServices/AuthenticationServices.h", "mac"), {},
+                                    Path("/x"))
+        self.assertIn("no stand-in for it", st[1])
+        st = compile_check.classify(missing("CoreText/CoreText.h", "mac"),
+                                    {}, Path("/x"))
+        self.assertEqual(st[1], "header not available here: "
+                         "CoreText/CoreText.h")
+        st = compile_check.classify(missing("v.hpp", "linux", None), {},
+                                    Path("/x"))
+        self.assertIn("no GN target lists the file with configs/linux-x64.gn",
+                      st[1])
 
 
 if __name__ == "__main__":

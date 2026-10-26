@@ -51,46 +51,21 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   // this: the certificate-fetch pools draw on `cert_fetch_budget`, the
   // others on `budget`; `budget_owner` identifies the session (the same
   // for its normal and WebSocket pools).
-  MoltPerSiteSocketPools(size_t per_site_pool_size,
-                         size_t max_sockets_per_group,
-                         base::TimeDelta unused_idle_socket_timeout,
-                         bool is_for_websockets,
-                         const CommonConnectJobParams* common_connect_job_params,
-                         bool cleanup_on_ip_address_change,
-                         MoltConnectionBudget* budget = nullptr,
-                         uintptr_t budget_owner = 0,
-                         MoltConnectionBudget* cert_fetch_budget = nullptr)
-      : per_site_pool_size_(per_site_pool_size),
-        max_sockets_per_group_(max_sockets_per_group),
-        unused_idle_socket_timeout_(unused_idle_socket_timeout),
-        is_for_websockets_(is_for_websockets),
-        common_connect_job_params_(common_connect_job_params),
-        cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
-        budget_(budget),
-        cert_fetch_budget_(cert_fetch_budget) {
-    if (budget_) {
-      budget_->AddMember(this, budget_owner);
-    }
-    if (cert_fetch_budget_) {
-      cert_fetch_budget_->AddMember(&cert_fetch_member_, budget_owner);
-    }
-  }
+  MoltPerSiteSocketPools(
+      size_t per_site_pool_size,
+      size_t max_sockets_per_group,
+      base::TimeDelta unused_idle_socket_timeout,
+      bool is_for_websockets,
+      const CommonConnectJobParams* common_connect_job_params,
+      bool cleanup_on_ip_address_change,
+      MoltConnectionBudget* budget = nullptr,
+      uintptr_t budget_owner = 0,
+      MoltConnectionBudget* cert_fetch_budget = nullptr);
 
   MoltPerSiteSocketPools(const MoltPerSiteSocketPools&) = delete;
   MoltPerSiteSocketPools& operator=(const MoltPerSiteSocketPools&) = delete;
 
-  ~MoltPerSiteSocketPools() override {
-    if (budget_) {
-      budget_->RemoveMember(this);
-    }
-    if (cert_fetch_budget_) {
-      cert_fetch_budget_->RemoveMember(&cert_fetch_member_);
-    }
-    // What the pools release while they go no longer concerns the budgets.
-    budget_ = nullptr;
-    cert_fetch_budget_ = nullptr;
-    pools_.clear();
-  }
+  ~MoltPerSiteSocketPools() override;
 
   // The pool for requests of network key `network_anonymization_key`
   // through `proxy_chain`: its site's (MoltBudgetSiteFor()), or, for a
@@ -167,49 +142,17 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   }
 
   // ClientSocketPool::MoltSocketGate:
-  bool MoltMayAllocate(const ClientSocketPool* pool) override {
-    for (const auto& [key, entry] : pools_) {
-      if (entry.pool.get() == pool) {
-        if (key.cert_fetch_pool) {
-          return !cert_fetch_budget_ ||
-                 cert_fetch_budget_->MayAllocate(&cert_fetch_member_,
-                                                 key.site);
-        }
-        return !budget_ || budget_->MayAllocate(this, key.site);
-      }
-    }
-    return true;
-  }
-  void MoltOnReleased(const ClientSocketPool* pool) override {
-    for (const auto& [key, entry] : pools_) {
-      if (entry.pool.get() == pool) {
-        if (MoltConnectionBudget* budget =
-                key.cert_fetch_pool ? cert_fetch_budget_ : budget_) {
-          budget->OnReleased();
-        }
-        return;
-      }
-    }
-  }
+  bool MoltMayAllocate(const ClientSocketPool* pool) override;
+  void MoltOnReleased(const ClientSocketPool* pool) override;
 
   // MoltConnectionBudget::Member, for `budget`: every pool but the
   // certificate-fetch pools.
   void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
-                    size_t& within_limits) const override {
-    AddLoads(/*cert_fetch_pools=*/false, loads, within_limits);
-  }
-  bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
-    return HasStalledRequest(/*cert_fetch_pools=*/false, site);
-  }
-  void MoltRetryStalledRequests(const MoltBudgetSite& site) override {
-    RetryStalledRequests(/*cert_fetch_pools=*/false, site);
-  }
-  bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override {
-    return CloseOneIdleSocket(/*cert_fetch_pools=*/false, site);
-  }
-  bool MoltCloseIdleSessions(const MoltBudgetSite& site) override {
-    return CloseIdleSessions(/*cert_fetch_pools=*/false, site);
-  }
+                    size_t& within_limits) const override;
+  bool MoltHasStalledRequest(const MoltBudgetSite& site) const override;
+  void MoltRetryStalledRequests(const MoltBudgetSite& site) override;
+  bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override;
+  bool MoltCloseIdleSessions(const MoltBudgetSite& site) override;
 
  private:
   // The certificate-fetch pools as a member of `cert_fetch_budget`.
@@ -217,21 +160,11 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
    public:
     explicit CertFetchMember(MoltPerSiteSocketPools* pools) : pools_(pools) {}
     void MoltAddLoads(std::map<MoltBudgetSite, size_t>& loads,
-                      size_t& within_limits) const override {
-      pools_->AddLoads(/*cert_fetch_pools=*/true, loads, within_limits);
-    }
-    bool MoltHasStalledRequest(const MoltBudgetSite& site) const override {
-      return pools_->HasStalledRequest(/*cert_fetch_pools=*/true, site);
-    }
-    void MoltRetryStalledRequests(const MoltBudgetSite& site) override {
-      pools_->RetryStalledRequests(/*cert_fetch_pools=*/true, site);
-    }
-    bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override {
-      return pools_->CloseOneIdleSocket(/*cert_fetch_pools=*/true, site);
-    }
-    bool MoltCloseIdleSessions(const MoltBudgetSite& site) override {
-      return pools_->CloseIdleSessions(/*cert_fetch_pools=*/true, site);
-    }
+                      size_t& within_limits) const override;
+    bool MoltHasStalledRequest(const MoltBudgetSite& site) const override;
+    void MoltRetryStalledRequests(const MoltBudgetSite& site) override;
+    bool MoltCloseOneIdleSocket(const MoltBudgetSite& site) override;
+    bool MoltCloseIdleSessions(const MoltBudgetSite& site) override;
 
    private:
     const raw_ptr<MoltPerSiteSocketPools> pools_;
@@ -334,6 +267,124 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   CertFetchMember cert_fetch_member_{this};
   std::map<Key, Entry> pools_;
 };
+
+inline MoltPerSiteSocketPools::MoltPerSiteSocketPools(
+    size_t per_site_pool_size,
+    size_t max_sockets_per_group,
+    base::TimeDelta unused_idle_socket_timeout,
+    bool is_for_websockets,
+    const CommonConnectJobParams* common_connect_job_params,
+    bool cleanup_on_ip_address_change,
+    MoltConnectionBudget* budget,
+    uintptr_t budget_owner,
+    MoltConnectionBudget* cert_fetch_budget)
+    : per_site_pool_size_(per_site_pool_size),
+      max_sockets_per_group_(max_sockets_per_group),
+      unused_idle_socket_timeout_(unused_idle_socket_timeout),
+      is_for_websockets_(is_for_websockets),
+      common_connect_job_params_(common_connect_job_params),
+      cleanup_on_ip_address_change_(cleanup_on_ip_address_change),
+      budget_(budget),
+      cert_fetch_budget_(cert_fetch_budget) {
+  if (budget_) {
+    budget_->AddMember(this, budget_owner);
+  }
+  if (cert_fetch_budget_) {
+    cert_fetch_budget_->AddMember(&cert_fetch_member_, budget_owner);
+  }
+}
+
+inline MoltPerSiteSocketPools::~MoltPerSiteSocketPools() {
+  if (budget_) {
+    budget_->RemoveMember(this);
+  }
+  if (cert_fetch_budget_) {
+    cert_fetch_budget_->RemoveMember(&cert_fetch_member_);
+  }
+  // What the pools release while they go no longer concerns the budgets.
+  budget_ = nullptr;
+  cert_fetch_budget_ = nullptr;
+  pools_.clear();
+}
+
+inline bool MoltPerSiteSocketPools::MoltMayAllocate(
+    const ClientSocketPool* pool) {
+  for (const auto& [key, entry] : pools_) {
+    if (entry.pool.get() == pool) {
+      if (key.cert_fetch_pool) {
+        return !cert_fetch_budget_ ||
+               cert_fetch_budget_->MayAllocate(&cert_fetch_member_, key.site);
+      }
+      return !budget_ || budget_->MayAllocate(this, key.site);
+    }
+  }
+  return true;
+}
+
+inline void MoltPerSiteSocketPools::MoltOnReleased(
+    const ClientSocketPool* pool) {
+  for (const auto& [key, entry] : pools_) {
+    if (entry.pool.get() == pool) {
+      if (MoltConnectionBudget* budget =
+              key.cert_fetch_pool ? cert_fetch_budget_ : budget_) {
+        budget->OnReleased();
+      }
+      return;
+    }
+  }
+}
+
+inline void MoltPerSiteSocketPools::MoltAddLoads(
+    std::map<MoltBudgetSite, size_t>& loads,
+    size_t& within_limits) const {
+  AddLoads(/*cert_fetch_pools=*/false, loads, within_limits);
+}
+
+inline bool MoltPerSiteSocketPools::MoltHasStalledRequest(
+    const MoltBudgetSite& site) const {
+  return HasStalledRequest(/*cert_fetch_pools=*/false, site);
+}
+
+inline void MoltPerSiteSocketPools::MoltRetryStalledRequests(
+    const MoltBudgetSite& site) {
+  RetryStalledRequests(/*cert_fetch_pools=*/false, site);
+}
+
+inline bool MoltPerSiteSocketPools::MoltCloseOneIdleSocket(
+    const MoltBudgetSite& site) {
+  return CloseOneIdleSocket(/*cert_fetch_pools=*/false, site);
+}
+
+inline bool MoltPerSiteSocketPools::MoltCloseIdleSessions(
+    const MoltBudgetSite& site) {
+  return CloseIdleSessions(/*cert_fetch_pools=*/false, site);
+}
+
+inline void MoltPerSiteSocketPools::CertFetchMember::MoltAddLoads(
+    std::map<MoltBudgetSite, size_t>& loads,
+    size_t& within_limits) const {
+  pools_->AddLoads(/*cert_fetch_pools=*/true, loads, within_limits);
+}
+
+inline bool MoltPerSiteSocketPools::CertFetchMember::MoltHasStalledRequest(
+    const MoltBudgetSite& site) const {
+  return pools_->HasStalledRequest(/*cert_fetch_pools=*/true, site);
+}
+
+inline void MoltPerSiteSocketPools::CertFetchMember::MoltRetryStalledRequests(
+    const MoltBudgetSite& site) {
+  pools_->RetryStalledRequests(/*cert_fetch_pools=*/true, site);
+}
+
+inline bool MoltPerSiteSocketPools::CertFetchMember::MoltCloseOneIdleSocket(
+    const MoltBudgetSite& site) {
+  return pools_->CloseOneIdleSocket(/*cert_fetch_pools=*/true, site);
+}
+
+inline bool MoltPerSiteSocketPools::CertFetchMember::MoltCloseIdleSessions(
+    const MoltBudgetSite& site) {
+  return pools_->CloseIdleSessions(/*cert_fetch_pools=*/true, site);
+}
 
 }  // namespace net
 
