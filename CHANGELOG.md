@@ -994,6 +994,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stand-ins had missed, all fixed; among them, WebGL2 `readPixels` into a
   buffer now farbles the pixels by reading them back, as 152 has no buffer
   mapping.
+- **Build checks without a checkout** (`tools/chromium/gn_static_check.py`):
+  reads Chromium's own build files at the pin with MoltBrowser's changes on
+  top and applies `gn check`'s include rule and `gn gen`'s dependency rules
+  for the macOS, Linux and Windows builds (also with the Vulkan switch and
+  as a component build), then runs Chromium's `checkdeps` and Blink's
+  non-Blink-usage audit. Every MoltBrowser header is now listed in its
+  build target, the targets and include rules declare what they use, and
+  the build-machine checklist starts with one ordered first-build list.
 - Consistency hardening: the site tools' approvals, the agent's plan, the
   chat's proposals and form fills, and saved agent runs (their step labels
   and the secret checks that read them) share one list of the characters

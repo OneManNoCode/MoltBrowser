@@ -1768,7 +1768,8 @@ def main(argv=None):
                        "Blink lines")
     for x in (c, d, b):
         x.add_argument("--tree", help="a fetched tree or a Chromium "
-                       "checkout (default: the fetched tree of the pin)")
+                       "checkout without the overlay copied in (default: "
+                       "the fetched tree of the pin)")
         x.add_argument("--chromium-cache", default=str(up.DEFAULT_CACHE),
                        help="tools/chromium/upstream.py's cache, for "
                        "upstream copies the tree lacks")
