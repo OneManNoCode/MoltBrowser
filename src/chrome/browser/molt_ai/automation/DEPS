@@ -1,0 +1,6 @@
+specific_include_rules = {
+  # The constrained-decoding grammar an AI step's reply follows.
+  "automation_ai_steps_unittest\.cc": [
+    "+chrome/services/molt_ai/inference/engine/json_schema_grammar.h",
+  ],
+}

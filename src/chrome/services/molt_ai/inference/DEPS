@@ -18,4 +18,11 @@ specific_include_rules = {
     "+third_party/llama_cpp/ggml/include/ggml.h",
     "+third_party/llama_cpp/ggml/include/ggml-cpu.h",
   ],
+  # ggml-vulkan's packed shaders: inflates them as ggml-vulkan does and
+  # checks the weight types left out.
+  "vulkan_shader_pack_unittest\.cc": [
+    "+third_party/brotli/include/brotli/decode.h",
+    "+third_party/llama_cpp/chromium/ggml-vulkan-shader-pack.h",
+    "+third_party/llama_cpp/ggml/include/ggml.h",
+  ],
 }

@@ -21,4 +21,10 @@ specific_include_rules = {
   "delegated_ink_point\\.h" : [
     "+mojo/public/cpp/bindings/struct_traits.h",
   ],
+  # MoltBrowser: gfx::molt_math (geometry/molt_math.h) on the portable math
+  # MoltNet's uniformity uses.
+  "molt_math(_unittest)?\\.cc" : [
+    "+third_party/fdlibm/ieee754.h",
+    "+third_party/llvm-libc/molt_portable_math.h",
+  ],
 }

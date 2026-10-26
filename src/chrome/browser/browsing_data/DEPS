@@ -74,6 +74,10 @@ include_rules = [
   "+chrome/browser/media/media_engagement_service.h",
   "+chrome/browser/media/webrtc/media_device_salt_service_factory.h",
   "+chrome/browser/media/webrtc/webrtc_event_log_manager.h",
+  # MoltBrowser: the agents' frame tools and the web AI APIs keep per-site
+  # permissions, which Clear browsing data clears.
+  "+chrome/browser/molt_ai/agents/frame_tool_permissions.h",
+  "+chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h",
   "+chrome/browser/net/system_network_context_manager.h",
   "+chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service.h",
   "+chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service_factory.h",

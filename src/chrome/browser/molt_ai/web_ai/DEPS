@@ -1,0 +1,16 @@
+include_rules = [
+  # The inference service's std-only parts the web AI APIs share with it:
+  # the stream filters, the bounds model images and audio must meet, and
+  # the bounded JSON a translation reply is read with.
+  "+chrome/services/molt_ai/inference/engine/audio_input.h",
+  "+chrome/services/molt_ai/inference/engine/bounded_json.h",
+  "+chrome/services/molt_ai/inference/engine/image_input.h",
+  "+chrome/services/molt_ai/inference/engine/stream_filters.h",
+]
+
+specific_include_rules = {
+  # The constrained-decoding grammar a translation request carries.
+  "web_ai_translation_unittest\.cc": [
+    "+chrome/services/molt_ai/inference/engine/json_schema_grammar.h",
+  ],
+}
