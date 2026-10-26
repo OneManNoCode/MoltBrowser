@@ -4,8 +4,9 @@
 // MoltNet's localStorage / sessionStorage caches, totals, commit and write
 // rates per site, and its partitions without a database
 // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h,
-// std-only); and the storage sequence taken in turn per site
-// (molt_dom_storage_fair_queue.h, std-only).
+// std-only); the storage sequence taken in turn per site
+// (molt_dom_storage_fair_queue.h, std-only); and an area's work split into
+// short tasks (molt_dom_storage_split_work.h, std-only).
 
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 
@@ -15,6 +16,7 @@
 #include <vector>
 
 #include "components/services/storage/dom_storage/molt_dom_storage_fair_queue.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -266,6 +268,79 @@ TEST(MoltNetDomStorageSitePolicyTest, WithoutADatabaseItemsStay) {
   EXPECT_TRUE(MoltDomStorageMayDropArea(true, false));
   EXPECT_TRUE(MoltDomStorageMayDropArea(false, false));
   EXPECT_FALSE(MoltDomStorageMayDropArea(false, true));
+}
+
+// Kept per site without a database, an unused area holding nothing goes as
+// it is left; with a database, or not kept per site, the purges decide.
+TEST(MoltNetDomStorageSitePolicyTest, UnusedEmptyAreasGoAtOnceWithoutADatabase) {
+  EXPECT_TRUE(MoltDomStorageDropsUnusedArea(/*caches_per_site=*/true,
+                                            /*has_database=*/false));
+  EXPECT_FALSE(MoltDomStorageDropsUnusedArea(true, true));
+  EXPECT_FALSE(MoltDomStorageDropsUnusedArea(false, false));
+  EXPECT_FALSE(MoltDomStorageDropsUnusedArea(false, true));
+}
+
+// The control pipe's and the namespaces' turns have names no site's group
+// has: serialized sites start with a scheme, the other groups with "^".
+TEST(MoltNetDomStorageSitePolicyTest, TurnsThatArentASitesHaveTheirOwnNames) {
+  const std::string control = kMoltDomStorageControlGroup;
+  const std::string ns = MoltDomStorageNamespaceGroup("0123-abcd");
+  EXPECT_EQ(ns, "^ns 0123-abcd");
+  for (const std::string& other :
+       {MoltDomStorageGroupName(MoltDomStorageGroupKind::kTopLevelSite,
+                                "https://a.test"),
+        MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "0123-abcd"),
+        MoltDomStorageGroupName(MoltDomStorageGroupKind::kOwnKey,
+                                "0123-abcd")}) {
+    EXPECT_NE(other, control);
+    EXPECT_NE(other, ns);
+  }
+  EXPECT_NE(control, ns);
+  EXPECT_NE(MoltDomStorageNamespaceGroup("a"), MoltDomStorageNamespaceGroup("b"));
+}
+
+// A big map is freed a chunk a task: at most 1024 items, or once 1 MiB is
+// freed (one item at least); a small one at once.
+TEST(MoltNetDomStorageSplitWorkTest, MapsAreFreedInChunks) {
+  EXPECT_FALSE(MoltDomStorageFreesInChunks(kMoltDomStorageFreeItemsPerTask,
+                                           kMoltDomStorageFreeBytesPerTask));
+  EXPECT_TRUE(MoltDomStorageFreesInChunks(kMoltDomStorageFreeItemsPerTask + 1,
+                                          0));
+  EXPECT_TRUE(MoltDomStorageFreesInChunks(1,
+                                          kMoltDomStorageFreeBytesPerTask + 1));
+
+  std::map<std::vector<uint8_t>, std::vector<uint8_t>> tiny;
+  for (int i = 0; i < 3000; ++i) {
+    tiny[{static_cast<uint8_t>(i), static_cast<uint8_t>(i >> 8)}] = {'v'};
+  }
+  std::vector<size_t> left;
+  while (MoltDomStorageFreeChunk(tiny)) {
+    left.push_back(tiny.size());
+  }
+  left.push_back(tiny.size());
+  EXPECT_EQ(left, (std::vector<size_t>{1976, 952, 0}));
+
+  std::map<std::vector<uint8_t>, std::vector<uint8_t>> big;
+  for (uint8_t i = 0; i < 5; ++i) {
+    big[{i}] = std::vector<uint8_t>(600 * 1024, 'v');
+  }
+  left.clear();
+  while (MoltDomStorageFreeChunk(big)) {
+    left.push_back(big.size());
+  }
+  // Two of 600 KiB pass 1 MiB: two a chunk.
+  EXPECT_EQ(left, (std::vector<size_t>{3, 1}));
+  EXPECT_TRUE(big.empty());
+
+  big[{1}] = std::vector<uint8_t>(10 * 1024 * 1024, 'v');
+  EXPECT_FALSE(MoltDomStorageFreeChunk(big));  // one item at least
+
+  std::map<std::vector<uint8_t>, size_t> keys_only;
+  for (int i = 0; i < 1500; ++i) {
+    keys_only[{static_cast<uint8_t>(i), static_cast<uint8_t>(i >> 8)}] = 99;
+  }
+  EXPECT_TRUE(MoltDomStorageFreeChunk(keys_only));
+  EXPECT_EQ(keys_only.size(), 1500u - kMoltDomStorageFreeItemsPerTask);
 }
 
 // A site's writes: a burst of 1000 writes and one area's limit in bytes,

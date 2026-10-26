@@ -111,6 +111,7 @@ source_set("storage") {
     "dom_storage/molt_dom_storage_site.h",
     "dom_storage/molt_dom_storage_site_budget.h",
     "dom_storage/molt_dom_storage_site_policy.h",
+    "dom_storage/molt_dom_storage_split_work.h",
   ]
 
   public_deps = [

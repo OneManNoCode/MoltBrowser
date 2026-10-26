@@ -43,6 +43,7 @@
 #include "components/services/storage/public/mojom/local_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -87,6 +88,44 @@ size_t FloodThenRead(blink::mojom::StorageArea* writes,
   loop.Run();
   return handled_at_read;
 }
+
+// An area's observer (a renderer process with the area open), recording
+// what it hears.
+class RecordingObserver : public blink::mojom::StorageAreaObserver {
+ public:
+  mojo::PendingRemote<blink::mojom::StorageAreaObserver> Bind() {
+    return receiver_.BindNewPipeAndPassRemote();
+  }
+  const std::vector<std::string>& heard() const { return heard_; }
+
+  // blink::mojom::StorageAreaObserver:
+  void KeyChanged(const std::vector<uint8_t>& key,
+                  const std::vector<uint8_t>& new_value,
+                  const std::optional<std::vector<uint8_t>>& old_value,
+                  blink::mojom::StorageAreaSourcePtr source) override {
+    heard_.push_back(base::StringPrintf(
+        "changed %zu", new_value.size()));
+  }
+  void KeyChangeFailed(const std::vector<uint8_t>& key,
+                       blink::mojom::StorageAreaSourcePtr source) override {
+    heard_.push_back("failed");
+  }
+  void KeyDeleted(const std::vector<uint8_t>& key,
+                  const std::optional<std::vector<uint8_t>>& old_value,
+                  blink::mojom::StorageAreaSourcePtr source) override {
+    heard_.push_back(base::StringPrintf(
+        "deleted %zu", old_value ? old_value->size() : 0));
+  }
+  void AllDeleted(bool was_nonempty,
+                  blink::mojom::StorageAreaSourcePtr source) override {
+    heard_.push_back(was_nonempty ? "cleared" : "cleared empty");
+  }
+  void ShouldSendOldValueOnMutations(bool value) override {}
+
+ private:
+  std::vector<std::string> heard_;
+  mojo::Receiver<blink::mojom::StorageAreaObserver> receiver_{this};
+};
 
 class MoltNetDomStorageTest : public testing::Test {
  protected:
@@ -435,6 +474,76 @@ TEST_F(MoltNetDomStorageTest, PerSitePartitionsRunOnThreadsOfTheirOwn) {
   session.reset();
   task_environment_.RunUntilIdle();
   EXPECT_EQ(threads.CountForTesting(), 0u);
+}
+
+// Kept per site, an area's observers each hear of a change in a task of
+// their own, in the order of the changes, and an observer gone meanwhile
+// hears nothing (molt_dom_storage_split_work.h). Chromium's order and
+// content, unchanged.
+TEST_F(MoltNetDomStorageTest, ObserversHearOfChangesInTasksOfTheirOwn) {
+  storage_->MoltKeepCachesPerSite();
+  const blink::StorageKey key = Key("https://a.test");
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+  std::vector<std::unique_ptr<RecordingObserver>> observers;
+  for (int i = 0; i < 3; ++i) {
+    observers.push_back(std::make_unique<RecordingObserver>());
+    area->AddObserver(observers.back()->Bind());
+  }
+  area.FlushForTesting();
+  ASSERT_TRUE(Put(area.get(), 'k', 10));
+  ASSERT_TRUE(Put(area.get(), 'k', 20));
+  {
+    base::test::TestFuture<void> deleted;
+    area->Delete({'k'}, std::nullopt, /*source=*/nullptr,
+                 deleted.GetCallback());
+    ASSERT_TRUE(deleted.Wait());
+  }
+  ASSERT_TRUE(Put(area.get(), 'j', 5));
+  {
+    base::test::TestFuture<void> cleared;
+    area->DeleteAll(/*source=*/nullptr, mojo::NullRemote(),
+                    cleared.GetCallback());
+    ASSERT_TRUE(cleared.Wait());
+  }
+  task_environment_.RunUntilIdle();
+  const std::vector<std::string> expected = {
+      "changed 10", "changed 20", "deleted 20", "changed 5", "cleared"};
+  for (const auto& observer : observers) {
+    EXPECT_EQ(observer->heard(), expected);
+  }
+  // An observer gone before its notification hears nothing more.
+  observers.pop_back();
+  ASSERT_TRUE(Put(area.get(), 'k', 7));
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(observers[0]->heard().back(), "changed 7");
+}
+
+// A clear() of an area holding many items frees them a chunk a task; the
+// area is empty at once, and its site's total with it.
+TEST_F(MoltNetDomStorageTest, AClearOfManyItemsIsFreedInChunks) {
+  storage_->MoltKeepCachesPerSite();
+  const blink::StorageKey key = Key("https://a.test");
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+  for (int i = 0; i < 900; ++i) {
+    base::test::TestFuture<bool> stored;
+    area->Put({static_cast<uint8_t>(i), static_cast<uint8_t>(i >> 8)},
+              std::vector<uint8_t>(2048, 'v'), std::nullopt,
+              /*source=*/nullptr, stored.GetCallback());
+    ASSERT_TRUE(stored.Take());
+  }
+  base::test::TestFuture<void> cleared;
+  area->DeleteAll(/*source=*/nullptr, mojo::NullRemote(),
+                  cleared.GetCallback());
+  ASSERT_TRUE(cleared.Wait());
+  EXPECT_EQ(storage_->GetStorageAreaForTesting(key)->storage_used(), 0u);
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(ReadAll(key).empty());
+  // The site's whole total is free again (once its write allowance has
+  // refilled).
+  task_environment_.FastForwardBy(base::Seconds(20));
+  EXPECT_TRUE(Write(key, 10 * 1024 * 1024));
 }
 
 // Chromium 156: an in-memory partition keeps its areas' items in a database
