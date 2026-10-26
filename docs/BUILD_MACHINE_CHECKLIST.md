@@ -92,8 +92,9 @@ what to send back.
    macOS, Windows, Linux and Windows with `molt_llama_vulkan`, a Linux
    component build) and warns only about `//third_party/rust/adblock/v0_13:lib`
    (step 2 vendors it); `checkdeps` and `blink-audit` report 0 errors;
-   compile_check's `report` lists no errors (§4). Each exits 1 on an
-   error. What they model and what they can't: the header of
+   compile_check's `report` lists no errors (§4). The three
+   `gn_static_check.py` checks exit 1 on an error. What they model and what
+   they can't: the header of
    `tools/chromium/gn_static_check.py`, and §4.9.
 2. **Sync, pins and the version** (§1, §2): `setup.sh --resync`, the patch
    series check, the search engines and en-US tables, the Rust crates
@@ -128,9 +129,10 @@ what to send back.
    and the sandboxed inference service, `//net` and the network service
    with MoltNet's hooks, the storage service, `//content`, Blink core and
    modules (hours), MoltBrowser's own unit tests (the first link of most of
-   MoltBrowser's browser code), then `chrome`. A step that fails can be
-   skipped for the next ones: later targets rebuild only what is left.
-   Then §3's own build command for the bundled helpers, and §5's tests.
+   MoltBrowser's browser code), then `chrome`. With `-k 0` a failing step
+   still compiles everything else it can: go on to the next target rather
+   than stop at the first failure, and send all the logs. Then §3's own
+   build command for the bundled helpers, and §5's tests.
 5. **Send back:** every log above, or for a long one the lines
    `grep -nE 'error:|FAILED:|finished with an error|undefined symbol|duplicate symbol'`
    prints and 30 lines after each `FAILED:`; `gn-check.log` and the
