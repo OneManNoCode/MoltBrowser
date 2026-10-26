@@ -21,6 +21,8 @@
 #include "base/numerics/safe_conversions.h"
 #include "build/build_config.h"
 #include "media/base/audio_bus.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
+#include "ui/gfx/geometry/molt_math.h"       // MoltBrowser
 
 #if defined(ARCH_CPU_X86_FAMILY)
 #include <immintrin.h>
@@ -226,7 +228,11 @@ void MultiChannelDotProduct(const AudioBus* a,
   static const auto dot_product_func = [] {
 #if defined(ARCH_CPU_X86_FAMILY)
     base::CPU cpu;
-    if (cpu.has_avx2() && cpu.has_fma3()) {
+    // MoltBrowser: in MoltNet's renderers (media/base/molt_portable_media.h)
+    // the SSE sums on every x86 CPU, the same sums as NEON's on Arm, not the
+    // AVX2 + FMA ones, which pick other blocks to stretch a media element's
+    // audio with (playbackRate; a page reads it through Web Audio).
+    if (cpu.has_avx2() && cpu.has_fma3() && !IsPortableMediaProcess()) {
       return MultiChannelDotProduct_AVX2;
     }
     return MultiChannelDotProduct_SSE;
@@ -452,7 +458,9 @@ size_t OptimalIndex(const AudioBus* search_block,
 void GetPeriodicHanningWindow(base::span<float> window) {
   const float scale = 2.0f * std::numbers::pi_v<float> / window.size();
   for (size_t n = 0; n < window.size(); ++n) {
-    window[n] = 0.5f * (1.0f - std::cos(n * scale));
+    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h); the C
+    // library's cosf otherwise, as before.
+    window[n] = 0.5f * (1.0f - gfx::molt_math::Cos(n * scale));
   }
 }
 
