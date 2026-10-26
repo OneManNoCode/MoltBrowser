@@ -266,6 +266,12 @@ constexpr bool MoltDomStorageGrowthNotifies(size_t old_total,
 // the storage service uses it on its sequence.
 class MoltDomStorageSiteTotals {
  public:
+  MoltDomStorageSiteTotals();
+  MoltDomStorageSiteTotals(const MoltDomStorageSiteTotals&) = delete;
+  MoltDomStorageSiteTotals& operator=(const MoltDomStorageSiteTotals&) =
+      delete;
+  ~MoltDomStorageSiteTotals();
+
   // Whether `area` of `site` may grow to `new_bytes`: if the site's areas
   // together stay within kMoltDomStorageBytesPerSite. Counted if so.
   bool MayGrowTo(std::string_view area, std::string_view site,
@@ -346,6 +352,11 @@ class MoltDomStorageSiteTotals {
   std::map<std::string, size_t, std::less<>> sites_;
   size_t total_ = 0;
 };
+
+// Out of the class body, as Chromium's style asks of a class with members
+// that have constructors.
+inline MoltDomStorageSiteTotals::MoltDomStorageSiteTotals() = default;
+inline MoltDomStorageSiteTotals::~MoltDomStorageSiteTotals() = default;
 
 // ---- One commit rate per site ----
 
