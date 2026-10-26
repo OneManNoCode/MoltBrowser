@@ -47,6 +47,16 @@
 // ERR_ACCESS_DENIED (with no address and no data pipes), the others drop
 // their pipes.
 //
+// Nor does such a context look up a name itself: its connections' names go
+// to Tor inside the SOCKS5 request, while ResolveHost() and
+// CreateHostResolver() use the context's own host resolver (the system's
+// resolver, or Chromium's built-in one and its DNS-over-HTTPS servers),
+// outside Tor, with any source or flag. At 156 the browser asks for them
+// for net-internals' lookup, DevTools' network targets, the error page's DNS
+// probes and preconnects; none reaches a MoltNet page's names, but each
+// would send what it looks up past Tor. ResolveHost() answers
+// ERR_ACCESS_DENIED and CreateHostResolver() drops its pipe.
+//
 // Std-only, so molt_ai_unittests tests it.
 
 #ifndef SERVICES_NETWORK_MOLT_OWN_SESSION_SOCKETS_POLICY_H_
