@@ -21,6 +21,7 @@
 #include "net/base/interval.h"
 #include "net/base/net_export.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/disk_cache/memory/molt_mem_backend_site_lru.h"  // MoltBrowser
 #include "net/log/net_log_with_source.h"
 
 namespace net {
@@ -97,6 +98,11 @@ class NET_EXPORT_PRIVATE MemEntryImpl final
 
   // Update an entry's position in the backend LRU list and set |last_used_|.
   void UpdateStateOnUse();
+
+  // MoltBrowser: the entry's place in its site's least-recently-used list,
+  // kept by MemBackendImpl with per-site limits
+  // (molt_mem_backend_site_lru.h).
+  MoltCacheSiteLink<MemEntryImpl>& molt_site_link() { return molt_site_link_; }
 
   // From disk_cache::Entry:
   void Doom() override;
@@ -189,6 +195,8 @@ class NET_EXPORT_PRIVATE MemEntryImpl final
   bool doomed_ = false;  // True if this entry was removed from the cache.
 
   net::NetLogWithSource net_log_;
+
+  MoltCacheSiteLink<MemEntryImpl> molt_site_link_{this};  // MoltBrowser
 };
 
 }  // namespace disk_cache
