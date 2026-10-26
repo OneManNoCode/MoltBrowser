@@ -24,6 +24,7 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
+#include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
@@ -55,10 +56,13 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
   bool is_bundled = tor.bundled;
   std::string resolved_path = tor.path.AsUTF8Unsafe();
   std::string missing_hint = tor.error;
+  // On a processor MoltNet refuses (molt_net_cpu_policy.h), that is the
+  // hint, never "/tor launch".
+  std::string cpu_error = molt_ai::tor::MoltNetCpuError();
   molt_ai::tor::TorService::Get()->Probe(base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
          std::string resolved_path, bool is_bundled, std::string missing_hint,
-         molt_ai::tor::TorStatus s) {
+         std::string cpu_error, molt_ai::tor::TorStatus s) {
         if (!self) return;
         base::DictValue out;
         out.Set("running", s.running);
@@ -73,13 +77,16 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
                                   : std::string("system")));
         if (!s.running) {
           out.Set("error", s.error);
-          // Two cases:
+          // Three cases:
+          //   - This processor can't run MoltNet — say why.
           //   - We have a binary (bundled or system) but Tor isn't
           //     running yet — tell the user to /tor launch.
           //   - We have nothing — TorManager says what to do ("Install the
           //     tor package" on Linux, a bundled build elsewhere), never to
           //     install via brew.
-          if (resolved_path.empty()) {
+          if (!cpu_error.empty()) {
+            out.Set("install_hint", cpu_error);
+          } else if (resolved_path.empty()) {
             out.Set("install_hint", missing_hint);
           } else {
             out.Set("install_hint",
@@ -90,7 +97,8 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
         self->ResolveJavascriptCallback(base::Value(cb),
                                         base::Value(std::move(out)));
       },
-      weak_this, cb, resolved_path, is_bundled, missing_hint));
+      weak_this, cb, resolved_path, is_bundled, missing_hint,
+      std::move(cpu_error)));
 }
 
 // ------------------------------------------------------------------

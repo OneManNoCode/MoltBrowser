@@ -23,6 +23,7 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/molt_net_identity_end_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_partitioning_policy.h"
@@ -784,6 +785,12 @@ Profile* MoltNetRouting::GetOrCreateMoltNetProfile(Profile* profile,
   Profile* original = profile->GetOriginalProfile();
   if (original->IsGuestSession() || original->IsSystemProfile()) {
     *error = "MoltNet isn't available in Guest or system profiles";
+    return nullptr;
+  }
+  // No MoltNet profile on a processor MoltNet refuses
+  // (molt_net_cpu_policy.h), whoever asks.
+  if (const std::string& cpu = MoltNetCpuError(); !cpu.empty()) {
+    *error = cpu;
     return nullptr;
   }
   if (std::string partitioning = ProcessWidePartitioningError();

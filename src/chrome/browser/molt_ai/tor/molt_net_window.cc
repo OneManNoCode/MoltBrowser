@@ -22,6 +22,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
+#include "chrome/browser/molt_ai/tor/molt_net_cpu.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_guard.h"
 #include "chrome/browser/molt_ai/tor/molt_net_live_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_parental_controls.h"
@@ -650,9 +651,14 @@ void OpenImpl(Profile* from,
                         "in a moment.");
     return;
   }
-  // Before Tor starts: there is nothing to wait for if sites can't be kept
-  // apart, or if Incognito is off (GetOrCreateMoltNetProfile() checks
-  // again).
+  // Before Tor starts: there is nothing to wait for on a processor MoltNet
+  // can't give pages the same answers on (molt_net_cpu_policy.h), if sites
+  // can't be kept apart, or if Incognito is off (GetOrCreateMoltNetProfile()
+  // checks again).
+  if (const std::string& error = MoltNetCpuError(); !error.empty()) {
+    std::move(done).Run(false, error);
+    return;
+  }
   if (std::string error = MoltNetRouting::ProcessWidePartitioningError();
       !error.empty()) {
     std::move(done).Run(false, std::move(error));
@@ -814,6 +820,12 @@ void MoltNetWindow::CloseAll(Profile* from) {
 void MoltNetWindow::NewIdentity(Profile* from, DoneCallback done) {
   if (!from) {
     std::move(done).Run(false, "No profile.");
+    return;
+  }
+  // No identity can exist on a processor MoltNet refuses; say why rather
+  // than that Tor isn't running.
+  if (const std::string& error = MoltNetCpuError(); !error.empty()) {
+    std::move(done).Run(false, error);
     return;
   }
   Profile* original = from->GetOriginalProfile();

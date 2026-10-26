@@ -383,6 +383,7 @@ back/forward, and a MoltNet window with Shields off.
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
 | Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
 | WebAssembly relaxed SIMD, `Math.pow` and `Math.tanh`, colours read back in another colour space, images with a colour profile, decoded audio (`AudioData`); how much heap V8 gives a page | the CPU's vector extensions (relaxed SIMD's results, the code Skia, skcms, Symphonia, FFmpeg and the C library pick); the machine's memory | **one code path for every CPU**: relaxed SIMD off, V8's own `Math` code, portable colour and audio code; V8 configured as on a 4 GB machine ([details](#moltnet-cpu-features)) | `flag-definitions.h`, `function-body-decoder-impl.h`, `ieee754.cc`, `v8.cc`, `isolate_holder.cc`, `chrome_content_renderer_client.cc`; Skia, skcms, Symphonia, `molt_portable_media.cc` |
+| Whether WebAssembly SIMD validates; the bits a `Float16Array` stores for a NaN; audio played at another `playbackRate`; JPEG XL pixels | the processor's extensions (SSE4.1 for SIMD, F16C, AVX2 and FMA, the code jxl-rs picks) | **the same on every processor MoltNet opens on**: MoltNet needs SSE4.1 on x86-64 and says so where it would open; V8's software half-float conversion, one way to time-stretch, jxl-rs's portable mode ([details](#moltnet-what-pages-can-learn-about-the-processor)) | `molt_net_cpu.cc`, `molt_net_window.cc`, `molt_net_routing.cc`, `tor_manager.cc`; `moltnet_cpu.h`; `wsola_internals.cc`; jxl-rs, `jxl_image_decoder.cc` |
 | `Math`'s trigonometry, exponentials and logarithms on arm64; CSS math functions, `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas and SVG transforms and their interpolation; Web Audio's filters, analyser, oscillators, panners, compressor, convolution and resampling; WebRTC audio levels | the OS's C library (glibc, the Windows C runtime and macOS's differ, and pick FMA versions by CPU), V8's math code with fused multiply-adds on arm64, Web Audio's AVX, SSE, NEON and Accelerate code | **one portable math library and Web Audio's scalar code**: the same results on every CPU and OS ([details](#moltnet-portable-math)) | `molt_portable_math.cc`, `ui/gfx/geometry/molt_math.cc`, `ieee754.cc`; the call sites in Blink, `ui/gfx` and `media` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
@@ -3162,8 +3163,10 @@ which for a MoltNet renderer calls
 `PinUniformMachineBeforeV8()` (`core/molt_fingerprinting/moltnet_cpu.h`):
 
 * gives V8 `--no-wasm-relaxed-simd --no-use-std-math-pow
-  --no-use-std-math-tanh --portable-math` (the last one: [portable
-  math](#moltnet-portable-math); `v8::V8::SetFlagsFromString`, before gin
+  --no-use-std-math-tanh --portable-math --no-enable-f16c` (the last two:
+  [portable math](#moltnet-portable-math) and [what pages can learn about
+  the processor](#moltnet-what-pages-can-learn-about-the-processor);
+  `v8::V8::SetFlagsFromString`, before gin
   initialises V8, so the flags hold for every isolate and are frozen with
   the others);
 * configures every isolate for the 4 GB machine
@@ -3345,6 +3348,219 @@ tests, and the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged
 fails validation (`cpu.wasm_relaxed_simd`); compared between runs, a hash
 of `Math` results (`cpu.math`), a frame read back in Display P3
 (`pixels.p3_readback`) and decoded Vorbis (`audio.decoded_vorbis`).
+
+## MoltNet: what pages can learn about the processor
+
+A page can't ask for the processor's model, but it can look for answers
+that Chromium computes differently depending on the processor's
+instruction-set extensions: whether a WebAssembly module validates, the
+bits a conversion stores, the samples or pixels a decoder or an encoder
+produces. [CPU features](#moltnet-cpu-features) and [pixels and encoded
+bytes](#moltnet-pixels-and-encoded-bytes) made the known ones alike in
+MoltNet windows. This section is the audit of Chromium 156 for all of
+them, on x86-64 and arm64, and what MoltNet does about each. How fast
+code runs is not part of it.
+
+### The processor MoltNet needs
+
+| Architecture | MoltNet needs | Processors without it, among others |
+|---|---|---|
+| x86-64 | **SSE3, SSSE3 and SSE4.1** (CPUID leaf 1, ECX bits 0, 9 and 19, the bits V8 reads) | Intel: Pentium 4 and Pentium D, the first (65 nm) Core 2, Atoms before Silvermont (2013). AMD: Athlon 64 and Opteron (K8); Phenom, Phenom II and Athlon II (K10); the E- and C-series (Bobcat) |
+| arm64 | nothing beyond ARMv8-A | none |
+| any other | | all (MoltBrowser isn't built for them) |
+
+V8 compiles WebAssembly's 128-bit SIMD instructions on x86-64 only when
+the processor has SSE4.1 (`CpuFeatures::SupportsWasmSimd128()`, which also
+needs SSE3 and SSSE3); without it every module that uses them fails
+validation (`WebAssembly.validate()` is false, compiling throws a
+`CompileError`), a yes or no about the processor that any page can get at
+once. Every arm64 processor has what V8 needs, and so does every Intel Mac
+that runs a macOS MoltBrowser supports. Chromium itself needs SSE3 on
+x86-64, so the processors MoltNet refuses are the ones in the table that
+still run the rest of MoltBrowser.
+
+### What MoltNet does
+
+The browser reads the processor once (`base::CPU`, the same CPUID bits V8
+reads; `MoltNetCpuError()`). On a processor without them:
+
+* **No MoltNet window, profile or Tor**, from any entry point: the MoltNet
+  button's panel, `molt://ai-settings`, AI chat and agents (opening a page
+  in MoltNet, starting Tor), New Identity, and the "Open in MoltNet" button
+  of `.onion` pages and Onion-Location. Each says why in one sentence:
+  "MoltNet can't open on this computer: its processor lacks SSE4.1 (Intel
+  processors from before about 2008, AMD ones from before about 2011),
+  which MoltNet needs to give pages the same answers as on other
+  computers." The panel, the settings page and the chat's Tor status show
+  it before the user tries; the `.onion` buttons in a message box.
+* **Everything else works as before.** Normal and Incognito windows don't
+  need SSE4.1, and nothing else in the browser changes.
+
+The checks sit where MoltNet's other refusals do (process-wide
+partitioning, a proxy extension, Incognito availability):
+`MoltNetWindow`'s open and New Identity paths,
+`MoltNetRouting::GetOrCreateMoltNetProfile()` (so nothing that makes a
+MoltNet profile passes it by) and `TorManager::Launch()` (so Tor doesn't
+start for MoltNet either). MoltNet windows aren't restored with a session
+(off-the-record profiles never are), and no menu command, keyboard
+shortcut or command-line switch opens one.
+
+### The audit
+
+Every place in Chromium 156 where code is chosen by the processor's
+extensions at run time (V8's `CpuFeatures`, `base::CPU`, libraries'
+own detection: Highway, simdutf, zlib, libyuv, libvpx, libaom, libwebp,
+libjpeg-turbo, dav1d, FFmpeg, Skia, skcms, the Rust crates' feature
+detection) or at build time for one architecture (NEON on arm64), and
+whose result a page can read. **Changed here**:
+
+| What a page can observe | Chromium 156 | MoltNet |
+|---|---|---|
+| Whether WebAssembly SIMD (`v128`) validates and compiles | on x86-64 only with SSE4.1; always on arm64 | **MoltNet needs SSE4.1** (above): on every processor MoltNet opens on, it validates |
+| The bits `Float16Array` and `DataView.setFloat16()` store for a NaN | on x86-64, optimized code converts with F16C (Intel from Ivy Bridge, AMD from Piledriver and Jaguar), which keeps part of a NaN's payload; other code, and processors without F16C, store the canonical NaN | **V8's software conversion on every x86-64 processor** (`--no-enable-f16c`); every other value converts the same either way |
+| Audio a media element plays at another `playbackRate` (time stretching, read through Web Audio or `captureStream()`) | WSOLA's block search sums with AVX2 and FMA on processors that have both (8 lanes, fused), with SSE or NEON on others (4 lanes, not fused), so it picks other blocks | **the 4-lane sums on every processor** (they're what non-AVX2 x86-64 and arm64 already did), and the Hann window from the portable `cos()` |
+| JPEG XL pixels (`<img>`, CSS, canvases, WebCodecs' `ImageDecoder`) | jxl-rs picks AVX-512, AVX2 + FMA + F16C, SSE4.2 or NEON code (they fuse multiply-adds or not, look tables up in bf16, convert half floats differently), and its transfer functions and weights call the C library's `powf`, `exp`, `log2`, `cbrt` and `hypot` | **jxl-rs's scalar code and the libm crate's functions** (the crates' portable mode, set when a decoder is made in a MoltNet renderer) |
+
+**Already alike in MoltNet** (other sections): relaxed SIMD (off),
+`Math.pow` and `Math.tanh`, Skia's and skcms's colour code, decoded audio
+([CPU features](#moltnet-cpu-features)); the rest of `Math`, CSS math,
+geometry and Web Audio ([portable math](#moltnet-portable-math)); Opus,
+the encoders' resampler and scaler, video decoding and read-back ([pixels
+and encoded bytes](#moltnet-pixels-and-encoded-bytes)); `hardwareConcurrency`
+and V8's heap ([performance.memory](#moltnet-performancememory)); the
+Media Capabilities and WebCodecs answers ([audio, DRM and media
+capabilities](#moltnet-audio-drm-and-media-capabilities)).
+
+**Alike in Chromium 156 already**, and why:
+
+| What a page can observe | Why it's the same on every processor |
+|---|---|
+| WebAssembly memories: the largest one, how many fit, out-of-bounds traps | V8's sandbox is 1 TB on processors with 48- and 57-bit addresses alike, and every memory lives in it; the trap handler is chosen by OS, not processor |
+| Which WebAssembly and JavaScript features exist (JSPI, memory64, GC, exceptions, tail calls, threads, `Atomics.pause`) and which tiers run | none is gated on an extension; `Atomics.pause` returns nothing (it runs `pause` or `isb`); TurboFan and Maglev run on every x86-64 and arm64 processor |
+| Plain WebAssembly SIMD results, numbers through V8's optimizing compilers (rounding, clamping, `Math.clz32`, conversions to integers) | the instructions picked by SSE4.1, SSE4.2, AVX, AVX2, POPCNT, LZCNT and BMI on x86-64, and LSE, JSCVT, DOTPROD, FP16 or SVE on arm64, compute the same values as the code without them |
+| String and array search, hashing and JSON (`indexOf`, `includes`, `JSON.stringify` escaping), typed-array `sort()` | exact comparisons; V8 uses Highway with the build's target only (no run-time choice), and `std::sort` for typed arrays |
+| `TextEncoder`, `TextDecoder`, `Uint8Array.fromBase64()` and `toBase64()` | simdutf's implementations for each extension give the same output and the same errors, which its tests check against each other |
+| `CompressionStream` and `DecompressionStream` | Chromium's zlib hashes the same way on every processor; its SIMD (CRC-32, Adler-32, window fill) computes exact checksums and copies (measured, below) |
+| Canvas images as JPEG, WebP and PNG (`toDataURL()`, `toBlob()`, `convertToBlob()`), and AV1 from `VideoEncoder` and `MediaRecorder` | libjpeg-turbo's, libwebp's and libaom's SIMD code gives the bytes their C code gives, at every level of x86-64 and on arm64 (measured, below); the PNG encoder (the png crate, fdeflate, miniz_oxide) chooses nothing by processor but exact checksums |
+| Stylesheets parsed into CSSOM | Blink's AVX2 scanner only decides whether a block is parsed now or when first used |
+| Images in JPEG, PNG, WebP, GIF, BMP, ICO and AVIF | their decoders' SIMD code is exact (integer DCT, upsampling and filters, measured for JPEG and WebP below; AV1 decoding is bit-exact by its specification), and colour profiles go through skcms's portable mode |
+| WebCrypto | BoringSSL's results are defined by the algorithms; only speed differs |
+| GPU canvases and WebGL | drawn by the GPU, and farbled; MoltNet has no WebGPU adapter |
+| WebNN, built-in AI | WebNN is off; the built-in AI APIs say `"unavailable"` in MoltNet |
+
+Microphone audio is processed (echo cancellation, noise suppression, gain)
+by WebRTC's code for the processor, like camera frames converted on the GPU
+([CPU features](#moltnet-cpu-features)): it exists only after the user
+grants a permission, and carries the room's sound.
+
+### What it costs MoltNet users
+
+Owners of the processors in the first table can't use MoltNet (the rest
+of MoltBrowser works). On the others: `Float16Array` stores convert in
+software on x86-64 (V8's conversion function instead of one instruction;
+arrays of half floats are rare outside WebGPU and machine learning, and
+MoltNet has no WebGPU); time stretching costs about as much as on a
+processor without AVX2; JPEG XL images take 1.2 to 1.9 times as long to decode (measured on
+this VM's Xeon: a 128 by 96 image 2.6 ms instead of 1.4 ms, a Display P3
+logo from Skia's test images 101 ms instead of 83 ms).
+
+### Code
+
+| Where | What |
+|---|---|
+| `chrome/browser/molt_ai/tor/molt_net_cpu_policy.h` | the requirement, as a pure function, and the sentence (std-only, + `molt_net_cpu_policy_unittest.cc`) |
+| `chrome/browser/molt_ai/tor/molt_net_cpu.{h,cc}` | `ReadMoltNetCpuFeatures()` from `base::CPU`, `MoltNetCpuError()` (read once; + `molt_net_cpu_unittest.cc`) |
+| `molt_net_window.cc`, `molt_net_routing.cc`, `tor_manager.cc` | the three checks |
+| `ui/webui/molt_ai/molt_net_handler.cc`, `molt_ai_settings_ui.cc`, `molt_ai_chat_handler_tor.cc` | the sentence up front |
+| `core/molt_fingerprinting/moltnet_cpu.h` | `--no-enable-f16c` among `kMoltNetV8Flags` |
+| `media/base/molt_portable_media.h` | the media process mode, now also WSOLA's |
+
+Upstream hooks (each marked `MoltBrowser:`; all new in `src/`):
+
+* `media/filters/wsola_internals.cc` (`MultiChannelDotProduct`: not the
+  AVX2 version in a portable media process; `GetPeriodicHanningWindow`:
+  `gfx::molt_math::Cos`).
+* jxl-rs, with the same changes as crate patches in
+  `third_party/rust/chromium_crates_io/patches/jxl_simd-v0_7/` and
+  `jxl-v0_7/`, so vendoring the crates again keeps them:
+  `vendor/jxl_simd-v0_7/src/lib.rs` (`moltbrowser_set_portable()`),
+  `src/x86_64/mod.rs` and `src/aarch64/mod.rs` (`simd_function!`: the
+  scalar descriptor in portable mode); `vendor/jxl-v0_7/src/moltbrowser_math.rs`
+  (new: the switch between the standard library's and libm's functions),
+  `src/lib.rs`, `Cargo.toml` (libm), and the call sites in
+  `src/frame/quant_weights.rs`, `src/frame/group.rs`, `src/api/color.rs`,
+  `src/features/spline.rs`, `src/render/stages/xyb.rs` and
+  `src/color/tf.rs`; `third_party/rust/chromium_crates_io/Cargo.lock`,
+  `third_party/rust/jxl/v0_7/BUILD.gn` (the new file, libm),
+  `third_party/rust/jxl/v0_7/wrapper/lib.rs`
+  (`jxl_rs_moltbrowser_set_portable()`), and
+  `third_party/blink/renderer/platform/image-decoders/jxl/jxl_image_decoder.cc`
+  (the constructor: portable when `gfx::molt_math::IsPortable()`).
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory), with
+Chromium 156's sources built with clang and Chromium's flags for x86-64
+(`-msse3`, `-ffp-contract=off`) and arm64, run natively (a Xeon with
+AVX-512) and under qemu on emulated Core 2 (Conroe and Penryn), Nehalem,
+Westmere, Sandy Bridge, Ivy Bridge, Haswell, Skylake, Ice Lake, Phenom,
+Opteron G3 and G4, EPYC, Denverton and Snow Ridge (Atom) CPUs, and arm64
+Cortex-A53, A72, A76, Neoverse N1 and V1, A64FX and qemu's `max` CPU:
+
+* **The requirement.** V8 156's `CpuFeatures` probe (`cpu.cc` and the x64
+  and arm64 `ProbeImpl`): Conroe, Phenom and Opteron G3 have no Wasm SIMD,
+  every other CPU above has it; `MoltNetCpuError()` refuses those three
+  and opens on the others it ran on. `molt_net_cpu_policy_unittest.cc` and `molt_net_cpu_unittest.cc`
+  (8 tests, against a stand-in `base::CPU` with 156's interface) with g++
+  (ASan/UBSan) and clang (`-fno-exceptions`, the strict warning set).
+* **Float16.** V8 156's software conversion (`DoubleToFloat16`) against
+  its F16C sequence (`Cvtpd2ph`) on 51.8 million non-NaN doubles (around
+  every half float's rounding boundaries, and 20 million random ones): the
+  same; on a million NaNs F16C kept part of the payload. With
+  `--no-enable-f16c` V8's probe reports no F16C on any CPU above.
+* **Time stretching.** 156's `wsola_internals.cc`, with the hooks, on
+  fixed audio: the dot products and the blocks picked differ between
+  CPUs with AVX2 and FMA (Haswell, EPYC, the Xeon) and the rest (Core 2,
+  Nehalem, Sandy Bridge, arm64); in portable mode all are the same.
+* **JPEG XL.** jxl-rs 0.7 as Chromium 156 vendors it, built offline with
+  its vendored dependencies, on 9 images (lossy and lossless, grey, RGB,
+  alpha, animated, a Display P3 one, from Chromium's and jxl-rs's test
+  data), decoded to 8-bit and float pixels: the default code gives 4
+  different results (scalar on Core 2, SSE4.2 on Nehalem and Sandy
+  Bridge, AVX2 on Haswell, EPYC and the Xeon, NEON); portable mode one, on
+  every CPU of both architectures. The crate patches apply to the crates
+  Chromium 156 vendors and reproduce the changed files.
+* **Already alike.** Chromium 156's zlib: 936 deflate streams (every
+  level, the zlib, gzip and raw wrappers, every strategy, inputs up to
+  1 MB) the same on every CPU above.
+  Blink's CSS scanner (`FindLengthOfDeclarationList`), SSE2 against AVX2
+  over 4 million random inputs: never two different lengths (one is 0,
+  "parse later", in 46,218).
+  The encoders as Chromium 156 builds and configures them (its source
+  lists and generated configurations, Skia's and `Av1VideoEncoder`'s
+  settings): libaom, 32 AV1 configurations (two sizes, cpu-used 7 and
+  9, VBR and CBR, camera and screen content, 1 and 4 threads with
+  Chromium's tiles), the same bytes on Core 2, Nehalem, Sandy Bridge,
+  Haswell, EPYC, the Xeon, Cortex-A53 and A76, Neoverse V1 and `max`, and
+  with libaom's C code alone; libwebp, 108 images (lossy at five
+  qualities with method 3, lossless with method 0, with and without
+  alpha) encoded and decoded, the same on every CPU above; libjpeg-turbo,
+  54 images at six qualities (4:2:0, and 4:4:4 at quality 100, with
+  optimized Huffman tables) encoded and decoded, the same with its C,
+  SSE2 and AVX2 code and on arm64.
+* **The page's view.** Node 22's V8 on emulated CPUs: a module with one
+  SIMD instruction fails `WebAssembly.validate()` on Core 2 (Conroe),
+  Phenom and Opteron G3, and validates on Penryn, Nehalem, Haswell and
+  the Xeon.
+
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`). **Needs the build machine:** compiling and
+linking (Rust included), `molt_ai_unittests` (`MoltNetCpuPolicyTest.*`,
+`MoltNetCpuErrorTest.*`), `blink_unittests` (`MoltNetCpuTest.Flags`),
+`media_unittests` and `blink_platform_unittests` (time stretching and JPEG
+XL outside MoltNet unchanged), and the checks in
+`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-arch" (MoltNet on a virtual
+machine with a Core 2 processor).
 
 ## MoltNet: portable math
 
@@ -5619,6 +5835,10 @@ Honest list; anything not in the table above is not covered.
   C library, and V8's heap configured from the machine's memory, see [CPU
   features](#moltnet-cpu-features) and
   [performance.memory](#moltnet-performancememory).)
+* (Closed: in MoltNet, WebAssembly SIMD's support on x86-64 processors
+  without SSE4.1 (MoltNet needs it), half-float conversion of NaNs, time
+  stretching and JPEG XL decoding, see [what pages can learn about the
+  processor](#moltnet-what-pages-can-learn-about-the-processor).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -5775,6 +5995,8 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}`; `src/sandbox/policy/linux/molt_data_limit.h` | MoltNet's `performance.memory`, memory measurement and the 4 GiB machine V8 is configured as (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`); the renderer's data limit on Linux (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
 | `src/third_party/llvm-libc/molt_portable_math.{h,cc}`; `src/ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | MoltNet's portable math: llvm-libc without fused multiply-adds (+ `molt_portable_math_unittest.cc`) and the process-wide switch Blink, `ui/gfx` and `media` call through (+ `molt_math_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.{h,cc}`; `src/third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | MoltNet's CPU features, set before V8 starts: V8's flags, the heap's machine, skcms's and Skia's portable code (+ `moltnet_cpu_test.cc`); Skia's portable raster pipeline |
+| `src/chrome/browser/molt_ai/tor/molt_net_cpu_policy.h`, `molt_net_cpu.{h,cc}` | the processor MoltNet needs, read once in the browser, and the sentence it shows (+ `molt_net_cpu_policy_unittest.cc`, `molt_net_cpu_unittest.cc`) |
+| `src/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/moltbrowser_math.rs`, `jxl_simd-v0_7/src/lib.rs` | jxl-rs's portable mode (crate patches in `chromium_crates_io/patches/jxl-v0_7/`, `jxl_simd-v0_7/`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
 | `src/media/base/molt_portable_media.{h,cc}`, `molt_portable_scale.{h,cc}`; `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_pixels.{h,cc}` | MoltNet's media pixels and encoded bytes: the portable mode and the integer scaler (std-only; + `molt_portable_media_unittest.cc`, `molt_portable_scale_unittest.cc`) and the glue (+ `moltnet_pixels_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher, `local()` names included (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
@@ -5958,4 +6180,8 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    Symphonia, rustfft or FFmpeg roll, repeat the comparisons of [CPU
    features](#moltnet-cpu-features) and look for new instructions or code
    paths picked by CPU feature (new relaxed instructions, new `SkOpts`
-   entries, new uses of the C library's math in V8).
+   entries, new uses of the C library's math in V8). When jxl-rs,
+   libaom, libwebp or libjpeg-turbo roll, or V8 gates a WebAssembly
+   feature on a processor extension, repeat the audit of [what pages can
+   learn about the processor](#moltnet-what-pages-can-learn-about-the-processor)
+   (and check that vendoring the jxl crates kept their patches).

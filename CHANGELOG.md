@@ -461,6 +461,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   `display-capture` permission reads "denied". Drawing speed is unchanged
   within measurement (`docs/FINGERPRINTING.md`, "MoltNet: portable math");
   regular and incognito windows are unchanged.
+- **MoltNet gives pages the same answers on every processor it runs on.**
+  MoltNet now needs SSE4.1 on x86-64 (Intel processors from about 2008,
+  AMD ones from about 2011; any arm64 processor works): on an older
+  processor it doesn't open, from any button, menu, chat or `.onion` page,
+  and says why in one sentence, while the rest of MoltBrowser works as
+  before. In MoltNet windows `Float16Array` conversions, audio played at
+  another speed and JPEG XL images now compute the same way on every
+  processor; JPEG XL images there decode up to about twice as slowly
+  (`docs/FINGERPRINTING.md`, "MoltNet: what pages can learn about the
+  processor"); regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

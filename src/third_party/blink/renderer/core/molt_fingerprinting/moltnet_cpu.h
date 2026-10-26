@@ -24,6 +24,16 @@
 //                                Math function, not the C library's, which
 //                                can pick its code by CPU feature (glibc's and
 //                                the Windows CRT's FMA variants)
+//   Float16 conversions        V8's own code on every x86-64 CPU
+//                                (--no-enable-f16c): optimised code converts
+//                                a double to a half float with F16C where
+//                                the CPU has it (Ivy Bridge and later, not
+//                                Atom-class Pentiums and Celerons), which
+//                                keeps a NaN's payload, while V8's own
+//                                conversion, the one every other x86-64 CPU
+//                                runs, stores the canonical NaN
+//                                (Float16Array, DataView.setFloat16,
+//                                Math.f16round); numbers convert alike
 //   every Math function        the same results on x86-64 and arm64
 //                                (--portable-math): the llvm-libc ones from
 //                                its build without fused multiply-adds
@@ -88,10 +98,12 @@
 
 namespace blink::molt_fingerprinting {
 
-// The V8 flags of a MoltNet renderer.
+// The V8 flags of a MoltNet renderer. (--no-enable-f16c does nothing on
+// arm64, where V8 converts half floats with FCVT, which every arm64 CPU
+// has.)
 inline constexpr std::string_view kMoltNetV8Flags =
     "--no-wasm-relaxed-simd --no-use-std-math-pow --no-use-std-math-tanh "
-    "--portable-math";
+    "--portable-math --no-enable-f16c";
 
 // For a MoltNet renderer, before V8 is initialised and before any isolate,
 // image decoder or colour transform exists (no Blink object or thread is

@@ -38,6 +38,9 @@
 #   molt_net_partitioning_policy — the process-wide switches MoltNet needs
 #                              on (connections, HTTP cache, third-party
 #                              storage partitioned by site)
+#   molt_net_cpu_policy / molt_net_cpu — the processors MoltNet opens on
+#                              (x86-64 with SSE4.1, arm64), read once with
+#                              base::CPU
 #   molt_net_live_policy / molt_net_live_guard — the open check run again
 #                              whenever a setting it reads changes while
 #                              MoltNet is open (MoltNet then ends), and only
@@ -167,6 +170,25 @@ source_set("partitioning_policy") {
   sources = [ "molt_net_partitioning_policy.h" ]
 }
 
+# The processors MoltNet opens on (molt_net_cpu_policy.h): x86-64 with
+# SSE4.1, without which V8 has no WebAssembly SIMD, and arm64.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("cpu_policy") {
+  sources = [ "molt_net_cpu_policy.h" ]
+}
+
+# This computer's processor as the policy reads it (base::CPU), cached for
+# the browser run: TorManager, MoltNetRouting, MoltNetWindow and MoltNet's
+# pages ask it.
+source_set("cpu") {
+  sources = [
+    "molt_net_cpu.cc",
+    "molt_net_cpu.h",
+  ]
+  public_deps = [ ":cpu_policy" ]
+  deps = [ "//base" ]
+}
+
 # Whether a profile's proxy settings are MoltNet's own: no policy proxy and
 # no proxy override rules (molt_net_proxy_policy.h); molt_net_routing.cc
 # reads it. Header-only and std-only, so molt_ai_unittests tests it.
@@ -260,6 +282,7 @@ source_set("tor") {
 
   public_deps = [
     ":autofill",
+    ":cpu",
     ":identity_end_policy",
     ":process_policy",
     ":incognito_parity_policy",
@@ -549,6 +572,8 @@ source_set("unit_tests") {
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_background_fetch_scheduling_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
+    "molt_net_cpu_policy_unittest.cc",
+    "molt_net_cpu_unittest.cc",
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
@@ -584,6 +609,8 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":cpu",
+    ":cpu_policy",
     ":identity_end_policy",
     ":incognito_parity_policy",
     ":isolation_policy",
