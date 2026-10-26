@@ -1393,7 +1393,12 @@ def run(tree, overlay, platforms, only_files=None, extra_args=None,
         for bf in bfiles:
             check_build_file(g, ug, overlay, bf, dot, findings)
         if only_files is None:
+            # Upstream's graph has none; one it shows too comes from this
+            # checker's approximations (a host-toolchain edge), not ours.
+            upstream_cycles = {tuple(c) for c in ug.cycles()} if ug else set()
             for comp in g.cycles():
+                if tuple(comp) in upstream_cycles:
+                    continue
                 findings.add(Finding(
                     "cycles", "error", comp[0],
                     "dependency cycle: " + " -> ".join(
