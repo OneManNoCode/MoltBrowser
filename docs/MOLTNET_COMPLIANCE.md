@@ -1083,8 +1083,23 @@ all entries, so how long it takes depends on the site's own entries
 only, never on how many other sites hold
 (`net/disk_cache/memory/molt_mem_backend_site_lru.h`). An entry unused
 for 30 minutes is dropped, when it is next opened or by a sweep that runs
-every minute whatever sites do (and stops at the first entry used within
-the 30 minutes). All sites together may use 120 MiB (twelve
+every minute whatever sites do. The sweep goes site by site, from each
+site's least recently used entry to its first one used within the 30
+minutes, in steps of at most 64 entries of one site, each step a task of
+its own: what a site's entries cost to sweep is spent in that site's
+steps, and another site's request waits for one step at most, however
+many entries the sites have expiring (in a harness with 100,000 entries of
+other sites expiring at once, the longest task went from 28 ms to 65 µs).
+When an entry was last used is read from a monotonic clock, the one each
+site's list is ordered by, so a wall clock set back or forward neither
+holds expiry back nor drops entries early. Finding a site's record is a
+hash lookup in a table made once with room for 4096 sites (more than one
+person visits within the 30 minutes an entry is kept), with a hash seeded
+per table: adding a site never rehashes the table, so it costs the same
+however many other sites there are (a table that grows took up to 20 µs
+to add the site that made it rehash at 2,357 sites; this one stays under
+half a microsecond); a site past the cap gets no entry, as a write that
+doesn't fit. All sites together may use 120 MiB (twelve
 shares); a write that would pass that is not stored, and nothing is
 evicted for it. A new entry's key counts like data written into it: the
 site makes room from its own unused entries first, and an entry that
@@ -1318,7 +1333,13 @@ tab. The low-end-device rule and `PurgeMemory()` don't apply there.
 MoltNet's partition keeps no database (below): an area that holds an
 item, of any size, is never purged, since its items are nowhere else; only
 areas that hold nothing leave the cache, and a page that opens one again
-finds it empty, as it was
+finds it empty, as it was. So there an area that holds nothing goes as
+soon as no page has it open, in a task in its site's turn (the purge on
+opening and the sweep above are for a partition kept per site with a
+database): the cache holds exactly the areas in use and those holding
+items, nothing that opens or sweeps looks at other sites' areas (both
+purges walked every site's areas), and whether an area was still cached
+says nothing about other sites (`MoltDomStorageDropsUnusedArea()`)
 (`components/services/storage/dom_storage/molt_dom_storage_site_policy.h`;
 the storage controls' `MoltKeepCachesPerSite()`, which
 `DOMStorageContextWrapper` sends when
@@ -1438,26 +1459,83 @@ pages', and its observers') are bound to a task runner of the area's site,
 whose tasks wait in that site's queue, and the sequence runs one task at a
 time from the queues in turn: the site whose next task would start
 earliest in a virtual time goes first, and each task moves its site's
-virtual time on by the time it took, a microsecond at least (start-time
+virtual time on by the time it took, a microsecond at least: the thread's
+processor time where the platform has it, so that a task during which the
+operating system ran other threads isn't charged that time (start-time
 fair queueing:
 `components/services/storage/dom_storage/molt_dom_storage_fair_queue.h`
 and `molt_dom_storage_fair_scheduler.h`, used by `StorageAreaImpl`,
 `SessionStorageAreaImpl`, `LocalStorageImpl` and `SessionStorageImpl`).
-Everything still runs on the storage sequence, each site's messages in
-the order they came; only the order between sites changes. A site that had
-nothing queued, and has used no more than its share of the sequence, goes
-next, after the task in service; sites with work queued share the
-sequence's time equally, however many messages or areas each has. In a
+Everything still runs on the partition's thread (below), each site's
+messages in the order they came; only the order between sites changes. A
+site that had nothing queued, and has used no more than its share of the
+thread, goes next, after the task in service; sites with work queued share
+the thread's time equally, however many messages or areas each has. In a
 harness that reproduces mojo's dispatch around the shipped scheduler, a
 polite site's read every 10 ms waited behind 50,000, 100,000 and 200,000
 messages of one, two and four flooding sites (73, 159 and 262 ms) in
 Chromium's order, and behind one or two (64 µs, as without a flood) in
-MoltNet's. What a page can still observe: the task in service when its
-message arrives (one message of another site, at most a write of an
-area's whole limit), the sequence's other work (the browser's requests,
-other partitions), and, if it uses more than its share, that it shares
-the sequence. What it costs: one more task per message on the storage
-sequence.
+MoltNet's.
+
+A thread of its own. At Chromium 156 the storage service (a utility
+process on the desktop, the browser's IO thread on Android or with
+`--single-process`) makes every partition's `localStorage` and
+`sessionStorage` on its one sequence: a regular window's page flooding
+its storage delayed MoltNet's reads, one task for one, and MoltNet's pages
+delayed the regular window's, a timing channel between identities. The
+browser now binds a partition kept per site in memory (MoltNet's) through
+`StorageService.MoltBindPerSiteLocalStorageControl()` and
+`MoltBindPerSiteSessionStorageControl()` (`DOMStorageContextWrapper`), and
+the storage service gives each of its two controls a dedicated thread from
+the thread pool, which runs nothing else, so it never waits for a pool
+worker either (`components/services/storage/dom_storage/
+molt_dom_storage_own_thread.{h,cc}`). Every identity has its own; regular
+profiles keep the storage service's sequence. In the harness, with
+MoltNet's scheduler on the storage sequence as before, MoltNet's polite
+read waited behind about 33,000 messages of one flooding regular page
+(38 ms at the median) and a regular page's behind one MoltNet task; on
+its own thread, behind none of the other side's (17 µs at the median, as
+without a flood; what stays is the machine's: the processor, and the
+storage service's IO thread, which reads every pipe's messages).
+
+The control pipe. The browser's messages to a partition (binding an area
+for a page, deleting a site's storage, creating, cloning and deleting a
+tab's `sessionStorage` namespace, usage, flushes) come on one pipe, and
+were handled as they came, one task each, ahead of the sites' turns: a page
+making the browser bind areas in a loop (frames of many subdomains) held
+up every other site. In MoltNet's partition that pipe takes a turn of its
+own, and each message that names a storage key (`BindStorageArea()`,
+`DeleteStorage()`) is handled in its site's turn; its turn counts its
+tasks at an eighth of their time, as it carries every site's messages and
+only reads them (`MoltDomStorageChargeFor()`); and each `sessionStorage`
+namespace's pipes (a tab's renderers' `Clone()` calls) take a turn of
+their own too (`MoltDomStorageNamespaceGroup()`). A message that names a
+storage key is handled after the control messages that came before it,
+and in order with its site's other messages. In the harness, with the
+browser forwarding binds as fast as it could, another site's read waited
+behind about 24,000 of them (39 ms at the median) before, behind none
+(21 µs) now.
+
+Long tasks. One task of a site is how long another site's message may
+wait. Where it could be long, the work is split
+(`molt_dom_storage_split_work.h`): a change carrying 64 KiB or more to an
+area open in more than one tab notifies each tab's renderer in a task of
+its own, in order with the area's other notifications (a 10 MiB write to
+an area open in eight tabs serialized 180 MiB in one task, 13.5 ms in the
+harness; now 2.2 ms for the write and 1.5 ms for each notification), and a
+big map (a `clear()`, an area or a tab's namespace going) is freed at most
+1024 items or 1 MiB a task (a clear of 90,000 items took 10 ms in one
+task; now 19 µs and steps of 0.2 ms).
+
+What a page can still observe: the task in service when its message
+arrives (one message of another site, or one control message: at most the
+decoding and handling of a write of an area's whole limit with one
+notification, or a read of a whole area, a few milliseconds), the
+machine, and, if it uses more than its share, that it shares the thread.
+A page's own first opening of an area waits for the browser's control
+messages before it, which the browser forwards one at a time. What it
+costs: one more task per message, two threads per MoltNet identity, and a
+task per tab for a big change.
 
 **Shared work queues.** Sites also share the browser's work: a site that
 keeps a part of the browser busy slows what another site asks of it, and
@@ -1471,17 +1549,18 @@ own storage keys cost (*Storage*); Background Fetch limits of its own
 (*Downloads and Background Fetch*); and, for `localStorage` and
 `sessionStorage`, its own total and write allowance, with no database to
 wait behind (*DOM storage caches*, *DOM storage totals*), and its turn on
-the storage service's sequence (*The storage service's sequence, in turn
-per site*), so the work its messages cause the storage service is
-bounded, and no read waits for another site's queued messages or
-commits. What every site still shares, in MoltNet as in
+the identity's own storage thread, which no other identity or regular
+window shares (*The storage service's sequence, in turn per site*), so
+the work its messages cause the storage service is bounded, and no read
+waits for another site's queued messages or commits. What every site still
+shares, in MoltNet as in
 any browser, Tor Browser included: the processor and the GPU process; the
 browser's main and IO threads, which pass every page's messages; the
 network service's thread, which runs every request's network code (a
 site's many requests delay another's by the time that code takes, not by
-the network's); the storage service's sequence, apart from the turns its
-DOM storage messages take, one task at a time (a message of another site
-in service when a page's own arrives); and Tor's own process (*Tor's
+the network's); the identity's storage thread, one task at a time (a
+message of another site in service when a page's own arrives), and the
+storage service's IO thread; and Tor's own process (*Tor's
 capacity*). Threads of their own for each site would take
 a network and a storage service per site, which no browser has; what a
 site can measure through them is how busy the machine is, as any page can
