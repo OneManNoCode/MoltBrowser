@@ -495,17 +495,27 @@ TEST(MoltNetDomStorageFairQueueTest, AnIdleSiteGetsNoCredit) {
 // messages doesn't go first forever.
 TEST(MoltNetDomStorageFairQueueTest, EveryTaskCounts) {
   FairQueue queue;
-  for (int i = 0; i < 1000; ++i) {
+  for (int i = 0; i < 100; ++i) {
     queue.Push("https://free.test", i);
   }
-  queue.Push("https://other.test", 0);
-  queue.Push("https://other.test", 1);
-  int free_before_other = 0;
-  RunNext(queue, 0);  // free's first, ready first
-  while (RunNext(queue, 0) == "https://free.test") {
-    ++free_before_other;
+  for (int i = 0; i < 10; ++i) {
+    queue.Push("https://dear.test", i);
   }
-  EXPECT_EQ(free_before_other, 0);
+  // The free site's tasks take no time by the clock, the dear site's 5
+  // microseconds.
+  int free_runs = 0;
+  int dear_runs = 0;
+  while (dear_runs < 3) {
+    std::string site;
+    int task = 0;
+    ASSERT_TRUE(queue.Pop(&site, &task));
+    const bool dear = site == "https://dear.test";
+    queue.Charge(site, dear ? 5 : 0);
+    ++(dear ? dear_runs : free_runs);
+  }
+  // Each free task counts a microsecond: five of them for each dear one.
+  EXPECT_GE(free_runs, 10);
+  EXPECT_LE(free_runs, 12);
 }
 
 // Nothing is kept for a site once its next task would start now anyway:
