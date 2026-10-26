@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/disk_cache/memory/mem_backend_impl.cc b/net/disk_cache/memory/mem_backend_impl.cc
-index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd1303ae38b38 100644
+index c07ca9a4cc1309972319c95d99318c710a2dee34..4602dcba4e1d054ad590258c8894ee6ca2126b5b 100644
 --- a/net/disk_cache/memory/mem_backend_impl.cc
 +++ b/net/disk_cache/memory/mem_backend_impl.cc
 @@ -13,6 +13,7 @@
@@ -27,7 +27,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd130
    return max_size_ / 8;
  }
  
-@@ -145,6 +150,111 @@ bool MemBackendImpl::HasExceededStorageSize() const {
+@@ -145,6 +150,123 @@ bool MemBackendImpl::HasExceededStorageSize() const {
    return current_size_ > current_max_size_;
  }
  
@@ -90,6 +90,18 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd130
 +  }
 +}
 +
++bool MemBackendImpl::MoltMayCreateEntry(const std::string& key) {
++  const std::string_view site = MoltHttpCacheSiteOfKey(key);
++  const int64_t key_bytes = static_cast<int64_t>(key.size());
++  if (MoltCacheSiteMakesRoomForEntry(MoltSiteSize(site), key_bytes,
++                                     molt_budget_)) {
++    MoltEvictSiteTill(site,
++                      MoltCacheSiteEntryEvictionTarget(key_bytes, molt_budget_));
++  }
++  return !MoltCacheEntryRefused(MoltSiteSize(site), current_size_, key_bytes,
++                                molt_budget_);
++}
++
 +bool MemBackendImpl::MoltIsExpired(const MemEntryImpl* entry) const {
 +  const base::Time now = custom_clock_for_testing_
 +                             ? custom_clock_for_testing_->Now()
@@ -139,7 +151,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd130
  void MemBackendImpl::SetPostCleanupCallback(base::OnceClosure cb) {
    DCHECK(post_cleanup_callback_.is_null());
    post_cleanup_callback_ = std::move(cb);
-@@ -185,6 +295,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
+@@ -185,6 +307,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
    if (it == entries_.end())
      return EntryResult::MakeError(net::ERR_FAILED);
  
@@ -153,7 +165,20 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd130
    it->second->Open();
  
    return EntryResult::MakeOpened(it->second);
-@@ -327,6 +444,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
+@@ -193,6 +322,12 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
+ EntryResult MemBackendImpl::CreateEntry(const std::string& key,
+                                         net::RequestPriority request_priority,
+                                         EntryResultCallback callback) {
++  // MoltBrowser: with per-site limits, a new entry's key counts like its
++  // data: none its site's own entries can't make room for, or past the
++  // total (molt_mem_backend_budget_policy.h).
++  if (MoltHasBudget() && !MoltMayCreateEntry(key)) {
++    return EntryResult::MakeError(net::ERR_INSUFFICIENT_RESOURCES);
++  }
+   std::pair<EntryMap::iterator, bool> create_result =
+       entries_.insert(EntryMap::value_type(key, nullptr));
+   const bool did_insert = create_result.second;
+@@ -327,6 +462,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
  }
  
  void MemBackendImpl::SetMaxBytes(base::ByteSize max_bytes) {
@@ -164,7 +189,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd130
    max_size_ = base::saturated_cast<int32_t>(max_bytes.InBytes());
    if (base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
      current_max_size_ = CalculateTargetMemoryLimit();
-@@ -381,7 +502,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
+@@ -381,7 +520,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
  }
  
  void MemBackendImpl::OnUpdateMemoryLimit() {
@@ -175,7 +200,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..8c2ef2642ed170b08aae246cd84dd130
      return;
    }
    // IMPORTANT: Ensure no memory is released during this call.
-@@ -391,6 +514,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
+@@ -391,6 +532,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
  }
  
  void MemBackendImpl::OnReleaseMemory() {

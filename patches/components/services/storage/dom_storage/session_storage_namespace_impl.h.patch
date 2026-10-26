@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.h b/components/services/storage/dom_storage/session_storage_namespace_impl.h
-index 1e29263e377612b4384e7bedb10d9712424ce52a..e8cf002e4c57405e532b8afb460ab5594cb5be5e 100644
+index 1e29263e377612b4384e7bedb10d9712424ce52a..ddfb305b3ac0e4f91552129b9e292e7713b72e6e 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.h
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.h
 @@ -18,6 +18,7 @@
@@ -20,9 +20,9 @@ index 1e29263e377612b4384e7bedb10d9712424ce52a..e8cf002e4c57405e532b8afb460ab559
  
    // Removes any StorageAreas bound in |OpenArea| that are no longer bound.
    void PurgeUnboundAreas();
-+  // MoltBrowser: the same, for the areas of storage keys whose top-level site
-+  // is `site` only (molt_dom_storage_site_policy.h).
-+  void MoltPurgeUnboundAreasOfSite(const net::SchemefulSite& site);
++  // MoltBrowser: the same, for the areas of storage keys that count to the
++  // group `site` only (molt_dom_storage_site.h: MoltDomStorageSiteOf()).
++  void MoltPurgeUnboundAreasOfSite(const std::string& site);
  
    // Removes data for the given StorageKey from this namespace. If there is no
    // data map for that given StorageKey, this does nothing. Expects that this

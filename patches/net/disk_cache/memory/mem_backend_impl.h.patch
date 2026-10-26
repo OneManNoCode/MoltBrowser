@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/disk_cache/memory/mem_backend_impl.h b/net/disk_cache/memory/mem_backend_impl.h
-index d2003a63c8c203e05d2c2af0724a343d392d4226..473dd94fe029cea222e0df1268d2d1d86c1474f9 100644
+index d2003a63c8c203e05d2c2af0724a343d392d4226..46628a8bdf812679e2fe8e15e9cae162c40b9b4d 100644
 --- a/net/disk_cache/memory/mem_backend_impl.h
 +++ b/net/disk_cache/memory/mem_backend_impl.h
 @@ -9,7 +9,10 @@
@@ -64,7 +64,7 @@ index d2003a63c8c203e05d2c2af0724a343d392d4226..473dd94fe029cea222e0df1268d2d1d8
  
   private:
    class MemIterator;
-@@ -143,6 +161,19 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
+@@ -143,6 +161,23 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
  
    int32_t CalculateTargetMemoryLimit() const;
  
@@ -76,6 +76,10 @@ index d2003a63c8c203e05d2c2af0724a343d392d4226..473dd94fe029cea222e0df1268d2d1d8
 +  // Evicts |site|'s own least recently used entries that aren't in use
 +  // while it uses more than |target|.
 +  void MoltEvictSiteTill(std::string_view site, int64_t target);
++  // Whether an entry of |key| may be made: its site's own unused entries
++  // are evicted to make room for the key if needed; false if it still
++  // doesn't fit in the site's share or the total.
++  bool MoltMayCreateEntry(const std::string& key);
 +  // Whether |entry| has gone unused for the budget's idle expiry.
 +  bool MoltIsExpired(const MemEntryImpl* entry) const;
 +  // Dooms every expired entry that isn't in use.
@@ -84,7 +88,7 @@ index d2003a63c8c203e05d2c2af0724a343d392d4226..473dd94fe029cea222e0df1268d2d1d8
    // base::MemoryConsumer.
    void OnUpdateMemoryLimit() override;
    void OnReleaseMemory() override;
-@@ -166,6 +197,12 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
+@@ -166,6 +201,12 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
    raw_ptr<net::NetLog> net_log_;
    base::OnceClosure post_cleanup_callback_;
  

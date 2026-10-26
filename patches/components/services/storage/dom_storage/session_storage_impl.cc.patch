@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_impl.cc b/components/services/storage/dom_storage/session_storage_impl.cc
-index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39773f1314 100644
+index 02b6403041f5abd0f68912d2173e9900240e7d0b..e329ece6a8bef0db61c72d7474f9d4528662d112 100644
 --- a/components/services/storage/dom_storage/session_storage_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_impl.cc
-@@ -28,6 +28,7 @@
+@@ -28,6 +28,8 @@
  #include "components/services/storage/dom_storage/dom_storage_database.h"
  #include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
  #include "components/services/storage/dom_storage/features.h"
++#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 +#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
  #include "components/services/storage/dom_storage/session_storage_area_impl.h"
  #include "mojo/public/cpp/bindings/callback_helpers.h"
  #include "mojo/public/cpp/bindings/self_owned_receiver.h"
-@@ -96,7 +97,11 @@ void SessionStorageImpl::BindNamespace(
+@@ -96,7 +98,11 @@ void SessionStorageImpl::BindNamespace(
          database_.get(), metadata_.GetOrCreateNamespaceEntry(namespace_id));
    }
  
@@ -29,7 +30,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
    found->second->Bind(std::move(receiver));
  }
  
-@@ -124,7 +129,13 @@ void SessionStorageImpl::BindStorageArea(
+@@ -124,7 +130,13 @@ void SessionStorageImpl::BindStorageArea(
      found->second->PopulateFromMetadata(database_.get(), namespace_entry);
    }
  
@@ -44,7 +45,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
    found->second->OpenArea(storage_key, std::move(receiver), namespace_entry);
  }
  
-@@ -323,6 +334,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+@@ -323,6 +335,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
    if (map_locator->session_ids().empty()) {
      maps_to_delete.emplace_back(std::move(*map_locator));
    }
@@ -52,7 +53,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
    database_->DeleteStorageKeysFromSession(
        namespace_id, /*metadata_to_delete=*/{storage_key},
        std::move(maps_to_delete),
-@@ -369,6 +381,11 @@ void SessionStorageImpl::ShutDown() {
+@@ -369,6 +382,11 @@ void SessionStorageImpl::ShutDown() {
  }
  
  void SessionStorageImpl::PurgeMemory() {
@@ -64,7 +65,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
    // Purge all areas that don't have bindings.
    for (const auto& namespace_pair : namespaces_) {
      namespace_pair.second->PurgeUnboundAreas();
-@@ -639,6 +656,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
+@@ -639,6 +657,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
      }
    }
  
@@ -74,7 +75,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
    // Delete the namespaces and map key/values from `database_`.
    if (!database_) {
      return;
-@@ -825,6 +845,90 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
+@@ -825,6 +846,91 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
                       /*destroy_existing_db_for_recovery=*/!in_memory_);
  }
  
@@ -89,14 +90,14 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
 +  molt_site_budget_.SetGrowthObserver(std::move(observer));
 +}
 +
-+// MoltBrowser: a map counts to its storage key's top-level site, in every
-+// namespace (tab) that uses it.
++// MoltBrowser: a map counts to its storage key's top-level site's group
++// (molt_dom_storage_site.h), in every namespace (tab) that uses it.
 +bool SessionStorageImpl::MoltMayGrowTo(int64_t map_id,
 +                                       const blink::StorageKey& storage_key,
 +                                       size_t new_storage_used) {
 +  return !molt_caches_per_site_ ||
 +         molt_site_budget_.MayGrowTo(base::NumberToString(map_id),
-+                                     storage_key.top_level_site().Serialize(),
++                                     MoltDomStorageSiteOf(storage_key),
 +                                     new_storage_used);
 +}
 +
@@ -105,7 +106,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
 +                                      size_t new_storage_used) {
 +  if (molt_caches_per_site_) {
 +    molt_site_budget_.ShrankTo(base::NumberToString(map_id),
-+                               storage_key.top_level_site().Serialize(),
++                               MoltDomStorageSiteOf(storage_key),
 +                               new_storage_used);
 +  }
 +}
@@ -114,7 +115,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
 +    const blink::StorageKey& storage_key) {
 +  return molt_caches_per_site_
 +             ? molt_site_budget_.CommitDelay(
-+                   storage_key.top_level_site().Serialize())
++                   MoltDomStorageSiteOf(storage_key))
 +             : base::TimeDelta();
 +}
 +
@@ -122,7 +123,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
 +    const blink::StorageKey& storage_key,
 +    size_t bytes) {
 +  if (molt_caches_per_site_) {
-+    molt_site_budget_.Committed(storage_key.top_level_site().Serialize(),
++    molt_site_budget_.Committed(MoltDomStorageSiteOf(storage_key),
 +                                bytes);
 +  }
 +}
@@ -139,12 +140,13 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..ce8eaba091558c9914c400249ec08f39
 +// MoltBrowser:
 +void SessionStorageImpl::MoltPurgeUnusedAreasOfSite(
 +    const blink::StorageKey& storage_key) {
-+  const net::SchemefulSite& site = storage_key.top_level_site();
++  const std::string site = MoltDomStorageSiteOf(storage_key);
 +  size_t site_maps = 0;
 +  size_t site_unused_maps = 0;
 +  size_t site_cache_bytes = 0;
 +  for (const auto& [map_id, data_map] : data_maps_) {
-+    if (data_map->map_locator().storage_key().top_level_site() != site) {
++    if (MoltDomStorageSiteOf(data_map->map_locator().storage_key()) !=
++        site) {
 +      continue;
 +    }
 +    ++site_maps;

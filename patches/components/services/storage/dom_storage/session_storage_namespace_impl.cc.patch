@@ -5,19 +5,27 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.cc b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-index 3314b24c0712085f29dd517888898120745a216f..b6a589f7ec1b3ec8b1c0114f3308c953f8af46ab 100644
+index 3314b24c0712085f29dd517888898120745a216f..b2fbe428b9b8ab4c064391d944266c7dd756ea68 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-@@ -132,6 +132,19 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
+@@ -10,6 +10,7 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
++#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
+ #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
+ 
+ namespace storage {
+@@ -132,6 +133,19 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
    }
  }
  
 +// MoltBrowser:
 +void SessionStorageNamespaceImpl::MoltPurgeUnboundAreasOfSite(
-+    const net::SchemefulSite& site) {
++    const std::string& site) {
 +  auto it = storage_key_areas_.begin();
 +  while (it != storage_key_areas_.end()) {
-+    if (it->first.top_level_site() == site && !it->second->IsBound()) {
++    if (!it->second->IsBound() && MoltDomStorageSiteOf(it->first) == site) {
 +      it = storage_key_areas_.erase(it);
 +    } else {
 +      ++it;
