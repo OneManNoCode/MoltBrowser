@@ -143,6 +143,7 @@
 #include "services/network/prefetch_url_loader_client.h"
 #include "services/network/proxy_checking_host_resolver_request.h"
 #include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
+#include "services/network/molt_own_session_sockets_policy.h"  // MoltBrowser
 #include "services/network/proxy_config_service_mojo.h"
 #include "services/network/proxy_lookup_request.h"
 #include "services/network/proxy_resolving_socket_factory_mojo.h"
@@ -221,6 +222,7 @@
 #endif  // BUILDFLAG(ENABLE_MDNS)
 
 #if BUILDFLAG(IS_P2P_ENABLED)
+#include "services/network/molt_refusing_p2p_socket_manager.h"  // MoltBrowser
 #include "services/network/p2p/socket_manager.h"
 #endif  // BUILDFLAG(IS_P2P_ENABLED)
 
@@ -1426,6 +1428,16 @@ bool NetworkContext::CanCreateLoader(const OriginatingProcessId& process_id) {
   return count < max_loaders_per_process_;
 }
 
+// MoltBrowser: see molt_own_session_sockets_policy.h. A context made from a
+// URLRequestContext alone (tests) has no parameters, so none of MoltNet's.
+bool NetworkContext::MoltAllowsOwnSessionSockets() const {
+  return !params_ ||
+         network::MoltAllowsOwnSessionSockets(
+             params_->molt_socks_isolation_password.has_value(),
+             params_->molt_per_site_socket_pool_size,
+             params_->molt_stop_all_when_refusing);
+}
+
 // MoltBrowser: the end of this context's MoltNet identity, in one task
 // (services/network/molt_ended_identity_policy.h). Whatever the context
 // handles after this starts nothing (MoltAdmits()).
@@ -2208,6 +2220,13 @@ void NetworkContext::CreateTCPBoundSocket(
 
 void NetworkContext::CreateProxyResolvingSocketFactory(
     mojo::PendingReceiver<mojom::ProxyResolvingSocketFactory> receiver) {
+  // MoltBrowser: none for MoltNet's context, whose connections carry what
+  // the factory's own HTTP network session wouldn't
+  // (services/network/molt_own_session_sockets_policy.h). `receiver` is
+  // dropped: the caller sees its pipe close.
+  if (!MoltAllowsOwnSessionSockets()) {
+    return;
+  }
   proxy_resolving_socket_factories_.Add(
       std::make_unique<ProxyResolvingSocketFactoryMojo>(url_request_context()),
       std::move(receiver));
@@ -2795,6 +2814,14 @@ void NetworkContext::CreateP2PSocketManager(
     mojo::PendingReceiver<mojom::P2PTrustedSocketManager>
         trusted_socket_manager,
     mojo::PendingReceiver<mojom::P2PSocketManager> socket_manager_receiver) {
+  // MoltBrowser: for MoltNet's context, a manager that reaches nothing
+  // instead (it would make a ProxyResolvingClientSocketFactory, and UDP
+  // sockets outside the proxy: molt_own_session_sockets_policy.h). The
+  // trusted pipes are dropped; the renderer's stays open.
+  if (!MoltAllowsOwnSessionSockets()) {
+    MoltRefusingP2PSocketManager::Bind(std::move(socket_manager_receiver));
+    return;
+  }
   std::unique_ptr<P2PSocketManager> socket_manager =
       std::make_unique<P2PSocketManager>(
           network_anonymization_key, std::move(client),
