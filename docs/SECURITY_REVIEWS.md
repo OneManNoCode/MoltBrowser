@@ -46,8 +46,8 @@ code verbatim against stand-ins with 156's shapes, a mutant set each new
 test catches, the earlier rounds' harnesses re-run on the changed code,
 and the compile check against Chromium 156's headers.
 
-**Findings.** 8: 1 medium, 1 low, 6 informational. Fixed: the medium and
-the low.
+**Findings.** 9: 1 medium, 2 low, 6 informational. Fixed: the medium and
+both low.
 
 **Fixed.**
 
@@ -64,6 +64,10 @@ the low.
   makes room from its own unused entries first, and an entry that still
   doesn't fit isn't made, so entries a site holds open can't take it past
   its share or the cache past its total.
+- The `localStorage` and `sessionStorage` totals forget an area a page
+  cleared safely when its site's other areas were forgotten first (their
+  data deleted, for example by a `Clear-Site-Data` header): the site's
+  entry, already gone, is no longer looked up.
 
 ## 2026-10-25: PRs #67-#69 (October 2026)
 

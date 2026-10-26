@@ -301,7 +301,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   with the page it is in, not with its own site, in MoltNet's per-site
   storage quota and `localStorage`/`sessionStorage` limits; and a new
   entry of MoltNet's in-memory HTTP cache counts against its site's 10 MiB
-  from the start, its address included.
+  from the start, its address included. The per-site `localStorage` and
+  `sessionStorage` totals stay consistent when a cleared area's data is
+  deleted.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
