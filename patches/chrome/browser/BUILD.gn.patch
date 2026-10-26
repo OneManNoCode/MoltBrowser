@@ -5,10 +5,20 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 33a6696fd803af080bb0a7d71b66e06d6950f86d..5751ba0e9064d63862afb0a4baad555d59f9da73 100644
+index 33a6696fd803af080bb0a7d71b66e06d6950f86d..7732dcf16096f54e4abaa16f38783793b5738a29 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -2083,6 +2083,11 @@ source_set("browser") {
+@@ -985,6 +985,9 @@ source_set("core") {
+     "//chrome/browser/memory",
+     "//chrome/browser/metrics",
+     "//chrome/browser/metrics:expired_histograms_array",
++
++    # MoltBrowser: what this target's hooks include.
++    "//chrome/browser/molt_ai:core_hooks",
+     "//chrome/browser/navigation_predictor",
+     "//chrome/browser/net",
+     "//chrome/browser/notifications",
+@@ -2083,6 +2086,11 @@ source_set("browser") {
      "//chrome/browser/affiliations",
      "//chrome/browser/ai",
      "//chrome/browser/ai:impl",

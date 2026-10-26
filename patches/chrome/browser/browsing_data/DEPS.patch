@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/browsing_data/DEPS
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/browsing_data/DEPS by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/browsing_data/DEPS b/chrome/browser/browsing_data/DEPS
+index d3d8a31660bbd529b02ce6ba065f0dd9c42f39d8..7123d90a907439ff9aeff5b5f25846f038d36e6d 100644
+--- a/chrome/browser/browsing_data/DEPS
++++ b/chrome/browser/browsing_data/DEPS
+@@ -74,6 +74,10 @@ include_rules = [
+   "+chrome/browser/media/media_engagement_service.h",
+   "+chrome/browser/media/webrtc/media_device_salt_service_factory.h",
+   "+chrome/browser/media/webrtc/webrtc_event_log_manager.h",
++  # MoltBrowser: the agents' frame tools and the web AI APIs keep per-site
++  # permissions, which Clear browsing data clears.
++  "+chrome/browser/molt_ai/agents/frame_tool_permissions.h",
++  "+chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h",
+   "+chrome/browser/net/system_network_context_manager.h",
+   "+chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service.h",
+   "+chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service_factory.h",

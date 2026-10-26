@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 056bd22809479eac64251cfc67f37336c4438424..785bda016ce5d7e92c61be6c6207fa686b2f7642 100644
+index 056bd22809479eac64251cfc67f37336c4438424..c2c276ba0b3ae0cee04b7e041f95c30a6e2f4ca0 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -57,6 +57,8 @@ import("//third_party/blink/renderer/core/mathml/build.gni")
@@ -55,12 +55,14 @@ index 056bd22809479eac64251cfc67f37336c4438424..785bda016ce5d7e92c61be6c6207fa68
    sources += rebase_path(blink_core_tests_navigation_api, "", "navigation_api")
    sources += rebase_path(blink_core_tests_origin_trials, "", "origin_trials")
    sources += rebase_path(blink_core_tests_page, "", "page")
-@@ -1620,6 +1639,9 @@ source_set("unit_tests") {
+@@ -1620,6 +1639,11 @@ source_set("unit_tests") {
      "//third_party/blink/renderer/core",
      "//third_party/blink/renderer/core:testing",
      "//third_party/blink/renderer/core:unit_test_support",
 +
-+    # MoltBrowser: fingerprinting protection math tests.
++    # MoltBrowser: fingerprinting protection math tests, and the math the
++    # glue's tests (blink_core_tests_molt_fingerprinting) include.
++    "//third_party/blink/renderer/core/molt_fingerprinting:farbling",
 +    "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
      "//third_party/blink/renderer/core/sanitizer:unit_test_support",
      "//third_party/blink/renderer/platform:test_support",

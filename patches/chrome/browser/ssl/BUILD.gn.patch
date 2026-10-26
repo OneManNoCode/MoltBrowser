@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/ssl/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ssl/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ssl/BUILD.gn b/chrome/browser/ssl/BUILD.gn
+index 3fb4bf218eece97d5a25f9c713d5435c04b251ba..cd51df653fb04359f9a0e68dd6da7121842f29c1 100644
+--- a/chrome/browser/ssl/BUILD.gn
++++ b/chrome/browser/ssl/BUILD.gn
+@@ -118,6 +118,11 @@ source_set("impl") {
+   ]
+ 
+   deps = [
++    # MoltBrowser: no HTTPS upgrade for .onion (onion_util.h) and
++    # MoltNet's in-memory certificate exceptions.
++    "//chrome/browser/molt_ai/tor:isolation",
++    "//chrome/browser/molt_ai/tor:protocol",
++
+     "//chrome/browser:browser_process",
+     "//chrome/browser:browser_process_platform_part",
+     "//chrome/browser/content_settings:content_settings_factory",

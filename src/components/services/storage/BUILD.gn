@@ -101,9 +101,11 @@ source_set("storage") {
     "storage_service_impl.h",
   ]
 
-  # MoltBrowser: MoltNet's DOM storage grouped and budgeted per site
-  # (header-only).
+  # MoltBrowser: MoltNet's DOM storage grouped, budgeted and scheduled per
+  # site (header-only).
   sources += [
+    "dom_storage/molt_dom_storage_fair_queue.h",
+    "dom_storage/molt_dom_storage_fair_scheduler.h",
     "dom_storage/molt_dom_storage_site.h",
     "dom_storage/molt_dom_storage_site_budget.h",
     "dom_storage/molt_dom_storage_site_policy.h",

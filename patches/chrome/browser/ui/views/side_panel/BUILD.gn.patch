@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/ui/views/side_panel/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/views/side_panel/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/side_panel/BUILD.gn b/chrome/browser/ui/views/side_panel/BUILD.gn
+index 64303e7ca0bbaacddd23499be20d64fd311dd074..cc76892dc3adfba53f833d929c51f4e2769eccb3 100644
+--- a/chrome/browser/ui/views/side_panel/BUILD.gn
++++ b/chrome/browser/ui/views/side_panel/BUILD.gn
+@@ -94,6 +94,10 @@ source_set("side_panel") {
+     "//url",
+   ]
+   deps = [
++    # MoltBrowser: the AI chat's and Agent mode's side panel web
++    # views (side_panel_helper.cc).
++    "//chrome/browser/molt_ai:molt_ai_side_panel_views",
++
+     "//base:i18n",
+     "//chrome/app:generated_resources",
+     "//chrome/app:generated_resources_grit",

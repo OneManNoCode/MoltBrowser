@@ -1,0 +1,20 @@
+MoltBrowser patch for chrome/browser/ui/views/translate/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/views/translate/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/translate/BUILD.gn b/chrome/browser/ui/views/translate/BUILD.gn
+index 74302eb3d9b3f8ccde24d1f16b4aca957a5fa4a7..a8e87d7ddddf6d2a3cb1fd05febf6c53065b486c 100644
+--- a/chrome/browser/ui/views/translate/BUILD.gn
++++ b/chrome/browser/ui/views/translate/BUILD.gn
+@@ -47,6 +47,9 @@ source_set("impl") {
+     "translate_page_action_controller.cc",
+   ]
+   deps = [
++    # MoltBrowser: the on-device translation footnote.
++    "//chrome/browser/molt_ai/translate:footnote_view",
++
+     ":translate",
+     "//chrome/app:generated_resources",
+     "//chrome/app/theme:theme_resources",

@@ -1,0 +1,23 @@
+MoltBrowser patch for chrome/browser/net/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/net/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
+index ad8bf42b63e6151853bf475bdee0893ff5bca927..dfaf4760c62c914f3a8f9461ccbbcc96ba238088 100644
+--- a/chrome/browser/net/BUILD.gn
++++ b/chrome/browser/net/BUILD.gn
+@@ -166,6 +166,12 @@ source_set("impl") {
+   ]
+ 
+   deps = [
++    # MoltBrowser: MoltNet's network context settings
++    # (profile_network_context_service.cc) and its proxy
++    # (proxy_config_monitor.cc).
++    "//chrome/browser/molt_ai/tor",
++    "//chrome/browser/molt_ai/tor:network_context_policy",
++
+     ":key_pinning_proto",
+     "//base:build_time",
+     "//chrome/browser:browser_features",

@@ -5,14 +5,16 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/utility/DEPS b/chrome/utility/DEPS
-index fe9017a483ce1b6aa1a92c9cb5dabc4286ff6865..62863958ac9f7402978972be4b28a71cc77fad17 100644
+index fe9017a483ce1b6aa1a92c9cb5dabc4286ff6865..7b4f0b0dbfdad72061eb13e84571e5550e27ff67 100644
 --- a/chrome/utility/DEPS
 +++ b/chrome/utility/DEPS
-@@ -9,6 +9,7 @@ include_rules = [
+@@ -9,6 +9,9 @@ include_rules = [
    "+chrome/services/file_util/public/mojom",
    "+chrome/services/mac_notifications",
    "+chrome/services/media_gallery_util",
 +  "+chrome/services/molt_ai/document_parser",
++  # MoltBrowser: the sandboxed inference service (services.cc).
++  "+chrome/services/molt_ai/inference/molt_inference_service.h",
    "+chrome/services/pdf/pdf_service.h",
    "+chrome/services/pdf/public/mojom",
    "+chrome/services/platform_runtime/platform_runtime_service_impl.h",

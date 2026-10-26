@@ -271,12 +271,13 @@ component("network_service") {
     "web_transport.h",
   ]
 
-  # MoltBrowser: MoltNet's ended identities and per-site keepalive requests
-  # (header-only).
+  # MoltBrowser: MoltNet's ended identities, per-site keepalive requests and
+  # no sockets outside its own session (header-only).
   sources += [
     "molt_ended_identity_policy.h",
     "molt_keepalive_partitions.h",
     "molt_keepalive_site.h",
+    "molt_own_session_sockets_policy.h",
   ]
 
   if (is_p2p_enabled) {
@@ -294,6 +295,10 @@ component("network_service") {
       "throttling/throttling_p2p_network_interceptor.cc",
       "throttling/throttling_p2p_network_interceptor.h",
     ]
+
+    # MoltBrowser: the P2P manager MoltNet's network contexts get, which
+    # refuses every socket (header-only).
+    sources += [ "molt_refusing_p2p_socket_manager.h" ]
   }
 
   if (enable_disk_cache_sql_backend) {

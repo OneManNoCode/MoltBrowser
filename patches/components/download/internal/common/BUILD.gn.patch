@@ -1,0 +1,37 @@
+MoltBrowser patch for components/download/internal/common/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/download/internal/common/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/common/BUILD.gn b/components/download/internal/common/BUILD.gn
+index 2c1b695e79eb61f07554a0abded7edfaacc9754f..3cdb89e01055be519e62f6d63aa4287dafb837f7 100644
+--- a/components/download/internal/common/BUILD.gn
++++ b/components/download/internal/common/BUILD.gn
+@@ -11,6 +11,16 @@ if (is_android) {
+   import("//third_party/jni_zero/jni_zero.gni")
+ }
+ 
++# MoltBrowser: the credentials mode a Background Fetch request carries
++# (header-only), for :internal and MoltBrowser's own tests.
++source_set("molt_fetch_credentials") {
++  sources = [ "molt_fetch_credentials.h" ]
++  public_deps = [
++    "//services/network/public/cpp",
++    "//services/network/public/mojom",
++  ]
++}
++
+ source_set("internal") {
+   visibility = [
+     ":for_tests",
+@@ -74,6 +84,9 @@ source_set("internal") {
+   ]
+ 
+   deps = [
++    # MoltBrowser: a Background Fetch request's credentials mode.
++    ":molt_fetch_credentials",
++
+     "//base",
+     "//components/download/database",
+     "//components/download/public/common:interfaces",

@@ -1246,11 +1246,13 @@ component("net") {
   ]
 
   # MoltBrowser: MoltNet's per-site certificate fetches, connection budgets
-  # and socket pools, and the end of an identity (header-only but for the
+  # and socket pools, its HTTP cache's per-site eviction lists, and the end
+  # of an identity (header-only but for the
   # process's Tor capacity; the std-only policies they follow are
   # :molt_policies).
   sources += [
     "cert/molt_cert_fetch_site.h",
+    "disk_cache/memory/molt_mem_backend_site_lru.h",
     "socket/molt_connection_budget.cc",
     "socket/molt_connection_budget.h",
     "socket/molt_identity_end.h",

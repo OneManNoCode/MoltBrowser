@@ -1,0 +1,68 @@
+MoltBrowser patch for third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py b/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py
+index 9136b3f7f225ff4eda9c32eb130aa510aca3c4aa..038037ee8d882ee0712eb75b7512f516662cd166 100644
+--- a/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py
++++ b/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py
+@@ -3314,6 +3314,57 @@ _CONFIG = [
+             'viz::mojom::CompositorFrameSinkClient.*',
+         ],
+     },
++    # MoltBrowser: fingerprinting protection and MoltNet's uniform values
++    # (core/molt_fingerprinting, core/molt_net) and the portable math they
++    # run on (ui/gfx/geometry/molt_math.h), called from Blink's hooks.
++    {
++        'paths': ['third_party/blink/renderer/'],
++        'allowed': [
++            'gfx::molt_math::.+',
++            'molt_fingerprinting::.+',
++            'moltnet::.+',
++            'webgl_uniform::.+',
++        ],
++    },
++    # MoltBrowser: what the fingerprinting protection and MoltNet glue use
++    # outside Blink: MoltNet's audio clock on media's sinks and resamplers,
++    # the GL limits a uniform WebGL reports, the encoders it allows, the
++    # bundled fonts mapped from files, and the farbling seed's HMAC.
++    {
++        'paths': [
++            'third_party/blink/renderer/core/molt_fingerprinting/',
++            'third_party/blink/renderer/core/molt_net/',
++        ],
++        'allowed': [
++            'base::MemoryMappedFile',
++            'base::NoDestructor',
++            'base::RefCountedThreadSafe',
++            'crypto::RandBytes',
++            'crypto::hmac::SignSha256',
++            'display::mojom::ScreenOrientation',
++            'gfx::SkPixmapToWritableSpan',
++            'gin::IsolateHolder',
++            'gl::k.+',
++            'gpu::gles2(::GLES2Interface)?',
++            'media::.+',
++            'mojom::MediaDeviceType',
++            'mojom::MediaStreamRequestResult',
++            'mojom::MediaStreamType',
++        ],
++        # The media sinks' and the fonts' threads (not a frame's).
++        'inclass_allowed': [
++            'base::(SingleThread|Sequenced)TaskRunner::GetCurrentDefault',
++        ],
++    },
++    {
++        # MoltBrowser: a font-cache invalidation posted to another thread
++        # binds a plain function, no arguments.
++        'paths': [
++            'third_party/blink/renderer/core/molt_fingerprinting/'
++            'moltnet_fonts.cc',
++        ],
++        'allowed': ['base::BindOnce'],
++    },
+ ]
+ 
+ 

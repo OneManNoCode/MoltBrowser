@@ -1,0 +1,21 @@
+MoltBrowser patch for ui/gfx/DEPS
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/ui/gfx/DEPS by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/ui/gfx/DEPS b/ui/gfx/DEPS
+index 2bbc51d628908dc1fa530d990f39bd7478d70be4..2f7145a3dcff4dc58972f17ae1997cbb35ac1f48 100644
+--- a/ui/gfx/DEPS
++++ b/ui/gfx/DEPS
+@@ -21,4 +21,10 @@ specific_include_rules = {
+   "delegated_ink_point\\.h" : [
+     "+mojo/public/cpp/bindings/struct_traits.h",
+   ],
++  # MoltBrowser: gfx::molt_math (geometry/molt_math.h) on the portable math
++  # MoltNet's uniformity uses.
++  "molt_math(_unittest)?\\.cc" : [
++    "+third_party/fdlibm/ieee754.h",
++    "+third_party/llvm-libc/molt_portable_math.h",
++  ],
+ }

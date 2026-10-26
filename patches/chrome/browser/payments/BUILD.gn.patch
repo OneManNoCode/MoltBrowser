@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/payments/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/payments/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/payments/BUILD.gn b/chrome/browser/payments/BUILD.gn
+index 66a711bd8e8bbe2e85d1f9cd78f08cdecf6e113a..6a5885308f7743f23d33a4cb4640d7bf6fd2bc42 100644
+--- a/chrome/browser/payments/BUILD.gn
++++ b/chrome/browser/payments/BUILD.gn
+@@ -24,6 +24,10 @@ source_set("impl") {
+   public_deps = [ ":payments" ]
+ 
+   deps = [
++    # MoltBrowser: no Autofill server traffic for MoltNet payment
++    # sheets.
++    "//chrome/browser/molt_ai/tor:autofill",
++
+     "//base",
+     "//components/payments/core",
+     "//content/public/browser",

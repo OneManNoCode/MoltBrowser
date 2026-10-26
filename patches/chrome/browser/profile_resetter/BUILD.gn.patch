@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/profile_resetter/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/profile_resetter/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/profile_resetter/BUILD.gn b/chrome/browser/profile_resetter/BUILD.gn
+index 5777f7730975ef548f9bf370d6e06b871fee531b..4f48b6afd8ed82eb37d8d57ebd03d4b1f28518ab 100644
+--- a/chrome/browser/profile_resetter/BUILD.gn
++++ b/chrome/browser/profile_resetter/BUILD.gn
+@@ -49,6 +49,11 @@ if (!is_android) {
+     ]
+ 
+     deps = [
++      # MoltBrowser: a profile reset also clears the per-site
++      # permissions of the agents' frame tools and of the web AI APIs.
++      "//chrome/browser/molt_ai:molt_ai_agents",
++      "//chrome/browser/molt_ai/web_ai",
++
+       ":profile_reset_report_proto",
+       ":profile_resetter",
+       "//base",

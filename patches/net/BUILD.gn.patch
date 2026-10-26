@@ -1,0 +1,58 @@
+MoltBrowser patch for net/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/net/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+index ba081007c657a63434ed1fefdfddcbb00b2b40e0..370b46d61a130335365ded47658fd9b696b5c3dc 100644
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -172,6 +172,15 @@ source_set("chrome_root_store_data") {
+   }
+ }
+ 
++# MoltBrowser: how MoltNet splits socket pools and the memory cache by site
++# (std-only and header-only), for :net and MoltBrowser's own targets.
++source_set("molt_policies") {
++  sources = [
++    "disk_cache/memory/molt_mem_backend_budget_policy.h",
++    "socket/molt_per_site_socket_pool_policy.h",
++  ]
++}
++
+ component("net") {
+   sources = [
+     "base/address_family.cc",
+@@ -1236,6 +1245,20 @@ component("net") {
+     "url_request/websocket_handshake_userdata_key.h",
+   ]
+ 
++  # MoltBrowser: MoltNet's per-site certificate fetches, connection budgets
++  # and socket pools, its HTTP cache's per-site eviction lists, and the end
++  # of an identity (header-only but for the
++  # process's Tor capacity; the std-only policies they follow are
++  # :molt_policies).
++  sources += [
++    "cert/molt_cert_fetch_site.h",
++    "disk_cache/memory/molt_mem_backend_site_lru.h",
++    "socket/molt_connection_budget.cc",
++    "socket/molt_connection_budget.h",
++    "socket/molt_identity_end.h",
++    "socket/molt_per_site_socket_pools.h",
++  ]
++
+   if (is_posix || is_fuchsia) {
+     sources += [ "base/net_errors_posix.cc" ]
+   }
+@@ -1264,6 +1287,10 @@ component("net") {
+   ]
+ 
+   public_deps = [
++    # MoltBrowser: net's own headers include them (disk_cache.h,
++    # transport_client_socket_pool.h, ...).
++    ":molt_policies",
++
+     ":chrome_root_store_types",
+     ":disk_cache_buildflags",
+     ":net_features",

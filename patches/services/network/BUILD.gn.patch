@@ -1,0 +1,37 @@
+MoltBrowser patch for services/network/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/services/network/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
+index 3603695f3e0c381c82589c7a7dfb4b6cfff83d59..3904c69a254637a44d4295a9d9756d7c92d14328 100644
+--- a/services/network/BUILD.gn
++++ b/services/network/BUILD.gn
+@@ -271,6 +271,15 @@ component("network_service") {
+     "web_transport.h",
+   ]
+ 
++  # MoltBrowser: MoltNet's ended identities, per-site keepalive requests and
++  # no sockets outside its own session (header-only).
++  sources += [
++    "molt_ended_identity_policy.h",
++    "molt_keepalive_partitions.h",
++    "molt_keepalive_site.h",
++    "molt_own_session_sockets_policy.h",
++  ]
++
+   if (is_p2p_enabled) {
+     sources += [
+       "p2p/socket.cc",
+@@ -286,6 +295,10 @@ component("network_service") {
+       "throttling/throttling_p2p_network_interceptor.cc",
+       "throttling/throttling_p2p_network_interceptor.h",
+     ]
++
++    # MoltBrowser: the P2P manager MoltNet's network contexts get, which
++    # refuses every socket (header-only).
++    sources += [ "molt_refusing_p2p_socket_manager.h" ]
+   }
+ 
+   if (enable_disk_cache_sql_backend) {

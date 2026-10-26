@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/cert/cert_verifier.cc b/net/cert/cert_verifier.cc
-index 04fada42cca273fad8fabb8f6fa062d028b1a8f5..5942c2eec099c5d69cfda24e3e5f5f756a102313 100644
+index 04fada42cca273fad8fabb8f6fa062d028b1a8f5..39a418eaae00351b3a5c0fa5f6dca2f2143cad05 100644
 --- a/net/cert/cert_verifier.cc
 +++ b/net/cert/cert_verifier.cc
 @@ -6,6 +6,7 @@
@@ -16,7 +16,7 @@ index 04fada42cca273fad8fabb8f6fa062d028b1a8f5..5942c2eec099c5d69cfda24e3e5f5f75
  #include <utility>
  
  #include "base/containers/span.h"
-@@ -16,10 +17,12 @@
+@@ -16,6 +17,7 @@
  #include "net/cert/cert_verify_proc.h"
  #include "net/cert/coalescing_cert_verifier.h"
  #include "net/cert/crl_set.h"
@@ -24,12 +24,7 @@ index 04fada42cca273fad8fabb8f6fa062d028b1a8f5..5942c2eec099c5d69cfda24e3e5f5f75
  #include "net/cert/do_nothing_ct_verifier.h"
  #include "net/cert/multi_threaded_cert_verifier.h"
  #include "net/cert/x509_util.h"
- #include "net/net_buildflags.h"
-+#include "third_party/abseil-cpp/absl/base/attributes.h"  // MoltBrowser
- #include "third_party/boringssl/src/include/openssl/pool.h"
- #include "third_party/boringssl/src/include/openssl/sha.h"
- 
-@@ -121,12 +124,32 @@ CertVerifier::RequestParams::~RequestParams() = default;
+@@ -121,12 +123,31 @@ CertVerifier::RequestParams::~RequestParams() = default;
  
  bool CertVerifier::RequestParams::operator==(
      const CertVerifier::RequestParams& other) const {
@@ -51,8 +46,7 @@ index 04fada42cca273fad8fabb8f6fa062d028b1a8f5..5942c2eec099c5d69cfda24e3e5f5f75
 +// MoltBrowser: the site of the certificate verification running on a
 +// thread (net/cert/molt_cert_fetch_site.h).
 +namespace {
-+ABSL_CONST_INIT thread_local const std::string* g_molt_cert_fetch_site =
-+    nullptr;
++constinit thread_local const std::string* g_molt_cert_fetch_site = nullptr;
 +}  // namespace
 +
 +const std::string* MoltGetCertFetchSite() {
