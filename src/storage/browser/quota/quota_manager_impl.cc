@@ -286,7 +286,7 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
     if (molt_counts_site_) {
       UsageTracker* tracker = manager()->GetUsageTracker();
       quota = MoltStorageQuota(
-          quota, usage_, tracker->MoltSiteUsage(storage_key_.top_level_site()),
+          quota, usage_, tracker->MoltSiteUsage(MoltBudgetSiteOf(storage_key_)),
           settings_.molt_per_site_quota);
       if (MoltStorageBeyondFloor(settings_.molt_per_site_quota,
                                  tracker->MoltTotalUsage(),
@@ -339,7 +339,7 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
       molt_counts_site_ = true;
       manager()->EnsureDatabaseOpened();
       manager()->GetUsageTracker()->MoltRefreshSiteUsage(
-          storage_key_.top_level_site(), std::move(callback));
+          MoltBudgetSiteOf(storage_key_), std::move(callback));
       return;
     }
 

@@ -284,7 +284,7 @@ void ClientUsageTracker::MoltCountSites() {
 }
 
 int64_t ClientUsageTracker::MoltSiteUsage(
-    const net::SchemefulSite& site) const {
+    const MoltBudgetSite& site) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return molt_site_usage_.Of(site);
 }
@@ -303,7 +303,7 @@ void ClientUsageTracker::MoltCountChange(const BucketLocator& bucket,
                                          int64_t old_usage,
                                          int64_t new_usage) {
   if (molt_counts_sites_) {
-    molt_site_usage_.Changed(bucket.storage_key.top_level_site(), old_usage,
+    molt_site_usage_.Changed(MoltBudgetSiteOf(bucket.storage_key), old_usage,
                              new_usage);
   }
 }

@@ -15,7 +15,9 @@
 // as long as it liked, and the other site could measure how long.
 //
 // Scheduled per site (by the registration's storage key's top-level site, so
-// a frame's service worker counts to the site embedding it):
+// a frame's service worker counts to the site embedding it, grouped as DOM
+// storage groups keys: components/services/storage/dom_storage/
+// molt_dom_storage_site.h):
 //  * each site has the limits Chromium gives a whole partition:
 //    kMoltBackgroundFetchActivePerSite registrations active (one per storage
 //    key, as in Chromium) and kMoltBackgroundFetchRunningPerSite requests

@@ -296,6 +296,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   fetch's credentials setting (`credentials: 'omit'` sends no cookies).
   The MoltNet panel says when a build has no bundled fonts
   (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening (security review of PRs #70 and #71,
+  `docs/SECURITY_REVIEWS.md`): a credentialless iframe's storage counts
+  with the page it is in, not with its own site, in MoltNet's per-site
+  storage quota and `localStorage`/`sessionStorage` limits; and a new
+  entry of MoltNet's in-memory HTTP cache counts against its site's 10 MiB
+  from the start, its address included. The per-site `localStorage` and
+  `sessionStorage` totals stay consistent when a cleared area's data is
+  deleted.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

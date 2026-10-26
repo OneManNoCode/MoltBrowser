@@ -2,12 +2,12 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // What MoltNet's storage budget counts per site
-// (storage/browser/quota/molt_storage_budget.h, std-only templates): the
+// (storage/browser/quota/molt_storage_usage_counts.h, std-only templates):
 // cached usage per site and for all sites, and the storage keys to ask
 // again. Sites and keys are strings here; the quota system uses
-// net::SchemefulSite and blink::StorageKey.
+// MoltBudgetSite (molt_storage_budget.h) and blink::StorageKey.
 
-#include "storage/browser/quota/molt_storage_budget.h"
+#include "storage/browser/quota/molt_storage_usage_counts.h"
 
 #include <cstdint>
 #include <string>

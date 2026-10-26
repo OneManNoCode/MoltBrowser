@@ -4,6 +4,71 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-26: PRs #70 and #71 (October 2026)
+
+**Scope.** The code merged in pull requests #70 and #71 (rounds 25 and
+26), in this order of priority:
+
+1. The end of a MoltNet identity: every way a request, a socket write or
+   a name lookup could still leave once the end reaches a network context
+   (URL loader factories, WebSockets, WebTransport, preconnects,
+   prefetches, host resolution, the SOCKS refusal of writes and
+   handshakes), contexts made after the end and after a network service
+   restart, the browser's wait for every context and its 5-second
+   deadline, the requests the browser holds for pages (keepalive,
+   `fetchLater`, Background Fetch, downloads, Save Page As), New Identity
+   while an end is under way, and a new identity's starting state.
+2. The per-site budgets: the in-memory HTTP cache's shares, the
+   `localStorage` and `sessionStorage` totals, cache groups and commit
+   rates, the Background Fetch buffer counted against blob shares and its
+   site keys, the storage quota share, and the memory valve: integer
+   ranges, map growth, entry and area lifetimes, thread affinity, stale
+   callbacks, what one site can make another see or lose, and who can
+   make the valve end an identity.
+3. The certificate-fetch pools and the split connection budget, and their
+   checks against Tor's capacity.
+4. The de-Google changes: the component registration guards and their
+   switch, the on-device model manifest asked for on demand, the feature
+   overrides, and the traffic-capture kit (its TLS key, the namespace set
+   up as root, the parsing of what pages send).
+5. Portable math and display capture in MoltNet: other ways to a picker or
+   a capture (workers, frames, Permissions Policy, extensions), and the
+   remaining C library calls a page can observe.
+6. The one-click rule on every MoltBrowser page, with the handlers PR #71
+   added.
+
+**Method.** Each candidate traced from its attacker (web page, a third
+party's script, a group of sites, a compromised WebUI script, local
+environment) through MoltBrowser's code and the upstream Chromium 156 code
+at the pinned revision; fixes tested with standalone harnesses (system
+gtest, g++ ASan/UBSan, clang `-fno-exceptions`) that compile the hooked
+code verbatim against stand-ins with 156's shapes, a mutant set each new
+test catches, the earlier rounds' harnesses re-run on the changed code,
+and the compile check against Chromium 156's headers.
+
+**Findings.** 9: 1 medium, 2 low, 6 informational. Fixed: the medium and
+both low.
+
+**Fixed.**
+
+- A credentialless iframe's storage key has a nonce and, in Chromium, its
+  own origin's site as top-level site wherever it is embedded. MoltNet's
+  per-site storage budgets now count such a key with the other keys of
+  its nonce only (the credentialless frames of one page), not with that
+  site: the storage quota share, and the `localStorage` and
+  `sessionStorage` totals, cache groups and commit rates. A
+  `localStorage` or `sessionStorage` area under an opaque top-level site
+  counts on its own.
+- MoltNet's in-memory HTTP cache counts a new entry's key against its
+  site's share and the total like the data written into it: the site
+  makes room from its own unused entries first, and an entry that still
+  doesn't fit isn't made, so entries a site holds open can't take it past
+  its share or the cache past its total.
+- The `localStorage` and `sessionStorage` totals forget an area a page
+  cleared safely when its site's other areas were forgotten first (their
+  data deleted, for example by a `Clear-Site-Data` header): the site's
+  entry, already gone, is no longer looked up.
+
 ## 2026-10-25: PRs #67-#69 (October 2026)
 
 **Scope.** The code merged in pull requests #67 to #69 (rounds 22 to 24),

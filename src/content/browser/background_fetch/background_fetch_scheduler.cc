@@ -8,6 +8,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_number_conversions.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 #include "content/browser/background_fetch/background_fetch_data_manager.h"
 #include "content/browser/background_fetch/background_fetch_delegate_proxy.h"
 #include "content/browser/background_fetch/background_fetch_job_controller.h"
@@ -25,10 +26,12 @@ namespace content {
 
 namespace {
 
-// MoltBrowser: the site a registration is scheduled with: its storage key's
-// top-level site (molt_background_fetch_site_policy.h).
+// MoltBrowser: the site a registration is scheduled with
+// (molt_background_fetch_site_policy.h): its storage key's top-level site,
+// grouped as DOM storage groups it (a key with a nonce with its nonce, one
+// under an opaque top-level site on its own: molt_dom_storage_site.h).
 std::string MoltSiteOf(const BackgroundFetchRegistrationId& registration_id) {
-  return registration_id.storage_key().top_level_site().Serialize();
+  return storage::MoltDomStorageSiteOf(registration_id.storage_key());
 }
 
 // The maximum number of active registrations that can be processed

@@ -138,6 +138,65 @@ TEST(MoltNetDomStorageSitePolicyTest, GrowthPastTheFloor) {
   EXPECT_TRUE(MoltDomStorageGrowthNotifies(0, 10 * kFloor));
 }
 
+// An area a page cleared, forgotten (its origin's data deleted, for
+// example by a Clear-Site-Data header) after its site's other areas were:
+// the site is left with nothing, and nothing else changes.
+TEST(MoltNetDomStorageSitePolicyTest, ForgettingAClearedAreaLast) {
+  MoltDomStorageSiteTotals totals;
+  ASSERT_TRUE(totals.MayGrowTo("https://a.s.test/", "https://s.test", 100));
+  totals.ShrankTo("https://a.s.test/", "https://s.test", 0);
+  ASSERT_TRUE(totals.MayGrowTo("https://b.s.test/", "https://s.test", 50));
+  ASSERT_TRUE(totals.MayGrowTo("https://o.test/", "https://o.test", 7));
+  totals.Forget("https://b.s.test/");
+  totals.Forget("https://a.s.test/");
+  EXPECT_EQ(totals.SiteBytes("https://s.test"), 0u);
+  EXPECT_EQ(totals.SiteBytes("https://o.test"), 7u);
+  EXPECT_EQ(totals.total(), 7u);
+  // The site has its whole share again.
+  EXPECT_TRUE(totals.MayGrowTo("https://a.s.test/", "https://s.test",
+                               kMoltDomStorageBytesPerSite));
+  EXPECT_EQ(totals.total(), 7u + kMoltDomStorageBytesPerSite);
+}
+
+// An area counts to its top-level site, but a key with a nonce (a
+// credentialless iframe's, whose top-level site is its own origin's site
+// wherever it is embedded) to its nonce, and a key with an opaque top-level
+// site (which serializes as "null" for all of them) to itself; no such
+// group's name is ever a site's.
+TEST(MoltNetDomStorageSitePolicyTest, GroupsOfKeysThatDontNameTheirSite) {
+  EXPECT_EQ(MoltDomStorageGroupKindFor(false, false),
+            MoltDomStorageGroupKind::kTopLevelSite);
+  EXPECT_EQ(MoltDomStorageGroupKindFor(true, false),
+            MoltDomStorageGroupKind::kNonce);
+  EXPECT_EQ(MoltDomStorageGroupKindFor(true, true),
+            MoltDomStorageGroupKind::kNonce);
+  EXPECT_EQ(MoltDomStorageGroupKindFor(false, true),
+            MoltDomStorageGroupKind::kOwnKey);
+  EXPECT_EQ(MoltDomStorageGroupName(MoltDomStorageGroupKind::kTopLevelSite,
+                                    "https://t.test"),
+            "https://t.test");
+  const std::string nonce =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "https://t.test");
+  const std::string own =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kOwnKey, "https://t.test");
+  EXPECT_NE(nonce, "https://t.test");
+  EXPECT_NE(own, "https://t.test");
+  EXPECT_NE(nonce, own);
+  // A tracker's frames under two pages' nonces have totals of their own,
+  // and neither touches its first-party site's.
+  MoltDomStorageSiteTotals totals;
+  const std::string site = "https://t.test";
+  const std::string under_a =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "A");
+  const std::string under_b =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "B");
+  ASSERT_TRUE(totals.MayGrowTo("t/", site, kMoltDomStorageBytesPerSite));
+  EXPECT_TRUE(totals.MayGrowTo("t/^1A", under_a, kMoltDomStorageBytesPerSite));
+  EXPECT_TRUE(totals.MayGrowTo("t/^1B", under_b, kMoltDomStorageBytesPerSite));
+  EXPECT_EQ(totals.SiteBytes(site), kMoltDomStorageBytesPerSite);
+  EXPECT_EQ(totals.SiteBytes(under_a), kMoltDomStorageBytesPerSite);
+}
+
 // A site's areas together write to the database at one area's rate.
 TEST(MoltNetDomStorageSitePolicyTest, OneCommitRatePerSite) {
   constexpr int64_t kHour = kMoltDomStorageHourMs;

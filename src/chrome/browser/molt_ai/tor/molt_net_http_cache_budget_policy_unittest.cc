@@ -87,6 +87,28 @@ TEST(MoltNetHttpCacheBudgetPolicyTest, WritesPastTheShareOrTheTotalFail) {
   EXPECT_TRUE(MoltCacheWriteRefused(1, budget.total_bytes + 1, budget));
 }
 
+// A new entry's key counts like data: the site makes room from its own
+// entries first, and an entry that still doesn't fit in its share or the
+// total isn't made.
+TEST(MoltNetHttpCacheBudgetPolicyTest, ANewEntrysKeyCountsLikeData) {
+  const MoltCacheSiteBudget budget = MoltNetHttpCacheBudget();
+  const int64_t share = budget.per_site_bytes;
+  EXPECT_FALSE(MoltCacheSiteMakesRoomForEntry(share - 100, 100, budget));
+  EXPECT_TRUE(MoltCacheSiteMakesRoomForEntry(share - 100, 101, budget));
+  EXPECT_TRUE(MoltCacheSiteMakesRoomForEntry(share, 1, budget));
+  // Down to the target with the key counted.
+  EXPECT_EQ(MoltCacheSiteEntryEvictionTarget(1000, budget),
+            MoltCacheSiteEvictionTarget(budget) - 1000);
+  EXPECT_FALSE(MoltCacheEntryRefused(0, 0, 100, budget));
+  EXPECT_FALSE(MoltCacheEntryRefused(share - 100, budget.total_bytes - 100,
+                                     100, budget));
+  // Past the share (entries in use couldn't go), or past the total.
+  EXPECT_TRUE(MoltCacheEntryRefused(share - 100, 0, 101, budget));
+  EXPECT_TRUE(MoltCacheEntryRefused(0, budget.total_bytes - 100, 101, budget));
+  // A key alone larger than the share.
+  EXPECT_TRUE(MoltCacheEntryRefused(0, 0, share + 1, budget));
+}
+
 TEST(MoltNetHttpCacheBudgetPolicyTest, UnusedEntriesExpire) {
   const MoltCacheSiteBudget budget = MoltNetHttpCacheBudget();
   EXPECT_FALSE(MoltCacheEntryExpired(0, budget));

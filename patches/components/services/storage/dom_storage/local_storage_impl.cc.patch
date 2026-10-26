@@ -5,20 +5,21 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.cc b/components/services/storage/dom_storage/local_storage_impl.cc
-index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c4810898f 100644
+index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..0f65e5aedf79220b21c79ba58283aab1f21b89d8 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.cc
 +++ b/components/services/storage/dom_storage/local_storage_impl.cc
-@@ -31,7 +31,9 @@
+@@ -31,7 +31,10 @@
  #include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
  #include "components/services/storage/dom_storage/features.h"
  #include "components/services/storage/dom_storage/leveldb_status_helper.h"
++#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 +#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
  #include "components/services/storage/dom_storage/storage_area_impl.h"
 +#include "net/base/schemeful_site.h"  // MoltBrowser
  #include "storage/common/database/database_identifier.h"
  #include "third_party/blink/public/common/storage_key/storage_key.h"
  
-@@ -123,6 +125,8 @@ class LocalStorageImpl::StorageAreaHolder final
+@@ -123,6 +126,8 @@ class LocalStorageImpl::StorageAreaHolder final
  
    void OnNoBindings() override {
      has_bindings_ = false;
@@ -27,7 +28,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
      // Don't delete ourselves, but do schedule an immediate commit. Possible
      // deletion will happen under memory pressure or when another localstorage
      // area is opened.
-@@ -153,17 +157,34 @@ class LocalStorageImpl::StorageAreaHolder final
+@@ -153,17 +158,34 @@ class LocalStorageImpl::StorageAreaHolder final
    }
  
    void DidCommit(DbStatus status) override { context_->OnCommitResult(status); }
@@ -62,7 +63,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
    bool has_written_access_meta_data_ = false;
    StorageAreaImpl area_;
  };
-@@ -227,6 +248,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+@@ -227,6 +249,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
          /*new_observer=*/mojo::NullRemote(), std::move(callback));
      found->second->storage_area()->ScheduleImmediateCommit();
    } else if (database_) {
@@ -71,7 +72,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
      std::vector<DomStorageDatabase::MapLocator> maps_to_delete;
      maps_to_delete.emplace_back(storage_key);
  
-@@ -313,6 +336,11 @@ void LocalStorageImpl::ShutDown() {
+@@ -313,6 +337,11 @@ void LocalStorageImpl::ShutDown() {
  }
  
  void LocalStorageImpl::PurgeMemory() {
@@ -83,7 +84,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
    for (auto it = areas_.begin(); it != areas_.end();) {
      if (it->second->has_bindings()) {
        it->second->storage_area()->PurgeMemory();
-@@ -582,7 +610,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
+@@ -582,7 +611,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
      return found->second.get();
    }
  
@@ -98,7 +99,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
  
    auto holder = std::make_unique<StorageAreaHolder>(this, storage_key);
    StorageAreaHolder* holder_ptr = holder.get();
-@@ -648,6 +682,102 @@ void LocalStorageImpl::OnGotWriteMetaData(
+@@ -648,6 +683,104 @@ void LocalStorageImpl::OnGotWriteMetaData(
    std::move(callback).Run(std::move(result));
  }
  
@@ -108,12 +109,13 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
 +  molt_site_budget_.SetGrowthObserver(std::move(observer));
 +}
 +
-+// MoltBrowser: the area of `storage_key` counts to its top-level site.
++// MoltBrowser: the area of `storage_key` counts to its top-level site's
++// group (molt_dom_storage_site.h).
 +bool LocalStorageImpl::MoltMayGrowTo(const blink::StorageKey& storage_key,
 +                                     size_t new_bytes) {
 +  return !molt_caches_per_site_ ||
 +         molt_site_budget_.MayGrowTo(storage_key.Serialize(),
-+                                     storage_key.top_level_site().Serialize(),
++                                     MoltDomStorageSiteOf(storage_key),
 +                                     new_bytes);
 +}
 +
@@ -121,7 +123,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
 +                                    size_t new_bytes) {
 +  if (molt_caches_per_site_) {
 +    molt_site_budget_.ShrankTo(storage_key.Serialize(),
-+                               storage_key.top_level_site().Serialize(),
++                               MoltDomStorageSiteOf(storage_key),
 +                               new_bytes);
 +  }
 +}
@@ -130,14 +132,14 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
 +    const blink::StorageKey& storage_key) {
 +  return molt_caches_per_site_
 +             ? molt_site_budget_.CommitDelay(
-+                   storage_key.top_level_site().Serialize())
++                   MoltDomStorageSiteOf(storage_key))
 +             : base::TimeDelta();
 +}
 +
 +void LocalStorageImpl::MoltSiteCommitted(const blink::StorageKey& storage_key,
 +                                         size_t bytes) {
 +  if (molt_caches_per_site_) {
-+    molt_site_budget_.Committed(storage_key.top_level_site().Serialize(),
++    molt_site_budget_.Committed(MoltDomStorageSiteOf(storage_key),
 +                                bytes);
 +  }
 +}
@@ -157,12 +159,12 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
 +// MoltBrowser:
 +void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
 +    const blink::StorageKey& storage_key) {
-+  const net::SchemefulSite& site = storage_key.top_level_site();
++  const std::string site = MoltDomStorageSiteOf(storage_key);
 +  size_t site_areas = 0;
 +  size_t site_unused_areas = 0;
 +  size_t site_cache_bytes = 0;
 +  for (const auto& [key, holder] : areas_) {
-+    if (key.top_level_site() != site) {
++    if (MoltDomStorageSiteOf(key) != site) {
 +      continue;
 +    }
 +    ++site_areas;
@@ -176,7 +178,8 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..f6118198df8e43addfa139294b9dca2c
 +    return;
 +  }
 +  for (auto it = areas_.begin(); it != areas_.end();) {
-+    if (it->first.top_level_site() == site && !it->second->has_bindings()) {
++    if (!it->second->has_bindings() &&
++        MoltDomStorageSiteOf(it->first) == site) {
 +      it = areas_.erase(it);
 +    } else {
 +      ++it;

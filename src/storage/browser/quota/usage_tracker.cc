@@ -112,7 +112,7 @@ void UsageTracker::UpdateBucketUsageCache(QuotaClientType client_type,
   // for its site's count (molt_storage_budget.h).
   if (molt_counting_ && (!delta.has_value() ||
                          !GetClient(client_type).MoltHasCachedUsage(bucket))) {
-    molt_stale_.Mark(bucket.storage_key.top_level_site(), bucket.storage_key);
+    molt_stale_.Mark(MoltBudgetSiteOf(bucket.storage_key), bucket.storage_key);
   }
 
   GetClient(client_type).UpdateBucketUsageCache(bucket, delta);
@@ -182,7 +182,7 @@ void UsageTracker::SetUsageCacheEnabled(QuotaClientType client_type,
   // MoltBrowser: a storage key whose cache comes back on is counted again
   // (molt_storage_budget.h).
   if (molt_counting_ && enabled) {
-    molt_stale_.Mark(storage_key.top_level_site(), storage_key);
+    molt_stale_.Mark(MoltBudgetSiteOf(storage_key), storage_key);
   }
 
   GetClient(client_type).SetUsageCacheEnabled(storage_key, enabled);
@@ -367,7 +367,7 @@ void UsageTracker::FinallySendBucketUsageWithBreakdown(
 }
 
 // MoltBrowser:
-void UsageTracker::MoltRefreshSiteUsage(const net::SchemefulSite& site,
+void UsageTracker::MoltRefreshSiteUsage(const MoltBudgetSite& site,
                                         base::OnceClosure callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!molt_counting_) {
@@ -410,7 +410,7 @@ void UsageTracker::MoltDidCountEverything(base::OnceClosure callback,
   std::move(callback).Run();
 }
 
-int64_t UsageTracker::MoltSiteUsage(const net::SchemefulSite& site) const {
+int64_t UsageTracker::MoltSiteUsage(const MoltBudgetSite& site) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   int64_t usage = 0;
   for (const auto& [client_type, client_tracker] : client_tracker_map_) {

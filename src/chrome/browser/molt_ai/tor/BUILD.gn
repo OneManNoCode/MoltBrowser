@@ -542,6 +542,7 @@ source_set("unit_tests") {
     "molt_net_requests_policy_unittest.cc",
     "molt_net_socket_pool_policy_unittest.cc",
     "molt_net_socket_pools_unittest.cc",
+    "molt_net_storage_groups_unittest.cc",
     "molt_net_webrtc_binders_unittest.cc",
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",

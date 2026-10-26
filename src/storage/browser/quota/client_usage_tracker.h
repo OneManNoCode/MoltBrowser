@@ -17,7 +17,6 @@
 #include "base/sequence_checker.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "components/services/storage/public/mojom/quota_client.mojom.h"
-#include "net/base/schemeful_site.h"                // MoltBrowser
 #include "storage/browser/quota/molt_storage_budget.h"  // MoltBrowser
 #include "storage/browser/quota/quota_callbacks.h"
 #include "storage/browser/quota/quota_task.h"
@@ -84,12 +83,13 @@ class ClientUsageTracker : public SpecialStoragePolicy::Observer {
   // quota restrictions.
   void SetUsageCacheEnabled(const blink::StorageKey& storage_key, bool enabled);
 
-  // MoltBrowser: the cached usage per top-level site and for all sites, for
-  // MoltNet's storage budget (molt_storage_budget.h), kept from
+  // MoltBrowser: the cached usage per site (MoltBudgetSiteOf()) and for all
+  // sites, for MoltNet's storage budget (molt_storage_usage_counts.h), kept
+  // from
   // MoltCountSites() on (which counts what is cached so far), as the cache
   // changes.
   void MoltCountSites();
-  int64_t MoltSiteUsage(const net::SchemefulSite& site) const;
+  int64_t MoltSiteUsage(const MoltBudgetSite& site) const;
   int64_t MoltCachedUsage() const;
   // Whether `bucket`'s usage is cached (a change to it is counted).
   bool MoltHasCachedUsage(const BucketLocator& bucket) const;
@@ -153,7 +153,7 @@ class ClientUsageTracker : public SpecialStoragePolicy::Observer {
 
   // MoltBrowser: the cache's usage per site, once counted.
   bool molt_counts_sites_ = false;
-  MoltSiteUsageTotals<net::SchemefulSite> molt_site_usage_;
+  MoltSiteUsageTotals<MoltBudgetSite> molt_site_usage_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

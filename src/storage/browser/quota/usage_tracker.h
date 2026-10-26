@@ -22,7 +22,6 @@
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "components/services/storage/public/mojom/quota_client.mojom.h"
-#include "net/base/schemeful_site.h"                // MoltBrowser
 #include "storage/browser/quota/molt_storage_budget.h"  // MoltBrowser
 #include "third_party/blink/public/common/storage_key/storage_key.h"  // MoltBrowser
 #include "storage/browser/quota/quota_callbacks.h"
@@ -116,14 +115,15 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
                             const blink::StorageKey& storage_key,
                             bool enabled);
 
-  // MoltBrowser: for MoltNet's storage budget (molt_storage_budget.h). Asks
-  // again for the usage of `site`'s stale storage keys, then runs
+  // MoltBrowser: for MoltNet's storage budget (molt_storage_usage_counts.h;
+  // sites are molt_storage_budget.h's). Asks again for the usage of
+  // `site`'s stale storage keys, then runs
   // `callback`; the first time, counts the cache per site from then on and
   // asks for every bucket's usage instead. MoltSiteUsage() and
   // MoltTotalUsage() then read the counts, costing a lookup per client.
-  void MoltRefreshSiteUsage(const net::SchemefulSite& site,
+  void MoltRefreshSiteUsage(const MoltBudgetSite& site,
                             base::OnceClosure callback);
-  int64_t MoltSiteUsage(const net::SchemefulSite& site) const;
+  int64_t MoltSiteUsage(const MoltBudgetSite& site) const;
   int64_t MoltTotalUsage() const;
 
  private:
@@ -177,7 +177,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
   // whose usage changed in a way the cache couldn't take in.
   bool molt_counting_ = false;
   bool molt_counted_everything_ = false;
-  MoltStaleStorageKeys<net::SchemefulSite, blink::StorageKey> molt_stale_;
+  MoltStaleStorageKeys<MoltBudgetSite, blink::StorageKey> molt_stale_;
 
   base::WeakPtrFactory<UsageTracker> weak_factory_{this};
 };

@@ -80,6 +80,18 @@
 //    past the area's limit does (never as a bad message): for localStorage
 //    the page's value reverts.
 //
+// "Site" above is the group an area counts to (MoltDomStorageGroupKindFor()):
+// its storage key's top-level site, except for a key that doesn't name
+// where it is embedded. A key with a nonce (a credentialless iframe's, a
+// fenced frame's) has its own origin's site as top-level site, wherever it
+// is embedded (blink::StorageKey::CreateWithNonce()); counted with that
+// site, a site's credentialless frames on every site, and its own pages,
+// would share one total, cache and commit rate, which each of them could
+// read. Such a key counts with the other keys of its nonce only (the
+// credentialless frames of one page). A key whose top-level site is
+// opaque, which serializes as "null" for every such site, counts on its
+// own.
+//
 // Std-only, so molt_ai_unittests tests it.
 
 #ifndef COMPONENTS_SERVICES_STORAGE_DOM_STORAGE_MOLT_DOM_STORAGE_SITE_POLICY_H_
@@ -138,6 +150,46 @@ constexpr bool MoltDomStorageKeepsNoDatabase(bool caches_per_site,
 // (also none of zero bytes), since its items are nowhere else.
 constexpr bool MoltDomStorageMayDropArea(bool has_database, bool holds_items) {
   return has_database || !holds_items;
+}
+
+// ---- The group an area counts to ----
+
+enum class MoltDomStorageGroupKind {
+  // Its storage key's top-level site, with the areas of that site and of
+  // what its pages embed.
+  kTopLevelSite,
+  // Its storage key's nonce, with the other areas of the nonce.
+  kNonce,
+  // Its storage key alone.
+  kOwnKey,
+};
+
+// Which group the area of a storage key with (`has_nonce`) or without a
+// nonce, and with an opaque top-level site or not, counts to.
+constexpr MoltDomStorageGroupKind MoltDomStorageGroupKindFor(
+    bool has_nonce,
+    bool opaque_top_level_site) {
+  if (has_nonce) {
+    return MoltDomStorageGroupKind::kNonce;
+  }
+  return opaque_top_level_site ? MoltDomStorageGroupKind::kOwnKey
+                               : MoltDomStorageGroupKind::kTopLevelSite;
+}
+
+// The group's name: for kTopLevelSite the serialized site itself (as
+// before), else a prefix no serialized site starts with (they start with a
+// scheme) and `value`, the nonce or the serialized storage key.
+inline std::string MoltDomStorageGroupName(MoltDomStorageGroupKind kind,
+                                           std::string_view value) {
+  switch (kind) {
+    case MoltDomStorageGroupKind::kTopLevelSite:
+      return std::string(value);
+    case MoltDomStorageGroupKind::kNonce:
+      return "^nonce " + std::string(value);
+    case MoltDomStorageGroupKind::kOwnKey:
+      return "^key " + std::string(value);
+  }
+  return "^key " + std::string(value);
 }
 
 // ---- Totals per site ----
@@ -229,10 +281,13 @@ class MoltDomStorageSiteTotals {
       return;
     }
     total_ -= it->second.bytes;
-    auto site = sites_.find(it->second.site);
-    site->second -= it->second.bytes;
-    if (site->second == 0) {
-      sites_.erase(site);
+    // An area left empty (cleared) may outlive its site's entry, which goes
+    // once the site's other areas are forgotten.
+    if (auto site = sites_.find(it->second.site); site != sites_.end()) {
+      site->second -= it->second.bytes;
+      if (site->second == 0) {
+        sites_.erase(site);
+      }
     }
     areas_.erase(it);
   }

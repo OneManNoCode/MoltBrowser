@@ -22,6 +22,7 @@
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
+#include "base/unguessable_token.h"
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
 #include "components/services/storage/public/cpp/buckets/bucket_init_params.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
@@ -37,6 +38,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai::fingerprinting {
 namespace {
@@ -118,6 +121,24 @@ TEST_F(MoltNetStorageSiteUsageTest, ASitesKeysShareItsShare) {
   EXPECT_EQ(Quota(Key("https://y.a.test")), kPerSite - 30 * kMiB);
   EXPECT_EQ(Quota(Key("https://a.test")), 10 * kMiB + kPerSite - 30 * kMiB);
   EXPECT_EQ(Quota(Key("https://polite.test")), kPerSite);
+}
+
+// A credentialless iframe's storage key (with its page's nonce) counts with
+// its nonce, not with its origin's site: the counts per site follow the
+// budget's groups (MoltBudgetSiteOf()).
+TEST_F(MoltNetStorageSiteUsageTest, CredentiallessFramesCountWithTheirNonce) {
+  const url::Origin tracker = url::Origin::Create(GURL("https://t.test"));
+  const base::UnguessableToken page = base::UnguessableToken::Create();
+  Store(Key("https://t.test"), 50 * kMiB);
+  const blink::StorageKey framed =
+      blink::StorageKey::CreateWithNonce(tracker, page);
+  Store(framed, 5 * kMiB);
+  EXPECT_EQ(Quota(Key("https://x.t.test")), kPerSite - 50 * kMiB);
+  EXPECT_EQ(Quota(framed), kPerSite);
+  // Another origin under the same page's nonce shares it.
+  EXPECT_EQ(Quota(blink::StorageKey::CreateWithNonce(
+                url::Origin::Create(GURL("https://o.test")), page)),
+            kPerSite - 5 * kMiB);
 }
 
 // A change to a cached bucket's usage is counted at once: the next check

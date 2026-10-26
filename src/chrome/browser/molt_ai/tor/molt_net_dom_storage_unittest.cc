@@ -23,6 +23,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "base/uuid.h"
 #include "components/services/storage/dom_storage/db_status.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
@@ -36,6 +37,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_area.mojom.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai::tor {
 namespace {
@@ -250,6 +253,30 @@ TEST_F(MoltNetDomStorageTest, AGreedySitesWritesDontDelayAnothers) {
   EXPECT_FALSE(Put(greedy.get(), 'z', 1));
 }
 
+// The write allowance follows the same groups as the totals: a
+// credentialless iframe's writes come out of its page's nonce's allowance,
+// not out of its own site's, nor the other way round.
+TEST_F(MoltNetDomStorageTest, CredentiallessFramesHaveTheirOwnAllowance) {
+  storage_->MoltKeepCachesPerSite();
+  const url::Origin tracker = url::Origin::Create(GURL("https://t.test"));
+  mojo::Remote<blink::mojom::StorageArea> own;
+  storage_->BindStorageArea(Key("https://t.test"),
+                            own.BindNewPipeAndPassReceiver());
+  for (int64_t i = 0; i < storage::kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(Put(own.get(), static_cast<uint8_t>(i), 1));
+  }
+  EXPECT_FALSE(Put(own.get(), 'x', 1));
+  mojo::Remote<blink::mojom::StorageArea> framed;
+  storage_->BindStorageArea(
+      blink::StorageKey::CreateWithNonce(tracker,
+                                         base::UnguessableToken::Create()),
+      framed.BindNewPipeAndPassReceiver());
+  for (int64_t i = 0; i < storage::kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(Put(framed.get(), static_cast<uint8_t>(i), 1));
+  }
+  EXPECT_FALSE(Put(framed.get(), 'x', 1));
+}
+
 // The bytes a site writes come out of its allowance too, also a value
 // written over and over at the same size.
 TEST_F(MoltNetDomStorageTest, ASitesWriteBytesAreLimited) {
@@ -414,6 +441,31 @@ TEST(MoltStorageAreaPutTest, AQuotaRefusedPutKeepsTheOldValue) {
   ASSERT_EQ(data.size(), 1u);
   EXPECT_EQ(data[0]->value, old_value);
   EXPECT_EQ(area.storage_used(), 1u + 40u);
+}
+
+// A credentialless iframe's areas (a storage key with a nonce, whose
+// top-level site is its own origin's site wherever it is embedded) count
+// with its nonce: not with its site's own pages, nor with the same site's
+// credentialless frames under another page's nonce.
+TEST_F(MoltNetDomStorageTest, CredentiallessFramesCountWithTheirNonce) {
+  storage_->MoltKeepCachesPerSite();
+  constexpr size_t kMiB = 1024 * 1024;
+  const url::Origin tracker = url::Origin::Create(GURL("https://t.test"));
+  const base::UnguessableToken page_a = base::UnguessableToken::Create();
+  const base::UnguessableToken page_b = base::UnguessableToken::Create();
+  ASSERT_TRUE(Write(Key("https://t.test"), 10 * kMiB));
+  // The site's own total is full; its frames under page A's nonce have
+  // theirs.
+  EXPECT_TRUE(Write(blink::StorageKey::CreateWithNonce(tracker, page_a),
+                    6 * kMiB));
+  EXPECT_FALSE(Write(Key("https://x.t.test"), kMiB));
+  // Under page B's nonce, a total of its own again.
+  EXPECT_TRUE(Write(blink::StorageKey::CreateWithNonce(tracker, page_b),
+                    10 * kMiB));
+  // Two origins under one page's nonce share it.
+  EXPECT_FALSE(Write(blink::StorageKey::CreateWithNonce(
+                         url::Origin::Create(GURL("https://x.t.test")), page_a),
+                     5 * kMiB));
 }
 
 // Chromium 156: every subdomain has its own 10 MiB.

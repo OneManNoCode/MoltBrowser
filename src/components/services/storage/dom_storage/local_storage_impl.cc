@@ -31,6 +31,7 @@
 #include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
 #include "components/services/storage/dom_storage/features.h"
 #include "components/services/storage/dom_storage/leveldb_status_helper.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/storage_area_impl.h"
 #include "net/base/schemeful_site.h"  // MoltBrowser
@@ -708,12 +709,13 @@ void LocalStorageImpl::MoltSetGrowthObserver(
   molt_site_budget_.SetGrowthObserver(std::move(observer));
 }
 
-// MoltBrowser: the area of `storage_key` counts to its top-level site.
+// MoltBrowser: the area of `storage_key` counts to its top-level site's
+// group (molt_dom_storage_site.h).
 bool LocalStorageImpl::MoltMayGrowTo(const blink::StorageKey& storage_key,
                                      size_t new_bytes) {
   return !molt_caches_per_site_ ||
          molt_site_budget_.MayGrowTo(storage_key.Serialize(),
-                                     storage_key.top_level_site().Serialize(),
+                                     MoltDomStorageSiteOf(storage_key),
                                      new_bytes);
 }
 
@@ -721,7 +723,7 @@ void LocalStorageImpl::MoltShrankTo(const blink::StorageKey& storage_key,
                                     size_t new_bytes) {
   if (molt_caches_per_site_) {
     molt_site_budget_.ShrankTo(storage_key.Serialize(),
-                               storage_key.top_level_site().Serialize(),
+                               MoltDomStorageSiteOf(storage_key),
                                new_bytes);
   }
 }
@@ -730,14 +732,14 @@ base::TimeDelta LocalStorageImpl::MoltSiteCommitDelay(
     const blink::StorageKey& storage_key) {
   return molt_caches_per_site_
              ? molt_site_budget_.CommitDelay(
-                   storage_key.top_level_site().Serialize())
+                   MoltDomStorageSiteOf(storage_key))
              : base::TimeDelta();
 }
 
 void LocalStorageImpl::MoltSiteCommitted(const blink::StorageKey& storage_key,
                                          size_t bytes) {
   if (molt_caches_per_site_) {
-    molt_site_budget_.Committed(storage_key.top_level_site().Serialize(),
+    molt_site_budget_.Committed(MoltDomStorageSiteOf(storage_key),
                                 bytes);
   }
 }
@@ -745,8 +747,7 @@ void LocalStorageImpl::MoltSiteCommitted(const blink::StorageKey& storage_key,
 bool LocalStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
                                     size_t bytes) {
   return !molt_caches_per_site_ ||
-         molt_site_budget_.MayWrite(storage_key.top_level_site().Serialize(),
-                                    bytes);
+         molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
 }
 
 bool LocalStorageImpl::MoltMayDrop(StorageAreaHolder& holder) {
@@ -770,12 +771,12 @@ void LocalStorageImpl::MoltKeepCachesPerSite() {
 // MoltBrowser:
 void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
     const blink::StorageKey& storage_key) {
-  const net::SchemefulSite& site = storage_key.top_level_site();
+  const std::string site = MoltDomStorageSiteOf(storage_key);
   size_t site_areas = 0;
   size_t site_unused_areas = 0;
   size_t site_cache_bytes = 0;
   for (const auto& [key, holder] : areas_) {
-    if (key.top_level_site() != site) {
+    if (MoltDomStorageSiteOf(key) != site) {
       continue;
     }
     ++site_areas;
@@ -789,7 +790,7 @@ void LocalStorageImpl::MoltPurgeUnusedAreasOfSite(
     return;
   }
   for (auto it = areas_.begin(); it != areas_.end();) {
-    if (it->first.top_level_site() == site && MoltMayDrop(*it->second)) {
+    if (MoltMayDrop(*it->second) && MoltDomStorageSiteOf(it->first) == site) {
       it = areas_.erase(it);
     } else {
       ++it;
