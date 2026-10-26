@@ -23,6 +23,31 @@ mod wasm32;
 pub mod float16;
 pub mod scalar;
 
+// MoltBrowser: a process-wide switch to the scalar code.
+//
+// Every function made with `simd_function!` picks the widest instruction set
+// the CPU has (AVX-512, AVX2 + FMA + F16C, SSE4.2, NEON) and falls back to
+// the scalar descriptor. The vector ones fuse multiply-adds or not, look up
+// tables in bf16 and convert half floats in hardware, so a decoded image's
+// pixels depend on the CPU. Once `moltbrowser_set_portable(true)` has been
+// called, every such function runs the scalar descriptor on every CPU and
+// architecture, which gives the same values everywhere. MoltBrowser's
+// MoltNet renderers set it before they decode any image; nothing else does.
+static MOLTBROWSER_PORTABLE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// MoltBrowser: runs every `simd_function!` on the scalar descriptor from
+/// now on (`true`), or picks by CPU again (`false`, the default).
+pub fn moltbrowser_set_portable(portable: bool) {
+    MOLTBROWSER_PORTABLE.store(portable, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// MoltBrowser: whether `moltbrowser_set_portable(true)` is in effect.
+#[inline(always)]
+pub fn moltbrowser_portable() -> bool {
+    MOLTBROWSER_PORTABLE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(all(target_arch = "aarch64", feature = "neon"))]
 pub use aarch64::neon::NeonDescriptor;
 pub use float16::f16;

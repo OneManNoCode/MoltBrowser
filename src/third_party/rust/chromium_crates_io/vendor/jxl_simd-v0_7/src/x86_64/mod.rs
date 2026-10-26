@@ -29,6 +29,10 @@ macro_rules! simd_function {
         $pub fn $dname($($arg: $ty),*) $(-> $ret)? {
             #[allow(unused)]
             use $crate::SimdDescriptor;
+            // MoltBrowser: the scalar code on every CPU when portable.
+            if $crate::moltbrowser_portable() {
+                return $name($crate::ScalarDescriptor::new().unwrap(), $($arg),*);
+            }
             $crate::simd_function_body_avx512!($name($($arg: $ty),*) $(-> $ret)?; ($($arg),*));
             $crate::simd_function_body_avx!($name($($arg: $ty),*) $(-> $ret)?; ($($arg),*));
             $crate::simd_function_body_sse42!($name($($arg: $ty),*) $(-> $ret)?; ($($arg),*));

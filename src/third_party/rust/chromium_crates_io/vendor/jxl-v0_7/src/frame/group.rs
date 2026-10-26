@@ -6,7 +6,6 @@
 use jxl_simd::{F32SimdVec, I32SimdVec, SimdDescriptor, SimdMask, simd_function};
 use jxl_transforms::transform::*;
 use jxl_transforms::transform_map::*;
-use num_traits::Float;
 
 use crate::bit_reader::BitReader;
 use crate::entropy_coding::decode::{Histograms, SymbolReader};
@@ -580,8 +579,9 @@ pub fn decode_vardct_group(
     pixels: &mut Option<[Image<f32>; 3]>,
     buffers: &mut VarDctBuffers,
 ) -> Result<(), Error> {
-    let x_dm_multiplier = (1.0 / (1.25)).powf(frame_header.x_qm_scale as f32 - 2.0);
-    let b_dm_multiplier = (1.0 / (1.25)).powf(frame_header.b_qm_scale as f32 - 2.0);
+    // MoltBrowser: portable in MoltNet (moltbrowser_math).
+    let x_dm_multiplier = crate::moltbrowser_math::powf(1.0 / (1.25), frame_header.x_qm_scale as f32 - 2.0);
+    let b_dm_multiplier = crate::moltbrowser_math::powf(1.0 / (1.25), frame_header.b_qm_scale as f32 - 2.0);
 
     let block_group_rect = frame_header.block_group_rect(group);
     debug!(?block_group_rect);

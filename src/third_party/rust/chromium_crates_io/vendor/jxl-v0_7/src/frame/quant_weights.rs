@@ -1175,7 +1175,8 @@ fn interpolate_vec(scaled_pos: f32, array: &[f32]) -> f32 {
     let idx = idxf32 as usize;
     let a = array[idx];
     let b = array[1..][idx];
-    (b / a).powf(frac) * a
+    // MoltBrowser: portable in MoltNet (moltbrowser_math).
+    crate::moltbrowser_math::powf(b / a, frac) * a
 }
 
 fn interpolate(pos: f32, max: f32, array: &[f32]) -> f32 {
@@ -1183,7 +1184,8 @@ fn interpolate(pos: f32, max: f32, array: &[f32]) -> f32 {
     let idx = scaled_pos as usize;
     let a = array[idx];
     let b = array[idx + 1];
-    a * (b / a).powf(scaled_pos - idx as f32)
+    // MoltBrowser: portable in MoltNet (moltbrowser_math).
+    a * crate::moltbrowser_math::powf(b / a, scaled_pos - idx as f32)
 }
 
 fn mult(v: f32) -> f32 {

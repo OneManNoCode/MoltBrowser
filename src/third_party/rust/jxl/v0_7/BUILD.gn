@@ -101,6 +101,9 @@ cargo_crate("lib") {
     "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/image/test.rs",
     "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/image/typed.rs",
     "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/lib.rs",
+
+    # MoltBrowser: decoding alike on every CPU and OS (patches/jxl-v0_7).
+    "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/moltbrowser_math.rs",
     "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/buffer_splitter.rs",
     "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/builder.rs",
     "//third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/channels.rs",
@@ -191,6 +194,9 @@ cargo_crate("lib") {
     "//third_party/rust/jxl_macros/v0_7:lib",
     "//third_party/rust/jxl_simd/v0_7:lib",
     "//third_party/rust/jxl_transforms/v0_7:lib",
+
+    # MoltBrowser: moltbrowser_math's portable functions.
+    "//third_party/rust/libm/v0_2:lib",
     "//third_party/rust/num_derive/v0_4:lib",
     "//third_party/rust/num_traits/v0_2:lib",
     "//third_party/rust/thiserror/v2:lib",

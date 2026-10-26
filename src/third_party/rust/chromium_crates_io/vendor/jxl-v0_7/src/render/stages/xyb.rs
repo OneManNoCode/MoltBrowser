@@ -156,7 +156,7 @@ impl XybParams {
         let intensity_scale = 255.0 / intensity_target;
         Self {
             mat: opsin.inverse_matrix,
-            bias_cbrt: opsin.opsin_biases.map(|x| x.cbrt()),
+            bias_cbrt: opsin.opsin_biases.map(crate::moltbrowser_math::cbrt), // MoltBrowser
             scaled_bias: opsin.opsin_biases.map(|x| x * intensity_scale),
             intensity_scale,
         }

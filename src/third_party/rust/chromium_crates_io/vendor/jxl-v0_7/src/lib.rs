@@ -14,8 +14,13 @@ pub mod frame;
 pub mod headers;
 pub mod icc;
 pub mod image;
+// MoltBrowser: one process-wide switch to code that decodes alike on every
+// CPU and OS.
+pub mod moltbrowser_math;
 pub mod render;
 pub mod util;
+
+pub use moltbrowser_math::moltbrowser_set_portable;
 
 #[cfg(test)]
 mod tests;

@@ -1553,7 +1553,7 @@ fn display_from_encoded_pq(display_intensity_target: f32, mut e: f64) -> f64 {
     e = e.abs();
 
     // Core PQ EOTF formula from ST 2084.
-    let xp = e.powf(1.0 / M2);
+    let xp = crate::moltbrowser_math::powf(e, 1.0 / M2); // MoltBrowser
     let num = (xp - C1).max(0.0);
     let den = C2 - C3 * xp;
 
@@ -1562,7 +1562,7 @@ fn display_from_encoded_pq(display_intensity_target: f32, mut e: f64) -> f64 {
     // the denominator is always positive.
     debug_assert!(den != 0.0, "PQ transfer function denominator is zero.");
 
-    let d = (num / den).powf(1.0 / M1);
+    let d = crate::moltbrowser_math::powf(num / den, 1.0 / M1); // MoltBrowser
 
     // The result `d` should always be non-negative for non-negative inputs.
     debug_assert!(
@@ -1623,7 +1623,7 @@ impl TF_HLG {
             // The `* (1.0 / 3.0)` is slightly more efficient than `/ 3.0`.
             e * e * (1.0 / 3.0)
         } else {
-            (((e - Self::C) * Self::RA).exp() + Self::B) * Self::INV_12
+            (crate::moltbrowser_math::exp((e - Self::C) * Self::RA) + Self::B) * Self::INV_12 // MoltBrowser
         };
 
         // The result should be non-negative for non-negative inputs.
@@ -1831,7 +1831,8 @@ impl Rec2408ToneMapper {
 fn apply_hlg_ootf(rgb: &mut [f32; 3], target_luminance: f32, luminances: [f32; 3]) {
     // HLG OOTF: scene-referred to display-referred conversion
     // system_gamma = 1.2 * 1.111^log2(intensity_display / 1000)
-    let system_gamma = 1.2_f32 * 1.111_f32.powf((target_luminance / 1e3).log2());
+    // MoltBrowser: portable in MoltNet (moltbrowser_math).
+    let system_gamma = 1.2_f32 * crate::moltbrowser_math::powf(1.111_f32, crate::moltbrowser_math::log2(target_luminance / 1e3));
     let exp = system_gamma - 1.0;
 
     if exp.abs() < 0.1 {
@@ -1980,7 +1981,7 @@ fn tone_map_pixel(
         if x <= DELTA * DELTA * DELTA {
             x * (1.0 / (3.0 * DELTA * DELTA)) + 4.0 / 29.0
         } else {
-            x.cbrt()
+            crate::moltbrowser_math::cbrt(x) // MoltBrowser
         }
     };
 
@@ -2073,7 +2074,7 @@ fn create_icc_lut_atob_tag_for_xyb(tags: &mut Vec<u8>) -> Result<(), Error> {
     // Each curve: 12 + 5*4 = 32 bytes
     let scale = xyb_scale();
     for i in 0..3 {
-        let b = -XYB_OFFSET[i] - NEG_OPSIN_ABSORBANCE_BIAS_RGB[i].cbrt();
+        let b = -XYB_OFFSET[i] - crate::moltbrowser_math::cbrt(NEG_OPSIN_ABSORBANCE_BIAS_RGB[i]); // MoltBrowser
         let params = [
             3.0,                      // gamma
             1.0 / scale[i],           // a

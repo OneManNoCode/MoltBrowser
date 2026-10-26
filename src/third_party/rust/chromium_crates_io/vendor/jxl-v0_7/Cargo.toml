@@ -72,6 +72,10 @@ version = "=0.7.4"
 [dependencies.jxl_transforms]
 version = "=0.7.4"
 
+# MoltBrowser: the portable functions of moltbrowser_math.
+[dependencies.libm]
+version = "0.2.16"
+
 [dependencies.num-derive]
 version = "0.4"
 

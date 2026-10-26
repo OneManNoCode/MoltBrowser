@@ -40,7 +40,7 @@ impl Point {
         Point { x, y }
     }
     fn abs(&self) -> f32 {
-        self.x.hypot(self.y)
+        crate::moltbrowser_math::hypot(self.x, self.y) // MoltBrowser
     }
 }
 
@@ -690,7 +690,8 @@ impl Splines {
             .max_by(|a, b| a.total_cmp(b))
             .unwrap();
         let max_distance =
-            (-2.0 * sigma * sigma * (0.1f32.ln() * distance_exp - max_color.ln())).sqrt();
+            // MoltBrowser: portable in MoltNet (moltbrowser_math).
+            (-2.0 * sigma * sigma * (crate::moltbrowser_math::ln(0.1f32) * distance_exp - crate::moltbrowser_math::ln(max_color))).sqrt();
         let segment = SplineSegment {
             center_x: center.x,
             center_y: center.y,
