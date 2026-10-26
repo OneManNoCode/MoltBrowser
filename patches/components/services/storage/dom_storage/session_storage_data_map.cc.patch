@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_data_map.cc b/components/services/storage/dom_storage/session_storage_data_map.cc
-index 38b1a08e8776f734029fed12b2eb82d020100cdb..3deb076533eadc6287ceeb517a659df127dd6eba 100644
+index 38b1a08e8776f734029fed12b2eb82d020100cdb..83b7131a03a70daa9c8d82813358406c136ccdb9 100644
 --- a/components/services/storage/dom_storage/session_storage_data_map.cc
 +++ b/components/services/storage/dom_storage/session_storage_data_map.cc
-@@ -10,6 +10,55 @@
+@@ -10,6 +10,58 @@
  #include "components/services/storage/dom_storage/dom_storage_constants.h"
  
  namespace storage {
@@ -37,6 +37,9 @@ index 38b1a08e8776f734029fed12b2eb82d020100cdb..3deb076533eadc6287ceeb517a659df1
 +SessionStorageDataMap::Listener::MoltTaskRunner(const blink::StorageKey&) {
 +  return nullptr;
 +}
++void SessionStorageDataMap::Listener::MoltAreaUnbound(
++    const std::string& namespace_id,
++    const blink::StorageKey& storage_key) {}
 +
 +// MoltBrowser: the map's budget is its listener's.
 +bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {

@@ -1,0 +1,41 @@
+MoltBrowser patch for components/services/storage/storage_service_impl.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/services/storage/storage_service_impl.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/services/storage/storage_service_impl.h b/components/services/storage/storage_service_impl.h
+index 3e64507a2a09a1b7865e3b2edcec2ca64ae9baa6..adc4f2728027ed3e6cfa22a5b8ffcbaee8789a17 100644
+--- a/components/services/storage/storage_service_impl.h
++++ b/components/services/storage/storage_service_impl.h
+@@ -14,6 +14,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "build/build_config.h"
++#include "components/services/storage/dom_storage/molt_dom_storage_own_thread.h"  // MoltBrowser
+ #include "components/services/storage/public/mojom/filesystem/directory.mojom.h"
+ #include "components/services/storage/public/mojom/storage_service.mojom.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+@@ -56,6 +57,12 @@ class StorageServiceImpl : public mojom::StorageService {
+       bool clear_on_open,
+       mojo::PendingReceiver<mojom::SessionStorageControl> receiver) override;
+   void BindTestApi(mojo::ScopedMessagePipeHandle test_api_receiver) override;
++  // MoltBrowser: a partition kept per site, on a thread of its own
++  // (molt_dom_storage_own_thread.h).
++  void MoltBindPerSiteLocalStorageControl(
++      mojo::PendingReceiver<mojom::LocalStorageControl> receiver) override;
++  void MoltBindPerSiteSessionStorageControl(
++      mojo::PendingReceiver<mojom::SessionStorageControl> receiver) override;
+ 
+   // These transfer ownership of the storage instance to a DeferredDeleter when
+   // performing ShutDown. This allows the storage instance to be deleted after
+@@ -101,6 +108,9 @@ class StorageServiceImpl : public mojom::StorageService {
+   std::map<base::FilePath, raw_ptr<SessionStorageImpl, CtnExperimental>>
+       persistent_session_storage_map_;
+ 
++  // MoltBrowser: the partitions kept per site, each on its own thread.
++  MoltDomStorageOwnThreads molt_own_threads_;
++
+   base::WeakPtrFactory<StorageServiceImpl> weak_ptr_factory_{this};
+ };
+ 

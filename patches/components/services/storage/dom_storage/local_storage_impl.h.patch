@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.h b/components/services/storage/dom_storage/local_storage_impl.h
-index 803764e6d25c73798e4c02f7404e6ee52f595d00..39d33e518d9db66c3236186c9209a8091bf030b5 100644
+index 803764e6d25c73798e4c02f7404e6ee52f595d00..32e2f268d08b5d397945f49d1746a8fb4c6146b4 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.h
 +++ b/components/services/storage/dom_storage/local_storage_impl.h
 @@ -19,6 +19,9 @@
@@ -18,7 +18,7 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..39d33e518d9db66c3236186c9209a809
  #include "base/trace_event/memory_allocator_dump.h"
  #include "base/trace_event/memory_dump_provider.h"
  #include "build/build_config.h"
-@@ -94,6 +97,10 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -94,6 +97,15 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    void ApplyPolicyUpdates(
        std::vector<mojom::StoragePolicyUpdatePtr> policy_updates) override;
    void ForceKeepSessionState() override;
@@ -26,10 +26,15 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..39d33e518d9db66c3236186c9209a809
 +  void MoltSetGrowthObserver(
 +      mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
 +      override;  // MoltBrowser
++  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
++  // through `scheduler` (one for the whole partition, which its host shares:
++  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
++  void MoltKeepCachesPerSiteOn(
++      scoped_refptr<MoltDomStorageFairScheduler> scheduler);
  
    // base::trace_event::MemoryDumpProvider implementation.
    bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
-@@ -149,6 +156,26 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -149,6 +161,30 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    void GetStatistics(size_t* total_cache_size, size_t* unused_area_count);
    void OnCommitResult(DbStatus status);
  
@@ -39,6 +44,10 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..39d33e518d9db66c3236186c9209a809
 +  // Without a database, only areas that hold no item.
 +  void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
 +  void MoltSweepIdleAreas();
++  // MoltBrowser: kept per site without a database, `storage_key`'s area,
++  // left unused, goes in its site's turn if it holds nothing.
++  void MoltAreaUnused(const blink::StorageKey& storage_key);
++  void MoltDropIfUnused(const blink::StorageKey& storage_key);
 +  bool MoltMayDrop(StorageAreaHolder& holder);
 +  // MoltBrowser: the per-site budget, for `storage_key`'s area
 +  // (molt_dom_storage_site_budget.h); everything goes without caches per
@@ -56,7 +65,7 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..39d33e518d9db66c3236186c9209a809
    // These clear stale storage areas (not read/written to within 400 days) from
    // the database. See crbug.com/40281870 for more info.
    void DeleteStaleStorageAreas();
-@@ -212,6 +239,17 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -212,6 +248,17 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    // `~StorageAreaHolder()`.
    std::map<blink::StorageKey, std::unique_ptr<StorageAreaHolder>> areas_;
  

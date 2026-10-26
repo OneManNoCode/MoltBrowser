@@ -1,0 +1,29 @@
+MoltBrowser patch for components/services/storage/storage_service_impl.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/services/storage/storage_service_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/services/storage/storage_service_impl.cc b/components/services/storage/storage_service_impl.cc
+index ffe1ae56a976cc2f090dd1d4df4849b639e5f047..7e3437ed31e2361cffab7bcff9481dffd91f0da8 100644
+--- a/components/services/storage/storage_service_impl.cc
++++ b/components/services/storage/storage_service_impl.cc
+@@ -167,6 +167,18 @@ void StorageServiceImpl::BindSessionStorageControl(
+   session_storages_.insert(std::move(new_session_storage));
+ }
+ 
++// MoltBrowser:
++void StorageServiceImpl::MoltBindPerSiteLocalStorageControl(
++    mojo::PendingReceiver<mojom::LocalStorageControl> receiver) {
++  molt_own_threads_.BindLocalStorageControl(std::move(receiver));
++}
++
++// MoltBrowser:
++void StorageServiceImpl::MoltBindPerSiteSessionStorageControl(
++    mojo::PendingReceiver<mojom::SessionStorageControl> receiver) {
++  molt_own_threads_.BindSessionStorageControl(std::move(receiver));
++}
++
+ void StorageServiceImpl::BindTestApi(
+     mojo::ScopedMessagePipeHandle test_api_receiver) {
+   GetTestApiBinderForTesting().Run(std::move(test_api_receiver));

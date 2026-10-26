@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.cc b/components/services/storage/dom_storage/local_storage_impl.cc
-index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce29887935c9b98b4 100644
+index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..c68c54be629c4643ea167b465784e641237b343f 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.cc
 +++ b/components/services/storage/dom_storage/local_storage_impl.cc
 @@ -31,7 +31,10 @@
@@ -19,16 +19,19 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce2988793
  #include "storage/common/database/database_identifier.h"
  #include "third_party/blink/public/common/storage_key/storage_key.h"
  
-@@ -123,6 +126,8 @@ class LocalStorageImpl::StorageAreaHolder final
+@@ -123,6 +126,11 @@ class LocalStorageImpl::StorageAreaHolder final
  
    void OnNoBindings() override {
      has_bindings_ = false;
-+    // MoltBrowser: for the idle sweep (molt_dom_storage_site_policy.h).
++    // MoltBrowser: for the idle sweep (molt_dom_storage_site_policy.h); and,
++    // kept per site without a database, an area left unused and empty goes
++    // in its site's turn.
 +    molt_unused_since_ = base::TimeTicks::Now();
++    context_->MoltAreaUnused(storage_key_);
      // Don't delete ourselves, but do schedule an immediate commit. Possible
      // deletion will happen under memory pressure or when another localstorage
      // area is opened.
-@@ -153,17 +158,40 @@ class LocalStorageImpl::StorageAreaHolder final
+@@ -153,17 +161,40 @@ class LocalStorageImpl::StorageAreaHolder final
    }
  
    void DidCommit(DbStatus status) override { context_->OnCommitResult(status); }
@@ -69,16 +72,19 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce2988793
    bool has_written_access_meta_data_ = false;
    StorageAreaImpl area_;
  };
-@@ -227,6 +255,8 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+@@ -226,7 +257,11 @@ void LocalStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+         /*source=*/nullptr,
          /*new_observer=*/mojo::NullRemote(), std::move(callback));
      found->second->storage_area()->ScheduleImmediateCommit();
++    // MoltBrowser: an unused area left empty goes (molt_dom_storage_site_policy.h).
++    MoltAreaUnused(storage_key);
    } else if (database_) {
 +    // MoltBrowser: what it held is gone (molt_dom_storage_site_policy.h).
 +    molt_site_budget_.Forget(storage_key.Serialize());
      std::vector<DomStorageDatabase::MapLocator> maps_to_delete;
      maps_to_delete.emplace_back(storage_key);
  
-@@ -313,6 +343,11 @@ void LocalStorageImpl::ShutDown() {
+@@ -313,6 +348,11 @@ void LocalStorageImpl::ShutDown() {
  }
  
  void LocalStorageImpl::PurgeMemory() {
@@ -90,7 +96,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce2988793
    for (auto it = areas_.begin(); it != areas_.end();) {
      if (it->second->has_bindings()) {
        it->second->storage_area()->PurgeMemory();
-@@ -458,6 +493,13 @@ void LocalStorageImpl::InitiateConnection(
+@@ -458,6 +498,16 @@ void LocalStorageImpl::InitiateConnection(
    // subdirectory and weren't asked to stay in memory.
    in_memory_ = in_memory_only || storage_partition_directory_.empty() ||
                 !storage_partition_directory_.IsAbsolute();
@@ -98,28 +104,35 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce2988793
 +  // no database; its areas hold their items themselves, and opening one
 +  // never waits on the database's sequence (molt_dom_storage_site_policy.h).
 +  if (MoltDomStorageKeepsNoDatabase(molt_caches_per_site_, in_memory_)) {
++    // Nor any sweep: unused areas that hold nothing go as they are left
++    // (MoltAreaUnused()), and the others stay.
++    molt_idle_sweep_.Stop();
 +    OnConnectionFinished();
 +    return;
 +  }
    const base::FilePath dir_to_open =
        in_memory_ ? base::FilePath() : storage_partition_directory_;
    // Recovery destroys the pre-existing on-disk database before reopening (which
-@@ -582,7 +624,13 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
+@@ -582,7 +632,17 @@ LocalStorageImpl::StorageAreaHolder* LocalStorageImpl::GetOrCreateStorageArea(
      return found->second.get();
    }
  
 -  PurgeUnusedAreasIfNeeded();
 +  // MoltBrowser: with caches per site, only this site's unused areas, by its
-+  // own limits (molt_dom_storage_site_policy.h).
++  // own limits (molt_dom_storage_site_policy.h); without a database there is
++  // none to purge (an unused area that holds nothing is gone already:
++  // MoltAreaUnused()).
 +  if (molt_caches_per_site_) {
-+    MoltPurgeUnusedAreasOfSite(storage_key);
++    if (database_) {
++      MoltPurgeUnusedAreasOfSite(storage_key);
++    }
 +  } else {
 +    PurgeUnusedAreasIfNeeded();
 +  }
  
    auto holder = std::make_unique<StorageAreaHolder>(this, storage_key);
    StorageAreaHolder* holder_ptr = holder.get();
-@@ -599,6 +647,16 @@ void LocalStorageImpl::RetrieveStorageUsage(GetUsageCallback callback) {
+@@ -599,6 +659,16 @@ void LocalStorageImpl::RetrieveStorageUsage(GetUsageCallback callback) {
      std::vector<mojom::StorageUsageInfoPtr> result;
      base::Time now = base::Time::Now();
      for (const auto& it : areas_) {
@@ -136,7 +149,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce2988793
        result.emplace_back(mojom::StorageUsageInfo::New(it.first, 0, now));
      }
      std::move(callback).Run(std::move(result));
-@@ -648,6 +706,124 @@ void LocalStorageImpl::OnGotWriteMetaData(
+@@ -648,6 +718,155 @@ void LocalStorageImpl::OnGotWriteMetaData(
    std::move(callback).Run(std::move(result));
  }
  
@@ -202,16 +215,47 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..344fae7d8438e79b6e49725ce2988793
 +
 +// MoltBrowser:
 +void LocalStorageImpl::MoltKeepCachesPerSite() {
++  MoltKeepCachesPerSiteOn(nullptr);
++}
++
++// MoltBrowser:
++void LocalStorageImpl::MoltKeepCachesPerSiteOn(
++    scoped_refptr<MoltDomStorageFairScheduler> scheduler) {
 +  if (molt_caches_per_site_) {
 +    return;
 +  }
 +  molt_caches_per_site_ = true;
-+  molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
-+      base::SequencedTaskRunner::GetCurrentDefault());
++  molt_scheduler_ =
++      scheduler ? std::move(scheduler)
++                : base::MakeRefCounted<MoltDomStorageFairScheduler>(
++                      base::SequencedTaskRunner::GetCurrentDefault());
 +  molt_idle_sweep_.Start(
 +      FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
 +      base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,
 +                          base::Unretained(this)));
++}
++
++// MoltBrowser: kept per site without a database, an area left unused that
++// holds nothing goes, in its site's turn (molt_dom_storage_site_policy.h:
++// MoltDomStorageDropsUnusedArea()), so that no purge or sweep over every
++// site's areas is needed.
++void LocalStorageImpl::MoltAreaUnused(const blink::StorageKey& storage_key) {
++  if (!MoltDomStorageDropsUnusedArea(molt_caches_per_site_,
++                                     database_ != nullptr)) {
++    return;
++  }
++  scoped_refptr<base::SequencedTaskRunner> runner =
++      MoltTaskRunnerFor(storage_key);
++  runner->PostTask(FROM_HERE,
++                   base::BindOnce(&LocalStorageImpl::MoltDropIfUnused,
++                                  weak_ptr_factory_.GetWeakPtr(), storage_key));
++}
++
++void LocalStorageImpl::MoltDropIfUnused(const blink::StorageKey& storage_key) {
++  auto found = areas_.find(storage_key);
++  if (found != areas_.end() && MoltMayDrop(*found->second)) {
++    areas_.erase(found);
++  }
 +}
 +
 +// MoltBrowser:

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_area_impl.cc b/components/services/storage/dom_storage/session_storage_area_impl.cc
-index 57585cbb6bdb4bc8849fad271215fe26e3d71834..a87006ba75535b3d58af2e52762133e7841eca36 100644
+index 57585cbb6bdb4bc8849fad271215fe26e3d71834..2814d556675fac249eaa64b6dc5cdb7120b23bd8 100644
 --- a/components/services/storage/dom_storage/session_storage_area_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_area_impl.cc
 @@ -36,7 +36,9 @@ void SessionStorageAreaImpl::Bind(
@@ -29,3 +29,13 @@ index 57585cbb6bdb4bc8849fad271215fe26e3d71834..a87006ba75535b3d58af2e52762133e7
  }
  
  void SessionStorageAreaImpl::Put(
+@@ -138,6 +141,9 @@ void SessionStorageAreaImpl::OnConnectionError() {
+   if (IsBound())
+     return;
+   shared_data_map_->RemoveBindingReference();
++  // MoltBrowser: kept per site without a database, an area left unbound that
++  // holds nothing goes (molt_dom_storage_site_policy.h).
++  shared_data_map_->listener()->MoltAreaUnbound(namespace_id_, storage_key_);
+ }
+ 
+ void SessionStorageAreaImpl::OnGetAllResult(

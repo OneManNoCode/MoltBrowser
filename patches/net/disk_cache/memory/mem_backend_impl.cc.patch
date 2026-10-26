@@ -5,18 +5,20 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/disk_cache/memory/mem_backend_impl.cc b/net/disk_cache/memory/mem_backend_impl.cc
-index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a4819a04d 100644
+index c07ca9a4cc1309972319c95d99318c710a2dee34..165729546ad329dc20853fea7597c630c60e64ca 100644
 --- a/net/disk_cache/memory/mem_backend_impl.cc
 +++ b/net/disk_cache/memory/mem_backend_impl.cc
-@@ -13,6 +13,7 @@
+@@ -13,6 +13,9 @@
  #include "base/byte_size.h"
  #include "base/feature_list.h"
  #include "base/functional/bind.h"
 +#include "base/location.h"  // MoltBrowser
++#include "base/rand_util.h"  // MoltBrowser
++#include "base/task/sequenced_task_runner.h"  // MoltBrowser
  #include "base/logging.h"
  #include "base/memory_coordinator/memory_consumer.h"
  #include "base/memory_coordinator/memory_coordinator_features.h"
-@@ -115,17 +116,29 @@ std::unique_ptr<MemBackendImpl> MemBackendImpl::CreateBackend(
+@@ -115,17 +118,29 @@ std::unique_ptr<MemBackendImpl> MemBackendImpl::CreateBackend(
  }
  
  int64_t MemBackendImpl::MaxFileSize() const {
@@ -31,7 +33,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
    lru_list_.Append(entry);
 +  // MoltBrowser: and last in its site's list, with per-site limits.
 +  if (MoltHasBudget()) {
-+    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
++    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link(), MoltNowUs());
 +  }
  }
  
@@ -41,12 +43,12 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
    lru_list_.Append(entry);
 +  // MoltBrowser: and in its site's list, with per-site limits.
 +  if (MoltHasBudget()) {
-+    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
++    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link(), MoltNowUs());
 +  }
  }
  
  void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
-@@ -133,6 +146,10 @@ void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
+@@ -133,6 +148,10 @@ void MemBackendImpl::OnEntryDoomed(MemEntryImpl* entry) {
      entries_.erase(entry->key());
    // LinkedList<>::RemoveFromList() removes |entry| from |lru_list_|.
    entry->RemoveFromList();
@@ -57,7 +59,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
  }
  
  void MemBackendImpl::ModifyStorageSize(int32_t delta) {
-@@ -145,6 +162,121 @@ bool MemBackendImpl::HasExceededStorageSize() const {
+@@ -145,6 +164,146 @@ bool MemBackendImpl::HasExceededStorageSize() const {
    return current_size_ > current_max_size_;
  }
  
@@ -111,6 +113,11 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
 +
 +bool MemBackendImpl::MoltMayCreateEntry(const std::string& key) {
 +  const std::string_view site = MoltHttpCacheSiteOfKey(key);
++  // A site past the cap on sites isn't given a record: its entry isn't
++  // made, as one that doesn't fit isn't (molt_mem_backend_site_lru.h).
++  if (!molt_sites_.HasRoomFor(site)) {
++    return false;
++  }
 +  const int64_t key_bytes = static_cast<int64_t>(key.size());
 +  if (MoltCacheSiteMakesRoomForEntry(MoltSiteSize(site), key_bytes,
 +                                     molt_budget_)) {
@@ -121,29 +128,46 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
 +                                molt_budget_);
 +}
 +
-+bool MemBackendImpl::MoltIsExpired(const MemEntryImpl* entry) const {
-+  const base::Time now = custom_clock_for_testing_
-+                             ? custom_clock_for_testing_->Now()
-+                             : base::Time::Now();
-+  return MoltCacheEntryExpired((now - entry->GetLastUsed()).InSeconds(),
-+                               molt_budget_);
++// static
++int64_t MemBackendImpl::MoltNowUs() {
++  return (base::TimeTicks::Now() - base::TimeTicks()).InMicroseconds();
 +}
 +
-+void MemBackendImpl::MoltDropExpiredEntries() {
-+  // |lru_list_| is in order of last use (an entry moves to its end when it
-+  // is used, and its last use is then now), so the expired entries come
-+  // first: the sweep stops at the first entry that hasn't expired, and
-+  // costs what expires, not what the cache holds.
-+  base::LinkNode<MemEntryImpl>* node = lru_list_.head();
-+  while (node != lru_list_.end()) {
-+    MemEntryImpl* candidate = node->value();
-+    if (!MoltIsExpired(candidate)) {
-+      break;
-+    }
-+    node = NextSkippingChildren(lru_list_, node);
-+    if (!candidate->InUse()) {
-+      candidate->Doom();
-+    }
++bool MemBackendImpl::MoltIsExpiredSince(int64_t last_used_us) const {
++  return MoltCacheEntryExpired(
++      (MoltNowUs() - last_used_us) / base::Time::kMicrosecondsPerSecond,
++      molt_budget_);
++}
++
++bool MemBackendImpl::MoltIsExpired(MemEntryImpl* entry) {
++  // The monotonic time of its last use, by which its site's list is ordered
++  // (molt_mem_backend_site_lru.h), not the wall clock's.
++  return MoltIsExpiredSince(entry->molt_site_link().last_used_us());
++}
++
++void MemBackendImpl::MoltStartSweep() {
++  // A round still going on (its next step is posted) goes on.
++  if (molt_sites_.sweeping()) {
++    return;
++  }
++  molt_sites_.StartSweep();
++  MoltSweepStep();
++}
++
++void MemBackendImpl::MoltSweepStep() {
++  // One step: a few entries of one site, from its least recently used, up
++  // to its first that hasn't expired (molt_mem_backend_site_lru.h); the
++  // next step is a task of its own, so a request waits for one step at
++  // most, however many entries the sites have expiring.
++  const bool more = molt_sites_.SweepStep(
++      kMoltCacheSweepStepEntries,
++      [this](int64_t last_used_us) { return MoltIsExpiredSince(last_used_us); },
++      [](const MemEntryImpl* candidate) { return !candidate->InUse(); },
++      [](MemEntryImpl* candidate) { candidate->Doom(); });
++  if (more) {
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&MemBackendImpl::MoltSweepStep,
++                                  weak_factory_.GetWeakPtr()));
 +  }
 +}
 +
@@ -154,12 +178,15 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
 +  molt_budget_ = budget;
 +  // Every entry so far counts against its site and is in its site's list,
 +  // in the order of |lru_list_| (normally there is none yet: the budget is
-+  // set when the backend is made).
++  // set when the backend is made). The table of sites is made with room
++  // for the cap, so adding a site never rehashes it.
 +  molt_sites_.Clear();
++  molt_sites_.Reserve(kMoltCacheMaxSites, base::RandUint64());
++  const int64_t now_us = MoltNowUs();
 +  for (base::LinkNode<MemEntryImpl>* node = lru_list_.head();
 +       node != lru_list_.end(); node = node->next()) {
 +    MemEntryImpl* entry = node->value();
-+    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link());
++    molt_sites_.Touch(MoltSiteOf(entry), entry->molt_site_link(), now_us);
 +    molt_sites_.AddSize(MoltSiteOf(entry), entry->GetStorageSize());
 +  }
 +  max_size_ = base::saturated_cast<int32_t>(budget.total_bytes);
@@ -167,7 +194,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
 +  if (budget.idle_expiry_seconds > 0 && budget.sweep_interval_seconds > 0) {
 +    molt_expiry_sweep_.Start(
 +        FROM_HERE, base::Seconds(budget.sweep_interval_seconds),
-+        base::BindRepeating(&MemBackendImpl::MoltDropExpiredEntries,
++        base::BindRepeating(&MemBackendImpl::MoltStartSweep,
 +                            base::Unretained(this)));
 +  }
 +}
@@ -179,7 +206,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
  void MemBackendImpl::SetPostCleanupCallback(base::OnceClosure cb) {
    DCHECK(post_cleanup_callback_.is_null());
    post_cleanup_callback_ = std::move(cb);
-@@ -185,6 +317,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
+@@ -185,6 +344,13 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
    if (it == entries_.end())
      return EntryResult::MakeError(net::ERR_FAILED);
  
@@ -193,7 +220,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
    it->second->Open();
  
    return EntryResult::MakeOpened(it->second);
-@@ -193,6 +332,12 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
+@@ -193,6 +359,12 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
  EntryResult MemBackendImpl::CreateEntry(const std::string& key,
                                          net::RequestPriority request_priority,
                                          EntryResultCallback callback) {
@@ -206,7 +233,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
    std::pair<EntryMap::iterator, bool> create_result =
        entries_.insert(EntryMap::value_type(key, nullptr));
    const bool did_insert = create_result.second;
-@@ -327,6 +472,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
+@@ -327,6 +499,10 @@ void MemBackendImpl::OnExternalCacheHit(const std::string& key) {
  }
  
  void MemBackendImpl::SetMaxBytes(base::ByteSize max_bytes) {
@@ -217,7 +244,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
    max_size_ = base::saturated_cast<int32_t>(max_bytes.InBytes());
    if (base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
      current_max_size_ = CalculateTargetMemoryLimit();
-@@ -381,7 +530,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
+@@ -381,7 +557,9 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
  }
  
  void MemBackendImpl::OnUpdateMemoryLimit() {
@@ -228,7 +255,7 @@ index c07ca9a4cc1309972319c95d99318c710a2dee34..c4fafc6fb06ce68b440fe45bf7d7677a
      return;
    }
    // IMPORTANT: Ensure no memory is released during this call.
-@@ -391,6 +542,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
+@@ -391,6 +569,10 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
  }
  
  void MemBackendImpl::OnReleaseMemory() {

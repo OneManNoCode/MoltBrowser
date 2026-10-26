@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/dom_storage/dom_storage_context_wrapper.cc b/content/browser/dom_storage/dom_storage_context_wrapper.cc
-index abe861aed3e95307caf8e540c0115ce75369e3c2..f605ea44f2939b3df578d203d05cdfe7639bbdad 100644
+index abe861aed3e95307caf8e540c0115ce75369e3c2..8ca9b6d8fbc41a803966e9cda0b7eccdbb8a3daa 100644
 --- a/content/browser/dom_storage/dom_storage_context_wrapper.cc
 +++ b/content/browser/dom_storage/dom_storage_context_wrapper.cc
 @@ -38,6 +38,7 @@
@@ -16,7 +16,7 @@ index abe861aed3e95307caf8e540c0115ce75369e3c2..f605ea44f2939b3df578d203d05cdfe7
  #include "storage/browser/quota/special_storage_policy.h"
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/common/permissions/permission_utils.h"
-@@ -73,6 +74,39 @@ void AdaptStorageUsageInfo(
+@@ -73,6 +74,50 @@ void AdaptStorageUsageInfo(
    std::move(callback).Run(result);
  }
  
@@ -53,10 +53,37 @@ index abe861aed3e95307caf8e540c0115ce75369e3c2..f605ea44f2939b3df578d203d05cdfe7
 +  }
 +}
 +
++// MoltBrowser: whether a partition's DOM storage controls are bound on a
++// thread of their own in the storage service: in memory and kept per site
++// (MoltNet's; components/services/storage/dom_storage/
++// molt_dom_storage_own_thread.h).
++bool MoltBindsOnOwnThread(BrowserContext* browser_context,
++                          const std::optional<base::FilePath>& path) {
++  return !path.has_value() &&
++         GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
++             browser_context);
++}
++
  }  // namespace
  
  scoped_refptr<DOMStorageContextWrapper> DOMStorageContextWrapper::Create(
-@@ -358,6 +392,10 @@ void DOMStorageContextWrapper::MaybeBindSessionStorageControl(
+@@ -352,12 +397,23 @@ void DOMStorageContextWrapper::MaybeBindSessionStorageControl(
+   if (!partition_)
+     return;
+   session_storage_control_.reset();
+-  partition_->GetStorageService()->BindSessionStorageControl(
+-      partition_->GetStoragePartitionPath(), clear_on_open,
+-      session_storage_control_.BindNewPipeAndPassReceiver());
++  // MoltBrowser: on a thread of its own, for a partition kept per site.
++  if (MoltBindsOnOwnThread(partition_->browser_context(),
++                           partition_->GetStoragePartitionPath())) {
++    partition_->GetStorageService()->MoltBindPerSiteSessionStorageControl(
++        session_storage_control_.BindNewPipeAndPassReceiver());
++  } else {
++    partition_->GetStorageService()->BindSessionStorageControl(
++        partition_->GetStoragePartitionPath(), clear_on_open,
++        session_storage_control_.BindNewPipeAndPassReceiver());
++  }
    session_storage_control_.set_disconnect_handler(
        base::BindOnce(&DOMStorageContextWrapper::OnSessionStorageDisconnected,
                       base::Unretained(this)));
@@ -67,7 +94,23 @@ index abe861aed3e95307caf8e540c0115ce75369e3c2..f605ea44f2939b3df578d203d05cdfe7
  }
  
  void DOMStorageContextWrapper::OnLocalStorageDisconnected() {
-@@ -378,6 +416,9 @@ void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
+@@ -372,12 +428,22 @@ void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
+     return;
+   }
+   local_storage_control_.reset();
+-  partition_->GetStorageService()->BindLocalStorageControl(
+-      partition_->GetStoragePartitionPath(),
+-      local_storage_control_.BindNewPipeAndPassReceiver());
++  // MoltBrowser: on a thread of its own, for a partition kept per site.
++  if (MoltBindsOnOwnThread(partition_->browser_context(),
++                           partition_->GetStoragePartitionPath())) {
++    partition_->GetStorageService()->MoltBindPerSiteLocalStorageControl(
++        local_storage_control_.BindNewPipeAndPassReceiver());
++  } else {
++    partition_->GetStorageService()->BindLocalStorageControl(
++        partition_->GetStoragePartitionPath(),
++        local_storage_control_.BindNewPipeAndPassReceiver());
++  }
    local_storage_control_.set_disconnect_handler(
        base::BindOnce(&DOMStorageContextWrapper::OnLocalStorageDisconnected,
                       base::Unretained(this)));

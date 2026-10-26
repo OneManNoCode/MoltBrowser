@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_impl.h b/components/services/storage/dom_storage/session_storage_impl.h
-index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..84c28bfd9b66090ac9aba5399ae8a46843ab4bb3 100644
+index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..d9ea2a09e872a3a6e924c954d8dc843702975aa1 100644
 --- a/components/services/storage/dom_storage/session_storage_impl.h
 +++ b/components/services/storage/dom_storage/session_storage_impl.h
 @@ -24,6 +24,8 @@
@@ -17,7 +17,7 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..84c28bfd9b66090ac9aba5399ae8a468
  #include "components/services/storage/dom_storage/session_storage_data_map.h"
  #include "components/services/storage/dom_storage/session_storage_metadata.h"
  #include "components/services/storage/dom_storage/session_storage_namespace_impl.h"
-@@ -90,6 +92,10 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -90,6 +92,15 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    void ScavengeUnusedNamespaces() override;
    void Flush() override;
    void PurgeMemory() override;
@@ -25,10 +25,15 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..84c28bfd9b66090ac9aba5399ae8a468
 +  void MoltSetGrowthObserver(
 +      mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
 +      override;  // MoltBrowser
++  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
++  // through `scheduler` (one for the whole partition, which its host shares:
++  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
++  void MoltKeepCachesPerSiteOn(
++      scoped_refptr<MoltDomStorageFairScheduler> scheduler);
    void CreateNamespace(const std::string& namespace_id) override;
    void CloneNamespace(const std::string& namespace_id_to_clone,
                        const std::string& clone_namespace_id,
-@@ -137,6 +143,24 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -137,8 +148,34 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    void OnDataMapCreation(int64_t map_id, SessionStorageDataMap* map) override;
    void OnDataMapDestruction(int64_t map_id) override;
    void OnCommitResult(DbStatus status) override;
@@ -50,10 +55,20 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..84c28bfd9b66090ac9aba5399ae8a468
 +  // site (molt_dom_storage_fair_scheduler.h); else null.
 +  scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner(
 +      const blink::StorageKey& storage_key) override;
++  // MoltBrowser: kept per site without a database, an area left unbound
++  // goes in its site's turn if it holds nothing.
++  void MoltAreaUnbound(const std::string& namespace_id,
++                       const blink::StorageKey& storage_key) override;
++  void MoltDropAreaIfUnused(const std::string& namespace_id,
++                            const blink::StorageKey& storage_key);
  
    // SessionStorageNamespaceImpl::Delegate implementation:
++  scoped_refptr<base::SequencedTaskRunner> MoltNamespaceTaskRunner(
++      const std::string& namespace_id) override;  // MoltBrowser
    scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
-@@ -177,6 +201,21 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+       int64_t map_id) override;
+   void RegisterShallowClonedNamespace(
+@@ -177,6 +214,21 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
  
    void GetStatistics(size_t* total_cache_size, size_t* unused_areas_count);
  

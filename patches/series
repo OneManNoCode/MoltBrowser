@@ -241,6 +241,9 @@ components/services/storage/dom_storage/storage_area_impl.cc.patch
 components/services/storage/dom_storage/storage_area_impl.h.patch
 components/services/storage/public/mojom/local_storage_control.mojom.patch
 components/services/storage/public/mojom/session_storage_control.mojom.patch
+components/services/storage/public/mojom/storage_service.mojom.patch
+components/services/storage/storage_service_impl.cc.patch
+components/services/storage/storage_service_impl.h.patch
 components/signin/internal/identity_manager/primary_account_manager.cc.patch
 components/ssl_errors_strings.grdp.patch
 components/supervised_user_strings.grdp.patch
