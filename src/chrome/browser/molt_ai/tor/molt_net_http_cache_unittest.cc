@@ -512,6 +512,65 @@ TEST(MoltNetHttpCacheSiteLruTest, ASweepStepThatDropsNothingMovesOn) {
   EXPECT_EQ(dropped, 1);
 }
 
+// A step stops at its site's first entry that hasn't expired: the entries
+// used after it aren't looked at.
+TEST(MoltNetHttpCacheSiteLruTest, ASweepStepStopsAtTheFirstFreshEntry) {
+  disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
+  FakeEntry old_entry;
+  lru.Touch("https://a.test", old_entry.link(), ++now_us);
+  std::vector<std::unique_ptr<FakeEntry>> fresh;
+  for (int i = 0; i < 100; ++i) {
+    fresh.push_back(std::make_unique<FakeEntry>());
+    lru.Touch("https://a.test", fresh.back()->link(), 1000 + i);
+  }
+  int asked = 0;
+  lru.StartSweep();
+  EXPECT_FALSE(lru.SweepStep(
+      disk_cache::kMoltCacheSweepStepEntries,
+      [&](int64_t last_used_us) {
+        ++asked;
+        return last_used_us < 500;
+      },
+      [](const FakeEntry*) { return true; },
+      [&](FakeEntry* entry) { lru.Remove("https://a.test", entry->link()); }));
+  EXPECT_EQ(asked, 2);
+}
+
+// The site a round is at may go between two steps (its entries doomed by
+// other means): the round goes on with the next site.
+TEST(MoltNetHttpCacheSiteLruTest, TheSweepsSiteMayGoBetweenSteps) {
+  disk_cache::MoltCacheSiteLru<FakeEntry> lru;
+  int64_t now_us = 0;
+  std::vector<std::unique_ptr<FakeEntry>> a;
+  for (size_t i = 0; i < 2 * disk_cache::kMoltCacheSweepStepEntries; ++i) {
+    a.push_back(std::make_unique<FakeEntry>());
+    lru.Touch("https://a.test", a.back()->link(), ++now_us);
+  }
+  FakeEntry b;
+  lru.Touch("https://b.test", b.link(), ++now_us);
+  lru.StartSweep();
+  std::vector<FakeEntry*> dropped;
+  auto drop = [&](FakeEntry* entry) {
+    dropped.push_back(entry);
+    lru.Remove(entry == &b ? "https://b.test" : "https://a.test",
+               entry->link());
+  };
+  ASSERT_TRUE(lru.SweepStep(disk_cache::kMoltCacheSweepStepEntries,
+                            [](int64_t) { return true; },
+                            [](const FakeEntry*) { return true; }, drop));
+  // Every entry of a's left goes another way; a is forgotten.
+  for (auto& entry : a) {
+    lru.Remove("https://a.test", entry->link());
+  }
+  ASSERT_EQ(lru.SiteCountForTesting(), 1u);
+  EXPECT_FALSE(lru.SweepStep(disk_cache::kMoltCacheSweepStepEntries,
+                             [](int64_t) { return true; },
+                             [](const FakeEntry*) { return true; }, drop));
+  EXPECT_EQ(dropped.back(), &b);
+  EXPECT_FALSE(lru.sweeping());
+}
+
 // The table of sites is made with room for the cap: adding sites up to it
 // never rehashes it, and a site past it gets no room.
 TEST(MoltNetHttpCacheSiteLruTest, TheTableOfSitesHasRoomForTheCap) {

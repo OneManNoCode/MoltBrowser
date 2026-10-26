@@ -651,7 +651,8 @@ TEST(MoltNetDomStorageTimingTest, DISABLED_PartitionsDontDelayEachOther) {
                          storage::mojom::LocalStorageControl> receiver) {
     return base::SequenceBound<storage::LocalStorageImpl>(
         storage_sequence.task_runner(), base::FilePath(),
-        base::NullCallback(), std::move(receiver));
+        storage::LocalStorageImpl::DestructLocalStorageCallback(),
+        std::move(receiver));
   };
   for (bool own_thread : {false, true}) {
     mojo::Remote<storage::mojom::LocalStorageControl> regular, moltnet;
