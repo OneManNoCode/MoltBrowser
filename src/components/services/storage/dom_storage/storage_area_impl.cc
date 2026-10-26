@@ -12,6 +12,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
 #include "third_party/abseil-cpp/absl/strings/str_format.h"
 
 namespace storage {
@@ -296,9 +297,11 @@ void StorageAreaImpl::Put(
   size_t old_item_memory = 0;
   size_t new_item_memory = 0;
   std::optional<std::vector<uint8_t>> old_value;
+  bool molt_new_key = true;  // MoltBrowser
   if (map_state_ == MapState::LOADED_KEYS_ONLY) {
     KeysOnlyMap::const_iterator found = keys_only_map_.find(key);
     if (found != keys_only_map_.end()) {
+      molt_new_key = false;  // MoltBrowser
       if (client_old_value &&
           client_old_value.value().size() == found->second) {
         if (client_old_value == value) {
@@ -337,6 +340,7 @@ void StorageAreaImpl::Put(
     DCHECK_EQ(map_state_, MapState::LOADED_KEYS_AND_VALUES);
     auto found = keys_values_map_.find(key);
     if (found != keys_values_map_.end()) {
+      molt_new_key = false;  // MoltBrowser
       if (found->second == value) {
         // NOTE: Even though the key is not changing, we have to acknowledge
         // the change request, as clients may rely on this acknowledgement for
@@ -382,10 +386,12 @@ void StorageAreaImpl::Put(
     return;
   }
   // MoltBrowser: nor past its site's total, where the partition keeps one
-  // (molt_dom_storage_site_policy.h). Never a bad message: the page can't
+  // (molt_dom_storage_site_policy.h), which also counts each item and area
+  // held, so a new key always grows it. Never a bad message: the page can't
   // know what its site's other areas hold.
-  if (new_item_size > old_item_size &&
-      !delegate_->MoltMayGrowTo(new_storage_used)) {
+  if ((new_item_size > old_item_size || molt_new_key) &&
+      !delegate_->MoltMayGrowTo(MoltDomStorageCountedBytes(
+          new_storage_used, molt_item_count() + (molt_new_key ? 1 : 0)))) {
     restore_old_value();
     for (const auto& observer : observers_) {
       observer->KeyChangeFailed(key, source.Clone());
@@ -414,7 +420,8 @@ void StorageAreaImpl::Put(
   memory_used_ += new_item_memory - old_item_memory;
   // MoltBrowser: what it holds now, if less (molt_dom_storage_site_policy.h).
   if (new_item_size < old_item_size) {
-    delegate_->MoltShrankTo(storage_used_);
+    delegate_->MoltShrankTo(
+        MoltDomStorageCountedBytes(storage_used_, molt_item_count()));
   }
   for (const auto& observer : observers_)
     observer->KeyChanged(key, value, old_value, source.Clone());
@@ -498,7 +505,8 @@ void StorageAreaImpl::Delete(
       commit_batch_->changed_keys.insert(key);
   }
   // MoltBrowser: what it holds now (molt_dom_storage_site_policy.h).
-  delegate_->MoltShrankTo(storage_used_);
+  delegate_->MoltShrankTo(
+      MoltDomStorageCountedBytes(storage_used_, molt_item_count()));
 
   for (auto& observer : observers_)
     observer->KeyDeleted(key, old_value, source.Clone());
@@ -943,7 +951,8 @@ void StorageAreaImpl::OnForkStateLoaded(bool database_enabled,
 
   CalculateStorageAndMemoryUsed();
   // MoltBrowser: a copy counts as it is (molt_dom_storage_site_policy.h).
-  delegate_->MoltShrankTo(storage_used_);
+  delegate_->MoltShrankTo(
+      MoltDomStorageCountedBytes(storage_used_, molt_item_count()));
   OnLoadComplete();
 }
 

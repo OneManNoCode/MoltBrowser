@@ -329,6 +329,38 @@ TEST_F(MoltNetDomStorageTest, ASitesAreasShareOneTotal) {
   EXPECT_TRUE(Write(Key("https://s9.greedy.test"), kPart));
 }
 
+// The site's total counts what each item and area takes, not only the
+// items' bytes: a site with a full area has room for a few hundred tiny
+// items in another, not tens of thousands.
+TEST_F(MoltNetDomStorageTest, TinyItemsCountWhatTheyTake) {
+  storage_->MoltKeepCachesPerSite();
+  constexpr size_t kQuota = 10 * 1024 * 1024;
+  ASSERT_TRUE(Write(Key("https://a.test"), kQuota));
+  const size_t room =
+      storage::kMoltDomStorageBytesPerSite -
+      storage::MoltDomStorageCountedBytes(/*item_bytes=*/1 + kQuota, 1);
+  // Items with a key of 4 bytes and an empty value.
+  const size_t fit =
+      (room - storage::kMoltDomStorageAreaOverheadBytes) /
+      (4 + storage::kMoltDomStorageItemOverheadBytes);
+  mojo::Remote<blink::mojom::StorageArea> area;
+  storage_->BindStorageArea(Key("https://x.a.test"),
+                            area.BindNewPipeAndPassReceiver());
+  size_t stored = 0;
+  for (uint32_t i = 0; i < 2 * fit; ++i) {
+    base::test::TestFuture<bool> success;
+    area->Put({static_cast<uint8_t>(i), static_cast<uint8_t>(i >> 8), 'k',
+               'k'},
+              {}, std::nullopt, /*source=*/nullptr, success.GetCallback());
+    if (!success.Take()) {
+      break;
+    }
+    ++stored;
+  }
+  EXPECT_EQ(stored, fit);
+  EXPECT_LT(fit, 1000u);
+}
+
 // A write its site's total refuses changes nothing: the area still holds
 // the value it overwrote.
 TEST_F(MoltNetDomStorageTest, ARefusedWriteChangesNothing) {

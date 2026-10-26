@@ -208,6 +208,45 @@ inline constexpr size_t kMoltDomStorageFloorBytes =
     5 * kMoltDomStorageBytesPerSite;
 inline constexpr size_t kMoltDomStorageGrowthStepBytes = 1024 * 1024;
 
+// What an area counts toward its site's total: not only its items' keys and
+// values (what Chromium's per-area quota counts), but also what holding
+// them takes in the storage service, so that a site storing many tiny
+// items, or spreading them over many areas, uses no more memory than its
+// total says. Measured on 64-bit Linux at Chromium 156 (libc++, and
+// PartitionAlloc, which Chromium's allocations use):
+//  * per item, kMoltDomStorageItemOverheadBytes: the area's map node (80
+//    bytes: three pointers and a colour, and the key's and the value's
+//    std::vector, 24 bytes each), and the key's and the value's buffers
+//    rounded up to the allocator's 16-byte slots (up to 15 bytes each).
+//    An item whose key and value have 1 to 16 bytes each takes exactly
+//    112 bytes, so it counts at least what it takes;
+//  * per area holding an item, kMoltDomStorageAreaOverheadBytes: the
+//    StorageAreaImpl (352 bytes), its map locator (320, with a copy of the
+//    storage key, 272), and the holder (localStorage) or the session map,
+//    its metadata and the namespace's and the cache's map entries
+//    (sessionStorage), each with a copy of the storage key: about 1.4 KiB
+//    for a localStorage area and 1.8 KiB for a sessionStorage map, with
+//    the allocator's slots.
+// An area that holds nothing counts nothing (without a database it stays in
+// the cache only while a page has it open: MoltDomStorageMayDropArea()).
+// With a site's total of one area's limit (10 MiB and 100 KiB), an area
+// filled to Chromium's 10 MiB quota fits it with up to about 900 items,
+// and a site's areas of one kind hold at most about 94,000 items.
+inline constexpr size_t kMoltDomStorageItemOverheadBytes = 80 + 2 * 16;
+inline constexpr size_t kMoltDomStorageAreaOverheadBytes = 2048;
+
+// What an area holding `items` items of `item_bytes` bytes (keys and values)
+// counts toward its site's total.
+constexpr size_t MoltDomStorageCountedBytes(size_t item_bytes, size_t items) {
+  if (items == 0) {
+    return 0;
+  }
+  return item_bytes + items * kMoltDomStorageItemOverheadBytes +
+         kMoltDomStorageAreaOverheadBytes;
+}
+static_assert(MoltDomStorageCountedBytes(0, 0) == 0);
+static_assert(MoltDomStorageCountedBytes(10, 1) == 10 + 112 + 2048);
+
 // Whether all sites' areas growing from `old_total` to `new_total` bytes
 // tell the valve: past the floor, once per step of growth.
 constexpr bool MoltDomStorageGrowthNotifies(size_t old_total,

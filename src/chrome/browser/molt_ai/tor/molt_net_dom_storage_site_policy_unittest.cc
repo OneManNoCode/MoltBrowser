@@ -46,6 +46,36 @@ TEST(MoltNetDomStorageSitePolicyTest, IdleExpiry) {
   EXPECT_EQ(kMoltDomStorageSweepIntervalSeconds, 60);
 }
 
+// What an area counts toward its site's total: its items' bytes, and what
+// each item and the area take in the storage service. An area holding
+// nothing counts nothing.
+TEST(MoltNetDomStorageSitePolicyTest, ItemsAndAreasCountWhatTheyTake) {
+  EXPECT_EQ(MoltDomStorageCountedBytes(0, 0), 0u);
+  EXPECT_EQ(MoltDomStorageCountedBytes(0, 1),
+            kMoltDomStorageItemOverheadBytes +
+                kMoltDomStorageAreaOverheadBytes);
+  EXPECT_EQ(MoltDomStorageCountedBytes(1000, 10),
+            1000 + 10 * kMoltDomStorageItemOverheadBytes +
+                kMoltDomStorageAreaOverheadBytes);
+  // A map node of 80 bytes and a 16-byte slot's rounding for each of the
+  // key's and the value's buffers; the area's objects.
+  EXPECT_EQ(kMoltDomStorageItemOverheadBytes, 112u);
+  EXPECT_EQ(kMoltDomStorageAreaOverheadBytes, 2048u);
+  // An area at Chromium's 10 MiB quota fits the site's total with up to
+  // about 900 items.
+  constexpr size_t kQuota = 10 * kMiB;
+  EXPECT_LE(MoltDomStorageCountedBytes(kQuota, 896),
+            kMoltDomStorageBytesPerSite);
+  EXPECT_GT(MoltDomStorageCountedBytes(kQuota, 897),
+            kMoltDomStorageBytesPerSite);
+  // Tiny items: about 94,000 at most, where their bytes alone would allow
+  // ten million.
+  EXPECT_LE(MoltDomStorageCountedBytes(0, 94000),
+            kMoltDomStorageBytesPerSite);
+  EXPECT_GT(MoltDomStorageCountedBytes(0, 95000),
+            kMoltDomStorageBytesPerSite);
+}
+
 // A site's areas together hold at most one area's own limit: a site of one
 // origin stores what Chromium lets it; its subdomains share it; another site
 // keeps all of its own whatever the first stores.
