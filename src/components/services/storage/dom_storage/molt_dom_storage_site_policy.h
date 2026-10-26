@@ -233,10 +233,13 @@ class MoltDomStorageSiteTotals {
       return;
     }
     total_ -= it->second.bytes;
-    auto site = sites_.find(it->second.site);
-    site->second -= it->second.bytes;
-    if (site->second == 0) {
-      sites_.erase(site);
+    // An area left empty (cleared) may outlive its site's entry, which goes
+    // once the site's other areas are forgotten.
+    if (auto site = sites_.find(it->second.site); site != sites_.end()) {
+      site->second -= it->second.bytes;
+      if (site->second == 0) {
+        sites_.erase(site);
+      }
     }
     areas_.erase(it);
   }

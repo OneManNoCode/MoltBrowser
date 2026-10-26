@@ -138,6 +138,26 @@ TEST(MoltNetDomStorageSitePolicyTest, GrowthPastTheFloor) {
   EXPECT_TRUE(MoltDomStorageGrowthNotifies(0, 10 * kFloor));
 }
 
+// An area a page cleared, forgotten (its origin's data deleted, for
+// example by a Clear-Site-Data header) after its site's other areas were:
+// the site is left with nothing, and nothing else changes.
+TEST(MoltNetDomStorageSitePolicyTest, ForgettingAClearedAreaLast) {
+  MoltDomStorageSiteTotals totals;
+  ASSERT_TRUE(totals.MayGrowTo("https://a.s.test/", "https://s.test", 100));
+  totals.ShrankTo("https://a.s.test/", "https://s.test", 0);
+  ASSERT_TRUE(totals.MayGrowTo("https://b.s.test/", "https://s.test", 50));
+  ASSERT_TRUE(totals.MayGrowTo("https://o.test/", "https://o.test", 7));
+  totals.Forget("https://b.s.test/");
+  totals.Forget("https://a.s.test/");
+  EXPECT_EQ(totals.SiteBytes("https://s.test"), 0u);
+  EXPECT_EQ(totals.SiteBytes("https://o.test"), 7u);
+  EXPECT_EQ(totals.total(), 7u);
+  // The site has its whole share again.
+  EXPECT_TRUE(totals.MayGrowTo("https://a.s.test/", "https://s.test",
+                               kMoltDomStorageBytesPerSite));
+  EXPECT_EQ(totals.total(), 7u + kMoltDomStorageBytesPerSite);
+}
+
 // An area counts to its top-level site, but a key with a nonce (a
 // credentialless iframe's, whose top-level site is its own origin's site
 // wherever it is embedded) to its nonce, and a key with an opaque top-level
