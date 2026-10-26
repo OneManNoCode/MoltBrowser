@@ -89,6 +89,13 @@ MoltBrowser is an open-source, AI-native web browser built on a hardened open we
 | Recommended | 16GB | 6GB+ VRAM | Full model stack |
 | Power User | 32GB+ | 12GB+ VRAM | All models, multi-model |
 
+**MoltNet (Tor windows)** needs a 64-bit x86 processor with SSE4.1 (Intel
+from about 2008, AMD from about 2011, every Intel Mac that runs a supported
+macOS) or any arm64 processor (Apple Silicon included). On an older x86
+processor MoltNet doesn't open and says why; the rest of MoltBrowser works
+as usual. Details:
+[docs/FINGERPRINTING.md](docs/FINGERPRINTING.md#moltnet-what-pages-can-learn-about-the-processor).
+
 ## Building from Source
 
 ### Prerequisites
