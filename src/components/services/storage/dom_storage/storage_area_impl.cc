@@ -34,6 +34,9 @@ base::TimeDelta StorageAreaImpl::Delegate::MoltSiteCommitDelay() {
   return base::TimeDelta();
 }
 void StorageAreaImpl::Delegate::MoltSiteCommitted(size_t) {}
+bool StorageAreaImpl::Delegate::MoltMayWrite(size_t) {
+  return true;
+}
 
 bool StorageAreaImpl::s_aggressive_flushing_enabled_ = false;
 
@@ -277,6 +280,18 @@ void StorageAreaImpl::Put(
     return;
   }
 
+  // MoltBrowser: a write must fit its site's write rate, where the partition
+  // keeps one (molt_dom_storage_site_policy.h), also one that changes
+  // nothing, which observers still hear of. A write past it fails as one
+  // past the area's quota does, never as a bad message.
+  if (!delegate_->MoltMayWrite(key.size() + value.size())) {
+    for (const auto& observer : observers_) {
+      observer->KeyChangeFailed(key, source.Clone());
+    }
+    std::move(callback).Run(false);
+    return;
+  }
+
   size_t old_item_size = 0;
   size_t old_item_memory = 0;
   size_t new_item_memory = 0;
@@ -341,9 +356,20 @@ void StorageAreaImpl::Put(
   size_t new_item_size = key.size() + value.size();
   size_t new_storage_used = storage_used_ - old_item_size + new_item_size;
 
+  // MoltBrowser: a write refused below changes nothing. With keys and values
+  // cached, the old value was moved out of the map above; every early return
+  // from here on puts it back (Chromium 156 left the key mapped to an empty
+  // value when the area's quota refused the write, in every profile).
+  auto restore_old_value = [&] {
+    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
+      keys_values_map_[key] = std::move(*old_value);
+    }
+  };
+
   // Only check quota if the size is increasing, this allows
   // shrinking changes to pre-existing maps that are over budget.
   if (new_item_size > old_item_size && new_storage_used > max_size_) {
+    restore_old_value();  // MoltBrowser
     if (map_state_ == MapState::LOADED_KEYS_ONLY) {
       receivers_.ReportBadMessage(
           "The quota in browser cannot exceed when there is only one "
@@ -360,10 +386,7 @@ void StorageAreaImpl::Put(
   // know what its site's other areas hold.
   if (new_item_size > old_item_size &&
       !delegate_->MoltMayGrowTo(new_storage_used)) {
-    // The old value, moved out above, goes back: the write changes nothing.
-    if (old_value && map_state_ == MapState::LOADED_KEYS_AND_VALUES) {
-      keys_values_map_[key] = std::move(*old_value);
-    }
+    restore_old_value();
     for (const auto& observer : observers_) {
       observer->KeyChangeFailed(key, source.Clone());
     }

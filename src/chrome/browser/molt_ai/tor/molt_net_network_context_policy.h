@@ -278,6 +278,16 @@ constexpr bool KeepDomStorageCachesPerSite(bool is_moltnet_profile) {
   return is_moltnet_profile;
 }
 
+// Whether a profile's Background Fetch is scheduled per top-level site
+// (ChromeContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(),
+// content/browser/background_fetch/molt_background_fetch_site_policy.h).
+// Chromium runs 2 registrations and 2 downloads at a time for a whole
+// partition, so one site's slow fetches could keep every other site's from
+// starting, and the other site could time it.
+constexpr bool ScheduleBackgroundFetchesPerSite(bool is_moltnet_profile) {
+  return is_moltnet_profile;
+}
+
 // ProfileNetworkContextService's block_trust_tokens, when a network context
 // is created and when the anti-abuse content setting changes:
 // `chromium_value` is Chromium's (the setting blocks them).

@@ -245,6 +245,7 @@ paths that reached the onion server.
 | `cert_fetch` | an https onion whose certificate lacks its intermediate, with AIA, OCSP and CRL URLs | no lookup of those names outside Tor; whether AIA came through Tor is shown |
 | `cert_fetch_b` | the same certificate on the second onion site (so the same AIA URLs) | nothing outside Tor; read with `cert_fetch` by `identity.cert_fetch_circuits` |
 | `bgfetch_a`, `bgfetch_b` | on each onion site, a service worker registration starts a Background Fetch of a name of the test's own (`bgf-<nonce>.<canary domain>`), which the browser's download service fetches | nothing outside Tor; `identity.background_fetch_circuits`: the fetch goes to Tor with its page's site's SOCKS username, not one of its destination |
+| `dom_storage_rate` | writes 3000 `localStorage` items as fast as it can, then counts what is left once the storage service has answered | the burst (1000) is kept, no more than the burst and what refilled while the page wrote (100 a second), not all 3000: the writes past the site's write rate failed and reverted (MOLTNET_COMPLIANCE.md §2, *DOM storage totals*) |
 | `client_cert` | the basic page from an https onion port (8444) whose server asks for a TLS client certificate without requiring one, and logs every handshake | nothing outside Tor; `net.client_cert.handshakes`: every handshake completes and none carries a certificate, so the browser neither asked the user nor connected again. In a regular window Chromium drops the first handshake to ask and connects again; the check reports that as information (step 20) |
 | `builtin_ai` | `availability()` and `create()` (with a user gesture) of every built-in AI API | `LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator` unavailable; no component or model download host looked up |
 | `geolocation` | `getCurrentPosition()` | error 1 at once (no prompt); no location provider host |
@@ -252,6 +253,7 @@ paths that reached the onion server.
 | `extension` | a test extension allowed in Incognito (content script, web-accessible resource, `tabs`, `webRequest`) | the MoltNet page isn't marked, `chrome.runtime` is absent, the resource can't be fetched, and its background never sees a MoltNet tab or request (it would look up a canary name if it did) (step 16) |
 | `regular_onion_navigation` | a **regular** window opens an onion address | the "Tor onion site" page; no lookup of the name (step 12) |
 | `regular_onion_subresources` | a regular page loads images, `fetch`, a WebSocket and a worker fetch from an onion host | all fail; no lookup (step 12); with a proxy configured, the proxy sees none (step 13) |
+| `regular_dom_storage_rate` | the `dom_storage_rate` page in a **regular** window | all 3000 writes are kept: regular windows have no write rate |
 
 Two further network checks cover the whole run. Leak-shaped traffic outside
 any test fails. So does any lookup or connection outside Tor that no list

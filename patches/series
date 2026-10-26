@@ -166,6 +166,7 @@ components/autofill_strings.grdp.patch
 components/browsing_data_strings.grdp.patch
 components/collaboration_strings.grdp.patch
 components/commerce_strings.grdp.patch
+components/download/content/factory/download_service_factory_helper.cc.patch
 components/download/internal/background_service/blob_task_proxy.cc.patch
 components/download/internal/background_service/blob_task_proxy.h.patch
 components/download/internal/background_service/in_memory_download.cc.patch
@@ -226,7 +227,10 @@ components/translate/core/browser/translate_driver.h.patch
 components/translate/core/browser/translate_language_list.cc.patch
 components/translate/core/browser/translate_language_list.h.patch
 components/translate/core/browser/translate_manager.cc.patch
+content/browser/background_fetch/background_fetch_context.cc.patch
 content/browser/background_fetch/background_fetch_delegate_proxy.cc.patch
+content/browser/background_fetch/background_fetch_scheduler.cc.patch
+content/browser/background_fetch/background_fetch_scheduler.h.patch
 content/browser/blob_storage/blob_registry_wrapper.cc.patch
 content/browser/blob_storage/chrome_blob_storage_context.cc.patch
 content/browser/client_hints/client_hints.cc.patch
@@ -338,9 +342,13 @@ storage/browser/blob/blob_registry_impl.h.patch
 storage/browser/blob/blob_storage_constants.h.patch
 storage/browser/blob/blob_storage_context.cc.patch
 storage/browser/blob/blob_storage_context.h.patch
+storage/browser/quota/client_usage_tracker.cc.patch
+storage/browser/quota/client_usage_tracker.h.patch
 storage/browser/quota/quota_manager_impl.cc.patch
 storage/browser/quota/quota_settings.h.patch
 storage/browser/quota/quota_temporary_storage_evictor.cc.patch
+storage/browser/quota/usage_tracker.cc.patch
+storage/browser/quota/usage_tracker.h.patch
 third_party/blink/public/BUILD.gn.patch
 third_party/blink/public/mojom/service_worker/service_worker.mojom.patch
 third_party/blink/public/mojom/worker/shared_worker_info.mojom.patch

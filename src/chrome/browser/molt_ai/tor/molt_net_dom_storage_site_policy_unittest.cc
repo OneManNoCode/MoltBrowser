@@ -1,8 +1,8 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltNet's localStorage / sessionStorage caches, totals and commit rates
-// per site
+// MoltNet's localStorage / sessionStorage caches, totals, commit and write
+// rates per site, and its partitions without a database
 // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h,
 // std-only).
 
@@ -138,6 +138,65 @@ TEST(MoltNetDomStorageSitePolicyTest, GrowthPastTheFloor) {
   EXPECT_TRUE(MoltDomStorageGrowthNotifies(0, 10 * kFloor));
 }
 
+// An area a page cleared, forgotten (its origin's data deleted, for
+// example by a Clear-Site-Data header) after its site's other areas were:
+// the site is left with nothing, and nothing else changes.
+TEST(MoltNetDomStorageSitePolicyTest, ForgettingAClearedAreaLast) {
+  MoltDomStorageSiteTotals totals;
+  ASSERT_TRUE(totals.MayGrowTo("https://a.s.test/", "https://s.test", 100));
+  totals.ShrankTo("https://a.s.test/", "https://s.test", 0);
+  ASSERT_TRUE(totals.MayGrowTo("https://b.s.test/", "https://s.test", 50));
+  ASSERT_TRUE(totals.MayGrowTo("https://o.test/", "https://o.test", 7));
+  totals.Forget("https://b.s.test/");
+  totals.Forget("https://a.s.test/");
+  EXPECT_EQ(totals.SiteBytes("https://s.test"), 0u);
+  EXPECT_EQ(totals.SiteBytes("https://o.test"), 7u);
+  EXPECT_EQ(totals.total(), 7u);
+  // The site has its whole share again.
+  EXPECT_TRUE(totals.MayGrowTo("https://a.s.test/", "https://s.test",
+                               kMoltDomStorageBytesPerSite));
+  EXPECT_EQ(totals.total(), 7u + kMoltDomStorageBytesPerSite);
+}
+
+// An area counts to its top-level site, but a key with a nonce (a
+// credentialless iframe's, whose top-level site is its own origin's site
+// wherever it is embedded) to its nonce, and a key with an opaque top-level
+// site (which serializes as "null" for all of them) to itself; no such
+// group's name is ever a site's.
+TEST(MoltNetDomStorageSitePolicyTest, GroupsOfKeysThatDontNameTheirSite) {
+  EXPECT_EQ(MoltDomStorageGroupKindFor(false, false),
+            MoltDomStorageGroupKind::kTopLevelSite);
+  EXPECT_EQ(MoltDomStorageGroupKindFor(true, false),
+            MoltDomStorageGroupKind::kNonce);
+  EXPECT_EQ(MoltDomStorageGroupKindFor(true, true),
+            MoltDomStorageGroupKind::kNonce);
+  EXPECT_EQ(MoltDomStorageGroupKindFor(false, true),
+            MoltDomStorageGroupKind::kOwnKey);
+  EXPECT_EQ(MoltDomStorageGroupName(MoltDomStorageGroupKind::kTopLevelSite,
+                                    "https://t.test"),
+            "https://t.test");
+  const std::string nonce =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "https://t.test");
+  const std::string own =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kOwnKey, "https://t.test");
+  EXPECT_NE(nonce, "https://t.test");
+  EXPECT_NE(own, "https://t.test");
+  EXPECT_NE(nonce, own);
+  // A tracker's frames under two pages' nonces have totals of their own,
+  // and neither touches its first-party site's.
+  MoltDomStorageSiteTotals totals;
+  const std::string site = "https://t.test";
+  const std::string under_a =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "A");
+  const std::string under_b =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, "B");
+  ASSERT_TRUE(totals.MayGrowTo("t/", site, kMoltDomStorageBytesPerSite));
+  EXPECT_TRUE(totals.MayGrowTo("t/^1A", under_a, kMoltDomStorageBytesPerSite));
+  EXPECT_TRUE(totals.MayGrowTo("t/^1B", under_b, kMoltDomStorageBytesPerSite));
+  EXPECT_EQ(totals.SiteBytes(site), kMoltDomStorageBytesPerSite);
+  EXPECT_EQ(totals.SiteBytes(under_a), kMoltDomStorageBytesPerSite);
+}
+
 // A site's areas together write to the database at one area's rate.
 TEST(MoltNetDomStorageSitePolicyTest, OneCommitRatePerSite) {
   constexpr int64_t kHour = kMoltDomStorageHourMs;
@@ -153,6 +212,96 @@ TEST(MoltNetDomStorageSitePolicyTest, OneCommitRatePerSite) {
   // (2^40 bytes at 10 MiB an hour: 104857.6 hours.)
   EXPECT_EQ(MoltDomStorageSiteCommitDelayMs(0, int64_t{1} << 40, 0),
             104857 * kHour + kHour * 6 / 10);
+}
+
+// A partition kept per site in memory has no database; one on disk, or not
+// kept per site, keeps Chromium's.
+TEST(MoltNetDomStorageSitePolicyTest, NoDatabaseInMemoryPerSite) {
+  EXPECT_TRUE(MoltDomStorageKeepsNoDatabase(true, true));
+  EXPECT_FALSE(MoltDomStorageKeepsNoDatabase(true, false));
+  EXPECT_FALSE(MoltDomStorageKeepsNoDatabase(false, true));
+  EXPECT_FALSE(MoltDomStorageKeepsNoDatabase(false, false));
+}
+
+// Without a database, an area holding items is never dropped from the
+// cache: they are nowhere else.
+TEST(MoltNetDomStorageSitePolicyTest, WithoutADatabaseItemsStay) {
+  EXPECT_TRUE(MoltDomStorageMayDropArea(true, true));
+  EXPECT_TRUE(MoltDomStorageMayDropArea(true, false));
+  EXPECT_TRUE(MoltDomStorageMayDropArea(false, false));
+  EXPECT_FALSE(MoltDomStorageMayDropArea(false, true));
+}
+
+// A site's writes: a burst of 1000 writes and one area's limit in bytes,
+// refilled at 100 writes and 1 MiB a second.
+TEST(MoltNetDomStorageSitePolicyTest, WriteRateBurst) {
+  EXPECT_EQ(kMoltDomStorageSiteWritesBurst, 1000);
+  EXPECT_EQ(kMoltDomStorageSiteWritesPerSecond, 100);
+  EXPECT_EQ(kMoltDomStorageSiteWriteBytesBurst,
+            static_cast<int64_t>(kMoltDomStorageBytesPerSite));
+  EXPECT_EQ(kMoltDomStorageSiteWriteBytesPerSecond,
+            static_cast<int64_t>(kMiB));
+  MoltDomStorageWriteAllowance allowance{/*at_ms=*/5000};
+  for (int i = 0; i < kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(MoltDomStorageMayWrite(allowance, 5000, 2)) << i;
+  }
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 5000, 2));
+  // A refused write takes nothing: 9 ms refill less than one write.
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 5009, 2));
+  EXPECT_TRUE(MoltDomStorageMayWrite(allowance, 5010, 2));
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 5010, 2));
+  // A second refills 100.
+  for (int i = 0; i < kMoltDomStorageSiteWritesPerSecond; ++i) {
+    ASSERT_TRUE(MoltDomStorageMayWrite(allowance, 6010, 2)) << i;
+  }
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 6010, 2));
+}
+
+TEST(MoltNetDomStorageSitePolicyTest, WriteRateBytes) {
+  MoltDomStorageWriteAllowance allowance{/*at_ms=*/0};
+  // One area's whole limit at once.
+  EXPECT_TRUE(
+      MoltDomStorageMayWrite(allowance, 0, kMoltDomStorageBytesPerSite));
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 0, 1));
+  // 1 MiB a second.
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 999, kMiB));
+  EXPECT_TRUE(MoltDomStorageMayWrite(allowance, 1000, kMiB));
+  // A write larger than the burst costs the burst, once full again.
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 1000, 100 * kMiB));
+  EXPECT_TRUE(MoltDomStorageMayWrite(allowance, 100000, 100 * kMiB));
+}
+
+// However long a site waits, its allowance is the burst, no more, and the
+// arithmetic stays in range.
+TEST(MoltNetDomStorageSitePolicyTest, WriteRateCapped) {
+  MoltDomStorageWriteAllowance allowance{/*at_ms=*/0};
+  for (int i = 0; i < kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(MoltDomStorageMayWrite(allowance, 0, 0));
+  }
+  constexpr int64_t kYears = int64_t{1} << 50;
+  for (int i = 0; i < kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_TRUE(MoltDomStorageMayWrite(allowance, kYears, 0));
+  }
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, kYears, 0));
+  // A clock that went back refills nothing.
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 0, 0));
+}
+
+// A greedy site using up its allowance leaves another site's untouched: the
+// polite site's writes all go.
+TEST(MoltNetDomStorageSitePolicyTest, WriteRateIsPerSite) {
+  MoltDomStorageWriteAllowance greedy{/*at_ms=*/0};
+  MoltDomStorageWriteAllowance polite{/*at_ms=*/0};
+  int64_t refused = 0;
+  for (int64_t ms = 0; ms < 60000; ms += 1) {
+    for (int i = 0; i < 10; ++i) {
+      refused += MoltDomStorageMayWrite(greedy, ms, 64 * 1024) ? 0 : 1;
+    }
+    if (ms % 100 == 0) {
+      EXPECT_TRUE(MoltDomStorageMayWrite(polite, ms, 1024)) << ms;
+    }
+  }
+  EXPECT_GT(refused, 0);
 }
 
 }  // namespace

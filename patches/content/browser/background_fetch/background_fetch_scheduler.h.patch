@@ -1,0 +1,58 @@
+MoltBrowser patch for content/browser/background_fetch/background_fetch_scheduler.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/background_fetch/background_fetch_scheduler.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/background_fetch/background_fetch_scheduler.h b/content/browser/background_fetch/background_fetch_scheduler.h
+index 4969f802c5332d852532fa83574ac8d32b1e2c66..ebf5591b23bfd5c5f10e29140e71bea557d3956d 100644
+--- a/content/browser/background_fetch/background_fetch_scheduler.h
++++ b/content/browser/background_fetch/background_fetch_scheduler.h
+@@ -6,6 +6,7 @@
+ #define CONTENT_BROWSER_BACKGROUND_FETCH_BACKGROUND_FETCH_SCHEDULER_H_
+ 
+ #include <map>
++#include <memory>  // MoltBrowser
+ #include <string>
+ #include <utility>
+ #include <vector>
+@@ -17,6 +18,7 @@
+ #include "content/browser/background_fetch/background_fetch_data_manager_observer.h"
+ #include "content/browser/background_fetch/background_fetch_event_dispatcher.h"
+ #include "content/browser/background_fetch/background_fetch_registration_id.h"
++#include "content/browser/background_fetch/molt_background_fetch_site_policy.h"  // MoltBrowser
+ #include "content/browser/service_worker/service_worker_context_core_observer.h"
+ #include "content/common/content_export.h"
+ #include "third_party/blink/public/mojom/background_fetch/background_fetch.mojom.h"
+@@ -100,6 +102,11 @@ class CONTENT_EXPORT BackgroundFetchScheduler
+   // Called by BackgroundFetchContext during shutdown.
+   void Shutdown();
+ 
++  // MoltBrowser: schedules per site from now on, for a partition whose
++  // embedder asks (molt_background_fetch_site_policy.h). Called once, before
++  // any registration.
++  void MoltSchedulePerSite();
++
+  private:
+   friend class BackgroundFetchJobControllerTest;
+   friend class BackgroundFetchSchedulerTest;
+@@ -107,6 +114,8 @@ class CONTENT_EXPORT BackgroundFetchScheduler
+ 
+   // Schedules a download, if possible, and returns whether successful.
+   bool ScheduleDownload();
++  // MoltBrowser: the same, per site (molt_background_fetch_site_policy.h).
++  bool MoltScheduleDownload();
+ 
+   // Helper method to abandon ongoing fetches for a given service worker.
+   // Abandons all of them if |service_worker_registration_id| is set to
+@@ -211,6 +220,10 @@ class CONTENT_EXPORT BackgroundFetchScheduler
+   int num_active_registrations_ = 0;
+   int num_running_downloads_ = 0;
+ 
++  // MoltBrowser: each site's active registrations and downloads, when
++  // scheduling per site.
++  std::unique_ptr<MoltBackgroundFetchSites> molt_sites_;
++
+   base::WeakPtrFactory<BackgroundFetchScheduler> weak_ptr_factory_{this};
+ };
+ 

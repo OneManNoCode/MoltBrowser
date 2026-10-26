@@ -3762,11 +3762,11 @@ storage in memory; its limits are now fixed, and each site's are its own:
 
 | Limit a page reaches by writing | Chromium 156, off the record | MoltNet |
 |---|---|---|
-| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds; always available to the site, whatever other sites store |
+| Quota: IndexedDB, Cache Storage, the origin-private file system, service worker scripts and Background Fetch together | a third of the pool for each storage key (an origin, partitioned by top-level site) | **60 MiB per site**: a top-level site's storage keys together, its own origins' and those of what it embeds (a credentialless iframe's key counts with its page's nonce, as its farbling key does); always available to the site, whatever other sites store |
 | The pool all sites share | a random 15% to 20% of the machine's memory, drawn per profile; each key's quota is checked on its own, so all keys together may use more | **600 MiB** that all sites can always store together, a floor, not a limit: no write fails because of the total; past it the memory valve watches the machine (below) |
 | Eviction | every half hour (and five minutes after the profile starts), the least recently used data of any site, until all sites use less than 70% of the pool | **none**: a site that reaches its limit gets `QuotaExceededError`, and no site's data is removed to make room |
 | Blob memory (`Blob`, `File` and `MediaRecorder` data held in the browser) | 2 GiB on 64-bit desktops, a fifth of the memory on 32-bit ones and ChromeOS, 1% on Android, for all sites together; no disk | **200 MiB per renderer process** (in MoltNet one site in one tab), whatever the others hold, and a Background Fetch's response counted to its site; 800 MiB that all can always hold together, a floor as for the quota; no disk |
-| `localStorage`, `sessionStorage` | 10 MiB per storage area, on every machine | unchanged; the storage service's cache of areas is kept per site (MOLTNET_COMPLIANCE.md §2 *DOM storage caches*) |
+| `localStorage`, `sessionStorage` | 10 MiB per storage area, on every machine | unchanged; the storage service's cache of areas is kept per site, with no database behind it, and each site's areas share one area's limit and a write allowance (MOLTNET_COMPLIANCE.md §2 *DOM storage caches*, *DOM storage totals*) |
 
 `navigator.storage.estimate()` has reported a fixed quota in off-the-record
 profiles since 156 (the usage + 10 GiB, unchanged); the limits above are
@@ -3862,12 +3862,16 @@ and `storage/browser/blob/blob_memory_controller.{h,cc}` (the new
 limits then leave alone). The site budget:
 `storage/browser/quota/molt_storage_budget_policy.h` (the rules, std-only,
 + `molt_net_storage_budget_policy_unittest.cc`) and `molt_storage_budget.h`
-(a site's usage from each storage key's), hooked into
+(each site's usage, counted as the usage cache changes, std-only, +
+`molt_net_storage_site_usage{,_policy}_unittest.cc`), hooked into
 `storage/browser/quota/quota_settings.h` (the new `molt_per_site_quota`,
 0 everywhere else, and `molt_on_growth_beyond_floor`, null everywhere
-else), `quota_manager_impl.cc` (`UsageAndQuotaInfoGatherer` counts every
-key's usage when there is a budget, and its `Completed()` leaves a key no
-more room than its site's share, and past the floor runs
+else), `client_usage_tracker.{h,cc}` and `usage_tracker.{h,cc}` (the
+counts per site, and the storage keys to ask again for), and
+`quota_manager_impl.cc` (`UsageAndQuotaInfoGatherer` asks the usage
+tracker for its site's usage when there is a budget, which costs what the
+site's own storage keys cost, and its `Completed()` leaves a key no more
+room than its site's share, and past the floor runs
 `molt_on_growth_beyond_floor`) and
 `quota_temporary_storage_evictor.cc` (`OnGotEvictionRoundInfo` evicts
 nothing for the pool when there is a budget). Blobs:
@@ -5790,7 +5794,7 @@ manual.
 | `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode and seed to Blink; `molt_shields_decision_agent.{h,cc}` hands each new document its Shields decision |
 | `src/chrome/browser/molt_ai/tor/molt_net_routing.cc` | MoltNet `Accept-Language` |
 | `src/chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h`, `molt_net_storage.{h,cc}` | MoltNet's fixed quota and blob limits (+ `molt_net_storage_values_unittest.cc`, `molt_net_storage_unittest.cc`) |
-| `src/storage/browser/quota/molt_storage_budget_policy.h`, `molt_storage_budget.h` | MoltNet's storage budget per site, and no eviction for the pool (+ `molt_net_storage_budget_policy_unittest.cc`) |
+| `src/storage/browser/quota/molt_storage_budget_policy.h`, `molt_storage_budget.h` | MoltNet's storage budget per site, each site's usage counted as it changes, and no eviction for the pool (+ `molt_net_storage_budget_policy_unittest.cc`, `molt_net_storage_site_usage{,_policy}_unittest.cc`) |
 | `src/chrome/browser/molt_ai/tor/molt_net_isolation_policy.{h,cc}`, `molt_net_isolation.{h,cc}` | which regular-profile prefs MoltNet uses MoltBrowser's defaults for (pure, + `molt_net_isolation_policy_unittest.cc`) and MoltNet's pref service (+ `molt_net_isolation_unittest.cc`) |
 
 Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):

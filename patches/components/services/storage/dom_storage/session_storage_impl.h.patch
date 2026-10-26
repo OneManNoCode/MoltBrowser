@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_impl.h b/components/services/storage/dom_storage/session_storage_impl.h
-index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..bf8e39cc929bc069aa56a31ba14e1688e3b869f7 100644
+index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..dae7c8f8d2da7b02a585ee9f0977f0c3b2b8f2a6 100644
 --- a/components/services/storage/dom_storage/session_storage_impl.h
 +++ b/components/services/storage/dom_storage/session_storage_impl.h
 @@ -24,6 +24,7 @@
@@ -27,7 +27,7 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..bf8e39cc929bc069aa56a31ba14e1688
    void CreateNamespace(const std::string& namespace_id) override;
    void CloneNamespace(const std::string& namespace_id_to_clone,
                        const std::string& clone_namespace_id,
-@@ -137,6 +142,18 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -137,6 +142,20 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    void OnDataMapCreation(int64_t map_id, SessionStorageDataMap* map) override;
    void OnDataMapDestruction(int64_t map_id) override;
    void OnCommitResult(DbStatus status) override;
@@ -43,20 +43,24 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..bf8e39cc929bc069aa56a31ba14e1688
 +      const blink::StorageKey& storage_key) override;
 +  void MoltSiteCommitted(const blink::StorageKey& storage_key,
 +                         size_t bytes) override;
++  bool MoltMayWrite(const blink::StorageKey& storage_key,
++                    size_t bytes) override;
  
    // SessionStorageNamespaceImpl::Delegate implementation:
    scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
-@@ -177,6 +194,16 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -177,6 +196,18 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
  
    void GetStatistics(size_t* total_cache_size, size_t* unused_areas_count);
  
 +  // MoltBrowser: with caches per site (molt_dom_storage_site_policy.h),
 +  // purges the unbound areas of `storage_key`'s top-level site, in every
-+  // namespace, if that site's maps pass the per-site limits.
++  // namespace, if that site's maps pass the per-site limits. Without a
++  // database, only areas whose maps hold no item.
 +  void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
 +  bool molt_caches_per_site_ = false;
-+  // MoltBrowser: what each site's maps hold, and its commit rate. A map is
-+  // forgotten when its data leaves the database.
++  // MoltBrowser: what each site's maps hold, its commit rate and its write
++  // rate. A map is forgotten when its data leaves the database (or, without
++  // one, the namespaces).
 +  MoltDomStorageSiteBudget molt_site_budget_;
 +  void MoltForgetMaps(const std::vector<DomStorageDatabase::MapLocator>& maps);
 +

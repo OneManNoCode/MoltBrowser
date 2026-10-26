@@ -1,0 +1,54 @@
+MoltBrowser patch for storage/browser/quota/client_usage_tracker.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/quota/client_usage_tracker.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/quota/client_usage_tracker.h b/storage/browser/quota/client_usage_tracker.h
+index 0dc7b4bbdf91b2e473df32174f0abf44981b4752..9fb1aa0b44d0fa37e62f7357f2e979b961e05e75 100644
+--- a/storage/browser/quota/client_usage_tracker.h
++++ b/storage/browser/quota/client_usage_tracker.h
+@@ -17,6 +17,7 @@
+ #include "base/sequence_checker.h"
+ #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
+ #include "components/services/storage/public/mojom/quota_client.mojom.h"
++#include "storage/browser/quota/molt_storage_budget.h"  // MoltBrowser
+ #include "storage/browser/quota/quota_callbacks.h"
+ #include "storage/browser/quota/quota_task.h"
+ #include "storage/browser/quota/special_storage_policy.h"
+@@ -82,7 +83,24 @@ class ClientUsageTracker : public SpecialStoragePolicy::Observer {
+   // quota restrictions.
+   void SetUsageCacheEnabled(const blink::StorageKey& storage_key, bool enabled);
+ 
++  // MoltBrowser: the cached usage per site (MoltBudgetSiteOf()) and for all
++  // sites, for MoltNet's storage budget (molt_storage_usage_counts.h), kept
++  // from
++  // MoltCountSites() on (which counts what is cached so far), as the cache
++  // changes.
++  void MoltCountSites();
++  int64_t MoltSiteUsage(const MoltBudgetSite& site) const;
++  int64_t MoltCachedUsage() const;
++  // Whether `bucket`'s usage is cached (a change to it is counted).
++  bool MoltHasCachedUsage(const BucketLocator& bucket) const;
++
+  private:
++  // MoltBrowser: a cached bucket's usage went from `old_usage` to
++  // `new_usage` (0: not cached).
++  void MoltCountChange(const BucketLocator& bucket,
++                       int64_t old_usage,
++                       int64_t new_usage);
++
+   struct AccumulateInfo;
+ 
+   bool IsUsageCacheEnabledForStorageKey(
+@@ -133,6 +151,10 @@ class ClientUsageTracker : public SpecialStoragePolicy::Observer {
+ 
+   const scoped_refptr<SpecialStoragePolicy> special_storage_policy_;
+ 
++  // MoltBrowser: the cache's usage per site, once counted.
++  bool molt_counts_sites_ = false;
++  MoltSiteUsageTotals<MoltBudgetSite> molt_site_usage_;
++
+   SEQUENCE_CHECKER(sequence_checker_);
+ 
+   base::WeakPtrFactory<ClientUsageTracker> weak_factory_{this};

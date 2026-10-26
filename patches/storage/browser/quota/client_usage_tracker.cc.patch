@@ -1,0 +1,103 @@
+MoltBrowser patch for storage/browser/quota/client_usage_tracker.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/storage/browser/quota/client_usage_tracker.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/storage/browser/quota/client_usage_tracker.cc b/storage/browser/quota/client_usage_tracker.cc
+index 36ff65a686b7c59e69bc61ee4aaf4380cc6e4857..9d3fb601912a1528153b4b7a8205ed7b5d41f4dd 100644
+--- a/storage/browser/quota/client_usage_tracker.cc
++++ b/storage/browser/quota/client_usage_tracker.cc
+@@ -82,18 +82,27 @@ void ClientUsageTracker::UpdateBucketUsageCache(const BucketLocator& bucket,
+   }
+ 
+   if (delta.has_value()) {
++    const int64_t molt_old_usage = bucket_it->second;  // MoltBrowser
+     // Constrain `delta` to avoid negative usage values.
+     // TODO(crbug.com/40408082): At least one storage API sends deltas that
+     // result in negative total usage. The line below works around this bug.
+     // Fix the bug, and remove the workaround.
+     bucket_it->second += std::max(*delta, -bucket_it->second);
++    MoltCountChange(bucket_it->first, molt_old_usage,
++                    bucket_it->second);  // MoltBrowser
+   } else {
++    MoltCountChange(bucket_it->first, bucket_it->second, 0);  // MoltBrowser
+     cached_bucket_usage_.erase(bucket_it);
+   }
+ }
+ 
+ void ClientUsageTracker::DeleteBucketCache(const BucketLocator& bucket) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // MoltBrowser: (molt_storage_budget.h).
++  if (auto it = cached_bucket_usage_.find(bucket);
++      it != cached_bucket_usage_.end()) {
++    MoltCountChange(it->first, it->second, 0);
++  }
+   cached_bucket_usage_.erase(bucket);
+ }
+ 
+@@ -126,6 +135,7 @@ void ClientUsageTracker::SetUsageCacheEnabled(
+   for (auto it = cached_bucket_usage_.cbegin();
+        it != cached_bucket_usage_.cend();) {
+     if (it->first.storage_key == storage_key) {
++      MoltCountChange(it->first, it->second, 0);  // MoltBrowser
+       // Calling erase() while iterating is safe because (1) std::map::erase()
+       // only invalidates the iterator pointing to the erased element, and (2)
+       // `it` is advanced off of the erased element before erase() is called.
+@@ -188,6 +198,11 @@ void ClientUsageTracker::CacheBucketUsage(const BucketLocator& bucket,
+                                           int64_t new_usage) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   DCHECK(IsUsageCacheEnabledForStorageKey(bucket.storage_key));
++  // MoltBrowser: (molt_storage_budget.h).
++  auto molt_it = cached_bucket_usage_.find(bucket);
++  MoltCountChange(bucket,
++                  molt_it == cached_bucket_usage_.end() ? 0 : molt_it->second,
++                  new_usage);
+   cached_bucket_usage_[bucket] = new_usage;
+ }
+ 
+@@ -255,6 +270,44 @@ void ClientUsageTracker::OnCleared() {
+   non_cached_unlimited_storage_keys_.clear();
+ }
+ 
++// MoltBrowser:
++void ClientUsageTracker::MoltCountSites() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (molt_counts_sites_) {
++    return;
++  }
++  molt_counts_sites_ = true;
++  molt_site_usage_.Clear();
++  for (const auto& [bucket, usage] : cached_bucket_usage_) {
++    MoltCountChange(bucket, 0, usage);
++  }
++}
++
++int64_t ClientUsageTracker::MoltSiteUsage(
++    const MoltBudgetSite& site) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return molt_site_usage_.Of(site);
++}
++
++int64_t ClientUsageTracker::MoltCachedUsage() const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return molt_site_usage_.total();
++}
++
++bool ClientUsageTracker::MoltHasCachedUsage(const BucketLocator& bucket) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return cached_bucket_usage_.contains(bucket);
++}
++
++void ClientUsageTracker::MoltCountChange(const BucketLocator& bucket,
++                                         int64_t old_usage,
++                                         int64_t new_usage) {
++  if (molt_counts_sites_) {
++    molt_site_usage_.Changed(MoltBudgetSiteOf(bucket.storage_key), old_usage,
++                             new_usage);
++  }
++}
++
+ bool ClientUsageTracker::IsStorageUnlimited(
+     const blink::StorageKey& storage_key) const {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

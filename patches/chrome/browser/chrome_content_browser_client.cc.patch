@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba93fd4518 100644
+index 2e0f287290b7656d1b97dffc79bf117da240507a..40f0b0cdda50f4aa42c4a9a6cdbc5b7f0cb1a33b 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -125,6 +125,30 @@
@@ -89,12 +89,8 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
 +bool HandleMoltSchemeRewrite(GURL* url,
 +                              content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(chrome::kMoltScheme)) {
-     return false;
-   }
--  url::Component scheme;
--  if (!url::ExtractScheme(ntp_location, &scheme)) {
--    ntp_location = base::StrCat(
--        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
++    return false;
++  }
 +
 +  auto host = url->host();
 +  std::string new_host;
@@ -119,9 +115,8 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
 +    new_host = chrome::kChromeUISettingsHost;
 +  } else {
 +    return false;
-   }
- 
--  *url = GURL(ntp_location);
++  }
++
 +  GURL::Replacements replacements;
 +  replacements.SetSchemeStr(content::kChromeUIScheme);
 +  replacements.SetHostStr(new_host);
@@ -135,8 +130,12 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
 +bool HandleMoltSchemeReverseRewrite(GURL* url,
 +                                     content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(content::kChromeUIScheme)) {
-+    return false;
-+  }
+     return false;
+   }
+-  url::Component scheme;
+-  if (!url::ExtractScheme(ntp_location, &scheme)) {
+-    ntp_location = base::StrCat(
+-        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
 +
 +  auto host = url->host();
 +  std::string new_host;
@@ -160,8 +159,9 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
 +    new_host = chrome::kMoltSettingsHost;
 +  } else {
 +    return false;
-+  }
-+
+   }
+ 
+-  *url = GURL(ntp_location);
 +  GURL::Replacements replacements;
 +  replacements.SetSchemeStr(chrome::kMoltScheme);
 +  replacements.SetHostStr(new_host);
@@ -359,7 +359,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
    return interceptors;
  }
  
-@@ -6947,8 +7156,132 @@ ChromeContentBrowserClient::
+@@ -6947,8 +7156,142 @@ ChromeContentBrowserClient::
    return prefetch_handler;
  }
  
@@ -467,6 +467,16 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
 +      molt_ai::fingerprinting::kMoltNetStorageMemoryReserveBytes);
 +}
 +
++bool ChromeContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(
++    content::BrowserContext* browser_context) {
++  // MoltBrowser: MoltNet's Background Fetch is scheduled per site
++  // (molt_ai/tor/molt_net_network_context_policy.h).
++  return browser_context &&
++         molt_ai::tor::ScheduleBackgroundFetchesPerSite(
++             molt_ai::tor::IsMoltNetProfile(
++                 Profile::FromBrowserContext(browser_context)));
++}
++
 +bool ChromeContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
 +    content::BrowserContext* browser_context,
 +    const GURL& site_url) {
@@ -492,7 +502,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    if (!frame) {
      return false;
-@@ -6994,6 +7327,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
+@@ -6994,6 +7337,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
      mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
          handshake_client,
      content::ContentBrowserClient::WebSocketOptions options) {
@@ -528,7 +538,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
    if (!frame) {
-@@ -9252,7 +9614,12 @@ bool ChromeContentBrowserClient::ShouldReduceAcceptLanguage(
+@@ -9252,7 +9624,12 @@ bool ChromeContentBrowserClient::ShouldReduceAcceptLanguage(
            ->FindPreference(prefs::kReduceAcceptLanguageEnabled);
  
    if (pref && pref->IsManaged() && pref->GetValue()->is_bool()) {
@@ -542,7 +552,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
    }
    return true;
  }
-@@ -9426,15 +9793,12 @@ void ChromeContentBrowserClient::BindAIManager(
+@@ -9426,15 +9803,12 @@ void ChromeContentBrowserClient::BindAIManager(
      base::SupportsUserData* context_user_data,
      content::RenderFrameHost* rfh,
      mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
@@ -564,7 +574,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
  }
  
  #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
-@@ -9444,9 +9808,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
+@@ -9444,9 +9818,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
      base::SupportsUserData* context_user_data,
      const url::Origin& origin,
      mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
@@ -583,7 +593,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
  }
  #endif
  
-@@ -9723,6 +10093,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
+@@ -9723,6 +10103,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
  
  std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
      content::BrowserContext* browser_context) {
@@ -595,7 +605,7 @@ index 2e0f287290b7656d1b97dffc79bf117da240507a..760d083a3dbdfe02d7b5acd42a8560ba
    if (browser_context) {
      const PrefService* prefs =
          Profile::FromBrowserContext(browser_context)->GetPrefs();
-@@ -9782,9 +10157,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9782,9 +10167,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {

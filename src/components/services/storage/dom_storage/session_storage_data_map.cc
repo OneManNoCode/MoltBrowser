@@ -27,6 +27,10 @@ base::TimeDelta SessionStorageDataMap::Listener::MoltSiteCommitDelay(
 void SessionStorageDataMap::Listener::MoltSiteCommitted(
     const blink::StorageKey&,
     size_t) {}
+bool SessionStorageDataMap::Listener::MoltMayWrite(const blink::StorageKey&,
+                                                   size_t) {
+  return true;
+}
 
 // MoltBrowser: the map's budget is its listener's.
 bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {
@@ -43,6 +47,9 @@ base::TimeDelta SessionStorageDataMap::MoltSiteCommitDelay() {
 }
 void SessionStorageDataMap::MoltSiteCommitted(size_t bytes) {
   listener_->MoltSiteCommitted(map_locator_->storage_key(), bytes);
+}
+bool SessionStorageDataMap::MoltMayWrite(size_t bytes) {
+  return listener_->MoltMayWrite(map_locator_->storage_key(), bytes);
 }
 namespace {
 

@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_data_map.cc b/components/services/storage/dom_storage/session_storage_data_map.cc
-index 38b1a08e8776f734029fed12b2eb82d020100cdb..2ab13651a4455147ed794874d3ec30bb931cac67 100644
+index 38b1a08e8776f734029fed12b2eb82d020100cdb..e0cacfec5dacb9162227530a35bf781ff3079287 100644
 --- a/components/services/storage/dom_storage/session_storage_data_map.cc
 +++ b/components/services/storage/dom_storage/session_storage_data_map.cc
-@@ -10,6 +10,40 @@
+@@ -10,6 +10,47 @@
  #include "components/services/storage/dom_storage/dom_storage_constants.h"
  
  namespace storage {
@@ -29,6 +29,10 @@ index 38b1a08e8776f734029fed12b2eb82d020100cdb..2ab13651a4455147ed794874d3ec30bb
 +void SessionStorageDataMap::Listener::MoltSiteCommitted(
 +    const blink::StorageKey&,
 +    size_t) {}
++bool SessionStorageDataMap::Listener::MoltMayWrite(const blink::StorageKey&,
++                                                   size_t) {
++  return true;
++}
 +
 +// MoltBrowser: the map's budget is its listener's.
 +bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {
@@ -45,6 +49,9 @@ index 38b1a08e8776f734029fed12b2eb82d020100cdb..2ab13651a4455147ed794874d3ec30bb
 +}
 +void SessionStorageDataMap::MoltSiteCommitted(size_t bytes) {
 +  listener_->MoltSiteCommitted(map_locator_->storage_key(), bytes);
++}
++bool SessionStorageDataMap::MoltMayWrite(size_t bytes) {
++  return listener_->MoltMayWrite(map_locator_->storage_key(), bytes);
 +}
  namespace {
  

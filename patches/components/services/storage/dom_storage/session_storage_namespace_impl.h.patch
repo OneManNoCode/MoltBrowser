@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.h b/components/services/storage/dom_storage/session_storage_namespace_impl.h
-index 1e29263e377612b4384e7bedb10d9712424ce52a..e8cf002e4c57405e532b8afb460ab5594cb5be5e 100644
+index 1e29263e377612b4384e7bedb10d9712424ce52a..1ad7182d7da27b019aa9b59dd9e011d5d119e489 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.h
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.h
 @@ -18,6 +18,7 @@
@@ -16,13 +16,15 @@ index 1e29263e377612b4384e7bedb10d9712424ce52a..e8cf002e4c57405e532b8afb460ab559
  #include "third_party/blink/public/common/storage_key/storage_key.h"
  #include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
  
-@@ -157,6 +158,9 @@ class SessionStorageNamespaceImpl final
+@@ -157,6 +158,11 @@ class SessionStorageNamespaceImpl final
  
    // Removes any StorageAreas bound in |OpenArea| that are no longer bound.
    void PurgeUnboundAreas();
-+  // MoltBrowser: the same, for the areas of storage keys whose top-level site
-+  // is `site` only (molt_dom_storage_site_policy.h).
-+  void MoltPurgeUnboundAreasOfSite(const net::SchemefulSite& site);
++  // MoltBrowser: the same, for the areas of storage keys that count to the
++  // group `site` only (molt_dom_storage_site.h: MoltDomStorageSiteOf()), and
++  // without a database only areas whose maps hold no item
++  // (molt_dom_storage_site_policy.h).
++  void MoltPurgeUnboundAreasOfSite(const std::string& site);
  
    // Removes data for the given StorageKey from this namespace. If there is no
    // data map for that given StorageKey, this does nothing. Expects that this

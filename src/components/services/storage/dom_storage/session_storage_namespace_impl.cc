@@ -10,6 +10,8 @@
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
 #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
 
 namespace storage {
@@ -134,10 +136,15 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
 
 // MoltBrowser:
 void SessionStorageNamespaceImpl::MoltPurgeUnboundAreasOfSite(
-    const net::SchemefulSite& site) {
+    const std::string& site) {
   auto it = storage_key_areas_.begin();
   while (it != storage_key_areas_.end()) {
-    if (it->first.top_level_site() == site && !it->second->IsBound()) {
+    // Without a database, an area whose map holds an item stays: the item
+    // is nowhere else.
+    if (!it->second->IsBound() && MoltDomStorageSiteOf(it->first) == site &&
+        MoltDomStorageMayDropArea(
+            database_ != nullptr,
+            it->second->data_map()->storage_area()->molt_holds_items())) {
       it = storage_key_areas_.erase(it);
     } else {
       ++it;

@@ -169,6 +169,10 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
   // Evicts |site|'s own least recently used entries that aren't in use
   // while it uses more than |target|.
   void MoltEvictSiteTill(std::string_view site, int64_t target);
+  // Whether an entry of |key| may be made: its site's own unused entries
+  // are evicted to make room for the key if needed; false if it still
+  // doesn't fit in the site's share or the total.
+  bool MoltMayCreateEntry(const std::string& key);
   // Whether |entry| has gone unused for the budget's idle expiry.
   bool MoltIsExpired(const MemEntryImpl* entry) const;
   // Dooms every expired entry that isn't in use.

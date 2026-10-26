@@ -7260,6 +7260,16 @@ ChromeContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback(
       molt_ai::fingerprinting::kMoltNetStorageMemoryReserveBytes);
 }
 
+bool ChromeContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: MoltNet's Background Fetch is scheduled per site
+  // (molt_ai/tor/molt_net_network_context_policy.h).
+  return browser_context &&
+         molt_ai::tor::ScheduleBackgroundFetchesPerSite(
+             molt_ai::tor::IsMoltNetProfile(
+                 Profile::FromBrowserContext(browser_context)));
+}
+
 bool ChromeContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
     content::BrowserContext* browser_context,
     const GURL& site_url) {

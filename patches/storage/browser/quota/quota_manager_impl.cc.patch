@@ -5,20 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/quota/quota_manager_impl.cc b/storage/browser/quota/quota_manager_impl.cc
-index 5c661f4973419fdc125531dd525ce22117d0a2bb..c78daa4dbdc1957693696391c89342ae86fb67d0 100644
+index 5c661f4973419fdc125531dd525ce22117d0a2bb..b7b127f27de40fcc00a74c532cd7dd9c1ce99acb 100644
 --- a/storage/browser/quota/quota_manager_impl.cc
 +++ b/storage/browser/quota/quota_manager_impl.cc
-@@ -11,7 +11,9 @@
- #include <cstdint>
- #include <functional>
- #include <limits>
-+#include <map>       // MoltBrowser
- #include <memory>
-+#include <optional>  // MoltBrowser
- #include <utility>
- 
- #include "base/barrier_callback.h"
-@@ -59,6 +61,8 @@
+@@ -59,6 +59,8 @@
  #include "sql/sqlite_result_code.h"
  #include "sql/sqlite_result_code_values.h"
  #include "storage/browser/quota/client_usage_tracker.h"
@@ -27,20 +17,22 @@ index 5c661f4973419fdc125531dd525ce22117d0a2bb..c78daa4dbdc1957693696391c89342ae
  #include "storage/browser/quota/quota_callbacks.h"
  #include "storage/browser/quota/quota_client_type.h"
  #include "storage/browser/quota/quota_features.h"
-@@ -277,6 +281,21 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
+@@ -277,6 +279,23 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
        }
      }
  
 +    // MoltBrowser: with MoltNet's budget, no more room than the site's own
 +    // share has left, whatever the other sites store; past the floor, the
-+    // embedder hears of it (molt_storage_budget_policy.h).
-+    if (molt_usage_by_storage_key_) {
++    // embedder hears of it (molt_storage_budget_policy.h). The usage tracker
++    // counts its cache per site (molt_storage_budget.h).
++    if (molt_counts_site_) {
++      UsageTracker* tracker = manager()->GetUsageTracker();
 +      quota = MoltStorageQuota(
-+          quota, usage_,
-+          MoltSiteUsage(*molt_usage_by_storage_key_, storage_key_),
++          quota, usage_, tracker->MoltSiteUsage(MoltBudgetSiteOf(storage_key_)),
 +          settings_.molt_per_site_quota);
 +      if (MoltStorageBeyondFloor(settings_.molt_per_site_quota,
-+                                 molt_total_usage_, settings_.pool_size) &&
++                                 tracker->MoltTotalUsage(),
++                                 settings_.pool_size) &&
 +          settings_.molt_on_growth_beyond_floor) {
 +        settings_.molt_on_growth_beyond_floor.Run();
 +      }
@@ -49,44 +41,34 @@ index 5c661f4973419fdc125531dd525ce22117d0a2bb..c78daa4dbdc1957693696391c89342ae
      std::move(callback_).Run(usage_ >= 0
                                   ? blink::mojom::QuotaStatusCode::kOk
                                   : blink::mojom::QuotaStatusCode::kUnknown,
-@@ -310,6 +329,28 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
+@@ -310,6 +329,20 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
        SetDesiredStorageKeyQuota(quota);
      }
  
-+    // MoltBrowser: MoltNet's budget needs every site's usage
-+    // (molt_storage_budget_policy.h); counting it all also brings the usage
-+    // the quota system keeps per storage key up to date.
++    // MoltBrowser: MoltNet's budget needs the site's usage
++    // (molt_storage_budget_policy.h): the usage tracker asks again for its
++    // site's stale storage keys only, and Completed() reads its counts
++    // (molt_storage_budget.h). What other sites store doesn't add to the
++    // cost.
 +    if (MoltUsesStorageBudget(settings_.molt_per_site_quota) &&
 +        !is_unlimited_) {
-+      manager()->GetGlobalUsage(
-+          base::BindOnce(&UsageAndQuotaInfoGatherer::MoltOnGotGlobalUsage,
-+                         weak_factory_.GetWeakPtr(), std::move(callback)));
++      molt_counts_site_ = true;
++      manager()->EnsureDatabaseOpened();
++      manager()->GetUsageTracker()->MoltRefreshSiteUsage(
++          MoltBudgetSiteOf(storage_key_), std::move(callback));
 +      return;
 +    }
 +
-+    std::move(callback).Run();
-+  }
-+
-+  // MoltBrowser:
-+  void MoltOnGotGlobalUsage(base::OnceClosure callback,
-+                            int64_t usage,
-+                            int64_t unlimited_usage) {
-+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-+    molt_total_usage_ = usage;
-+    molt_usage_by_storage_key_ =
-+        manager()->GetUsageTracker()->GetCachedStorageKeysUsage();
      std::move(callback).Run();
    }
  
-@@ -358,6 +399,11 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
+@@ -358,6 +391,9 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
    // Fields retrieved while running.
    int64_t available_space_ = 0;
    int64_t total_space_ = 0;
-+  // MoltBrowser: all sites' usage, and each storage key's, for MoltNet's
-+  // budget (unset without it).
-+  int64_t molt_total_usage_ = 0;
-+  std::optional<std::map<blink::StorageKey, int64_t>>
-+      molt_usage_by_storage_key_;
++  // MoltBrowser: whether MoltNet's budget applies (its site's usage asked
++  // for).
++  bool molt_counts_site_ = false;
    int64_t desired_storage_key_quota_ = 0;
    int64_t usage_ = 0;
    blink::mojom::UsageBreakdownPtr usage_breakdown_;
