@@ -4,8 +4,10 @@
 // MoltBrowser: MoltNet's connection budget and SOCKS handshake budget, the
 // share of Tor's capacity MoltNet's network contexts draw on
 // (molt_per_site_socket_pool_policy.h says why and holds the numbers and
-// decisions, std-only). Header-only: //net's sources are Chromium's
-// BUILD.gn, which MoltBrowser doesn't change.
+// decisions, std-only). Header-only but for MoltTorCapacity's pointer to
+// the process's capacity (molt_connection_budget.cc), which must be one
+// for the process also in a component build, where //net is a library of
+// its own.
 //
 //  * MoltBudgetSiteFor(): which site a network key's connections count
 //    against.
@@ -53,6 +55,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/request_priority.h"
 #include "net/base/schemeful_site.h"
@@ -545,10 +548,9 @@ class MoltTorCapacity : public base::RefCounted<MoltTorCapacity> {
     }
   }
 
-  static MoltTorCapacity*& SharedInstance() {
-    static MoltTorCapacity* instance = nullptr;
-    return instance;
-  }
+  // The process's, or null (out of line, so that code in other libraries
+  // of a component build sees the same one).
+  NET_EXPORT_PRIVATE static MoltTorCapacity*& SharedInstance();
 
   MoltConnectionBudget connection_budget_;
   MoltConnectionBudget cert_fetch_budget_;
