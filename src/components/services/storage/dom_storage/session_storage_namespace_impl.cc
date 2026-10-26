@@ -16,6 +16,13 @@
 
 namespace storage {
 
+// MoltBrowser: the current sequence's own by default.
+scoped_refptr<base::SequencedTaskRunner>
+SessionStorageNamespaceImpl::Delegate::MoltNamespaceTaskRunner(
+    const std::string& namespace_id) {
+  return nullptr;
+}
+
 SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
     std::string namespace_id,
     SessionStorageDataMap::Listener* data_map_listener,
@@ -120,7 +127,10 @@ void SessionStorageNamespaceImpl::Bind(
     return;
   }
   DCHECK(IsPopulated());
-  receivers_.Add(this, std::move(receiver));
+  // MoltBrowser: in the namespace's own turn, where the partition takes its
+  // sequence in turn (molt_dom_storage_fair_scheduler.h).
+  receivers_.Add(this, std::move(receiver),
+                 delegate_->MoltNamespaceTaskRunner(namespace_id_));
   bind_waiting_on_population_ = false;
 }
 

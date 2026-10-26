@@ -101,6 +101,11 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;  // MoltBrowser
+  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
+  // through `scheduler` (one for the whole partition, which its host shares:
+  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
+  void MoltKeepCachesPerSiteOn(
+      scoped_refptr<MoltDomStorageFairScheduler> scheduler);
 
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,

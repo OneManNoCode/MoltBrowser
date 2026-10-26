@@ -768,12 +768,20 @@ bool LocalStorageImpl::MoltMayDrop(StorageAreaHolder& holder) {
 
 // MoltBrowser:
 void LocalStorageImpl::MoltKeepCachesPerSite() {
+  MoltKeepCachesPerSiteOn(nullptr);
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltKeepCachesPerSiteOn(
+    scoped_refptr<MoltDomStorageFairScheduler> scheduler) {
   if (molt_caches_per_site_) {
     return;
   }
   molt_caches_per_site_ = true;
-  molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
-      base::SequencedTaskRunner::GetCurrentDefault());
+  molt_scheduler_ =
+      scheduler ? std::move(scheduler)
+                : base::MakeRefCounted<MoltDomStorageFairScheduler>(
+                      base::SequencedTaskRunner::GetCurrentDefault());
   molt_idle_sweep_.Start(
       FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
       base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,

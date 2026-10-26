@@ -855,11 +855,28 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
 
 // MoltBrowser:
 void SessionStorageImpl::MoltKeepCachesPerSite() {
+  MoltKeepCachesPerSiteOn(nullptr);
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltKeepCachesPerSiteOn(
+    scoped_refptr<MoltDomStorageFairScheduler> scheduler) {
   molt_caches_per_site_ = true;
   if (!molt_scheduler_) {
-    molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
-        base::SequencedTaskRunner::GetCurrentDefault());
+    molt_scheduler_ =
+        scheduler ? std::move(scheduler)
+                  : base::MakeRefCounted<MoltDomStorageFairScheduler>(
+                        base::SequencedTaskRunner::GetCurrentDefault());
   }
+}
+
+// MoltBrowser: a namespace's pipes (a tab's renderers' Clone() calls) take
+// a turn of their own, as a site's do (molt_dom_storage_fair_scheduler.h).
+scoped_refptr<base::SequencedTaskRunner>
+SessionStorageImpl::MoltNamespaceTaskRunner(const std::string& namespace_id) {
+  return molt_scheduler_ ? molt_scheduler_->RunnerFor(
+                               MoltDomStorageNamespaceGroup(namespace_id))
+                         : nullptr;
 }
 
 // MoltBrowser:

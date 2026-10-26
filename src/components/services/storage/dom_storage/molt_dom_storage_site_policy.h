@@ -192,6 +192,20 @@ inline std::string MoltDomStorageGroupName(MoltDomStorageGroupKind kind,
   return "^key " + std::string(value);
 }
 
+// ---- Turns that aren't a site's ----
+
+// On the storage sequence of a partition kept per site, two more kinds of
+// pipe take turns of their own, as a site does
+// (molt_dom_storage_fair_queue.h): the partition's control pipe (the
+// browser's messages; one that names a storage key is then handled in its
+// site's turn: molt_dom_storage_own_thread.h), and each sessionStorage
+// namespace's pipes (a tab's renderers' Clone() calls). Their names start
+// with the prefix of the groups above, which no serialized site starts with.
+inline constexpr char kMoltDomStorageControlGroup[] = "^control";
+inline std::string MoltDomStorageNamespaceGroup(std::string_view namespace_id) {
+  return "^ns " + std::string(namespace_id);
+}
+
 // ---- Totals per site ----
 
 // What all of a site's areas of one kind may hold together: one area's own

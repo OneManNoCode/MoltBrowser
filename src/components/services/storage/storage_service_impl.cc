@@ -167,6 +167,18 @@ void StorageServiceImpl::BindSessionStorageControl(
   session_storages_.insert(std::move(new_session_storage));
 }
 
+// MoltBrowser:
+void StorageServiceImpl::MoltBindPerSiteLocalStorageControl(
+    mojo::PendingReceiver<mojom::LocalStorageControl> receiver) {
+  molt_own_threads_.BindLocalStorageControl(std::move(receiver));
+}
+
+// MoltBrowser:
+void StorageServiceImpl::MoltBindPerSiteSessionStorageControl(
+    mojo::PendingReceiver<mojom::SessionStorageControl> receiver) {
+  molt_own_threads_.BindSessionStorageControl(std::move(receiver));
+}
+
 void StorageServiceImpl::BindTestApi(
     mojo::ScopedMessagePipeHandle test_api_receiver) {
   GetTestApiBinderForTesting().Run(std::move(test_api_receiver));

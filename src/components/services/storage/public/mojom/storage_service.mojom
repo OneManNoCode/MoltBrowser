@@ -66,6 +66,18 @@ interface StorageService {
   BindLocalStorageControl(mojo_base.mojom.FilePath? path,
                           pending_receiver<LocalStorageControl> receiver);
 
+  // MoltBrowser: as BindLocalStorageControl() and
+  // BindSessionStorageControl() with a null `path` (in memory), for a
+  // partition that keeps DOM storage per site (MoltNet's): its storage runs
+  // on a thread of its own, which no other partition's work shares, and
+  // each message that names a storage key is handled in its site's turn
+  // there (components/services/storage/dom_storage/
+  // molt_dom_storage_own_thread.h).
+  MoltBindPerSiteLocalStorageControl(
+      pending_receiver<LocalStorageControl> receiver);
+  MoltBindPerSiteSessionStorageControl(
+      pending_receiver<SessionStorageControl> receiver);
+
   // Binds a receiving endpoint for the TestApi interface defined in
   // test_api.mojom. Note that this message is not strongly typed in order to
   // avoid production dependencies on test interface definitions.
