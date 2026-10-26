@@ -56,6 +56,9 @@ if (use_blink) {
       "//storage/browser",
     ]
 
+    # MoltBrowser: public, for //components/download/content/factory too.
+    public_deps = [ ":molt_site_isolation" ]
+
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
     if (is_android) {
@@ -74,6 +77,23 @@ if (use_blink) {
       ]
     }
   }
+}
+
+# MoltBrowser: MoltNet's in-memory Background Fetch limits and the site a
+# registering page's fetches are isolated to (header-only), for :internal,
+# //components/download/content/factory and MoltBrowser's own tests.
+source_set("molt_site_isolation") {
+  sources = [
+    "molt_in_memory_download_limits.h",
+    "molt_registering_site_isolation.h",
+  ]
+  public_deps = [
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//storage/browser",
+    "//url",
+  ]
 }
 
 if (is_android) {

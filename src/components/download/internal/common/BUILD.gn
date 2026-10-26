@@ -11,6 +11,16 @@ if (is_android) {
   import("//third_party/jni_zero/jni_zero.gni")
 }
 
+# MoltBrowser: the credentials mode a Background Fetch request carries
+# (header-only), for :internal and MoltBrowser's own tests.
+source_set("molt_fetch_credentials") {
+  sources = [ "molt_fetch_credentials.h" ]
+  public_deps = [
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+  ]
+}
+
 source_set("internal") {
   visibility = [
     ":for_tests",
@@ -74,6 +84,9 @@ source_set("internal") {
   ]
 
   deps = [
+    # MoltBrowser: a Background Fetch request's credentials mode.
+    ":molt_fetch_credentials",
+
     "//base",
     "//components/download/database",
     "//components/download/public/common:interfaces",

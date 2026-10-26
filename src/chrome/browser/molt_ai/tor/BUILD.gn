@@ -67,6 +67,9 @@ source_set("protocol") {
     "//base",
     # SAFECOOKIE control-port auth (HMAC-SHA256).
     "//crypto",
+
+    # The per-site socket pool policy torrc_builder.h follows (std-only).
+    "//net:molt_policies",
   ]
 }
 
@@ -149,7 +152,12 @@ source_set("requests_policy") {
 # molt_ai_unittests tests it.
 source_set("network_context_policy") {
   sources = [ "molt_net_network_context_policy.h" ]
-  deps = [ "//base" ]
+  public_deps = [
+    "//base",
+
+    # The per-site socket pool policy (std-only).
+    "//net:molt_policies",
+  ]
 }
 
 # The process-wide switches MoltNet's per-site isolation needs on
@@ -619,7 +627,16 @@ source_set("unit_tests") {
 
     # A regular profile's Background Fetch request carries the fetch's
     # credentials mode (download::CreateResourceRequest()).
+    "//components/download/internal/common:molt_fetch_credentials",
     "//components/download/public/common:public",
+
+    # A Background Fetch's in-memory limits and the site its registering
+    # page isolates it to.
+    "//components/download/internal/background_service:molt_site_isolation",
+
+    # Background Fetch scheduling, download isolation and processes per
+    # BrowsingInstance (content's std-only policies).
+    "//content/browser:molt_policies",
 
     # A Background Fetch's buffer counts against its site's blob share
     # (BlobStorageContext).
@@ -640,6 +657,7 @@ source_set("unit_tests") {
     "//net/traffic_annotation:test_support",
 
     # The parameters MoltNet's network-context settings are written into.
+    "//services/cert_verifier/cert_net_url_loader",
     "//services/cert_verifier/public/mojom",
     "//services/device/public/mojom",
     "//services/image_annotation/public/mojom",

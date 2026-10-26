@@ -101,6 +101,14 @@ source_set("storage") {
     "storage_service_impl.h",
   ]
 
+  # MoltBrowser: MoltNet's DOM storage grouped and budgeted per site
+  # (header-only).
+  sources += [
+    "dom_storage/molt_dom_storage_site.h",
+    "dom_storage/molt_dom_storage_site_budget.h",
+    "dom_storage/molt_dom_storage_site_policy.h",
+  ]
+
   public_deps = [
     ":test_api_stubs",
     "//base",

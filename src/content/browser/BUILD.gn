@@ -98,6 +98,17 @@ if (is_ios) {
   import("//build/config/apple/mobile_config.gni")  # For `target_platform`
 }
 
+# MoltBrowser: MoltNet's Background Fetch scheduling per site, download
+# isolation and process-per-BrowsingInstance decisions (std-only and
+# header-only), for :browser and MoltBrowser's own tests.
+source_set("molt_policies") {
+  sources = [
+    "background_fetch/molt_background_fetch_site_policy.h",
+    "download/molt_download_isolation_policy.h",
+    "renderer_host/molt_browsing_instance_processes_policy.h",
+  ]
+}
+
 source_set("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
@@ -131,6 +142,9 @@ source_set("browser") {
   ldflags = []
 
   deps = [
+    # MoltBrowser: the std-only policies below.
+    ":molt_policies",
+
     ":child_process_security_policy_impl",
     "//base",
     "//base:base_static",
@@ -2380,6 +2394,14 @@ source_set("browser") {
     "worker_host/worker_script_loader_factory.h",
     "worker_host/worker_util.cc",
     "worker_host/worker_util.h",
+  ]
+
+  # MoltBrowser: MoltNet's per-site downloads, processes per
+  # BrowsingInstance and uniform network state (header-only).
+  sources += [
+    "download/molt_download_isolation.h",
+    "network/molt_uniform_network_state.h",
+    "renderer_host/molt_browsing_instance_processes.h",
   ]
 
   if (is_android) {

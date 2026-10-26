@@ -9,6 +9,10 @@ component("cert_net_url_loader") {
   sources = [
     "cert_net_fetcher_url_loader.cc",
     "cert_net_fetcher_url_loader.h",
+
+    # MoltBrowser: the isolation of MoltNet's certificate fetches
+    # (header-only).
+    "molt_cert_fetch_isolation.h",
   ]
 
   deps = [

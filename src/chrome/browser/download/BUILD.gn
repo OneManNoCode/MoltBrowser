@@ -50,10 +50,17 @@ source_set("download") {
     "save_package_file_picker.h",
     "simple_download_manager_coordinator_factory.h",
     "trusted_sources_manager.h",
+
+    # MoltBrowser: a retried MoltNet download keeps its own network
+    # isolation (header-only).
+    "molt_retried_download_isolation.h",
   ]
 
   public_deps = [
     "//base",
+
+    # MoltBrowser: what molt_retried_download_isolation.h includes.
+    "//chrome/browser/molt_ai/tor:network_context_policy",
     "//chrome/browser/profiles",
     "//components/content_settings/core/browser",
     "//components/download/content/public",
