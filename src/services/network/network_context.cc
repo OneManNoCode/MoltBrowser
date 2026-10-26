@@ -1186,6 +1186,11 @@ void NetworkContext::SetClient(
 
 void NetworkContext::CreateSocketFactory(
     mojo::PendingReceiver<mojom::SocketFactory> receiver) {
+  // MoltBrowser: no socket outside the context's own session for MoltNet's
+  // (molt_own_session_sockets_policy.h): the pipe is dropped.
+  if (!MoltAllowsOwnSessionSockets()) {
+    return;
+  }
   socket_factory_receivers_.Add(socket_factory_.get(), std::move(receiver));
 }
 
@@ -2161,6 +2166,10 @@ void NetworkContext::OnNewSCTAuditingReportSent() {
 void NetworkContext::CreateUDPSocket(
     mojo::PendingReceiver<mojom::UDPSocket> receiver,
     mojo::PendingRemote<mojom::UDPSocketListener> listener) {
+  // MoltBrowser: none for MoltNet's context; both pipes are dropped.
+  if (!MoltAllowsOwnSessionSockets()) {
+    return;
+  }
   socket_factory_->CreateUDPSocket(std::move(receiver), std::move(listener));
 }
 
@@ -2174,6 +2183,11 @@ void NetworkContext::CreateRestrictedUDPSocket(
     bool allow_multicast,
     bool allow_source_specific_multicast,
     CreateRestrictedUDPSocketCallback callback) {
+  // MoltBrowser: none for MoltNet's context.
+  if (!MoltAllowsOwnSessionSockets()) {
+    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt);
+    return;
+  }
   // SimpleHostResolver is transitively owned by |this|.
   socket_factory_->CreateRestrictedUDPSocket(
       addr, mode, traffic_annotation, std::move(params), std::move(receiver),
@@ -2187,6 +2201,11 @@ void NetworkContext::CreateTCPServerSocket(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     mojo::PendingReceiver<mojom::TCPServerSocket> receiver,
     CreateTCPServerSocketCallback callback) {
+  // MoltBrowser: none for MoltNet's context.
+  if (!MoltAllowsOwnSessionSockets()) {
+    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt);
+    return;
+  }
   socket_factory_->CreateTCPServerSocket(
       local_addr, std::move(options),
       static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
@@ -2201,6 +2220,13 @@ void NetworkContext::CreateTCPConnectedSocket(
     mojo::PendingReceiver<mojom::TCPConnectedSocket> receiver,
     mojo::PendingRemote<mojom::SocketObserver> observer,
     CreateTCPConnectedSocketCallback callback) {
+  // MoltBrowser: none for MoltNet's context.
+  if (!MoltAllowsOwnSessionSockets()) {
+    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt,
+                            std::nullopt, mojo::ScopedDataPipeConsumerHandle(),
+                            mojo::ScopedDataPipeProducerHandle());
+    return;
+  }
   socket_factory_->CreateTCPConnectedSocket(
       local_addr, remote_addr_list, std::move(tcp_connected_socket_options),
       traffic_annotation, std::move(receiver), std::move(observer),
@@ -2212,6 +2238,11 @@ void NetworkContext::CreateTCPBoundSocket(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     mojo::PendingReceiver<mojom::TCPBoundSocket> receiver,
     CreateTCPBoundSocketCallback callback) {
+  // MoltBrowser: none for MoltNet's context.
+  if (!MoltAllowsOwnSessionSockets()) {
+    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt);
+    return;
+  }
   socket_factory_->CreateTCPBoundSocket(
       local_addr,
       static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
@@ -2835,6 +2866,11 @@ void NetworkContext::CreateP2PSocketManager(
 
 void NetworkContext::CreateMdnsResponder(
     mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) {
+  // MoltBrowser: none for MoltNet's context (multicast DNS on the local
+  // network); the pipe is dropped.
+  if (!MoltAllowsOwnSessionSockets()) {
+    return;
+  }
 #if BUILDFLAG(ENABLE_MDNS)
   if (!mdns_responder_manager_) {
     mdns_responder_manager_ = std::make_unique<MdnsResponderManager>();

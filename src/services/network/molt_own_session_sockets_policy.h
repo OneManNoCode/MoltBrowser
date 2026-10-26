@@ -35,6 +35,18 @@
 // make the renderer ask again at once), so no
 // ProxyResolvingClientSocketFactory is ever made for it.
 //
+// The network context's raw sockets go further: no session, no proxy. At
+// 156 its entry points are CreateTCPConnectedSocket(),
+// CreateTCPServerSocket(), CreateTCPBoundSocket(), CreateUDPSocket(),
+// CreateRestrictedUDPSocket(), CreateSocketFactory() (the same TCP and UDP
+// sockets behind a narrower interface) and CreateMdnsResponder() (multicast
+// DNS on the local network); the browser asks for them for Direct Sockets
+// (isolated web apps), Chrome Apps' socket APIs, Cast and WebRTC's mDNS
+// names, none of which a MoltNet window has. A network context with any of
+// MoltNet's settings refuses each: those with a reply answer
+// ERR_ACCESS_DENIED (with no address and no data pipes), the others drop
+// their pipes.
+//
 // Std-only, so molt_ai_unittests tests it.
 
 #ifndef SERVICES_NETWORK_MOLT_OWN_SESSION_SOCKETS_POLICY_H_
