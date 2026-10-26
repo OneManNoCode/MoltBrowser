@@ -10,7 +10,7 @@
 namespace molt_ai::tor {
 namespace {
 
-TEST(MoltNetCpuTest, ReadsWhatBaseCpuReports) {
+TEST(MoltNetCpuErrorTest, ReadsWhatBaseCpuReports) {
   const MoltNetCpuFeatures features = ReadMoltNetCpuFeatures();
 #if defined(ARCH_CPU_X86_64)
   const base::CPU& cpu = base::CPU::GetInstanceNoAllocation();
@@ -27,7 +27,7 @@ TEST(MoltNetCpuTest, ReadsWhatBaseCpuReports) {
 
 // The cached answer is the policy's for this machine, and the same object
 // every time.
-TEST(MoltNetCpuTest, ErrorIsThePolicysAndCached) {
+TEST(MoltNetCpuErrorTest, ErrorIsThePolicysAndCached) {
   EXPECT_EQ(MoltNetCpuError(),
             MoltNetCpuMessage(CheckMoltNetCpu(ReadMoltNetCpuFeatures())));
   EXPECT_EQ(&MoltNetCpuError(), &MoltNetCpuError());
