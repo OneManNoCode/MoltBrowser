@@ -2,7 +2,9 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // MoltBrowser: a video-plane scaler that computes the same values on every
-// machine. Pure and std-only (tested standalone and in media_unittests).
+// machine. Pure and std-only but for media's export macro (tested
+// standalone and in media_unittests, which a component build links against
+// the media library).
 //
 // libyuv's filtered scalers (ScalePlane(), ARGBScale(), NV12Scale(), ...
 // with kFilterBox or kFilterBilinear) are bit-exact across the SIMD levels of
@@ -32,11 +34,13 @@
 #include <span>
 #include <vector>
 
+#include "media/base/media_export.h"
+
 namespace media::molt {
 
 // One axis of a scale: for every output position, the first source position
 // it reads and the Q14 weights of it and the following ones.
-struct PortableScaleAxis {
+struct MEDIA_EXPORT PortableScaleAxis {
   static constexpr int32_t kOne = 1 << 14;
 
   std::vector<int32_t> first;    // per output position
@@ -53,27 +57,27 @@ struct PortableScaleAxis {
 // apart (not bytes); likewise `dst`. Returns false, writing nothing, when a
 // size isn't positive, a stride is shorter than its row, or a span is too
 // short for its rows.
-bool PortableScalePlane(std::span<const uint8_t> src,
-                        size_t src_stride,
-                        int src_width,
-                        int src_height,
-                        std::span<uint8_t> dst,
-                        size_t dst_stride,
-                        int dst_width,
-                        int dst_height,
-                        int channels);
+MEDIA_EXPORT bool PortableScalePlane(std::span<const uint8_t> src,
+                                     size_t src_stride,
+                                     int src_width,
+                                     int src_height,
+                                     std::span<uint8_t> dst,
+                                     size_t dst_stride,
+                                     int dst_width,
+                                     int dst_height,
+                                     int channels);
 
 // The same for 16-bit samples (high bit depth planes, whatever their bit
 // depth: the result never exceeds the largest input value).
-bool PortableScalePlane16(std::span<const uint16_t> src,
-                          size_t src_stride,
-                          int src_width,
-                          int src_height,
-                          std::span<uint16_t> dst,
-                          size_t dst_stride,
-                          int dst_width,
-                          int dst_height,
-                          int channels);
+MEDIA_EXPORT bool PortableScalePlane16(std::span<const uint16_t> src,
+                                       size_t src_stride,
+                                       int src_width,
+                                       int src_height,
+                                       std::span<uint16_t> dst,
+                                       size_t dst_stride,
+                                       int dst_width,
+                                       int dst_height,
+                                       int channels);
 
 }  // namespace media::molt
 

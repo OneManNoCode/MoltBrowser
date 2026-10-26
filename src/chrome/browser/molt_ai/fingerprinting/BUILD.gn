@@ -28,8 +28,7 @@ source_set("fingerprinting") {
     "//base",
     "//chrome/browser/content_settings:content_settings_factory",
 
-    # molt_net_profile_id.h (is this the MoltNet profile?).
-    "//chrome/browser/molt_ai/tor",
+    # Also molt_net_profile_id.h (is this the MoltNet profile?).
     "//chrome/browser/profiles:profile",
     "//chrome/common/molt_ai/fingerprinting:mojom",
     "//content/public/browser",
@@ -187,14 +186,14 @@ source_set("display_capture_policy") {
 # include molt_net_profile_id.h.
 source_set("display_capture") {
   sources = [ "molt_net_display_capture.h" ]
+
+  # profile.h also gives molt_net_profile_id.h (is this the MoltNet
+  # profile?).
   public_deps = [
     ":display_capture_policy",
     "//chrome/browser/profiles:profile",
     "//content/public/browser",
   ]
-
-  # molt_net_profile_id.h (is this the MoltNet profile?).
-  deps = [ "//chrome/browser/molt_ai/tor" ]
 }
 
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
@@ -223,6 +222,9 @@ source_set("unit_tests") {
     ":storage_values",
     "//base",
     "//base/test:test_support",
+
+    # A site's MoltShield exception (molt_shields_decision_unittest.cc).
+    "//chrome/browser/molt_ai/shield:site_exceptions",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/sync_preferences:test_support",

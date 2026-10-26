@@ -48,12 +48,23 @@ source_set("automation") {
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
 
-    # molt_net_profile_id.h (header-only IsMoltNetProfile()): a tool step in
-    # a frame of another site never runs in MoltNet.
-    "//chrome/browser/molt_ai/tor",
     # Secret (password) steps are filled from the vault at replay; read-only.
     "//chrome/browser/molt_ai/vault",
+
+    # The run notification (automation_notification.cc).
+    "//chrome/browser/notifications",
+
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): a tool
+    # step in a frame of another site never runs in MoltNet.
     "//chrome/browser/profiles:profile",
+
+    # The throwaway run window and its tabs (automation_background_browser.cc,
+    # automation_recorder_tab_helper.cc); browser.h is //chrome/browser/ui's
+    # own, which lists this target in allow_circular_includes_from.
+    "//chrome/browser/ui:singleton_tabs",
+    "//chrome/browser/ui/browser_window:create_browser_window",
+    "//chrome/browser/ui/navigator",
+    "//chrome/browser/ui/tabs:tab_strip",
     "//components/keyed_service/content",
     "//components/keyed_service/core",
     "//components/viz/common",

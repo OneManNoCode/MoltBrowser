@@ -145,8 +145,9 @@ source_set("unit_tests") {
     "//chrome/browser/molt_ai/keys:test_support",
 
     # The @memory omnibox shortcut: its provider, the controller's gate and
-    # the pure query logic (components only, plus the WebUI URL constant).
-    "//chrome/common:url_constants",
+    # the pure query logic (components only, plus the WebUI URL constant;
+    # :url_constants is visible to //chrome/common/* only, which exports it).
+    "//chrome/common",
     "//components/omnibox/browser",
     "//components/omnibox/browser:molt_local_input",
     "//components/omnibox/browser:molt_memory_query",

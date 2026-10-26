@@ -11,6 +11,8 @@ include_rules = [
   "+crypto/hash.h",
   # Image input: the bounds a model image must meet (std-only).
   "+chrome/services/molt_ai/inference/engine/image_input.h",
+  # Audio input: the bounds a model's audio must meet (std-only).
+  "+chrome/services/molt_ai/inference/engine/audio_input.h",
   # Making model images: the sandboxed image decoder, Skia scaling, and
   # mojo's BigBuffer for the pixels.
   "+mojo/public/cpp/base/big_buffer.h",

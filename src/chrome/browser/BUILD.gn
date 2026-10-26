@@ -985,6 +985,9 @@ source_set("core") {
     "//chrome/browser/memory",
     "//chrome/browser/metrics",
     "//chrome/browser/metrics:expired_histograms_array",
+
+    # MoltBrowser: what this target's hooks include.
+    "//chrome/browser/molt_ai:core_hooks",
     "//chrome/browser/navigation_predictor",
     "//chrome/browser/net",
     "//chrome/browser/notifications",

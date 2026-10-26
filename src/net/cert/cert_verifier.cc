@@ -22,7 +22,6 @@
 #include "net/cert/multi_threaded_cert_verifier.h"
 #include "net/cert/x509_util.h"
 #include "net/net_buildflags.h"
-#include "third_party/abseil-cpp/absl/base/attributes.h"  // MoltBrowser
 #include "third_party/boringssl/src/include/openssl/pool.h"
 #include "third_party/boringssl/src/include/openssl/sha.h"
 
@@ -140,8 +139,7 @@ bool CertVerifier::RequestParams::operator<(
 // MoltBrowser: the site of the certificate verification running on a
 // thread (net/cert/molt_cert_fetch_site.h).
 namespace {
-ABSL_CONST_INIT thread_local const std::string* g_molt_cert_fetch_site =
-    nullptr;
+constinit thread_local const std::string* g_molt_cert_fetch_site = nullptr;
 }  // namespace
 
 const std::string* MoltGetCertFetchSite() {

@@ -1640,7 +1640,9 @@ source_set("unit_tests") {
     "//third_party/blink/renderer/core:testing",
     "//third_party/blink/renderer/core:unit_test_support",
 
-    # MoltBrowser: fingerprinting protection math tests.
+    # MoltBrowser: fingerprinting protection math tests, and the math the
+    # glue's tests (blink_core_tests_molt_fingerprinting) include.
+    "//third_party/blink/renderer/core/molt_fingerprinting:farbling",
     "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
     "//third_party/blink/renderer/core/sanitizer:unit_test_support",
     "//third_party/blink/renderer/platform:test_support",

@@ -1,0 +1,16 @@
+# MoltBrowser's glue around the vendored llama.cpp. Its includes are written
+# against llama.cpp's own include roots (llama_cpp_config in ../BUILD.gn)
+# and, for the Vulkan shader compiler, glslang's and SPIRV-Tools'.
+include_rules = [
+  "+chromium",
+  "+ggml-cpu",
+]
+
+specific_include_rules = {
+  # The host tool that compiles ggml-vulkan's shaders (molt_llama_vulkan).
+  "ggml_vk_glslc\.cc": [
+    "+SPIRV/GlslangToSpv.h",
+    "+glslang/Public",
+    "+spirv-tools/optimizer.hpp",
+  ],
+}

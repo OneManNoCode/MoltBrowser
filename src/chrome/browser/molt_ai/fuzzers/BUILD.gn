@@ -325,9 +325,12 @@ fuzzer_test("molt_onion_location_fuzzer") {
 }
 
 fuzzer_test("molt_http_cache_site_fuzzer") {
-  # The policy is header-only and std-only, in no target's sources.
+  # The policy is header-only and std-only (//net:molt_policies).
   sources = [ "molt_http_cache_site_fuzzer.cc" ]
-  deps = [ "//base" ]
+  deps = [
+    "//base",
+    "//net:molt_policies",
+  ]
   seed_corpus = "corpus/molt_http_cache_site_fuzzer"
   libfuzzer_options = [ "max_len=4096" ]
 }

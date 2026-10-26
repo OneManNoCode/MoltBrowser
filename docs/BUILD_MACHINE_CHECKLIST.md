@@ -73,6 +73,89 @@ items are marked *deferred*.
 | 10 | Packaging, signing, draft release | Mac, Linux, offline machine | a day |
 | 11 | The owner's open decisions | | |
 
+### First build: the order in one place
+
+The first build against Chromium 156 in the order to run it. The steps
+point to the sections below for the detail; this list is what to do and
+what to send back.
+
+1. **Static checks, before the sync** (any Linux machine, no checkout,
+   minutes). They read 156's own build files with the overlay on top:
+   ```bash
+   python3 tools/chromium/gn_static_check.py fetch      # once per pin: streams 156's tarball (5 min), keeps ~190 MB
+   python3 tools/chromium/gn_static_check.py check --warnings 2>&1 | tee ~/molt-v0.3.0/static-gn-check.log
+   python3 tools/chromium/gn_static_check.py checkdeps     2>&1 | tee ~/molt-v0.3.0/static-checkdeps.log
+   python3 tools/chromium/gn_static_check.py blink-audit   2>&1 | tee ~/molt-v0.3.0/static-blink-audit.log
+   python3 tools/compile_check/compile_check.py all && python3 tools/compile_check/compile_check.py report
+   ```
+   *Expected:* `check` finds no error in any of its six configs (Linux,
+   macOS, Windows, Linux and Windows with `molt_llama_vulkan`, a Linux
+   component build) and warns only about `//third_party/rust/adblock/v0_13:lib`
+   (step 2 vendors it); `checkdeps` and `blink-audit` report 0 errors;
+   compile_check's `report` lists no errors (§4). The three
+   `gn_static_check.py` checks exit 1 on an error. What they model and what
+   they can't: the header of
+   `tools/chromium/gn_static_check.py`, and §4.9.
+2. **Sync, pins and the version** (§1, §2): `setup.sh --resync`, the patch
+   series check, the search engines and en-US tables, the Rust crates
+   (gnrt), then the pins and the version bump in one PR before the first
+   full build (§2.6: `webui_url_constants.h` costs a ~2 h recompile).
+3. **Configure, then let GN check the real graph** (minutes; §3, §4.9):
+   ```bash
+   ./scripts/configure.sh --platform macos --arch arm64 2>&1 | tee ~/molt-v0.3.0/configure-mac.log   # runs gn gen
+   (cd chromium/src && gn check out/MoltBrowser) 2>&1 | tee ~/molt-v0.3.0/gn-check.log
+   ./scripts/vendor-rust-crates.sh --check 2>&1 | tee ~/molt-v0.3.0/vendor-rust-check.log
+   ```
+   `gn gen` refuses an unknown label, a visibility or `testonly` violation
+   and a dependency cycle; `gn check` the include rule. Then checkdeps over
+   the real tree (§4.9).
+4. **Build the small targets first** (`-k 0` so one run lists every broken
+   file; read the whole log, `autoninja` can exit 0 on a failure):
+   ```bash
+   cd chromium/src
+   B=out/MoltBrowser    # out/MoltBrowser-linux on Linux
+   for t in third_party/llvm-libc:molt_portable_math ui/gfx/geometry:geometry \
+            third_party/llama_cpp:llama_cpp chrome/services/molt_ai/inference:inference \
+            net:net services/network:network_service storage/browser:browser \
+            components/services/storage:storage content:content \
+            third_party/blink/renderer/core:core third_party/blink/renderer/modules:modules \
+            molt_ai_unittests chrome; do
+     autoninja -C $B -k 0 $t 2>&1 | tee ~/molt-v0.3.0/build-${t//[\/:]/_}.log
+   done
+   grep -lE 'error:|FAILED:|finished with an error' ~/molt-v0.3.0/build-*.log
+   ```
+   (verify the command; on Linux, run it on a native box or inside the
+   Docker image of §3.2.) In order: the portable math (minutes), llama.cpp
+   and the sandboxed inference service, `//net` and the network service
+   with MoltNet's hooks, the storage service, `//content`, Blink core and
+   modules (hours), MoltBrowser's own unit tests (the first link of most of
+   MoltBrowser's browser code), then `chrome`. With `-k 0` a failing step
+   still compiles everything else it can: go on to the next target rather
+   than stop at the first failure, and send all the logs. Then §3's own
+   build command for the bundled helpers, and §5's tests.
+5. **Send back:** every log above, or for a long one the lines
+   `grep -nE 'error:|FAILED:|finished with an error|undefined symbol|duplicate symbol'`
+   prints and 30 lines after each `FAILED:`; `gn-check.log` and the
+   checkdeps output whole; `gn args --list --short --overrides-only` for
+   each out dir (§3.1); the four static-check logs if any of them was not
+   clean.
+
+**Known risky files, each once** (the rows hold the detail):
+
+| Risk | Where |
+|---|---|
+| New mojom fields and methods: the storage controls' `MoltKeepCachesPerSite()` and `MoltSetGrowthObserver()` need an override in every fake or mock of them | [§4.1](#41-mojo-new-fields-unions-and-interfaces) |
+| Widely included `//net` headers (`connect_job.h`, `client_socket_pool.h`, `transport_client_socket_pool.h`, `ssl_client_socket.h`, `http_network_session.h`): long rebuilds | [§4.2](#42-net-and-the-network-service-moltnet-circuits) |
+| `chrome/browser/ui/autofill/chrome_autofill_client.cc`: only two functions type-checked | [§4.2](#42-net-and-the-network-service-moltnet-circuits) |
+| `third_party/llama_cpp:ggml_vulkan` (with the switch on): built in a stub GN root only | [§4.6](#46-sandboxes-and-utility-processes) |
+| Blink's font hooks on macOS and Windows (`font_platform_data_*`, `font_cache_*`, `font_metrics.cc`'s Apple branch, `skia_text_metrics.cc`): never compiled | [§4.7](#47-blink-and-fingerprinting-moltnet-uniformity) |
+| The cxx bridges that must be regenerated, not taken from an old out dir (`rustfft_ffi.rs`, Fontations' `ffi.rs`, the exif `FFI.rs`) | [§4.7](#47-blink-and-fingerprinting-moltnet-uniformity) |
+| `third_party/skia/include/core/SkScalar.h`: the math macros call an exported function now | [§4.7](#47-blink-and-fingerprinting-moltnet-uniformity) |
+| `chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.cc`: not type-checked at all | [§4.8](#48-webui-handlers-and-the-agents) |
+| A component build (developer builds only): a symbol used across libraries without its export macro | [§4.9](#49-gn-targets-and-deps-edges) |
+| Windows-only hooks (deferred) | [§3.3](#33-windows-deferred) |
+| The vendored adblock crates (gnrt) | [§1](#1-sync) |
+
 ---
 
 ## 0. Before you start
@@ -330,6 +413,10 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 
 ## 3. Configure and build
 
+The first time, follow the order of "First build" at the top: the static
+checks, then configure and `gn check`, the small targets, and `chrome`
+last. The steps below are the per-platform detail.
+
 ### 3.1 macOS arm64
 
 - [ ] Configure from `configs/macos-arm64.gn` (official build,
@@ -404,6 +491,9 @@ dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
 When the build fails, find the file here; the PR tag says which change to
 read. Upstream files are whole copies under `src/`, each hook marked
 `// MoltBrowser:`; `patches/<path>.patch` shows exactly what changed.
+Where a row below says a header is "in no target's `sources`", or to add a
+dep "if `gn check` complains", that predates round 28: the headers are
+listed and the deps are in (§4.9).
 
 - [ ] Optional, on any Linux machine before the slow build:
   `tools/compile_check/compile_check.py all` type-checks MoltBrowser's own
@@ -606,6 +696,22 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 
 ### 4.9 GN targets and DEPS edges
 
+Since round 28 (gn-ready) the GN graph, the DEPS rules and Blink's audit
+are checked without a checkout (First build, step 1).
+`tools/chromium/gn_static_check.py` evaluates 156's `BUILD.gn` files with
+the overlay for the three desktop configs, also with `molt_llama_vulkan` and
+as a component build, loads what `gn gen` loads, and applies `gn check`'s
+include rule and `gn gen`'s dependency rules (unknown labels, visibility,
+`testonly`, `allow_circular_includes_from`, cycles) to every file and target
+MoltBrowser adds or changes; `checkdeps` and `blink-audit` run Chromium's own
+scripts from the pin. All three are clean, and every MoltBrowser header is
+listed in the target that owns it, so the notes of earlier rounds of the
+form "in no target's `sources`" or "if `gn check` complains, list X in Y /
+add the dep" (in §4.2, §4.7 and §4.10 as well) are done. The real
+`gn gen` and `gn check` below stay the authority; what the static check
+approximates is in its header (values known only at `gn gen` time, other
+toolchains, a third-party library's own `include_dirs`).
+
 - [ ] List what the new code defines (from the PRs below):
   `(cd chromium/src && gn ls out/MoltBrowser '//chrome/browser/molt_ai/*')`.
 - [ ] `gn check` the MoltBrowser directories first (fast), then the whole
@@ -623,183 +729,111 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   done
   gn check out/MoltBrowser 2>&1 | tee ~/molt-v0.3.0/gn-check.log
   ```
-  New edges the PRs flagged: memory → `runtime:embedding_host`,
-  `models:download`, the inference mojom (from #28); `:constrained_decoding`
-  (from #30); `agent_actions` → `constrained_decoding` (from #45); the
-  content utility directory → `//sandbox/linux:sandbox_services`, the
-  browser → `public:buildflags` and `//content/public/common` (from #52);
-  `universal_web_contents_observers.cc` and `:letterbox_view` (from #27).
-  New at MoltNet 156: `chrome_content_browser_client.cc` includes
-  `molt_net_requests_policy.h`, `molt_net_network_context_policy.h` and
-  `molt_net_profile_id.h` (the `:requests_policy`,
-  `:network_context_policy` and `:tor` targets), and the two
-  `content/browser/network/` observers include
-  `molt_uniform_network_state.h`, which no target lists (see §4.2).
-  New in moltnet-live: `chrome/browser/net/proxy_config_monitor.cc` (in
-  `//chrome/browser`) includes `molt_net_routing.h` and
-  `molt_net_profile_id.h` (`:tor`); `chrome_autofill_client.cc`
-  (`//chrome/browser/ui`) and `chrome_payment_request_delegate.cc`
-  (`//chrome/browser/payments:impl`) include `molt_net_autofill.h`: if
-  `gn check` flags them, add `//chrome/browser/molt_ai/tor:autofill` to
-  those targets' deps. The new `:autofill` target depends on
-  `//components/autofill/core/browser` and `//third_party/libaddressinput`;
-  if that makes a cycle through `:tor`, drop it from `:tor`'s
-  `public_deps` and add it to `//chrome/browser/ui` and
-  `//chrome/browser/payments:impl` instead. Checkdeps: the tor `DEPS`
-  file allows `molt_net_autofill.cc` its two libaddressinput headers.
-  New in moltnet-policy: `chrome/browser/prefs/incognito_mode_prefs.cc`
-  includes `molt_net_profile_id.h` and
-  `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc`
-  includes `molt_net_incognito_parity.h` (both header-only, in `:tor` and
-  `:incognito_parity_policy`); `chrome_content_browser_client.cc` includes
-  `molt_net_language_policy.h` (new header-only `:language_policy`, a
-  public dep of `:tor`); `:pref_isolation` now depends on
-  `:language_policy` and `//chrome/common/molt_ai/fingerprinting`;
-  `molt_net_network_context_policy.h` and
-  `client_socket_pool_manager_impl.h` include the new `net/socket/molt_*`
-  headers (§4.2); `molt_ai_unittests` uses `net/spdy/spdy_test_util_common.h`
-  (`//net:test_support`, already a dep).
-  New in moltnet-shared: `torrc_builder.h` (`:protocol`, which has no
-  `//net` dep) includes `net/socket/molt_per_site_socket_pool_policy.h`
-  (std-only, in no target's `sources`); `molt_ai_unittests` includes
-  `services/network/molt_keepalive_partitions.h` (allowed for that test in
-  the tor `DEPS`) and `storage/browser/quota/molt_storage_budget_policy.h`
-  (both std-only); `services/network/` and `storage/browser/quota/` include
-  their new header-only `molt_*` files (§4.2). If `gn check` flags any of
-  them, list the header in the target that includes it. The same for
-  `components/download/internal/background_service/molt_registering_site_isolation.h`
-  and `content/browser/download/molt_download_isolation{,_policy}.h`;
-  `molt_ai_unittests` includes the std-only policy (allowed for that test
-  in the tor `DEPS`).
-  New in moltnet-shared2: header-only files in no target's `sources`,
-  included by the hooked files above: `net/cert/molt_cert_fetch_site.h`
-  (by `//net` and `//services/cert_verifier/cert_net_url_loader`),
-  `services/cert_verifier/cert_net_url_loader/molt_cert_fetch_isolation.h`,
-  `storage/browser/blob/molt_blob_budget_policy.h` (by `//storage/browser`
-  and `content/browser/blob_storage/blob_registry_wrapper.cc`),
-  `content/browser/renderer_host/molt_browsing_instance_processes{,_policy}.h`
-  and `chrome/browser/download/molt_retried_download_isolation.h` (by
-  `download_bubble_ui_controller.cc` and `downloads_dom_handler.cc`, which
-  then include `chrome/browser/molt_ai/tor/molt_net_network_context_policy.h`
-  and `molt_net_profile_id.h`). `molt_ai_unittests` includes the blob
-  policy (`chrome/browser/molt_ai/fingerprinting`), the process policy, the
-  Background Fetch header and the certificate-fetch header (each allowed for
-  its test in the tor `DEPS`) and now needs
-  `//mojo/public/cpp/test_support:test_utils` and
-  `//services/network/public/cpp` (added). `//chrome/browser/molt_ai/tor`
-  gained `:process_policy`, `:identity_end_policy` and
-  `//extensions/buildflags`; `chrome/browser/enterprise/data_controls/`
-  now includes `molt_net_incognito_parity.h` (§4.10). Windows only:
-  `molt_net_parental_controls.cc` includes
-  `chrome/browser/win/parental_controls.h`, whose target is
-  `//chrome/browser` itself (as for the tor target's other
-  `chrome/browser/` includes). If `gn check` flags any of them, list the
-  header in the target that includes it or add the dep.
-  New in moltnet-shared3: header-only files in no target's `sources`:
-  `net/disk_cache/memory/molt_mem_backend_budget_policy.h` (by
-  `//net`; `disk_cache.h` names its struct), `services/network/molt_ended_identity_policy.h`,
-  `components/services/storage/dom_storage/molt_dom_storage_site_policy.h`
-  (by `//components/services/storage`); `//components/download/internal/background_service`
-  now includes `storage/browser/blob/molt_blob_budget_policy.h`.
-  `//chrome/browser/molt_ai/tor`: `:identity_end_policy` gained
-  `molt_net_memory_valve_policy.h`, `:tor` the valve's `.cc/.h`; the unit
-  tests gained `//components/services/storage`,
-  `//third_party/blink/public/common`,
-  `//chrome/browser/molt_ai/fingerprinting:storage_values`,
-  `//services/network:network_service` and
-  `//net/traffic_annotation:test_support`;
-  `//chrome/browser/molt_ai/fingerprinting:storage` now has
-  `:storage_values` as a public dep (Chrome's client reads the reserve).
-  If `gn check` flags any of them, list the header in the target that
-  includes it or add the dep.
-  New in moltnet-shared4: header-only files in no target's `sources`:
-  `net/socket/molt_identity_end.h` (by `//net`),
-  `components/download/internal/common/molt_fetch_credentials.h` (by
-  `//components/download/internal/common`) and
-  `components/services/storage/dom_storage/molt_dom_storage_site_budget.h`
-  (by `//components/services/storage`; it includes the generated
-  `local_storage_control.mojom.h`). `//chrome/browser/molt_ai/tor`'s unit
-  tests gained `//services/network:test_support`,
-  `//components/download/public/common:public` and `//storage/browser`;
-  `//chrome/browser/ui/webui/molt_ai` gained
-  `//chrome/browser/molt_ai/fingerprinting:net_fonts`. If `gn check`
-  flags any of them, list the header in the target that includes it or
-  add the dep.
-  New in moltnet-shared5: header-only files in no target's `sources`:
-  `content/browser/background_fetch/molt_background_fetch_site_policy.h`
-  (by `//content/browser`),
-  `components/download/internal/background_service/molt_in_memory_download_limits.h`
-  (by `//components/download/content/factory`) and
-  `storage/browser/quota/molt_storage_usage_counts.h` (by `//storage/browser`,
-  through `molt_storage_budget.h`, which `client_usage_tracker.h` and
-  `usage_tracker.h` now include; it includes `net/base/schemeful_site.h`
-  and `base/unguessable_token.h`). `//chrome/browser/molt_ai/fingerprinting`'s
-  unit tests gained `//storage/browser`, `//storage/browser:test_support`
-  (`MockQuotaClient`), `//components/services/storage/public/cpp`,
-  `//components/services/storage/public/cpp/buckets`,
-  `//mojo/public/cpp/bindings` and
-  `//third_party/blink/public/mojom:mojom_platform`. If `gn check` flags
-  any of them, list the header in the target that includes it or add the
-  dep.
-  New in moltnet-shared6: header-only files in no target's `sources`:
-  `net/disk_cache/memory/molt_mem_backend_site_lru.h` (by `//net`,
-  through `mem_entry_impl.h`),
-  `components/services/storage/dom_storage/molt_dom_storage_fair_queue.h`
-  and `molt_dom_storage_fair_scheduler.h` (by
-  `//components/services/storage`, through `local_storage_impl.h` and
-  `session_storage_impl.h`; `storage_area_impl.cc` now includes
-  `molt_dom_storage_site_policy.h`), and
-  `services/network/molt_own_session_sockets_policy.h` and
-  `molt_refusing_p2p_socket_manager.h` (by `//services/network:network_service`;
-  the second includes `//services/network/public/mojom`'s `p2p.mojom.h`
-  and `//services/network/public/cpp`'s `p2p_socket_type.h`, built only
-  with `IS_P2P_ENABLED`). The tor unit tests include
-  `components/services/storage/dom_storage/session_storage_namespace_impl.h`,
-  `net/disk_cache/memory/molt_mem_backend_site_lru.h` and
-  `services/network/molt_own_session_sockets_policy.h`; their deps already
-  cover them. If `gn check` flags any of them, list the header in the
-  target that includes it or add the dep.
-  New in fonts: `//chrome/browser/molt_ai/fingerprinting:net_fonts` (the
-  browser side of the bundled font set; `:fingerprinting` and the unit
-  tests depend on it); `//chrome/common/molt_ai/fingerprinting`'s mojom
-  now has `//mojo/public/mojom/base` as a public dep (`ReadOnlyFile`);
-  `molt_net_fonts_unittest.cc` includes Blink's pure
-  `moltnet_font_set.h` (allowed for that test in the fingerprinting
-  `DEPS`, as the device values test does); core's `DEPS` allow
-  `moltnet_fonts.cc` `base/files/memory_mapped_file.h` and its test
-  `base/files/scoped_temp_dir.h` and `file_util.h`;
-  `public/web/web_molt_fingerprinting.h` forward-declares `base::File`.
-  New in degoogle-kit: `//chrome/browser/molt_ai/privacy:feature_overrides`
-  (and its `:unit_tests`) now depends on `//chrome/browser/dictation:features`,
-  `//chrome/common:chrome_features`, `//components/history_embeddings/core`,
-  `//components/optimization_guide/core:prediction` and
-  `//components/optimization_guide/proto:optimization_guide_proto`, for the
-  features it turns off (the five headers type-check against 156's real
-  headers). If a visibility rule refuses one, or the standalone
-  `molt_ai_unittests` link grows too much, the alternative is to move
-  those entries into a second overrides source set that only
-  `//chrome/browser` links. Also degoogle-kit, after the follow-up:
-  `:feature_overrides` and `:unit_tests` add
-  `//components/optimization_guide/core:features`,
-  `//components/safe_browsing/core/common:features` and `//media`; the new
-  `//chrome/browser/molt_ai/privacy:component_policy` (`//base` only) is a
-  dep of `//chrome/browser/component_updater:impl` (its `BUILD.gn` is now
-  in `src/`, hooked); and `molt_ai_unittests` gains
-  `//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests` where
-  `use_on_device_model_service` is set, which links
-  `//components/optimization_guide/core:manifest_broker`. `gn check`
-  should accept all of them; a cycle through `component_updater:impl`
-  would mean `:component_policy` picked up a dep it must not have.
-- [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
-  `chrome/{browser,renderer,services}/molt_ai/` and Blink's
-  `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
+  *Expected:* no error. If there is one, the static check missed it: send
+  `gn-check.log`, and fix it as the message says (a dep, a `public` entry,
+  a visibility line). Do it in both out dirs (macOS and Linux evaluate
+  different files).
+- [ ] DEPS include rules (checkdeps) on the real tree, for the new `DEPS`
+  files under `chrome/{browser,renderer,services}/molt_ai/` and Blink's
+  `core/molt_fingerprinting` and the hooked upstream directories (from #10,
+  #19, #37, #41) (verify the command):
   ```bash
   cd chromium/src
   for d in chrome/browser/molt_ai chrome/services/molt_ai chrome/common/molt_ai \
            chrome/renderer/molt_ai third_party/blink/renderer/core/molt_fingerprinting chrome/utility; do
     python3 buildtools/checkdeps/checkdeps.py "$d" || echo "CHECKDEPS FAILED: $d"
   done
+  python3 buildtools/checkdeps/checkdeps.py 2>&1 | tee ~/molt-v0.3.0/checkdeps.log   # the whole tree
   ```
+  *Expected:* no violation. The static run used 156's own `checkdeps.py`
+  over every C++ file MoltBrowser adds and every include it adds to an
+  upstream file; Skia and V8 are repositories of their own, with their own
+  rules, and were left out.
+- [ ] Blink's presubmit audit (`audit_non_blink_usage.py`, which the build
+  doesn't run): `gn_static_check.py blink-audit` runs its `check()` over the
+  lines MoltBrowser adds under `third_party/blink`. MoltBrowser's entries
+  are at the end of `_CONFIG` in
+  `src/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py`.
+
+How the graph fits together since round 28, where a reviewer may want it
+otherwise:
+
+- `//chrome/browser:core` depends on `//chrome/browser/molt_ai:core_hooks`,
+  a group of the MoltBrowser targets whose headers the hooks in
+  `chrome/browser/` include (the runtime, the agents' features,
+  fingerprinting, the tor policies, the shield, the web AI APIs, the WebUI
+  navigation throttle; the letterbox view on desktop, the updater on
+  macOS).
+- `molt_net_profile_id.h` and `molt_net_incognito_parity.h` are public
+  headers of `//chrome/browser/profiles:profile`, which has
+  `//chrome/browser/molt_ai/tor:incognito_parity_policy` as a public dep: any
+  target that may include `profile.h` may include them, so the split-out
+  targets of §4.10 need no dep of their own.
+- `//chrome/browser/ui:ui` depends on `molt_ai/automation`, and lists it
+  and `molt_ai/tor` in `allow_circular_includes_from` (`ui:ui` is on
+  `//.gn`'s allowlist): their code includes `chrome/browser/ui` headers
+  while `ui` includes theirs.
+- The std-only policies MoltBrowser keeps inside components are small
+  targets there, which std-only MoltBrowser targets and tests depend on
+  instead of the whole component: `//net:molt_policies`,
+  `//content/browser:molt_policies`,
+  `//components/download/internal/background_service:molt_site_isolation`
+  and `//components/download/internal/common:molt_fetch_credentials`. The
+  header-only hook files are listed in the component that includes them
+  (`//net`, `//services/network:network_service`, `//storage/browser`,
+  `//components/services/storage`, `//content/browser`,
+  `//services/cert_verifier/cert_net_url_loader`).
+- The side panel's views code is its own target,
+  `//chrome/browser/molt_ai:molt_ai_side_panel_views`.
+- For these hooks 26 upstream `BUILD.gn` files are now in `src/`, each
+  change in a `# MoltBrowser:` block: `chrome/browser/` `browsing_data`,
+  `download`, `extensions`, `media/router`, `media/webrtc`, `metrics`,
+  `net`, `payments`, `profile_resetter`, `ssl`, `translate`, `webauthn`;
+  `chrome/browser/ui/` `autofill`, `extensions`, `tabs`, `views/frame`,
+  `views/side_panel`, `views/translate`;
+  `components/download/internal/{background_service,common}`,
+  `components/services/storage`, `content/browser`, `net`,
+  `services/cert_verifier/cert_net_url_loader`, `services/network`,
+  `storage/browser`. Also two `DEPS` files (`chrome/browser/browsing_data`,
+  `ui/gfx`) and Blink's audit script.
+- A component build (`is_component_build = true`: developer builds only,
+  never a release): every MoltBrowser function or class used from another
+  library has that library's export macro (a scripted review in round 28
+  added `MEDIA_EXPORT` to the portable scaler, `CORE_EXPORT` to two Blink
+  functions Blink's tests call, and moved `MoltTorCapacity`'s per-process
+  pointer out of line with `NET_EXPORT_PRIVATE`, so each library sees the
+  same one). An `undefined symbol` naming a MoltBrowser function at link
+  time means one was missed: add the export macro of the library that
+  defines it.
+
+Still worth knowing from earlier rounds:
+
+- degoogle-kit: `//chrome/browser/molt_ai/privacy:feature_overrides` and its
+  `:unit_tests` depend on `//chrome/browser/dictation:features`,
+  `//chrome/common:chrome_features`, `//components/history_embeddings/core`,
+  `//components/optimization_guide/core:prediction`,
+  `//components/optimization_guide/proto:optimization_guide_proto`,
+  `//components/optimization_guide/core:features`,
+  `//components/safe_browsing/core/common:features` and `//media`, for the
+  features they turn off. If the standalone `molt_ai_unittests` link grows
+  too much, move those entries into a second overrides source set that only
+  `//chrome/browser` links. `//chrome/browser/molt_ai/privacy:component_policy`
+  (`//base` only) is a dep of `//chrome/browser/component_updater:impl`: a
+  cycle there would mean it picked up a dep it must not have.
+  `molt_ai_unittests` gains
+  `//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests` where
+  `use_on_device_model_service` is set, which links
+  `//components/optimization_guide/core:manifest_broker`.
+- The `:autofill` target of `//chrome/browser/molt_ai/tor` depends on
+  `//components/autofill/core/browser` and `//third_party/libaddressinput`;
+  the tor `DEPS` file allows `molt_net_autofill.cc` its two libaddressinput
+  headers.
+- Windows only: `molt_net_parental_controls.cc` includes
+  `chrome/browser/win/parental_controls.h` (`//chrome/browser/win`, a
+  Windows dep of `//chrome/browser/molt_ai/tor`).
+- `public/web/web_molt_fingerprinting.h` forward-declares `base::File`;
+  `//chrome/common/molt_ai/fingerprinting`'s mojom has
+  `//mojo/public/mojom/base` as a public dep (`ReadOnlyFile`).
 
 ### 4.10 MoltNet's Incognito protections (`molt_net_incognito_parity.h`)
 
