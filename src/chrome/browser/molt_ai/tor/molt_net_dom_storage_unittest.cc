@@ -19,6 +19,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "base/uuid.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
@@ -28,6 +29,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_area.mojom.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai::tor {
 namespace {
@@ -185,6 +188,31 @@ TEST_F(MoltNetDomStorageTest, ARefusedWriteChangesNothing) {
   const std::vector<blink::mojom::KeyValuePtr> data = all.Take();
   ASSERT_EQ(data.size(), 1u);
   EXPECT_EQ(data[0]->value.size(), 6 * kMiB);
+}
+
+// A credentialless iframe's areas (a storage key with a nonce, whose
+// top-level site is its own origin's site wherever it is embedded) count
+// with its nonce: not with its site's own pages, nor with the same site's
+// credentialless frames under another page's nonce.
+TEST_F(MoltNetDomStorageTest, CredentiallessFramesCountWithTheirNonce) {
+  storage_->MoltKeepCachesPerSite();
+  constexpr size_t kMiB = 1024 * 1024;
+  const url::Origin tracker = url::Origin::Create(GURL("https://t.test"));
+  const base::UnguessableToken page_a = base::UnguessableToken::Create();
+  const base::UnguessableToken page_b = base::UnguessableToken::Create();
+  ASSERT_TRUE(Write(Key("https://t.test"), 10 * kMiB));
+  // The site's own total is full; its frames under page A's nonce have
+  // theirs.
+  EXPECT_TRUE(Write(blink::StorageKey::CreateWithNonce(tracker, page_a),
+                    6 * kMiB));
+  EXPECT_FALSE(Write(Key("https://x.t.test"), kMiB));
+  // Under page B's nonce, a total of its own again.
+  EXPECT_TRUE(Write(blink::StorageKey::CreateWithNonce(tracker, page_b),
+                    10 * kMiB));
+  // Two origins under one page's nonce share it.
+  EXPECT_FALSE(Write(blink::StorageKey::CreateWithNonce(
+                         url::Origin::Create(GURL("https://x.t.test")), page_a),
+                     5 * kMiB));
 }
 
 // Chromium 156: every subdomain has its own 10 MiB.

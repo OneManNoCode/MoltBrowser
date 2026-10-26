@@ -144,6 +144,59 @@ TEST_F(MoltNetHttpCacheTest, AFullTotalEvictsNobody) {
   }
 }
 
+// Entries a site holds open (a request's, from before it is sent until its
+// response is stored) with long keys take neither it past its share nor
+// the cache past its total: another site's writes are still stored.
+TEST_F(MoltNetHttpCacheTest, KeysOfEntriesHeldOpenCountAgainstTheSite) {
+  UseBudget(disk_cache::MoltNetHttpCacheBudget());
+  const std::string long_path = "/?" + std::string(1024 * 1024, 'k');
+  std::vector<disk_cache::Entry*> held;
+  int made = 0;
+  for (int i = 0; i < 200; ++i) {
+    disk_cache::EntryResult result = backend_->CreateEntry(
+        Key("https://greedy.test", long_path + std::to_string(i)),
+        net::HIGHEST, disk_cache::EntryResultCallback());
+    if (result.net_error() == net::OK) {
+      held.push_back(result.ReleaseEntry());
+      ++made;
+    } else {
+      EXPECT_EQ(result.net_error(), net::ERR_INSUFFICIENT_RESOURCES);
+    }
+  }
+  EXPECT_GT(made, 0);
+  EXPECT_LT(made, 11);
+  EXPECT_LE(backend_->MoltSiteSizeForTesting("https://greedy.test"),
+            disk_cache::kMoltHttpCachePerSiteBytes);
+  EXPECT_EQ(Write(Key("https://polite.test", "/x"), 1024 * 1024),
+            1024 * 1024);
+  for (disk_cache::Entry* entry : held) {
+    entry->Close();
+  }
+}
+
+// A site's new entry makes room from its own unused entries, as a write
+// does.
+TEST_F(MoltNetHttpCacheTest, ANewEntryMakesRoomFromItsSitesOwnEntries) {
+  UseBudget(disk_cache::MoltNetHttpCacheBudget());
+  const int kChunk = 1024 * 1024 - 256;
+  for (int i = 0; i < 10; ++i) {
+    clock_.Advance(base::Seconds(1));
+    ASSERT_EQ(Write(Key("https://a.test", "/" + std::to_string(i)), kChunk),
+              kChunk);
+  }
+  ASSERT_EQ(Write(Key("https://b.test", "/0"), kChunk), kChunk);
+  const std::string long_path = "/?" + std::string(2 * 1024 * 1024, 'k');
+  disk_cache::EntryResult result = backend_->CreateEntry(
+      Key("https://a.test", long_path), net::HIGHEST,
+      disk_cache::EntryResultCallback());
+  ASSERT_EQ(result.net_error(), net::OK);
+  result.ReleaseEntry()->Close();
+  EXPECT_FALSE(Has(Key("https://a.test", "/0")));
+  EXPECT_TRUE(Has(Key("https://b.test", "/0")));
+  EXPECT_LE(backend_->MoltSiteSizeForTesting("https://a.test"),
+            disk_cache::kMoltHttpCachePerSiteBytes);
+}
+
 // An entry unused for the idle expiry goes, on its next use and in the
 // sweep; one used meanwhile stays.
 TEST_F(MoltNetHttpCacheTest, UnusedEntriesExpire) {

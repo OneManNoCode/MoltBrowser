@@ -209,6 +209,18 @@ void MemBackendImpl::MoltEvictSiteTill(std::string_view site, int64_t target) {
   }
 }
 
+bool MemBackendImpl::MoltMayCreateEntry(const std::string& key) {
+  const std::string_view site = MoltHttpCacheSiteOfKey(key);
+  const int64_t key_bytes = static_cast<int64_t>(key.size());
+  if (MoltCacheSiteMakesRoomForEntry(MoltSiteSize(site), key_bytes,
+                                     molt_budget_)) {
+    MoltEvictSiteTill(site,
+                      MoltCacheSiteEntryEvictionTarget(key_bytes, molt_budget_));
+  }
+  return !MoltCacheEntryRefused(MoltSiteSize(site), current_size_, key_bytes,
+                                molt_budget_);
+}
+
 bool MemBackendImpl::MoltIsExpired(const MemEntryImpl* entry) const {
   const base::Time now = custom_clock_for_testing_
                              ? custom_clock_for_testing_->Now()
@@ -310,6 +322,12 @@ EntryResult MemBackendImpl::OpenEntry(const std::string& key,
 EntryResult MemBackendImpl::CreateEntry(const std::string& key,
                                         net::RequestPriority request_priority,
                                         EntryResultCallback callback) {
+  // MoltBrowser: with per-site limits, a new entry's key counts like its
+  // data: none its site's own entries can't make room for, or past the
+  // total (molt_mem_backend_budget_policy.h).
+  if (MoltHasBudget() && !MoltMayCreateEntry(key)) {
+    return EntryResult::MakeError(net::ERR_INSUFFICIENT_RESOURCES);
+  }
   std::pair<EntryMap::iterator, bool> create_result =
       entries_.insert(EntryMap::value_type(key, nullptr));
   const bool did_insert = create_result.second;

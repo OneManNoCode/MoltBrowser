@@ -10,7 +10,8 @@
 // it, holds no space, and is empty unless the key has the double-key form;
 // a key built the way net::HttpCache::GenerateCacheKey() builds one, with
 // any URL, frame site and prefixes, gives back its top-level site; and the
-// budget's decisions agree with each other for any sizes.
+// budget's decisions agree with each other for any sizes, a new
+// entry's key included.
 
 #include <cstddef>
 #include <cstdint>
@@ -94,6 +95,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(site_size <= budget.per_site_bytes);
     CHECK(total_size <= budget.total_bytes);
   }
+  // A new entry's key (an URL is at most 2 MiB): made only if its site and
+  // the cache stay within their limits with it; the room made for it
+  // leaves the key's size below the share.
+  const int64_t key_bytes =
+      p.ConsumeIntegralInRange<int64_t>(0, 2 * 1024 * 1024 + 1024);
+  if (!MoltCacheEntryRefused(site_size, total_size, key_bytes, budget)) {
+    CHECK(site_size + key_bytes <= budget.per_site_bytes);
+    CHECK(total_size + key_bytes <= budget.total_bytes);
+  }
+  CHECK(MoltCacheSiteMakesRoomForEntry(site_size, key_bytes, budget) ==
+        MoltCacheSiteOverShare(site_size + key_bytes, budget));
+  CHECK(MoltCacheSiteEntryEvictionTarget(key_bytes, budget) + key_bytes <=
+        budget.per_site_bytes);
   const int64_t idle = p.ConsumeIntegral<int64_t>();
   CHECK(MoltCacheEntryExpired(idle, budget) ==
         (idle >= budget.idle_expiry_seconds));
