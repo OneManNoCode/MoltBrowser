@@ -52,8 +52,8 @@ against stand-ins with 156's shapes, with a mutant set each test catches,
 unit tests on Chromium's real download request and network context, and
 the compile check against Chromium 156's headers.
 
-**Findings.** 10: 1 medium, 1 low, 8 informational. Fixed: the medium and
-the low.
+**Findings.** 10: 1 medium, 2 low, 7 informational. Fixed: the medium and
+both low.
 
 **Fixed.**
 
@@ -68,6 +68,10 @@ the low.
   and host resolvers, which some browser pages and services ask for, used
   the context's own host resolver outside Tor; they are now refused, so
   only Tor resolves names for MoltNet.
+- MoltNet's Background Fetch scheduler looks at the registrations waiting
+  to become active only when one is made or one finishes, not on every
+  request's start and end, so a site keeping many waiting doesn't add to
+  the work every site's requests cause in the browser.
 
 ## 2026-10-26: PRs #70 and #71 (October 2026)
 

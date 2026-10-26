@@ -329,7 +329,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page's origin, network key and credentials setting, as its first
   request had them, instead of going out as a request the browser makes
   itself (first-party at its destination). MoltNet's network context
-  looks up no host name itself; only Tor resolves names for MoltNet.
+  looks up no host name itself; only Tor resolves names for MoltNet. A
+  site with many Background Fetches waiting no longer adds to the work
+  other sites' fetches cause in MoltNet.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
