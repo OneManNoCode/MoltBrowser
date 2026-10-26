@@ -43,6 +43,9 @@ source_set("logic") {
     # JsonQuote() for the texts of a page-translation batch (std-only).
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//chrome/services/molt_ai/inference/engine:image_input",
+
+    # MOLT_RAW_PTR_EXCLUSION in web_ai_translation.h (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
   ]
 }
 

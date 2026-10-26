@@ -15,6 +15,12 @@ source_set("stream_filters") {
   ]
 }
 
+# MOLT_RAW_PTR_EXCLUSION, for std-only code that holds a pointer field
+# without //base's raw_ptr (header-only).
+source_set("raw_ptr_exclusion") {
+  sources = [ "raw_ptr_exclusion.h" ]
+}
+
 # Everything the engine (//chrome/services/molt_ai/inference) uses.
 source_set("inference_utils") {
   sources = [
