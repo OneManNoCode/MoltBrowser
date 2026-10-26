@@ -323,6 +323,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and MoltNet's network context makes no sockets with a connection setup
   of their own, outside its per-site pools and Tor circuit isolation, and
   no raw TCP, UDP or multicast DNS sockets (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening (security review of PR #72 and round 28,
+  `docs/SECURITY_REVIEWS.md`): in every profile, a Background Fetch
+  request that is resumed after its response stopped early keeps the
+  page's origin, network key and credentials setting, as its first
+  request had them, instead of going out as a request the browser makes
+  itself (first-party at its destination). MoltNet's network context
+  looks up no host name itself; only Tor resolves names for MoltNet.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

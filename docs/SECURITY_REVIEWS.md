@@ -4,6 +4,71 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-26: PR #72 and round 28 (October 2026)
+
+**Scope.** The code merged in pull request #72 (round 27) and round 28's
+MoltNet changes, in this order of priority:
+
+1. Background Fetch scheduled per site in MoltNet: the scheduler's
+   containers while it activates and starts requests, the controllers'
+   lifetime when a registration is aborted, a job finishes or its service
+   worker goes away, starvation and whether one site can keep another's
+   fetches from starting, the in-memory download service's limits, and
+   regular profiles staying as Chromium has them.
+2. DOM storage in MoltNet: the mode without a database, the write
+   allowance, the storage service's sequence taken in turn per site
+   (reentrancy, tasks of an area or site that is gone, the order callers
+   rely on, a task that never runs), the per-item and per-area overhead
+   in the totals, the groups of storage keys (nonces, opaque top-level
+   sites), and the restore of a refused write's old value, which runs in
+   every profile.
+3. The in-memory HTTP cache's list per site: the second link in every
+   entry on each doom, eviction and destruction path, the walks during
+   eviction and the idle sweep, the check on a new entry's key, and sparse
+   data's child entries.
+4. The quota system's usage counted per site: after deletions, eviction
+   and the end of an identity, and what a quota answer reads.
+5. MoltNet's network context and sockets outside its own session: the
+   socket factory with a session of its own, the WebRTC socket manager,
+   raw sockets and multicast DNS, and the rest of the network context's
+   interface at Chromium 156 (name lookups and host resolvers,
+   WebTransport, proxy lookups, preconnects), with the browser features
+   that ask for them.
+6. What a Background Fetch request carries in every profile (initiator,
+   network isolation, credentials, `Sec-Fetch-*`, `Origin` and `Referer`,
+   SameSite and third-party cookie decisions, CORS, Local Network
+   Access), on each path: the download service of regular profiles, the
+   in-memory one of private profiles, registrations restored at startup,
+   requests resumed or retried, and MoltNet's one-off key for a retried
+   download.
+
+**Method.** Each candidate traced from its attacker (web page, third-party
+frame, a site and a server working together, a group of sites, local
+user) through MoltBrowser's code and the upstream Chromium 156 code at the
+pinned revision, through to the network service's request, header and
+cookie decisions; fixes tested with a standalone harness (system gtest,
+g++ ASan/UBSan, clang `-fno-exceptions`) that compiles the new header
+against stand-ins with 156's shapes, with a mutant set each test catches,
+unit tests on Chromium's real download request and network context, and
+the compile check against Chromium 156's headers.
+
+**Findings.** 10: 1 medium, 1 low, 8 informational. Fixed: the medium and
+the low.
+
+**Fixed.**
+
+- Background Fetch, every profile: a request whose response stops early
+  and is resumed carries its first request's initiator, network isolation
+  and credentials mode, and keeps its first party on redirects. In a
+  regular profile the download item that resumes it used none of them,
+  so the resumed request was made as one the browser starts itself:
+  first-party at its destination, with credentials whatever the fetch
+  asked for. Other downloads resume as before.
+- MoltNet: the network context looks up no name itself. Its name lookups
+  and host resolvers, which some browser pages and services ask for, used
+  the context's own host resolver outside Tor; they are now refused, so
+  only Tor resolves names for MoltNet.
+
 ## 2026-10-26: PRs #70 and #71 (October 2026)
 
 **Scope.** The code merged in pull requests #70 and #71 (rounds 25 and
