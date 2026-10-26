@@ -82,7 +82,7 @@ what to send back.
 1. **Static checks, before the sync** (any Linux machine, no checkout,
    minutes). They read 156's own build files with the overlay on top:
    ```bash
-   python3 tools/chromium/gn_static_check.py fetch      # once per pin: streams 156's tarball, keeps ~165 MB
+   python3 tools/chromium/gn_static_check.py fetch      # once per pin: streams 156's tarball (5 min), keeps ~190 MB
    python3 tools/chromium/gn_static_check.py check --warnings 2>&1 | tee ~/molt-v0.3.0/static-gn-check.log
    python3 tools/chromium/gn_static_check.py checkdeps     2>&1 | tee ~/molt-v0.3.0/static-checkdeps.log
    python3 tools/chromium/gn_static_check.py blink-audit   2>&1 | tee ~/molt-v0.3.0/static-blink-audit.log
