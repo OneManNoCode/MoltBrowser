@@ -14,6 +14,8 @@
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"  // MoltBrowser
+#include "base/task/sequenced_task_runner.h"  // MoltBrowser
 #include "base/time/time.h"
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/db_status.h"
@@ -82,6 +84,11 @@ class StorageAreaImpl : public blink::mojom::StorageArea,
     // taken from it if so. A write it refuses fails as one past the area's
     // own limit does.
     virtual bool MoltMayWrite(size_t bytes);
+    // The task runner the area's pipes (its receivers and its observers'
+    // remotes) are bound to: null for the storage sequence's own, or, where
+    // the partition takes the sequence in turn per site, the area's site's
+    // (molt_dom_storage_fair_scheduler.h).
+    virtual scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner();
   };
 
   enum class CacheMode {

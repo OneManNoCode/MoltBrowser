@@ -31,6 +31,10 @@ bool SessionStorageDataMap::Listener::MoltMayWrite(const blink::StorageKey&,
                                                    size_t) {
   return true;
 }
+scoped_refptr<base::SequencedTaskRunner>
+SessionStorageDataMap::Listener::MoltTaskRunner(const blink::StorageKey&) {
+  return nullptr;
+}
 
 // MoltBrowser: the map's budget is its listener's.
 bool SessionStorageDataMap::MoltMayGrowTo(size_t new_storage_used) {
@@ -50,6 +54,10 @@ void SessionStorageDataMap::MoltSiteCommitted(size_t bytes) {
 }
 bool SessionStorageDataMap::MoltMayWrite(size_t bytes) {
   return listener_->MoltMayWrite(map_locator_->storage_key(), bytes);
+}
+scoped_refptr<base::SequencedTaskRunner>
+SessionStorageDataMap::MoltTaskRunner() {
+  return listener_->MoltTaskRunner(map_locator_->storage_key());
 }
 namespace {
 

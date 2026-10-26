@@ -856,6 +856,10 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
 // MoltBrowser:
 void SessionStorageImpl::MoltKeepCachesPerSite() {
   molt_caches_per_site_ = true;
+  if (!molt_scheduler_) {
+    molt_scheduler_ = base::MakeRefCounted<MoltDomStorageFairScheduler>(
+        base::SequencedTaskRunner::GetCurrentDefault());
+  }
 }
 
 // MoltBrowser:
@@ -906,6 +910,13 @@ bool SessionStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
                                       size_t bytes) {
   return !molt_caches_per_site_ ||
          molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
+}
+
+scoped_refptr<base::SequencedTaskRunner> SessionStorageImpl::MoltTaskRunner(
+    const blink::StorageKey& storage_key) {
+  return molt_scheduler_
+             ? molt_scheduler_->RunnerFor(MoltDomStorageSiteOf(storage_key))
+             : nullptr;
 }
 
 void SessionStorageImpl::MoltForgetMaps(

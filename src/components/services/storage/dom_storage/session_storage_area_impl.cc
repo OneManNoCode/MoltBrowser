@@ -36,7 +36,9 @@ void SessionStorageAreaImpl::Bind(
     mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
   if (!IsBound())
     shared_data_map_->AddBindingReference();
-  receivers_.Add(this, std::move(receiver));
+  // MoltBrowser: on the site's runner, where the partition has one
+  // (molt_dom_storage_fair_scheduler.h).
+  receivers_.Add(this, std::move(receiver), shared_data_map_->MoltTaskRunner());
 }
 
 bool SessionStorageAreaImpl::IsBound() const {
@@ -66,7 +68,8 @@ void SessionStorageAreaImpl::NotifyObserversAllDeleted() {
 // blink::mojom::StorageArea:
 void SessionStorageAreaImpl::AddObserver(
     mojo::PendingRemote<blink::mojom::StorageAreaObserver> observer) {
-  observers_.Add(std::move(observer));
+  // MoltBrowser: on the site's runner, where the partition has one.
+  observers_.Add(std::move(observer), shared_data_map_->MoltTaskRunner());
 }
 
 void SessionStorageAreaImpl::Put(

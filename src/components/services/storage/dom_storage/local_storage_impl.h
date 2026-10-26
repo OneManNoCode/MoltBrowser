@@ -20,6 +20,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/sequence_bound.h"
 #include "base/timer/timer.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_provider.h"
@@ -170,6 +171,10 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   base::TimeDelta MoltSiteCommitDelay(const blink::StorageKey& storage_key);
   void MoltSiteCommitted(const blink::StorageKey& storage_key, size_t bytes);
   bool MoltMayWrite(const blink::StorageKey& storage_key, size_t bytes);
+  // MoltBrowser: the task runner of `storage_key`'s site, with caches per
+  // site (molt_dom_storage_fair_scheduler.h); else null.
+  scoped_refptr<base::SequencedTaskRunner> MoltTaskRunnerFor(
+      const blink::StorageKey& storage_key);
 
   // These clear stale storage areas (not read/written to within 400 days) from
   // the database. See crbug.com/40281870 for more info.
@@ -241,6 +246,9 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // MoltBrowser: what each site's areas hold, its commit rate and its write
   // rate.
   MoltDomStorageSiteBudget molt_site_budget_;
+  // MoltBrowser: with caches per site, the storage sequence taken in turn
+  // per site by the areas' pipes.
+  scoped_refptr<MoltDomStorageFairScheduler> molt_scheduler_;
 
   base::WeakPtrFactory<LocalStorageImpl> weak_ptr_factory_{this};
 };

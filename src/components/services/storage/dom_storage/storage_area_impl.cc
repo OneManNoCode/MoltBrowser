@@ -38,6 +38,10 @@ void StorageAreaImpl::Delegate::MoltSiteCommitted(size_t) {}
 bool StorageAreaImpl::Delegate::MoltMayWrite(size_t) {
   return true;
 }
+scoped_refptr<base::SequencedTaskRunner>
+StorageAreaImpl::Delegate::MoltTaskRunner() {
+  return nullptr;
+}
 
 bool StorageAreaImpl::s_aggressive_flushing_enabled_ = false;
 
@@ -130,7 +134,8 @@ void StorageAreaImpl::InitializeAsEmpty() {
 
 void StorageAreaImpl::Bind(
     mojo::PendingReceiver<blink::mojom::StorageArea> receiver) {
-  receivers_.Add(this, std::move(receiver));
+  // MoltBrowser: on the site's runner, where the partition has one.
+  receivers_.Add(this, std::move(receiver), delegate_->MoltTaskRunner());
   // If the number of bindings is more than 1, then the |client_old_value| sent
   // by the clients need not be valid due to races on updates from multiple
   // clients. So, cache the values in the service. Setting cache mode back to
@@ -259,8 +264,9 @@ void StorageAreaImpl::SetLoadingStartedCallbackForTesting(
 
 void StorageAreaImpl::AddObserver(
     mojo::PendingRemote<blink::mojom::StorageAreaObserver> observer) {
+  // MoltBrowser: on the site's runner, where the partition has one.
   mojo::Remote<blink::mojom::StorageAreaObserver> observer_remote(
-      std::move(observer));
+      std::move(observer), delegate_->MoltTaskRunner());
   if (cache_mode_ == CacheMode::KEYS_AND_VALUES)
     observer_remote->ShouldSendOldValueOnMutations(false);
   observers_.Add(std::move(observer_remote));
