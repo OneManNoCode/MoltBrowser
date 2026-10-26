@@ -193,6 +193,7 @@ components/download/internal/background_service/in_memory_download.cc.patch
 components/download/internal/background_service/in_memory_download.h.patch
 components/download/internal/background_service/in_memory_download_unittest.cc.patch
 components/download/internal/common/BUILD.gn.patch
+components/download/internal/common/download_item_impl.cc.patch
 components/download/internal/common/download_utils.cc.patch
 components/embedder_support/origin_trials/origin_trial_policy_impl.cc.patch
 components/embedder_support/user_agent_utils.cc.patch

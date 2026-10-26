@@ -1,0 +1,33 @@
+MoltBrowser patch for components/download/internal/common/download_item_impl.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/download/internal/common/download_item_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/common/download_item_impl.cc b/components/download/internal/common/download_item_impl.cc
+index 48b41ef91ab2c3c70a0b0bccb12dd6a7319f5416..b6b7d64549f14674a902b8be5dc94ed89bdbf72a 100644
+--- a/components/download/internal/common/download_item_impl.cc
++++ b/components/download/internal/common/download_item_impl.cc
+@@ -48,6 +48,7 @@
+ #include "base/uuid.h"
+ #include "build/build_config.h"
+ #include "components/download/internal/common/download_job_impl.h"
++#include "components/download/internal/common/molt_resumed_fetch.h"  // MoltBrowser
+ #include "components/download/internal/common/parallel_download_utils.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/download/public/common/download_features.h"
+@@ -2727,6 +2728,14 @@ void DownloadItemImpl::ResumeInterruptedDownload(
+   download_params->set_cross_origin_redirects(
+       network::mojom::RedirectMode::kError);
+ 
++  // MoltBrowser: a page's fetch made by the download service (Background
++  // Fetch) is resumed with its first request's initiator, isolation and
++  // credentials mode (molt_resumed_fetch.h).
++  MoltKeepResumedFetchMetadata(
++      download_source_ == DownloadSource::INTERNAL_API,
++      request_info_.request_initiator, request_info_.isolation_info,
++      request_info_.credentials_mode, *download_params);
++
+   TransitionTo(RESUMING_INTERNAL);
+   RecordDownloadCountWithSource(source == ResumptionRequestSource::USER
+                                     ? MANUAL_RESUMPTION_COUNT
