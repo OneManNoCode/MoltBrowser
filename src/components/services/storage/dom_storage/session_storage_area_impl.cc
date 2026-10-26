@@ -141,6 +141,9 @@ void SessionStorageAreaImpl::OnConnectionError() {
   if (IsBound())
     return;
   shared_data_map_->RemoveBindingReference();
+  // MoltBrowser: kept per site without a database, an area left unbound that
+  // holds nothing goes (molt_dom_storage_site_policy.h).
+  shared_data_map_->listener()->MoltAreaUnbound(namespace_id_, storage_key_);
 }
 
 void SessionStorageAreaImpl::OnGetAllResult(

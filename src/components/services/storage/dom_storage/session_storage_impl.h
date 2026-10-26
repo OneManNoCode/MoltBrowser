@@ -166,6 +166,12 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   // site (molt_dom_storage_fair_scheduler.h); else null.
   scoped_refptr<base::SequencedTaskRunner> MoltTaskRunner(
       const blink::StorageKey& storage_key) override;
+  // MoltBrowser: kept per site without a database, an area left unbound
+  // goes in its site's turn if it holds nothing.
+  void MoltAreaUnbound(const std::string& namespace_id,
+                       const blink::StorageKey& storage_key) override;
+  void MoltDropAreaIfUnused(const std::string& namespace_id,
+                            const blink::StorageKey& storage_key);
 
   // SessionStorageNamespaceImpl::Delegate implementation:
   scoped_refptr<base::SequencedTaskRunner> MoltNamespaceTaskRunner(

@@ -171,6 +171,9 @@ class SessionStorageNamespaceImpl final
   // without a database only areas whose maps hold no item
   // (molt_dom_storage_site_policy.h).
   void MoltPurgeUnboundAreasOfSite(const std::string& site);
+  // MoltBrowser: drops `storage_key`'s area if it is unbound and its map
+  // holds no item (molt_dom_storage_site_policy.h).
+  void MoltDropAreaIfUnused(const blink::StorageKey& storage_key);
 
   // Removes data for the given StorageKey from this namespace. If there is no
   // data map for that given StorageKey, this does nothing. Expects that this

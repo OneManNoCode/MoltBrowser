@@ -152,6 +152,19 @@ constexpr bool MoltDomStorageMayDropArea(bool has_database, bool holds_items) {
   return has_database || !holds_items;
 }
 
+// Whether an area is dropped as soon as it is left unused (no page has it
+// open), if it holds nothing: kept per site without a database. Such an area
+// holds nothing another opening of it wouldn't, so the cache holds exactly
+// the areas in use and those holding items: there is nothing to purge when
+// an area is opened and nothing to sweep, either of which would look at
+// every site's areas (what they cost would depend on the other sites), and
+// whether an area was purged says nothing about other sites. The drop is a
+// task in the area's site's turn.
+constexpr bool MoltDomStorageDropsUnusedArea(bool caches_per_site,
+                                             bool has_database) {
+  return caches_per_site && !has_database;
+}
+
 // ---- The group an area counts to ----
 
 enum class MoltDomStorageGroupKind {

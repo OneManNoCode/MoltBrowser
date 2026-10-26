@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
@@ -34,10 +35,12 @@
 #include "components/services/storage/dom_storage/db_status.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_own_thread.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
 #include "components/services/storage/dom_storage/session_storage_namespace_impl.h"
 #include "components/services/storage/dom_storage/storage_area_impl.h"
+#include "components/services/storage/public/mojom/local_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -95,6 +98,13 @@ class MoltNetDomStorageTest : public testing::Test {
   void TearDown() override {
     storage_.reset();
     task_environment_.RunUntilIdle();
+  }
+
+  // A partition on disk instead, which keeps a database also per site.
+  void UseDiskPartition() {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    storage_ = std::make_unique<storage::LocalStorageImpl>(
+        temp_dir_.GetPath(), base::NullCallback(), mojo::NullReceiver());
   }
 
   // Opens `key`'s area and leaves it unused, holding nothing.
@@ -168,6 +178,7 @@ class MoltNetDomStorageTest : public testing::Test {
 
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  base::ScopedTempDir temp_dir_;
   std::unique_ptr<storage::LocalStorageImpl> storage_;
 };
 
@@ -184,11 +195,12 @@ TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteOneSitePurgesOthers) {
 }
 
 // With caches per site, however many areas another site opens, a site's
-// unused area stays cached.
+// unused area stays cached (one holding nothing goes as it is left, whatever
+// other sites do: WithoutADatabaseAnUnusedEmptyAreaGoesAtOnce).
 TEST_F(MoltNetDomStorageTest, OtherSitesNeverPurgeASitesAreas) {
   storage_->MoltKeepCachesPerSite();
   const blink::StorageKey polite = Key("https://polite.test");
-  OpenAndLeave(polite);
+  ASSERT_TRUE(Write(polite, 10));
   for (int i = 0; i < 100; ++i) {
     OpenAndLeave(Key(base::StringPrintf("https://s%d.greedy.test", i)));
     OpenAndLeave(Key(base::StringPrintf("https://site%d.test", i)));
@@ -199,8 +211,10 @@ TEST_F(MoltNetDomStorageTest, OtherSitesNeverPurgeASitesAreas) {
   EXPECT_TRUE(Cached(polite));
 }
 
-// A site past its own limits purges its own unused areas, and only those.
+// With a database (on disk), a site past its own limits purges its own
+// unused areas, and only those.
 TEST_F(MoltNetDomStorageTest, ASitePurgesItsOwn) {
+  UseDiskPartition();
   storage_->MoltKeepCachesPerSite();
   const blink::StorageKey other = Key("https://other.test");
   OpenAndLeave(other);
@@ -216,9 +230,10 @@ TEST_F(MoltNetDomStorageTest, ASitePurgesItsOwn) {
   EXPECT_TRUE(Cached(other));
 }
 
-// An unused area that holds nothing leaves the cache after 30 minutes
-// unused, whatever other sites do; one a page has open never does.
+// With a database (on disk), an unused area leaves the cache after 30
+// minutes unused, whatever other sites do; one a page has open never does.
 TEST_F(MoltNetDomStorageTest, IdleAreasExpire) {
+  UseDiskPartition();
   storage_->MoltKeepCachesPerSite();
   const blink::StorageKey idle = Key("https://idle.test");
   const blink::StorageKey open = Key("https://open.test");
@@ -275,6 +290,151 @@ TEST_F(MoltNetDomStorageTest, WithoutADatabaseAreasHoldingItemsStay) {
   for (const storage::mojom::StorageUsageInfoPtr& info : infos) {
     EXPECT_EQ(info->total_size_bytes, info->storage_key == kept ? 11 : 0);
   }
+}
+
+// Without a database (MoltNet's partition), an area left unused that holds
+// nothing goes at once, in its site's turn: no purge when another area
+// opens, no sweep. One a page has open, or one holding an item, stays; one
+// holding items goes once they are deleted and it is unused.
+TEST_F(MoltNetDomStorageTest, WithoutADatabaseAnUnusedEmptyAreaGoesAtOnce) {
+  storage_->MoltKeepCachesPerSite();
+  const blink::StorageKey left = Key("https://left.test");
+  OpenAndLeave(left);
+  EXPECT_FALSE(Cached(left));
+  const blink::StorageKey open = Key("https://open.test");
+  mojo::Remote<blink::mojom::StorageArea> kept_open;
+  storage_->BindStorageArea(open, kept_open.BindNewPipeAndPassReceiver());
+  kept_open.FlushForTesting();
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(Cached(open));
+  const blink::StorageKey cleared = Key("https://cleared.test");
+  {
+    mojo::Remote<blink::mojom::StorageArea> area;
+    storage_->BindStorageArea(cleared, area.BindNewPipeAndPassReceiver());
+    ASSERT_TRUE(Put(area.get(), 'k', 10));
+    base::test::TestFuture<void> done;
+    area->DeleteAll(/*source=*/nullptr, mojo::NullRemote(),
+                    done.GetCallback());
+    ASSERT_TRUE(done.Wait());
+  }
+  task_environment_.RunUntilIdle();
+  EXPECT_FALSE(Cached(cleared));
+  const blink::StorageKey held = Key("https://held.test");
+  ASSERT_TRUE(Write(held, 10));
+  task_environment_.FastForwardBy(base::Hours(3));
+  EXPECT_TRUE(Cached(held));
+  base::test::TestFuture<void> deleted;
+  storage_->DeleteStorage(held, deleted.GetCallback());
+  ASSERT_TRUE(deleted.Wait());
+  task_environment_.RunUntilIdle();
+  EXPECT_FALSE(Cached(held));
+}
+
+// The same for sessionStorage: an area left unbound that holds nothing goes
+// from its namespace at once; one holding an item stays.
+TEST_F(MoltNetDomStorageTest, SessionStorageWithoutADatabaseDropsEmptyAreas) {
+  storage::SessionStorageImpl session(
+      base::FilePath(), storage::SessionStorageImpl::BackingMode::kNoDisk,
+      base::DoNothing(), mojo::NullReceiver());
+  session.MoltKeepCachesPerSite();
+  const std::string ns = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session.CreateNamespace(ns);
+  const blink::StorageKey empty = Key("https://empty.test");
+  const blink::StorageKey held = Key("https://held.test");
+  {
+    mojo::Remote<blink::mojom::StorageArea> a, b;
+    session.BindStorageArea(empty, ns, a.BindNewPipeAndPassReceiver());
+    session.BindStorageArea(held, ns, b.BindNewPipeAndPassReceiver());
+    a.FlushForTesting();
+    ASSERT_TRUE(Put(b.get(), 'k', 10));
+  }
+  task_environment_.RunUntilIdle();
+  storage::SessionStorageNamespaceImpl* namespace_impl =
+      session.GetNamespaceForTesting(ns);
+  ASSERT_TRUE(namespace_impl);
+  EXPECT_FALSE(namespace_impl->HasAreaForStorageKeyForTesting(empty));
+  EXPECT_TRUE(namespace_impl->HasAreaForStorageKeyForTesting(held));
+}
+
+// A partition kept per site on a thread of its own
+// (molt_dom_storage_own_thread.h): its control pipe takes a turn of its own,
+// and each BindStorageArea() it carries is handled in its site's turn. A
+// page making the browser bind areas in a loop (here 1000 subdomains of
+// one site) takes its own site's turns: another site's read, sent after
+// them, waits for a few of them, not for all.
+TEST_F(MoltNetDomStorageTest, BindingAreasInALoopDoesntDelayAnotherSite) {
+  mojo::Remote<storage::mojom::LocalStorageControl> control;
+  storage::MoltPerSiteLocalStorage host(control.BindNewPipeAndPassReceiver(),
+                                        base::DoNothing());
+  const blink::StorageKey polite = Key("https://polite.test");
+  mojo::Remote<blink::mojom::StorageArea> polite_area;
+  control->BindStorageArea(polite, polite_area.BindNewPipeAndPassReceiver());
+  ASSERT_TRUE(Put(polite_area.get(), 'k', 10));
+  std::vector<mojo::Remote<blink::mojom::StorageArea>> greedy(1000);
+  for (size_t i = 0; i < greedy.size(); ++i) {
+    control->BindStorageArea(
+        Key(base::StringPrintf("https://s%zu.greedy.test", i)),
+        greedy[i].BindNewPipeAndPassReceiver());
+  }
+  size_t bound_at_read = 0;
+  base::RunLoop loop;
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindLambdaForTesting([&] {
+        polite_area->GetAll(
+            mojo::NullRemote(),
+            base::BindLambdaForTesting(
+                [&](std::vector<blink::mojom::KeyValuePtr> all) {
+                  EXPECT_EQ(all.size(), 1u);
+                  for (size_t i = 0; i < greedy.size(); ++i) {
+                    if (host.storage_for_testing()->GetStorageAreaForTesting(
+                            Key(base::StringPrintf("https://s%zu.greedy.test",
+                                                   i)))) {
+                      ++bound_at_read;
+                    }
+                  }
+                  loop.Quit();
+                }));
+      }));
+  loop.Run();
+  EXPECT_LT(bound_at_read, 20u);
+  // They are all bound in the end.
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(host.storage_for_testing()->GetStorageAreaForTesting(
+      Key("https://s999.greedy.test")));
+}
+
+// The storage service's per-site partitions: each on a thread of its own,
+// answering through its control pipe as a partition does, and gone with
+// its pipe.
+TEST_F(MoltNetDomStorageTest, PerSitePartitionsRunOnThreadsOfTheirOwn) {
+  storage::MoltDomStorageOwnThreads threads;
+  mojo::Remote<storage::mojom::LocalStorageControl> local;
+  mojo::Remote<storage::mojom::SessionStorageControl> session;
+  threads.BindLocalStorageControl(local.BindNewPipeAndPassReceiver());
+  threads.BindSessionStorageControl(session.BindNewPipeAndPassReceiver());
+  EXPECT_EQ(threads.CountForTesting(), 2u);
+
+  const blink::StorageKey key = Key("https://a.test");
+  mojo::Remote<blink::mojom::StorageArea> area;
+  local->BindStorageArea(key, area.BindNewPipeAndPassReceiver());
+  ASSERT_TRUE(Put(area.get(), 'k', 10));
+  base::test::TestFuture<std::vector<storage::mojom::StorageUsageInfoPtr>>
+      usage;
+  local->GetUsage(usage.GetCallback());
+  EXPECT_EQ(usage.Take().size(), 1u);
+
+  const std::string ns = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session->CreateNamespace(ns);
+  mojo::Remote<blink::mojom::StorageArea> session_area;
+  session->BindStorageArea(key, ns, session_area.BindNewPipeAndPassReceiver());
+  ASSERT_TRUE(Put(session_area.get(), 'k', 10));
+
+  area.reset();
+  session_area.reset();
+  local.reset();
+  session.reset();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(threads.CountForTesting(), 0u);
 }
 
 // Chromium 156: an in-memory partition keeps its areas' items in a database

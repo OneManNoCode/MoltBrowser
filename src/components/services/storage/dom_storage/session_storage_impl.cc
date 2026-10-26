@@ -131,9 +131,13 @@ void SessionStorageImpl::BindStorageArea(
   }
 
   // MoltBrowser: with caches per site, only this site's unbound areas, by
-  // its own limits (molt_dom_storage_site_policy.h).
+  // its own limits (molt_dom_storage_site_policy.h); without a database
+  // there is none to purge (an unbound area that holds nothing is gone
+  // already: MoltAreaUnbound()).
   if (molt_caches_per_site_) {
-    MoltPurgeUnusedAreasOfSite(storage_key);
+    if (database_) {
+      MoltPurgeUnusedAreasOfSite(storage_key);
+    }
   } else {
     PurgeUnusedAreasIfNeeded();
   }
@@ -934,6 +938,30 @@ scoped_refptr<base::SequencedTaskRunner> SessionStorageImpl::MoltTaskRunner(
   return molt_scheduler_
              ? molt_scheduler_->RunnerFor(MoltDomStorageSiteOf(storage_key))
              : nullptr;
+}
+
+// MoltBrowser: see molt_dom_storage_site_policy.h,
+// MoltDomStorageDropsUnusedArea().
+void SessionStorageImpl::MoltAreaUnbound(const std::string& namespace_id,
+                                         const blink::StorageKey& storage_key) {
+  if (!MoltDomStorageDropsUnusedArea(molt_caches_per_site_,
+                                     database_ != nullptr)) {
+    return;
+  }
+  MoltTaskRunner(storage_key)
+      ->PostTask(FROM_HERE,
+                 base::BindOnce(&SessionStorageImpl::MoltDropAreaIfUnused,
+                                weak_ptr_factory_.GetWeakPtr(), namespace_id,
+                                storage_key));
+}
+
+void SessionStorageImpl::MoltDropAreaIfUnused(
+    const std::string& namespace_id,
+    const blink::StorageKey& storage_key) {
+  auto found = namespaces_.find(namespace_id);
+  if (found != namespaces_.end()) {
+    found->second->MoltDropAreaIfUnused(storage_key);
+  }
 }
 
 void SessionStorageImpl::MoltForgetMaps(
