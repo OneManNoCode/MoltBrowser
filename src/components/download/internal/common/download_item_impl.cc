@@ -48,6 +48,7 @@
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "components/download/internal/common/download_job_impl.h"
+#include "components/download/internal/common/molt_resumed_fetch.h"  // MoltBrowser
 #include "components/download/internal/common/parallel_download_utils.h"
 #include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_features.h"
@@ -2726,6 +2727,14 @@ void DownloadItemImpl::ResumeInterruptedDownload(
   download_params->set_referrer_policy(net::ReferrerPolicy::NEVER_CLEAR);
   download_params->set_cross_origin_redirects(
       network::mojom::RedirectMode::kError);
+
+  // MoltBrowser: a page's fetch made by the download service (Background
+  // Fetch) is resumed with its first request's initiator, isolation and
+  // credentials mode (molt_resumed_fetch.h).
+  MoltKeepResumedFetchMetadata(
+      download_source_ == DownloadSource::INTERNAL_API,
+      request_info_.request_initiator, request_info_.isolation_info,
+      request_info_.credentials_mode, *download_params);
 
   TransitionTo(RESUMING_INTERNAL);
   RecordDownloadCountWithSource(source == ResumptionRequestSource::USER
