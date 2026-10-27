@@ -20,12 +20,19 @@
 //    AutoResumeIfValid() when a response stops early or a connection
 //    drops), which carries the item's factory only if the download service
 //    set one (ResumeWithFactory()), and it didn't for a download it started;
-//  * a download the download service resumes after the browser restarted
-//    (a request active at shutdown): it asks Background Fetch for the
-//    factory (GetUploadData()), and gets none if the registration isn't
-//    loaded yet, then resumes with none.
+//  * a download the download service takes up again after the browser
+//    restarted (a request active at shutdown): it asks Background Fetch for
+//    the factory (GetUploadData()), and gets none: Background Fetch makes
+//    the factory when it takes a request from the registration's queue
+//    (DidGetRegistrationForRequest()), and a request active at shutdown is
+//    started again directly (BackgroundFetchScheduler::
+//    OnRegistrationLoadedAtStartup()); nor any if the registration isn't
+//    loaded yet.
 // A server can make the first happen at will (end its response early), and
 // a site can make the second likely (keep a fetch running at shutdown).
+// Such a download now waits for its fetch's parameters and starts again
+// with them (components/download/internal/background_service/
+// molt_restored_fetch.h), which may still bring no factory.
 //
 // So a download the download service makes for a page (one with an initiator,
 // which only a Background Fetch sets) that comes with no factory of its own

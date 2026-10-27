@@ -33,8 +33,24 @@
 // redirects, and one whose item is from the earlier session is started
 // again from its beginning with them, as the upload of a request body
 // already is (ControllerImpl::UpdateDriverState()), rather than resumed
-// without them. A fetch that comes back without its parameters, and every
-// other client's download, goes on as in Chromium.
+// without them.
+//
+// The parameters don't come back while the fetch's registration isn't loaded
+// yet in the new session: Background Fetch knows a download only once its
+// registration loads and it takes the download up again
+// (BackgroundFetchDelegateBase::GetUploadData() answers with nothing until
+// DownloadUrl()). At Chromium 156 such a download was resumed, or started,
+// at once without them: no initiator, no isolation, and, with Local Network
+// Access for Background Fetch, no factory of the service worker's, so the
+// request went out on the partition's default factory, which checks no
+// Local Network Access at all. Here a page's fetch whose parameters don't
+// come back waits for them (MoltWaitsForFetchParameters()): when Background
+// Fetch takes it up (StartDownload() with its GUID, refused as one the
+// service has already), it asks for them again, and goes on with them as
+// above; one still waiting after kMoltFetchParametersWaitSeconds (its
+// registration gone meanwhile) fails, which Background Fetch ignores for a
+// download it doesn't know. Every other client's download goes on as in
+// Chromium.
 //
 // Header-only and templated on the request parameters (RequestParams), so
 // the download service's target needs no new dependency and
@@ -42,6 +58,8 @@
 
 #ifndef COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_RESTORED_FETCH_H_
 #define COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_RESTORED_FETCH_H_
+
+#include <cstdint>
 
 namespace download {
 
@@ -53,6 +71,18 @@ constexpr bool MoltRestartsRestoredFetch(bool has_initiator,
                                          bool has_driver_entry) {
   return has_initiator && has_driver_entry;
 }
+
+// Whether a download of `page_fetch_client` (Background Fetch's: every one
+// is a page's fetch) whose request parameters name no initiator once its
+// client's are back (`has_initiator`) waits for them rather than going on.
+constexpr bool MoltWaitsForFetchParameters(bool page_fetch_client,
+                                           bool has_initiator) {
+  return page_fetch_client && !has_initiator;
+}
+
+// How long such a download waits before it fails. A registration loads
+// within seconds of the browser's start; this is far longer.
+inline constexpr int64_t kMoltFetchParametersWaitSeconds = 5 * 60;
 
 // ControllerImpl::OnDownloadReadyToStart(), once the client's parameters
 // are on `request_params` (RequestParams): a page's fetch keeps its first

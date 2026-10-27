@@ -214,9 +214,19 @@ void ControllerImpl::StartDownload(DownloadParams params) {
 
   if (start_callbacks_.find(params.guid) != start_callbacks_.end() ||
       model_->Get(params.guid) != nullptr) {
+    // MoltBrowser: a page's fetch waiting for its parameters asks for them
+    // again now that its client takes it up (molt_restored_fetch.h).
+    Entry* molt_waiting = model_->Get(params.guid);
     HandleStartDownloadResponse(params.client, params.guid,
                                 DownloadParams::StartResult::UNEXPECTED_GUID,
                                 std::move(params.callback));
+    if (molt_waiting &&
+        MoltWaitsForFetchParameters(
+            molt_waiting->client == DownloadClient::BACKGROUND_FETCH,
+            molt_waiting->request_params.initiator.has_value()) &&
+        !guids_with_custom_request_params_.contains(molt_waiting->guid)) {
+      UpdateDriverState(molt_waiting);
+    }
     return;
   }
 
@@ -1106,6 +1116,35 @@ void ControllerImpl::OnDownloadReadyToStart(const std::string& guid,
 
   if (params.isolation_info) {
     entry->request_params.isolation_info = std::move(params.isolation_info);
+  }
+
+  // MoltBrowser: a page's fetch whose parameters didn't come back (its
+  // registration isn't loaded yet) waits for them rather than going out
+  // without them: it asks again when its client takes it up
+  // (StartDownload()), and fails if that doesn't happen
+  // (molt_restored_fetch.h).
+  if (MoltWaitsForFetchParameters(
+          entry->client == DownloadClient::BACKGROUND_FETCH,
+          entry->request_params.initiator.has_value())) {
+    guids_with_custom_request_params_.erase(guid);
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](base::WeakPtr<ControllerImpl> controller,
+               const std::string& guid) {
+              Entry* waiting =
+                  controller ? controller->model_->Get(guid) : nullptr;
+              if (waiting && !controller->pending_uploads_.contains(guid) &&
+                  MoltWaitsForFetchParameters(
+                      waiting->client == DownloadClient::BACKGROUND_FETCH,
+                      waiting->request_params.initiator.has_value())) {
+                controller->HandleCompleteDownload(CompletionType::FAIL,
+                                                   guid);
+              }
+            },
+            weak_ptr_factory_.GetWeakPtr(), guid),
+        base::Seconds(kMoltFetchParametersWaitSeconds));
+    return;
   }
 
   // MoltBrowser: a page's fetch keeps its first party on redirects, and one
