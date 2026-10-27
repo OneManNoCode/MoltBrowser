@@ -288,6 +288,10 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
       quota = MoltStorageQuota(
           quota, usage_, tracker->MoltSiteUsage(MoltBudgetSiteOf(storage_key_)),
           settings_.molt_per_site_quota);
+      // A closed site (a page's nonce past its site's bound) has no room.
+      if (manager()->MoltIsSiteClosed(MoltBudgetSiteOf(storage_key_))) {
+        quota = std::min(quota, std::max<int64_t>(0, usage_));
+      }
       if (MoltStorageBeyondFloor(settings_.molt_per_site_quota,
                                  tracker->MoltTotalUsage(),
                                  settings_.pool_size) &&
@@ -1958,6 +1962,48 @@ void QuotaManagerImpl::RegisterClient(
   clients_for_ownership_.emplace_back(std::move(client));
   mojom::QuotaClient* client_ptr = clients_for_ownership_.back().get();
   client_types_.insert({client_ptr, client_type});
+}
+
+// MoltBrowser: see the header.
+void QuotaManagerImpl::MoltDropNonce(
+    const base::UnguessableToken& nonce,
+    const std::vector<blink::StorageKey>& storage_keys,
+    bool closed) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  const MoltBudgetSite site{nonce, std::nullopt};
+  if (closed) {
+    molt_closed_sites_.insert(site);
+  } else {
+    molt_closed_sites_.erase(site);
+  }
+  std::vector<blink::StorageKey> keys;
+  for (const blink::StorageKey& storage_key : storage_keys) {
+    if (storage_key.nonce() == nonce) {
+      keys.push_back(storage_key);
+    }
+  }
+  // Once their buckets are gone, nothing of the site is stale either.
+  base::RepeatingClosure barrier = base::BarrierClosure(
+      keys.size(),
+      base::BindOnce(
+          [](base::WeakPtr<QuotaManagerImpl> manager, MoltBudgetSite site) {
+            if (manager && manager->GetUsageTracker()) {
+              manager->GetUsageTracker()->MoltForgetSite(site);
+            }
+          },
+          weak_factory_.GetWeakPtr(), site));
+  for (const blink::StorageKey& storage_key : keys) {
+    DeleteStorageKeyData(
+        storage_key,
+        base::BindOnce([](base::RepeatingClosure barrier,
+                          blink::mojom::QuotaStatusCode) { barrier.Run(); },
+                       barrier));
+  }
+}
+
+bool QuotaManagerImpl::MoltIsSiteClosed(const MoltBudgetSite& site) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return molt_closed_sites_.contains(site);
 }
 
 UsageTracker* QuotaManagerImpl::GetUsageTracker() const {

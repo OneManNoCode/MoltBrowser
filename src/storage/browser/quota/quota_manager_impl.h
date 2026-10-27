@@ -38,6 +38,7 @@
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
+#include "storage/browser/quota/molt_storage_budget.h"  // MoltBrowser
 #include "storage/browser/quota/quota_callbacks.h"
 #include "storage/browser/quota/quota_client_type.h"
 #include "storage/browser/quota/quota_database.h"
@@ -336,6 +337,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
   // Deletes buckets of a particular blink::StorageKey.
   void DeleteStorageKeyData(const blink::StorageKey& storage_key,
                             StatusCallback callback);
+
+  // MoltBrowser: for MoltNet's storage budget (molt_storage_budget.h).
+  // Deletes the buckets of `storage_keys` (those with `nonce`: the storage
+  // keys of a page's credentialless frames), and then forgets the nonce's
+  // site. With `closed`, the nonce's storage keys get no room from then on
+  // (their page lives on past its site's bound); without, that ends (the page
+  // is gone).
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     const std::vector<blink::StorageKey>& storage_keys,
+                     bool closed);
+  // MoltBrowser: whether `site`'s storage keys get no room (MoltDropNonce()).
+  bool MoltIsSiteClosed(const MoltBudgetSite& site) const;
 
   // Queries QuotaDatabase for the bucket with `storage_key` and `bucket_name`
   // and deletes bucket data for all clients for the bucket. Used by the
@@ -855,6 +868,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
   mojo::RemoteSet<storage::mojom::QuotaManagerObserver> observers_;
 
   SEQUENCE_CHECKER(sequence_checker_);
+
+  // MoltBrowser: the sites whose storage keys get no room (MoltDropNonce()).
+  std::set<MoltBudgetSite> molt_closed_sites_;
 
   base::WeakPtrFactory<QuotaManagerImpl> weak_factory_{this};
 };

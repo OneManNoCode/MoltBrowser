@@ -13,6 +13,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/ref_counted.h"  // MoltBrowser
 #include "base/metrics/histogram_functions.h"
 #include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
@@ -30,6 +31,7 @@
 #include "components/services/storage/dom_storage/features.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_area_impl.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -291,6 +293,15 @@ void SessionStorageImpl::GetUsage(GetUsageCallback callback) {
     return;
   }
 
+  // MoltBrowser: kept per site without a database, the maps in use are what
+  // is stored, listed group by group in their own turns, a step at a time
+  // (molt_dom_storage_split_work.h).
+  if (molt_caches_per_site_ && molt_scheduler_ && !database_) {
+    MoltWalkGroups(base::MakeRefCounted<MoltUsageWalk>(std::move(callback)),
+                   std::nullopt);
+    return;
+  }
+
   const SessionStorageMetadata::NamespaceStorageKeyMap& all_namespaces =
       metadata_.namespace_storage_key_map();
 
@@ -459,6 +470,20 @@ bool SessionStorageImpl::OnMemoryDump(
       base::StringPrintf("site_storage/sessionstorage/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
+  // MoltBrowser: kept per site without a database, the partition's totals,
+  // kept as they change: no walk over every site's maps in one task, and no
+  // area named (molt_dom_storage_split_work.h).
+  if (molt_caches_per_site_ && !database_) {
+    auto* mad = pmd->CreateAllocatorDump(context_name + "/cache_size");
+    mad->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                   base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                   molt_site_budget_.totals().total());
+    mad->AddScalar("total_areas",
+                   base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                   data_maps_.size());
+    return true;
+  }
+
   if (database_) {
     // Account for database memory usage, which actually lives in the file
     // service.
@@ -525,10 +550,26 @@ void SessionStorageImpl::OnDataMapCreation(int64_t map_id,
 
   // `map_id` must identify a unique new map that did not exist in `data_maps_`.
   CHECK(result.second);
+  // MoltBrowser: in its group's index, with caches per site.
+  if (molt_caches_per_site_) {
+    MoltIndexMap(map_id, map);
+  }
 }
 
 void SessionStorageImpl::OnDataMapDestruction(int64_t map_id) {
   data_maps_.erase(map_id);
+  // MoltBrowser: out of its group's index.
+  if (auto group = molt_map_groups_.find(map_id);
+      group != molt_map_groups_.end()) {
+    if (auto maps = molt_group_maps_.find(group->second);
+        maps != molt_group_maps_.end()) {
+      maps->second.erase(map_id);
+      if (maps->second.empty()) {
+        molt_group_maps_.erase(maps);
+      }
+    }
+    molt_map_groups_.erase(group);
+  }
 }
 
 void SessionStorageImpl::OnCommitResult(DbStatus status) {
@@ -872,6 +913,9 @@ void SessionStorageImpl::MoltKeepCachesPerSiteOn(
                   : base::MakeRefCounted<MoltDomStorageFairScheduler>(
                         base::SequencedTaskRunner::GetCurrentDefault());
   }
+  for (const auto& [map_id, map] : data_maps_) {
+    MoltIndexMap(map_id, map);
+  }
 }
 
 // MoltBrowser: a namespace's pipes (a tab's renderers' Clone() calls) take
@@ -894,9 +938,12 @@ void SessionStorageImpl::MoltSetGrowthObserver(
 bool SessionStorageImpl::MoltMayGrowTo(int64_t map_id,
                                        const blink::StorageKey& storage_key,
                                        size_t new_storage_used) {
-  return !molt_caches_per_site_ ||
-         molt_site_budget_.MayGrowTo(base::NumberToString(map_id),
-                                     MoltDomStorageSiteOf(storage_key),
+  if (!molt_caches_per_site_) {
+    return true;
+  }
+  const std::string site = MoltDomStorageSiteOf(storage_key);
+  return !molt_closed_groups_.contains(site) &&
+         molt_site_budget_.MayGrowTo(base::NumberToString(map_id), site,
                                      new_storage_used);
 }
 
@@ -929,8 +976,12 @@ void SessionStorageImpl::MoltSiteCommitted(
 
 bool SessionStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
                                       size_t bytes) {
-  return !molt_caches_per_site_ ||
-         molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
+  if (!molt_caches_per_site_) {
+    return true;
+  }
+  const std::string site = MoltDomStorageSiteOf(storage_key);
+  return !molt_closed_groups_.contains(site) &&
+         molt_site_budget_.MayWrite(site, bytes);
 }
 
 scoped_refptr<base::SequencedTaskRunner> SessionStorageImpl::MoltTaskRunner(
@@ -1001,6 +1052,166 @@ void SessionStorageImpl::MoltPurgeUnusedAreasOfSite(
   for (const auto& namespace_pair : namespaces_) {
     namespace_pair.second->MoltPurgeUnboundAreasOfSite(site);
   }
+}
+
+// MoltBrowser: a GetUsage() walked in turns, its result gathered from each
+// group's turn (molt_dom_storage_split_work.h).
+class SessionStorageImpl::MoltUsageWalk
+    : public base::RefCounted<SessionStorageImpl::MoltUsageWalk> {
+ public:
+  explicit MoltUsageWalk(GetUsageCallback callback)
+      : callback_(std::move(callback)) {}
+
+  std::vector<mojom::SessionStorageUsageInfoPtr> result;
+  size_t pending = 0;
+  bool walked = false;
+
+  void MaybeFinish() {
+    if (walked && pending == 0 && callback_) {
+      std::move(callback_).Run(std::move(result));
+    }
+  }
+
+ private:
+  friend class base::RefCounted<MoltUsageWalk>;
+  ~MoltUsageWalk() = default;
+
+  GetUsageCallback callback_;
+};
+
+// MoltBrowser:
+void SessionStorageImpl::MoltWalkGroups(scoped_refptr<MoltUsageWalk> walk,
+                                        std::optional<std::string> after) {
+  bool more = false;
+  const std::vector<std::string> groups = MoltDomStorageNextChunk(
+      molt_group_maps_, after ? &*after : nullptr,
+      kMoltDomStorageGroupsPerTask, &more);
+  for (const std::string& group : groups) {
+    ++walk->pending;
+    molt_scheduler_->Post(
+        group, base::BindOnce(&SessionStorageImpl::MoltListGroup,
+                              weak_ptr_factory_.GetWeakPtr(), walk, group,
+                              std::optional<int64_t>()));
+  }
+  if (more) {
+    molt_scheduler_->Post(
+        kMoltDomStorageControlGroup,
+        base::BindOnce(&SessionStorageImpl::MoltWalkGroups,
+                       weak_ptr_factory_.GetWeakPtr(), walk, groups.back()));
+    return;
+  }
+  walk->walked = true;
+  walk->MaybeFinish();
+}
+
+// MoltBrowser: each of the group's maps in every namespace that uses it.
+void SessionStorageImpl::MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
+                                       std::string group,
+                                       std::optional<int64_t> after) {
+  bool more = false;
+  std::vector<int64_t> map_ids;
+  if (auto it = molt_group_maps_.find(group); it != molt_group_maps_.end()) {
+    map_ids = MoltDomStorageNextChunk(it->second, after ? &*after : nullptr,
+                                      kMoltDomStorageAreasPerTask, &more);
+  }
+  for (int64_t map_id : map_ids) {
+    auto map = data_maps_.find(map_id);
+    if (map == data_maps_.end()) {
+      continue;
+    }
+    const DomStorageDatabase::SharedMapLocator& locator =
+        map->second->map_locator();
+    for (const std::string& namespace_id : locator.session_ids()) {
+      walk->result.push_back(mojom::SessionStorageUsageInfo::New(
+          locator.storage_key(), namespace_id));
+    }
+  }
+  if (more) {
+    molt_scheduler_->Post(
+        group, base::BindOnce(&SessionStorageImpl::MoltListGroup,
+                              weak_ptr_factory_.GetWeakPtr(), walk, group,
+                              map_ids.back()));
+    return;
+  }
+  --walk->pending;
+  walk->MaybeFinish();
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltIndexMap(int64_t map_id,
+                                      SessionStorageDataMap* map) {
+  const std::string group =
+      MoltDomStorageSiteOf(map->map_locator().storage_key());
+  molt_group_maps_[group].insert(map_id);
+  molt_map_groups_[map_id] = group;
+}
+
+// MoltBrowser: see session_storage_control.mojom.
+void SessionStorageImpl::MoltDropNonce(const base::UnguessableToken& nonce,
+                                       bool closed) {
+  if (!molt_caches_per_site_ || !molt_scheduler_) {
+    return;
+  }
+  const std::string group =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, nonce.ToString());
+  molt_scheduler_->Post(group,
+                        base::BindOnce(&SessionStorageImpl::MoltDropGroup,
+                                       weak_ptr_factory_.GetWeakPtr(), group,
+                                       closed));
+}
+
+void SessionStorageImpl::MoltDropGroup(const std::string& group, bool closed) {
+  if (closed) {
+    molt_closed_groups_.insert(group);
+  } else {
+    molt_closed_groups_.erase(group);
+  }
+  // The group's areas, by storage key and namespace, taken first: clearing a
+  // map shared by a copy forks it.
+  std::vector<std::pair<blink::StorageKey, std::string>> areas;
+  if (auto it = molt_group_maps_.find(group); it != molt_group_maps_.end()) {
+    for (int64_t map_id : it->second) {
+      auto map = data_maps_.find(map_id);
+      if (map == data_maps_.end()) {
+        continue;
+      }
+      const DomStorageDatabase::SharedMapLocator& locator =
+          map->second->map_locator();
+      for (const std::string& namespace_id : locator.session_ids()) {
+        areas.emplace_back(locator.storage_key(), namespace_id);
+      }
+    }
+  }
+  for (const auto& [storage_key, namespace_id] : areas) {
+    auto found = namespaces_.find(namespace_id);
+    if (found == namespaces_.end() || !found->second->IsPopulated()) {
+      continue;
+    }
+    found->second->RemoveStorageKeyData(storage_key, base::DoNothing());
+    found->second->MoltDropAreaIfUnused(storage_key);
+  }
+  molt_site_budget_.ForgetSite(group);
+}
+
+// MoltBrowser:
+std::set<std::string> SessionStorageImpl::MoltGroupsOfNamespace(
+    const std::string& namespace_id) {
+  std::set<std::string> groups;
+  auto found = namespaces_.find(namespace_id);
+  if (found == namespaces_.end()) {
+    return groups;
+  }
+  for (const auto& area : found->second->molt_storage_key_areas()) {
+    groups.insert(MoltDomStorageSiteOf(area.first));
+  }
+  return groups;
+}
+
+bool SessionStorageImpl::MoltHasClonesWaiting(
+    const std::string& namespace_id) {
+  auto found = namespaces_.find(namespace_id);
+  return found != namespaces_.end() &&
+         found->second->HasChildNamespacesWaitingForClone();
 }
 
 void SessionStorageImpl::GetStatistics(size_t* total_cache_size,

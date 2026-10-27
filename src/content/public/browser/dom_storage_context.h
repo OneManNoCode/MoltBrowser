@@ -10,6 +10,10 @@
 
 #include "base/functional/callback.h"
 
+namespace base {
+class UnguessableToken;  // MoltBrowser
+}  // namespace base
+
 namespace blink {
 class StorageKey;
 }  // namespace blink
@@ -52,6 +56,16 @@ class DOMStorageContext {
   // SessionStorageNamespace alive. Called when SessionStorageNamespaces have
   // been created after a session restore, or a session restore won't happen.
   virtual void StartScavengingUnusedSessionStorage() = 0;
+
+  // MoltBrowser: for a context whose DOM storage is kept per site
+  // (ContentBrowserClient::ShouldKeepDomStorageCachesPerSite()), drops the
+  // localStorage and sessionStorage of the storage keys with `nonce` (a
+  // page's credentialless frames) and their records; with `closed`, their
+  // writes are refused from then on, without, that ends
+  // (components/services/storage/dom_storage/molt_dom_storage_site_policy.h).
+  // Does nothing otherwise.
+  virtual void MoltDropNonce(const base::UnguessableToken& nonce,
+                             bool closed) {}
 
  protected:
   virtual ~DOMStorageContext() {}

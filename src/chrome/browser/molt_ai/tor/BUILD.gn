@@ -495,6 +495,37 @@ source_set("onion_location") {
   ]
 }
 
+# MoltNet's storage keyed by a page's nonce (a credentialless iframe's) goes
+# with the page, and a top-level site holds at most 32 such groups at once
+# (molt_net_nonce_storage_policy.h). Header-only and std-only, so
+# molt_ai_unittests tests it.
+source_set("nonce_storage_policy") {
+  sources = [ "molt_net_nonce_storage_policy.h" ]
+}
+
+# The tab helper that applies it to MoltNet's tabs (attached by
+# tab_helpers.cc): it notes the nonces a page's frames use and drops their
+# storage when the page goes.
+source_set("nonce_storage") {
+  sources = [
+    "molt_net_nonce_storage.cc",
+    "molt_net_nonce_storage.h",
+  ]
+  public_deps = [ "//content/public/browser" ]
+  deps = [
+    ":nonce_storage_policy",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//net",
+
+    # The quota manager drops the nonce's buckets
+    # (storage::QuotaManagerImpl::MoltDropNonce()).
+    "//storage/browser",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
+
 # .onion UX: the navigation throttle that keeps onion names off the network in
 # regular windows (registered first in chrome_content_browser_client.cc), its
 # "Open in a MoltNet window" interstitial, the Onion-Location infobar, and the
@@ -591,6 +622,7 @@ source_set("unit_tests") {
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
+    "molt_net_nonce_storage_policy_unittest.cc",
     "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
@@ -618,6 +650,7 @@ source_set("unit_tests") {
     ":live_policy",
     ":locale_prefs",
     ":network_context_policy",
+    ":nonce_storage_policy",
     ":onion_location",
     ":partitioning_policy",
     ":pref_isolation",

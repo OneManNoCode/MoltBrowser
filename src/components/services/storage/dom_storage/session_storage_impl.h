@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>  // MoltBrowser
 #include <string>
 #include <vector>
 
@@ -24,6 +25,7 @@
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/db_status.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_data_map.h"
@@ -96,6 +98,15 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;  // MoltBrowser
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     bool closed) override;  // MoltBrowser
+  // MoltBrowser: the groups (molt_dom_storage_site.h) of namespace
+  // `namespace_id`'s areas, for a clone that waits for their turns
+  // (molt_dom_storage_own_thread.h).
+  std::set<std::string> MoltGroupsOfNamespace(const std::string& namespace_id);
+  // MoltBrowser: whether namespace `namespace_id` has namespaces waiting for
+  // a clone of it.
+  bool MoltHasClonesWaiting(const std::string& namespace_id);
   // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
   // through `scheduler` (one for the whole partition, which its host shares:
   // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
@@ -140,6 +151,7 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void SetDatabaseOpenCallbackForTesting(base::OnceClosure callback);
 
  private:
+  class MoltUsageWalk;  // MoltBrowser
   friend class DOMStorageBrowserTest;
   FRIEND_TEST_ALL_PREFIXES(SessionStorageImplTest,
                            ClearDiskStateOnOpenWithEmptyPathUsesInMemory);
@@ -228,6 +240,24 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   // MoltBrowser: with caches per site, the storage sequence taken in turn
   // per site by the areas' pipes.
   scoped_refptr<MoltDomStorageFairScheduler> molt_scheduler_;
+  // MoltBrowser: with caches per site, each group's maps
+  // (molt_dom_storage_site.h) and each map's group, kept as maps are made
+  // and go (declared before the maps' owners, which tell as they go); and
+  // the groups whose writes are refused (MoltDropNonce()).
+  std::map<std::string, std::set<int64_t>, std::less<>> molt_group_maps_;
+  std::map<int64_t, std::string> molt_map_groups_;
+  std::set<std::string, std::less<>> molt_closed_groups_;
+  void MoltIndexMap(int64_t map_id, SessionStorageDataMap* map);
+  // MoltBrowser: in `group`'s turn, its areas in every namespace cleared and
+  // dropped, and its records forgotten; `closed`: its writes refused from
+  // then on.
+  void MoltDropGroup(const std::string& group, bool closed);
+  // MoltBrowser: GetUsage() walked in turns (molt_dom_storage_split_work.h).
+  void MoltWalkGroups(scoped_refptr<MoltUsageWalk> walk,
+                      std::optional<std::string> after);
+  void MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
+                     std::string group,
+                     std::optional<int64_t> after);
 
   void OnReceiverDisconnected();
 

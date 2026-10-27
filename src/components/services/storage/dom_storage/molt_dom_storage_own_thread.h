@@ -39,6 +39,24 @@
 // and in order with its site's other messages; between two such messages of
 // different sites the order may change, as between two sites' pipes.
 //
+// A control message that reads every site's areas waits for what those sites
+// queued before it:
+//  * GetUsage() (what Clear-Site-Data and the settings read before they
+//    delete) lists each site's areas in that site's turn
+//    (molt_dom_storage_split_work.h), so a clear that follows deletes what
+//    the site wrote before it;
+//  * a sessionStorage namespace copied at once (CloneNamespace() with
+//    kImmediate: a tab duplicated) waits for a turn of each site with areas
+//    in it, or with a bind or a deletion for it queued, so the copy holds
+//    every write those sites queued before it; and a namespace that goes
+//    while tabs it opened wait for their copy (DeleteNamespace()) does the
+//    same. Meanwhile, every other control message that names either
+//    namespace waits too, in the order it came (a bind of the copy, the
+//    source's deletion), and runs after it; messages for other namespaces
+//    don't wait. A renderer's own copy (window.open(), SessionStorageNamespace
+//    Clone()) is ordered after its writes by the renderer itself (it pauses
+//    the namespace's pipe until each area's pipe is flushed).
+//
 // What a page can still observe: the work of the task in service on
 // MoltNet's thread (one message of another site, or one control message),
 // and the machine (the processor and the storage service's IO thread, which
@@ -48,8 +66,10 @@
 #define COMPONENTS_SERVICES_STORAGE_DOM_STORAGE_MOLT_DOM_STORAGE_OWN_THREAD_H_
 
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -57,6 +77,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/sequence_bound.h"
+#include "base/unguessable_token.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"
 #include "components/services/storage/public/mojom/local_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
@@ -100,6 +121,8 @@ class MoltPerSiteLocalStorage : public mojom::LocalStorageControl {
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     bool closed) override;
 
   LocalStorageImpl* storage_for_testing() { return impl_.get(); }
 
@@ -151,6 +174,8 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     bool closed) override;
   void CreateNamespace(const std::string& namespace_id) override;
   void CloneNamespace(const std::string& namespace_id_to_clone,
                       const std::string& clone_namespace_id,
@@ -159,6 +184,9 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
                        bool should_persist) override;
 
   SessionStorageImpl* storage_for_testing() { return impl_.get(); }
+
+  // How many control messages wait for a copy (for testing).
+  size_t held_for_testing() const { return held_.size(); }
 
  private:
   void BindStorageAreaInTurn(
@@ -169,9 +197,58 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
                            const std::string& namespace_id,
                            DeleteStorageCallback callback);
 
+  // Whether a control message naming `a` (and `b`) waits for a copy; such a
+  // message is kept (Hold()) to run after it, in the order they came.
+  bool IsHeld(const std::string& a, const std::string& b) const;
+  void Hold(const std::string& a,
+            const std::string& b,
+            base::OnceClosure message);
+  // Runs the held messages that no longer wait, in the order they came.
+  void ReplayHeld();
+  // A site's message for `namespace_id` queued in its turn, and its end.
+  void Queued(const std::string& namespace_id, const std::string& group);
+  void Dequeued(const std::string& namespace_id, const std::string& group);
+  // Runs `operation` in the control's turn once each site with areas in
+  // `namespace_id`, or a message for it queued, has had a turn; the
+  // namespaces in `hold` hold their control messages until then.
+  void AfterTurnsOf(const std::string& namespace_id,
+                    std::vector<std::string> hold,
+                    base::OnceClosure operation);
+  void TurnTaken(uint64_t barrier);
+  void RunBarrier(uint64_t barrier);
+
   const scoped_refptr<MoltDomStorageFairScheduler> scheduler_;
   mojo::Remote<mojom::SessionStorageControl> impl_pipe_;
   std::unique_ptr<SessionStorageImpl> impl_;
+  // The groups of each namespace's messages queued in their sites' turns
+  // (BindStorageArea(), DeleteStorage()).
+  std::map<std::string, std::multiset<std::string>> queued_;
+  // Copies (and deletions) waiting for their sites' turns: the turns still
+  // to come, the operation, and the namespaces held; the held namespaces
+  // and their control messages, in the order they came.
+  struct Barrier {
+    Barrier();
+    Barrier(Barrier&&);
+    Barrier& operator=(Barrier&&);
+    ~Barrier();
+    size_t turns_left = 0;
+    base::OnceClosure operation;
+    std::vector<std::string> hold;
+  };
+  std::map<uint64_t, Barrier> barriers_;
+  uint64_t next_barrier_ = 0;
+  std::multiset<std::string> held_namespaces_;
+  struct HeldMessage {
+    HeldMessage(std::string a, std::string b, base::OnceClosure message);
+    HeldMessage(HeldMessage&&);
+    HeldMessage& operator=(HeldMessage&&);
+    ~HeldMessage();
+    // The namespaces it names (the same twice if one).
+    std::string a;
+    std::string b;
+    base::OnceClosure message;
+  };
+  std::deque<HeldMessage> held_;
   mojo::Receiver<mojom::SessionStorageControl> receiver_{this};
   base::WeakPtrFactory<MoltPerSiteSessionStorage> weak_factory_{this};
 };

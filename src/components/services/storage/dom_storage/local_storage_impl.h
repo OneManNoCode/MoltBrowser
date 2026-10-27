@@ -16,6 +16,7 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback_forward.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/sequence_bound.h"
@@ -101,6 +102,8 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;  // MoltBrowser
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     bool closed) override;  // MoltBrowser
   // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
   // through `scheduler` (one for the whole partition, which its host shares:
   // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
@@ -131,6 +134,7 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   friend class LocalStorageImplTest;
 
   class StorageAreaHolder;
+  class MoltUsageWalk;  // MoltBrowser
 
   // Does dtor work. This is a distinct function mainly to retain git history.
   void ShutDown();
@@ -184,6 +188,22 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // site (molt_dom_storage_fair_scheduler.h); else null.
   scoped_refptr<base::SequencedTaskRunner> MoltTaskRunnerFor(
       const blink::StorageKey& storage_key);
+  // MoltBrowser: with caches per site, each group's areas
+  // (molt_dom_storage_site.h), kept as areas are made and go.
+  void MoltIndexArea(const blink::StorageKey& storage_key);
+  void MoltUnindexArea(const blink::StorageKey& storage_key);
+  // MoltBrowser: in `group`'s turn, its areas cleared and dropped, and its
+  // records forgotten; `closed`: its writes refused from then on
+  // (MoltDropNonce()).
+  void MoltDropGroup(const std::string& group, bool closed);
+  // MoltBrowser: GetUsage() walked in turns (molt_dom_storage_split_work.h):
+  // a step over the groups after `after` in the control's turn, and each
+  // group's areas after `after` in its own turn.
+  void MoltWalkGroups(scoped_refptr<MoltUsageWalk> walk,
+                      std::optional<std::string> after);
+  void MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
+                     std::string group,
+                     std::optional<blink::StorageKey> after);
 
   // These clear stale storage areas (not read/written to within 400 days) from
   // the database. See crbug.com/40281870 for more info.
@@ -242,6 +262,12 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // See crbug.com/40281870 for more info.
   base::TimeDelta delete_stale_storage_areas_delay_{base::Minutes(1)};
 
+  // MoltBrowser: with caches per site, the storage keys of each group's areas
+  // in `areas_` (MoltIndexArea()). Declared before `areas_`, which
+  // `~StorageAreaHolder()` takes out of it.
+  std::map<std::string, std::set<blink::StorageKey>, std::less<>>
+      molt_group_areas_;
+
   // Maps between a StorageKey and its view of the map's key/value pairs in the
   // database.  Declared near the bottom of this class so it destructs
   // before its dependencies accessed by `StorageAreaHolder::context_` in
@@ -258,6 +284,8 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // MoltBrowser: with caches per site, the storage sequence taken in turn
   // per site by the areas' pipes.
   scoped_refptr<MoltDomStorageFairScheduler> molt_scheduler_;
+  // MoltBrowser: the groups whose writes are refused (MoltDropNonce()).
+  std::set<std::string, std::less<>> molt_closed_groups_;
 
   base::WeakPtrFactory<LocalStorageImpl> weak_ptr_factory_{this};
 };

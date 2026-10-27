@@ -89,6 +89,8 @@ class CONTENT_EXPORT DOMStorageContextWrapper
                           base::OnceClosure callback) override;
   void DeleteSessionStorage(const SessionStorageUsageInfo& usage_info,
                             base::OnceClosure callback) override;
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     bool closed) override;  // MoltBrowser
   scoped_refptr<SessionStorageNamespaceHandle> RecreateSessionStorage(
       const std::string& namespace_id) override;
   void StartScavengingUnusedSessionStorage() override;

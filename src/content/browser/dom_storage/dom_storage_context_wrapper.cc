@@ -19,6 +19,7 @@
 #include "base/syslog_logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "build/build_config.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
@@ -231,6 +232,24 @@ void DOMStorageContextWrapper::DeleteSessionStorage(
   }
   session_storage_control_->DeleteStorage(
       usage_info.storage_key, usage_info.namespace_id, std::move(callback));
+}
+
+// MoltBrowser: only where DOM storage is kept per site (MoltNet); in its
+// nonce's group's turn in the storage service.
+void DOMStorageContextWrapper::MoltDropNonce(
+    const base::UnguessableToken& nonce,
+    bool closed) {
+  if (!partition_ ||
+      !GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
+          partition_->browser_context())) {
+    return;
+  }
+  if (local_storage_control_) {
+    local_storage_control_->MoltDropNonce(nonce, closed);
+  }
+  if (session_storage_control_) {
+    session_storage_control_->MoltDropNonce(nonce, closed);
+  }
 }
 
 void DOMStorageContextWrapper::PerformSessionStorageCleanup(
