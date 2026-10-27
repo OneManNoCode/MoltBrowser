@@ -1309,6 +1309,15 @@ action("generate_transport_security_state_pins") {
         self.assertIn("V8_USE_METAGEN_INSTANCE_TYPES", scan.FALSE_ATOMS)
 
 
+class UnlistedTest(unittest.TestCase):
+    def test_files_no_build_file_names(self):
+        tree = FakeTree({
+            "a/BUILD.gn": 'source_set("a") { sources = [ "ios/x.mm" ] }',
+            "b/BUILD.gn": 'group("b") {}'})
+        self.assertEqual(compile_check.unlisted(
+            tree, ["a/ios/x.mm", "c/ios/Lonely.mm"]), ["c/ios/Lonely.mm"])
+
+
 class SkippedReportTest(unittest.TestCase):
     def test_skipped_and_sdk_stand_ins(self):
         r = {"target": "x_android.cc", "skipped": "built for android only",

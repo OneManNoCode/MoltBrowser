@@ -494,6 +494,25 @@ def save_results(args, res, partial):
                                                           summary))
 
 
+def unlisted(tree, paths):
+    """The paths no BUILD.gn file (Chromium's or the overlay's) names, by
+    file name: sources no build compiles, on any platform."""
+    left = {p: p.rsplit("/", 1)[-1].encode() for p in paths}
+    files = set(tree.chromium_files(lambda p: p.endswith("BUILD.gn")))
+    files |= {p for p in tree.overlay_set() if p.endswith(("BUILD.gn",
+                                                            ".gni"))}
+    if left and hasattr(tree, "materialize"):
+        tree.materialize(sorted(files))  # one batch (setup has them all)
+    for bf in sorted(files):
+        if not left:
+            break
+        data = tree.read(bf) or b""
+        for p, n in list(left.items()):
+            if n in data:
+                del left[p]
+    return sorted(left)
+
+
 def skipped_results(skipped):
     return [{"target": t, "platform": None, "skipped": why, "diags": [],
              "rc": None} for t, why in sorted(skipped.items())]
@@ -544,6 +563,10 @@ def run_checks(args, base, tgts, rounds=0, headers=False):
         groups = {k: v for k, v in groups.items() if k in only}
         if platforms.DEFAULT not in only:
             skipped = {}  # reported with the default platform
+    # A file for a platform not modeled here that no BUILD.gn names is
+    # compiled by no build at all: say so.
+    for t in unlisted(base, list(skipped)):
+        skipped[t] += "; no BUILD.gn lists it, so no build compiles it"
     res = skipped_results(skipped)
     for tree, ts in platform_trees(args, groups, base):
         if tree.unavailable_reason is not None:
