@@ -16,6 +16,13 @@ googlesource.com is not). This module:
     under the mounts asked for (extract): about 3 minutes and 600 MB;
   * serves those files like a git tree (DirRepo), with git blob ids.
 
+Every tarball is checked against the SHA-256 PINNED_SHA256 holds for it
+before anything from it is used (tools/chromium/gn_static_check.py's fetch
+too): code from it runs here (generator scripts of the mounts, Chromium's
+checkdeps and the DEPS files it reads, version.py), and nothing else
+vouches for its files, which no git commit covers. A tarball with no pin is
+refused.
+
 Whether a mount's tree is the pinned one is decided by comparing gitlinks:
 the mount's gitlink in the tarball's release against the pin's (the caller
 does that, sources.py). A different commit is the nearest public tree, a
@@ -51,6 +58,61 @@ EXCLUDE = (
 MAX_FILE = 2 << 20
 
 MANIFEST = "manifest.json"
+
+# The SHA-256 of every tarball the tools may stream, by file name. When the
+# Chromium pin moves (docs/REBASING.md), add the new release's: its
+# <name>.hashes file in the bucket lists it, and the size and MD5 the
+# bucket reports for the tarball itself (its ETag) should agree with it.
+PINNED_SHA256 = {
+    "chromium-156.0.8078.48-lite.tar.xz":
+        "63042065e7d52ed00e4375f6e989be4caf29fcd4ca0a9e3cadf32ec55462bd9f",
+}
+
+
+class TarballNotVerified(RuntimeError):
+    """A tarball with no pinned SHA-256, or whose bytes don't match it."""
+
+
+def pinned_sha256(url, pins=None):
+    """The pinned SHA-256 of the tarball at `url` (by its file name)."""
+    name = url.rsplit("/", 1)[-1]
+    sha = (PINNED_SHA256 if pins is None else pins).get(name)
+    if sha is None:
+        raise TarballNotVerified(
+            "%s has no pinned SHA-256: add it to PINNED_SHA256 in "
+            "tools/compile_check/ccheck/tarball.py (from %s.hashes, "
+            "checked against the bucket's MD5 of the tarball)" % (name, url))
+    return sha
+
+
+class HashingReader:
+    """A file object that hashes what is read from it (tarfile's stream
+    mode reads it in order); drain() reads the rest, which tarfile leaves
+    after the archive's end."""
+
+    def __init__(self, f):
+        self._f = f
+        self._h = hashlib.sha256()
+
+    def read(self, n=-1):
+        data = self._f.read(n)
+        self._h.update(data)
+        return data
+
+    def drain(self):
+        while self.read(1 << 20):
+            pass
+        return self._h.hexdigest()
+
+
+def safe_relpath(rel):
+    """`rel` if writing it under a directory stays there (no "..", ".", empty
+    or absolute component), else None."""
+    if not rel or rel.startswith("/"):
+        return None
+    if any(p in ("", ".", "..") for p in rel.split("/")):
+        return None
+    return rel
 
 
 def _vkey(v):
@@ -122,16 +184,20 @@ def member_dest(name, top, mounts):
         return None
     for m in mounts:
         if rel.startswith(m + "/"):
-            return m, rel[len(m) + 1:]
+            inside = safe_relpath(rel[len(m) + 1:])
+            return (m, inside) if inside is not None else None
     return None
 
 
-def extract(url, version, mounts, dest, log, opener=None):
+def extract(url, version, mounts, dest, log, opener=None, pins=None):
     """Streams the tarball at `url` and writes every regular file (up to
     MAX_FILE) under the mounts to dest/<mount>/..., then dest/manifest.json:
     {"version", "url", "mounts": {mount: {path: [mode, blob id]}}}.
-    Written to a temporary directory first: an interrupted run leaves
-    nothing behind."""
+    Written to a temporary directory first, and moved to `dest` only once
+    the whole tarball matched its pinned SHA-256 (`pins`, PINNED_SHA256 by
+    default; TarballNotVerified otherwise): an interrupted or unverified
+    run leaves nothing behind."""
+    expected = pinned_sha256(url, pins)
     dest = Path(dest)
     tmp = dest.with_name(dest.name + ".partial")
     shutil.rmtree(tmp, ignore_errors=True)
@@ -144,23 +210,30 @@ def extract(url, version, mounts, dest, log, opener=None):
         url, ", ".join(sorted(mounts))))
     opener = opener or urllib.request.urlopen
     n = 0
-    with opener(url) as r, tarfile.open(fileobj=r, mode="r|xz") as tf:
-        for m in tf:
-            n += 1
-            if not m.isfile() or m.size > MAX_FILE:
-                continue
-            hit = member_dest(m.name, top, mounts_by_len)
-            if hit is None:
-                continue
-            mount, rel = hit
-            data = tf.extractfile(m).read()
-            out = tmp / mount / rel
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(data)
-            mode = "100755" if m.mode & 0o111 else "100644"
-            files[mount][rel] = [mode, blob_id(data)]
+    with opener(url) as r:
+        hashed = HashingReader(r)
+        with tarfile.open(fileobj=hashed, mode="r|xz") as tf:
+            for m in tf:
+                n += 1
+                if not m.isfile() or m.size > MAX_FILE:
+                    continue
+                hit = member_dest(m.name, top, mounts_by_len)
+                if hit is None:
+                    continue
+                mount, rel = hit
+                data = tf.extractfile(m).read()
+                out = tmp / mount / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(data)
+                mode = "100755" if m.mode & 0o111 else "100644"
+                files[mount][rel] = [mode, blob_id(data)]
+        got = hashed.drain()
+    if got != expected:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise TarballNotVerified("%s: SHA-256 %s, not the pinned %s" % (
+            url, got, expected))
     (tmp / MANIFEST).write_text(json.dumps(
-        {"version": version, "url": url, "mounts": files}))
+        {"version": version, "url": url, "sha256": got, "mounts": files}))
     shutil.rmtree(dest, ignore_errors=True)
     tmp.rename(dest)
     log("tarball: %d members read, %d files kept, %.0f s" % (

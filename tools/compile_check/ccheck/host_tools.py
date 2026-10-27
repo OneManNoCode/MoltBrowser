@@ -109,6 +109,15 @@ def ensure_perfetto_plugins(work, tree, interp):
     return paths
 
 
+def cxxbridge_install_cmd(cargo, crate, root):
+    """`cargo install` of the vendored cxxbridge-cmd at `crate` into `root`,
+    with the dependency versions its Cargo.lock pins (--locked): without
+    it cargo ignores the lock file and takes the newest matching releases
+    from crates.io, whose build scripts and macros run here."""
+    return [cargo, "install", "--path", str(crate), "--locked",
+            "--root", str(root), "-j", "2", "--force"]
+
+
 def ensure_cxxbridge(work, tree):
     """cxxbridge from Chromium's vendored cxxbridge-cmd (its dependencies
     come from crates.io), for the .rs.h headers of cxx bindings."""
@@ -127,8 +136,9 @@ def ensure_cxxbridge(work, tree):
     crate = root / "src"
     shutil.rmtree(crate, ignore_errors=True)
     shutil.copytree(tree.tree_dir / vend, crate)
-    r = subprocess.run([cargo, "install", "--path", str(crate),
-                        "--root", str(root), "-j", "2", "--force"],
+    # --locked: the dependencies the crate's own Cargo.lock pins, each
+    # checked against its checksum there, never the newest crates.io has.
+    r = subprocess.run(cxxbridge_install_cmd(cargo, crate, root),
                        capture_output=True, text=True,
                        env=dict(os.environ,
                                 CARGO_TARGET_DIR=str(root / "target")))

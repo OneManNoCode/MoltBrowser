@@ -10,6 +10,7 @@ process and the tooling for it, plus the first dry run.
 | What | Where |
 |---|---|
 | The Chromium revision we build on | `chromium_version.txt` (`CHROMIUM_VERSION`, `CHROMIUM_REVISION`). The only copy: `scripts/setup.sh`, `build/docker/*`, every workflow and `tools/chromium/*` read it. Shell code uses `tools/chromium/pin.sh`. |
+| The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). |
 | MoltBrowser's own code | `src/` files that do not exist upstream (3824 today: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
 | Our changes to upstream files | `src/` still holds whole copies (the build does `cp -R src/. chromium/src/`). `patches/` holds the same changes as one diff per file against the pin, generated from `src/`. |
 
@@ -117,7 +118,9 @@ extended channel moves to a new milestone again, do the big rebase to it.
    are normally all clean.
 3. `tools/chromium/rebase.py <tag> --apply`, then
    `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`
-   and `tools/moltnet_locale/generate_tables.py` (step 5 below).
+   and `tools/moltnet_locale/generate_tables.py` (step 5 below). Pin the
+   new release's source tarball (`PINNED_SHA256`, above) before the static
+   GN check or the compile check fetches it.
 4. Compile check and smoke test on the build machine (below), then release.
    Note the Chromium version in the release notes.
 

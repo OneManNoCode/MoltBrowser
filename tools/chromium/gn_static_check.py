@@ -76,6 +76,8 @@ Two presubmit checks run over the same overlay:
 
 Usage:
   tools/chromium/gn_static_check.py fetch      # stream the pin's GN files once
+                                    # (kept if the tarball matches its
+                                    # pinned SHA-256: ccheck/tarball.py)
   tools/chromium/gn_static_check.py check [--platform CONFIGS] [--tree DIR]
                                     [--warnings] [--json OUT] [FILE...]
   tools/chromium/gn_static_check.py checkdeps [--json OUT]
@@ -107,6 +109,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools" / "compile_check"))
 
 import upstream as up  # noqa: E402
 from ccheck import gn as gnlib  # noqa: E402
+from ccheck import tarball as cctarball  # noqa: E402
 
 DEFAULT_CACHE = REPO_ROOT / ".molt-gn-check-cache"
 BUCKET = ("https://commondatastorage.googleapis.com/"
@@ -1512,16 +1515,20 @@ def check_build_file(g, ug, overlay, bf, dot, findings):
 # fetch: Chromium's GN files from the official source tarball
 
 
-def fetch(version, dest, overlay_files, log=log, opener=None):
+def fetch(version, dest, overlay_files, log=log, opener=None, pins=None):
     """Streams chromium-<version>-lite.tar.xz once and keeps every BUILD.gn,
     .gn, .gni and DEPS file, //chrome/VERSION and build/util (gn runs
     version.py), checkdeps, and the upstream copy of every overlay path;
-    writes paths.txt (every file in the tarball)."""
+    writes paths.txt (every file in the tarball). Kept only if the whole
+    tarball matches its pinned SHA-256 (ccheck/tarball.py: PINNED_SHA256,
+    or `pins`): checkdeps, the DEPS files it reads and version.py run
+    here."""
+    url = BUCKET + "chromium-%s-lite.tar.xz" % version
+    expected = cctarball.pinned_sha256(url, pins)
     dest = Path(dest)
     tmp = dest.with_name(dest.name + ".partial")
     shutil.rmtree(tmp, ignore_errors=True)
     (tmp / "tree").mkdir(parents=True)
-    url = BUCKET + "chromium-%s-lite.tar.xz" % version
     top = "chromium-%s/" % version
     keep_prefix = ("buildtools/checkdeps/", "build/util/")
     want = set(overlay_files)
@@ -1529,28 +1536,34 @@ def fetch(version, dest, overlay_files, log=log, opener=None):
     log("fetch: streaming %s (about 5 minutes)" % url)
     n = kept = 0
     opener = opener or urllib.request.urlopen
-    with open(tmp / "paths.txt", "w") as paths, opener(url) as r, \
-            tarfile.open(fileobj=r, mode="r|xz") as tf:
-        for m in tf:
-            n += 1
-            if not m.name.startswith(top):
-                continue
-            rel = m.name[len(top):]
-            if not rel or ".." in rel.split("/"):
-                continue
-            if m.isfile() or m.issym():
-                paths.write(rel + "\n")
-            if not m.isfile():
-                continue
-            base = rel.rsplit("/", 1)[-1]
-            if not (base.endswith((".gn", ".gni")) or base == "DEPS" or
-                    rel == "chrome/VERSION" or rel.startswith(keep_prefix)
-                    or rel in want):
-                continue
-            out = tmp / "tree" / rel
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(tf.extractfile(m).read())
-            kept += 1
+    with open(tmp / "paths.txt", "w") as paths, opener(url) as r:
+        hashed = cctarball.HashingReader(r)
+        with tarfile.open(fileobj=hashed, mode="r|xz") as tf:
+            for m in tf:
+                n += 1
+                if not m.name.startswith(top):
+                    continue
+                rel = m.name[len(top):]
+                if cctarball.safe_relpath(rel) is None:
+                    continue
+                if m.isfile() or m.issym():
+                    paths.write(rel + "\n")
+                if not m.isfile():
+                    continue
+                base = rel.rsplit("/", 1)[-1]
+                if not (base.endswith((".gn", ".gni")) or base == "DEPS" or
+                        rel == "chrome/VERSION" or rel.startswith(keep_prefix)
+                        or rel in want):
+                    continue
+                out = tmp / "tree" / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(tf.extractfile(m).read())
+                kept += 1
+        got = hashed.drain()
+    if got != expected:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise cctarball.TarballNotVerified(
+            "%s: SHA-256 %s, not the pinned %s" % (url, got, expected))
     (tmp / "version.txt").write_text(version + "\n")
     shutil.rmtree(dest, ignore_errors=True)
     tmp.rename(dest)
@@ -1786,7 +1799,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     version = getattr(a, "version", None) or up.read_pin().version
     if a.cmd == "fetch":
-        fetch(version, default_tree_dir(a.cache, version), up.overlay_files())
+        try:
+            fetch(version, default_tree_dir(a.cache, version),
+                  up.overlay_files())
+        except cctarball.TarballNotVerified as e:
+            log("fetch: %s" % e)
+            return 2
         return 0
     if a.tree:
         root = Path(a.tree)

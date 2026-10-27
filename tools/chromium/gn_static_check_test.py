@@ -13,6 +13,7 @@ plumbing of the checkdeps and Blink-audit runs (with stand-in scripts).
 
 Run: python3 tools/chromium/gn_static_check_test.py -v
 """
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -606,11 +607,13 @@ class FetchTest(unittest.TestCase):
                 info = tarfile.TarInfo("chromium-1.2.3.4/" + name)
                 info.size = len(data)
                 tf.addfile(info, io.BytesIO(data))
+        name = "chromium-1.2.3.4-lite.tar.xz"
+        pins = {name: hashlib.sha256(buf.getvalue()).hexdigest()}
         tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-fetch-"))
         try:
             dest = tmp / "1.2.3.4"
             g.fetch("1.2.3.4", dest, ["a/c.cc"], log=lambda m: None,
-                    opener=lambda url: io.BytesIO(buf.getvalue()))
+                    opener=lambda url: io.BytesIO(buf.getvalue()), pins=pins)
             kept = sorted(str(p.relative_to(dest / "tree"))
                           for p in (dest / "tree").rglob("*") if p.is_file())
             self.assertEqual(kept, ["BUILD.gn", "a/DEPS", "a/b.gni", "a/c.cc",
@@ -618,6 +621,44 @@ class FetchTest(unittest.TestCase):
                                     "chrome/VERSION"])
             self.assertEqual(len(g.load_paths(dest / "paths.txt")), 7)
             self.assertFalse((tmp / "1.2.3.4.partial").exists())
+
+            # Nothing is kept from a tarball that isn't the pinned one, or
+            # that has no pin.
+            other = tmp / "other"
+            bad = {name: "0" * 64}
+            for kwargs in ({"pins": bad}, {"pins": {}}):
+                with self.assertRaises(g.cctarball.TarballNotVerified):
+                    g.fetch("1.2.3.4", other, ["a/c.cc"], log=lambda m: None,
+                            opener=lambda url: io.BytesIO(buf.getvalue()),
+                            **kwargs)
+                self.assertFalse(other.exists())
+                self.assertFalse((tmp / "other.partial").exists())
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_fetch_keeps_nothing_outside_the_tree(self):
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:xz") as tf:
+            for name in ("chromium-1.2.3.4/a/../../escape.gn",
+                         "chromium-1.2.3.4/./a/dot.gn",
+                         "chromium-1.2.3.4/a/ok.gn"):
+                info = tarfile.TarInfo(name)
+                info.size = 2
+                tf.addfile(info, io.BytesIO(b"#\n"))
+        tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-fetch-"))
+        try:
+            dest = tmp / "d" / "1.2.3.4"
+            g.fetch("1.2.3.4", dest, [], log=lambda m: None,
+                    opener=lambda url: io.BytesIO(buf.getvalue()),
+                    pins={"chromium-1.2.3.4-lite.tar.xz":
+                          hashlib.sha256(buf.getvalue()).hexdigest()})
+            written = sorted(str(p.relative_to(tmp))
+                             for p in tmp.rglob("*") if p.is_file())
+            self.assertEqual(written, ["d/1.2.3.4/paths.txt",
+                                       "d/1.2.3.4/tree/a/ok.gn",
+                                       "d/1.2.3.4/version.txt"])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
