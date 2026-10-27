@@ -82,11 +82,15 @@ class Index:
 
 def build_index(tree, interp, cache_path):
     """Reads every BUILD.gn mentioning .mojom; cached by the content hash of
-    those files."""
+    those files and of what decides their values besides them (the
+    platform's args and MoltBrowser's GN files), so a target's
+    enabled_features, and with them its outputs' stamps, follow an args
+    change."""
     files = sorted(set(tree.chromium_files(
         lambda p: p.endswith("BUILD.gn")) + [
             p for p in tree.overlay_set() if p.endswith("BUILD.gn")]))
-    h = hashlib.sha1()
+    from . import gen_buildflags  # the same platform key
+    h = hashlib.sha1(gen_buildflags.platform_key(tree).encode())
     relevant = []
     for p in files:
         data = tree.read(p)

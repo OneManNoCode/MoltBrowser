@@ -117,10 +117,12 @@ def _write(tree, gen_dir, name, t, d):
     return None
 
 
-def _platform_key(tree):
+def platform_key(tree):
     """What decides every header's flags besides its own BUILD.gn: the pin,
     the platform's args, and MoltBrowser's GN files."""
-    plat = tree.platform
+    plat = getattr(tree, "platform", None)
+    if plat is None:  # a tree without a platform (tests)
+        return ""
     h = hashlib.sha1(DRIVER_VERSION.encode())
     h.update(("%s\0%s\0%s\0" % (
         tree.chromium.rev, plat.name,
@@ -180,7 +182,7 @@ def refresh(tree, interp, gen_dir):
     since it was written (see the module doc), when they did. Returns
     (remade, removed)."""
     stamps = _load(tree)
-    pkey = _platform_key(tree)
+    pkey = platform_key(tree)
     remade, removed = [], []
     for name, (d, tname) in sorted(generated_headers(gen_dir).items()):
         bf = (d + "/BUILD.gn") if d else "BUILD.gn"
@@ -241,7 +243,7 @@ def generate(tree, interp, gen_dir, names, include_dirs):
                 break
     written, failed = [], {}
     stamps = _load(tree) if hasattr(tree, "state") else None
-    pkey = _platform_key(tree) if stamps is not None else None
+    pkey = platform_key(tree) if stamps is not None else None
     for name in names:
         if name not in found:
             failed[name] = "no buildflag_header() target found"

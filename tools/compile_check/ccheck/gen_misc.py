@@ -7,7 +7,9 @@ grit resource headers (grit/*.h) are made by Chromium's own grit
 target expands to and the first-ids file the build makes
 (tools/gritsettings:default_resource_ids). Only the headers are written,
 not the .pak files. A header is remade when its .grd, a <part> of it, the
-first-ids file or its args change (grit_stamps.json).
+first-ids file or its args change (grit_stamps.json; the args are taken
+from the action again when the platform's GN args or MoltBrowser's GN
+files change).
 
 STAND-INS. Each writer below approximates what the build generates; checks
 that include its output rest partly on a stand-in (the report lists them):
@@ -568,9 +570,9 @@ def run_grit(tree, gen_dir, args):
         raise RuntimeError("grit: " + (r.stderr or r.stdout)[-600:])
 
 
-def real_grit_header(tree, interp, name, t):
-    """Writes gen/<name> with Chromium's grit, run with the args of the
-    action the grit() target `t` expands to. Records its stamp."""
+def _grit_args(tree, interp, name, t):
+    """The header-writing args of the grit action the grit() target `t`
+    expands to, as GN evaluates them now."""
     from .gen_actions import find_action
     act = find_action(tree, interp, name, hint=t.path[2:] + "/BUILD.gn")
     if act is None or not str(act.get("script") or "").endswith("grit.py"):
@@ -582,6 +584,13 @@ def real_grit_header(tree, interp, name, t):
     bad = [a for a in args if not isinstance(a, str) or "<UNKNOWN>" in a]
     if bad:
         raise RuntimeError("grit args not computable: %r" % bad[:3])
+    return args
+
+
+def real_grit_header(tree, interp, name, t):
+    """Writes gen/<name> with Chromium's grit, run with the args of the
+    action the grit() target `t` expands to. Records its stamp."""
+    args = _grit_args(tree, interp, name, t)
     ensure_resource_ids(tree, interp, tree.gen_dir)
     out = tree.gen_dir / name
     if out.exists():
@@ -597,15 +606,39 @@ def real_grit_header(tree, interp, name, t):
 
 def refresh_grit(tree, interp):
     """Remakes every grit header whose .grd (or a <part>, or the first-ids
-    file, or its args) changed since it was written, and replaces the
+    file, or its args, evaluated again when the platform's GN args or
+    MoltBrowser's GN files change) changed since it was written, and
+    replaces the
     stand-ins of earlier runs where grit can make the header now. A header
     that can't be remade is removed (a check then reports it missing rather
     than compiling against an old one). Returns (remade, removed)."""
+    from .gen_buildflags import platform_key
     gen_dir = tree.gen_dir
     stamps = _load_stamps(tree)
     remade, removed = [], []
     headers = [n for n in stamps if n != RESOURCE_IDS and
                not n.startswith("_")]
+    pkey = platform_key(tree)
+    if stamps.get("_platform") != pkey:
+        # The platform's GN args or MoltBrowser's GN files changed since
+        # these were made (or the stamps predate this check): take each
+        # header's args from its action as GN evaluates it now, so one
+        # whose defines changed is remade below (and one whose action is
+        # gone is removed), and retry grit's earlier failures.
+        for n in sorted(headers):
+            t = _find_grit_target(tree, interp, n)
+            try:
+                if t is None:
+                    raise RuntimeError("no grit() target writes it now")
+                args = _grit_args(tree, interp, n, t)
+            except RuntimeError as e:
+                args = None
+                log("grit: %s: %s" % (n, e))
+            if args != stamps[n]["args"]:
+                stamps[n] = {"args": args or ["--no-action"], "key": None}
+        stamps.pop("_failed", None)
+        stamps["_platform"] = pkey
+        _save_stamps(tree, stamps)
     if headers:
         try:
             ensure_resource_ids(tree, interp, gen_dir)

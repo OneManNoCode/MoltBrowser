@@ -511,6 +511,102 @@ class GritFreshnessTest(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class GritArgsChangeTest(unittest.TestCase):
+    """When the platform's GN args change, each grit header's args are
+    taken from its action again, and a header whose defines changed is
+    remade with them."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.tree = FakeTree({"a/x.grd": "<grit/>"})
+        self.tree.state = self.tmp / "state"
+        self.tree.gen_dir = self.tmp / "gen"
+        self.tree.platform = platforms.get("linux")
+        self.tree.chromium = types.SimpleNamespace(rev="pin")
+        self.saved = {n: getattr(gen_misc, n) for n in (
+            "_find_grit_target", "_grit_args", "run_grit",
+            "ensure_resource_ids")}
+        self.defines = ["-D", "x=1"]
+        self.ran = []
+        gen_misc._find_grit_target = lambda tree, interp, n: "target"
+        gen_misc._grit_args = lambda tree, interp, n, t: (
+            ["-i", "../../a/x.grd", "build"] + self.defines)
+        gen_misc.ensure_resource_ids = lambda tree, interp, gen_dir: None
+
+        def run_grit(tree, gen_dir, args):
+            self.ran.append(args)
+            (gen_dir / "a/grit/x.h").write_text("// %s\n" % args)
+        gen_misc.run_grit = run_grit
+        h = self.tree.gen_dir / "a/grit/x.h"
+        h.parent.mkdir(parents=True)
+        h.write_text("// old\n")
+        args = ["-i", "../../a/x.grd", "build", "-D", "x=1"]
+        gen_misc._save_stamps(self.tree, {"a/grit/x.h": {
+            "args": args,
+            "key": gen_misc._grit_key(self.tree, self.tree.gen_dir, args)}})
+
+    def tearDown(self):
+        for n, f in self.saved.items():
+            setattr(gen_misc, n, f)
+        shutil.rmtree(self.tmp)
+
+    def test_defines_follow_the_args(self):
+        # Stamps from before the platform key: args evaluated, unchanged.
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None), ([], []))
+        self.assertEqual(self.ran, [])
+        # The args file changes a define: remade with the new one.
+        self.tree.platform = types.SimpleNamespace(
+            name="linux", extra_args={"x": 2}, args_file="configs/none.gn")
+        self.defines = ["-D", "x=2"]
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None),
+                         (["a/grit/x.h"], []))
+        self.assertEqual(self.ran[-1][-1], "x=2")
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None), ([], []))
+        self.assertEqual(len(self.ran), 1)
+
+    def test_header_without_an_action_removed(self):
+        self.tree.platform = types.SimpleNamespace(
+            name="linux", extra_args={"x": 2}, args_file="configs/none.gn")
+        gen_misc._find_grit_target = lambda tree, interp, n: None
+
+        def fail(tree, gen_dir, args):
+            raise RuntimeError("grit: no .grd")
+        gen_misc.run_grit = fail
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None),
+                         ([], ["a/grit/x.h"]))
+        self.assertFalse((self.tree.gen_dir / "a/grit/x.h").exists())
+
+
+class MojomIndexArgsTest(unittest.TestCase):
+    """The mojom index (with each target's enabled_features) is read again
+    when the platform's GN args change, not only its BUILD.gn files."""
+
+    def test_args_change_reindexes(self):
+        files = {"a/BUILD.gn": 'declare_args() { use_x = false }\n'
+                               'source_set("m") {\n'
+                               '  sources = [ "x.mojom" ]\n'
+                               '  enabled_features = []\n'
+                               '  if (use_x) { enabled_features += '
+                               '[ "use_x" ] }\n}\n'}
+        tree = FakeTree(files)
+        tree.platform = types.SimpleNamespace(
+            name="linux", extra_args={}, args_file="configs/none.gn")
+        tree.chromium = types.SimpleNamespace(rev="pin")
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            cache = tmp / "mojom_index.json"
+            idx = gen_mojom.build_index(tree, make_interp(files), cache)
+            self.assertEqual(idx.mojoms["a/x.mojom"]["enabled_features"], [])
+            it = make_interp(files)
+            it.args = {"use_x": True}
+            tree.platform.extra_args = {"use_x": True}
+            idx = gen_mojom.build_index(tree, it, cache)
+            self.assertEqual(idx.mojoms["a/x.mojom"]["enabled_features"],
+                             ["use_x"])
+        finally:
+            shutil.rmtree(tmp)
+
+
 class SourcesStateTest(unittest.TestCase):
     """SourceTree._record: a mount whose source changed drops its files."""
 
