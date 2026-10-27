@@ -27,6 +27,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -639,6 +640,7 @@ def run_checks(args, base, tgts, rounds=0, headers=False):
         if tree is not base:
             ensure_inputs(tree)
         ts = built_here(tree, ts, optional.get(tree.platform.name))
+        t0 = time.time()
         if rounds:
             fetch_and_gen(args, tree, ts, rounds)
         via = {}
@@ -659,7 +661,11 @@ def run_checks(args, base, tgts, rounds=0, headers=False):
                 ts = ts + extra
                 if rounds:
                     fetch_and_gen(args, tree, ts, rounds)
+        t1 = time.time()
         out = do_check(args, tree, ts)
+        print("%s: %d file(s); fetch and generate %.0f s, check %.0f s" % (
+            tree.platform.name, len(ts), t1 - t0, time.time() - t1),
+            flush=True)
         for r in out:
             if r["target"] in via:
                 r["via"] = r["target"]
@@ -934,6 +940,12 @@ def cmd_report(args):
         for t, st, det, _, plat in rows:
             print("| `%s` | %s | %s | %s |" % (t, plat, st, det))
     print("\n" + ", ".join("%s: %d" % kv for kv in sorted(counts.items())))
+    peaks = sorted((r for r in res if r.get("max_rss_mb")),
+                   key=lambda r: -r["max_rss_mb"])
+    if peaks:
+        print("peak memory of a compile: %s" % ", ".join(
+            "%s (%s) %d MB" % (r["target"], r.get("platform") or "-",
+                               r["max_rss_mb"]) for r in peaks[:3]))
 
 
 # -- clean --------------------------------------------------------------------

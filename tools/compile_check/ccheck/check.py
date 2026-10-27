@@ -7,9 +7,11 @@ language: C with clang and -std=c11, C++ with clang++, Objective-C++ with
 ARC, Windows files with clang-cl against the Windows SDK."""
 import concurrent.futures
 import json
+import os
 import re
 import resource
 import subprocess
+import tempfile
 from pathlib import Path
 
 from . import config, platforms, result_cache, sdks, toolchain
@@ -146,6 +148,20 @@ def _limit():
     resource.setrlimit(resource.RLIMIT_AS, (6 << 30, 6 << 30))
 
 
+def run_measured(cmd, cwd):
+    """(exit status, output, peak resident memory in MB) of a compile:
+    its stderr and stdout in one stream, and the process's own maximum
+    RSS (wait4), which `report` lists to size --jobs."""
+    with tempfile.TemporaryFile() as out:
+        p = subprocess.Popen(cmd, cwd=cwd, stdout=out,
+                             stderr=subprocess.STDOUT, preexec_fn=_limit)
+        _, status, ru = os.wait4(p.pid, 0)
+        p.returncode = os.waitstatus_to_exitcode(status)
+        out.seek(0)
+        text = out.read().decode("utf-8", "replace")
+    return p.returncode, text, ru.ru_maxrss // 1024
+
+
 def parse_diags(text):
     diags = []
     for m in DIAG_RE.finditer(text):
@@ -169,15 +185,13 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
     key = result_cache.key(work, cmd, tree.out_dir, _limit) if cache \
         else None
     hit = result_cache.lookup(work, name, key)
+    peak = None
     if hit is not None:
         rc, text = hit
     else:
-        r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
-                           text=True, preexec_fn=_limit)
-        text = r.stderr + r.stdout
+        rc, text, peak = run_measured(cmd, str(tree.out_dir))
         root = str(tree.tree_dir) + "/"
         text = text.replace(root, "")
-        rc = r.returncode
         if cache:
             result_cache.store(work, name, key, rc, text)
         else:
@@ -189,6 +203,7 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
         {"directory": str(tree.out_dir), "arguments": cmd}, indent=1))
     res = {"target": target, "rc": rc, "diags": parse_diags(text),
            "log": str(log), "reused": hit is not None,
+           "max_rss_mb": peak,
            "platform": plat.name if plat else platforms.DEFAULT,
            "lang": platforms.language(target)}
     if lang:
@@ -215,8 +230,9 @@ def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None,
             n_err = sum(1 for d in res["diags"] if "error" in d["kind"])
             print("[%d/%d] %s (%s): %d error(s)%s" % (
                 i + 1, len(targets), res["target"], res["platform"], n_err,
-                " (unchanged: last result)" if res.get("reused") else ""),
-                flush=True)
+                " (unchanged: last result)" if res.get("reused") else
+                ", %d MB" % res["max_rss_mb"] if res.get("max_rss_mb")
+                else ""), flush=True)
     n = sum(1 for r in results if r.get("reused"))
     if n:
         print("%s: %d of %d result(s) reused (inputs unchanged)" % (
