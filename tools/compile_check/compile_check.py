@@ -437,7 +437,8 @@ def do_check(args, tree, tgts):
         tflags.setdefault(t, {})["scoped"] = dirs
     return check.run(tree, args.work, tgts, jobs=args.jobs,
                      plugins=not args.no_plugins, dev=args.dev_plugins,
-                     gn_flags=gn_flags, target_flags=tflags)
+                     gn_flags=gn_flags, target_flags=tflags,
+                     cache=not getattr(args, "no_cache", False))
 
 
 def scoped_dirs(tree, tgts):
@@ -888,6 +889,10 @@ def main():
         c.add_argument("--dev-plugins", action="store_true",
                        help="also the raw_ptr/raw_ref field checks a "
                        "non-official build runs")
+        c.add_argument("--no-cache", action="store_true",
+                       help="compile every file again (by default a file "
+                       "whose preprocessed source, command and compiler "
+                       "are unchanged keeps its last result)")
         c.add_argument("--rounds", type=int, default=6)
         c.add_argument("--platforms", type=lambda v: v.split(","),
                        help="only these platforms (comma-separated: %s)" %

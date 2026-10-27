@@ -7,8 +7,8 @@ exception/RTTI flags and own configs from its GN target, mojom freshness
 and the parser bisection, the tarball source, grit header freshness, cxx
 bridge headers' cfgs and freshness, where subprojects came from, the
 platforms (which files, their atoms, buildflags in the scan, the compile
-command of each platform and language), the Windows SDK's layout, and the
-report's stand-in labels.
+command of each platform and language), the Windows SDK's layout, the
+report's stand-in labels, and when a check result is reused.
 
 Run: python3 tools/compile_check/compile_check_test.py -v
 """
@@ -31,7 +31,7 @@ sys.path.insert(0, str(HERE))
 import compile_check  # noqa: E402
 from ccheck import check, config, gen_actions, gen_misc, gen_mojom  # noqa
 from ccheck import gn, gnconfigs, platforms, scan, sdks, sources  # noqa
-from ccheck import tarball, targets  # noqa: E402
+from ccheck import result_cache, tarball, targets  # noqa: E402
 
 BUILDCONFIG = """
 default_compiler_configs = [
@@ -1400,6 +1400,137 @@ class SkippedReportTest(unittest.TestCase):
                                     Path("/x"))
         self.assertIn("no GN target lists the file with configs/linux-x64.gn",
                       st[1])
+
+
+# A stand-in for clang: with -E it prints the source and the files it
+# includes ("#include "x"" lines, from the source's directory); otherwise it
+# counts the compile (in compiles.txt next to it) and warns about "WARN".
+FAKE_CLANG = r"""#!/usr/bin/env python3
+import os, re, sys
+src = sys.argv[-1]
+text = open(src).read()
+if "-E" in sys.argv or "/E" in sys.argv:
+    sys.stdout.write(text)
+    for inc in re.findall(r'#include "([^"]+)"', text):
+        p = os.path.join(os.path.dirname(src), inc)
+        if not os.path.exists(p):
+            sys.stderr.write("%s:1:10: fatal error: '%s' file not found\n"
+                             % (src, inc))
+            sys.exit(1)
+        sys.stdout.write(open(p).read())
+    sys.exit(int(os.environ.get("FAKE_PP_RC", "0")))
+with open(os.path.join(os.path.dirname(__file__), "compiles.txt"), "a") as f:
+    f.write(src + "\n")
+if "CRASH" in text:
+    sys.stderr.write("PLEASE submit a bug report\n")
+    sys.exit(1)
+if "WARN" in text:
+    sys.stderr.write("%s:1:1: warning: a warning\n" % src)
+"""
+
+
+class ResultCacheTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.work = self.tmp / "work"
+        bindir = self.work / "toolchain" / "clang" / "bin"
+        bindir.mkdir(parents=True)
+        (bindir.parent / "cr_build_revision").write_text("r1-1\n")
+        for exe in ("clang++", "clang", "clang-cl"):
+            (bindir / exe).write_text(FAKE_CLANG)
+            (bindir / exe).chmod(0o755)
+        self.compiles = bindir / "compiles.txt"
+        self.tree = sources.SourceTree(self.work, self.tmp / "cache",
+                                       overlay=self.tmp / "overlay",
+                                       platform="linux")
+        self.tree.system_dirs = []
+        self.tree.out_dir.mkdir(parents=True)
+        (self.work / "check").mkdir(parents=True)
+        self.src = self.tree.tree_dir / "a" / "x.cc"
+        self.src.parent.mkdir(parents=True)
+        self.src.write_text('#include "x.h"\nint x;\n')
+        (self.src.parent / "x.h").write_text("int y;\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def run_one(self, cache=True):
+        return check.run_one(self.tree, self.work, "a/x.cc",
+                             self.work / "check", plugins=True, cache=cache)
+
+    def compiled(self):
+        return len(self.compiles.read_text().splitlines()) \
+            if self.compiles.exists() else 0
+
+    def test_preprocess_command(self):
+        cmd = ["clang++", "-fsyntax-only", "-DA", "-Xclang", "-add-plugin",
+               "-Xclang", "find-bad-constructs", "-Xclang",
+               "-plugin-arg-find-bad-constructs", "-Xclang", "check-ipc",
+               "-Xclang", "-fno-x", "/src/a.cc"]
+        self.assertEqual(result_cache.preprocess_command(cmd),
+                         ["clang++", "-E", "-DA", "-Xclang", "-fno-x", "-dD",
+                          "/src/a.cc"])
+        self.assertEqual(result_cache.preprocess_command(
+            ["clang-cl", "/Zs", "/W4", "a.cc"]),
+            ["clang-cl", "/E", "/W4", "/clang:-dD", "a.cc"])
+
+    def test_unchanged_input_reuses_the_result(self):
+        self.src.write_text('#include "x.h"\nint x; // WARN\n')
+        r1 = self.run_one()
+        self.assertFalse(r1["reused"])
+        self.assertEqual([d["kind"] for d in r1["diags"]], ["warning"])
+        r2 = self.run_one()
+        self.assertTrue(r2["reused"])
+        self.assertEqual(r2["diags"], r1["diags"])
+        self.assertEqual(self.compiled(), 1)
+        # An included header changes: compiled again.
+        (self.src.parent / "x.h").write_text("int y, z;\n")
+        self.assertFalse(self.run_one()["reused"])
+        self.assertEqual(self.compiled(), 2)
+        self.assertTrue(self.run_one()["reused"])
+        # So does the compiler, or the command (plugins off).
+        (self.work / "toolchain/clang/cr_build_revision").write_text("r2-1")
+        self.assertFalse(self.run_one()["reused"])
+        r = check.run_one(self.tree, self.work, "a/x.cc",
+                          self.work / "check", plugins=False)
+        self.assertFalse(r["reused"])
+        self.assertEqual(self.compiled(), 4)
+        # --no-cache compiles, and forgets the entry.
+        self.assertFalse(self.run_one(cache=False)["reused"])
+        self.assertFalse(self.run_one()["reused"])
+        self.assertEqual(self.compiled(), 6)
+
+    def test_new_header_that_preprocessing_finds(self):
+        self.src.write_text('#include "y.h"\nint x;\n')
+        self.run_one()
+        self.run_one()
+        self.assertEqual(self.compiled(), 1)
+        (self.src.parent / "y.h").write_text("int w;\n")
+        self.assertFalse(self.run_one()["reused"])
+
+    def test_crash_and_failed_preprocessing_are_not_stored(self):
+        self.src.write_text("int x; // CRASH\n")
+        self.run_one()
+        self.assertFalse(result_cache.entry_path(self.work,
+                                                 "a__x.cc").exists())
+        self.assertFalse(self.run_one()["reused"])
+        self.src.write_text("int x;\n")
+        os.environ["FAKE_PP_RC"] = "2"
+        try:
+            self.run_one()
+            self.assertFalse(self.run_one()["reused"])
+        finally:
+            del os.environ["FAKE_PP_RC"]
+        self.assertEqual(self.compiled(), 4)
+
+    def test_entry_of_another_key_is_not_used(self):
+        result_cache.store(self.work, "n", "k1", 0, "log")
+        self.assertEqual(result_cache.lookup(self.work, "n", "k1"),
+                         (0, "log"))
+        self.assertIsNone(result_cache.lookup(self.work, "n", "k2"))
+        self.assertIsNone(result_cache.lookup(self.work, "n", None))
+        result_cache.store(self.work, "n", "k1", -9, "killed")
+        self.assertIsNone(result_cache.lookup(self.work, "n", "k1"))
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import resource
 import subprocess
 from pathlib import Path
 
-from . import config, platforms, sdks, toolchain
+from . import config, platforms, result_cache, sdks, toolchain
 
 DIAG_RE = re.compile(r"^(?P<file>[^:\n(]+?)(?::(?P<line>\d+):(?P<col>\d+)|"
                      r"\((?P<wline>\d+),(?P<wcol>\d+)\)): "
@@ -159,24 +159,36 @@ def parse_diags(text):
 
 
 def run_one(tree, work, target, out_dir, plugins=True, dev=False,
-            gn_flags=None, lang=None):
+            gn_flags=None, lang=None, cache=True):
     cmd = compile_command(tree, work, target, plugins, dev, gn_flags, lang)
-    r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
-                       text=True, preexec_fn=_limit)
-    text = r.stderr + r.stdout
-    root = str(tree.tree_dir) + "/"
-    text = text.replace(root, "")
     plat = getattr(tree, "platform", None)
     name = target.replace("/", "__")
     if plat is not None and plat.name != platforms.of(target):
         name += "@" + plat.name
+    # The last result, if nothing that decides it changed (result_cache).
+    key = result_cache.key(work, cmd, tree.out_dir, _limit) if cache \
+        else None
+    hit = result_cache.lookup(work, name, key)
+    if hit is not None:
+        rc, text = hit
+    else:
+        r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
+                           text=True, preexec_fn=_limit)
+        text = r.stderr + r.stdout
+        root = str(tree.tree_dir) + "/"
+        text = text.replace(root, "")
+        rc = r.returncode
+        if cache:
+            result_cache.store(work, name, key, rc, text)
+        else:
+            result_cache.drop(work, name)
     log = out_dir / (name + ".log")
     log.write_text(text)
     (out_dir / "commands").mkdir(parents=True, exist_ok=True)
     (out_dir / "commands" / (name + ".json")).write_text(json.dumps(
         {"directory": str(tree.out_dir), "arguments": cmd}, indent=1))
-    res = {"target": target, "rc": r.returncode, "diags": parse_diags(text),
-           "log": str(log),
+    res = {"target": target, "rc": rc, "diags": parse_diags(text),
+           "log": str(log), "reused": hit is not None,
            "platform": plat.name if plat else platforms.DEFAULT,
            "lang": platforms.language(target)}
     if lang:
@@ -187,7 +199,7 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
 
 
 def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None,
-        target_flags=None):
+        target_flags=None, cache=True):
     out_dir = Path(work) / "check"
     out_dir.mkdir(parents=True, exist_ok=True)
     tree.out_dir.mkdir(parents=True, exist_ok=True)
@@ -195,14 +207,20 @@ def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None,
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
         futs = {ex.submit(run_one, tree, work, t, out_dir, plugins, dev,
-                          gn_flags, (target_flags or {}).get(t)): t
+                          gn_flags, (target_flags or {}).get(t), cache): t
                 for t in targets}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()
             results.append(res)
             n_err = sum(1 for d in res["diags"] if "error" in d["kind"])
-            print("[%d/%d] %s (%s): %d error(s)" % (
-                i + 1, len(targets), res["target"], res["platform"], n_err),
+            print("[%d/%d] %s (%s): %d error(s)%s" % (
+                i + 1, len(targets), res["target"], res["platform"], n_err,
+                " (unchanged: last result)" if res.get("reused") else ""),
                 flush=True)
+    n = sum(1 for r in results if r.get("reused"))
+    if n:
+        print("%s: %d of %d result(s) reused (inputs unchanged)" % (
+            getattr(tree, "platform", None) and tree.platform.name or "",
+            n, len(results)))
     results.sort(key=lambda r: r["target"])
     return results
