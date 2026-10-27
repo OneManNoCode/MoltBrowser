@@ -3756,6 +3756,12 @@ Cortex-A53, Cortex-A76 and qemu's `max` CPU:
   harness (its signal code extracted from the test), the same on every CPU
   above; two modules of both kinds processing in turn on one thread each
   give what they give alone.
+* The leak kit's WAV, processed as the fake capture device delivers it
+  (44.1 kHz stereo in 10 ms buffers, to 48 kHz mono) and hashed as its
+  page hashes it: with the setting, one digest on every CPU above, the
+  silence before the burst processed to exact zeros and the burst found
+  in the same buffer however late the page starts listening; Chromium's
+  code gives two digests (with and without AVX2).
 
 Every changed C++ file compiles against Chromium 156's real headers
 (`tools/compile_check`).
