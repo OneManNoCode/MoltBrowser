@@ -1,0 +1,4 @@
+include_rules = [
+  # The inference service's std-only stream filters (page_translate_io.cc).
+  "+chrome/services/molt_ai/inference/engine/stream_filters.h",
+]

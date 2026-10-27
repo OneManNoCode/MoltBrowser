@@ -29,7 +29,24 @@ DIR_CONFIGS = {
 }
 
 
-def _flags_of(interp, tree, label, seen, out, cache):
+def _keep_cflag(c, interp):
+    """A config's cflag the check passes on: not a clang-cl flag on the
+    GCC-style platforms, nothing GN could not compute."""
+    if not isinstance(c, str) or "<UNKNOWN>" in c:
+        return False
+    if c.startswith("/") and not _is_win(interp):
+        return False
+    return True
+
+
+def _is_win(interp):
+    try:
+        return interp.globals.get("current_os") == "win"
+    except KeyError:
+        return False
+
+
+def _flags_of(interp, tree, label, seen, out, cache, lang=None):
     if label in seen:
         return
     seen.add(label)
@@ -52,18 +69,26 @@ def _flags_of(interp, tree, label, seen, out, cache):
                 continue
             a = interp.abspath(d, {"dir": t.path})
             out.append("-I" + str(tree.tree_dir / a[2:]))
-        for c in t.get("cflags") or []:
-            if isinstance(c, str) and not c.startswith("/") \
-                    and "<UNKNOWN>" not in c:
-                out.append(c)
+        for key in ["cflags"] + _lang_keys(lang):
+            v = t.get(key)
+            for c in v if isinstance(v, list) else []:
+                if _keep_cflag(c, interp):
+                    out.append(c)
         for sub in t.get("configs") or []:
             if isinstance(sub, str):
                 sub = sub.split("(")[0]
                 if sub.startswith(":"):
                     sub = t.path + sub
-                _flags_of(interp, tree, sub, seen, out, cache)
+                _flags_of(interp, tree, sub, seen, out, cache, lang)
         return
     log("gnconfigs: no config %s" % label)
+
+
+def _lang_keys(lang):
+    """GN's language-specific cflags keys for a file's language."""
+    return {"c": ["cflags_c"], "c++": ["cflags_cc"],
+            "objective-c": ["cflags_objc"],
+            "objective-c++": ["cflags_objcc"]}.get(lang, [])
 
 
 NO_EXCEPTIONS = "//build/config/compiler:no_exceptions"
@@ -188,19 +213,105 @@ def owning_target(tree, interp, path, cache):
     return None
 
 
+# Built-in target types (what a template expands to).
+BUILTIN_TARGETS = ("source_set", "static_library", "shared_library",
+                   "executable", "loadable_module", "component",
+                   "jumbo_source_set", "jumbo_static_library")
+
+# Configs whose flags the check sets itself (config.py) or that only
+# matter past the front end: a target's own configs other than these are
+# passed on.
+SKIP_OWN_CONFIGS = (
+    "//build/config/compiler:", "//build/config/clang:",
+    "//build/config/sanitizers:", "//build/config/coverage:",
+    "//build/config/c++:", "//build/config/win:", "//build/config/mac:",
+    "//build/config/linux:", "//build/config/posix:",
+    "//build/config/gcc:", "//build/config:",
+)
+
+
+def expanded_target(tree, interp, t, cache):
+    """For a template invocation (v8_source_set("x"), ...), the built-in
+    target its expansion defines with the same sources; else t."""
+    if t.func in BUILTIN_TARGETS:
+        return t
+    bf = t.path + "/BUILD.gn"
+    key = ("expanded", bf)
+    if key not in cache:
+        try:
+            cache[key] = interp.run_file(bf, expand=True)
+        except Exception as e:  # noqa: BLE001 - report, keep going
+            log("gnconfigs: %s (expanded): %s" % (bf, e))
+            cache[key] = []
+    want = _sources(t, interp)
+    for x in cache[key]:
+        if x.func in BUILTIN_TARGETS and x.path == t.path and \
+                want and want <= _sources(x, interp):
+            return x
+    return t
+
+
+def own_flags(t, interp, tree, cache, lang=None):
+    """The flags a target's own settings give its files: its defines,
+    include_dirs and cflags, and those of the configs it adds beyond the
+    defaults (SKIP_OWN_CONFIGS excepted)."""
+    out = []
+    for d in t.get("defines") or []:
+        if isinstance(d, str) and "<UNKNOWN>" not in d:
+            out.append("-D" + d)
+    for d in t.get("include_dirs") or []:
+        if isinstance(d, str) and "<UNKNOWN>" not in d:
+            a = interp.abspath(d, {"dir": t.path})
+            if a.startswith("//"):
+                out.append("-I" + str(tree.tree_dir / a[2:]))
+    for key in ["cflags"] + _lang_keys(lang):
+        v = t.get(key)
+        for c in v if isinstance(v, list) else []:
+            if _keep_cflag(c, interp) and c not in (
+                    "-fexceptions", "-frtti", "-fno-exceptions",
+                    "-fno-rtti", "/EHsc", "/GR", "/GR-"):
+                out.append(c)
+    defaults = interp.target_defaults.get(t.func, {}).get("configs")
+    defaults = [_label(c, "//build/config") for c in defaults
+                if isinstance(c, str)] if isinstance(defaults, list) else []
+    seen = set()
+    for c in t.get("configs") or []:
+        if not isinstance(c, str):
+            continue
+        c = _label(c, t.path)
+        if c in defaults or c.startswith(SKIP_OWN_CONFIGS):
+            continue
+        sub = []
+        _flags_of(interp, tree, c, seen, sub, cache, lang)
+        out += [f for f in sub if f not in (
+            "-fexceptions", "-frtti", "-fno-exceptions", "-fno-rtti",
+            "/EHsc", "/GR", "/GR-")]
+    return _dedupe(out)
+
+
 def target_flags(tree, interp, paths):
     """{path: {"gn_target": label or None, "exceptions": bool, "rtti":
-    bool}} for the files to check (the language flags their own GN target
-    compiles them with)."""
+    bool, "flags": [...]}} for the files to check: the language flags their
+    own GN target compiles them with, and the flags of its own settings
+    (own_flags)."""
+    from . import platforms
     cache = {}
     out = {}
     for p in paths:
         t = owning_target(tree, interp, p, cache)
         if t is None:
-            out[p] = {"gn_target": None, "exceptions": False, "rtti": False}
+            out[p] = {"gn_target": None, "exceptions": False, "rtti": False,
+                      "flags": []}
             continue
         info = {"gn_target": "%s:%s" % (t.path, t.name)}
         info.update(language_flags(t, interp, tree, cache))
+        x = expanded_target(tree, interp, t, cache)
+        if x is not t:
+            more = language_flags(x, interp, tree, cache)
+            for k in ("exceptions", "rtti"):
+                info[k] = info[k] or more[k]
+        info["flags"] = own_flags(x, interp, tree, cache,
+                                  platforms.language(p))
         out[p] = info
     return out
 

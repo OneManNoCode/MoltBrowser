@@ -38,6 +38,9 @@
 #   molt_net_partitioning_policy — the process-wide switches MoltNet needs
 #                              on (connections, HTTP cache, third-party
 #                              storage partitioned by site)
+#   molt_net_cpu_policy / molt_net_cpu — the processors MoltNet opens on
+#                              (x86-64 with SSE4.1, arm64), read once with
+#                              base::CPU
 #   molt_net_live_policy / molt_net_live_guard — the open check run again
 #                              whenever a setting it reads changes while
 #                              MoltNet is open (MoltNet then ends), and only
@@ -45,6 +48,7 @@
 #                              network context
 
 import("//extensions/buildflags/buildflags.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
 
 # Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
@@ -66,6 +70,9 @@ source_set("protocol") {
     "//base",
     # SAFECOOKIE control-port auth (HMAC-SHA256).
     "//crypto",
+
+    # The per-site socket pool policy torrc_builder.h follows (std-only).
+    "//net:molt_policies",
   ]
 }
 
@@ -73,7 +80,10 @@ source_set("protocol") {
 # molt_net_incognito_parity.h (Incognito and MoltNet), and the MoltNet
 # profile-id check molt_net_profile_id.h uses. Std-only and header-only, so
 # every upstream hook can include it without a link dependency and
-# molt_ai_unittests tests it without a Profile.
+# molt_ai_unittests tests it without a Profile. The two header-only checks
+# themselves (molt_net_profile_id.h, molt_net_incognito_parity.h) are listed
+# in //chrome/browser/profiles:profile, next to profile.h: every upstream
+# hook that asks them can include profile.h already.
 source_set("incognito_parity_policy") {
   sources = [ "molt_net_incognito_parity_policy.h" ]
 }
@@ -145,7 +155,12 @@ source_set("requests_policy") {
 # molt_ai_unittests tests it.
 source_set("network_context_policy") {
   sources = [ "molt_net_network_context_policy.h" ]
-  deps = [ "//base" ]
+  public_deps = [
+    "//base",
+
+    # The per-site socket pool policy (std-only).
+    "//net:molt_policies",
+  ]
 }
 
 # The process-wide switches MoltNet's per-site isolation needs on
@@ -153,6 +168,25 @@ source_set("network_context_policy") {
 # Header-only and std-only, so molt_ai_unittests tests it.
 source_set("partitioning_policy") {
   sources = [ "molt_net_partitioning_policy.h" ]
+}
+
+# The processors MoltNet opens on (molt_net_cpu_policy.h): x86-64 with
+# SSE4.1, without which V8 has no WebAssembly SIMD, and arm64.
+# Header-only and std-only, so molt_ai_unittests tests it.
+source_set("cpu_policy") {
+  sources = [ "molt_net_cpu_policy.h" ]
+}
+
+# This computer's processor as the policy reads it (base::CPU), cached for
+# the browser run: TorManager, MoltNetRouting, MoltNetWindow and MoltNet's
+# pages ask it.
+source_set("cpu") {
+  sources = [
+    "molt_net_cpu.cc",
+    "molt_net_cpu.h",
+  ]
+  public_deps = [ ":cpu_policy" ]
+  deps = [ "//base" ]
 }
 
 # Whether a profile's proxy settings are MoltNet's own: no policy proxy and
@@ -192,9 +226,9 @@ source_set("identity_end_policy") {
 
 # No Autofill server traffic and no address metadata downloads for MoltNet
 # tabs and payment sheets (molt_net_autofill.h). Asked by
-# ChromeAutofillClient (//chrome/browser/ui) and ChromePaymentRequestDelegate
-# (//chrome/browser/payments:impl); a dep of :tor so it links wherever they
-# do. If `gn check` flags their include, add this target to theirs.
+# ChromeAutofillClient (//chrome/browser/ui/autofill:impl) and
+# ChromePaymentRequestDelegate (//chrome/browser/payments:impl), which
+# depend on it.
 source_set("autofill") {
   sources = [
     "molt_net_autofill.cc",
@@ -203,6 +237,9 @@ source_set("autofill") {
   public_deps = [ "//base" ]
   deps = [
     ":requests_policy",
+
+    # g_browser_process (the application locale).
+    "//chrome/browser:browser_process",
     "//chrome/browser/profiles:profile",
     "//components/autofill/core/browser",
     "//components/autofill/core/common",
@@ -210,18 +247,11 @@ source_set("autofill") {
     "//net",
     "//third_party/libaddressinput",
   ]
-
-  # g_browser_process (the application locale) is in //chrome/browser,
-  # which depends on this target: not declared, as for :tor.
 }
 
 source_set("tor") {
   sources = [
     "exit_country_names.h",
-
-    # Header-only: Chromium's Incognito protections for MoltNet; the
-    # upstream hooks marked "MoltBrowser:" include it.
-    "molt_net_incognito_parity.h",
 
     # No navigation of an ended identity (registered in
     # chrome_content_browser_client.cc).
@@ -238,7 +268,6 @@ source_set("tor") {
     # Windows' parental controls, read again as a MoltNet window opens.
     "molt_net_parental_controls.cc",
     "molt_net_parental_controls.h",
-    "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
     "molt_net_window.cc",
@@ -253,6 +282,7 @@ source_set("tor") {
 
   public_deps = [
     ":autofill",
+    ":cpu",
     ":identity_end_policy",
     ":process_policy",
     ":incognito_parity_policy",
@@ -268,6 +298,9 @@ source_set("tor") {
 
   deps = [
     "//base",
+
+    # g_browser_process (molt_net_routing.cc, molt_net_window.cc).
+    "//chrome/browser:browser_process",
     # Which tor binary may run: bundled, or a root-owned system tor on Linux
     # (audit S18).
     "//chrome/browser/molt_ai/common:helper_binary",
@@ -276,9 +309,26 @@ source_set("tor") {
     # letterbox geometry is header-only and std-only).
     "//chrome/browser/molt_ai/fingerprinting:letterbox",
 
+    # IncognitoModePrefs (molt_net_routing.cc).
+    "//chrome/browser/prefs",
+
     # molt_net_routing.cc applies the Tor proxy + leak-safe prefs to the
     # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",
+
+    # ProfileManager and ProfileDestroyer (molt_net_routing.cc,
+    # molt_net_window.cc).
+    "//chrome/browser/profiles:profile_manager",
+
+    # molt_net_window.cc opens, finds and closes MoltNet's windows and tabs
+    # (browser_tabstrip.h is //chrome/browser/ui's own, which lists this
+    # target in allow_circular_includes_from).
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui:simple_message_box_headers",
+    "//chrome/browser/ui:unload_controller",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/browser_window:create_browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/common",
 
     # Whether new MoltNet windows open at a letterbox size (fingerprinting
@@ -313,16 +363,16 @@ source_set("tor") {
     "//url",
   ]
 
-  # NOTE: molt_net_window.cc creates Browser windows and molt_net_routing.cc
-  # enumerates loaded profiles, so they include //chrome/browser/ui and
-  # //chrome/browser/profiles headers. Those targets depend on this one, so
-  # the deps can't be declared here without a cycle — the same pattern the
-  # other molt_ai UI-adjacent code uses (this tree doesn't run `gn check`).
-  # The symbols resolve when everything is linked into chrome.
+  # The print-preview contents of a MoltNet profile (molt_net_window.cc).
+  if (enable_printing) {
+    deps += [ "//chrome/browser/printing" ]
+  }
 
   # tor_service.cc / tor_manager.cc talk to the Tor control port over
   # raw sockets. On Windows that means winsock2, which needs ws2_32.
   if (is_win) {
+    # Windows' parental controls (molt_net_parental_controls.cc).
+    deps += [ "//chrome/browser/win" ]
     libs = [ "ws2_32.lib" ]
   }
 }
@@ -468,9 +518,18 @@ source_set("onion") {
     ":tor",
     "//base",
 
+    # g_browser_process (onion_blocking_page.cc).
+    "//chrome/browser:browser_process",
+
+    # CreateConfirmInfoBar() (onion_location_tab_helper.cc).
+    "//chrome/browser/infobars",
+
     # ConsumeUserClick() (onion_blocking_page.cc).
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/profiles:profile",
+
+    # TypedNavigationUpgradeThrottle (onion_navigation_throttle.cc).
+    "//chrome/browser/ssl",
     "//chrome/common",
     "//components/infobars/content",
     "//components/infobars/core",
@@ -492,11 +551,8 @@ source_set("onion") {
     "//url",
   ]
 
-  # As in :tor: onion_blocking_page.cc reads g_browser_process and
-  # onion_location_tab_helper.cc uses //chrome/browser/infobars
-  # (CreateConfirmInfoBar); those depend on //chrome/browser, which depends
-  # on this target, so the symbols resolve at link time (no gn check here).
-  # tab_helpers.cc attaches OnionLocationTabHelper.
+  # tab_helpers.cc (//chrome/browser/ui:tab_helpers_impl) attaches
+  # OnionLocationTabHelper.
 }
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
@@ -516,6 +572,8 @@ source_set("unit_tests") {
     "molt_net_background_fetch_request_unittest.cc",
     "molt_net_background_fetch_scheduling_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
+    "molt_net_cpu_policy_unittest.cc",
+    "molt_net_cpu_unittest.cc",
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
@@ -551,6 +609,8 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":cpu",
+    ":cpu_policy",
     ":identity_end_policy",
     ":incognito_parity_policy",
     ":isolation_policy",
@@ -594,7 +654,16 @@ source_set("unit_tests") {
 
     # A regular profile's Background Fetch request carries the fetch's
     # credentials mode (download::CreateResourceRequest()).
+    "//components/download/internal/common:molt_fetch_credentials",
     "//components/download/public/common:public",
+
+    # A Background Fetch's in-memory limits and the site its registering
+    # page isolates it to.
+    "//components/download/internal/background_service:molt_site_isolation",
+
+    # Background Fetch scheduling, download isolation and processes per
+    # BrowsingInstance (content's std-only policies).
+    "//content/browser:molt_policies",
 
     # A Background Fetch's buffer counts against its site's blob share
     # (BlobStorageContext).
@@ -615,6 +684,7 @@ source_set("unit_tests") {
     "//net/traffic_annotation:test_support",
 
     # The parameters MoltNet's network-context settings are written into.
+    "//services/cert_verifier/cert_net_url_loader",
     "//services/cert_verifier/public/mojom",
     "//services/device/public/mojom",
     "//services/image_annotation/public/mojom",

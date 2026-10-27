@@ -5,10 +5,15 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.h b/components/services/storage/dom_storage/session_storage_namespace_impl.h
-index 1e29263e377612b4384e7bedb10d9712424ce52a..1ad7182d7da27b019aa9b59dd9e011d5d119e489 100644
+index 1e29263e377612b4384e7bedb10d9712424ce52a..09845c40e70c412bf4b7be6d832eb0e242db01cd 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.h
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.h
-@@ -18,6 +18,7 @@
+@@ -14,10 +14,12 @@
+ #include "base/gtest_prod_util.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
++#include "base/task/sequenced_task_runner.h"  // MoltBrowser
+ #include "components/services/storage/dom_storage/session_storage_area_impl.h"
  #include "components/services/storage/dom_storage/session_storage_data_map.h"
  #include "components/services/storage/dom_storage/session_storage_metadata.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -16,7 +21,21 @@ index 1e29263e377612b4384e7bedb10d9712424ce52a..1ad7182d7da27b019aa9b59dd9e011d5
  #include "third_party/blink/public/common/storage_key/storage_key.h"
  #include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
  
-@@ -157,6 +158,11 @@ class SessionStorageNamespaceImpl final
+@@ -85,6 +87,13 @@ class SessionStorageNamespaceImpl final
+     // Returns nullptr if a data map was not found.
+     virtual scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
+         int64_t map_id) = 0;
++
++    // MoltBrowser: the task runner the pipes of namespace `namespace_id` are
++    // bound to: null for the current sequence's own, or, where the
++    // partition takes its sequence in turn per site, the namespace's own
++    // turn (molt_dom_storage_fair_scheduler.h).
++    virtual scoped_refptr<base::SequencedTaskRunner> MoltNamespaceTaskRunner(
++        const std::string& namespace_id);
+   };
+ 
+   // Constructs a namespace with the given |namespace_id|, expecting to be
+@@ -157,6 +166,14 @@ class SessionStorageNamespaceImpl final
  
    // Removes any StorageAreas bound in |OpenArea| that are no longer bound.
    void PurgeUnboundAreas();
@@ -25,6 +44,9 @@ index 1e29263e377612b4384e7bedb10d9712424ce52a..1ad7182d7da27b019aa9b59dd9e011d5
 +  // without a database only areas whose maps hold no item
 +  // (molt_dom_storage_site_policy.h).
 +  void MoltPurgeUnboundAreasOfSite(const std::string& site);
++  // MoltBrowser: drops `storage_key`'s area if it is unbound and its map
++  // holds no item (molt_dom_storage_site_policy.h).
++  void MoltDropAreaIfUnused(const blink::StorageKey& storage_key);
  
    // Removes data for the given StorageKey from this namespace. If there is no
    // data map for that given StorageKey, this does nothing. Expects that this

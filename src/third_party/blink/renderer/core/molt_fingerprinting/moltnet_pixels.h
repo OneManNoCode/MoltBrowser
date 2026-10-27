@@ -37,12 +37,14 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_PIXELS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_PIXELS_H_
 
+#include "third_party/blink/renderer/core/core_export.h"
+
 namespace blink::molt_fingerprinting {
 
 // Configure(kUniform): media in this process decodes, converts, scales and
 // encodes the same way on every machine of an OS. Before any media object
 // exists; for the life of the process.
-void PinUniformMediaPixels();
+CORE_EXPORT void PinUniformMediaPixels();
 
 }  // namespace blink::molt_fingerprinting
 

@@ -96,7 +96,12 @@ source_set("misc") {
     "//chrome/browser/image_decoder",
     "//chrome/browser/lifetime",
 
-    # MoltBrowser: MoltNet's pref service (off_the_record_profile_impl.cc).
+    # MoltBrowser: privacy-by-default prefs and MoltShield's prefs
+    # (profile_impl.cc), and MoltNet's isolation and pref service
+    # (off_the_record_profile_impl.cc).
+    "//chrome/browser/molt_ai/privacy",
+    "//chrome/browser/molt_ai/shield:prefs",
+    "//chrome/browser/molt_ai/tor:isolation",
     "//chrome/browser/molt_ai/tor:pref_isolation",
     "//chrome/browser/net",
     "//chrome/browser/origin_trials",
@@ -395,6 +400,11 @@ source_set("profile") {
     "profile_observer.h",
     "profile_selections.h",
     "refcounted_profile_keyed_service_factory.h",
+
+    # MoltBrowser: the MoltNet profile checks (header-only, profile.h and
+    # std), here so every target that can include profile.h can ask them.
+    "//chrome/browser/molt_ai/tor/molt_net_incognito_parity.h",
+    "//chrome/browser/molt_ai/tor/molt_net_profile_id.h",
   ]
 
   sources = [
@@ -406,6 +416,9 @@ source_set("profile") {
 
   public_deps = [
     "//base",
+
+    # MoltBrowser: what the two headers above include (std-only).
+    "//chrome/browser/molt_ai/tor:incognito_parity_policy",
     "//components/media_router/common",
   ]
 
@@ -780,9 +793,11 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/manta:impl",
     "//chrome/browser/media/router",
     "//chrome/browser/media/webrtc",
+    "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/keys:os_crypt_startup",
     "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/web_ai",
     "//chrome/browser/notebooks",
     "//chrome/browser/notifications",
     "//chrome/browser/omnibox",

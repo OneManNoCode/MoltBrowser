@@ -64,6 +64,9 @@ inline constexpr uint64_t kMoltBlobSiteKeyBit = uint64_t{1} << 63;
 // it on one sequence, or locks.
 class MoltBlobSiteKeys {
  public:
+  MoltBlobSiteKeys();
+  ~MoltBlobSiteKeys();
+
   uint64_t KeyFor(std::string_view site) {
     if (site.empty()) {
       return kMoltBlobBrowserKey;
@@ -81,6 +84,9 @@ class MoltBlobSiteKeys {
   std::map<std::string, uint64_t, std::less<>> keys_;
   uint64_t last_ = 0;
 };
+
+inline MoltBlobSiteKeys::MoltBlobSiteKeys() = default;
+inline MoltBlobSiteKeys::~MoltBlobSiteKeys() = default;
 
 // Whether blob memory is counted in shares.
 constexpr bool MoltUsesBlobBudget(uint64_t per_key) {

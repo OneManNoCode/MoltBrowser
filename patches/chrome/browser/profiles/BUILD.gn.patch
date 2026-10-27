@@ -5,26 +5,55 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 1c4ee4ac17e827a18dbb363f61aea886b5487bd2..34ed09ac644a3814633da06e8f6913a8099d0a06 100644
+index 1c4ee4ac17e827a18dbb363f61aea886b5487bd2..0efa65e3c8497b6915a86efcd8a22018091392f6 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -95,6 +95,9 @@ source_set("misc") {
+@@ -95,6 +95,14 @@ source_set("misc") {
      "//chrome/browser/heavy_ad_intervention",
      "//chrome/browser/image_decoder",
      "//chrome/browser/lifetime",
 +
-+    # MoltBrowser: MoltNet's pref service (off_the_record_profile_impl.cc).
++    # MoltBrowser: privacy-by-default prefs and MoltShield's prefs
++    # (profile_impl.cc), and MoltNet's isolation and pref service
++    # (off_the_record_profile_impl.cc).
++    "//chrome/browser/molt_ai/privacy",
++    "//chrome/browser/molt_ai/shield:prefs",
++    "//chrome/browser/molt_ai/tor:isolation",
 +    "//chrome/browser/molt_ai/tor:pref_isolation",
      "//chrome/browser/net",
      "//chrome/browser/origin_trials",
      "//chrome/browser/password_manager/factories",
-@@ -777,6 +780,9 @@ source_set("profiles_extra_parts_impl") {
+@@ -392,6 +400,11 @@ source_set("profile") {
+     "profile_observer.h",
+     "profile_selections.h",
+     "refcounted_profile_keyed_service_factory.h",
++
++    # MoltBrowser: the MoltNet profile checks (header-only, profile.h and
++    # std), here so every target that can include profile.h can ask them.
++    "//chrome/browser/molt_ai/tor/molt_net_incognito_parity.h",
++    "//chrome/browser/molt_ai/tor/molt_net_profile_id.h",
+   ]
+ 
+   sources = [
+@@ -403,6 +416,9 @@ source_set("profile") {
+ 
+   public_deps = [
+     "//base",
++
++    # MoltBrowser: what the two headers above include (std-only).
++    "//chrome/browser/molt_ai/tor:incognito_parity_policy",
+     "//components/media_router/common",
+   ]
+ 
+@@ -777,6 +793,11 @@ source_set("profiles_extra_parts_impl") {
      "//chrome/browser/manta:impl",
      "//chrome/browser/media/router",
      "//chrome/browser/media/webrtc",
++    "//chrome/browser/molt_ai:molt_ai_agents",
 +    "//chrome/browser/molt_ai/automation",
 +    "//chrome/browser/molt_ai/keys:os_crypt_startup",
 +    "//chrome/browser/molt_ai/memory",
++    "//chrome/browser/molt_ai/web_ai",
      "//chrome/browser/notebooks",
      "//chrome/browser/notifications",
      "//chrome/browser/omnibox",

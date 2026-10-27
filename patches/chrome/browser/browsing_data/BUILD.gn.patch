@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/browsing_data/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/browsing_data/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/browsing_data/BUILD.gn b/chrome/browser/browsing_data/BUILD.gn
+index a1c17bda2bab66127448ae0f4394f500cf606eed..a8ab01d3a50a04b0a53406cfd7eb827156c296d4 100644
+--- a/chrome/browser/browsing_data/BUILD.gn
++++ b/chrome/browser/browsing_data/BUILD.gn
+@@ -95,6 +95,11 @@ source_set("impl") {
+   }
+ 
+   deps = [
++    # MoltBrowser: Clear browsing data also clears the per-site
++    # permissions of the agents' frame tools and of the web AI APIs.
++    "//chrome/browser/molt_ai:molt_ai_agents",
++    "//chrome/browser/molt_ai/web_ai",
++
+     ":browsing_data",
+     ":constants",
+     "//chrome/browser:browser_process",

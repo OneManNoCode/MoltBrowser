@@ -1,0 +1,11 @@
+include_rules = [
+  # The vault's re-authentication (molt_vault_handler.cc).
+  "+components/device_reauth",
+]
+
+specific_include_rules = {
+  # The constrained-decoding grammar a form fill's reply follows.
+  "molt_ai_chat_form_fill_unittest\.cc": [
+    "+chrome/services/molt_ai/inference/engine/json_schema_grammar.h",
+  ],
+}

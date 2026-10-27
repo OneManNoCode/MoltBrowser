@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/task/sequenced_task_runner.h"
+#include "build/build_config.h"
 
 namespace molt_ai {
 namespace automation {
@@ -96,7 +97,11 @@ base::Time NextCronFire(const std::string& expression,
   const std::time_t kCap = t + 366 * 24 * 60 * 60;
   while (t < kCap) {
     std::tm local{};
+#if BUILDFLAG(IS_WIN)
+    localtime_s(&local, &t);
+#else
     localtime_r(&t, &local);
+#endif
     auto ex = Explode(local);
     if (minutes.count(ex.minute) && hours.count(ex.hour) &&
         mdays.count(ex.mday) && months.count(ex.month) &&

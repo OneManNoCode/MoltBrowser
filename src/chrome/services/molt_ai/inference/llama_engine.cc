@@ -137,6 +137,7 @@
 #include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "chrome/services/molt_ai/inference/grammar_sampler.h"
 #include "third_party/llama_cpp/chromium/llama_guard.h"
@@ -656,9 +657,9 @@ struct LlamaEngine::Model {
   }
 
   ScopedStdioFile file;
-  llama_model* model = nullptr;
-  llama_context* ctx = nullptr;
-  const llama_vocab* vocab = nullptr;
+  MOLT_RAW_PTR_EXCLUSION llama_model* model = nullptr;
+  MOLT_RAW_PTR_EXCLUSION llama_context* ctx = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const llama_vocab* vocab = nullptr;
   std::string arch;
   int n_ctx = 0;
   int n_batch = kMinContextTokens;
@@ -673,7 +674,7 @@ struct LlamaEngine::Model {
   // every token once). Doesn't use the vocab after Build().
   std::unique_ptr<GrammarVocab> grammar_vocab;
   // The projector's context (image and audio input); null without one.
-  mtmd_context* mtmd = nullptr;
+  MOLT_RAW_PTR_EXCLUSION mtmd_context* mtmd = nullptr;
   // It has an image encoder; an audio encoder taking kAudioSampleRate, on
   // the allow-list, whose windows take |audio_window_tokens| tokens.
   bool vision = false;
@@ -700,7 +701,7 @@ struct LlamaEngine::Gpu {
 // order), then
 // |suffix| (a constrained answer's prefill), |n_tokens| KV cells in all.
 struct LlamaEngine::MediaPrompt {
-  const mtmd_input_chunks* chunks = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const mtmd_input_chunks* chunks = nullptr;
   std::vector<llama_token> suffix;
   size_t n_tokens = 0;
 };
@@ -719,7 +720,7 @@ struct LlamaEngine::DecodeParams {
   std::string grammar;
   // A prompt with images or audio, evaluated instead of Generate()'s token
   // prompt.
-  const MediaPrompt* media = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const MediaPrompt* media = nullptr;
 };
 
 namespace {

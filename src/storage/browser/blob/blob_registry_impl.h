@@ -42,7 +42,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobRegistryImpl
     virtual bool CanAccessDataForOrigin(const url::Origin& origin) = 0;
     // MoltBrowser: the budget key the blobs registered here count to
     // (molt_blob_budget_policy.h); the browser's by default.
-    virtual uint64_t MoltBudgetKey() { return kMoltBlobBrowserKey; }
+    virtual uint64_t MoltBudgetKey();
   };
 
   explicit BlobRegistryImpl(base::WeakPtr<BlobStorageContext> context);

@@ -43,6 +43,7 @@ source_set("inference") {
     "//chrome/services/molt_ai/inference/engine:gpu_pipeline_cache",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:inference_utils",
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
     "//mojo/public/cpp/base",
     "//third_party/llama_cpp",
 
@@ -79,6 +80,7 @@ if (molt_llama_vulkan) {
     testonly = true
     sources = [ "vulkan_shader_pack_unittest.cc" ]
     deps = [
+      "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
       "//testing/gtest",
       "//third_party/brotli:dec",
       "//third_party/llama_cpp:ggml",

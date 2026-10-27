@@ -10,6 +10,8 @@ include_rules = [
   "+chrome/services/mac_notifications",
   "+chrome/services/media_gallery_util",
   "+chrome/services/molt_ai/document_parser",
+  # MoltBrowser: the sandboxed inference service (services.cc).
+  "+chrome/services/molt_ai/inference/molt_inference_service.h",
   "+chrome/services/pdf/pdf_service.h",
   "+chrome/services/pdf/public/mojom",
   "+chrome/services/platform_runtime/platform_runtime_service_impl.h",

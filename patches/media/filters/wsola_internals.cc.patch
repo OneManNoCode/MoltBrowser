@@ -1,0 +1,43 @@
+MoltBrowser patch for media/filters/wsola_internals.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/filters/wsola_internals.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/filters/wsola_internals.cc b/media/filters/wsola_internals.cc
+index 6798bcb08fb8311e139511dfe7bb97ef7611cfd2..2af34af682b11ccd4c6fb304cfe76095bec29292 100644
+--- a/media/filters/wsola_internals.cc
++++ b/media/filters/wsola_internals.cc
+@@ -21,6 +21,8 @@
+ #include "base/numerics/safe_conversions.h"
+ #include "build/build_config.h"
+ #include "media/base/audio_bus.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
++#include "ui/gfx/geometry/molt_math.h"       // MoltBrowser
+ 
+ #if defined(ARCH_CPU_X86_FAMILY)
+ #include <immintrin.h>
+@@ -226,7 +228,11 @@ void MultiChannelDotProduct(const AudioBus* a,
+   static const auto dot_product_func = [] {
+ #if defined(ARCH_CPU_X86_FAMILY)
+     base::CPU cpu;
+-    if (cpu.has_avx2() && cpu.has_fma3()) {
++    // MoltBrowser: in MoltNet's renderers (media/base/molt_portable_media.h)
++    // the SSE sums on every x86 CPU, the same sums as NEON's on Arm, not the
++    // AVX2 + FMA ones, which pick other blocks to stretch a media element's
++    // audio with (playbackRate; a page reads it through Web Audio).
++    if (cpu.has_avx2() && cpu.has_fma3() && !IsPortableMediaProcess()) {
+       return MultiChannelDotProduct_AVX2;
+     }
+     return MultiChannelDotProduct_SSE;
+@@ -452,7 +458,9 @@ size_t OptimalIndex(const AudioBus* search_block,
+ void GetPeriodicHanningWindow(base::span<float> window) {
+   const float scale = 2.0f * std::numbers::pi_v<float> / window.size();
+   for (size_t n = 0; n < window.size(); ++n) {
+-    window[n] = 0.5f * (1.0f - std::cos(n * scale));
++    // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h); the C
++    // library's cosf otherwise, as before.
++    window[n] = 0.5f * (1.0f - gfx::molt_math::Cos(n * scale));
+   }
+ }
+ 

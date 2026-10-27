@@ -1,0 +1,20 @@
+MoltBrowser patch for chrome/browser/media/router/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/media/router/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/media/router/BUILD.gn b/chrome/browser/media/router/BUILD.gn
+index a48699eeb3f7a4e8d40e7c5819f43aa30a9755fc..6272b3af2bc56a5aa09fb67f64fd6220a955a2ba 100644
+--- a/chrome/browser/media/router/BUILD.gn
++++ b/chrome/browser/media/router/BUILD.gn
+@@ -49,6 +49,9 @@ static_library("media_router_feature") {
+     "//extensions/buildflags",
+   ]
+   deps = [
++    # MoltBrowser: no Cast from MoltNet windows.
++    "//chrome/browser/molt_ai/tor:requests_policy",
++
+     "//chrome/browser/profiles",
+     "//chrome/browser/profiles:profile",
+     "//chrome/common:constants",

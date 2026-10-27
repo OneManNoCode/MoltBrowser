@@ -6,6 +6,9 @@
 // goes through here, so there is exactly one way a MoltNet window comes into
 // existence:
 //
+//   0. MoltNetCpuError() — this computer's processor lets MoltNet give pages
+//      the same answers as elsewhere (molt_net_cpu_policy.h; checked again
+//      in steps 1 and 2);
 //   1. TorManager::Launch() — Tor up with an established circuit;
 //   2. MoltNetRouting::GetOrCreateMoltNetProfile() — the isolated OTR
 //      profile, with the proxy/leak prefs applied and checked;

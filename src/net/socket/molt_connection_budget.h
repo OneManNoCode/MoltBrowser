@@ -4,8 +4,10 @@
 // MoltBrowser: MoltNet's connection budget and SOCKS handshake budget, the
 // share of Tor's capacity MoltNet's network contexts draw on
 // (molt_per_site_socket_pool_policy.h says why and holds the numbers and
-// decisions, std-only). Header-only: //net's sources are Chromium's
-// BUILD.gn, which MoltBrowser doesn't change.
+// decisions, std-only). Header-only but for MoltTorCapacity's pointer to
+// the process's capacity (molt_connection_budget.cc), which must be one
+// for the process also in a component build, where //net is a library of
+// its own.
 //
 //  * MoltBudgetSiteFor(): which site a network key's connections count
 //    against.
@@ -53,6 +55,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/request_priority.h"
 #include "net/base/schemeful_site.h"
@@ -120,10 +123,10 @@ class MoltConnectionBudget {
     virtual ~Member() = default;
   };
 
-  explicit MoltConnectionBudget(size_t budget) : budget_(budget) {}
+  explicit MoltConnectionBudget(size_t budget);
   MoltConnectionBudget(const MoltConnectionBudget&) = delete;
   MoltConnectionBudget& operator=(const MoltConnectionBudget&) = delete;
-  ~MoltConnectionBudget() = default;
+  ~MoltConnectionBudget();
 
   // `owner` identifies the member's session: the same for its normal and
   // WebSocket pools, different for every other session.
@@ -376,6 +379,11 @@ class MoltConnectionBudget {
   base::WeakPtrFactory<MoltConnectionBudget> weak_factory_{this};
 };
 
+inline MoltConnectionBudget::MoltConnectionBudget(size_t budget)
+    : budget_(budget) {}
+
+inline MoltConnectionBudget::~MoltConnectionBudget() = default;
+
 // SOCKS handshakes to MoltNet's Tor in progress, by weight
 // (MoltSocksHandshakeWeight()), for each site of each session
 // (MoltSocksHandshakeLimit()) and for all of them together
@@ -391,11 +399,7 @@ class MoltSocksHandshakeBudget {
    public:
     Slot(const Slot&) = delete;
     Slot& operator=(const Slot&) = delete;
-    ~Slot() {
-      if (budget_) {
-        budget_->OnSlotGone(*this);
-      }
-    }
+    ~Slot();
 
     bool granted() const { return granted_; }
 
@@ -413,12 +417,7 @@ class MoltSocksHandshakeBudget {
          MoltBudgetOwner owner,
          size_t weight,
          uint64_t id,
-         base::OnceClosure on_granted)
-        : budget_(std::move(budget)),
-          owner_(std::move(owner)),
-          weight_(weight),
-          id_(id),
-          on_granted_(std::move(on_granted)) {}
+         base::OnceClosure on_granted);
 
     void RunGranted() {
       if (on_granted_) {
@@ -435,11 +434,11 @@ class MoltSocksHandshakeBudget {
     base::WeakPtrFactory<Slot> weak_factory_{this};
   };
 
-  explicit MoltSocksHandshakeBudget(size_t budget) : slots_(budget) {}
+  explicit MoltSocksHandshakeBudget(size_t budget);
   MoltSocksHandshakeBudget(const MoltSocksHandshakeBudget&) = delete;
   MoltSocksHandshakeBudget& operator=(const MoltSocksHandshakeBudget&) =
       delete;
-  ~MoltSocksHandshakeBudget() = default;
+  ~MoltSocksHandshakeBudget();
 
   // Slots of `weight` for a handshake of `owner`: granted() at once if the
   // owner and the budget have room and no owner holding fewer waits, else
@@ -506,6 +505,29 @@ class MoltSocksHandshakeBudget {
   base::WeakPtrFactory<MoltSocksHandshakeBudget> weak_factory_{this};
 };
 
+inline MoltSocksHandshakeBudget::Slot::Slot(
+    base::WeakPtr<MoltSocksHandshakeBudget> budget,
+    MoltBudgetOwner owner,
+    size_t weight,
+    uint64_t id,
+    base::OnceClosure on_granted)
+    : budget_(std::move(budget)),
+      owner_(std::move(owner)),
+      weight_(weight),
+      id_(id),
+      on_granted_(std::move(on_granted)) {}
+
+inline MoltSocksHandshakeBudget::Slot::~Slot() {
+  if (budget_) {
+    budget_->OnSlotGone(*this);
+  }
+}
+
+inline MoltSocksHandshakeBudget::MoltSocksHandshakeBudget(size_t budget)
+    : slots_(budget) {}
+
+inline MoltSocksHandshakeBudget::~MoltSocksHandshakeBudget() = default;
+
 // Tor's capacity as MoltNet's network contexts share it: one for the
 // process, made when the first session with per-site pools needs it and
 // gone with the last.
@@ -522,10 +544,7 @@ class MoltTorCapacity : public base::RefCounted<MoltTorCapacity> {
     return created;
   }
 
-  MoltTorCapacity()
-      : connection_budget_(kMoltMainConnectionBudget),
-        cert_fetch_budget_(kMoltCertFetchConnectionBudget),
-        handshake_budget_(kMoltSocksHandshakeBudget) {}
+  MoltTorCapacity();
   MoltTorCapacity(const MoltTorCapacity&) = delete;
   MoltTorCapacity& operator=(const MoltTorCapacity&) = delete;
 
@@ -539,21 +558,27 @@ class MoltTorCapacity : public base::RefCounted<MoltTorCapacity> {
 
  private:
   friend class base::RefCounted<MoltTorCapacity>;
-  ~MoltTorCapacity() {
-    if (SharedInstance() == this) {
-      SharedInstance() = nullptr;
-    }
-  }
+  ~MoltTorCapacity();
 
-  static MoltTorCapacity*& SharedInstance() {
-    static MoltTorCapacity* instance = nullptr;
-    return instance;
-  }
+  // The process's, or null (out of line, so that code in other libraries
+  // of a component build sees the same one).
+  NET_EXPORT_PRIVATE static MoltTorCapacity*& SharedInstance();
 
   MoltConnectionBudget connection_budget_;
   MoltConnectionBudget cert_fetch_budget_;
   MoltSocksHandshakeBudget handshake_budget_;
 };
+
+inline MoltTorCapacity::MoltTorCapacity()
+    : connection_budget_(kMoltMainConnectionBudget),
+      cert_fetch_budget_(kMoltCertFetchConnectionBudget),
+      handshake_budget_(kMoltSocksHandshakeBudget) {}
+
+inline MoltTorCapacity::~MoltTorCapacity() {
+  if (SharedInstance() == this) {
+    SharedInstance() = nullptr;
+  }
+}
 
 // One session's handshake slots: its sites are owners of their own in the
 // process's MoltSocksHandshakeBudget (CommonConnectJobParams::
@@ -564,12 +589,11 @@ class MoltSocksHandshakeLimiter {
 
   // `owner` identifies the session.
   MoltSocksHandshakeLimiter(scoped_refptr<MoltTorCapacity> capacity,
-                            uintptr_t owner)
-      : capacity_(std::move(capacity)), owner_(owner) {}
+                            uintptr_t owner);
   MoltSocksHandshakeLimiter(const MoltSocksHandshakeLimiter&) = delete;
   MoltSocksHandshakeLimiter& operator=(const MoltSocksHandshakeLimiter&) =
       delete;
-  ~MoltSocksHandshakeLimiter() = default;
+  ~MoltSocksHandshakeLimiter();
 
   // Slots of `weight` for a handshake of `site` (MoltSocksHandshakeBudget::
   // Acquire()).
@@ -595,6 +619,13 @@ class MoltSocksHandshakeLimiter {
   const scoped_refptr<MoltTorCapacity> capacity_;
   const uintptr_t owner_;
 };
+
+inline MoltSocksHandshakeLimiter::MoltSocksHandshakeLimiter(
+    scoped_refptr<MoltTorCapacity> capacity,
+    uintptr_t owner)
+    : capacity_(std::move(capacity)), owner_(owner) {}
+
+inline MoltSocksHandshakeLimiter::~MoltSocksHandshakeLimiter() = default;
 
 }  // namespace net
 

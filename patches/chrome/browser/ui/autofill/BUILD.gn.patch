@@ -1,0 +1,20 @@
+MoltBrowser patch for chrome/browser/ui/autofill/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/autofill/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/autofill/BUILD.gn b/chrome/browser/ui/autofill/BUILD.gn
+index 9708663b21d2091a5df7dd1852901855e1256822..dfa2ef92a9fa9c5fa9332c513617990a2bcb1ee3 100644
+--- a/chrome/browser/ui/autofill/BUILD.gn
++++ b/chrome/browser/ui/autofill/BUILD.gn
+@@ -188,6 +188,9 @@ source_set("impl") {
+   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+ 
+   deps = [
++    # MoltBrowser: no Autofill server traffic for MoltNet tabs.
++    "//chrome/browser/molt_ai/tor:autofill",
++
+     ":autofill",
+     ":autofill_ai_ui_utils_impl",
+     "//chrome/browser:browser_process",

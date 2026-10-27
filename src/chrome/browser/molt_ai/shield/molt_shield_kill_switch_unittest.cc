@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/memory/raw_ptr.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
@@ -66,26 +67,26 @@ TEST(MoltShieldKillSwitchTest, FeatureTurnsOffOnlyItsHook) {
 
 TEST(MoltShieldKillSwitchTest, EachFeatureMapsToItsFlag) {
   struct {
-    const base::Feature& feature;
+    raw_ptr<const base::Feature> feature;
     std::string_view flag;
     bool (*enabled)();
   } const kCases[] = {
-      {kMoltShieldRequestProxy, "molt-shield-request-proxy",
+      {&kMoltShieldRequestProxy, "molt-shield-request-proxy",
        &IsRequestProxyEnabled},
-      {kMoltShieldFrameBlocking, "molt-shield-frame-blocking",
+      {&kMoltShieldFrameBlocking, "molt-shield-frame-blocking",
        &IsFrameBlockingEnabled},
-      {kMoltShieldWebSocket, "molt-shield-websocket", &IsWebSocketEnabled},
-      {kMoltShieldKeepAlive, "molt-shield-keepalive", &IsKeepAliveEnabled},
-      {kMoltShieldCosmetics, "molt-shield-cosmetics", &IsCosmeticsEnabled},
-      {kMoltShieldConsentKiller, "molt-shield-consent-killer",
+      {&kMoltShieldWebSocket, "molt-shield-websocket", &IsWebSocketEnabled},
+      {&kMoltShieldKeepAlive, "molt-shield-keepalive", &IsKeepAliveEnabled},
+      {&kMoltShieldCosmetics, "molt-shield-cosmetics", &IsCosmeticsEnabled},
+      {&kMoltShieldConsentKiller, "molt-shield-consent-killer",
        &IsConsentKillerEnabled},
-      {kMoltShieldRemoveParam, "molt-shield-removeparam",
+      {&kMoltShieldRemoveParam, "molt-shield-removeparam",
        &IsRemoveParamEnabled},
   };
   for (const auto& c : kCases) {
     SCOPED_TRACE(c.flag);
     base::test::ScopedFeatureList features;
-    features.InitAndDisableFeature(c.feature);
+    features.InitAndDisableFeature(*c.feature);
     EXPECT_FALSE(c.enabled());
     EXPECT_EQ(FlagNamesOfDisabledHooks(),
               std::vector<std::string_view>{c.flag});

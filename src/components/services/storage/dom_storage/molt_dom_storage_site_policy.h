@@ -152,6 +152,19 @@ constexpr bool MoltDomStorageMayDropArea(bool has_database, bool holds_items) {
   return has_database || !holds_items;
 }
 
+// Whether an area is dropped as soon as it is left unused (no page has it
+// open), if it holds nothing: kept per site without a database. Such an area
+// holds nothing another opening of it wouldn't, so the cache holds exactly
+// the areas in use and those holding items: there is nothing to purge when
+// an area is opened and nothing to sweep, either of which would look at
+// every site's areas (what they cost would depend on the other sites), and
+// whether an area was purged says nothing about other sites. The drop is a
+// task in the area's site's turn.
+constexpr bool MoltDomStorageDropsUnusedArea(bool caches_per_site,
+                                             bool has_database) {
+  return caches_per_site && !has_database;
+}
+
 // ---- The group an area counts to ----
 
 enum class MoltDomStorageGroupKind {
@@ -192,6 +205,40 @@ inline std::string MoltDomStorageGroupName(MoltDomStorageGroupKind kind,
   return "^key " + std::string(value);
 }
 
+// ---- Turns that aren't a site's ----
+
+// On the storage sequence of a partition kept per site, two more kinds of
+// pipe take turns of their own, as a site does
+// (molt_dom_storage_fair_queue.h): the partition's control pipe (the
+// browser's messages; one that names a storage key is then handled in its
+// site's turn: molt_dom_storage_own_thread.h), and each sessionStorage
+// namespace's pipes (a tab's renderers' Clone() calls). Their names start
+// with the prefix of the groups above, which no serialized site starts with.
+inline constexpr char kMoltDomStorageControlGroup[] = "^control";
+inline std::string MoltDomStorageNamespaceGroup(std::string_view namespace_id) {
+  return "^ns " + std::string(namespace_id);
+}
+
+// The control pipe carries the browser's messages for every site, so its
+// turn counts its tasks at an eighth of their time: it keeps up with the
+// browser while sites are busy (each of its tasks only reads a message and,
+// for one that names a storage key, queues the work in the key's site's
+// turn). Another site's message still waits for one of its tasks at most.
+inline constexpr int64_t kMoltDomStorageControlWeight = 8;
+
+// What a task of `group` that took `microseconds` (a microsecond at least)
+// counts in its turn (molt_dom_storage_fair_queue.h: Charge()), in eighths
+// of a microsecond: a site's or a namespace's tasks their whole time, the
+// control's an eighth of it. So a short control task counts less than any
+// site's, as its weight says.
+inline int64_t MoltDomStorageChargeFor(std::string_view group,
+                                       int64_t microseconds) {
+  const int64_t time = microseconds > 1 ? microseconds : 1;
+  return group == kMoltDomStorageControlGroup
+             ? time
+             : time * kMoltDomStorageControlWeight;
+}
+
 // ---- Totals per site ----
 
 // What all of a site's areas of one kind may hold together: one area's own
@@ -207,6 +254,45 @@ inline constexpr size_t kMoltDomStorageBytesPerSite =
 inline constexpr size_t kMoltDomStorageFloorBytes =
     5 * kMoltDomStorageBytesPerSite;
 inline constexpr size_t kMoltDomStorageGrowthStepBytes = 1024 * 1024;
+
+// What an area counts toward its site's total: not only its items' keys and
+// values (what Chromium's per-area quota counts), but also what holding
+// them takes in the storage service, so that a site storing many tiny
+// items, or spreading them over many areas, uses no more memory than its
+// total says. Measured on 64-bit Linux at Chromium 156 (libc++, and
+// PartitionAlloc, which Chromium's allocations use):
+//  * per item, kMoltDomStorageItemOverheadBytes: the area's map node (80
+//    bytes: three pointers and a colour, and the key's and the value's
+//    std::vector, 24 bytes each), and the key's and the value's buffers
+//    rounded up to the allocator's 16-byte slots (up to 15 bytes each).
+//    An item whose key and value have 1 to 16 bytes each takes exactly
+//    112 bytes, so it counts at least what it takes;
+//  * per area holding an item, kMoltDomStorageAreaOverheadBytes: the
+//    StorageAreaImpl (352 bytes), its map locator (320, with a copy of the
+//    storage key, 272), and the holder (localStorage) or the session map,
+//    its metadata and the namespace's and the cache's map entries
+//    (sessionStorage), each with a copy of the storage key: about 1.4 KiB
+//    for a localStorage area and 1.8 KiB for a sessionStorage map, with
+//    the allocator's slots.
+// An area that holds nothing counts nothing (without a database it stays in
+// the cache only while a page has it open: MoltDomStorageMayDropArea()).
+// With a site's total of one area's limit (10 MiB and 100 KiB), an area
+// filled to Chromium's 10 MiB quota fits it with up to about 900 items,
+// and a site's areas of one kind hold at most about 94,000 items.
+inline constexpr size_t kMoltDomStorageItemOverheadBytes = 80 + 2 * 16;
+inline constexpr size_t kMoltDomStorageAreaOverheadBytes = 2048;
+
+// What an area holding `items` items of `item_bytes` bytes (keys and values)
+// counts toward its site's total.
+constexpr size_t MoltDomStorageCountedBytes(size_t item_bytes, size_t items) {
+  if (items == 0) {
+    return 0;
+  }
+  return item_bytes + items * kMoltDomStorageItemOverheadBytes +
+         kMoltDomStorageAreaOverheadBytes;
+}
+static_assert(MoltDomStorageCountedBytes(0, 0) == 0);
+static_assert(MoltDomStorageCountedBytes(10, 1) == 10 + 112 + 2048);
 
 // Whether all sites' areas growing from `old_total` to `new_total` bytes
 // tell the valve: past the floor, once per step of growth.
@@ -227,6 +313,12 @@ constexpr bool MoltDomStorageGrowthNotifies(size_t old_total,
 // the storage service uses it on its sequence.
 class MoltDomStorageSiteTotals {
  public:
+  MoltDomStorageSiteTotals();
+  MoltDomStorageSiteTotals(const MoltDomStorageSiteTotals&) = delete;
+  MoltDomStorageSiteTotals& operator=(const MoltDomStorageSiteTotals&) =
+      delete;
+  ~MoltDomStorageSiteTotals();
+
   // Whether `area` of `site` may grow to `new_bytes`: if the site's areas
   // together stay within kMoltDomStorageBytesPerSite. Counted if so.
   bool MayGrowTo(std::string_view area, std::string_view site,
@@ -307,6 +399,11 @@ class MoltDomStorageSiteTotals {
   std::map<std::string, size_t, std::less<>> sites_;
   size_t total_ = 0;
 };
+
+// Out of the class body, as Chromium's style asks of a class with members
+// that have constructors.
+inline MoltDomStorageSiteTotals::MoltDomStorageSiteTotals() = default;
+inline MoltDomStorageSiteTotals::~MoltDomStorageSiteTotals() = default;
 
 // ---- One commit rate per site ----
 

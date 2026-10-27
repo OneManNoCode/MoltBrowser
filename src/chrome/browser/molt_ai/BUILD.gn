@@ -31,6 +31,8 @@ source_set("molt_ai_runtime") {
   ]
 
   deps = [
+    # g_browser_process->local_state() (the GPU record and setting).
+    "//chrome/browser:browser_process",
     "//chrome/browser/lifetime:termination_notification",
 
     # When a model's files count as downloaded (std-only).
@@ -44,8 +46,7 @@ source_set("molt_ai_runtime") {
 
     # The GPU record and setting in Local State, the pipeline caches under
     # the user data directory (section 11.10-11.12): chrome_paths.h,
-    # kMoltBrowserVersion, the cache files' digest. g_browser_process
-    # (browser_process.h) resolves when chrome links (see web_ai:manager).
+    # kMoltBrowserVersion, the cache files' digest.
     "//chrome/common",
     "//chrome/common:constants",
     "//components/prefs",
@@ -123,8 +124,7 @@ source_set("molt_ai_agents") {
     # The screenshot scaled for the model on a worker (Skia).
     "//chrome/browser/molt_ai/runtime:model_image_prep",
 
-    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
-    "//chrome/browser/molt_ai/tor",
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()).
     "//chrome/browser/profiles:profile",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//components/keyed_service/core",
@@ -208,22 +208,28 @@ source_set("molt_ai_import") {
   }
 }
 
-# AI Side Panel — chat interface in the browser sidebar
-source_set("molt_ai_side_panel") {
+# AI Side Panel — chat interface in the browser sidebar: the AI chat's and
+# Agent mode's web views. //chrome/browser/ui/views/side_panel, which
+# registers them (side_panel_helper.cc), depends on this target, so it
+# depends on no side panel target itself.
+source_set("molt_ai_side_panel_views") {
   sources = [
     "side_panel/agent_side_panel_web_view.cc",
     "side_panel/agent_side_panel_web_view.h",
-    "side_panel/ai_chat_side_panel_coordinator.cc",
-    "side_panel/ai_chat_side_panel_coordinator.h",
     "side_panel/ai_chat_side_panel_web_view.cc",
     "side_panel/ai_chat_side_panel_web_view.h",
   ]
 
   deps = [
     "//base",
+
+    # File choosers of the chat page (FileSelectHelper).
+    "//chrome/browser:file_select_helper",
     "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//components/input",
     "//components/pdf/common:constants",
     "//content/public/browser",
     "//content/public/common",
@@ -231,6 +237,25 @@ source_set("molt_ai_side_panel") {
     "//ui/base",
     "//ui/views",
     "//url",
+  ]
+}
+
+# ... and the coordinator that shows the chat in a window's side panel.
+source_set("molt_ai_side_panel") {
+  sources = [
+    "side_panel/ai_chat_side_panel_coordinator.cc",
+    "side_panel/ai_chat_side_panel_coordinator.h",
+  ]
+
+  public_deps = [ ":molt_ai_side_panel_views" ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+    "//ui/views",
   ]
 }
 
@@ -337,6 +362,39 @@ group("molt_ai") {
       # MoltNet letterboxing in the window (ContentsWebView's hooks).
       "fingerprinting:letterbox_view",
     ]
+  }
+}
+
+# What the hooks marked "MoltBrowser:" in //chrome/browser:core's own files
+# include (chrome_content_browser_client.cc and its receiver bindings,
+# about_flags.cc, universal_web_contents_observers.cc and, on macOS,
+# app_controller_mac.mm and chrome_browser_main_mac.mm): one dependency in
+# that upstream target instead of one per header.
+group("core_hooks") {
+  public_deps = [
+    ":molt_ai_runtime",
+    "agents:features",
+    "fingerprinting",
+    "fingerprinting:device",
+    "fingerprinting:storage",
+    "fingerprinting:storage_values",
+    "security:webui_navigation_throttle",
+    "shield",
+    "tor",
+    "tor:language_policy",
+    "tor:network_context_policy",
+    "tor:onion",
+    "tor:process_policy",
+    "tor:requests_policy",
+    "tor:webrtc",
+    "web_ai",
+    "//chrome/common/molt_ai/shield:features",
+  ]
+  if (!is_android && !is_ios) {
+    public_deps += [ "fingerprinting:letterbox_view" ]
+  }
+  if (is_mac) {
+    public_deps += [ ":molt_update" ]
   }
 }
 

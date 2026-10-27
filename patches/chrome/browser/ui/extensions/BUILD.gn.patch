@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/ui/extensions/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/extensions/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/extensions/BUILD.gn b/chrome/browser/ui/extensions/BUILD.gn
+index 7d3f03ae3d9ad911cbe8376c6ebb40826527723f..66502ffd1c8f963f7fe67d06c4fa905b585ec806 100644
+--- a/chrome/browser/ui/extensions/BUILD.gn
++++ b/chrome/browser/ui/extensions/BUILD.gn
+@@ -185,6 +185,10 @@ source_set("impl") {
+     "upload_extension_to_account_dialog.cc",
+   ]
+   deps = [
++    # MoltBrowser: MoltNet's isolation from the regular profile's
++    # extensions (extension_side_panel_manager.cc).
++    "//chrome/browser/molt_ai/tor:isolation",
++
+     ":extension_post_install_dialog",
+     ":extensions",
+     "//chrome/browser/extensions",

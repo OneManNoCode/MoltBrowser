@@ -223,6 +223,9 @@ class CONTENT_EXPORT BackgroundFetchScheduler
   // MoltBrowser: each site's active registrations and downloads, when
   // scheduling per site.
   std::unique_ptr<MoltBackgroundFetchSites> molt_sites_;
+  // MoltBrowser: whether a registration was made or one finished since the
+  // pending ones were last looked at (only that lets one become active).
+  bool molt_pending_changed_ = false;
 
   base::WeakPtrFactory<BackgroundFetchScheduler> weak_ptr_factory_{this};
 };

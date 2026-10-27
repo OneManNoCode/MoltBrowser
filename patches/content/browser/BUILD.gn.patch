@@ -1,0 +1,53 @@
+MoltBrowser patch for content/browser/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
+index 3162721b67d5b744c2c1d7021656a862eea2c2c5..e83ae2d16f60d9aeb6ef0777d1f18d0e1bdaf0ee 100644
+--- a/content/browser/BUILD.gn
++++ b/content/browser/BUILD.gn
+@@ -98,6 +98,17 @@ if (is_ios) {
+   import("//build/config/apple/mobile_config.gni")  # For `target_platform`
+ }
+ 
++# MoltBrowser: MoltNet's Background Fetch scheduling per site, download
++# isolation and process-per-BrowsingInstance decisions (std-only and
++# header-only), for :browser and MoltBrowser's own tests.
++source_set("molt_policies") {
++  sources = [
++    "background_fetch/molt_background_fetch_site_policy.h",
++    "download/molt_download_isolation_policy.h",
++    "renderer_host/molt_browsing_instance_processes_policy.h",
++  ]
++}
++
+ source_set("browser") {
+   # Only the public target should depend on this. All other targets (even
+   # internal content ones) should depend on the public one.
+@@ -131,6 +142,9 @@ source_set("browser") {
+   ldflags = []
+ 
+   deps = [
++    # MoltBrowser: the std-only policies below.
++    ":molt_policies",
++
+     ":child_process_security_policy_impl",
+     "//base",
+     "//base:base_static",
+@@ -2382,6 +2396,14 @@ source_set("browser") {
+     "worker_host/worker_util.h",
+   ]
+ 
++  # MoltBrowser: MoltNet's per-site downloads, processes per
++  # BrowsingInstance and uniform network state (header-only).
++  sources += [
++    "download/molt_download_isolation.h",
++    "network/molt_uniform_network_state.h",
++    "renderer_host/molt_browsing_instance_processes.h",
++  ]
++
+   if (is_android) {
+     sources += [
+       "memory_pressure/user_level_memory_pressure_signal_generator.cc",

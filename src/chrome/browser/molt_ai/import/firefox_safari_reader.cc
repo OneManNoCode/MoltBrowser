@@ -278,7 +278,7 @@ std::vector<BrowserBookmark> ReadFirefoxBookmarks(
     return bookmarks;
   }
 
-  base::FilePath places = profile_dir.Append("places.sqlite");
+  base::FilePath places = profile_dir.AppendASCII("places.sqlite");
   if (!base::PathExists(places)) {
     return bookmarks;  // No Firefox profile / no places DB — not an error.
   }
@@ -290,7 +290,7 @@ std::vector<BrowserBookmark> ReadFirefoxBookmarks(
   if (!temp_dir.CreateUniqueTempDir()) {
     return bookmarks;
   }
-  base::FilePath temp_db = temp_dir.GetPath().Append("places.sqlite");
+  base::FilePath temp_db = temp_dir.GetPath().AppendASCII("places.sqlite");
   if (!base::CopyFile(places, temp_db)) {
     return bookmarks;
   }

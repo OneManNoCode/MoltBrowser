@@ -442,6 +442,12 @@ MoltNet window and nothing else (not the fingerprinting switch):
   PeerConnection handler can be created, perhaps WebRTC is disabled?",
   Chromium's usual message) before it reads the configuration, so a page
   fails at once instead of waiting.
+- *In the network service*, MoltNet's network context makes no WebRTC
+  socket manager either: one asked of it (no path in MoltBrowser does)
+  gets the same kind of stand-in, which keeps the renderer's connection
+  open, as the renderer would ask again at once for a closed one
+  (`services/network/molt_refusing_p2p_socket_manager.h`; *Circuits*
+  below).
 
 `disable_non_proxied_udp` stays set underneath. It is MoltNet's own
 setting: it doesn't follow your regular windows' WebRTC setting, and if a
@@ -466,7 +472,8 @@ checks use the address of the connection itself (for a proxied one:
 unknown) and look nothing up. The Network Information API reads values the
 browser sends; MoltNet's renderers get fixed ones (*Shared network
 state*, network quality). Direct Sockets is only for isolated web apps and
-Chrome Apps, which MoltNet windows can't host. Chromium's built-in proxy
+Chrome Apps, which MoltNet windows can't host, and MoltNet's network
+context makes no raw socket anyway (*Circuits*). Chromium's built-in proxy
 exceptions (`localhost`, loopback and link-local addresses) are switched off
 for MoltNet (`<-loopback>`): those requests go to Tor too, which refuses
 them, so a MoltNet page can't reach or probe services on your machine or
@@ -895,6 +902,35 @@ caches (resolved names, onion-service descriptors). Regular and Incognito
 windows don't use Tor; a SOCKS5 proxy you set up for them on your own
 computer gets the per-site username and a fixed password, as before.
 
+Every connection MoltNet's network context makes comes from its own HTTP
+network session, which carries the password, the per-site socket pools
+and the identity's end (*After an identity ends*). The network service
+has one kind of socket that builds a session of its own from Chromium's
+defaults instead (`ProxyResolvingClientSocketFactory`: at Chromium 156
+made for GCM, which the browser asks of the browser-wide context and of a
+profile's default partition, and for WebRTC's TCP sockets): through the
+same proxy, but with the fixed password, shared pools, and no end. No
+MoltNet feature uses it, and a network context with any of MoltNet's
+session settings makes none: asked for the factory, it closes the pipe,
+and asked for a WebRTC socket manager, it binds a stand-in that reaches
+nothing (`services/network/molt_own_session_sockets_policy.h`, hooked
+into `NetworkContext`). The network context's raw sockets have neither a
+session nor the proxy: TCP connected, server and bound sockets, UDP and
+restricted UDP sockets, the socket factory that hands out the same, and
+the multicast DNS responder, which the browser asks for Direct Sockets,
+Chrome Apps' socket APIs, Cast and WebRTC's local names. No MoltNet window
+has any of these, and MoltNet's network context refuses them too: those
+that wait for an answer get `ERR_ACCESS_DENIED`, with no address and no
+data pipes, and the others' pipes are closed. Nor does that context look
+up a name itself: the network context's own name lookups
+(`ResolveHost()`, `CreateHostResolver()`) use its host resolver, the
+system's or Chromium's built-in one with your secure-DNS servers, outside
+Tor. At Chromium 156 the browser asks for them for net-internals' DNS
+lookup, DevTools' network targets, the error page's DNS probes and the
+preconnect service, none of them for a MoltNet page's names; MoltNet's
+context answers every lookup, from any source, with `ERR_ACCESS_DENIED`
+and closes a host resolver's pipe, so only Tor resolves names for it.
+
 **Certificate fetches.** To check a site's certificate the browser may
 download a missing intermediate certificate (AIA) and, with online
 revocation checks on, an OCSP response or a CRL, from addresses the
@@ -938,7 +974,7 @@ measured in a built browser):
 
 | State | In MoltNet's network context | After New Identity |
 |---|---|---|
-| HTTP cache | keyed by top-level site and frame site; one-off keys (certificate fetches, opaque origins) are never cached. Chromium 152 files a built-in list of well-known scripts and styles under one entry shared by every site where cookie settings allow full cookie access; MoltNet's context never does. **Size per site**: Chromium's in-memory cache has one size limit and evicts the least recently used entries of any site; MoltNet's context gives each site 10 MiB of its own, whose entries are evicted only by that site's own use or after 30 minutes unused (*HTTP cache* below) | gone (in memory, with the context) |
+| HTTP cache | keyed by top-level site and frame site; one-off keys (certificate fetches, opaque origins) are never cached. Chromium 152 files a built-in list of well-known scripts and styles under one entry shared by every site where cookie settings allow full cookie access; MoltNet's context never does. **Size per site**: Chromium's in-memory cache has one size limit and evicts the least recently used entries of any site; MoltNet's context gives each site 10 MiB of its own, whose entries are evicted only by that site's own use or after 30 minutes unused, found on a list of the site's own entries (*HTTP cache* below) | gone (in memory, with the context) |
 | Code cache | none: off-the-record profiles have no code cache | — |
 | Idle sockets, HTTP/2 sessions | keyed by top-level site; each site's connections also go to Tor with that site as SOCKS username, so on circuits of their own (§1.4) | closed, then gone |
 | Connection limits | **per site**. Chromium gives each proxy one pool of connections, 128 at most for all sites together (the `MaxConnectionsPerProxy` policy changes the number; at 156 the pool may also grow past it by a random amount), so a site that kept many connections open made other sites' requests wait, and could count how many the others held. MoltNet's context gives each site (the top-level site, for its first-party and third-party requests alike; a page its server sandboxed counts against the site it came from) pools of its own: 48 connections for HTTP and 16 for WebSockets, whatever the policy says and with no random room, with Chromium's 6 per host inside. A certificate fetch counts against the site whose connection needed it (*Certificate fetches*), in a pool of 4 of that site's own, apart from its 48, and in a part of the budget kept for those pools: the connections waiting for their certificate checks hold slots of the 48 and of the budget's other part, and the fetches the checks wait for never need one of them. A credentialless iframe's one-off keys count in its site's 48. The one-off keys no site can be named for share one pool of 8, and their certificate fetches one of 4. A synchronous `XMLHttpRequest`, which Chromium lets past every limit (its thread waits for it, so it must not wait behind the page's own requests), skips only the 6 per host in MoltNet's pools: it counts against its site and waits for the site's 48 and the budget like any other request, and once the site holds all 48 it may go past them by 4 at most, which come out of the margin MoltNet leaves Tor (*Tor's capacity*), not out of the budget other sites share. The pools start no backup connections (Chromium's second attempt at a slow connection, which a proxy on the same machine doesn't need) | closed, then gone |
@@ -950,7 +986,7 @@ measured in a built browser):
 | Storage quota and eviction (IndexedDB, Cache Storage, OPFS, service worker scripts) | **per site**: each site's storage keys together may always use 60 MiB, whatever other sites store, and that is the only limit a write meets; nothing is evicted to make room. Past 600 MiB for all sites together, MoltNet watches the machine's memory apart from any write and ends the identity if it runs short (*Storage* below, [FINGERPRINTING.md](FINGERPRINTING.md#moltnet-storage-limits)). Chromium checks writes against each storage key's quota only and, every half hour, evicts the least recently used data of any site until all sites use 70% of a pool. A quota check costs what the site's own storage keys cost, whatever other sites store (*Storage* below) | gone (in memory) |
 | Blob memory (`Blob`, `Response.blob()`, `canvas.toBlob()`, recordings) | **per renderer process**: each process's blobs may use 200 MiB whatever the others hold, and that is the only limit a blob meets; a Background Fetch's response, which the browser holds in memory as it downloads and then as a blob, counts to the site that started it from its first byte. Past 800 MiB for all together, MoltNet watches the machine's memory as for storage (*Blob memory* below). Chromium holds all of a profile's blobs within one limit | gone (in memory) |
 | `localStorage` and `sessionStorage` caches | **per site**: the storage service keeps the areas it has opened in a cache and, at 156, purges every site's unused ones once all areas together pass one limit (50 areas or 20 MiB); MoltNet's partition keeps them per top-level site, an unused one that holds nothing purged only by that site's own use or after 30 minutes unused, and has no database: an area that holds items stays until they are deleted or the identity ends, and opening one waits on nothing another site queued (*DOM storage caches* below) | gone (in memory) |
-| `localStorage` and `sessionStorage` contents | **per site**: Chromium limits each area (an origin's, and for `sessionStorage` a tab's) to 10 MiB, so a site's subdomains and tabs together had no limit, each area committed to the partition's one database at a rate of its own, and a page could send as many writes as it liked; in MoltNet each site's areas together hold one area's limit, for each kind, nothing is committed (no database), and a site's writes come out of a write allowance of its own (*DOM storage totals* below) | gone (in memory) |
+| `localStorage` and `sessionStorage` contents | **per site**: Chromium limits each area (an origin's, and for `sessionStorage` a tab's) to 10 MiB, so a site's subdomains and tabs together had no limit, each area committed to the partition's one database at a rate of its own, and a page could send as many writes as it liked; in MoltNet each site's areas together hold one area's limit, for each kind, counting what each item and area takes in memory, nothing is committed (no database), a site's writes come out of a write allowance of its own, and the storage service handles each site's messages in turn (*DOM storage totals*, *The storage service's sequence, in turn per site* below) | gone (in memory) |
 | Renderer processes | **one tab each** (a tab and the windows it opened with an opener): a process that serves one is never given to another (*Renderer processes* below). Chromium lets a site's frames and workers share a process across tabs | ended with the identity |
 | TLS session resumption | keyed by top-level site | gone |
 | QUIC sessions and server configurations | not used: QUIC doesn't go through a SOCKS5 proxy | — |
@@ -1049,9 +1085,29 @@ context (the `[MinVersion=1]` field `molt_per_site_http_cache`) each
 top-level site's entries, parsed from the cache key, have a share of
 their own: 10 MiB, with entries of 5 MiB at most. A write that takes a
 site past its share evicts that site's own least recently used entries
-(down to 90% of the share), never another's; an entry unused for 30
-minutes is dropped, when it is next opened or by a sweep that runs every
-minute whatever sites do. All sites together may use 120 MiB (twelve
+(down to 90% of the share), never another's. It finds them on a list of
+the site's own entries, kept in order of use beside Chromium's list of
+all entries, so how long it takes depends on the site's own entries
+only, never on how many other sites hold
+(`net/disk_cache/memory/molt_mem_backend_site_lru.h`). An entry unused
+for 30 minutes is dropped, when it is next opened or by a sweep that runs
+every minute whatever sites do. The sweep goes site by site, from each
+site's least recently used entry to its first one used within the 30
+minutes, in steps of at most 64 entries of one site, each step a task of
+its own: what a site's entries cost to sweep is spent in that site's
+steps, and another site's request waits for one step at most, however
+many entries the sites have expiring (in a harness with 100,000 entries of
+other sites expiring at once, the longest task went from 28 ms to 65 µs).
+When an entry was last used is read from a monotonic clock, the one each
+site's list is ordered by, so a wall clock set back or forward neither
+holds expiry back nor drops entries early. Finding a site's record is a
+hash lookup in a table made once with room for 4096 sites (more than one
+person visits within the 30 minutes an entry is kept), with a hash seeded
+per table: adding a site never rehashes the table, so it costs the same
+however many other sites there are (a table that grows took up to 20 µs
+to add the site that made it rehash at 2,357 sites; this one stays under
+half a microsecond); a site past the cap gets no entry, as a write that
+doesn't fit. All sites together may use 120 MiB (twelve
 shares); a write that would pass that is not stored, and nothing is
 evicted for it. A new entry's key counts like data written into it: the
 site makes room from its own unused entries first, and an entry that
@@ -1285,7 +1341,13 @@ tab. The low-end-device rule and `PurgeMemory()` don't apply there.
 MoltNet's partition keeps no database (below): an area that holds an
 item, of any size, is never purged, since its items are nowhere else; only
 areas that hold nothing leave the cache, and a page that opens one again
-finds it empty, as it was
+finds it empty, as it was. So there an area that holds nothing goes as
+soon as no page has it open, in a task in its site's turn (the purge on
+opening and the sweep above are for a partition kept per site with a
+database): the cache holds exactly the areas in use and those holding
+items, nothing that opens or sweeps looks at other sites' areas (both
+purges walked every site's areas), and whether an area was still cached
+says nothing about other sites (`MoltDomStorageDropsUnusedArea()`)
 (`components/services/storage/dom_storage/molt_dom_storage_site_policy.h`;
 the storage controls' `MoltKeepCachesPerSite()`, which
 `DOMStorageContextWrapper` sends when
@@ -1326,7 +1388,17 @@ scheduling) hold at most one area's limit, 10 MiB and 100 KiB, for
 `localStorage` and for `sessionStorage` apart
 (`components/services/storage/dom_storage/molt_dom_storage_site_policy.h`
 and `molt_dom_storage_site_budget.h`, applied by `StorageAreaImpl`
-through its delegate, `LocalStorageImpl` and `SessionStorageImpl`). With
+through its delegate, `LocalStorageImpl` and `SessionStorageImpl`). An
+area counts not only its items' keys and values, as Chromium's limit per
+area does, but also what holding them takes in the storage service: 112
+bytes for each item (its node in the area's map, 80 bytes, and the
+rounding of its key's and its value's memory to the allocator's 16-byte
+slots) and 2 KiB for each area that holds an item (its objects in the
+storage service, each with a copy of the storage key), measured at
+Chromium 156 on 64-bit Linux (`MoltDomStorageCountedBytes()`). So a site
+storing many tiny items, or a few in many areas, holds no more memory
+than its total says: without it, 10 MiB of one-byte items took about
+1 GiB. With
 a database a site's areas would also commit at one area's rate together
 (60 commits and 10 MiB an hour); MoltNet's partition has none (*DOM
 storage caches* above). A tab's `sessionStorage`, copied into a tab it
@@ -1342,10 +1414,12 @@ the memory valve hears of each further MiB (*Storage* above:
 both storage controls from
 `ContentBrowserClient::GetDomStorageGrowthBeyondFloorCallback()`, for
 MoltNet). What a page can still observe: its own site's total. What it
-costs: a site of one origin in one tab stores what Chromium lets it; a
-site that spreads its storage over subdomains or tabs gets one area's
-worth in all, and a `sessionStorage` write refused for the total is kept
-only in that page's own copy (Chromium's renderer doesn't hear of a
+costs: a site of one origin in one tab stores what Chromium lets it,
+unless it fills its 10 MiB with more than about 900 items (a site's areas
+of one kind hold at most about 94,000 items); a site that spreads its
+storage over subdomains or tabs gets one area's worth in all, and a
+`sessionStorage` write refused for the total is kept only in that page's
+own copy (Chromium's renderer doesn't hear of a
 refused `sessionStorage` write), so it is gone after a reload.
 
 Writes per site. Each write a page sends is work on the storage service's
@@ -1370,13 +1444,106 @@ own site's allowance. What it costs: a page that writes faster than that
 for long loses the writes past it (the last write that fits stays).
 Deleting and clearing take no allowance (the storage interface gives them
 no failure to report, and a delete only removes what a write added). A
-refused write still costs the storage service its message, as any message
-a page sends does (*Shared work queues*).
+refused write, a removal or a `clear()` still costs the storage service
+its handling; what keeps a page sending them in a loop from delaying other
+sites is that the storage service's sequence is taken in turn per site
+(below).
 
 In every profile, a write the storage service refuses leaves the area as
 it was: `StorageAreaImpl::Put()` puts back the value it had taken out on
 every refusal (at Chromium 156, a refusal for an area's own limit
 didn't).
+
+**The storage service's sequence, in turn per site.** Every message a
+page sends its `localStorage` and `sessionStorage` areas is handled on the
+storage service's one sequence, and Chromium's mojo bindings post one task
+there for each message waiting on an area's pipe, all at once. A page
+sending messages in a tight loop (writes past its allowance, which are
+refused but still handled, `clear()`, removals) queued thousands of
+tasks, and another site's read (a page's first read of an area is
+synchronous) waited for all of them: one such page kept the sequence about
+half busy, two saturated it. In MoltNet's partition each area's pipes (the
+pages', and its observers') are bound to a task runner of the area's site,
+whose tasks wait in that site's queue, and the sequence runs one task at a
+time from the queues in turn: the site whose next task would start
+earliest in a virtual time goes first, and each task moves its site's
+virtual time on by the time it took, a microsecond at least: the thread's
+processor time where the platform has it, so that a task during which the
+operating system ran other threads isn't charged that time (start-time
+fair queueing:
+`components/services/storage/dom_storage/molt_dom_storage_fair_queue.h`
+and `molt_dom_storage_fair_scheduler.h`, used by `StorageAreaImpl`,
+`SessionStorageAreaImpl`, `LocalStorageImpl` and `SessionStorageImpl`).
+Everything still runs on the partition's thread (below), each site's
+messages in the order they came; only the order between sites changes. A
+site that had nothing queued, and has used no more than its share of the
+thread, goes next, after the task in service; sites with work queued share
+the thread's time equally, however many messages or areas each has. In a
+harness that reproduces mojo's dispatch around the shipped scheduler, a
+polite site's read every 10 ms waited behind 50,000, 100,000 and 200,000
+messages of one, two and four flooding sites (73, 159 and 262 ms) in
+Chromium's order, and behind one or two (64 µs, as without a flood) in
+MoltNet's.
+
+A thread of its own. At Chromium 156 the storage service (a utility
+process on the desktop, the browser's IO thread on Android or with
+`--single-process`) makes every partition's `localStorage` and
+`sessionStorage` on its one sequence: a regular window's page flooding
+its storage delayed MoltNet's reads, one task for one, and MoltNet's pages
+delayed the regular window's, a timing channel between identities. The
+browser now binds a partition kept per site in memory (MoltNet's) through
+`StorageService.MoltBindPerSiteLocalStorageControl()` and
+`MoltBindPerSiteSessionStorageControl()` (`DOMStorageContextWrapper`), and
+the storage service gives each of its two controls a dedicated thread from
+the thread pool, which runs nothing else, so it never waits for a pool
+worker either (`components/services/storage/dom_storage/
+molt_dom_storage_own_thread.{h,cc}`). Every identity has its own; regular
+profiles keep the storage service's sequence. In the harness, with
+MoltNet's scheduler on the storage sequence as before, MoltNet's polite
+read waited behind about 33,000 messages of one flooding regular page
+(38 ms at the median) and a regular page's behind one MoltNet task; on
+its own thread, behind none of the other side's (17 µs at the median, as
+without a flood; what stays is the machine's: the processor, and the
+storage service's IO thread, which reads every pipe's messages).
+
+The control pipe. The browser's messages to a partition (binding an area
+for a page, deleting a site's storage, creating, cloning and deleting a
+tab's `sessionStorage` namespace, usage, flushes) come on one pipe, and
+were handled as they came, one task each, ahead of the sites' turns: a page
+making the browser bind areas in a loop (frames of many subdomains) held
+up every other site. In MoltNet's partition that pipe takes a turn of its
+own, and each message that names a storage key (`BindStorageArea()`,
+`DeleteStorage()`) is handled in its site's turn; its turn counts its
+tasks at an eighth of their time, as it carries every site's messages and
+only reads them (`MoltDomStorageChargeFor()`); and each `sessionStorage`
+namespace's pipes (a tab's renderers' `Clone()` calls) take a turn of
+their own too (`MoltDomStorageNamespaceGroup()`). A message that names a
+storage key is handled after the control messages that came before it,
+and in order with its site's other messages. In the harness, with the
+browser forwarding binds as fast as it could, another site's read waited
+behind about 24,000 of them (39 ms at the median) before, behind none
+(21 µs) now.
+
+Long tasks. One task of a site is how long another site's message may
+wait. Where it could be long, the work is split
+(`molt_dom_storage_split_work.h`): a change carrying 64 KiB or more to an
+area open in more than one tab notifies each tab's renderer in a task of
+its own, in order with the area's other notifications (a 10 MiB write to
+an area open in eight tabs serialized 180 MiB in one task, 13.5 ms in the
+harness; now 2.2 ms for the write and 1.5 ms for each notification), and a
+big map (a `clear()`, an area or a tab's namespace going) is freed at most
+1024 items or 1 MiB a task (a clear of 90,000 items took 10 ms in one
+task; now 19 µs and steps of 0.2 ms).
+
+What a page can still observe: the task in service when its message
+arrives (one message of another site, or one control message: at most the
+decoding and handling of a write of an area's whole limit with one
+notification, or a read of a whole area, a few milliseconds), the
+machine, and, if it uses more than its share, that it shares the thread.
+A page's own first opening of an area waits for the browser's control
+messages before it, which the browser forwards one at a time. What it
+costs: one more task per message, two threads per MoltNet identity, and a
+task per tab for a big change.
 
 **Shared work queues.** Sites also share the browser's work: a site that
 keeps a part of the browser busy slows what another site asks of it, and
@@ -1389,20 +1556,35 @@ and renderer processes (one tab each); quota checks that cost what its
 own storage keys cost (*Storage*); Background Fetch limits of its own
 (*Downloads and Background Fetch*); and, for `localStorage` and
 `sessionStorage`, its own total and write allowance, with no database to
-wait behind (*DOM storage caches*, *DOM storage totals*), so the work its
-writes cause the storage service is bounded, and no first read waits for
-another site's commits. What every site still shares, in MoltNet as in
+wait behind (*DOM storage caches*, *DOM storage totals*), and its turn on
+the identity's own storage thread, which no other identity or regular
+window shares (*The storage service's sequence, in turn per site*), so
+the work its messages cause the storage service is bounded, and no read
+waits for another site's queued messages or commits. What every site still
+shares, in MoltNet as in
 any browser, Tor Browser included: the processor and the GPU process; the
 browser's main and IO threads, which pass every page's messages; the
 network service's thread, which runs every request's network code (a
 site's many requests delay another's by the time that code takes, not by
-the network's); the storage service's sequences, on which each storage
-operation runs in turn (each message a page sends there costs its
-handling, also a write refused for its site's allowance); and Tor's own
-process (*Tor's capacity*). Threads of their own for each site would take
+the network's); the identity's storage thread, one task at a time (a
+message of another site in service when a page's own arrives), and the
+storage service's IO thread; and Tor's own process (*Tor's
+capacity*). Threads of their own for each site would take
 a network and a storage service per site, which no browser has; what a
 site can measure through them is how busy the machine is, as any page can
 with its own timers.
+
+**Records per site.** Each limit above keeps a record for each site (its
+share, count, turn, allowance or pools), made when the site first needs
+one, and adding one doesn't cost more because other sites have records:
+the HTTP cache's table of sites is made with room for its cap (*HTTP
+cache*); every other record (DOM storage's turns, totals and write
+allowances, Background Fetch's, the keepalive counts, the socket pools and
+their budgets, blob and quota counts) is kept in a balanced tree, which
+never rehashes: adding a site takes one comparison per level of the tree.
+In a harness, adding a site to such a tree took under half a microsecond
+at 4,096 sites, as at none; a hash table left to grow took up to 20 µs to
+add the site that made it rehash.
 
 **Renderer processes.** Chromium lets a site's frames and workers share a
 renderer process across tabs: an iframe takes the process its site
@@ -1719,6 +1901,15 @@ gpg-verified steps documented in that script.
 | Storage groups of keys that don't name their site, and HTTP cache entries' keys (§2 *Storage*, *DOM storage totals*, *HTTP cache*): a credentialless iframe's key counts with its page's nonce, never with its own site's pages or its frames under another page, for the quota share and the `localStorage` and `sessionStorage` totals, cache groups and commit rates; an area under an opaque top-level site counts on its own; a new HTTP cache entry's key counts against its site's share and the total, the site making room from its own unused entries, so entries held open never take it past either | Unit tests (`molt_ai_unittests`): the policies (built standalone), real storage keys (`molt_net_storage_groups_unittest.cc`), Chromium's real `LocalStorageImpl` and `MemBackendImpl`; standalone harnesses: the grouping headers verbatim against a storage key with 156's rules (a tracker's credentialless frames on two pages, the quota a frame reads), 5 tests, 6 mutants caught; the HTTP cache harness of round 25 with `CreateEntry()` verbatim, 17 tests, 25 mutants caught; round 26's DOM storage totals harness re-run on the changed code; type-checked against Chromium 156's headers | Partly: the real-service tests need a Chromium build |
 | Background Fetch requests with the fetch's credentials mode and initiator, retried downloads with their download's key (§2 *Downloads and Background Fetch*): a fetch that asked for no credentials, or same-origin ones for another origin, sends no cookies, in every profile (regular profiles' requests through `download::CreateResourceRequest()`: a test sends one to a server with a regular profile's network context and its cookie, and with `credentials: 'omit'` the server sees none); a client without the site's key is unchanged; a retry from the bubble or the downloads page has the key and initiator of the download it retries, never the downloads page's, and a one-off key when there is none; offline items and other profiles unchanged | Unit tests (`molt_ai_unittests`: the request, 3 tests; the choice, 7 tests, built standalone); the standalone harness below, extended: the retry code of `DownloadBubbleUIController` and `DownloadsDOMHandler` as Chromium 156 has it and as hooked, `molt_retried_download_isolation.h` verbatim, 16 tests, 33 mutants, 32 caught (the last, the bubble's retry source, changes nothing: a bubble retry has no frame); the changed files type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the download suites need a Chromium build |
 | Downloads and Background Fetch keyed by their site (§2 *Downloads and Background Fetch*): a Background Fetch has its service worker's or page's key (also a third-party worker's, under each embedding site), not its server's, in every off-the-record profile; a download from a frame embedded on two sites has each site's key, "Save image as" the page's, a resumed download its first request's, "Save page as"'s resources their frame's, none of them a first party that follows redirects; with nothing to go by a one-off key; regular profiles unchanged | Standalone harness: `molt_registering_site_isolation.h` and `molt_download_isolation{,_policy}.h` compiled verbatim, the request set-up of `InMemoryDownloadImpl::SendRequest()` and `SaveFileManager::SaveURL()` as Chromium 156 has them and as hooked, `DownloadManagerImpl::BeginDownloadInternal()`'s hook, `download::CreateResourceRequest()`, `StorageKey::ToPartialNetIsolationInfo()` and the network service's choice of a request's isolation (`url_loader_util::GetIsolationInfo()`) included verbatim, against stand-ins of origins, sites and `IsolationInfo` (g++ ASan/UBSan, clang `-fno-exceptions`): the key before and after for each case, 10 tests, 17 mutants caught; unit tests (`molt_ai_unittests`: the choice, 5 tests, built standalone; the profile rule); the changed files type-checked against Chromium 156's headers (`tools/compile_check`); the leak kit's `identity.background_fetch_circuits` | Partly: the standalone tests pass; the download suites need a Chromium build |
+| HTTP cache evictions per site cost only the site's own entries (§2 *HTTP cache*): each site's list holds its entries in the order of Chromium's list, children (sparse data) included; a site's eviction walks only its own list, skipping entries in use and the children of an entry it evicts, keeps the same entries Chromium's list with other sites skipped would, and costs the same whatever other sites hold; entries made before the limits are put in their sites' lists; the sweep stops at the first entry used within the 30 minutes | Unit tests (`molt_ai_unittests`: the lists with a stand-in entry, and Chromium's real `MemBackendImpl`: sparse data, entries made before the limits, the sweep past an entry in use); standalone harness: `molt_mem_backend_site_lru.h` verbatim with Chromium 156's `base::LinkedList`, around a model of `MemEntryImpl` and `MemBackendImpl`'s hooks (parents, children, references, doom), 200 random runs of 3000 operations against round 27's eviction (same entries kept, each site's list the global list by site; g++ ASan/UBSan), 6 mutants caught; one site's evicting write with 0 to 1,000,000 older entries of other sites: 3 to 4 µs (17 entries looked at) against round 27's 3 µs to 34 ms (17 to 1,000,017); type-checked against Chromium 156's headers (`tools/compile_check`) | Partly: the standalone tests pass; the real-backend tests need a Chromium build |
+| `localStorage` and `sessionStorage` totals count each item and area held (§2 *DOM storage totals*): 112 bytes per item, 2 KiB per area holding one, a new key always counted; a site with a full area has room for some hundred tiny items in another, not tens of thousands | Unit tests (`molt_ai_unittests`: the policy, built standalone here; Chromium's real `LocalStorageImpl`); standalone harness: `StorageAreaImpl`'s `Put()`, `Delete()`, `DeleteAll()` and fork code verbatim with the budget functions (round 26's, now checking after every random operation that each site's count is what its areas' items and the areas themselves take; g++ ASan/UBSan), 11 tests, 10 mutants caught; the sizes read from Chromium 156's headers with its clang (`StorageAreaImpl` 352 bytes, `blink::StorageKey` 272, the map locator 320, the map's node 80); a measurement of the map's allocations (glibc: 128 to 160 bytes for an item of a 4-byte key and a value of up to 24 bytes); type-checked against Chromium 156's headers | Partly: the real-service tests need a Chromium build |
+| The storage service's sequence in turn per site (§2 *The storage service's sequence, in turn per site*): a site with nothing queued goes after the task in service, also against twenty flooding sites; busy sites share the time equally whatever their tasks cost; a site that used more waits its turn; an idle site gets no credit; every task counts; each site's tasks keep their order; idle sites are forgotten; `localStorage` and `sessionStorage` areas' pipes bound to their site's runner in MoltNet's partition only | Unit tests (`molt_ai_unittests`: the queue, 8 tests built standalone here, 6 mutants caught; Chromium's real `LocalStorageImpl` and `SessionStorageImpl` with a flood of 1,500 writes and 1,500 `clear()`s against another site's read); standalone harness: `molt_dom_storage_fair_scheduler.h` and `molt_dom_storage_fair_queue.h` verbatim against stand-ins with Chromium 156's `SequencedTaskRunner` shape, on a storage sequence of its own with pipes read as mojo 156's `Connector` reads them, real areas and the real write allowance, flooding sites (refused writes and `clear()`s) against a polite site's reads: in Chromium's order the read waited behind 50,000 to 200,000 messages, in MoltNet's behind one or two (also under ThreadSanitizer); type-checked against Chromium 156's headers | Partly: the standalone tests pass; the real-service tests need a Chromium build |
+| No sockets outside MoltNet's network context's own session (§2 *Circuits*): a context with the SOCKS isolation password, per-site pools or the identity's end makes no `ProxyResolvingClientSocketFactory` (its pipe closed) and binds a renderer's WebRTC socket manager to one that resolves nothing, opens nothing and stays connected; it makes no raw socket (TCP connected, server and bound sockets and restricted UDP sockets answer `ERR_ACCESS_DENIED` with no address and no data pipes; UDP sockets, the socket factory and the mDNS responder have their pipes closed); it looks up no name itself (`ResolveHost()` answers `ERR_ACCESS_DENIED` from any source, `CreateHostResolver()` closes its pipe); other contexts unchanged | Every creator of the factory at Chromium 156 found in its source (the network context's factory, for GCM; the WebRTC socket manager; tests and a GCM tool), every raw socket entry point of the network context's 156 interface, and the browser's callers of its name lookups; unit tests (`molt_ai_unittests`: the rule, and Chromium's real `NetworkContext` and network service, a MoltNet context against another binding local sockets); type-checked against Chromium 156's headers | Partly: the real-service tests need a Chromium build |
+| MoltNet's DOM storage on a thread of its own (§2 *The storage service's sequence, in turn per site*): a partition kept per site in memory is bound through `MoltBindPerSiteLocalStorageControl()` / `MoltBindPerSiteSessionStorageControl()` and runs on a dedicated thread with its own scheduler; other partitions keep the storage sequence; a regular page's flood doesn't delay MoltNet's reads, nor the reverse | Unit tests (`molt_ai_unittests`: the per-site partitions on threads of their own, through their control pipes; a disabled timing test of the real classes for the build machine); standalone harness: the shipped scheduler verbatim against stand-ins with 156's shapes, the storage sequence and MoltNet's thread as real threads, pipes read as mojo 156's `Connector` reads them: a regular page flooding (one or two) against MoltNet's polite read every 10 ms, and two MoltNet pages flooding against a regular page's read: before, the read waited behind about 33,000 regular messages (38 ms at the median), or one MoltNet task; on MoltNet's own thread behind none of the other side's (17 µs); ThreadSanitizer clean; type-checked against Chromium 156's headers | Partly: the standalone tests pass; the real-service tests and the timing check need a Chromium build |
+| The control pipe in its own turn (§2 *The storage service's sequence, in turn per site*): `BindStorageArea()` and `DeleteStorage()` handled in their site's turn, after the control messages before them; the namespaces' lifecycle in the control's turn, counted at an eighth of its time; each namespace's pipes in a turn of their own; the scheduler counts a task's processor time | Unit tests (`molt_ai_unittests`: binding 1,000 areas of one site through the control pipe against another site's read, with the real `LocalStorageImpl`; the weights and the queue, built standalone here); the harness above with a browser binding areas in a loop: at 200,000 binds a second both orders keep up; flat out, another site's read waited behind about 24,000 binds (39 ms) before and none (21 µs) now, while a page's own bind waits for the binds before it in the pipe (55 ms before, 119 ms now, with a flood no browser forwards) | Partly: the standalone tests pass; the real-service tests need a Chromium build |
+| Long tasks split (§2 *The storage service's sequence, in turn per site*): a change of 64 KiB or more to an area open in more than one tab notifies each in a task of its own, in order with the area's other notifications; big maps freed 1,024 items or 1 MiB a task; smaller changes and one tab as Chromium | Unit tests (`molt_ai_unittests`: three observers hear every change in order, a gone one nothing; a clear of 900 items; the rules built standalone here); the harness above: one 10 MiB write over a 10 MiB value with eight tabs open went from one task of 13.5 ms (180 MiB copied) to 2.2 ms and 1.5 ms per tab, with one tab unchanged (3 ms); a clear of 90,000 items from one task of 10 ms to 19 µs and steps of 0.2 ms | Partly: the standalone tests pass; the real-service tests need a Chromium build |
+| `localStorage` and `sessionStorage` areas holding nothing go when unused (§2 *DOM storage caches*): kept per site without a database, an area left unused that holds nothing goes in its site's turn, one in use or holding an item stays; no purge on opening and no sweep there; with a database the per-site purge and sweep as before | Unit tests (`molt_ai_unittests`: real `LocalStorageImpl` and `SessionStorageImpl`; the purge and expiry tests on a partition on disk, which keeps a database; the rule built standalone here); type-checked against Chromium 156's headers | Partly: the real-service tests need a Chromium build |
+| The HTTP cache's sweep per site, its monotonic clock and its table of sites (§2 *HTTP cache*): the sweep goes site by site, at most 64 entries of one site a task; expiry reads a monotonic clock, also when the wall clock goes back or forward; adding a site never rehashes the table; a site past 4,096 gets no entry | Unit tests (`molt_ai_unittests`: Chromium's real `MemBackendImpl`; the site lists with a stand-in entry, built standalone here, 6 tests under ASan/UBSan); standalone harness: the lists with Chromium 156's real `base::LinkedList` and a model of `MemBackendImpl` and `MemEntryImpl` with both clocks: 200 random runs of 3,000 operations keep the same entries as round 28's sweep; with the wall clock an hour back, round 28's sweep left 100 expired entries, this one none; with 100,000 other sites' entries expiring, the longest sweep task went from 28 ms to 65 µs; 9 rehashes against none while adding 4,096 sites | Partly: the standalone tests pass; the real-backend tests need a Chromium build |
 | The same in a running browser: language policies change nothing in MoltNet; Incognito turned off closes MoltNet with DevTools open in a window of its own and an unanswered "Leave site?", MoltNet refuses to open, and opens again once allowed; Incognito only keeps it open (§4 step 9) | Needs a Chromium build; the leak kit's `identity.language_policy_ignored`, `identity.incognito_off_closes`, `identity.incognito_forced_allows` | **Not yet done** |
 | No Autofill server traffic and no address-format downloads in MoltNet (§2 *Requests outside Tor*): no query and no vote (Autofill's or the password manager's), also with `AutofillServerCommunication` turned on; no address rules downloaded or read from the shared file, for Autofill or the payment sheet; every other profile keeps Chromium's | Unit tests (`molt_ai_unittests`); `molt_net_autofill.cc` and `chrome_payment_request_delegate.cc` type-checked against Chromium 156's headers, and the two hooked functions of `chrome_autofill_client.cc` too (copied verbatim into a stand-in of the class: the checker can't generate one header the whole file needs) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser (§4 step 20) | Needs a Chromium build; the leak kit's `net.autofill_server` | **Not yet done** |

@@ -3,13 +3,11 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/chrome_views_delegate.h"
-#include "chrome/browser/ui/ui_features.h"
 
 #include <memory>
 
 #include "base/check_op.h"
 #include "build/build_config.h"
-#include "base/feature_list.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"

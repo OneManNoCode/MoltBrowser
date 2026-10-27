@@ -1,0 +1,20 @@
+MoltBrowser patch for chrome/browser/ui/views/frame/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/views/frame/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/frame/BUILD.gn b/chrome/browser/ui/views/frame/BUILD.gn
+index d1973034eed485334dad8980883d3647be2e4759..a44fbff1b4e0d59240701b2ca944c25570f3504a 100644
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -1020,6 +1020,9 @@ source_set("contents_web_view") {
+     "//ui/views/controls/webview",
+   ]
+   deps = [
++    # MoltBrowser: MoltNet's letterboxing.
++    "//chrome/browser/molt_ai/fingerprinting:letterbox_view",
++
+     ":safe_invoke",
+     ":web_contents_close_handler",
+     "//chrome/browser/ui/color:color_headers",

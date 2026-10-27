@@ -2,6 +2,7 @@
 # Licensed under GPLv3. See LICENSE file.
 """Which files the check compiles by default."""
 import os
+import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -59,18 +60,30 @@ UPSTREAM_HOOKS = [
     "content/public/browser/content_browser_client.cc",
 ]
 
-# The check is a Linux build: other platforms' files are not compiled there.
-OTHER_PLATFORM = ("_win.cc", "_mac.cc", "_android.cc", "_chromeos.cc",
-                  "_ios.cc", "_fuchsia.cc", "_win_unittest.cc",
-                  "_mac_unittest.cc", "_android_unittest.cc")
+# Sources the check compiles: C, C++, Objective-C and Objective-C++, each
+# for its platform (platforms.py).
+SOURCE_EXTS = (".cc", ".cpp", ".c", ".mm", ".m")
+
+# Third-party code vendored under src/ that is not Chromium's and is built
+# by its own build elsewhere: llama.cpp's own sources (built and tested by
+# its CMake build, see CLAUDE.md; MoltBrowser's glue in chromium/ is
+# checked) and the vendored Rust crates' C++ (a Qt test tool of ttf-parser
+# that no GN target builds).
+VENDORED = ("third_party/llama_cpp/",
+            "third_party/rust/chromium_crates_io/vendor/")
+VENDORED_CHECKED = ("third_party/llama_cpp/chromium/",)
+
+
+def is_vendored(path):
+    return path.startswith(VENDORED) and not path.startswith(
+        VENDORED_CHECKED)
 
 
 def _cc_under(d):
     out = []
     for dirpath, dirs, files in os.walk(SRC / d):
-        dirs[:] = [x for x in dirs if x not in ("win", "mac", "android")]
         for f in files:
-            if f.endswith((".cc", ".cpp")) and not f.endswith(OTHER_PLATFORM):
+            if f.endswith(SOURCE_EXTS):
                 out.append(os.path.relpath(os.path.join(dirpath, f), SRC))
     return sorted(out)
 
@@ -89,37 +102,83 @@ def upstream_hooks():
     return [p for p in UPSTREAM_HOOKS if (SRC / p).exists()]
 
 
-def default_targets():
-    return first_party() + upstream_hooks()
+def default_targets(tree=None):
+    if tree is None:
+        return first_party() + upstream_hooks()
+    return changed(tree)
+
+
+def _upstream_oid(tree, p):
+    """The blob id of `p` upstream (Chromium or a mounted subproject), or
+    None if it is not an upstream file."""
+    e = tree.chromium.entries.get(p)
+    if e is not None:
+        return e.oid if e.type == "blob" else None
+    if tree.mount_of(p) is None:
+        return None
+    ent = tree.upstream_entry(p)
+    return ent[1] if ent else None
+
+
+def _blob_oid(p):
+    import hashlib
+    data = (SRC / p).read_bytes()
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
 def patched(tree):
-    """Every upstream .cc file the overlay carries a modified copy of."""
-    import hashlib
+    """Every upstream source file (C, C++, Objective-C++; Chromium's own or
+    a subproject's) the overlay carries a modified copy of."""
     out = []
     for p in sorted(tree.overlay_set()):
-        if not p.endswith(".cc") or p.endswith(OTHER_PLATFORM):
+        if not p.endswith(SOURCE_EXTS) or is_vendored(p):
             continue
-        e = tree.chromium.entries.get(p)
-        if e is None or e.type != "blob":
+        oid = _upstream_oid(tree, p)
+        if oid is not None and oid != _blob_oid(p):
+            out.append(p)
+    return out
+
+
+def changed_headers(tree):
+    """Every header (.h) the overlay adds or changes, vendored code
+    excepted."""
+    out = []
+    for p in sorted(tree.overlay_set()):
+        if not p.endswith(".h") or is_vendored(p):
             continue
-        data = (SRC / p).read_bytes()
-        oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-        if oid != e.oid:
+        oid = _upstream_oid(tree, p)
+        if oid is None or oid != _blob_oid(p):
+            out.append(p)
+    return out
+
+
+def changed(tree):
+    """Every C/C++/Objective-C(++) source MoltBrowser adds or changes: the
+    overlay's new files and its modified upstream copies, except vendored
+    third-party code (VENDORED)."""
+    out = []
+    for p in sorted(tree.overlay_set()):
+        if not p.endswith(SOURCE_EXTS) or is_vendored(p):
+            continue
+        oid = _upstream_oid(tree, p)
+        if oid is None or oid != _blob_oid(p):
             out.append(p)
     return out
 
 
 def expand(args, tree=None):
-    """Paths relative to src/ (files or directories) -> .cc files.
+    """Paths relative to src/ (files or directories) -> source files.
+    @changed (every source MoltBrowser adds or changes; the default),
     @first-party, @hooks (section 4 of the build checklist) and @patched
-    (every modified upstream .cc file) name groups."""
+    (every modified upstream source) name groups."""
     if not args:
-        return default_targets()
+        return default_targets(tree)
     out = []
     for a in args:
         a = a[len("src/"):] if a.startswith("src/") else a
-        if a == "@first-party":
+        if a == "@changed":
+            out += changed(tree)
+        elif a == "@first-party":
             out += first_party()
         elif a == "@hooks":
             out += upstream_hooks()
@@ -128,9 +187,148 @@ def expand(args, tree=None):
         elif a.startswith("@list:"):
             with open(a[6:]) as f:
                 out += expand([x.strip() for x in f if x.strip() and
-                               x.strip().endswith((".cc", ".cpp"))], tree)
+                               x.strip().endswith(SOURCE_EXTS + (".h",))],
+                              tree)
         elif (SRC / a).is_dir():
             out += _cc_under(a)
         else:
             out.append(a)
     return list(dict.fromkeys(out))
+
+
+# Platforms a file's other-platform branches are checked on, besides its own
+# (platforms.of): MoltBrowser's hooks in a Linux-built file's
+# `#if BUILDFLAG(IS_WIN)` block (utility_main.cc's warm-up) or in the
+# IS_APPLE branch of a shared file (font_metrics.cc) are compiled there.
+EXTRA_PLATFORM_CANDIDATES = ("linux", "mac", "win", "linux-vulkan")
+
+
+# Headers made to be included in a context (several times, after macros
+# their includer sets): checked through a source that includes them.
+TEXTUAL_HEADER_RE = re.compile(r"[_-]inl\.h$|\.inc$")
+
+
+def includer_of(tree, header):
+    """A source next to `header`, or one directory up, whose text includes
+    it (by its name), or None."""
+    name = header.rsplit("/", 1)[-1].encode()
+    d = header.rsplit("/", 1)[0]
+    dirs = [d] + ([d.rsplit("/", 1)[0]] if "/" in d else [])
+    for base in dirs:
+        for p in sorted(tree.glob_upstream(base + "/")):
+            if not p.endswith((".c", ".cc", ".cpp")) or \
+                    p.count("/") > base.count("/") + 2:
+                continue
+            data = tree.read(p) or b""
+            for line in data.split(b"\n"):
+                if line.lstrip().startswith(b"#include") and name in line:
+                    return p
+    return None
+
+
+def changed_lines(new, old):
+    """0-based indices of the lines of `new` (bytes) that are not in `old`
+    (bytes, or None for a new file: every line)."""
+    import difflib
+    a = new.split(b"\n")
+    if old is None:
+        return set(range(len(a)))
+    b = old.split(b"\n")
+    out = set()
+    sm = difflib.SequenceMatcher(None, b, a, autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("replace", "insert"):
+            out.update(range(j1, j2))
+    return out
+
+
+def extra_platforms(path, new, old):
+    """The platforms besides platforms.of(path) on which some of the file's
+    changed lines are compiled while its own platform certainly skips
+    them (scan.live_lines with each platform's certain atoms)."""
+    from . import platforms, scan
+    own = platforms.of(path)
+    if own is None or not path.endswith(SOURCE_EXTS):
+        return []
+    lines = changed_lines(new, old)
+    if not lines:
+        return []
+
+    def live(name):
+        p = platforms.get(name)
+        return scan.live_lines(new, scan.Atoms(p.true_atoms, p.false_atoms))
+
+    own_live = live(own)
+    out = []
+    for name in EXTRA_PLATFORM_CANDIDATES:
+        if name == own or not platforms.may_build(path, name):
+            continue
+        other = live(name)
+        if any(not own_live[i] and other[i] for i in lines
+               if i < len(own_live) and i < len(other)):
+            out.append(name)
+    return out
+
+
+# MoltBrowser's own sources are compiled for Windows too, when a Windows
+# GN target builds them (if_built): the same code compiles differently
+# there (base::FilePath holds wide strings, Win32's headers and macros).
+OWN_SOURCES_ALSO_ON = ("win",)
+OWN_SOURCE_EXTS = (".cc", ".cpp", ".c")
+
+
+def if_built(pairs):
+    """{platform: {paths}} of the (path, platform, "if_built") entries of
+    platform_targets: checked there only if a GN target there builds
+    them."""
+    out = {}
+    for x in pairs:
+        if len(x) == 3 and x[2] == "if_built":
+            out.setdefault(x[1], set()).add(x[0])
+    return out
+
+
+def platform_targets(tree, paths):
+    """[(path, platform)] for the files to check: each on its own platform
+    and on the extra platforms its changed lines need (extra_platforms;
+    upstream copies compared with the pinned file); MoltBrowser's own
+    sources also as (path, platform, "if_built") on OWN_SOURCES_ALSO_ON."""
+    from . import platforms
+    oids = {}
+    for p in paths:
+        if (SRC / p).is_file() and p.endswith(SOURCE_EXTS):
+            ent = tree.upstream_entry(p) if tree is not None else None
+            if ent is not None:
+                oids[p] = ent
+    old = {}
+    by_repo = {}
+    for p, (repo, oid) in oids.items():
+        wanted = by_repo.setdefault(id(repo), (repo, {}))[1]
+        wanted.setdefault(oid, []).append(p)
+    for repo, wanted in by_repo.values():
+        try:
+            for oid, data in repo.blobs(list(wanted)):
+                for p in wanted[oid]:
+                    old[p] = data
+        except (RuntimeError, OSError, KeyError):
+            pass  # left out: every line counts as changed
+    out = []
+    for p in paths:
+        out.append((p, platforms.of(p)))
+        if not (SRC / p).is_file():
+            continue
+        new = (SRC / p).read_bytes()
+        prev = old.get(p) if p in oids else None
+        if p in oids and prev is None:
+            # The pinned copy can't be read: its MoltBrowser-marked lines.
+            lines = new.split(b"\n")
+            prev = b"\n".join(x for x in lines if b"MoltBrowser" not in x)
+        extras = extra_platforms(p, new, prev)
+        for extra in extras:
+            out.append((p, extra))
+        if p not in oids and p.endswith(OWN_SOURCE_EXTS) and \
+                platforms.of(p) == platforms.DEFAULT:
+            for name in OWN_SOURCES_ALSO_ON:
+                if name not in extras and platforms.may_build(p, name):
+                    out.append((p, name, "if_built"))
+    return out

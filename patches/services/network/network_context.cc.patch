@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88416e0157 100644
+index 66e2d0450518803f1531470045ffadc1412c497f..aeecb6bda5ddba4a756d5e3a6875a0a2fd84db51 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -88,6 +88,7 @@
@@ -16,15 +16,24 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
  #include "net/dns/context_host_resolver.h"
  #include "net/dns/host_cache.h"
  #include "net/dns/mapped_host_resolver.h"
-@@ -141,6 +142,7 @@
+@@ -141,6 +142,8 @@
  #include "services/network/prefetch_matching_url_loader_factory.h"
  #include "services/network/prefetch_url_loader_client.h"
  #include "services/network/proxy_checking_host_resolver_request.h"
 +#include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
++#include "services/network/molt_own_session_sockets_policy.h"  // MoltBrowser
  #include "services/network/proxy_config_service_mojo.h"
  #include "services/network/proxy_lookup_request.h"
  #include "services/network/proxy_resolving_socket_factory_mojo.h"
-@@ -665,6 +667,34 @@ void RemoveInvalidationFilterCallback(
+@@ -219,6 +222,7 @@
+ #endif  // BUILDFLAG(ENABLE_MDNS)
+ 
+ #if BUILDFLAG(IS_P2P_ENABLED)
++#include "services/network/molt_refusing_p2p_socket_manager.h"  // MoltBrowser
+ #include "services/network/p2p/socket_manager.h"
+ #endif  // BUILDFLAG(IS_P2P_ENABLED)
+ 
+@@ -665,6 +669,34 @@ void RemoveInvalidationFilterCallback(
    context->OnLogicalFilterRemoved(filter);
  }
  
@@ -59,7 +68,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
  }  // namespace
  
  constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
-@@ -825,6 +855,17 @@ NetworkContext::NetworkContext(
+@@ -825,6 +857,17 @@ NetworkContext::NetworkContext(
  
    shared_resource_checker_ = std::make_unique<SharedResourceChecker>(
        cookie_manager_->cookie_settings());
@@ -77,7 +86,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
  
    network_service_->RegisterNetworkContext(this);
  
-@@ -854,6 +895,11 @@ NetworkContext::NetworkContext(
+@@ -854,6 +897,11 @@ NetworkContext::NetworkContext(
          params_->http_auth_static_network_context_params
              ->allow_default_credentials);
    }
@@ -89,7 +98,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
  
    InitializeCorsParams();
  
-@@ -997,6 +1043,10 @@ NetworkContext::~NetworkContext() {
+@@ -997,6 +1045,10 @@ NetworkContext::~NetworkContext() {
    // May be nullptr in tests.
    if (network_service_) {
      network_service_->DeregisterNetworkContext(this);
@@ -100,7 +109,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    }
  
    if (domain_reliability_monitor_) {
-@@ -1114,6 +1164,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
+@@ -1114,6 +1166,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
  void NetworkContext::ActivateDohProbes() {
    DCHECK(url_request_context_->host_resolver());
  
@@ -113,10 +122,32 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    doh_probes_request_.reset();
    doh_probes_request_ =
        url_request_context_->host_resolver()->CreateDohProbeRequest();
-@@ -1370,6 +1426,68 @@ bool NetworkContext::CanCreateLoader(const OriginatingProcessId& process_id) {
+@@ -1128,6 +1186,11 @@ void NetworkContext::SetClient(
+ 
+ void NetworkContext::CreateSocketFactory(
+     mojo::PendingReceiver<mojom::SocketFactory> receiver) {
++  // MoltBrowser: no socket outside the context's own session for MoltNet's
++  // (molt_own_session_sockets_policy.h): the pipe is dropped.
++  if (!MoltAllowsOwnSessionSockets()) {
++    return;
++  }
+   socket_factory_receivers_.Add(socket_factory_.get(), std::move(receiver));
+ }
+ 
+@@ -1370,6 +1433,78 @@ bool NetworkContext::CanCreateLoader(const OriginatingProcessId& process_id) {
    return count < max_loaders_per_process_;
  }
  
++// MoltBrowser: see molt_own_session_sockets_policy.h. A context made from a
++// URLRequestContext alone (tests) has no parameters, so none of MoltNet's.
++bool NetworkContext::MoltAllowsOwnSessionSockets() const {
++  return !params_ ||
++         network::MoltAllowsOwnSessionSockets(
++             params_->molt_socks_isolation_password.has_value(),
++             params_->molt_per_site_socket_pool_size,
++             params_->molt_stop_all_when_refusing);
++}
++
 +// MoltBrowser: the end of this context's MoltNet identity, in one task
 +// (services/network/molt_ended_identity_policy.h). Whatever the context
 +// handles after this starts nothing (MoltAdmits()).
@@ -182,7 +213,82 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
  size_t NetworkContext::GetNumOutstandingResolveHostRequestsForTesting() const {
    size_t sum = proxy_checking_host_resolver_requests_.size();
    if (internal_host_resolver_) {
-@@ -2152,6 +2270,13 @@ void NetworkContext::CreateWebSocket(
+@@ -2031,6 +2166,10 @@ void NetworkContext::OnNewSCTAuditingReportSent() {
+ void NetworkContext::CreateUDPSocket(
+     mojo::PendingReceiver<mojom::UDPSocket> receiver,
+     mojo::PendingRemote<mojom::UDPSocketListener> listener) {
++  // MoltBrowser: none for MoltNet's context; both pipes are dropped.
++  if (!MoltAllowsOwnSessionSockets()) {
++    return;
++  }
+   socket_factory_->CreateUDPSocket(std::move(receiver), std::move(listener));
+ }
+ 
+@@ -2044,6 +2183,11 @@ void NetworkContext::CreateRestrictedUDPSocket(
+     bool allow_multicast,
+     bool allow_source_specific_multicast,
+     CreateRestrictedUDPSocketCallback callback) {
++  // MoltBrowser: none for MoltNet's context.
++  if (!MoltAllowsOwnSessionSockets()) {
++    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt);
++    return;
++  }
+   // SimpleHostResolver is transitively owned by |this|.
+   socket_factory_->CreateRestrictedUDPSocket(
+       addr, mode, traffic_annotation, std::move(params), std::move(receiver),
+@@ -2057,6 +2201,11 @@ void NetworkContext::CreateTCPServerSocket(
+     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+     mojo::PendingReceiver<mojom::TCPServerSocket> receiver,
+     CreateTCPServerSocketCallback callback) {
++  // MoltBrowser: none for MoltNet's context.
++  if (!MoltAllowsOwnSessionSockets()) {
++    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt);
++    return;
++  }
+   socket_factory_->CreateTCPServerSocket(
+       local_addr, std::move(options),
+       static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
+@@ -2071,6 +2220,13 @@ void NetworkContext::CreateTCPConnectedSocket(
+     mojo::PendingReceiver<mojom::TCPConnectedSocket> receiver,
+     mojo::PendingRemote<mojom::SocketObserver> observer,
+     CreateTCPConnectedSocketCallback callback) {
++  // MoltBrowser: none for MoltNet's context.
++  if (!MoltAllowsOwnSessionSockets()) {
++    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt,
++                            std::nullopt, mojo::ScopedDataPipeConsumerHandle(),
++                            mojo::ScopedDataPipeProducerHandle());
++    return;
++  }
+   socket_factory_->CreateTCPConnectedSocket(
+       local_addr, remote_addr_list, std::move(tcp_connected_socket_options),
+       traffic_annotation, std::move(receiver), std::move(observer),
+@@ -2082,6 +2238,11 @@ void NetworkContext::CreateTCPBoundSocket(
+     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+     mojo::PendingReceiver<mojom::TCPBoundSocket> receiver,
+     CreateTCPBoundSocketCallback callback) {
++  // MoltBrowser: none for MoltNet's context.
++  if (!MoltAllowsOwnSessionSockets()) {
++    std::move(callback).Run(net::ERR_ACCESS_DENIED, std::nullopt);
++    return;
++  }
+   socket_factory_->CreateTCPBoundSocket(
+       local_addr,
+       static_cast<net::NetworkTrafficAnnotationTag>(traffic_annotation),
+@@ -2090,6 +2251,13 @@ void NetworkContext::CreateTCPBoundSocket(
+ 
+ void NetworkContext::CreateProxyResolvingSocketFactory(
+     mojo::PendingReceiver<mojom::ProxyResolvingSocketFactory> receiver) {
++  // MoltBrowser: none for MoltNet's context, whose connections carry what
++  // the factory's own HTTP network session wouldn't
++  // (services/network/molt_own_session_sockets_policy.h). `receiver` is
++  // dropped: the caller sees its pipe close.
++  if (!MoltAllowsOwnSessionSockets()) {
++    return;
++  }
+   proxy_resolving_socket_factories_.Add(
+       std::make_unique<ProxyResolvingSocketFactoryMojo>(url_request_context()),
+       std::move(receiver));
+@@ -2152,6 +2320,13 @@ void NetworkContext::CreateWebSocket(
      mojom::IPAddressSpace target_address_space,
      std::optional<int64_t> target_network) {
  #if BUILDFLAG(ENABLE_WEBSOCKETS)
@@ -196,7 +302,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    if (!websocket_factory_) {
      websocket_factory_ = std::make_unique<WebSocketFactory>(this);
    }
-@@ -2188,6 +2313,13 @@ void NetworkContext::CreateWebTransport(
+@@ -2188,6 +2363,13 @@ void NetworkContext::CreateWebTransport(
          url_loader_network_observer,
      mojom::ClientSecurityStatePtr client_security_state,
      const base::UnguessableToken& network_restrictions_id) {
@@ -210,7 +316,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    if (!IsNetworkForNetworkRestrictionsIdAndUrlAllowed(network_restrictions_id,
                                                        url, key)) {
      mojo::Remote<mojom::WebTransportHandshakeClient> remote_handshake_client(
-@@ -2216,6 +2348,14 @@ void NetworkContext::ResolveHost(
+@@ -2216,6 +2398,25 @@ void NetworkContext::ResolveHost(
      const net::NetworkAnonymizationKey& network_anonymization_key,
      mojom::ResolveHostParametersPtr optional_parameters,
      mojo::PendingRemote<mojom::ResolveHostClient> response_client) {
@@ -222,10 +328,21 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
 +                     /*alternative_endpoints=*/{});
 +    return;
 +  }
++  // MoltBrowser: nor ever for MoltNet's context, which looks up no name
++  // itself (its connections' names go to Tor in the SOCKS5 request), with
++  // any source or flag (molt_own_session_sockets_policy.h).
++  if (!MoltAllowsOwnSessionSockets()) {
++    mojo::Remote<mojom::ResolveHostClient>(std::move(response_client))
++        ->OnComplete(net::ERR_ACCESS_DENIED,
++                     net::ResolveErrorInfo(net::ERR_ACCESS_DENIED),
++                     /*resolved_addresses=*/{},
++                     /*alternative_endpoints=*/{});
++    return;
++  }
    // Dns request is disallowed if network access is disabled for the partition
    // nonce or the network_restrictions_id.
    // TODO(crbug.com/447954811): For Connection Allowlist DNS lookups, define a
-@@ -2265,6 +2405,11 @@ void NetworkContext::ResolveHost(
+@@ -2265,6 +2466,16 @@ void NetworkContext::ResolveHost(
  void NetworkContext::CreateHostResolver(
      const std::optional<net::DnsConfigOverrides>& config_overrides,
      mojo::PendingReceiver<mojom::HostResolver> receiver) {
@@ -234,10 +351,15 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
 +  if (!MoltAdmits(MoltNetworkEntry::kHostResolution)) {
 +    return;
 +  }
++  // MoltBrowser: nor ever for MoltNet's context, which looks up no name
++  // itself (molt_own_session_sockets_policy.h); the caller's pipe closes.
++  if (!MoltAllowsOwnSessionSockets()) {
++    return;
++  }
    net::HostResolver* internal_resolver = url_request_context_->host_resolver();
    std::unique_ptr<net::HostResolver> private_internal_resolver;
  
-@@ -2553,6 +2698,11 @@ void NetworkContext::PreconnectSockets(
+@@ -2553,6 +2764,11 @@ void NetworkContext::PreconnectSockets(
    DCHECK(!require_network_anonymization_key_ ||
           !network_anonymization_key.IsEmpty());
  
@@ -249,7 +371,34 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    if (base::FeatureList::IsEnabled(
            net::features::kEarlyCookieLoadOnPreconnect)) {
      net::CookieStore* cookie_store = url_request_context_->cookie_store();
-@@ -2855,6 +3005,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+@@ -2645,6 +2861,14 @@ void NetworkContext::CreateP2PSocketManager(
+     mojo::PendingReceiver<mojom::P2PTrustedSocketManager>
+         trusted_socket_manager,
+     mojo::PendingReceiver<mojom::P2PSocketManager> socket_manager_receiver) {
++  // MoltBrowser: for MoltNet's context, a manager that reaches nothing
++  // instead (it would make a ProxyResolvingClientSocketFactory, and UDP
++  // sockets outside the proxy: molt_own_session_sockets_policy.h). The
++  // trusted pipes are dropped; the renderer's stays open.
++  if (!MoltAllowsOwnSessionSockets()) {
++    MoltRefusingP2PSocketManager::Bind(std::move(socket_manager_receiver));
++    return;
++  }
+   std::unique_ptr<P2PSocketManager> socket_manager =
+       std::make_unique<P2PSocketManager>(
+           network_anonymization_key, std::move(client),
+@@ -2658,6 +2882,11 @@ void NetworkContext::CreateP2PSocketManager(
+ 
+ void NetworkContext::CreateMdnsResponder(
+     mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) {
++  // MoltBrowser: none for MoltNet's context (multicast DNS on the local
++  // network); the pipe is dropped.
++  if (!MoltAllowsOwnSessionSockets()) {
++    return;
++  }
+ #if BUILDFLAG(ENABLE_MDNS)
+   if (!mdns_responder_manager_) {
+     mdns_responder_manager_ = std::make_unique<MdnsResponderManager>();
+@@ -2855,6 +3084,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
    http_auth_merged_preferences_.set_http_auth_scheme_filter(
        base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                            base::Unretained(this)));
@@ -260,7 +409,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
-@@ -2894,9 +3048,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2894,9 +3127,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
  
      // Whether the cert verifier is remote or in-process, we should wrap it in
      // caching and coalescing layers to avoid extra verifications and IPCs.
@@ -277,7 +426,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    }
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-@@ -2938,8 +3096,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2938,8 +3175,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      }
      builder.SetHttpAuthHandlerFactory(
          network_service_->CreateHttpAuthHandlerFactory(this));
@@ -292,7 +441,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    }
    trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
  
-@@ -3079,10 +3241,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3079,10 +3320,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      params_->initial_proxy_config =
          net::ProxyConfigWithAnnotation::CreateDirect();
    }
@@ -310,7 +459,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    builder.set_pac_quick_check_enabled(params_->pac_quick_check_enabled);
  
    std::unique_ptr<PrefService> pref_service;
-@@ -3209,6 +3376,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3209,6 +3455,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -325,7 +474,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3344,6 +3519,58 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3344,6 +3598,58 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  
@@ -384,7 +533,7 @@ index 66e2d0450518803f1531470045ffadc1412c497f..9b916d6dea69cc951dd35cffb238ca88
    if (network_service_->pins_list_updated()) {
      result.url_request_context->transport_security_state()->UpdatePinList(
          network_service_->pinsets(), network_service_->host_pins(),
-@@ -3865,6 +4092,10 @@ void NetworkContext::Prefetch(
+@@ -3865,6 +4171,10 @@ void NetworkContext::Prefetch(
    if (!prefetch_enabled_) {
      return;
    }

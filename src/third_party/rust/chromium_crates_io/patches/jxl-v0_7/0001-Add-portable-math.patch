@@ -1,0 +1,422 @@
+From: MoltBrowser <noreply@geneye.ai>
+Subject: [PATCH] Add portable math
+
+The decoder computes dequantization weights, transfer functions, XYB
+biases and splines with the standard library's powf, exp, ln, log2,
+cbrt and hypot, the platform's C library, whose results differ between
+operating systems and, with glibc, CPUs. moltbrowser_math routes them
+through one switch: the standard library's by default, the libm
+crate's after moltbrowser_set_portable(true), which also turns on
+jxl_simd's scalar mode. Chromium's wrapper (jxl_rs) exposes it to
+JXLImageDecoder. jxl depends on libm for it.
+---
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/Cargo.toml b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/Cargo.toml
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/Cargo.toml
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/Cargo.toml
+@@ -72,6 +72,10 @@
+ [dependencies.jxl_transforms]
+ version = "=0.7.4"
+ 
++# MoltBrowser: the portable functions of moltbrowser_math.
++[dependencies.libm]
++version = "0.2.16"
++
+ [dependencies.num-derive]
+ version = "0.4"
+ 
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/lib.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/lib.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/lib.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/lib.rs
+@@ -14,8 +14,13 @@
+ pub mod headers;
+ pub mod icc;
+ pub mod image;
++// MoltBrowser: one process-wide switch to code that decodes alike on every
++// CPU and OS.
++pub mod moltbrowser_math;
+ pub mod render;
+ pub mod util;
++
++pub use moltbrowser_math::moltbrowser_set_portable;
+ 
+ #[cfg(test)]
+ mod tests;
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/moltbrowser_math.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/moltbrowser_math.rs
+new file mode 100644
+--- /dev/null
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/moltbrowser_math.rs
+@@ -0,0 +1,122 @@
++//! MoltBrowser: the standard-library math the decoder uses outside the
++//! SIMD kernels (dequantization weights, transfer functions, XYB biases,
++//! splines), on one switch with `jxl_simd`'s scalar code.
++//!
++//! By default each function is the standard library's, which calls the
++//! platform's C library (glibc picks some float functions by CPU feature,
++//! and every OS has its own), exactly as before. After
++//! `moltbrowser_set_portable(true)` each is the `libm` crate's, Rust ports
++//! of musl's functions in plain arithmetic, the same on every CPU and OS,
++//! and every `simd_function!` runs its scalar code
++//! (`jxl_simd::moltbrowser_set_portable`). MoltBrowser's MoltNet renderers
++//! set it before they decode any image.
++
++/// Turns the portable mode on or off for the whole process.
++pub fn moltbrowser_set_portable(portable: bool) {
++    jxl_simd::moltbrowser_set_portable(portable);
++}
++
++#[inline]
++fn portable() -> bool {
++    jxl_simd::moltbrowser_portable()
++}
++
++/// The functions, for `f32` and `f64` alike.
++pub(crate) trait PortableMath: Copy {
++    fn std_powf(self, y: Self) -> Self;
++    fn libm_powf(self, y: Self) -> Self;
++    fn std_exp(self) -> Self;
++    fn libm_exp(self) -> Self;
++    fn std_ln(self) -> Self;
++    fn libm_ln(self) -> Self;
++    fn std_log2(self) -> Self;
++    fn libm_log2(self) -> Self;
++    fn std_cbrt(self) -> Self;
++    fn libm_cbrt(self) -> Self;
++    fn std_hypot(self, y: Self) -> Self;
++    fn libm_hypot(self, y: Self) -> Self;
++}
++
++impl PortableMath for f32 {
++    fn std_powf(self, y: f32) -> f32 { self.powf(y) }
++    fn libm_powf(self, y: f32) -> f32 { libm::powf(self, y) }
++    fn std_exp(self) -> f32 { self.exp() }
++    fn libm_exp(self) -> f32 { libm::expf(self) }
++    fn std_ln(self) -> f32 { self.ln() }
++    fn libm_ln(self) -> f32 { libm::logf(self) }
++    fn std_log2(self) -> f32 { self.log2() }
++    fn libm_log2(self) -> f32 { libm::log2f(self) }
++    fn std_cbrt(self) -> f32 { self.cbrt() }
++    fn libm_cbrt(self) -> f32 { libm::cbrtf(self) }
++    fn std_hypot(self, y: f32) -> f32 { self.hypot(y) }
++    fn libm_hypot(self, y: f32) -> f32 { libm::hypotf(self, y) }
++}
++
++impl PortableMath for f64 {
++    fn std_powf(self, y: f64) -> f64 { self.powf(y) }
++    fn libm_powf(self, y: f64) -> f64 { libm::pow(self, y) }
++    fn std_exp(self) -> f64 { self.exp() }
++    fn libm_exp(self) -> f64 { libm::exp(self) }
++    fn std_ln(self) -> f64 { self.ln() }
++    fn libm_ln(self) -> f64 { libm::log(self) }
++    fn std_log2(self) -> f64 { self.log2() }
++    fn libm_log2(self) -> f64 { libm::log2(self) }
++    fn std_cbrt(self) -> f64 { self.cbrt() }
++    fn libm_cbrt(self) -> f64 { libm::cbrt(self) }
++    fn std_hypot(self, y: f64) -> f64 { self.hypot(y) }
++    fn libm_hypot(self, y: f64) -> f64 { libm::hypot(self, y) }
++}
++
++/// `x.powf(y)`.
++pub(crate) fn powf<T: PortableMath>(x: T, y: T) -> T {
++    if portable() { x.libm_powf(y) } else { x.std_powf(y) }
++}
++
++/// `x.exp()`.
++pub(crate) fn exp<T: PortableMath>(x: T) -> T {
++    if portable() { x.libm_exp() } else { x.std_exp() }
++}
++
++/// `x.ln()`.
++pub(crate) fn ln<T: PortableMath>(x: T) -> T {
++    if portable() { x.libm_ln() } else { x.std_ln() }
++}
++
++/// `x.log2()`.
++pub(crate) fn log2<T: PortableMath>(x: T) -> T {
++    if portable() { x.libm_log2() } else { x.std_log2() }
++}
++
++/// `x.cbrt()`.
++pub(crate) fn cbrt<T: PortableMath>(x: T) -> T {
++    if portable() { x.libm_cbrt() } else { x.std_cbrt() }
++}
++
++/// `x.hypot(y)`.
++pub(crate) fn hypot<T: PortableMath>(x: T, y: T) -> T {
++    if portable() { x.libm_hypot(y) } else { x.std_hypot(y) }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    // Off: the standard library's functions, bit for bit. (The portable
++    // ones are libm's, tested there; switching them on here would race with
++    // the crate's other tests, which run in the same process.)
++    #[test]
++    fn off_is_the_standard_library() {
++        for x in [0.25f32, 0.5, 1.0, 1.5, 2.0, 7.25, 100.0] {
++            assert_eq!(powf(x, 0.45).to_bits(), x.powf(0.45).to_bits());
++            assert_eq!(exp(-x).to_bits(), (-x).exp().to_bits());
++            assert_eq!(ln(x).to_bits(), x.ln().to_bits());
++            assert_eq!(log2(x).to_bits(), x.log2().to_bits());
++            assert_eq!(cbrt(x).to_bits(), x.cbrt().to_bits());
++            assert_eq!(hypot(x, 3.0).to_bits(), x.hypot(3.0).to_bits());
++            let d = f64::from(x);
++            assert_eq!(powf(d, 1.25).to_bits(), d.powf(1.25).to_bits());
++            assert_eq!(exp(d).to_bits(), d.exp().to_bits());
++            assert_eq!(log2(d).to_bits(), d.log2().to_bits());
++        }
++    }
++}
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/quant_weights.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/quant_weights.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/quant_weights.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/quant_weights.rs
+@@ -1175,7 +1175,8 @@
+     let idx = idxf32 as usize;
+     let a = array[idx];
+     let b = array[1..][idx];
+-    (b / a).powf(frac) * a
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    crate::moltbrowser_math::powf(b / a, frac) * a
+ }
+ 
+ fn interpolate(pos: f32, max: f32, array: &[f32]) -> f32 {
+@@ -1183,7 +1184,8 @@
+     let idx = scaled_pos as usize;
+     let a = array[idx];
+     let b = array[idx + 1];
+-    a * (b / a).powf(scaled_pos - idx as f32)
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    a * crate::moltbrowser_math::powf(b / a, scaled_pos - idx as f32)
+ }
+ 
+ fn mult(v: f32) -> f32 {
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/frame/group.rs
+@@ -6,7 +6,6 @@
+ use jxl_simd::{F32SimdVec, I32SimdVec, SimdDescriptor, SimdMask, simd_function};
+ use jxl_transforms::transform::*;
+ use jxl_transforms::transform_map::*;
+-use num_traits::Float;
+ 
+ use crate::bit_reader::BitReader;
+ use crate::entropy_coding::decode::{Histograms, SymbolReader};
+@@ -580,8 +579,9 @@
+     pixels: &mut Option<[Image<f32>; 3]>,
+     buffers: &mut VarDctBuffers,
+ ) -> Result<(), Error> {
+-    let x_dm_multiplier = (1.0 / (1.25)).powf(frame_header.x_qm_scale as f32 - 2.0);
+-    let b_dm_multiplier = (1.0 / (1.25)).powf(frame_header.b_qm_scale as f32 - 2.0);
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let x_dm_multiplier = crate::moltbrowser_math::powf(1.0 / (1.25), frame_header.x_qm_scale as f32 - 2.0);
++    let b_dm_multiplier = crate::moltbrowser_math::powf(1.0 / (1.25), frame_header.b_qm_scale as f32 - 2.0);
+ 
+     let block_group_rect = frame_header.block_group_rect(group);
+     debug!(?block_group_rect);
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/api/color.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/api/color.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/api/color.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/api/color.rs
+@@ -1553,7 +1553,7 @@
+     e = e.abs();
+ 
+     // Core PQ EOTF formula from ST 2084.
+-    let xp = e.powf(1.0 / M2);
++    let xp = crate::moltbrowser_math::powf(e, 1.0 / M2); // MoltBrowser
+     let num = (xp - C1).max(0.0);
+     let den = C2 - C3 * xp;
+ 
+@@ -1562,7 +1562,7 @@
+     // the denominator is always positive.
+     debug_assert!(den != 0.0, "PQ transfer function denominator is zero.");
+ 
+-    let d = (num / den).powf(1.0 / M1);
++    let d = crate::moltbrowser_math::powf(num / den, 1.0 / M1); // MoltBrowser
+ 
+     // The result `d` should always be non-negative for non-negative inputs.
+     debug_assert!(
+@@ -1623,7 +1623,7 @@
+             // The `* (1.0 / 3.0)` is slightly more efficient than `/ 3.0`.
+             e * e * (1.0 / 3.0)
+         } else {
+-            (((e - Self::C) * Self::RA).exp() + Self::B) * Self::INV_12
++            (crate::moltbrowser_math::exp((e - Self::C) * Self::RA) + Self::B) * Self::INV_12 // MoltBrowser
+         };
+ 
+         // The result should be non-negative for non-negative inputs.
+@@ -1831,7 +1831,8 @@
+ fn apply_hlg_ootf(rgb: &mut [f32; 3], target_luminance: f32, luminances: [f32; 3]) {
+     // HLG OOTF: scene-referred to display-referred conversion
+     // system_gamma = 1.2 * 1.111^log2(intensity_display / 1000)
+-    let system_gamma = 1.2_f32 * 1.111_f32.powf((target_luminance / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2_f32 * crate::moltbrowser_math::powf(1.111_f32, crate::moltbrowser_math::log2(target_luminance / 1e3));
+     let exp = system_gamma - 1.0;
+ 
+     if exp.abs() < 0.1 {
+@@ -1980,7 +1981,7 @@
+         if x <= DELTA * DELTA * DELTA {
+             x * (1.0 / (3.0 * DELTA * DELTA)) + 4.0 / 29.0
+         } else {
+-            x.cbrt()
++            crate::moltbrowser_math::cbrt(x) // MoltBrowser
+         }
+     };
+ 
+@@ -2073,7 +2074,7 @@
+     // Each curve: 12 + 5*4 = 32 bytes
+     let scale = xyb_scale();
+     for i in 0..3 {
+-        let b = -XYB_OFFSET[i] - NEG_OPSIN_ABSORBANCE_BIAS_RGB[i].cbrt();
++        let b = -XYB_OFFSET[i] - crate::moltbrowser_math::cbrt(NEG_OPSIN_ABSORBANCE_BIAS_RGB[i]); // MoltBrowser
+         let params = [
+             3.0,                      // gamma
+             1.0 / scale[i],           // a
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/features/spline.rs
+@@ -40,7 +40,7 @@
+         Point { x, y }
+     }
+     fn abs(&self) -> f32 {
+-        self.x.hypot(self.y)
++        crate::moltbrowser_math::hypot(self.x, self.y) // MoltBrowser
+     }
+ }
+ 
+@@ -690,7 +690,8 @@
+             .max_by(|a, b| a.total_cmp(b))
+             .unwrap();
+         let max_distance =
+-            (-2.0 * sigma * sigma * (0.1f32.ln() * distance_exp - max_color.ln())).sqrt();
++            // MoltBrowser: portable in MoltNet (moltbrowser_math).
++            (-2.0 * sigma * sigma * (crate::moltbrowser_math::ln(0.1f32) * distance_exp - crate::moltbrowser_math::ln(max_color))).sqrt();
+         let segment = SplineSegment {
+             center_x: center.x,
+             center_y: center.y,
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/stages/xyb.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/stages/xyb.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/stages/xyb.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/render/stages/xyb.rs
+@@ -156,7 +156,7 @@
+         let intensity_scale = 255.0 / intensity_target;
+         Self {
+             mat: opsin.inverse_matrix,
+-            bias_cbrt: opsin.opsin_biases.map(|x| x.cbrt()),
++            bias_cbrt: opsin.opsin_biases.map(crate::moltbrowser_math::cbrt), // MoltBrowser
+             scaled_bias: opsin.opsin_biases.map(|x| x * intensity_scale),
+             intensity_scale,
+         }
+diff --git a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
+--- a/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
++++ b/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/color/tf.rs
+@@ -204,10 +204,10 @@
+         }
+ 
+         let a = s.abs() as f64;
+-        let xp = (a * mult).powf(PQ_M1);
++        let xp = crate::moltbrowser_math::powf(a * mult, PQ_M1); // MoltBrowser
+         let num = PQ_C1 + xp * PQ_C2;
+         let den = 1.0 + xp * PQ_C3;
+-        let e = (num / den).powf(PQ_M2);
++        let e = crate::moltbrowser_math::powf(num / den, PQ_M2); // MoltBrowser
+         *s = (e as f32).copysign(*s);
+     }
+ }
+@@ -225,10 +225,10 @@
+         }
+ 
+         let a = s.abs() as f64;
+-        let xp = a.powf(PQ_M2.recip());
++        let xp = crate::moltbrowser_math::powf(a, PQ_M2.recip()); // MoltBrowser
+         let num = (xp - PQ_C1).max(0.0);
+         let den = PQ_C2 - PQ_C3 * xp;
+-        let y = (num / den).powf(PQ_M1.recip());
++        let y = crate::moltbrowser_math::powf(num / den, PQ_M1.recip()); // MoltBrowser
+         *s = ((y * mult) as f32).copysign(*s);
+     }
+ }
+@@ -369,7 +369,7 @@
+         let dg = *g as f64;
+         let db = *b as f64;
+         let mixed = dr.mul_add(lr, dg.mul_add(lg, db * lb));
+-        let mult = mixed.powf(exp);
++        let mult = crate::moltbrowser_math::powf(mixed, exp); // MoltBrowser
+         *r = (dr * mult) as f32;
+         *g = (dg * mult) as f32;
+         *b = (db * mult) as f32;
+@@ -398,7 +398,8 @@
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f64 * 1.111f64.powf((intensity_display as f64 / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f64 * crate::moltbrowser_math::powf(1.111f64, crate::moltbrowser_math::log2(intensity_display as f64 / 1e3));
+     let gamma_sub_one = system_gamma - 1.0;
+     hlg_ootf_inner_precise(gamma_sub_one, luminance_rgb, samples_rgb);
+ }
+@@ -412,7 +413,8 @@
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f64 * 1.111f64.powf((intensity_display as f64 / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f64 * crate::moltbrowser_math::powf(1.111f64, crate::moltbrowser_math::log2(intensity_display as f64 / 1e3));
+     let one_sub_gamma = 1.0 - system_gamma;
+     hlg_ootf_inner_precise(one_sub_gamma / system_gamma, luminance_rgb, samples_rgb);
+ }
+@@ -425,7 +427,8 @@
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f32 * 1.111f32.powf((intensity_display / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f32 * crate::moltbrowser_math::powf(1.111f32, crate::moltbrowser_math::log2(intensity_display / 1e3));
+     let gamma_sub_one = system_gamma - 1.0;
+     hlg_ootf_inner(gamma_sub_one, luminance_rgb, samples_rgb);
+ }
+@@ -439,7 +442,8 @@
+     luminance_rgb: [f32; 3],
+     samples_rgb: [&mut [f32]; 3],
+ ) {
+-    let system_gamma = 1.2f32 * 1.111f32.powf((intensity_display / 1e3).log2());
++    // MoltBrowser: portable in MoltNet (moltbrowser_math).
++    let system_gamma = 1.2f32 * crate::moltbrowser_math::powf(1.111f32, crate::moltbrowser_math::log2(intensity_display / 1e3));
+     let one_sub_gamma = 1.0 - system_gamma;
+     hlg_ootf_inner(one_sub_gamma / system_gamma, luminance_rgb, samples_rgb);
+ }
+@@ -454,7 +458,7 @@
+             (3.0 * a).sqrt()
+         } else {
+             // TODO(tirr-c): maybe use mul_add?
+-            HLG_A * (12.0 * a - HLG_B).ln() + HLG_C
++            HLG_A * crate::moltbrowser_math::ln(12.0 * a - HLG_B) + HLG_C // MoltBrowser
+         };
+         *s = (y as f32).copysign(*s);
+     }
+@@ -469,7 +473,7 @@
+         let y = if a <= 0.5 {
+             a * a / 3.0
+         } else {
+-            (((a - HLG_C) / HLG_A).exp() + HLG_B) / 12.0
++            (crate::moltbrowser_math::exp((a - HLG_C) / HLG_A) + HLG_B) / 12.0 // MoltBrowser
+         };
+         *s = (y as f32).copysign(*s);
+     }
+@@ -552,7 +556,7 @@
+             *x = if a <= 0.0031308 {
+                 a * 12.92
+             } else {
+-                a.powf(1.0 / 2.4).mul_add(1.055, -0.055)
++                crate::moltbrowser_math::powf(a, 1.0 / 2.4).mul_add(1.055, -0.055) // MoltBrowser
+             }
+             .copysign(*x);
+         }
+@@ -565,7 +569,7 @@
+             *x = if a <= 0.018 {
+                 a * 4.5
+             } else {
+-                a.powf(0.45).mul_add(1.099, -0.099)
++                crate::moltbrowser_math::powf(a, 0.45).mul_add(1.099, -0.099) // MoltBrowser
+             }
+             .copysign(*x);
+         }

@@ -75,7 +75,7 @@ CORE_EXPORT bool IsMediaRecorderVideoTypeSupported(const media::VideoType& type)
 
 // Configure(kUniform): software video encoders in this process size their
 // threads (and libaom its tiles) for kUniformHardwareConcurrency cores.
-void PinUniformSoftwareEncoding();
+CORE_EXPORT void PinUniformSoftwareEncoding();
 
 // Makes the functions above behave as in kUniform without configuring the
 // process for it.

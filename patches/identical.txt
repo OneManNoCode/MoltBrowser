@@ -38,6 +38,7 @@ components/print_media_strings.grdp
 components/printing_component_strings.grdp
 components/protocol_handler_strings.grdp
 components/saved_tab_groups_strings.grdp
+components/services/storage/dom_storage/session_storage_area_impl.h
 components/site_settings_strings.grdp
 components/smart_tab_sharing.grdp
 components/subresource_filter_strings.grdp

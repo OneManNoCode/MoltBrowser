@@ -73,6 +73,89 @@ items are marked *deferred*.
 | 10 | Packaging, signing, draft release | Mac, Linux, offline machine | a day |
 | 11 | The owner's open decisions | | |
 
+### First build: the order in one place
+
+The first build against Chromium 156 in the order to run it. The steps
+point to the sections below for the detail; this list is what to do and
+what to send back.
+
+1. **Static checks, before the sync** (any Linux machine, no checkout,
+   minutes). They read 156's own build files with the overlay on top:
+   ```bash
+   python3 tools/chromium/gn_static_check.py fetch      # once per pin: streams 156's tarball (5 min), keeps ~190 MB
+   python3 tools/chromium/gn_static_check.py check --warnings 2>&1 | tee ~/molt-v0.3.0/static-gn-check.log
+   python3 tools/chromium/gn_static_check.py checkdeps     2>&1 | tee ~/molt-v0.3.0/static-checkdeps.log
+   python3 tools/chromium/gn_static_check.py blink-audit   2>&1 | tee ~/molt-v0.3.0/static-blink-audit.log
+   python3 tools/compile_check/compile_check.py all && python3 tools/compile_check/compile_check.py report
+   ```
+   *Expected:* `check` finds no error in any of its six configs (Linux,
+   macOS, Windows, Linux and Windows with `molt_llama_vulkan`, a Linux
+   component build) and warns only about `//third_party/rust/adblock/v0_13:lib`
+   (step 2 vendors it); `checkdeps` and `blink-audit` report 0 errors;
+   compile_check's `report` lists no errors (§4). The three
+   `gn_static_check.py` checks exit 1 on an error. What they model and what
+   they can't: the header of
+   `tools/chromium/gn_static_check.py`, and §4.9.
+2. **Sync, pins and the version** (§1, §2): `setup.sh --resync`, the patch
+   series check, the search engines and en-US tables, the Rust crates
+   (gnrt), then the pins and the version bump in one PR before the first
+   full build (§2.6: `webui_url_constants.h` costs a ~2 h recompile).
+3. **Configure, then let GN check the real graph** (minutes; §3, §4.9):
+   ```bash
+   ./scripts/configure.sh --platform macos --arch arm64 2>&1 | tee ~/molt-v0.3.0/configure-mac.log   # runs gn gen
+   (cd chromium/src && gn check out/MoltBrowser) 2>&1 | tee ~/molt-v0.3.0/gn-check.log
+   ./scripts/vendor-rust-crates.sh --check 2>&1 | tee ~/molt-v0.3.0/vendor-rust-check.log
+   ```
+   `gn gen` refuses an unknown label, a visibility or `testonly` violation
+   and a dependency cycle; `gn check` the include rule. Then checkdeps over
+   the real tree (§4.9).
+4. **Build the small targets first** (`-k 0` so one run lists every broken
+   file; read the whole log, `autoninja` can exit 0 on a failure):
+   ```bash
+   cd chromium/src
+   B=out/MoltBrowser    # out/MoltBrowser-linux on Linux
+   for t in third_party/llvm-libc:molt_portable_math ui/gfx/geometry:geometry \
+            third_party/llama_cpp:llama_cpp chrome/services/molt_ai/inference:inference \
+            net:net services/network:network_service storage/browser:browser \
+            components/services/storage:storage content:content \
+            third_party/blink/renderer/core:core third_party/blink/renderer/modules:modules \
+            molt_ai_unittests chrome; do
+     autoninja -C $B -k 0 $t 2>&1 | tee ~/molt-v0.3.0/build-${t//[\/:]/_}.log
+   done
+   grep -lE 'error:|FAILED:|finished with an error' ~/molt-v0.3.0/build-*.log
+   ```
+   (verify the command; on Linux, run it on a native box or inside the
+   Docker image of §3.2.) In order: the portable math (minutes), llama.cpp
+   and the sandboxed inference service, `//net` and the network service
+   with MoltNet's hooks, the storage service, `//content`, Blink core and
+   modules (hours), MoltBrowser's own unit tests (the first link of most of
+   MoltBrowser's browser code), then `chrome`. With `-k 0` a failing step
+   still compiles everything else it can: go on to the next target rather
+   than stop at the first failure, and send all the logs. Then §3's own
+   build command for the bundled helpers, and §5's tests.
+5. **Send back:** every log above, or for a long one the lines
+   `grep -nE 'error:|FAILED:|finished with an error|undefined symbol|duplicate symbol'`
+   prints and 30 lines after each `FAILED:`; `gn-check.log` and the
+   checkdeps output whole; `gn args --list --short --overrides-only` for
+   each out dir (§3.1); the four static-check logs if any of them was not
+   clean.
+
+**Known risky files, each once** (the rows hold the detail):
+
+| Risk | Where |
+|---|---|
+| New mojom fields and methods: the storage controls' `MoltKeepCachesPerSite()` and `MoltSetGrowthObserver()` need an override in every fake or mock of them | [§4.1](#41-mojo-new-fields-unions-and-interfaces) |
+| Widely included `//net` headers (`connect_job.h`, `client_socket_pool.h`, `transport_client_socket_pool.h`, `ssl_client_socket.h`, `http_network_session.h`): long rebuilds | [§4.2](#42-net-and-the-network-service-moltnet-circuits) |
+| `chrome/browser/ui/autofill/chrome_autofill_client.cc`: only two functions type-checked | [§4.2](#42-net-and-the-network-service-moltnet-circuits) |
+| `third_party/llama_cpp:ggml_vulkan` (with the switch on): built in a stub GN root only | [§4.6](#46-sandboxes-and-utility-processes) |
+| Blink's font hooks on macOS and Windows (`font_platform_data_*`, `font_cache_*`, `font_metrics.cc`'s Apple branch, `skia_text_metrics.cc`): never compiled | [§4.7](#47-blink-and-fingerprinting-moltnet-uniformity) |
+| The cxx bridges that must be regenerated, not taken from an old out dir (`rustfft_ffi.rs`, Fontations' `ffi.rs`, the exif `FFI.rs`) | [§4.7](#47-blink-and-fingerprinting-moltnet-uniformity) |
+| `third_party/skia/include/core/SkScalar.h`: the math macros call an exported function now | [§4.7](#47-blink-and-fingerprinting-moltnet-uniformity) |
+| `chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.cc`: not type-checked at all | [§4.8](#48-webui-handlers-and-the-agents) |
+| A component build (developer builds only): a symbol used across libraries without its export macro | [§4.9](#49-gn-targets-and-deps-edges) |
+| Windows-only hooks (deferred) | [§3.3](#33-windows-deferred) |
+| The vendored adblock crates (gnrt) | [§1](#1-sync) |
+
 ---
 
 ## 0. Before you start
@@ -330,6 +413,10 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 
 ## 3. Configure and build
 
+The first time, follow the order of "First build" at the top: the static
+checks, then configure and `gn check`, the small targets, and `chrome`
+last. The steps below are the per-platform detail.
+
 ### 3.1 macOS arm64
 
 - [ ] Configure from `configs/macos-arm64.gn` (official build,
@@ -404,13 +491,22 @@ dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
 When the build fails, find the file here; the PR tag says which change to
 read. Upstream files are whole copies under `src/`, each hook marked
 `// MoltBrowser:`; `patches/<path>.patch` shows exactly what changed.
+Where a row below says a header is "in no target's `sources`", or to add a
+dep "if `gn check` complains", that predates round 28: the headers are
+listed and the deps are in (§4.9).
 
 - [ ] Optional, on any Linux machine before the slow build:
-  `tools/compile_check/compile_check.py all` type-checks MoltBrowser's own
-  C++ and the hook files below against the real 156 headers with
-  Chromium's clang (no checkout needed; see its README for what it can't
-  cover). *Expected:* `report` shows no errors (at 156, from #64: 518 of
-  558 files checked, 38 partly on grit stand-ins, 0 errors).
+  `tools/compile_check/compile_check.py all` type-checks every C, C++ and
+  Objective-C++ file MoltBrowser adds or changes (and the changed headers
+  no source includes) against the real 156 headers with Chromium's clang
+  and its plugins, on each platform that builds it: Linux x64 and arm64,
+  Windows x64 (clang-cl against the Windows SDK), macOS arm64 (Darwin's
+  headers, Apple framework stand-ins) and Linux with `molt_llama_vulkan`
+  on (no checkout needed; see its README for what it can't cover).
+  *Expected:* `report` shows no ERRORS and no PLUGIN rows (at 156, round 28:
+  858 files in 1383 platform rows, 1342 checked, 36 partly on stand-ins, the
+  Mac files' Apple frameworks among them, 5 not checked: four Mac files that
+  need AuthenticationServices or IOSurface, and an iOS file).
 
 ### 4.1 Mojo: new fields, unions and interfaces
 
@@ -426,6 +522,7 @@ read. Upstream files are whole copies under `src/`, each hook marked
 | `services/network/public/mojom/network_context.mojom` | `[MinVersion=1] bool molt_per_site_http_cache` and `[MinVersion=1] bool molt_stop_all_when_refusing`, set for MoltNet by `molt_net_network_context_policy.h` | moltnet-shared3 |
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` (new upstream copies) | a new method `MoltKeepCachesPerSite()` on both (not `[Stable]` interfaces, so no `[MinVersion]`): every C++ implementation needs it. `LocalStorageImpl` and `SessionStorageImpl` have it; a test fake or mock of either control elsewhere in the tree (none in the 156 files read) fails to compile until it gets an empty override | moltnet-shared3 |
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` | a new interface `MoltDomStorageGrowthObserver` (`OnGrowthBeyondFloor()`) in `local_storage_control.mojom`, which `session_storage_control.mojom` now imports, and a new method `MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver>)` on both controls: as for `MoltKeepCachesPerSite()`, a test fake or mock of either control fails to compile until it gets an empty override | moltnet-shared4 |
+| `components/services/storage/public/mojom/storage_service.mojom` (new upstream copy) | two new methods on `StorageService`, `MoltBindPerSiteLocalStorageControl(pending_receiver<LocalStorageControl>)` and `MoltBindPerSiteSessionStorageControl(pending_receiver<SessionStorageControl>)` (not `[Stable]`, no `[MinVersion]`; the interface keeps its `[ServiceSandbox]`): `StorageServiceImpl` is its only implementation in the 156 tree; a fake elsewhere would need empty overrides | moltnet-shared7 |
 
 ### 4.2 `net/` and the network service (MoltNet circuits)
 
@@ -456,7 +553,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `chrome/browser/net/proxy_config_monitor.{h,cc}` | a new `raw_ptr<Profile> moltnet_profile_` member, set in the profile constructor for MoltNet profiles; `AddToNetworkContextParams()` leaves `initial_proxy_config` unset, and `OnProxyConfigChanged()` sends nothing, unless `MoltNetRouting::MayApplyProxyConfig()` agrees. `proxy_config_monitor.h` is included by `profile_network_context_service.h` | moltnet-live |
 | `chrome/browser/molt_ai/tor/molt_net_routing.{h,cc}` | `SettingsError()` (shared by the open check and the live one; reads `prefs::kPartitionedBlobUrlUsage`) and `MayApplyProxyConfig()` (`PrefProxyConfigTrackerImpl::PrefConfigToNetConfig()`, `net::ProxyConfig::Equals()`); new header-only target `:live_policy` | moltnet-live |
 | `chrome/browser/molt_ai/tor/molt_net_live_guard.cc`, `molt_net_window.cc` | `PrefChangeRegistrar`s on the MoltNet and the regular profile's prefs, a `ProfileObserver` (`Profile::AddObserver()`), `chrome::ShowWarningMessageBoxAsync()` with a `char16_t` title; `OpenVerifiedWindow()` now gets the profile's `OTRProfileID` | moltnet-live |
-| `chrome/browser/ui/autofill/chrome_autofill_client.cc` | `GetCrowdsourcingManager()` and `GetAddressNormalizer()` ask `molt_net_autofill.h` first (only these two functions were type-checked here: the checker can't generate `components/personal_context/proto/features/at_memory.equal.h`, a proto_extras plugin output the file needs) | moltnet-live |
+| `chrome/browser/ui/autofill/chrome_autofill_client.cc` | `GetCrowdsourcingManager()` and `GetAddressNormalizer()` ask `molt_net_autofill.h` first (only these two functions were type-checked here: the whole file type-checks since round 28, which generates the proto_extras plugin's outputs such as `components/personal_context/proto/features/at_memory.equal.h`) | moltnet-live |
 | `chrome/browser/payments/chrome_payment_request_delegate.cc` | `GetAddressNormalizer()` and `GetRegionDataLoader()` ask `molt_net_autofill.h` first | moltnet-live |
 | `chrome/browser/molt_ai/tor/molt_net_autofill.cc` (new target `:autofill`, a public dep of `:tor`) | subclasses `autofill::AutofillCrowdsourcingManager` (overrides the two virtual `Start*Request()` and inherits its constructors), and builds an `AddressNormalizerImpl` and a `RegionDataLoaderImpl` on a `::i18n::addressinput::Source` of its own and libaddressinput's `NullStorage`; deps `//components/autofill/core/browser`, `//third_party/libaddressinput` | moltnet-live |
 | `chrome/browser/net/proxy_config_monitor.{h,cc}` | now asks `MoltNetRouting::ProxyConfigFor()` (replaces `MayApplyProxyConfig()`), and holds a `base::CallbackListSubscription` from `MoltNetRouting::AddIdentityEndedCallback()` that sends `RefuseAllProxyConfig()` to every `ProxyConfigClient` of its MoltNet profile | moltnet-policy |
@@ -510,6 +607,16 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `components/services/storage/dom_storage/storage_area_impl.{h,cc}`, `local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `session_storage_data_map.{h,cc}`, `session_storage_namespace_impl.{h,cc}`, `molt_dom_storage_site_policy.h`, `molt_dom_storage_site_budget.h` | every profile: `StorageAreaImpl::Put()` gains a lambda `restore_old_value` (captures by reference) called before each early return after the old value is moved out, the upstream quota refusal included; MoltNet: a fifth `StorageAreaImpl::Delegate` virtual `MoltMayWrite(size_t)` (default body, checked in `Put()` right after the map is loaded, refusal = `KeyChangeFailed` + `false`) and a public inline `molt_holds_items()` (reads both maps); `SessionStorageDataMap::Listener::MoltMayWrite()`; `LocalStorageImpl::InitiateConnection()` and `SessionStorageImpl::InitiateConnection()` call `OnConnectionFinished()` and return before opening a database when `MoltDomStorageKeepsNoDatabase()` (so `database_` stays null: the storage service's existing no-database mode); `LocalStorageImpl::MoltMayDrop(StorageAreaHolder&)` (private, the nested class forward-declared in the header); `RetrieveStorageUsage()`'s no-database branch reports `storage_used()` for MoltNet; `MoltDomStorageSiteBudget::MayWrite()` keeps a `std::map<std::string, MoltDomStorageWriteAllowance, std::less<>>` | moltnet-shared5 |
 | `storage/browser/quota/client_usage_tracker.{h,cc}`, `usage_tracker.{h,cc}` (new upstream copies), `quota_manager_impl.cc`, `molt_storage_budget.h`, `molt_storage_usage_counts.h` (new, header-only, std-only, in no target's `sources`) | `molt_storage_budget.h` now defines `MoltBudgetSite` (an `std::optional<base::UnguessableToken>` and an `std::optional<net::SchemefulSite>`, `operator==` defaulted, `operator<` hand-written) and `MoltBudgetSiteOf()`, includes `base/unguessable_token.h` and `net/base/schemeful_site.h`, and is now included by `client_usage_tracker.h` and `usage_tracker.h` (widely included in `//storage`); `ClientUsageTracker` gains `MoltCountSites()`, `MoltSiteUsage()`, `MoltCachedUsage()`, `MoltHasCachedUsage()` (`std::map::contains` with `CompareBucketLocators`) and a private `MoltCountChange()` called from `UpdateBucketUsageCache()`, `DeleteBucketCache()` (an `if` with initializer), `SetUsageCacheEnabled()` and `CacheBucketUsage()`; `UsageTracker` gains `MoltRefreshSiteUsage()` (a `base::BarrierClosure` over `GetStorageKeyUsageWithBreakdown()`, a lambda taking `blink::mojom::UsageBreakdownPtr`), `MoltDidCountEverything()` (bound to `GetGlobalUsage()` with `weak_factory_`), `MoltSiteUsage()`, `MoltTotalUsage()` and three members; `UsageAndQuotaInfoGatherer` drops moltnet-shared's `MoltOnGotGlobalUsage()` and its two members for a `bool`, calls the private `QuotaManagerImpl::EnsureDatabaseOpened()` (the gatherer is a nested class) and reads the counts in `Completed()` | moltnet-shared5 |
 | `content/browser/background_fetch/background_fetch_scheduler.{h,cc}`, `background_fetch_context.cc`, `components/download/content/factory/download_service_factory_helper.cc` (new upstream copies), `content/browser/background_fetch/molt_background_fetch_site_policy.h`, `components/download/internal/background_service/molt_in_memory_download_limits.h` (new, header-only, std-only, in no target's `sources`), `content/public/browser/content_browser_client.{h,cc}`, `chrome/browser/chrome_content_browser_client.{h,cc}`, `chrome/browser/molt_ai/tor/molt_net_network_context_policy.h` | `BackgroundFetchScheduler` gains a public `MoltSchedulePerSite()`, a private `MoltScheduleDownload()` (erases from `controller_ids_` and `active_controllers_` while iterating, `base::circular_deque::erase()`'s returned iterator) and a `std::unique_ptr<MoltBackgroundFetchSites>`; `ScheduleDownload()`, `DidCompleteRequest()`, `FinishJob()` and `OnRegistrationLoadedAtStartup()` are hooked; the scheduler's `.cc` includes `components/services/storage/dom_storage/molt_dom_storage_site.h` (header-only, blink's `StorageKey`, so a registration groups as DOM storage does; `//content/browser` already depends on `//components/services/storage`; if `gn check` objects to a header in no target, list it in that source set); the context's constructor asks the new virtual `ContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(BrowserContext*)` (default `false`; Chrome: `molt_ai::tor::ScheduleBackgroundFetchesPerSite()`); `BuildInMemoryDownloadService()` raises the three `Configuration` limits with `MoltInMemoryDownloadLimit()` | moltnet-shared5 |
+| `net/disk_cache/memory/mem_entry_impl.h` (new upstream copy), `mem_backend_impl.{h,cc}`, `molt_mem_backend_site_lru.h` (new, header-only, in no target's `sources`) | `MemEntryImpl` gains a member `MoltCacheSiteLink<MemEntryImpl> molt_site_link_{this}` (a class template deriving from `base::LinkNode<MoltCacheSiteLink<Entry>>` with a `const raw_ptr<Entry>` to its owner) and an inline accessor; `mem_entry_impl.h` now includes the new header (`base/containers/linked_list.h`, `base/memory/raw_ptr.h`, `<unordered_map>`), so `//net`'s disk cache rebuilds. `MemBackendImpl` replaces its `std::map` of site sizes with `MoltCacheSiteLru<MemEntryImpl>` (an `std::unordered_map<std::string, std::unique_ptr<Site>, NameHash, std::equal_to<>>`, heterogeneous lookup with a transparent hash); `OnEntryInserted()`, `OnEntryUpdated()` and `OnEntryDoomed()` touch it under a budget only; `MoltEvictSiteTill()` passes two lambdas to the template's `EvictTill()`; `MoltDropExpiredEntries()` stops at the first entry that hasn't expired | moltnet-shared6 |
+| `components/services/storage/dom_storage/storage_area_impl.{h,cc}`, `session_storage_area_impl.{h,cc}` (new upstream copies), `session_storage_data_map.{h,cc}`, `local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `molt_dom_storage_fair_queue.h`, `molt_dom_storage_fair_scheduler.h` (new, header-only, in no target's `sources`), `molt_dom_storage_site_policy.h`, `molt_dom_storage_site_budget.h` | MoltNet: a sixth `StorageAreaImpl::Delegate` virtual `MoltTaskRunner()` returning `scoped_refptr<base::SequencedTaskRunner>` (default null), passed to `receivers_.Add(this, receiver, runner)` in `Bind()` and to `mojo::Remote(observer, runner)` in `AddObserver()`; `SessionStorageAreaImpl::Bind()` and `AddObserver()` the same with `shared_data_map_->MoltTaskRunner()` (`RemoteSet::Add(PendingRemote, runner)`); `SessionStorageDataMap::Listener::MoltTaskRunner(const blink::StorageKey&)`; `LocalStorageImpl` and `SessionStorageImpl` hold a `scoped_refptr<MoltDomStorageFairScheduler>` made in `MoltKeepCachesPerSite()` from `base::SequencedTaskRunner::GetCurrentDefault()`. `MoltDomStorageSiteTaskRunner` derives from `base::SequencedTaskRunner` (overrides `PostDelayedTask`, `PostNonNestableDelayedTask`, `RunsTasksInCurrentSequence`, private destructor) and the scheduler from `base::RefCountedThreadSafe` with a `base::Lock` and `GUARDED_BY`; both define every member out of the class body, `inline`, for the chromium-style plugin. `StorageAreaImpl::Put()` gains a `bool molt_new_key`, the inline `molt_item_count()` and `MoltDomStorageCountedBytes()` in its budget calls (also `Delete()` and `OnForkStateLoaded()`); `storage_area_impl.cc` now includes `molt_dom_storage_site_policy.h`. `MoltDomStorageSiteTotals` and `MoltDomStorageSiteBudget` declare their constructors and destructors and define them after the class | moltnet-shared6 |
+| `services/network/network_context.{h,cc}`, `molt_own_session_sockets_policy.h`, `molt_refusing_p2p_socket_manager.h` (new, header-only, in no target's `sources`) | MoltNet: `NetworkContext::MoltAllowsOwnSessionSockets()` (reads `params_`, null for the URLRequestContext-only constructor; calls the namespace function by its qualified name, `network::MoltAllowsOwnSessionSockets()`); `CreateProxyResolvingSocketFactory()` returns early, dropping the receiver; `CreateP2PSocketManager()` (under `IS_P2P_ENABLED`) binds the renderer's receiver with `MoltRefusingP2PSocketManager::Bind()` (`mojo::MakeSelfOwnedReceiver`; the class implements `mojom::P2PSocketManager` with out-of-class inline definitions) and returns; the new header is included under the same `#if`. The raw socket entry points return early too: `CreateTCPConnectedSocket()` runs its callback with `net::ERR_ACCESS_DENIED`, two `std::nullopt`s and default-constructed `mojo::ScopedDataPipeConsumerHandle`/`ProducerHandle`; `CreateTCPServerSocket()`, `CreateTCPBoundSocket()` and `CreateRestrictedUDPSocket()` with `net::ERR_ACCESS_DENIED` and `std::nullopt`; `CreateUDPSocket()`, `CreateSocketFactory()` and `CreateMdnsResponder()` (before its `#if BUILDFLAG(ENABLE_MDNS)`) drop their pipes | moltnet-shared6 |
+| `components/download/internal/common/download_item_impl.cc` (new upstream copy), `molt_resumed_fetch.h` (new, header-only, listed in `:molt_fetch_credentials` with `molt_fetch_credentials.h`, which now also has `//net` and `//url` as public deps) | every profile: in `ResumeInterruptedDownload()`, before `TransitionTo(RESUMING_INTERNAL)`, `MoltKeepResumedFetchMetadata(download_source_ == DownloadSource::INTERNAL_API, request_info_.request_initiator, request_info_.isolation_info, request_info_.credentials_mode, *download_params)` (a template on the parameters' type: `set_initiator()`, `set_isolation_info()` for a non-empty isolation, `set_update_first_party_url_on_redirect(false)`, `set_credentials_mode()`, only for a download-service download whose first request had an initiator) | redteam3 (round 29) |
+| `services/network/network_context.cc`, `molt_own_session_sockets_policy.h` | MoltNet: `ResolveHost()`, after the ended-identity check, answers `OnComplete(net::ERR_ACCESS_DENIED, net::ResolveErrorInfo(net::ERR_ACCESS_DENIED), {}, {})` through a temporary `mojo::Remote<mojom::ResolveHostClient>` when `!MoltAllowsOwnSessionSockets()`; `CreateHostResolver()` returns early (dropping the receiver) after its ended-identity check | redteam3 (round 29) |
+| `content/browser/background_fetch/background_fetch_scheduler.{h,cc}` | MoltNet: a member `bool molt_pending_changed_` (set in `OnRegistrationCreated()` after `controller_ids_.push_back()`, and in `FinishJob()` for a registration that was active); `MoltScheduleDownload()`'s first step runs only while it is set (and clears it), keeps the active storage keys in a `std::set<blink::StorageKey>` (`#include <set>`; `StorageKey` has `operator<=>`), takes each pending id by reference (used before its `erase()`), and works out `MoltSiteOf()` only for a key not active; the activations are the same | redteam3 (round 29) |
+| `components/services/storage/storage_service_impl.{h,cc}` (new upstream copies), `dom_storage/molt_dom_storage_own_thread.{h,cc}` (new, in `//components/services/storage:storage`), `content/browser/dom_storage/dom_storage_context_wrapper.cc` | `StorageServiceImpl` gains a member `MoltDomStorageOwnThreads molt_own_threads_` (its header now includes `molt_dom_storage_own_thread.h`, which includes the two control mojoms and `base/threading/sequence_bound.h`) and two overrides. The new classes: `MoltPerSiteLocalStorage` / `MoltPerSiteSessionStorage` implement the controls and own a `scoped_refptr<MoltDomStorageFairScheduler>`, a `mojo::Remote` to the implementation's own control pipe and `std::unique_ptr<LocalStorageImpl>` / `<SessionStorageImpl>` (forward-declared in the header, destructors defined in the `.cc`; constructed with `base::DoNothing()` as the destruct callback); their receiver is bound with `Bind(receiver, scheduler_->RunnerFor(...))`; per-key messages go through `scheduler_->Post(site, base::BindOnce(&...InTurn, weak, ...))`. `MoltDomStorageOwnThreads` keeps `std::map<uint64_t, base::SequenceBound<...>>`, made on `base::ThreadPool::CreateSingleThreadTaskRunner({USER_BLOCKING, SKIP_ON_SHUTDOWN}, SingleThreadTaskRunnerThreadMode::DEDICATED)` with `base::BindPostTaskToCurrentDefault()`. The wrapper calls the new methods for an in-memory partition (`GetStoragePartitionPath()` empty) whose embedder keeps DOM storage per site | moltnet-shared7 |
+| `components/services/storage/dom_storage/storage_area_impl.{h,cc}`, `molt_dom_storage_split_work.h` (new, std-only) | every profile compiles it, MoltNet's partition runs it: `StorageAreaImpl` gains `MoltNotify` (`base::RepeatingCallback<void(blink::mojom::StorageAreaObserver*)>`), `MoltAskSplitRunner()`, `MoltSplitsNotifications(size_t)`, `MoltNotifyObservers()`, `MoltNotifyObserver(mojo::RemoteSetElementId, MoltNotify)` and two members; the header now includes `mojo/public/cpp/bindings/remote_set.h`. The `.cc` binds free functions in an anonymous namespace with `base::BindRepeating(&MoltSendKeyChanged, key, value, std::move(old_value), source.Clone())` (a move-only `StorageAreaSourcePtr` bound to a repeating callback, passed on as `const&`), walks `observers_` with the iterator's `id()` and `observers_.Get(id)`, and frees maps through a function template `MoltFreeChunks<Map>` posted with `base::BindOnce(&MoltFreeChunks<Map>, runner, std::move(map))`; the destructor ends with two `MoltFreeInTurns()` calls | moltnet-shared7 |
+| `components/services/storage/dom_storage/local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `session_storage_namespace_impl.{h,cc}`, `session_storage_area_impl.cc`, `session_storage_data_map.{h,cc}`, `molt_dom_storage_fair_scheduler.h`, `molt_dom_storage_fair_queue.h`, `molt_dom_storage_site_policy.h` | `MoltKeepCachesPerSiteOn(scoped_refptr<MoltDomStorageFairScheduler>)` on both implementations; `SessionStorageNamespaceImpl::Delegate` gains a non-pure virtual `MoltNamespaceTaskRunner(const std::string&)` (defined in the `.cc`; `SessionStorageNamespaceImplTest`'s mock needs nothing) used in `receivers_.Add(this, receiver, runner)`; `SessionStorageDataMap::Listener` gains a non-pure `MoltAreaUnbound(const std::string&, const blink::StorageKey&)`, called from `SessionStorageAreaImpl::OnConnectionError()`; `LocalStorageImpl::MoltAreaUnused()` / `MoltDropIfUnused()` post to the site's runner with `weak_ptr_factory_`. The scheduler now uses `base::ThreadTicks::IsSupported()`, `WaitUntilInitialized()` and `Now()` (`base/time/time.h`), and `molt_dom_storage_site_policy.h` defines `kMoltDomStorageControlGroup` (`inline constexpr char[]`), `MoltDomStorageNamespaceGroup()` and `MoltDomStorageChargeFor()` | moltnet-shared7 |
+| `net/disk_cache/memory/mem_backend_impl.{h,cc}`, `molt_mem_backend_site_lru.h` | `MoltCacheSiteLru::Touch()` takes a third argument (`int64_t` microseconds); the template now has `Reserve(size_t, uint64_t)`, `HasRoomFor()`, `StartSweep()`, `SweepStep()` (three lambdas) and a nested `Site` deriving from `base::LinkNode<Site>` with a `raw_ptr<Site>` cursor; its `NameHash` holds a seed (an `std::unordered_map` constructed with a bucket count and a hasher, then move-assigned). `MemBackendImpl` replaces `MoltDropExpiredEntries()` with `MoltStartSweep()` / `MoltSweepStep()` (posted with `weak_factory_`), adds `static MoltNowUs()` and `MoltIsExpiredSince()`; `MoltIsExpired()` is no longer `const`; the `.cc` includes `base/rand_util.h` and `base/task/sequenced_task_runner.h` | moltnet-shared7 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -551,13 +658,13 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `content/utility/on_device_model/on_device_model_sandbox_init.cc` + `BUILD.gn` | `PreSandboxHook()`: a no-op without `--molt-inference-gpu`; new edge to `//sandbox/linux:sandbox_services` | #52, #55 |
 | `ServiceProcessHost::Options().WithProcessCallback()`; anydoc cxx sub-target visibility | | #13 |
 | document parser PDF rendering | PDFium config `version = 4`, `gfx::PNGCodec::Encode` with BGRA, spans and `base::U32FromBigEndian` | #18 |
-| `molt_ai/common/helper_sandbox_*` (Landlock and seccomp, Seatbelt, job object) | | #16 |
+| `molt_ai/common/helper_sandbox_*` (Landlock and seccomp, Seatbelt, job object) | type-checked against 156's headers on Linux and Windows (clang-cl), the POSIX part for the Mac too, on Apple framework stand-ins (round 28) | #16 |
 | `third_party/llama_cpp:mtmd` (exception and CFI configs), `:llama_guard` (a TU built with exceptions), `:constrained_decoding` deps | | #30, #38, #52 |
 | `runtime/model_image_prep.cc` (real Skia, the data decoder), `molt_model_impl.cc`, `molt_inference_service.cc` (syntax-checked only) | | #38 |
 | `embedding_process_host`, `runtime:embedding_host`, `models:download` | | #28 |
 | `inference_process_host.cc` and its tests | | #15, #52, #53 |
-| `content/utility/utility_main.cc` (Windows block, before `LowerToken()`) and `content/utility/on_device_model/molt_gpu_inference_sandbox_win.cc`, `molt_gpu_driver_warmup.cc`, `molt_gpu_inference_buildflags` | the GPU warm-up hook; `utility_main.cc` couldn't be compile-checked (the real-header harness can't generate its ChromeOS mojoms); the Windows files were type-checked against mingw-w64 headers and stand-ins, so check `base::win::GetLoadedModulesSnapshot` and the `//base` includes with clang-cl | ai-finish |
-| `third_party/llama_cpp:ggml_vulkan` with the switch: the shader pack tool (`//third_party/brotli:enc` for the host, `:dec` in the service), the two `ggml-vulkan.cpp` blocks | built in a stub GN root only | ai-finish |
+| `content/utility/utility_main.cc` (Windows block, before `LowerToken()`) and `content/utility/on_device_model/molt_gpu_inference_sandbox_win.cc`, `molt_gpu_driver_warmup.cc`, `molt_gpu_inference_buildflags` | the GPU warm-up hook; since round 28 `utility_main.cc` (its Windows block included) and the Windows files type-check with clang-cl against the Windows SDK (MSVC's runtime headers are VS 2017's, see the compile check's README) | ai-finish |
+| `third_party/llama_cpp:ggml_vulkan` with the switch: the shader pack tool (`//third_party/brotli:enc` for the host, `:dec` in the service), the two `ggml-vulkan.cpp` blocks | built in a stub GN root; MoltBrowser's glue (`chromium/ggml-vulkan-moltbrowser.cpp`, `ggml_vk_glslc.cc`, `ggml_vk_shader_pack.cc`) and the switch's hooks type-check against 156's headers with the switch on (compile check platform `linux-vulkan`, round 28); vendored `ggml-vulkan.cpp` itself is not compiled there | ai-finish |
 
 ### 4.7 Blink and fingerprinting (MoltNet uniformity)
 
@@ -577,19 +684,22 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `modules/media/audio/audio_device_factory.cc`, `modules/audio_output_devices/html_media_element_audio_output_device.cc`, `modules/mediastream/user_media_processor.cc`, `core/timing/memory_info.cc`, `core/timing/measure_memory/measure_memory_controller.cc` (all five new upstream copies), `media_devices.cc` (new hooks), `core/molt_fingerprinting/moltnet_audio_{output,sink}.{h,cc}`, `moltnet_media_devices.{h,cc}`, `moltnet_memory{,_values}.{h,cc}` | a `CORE_EXPORT` `media::AudioRendererSink` subclass in core with a ref-counted engine posting `CrossThreadBindOnce` tasks to a leaked `NonMainThread`; `blink::BindOnce` named explicitly where a `base::OnceCallback` argument made it ambiguous with `base::BindOnce`; core uses `media::AudioLatency`, `media::FakeAudioWorker::ComputeFakeOutputDelay` and `media::AudioDeviceDescription` (`media/audio`; DEPS rules in `core/molt_fingerprinting/DEPS`, tests included); a garbage-collected `HeapMojoRemote<mojom::blink::PermissionService>` bound through `LocalDOMWindow::GetBrowserInterfaceBroker()` in core; `UserMediaProcessor::GetUserMediaRequestFailed` binding a lambda with `WrapWeakPersistent(this)`; `memory_info.cc`'s `HeapSizeCache::Update` and `measure_memory_controller.cc`'s `ConvertResult` call core glue (same component) | fp-mediaclock |
 | `modules/mediarecorder/video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.{h,cc}` (all four new upstream copies), `core/molt_fingerprinting/moltnet_encoders.{h,cc}` | modules calling a new core glue file; core's DEPS now allow four `media/base` headers (`media::IsEncoderBuiltInVideoType`, `media::VideoType`, `media::SetProcessorCountForSoftwareEncoding`, a new `MEDIA_EXPORT` function); a `constinit std::atomic<int>` in `video_encoder.cc` | fp-probes |
 | `core/css/local_font_face_source.cc`, `core/molt_fingerprinting/fonts.{h,cc}`, `system_fonts.{h,cc}` | `local()` through visible families: `GetLocalFontFaceData` calls `FontCache::GetFontData(description, family, AlternateFontName::kNoAlternate)` and reads `SkTypeface::fontStyle()`; `String::substr` with a `wtf_size_t` | fp-probes |
-| `platform/fonts/font_platform_data.{h,cc}`, `font_cache.cc`, `font_selector.cc`, `skia/font_cache_skia.cc`, `linux/font_cache_linux.cc`, `win/font_cache_skia_win.cc`, `win/font_platform_data_win.cc`, `mac/font_cache_mac.mm`, `mac/font_platform_data_mac.mm`, `core/css/css_pending_system_font_value.cc`, `modules/font_access/font_access.cc` (the last eight new upstream copies, or newly hooked), `core/molt_fingerprinting/moltnet_fonts.{h,cc}`, `moltnet_font_set.{h,cc}` | MoltNet's bundled font set: a nested abstract `FontPlatformData::UniformFontSet` held in a `std::atomic` pointer, with `enum class AlternateFontName` and `FontFallbackPriority` forward-declared in `font_platform_data.h` (a header much of Blink includes: expect a large rebuild); `SkTypeface_Make_Fontations` with `SkFontArguments` (collection index, `wght`) from core; `base::MemoryMappedFile` from a `base::File` and `SkData::MakeWithoutCopy`; `FontCache::Invalidate()`; the Windows and macOS hooks have not been compiled yet (the compile check runs on Linux): look at them first on those builds; `font_selector.cc` includes `font_platform_data.h` | fonts |
-| `platform/fonts/font_metrics.cc`, `simple_font_data.cc`, `skia/skia_text_metrics.cc` (new upstream copies), `core/molt_fingerprinting/moltnet_fonts.cc`, `chrome/browser/chrome_content_browser_client.cc` (`InitOnUIThread`), `chrome/browser/molt_ai/fingerprinting/molt_net_fonts.cc` | MoltNet's metrics alike on every OS: the hooks sit in each file's `#if BUILDFLAG(IS_APPLE)` / non-Linux branches, which the Linux compile check doesn't build (`tools/fonts/metrics_check/run.py` builds them against stand-ins): watch `SkFont::isSubpixel()` in `font_metrics.cc`'s new `#else`, the early `return` in its macOS block, and `skia_text_metrics.cc`'s `#endif`s; worker font caches invalidated through `base::SingleThreadTaskRunner::GetCurrentDefault()` and `FontGlobalContext::TryGet()`; the browser posts a best-effort UI task (`content::GetUIThreadTaskRunner`) and keeps callbacks for renderers that launch before the set is open | fonts |
+| `platform/fonts/font_platform_data.{h,cc}`, `font_cache.cc`, `font_selector.cc`, `skia/font_cache_skia.cc`, `linux/font_cache_linux.cc`, `win/font_cache_skia_win.cc`, `win/font_platform_data_win.cc`, `mac/font_cache_mac.mm`, `mac/font_platform_data_mac.mm`, `core/css/css_pending_system_font_value.cc`, `modules/font_access/font_access.cc` (the last eight new upstream copies, or newly hooked), `core/molt_fingerprinting/moltnet_fonts.{h,cc}`, `moltnet_font_set.{h,cc}` | MoltNet's bundled font set: a nested abstract `FontPlatformData::UniformFontSet` held in a `std::atomic` pointer, with `enum class AlternateFontName` and `FontFallbackPriority` forward-declared in `font_platform_data.h` (a header much of Blink includes: expect a large rebuild); `SkTypeface_Make_Fontations` with `SkFontArguments` (collection index, `wght`) from core; `base::MemoryMappedFile` from a `base::File` and `SkData::MakeWithoutCopy`; `FontCache::Invalidate()`; since round 28 the compile check compiles the Windows hooks with clang-cl against the Windows SDK and the macOS ones against Darwin's headers and Apple framework stand-ins (the CoreText/AppKit declarations are the stand-ins', so look at the macOS ones first on that build); `font_selector.cc` includes `font_platform_data.h` | fonts |
+| `platform/fonts/font_metrics.cc`, `simple_font_data.cc`, `skia/skia_text_metrics.cc` (new upstream copies), `core/molt_fingerprinting/moltnet_fonts.cc`, `chrome/browser/chrome_content_browser_client.cc` (`InitOnUIThread`), `chrome/browser/molt_ai/fingerprinting/molt_net_fonts.cc` | MoltNet's metrics alike on every OS: the hooks sit in each file's `#if BUILDFLAG(IS_APPLE)` / non-Linux branches, which the compile check builds for those platforms since round 28 (Windows with clang-cl; macOS on Apple framework stand-ins; `tools/fonts/metrics_check/run.py` also builds them against stand-ins): watch `SkFont::isSubpixel()` in `font_metrics.cc`'s new `#else`, the early `return` in its macOS block, and `skia_text_metrics.cc`'s `#endif`s; worker font caches invalidated through `base::SingleThreadTaskRunner::GetCurrentDefault()` and `FontGlobalContext::TryGet()`; the browser posts a best-effort UI task (`content::GetUIThreadTaskRunner`) and keeps callbacks for renderers that launch before the set is open | fonts |
 | `content/public/browser/content_browser_client.{h,cc}` (two new virtuals returning `std::optional` of `storage::QuotaSettings` and `storage::BlobStorageLimits`), `chrome/browser/chrome_content_browser_client.{h,cc}`, `content/browser/storage_partition_impl.cc`, `content/browser/blob_storage/chrome_blob_storage_context.cc`, `storage/browser/blob/blob_memory_controller.{h,cc}` (new upstream copies), `chrome/browser/molt_ai/fingerprinting/molt_net_storage{,_values}.*` | MoltNet's fixed storage limits; a new `:storage` target in `//chrome/browser/molt_ai/fingerprinting` that `//chrome/browser/molt_ai` depends on (`gn check` on `chrome_content_browser_client.cc`); the blob limits are posted to the IO thread after `InitializeOnIOThread` | fp-probes |
 | `media/renderers/default_decoder_factory.cc`, `media/gfx/mappable_shared_image_video_frame_pool.cc`, `media/gfx/paint_canvas_video_renderer.cc`, `media/base/video_frame_converter_internals.cc`, `media/base/sinc_resampler.cc`, `media/base/vector_math.cc`, `media/base/BUILD.gn`, `third_party/opus/BUILD.gn`, `third_party/opus/src/celt/{celt.c,x86/x86cpu.c,arm/pitch_neon_intr.c,arm/celt_neon_intr.c}` (all new upstream copies), `media/base/molt_portable_{media,scale}.{h,cc}`, `core/molt_fingerprinting/moltnet_pixels.{h,cc}` | `//media/base` now depends on `//third_party/opus` and calls the C function `opus_moltbrowser_set_portable()` (defined in `celt.c`; declared `extern "C"` in `molt_portable_media.cc`); `OPUS_X86_PRESUME_SSE`/`SSE2` are gone, so the SSE kernels go through libopus's run-time tables (`x86_celt_map.c`, `x86_silk_map.c`; built and linked here with Chromium's source list); `base::subtle::reinterpret_span` in `PortableScaleFrame`; `molt_portable_media_unittest.cc` (in `media/base:unit_tests`) includes `media/gfx`, `media/renderers` and `media/video/mock_gpu_video_accelerator_factories.h` through `//media:test_support` (`gn check`); core's DEPS allow `media/base/molt_portable_media.h`. | fp-pixels |
 | `third_party/llvm-libc/BUILD.gn` (`molt_portable_math`, a static library the `:headers` group now depends on publicly, visible to the file and `//ui/gfx/geometry`), `molt_portable_math.cc` (llvm-libc's shared math with the FMA macros undefined after `cpu_features.h`, an `#error` if they come back), `v8/src/base/ieee754.cc` and `v8/src/base/DEPS` (V8 includes `third_party/llvm-libc/molt_portable_math.h` and links it through `//third_party/llvm-libc:headers`, which `v8_libbase` already uses), `ui/gfx/geometry/molt_math.{h,cc}` and `molt_complex_math.h` (`COMPONENT_EXPORT(GEOMETRY)`), `ui/gfx/geometry/BUILD.gn`, the `gfx::molt_math::` call sites in `ui/gfx`, Blink (core, modules, platform) and `media/base/sinc_resampler.cc` (`media/base/BUILD.gn` gains `//ui/gfx/geometry`), `platform/audio/rustfft_ffi.rs` (a new cxx bridge function, `rustfft_new_portable`: the generated `rustfft_ffi.rs.h` must be regenerated, not taken from an old out dir), `third_party/skia/src/opts/SkOpts_moltbrowser.cpp` (skvx), `sandbox/policy/win/sandbox_win.cc` and `molt_job_memory_limit.h` (64-bit Windows only), `core/workers/worker_backing_thread.cc`, `chrome/browser/chrome_content_browser_client.cc` (`ShouldTryToUseExistingProcessHost`) | the portable math library and its switch; Chromium's presubmit `audit_non_blink_usage.py`, which the build does not run, would list the `gfx::molt_math` names Blink now calls | fp-libm |
 | `third_party/skia/include/core/SkScalar.h` (the math macros now call `SkMoltBrowserMath::`, an exported function in the `skia` component; any code that used them in a constant expression or with a non-arithmetic type would fail), `include/private/SkMoltBrowserMath.h` and `src/core/SkMoltBrowserMath.cpp` (`SK_API`, in `skia_core_and_effects`, which now depends on `//third_party/llvm-libc:molt_portable_math`; that library's visibility gains `//skia:*`), `SkGraphics.{h,cpp}`, the Skia call sites (`SkCubics.cpp`, `SkPathOpsCubic.cpp`, `SkBlurEngine.cpp`, `SkGaussFilter.cpp`, `SkGradientBaseShader.cpp`, `SkGainmapShader.cpp`, `SkGainmapInfo.cpp`, `SkXmp.cpp`, `SkExif.cpp`, `SkHdrAgtm.cpp`, `SkHdrAgtmParse.cpp`), `src/ports/SkTypeface_fontations.cpp` and `fontations/src/ffi.rs` (a new cxx bridge function, `set_portable_math`: regenerate `ffi.rs.h`), `rust/exif/FFI.rs` and `exif_parse.rs` (a new shared-struct field, `hdr_headroom_log2`: regenerate `FFI.rs.h`), read-fonts and skrifa (vendored sources, `read_fonts/v0_43/BUILD.gn` with `libm`), `ui/gfx/geometry/BUILD.gn` (`//third_party/fdlibm` for `molt_math::Tanh`), `ui/gfx/color_utils.cc`, `cc/paint/tone_map_util.cc`, the `gfx::molt_math::` call sites in Blink (`core/style/basic_shapes.cc`, `style_shape.cc`, `superellipse.h` and `platform/geometry/contoured_rect.h`, both `constexpr` functions calling `molt_math::Pow` as they called `std::pow`, fine in C++23, `contoured_rect.cc`, `path_builder.cc`, `float_rounded_rect.cc`, `core/css/css_gradient_value.cc`, `platform/graphics/filters/fe_component_transfer.cc`, `fe_color_matrix.cc`, `fe_lighting.cc`, `platform/image-decoders/avif/avif_image_decoder.cc`, `modules/xr/xr_cube_map.cc`) | Skia's, Blink's and Fontations' math on the portable switch; checkdeps (not run by the build) would want `+third_party/fdlibm` in `ui/gfx/geometry`'s DEPS, and Chromium's presubmit `audit_non_blink_usage.py` the new `gfx::molt_math` names | fp-geometry |
 | `third_party/blink/renderer/modules/mediastream/user_media_processor.cc` (`GenerateStreamForCurrentRequestInfo`), `core/molt_net/molt_net_renderer.{h,cc}` (+ test), `core/molt_fingerprinting/moltnet_uniformity.{h,cc}` (`ReportsPermissionDenied`, + test), `chrome/browser/media/webrtc/media_capture_devices_dispatcher.cc` (imported from 156; `ProcessMediaAccessRequest`), new `chrome/browser/molt_ai/fingerprinting/molt_net_display_capture{,_policy}.h` (+ `_policy_unittest.cc`) | no screen, window or tab capture in MoltNet. `//chrome/browser/media/webrtc:webrtc` includes the header-only `molt_net_display_capture.h` without a dep, as it includes `molt_net_profile_id.h` (4.10): if `gn check` flags it, add `//chrome/browser/molt_ai/fingerprinting:display_capture` there. `moltnet_uniformity.cc` now includes `core/molt_net/molt_net_renderer.h` (both in core) | fp-geometry |
+| `chrome/browser/molt_ai/tor/molt_net_cpu_policy.h`, `molt_net_cpu.{h,cc}` (new; targets `:cpu_policy` and `:cpu`, which `:tor` depends on publicly), the checks in `molt_net_window.cc` (`OpenImpl`, `NewIdentity`), `molt_net_routing.cc` (`GetOrCreateMoltNetProfile`), `tor_manager.cc` (`Launch`), and the sentence up front in `ui/webui/molt_ai/molt_net_handler.cc` (`StatusDict`), `molt_ai_settings_ui.cc` (`TorUnavailableReason`) and `molt_ai_chat_handler_tor.cc` (`HandleGetTorStatus`, whose lambda now captures one more `std::string`) | `base::CPU::GetInstanceNoAllocation()` and `has_sse3()`, `has_ssse3()`, `has_sse41()` exist only under `ARCH_CPU_X86_FAMILY` (the call sits under `ARCH_CPU_X86_64`); a function-local `static const base::NoDestructor<std::string>`; `if (const std::string& e = MoltNetCpuError(); !e.empty())` in each check | fp-arch |
+| `media/filters/wsola_internals.cc` (new upstream copy: `MultiChannelDotProduct`, `GetPeriodicHanningWindow`), `media/base/molt_portable_media.h` (a comment), `core/molt_fingerprinting/moltnet_cpu.h` (`--no-enable-f16c` in `kMoltNetV8Flags`) | `//media/filters` calls `media::IsPortableMediaProcess()` and `gfx::molt_math::Cos(float)` (both already used inside `//media`); V8 defines `enable_f16c` on every architecture, so arm64 builds take the flag too (`MoltNetCpuTest.Flags` fails if `SetFlagsFromString` rejects one) | fp-arch |
+| jxl-rs: `third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/{lib.rs,x86_64/mod.rs,aarch64/mod.rs}`, `vendor/jxl-v0_7/Cargo.toml`, `src/lib.rs`, `src/moltbrowser_math.rs` (new) and six call-site files, the crate patches in `patches/jxl_simd-v0_7/` and `patches/jxl-v0_7/`, `Cargo.lock`, `third_party/rust/jxl/v0_7/BUILD.gn` (the new file; `//third_party/rust/libm/v0_2:lib`), `third_party/rust/jxl/v0_7/wrapper/lib.rs` (a new cxx bridge function: the generated `lib.rs.h` gains `jxl_rs_moltbrowser_set_portable()`), `platform/image-decoders/jxl/jxl_image_decoder.cc` (constructor) | rustc on `simd_function!`'s expansion (an early return to the scalar descriptor in every function it makes, x86-64 and arm64); the `PortableMath` trait for `f32` and `f64`; `libm`'s visibility (`//third_party/rust/*`); `scripts/vendor-rust-crates.sh` must keep the two crate patches (afterwards `moltbrowser_math.rs` must still be in the vendored crate) | fp-arch |
 
 ### 4.8 WebUI handlers and the agents
 
 | File | Risk | From |
 |---|---|---|
-| `ui/webui/molt_ai/molt_ai_chat_handler.cc` | not type-checked at all (too many dependencies); the download section, `ChooseChatWindow` with `BrowserWindowInterface`, `SidePanelUI::Show`, `HasTransientUserActivation` | #36, #40, #54 |
+| `ui/webui/molt_ai/molt_ai_chat_handler.cc` | type-checked against 156's headers (Linux and Windows) since round 28; the download section, `ChooseChatWindow` with `BrowserWindowInterface`, `SidePanelUI::Show`, `HasTransientUserActivation` | #36, #40, #54 |
 | `molt_ai_chat_handler_actions.cc`, `molt_ai_chat_form_fill.*`, `molt_ai_memory_ui.cc`, `molt_ai_settings_ui.cc` (`BoolArg`, `BoundedStringArg`), `molt_ai_automation_ui.cc` (`HasCallbackArgs`) | | #28, #32, #36, #40, #54 |
 | `agents/web_agent.cc`, `agent_actions.cc` (new `agent_actions` → `constrained_decoding` dependency and DEPS rule), `agent_screenshot.cc` (`CopyFromSurface` 4-arg form, observer overrides), `agent_vision.*`, `agents:agent_plan` (`-Wswitch` for `kReplan`) | | #35, #39, #45, #46, #47, #50 |
 | `automation/automation_ai_steps.cc`, `automation_runner.cc`, `agent_run_draft.*`, the new automation GN targets | | #35, #54 |
@@ -602,6 +712,22 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
 ### 4.9 GN targets and DEPS edges
+
+Since round 28 (gn-ready) the GN graph, the DEPS rules and Blink's audit
+are checked without a checkout (First build, step 1).
+`tools/chromium/gn_static_check.py` evaluates 156's `BUILD.gn` files with
+the overlay for the three desktop configs, also with `molt_llama_vulkan` and
+as a component build, loads what `gn gen` loads, and applies `gn check`'s
+include rule and `gn gen`'s dependency rules (unknown labels, visibility,
+`testonly`, `allow_circular_includes_from`, cycles) to every file and target
+MoltBrowser adds or changes; `checkdeps` and `blink-audit` run Chromium's own
+scripts from the pin. All three are clean, and every MoltBrowser header is
+listed in the target that owns it, so the notes of earlier rounds of the
+form "in no target's `sources`" or "if `gn check` complains, list X in Y /
+add the dep" (in §4.2, §4.7 and §4.10 as well) are done. The real
+`gn gen` and `gn check` below stay the authority; what the static check
+approximates is in its header (values known only at `gn gen` time, other
+toolchains, a third-party library's own `include_dirs`).
 
 - [ ] List what the new code defines (from the PRs below):
   `(cd chromium/src && gn ls out/MoltBrowser '//chrome/browser/molt_ai/*')`.
@@ -620,165 +746,111 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   done
   gn check out/MoltBrowser 2>&1 | tee ~/molt-v0.3.0/gn-check.log
   ```
-  New edges the PRs flagged: memory → `runtime:embedding_host`,
-  `models:download`, the inference mojom (from #28); `:constrained_decoding`
-  (from #30); `agent_actions` → `constrained_decoding` (from #45); the
-  content utility directory → `//sandbox/linux:sandbox_services`, the
-  browser → `public:buildflags` and `//content/public/common` (from #52);
-  `universal_web_contents_observers.cc` and `:letterbox_view` (from #27).
-  New at MoltNet 156: `chrome_content_browser_client.cc` includes
-  `molt_net_requests_policy.h`, `molt_net_network_context_policy.h` and
-  `molt_net_profile_id.h` (the `:requests_policy`,
-  `:network_context_policy` and `:tor` targets), and the two
-  `content/browser/network/` observers include
-  `molt_uniform_network_state.h`, which no target lists (see §4.2).
-  New in moltnet-live: `chrome/browser/net/proxy_config_monitor.cc` (in
-  `//chrome/browser`) includes `molt_net_routing.h` and
-  `molt_net_profile_id.h` (`:tor`); `chrome_autofill_client.cc`
-  (`//chrome/browser/ui`) and `chrome_payment_request_delegate.cc`
-  (`//chrome/browser/payments:impl`) include `molt_net_autofill.h`: if
-  `gn check` flags them, add `//chrome/browser/molt_ai/tor:autofill` to
-  those targets' deps. The new `:autofill` target depends on
-  `//components/autofill/core/browser` and `//third_party/libaddressinput`;
-  if that makes a cycle through `:tor`, drop it from `:tor`'s
-  `public_deps` and add it to `//chrome/browser/ui` and
-  `//chrome/browser/payments:impl` instead. Checkdeps: the tor `DEPS`
-  file allows `molt_net_autofill.cc` its two libaddressinput headers.
-  New in moltnet-policy: `chrome/browser/prefs/incognito_mode_prefs.cc`
-  includes `molt_net_profile_id.h` and
-  `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc`
-  includes `molt_net_incognito_parity.h` (both header-only, in `:tor` and
-  `:incognito_parity_policy`); `chrome_content_browser_client.cc` includes
-  `molt_net_language_policy.h` (new header-only `:language_policy`, a
-  public dep of `:tor`); `:pref_isolation` now depends on
-  `:language_policy` and `//chrome/common/molt_ai/fingerprinting`;
-  `molt_net_network_context_policy.h` and
-  `client_socket_pool_manager_impl.h` include the new `net/socket/molt_*`
-  headers (§4.2); `molt_ai_unittests` uses `net/spdy/spdy_test_util_common.h`
-  (`//net:test_support`, already a dep).
-  New in moltnet-shared: `torrc_builder.h` (`:protocol`, which has no
-  `//net` dep) includes `net/socket/molt_per_site_socket_pool_policy.h`
-  (std-only, in no target's `sources`); `molt_ai_unittests` includes
-  `services/network/molt_keepalive_partitions.h` (allowed for that test in
-  the tor `DEPS`) and `storage/browser/quota/molt_storage_budget_policy.h`
-  (both std-only); `services/network/` and `storage/browser/quota/` include
-  their new header-only `molt_*` files (§4.2). If `gn check` flags any of
-  them, list the header in the target that includes it. The same for
-  `components/download/internal/background_service/molt_registering_site_isolation.h`
-  and `content/browser/download/molt_download_isolation{,_policy}.h`;
-  `molt_ai_unittests` includes the std-only policy (allowed for that test
-  in the tor `DEPS`).
-  New in moltnet-shared2: header-only files in no target's `sources`,
-  included by the hooked files above: `net/cert/molt_cert_fetch_site.h`
-  (by `//net` and `//services/cert_verifier/cert_net_url_loader`),
-  `services/cert_verifier/cert_net_url_loader/molt_cert_fetch_isolation.h`,
-  `storage/browser/blob/molt_blob_budget_policy.h` (by `//storage/browser`
-  and `content/browser/blob_storage/blob_registry_wrapper.cc`),
-  `content/browser/renderer_host/molt_browsing_instance_processes{,_policy}.h`
-  and `chrome/browser/download/molt_retried_download_isolation.h` (by
-  `download_bubble_ui_controller.cc` and `downloads_dom_handler.cc`, which
-  then include `chrome/browser/molt_ai/tor/molt_net_network_context_policy.h`
-  and `molt_net_profile_id.h`). `molt_ai_unittests` includes the blob
-  policy (`chrome/browser/molt_ai/fingerprinting`), the process policy, the
-  Background Fetch header and the certificate-fetch header (each allowed for
-  its test in the tor `DEPS`) and now needs
-  `//mojo/public/cpp/test_support:test_utils` and
-  `//services/network/public/cpp` (added). `//chrome/browser/molt_ai/tor`
-  gained `:process_policy`, `:identity_end_policy` and
-  `//extensions/buildflags`; `chrome/browser/enterprise/data_controls/`
-  now includes `molt_net_incognito_parity.h` (§4.10). Windows only:
-  `molt_net_parental_controls.cc` includes
-  `chrome/browser/win/parental_controls.h`, whose target is
-  `//chrome/browser` itself (as for the tor target's other
-  `chrome/browser/` includes). If `gn check` flags any of them, list the
-  header in the target that includes it or add the dep.
-  New in moltnet-shared3: header-only files in no target's `sources`:
-  `net/disk_cache/memory/molt_mem_backend_budget_policy.h` (by
-  `//net`; `disk_cache.h` names its struct), `services/network/molt_ended_identity_policy.h`,
-  `components/services/storage/dom_storage/molt_dom_storage_site_policy.h`
-  (by `//components/services/storage`); `//components/download/internal/background_service`
-  now includes `storage/browser/blob/molt_blob_budget_policy.h`.
-  `//chrome/browser/molt_ai/tor`: `:identity_end_policy` gained
-  `molt_net_memory_valve_policy.h`, `:tor` the valve's `.cc/.h`; the unit
-  tests gained `//components/services/storage`,
-  `//third_party/blink/public/common`,
-  `//chrome/browser/molt_ai/fingerprinting:storage_values`,
-  `//services/network:network_service` and
-  `//net/traffic_annotation:test_support`;
-  `//chrome/browser/molt_ai/fingerprinting:storage` now has
-  `:storage_values` as a public dep (Chrome's client reads the reserve).
-  If `gn check` flags any of them, list the header in the target that
-  includes it or add the dep.
-  New in moltnet-shared4: header-only files in no target's `sources`:
-  `net/socket/molt_identity_end.h` (by `//net`),
-  `components/download/internal/common/molt_fetch_credentials.h` (by
-  `//components/download/internal/common`) and
-  `components/services/storage/dom_storage/molt_dom_storage_site_budget.h`
-  (by `//components/services/storage`; it includes the generated
-  `local_storage_control.mojom.h`). `//chrome/browser/molt_ai/tor`'s unit
-  tests gained `//services/network:test_support`,
-  `//components/download/public/common:public` and `//storage/browser`;
-  `//chrome/browser/ui/webui/molt_ai` gained
-  `//chrome/browser/molt_ai/fingerprinting:net_fonts`. If `gn check`
-  flags any of them, list the header in the target that includes it or
-  add the dep.
-  New in moltnet-shared5: header-only files in no target's `sources`:
-  `content/browser/background_fetch/molt_background_fetch_site_policy.h`
-  (by `//content/browser`),
-  `components/download/internal/background_service/molt_in_memory_download_limits.h`
-  (by `//components/download/content/factory`) and
-  `storage/browser/quota/molt_storage_usage_counts.h` (by `//storage/browser`,
-  through `molt_storage_budget.h`, which `client_usage_tracker.h` and
-  `usage_tracker.h` now include; it includes `net/base/schemeful_site.h`
-  and `base/unguessable_token.h`). `//chrome/browser/molt_ai/fingerprinting`'s
-  unit tests gained `//storage/browser`, `//storage/browser:test_support`
-  (`MockQuotaClient`), `//components/services/storage/public/cpp`,
-  `//components/services/storage/public/cpp/buckets`,
-  `//mojo/public/cpp/bindings` and
-  `//third_party/blink/public/mojom:mojom_platform`. If `gn check` flags
-  any of them, list the header in the target that includes it or add the
-  dep.
-  New in fonts: `//chrome/browser/molt_ai/fingerprinting:net_fonts` (the
-  browser side of the bundled font set; `:fingerprinting` and the unit
-  tests depend on it); `//chrome/common/molt_ai/fingerprinting`'s mojom
-  now has `//mojo/public/mojom/base` as a public dep (`ReadOnlyFile`);
-  `molt_net_fonts_unittest.cc` includes Blink's pure
-  `moltnet_font_set.h` (allowed for that test in the fingerprinting
-  `DEPS`, as the device values test does); core's `DEPS` allow
-  `moltnet_fonts.cc` `base/files/memory_mapped_file.h` and its test
-  `base/files/scoped_temp_dir.h` and `file_util.h`;
-  `public/web/web_molt_fingerprinting.h` forward-declares `base::File`.
-  New in degoogle-kit: `//chrome/browser/molt_ai/privacy:feature_overrides`
-  (and its `:unit_tests`) now depends on `//chrome/browser/dictation:features`,
-  `//chrome/common:chrome_features`, `//components/history_embeddings/core`,
-  `//components/optimization_guide/core:prediction` and
-  `//components/optimization_guide/proto:optimization_guide_proto`, for the
-  features it turns off (the five headers type-check against 156's real
-  headers). If a visibility rule refuses one, or the standalone
-  `molt_ai_unittests` link grows too much, the alternative is to move
-  those entries into a second overrides source set that only
-  `//chrome/browser` links. Also degoogle-kit, after the follow-up:
-  `:feature_overrides` and `:unit_tests` add
-  `//components/optimization_guide/core:features`,
-  `//components/safe_browsing/core/common:features` and `//media`; the new
-  `//chrome/browser/molt_ai/privacy:component_policy` (`//base` only) is a
-  dep of `//chrome/browser/component_updater:impl` (its `BUILD.gn` is now
-  in `src/`, hooked); and `molt_ai_unittests` gains
-  `//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests` where
-  `use_on_device_model_service` is set, which links
-  `//components/optimization_guide/core:manifest_broker`. `gn check`
-  should accept all of them; a cycle through `component_updater:impl`
-  would mean `:component_policy` picked up a dep it must not have.
-- [ ] DEPS include rules (checkdeps), for the new `DEPS` files under
-  `chrome/{browser,renderer,services}/molt_ai/` and Blink's
-  `core/molt_fingerprinting` (from #10, #19, #37, #41) (verify the command):
+  *Expected:* no error. If there is one, the static check missed it: send
+  `gn-check.log`, and fix it as the message says (a dep, a `public` entry,
+  a visibility line). Do it in both out dirs (macOS and Linux evaluate
+  different files).
+- [ ] DEPS include rules (checkdeps) on the real tree, for the new `DEPS`
+  files under `chrome/{browser,renderer,services}/molt_ai/` and Blink's
+  `core/molt_fingerprinting` and the hooked upstream directories (from #10,
+  #19, #37, #41) (verify the command):
   ```bash
   cd chromium/src
   for d in chrome/browser/molt_ai chrome/services/molt_ai chrome/common/molt_ai \
            chrome/renderer/molt_ai third_party/blink/renderer/core/molt_fingerprinting chrome/utility; do
     python3 buildtools/checkdeps/checkdeps.py "$d" || echo "CHECKDEPS FAILED: $d"
   done
+  python3 buildtools/checkdeps/checkdeps.py 2>&1 | tee ~/molt-v0.3.0/checkdeps.log   # the whole tree
   ```
+  *Expected:* no violation. The static run used 156's own `checkdeps.py`
+  over every C++ file MoltBrowser adds and every include it adds to an
+  upstream file; Skia and V8 are repositories of their own, with their own
+  rules, and were left out.
+- [ ] Blink's presubmit audit (`audit_non_blink_usage.py`, which the build
+  doesn't run): `gn_static_check.py blink-audit` runs its `check()` over the
+  lines MoltBrowser adds under `third_party/blink`. MoltBrowser's entries
+  are at the end of `_CONFIG` in
+  `src/third_party/blink/tools/blinkpy/presubmit/audit_non_blink_usage.py`.
+
+How the graph fits together since round 28, where a reviewer may want it
+otherwise:
+
+- `//chrome/browser:core` depends on `//chrome/browser/molt_ai:core_hooks`,
+  a group of the MoltBrowser targets whose headers the hooks in
+  `chrome/browser/` include (the runtime, the agents' features,
+  fingerprinting, the tor policies, the shield, the web AI APIs, the WebUI
+  navigation throttle; the letterbox view on desktop, the updater on
+  macOS).
+- `molt_net_profile_id.h` and `molt_net_incognito_parity.h` are public
+  headers of `//chrome/browser/profiles:profile`, which has
+  `//chrome/browser/molt_ai/tor:incognito_parity_policy` as a public dep: any
+  target that may include `profile.h` may include them, so the split-out
+  targets of §4.10 need no dep of their own.
+- `//chrome/browser/ui:ui` depends on `molt_ai/automation`, and lists it
+  and `molt_ai/tor` in `allow_circular_includes_from` (`ui:ui` is on
+  `//.gn`'s allowlist): their code includes `chrome/browser/ui` headers
+  while `ui` includes theirs.
+- The std-only policies MoltBrowser keeps inside components are small
+  targets there, which std-only MoltBrowser targets and tests depend on
+  instead of the whole component: `//net:molt_policies`,
+  `//content/browser:molt_policies`,
+  `//components/download/internal/background_service:molt_site_isolation`
+  and `//components/download/internal/common:molt_fetch_credentials`. The
+  header-only hook files are listed in the component that includes them
+  (`//net`, `//services/network:network_service`, `//storage/browser`,
+  `//components/services/storage`, `//content/browser`,
+  `//services/cert_verifier/cert_net_url_loader`).
+- The side panel's views code is its own target,
+  `//chrome/browser/molt_ai:molt_ai_side_panel_views`.
+- For these hooks 26 upstream `BUILD.gn` files are now in `src/`, each
+  change in a `# MoltBrowser:` block: `chrome/browser/` `browsing_data`,
+  `download`, `extensions`, `media/router`, `media/webrtc`, `metrics`,
+  `net`, `payments`, `profile_resetter`, `ssl`, `translate`, `webauthn`;
+  `chrome/browser/ui/` `autofill`, `extensions`, `tabs`, `views/frame`,
+  `views/side_panel`, `views/translate`;
+  `components/download/internal/{background_service,common}`,
+  `components/services/storage`, `content/browser`, `net`,
+  `services/cert_verifier/cert_net_url_loader`, `services/network`,
+  `storage/browser`. Also two `DEPS` files (`chrome/browser/browsing_data`,
+  `ui/gfx`) and Blink's audit script.
+- A component build (`is_component_build = true`: developer builds only,
+  never a release): every MoltBrowser function or class used from another
+  library has that library's export macro (a scripted review in round 28
+  added `MEDIA_EXPORT` to the portable scaler, `CORE_EXPORT` to two Blink
+  functions Blink's tests call, and moved `MoltTorCapacity`'s per-process
+  pointer out of line with `NET_EXPORT_PRIVATE`, so each library sees the
+  same one). An `undefined symbol` naming a MoltBrowser function at link
+  time means one was missed: add the export macro of the library that
+  defines it.
+
+Still worth knowing from earlier rounds:
+
+- degoogle-kit: `//chrome/browser/molt_ai/privacy:feature_overrides` and its
+  `:unit_tests` depend on `//chrome/browser/dictation:features`,
+  `//chrome/common:chrome_features`, `//components/history_embeddings/core`,
+  `//components/optimization_guide/core:prediction`,
+  `//components/optimization_guide/proto:optimization_guide_proto`,
+  `//components/optimization_guide/core:features`,
+  `//components/safe_browsing/core/common:features` and `//media`, for the
+  features they turn off. If the standalone `molt_ai_unittests` link grows
+  too much, move those entries into a second overrides source set that only
+  `//chrome/browser` links. `//chrome/browser/molt_ai/privacy:component_policy`
+  (`//base` only) is a dep of `//chrome/browser/component_updater:impl`: a
+  cycle there would mean it picked up a dep it must not have.
+  `molt_ai_unittests` gains
+  `//chrome/browser/molt_ai/privacy:on_device_manifest_unit_tests` where
+  `use_on_device_model_service` is set, which links
+  `//components/optimization_guide/core:manifest_broker`.
+- The `:autofill` target of `//chrome/browser/molt_ai/tor` depends on
+  `//components/autofill/core/browser` and `//third_party/libaddressinput`;
+  the tor `DEPS` file allows `molt_net_autofill.cc` its two libaddressinput
+  headers.
+- Windows only: `molt_net_parental_controls.cc` includes
+  `chrome/browser/win/parental_controls.h` (`//chrome/browser/win`, a
+  Windows dep of `//chrome/browser/molt_ai/tor`).
+- `public/web/web_molt_fingerprinting.h` forward-declares `base::File`;
+  `//chrome/common/molt_ai/fingerprinting`'s mojom has
+  `//mojo/public/mojom/base` as a public dep (`ReadOnlyFile`).
 
 ### 4.10 MoltNet's Incognito protections (`molt_net_incognito_parity.h`)
 
@@ -795,11 +867,11 @@ flags the include, add the dep there.
 |---|---|---|
 | `chrome/browser/devtools/devtools_window.cc` | `GetProfileForDevToolsWindow` keeps the MoltNet profile | #23 |
 | `chrome/browser/extensions/chrome_extension_cookies.cc` | in-memory extension cookie store | #23 |
-| `chrome/browser/webshare/mac/sharing_service_operation.mm` | file shares refused after the random delay | #23, rebase 156 (now on `IsPrimaryOTRProfileWithRegularParent()`) |
+| `chrome/browser/webshare/mac/sharing_service_operation.mm` | file shares refused after the random delay; type-checks on Apple framework stand-ins (round 28) | #23, rebase 156 (now on `IsPrimaryOTRProfileWithRegularParent()`) |
 | `chrome/browser/gcm/gcm_profile_service_factory.cc`, `.../instance_id/instance_id_profile_service_factory.cc` | no GCM for MoltNet | #23 |
 | `chrome/browser/media/chrome_media_session_client.cc` | `ShouldHideMetadata` | #23, rebase 156 (as above) |
 | `chrome/browser/net/net_error_diagnostics_dialog_win.cc` | no Network Diagnostics | #23, rebase 156 (as above) |
-| `chrome/browser/app_controller_mac.mm` | `OpenStartupTabsInBrowserWithProfile` skips MoltNet | #23 |
+| `chrome/browser/app_controller_mac.mm` | `OpenStartupTabsInBrowserWithProfile` skips MoltNet; the compile check can't compile it (it needs AuthenticationServices, for which `tools/compile_check/mac_stand_ins/` has no stand-in): look at it first on the Mac build | #23 |
 | `chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc` | "ask" counts as "block" | #23, rebase 156 (as above) |
 | `chrome/browser/media/webrtc/webrtc_logging_controller.cc` | `IsWebRtcTextLogAllowed` false for MoltNet | rebase 156 |
 | `chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc` | `ReduceAcceptLanguageService` gets `is_incognito` for MoltNet | rebase 156 |
@@ -808,7 +880,7 @@ flags the include, add the dep there.
 | `chrome/browser/policy/chrome_policy_blocklist_service_factory.cc` (imported from 156) | the Incognito URL lists for `GetsIncognitoProtections()` profiles instead of `IsIncognitoProfile()` | moltnet-policy |
 | `chrome/browser/enterprise/data_controls/chrome_rules_service.cc` (imported from 156) | `incognito_profile()`, `ExtractPasteActionContext()` and `ExtractPasteActionContextSource()`: a Data Controls rule's `incognito` condition covers `GetsIncognitoProtections()` profiles | moltnet-shared2 |
 | `chrome/browser/enterprise/data_controls/chrome_clipboard_context.cc` (imported from 156) | both `GetClipboardSource()` overloads: text copied in a MoltNet window has the source `INCOGNITO`, with no URL | moltnet-shared2 |
-| `chrome/browser/win/parental_controls.{h,cc}` (imported from 156) | `MoltReadWinParentalControlsNow()`: `WinParentalControlsValue::ReadNow()` (`GetParentalControlsFromApi()` + `UpdateParentalControlsFromRegistry()`, no histograms, not cached), asked on a COM STA runner (`base::ThreadPool::CreateCOMSTATaskRunner()`) each time a MoltNet window opens. Windows-only compile | moltnet-shared2 |
+| `chrome/browser/win/parental_controls.{h,cc}` (imported from 156) | `MoltReadWinParentalControlsNow()`: `WinParentalControlsValue::ReadNow()` (`GetParentalControlsFromApi()` + `UpdateParentalControlsFromRegistry()`, no histograms, not cached), asked on a COM STA runner (`base::ThreadPool::CreateCOMSTATaskRunner()`) each time a MoltNet window opens. Windows-only; type-checks with clang-cl against the Windows SDK (round 28) | moltnet-shared2 |
 
 ## 5. Unit tests
 
@@ -889,6 +961,10 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetEndedIdentityNetworkTest` (new cases: the refusal's answer, a SOCKS5 socket's writes and handshake after the end), `MoltNetEndedContextTest` (new: Chromium's real `NetworkService` and `NetworkContext`), `MoltNetBackgroundFetchCredentialsTest` and `MoltNetBackgroundFetchCookiesTest` (new: `download::CreateResourceRequest()`, a regular profile's network context and an `EmbeddedTestServer`), `MoltNetBackgroundFetchBufferTest` (new: `BlobStorageContext` with shares), `MoltNetDomStorageTest` (new cases) and `MoltNetSessionStorageTest` (new: the real `SessionStorageImpl` in memory), `MoltNetFontsDeliveryTest.ThePanelKnowsWhatOpeningFound`; built standalone only: `MoltNetEndOrderingTest` (new: 3000 random pipe interleavings, about 12 s), `MoltNetIdentityEndPolicyTest`, `MoltNetBlobBudgetPolicyTest.HeldMemoryCountsLikeABlob`, `MoltNetDomStorageSitePolicyTest` (new cases). In `components_unittests`: `InMemoryDownloadTest.MoltNet*` | moltnet-shared4 |
   | `MoltNetStorageGroupsTest` (new: real storage keys, a credentialless frame's key counts with its nonce, opaque top-level sites apart, the quota share), `MoltNetDomStorageTest.CredentiallessFramesCountWithTheirNonce`, `MoltNetHttpCacheTest.KeysOfEntriesHeldOpenCountAgainstTheSite` and `ANewEntryMakesRoomFromItsSitesOwnEntries` (new); built standalone only: `MoltNetHttpCacheBudgetPolicyTest.ANewEntrysKeyCountsLikeData`, `MoltNetDomStorageSitePolicyTest.GroupsOfKeysThatDontNameTheirSite` and `ForgettingAClearedAreaLast` | redteam2 (round 27) |
   | `MoltNetDomStorageTest` (new cases: no database, areas holding items stay, `GetUsage()`, a greedy site's writes refused while another's go, write bytes, credentialless frames' allowance, a quota-refused write keeps the old value in a regular profile), `MoltStorageAreaPutTest` (new: `StorageAreaImpl` on its own), `MoltNetStorageSiteUsageTest` (new: Chromium's real `QuotaManagerImpl`, off the record, with a `MockQuotaClient`: a site's keys share its share, cached changes counted with no client call, a polite site's check asks for none of a greedy site's new buckets, credentialless frames count with their nonce, the floor), `MoltNetNetworkContextPolicyTest.BackgroundFetchPerSiteInMoltNetOnly`; built standalone only: `MoltNetDomStorageSitePolicyTest` (new cases: no database, the write allowance), `MoltNetStorageSiteUsageTest` in `molt_net_storage_site_usage_policy_unittest.cc` (the counting templates), `MoltNetBackgroundFetchSchedulingTest` (new) | moltnet-shared5 |
+  | `MoltNetHttpCacheTest` (new cases: `TheSweepPassesEntriesInUse`, `SparseDataCountsAgainstItsSite`, `EntriesMadeBeforeTheLimitsAreInTheirSitesLists`), `MoltNetHttpCacheSiteLruTest` (new: the per-site lists with a stand-in entry), `MoltNetDomStorageTest` (new cases: `TinyItemsCountWhatTheyTake`, `AFloodingSiteDoesntDelayAnothersRead`, `WithoutCachesPerSiteAFloodDelaysEveryRead`), `MoltNetSessionStorageTest.AFloodingSiteDoesntDelayAnothersRead`, `MoltNetOwnSessionSocketsTest` (new), `MoltNetEndedContextTest` (new cases: `NoProxyResolvingSocketFactoryForMoltNet`, `NoRawSocketsForMoltNet` (the other context binds local TCP and UDP sockets on 127.0.0.1), `NoConnectedSocketForMoltNet`, `NoMdnsResponderForMoltNet` with `ENABLE_MDNS`, `MoltNetsP2PSocketManagerReachesNothing` with `IS_P2P_ENABLED`); built standalone only: `MoltNetDomStorageSitePolicyTest.ItemsAndAreasCountWhatTheyTake`, `MoltNetDomStorageFairQueueTest` (new, 8) | moltnet-shared6 |
+  | `MoltNetBackgroundFetchCredentialsTest` (new cases: `AResumedFetchKeepsItsFirstRequests`, `OtherDownloadsResumeAsChromium`), `MoltNetBackgroundFetchCookiesTest.AResumedFetchStaysCrossSite` (new: a SameSite=Strict cookie of the test server is sent with a request resumed as Chromium 156 resumes it and not with one that keeps its first request's initiator and isolation), `MoltNetEndedContextTest.NoNameLookupForMoltNet` (new: every source refused for MoltNet, `localhost` resolved by another context, the host resolver's pipe); built standalone only: the scheduler's `MoltScheduleDownload()` verbatim against stand-ins (5 tests: the same activations as before, no pending registration's site worked out on a request's start) | redteam3 (round 29) |
+  | `MoltNetDomStorageTest` (new cases: `WithoutADatabaseAnUnusedEmptyAreaGoesAtOnce`, `SessionStorageWithoutADatabaseDropsEmptyAreas`, `BindingAreasInALoopDoesntDelayAnotherSite`, `PerSitePartitionsRunOnThreadsOfTheirOwn` (real dedicated threads from the test's thread pool), `ObserversHearOfChangesInTasksOfTheirOwn`, `AClearOfManyItemsIsFreedInChunks`; `ASitePurgesItsOwn` and `IdleAreasExpire` now on a partition on disk in a temporary directory), `MoltNetHttpCacheTest` (new cases: `ExpiryFollowsAMonotonicClock`, `TheSweepDropsEntriesInStepsOfItsOwn`, `ASitePastTheCapIsNotCached`, which writes 4,097 sites; the old cases now move both the wall clock and the mock tick clock), `MoltNetHttpCacheSiteLruTest` (new: `TheSweepGoesSiteBySiteInSteps`, `ASweepStepThatDropsNothingMovesOn`, `ASweepStepStopsAtTheFirstFreshEntry`, `TheSweepsSiteMayGoBetweenSteps`, `TheTableOfSitesHasRoomForTheCap`); built standalone only: `MoltNetDomStorageSitePolicyTest.UnusedEmptyAreasGoAtOnceWithoutADatabase`, `TurnsThatArentASitesHaveTheirOwnNames`, `TheControlTurnCountsAnEighth`, `MoltNetDomStorageSplitWorkTest` (new, 2), `MoltNetDomStorageFairQueueTest.TheControlTurnHasEightShares` | moltnet-shared7 |
+  | `MoltNetCpuPolicyTest.*` (the requirement on x86-64, arm64 and other architectures, the sentence), `MoltNetCpuErrorTest.*` (what `base::CPU` reports; on a build machine with SSE4.1, and on every arm64 one, the sentence is empty, so a failure there means MoltNet would refuse to open) | fp-arch |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -909,6 +985,24 @@ extension enablement and `MediaRouterEnabled()`).
   (the on-device model manifest is not asked for at startup, and is asked
   for once by each kind of demand: a session, an eligibility check, an
   availability observer, binding the broker, requesting a use case).
+
+- [ ] The DOM storage timing check (moltnet-shared7): MoltNet's
+  `localStorage` against a regular window's, with the real storage
+  classes, on this machine:
+  ```bash
+  chromium/src/out/MoltBrowser/molt_ai_unittests --gtest_also_run_disabled_tests \
+    --gtest_filter='MoltNetDomStorageTimingTest.*' 2>&1 | tee ~/molt-v0.3.0/dom-storage-timing.log
+  ```
+  It takes about 20 seconds: twice, a polite page's reads every 10 ms,
+  quiet and while two pages of the other partition flood their areas,
+  with MoltNet's partition first on the storage sequence (as before) and
+  then on a thread of its own. *Expected:* it passes, and the log's line
+  for "MoltNet on its own thread" shows the median under either flood
+  within about twice the quiet one (the standalone harness measured 17 µs
+  against 21 µs quiet), while the line for "MoltNet on the storage
+  sequence" shows MoltNet's reads waiting milliseconds behind the regular
+  pages' flood. Close other heavy work first; if it fails, rerun once and
+  report both logs.
 
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
@@ -1020,6 +1114,14 @@ pass except where the table below says otherwise (verify the filters).
 | `storage_unittests` | `UsageTrackerTest.*:ClientUsageTracker*:QuotaManagerImplTest.*` (without MoltNet's budget nothing is counted per site and the quota answer is Chromium's) | moltnet-shared5 |
 | `content_unittests` | `BackgroundFetchSchedulerTest.*:BackgroundFetchJobControllerTest.*:BackgroundFetch*` (the test embedder doesn't ask for per-site scheduling: Chromium's 2 and 2) | moltnet-shared5 |
 | `components_unittests` | `DownloadServiceControllerImplTest.*:*InMemoryDownload*` (the controller's tests build their own `Configuration`; only `BuildInMemoryDownloadService()` raises the limits) | moltnet-shared5 |
+| `net_unittests` | `*MemoryOnly*:*InMemory*:*MemBackend*` (without a budget no site list is kept and eviction is Chromium's; the idle sweep runs only with one) | moltnet-shared6 |
+| `storage_unittests` | `*StorageAreaImpl*:*LocalStorageImpl*:*SessionStorage*` (parameterized suites, hence the leading `*`; no caches per site: no scheduler, every pipe on the storage sequence as before; totals are kept only with caches per site) | moltnet-shared6 |
+| `services_unittests` | `NetworkContextTest.*:*ProxyResolving*:*P2PSocket*:*TCPSocket*:*UDPSocket*:*SocketFactory*:*MdnsResponder*` (contexts without MoltNet's session settings make all of them as before) | moltnet-shared6 |
+| `storage_unittests` | `StorageServiceImplTest.*:*StorageAreaImpl*:*LocalStorageImpl*:*SessionStorage*` (no partition outside MoltNet is bound on a thread of its own; without a site's runner no notification is split and no map freed in chunks; namespaces' pipes stay on the sequence) | moltnet-shared7 |
+| `net_unittests` | `*MemoryOnly*:*InMemory*:*MemBackend*` (without a budget there is no table of sites and no sweep) | moltnet-shared7 |
+| `content_unittests` | `DOMStorageContextWrapperTest.*:DOMStorage*:*StoragePartition*` (the test embedder keeps no DOM storage per site: the controls are bound as before) | moltnet-shared7 |
+| `media_unittests`, `blink_platform_unittests` | `*Wsola*:AudioRendererAlgorithm*`; `*JXL*:*Jxl*` (outside MoltNet both pick their code as before) | fp-arch |
+| `v8_unittests`, V8's `mjsunit` | `*Float16*`; the `mjsunit` tests with `float16` in their name once more with `--no-enable-f16c` (V8's software conversion everywhere) | fp-arch |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1029,6 +1131,24 @@ pass except where the table below says otherwise (verify the filters).
   out/MoltTests/services_unittests --gtest_filter='NetworkContextTest.*:...'   # one run per row
   ```
   *Expected:* as in §5.3.
+
+- [ ] MoltNet on an old processor (fp-arch). On a Linux machine with KVM,
+  start two virtual machines with the Linux package installed, one whose
+  processor lacks SSE4.1 and one that has it:
+  `qemu-system-x86_64 -enable-kvm -cpu Conroe ...` (a 65 nm Core 2: SSE3
+  and SSSE3, no SSE4.1) and the same with `-cpu Penryn` (SSE4.1). In each,
+  open a normal window and run in the DevTools console
+  `WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,8,1,6,0,65,0,253,15,11]))`
+  (a module with one SIMD instruction).
+  *Expected:* on Conroe it is `false`, MoltBrowser's normal and Incognito
+  windows browse as usual, and MoltNet doesn't open from the MoltNet
+  button (its panel shows "MoltNet can't open on this computer: its
+  processor lacks SSE4.1 ..." before any click), from `molt://ai-settings`
+  (the same sentence as the MoltNet status), from the AI chat (`/tor
+  launch` and opening a page in MoltNet answer with it) or from an
+  `.onion` address's "Open in MoltNet" (a message box with it); `ps`
+  shows no `tor` started by MoltBrowser. On Penryn it is `true` and
+  MoltNet opens and loads a page.
 
 ### 5.3 Known-expected failures, and what to do
 

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_impl.cc b/components/services/storage/dom_storage/session_storage_impl.cc
-index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c7279a4a4 100644
+index 02b6403041f5abd0f68912d2173e9900240e7d0b..53ed9fdc23f1826ee3f26dcdbab371bb24c90e72 100644
 --- a/components/services/storage/dom_storage/session_storage_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_impl.cc
 @@ -28,6 +28,8 @@
@@ -30,22 +30,26 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c
    found->second->Bind(std::move(receiver));
  }
  
-@@ -124,7 +130,13 @@ void SessionStorageImpl::BindStorageArea(
+@@ -124,7 +130,17 @@ void SessionStorageImpl::BindStorageArea(
      found->second->PopulateFromMetadata(database_.get(), namespace_entry);
    }
  
 -  PurgeUnusedAreasIfNeeded();
 +  // MoltBrowser: with caches per site, only this site's unbound areas, by
-+  // its own limits (molt_dom_storage_site_policy.h).
++  // its own limits (molt_dom_storage_site_policy.h); without a database
++  // there is none to purge (an unbound area that holds nothing is gone
++  // already: MoltAreaUnbound()).
 +  if (molt_caches_per_site_) {
-+    MoltPurgeUnusedAreasOfSite(storage_key);
++    if (database_) {
++      MoltPurgeUnusedAreasOfSite(storage_key);
++    }
 +  } else {
 +    PurgeUnusedAreasIfNeeded();
 +  }
    found->second->OpenArea(storage_key, std::move(receiver), namespace_entry);
  }
  
-@@ -323,6 +335,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+@@ -323,6 +339,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
    if (map_locator->session_ids().empty()) {
      maps_to_delete.emplace_back(std::move(*map_locator));
    }
@@ -53,7 +57,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c
    database_->DeleteStorageKeysFromSession(
        namespace_id, /*metadata_to_delete=*/{storage_key},
        std::move(maps_to_delete),
-@@ -369,6 +382,11 @@ void SessionStorageImpl::ShutDown() {
+@@ -369,6 +386,11 @@ void SessionStorageImpl::ShutDown() {
  }
  
  void SessionStorageImpl::PurgeMemory() {
@@ -65,7 +69,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c
    // Purge all areas that don't have bindings.
    for (const auto& namespace_pair : namespaces_) {
      namespace_pair.second->PurgeUnboundAreas();
-@@ -639,6 +657,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
+@@ -639,6 +661,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
      }
    }
  
@@ -75,7 +79,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c
    // Delete the namespaces and map key/values from `database_`.
    if (!database_) {
      return;
-@@ -677,6 +698,13 @@ void SessionStorageImpl::InitiateConnection(
+@@ -677,6 +702,13 @@ void SessionStorageImpl::InitiateConnection(
    // weren't asked to stay in memory.
    in_memory_ = in_memory_only || backing_mode_ == BackingMode::kNoDisk ||
                 storage_partition_directory_.empty();
@@ -89,13 +93,34 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c
    const base::FilePath dir_to_open =
        in_memory_ ? base::FilePath() : storage_partition_directory_;
  
-@@ -825,6 +853,100 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
+@@ -825,6 +857,152 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
                       /*destroy_existing_db_for_recovery=*/!in_memory_);
  }
  
 +// MoltBrowser:
 +void SessionStorageImpl::MoltKeepCachesPerSite() {
++  MoltKeepCachesPerSiteOn(nullptr);
++}
++
++// MoltBrowser:
++void SessionStorageImpl::MoltKeepCachesPerSiteOn(
++    scoped_refptr<MoltDomStorageFairScheduler> scheduler) {
 +  molt_caches_per_site_ = true;
++  if (!molt_scheduler_) {
++    molt_scheduler_ =
++        scheduler ? std::move(scheduler)
++                  : base::MakeRefCounted<MoltDomStorageFairScheduler>(
++                        base::SequencedTaskRunner::GetCurrentDefault());
++  }
++}
++
++// MoltBrowser: a namespace's pipes (a tab's renderers' Clone() calls) take
++// a turn of their own, as a site's do (molt_dom_storage_fair_scheduler.h).
++scoped_refptr<base::SequencedTaskRunner>
++SessionStorageImpl::MoltNamespaceTaskRunner(const std::string& namespace_id) {
++  return molt_scheduler_ ? molt_scheduler_->RunnerFor(
++                               MoltDomStorageNamespaceGroup(namespace_id))
++                         : nullptr;
 +}
 +
 +// MoltBrowser:
@@ -146,6 +171,37 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..9b59d1dfc5fbaadae71b33c3cc96b18c
 +                                      size_t bytes) {
 +  return !molt_caches_per_site_ ||
 +         molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
++}
++
++scoped_refptr<base::SequencedTaskRunner> SessionStorageImpl::MoltTaskRunner(
++    const blink::StorageKey& storage_key) {
++  return molt_scheduler_
++             ? molt_scheduler_->RunnerFor(MoltDomStorageSiteOf(storage_key))
++             : nullptr;
++}
++
++// MoltBrowser: see molt_dom_storage_site_policy.h,
++// MoltDomStorageDropsUnusedArea().
++void SessionStorageImpl::MoltAreaUnbound(const std::string& namespace_id,
++                                         const blink::StorageKey& storage_key) {
++  if (!MoltDomStorageDropsUnusedArea(molt_caches_per_site_,
++                                     database_ != nullptr)) {
++    return;
++  }
++  MoltTaskRunner(storage_key)
++      ->PostTask(FROM_HERE,
++                 base::BindOnce(&SessionStorageImpl::MoltDropAreaIfUnused,
++                                weak_ptr_factory_.GetWeakPtr(), namespace_id,
++                                storage_key));
++}
++
++void SessionStorageImpl::MoltDropAreaIfUnused(
++    const std::string& namespace_id,
++    const blink::StorageKey& storage_key) {
++  auto found = namespaces_.find(namespace_id);
++  if (found != namespaces_.end()) {
++    found->second->MoltDropAreaIfUnused(storage_key);
++  }
 +}
 +
 +void SessionStorageImpl::MoltForgetMaps(

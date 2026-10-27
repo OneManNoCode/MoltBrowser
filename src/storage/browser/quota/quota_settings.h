@@ -19,16 +19,18 @@ namespace storage {
 
 // Settings the storage lib embedder must provide to the QuotaManager.
 struct QuotaSettings {
-  QuotaSettings() = default;
+  // MoltBrowser: defined below the struct (a callback member makes it
+  // complex).
+  QuotaSettings();
   QuotaSettings(int64_t pool_size,
                 int64_t per_storage_key_quota,
                 int64_t should_remain_available,
-                int64_t must_remain_available)
-      : pool_size(pool_size),
-        per_storage_key_quota(per_storage_key_quota),
-        session_only_per_storage_key_quota(per_storage_key_quota),
-        should_remain_available(should_remain_available),
-        must_remain_available(must_remain_available) {}
+                int64_t must_remain_available);
+  QuotaSettings(const QuotaSettings&);
+  QuotaSettings(QuotaSettings&&);
+  QuotaSettings& operator=(const QuotaSettings&);
+  QuotaSettings& operator=(QuotaSettings&&);
+  ~QuotaSettings();
 
   // The target size in bytes of the shared pool of disk space the quota
   // system allows for use by websites using HTML5 storage apis, for
@@ -68,6 +70,23 @@ struct QuotaSettings {
   int64_t molt_per_site_quota = 0;
   base::RepeatingClosure molt_on_growth_beyond_floor;
 };
+
+// MoltBrowser: QuotaSettings' special members.
+inline QuotaSettings::QuotaSettings() = default;
+inline QuotaSettings::QuotaSettings(int64_t pool_size,
+                                    int64_t per_storage_key_quota,
+                                    int64_t should_remain_available,
+                                    int64_t must_remain_available)
+    : pool_size(pool_size),
+      per_storage_key_quota(per_storage_key_quota),
+      session_only_per_storage_key_quota(per_storage_key_quota),
+      should_remain_available(should_remain_available),
+      must_remain_available(must_remain_available) {}
+inline QuotaSettings::QuotaSettings(const QuotaSettings&) = default;
+inline QuotaSettings::QuotaSettings(QuotaSettings&&) = default;
+inline QuotaSettings& QuotaSettings::operator=(const QuotaSettings&) = default;
+inline QuotaSettings& QuotaSettings::operator=(QuotaSettings&&) = default;
+inline QuotaSettings::~QuotaSettings() = default;
 
 // Function type used to return the settings in response to a
 // GetQuotaSettingsFunc invocation. If the embedder cannot

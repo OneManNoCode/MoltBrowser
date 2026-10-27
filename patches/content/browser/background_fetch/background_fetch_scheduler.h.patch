@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/background_fetch/background_fetch_scheduler.h b/content/browser/background_fetch/background_fetch_scheduler.h
-index 4969f802c5332d852532fa83574ac8d32b1e2c66..ebf5591b23bfd5c5f10e29140e71bea557d3956d 100644
+index 4969f802c5332d852532fa83574ac8d32b1e2c66..e2666d590a27993f09ff0129bbc557227f1b2fe1 100644
 --- a/content/browser/background_fetch/background_fetch_scheduler.h
 +++ b/content/browser/background_fetch/background_fetch_scheduler.h
 @@ -6,6 +6,7 @@
@@ -45,13 +45,16 @@ index 4969f802c5332d852532fa83574ac8d32b1e2c66..ebf5591b23bfd5c5f10e29140e71bea5
  
    // Helper method to abandon ongoing fetches for a given service worker.
    // Abandons all of them if |service_worker_registration_id| is set to
-@@ -211,6 +220,10 @@ class CONTENT_EXPORT BackgroundFetchScheduler
+@@ -211,6 +220,13 @@ class CONTENT_EXPORT BackgroundFetchScheduler
    int num_active_registrations_ = 0;
    int num_running_downloads_ = 0;
  
 +  // MoltBrowser: each site's active registrations and downloads, when
 +  // scheduling per site.
 +  std::unique_ptr<MoltBackgroundFetchSites> molt_sites_;
++  // MoltBrowser: whether a registration was made or one finished since the
++  // pending ones were last looked at (only that lets one become active).
++  bool molt_pending_changed_ = false;
 +
    base::WeakPtrFactory<BackgroundFetchScheduler> weak_ptr_factory_{this};
  };

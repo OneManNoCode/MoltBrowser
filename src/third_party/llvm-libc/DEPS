@@ -1,0 +1,12 @@
+# MoltBrowser: the portable math (molt_portable_math.*) includes llvm-libc's
+# shared math headers from llvm-libc's own include root
+# (molt_portable_math_config in BUILD.gn).
+specific_include_rules = {
+  "molt_portable_math\.cc": [
+    "+shared/math",
+    "+src/__support/macros/properties/cpu_features.h",
+  ],
+  "molt_portable_math_unittest\.cc": [
+    "+testing/gtest",
+  ],
+}

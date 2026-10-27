@@ -107,6 +107,17 @@ void MoltKeepDomStoragePerSite(BrowserContext* browser_context,
   }
 }
 
+// MoltBrowser: whether a partition's DOM storage controls are bound on a
+// thread of their own in the storage service: in memory and kept per site
+// (MoltNet's; components/services/storage/dom_storage/
+// molt_dom_storage_own_thread.h).
+bool MoltBindsOnOwnThread(BrowserContext* browser_context,
+                          const std::optional<base::FilePath>& path) {
+  return !path.has_value() &&
+         GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
+             browser_context);
+}
+
 }  // namespace
 
 scoped_refptr<DOMStorageContextWrapper> DOMStorageContextWrapper::Create(
@@ -386,9 +397,16 @@ void DOMStorageContextWrapper::MaybeBindSessionStorageControl(
   if (!partition_)
     return;
   session_storage_control_.reset();
-  partition_->GetStorageService()->BindSessionStorageControl(
-      partition_->GetStoragePartitionPath(), clear_on_open,
-      session_storage_control_.BindNewPipeAndPassReceiver());
+  // MoltBrowser: on a thread of its own, for a partition kept per site.
+  if (MoltBindsOnOwnThread(partition_->browser_context(),
+                           partition_->GetStoragePartitionPath())) {
+    partition_->GetStorageService()->MoltBindPerSiteSessionStorageControl(
+        session_storage_control_.BindNewPipeAndPassReceiver());
+  } else {
+    partition_->GetStorageService()->BindSessionStorageControl(
+        partition_->GetStoragePartitionPath(), clear_on_open,
+        session_storage_control_.BindNewPipeAndPassReceiver());
+  }
   session_storage_control_.set_disconnect_handler(
       base::BindOnce(&DOMStorageContextWrapper::OnSessionStorageDisconnected,
                      base::Unretained(this)));
@@ -410,9 +428,16 @@ void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
     return;
   }
   local_storage_control_.reset();
-  partition_->GetStorageService()->BindLocalStorageControl(
-      partition_->GetStoragePartitionPath(),
-      local_storage_control_.BindNewPipeAndPassReceiver());
+  // MoltBrowser: on a thread of its own, for a partition kept per site.
+  if (MoltBindsOnOwnThread(partition_->browser_context(),
+                           partition_->GetStoragePartitionPath())) {
+    partition_->GetStorageService()->MoltBindPerSiteLocalStorageControl(
+        local_storage_control_.BindNewPipeAndPassReceiver());
+  } else {
+    partition_->GetStorageService()->BindLocalStorageControl(
+        partition_->GetStoragePartitionPath(),
+        local_storage_control_.BindNewPipeAndPassReceiver());
+  }
   local_storage_control_.set_disconnect_handler(
       base::BindOnce(&DOMStorageContextWrapper::OnLocalStorageDisconnected,
                      base::Unretained(this)));

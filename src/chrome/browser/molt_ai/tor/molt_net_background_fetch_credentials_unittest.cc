@@ -4,13 +4,17 @@
 // A Background Fetch request of a regular profile is made with the fetch's
 // credentials mode (components/download/internal/common/
 // molt_fetch_credentials.h): one that asked for `credentials: 'omit'` sends
-// no cookies. Through Chromium's real download request
-// (download::CreateResourceRequest()) and a regular profile's real network
-// context, to a test server that records what it receives.
+// no cookies. The request that resumes one carries its first request's
+// initiator, isolation and credentials mode (molt_resumed_fetch.h). Through
+// Chromium's real download request (download::CreateResourceRequest()) and a
+// regular profile's real network context, to a test server that records
+// what it receives.
 
 #include "components/download/internal/common/molt_fetch_credentials.h"
+#include "components/download/internal/common/molt_resumed_fetch.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,6 +29,7 @@
 #include "net/cookies/site_for_cookies.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
+#include "net/url_request/referrer_policy.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/network_context.h"
 #include "services/network/network_service.h"
@@ -58,6 +63,25 @@ std::unique_ptr<DownloadUrlParameters> FetchParams(const GURL& url,
       net::SiteForCookies::FromOrigin(origin)));
   params->set_credentials_mode(mode);
   return params;
+}
+
+// What DownloadItemImpl::ResumeInterruptedDownload() makes the resuming
+// request's parameters with at Chromium 156: the URL, and none of the first
+// request's initiator, isolation or credentials mode.
+std::unique_ptr<DownloadUrlParameters> ResumeParams(const GURL& url) {
+  auto params =
+      std::make_unique<DownloadUrlParameters>(url, TRAFFIC_ANNOTATION_FOR_TESTS);
+  params->add_request_header("Accept-Encoding", "identity");
+  params->set_referrer_policy(net::ReferrerPolicy::NEVER_CLEAR);
+  params->set_cross_origin_redirects(network::mojom::RedirectMode::kError);
+  return params;
+}
+
+// The isolation of a page of `page`'s, which started a fetch.
+net::IsolationInfo PageIsolation(const url::Origin& page) {
+  return net::IsolationInfo::Create(net::IsolationInfo::RequestType::kOther,
+                                    page, page,
+                                    net::SiteForCookies::FromOrigin(page));
 }
 
 TEST(MoltNetBackgroundFetchCredentialsTest, TheFetchsModeIsApplied) {
@@ -101,6 +125,62 @@ TEST(MoltNetBackgroundFetchCredentialsTest, SameOriginNeedsAnOrigin) {
   MoltApplyDownloadCredentialsMode(CredentialsMode::kSameOrigin, request);
   EXPECT_EQ(request.credentials_mode, CredentialsMode::kOmit);
   EXPECT_EQ(request.mode, RequestMode::kNoCors);
+}
+
+// A resumed Background Fetch (a download the download service made, with an
+// initiator) is requested with its first request's initiator, isolation and
+// credentials mode, not as a top-level navigation the browser starts.
+TEST(MoltNetBackgroundFetchCredentialsTest, AResumedFetchKeepsItsFirstRequests) {
+  static_assert(MoltResumeKeepsFetchMetadata(/*from_download_service=*/true,
+                                             /*had_initiator=*/true));
+  static_assert(!MoltResumeKeepsFetchMetadata(true, false));
+  static_assert(!MoltResumeKeepsFetchMetadata(false, true));
+
+  const GURL url("https://b.test/movie.mp4");
+  const url::Origin page = url::Origin::Create(GURL("https://a.test/"));
+
+  // As Chromium 156 resumes it: no initiator, first-party at its
+  // destination, with credentials.
+  std::unique_ptr<network::ResourceRequest> chromium =
+      CreateResourceRequest(ResumeParams(url).get());
+  EXPECT_FALSE(chromium->request_initiator.has_value());
+  EXPECT_TRUE(chromium->site_for_cookies.IsFirstParty(url));
+  EXPECT_EQ(chromium->credentials_mode, CredentialsMode::kInclude);
+
+  std::unique_ptr<DownloadUrlParameters> params = ResumeParams(url);
+  MoltKeepResumedFetchMetadata(/*from_download_service=*/true, page,
+                               std::optional(PageIsolation(page)),
+                               CredentialsMode::kOmit, *params);
+  std::unique_ptr<network::ResourceRequest> resumed =
+      CreateResourceRequest(params.get());
+  EXPECT_EQ(resumed->request_initiator, page);
+  ASSERT_TRUE(resumed->trusted_params.has_value());
+  EXPECT_EQ(resumed->trusted_params->isolation_info.top_frame_origin(), page);
+  EXPECT_EQ(resumed->trusted_params->isolation_info.request_type(),
+            net::IsolationInfo::RequestType::kOther);
+  EXPECT_FALSE(resumed->site_for_cookies.IsFirstParty(url));
+  EXPECT_TRUE(resumed->site_for_cookies.IsFirstParty(page.GetURL()));
+  EXPECT_FALSE(resumed->update_first_party_url_on_redirect);
+  EXPECT_EQ(resumed->credentials_mode, CredentialsMode::kOmit);
+  EXPECT_EQ(resumed->mode, RequestMode::kNoCors);
+}
+
+// Every other download is resumed as in Chromium: a link's (not the download
+// service's), and the download service's other clients' (no initiator).
+TEST(MoltNetBackgroundFetchCredentialsTest, OtherDownloadsResumeAsChromium) {
+  const GURL url("https://b.test/movie.mp4");
+  const url::Origin page = url::Origin::Create(GURL("https://a.test/"));
+  for (const bool from_download_service : {false, true}) {
+    std::unique_ptr<DownloadUrlParameters> params = ResumeParams(url);
+    MoltKeepResumedFetchMetadata(
+        from_download_service,
+        from_download_service ? std::nullopt : std::optional(page),
+        std::optional(PageIsolation(page)), CredentialsMode::kOmit, *params);
+    EXPECT_FALSE(params->initiator().has_value());
+    EXPECT_FALSE(params->isolation_info().has_value());
+    EXPECT_EQ(params->credentials_mode(), CredentialsMode::kInclude);
+    EXPECT_TRUE(params->update_first_party_url_on_redirect());
+  }
 }
 
 // Through a regular profile's network context: the site has a cookie; the
@@ -175,6 +255,27 @@ TEST_F(MoltNetBackgroundFetchCookiesTest, AnOmittingFetchSendsNoCookies) {
   std::unique_ptr<DownloadUrlParameters> omit =
       FetchParams(server_.GetURL("/echo"), CredentialsMode::kOmit);
   EXPECT_EQ(Load(*omit), "");
+}
+
+// The server's site has a SameSite=Strict cookie. A request of another
+// site's fetch, resumed as Chromium 156 resumes it, sends it (no initiator,
+// first-party at the server); resumed with its first request's initiator
+// and isolation, it doesn't.
+TEST_F(MoltNetBackgroundFetchCookiesTest, AResumedFetchStaysCrossSite) {
+  DownloadUrlParameters set(
+      server_.GetURL("/set-cookie?strict=1;SameSite=Strict"),
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  Load(set);
+
+  EXPECT_EQ(Load(*ResumeParams(server_.GetURL("/echo"))), "strict=1");
+
+  const url::Origin page = url::Origin::Create(GURL("https://a.test/"));
+  std::unique_ptr<DownloadUrlParameters> resumed =
+      ResumeParams(server_.GetURL("/echo"));
+  MoltKeepResumedFetchMetadata(/*from_download_service=*/true, page,
+                               std::optional(PageIsolation(page)),
+                               CredentialsMode::kInclude, *resumed);
+  EXPECT_EQ(Load(*resumed), "");
 }
 
 }  // namespace

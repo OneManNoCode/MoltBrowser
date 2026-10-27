@@ -14,6 +14,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_area_impl.h"
 #include "components/services/storage/dom_storage/session_storage_data_map.h"
 #include "components/services/storage/dom_storage/session_storage_metadata.h"
@@ -86,6 +87,13 @@ class SessionStorageNamespaceImpl final
     // Returns nullptr if a data map was not found.
     virtual scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
         int64_t map_id) = 0;
+
+    // MoltBrowser: the task runner the pipes of namespace `namespace_id` are
+    // bound to: null for the current sequence's own, or, where the
+    // partition takes its sequence in turn per site, the namespace's own
+    // turn (molt_dom_storage_fair_scheduler.h).
+    virtual scoped_refptr<base::SequencedTaskRunner> MoltNamespaceTaskRunner(
+        const std::string& namespace_id);
   };
 
   // Constructs a namespace with the given |namespace_id|, expecting to be
@@ -163,6 +171,9 @@ class SessionStorageNamespaceImpl final
   // without a database only areas whose maps hold no item
   // (molt_dom_storage_site_policy.h).
   void MoltPurgeUnboundAreasOfSite(const std::string& site);
+  // MoltBrowser: drops `storage_key`'s area if it is unbound and its map
+  // holds no item (molt_dom_storage_site_policy.h).
+  void MoltDropAreaIfUnused(const blink::StorageKey& storage_key);
 
   // Removes data for the given StorageKey from this namespace. If there is no
   // data map for that given StorageKey, this does nothing. Expects that this

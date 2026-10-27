@@ -314,6 +314,33 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   `localStorage` or `sessionStorage` write the browser refuses for the
   area's limit leaves the stored value as it was
   (`docs/MOLTNET_COMPLIANCE.md`).
+- MoltNet hardening, per site: making room in a site's share of the
+  in-memory HTTP cache looks only at that site's own entries; the storage
+  service handles each site's `localStorage` and `sessionStorage` messages
+  in turn, so a page sending many (also refused writes and `clear()`)
+  doesn't make another site's reads wait; a site's `localStorage` and
+  `sessionStorage` totals count what each item and area takes in memory;
+  and MoltNet's network context makes no sockets with a connection setup
+  of their own, outside its per-site pools and Tor circuit isolation, and
+  no raw TCP, UDP or multicast DNS sockets (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening (security review of PR #72 and round 28,
+  `docs/SECURITY_REVIEWS.md`): in every profile, a Background Fetch
+  request that is resumed after its response stopped early keeps the
+  page's origin, network key and credentials setting, as its first
+  request had them, instead of going out as a request the browser makes
+  itself (first-party at its destination). MoltNet's network context
+  looks up no host name itself; only Tor resolves names for MoltNet. A
+  site with many Background Fetches waiting no longer adds to the work
+  other sites' fetches cause in MoltNet.
+- MoltNet hardening, storage isolation: each MoltNet identity's
+  `localStorage` and `sessionStorage` run on threads of their own in the
+  storage service, so regular windows' storage work and MoltNet's never
+  wait for each other; the browser's storage messages for a page (binding
+  areas, deleting a site's data) are handled in that page's site's turn;
+  a change to a big value open in several tabs, or a clear of many items,
+  is split into short tasks; and the in-memory HTTP cache sweeps unused
+  entries site by site, in small steps, on a monotonic clock
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -434,6 +461,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   `display-capture` permission reads "denied". Drawing speed is unchanged
   within measurement (`docs/FINGERPRINTING.md`, "MoltNet: portable math");
   regular and incognito windows are unchanged.
+- **MoltNet gives pages the same answers on every processor it runs on.**
+  MoltNet now needs SSE4.1 on x86-64 (Intel processors from about 2008,
+  AMD ones from about 2011; any arm64 processor works): on an older
+  processor it doesn't open, from any button, menu, chat or `.onion` page,
+  and says why in one sentence, while the rest of MoltBrowser works as
+  before. In MoltNet windows `Float16Array` conversions, audio played at
+  another speed and JPEG XL images now compute the same way on every
+  processor; JPEG XL images there decode up to about twice as slowly
+  (`docs/FINGERPRINTING.md`, "MoltNet: what pages can learn about the
+  processor"); regular and incognito windows are unchanged.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
@@ -994,6 +1031,37 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stand-ins had missed, all fixed; among them, WebGL2 `readPixels` into a
   buffer now farbles the pixels by reading them back, as 152 has no buffer
   mapping.
+- **Build checks without a checkout** (`tools/chromium/gn_static_check.py`):
+  reads Chromium's own build files at the pin with MoltBrowser's changes on
+  top and applies `gn check`'s include rule and `gn gen`'s dependency rules
+  for the macOS, Linux and Windows builds (also with the Vulkan switch and
+  as a component build), then runs Chromium's `checkdeps` and Blink's
+  non-Blink-usage audit. Every MoltBrowser header is now listed in its
+  build target, the targets and include rules declare what they use, and
+  the build-machine checklist starts with one ordered first-build list.
+- **Compile check on every platform** (`tools/compile_check/`): it now
+  type-checks every C, C++ and Objective-C++ file MoltBrowser adds or
+  changes, and the changed headers no source includes, on each platform
+  that builds it: Linux x64 and arm64, Windows x64 (clang-cl against the
+  Windows SDK; MoltBrowser's own sources are compiled there too), macOS
+  arm64 (Darwin's libc headers, stand-ins for the Apple frameworks), and
+  Linux with the Vulkan switch `molt_llama_vulkan` on. A hook in another
+  platform's `#if` branch is compiled for that platform, and Chromium's
+  clang plugins run with each platform's arguments, their findings in
+  MoltBrowser's code reported on their own. It also makes what it
+  couldn't before: cxx bridge headers with the target's Rust cfgs,
+  protobuf's well-known types, the proto_extras plugin's headers, V8's
+  Torque and bytecode lists, grit headers for every `.grd` that has one,
+  and mojom bindings parsed per target and platform. At 156, 1342 of 1383
+  file-and-platform rows are checked against real headers, 36 partly on
+  stand-ins and 5 not (Mac files that need Apple frameworks with no
+  stand-in, and an iOS file). Code it flagged now builds the same way
+  everywhere: the browser importer and the Firefox bookmark reader build
+  their paths with `AppendASCII`, the automation scheduler and storage
+  use the Windows time functions on Windows, the MoltNet budget, pool,
+  storage and Background Fetch classes define their special members out
+  of the class body, and pointer fields are `raw_ptr` or marked as
+  exclusions, as the plugins ask.
 - Consistency hardening: the site tools' approvals, the agent's plan, the
   chat's proposals and form fills, and saved agent runs (their step labels
   and the secret checks that read them) share one list of the characters

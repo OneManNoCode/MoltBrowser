@@ -172,7 +172,8 @@ class TorManager {
   // Starts Tor (no-op if already running) and calls |on_ready| once it has
   // an established circuit, or with an error (bootstrap timeout, bad config,
   // failed authentication). On failure the daemon is torn down. Concurrent
-  // calls are coalesced.
+  // calls are coalesced. Nothing starts on a processor MoltNet refuses
+  // (molt_net_cpu_policy.h): |on_ready| gets MoltNetCpuError().
   void Launch(base::OnceCallback<void(TorLaunchResult)> on_ready);
 
   // Stops our child Tor: closes the owning control connection (Tor exits on

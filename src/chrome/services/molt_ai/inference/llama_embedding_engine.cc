@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "chrome/services/molt_ai/inference/engine/embedding_utils.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 #include "third_party/llama_cpp/include/llama.h"
 
 namespace molt_ai {
@@ -117,9 +118,9 @@ struct LlamaEmbeddingEngine::Model {
   }
 
   ScopedStdioFile file;
-  llama_model* model = nullptr;
-  llama_context* ctx = nullptr;
-  const llama_vocab* vocab = nullptr;
+  MOLT_RAW_PTR_EXCLUSION llama_model* model = nullptr;
+  MOLT_RAW_PTR_EXCLUSION llama_context* ctx = nullptr;
+  MOLT_RAW_PTR_EXCLUSION const llama_vocab* vocab = nullptr;
   size_t native_dimensions = 0;
   size_t dimensions = 0;
   // Tokens per text, within the context's n_ctx, n_batch and n_ubatch.

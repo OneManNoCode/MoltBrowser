@@ -35,6 +35,9 @@ from .sources import log
 MOJOM_TEMPLATES = ("mojom", "mojom_component")
 SUFFIX_RE = re.compile(r"^(?P<base>.+\.mojom)(?P<suffix>(-[a-z-]+)?)\.h$")
 IMPORT_RE = re.compile(r'^\s*import\s+"([^"]+)"\s*;', re.M)
+# An import with the attribute list before it ([EnableIf=is_win]).
+_ATTR_IMPORT_RE = re.compile(
+    r'^\s*(?:\[([^\]]*)\]\s*)?import\s+"([^"]+)"\s*;', re.M)
 TYPE_KEYS = ("mojom", "cpp", "copyable_pass_by_value", "force_serialize",
              "hashable", "move_only", "non_const_ref",
              "nullable_is_same_type", "forward_declaration",
@@ -199,7 +202,30 @@ def wanted_mojoms(names):
     return out
 
 
-def import_closure(tree, gen_dir, roots, produce=None):
+def imports_of(text, features=None):
+    """The files a .mojom imports. With `features` (the set its parse is
+    given), only the imports the parser keeps: an import marked
+    [EnableIf=f] needs f, one marked [EnableIfNot=f] needs f to be off,
+    as mojom's conditional_features.py filters them."""
+    out = []
+    for m in _ATTR_IMPORT_RE.finditer(text):
+        keep = True
+        for attr in (m.group(1) or "").split(","):
+            k, _, v = (x.strip() for x in attr.partition("="))
+            if features is None or not v:
+                continue
+            if k == "EnableIf" and v not in features:
+                keep = False
+            elif k == "EnableIfNot" and v in features:
+                keep = False
+        if keep:
+            out.append(m.group(2))
+    return out
+
+
+def import_closure(tree, gen_dir, roots, produce=None, feats_of=None):
+    """{path: content or None} for `roots` and what they import (with
+    feats_of(path), only the imports its parse keeps)."""
     seen = {}
     todo = list(roots)
     while todo:
@@ -214,8 +240,8 @@ def import_closure(tree, gen_dir, roots, produce=None):
         seen[p] = data
         if data is None:
             continue
-        for imp in IMPORT_RE.findall(data.decode("utf-8", "replace")):
-            todo.append(imp)
+        todo += imports_of(data.decode("utf-8", "replace"),
+                           feats_of(p) if feats_of else None)
     return seen
 
 
@@ -289,7 +315,7 @@ def stale(tree, index, work, gen_dir):
     return out, gone
 
 
-def refresh(tree, index, work, gen_dir, produce=None):
+def refresh(tree, index, work, gen_dir, produce=None, features=None):
     """Regenerates every stamped .mojom whose key changed and removes the
     outputs of one whose source is gone. Returns (regenerated, removed,
     {mojom: reason})."""
@@ -306,7 +332,8 @@ def refresh(tree, index, work, gen_dir, produce=None):
     if not want:
         return [], gone, {}
     log("mojom: %d stale output set(s), regenerating" % len(want))
-    ok, failed = generate(tree, index, work, gen_dir, want, produce=produce)
+    ok, failed = generate(tree, index, work, gen_dir, want, produce=produce,
+                          features=features)
     return ok, gone, failed
 
 
@@ -315,13 +342,85 @@ def _py(script, args, cwd):
                           cwd=cwd, capture_output=True, text=True)
 
 
-def generate(tree, index, work, gen_dir, wanted, produce=None):
+# The features mojom.gni enables on Linux (platforms.Platform has each
+# platform's).
+LINUX_FEATURES = ("is_posix", "is_linux")
+
+
+def _parse(parser, root, gen_dir, work, files, feats):
+    rsp = Path(work) / "mojom_parse.rsp"
+    rsp.write_text("\n".join(str(root / p) for p in sorted(files)))
+    # One input root: generated .mojom files were copied into it too (the
+    # parser prefers the longest root, which would split a module in two).
+    args = ["--input-root", str(root),
+            "--output-root", str(gen_dir), "--mojom-file-list=" + str(rsp)]
+    for f in sorted(feats):
+        args += ["--enable-feature", f]
+    return _py(parser, args, cwd=str(work))
+
+
+def _last_line(text):
+    lines = text.strip().splitlines()
+    return lines[-1][:300] if lines else "?"
+
+
+def parse_in_order(deps, feats_of, parse):
+    """Parses each .mojom the way its own mojom() target does: with that
+    target's features (feats_of(path) -> frozenset), after the modules it
+    imports (deps: {path: [imported paths among those to parse]}), in
+    batches of files with the same features whose imports are all parsed.
+    parse(paths, features) -> None, or the error. A batch that fails is
+    parsed file by file to find the bad ones; a file importing a bad one
+    fails too. Returns (parsed, {path: error})."""
+    done, failed = set(), {}
+    remaining = set(deps)
+    while remaining:
+        ready = sorted(p for p in remaining
+                       if all(d in done or d in failed for d in deps[p]))
+        if not ready:
+            # An import cycle (malformed): parse the rest together.
+            ready = sorted(remaining)
+        remaining -= set(ready)
+        groups = {}
+        for p in ready:
+            bad = [d for d in deps[p] if d in failed]
+            if bad:
+                failed[p] = "imports %s, which failed" % bad[0]
+            else:
+                groups.setdefault(feats_of(p), []).append(p)
+        for feats, group in sorted(groups.items(), key=lambda kv: sorted(
+                kv[0])):
+            err = parse(group, feats)
+            if err is None:
+                done.update(group)
+                continue
+            for p in group if len(group) > 1 else []:
+                e1 = parse([p], feats)
+                if e1 is None:
+                    done.add(p)
+                else:
+                    failed[p] = e1
+            if len(group) == 1:
+                failed[group[0]] = err
+    return done, failed
+
+
+def generate(tree, index, work, gen_dir, wanted, produce=None,
+             features=None):
     """wanted: {mojom path: variants}. Returns (generated mojoms,
-    {mojom: reason}). produce(gen_rel_paths) makes generated .mojom files."""
+    {mojom: reason}). produce(gen_rel_paths) makes generated .mojom files.
+    features: the platform's mojom.gni features (LINUX_FEATURES by
+    default)."""
     work = Path(work)
     gen_dir = Path(gen_dir)
     failed = {}
-    files = import_closure(tree, gen_dir, sorted(wanted), produce)
+    base = frozenset(LINUX_FEATURES if features is None else features)
+
+    def feats_of(p):
+        return base | frozenset(index.mojoms.get(p, {}).get(
+            "enabled_features", []))
+
+    files = import_closure(tree, gen_dir, sorted(wanted), produce, feats_of)
     for p, data in files.items():
         if data is None:
             failed[p] = "mojom source not found"
@@ -356,30 +455,45 @@ def generate(tree, index, work, gen_dir, wanted, produce=None):
         todo.append((p, want_v, key))
     if not todo:
         return [], failed
-    feats = {"is_posix", "is_linux"}
-    for p in files:
-        feats |= set(index.mojoms.get(p, {}).get("enabled_features", []))
     tools = tree.tree_dir / "mojo" / "public" / "tools"
     parser = tools / "mojom" / "mojom_parser.py"
     generator = tools / "bindings" / "mojom_bindings_generator.py"
-    # Parse everything (imports included) in one go.
-    rsp = work / "mojom_parse.rsp"
-    rsp.write_text("\n".join(str(root / p) for p in sorted(files)))
-    # One input root: generated .mojom files were copied into it too (the
-    # parser prefers the longest root, which would split a module in two).
-    args = ["--input-root", str(root),
-            "--output-root", str(gen_dir), "--mojom-file-list=" + str(rsp)]
-    for f in sorted(feats):
-        args += ["--enable-feature", f]
-    log("mojom: parsing %d file(s)" % len(files))
-    r = _py(parser, args, cwd=str(work))
-    if r.returncode != 0:
-        log(r.stderr[-3000:])
+    if not parser.exists() or not generator.exists():
+        # Not a mojom's fault: nothing can be generated (the stale outputs
+        # go, so nothing compiles against them).
         for p, _, _ in todo:
             _drop(gen_dir, stamps, p)
         stamp_path.write_text(json.dumps(stamps, indent=1, sort_keys=True))
-        raise RuntimeError("mojom parser failed: " + (
-            r.stderr.strip().splitlines() or ["?"])[-1][:300])
+        raise RuntimeError("mojom generator not found: %s" % parser)
+    # Each file with its own target's features (mojom.gni parses every
+    # target's sources with its enabled_features plus the platform's), in
+    # import order: one file the parser rejects (a ChromeOS-only mojom the
+    # scan reached through a branch it could not rule out) fails only
+    # itself and its importers.
+    deps = {p: sorted(set(i for i in imports_of(
+        d.decode("utf-8", "replace"), feats_of(p)) if i in files))
+        for p, d in files.items()}
+
+    def parse(group, feats):
+        r = _parse(parser, root, gen_dir, work, {p: files[p] for p in group},
+                   feats)
+        return None if r.returncode == 0 else _last_line(r.stderr)
+
+    log("mojom: parsing %d file(s)" % len(files))
+    parsed, bad = parse_in_order(deps, feats_of, parse)
+    for p, err in sorted(bad.items()):
+        if p in wanted or not failed.get(p):
+            failed[p] = "mojom parser: " + err
+    if bad:
+        log("mojom: %d file(s) the parser rejects (gen_report.json)" %
+            len(bad))
+        for p, _, _ in todo:
+            if p in bad:
+                _drop(gen_dir, stamps, p)
+        todo = [x for x in todo if x[0] not in bad]
+        stamp_path.write_text(json.dumps(stamps, indent=1, sort_keys=True))
+        if not todo:
+            return [], failed
     bytecode = gen_dir / "mojo" / "public" / "tools" / "bindings"
     if not (bytecode / "cpp_templates.zip").exists():
         bytecode.mkdir(parents=True, exist_ok=True)

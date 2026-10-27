@@ -36,6 +36,11 @@ REPO_ROOT = HERE.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools" / "chromium"))
 import upstream as _up  # noqa: E402
 
+# The mirror's large fetches sometimes fail for a while (5xx, rate limits)
+# when several checkouts fetch at once: wait longer before giving up than
+# the patch tools do (a compile check run is long anyway).
+_up.FETCH_RETRY_DELAYS = (15, 60, 180, 300, 600)
+
 from . import tarball  # noqa: E402
 
 LLVM = "https://github.com/llvm/llvm-project"
@@ -69,6 +74,14 @@ SUBPROJECTS = {
     "third_party/angle": ("https://github.com/google/angle", "", None),
     "third_party/vulkan-headers/src": (
         "https://github.com/KhronosGroup/Vulkan-Headers", "", None),
+    # llama.cpp's Vulkan backend (molt_llama_vulkan): SPIR-V's headers, and
+    # glslang and SPIRV-Tools for its shader compiler (ggml_vk_glslc).
+    "third_party/spirv-headers/src": (
+        "https://github.com/KhronosGroup/SPIRV-Headers", "", None),
+    "third_party/glslang/src": (
+        "https://github.com/KhronosGroup/glslang", "", None),
+    "third_party/spirv-tools/src": (
+        "https://github.com/KhronosGroup/SPIRV-Tools", "", None),
     "third_party/jsoncpp/source": (
         "https://github.com/open-source-parsers/jsoncpp", "", None),
     "net/third_party/quiche/src": ("https://github.com/google/quiche", "",
@@ -105,6 +118,10 @@ SUBPROJECTS = {
     # address metadata; molt_net_autofill.cc and its hooks reach it).
     "third_party/libaddressinput/src": (
         "https://github.com/google/libaddressinput", "", None),
+    # Blink's AVIF decoder (avif_image_decoder.cc) includes CrabbyAvif's
+    # C header; Chromium's external/ copy has GitHub's commit ids.
+    "third_party/crabbyavif/src": (
+        "https://github.com/webmproject/CrabbyAvif", "", None),
     # No GitHub mirror (Chromium's own forks and a CIPD-built package):
     # from the tarball.
     "third_party/dom_distiller_js/dist": (None, "", None),
@@ -114,6 +131,13 @@ SUBPROJECTS = {
     # media/video/av1_video_encoder.h (MediaRecorder's AV1 encoder, which
     # video_track_recorder.cc creates): aomedia.googlesource.com only.
     "third_party/libaom/source/libaom": (None, "", None),
+    # llvm-libc (V8's ieee754.cc and molt_portable_math.cc include its
+    # shared math): Chromium pins a libc-only split of llvm-project, whose
+    # commit ids no mirror has.
+    "third_party/llvm-libc/src": (None, "", None),
+    # Chromium's FFmpeg fork (media/base/molt_portable_media.cc includes
+    # libavutil/cpu.h): chromium.googlesource.com only.
+    "third_party/ffmpeg": (None, "", None),
 }
 
 # Stand-ins for when neither a mirror nor a tarball has the pinned tree
@@ -215,11 +239,16 @@ class SourceTree:
     in a real build."""
 
     def __init__(self, work, chromium_cache, clang_llvm_commit=None,
-                 overlay=None):
+                 overlay=None, platform=None):
+        from . import platforms
         self.work = Path(work)
         self.tree_dir = self.work / "chromium" / "src"
-        self.out_dir = self.tree_dir / OUT_REL
+        # The platform whose build directory and generator state this tree
+        # uses (platforms.py); the checkout itself is shared.
+        self.platform = platforms.get(platform or platforms.DEFAULT)
+        self.out_dir = self.tree_dir / self.platform.out_rel
         self.gen_dir = self.out_dir / "gen"
+        self.state = self.platform.state_dir(self.work)
         self.overlay = Path(overlay or (REPO_ROOT / "src"))
         pin = _up.read_pin(REPO_ROOT / "chromium_version.txt")
         self.chromium = Repo(chromium_cache, _up.DEFAULT_REMOTE,
@@ -347,7 +376,11 @@ class SourceTree:
             state = json.loads(state_f.read_text())
         except (OSError, ValueError):
             state = {}
-        if state.get("pin") != pin.version:
+        # A mount added since the state was written needs its gitlink.
+        stale = state.get("version") and any(
+            m not in state.get("gitlinks", {}) and
+            m not in state.get("no_gitlink", []) for m in SUBPROJECTS)
+        if state.get("pin") != pin.version or stale:
             branch = ".".join(pin.version.split(".")[:3]) + "."
             try:
                 versions = tarball.list_versions(branch)
@@ -373,6 +406,8 @@ class SourceTree:
                 state["gitlinks"] = {
                     m: entries[m].oid for m in SUBPROJECTS
                     if m in entries and entries[m].type == "commit"}
+                state["no_gitlink"] = sorted(
+                    m for m in SUBPROJECTS if m not in state["gitlinks"])
             state_f.parent.mkdir(parents=True, exist_ok=True)
             state_f.write_text(json.dumps(state, indent=1, sort_keys=True))
         self._tarball_info = state if state.get("version") else {}
@@ -446,18 +481,22 @@ class SourceTree:
             log("subproject %s: source changed (%s -> %s); dropping its "
                 "files" % (mount, old or "earlier stand-in", key))
             self.purged.append(mount)
-            for x in (d, self.gen_dir / mount):
-                shutil.rmtree(x, ignore_errors=True)
-            # And what actions made from its files elsewhere in gen/
-            # (gen_actions.GEN_INPUTS).
-            try:
-                made = json.loads((self.work / "gen_inputs.json")
-                                  .read_text())
-            except (OSError, ValueError):
-                made = {}
-            for rel, mounts in made.items():
-                if mount in mounts and (self.gen_dir / rel).exists():
-                    (self.gen_dir / rel).unlink()
+            shutil.rmtree(d, ignore_errors=True)
+            # Its generated files, and what actions made from its files
+            # elsewhere in gen/ (gen_actions.GEN_INPUTS), on every platform.
+            from . import platforms
+            for name in platforms.all_names():
+                plat = platforms.get(name)
+                gen = self.tree_dir / plat.out_rel / "gen"
+                shutil.rmtree(gen / mount, ignore_errors=True)
+                try:
+                    made = json.loads((plat.state_dir(self.work) /
+                                       "gen_inputs.json").read_text())
+                except (OSError, ValueError):
+                    made = {}
+                for rel, mounts in made.items():
+                    if mount in mounts and (gen / rel).exists():
+                        (gen / rel).unlink()
             for p in self.overlay_set():
                 if p.startswith(mount + "/"):
                     (self.tree_dir / p).parent.mkdir(parents=True,

@@ -118,6 +118,8 @@ source_set("ggml_c") {
   visibility = _llama_cpp_visibility
 
   sources = [
+    # ggml.c's version macros (llama_cpp_version_headers).
+    "chromium/ggml-version.h",
     "ggml/src/ggml.c",
     "ggml/src/ggml-alloc.c",
     "ggml/src/ggml-quants.c",
@@ -1224,6 +1226,8 @@ source_set("llama_cpp") {
   visibility = _llama_cpp_visibility
 
   sources = [
+    # llama.cpp's version macros (llama_cpp_version_headers).
+    "chromium/llama-version.h",
     "src/llama.cpp",
     "src/llama-adapter.cpp",
     "src/llama-arch.cpp",

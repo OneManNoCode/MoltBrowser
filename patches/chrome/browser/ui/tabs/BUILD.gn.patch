@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/ui/tabs/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/ui/tabs/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/tabs/BUILD.gn b/chrome/browser/ui/tabs/BUILD.gn
+index fa77a939373e4a4e03d681d05409f67d220ed8b8..28603d47ec90e69104ab299c0d347cc27d5f252f 100644
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -531,6 +531,10 @@ if (!is_android) {
+     }
+ 
+     deps = [
++      # MoltBrowser: what a MoltNet tab may not cause outside Tor
++      # (tab_features.cc).
++      "//chrome/browser/molt_ai/tor:requests_policy",
++
+       ":tab_group",
+       ":tab_model",
+       ":tab_strip",

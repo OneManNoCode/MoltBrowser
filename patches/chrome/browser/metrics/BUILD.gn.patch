@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/metrics/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/metrics/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/metrics/BUILD.gn b/chrome/browser/metrics/BUILD.gn
+index 9b70af737d0502e79680f4601e92c949d595d857..9e0ec09f9b70aab4f219d8807fee468eb534b21d 100644
+--- a/chrome/browser/metrics/BUILD.gn
++++ b/chrome/browser/metrics/BUILD.gn
+@@ -272,6 +272,10 @@ source_set("impl") {
+   ]
+ 
+   deps = [
++    # MoltBrowser: the features MoltBrowser turns off
++    # (chrome_feature_list_creator.cc).
++    "//chrome/browser/molt_ai/privacy:feature_overrides",
++
+     "//build/config/compiler:compiler_buildflags",
+     "//chrome/browser:browser_process_platform_part",
+     "//chrome/browser:chrome_browser_main",

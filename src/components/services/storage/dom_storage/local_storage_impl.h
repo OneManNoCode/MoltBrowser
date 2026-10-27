@@ -20,6 +20,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/sequence_bound.h"
 #include "base/timer/timer.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_provider.h"
@@ -100,6 +101,11 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltSetGrowthObserver(
       mojo::PendingRemote<mojom::MoltDomStorageGrowthObserver> observer)
       override;  // MoltBrowser
+  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
+  // through `scheduler` (one for the whole partition, which its host shares:
+  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
+  void MoltKeepCachesPerSiteOn(
+      scoped_refptr<MoltDomStorageFairScheduler> scheduler);
 
   // base::trace_event::MemoryDumpProvider implementation.
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -161,6 +167,10 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // Without a database, only areas that hold no item.
   void MoltPurgeUnusedAreasOfSite(const blink::StorageKey& storage_key);
   void MoltSweepIdleAreas();
+  // MoltBrowser: kept per site without a database, `storage_key`'s area,
+  // left unused, goes in its site's turn if it holds nothing.
+  void MoltAreaUnused(const blink::StorageKey& storage_key);
+  void MoltDropIfUnused(const blink::StorageKey& storage_key);
   bool MoltMayDrop(StorageAreaHolder& holder);
   // MoltBrowser: the per-site budget, for `storage_key`'s area
   // (molt_dom_storage_site_budget.h); everything goes without caches per
@@ -170,6 +180,10 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   base::TimeDelta MoltSiteCommitDelay(const blink::StorageKey& storage_key);
   void MoltSiteCommitted(const blink::StorageKey& storage_key, size_t bytes);
   bool MoltMayWrite(const blink::StorageKey& storage_key, size_t bytes);
+  // MoltBrowser: the task runner of `storage_key`'s site, with caches per
+  // site (molt_dom_storage_fair_scheduler.h); else null.
+  scoped_refptr<base::SequencedTaskRunner> MoltTaskRunnerFor(
+      const blink::StorageKey& storage_key);
 
   // These clear stale storage areas (not read/written to within 400 days) from
   // the database. See crbug.com/40281870 for more info.
@@ -241,6 +255,9 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   // MoltBrowser: what each site's areas hold, its commit rate and its write
   // rate.
   MoltDomStorageSiteBudget molt_site_budget_;
+  // MoltBrowser: with caches per site, the storage sequence taken in turn
+  // per site by the areas' pipes.
+  scoped_refptr<MoltDomStorageFairScheduler> molt_scheduler_;
 
   base::WeakPtrFactory<LocalStorageImpl> weak_ptr_factory_{this};
 };

@@ -155,7 +155,8 @@ base::FilePath GetChromiumUserDataDir(const BrowserDescriptor& d) {
   if (!base::PathService::Get(base::DIR_LOCAL_APP_DATA, &local_app_data)) {
     return base::FilePath();
   }
-  return local_app_data.Append(d.win_userdata_subpath).Append("User Data");
+  return local_app_data.AppendASCII(d.win_userdata_subpath)
+      .AppendASCII("User Data");
 #elif BUILDFLAG(IS_LINUX)
   std::unique_ptr<base::Environment> env = base::Environment::Create();
   base::FilePath config_dir;
@@ -182,7 +183,7 @@ base::FilePath GetChromiumProfileDir(const BrowserDescriptor& d) {
   if (base_dir.empty()) {
     return base::FilePath();
   }
-  return d.profile_is_base_dir ? base_dir : base_dir.Append("Default");
+  return d.profile_is_base_dir ? base_dir : base_dir.AppendASCII("Default");
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +261,7 @@ void WalkBookmarkRoot(const base::DictValue& roots,
 
 void ReadBookmarks(const base::FilePath& profile_dir,
                    std::vector<BrowserBookmark>& out) {
-  base::FilePath bookmarks_path = profile_dir.Append("Bookmarks");
+  base::FilePath bookmarks_path = profile_dir.AppendASCII("Bookmarks");
   std::string json;
   if (!base::ReadFileToString(bookmarks_path, &json)) {
     return;
@@ -622,7 +623,7 @@ std::optional<std::string> UnprotectDpapi(base::span<const uint8_t> ciphertext) 
 // os_crypt.encrypted_key (base64 -> "DPAPI"<blob> -> CryptUnprotectData).
 std::optional<std::array<uint8_t, 32>> ReadWinMasterKey(
     const base::FilePath& user_data_dir) {
-  base::FilePath local_state = user_data_dir.Append("Local State");
+  base::FilePath local_state = user_data_dir.AppendASCII("Local State");
   std::string json;
   if (!base::ReadFileToString(local_state, &json)) {
     return std::nullopt;
@@ -700,7 +701,7 @@ std::optional<std::string> DecryptWinBlob(base::span<const uint8_t> master_key,
 void ReadPasswordsWin(const base::FilePath& profile_dir,
                       const BrowserDescriptor& d,
                       BrowserImportData& data) {
-  base::FilePath login_data = profile_dir.Append("Login Data");
+  base::FilePath login_data = profile_dir.AppendASCII("Login Data");
   if (!base::PathExists(login_data)) {
     return;
   }
@@ -799,7 +800,9 @@ base::FilePath FindFirefoxProfileDir() {
   if (!base::PathService::Get(base::DIR_ROAMING_APP_DATA, &app_data)) {
     return base::FilePath();
   }
-  profiles_root = app_data.Append("Mozilla").Append("Firefox").Append("Profiles");
+  profiles_root =
+      app_data.AppendASCII("Mozilla").AppendASCII("Firefox").AppendASCII(
+          "Profiles");
 #elif BUILDFLAG(IS_LINUX)
   base::FilePath home = base::GetHomeDir();
   if (home.empty()) {
@@ -816,7 +819,7 @@ base::FilePath FindFirefoxProfileDir() {
   base::FileEnumerator e(profiles_root, /*recursive=*/false,
                          base::FileEnumerator::DIRECTORIES);
   for (base::FilePath dir = e.Next(); !dir.empty(); dir = e.Next()) {
-    if (base::PathExists(dir.Append("places.sqlite"))) {
+    if (base::PathExists(dir.AppendASCII("places.sqlite"))) {
       return dir;
     }
   }
@@ -849,9 +852,9 @@ std::vector<DetectedBrowser> BrowserImporter::DetectInstalled() {
   for (const BrowserDescriptor& d : kDescriptors) {
     base::FilePath profile = GetChromiumProfileDir(d);
     bool has_bookmarks =
-        !profile.empty() && base::PathExists(profile.Append("Bookmarks"));
+        !profile.empty() && base::PathExists(profile.AppendASCII("Bookmarks"));
     bool has_passwords =
-        !profile.empty() && base::PathExists(profile.Append("Login Data"));
+        !profile.empty() && base::PathExists(profile.AppendASCII("Login Data"));
     DetectedBrowser db;
     db.id = d.id;
     db.display_name = d.display_name;
@@ -947,7 +950,7 @@ BrowserImportData BrowserImporter::ReadProfile(BrowserId id,
   }
 
   // A missing "Bookmarks" file is our signal that no profile exists.
-  if (!base::PathExists(profile_dir.Append("Bookmarks"))) {
+  if (!base::PathExists(profile_dir.AppendASCII("Bookmarks"))) {
     data.profile_found = false;
     return data;
   }

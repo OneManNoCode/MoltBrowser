@@ -9,8 +9,6 @@
 
 #include <stdint.h>
 
-#include <functional>  // MoltBrowser
-#include <map>         // MoltBrowser
 #include <string>
 #include <string_view>  // MoltBrowser
 #include <unordered_map>
@@ -31,6 +29,7 @@
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/memory/mem_entry_impl.h"
 #include "net/disk_cache/memory/molt_mem_backend_budget_policy.h"  // MoltBrowser
+#include "net/disk_cache/memory/molt_mem_backend_site_lru.h"  // MoltBrowser
 
 namespace base {
 class Clock;
@@ -167,16 +166,23 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
   static std::string_view MoltSiteOf(const MemEntryImpl* entry);
   int64_t MoltSiteSize(std::string_view site) const;
   // Evicts |site|'s own least recently used entries that aren't in use
-  // while it uses more than |target|.
+  // while it uses more than |target|, walking only its own entries.
   void MoltEvictSiteTill(std::string_view site, int64_t target);
   // Whether an entry of |key| may be made: its site's own unused entries
   // are evicted to make room for the key if needed; false if it still
   // doesn't fit in the site's share or the total.
   bool MoltMayCreateEntry(const std::string& key);
-  // Whether |entry| has gone unused for the budget's idle expiry.
-  bool MoltIsExpired(const MemEntryImpl* entry) const;
-  // Dooms every expired entry that isn't in use.
-  void MoltDropExpiredEntries();
+  // Now on the monotonic clock, in microseconds: what orders the per-site
+  // lists and what expiry reads (molt_mem_backend_site_lru.h).
+  static int64_t MoltNowUs();
+  // Whether an entry last used at |last_used_us|, or |entry|, has gone
+  // unused for the budget's idle expiry.
+  bool MoltIsExpiredSince(int64_t last_used_us) const;
+  bool MoltIsExpired(MemEntryImpl* entry);
+  // The sweep for unused entries: every interval a round over the sites,
+  // in steps of a few entries of one site, each step a task of its own.
+  void MoltStartSweep();
+  void MoltSweepStep();
 
   // base::MemoryConsumer.
   void OnUpdateMemoryLimit() override;
@@ -201,10 +207,11 @@ class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
   raw_ptr<net::NetLog> net_log_;
   base::OnceClosure post_cleanup_callback_;
 
-  // MoltBrowser: the per-site limits (none by default), each site's size,
-  // and the sweep for unused entries.
+  // MoltBrowser: the per-site limits (none by default), each site's size
+  // and least-recently-used list (kept with per-site limits only, beside
+  // |lru_list_|), and the sweep for unused entries.
   MoltCacheSiteBudget molt_budget_;
-  std::map<std::string, int64_t, std::less<>> molt_site_size_;
+  MoltCacheSiteLru<MemEntryImpl> molt_sites_;
   base::RepeatingTimer molt_expiry_sweep_;
 
   base::AsyncMemoryConsumerRegistration memory_consumer_registration_;

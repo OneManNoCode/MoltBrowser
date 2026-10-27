@@ -1,0 +1,30 @@
+MoltBrowser patch for components/services/storage/BUILD.gn
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/services/storage/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/services/storage/BUILD.gn b/components/services/storage/BUILD.gn
+index ee6e3c4329e99430c4510b4665b5320ddd3c8d3a..0347a7cbdfd1a106256d9e18a81d3200d1533009 100644
+--- a/components/services/storage/BUILD.gn
++++ b/components/services/storage/BUILD.gn
+@@ -101,6 +101,19 @@ source_set("storage") {
+     "storage_service_impl.h",
+   ]
+ 
++  # MoltBrowser: MoltNet's DOM storage grouped, budgeted and scheduled per
++  # site, on a thread of its own.
++  sources += [
++    "dom_storage/molt_dom_storage_fair_queue.h",
++    "dom_storage/molt_dom_storage_fair_scheduler.h",
++    "dom_storage/molt_dom_storage_own_thread.cc",
++    "dom_storage/molt_dom_storage_own_thread.h",
++    "dom_storage/molt_dom_storage_site.h",
++    "dom_storage/molt_dom_storage_site_budget.h",
++    "dom_storage/molt_dom_storage_site_policy.h",
++    "dom_storage/molt_dom_storage_split_work.h",
++  ]
++
+   public_deps = [
+     ":test_api_stubs",
+     "//base",

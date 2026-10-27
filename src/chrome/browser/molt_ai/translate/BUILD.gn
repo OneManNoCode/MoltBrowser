@@ -78,8 +78,7 @@ source_set("translate") {
     # The web AI backend (BrowserAIRuntime, its scheduler).
     "//chrome/browser/molt_ai/web_ai",
 
-    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
-    "//chrome/browser/molt_ai/tor",
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()).
     "//chrome/browser/profiles:profile",
 
     # chrome_isolated_world_ids.h.

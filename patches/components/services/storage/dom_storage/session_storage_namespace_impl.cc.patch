@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.cc b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-index 3314b24c0712085f29dd517888898120745a216f..c4a24735310a884933c76b2959efc9aac731256b 100644
+index 3314b24c0712085f29dd517888898120745a216f..f43b010bf047d1ae2e5149141d01d684a7d35836 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-@@ -10,6 +10,8 @@
+@@ -10,10 +10,19 @@
  
  #include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
@@ -17,7 +17,30 @@ index 3314b24c0712085f29dd517888898120745a216f..c4a24735310a884933c76b2959efc9aa
  #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
  
  namespace storage {
-@@ -132,6 +134,24 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
+ 
++// MoltBrowser: the current sequence's own by default.
++scoped_refptr<base::SequencedTaskRunner>
++SessionStorageNamespaceImpl::Delegate::MoltNamespaceTaskRunner(
++    const std::string& namespace_id) {
++  return nullptr;
++}
++
+ SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
+     std::string namespace_id,
+     SessionStorageDataMap::Listener* data_map_listener,
+@@ -118,7 +127,10 @@ void SessionStorageNamespaceImpl::Bind(
+     return;
+   }
+   DCHECK(IsPopulated());
+-  receivers_.Add(this, std::move(receiver));
++  // MoltBrowser: in the namespace's own turn, where the partition takes its
++  // sequence in turn (molt_dom_storage_fair_scheduler.h).
++  receivers_.Add(this, std::move(receiver),
++                 delegate_->MoltNamespaceTaskRunner(namespace_id_));
+   bind_waiting_on_population_ = false;
+ }
+ 
+@@ -132,6 +144,34 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
    }
  }
  
@@ -36,6 +59,16 @@ index 3314b24c0712085f29dd517888898120745a216f..c4a24735310a884933c76b2959efc9aa
 +    } else {
 +      ++it;
 +    }
++  }
++}
++
++// MoltBrowser:
++void SessionStorageNamespaceImpl::MoltDropAreaIfUnused(
++    const blink::StorageKey& storage_key) {
++  auto it = storage_key_areas_.find(storage_key);
++  if (it != storage_key_areas_.end() && !it->second->IsBound() &&
++      !it->second->data_map()->storage_area()->molt_holds_items()) {
++    storage_key_areas_.erase(it);
 +  }
 +}
 +

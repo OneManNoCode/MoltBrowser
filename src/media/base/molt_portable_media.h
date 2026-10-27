@@ -31,7 +31,11 @@
 //     decoded Vorbis samples are the same on x86-64 and arm64;
 //   * FFmpeg's decoders, which take the codecs Symphonia and libopus don't,
 //     run their C code (av_force_cpu_flags(0)) instead of the SSE, AVX2/FMA
-//     or NEON code for the CPU.
+//     or NEON code for the CPU;
+//   * a media element's audio played at another rate with its pitch kept
+//     (WSOLA time stretching) picks its blocks with the SSE sums on every
+//     x86 CPU, which NEON's equal, never the AVX2 + FMA ones
+//     (media/filters/wsola_internals.cc).
 //
 // libyuv's colour conversions and libvpx's encoders and decoders needed no
 // change: they give the same bytes on every SIMD level of x86 and Arm

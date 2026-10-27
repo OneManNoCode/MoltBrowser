@@ -143,6 +143,15 @@ int InitSocketPoolHelper(
 ClientSocketPoolManager::ClientSocketPoolManager() = default;
 ClientSocketPoolManager::~ClientSocketPoolManager() = default;
 
+// MoltBrowser: every manager but one with per-site pools uses one pool per
+// proxy chain.
+ClientSocketPool* ClientSocketPoolManager::GetSocketPoolForSite(
+    const ProxyChain& proxy_chain,
+    const NetworkAnonymizationKey& network_anonymization_key,
+    bool molt_no_cert_fetches) {
+  return GetSocketPool(proxy_chain);
+}
+
 // static
 size_t ClientSocketPoolManager::socket_soft_cap_per_pool(
     HttpNetworkSession::SocketPoolType pool_type) {

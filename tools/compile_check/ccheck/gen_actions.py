@@ -80,6 +80,10 @@ EXTRA_BUILD_FILES = {
     "third_party/dawn/include/dawn/dawn_version": "third_party/dawn/src/dawn/BUILD.gn",
     "third_party/dawn/include/dawn/": "third_party/dawn/include/dawn/BUILD.gn",
     "third_party/dawn/src/dawn/": "third_party/dawn/src/dawn/BUILD.gn",
+    # Blink's probe_generator() writes core/core_probes_inl.h from
+    # core/probe/.
+    "third_party/blink/renderer/core/core_probe":
+        "third_party/blink/renderer/core/probe/BUILD.gn",
 }
 
 
@@ -168,6 +172,10 @@ def _src_paths(interp, t, key):
 # substitutes (Chromium builds them from source for the host). A value is a
 # path, or a function of the target returning one.
 HOST_TOOLS = {}
+# Host executables a tools/run.py or build/gn_run_binary.py action runs
+# (V8's generators, llama.cpp's vulkan-shaders-gen), by name: a function
+# returning the path of the one built here.
+HOST_EXECUTABLES = {}
 
 
 def _gen_inputs(interp, t):
@@ -189,6 +197,19 @@ def _perfetto_plugin_target(t):
     """perfetto_proto_library() actions: zero_gen (protozero) and cpp_gen
     (cppgen)."""
     return t.name.endswith(("zero_gen", "cpp_gen"))
+
+
+# Protoc plugins Chromium builds that are built here too (host_tools.py),
+# by executable name: their outputs are kept.
+KNOWN_PLUGINS = {"proto_extras_plugin"}
+
+
+def plugin_name(args):
+    """The executable name a protoc_wrapper action's --plugin names."""
+    for i, a in enumerate(args[:-1]):
+        if a == "--plugin" and isinstance(args[i + 1], str):
+            return args[i + 1].rsplit("/", 1)[-1]
+    return None
 
 
 def run_action(tree, interp, t, depth=0):
@@ -215,6 +236,8 @@ def run_action(tree, interp, t, depth=0):
     if str(script).endswith("protoc_wrapper.py"):
         # Only the C++ output is needed; drop JS/TS generation (their
         # protoc plugins are built from source by Chromium).
+        keep_plugin = _perfetto_plugin_target(t) or \
+            plugin_name(args) in KNOWN_PLUGINS
         out = []
         skip = 0
         for a in args:
@@ -226,7 +249,7 @@ def run_action(tree, interp, t, depth=0):
                 skip = 1
                 continue
             if a in ("--plugin", "--plugin-out-dir", "--plugin-options") \
-                    and not _perfetto_plugin_target(t):
+                    and not keep_plugin:
                 # A generator plugin Chromium builds (not perfetto's):
                 # the C++ protoc output is all a syntax check needs.
                 skip = 1
@@ -239,6 +262,15 @@ def run_action(tree, interp, t, depth=0):
             tool = tool(t)
         if tool:
             args[i + 1] = str(tool)
+    if str(script).endswith(("tools/run.py", "build/gn_run_binary.py")) \
+            and args and isinstance(args[0], str):
+        # The host executable is the first argument.
+        exe = HOST_EXECUTABLES.get(args[0].rsplit("/", 1)[-1])
+        if exe is not None:
+            try:
+                args[0] = str(exe())
+            except (RuntimeError, OSError) as e:
+                return "%s: %s" % (t, str(e)[-800:])
     if any(not isinstance(a, str) or "<UNKNOWN>" in a for a in args):
         return "%s: args not computable: %r" % (t, [
             a for a in args if not isinstance(a, str) or "<UNKNOWN>" in a][:3])
@@ -314,7 +346,8 @@ def _record_inputs(tree, interp, t, need):
             a = interp.abspath(o, {"dir": t.path})
             if a.startswith(gn.OUT + "/gen/"):
                 outs.append(a[len(gn.OUT) + 5:])
-    f = Path(tree.work) / GEN_INPUTS
+    f = Path(tree.state) / GEN_INPUTS
+    f.parent.mkdir(parents=True, exist_ok=True)
     try:
         data = json.loads(f.read_text())
     except (OSError, ValueError):

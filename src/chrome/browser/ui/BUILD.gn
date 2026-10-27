@@ -1335,6 +1335,13 @@ source_set("tab_helpers_impl") {
     "//chrome/browser/login_detection",
     "//chrome/browser/lookalikes",
     "//chrome/browser/media",
+
+    # MoltBrowser: the tab helpers tab_helpers.cc attaches.
+    "//chrome/browser/molt_ai/anti_rage",
+    "//chrome/browser/molt_ai/consent",
+    "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/tor:onion",
+    "//chrome/browser/molt_ai/tor:requests_policy",
     "//chrome/browser/net",
     "//chrome/browser/optimization_guide",
     "//chrome/browser/page_content_annotations",
@@ -1652,6 +1659,9 @@ static_library("ui") {
     "//chrome/browser/metrics",
     "//chrome/browser/metrics:impl",
     "//chrome/browser/molt_ai/anti_rage",
+
+    # MoltBrowser: in allow_circular_includes_from below (browser.h).
+    "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/consent",
     "//chrome/browser/molt_ai/keys:os_crypt",
     "//chrome/browser/molt_ai/memory",
@@ -1875,6 +1885,11 @@ static_library("ui") {
     # - c/b/ui/browser.h
     # - c/b/ui/views/frame/browser_view.h
     "//chrome/browser/ui/views/file_system_access:impl",
+
+    # MoltBrowser: Agent mode's run window and MoltNet's windows include
+    # browser.h and browser_tabstrip.h.
+    "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/tor",
   ]
 
   # Desktop-Android-only dependencies.
