@@ -168,8 +168,10 @@ plugin findings reported.
      where GitHub's lacks release branches (pdfium);
   2. Chromium's official source tarball (`ccheck/tarball.py`): the pinned
      release's if it is published, else the newest published release of
-     the same branch. It is streamed once (about 5 minutes; only the files
-     of the mounts that need it are kept, about 450 MB) and serves the
+     the same branch, used only if it matches the SHA-256 pinned for it
+     (`PINNED_SHA256`; one without a pin is refused). It is streamed once
+     (about 5 minutes; only the files of the mounts that need it are kept,
+     about 450 MB, none outside its mount) and serves the
      repositories no mirror has: the release-branch commits of dawn and
      webrtc, Chromium's own libc++, libc++abi, ICU and dom_distiller_js,
      libaom, and llvm-libc (Chromium pins a libc-only split of
@@ -216,10 +218,11 @@ plugin findings reported.
     themselves). Keyed by the `.grd`, its parts, the first-ids file and the
     args (`grit_stamps.json`);
   - cxx bridge headers (`.rs.h`): cxxbridge built from Chromium's vendored
-    cxxbridge-cmd, run as `run_cxxbridge.py` runs it, with a `--cfg` for
-    every line `rustc --print=cfg` gives for the platform's Rust target
-    (so `#[cfg(target_family = "unix")]` items are decided as in the
-    build). Remade when the `.rs`, the cfgs or cxxbridge change
+    cxxbridge-cmd (its dependencies the versions its `Cargo.lock` pins,
+    `cargo install --locked`), run as `run_cxxbridge.py` runs it, with a
+    `--cfg` for every line `rustc --print=cfg` gives for the platform's
+    Rust target (so `#[cfg(target_family = "unix")]` items are decided as
+    in the build). Remade when the `.rs`, the cfgs or cxxbridge change
     (`cxx_stamps.json`);
   - everything a GN `action`/`action_foreach` writes (protos, the
     well-known protos' lite libraries, Blink's IDL bindings, names and

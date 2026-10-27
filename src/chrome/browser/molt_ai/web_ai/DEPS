@@ -6,6 +6,8 @@ include_rules = [
   "+chrome/services/molt_ai/inference/engine/bounded_json.h",
   "+chrome/services/molt_ai/inference/engine/image_input.h",
   "+chrome/services/molt_ai/inference/engine/stream_filters.h",
+  # MOLT_RAW_PTR_EXCLUSION, on the translation table's pointers.
+  "+chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h",
 ]
 
 specific_include_rules = {

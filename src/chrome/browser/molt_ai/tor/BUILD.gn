@@ -601,6 +601,7 @@ source_set("unit_tests") {
     "molt_net_background_fetch_buffer_unittest.cc",
     "molt_net_background_fetch_credentials_unittest.cc",
     "molt_net_background_fetch_request_unittest.cc",
+    "molt_net_background_fetch_restored_unittest.cc",
     "molt_net_background_fetch_scheduling_unittest.cc",
     "molt_net_cert_fetch_site_unittest.cc",
     "molt_net_cpu_policy_unittest.cc",
@@ -690,9 +691,11 @@ source_set("unit_tests") {
     "//components/download/internal/common:molt_fetch_credentials",
     "//components/download/public/common:public",
 
-    # A Background Fetch's in-memory limits and the site its registering
-    # page isolates it to.
+    # A Background Fetch's in-memory limits, the site its registering page
+    # isolates it to, and what it carries when taken up in a later session
+    # (on the download service's RequestParams).
     "//components/download/internal/background_service:molt_site_isolation",
+    "//components/download/public/background_service:public",
 
     # Background Fetch scheduling, download isolation and processes per
     # BrowsingInstance (content's std-only policies).

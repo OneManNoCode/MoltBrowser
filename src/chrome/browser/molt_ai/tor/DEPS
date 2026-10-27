@@ -39,6 +39,11 @@ specific_include_rules = {
     "+components/download/internal/common/molt_resumed_fetch.h",
     "+services/network/network_context.h",
   ],
+  # What a page's Background Fetch taken up in a later session carries
+  # (header-only).
+  "molt_net_background_fetch_restored_unittest\.cc": [
+    "+components/download/internal/background_service/molt_restored_fetch.h",
+  ],
   # When MoltNet's Background Fetches run and how much they may buffer
   # (std-only).
   "molt_net_background_fetch_scheduling_unittest\.cc": [

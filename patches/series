@@ -189,6 +189,7 @@ components/download/content/factory/download_service_factory_helper.cc.patch
 components/download/internal/background_service/BUILD.gn.patch
 components/download/internal/background_service/blob_task_proxy.cc.patch
 components/download/internal/background_service/blob_task_proxy.h.patch
+components/download/internal/background_service/controller_impl.cc.patch
 components/download/internal/background_service/in_memory_download.cc.patch
 components/download/internal/background_service/in_memory_download.h.patch
 components/download/internal/background_service/in_memory_download_unittest.cc.patch

@@ -341,6 +341,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   is split into short tasks; and the in-memory HTTP cache sweeps unused
   entries site by site, in small steps, on a monotonic clock
   (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening (security review of PR #73, `docs/SECURITY_REVIEWS.md`): in
+  every profile, a Background Fetch that continues after the browser
+  restarts keeps the page's origin, network key and credentials setting
+  (a download that was under way starts again from the beginning rather
+  than resuming without them), and keeps its first party on redirects.
+  The build tools use Chromium's source tarball only if it matches a
+  SHA-256 pinned in the repository, write none of its files outside
+  their directory, and build their Rust helper with the dependency
+  versions its lock file pins; Windows component builds link the Blob
+  registry's delegate again.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
