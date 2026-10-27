@@ -52,4 +52,8 @@ specific_include_rules = {
   "rate_tracker_comparison_unittest\\.cc": [
     "+absl/random/random.h",
   ],
+  # MoltBrowser: the audio processing's portable math functions.
+  "molt_math\\.cc": [
+    "+third_party/llvm-libc/molt_portable_math.h",
+  ],
 }
