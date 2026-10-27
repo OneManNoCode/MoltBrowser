@@ -53,7 +53,9 @@
 //    same. Meanwhile, every other control message that names either
 //    namespace waits too, in the order it came (a bind of the copy, the
 //    source's deletion), and runs after it; messages for other namespaces
-//    don't wait. A renderer's own copy (window.open(), SessionStorageNamespace
+//    don't wait. So do the control messages that name a namespace copied
+//    or deleted a chunk a task (molt_dom_storage_split_work.h), until that
+//    ends. A renderer's own copy (window.open(), SessionStorageNamespace
 //    Clone()) is ordered after its writes by the renderer itself (it pauses
 //    the namespace's pipe until each area's pipe is flushed).
 //
@@ -214,6 +216,9 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
   void AfterTurnsOf(const std::string& namespace_id,
                     std::vector<std::string> hold,
                     base::OnceClosure operation);
+  void PostTurns(uint64_t barrier,
+                 const std::string& namespace_id,
+                 std::set<std::string> groups);
   void TurnTaken(uint64_t barrier);
   void RunBarrier(uint64_t barrier);
 
@@ -249,6 +254,9 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
     base::OnceClosure message;
   };
   std::deque<HeldMessage> held_;
+  // Whether ReplayHeld() is running, and asked again meanwhile.
+  bool replaying_ = false;
+  bool replay_again_ = false;
   mojo::Receiver<mojom::SessionStorageControl> receiver_{this};
   base::WeakPtrFactory<MoltPerSiteSessionStorage> weak_factory_{this};
 };

@@ -258,6 +258,22 @@ void SessionStorageImpl::DeleteNamespace(const std::string& namespace_id,
       }
     }
 
+    // MoltBrowser: a namespace that is copied from, or doesn't fit one
+    // task, goes a chunk a task after the copies, its keys forgotten then
+    // (molt_dom_storage_split_work.h).
+    if (MoltSplitsNamespaceWork() && connection_state_ == CONNECTION_FINISHED &&
+        (MoltIsNamespaceBusy(namespace_id) ||
+         !namespace_ptr->MoltFitsOneFreeStep())) {
+      if (!has_scavenged_ && should_persist) {
+        protected_namespaces_from_scavenge_.insert(namespace_id);
+      }
+      MoltNamespaceJob job;
+      job.source = namespace_id;
+      job.should_persist = should_persist;
+      MoltAddJob(std::move(job));
+      return;
+    }
+
     // The object hierarchy uses iterators bound to the metadata object, so
     // make sure to delete the object hierarchy first.
     namespaces_.erase(namespace_it);
@@ -645,6 +661,21 @@ void SessionStorageImpl::RegisterShallowClonedNamespace(
 
   CHECK_EQ(connection_state_, CONNECTION_FINISHED);
 
+  // MoltBrowser: a copy of more keys than one task takes, or that a copy or
+  // a deletion under way involves, is made a chunk a task
+  // (molt_dom_storage_split_work.h).
+  if (MoltSplitsNamespaceWork()) {
+    auto source_keys =
+        metadata_.namespace_storage_key_map().find(source_namespace_id);
+    if (MoltIsNamespaceBusy(source_namespace_id) ||
+        MoltIsNamespaceBusy(new_namespace_id) ||
+        (source_keys != metadata_.namespace_storage_key_map().end() &&
+         source_keys->second.size() > kMoltDomStorageAreasPerTask)) {
+      MoltStartClone(source_namespace_id, new_namespace_id);
+      return;
+    }
+  }
+
   auto source_namespace_entry =
       metadata_.GetOrCreateNamespaceEntry(source_namespace_id);
   auto namespace_entry = metadata_.GetOrCreateNamespaceEntry(new_namespace_id);
@@ -907,6 +938,9 @@ void SessionStorageImpl::MoltKeepCachesPerSite() {
 void SessionStorageImpl::MoltKeepCachesPerSiteOn(
     scoped_refptr<MoltDomStorageFairScheduler> scheduler) {
   molt_caches_per_site_ = true;
+  // On the host that holds the control messages, the namespaces' work is
+  // split (molt_dom_storage_split_work.h).
+  molt_splits_namespace_work_ = scheduler != nullptr;
   if (!molt_scheduler_) {
     molt_scheduler_ =
         scheduler ? std::move(scheduler)
@@ -1166,6 +1200,7 @@ void SessionStorageImpl::MoltDropGroup(const std::string& group, bool closed) {
   } else {
     molt_closed_groups_.erase(group);
   }
+  MoltScrubClones(group);
   // The group's areas, by storage key and namespace, taken first: clearing a
   // map shared by a copy forks it.
   std::vector<std::pair<blink::StorageKey, std::string>> areas;
@@ -1194,17 +1229,251 @@ void SessionStorageImpl::MoltDropGroup(const std::string& group, bool closed) {
 }
 
 // MoltBrowser:
-std::set<std::string> SessionStorageImpl::MoltGroupsOfNamespace(
+void SessionStorageImpl::MoltCollectGroups(
+    const std::string& namespace_id,
+    base::OnceCallback<void(std::set<std::string>)> callback) {
+  MoltCollectGroupsStep(namespace_id, std::nullopt, {}, std::move(callback));
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltCollectGroupsStep(
+    std::string namespace_id,
+    std::optional<blink::StorageKey> after,
+    std::set<std::string> groups,
+    base::OnceCallback<void(std::set<std::string>)> callback) {
+  bool more = false;
+  if (auto found = namespaces_.find(namespace_id); found != namespaces_.end()) {
+    const std::vector<blink::StorageKey> keys = MoltDomStorageNextChunk(
+        found->second->molt_storage_key_areas(), after ? &*after : nullptr,
+        kMoltDomStorageAreasPerTask, &more);
+    for (const blink::StorageKey& key : keys) {
+      groups.insert(MoltDomStorageSiteOf(key));
+    }
+    if (!keys.empty()) {
+      after = keys.back();
+    }
+  }
+  if (!more || !molt_scheduler_) {
+    std::move(callback).Run(std::move(groups));
+    return;
+  }
+  molt_scheduler_->Post(
+      kMoltDomStorageControlGroup,
+      base::BindOnce(&SessionStorageImpl::MoltCollectGroupsStep,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(namespace_id),
+                     std::move(after), std::move(groups), std::move(callback)));
+}
+
+SessionStorageImpl::MoltNamespaceJob::MoltNamespaceJob() = default;
+SessionStorageImpl::MoltNamespaceJob::MoltNamespaceJob(MoltNamespaceJob&&) =
+    default;
+SessionStorageImpl::MoltNamespaceJob&
+SessionStorageImpl::MoltNamespaceJob::operator=(MoltNamespaceJob&&) = default;
+SessionStorageImpl::MoltNamespaceJob::~MoltNamespaceJob() = default;
+
+// MoltBrowser:
+bool SessionStorageImpl::MoltSplitsNamespaceWork() const {
+  return molt_splits_namespace_work_ && molt_scheduler_ && !database_;
+}
+
+// MoltBrowser:
+bool SessionStorageImpl::MoltIsNamespaceBusy(
+    const std::string& namespace_id) const {
+  for (const MoltNamespaceJob& job : molt_jobs_) {
+    if (job.source == namespace_id ||
+        (job.is_clone && job.destination == namespace_id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltSetOnNamespaceJobDone(
+    base::RepeatingClosure callback) {
+  molt_on_namespace_job_done_ = std::move(callback);
+}
+
+// MoltBrowser: the copy is a namespace waiting for its population, as one
+// the renderer is still to copy, so what is asked of it waits.
+void SessionStorageImpl::MoltStartClone(const std::string& source,
+                                        const std::string& destination) {
+  auto it = namespaces_.find(destination);
+  if (it == namespaces_.end()) {
+    it = namespaces_
+             .emplace(destination,
+                      CreateSessionStorageNamespaceImpl(destination))
+             .first;
+  }
+  if (it->second->state() ==
+      SessionStorageNamespaceImpl::State::kNotPopulated) {
+    it->second->SetPendingPopulationFromParentNamespace(source);
+  }
+  MoltNamespaceJob job;
+  job.is_clone = true;
+  job.source = source;
+  job.destination = destination;
+  MoltAddJob(std::move(job));
+}
+
+// MoltBrowser: the first step at once if no job is under way.
+void SessionStorageImpl::MoltAddJob(MoltNamespaceJob job) {
+  molt_jobs_.push_back(std::move(job));
+  if (molt_jobs_.size() == 1) {
+    MoltRunJobStep(/*posted=*/false);
+  }
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltRunJobStep(bool posted) {
+  if (posted) {
+    molt_job_step_posted_ = false;
+  }
+  if (molt_jobs_.empty()) {
+    return;
+  }
+  // A step may add jobs (a copy's population runs what waited for it); the
+  // job stays first, so it stays where it is.
+  MoltNamespaceJob& job = molt_jobs_.front();
+  const bool more = job.is_clone ? MoltCloneStep(job) : MoltDeleteStep(job);
+  if (!more) {
+    molt_jobs_.pop_front();
+    // What waited for it runs in a task of its own.
+    if (molt_on_namespace_job_done_) {
+      molt_scheduler_->Post(kMoltDomStorageControlGroup,
+                            molt_on_namespace_job_done_);
+    }
+  }
+  if (!molt_jobs_.empty() && !molt_job_step_posted_) {
+    molt_job_step_posted_ = true;
+    molt_scheduler_->Post(kMoltDomStorageControlGroup,
+                          base::BindOnce(&SessionStorageImpl::MoltRunJobStep,
+                                         weak_ptr_factory_.GetWeakPtr(),
+                                         /*posted=*/true));
+  }
+}
+
+// MoltBrowser: as SessionStorageMetadata::RegisterShallowClonedNamespace()
+// and SessionStorageNamespaceImpl::PopulateAsClone(), a chunk of keys a
+// step, each key's metadata and area together; the copy is populated with
+// them at the end. A key the source gains past the chunk copied is copied,
+// as a write to an area not copied yet is.
+bool SessionStorageImpl::MoltCloneStep(MoltNamespaceJob& job) {
+  auto destination = namespaces_.find(job.destination);
+  if (destination == namespaces_.end() ||
+      destination->second->IsPopulated()) {
+    // Gone (or made) meanwhile: the areas cloned go with the job.
+    return false;
+  }
+  auto source = namespaces_.find(job.source);
+  const bool source_keys =
+      metadata_.namespace_storage_key_map().contains(job.source);
+  auto destination_entry = metadata_.GetOrCreateNamespaceEntry(job.destination);
+  if (source != namespaces_.end() && source->second->IsPopulated() &&
+      source_keys) {
+    auto source_entry = metadata_.GetOrCreateNamespaceEntry(job.source);
+    bool more = false;
+    const std::vector<blink::StorageKey> keys = MoltDomStorageNextChunk(
+        source_entry->second, job.after ? &*job.after : nullptr,
+        kMoltDomStorageAreasPerTask, &more);
+    const SessionStorageNamespaceImpl::StorageKeyAreas& source_areas =
+        source->second->molt_storage_key_areas();
+    for (const blink::StorageKey& key : keys) {
+      auto locator = source_entry->second.find(key);
+      if (destination_entry->second.emplace(key, locator->second).second) {
+        locator->second->AddSession(job.destination);
+      }
+      if (auto area = source_areas.find(key); area != source_areas.end()) {
+        job.areas.emplace(key, area->second->Clone(job.destination));
+      }
+    }
+    if (!keys.empty()) {
+      job.after = keys.back();
+    }
+    if (more) {
+      return true;
+    }
+  }
+  destination->second->MoltPopulateWithClonedAreas(
+      database_.get(), destination_entry, std::move(job.areas));
+  return false;
+}
+
+// MoltBrowser: as DeleteNamespace() and
+// DeleteNamespacesFromMetadataAndDatabase(): out of the namespaces (its
+// pipes closed), its areas freed a step's worth a step, then, unless it
+// persists, its keys forgotten a chunk a step.
+bool SessionStorageImpl::MoltDeleteStep(MoltNamespaceJob& job) {
+  if (!job.areas_freed) {
+    if (!job.going) {
+      auto it = namespaces_.find(job.source);
+      if (it != namespaces_.end()) {
+        job.going = std::move(it->second);
+        namespaces_.erase(it);
+        job.going->MoltCloseReceivers();
+      }
+    }
+    if (job.going && job.going->MoltFreeAreasChunk()) {
+      return true;
+    }
+    job.going.reset();
+    job.areas_freed = true;
+    // Its keys from the next step on.
+    return !job.should_persist;
+  }
+  return !job.should_persist && MoltForgetNamespaceChunk(job.source);
+}
+
+// MoltBrowser: as SessionStorageMetadata::TakeNamespace(), a chunk of keys;
+// whether any are left.
+bool SessionStorageImpl::MoltForgetNamespaceChunk(
     const std::string& namespace_id) {
-  std::set<std::string> groups;
-  auto found = namespaces_.find(namespace_id);
-  if (found == namespaces_.end()) {
-    return groups;
+  if (!metadata_.namespace_storage_key_map().contains(namespace_id)) {
+    return false;
   }
-  for (const auto& area : found->second->molt_storage_key_areas()) {
-    groups.insert(MoltDomStorageSiteOf(area.first));
+  auto entry = metadata_.GetOrCreateNamespaceEntry(namespace_id);
+  std::vector<DomStorageDatabase::MapLocator> maps_to_delete;
+  size_t keys = 0;
+  while (!entry->second.empty() && keys < kMoltDomStorageAreasPerTask) {
+    auto first = entry->second.begin();
+    first->second->RemoveSession(namespace_id);
+    if (first->second->session_ids().empty()) {
+      maps_to_delete.push_back(first->second->Clone());
+    }
+    entry->second.erase(first);
+    ++keys;
   }
-  return groups;
+  MoltForgetMaps(maps_to_delete);
+  if (!entry->second.empty()) {
+    return true;
+  }
+  // Empty now: only its entry goes.
+  metadata_.TakeNamespace(namespace_id);
+  return false;
+}
+
+// MoltBrowser:
+void SessionStorageImpl::MoltScrubClones(const std::string& group) {
+  for (MoltNamespaceJob& job : molt_jobs_) {
+    if (!job.is_clone) {
+      continue;
+    }
+    for (auto it = job.areas.begin(); it != job.areas.end();) {
+      if (MoltDomStorageSiteOf(it->first) != group) {
+        ++it;
+        continue;
+      }
+      if (metadata_.namespace_storage_key_map().contains(job.destination)) {
+        auto entry = metadata_.GetOrCreateNamespaceEntry(job.destination);
+        if (auto key = entry->second.find(it->first);
+            key != entry->second.end()) {
+          key->second->RemoveSession(job.destination);
+          entry->second.erase(key);
+        }
+      }
+      it = job.areas.erase(it);
+    }
+  }
 }
 
 bool SessionStorageImpl::MoltHasClonesWaiting(

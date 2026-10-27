@@ -163,6 +163,11 @@ MoltPerSiteSessionStorage::MoltPerSiteSessionStorage(
           base::DoNothing(),
           impl_pipe_.BindNewPipeAndPassReceiver())) {
   impl_->MoltKeepCachesPerSiteOn(scheduler_);
+  // The messages that waited for a namespace's copy or deletion, made a
+  // chunk a task, run once it ends.
+  impl_->MoltSetOnNamespaceJobDone(
+      base::BindRepeating(&MoltPerSiteSessionStorage::ReplayHeld,
+                          weak_factory_.GetWeakPtr()));
   receiver_.Bind(std::move(receiver),
                  scheduler_->RunnerFor(kMoltDomStorageControlGroup));
   receiver_.set_disconnect_handler(std::move(on_disconnect));
@@ -337,7 +342,8 @@ void MoltPerSiteSessionStorage::DeleteNamespace(const std::string& namespace_id,
 
 bool MoltPerSiteSessionStorage::IsHeld(const std::string& a,
                                        const std::string& b) const {
-  return held_namespaces_.contains(a) || held_namespaces_.contains(b);
+  return held_namespaces_.contains(a) || held_namespaces_.contains(b) ||
+         impl_->MoltIsNamespaceBusy(a) || impl_->MoltIsNamespaceBusy(b);
 }
 
 void MoltPerSiteSessionStorage::Hold(const std::string& a,
@@ -347,22 +353,32 @@ void MoltPerSiteSessionStorage::Hold(const std::string& a,
 }
 
 void MoltPerSiteSessionStorage::ReplayHeld() {
-  // The messages held meanwhile, in the order they came. One that still
-  // names a held namespace is held again, in the same order, and so is any
-  // later one that names a namespace of a message held again.
-  std::deque<HeldMessage> held;
-  held.swap(held_);
-  std::set<std::string> blocked;
-  for (HeldMessage& message : held) {
-    if (IsHeld(message.a, message.b) || blocked.contains(message.a) ||
-        blocked.contains(message.b)) {
-      blocked.insert(message.a);
-      blocked.insert(message.b);
-      held_.push_back(std::move(message));
-      continue;
-    }
-    std::move(message.message).Run();
+  // Once at a time: a message it runs may end a hold, which asks again.
+  if (replaying_) {
+    replay_again_ = true;
+    return;
   }
+  replaying_ = true;
+  do {
+    replay_again_ = false;
+    // The messages held meanwhile, in the order they came. One that still
+    // names a held namespace is held again, in the same order, and so is
+    // any later one that names a namespace of a message held again.
+    std::deque<HeldMessage> held;
+    held.swap(held_);
+    std::set<std::string> blocked;
+    for (HeldMessage& message : held) {
+      if (IsHeld(message.a, message.b) || blocked.contains(message.a) ||
+          blocked.contains(message.b)) {
+        blocked.insert(message.a);
+        blocked.insert(message.b);
+        held_.push_back(std::move(message));
+        continue;
+      }
+      std::move(message.message).Run();
+    }
+  } while (replay_again_ && !held_.empty());
+  replaying_ = false;
 }
 
 void MoltPerSiteSessionStorage::Queued(const std::string& namespace_id,
@@ -387,26 +403,41 @@ void MoltPerSiteSessionStorage::Dequeued(const std::string& namespace_id,
 void MoltPerSiteSessionStorage::AfterTurnsOf(const std::string& namespace_id,
                                              std::vector<std::string> hold,
                                              base::OnceClosure operation) {
-  std::set<std::string> groups = impl_->MoltGroupsOfNamespace(namespace_id);
-  if (auto it = queued_.find(namespace_id); it != queued_.end()) {
-    groups.insert(it->second.begin(), it->second.end());
-  }
-  if (groups.empty()) {
-    std::move(operation).Run();
-    return;
-  }
   const uint64_t id = next_barrier_++;
   Barrier& barrier = barriers_[id];
-  barrier.turns_left = groups.size();
   barrier.operation = std::move(operation);
   for (const std::string& held : hold) {
     held_namespaces_.insert(held);
   }
   barrier.hold = std::move(hold);
+  // The namespace's sites, gathered a chunk of areas a task
+  // (molt_dom_storage_split_work.h); its messages wait meanwhile.
+  impl_->MoltCollectGroups(
+      namespace_id,
+      base::BindOnce(&MoltPerSiteSessionStorage::PostTurns,
+                     weak_factory_.GetWeakPtr(), id, namespace_id));
+}
+
+void MoltPerSiteSessionStorage::PostTurns(uint64_t barrier,
+                                          const std::string& namespace_id,
+                                          std::set<std::string> groups) {
+  auto it = barriers_.find(barrier);
+  if (it == barriers_.end()) {
+    return;
+  }
+  // And the sites with a bind or a deletion for it still queued.
+  if (auto queued = queued_.find(namespace_id); queued != queued_.end()) {
+    groups.insert(queued->second.begin(), queued->second.end());
+  }
+  if (groups.empty()) {
+    RunBarrier(barrier);
+    return;
+  }
+  it->second.turns_left = groups.size();
   for (const std::string& group : groups) {
     scheduler_->Post(group,
                      base::BindOnce(&MoltPerSiteSessionStorage::TurnTaken,
-                                    weak_factory_.GetWeakPtr(), id));
+                                    weak_factory_.GetWeakPtr(), barrier));
   }
 }
 

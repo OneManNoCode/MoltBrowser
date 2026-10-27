@@ -37,6 +37,26 @@
 // that follows deletes what they stored. The memory dump reports the
 // partition's totals, which are kept as they change, and names no area.
 //
+// So is the work on a sessionStorage namespace (a tab's), which holds an
+// area for each storage key its pages used: possibly thousands, which a
+// site can make the browser copy and delete at will (a popup it opens on a
+// gesture copies its tab's namespace; closing the popup deletes the copy).
+// At Chromium 156 a copy registered and cloned every area in one task
+// (SessionStorageImpl::RegisterShallowClonedNamespace()), and a deletion
+// freed every area and forgot every key in one
+// (SessionStorageImpl::DeleteNamespace()). Here, in a partition taken in
+// turn per site, a copy of more than kMoltDomStorageAreasPerTask keys
+// registers and clones that many a task, the copy holding what is asked of
+// it until it is complete (as a copy the renderer is still to make does);
+// and a deletion frees areas until a task's worth
+// (MoltDomStorageFreeStepIsFull()), then forgets
+// kMoltDomStorageAreasPerTask keys a task. These jobs run one at a time, in
+// the order they came, in the control's turn, and the control messages that
+// name their namespaces wait for them (molt_dom_storage_own_thread.h). A
+// namespace that fits one task is copied or deleted at once, as Chromium
+// does. Gathering a namespace's sites, for a copy that waits for their
+// turns, takes kMoltDomStorageAreasPerTask areas a task too.
+//
 // Std-only, so molt_ai_unittests and a standalone harness test it.
 
 #ifndef COMPONENTS_SERVICES_STORAGE_DOM_STORAGE_MOLT_DOM_STORAGE_SPLIT_WORK_H_
@@ -114,6 +134,17 @@ bool MoltDomStorageFreeChunk(Map& map) {
 // chunks: about a thousand areas listed, however many the partition holds.
 inline constexpr size_t kMoltDomStorageGroupsPerTask = 16;
 inline constexpr size_t kMoltDomStorageAreasPerTask = 64;
+
+// Whether a step that freed `areas` of a namespace's areas, whose maps held
+// `items` items and `bytes` bytes freed at once (a big map is freed a chunk
+// a task anyway: MoltDomStorageFreesInChunks()), is full.
+constexpr bool MoltDomStorageFreeStepIsFull(size_t areas,
+                                            size_t items,
+                                            size_t bytes) {
+  return areas >= kMoltDomStorageAreasPerTask ||
+         items >= kMoltDomStorageFreeItemsPerTask ||
+         bytes >= kMoltDomStorageFreeBytesPerTask;
+}
 
 // The key of a sorted container's element: a set's element, or a map's key.
 template <typename Key>
