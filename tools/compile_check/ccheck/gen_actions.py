@@ -9,6 +9,7 @@ blink_python_runner, ...) is run the way ninja would: from the build
 directory, with its response file written out. Its inputs and the Python
 packages generator scripts commonly import are fetched first.
 """
+import hashlib
 import json
 import os
 import shlex
@@ -18,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 from . import gn
-from .sources import log
+from .sources import REPO_ROOT, log
 
 # Python packages Chromium's generator scripts import.
 PY_DEPS = [
@@ -255,7 +256,10 @@ def run_action(tree, interp, t, depth=0):
                 if failed:
                     return "%s: input %s: %s" % (t, rel, failed[rel][:300])
     if t.func == "copy":
-        return run_copy(tree, interp, t)
+        err = run_copy(tree, interp, t)
+        if err is None:
+            _stamp(tree, interp, t, _src_paths(interp, t, "sources"), [], [])
+        return err
     script = t.get("script")
     args = t.get("args")
     if not isinstance(script, str) or not isinstance(args, list):
@@ -307,10 +311,9 @@ def run_action(tree, interp, t, depth=0):
     sd = script_path.rsplit("/", 1)[0] + "/"
     # The script's package, with the templates it renders (jinja2:
     # inspector_protocol's lib/*.template, ...).
-    need = [script_path] + [p for p in tree.glob_upstream(sd)
-                            if p.endswith((".py", ".template", ".tmpl",
-                                           ".jinja", ".jinja2"))]
-    need += _src_paths(interp, t, "inputs") + _src_paths(interp, t, "sources")
+    explicit = [script_path] + _src_paths(interp, t, "inputs") + \
+        _src_paths(interp, t, "sources")
+    globs = [(sd, SCRIPT_EXTS)]
     if script_path.endswith("protoc_wrapper.py"):
         # protoc reads the imports of the listed .proto files too.
         for i, a in enumerate(args):
@@ -322,8 +325,8 @@ def run_action(tree, interp, t, depth=0):
             if d:
                 rel = os.path.normpath(os.path.join(gn.OUT[2:], d))
                 if not rel.startswith(("..", gn.OUT[2:])):
-                    need += tree.glob_upstream(rel.rstrip("/") + "/",
-                                               ".proto")
+                    globs.append((rel.rstrip("/") + "/", (".proto",)))
+    need = explicit + [p for g in globs for p in _glob(tree, g)]
     tree.materialize(need)
     rsp = None
     rfc = t.get("response_file_contents")
@@ -353,6 +356,8 @@ def run_action(tree, interp, t, depth=0):
     if r.returncode != 0:
         return "%s failed: %s" % (t, (r.stderr or r.stdout)[-600:])
     _record_inputs(tree, interp, t, need)
+    _stamp(tree, interp, t, explicit, globs,
+           list(t.get("args") or []) + [t.get("response_file_contents")])
     return None
 
 
@@ -385,6 +390,190 @@ def _record_inputs(tree, interp, t, need):
     f.write_text(json.dumps(data, indent=0, sort_keys=True))
 
 
+# -- Freshness ----------------------------------------------------------
+#
+# An action's outputs are made again when what it read changed: its script
+# and the script's package, its inputs and sources (and, for protoc, the
+# .proto files of its import dirs), the generated files it read, its GN
+# args, its BUILD.gn, the platform's args file and the pin
+# (action_stamps.json, one entry per action and foreach source).
+
+ACTION_STAMPS = "action_stamps.json"
+# Bump when how actions are run changes (every output is made again).
+ACTION_DRIVER_VERSION = "1"
+
+_hash_cache = {}
+# The script package's files an action reads (its templates too).
+SCRIPT_EXTS = (".py", ".template", ".tmpl", ".jinja", ".jinja2")
+
+
+def _glob(tree, spec):
+    prefix, exts = spec
+    return [p for p in tree.glob_upstream(prefix) if p.endswith(tuple(exts))]
+
+
+def _file_hash(path):
+    """sha1 of a file's content (memoized on its stat), or "-"."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return "-"
+    k = (str(path), st.st_mtime_ns, st.st_size, st.st_ino)
+    h = _hash_cache.get(k)
+    if h is None:
+        try:
+            with open(path, "rb") as f:
+                h = hashlib.sha1(f.read()).hexdigest()
+        except OSError:
+            h = "-"
+        _hash_cache[k] = h
+    return h
+
+
+def _platform_text(tree):
+    plat = getattr(tree, "platform", None)
+    if plat is None:
+        return "-"
+    try:
+        args = (REPO_ROOT / plat.args_file).read_text()
+    except OSError:
+        args = "-"
+    return "%s\0%s\0%s" % (plat.name, json.dumps(plat.extra_args,
+                                                  sort_keys=True), args)
+
+
+def _glob_hash(tree, spec, memo):
+    k = (spec[0], tuple(spec[1]))
+    if k not in memo:
+        h = hashlib.sha1()
+        for p in _glob(tree, spec):
+            h.update(("%s=%s\0" % (p, _file_hash(tree.local_path(p))))
+                     .encode())
+        memo[k] = h.hexdigest()
+    return memo[k]
+
+
+def action_key(tree, files, globs, gen_files, args, bf, memo=None):
+    """The key of an action run: ACTION_DRIVER_VERSION, the pin, the
+    platform's args, its own GN args, and the content of its BUILD.gn, of
+    the src files it read (listed, or a directory's files of some
+    extensions) and of the generated files it read."""
+    memo = {} if memo is None else memo
+    h = hashlib.sha1(ACTION_DRIVER_VERSION.encode())
+    h.update(("%s\0%s\0%s\0" % (
+        getattr(getattr(tree, "chromium", None), "rev", "-"),
+        _platform_text(tree), json.dumps(args))).encode())
+    h.update(_file_hash(tree.local_path(bf)).encode())
+    for p in sorted(set(files)):
+        h.update(("\0%s=%s" % (p, _file_hash(tree.local_path(p)))).encode())
+    for g in sorted({(p, tuple(e)) for p, e in globs}):
+        h.update(("\0glob:%s%s=%s" % (g[0], ",".join(g[1]),
+                                       _glob_hash(tree, g, memo))).encode())
+    for g in sorted(set(gen_files)):
+        h.update(("\0gen:%s=%s" % (g, _file_hash(tree.gen_dir / g)))
+                 .encode())
+    return h.hexdigest()
+
+
+def _outputs(interp, t):
+    outs = []
+    for o in t.get("outputs") or []:
+        if isinstance(o, str):
+            if t.func == "action_foreach":
+                o = foreach_expand(o, t.foreach_source, False)
+            a = interp.abspath(o, {"dir": t.path})
+            if a.startswith(gn.OUT + "/gen/"):
+                outs.append(a[len(gn.OUT) + 5:])
+    return outs
+
+
+# The stamps of each state dir, in memory; written by flush_stamps().
+_stamps = {}
+
+
+def _load_stamps(tree):
+    k = str(tree.state)
+    if k not in _stamps:
+        try:
+            _stamps[k] = json.loads((Path(tree.state) /
+                                     ACTION_STAMPS).read_text())
+        except (OSError, ValueError):
+            _stamps[k] = {}
+    return _stamps[k]
+
+
+def flush_stamps(tree):
+    k = str(getattr(tree, "state", ""))
+    if k in _stamps:
+        Path(tree.state).mkdir(parents=True, exist_ok=True)
+        tmp = Path(tree.state) / (ACTION_STAMPS + ".tmp")
+        tmp.write_text(json.dumps(_stamps[k], indent=0, sort_keys=True))
+        tmp.replace(Path(tree.state) / ACTION_STAMPS)
+
+
+def _stamp(tree, interp, t, files, globs, args):
+    """Records what action `t` read, so refresh() can tell when to run it
+    again."""
+    if not hasattr(tree, "state"):
+        return
+    outs = _outputs(interp, t)
+    if not outs:
+        return
+    bf = t.path[2:].rstrip("/") + "/BUILD.gn" if t.path != "//" else \
+        "BUILD.gn"
+    gen_in = _gen_inputs(interp, t)
+    files = sorted(set(files))
+    globs = [[p, list(e)] for p, e in globs]
+    jargs = [a if isinstance(a, str) else repr(a) for a in args]
+    ident = "%s:%s|%s" % (t.path, t.name, getattr(t, "foreach_source", "")
+                          or "")
+    _load_stamps(tree)[ident] = {
+        "outputs": outs, "bf": bf, "files": files, "globs": globs,
+        "gen": gen_in, "args": jargs,
+        "key": action_key(tree, files, globs, gen_in, jargs, bf)}
+
+
+def refresh(tree, interp, passes=3):
+    """Runs again every recorded action whose key changed (an input, its
+    BUILD.gn, the args, ...), after removing its outputs; an action that
+    fails then leaves them missing, so a check reports the header missing
+    rather than compiling against an old one. Repeats while something was
+    made again (an action reading another's output). Returns (remade,
+    removed): output names."""
+    remade, removed = [], []
+    for _ in range(passes):
+        stamps = _load_stamps(tree)
+        stale = []
+        memo = {}
+        for ident, st in sorted(stamps.items()):
+            key = action_key(tree, st.get("files") or [],
+                             st.get("globs") or [], st.get("gen") or [],
+                             st.get("args") or [], st.get("bf") or "-",
+                             memo)
+            if key != st.get("key"):
+                stale.append((ident, st))
+        if not stale:
+            break
+        for ident, st in stale:
+            _load_stamps(tree).pop(ident, None)
+            outs = st.get("outputs") or []
+            for o in outs:
+                f = tree.gen_dir / o
+                if f.exists():
+                    f.unlink()
+            w, failed = produce(tree, interp, outs[:1],
+                                hint=st.get("bf"))
+            if w:
+                remade += [o for o in outs if (tree.gen_dir / o).exists()]
+            else:
+                log("action: %s could not be run again: %s; its outputs "
+                    "were removed" % (ident, (failed.get(outs[0]) or "?")
+                                      [:200] if outs else "?"))
+                removed += outs
+        flush_stamps(tree)
+    return remade, removed
+
+
 def produce(tree, interp, gen_rels, depth=0, hint=None):
     """Generates each gen/<rel> it can. Returns (written, {rel: reason})."""
     written, failed = [], {}
@@ -409,4 +598,6 @@ def produce(tree, interp, gen_rels, depth=0, hint=None):
             written.append(rel)
         else:
             failed[rel] = "%s ran but did not write it" % (t,)
+    if depth == 0:
+        flush_stamps(tree)
     return written, failed

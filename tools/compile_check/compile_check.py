@@ -300,6 +300,16 @@ def refresh_generated(args, tree, interp, produce):
         report["cxx_refresh"] = {"remade": ok, "removed": gone}
         print("cxx: %d bridge header(s) remade, %d removed" % (len(ok),
                                                                len(gone)))
+    ok, gone = gen_buildflags.refresh(tree, interp, tree.gen_dir)
+    if ok or gone:
+        report["buildflags_refresh"] = {"remade": ok, "removed": gone}
+        print("buildflags: %d header(s) remade, %d removed" % (len(ok),
+                                                               len(gone)))
+    ok, gone = gen_actions.refresh(tree, interp)
+    if ok or gone:
+        report["actions_refresh"] = {"remade": ok, "removed": gone}
+        print("actions: %d output(s) made again, %d removed (inputs "
+              "changed)" % (len(ok), len(gone)))
     ok = gen_misc.replace_stand_ins(tree, interp, produce)
     if ok:
         report["stand_ins_replaced"] = {"remade": ok}
