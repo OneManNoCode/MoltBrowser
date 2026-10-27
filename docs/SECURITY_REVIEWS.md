@@ -4,6 +4,77 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-27: PR #73 (October 2026)
+
+**Scope.** The code merged in pull request #73 (rounds 28 and 29) that
+the previous review didn't cover, in this order of priority:
+
+1. MoltNet's DOM storage on threads of its own: the storage service's new
+   binding methods, who can call them and for which partitions, the
+   threads' lifetime and shutdown; the fair scheduler's charge in
+   processor time and the control pipe's weight; notifications and frees
+   split into short tasks (their order, an area that goes in the middle,
+   reentrancy); unused empty areas dropped in their site's turn, and a
+   binding that arrives meanwhile; and the in-memory HTTP cache's sweep in
+   steps, its monotonic stamps, the table of sites made once with a seeded
+   hash, its cap on sites, and the sweep's position kept across steps.
+2. The previous review's fixes: what a resumed Background Fetch request
+   carries, in every profile and on every path a download is resumed or
+   started again, a later browser session included; the refusal of name
+   lookups and host resolvers for MoltNet; and when the Background Fetch
+   scheduler looks at the registrations waiting to become active.
+3. MoltNet's processor requirement: every way into MoltNet; the JPEG XL
+   decoder's portable mode (which processes turn it on, and when);
+   half-float conversions, time-stretched media audio and its window's
+   cosine.
+4. The compile check's changes to sources: Windows paths and time
+   functions, `raw_ptr` fields, special members defined out of the class
+   body in headers, and the virtual hooks moved into `.cc` files, in
+   component builds too.
+5. The build tools as a supply chain: what the compile check and the
+   static GN check download, how it is checked and unpacked, and what of
+   it runs on the machine; the Linux repository tool's check of rpm
+   signatures.
+6. Regular profiles: that each MoltNet-only path is taken only in MoltNet.
+
+**Method.** Each candidate traced from its attacker (web page,
+third-party frame, a site's server, a group of sites, a download source,
+the build machine's network) through MoltBrowser's code and the upstream
+Chromium 156 code at the pinned revision, and V8's and jxl-rs's at the
+revisions it pins; fixes tested with a standalone harness (system gtest,
+g++ ASan/UBSan) that compiles the download service's changed functions
+verbatim against stand-ins with 156's shapes, with a mutant set each test
+catches, a unit test on the download service's real request parameters,
+a DLL and an executable linked with Chromium's clang-cl and lld-link as a
+Windows component build links them, the tools' own test suites and a
+fetch of the pinned release's tarball, and the compile check against
+Chromium 156's headers.
+
+**Findings.** 12: 3 low, 9 informational. Fixed: the three low and one
+informational.
+
+**Fixed.**
+
+- Background Fetch, every profile: the download service keeps a page's
+  fetch across browser sessions, but not its initiator or network
+  isolation, which Background Fetch gives back when the download starts
+  again in a later session. A download whose item the browser kept from
+  the earlier session was then resumed without them, as a request the
+  browser makes itself (first-party at its destination, with
+  credentials); it now starts again from the beginning with them, as a
+  request with a body already did. A download started afresh in a later
+  session keeps its first party on redirects, as in its first session.
+  Other clients' downloads are unchanged.
+- The build tools: Chromium's source tarball, which the static GN check
+  and the compile check stream and whose scripts and DEPS files run on the
+  machine, is used only if it matches a SHA-256 pinned in the repository,
+  and none of its files is written outside its directory. The compile
+  check builds its cxxbridge with the dependency versions the crate's lock
+  file pins, not the newest ones crates.io has.
+- Windows component builds: the Blob registry's delegate is exported, so
+  libraries other than the storage one link against its method defined in
+  the `.cc` file.
+
 ## 2026-10-26: PR #72 and round 28 (October 2026)
 
 **Scope.** The code merged in pull request #72 (round 27) and round 28's
