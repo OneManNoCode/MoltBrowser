@@ -12,6 +12,7 @@ import re
 import resource
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from . import config, platforms, result_cache, sdks, toolchain
@@ -148,18 +149,46 @@ def _limit():
     resource.setrlimit(resource.RLIMIT_AS, (6 << 30, 6 << 30))
 
 
-def run_measured(cmd, cwd):
+def _vm_hwm_kb(pid="self"):
+    """A process's peak resident memory so far (VmHWM), in KB; 0 if
+    unknown."""
+    try:
+        with open("/proc/%s/status" % pid) as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def run_measured(cmd, cwd, interval=0.02):
     """(exit status, output, peak resident memory in MB) of a compile:
-    its stderr and stdout in one stream, and the process's own maximum
-    RSS (wait4), which `report` lists to size --jobs."""
+    its stderr and stdout in one stream, and the compiler's own peak RSS,
+    which `report` lists to size --jobs.
+
+    wait4's maximum alone is not the compiler's: the child forked from
+    this process starts with a copy of its memory (several hundred MB of
+    scan state), which Linux counts in the child's maximum. So the
+    compiler's VmHWM is sampled while it runs (its own, from exec on), and
+    wait4's maximum used where it exceeds anything this process ever held
+    (then it can only be the compiler's)."""
     with tempfile.TemporaryFile() as out:
         p = subprocess.Popen(cmd, cwd=cwd, stdout=out,
                              stderr=subprocess.STDOUT, preexec_fn=_limit)
-        _, status, ru = os.wait4(p.pid, 0)
+        seen = 0
+        while True:
+            pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+            if pid:
+                break
+            seen = max(seen, _vm_hwm_kb(p.pid))
+            time.sleep(interval)
         p.returncode = os.waitstatus_to_exitcode(status)
         out.seek(0)
         text = out.read().decode("utf-8", "replace")
-    return p.returncode, text, ru.ru_maxrss // 1024
+    own = _vm_hwm_kb()
+    kb = ru.ru_maxrss if not own or ru.ru_maxrss > own else seen
+    return p.returncode, text, kb // 1024
 
 
 def parse_diags(text):
@@ -185,15 +214,14 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
     key = result_cache.key(work, cmd, tree.out_dir, _limit) if cache \
         else None
     hit = result_cache.lookup(work, name, key)
-    peak = None
     if hit is not None:
-        rc, text = hit
+        rc, text, peak = hit  # the peak measured when it was compiled
     else:
         rc, text, peak = run_measured(cmd, str(tree.out_dir))
         root = str(tree.tree_dir) + "/"
         text = text.replace(root, "")
         if cache:
-            result_cache.store(work, name, key, rc, text)
+            result_cache.store(work, name, key, rc, text, peak)
         else:
             result_cache.drop(work, name)
     log = out_dir / (name + ".log")

@@ -117,7 +117,8 @@ def entry_path(work, name):
 
 
 def lookup(work, name, k):
-    """(returncode, log text) stored for `name` under key `k`, or None."""
+    """(returncode, log text, peak MB or None) stored for `name` under key
+    `k`, or None."""
     if k is None:
         return None
     try:
@@ -127,7 +128,8 @@ def lookup(work, name, k):
     if e.get("key") != k or not isinstance(e.get("log"), str) or \
             e.get("rc") not in _COMPLETE:
         return None
-    return e["rc"], e["log"]
+    peak = e.get("max_rss_mb")
+    return e["rc"], e["log"], peak if isinstance(peak, int) else None
 
 
 def reusable(rc, text):
@@ -135,14 +137,17 @@ def reusable(rc, text):
     return rc in _COMPLETE and not any(m in text for m in _CRASH_MARKS)
 
 
-def store(work, name, k, rc, text):
+def store(work, name, k, rc, text, peak=None):
+    """Stores a result as soon as its compile ends, so a run that is
+    interrupted (a restart, Ctrl-C) resumes where it stopped."""
     if k is None or not reusable(rc, text):
         drop(work, name)
         return
     p = entry_path(work, name)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps({"key": k, "rc": rc, "log": text}))
+    tmp.write_text(json.dumps({"key": k, "rc": rc, "log": text,
+                               "max_rss_mb": peak}))
     tmp.replace(p)
 
 

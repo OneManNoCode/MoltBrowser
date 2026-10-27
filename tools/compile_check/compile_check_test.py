@@ -1975,6 +1975,27 @@ if "WARN" in text:
 """
 
 
+@unittest.skipUnless(Path("/proc/self/status").exists(), "needs /proc")
+class PeakMemoryTest(unittest.TestCase):
+    """The peak memory of a compile is the compiler's, not the copy of the
+    harness's memory its fork starts with."""
+
+    def test_child_peak_not_the_parents(self):
+        ballast = b"\x01" * (200 << 20)  # this process: 200 MB more
+        try:
+            rc, _, mb = check.run_measured(["true"], "/")
+            self.assertEqual(rc, 0)
+            self.assertLess(mb, 100)
+            rc, _, mb = check.run_measured([
+                sys.executable, "-I", "-c",
+                "import time; x = b'1' * (120 << 20); time.sleep(0.3)"], "/")
+            self.assertEqual(rc, 0)
+            self.assertGreaterEqual(mb, 115)
+            self.assertLess(mb, 200)
+        finally:
+            del ballast
+
+
 class ResultCacheTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -2070,9 +2091,9 @@ class ResultCacheTest(unittest.TestCase):
         self.assertEqual(self.compiled(), 4)
 
     def test_entry_of_another_key_is_not_used(self):
-        result_cache.store(self.work, "n", "k1", 0, "log")
+        result_cache.store(self.work, "n", "k1", 0, "log", 512)
         self.assertEqual(result_cache.lookup(self.work, "n", "k1"),
-                         (0, "log"))
+                         (0, "log", 512))
         self.assertIsNone(result_cache.lookup(self.work, "n", "k2"))
         self.assertIsNone(result_cache.lookup(self.work, "n", None))
         result_cache.store(self.work, "n", "k1", -9, "killed")
