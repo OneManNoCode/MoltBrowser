@@ -7,6 +7,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.h"
 
@@ -605,5 +606,28 @@ INSTANTIATE_TEST_SUITE_P(All,
                          EchoCancellationModeTest,
                          // Platform AEC effect on/off.
                          ::testing::Bool());
+
+// MoltBrowser: MoltNet's renderers (the portable media process) ask for
+// processing that computes the same samples on every CPU, whatever else the
+// page asked for; other renderers keep the CPU's fast paths.
+TEST(AudioProcessingPropertiesToAudioProcessingSettingsTest,
+     MoltNetAsksForCpuIndependentProcessing) {
+  AudioProcessingProperties properties;
+  for (bool moltnet : {false, true, false}) {
+    media::SetPortableMediaProcessForTesting(moltnet);
+    for (bool aec : {false, true}) {
+      properties.echo_cancellation_mode =
+          aec ? EchoCancellationMode::kBrowserDecides
+              : EchoCancellationMode::kDisabled;
+      properties.noise_suppression = !aec;
+      const media::AudioProcessingSettings settings =
+          MediaStreamAudioProcessingLayout::
+              ComputeWebrtcProcessingSettingsForTests(
+                  properties, /*enabled_platform_effects=*/0,
+                  /*multichannel_processing=*/true);
+      EXPECT_EQ(settings.cpu_independent, moltnet);
+    }
+  }
+}
 
 }  // namespace blink
