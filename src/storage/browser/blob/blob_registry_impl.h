@@ -35,7 +35,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobRegistryImpl
  public:
   // Per binding delegate, used for security checks for requests coming in on
   // specific bindings/from specific processes.
-  class Delegate {
+  // MoltBrowser: exported, for MoltBudgetKey(), defined in the .cc (a nested
+  // class isn't exported with the class around it).
+  class COMPONENT_EXPORT(STORAGE_BROWSER) Delegate {
    public:
     virtual ~Delegate() {}
     virtual bool CanReadFile(const base::FilePath& file) = 0;

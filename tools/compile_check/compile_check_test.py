@@ -33,7 +33,7 @@ import compile_check  # noqa: E402
 from ccheck import check, config, gen_actions, gen_misc, gen_mojom  # noqa
 from ccheck import gen_buildflags  # noqa: E402
 from ccheck import gn, gnconfigs, platforms, scan, sdks, sources  # noqa
-from ccheck import result_cache, tarball, targets  # noqa: E402
+from ccheck import host_tools, result_cache, tarball, targets  # noqa: E402
 
 BUILDCONFIG = """
 default_compiler_configs = [
@@ -362,6 +362,13 @@ class TarballTest(unittest.TestCase):
             top + "/third_party/icu/source/data/x.txt", top, mounts))
         self.assertIsNone(tarball.member_dest("other/third_party/icu/a.h",
                                               top, mounts))
+        # Nothing that would be written outside its mount.
+        for bad in ("third_party/webrtc/../../../x.h",
+                    "third_party/webrtc/a/../../b.h",
+                    "third_party/webrtc/./a.h", "third_party/webrtc//a.h",
+                    "third_party/webrtc/"):
+            self.assertIsNone(tarball.member_dest(top + "/" + bad, top,
+                                                  mounts), bad)
 
     def test_extract_and_dir_repo(self):
         top = "chromium-1.2.3.4"
@@ -378,8 +385,10 @@ class TarballTest(unittest.TestCase):
             dest = tmp / "tarball-1.2.3.4"
             tarball.extract("mem://x", "1.2.3.4", ["third_party/webrtc"],
                             dest, lambda m: None,
-                            opener=lambda url: io.BytesIO(blob))
+                            opener=lambda url: io.BytesIO(blob),
+                            pins={"x": hashlib.sha256(blob).hexdigest()})
             man = json.loads((dest / tarball.MANIFEST).read_text())
+            self.assertEqual(man["sha256"], hashlib.sha256(blob).hexdigest())
             files = man["mounts"]["third_party/webrtc"]
             self.assertEqual(sorted(files), ["api/x.h", "tools/gen.py"])
             self.assertEqual(files["tools/gen.py"][0], "100755")
@@ -393,6 +402,75 @@ class TarballTest(unittest.TestCase):
             self.assertEqual(repo.commit, "c0ffee")
         finally:
             shutil.rmtree(tmp)
+
+
+class TarballPinTest(unittest.TestCase):
+    """Nothing from a tarball is used unless the whole tarball matches its
+    pinned SHA-256."""
+
+    def setUp(self):
+        self.top = "chromium-1.2.3.4"
+        self.blob = make_tarball({
+            "third_party/webrtc/api/x.h": b"int x;\n",
+            "third_party/webrtc/tools/gen.py": b"print(1)\n",
+        }, self.top)
+        self.tmp = Path(tempfile.mkdtemp())
+        self.dest = self.tmp / "tarball-1.2.3.4"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def extract(self, pins, blob=None):
+        data = self.blob if blob is None else blob
+        return tarball.extract(
+            tarball.BUCKET + "chromium-1.2.3.4-lite.tar.xz", "1.2.3.4",
+            ["third_party/webrtc"], self.dest, lambda m: None,
+            opener=lambda url: io.BytesIO(data), pins=pins)
+
+    def assertNothingKept(self):
+        self.assertFalse(self.dest.exists())
+        self.assertFalse((self.tmp / "tarball-1.2.3.4.partial").exists())
+
+    def test_pinned(self):
+        self.extract({"chromium-1.2.3.4-lite.tar.xz":
+                      hashlib.sha256(self.blob).hexdigest()})
+        self.assertTrue((self.dest / "third_party/webrtc/api/x.h").exists())
+
+    def test_unpinned_is_refused(self):
+        with self.assertRaises(tarball.TarballNotVerified):
+            self.extract({})
+        self.assertNothingKept()
+
+    def test_another_tarball_is_refused(self):
+        # The same files, after the archive's end the hash covers too.
+        with self.assertRaises(tarball.TarballNotVerified):
+            self.extract({"chromium-1.2.3.4-lite.tar.xz":
+                          hashlib.sha256(self.blob).hexdigest()},
+                         blob=self.blob + lzma.compress(b"\0" * 1024))
+        self.assertNothingKept()
+
+    def test_the_pin_of_the_pinned_release(self):
+        pin = sources._up.read_pin(sources.REPO_ROOT / "chromium_version.txt")
+        name = "chromium-%s-lite.tar.xz" % pin.version
+        self.assertRegex(tarball.pinned_sha256(tarball.BUCKET + name),
+                         "^[0-9a-f]{64}$")
+
+    def test_reader_hashes_what_tarfile_leaves(self):
+        # tarfile stops at the archive's end; what follows it (here bytes
+        # that don't compress) is hashed too.
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode="w") as tf:
+            info = tarfile.TarInfo(self.top + "/third_party/webrtc/a.h")
+            info.size = 2
+            tf.addfile(info, io.BytesIO(b"a\n"))
+        blob = lzma.compress(raw.getvalue() + os.urandom(1 << 18))
+        f = io.BytesIO(blob)
+        r = tarball.HashingReader(f)
+        with tarfile.open(fileobj=r, mode="r|xz") as tf:
+            names = [m.name for m in tf]
+        self.assertEqual(len(names), 1)
+        self.assertLess(f.tell(), len(blob))
+        self.assertEqual(r.drain(), hashlib.sha256(blob).hexdigest())
 
 
 class GritFreshnessTest(unittest.TestCase):
@@ -788,6 +866,16 @@ class CxxBridgeTest(unittest.TestCase):
         self.assertEqual(gen_misc.refresh_cxx(self.tree, None),
                          ([], ["base/old.rs.h"]))
         self.assertFalse(other.exists())
+
+    def test_install_takes_the_locked_dependencies(self):
+        # cxxbridge-cmd's dependencies are the versions its Cargo.lock
+        # pins, not the newest crates.io has.
+        cmd = host_tools.cxxbridge_install_cmd(
+            "cargo", Path("/v/cxxbridge-cmd-v1"), Path("/w/cxxbridge"))
+        self.assertEqual(cmd[:2], ["cargo", "install"])
+        self.assertIn("--locked", cmd)
+        self.assertEqual(cmd[cmd.index("--path") + 1], "/v/cxxbridge-cmd-v1")
+        self.assertNotIn("--offline", cmd)
 
 
 class CompileCommandTest(unittest.TestCase):
