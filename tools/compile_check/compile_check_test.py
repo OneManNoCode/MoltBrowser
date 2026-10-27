@@ -1388,10 +1388,13 @@ class SkippedReportTest(unittest.TestCase):
         self.assertEqual(st[:2], ("not checked", "header not available "
                                   "here: a/b.mojom-shared.h (mojom parser: "
                                   "bad enum)"))
+        st = compile_check.classify(missing("Metal/Metal.h", "mac"), {},
+                                    Path("/x"))
+        self.assertIn("no stand-in for it", st[1])
         st = compile_check.classify(missing(
             "AuthenticationServices/AuthenticationServices.h", "mac"), {},
                                     Path("/x"))
-        self.assertIn("no stand-in for it", st[1])
+        self.assertNotIn("no stand-in for it", st[1])
         st = compile_check.classify(missing("CoreText/CoreText.h", "mac"),
                                     {}, Path("/x"))
         self.assertEqual(st[1], "header not available here: "
