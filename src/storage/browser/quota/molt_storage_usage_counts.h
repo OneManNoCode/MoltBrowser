@@ -29,6 +29,17 @@
 // So a quota check costs what its own site's storage keys cost, whatever
 // other sites store.
 //
+// A site's stale keys are asked for one refresh at a time
+// (MoltSiteRefreshes): a check of a site whose refresh is running waits for
+// it, and for one more of whatever was marked meanwhile, before it reads the
+// site's total. Two checks of one site at once used to read the total while
+// the other was still asking for the stale keys' usage, and could answer
+// with more room than the site had. A site's marks don't wait for its next
+// check either: a refresh of its own follows a little after
+// (kMoltStaleSettleDelaySeconds), so marks don't pile up for sites that stop
+// asking, and a site's marks go at once when the site itself does (a page's
+// nonce).
+//
 // Std-only templates (Site: MoltBudgetSite, Key: blink::StorageKey in the
 // quota system), so molt_ai_unittests and a standalone harness test them.
 // Header-only: storage/browser's sources are Chromium's BUILD.gn, which
@@ -104,10 +115,52 @@ class MoltStaleStorageKeys {
   }
 
   bool HasAny(const Site& site) const { return sites_.contains(site); }
+  // `site` is gone, with its storage keys: nothing of it is stale.
+  void Forget(const Site& site) { sites_.erase(site); }
   void Clear() { sites_.clear(); }
+  size_t site_count() const { return sites_.size(); }
 
  private:
   std::map<Site, std::set<Key>> sites_;
+};
+
+// How long after a site's keys are marked stale a refresh of its own asks
+// for them (UsageTracker::MoltRefreshSiteUsage()), if no check of the site
+// did meanwhile.
+inline constexpr int64_t kMoltStaleSettleDelaySeconds = 10;
+
+// The refreshes of each site's stale keys, one at a time per site. A check
+// of a site with a refresh running waits (Wait()); when the refresh is done
+// (Finished()), those that waited get one more refresh, for what was marked
+// meanwhile, and then their answers. Not thread-safe.
+template <typename Site, typename Waiter>
+class MoltSiteRefreshes {
+ public:
+  bool IsRunning(const Site& site) const { return running_.contains(site); }
+  // A refresh of `site` starts.
+  void Start(const Site& site) { running_.try_emplace(site); }
+  // `waiter` waits for the refresh after the one running for `site`.
+  void Wait(const Site& site, Waiter waiter) {
+    running_[site].push_back(std::move(waiter));
+  }
+  // The refresh running for `site` is done: the waiters for the next one, if
+  // any (which then runs); else `site` has none running.
+  std::vector<Waiter> Finished(const Site& site) {
+    auto it = running_.find(site);
+    if (it == running_.end()) {
+      return {};
+    }
+    std::vector<Waiter> waiters = std::move(it->second);
+    it->second.clear();
+    if (waiters.empty()) {
+      running_.erase(it);
+    }
+    return waiters;
+  }
+  size_t site_count() const { return running_.size(); }
+
+ private:
+  std::map<Site, std::vector<Waiter>> running_;
 };
 
 }  // namespace storage

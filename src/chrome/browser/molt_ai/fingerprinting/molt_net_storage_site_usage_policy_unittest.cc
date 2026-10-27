@@ -87,5 +87,74 @@ TEST(MoltNetStorageSiteUsageTest, AGreedySiteDoesntSlowAnothersChecks) {
   EXPECT_EQ(totals.total(), 1001000);
 }
 
+// A site that is gone (a page's nonce) leaves no stale keys behind; others
+// keep theirs.
+TEST(MoltNetStorageSiteUsageTest, AGoneSitesStaleKeysGo) {
+  Stale stale;
+  stale.Mark("nonce-a", "https://t.test^nonce-a");
+  stale.Mark("https://b.test", "https://b.test");
+  stale.Forget("nonce-a");
+  stale.Forget("unknown");
+  EXPECT_FALSE(stale.HasAny("nonce-a"));
+  EXPECT_TRUE(stale.HasAny("https://b.test"));
+  EXPECT_EQ(stale.site_count(), 1u);
+}
+
+// One refresh of a site's stale keys at a time: a check arriving while one
+// runs waits for it and one more (for what was marked meanwhile); the site
+// has none running once a refresh ends with nobody waiting. Other sites'
+// refreshes run on their own.
+TEST(MoltNetStorageSiteUsageTest, OneRefreshAtATimePerSite) {
+  MoltSiteRefreshes<std::string, int> refreshes;
+  EXPECT_FALSE(refreshes.IsRunning("a"));
+  refreshes.Start("a");
+  refreshes.Start("b");
+  EXPECT_TRUE(refreshes.IsRunning("a"));
+  refreshes.Wait("a", 2);
+  refreshes.Wait("a", 3);
+  // The first refresh ends: the two that waited get the next one.
+  EXPECT_EQ(refreshes.Finished("a"), (std::vector<int>{2, 3}));
+  EXPECT_TRUE(refreshes.IsRunning("a"));
+  refreshes.Wait("a", 4);
+  EXPECT_EQ(refreshes.Finished("a"), (std::vector<int>{4}));
+  EXPECT_TRUE(refreshes.Finished("a").empty());
+  EXPECT_FALSE(refreshes.IsRunning("a"));
+  EXPECT_TRUE(refreshes.IsRunning("b"));
+  EXPECT_TRUE(refreshes.Finished("b").empty());
+  EXPECT_TRUE(refreshes.Finished("unknown").empty());
+  EXPECT_EQ(refreshes.site_count(), 0u);
+}
+
+// The race the serialization closes: a site at 50 counted, one stale key
+// whose real usage is 5 more. Two checks at once: the first takes the key
+// and asks for it; the second, reading at once, saw 50 and so more room than
+// the site had. Waiting for the refresh, it reads 55.
+TEST(MoltNetStorageSiteUsageTest, ASecondCheckReadsAfterTheRefresh) {
+  Totals totals;
+  Stale stale;
+  MoltSiteRefreshes<std::string, int> refreshes;
+  totals.Changed("s", 0, 50);
+  stale.Mark("s", "k");
+  // Check 1.
+  ASSERT_FALSE(refreshes.IsRunning("s"));
+  refreshes.Start("s");
+  const std::vector<std::string> asked = stale.Take("s");
+  ASSERT_EQ(asked.size(), 1u);
+  // Check 2 arrives before the answer for k.
+  ASSERT_TRUE(refreshes.IsRunning("s"));
+  refreshes.Wait("s", 2);
+  // (Chromium-shaped, without the wait: it would read now.)
+  EXPECT_EQ(totals.Of("s"), 50);
+  // k's usage comes back and is counted; check 1 reads; then check 2's
+  // refresh (nothing new) and its read.
+  totals.Changed("s", 0, 5);
+  EXPECT_EQ(totals.Of("s"), 55);
+  const std::vector<int> waiting = refreshes.Finished("s");
+  ASSERT_EQ(waiting, (std::vector<int>{2}));
+  EXPECT_TRUE(stale.Take("s").empty());
+  EXPECT_EQ(totals.Of("s"), 55);
+  EXPECT_TRUE(refreshes.Finished("s").empty());
+}
+
 }  // namespace
 }  // namespace storage
