@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/download/internal/background_service/BUILD.gn b/components/download/internal/background_service/BUILD.gn
-index 19f8acb9311677eb61e333dd8cf8408dc3926aca..af67ac18c363d4ce48f4240c1d001c397737567a 100644
+index 19f8acb9311677eb61e333dd8cf8408dc3926aca..52ecc2b2aa013ad6cc40462628587ac472fa91d6 100644
 --- a/components/download/internal/background_service/BUILD.gn
 +++ b/components/download/internal/background_service/BUILD.gn
 @@ -56,6 +56,9 @@ if (use_blink) {
@@ -18,17 +18,19 @@ index 19f8acb9311677eb61e333dd8cf8408dc3926aca..af67ac18c363d4ce48f4240c1d001c39
      configs += [ "//build/config/compiler:wexit_time_destructors" ]
  
      if (is_android) {
-@@ -76,6 +79,23 @@ if (use_blink) {
+@@ -76,6 +79,25 @@ if (use_blink) {
    }
  }
  
-+# MoltBrowser: MoltNet's in-memory Background Fetch limits and the site a
-+# registering page's fetches are isolated to (header-only), for :internal,
++# MoltBrowser: MoltNet's in-memory Background Fetch limits, the site a
++# registering page's fetches are isolated to, and what a page's fetch taken
++# up again in a later session carries (header-only), for :internal,
 +# //components/download/content/factory and MoltBrowser's own tests.
 +source_set("molt_site_isolation") {
 +  sources = [
 +    "molt_in_memory_download_limits.h",
 +    "molt_registering_site_isolation.h",
++    "molt_restored_fetch.h",
 +  ]
 +  public_deps = [
 +    "//net",

@@ -1,0 +1,36 @@
+MoltBrowser patch for components/download/internal/background_service/controller_impl.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/components/download/internal/background_service/controller_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/background_service/controller_impl.cc b/components/download/internal/background_service/controller_impl.cc
+index 9d0374f791c2d5d87ebaa1a71c19f69fe9a94a35..bda2c1c9d1a0139ba4d622cc4e17b679f9990e18 100644
+--- a/components/download/internal/background_service/controller_impl.cc
++++ b/components/download/internal/background_service/controller_impl.cc
+@@ -28,6 +28,7 @@
+ #include "components/download/internal/background_service/log_sink.h"
+ #include "components/download/internal/background_service/logger_impl.h"
+ #include "components/download/internal/background_service/model.h"
++#include "components/download/internal/background_service/molt_restored_fetch.h"  // MoltBrowser
+ #include "components/download/internal/background_service/scheduler/scheduler.h"
+ #include "components/download/internal/background_service/stats.h"
+ #include "components/download/network/download_http_utils.h"
+@@ -1107,6 +1108,17 @@ void ControllerImpl::OnDownloadReadyToStart(const std::string& guid,
+     entry->request_params.isolation_info = std::move(params.isolation_info);
+   }
+ 
++  // MoltBrowser: a page's fetch keeps its first party on redirects, and one
++  // whose download item is from an earlier session starts again with its
++  // initiator, isolation and credentials mode rather than resuming without
++  // them, as a request with a body does (molt_restored_fetch.h).
++  if (MoltPrepareRestoredFetch(entry->request_params,
++                               driver_->Find(guid).has_value())) {
++    driver_->Remove(entry->guid, /*remove_file=*/false);
++    PrepareToStartDownload(entry);
++    return;
++  }
++
+   auto blockage_status = IsDownloadBlocked(entry);
+   if (blockage_status.IsBlocked()) {
+     stats::LogDownloadPauseReason(blockage_status,
