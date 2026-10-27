@@ -50,7 +50,7 @@ Windows component build links them, the tools' own test suites and a
 fetch of the pinned release's tarball, and the compile check against
 Chromium 156's headers.
 
-**Findings.** 12: 3 low, 9 informational. Fixed: the three low and one
+**Findings.** 13: 3 low, 10 informational. Fixed: the three low and two
 informational.
 
 **Fixed.**
@@ -71,9 +71,11 @@ informational.
   and none of its files is written outside its directory. The compile
   check builds its cxxbridge with the dependency versions the crate's lock
   file pins, not the newest ones crates.io has.
-- Windows component builds: the Blob registry's delegate is exported, so
-  libraries other than the storage one link against its method defined in
-  the `.cc` file.
+- Builds: the Blob registry's delegate is exported, so in a Windows
+  component build libraries other than the storage one link against its
+  method defined in the `.cc` file; and the web AI translation header's
+  include of the inference engine's `raw_ptr` exclusion is allowed by its
+  DEPS rules, which checkdeps had refused.
 
 ## 2026-10-26: PR #72 and round 28 (October 2026)
 
