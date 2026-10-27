@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/component_export.h"
+#include "base/functional/callback.h"  // MoltBrowser
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
 #include "services/network/molt_keepalive_partitions.h"  // MoltBrowser
@@ -75,14 +76,30 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) KeepaliveStatisticsRecorder final {
   // one, or the site's own in a marked context.
   KeepaliveStatisticsRecorder* MoltRecorderFor(const void* context,
                                                const std::string& site);
+  // MoltBrowser: whether nothing uses this recorder (no top-level frame
+  // registered, nothing in flight): a site's can then go
+  // (molt_keepalive_partitions.h).
+  bool MoltIsIdle() const {
+    return per_top_level_frame_records_.empty() && num_inflight_requests_ == 0;
+  }
 
  private:
+  // MoltBrowser: a site's recorder tells the network service's (`root`) when
+  // it becomes idle, in a task of its own (it may be inside a call of its
+  // own), and is dropped there if it still is.
+  void MoltNotifyIfIdle();
+  static void MoltForgetIfIdle(base::WeakPtr<KeepaliveStatisticsRecorder> root,
+                               uintptr_t context,
+                               std::string site);
+
   std::map<base::UnguessableToken, PerTopLevelFrameStats>
       per_top_level_frame_records_;
   int num_inflight_requests_ = 0;
   int peak_inflight_requests_ = 0;
   // MoltBrowser: see MoltAddPartitionedContext().
   MoltKeepalivePartitions<KeepaliveStatisticsRecorder> molt_partitions_;
+  // MoltBrowser: for a site's recorder, what MoltNotifyIfIdle() runs.
+  base::RepeatingClosure molt_on_idle_;
   base::WeakPtrFactory<KeepaliveStatisticsRecorder> weak_ptr_factory_{this};
 };
 

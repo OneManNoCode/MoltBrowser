@@ -6,7 +6,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <utility>  // MoltBrowser
 
+#include "base/functional/bind.h"           // MoltBrowser
+#include "base/location.h"                  // MoltBrowser
+#include "base/task/sequenced_task_runner.h"  // MoltBrowser
 
 namespace network {
 
@@ -32,6 +36,7 @@ void KeepaliveStatisticsRecorder::Unregister(
 
   if (it->second.num_registrations == 1) {
     per_top_level_frame_records_.erase(it);
+    MoltNotifyIfIdle();  // MoltBrowser
     return;
   }
   --it->second.num_registrations;
@@ -64,6 +69,7 @@ void KeepaliveStatisticsRecorder::OnLoadFinished(
     it->second.total_request_size -= request_size;
   }
   --num_inflight_requests_;
+  MoltNotifyIfIdle();  // MoltBrowser
 }
 
 // MoltBrowser:
@@ -80,8 +86,31 @@ void KeepaliveStatisticsRecorder::MoltRemovePartitionedContext(
 KeepaliveStatisticsRecorder* KeepaliveStatisticsRecorder::MoltRecorderFor(
     const void* context,
     const std::string& site) {
-  return molt_partitions_.RecorderFor(reinterpret_cast<uintptr_t>(context),
-                                      site, this);
+  const uintptr_t key = reinterpret_cast<uintptr_t>(context);
+  KeepaliveStatisticsRecorder* recorder =
+      molt_partitions_.RecorderFor(key, site, this);
+  if (recorder != this && !recorder->molt_on_idle_) {
+    recorder->molt_on_idle_ = base::BindRepeating(
+        &KeepaliveStatisticsRecorder::MoltForgetIfIdle, AsWeakPtr(), key, site);
+  }
+  return recorder;
+}
+
+void KeepaliveStatisticsRecorder::MoltNotifyIfIdle() {
+  if (molt_on_idle_ && MoltIsIdle()) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+                                                             molt_on_idle_);
+  }
+}
+
+// static
+void KeepaliveStatisticsRecorder::MoltForgetIfIdle(
+    base::WeakPtr<KeepaliveStatisticsRecorder> root,
+    uintptr_t context,
+    std::string site) {
+  if (root) {
+    root->molt_partitions_.ForgetIfIdle(context, site);
+  }
 }
 
 int KeepaliveStatisticsRecorder::NumInflightRequestsPerTopLevelFrame(

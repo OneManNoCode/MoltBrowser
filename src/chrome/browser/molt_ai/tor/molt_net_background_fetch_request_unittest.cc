@@ -9,12 +9,16 @@
 
 #include "components/download/internal/background_service/molt_registering_site_isolation.h"
 
+#include <cstdint>
 #include <optional>
+#include <string>
+#include <string_view>
 
 #include "net/base/isolation_info.h"
 #include "net/cookies/site_for_cookies.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+#include "storage/browser/blob/molt_blob_budget_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -84,6 +88,31 @@ TEST(MoltNetBackgroundFetchRequestTest, OthersLeftAsChromium) {
     EXPECT_EQ(request.credentials_mode, CredentialsMode::kInclude);
     EXPECT_FALSE(request.request_initiator.has_value());
   }
+}
+
+// The blob key a fetch's response counts to: its site's, from the digest of
+// the serialized site (the same site, the same key, with nothing kept); the
+// site its origin came from for a page its server sandboxed; the browser's
+// own for a request with no site.
+TEST(MoltNetBackgroundFetchRequestTest, BlobKeyIsTheSitesDigest) {
+  std::string digested;
+  const auto digest = [&digested](std::string_view site) -> uint64_t {
+    digested = std::string(site);
+    return site.size();
+  };
+  const uint64_t a = MoltBlobBudgetKeyForFetch(
+      std::optional<net::IsolationInfo>(SiteIsolation(O("https://x.a.test"))),
+      digest);
+  EXPECT_EQ(digested, "https://a.test");
+  EXPECT_EQ(a, storage::MoltBlobSiteKeyFromDigest(14));
+  const url::Origin sandboxed = O("https://a.test").DeriveNewOpaqueOrigin();
+  EXPECT_EQ(MoltBlobBudgetKeyForFetch(
+                std::optional<net::IsolationInfo>(SiteIsolation(sandboxed)),
+                digest),
+            a);
+  EXPECT_EQ(MoltBlobBudgetKeyForFetch(std::optional<net::IsolationInfo>(),
+                                      digest),
+            storage::kMoltBlobBrowserKey);
 }
 
 }  // namespace
