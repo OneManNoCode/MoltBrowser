@@ -78,16 +78,62 @@ def ensure_inputs(tree):
     write_hook_outputs(tree)
 
 
+# What LASTCHANGE says when the pinned commit can't be read (fixed values).
+FALLBACK_COMMIT_TIME = 1767225600
+
+
+def parse_lastchange(commit, cat_file):
+    """(revision, commit time) as build/util/lastchange.py derives them
+    from a commit (`git cat-file commit` text) with its default filter
+    (^Change-Id:): "<hash>-<Cr-Commit-Position>" and the committer time.
+    None if the commit doesn't pass the filter (lastchange.py would look at
+    older commits, which the depth-1 cache doesn't have)."""
+    head, _, msg = cat_file.partition("\n\n")
+    ts = None
+    for line in head.splitlines():
+        if line.startswith("committer "):
+            parts = line.split()
+            if len(parts) >= 2 and parts[-2].isdigit():
+                ts = int(parts[-2])
+    lines = msg.splitlines()
+    if ts is None or not any(l.startswith("Change-Id:") for l in lines):
+        return None
+    pos = ""
+    for line in reversed(lines):
+        if line.startswith("Cr-Commit-Position:"):
+            pos = line.split()[-1].strip()
+            break
+    return ("%s-%s" % (commit, pos) if pos else commit), ts
+
+
+def lastchange_info(tree):
+    """(revision, commit time, exact) of the pinned checkout."""
+    commit = tree.chromium.commit
+    try:
+        text = tree.chromium.up.git(["cat-file", "commit", commit]).decode()
+        got = parse_lastchange(commit, text)
+    except (RuntimeError, OSError, UnicodeDecodeError):
+        got = None
+    if got is None:
+        return "%s-refs/heads/main@{#0}" % commit, FALLBACK_COMMIT_TIME, False
+    return got[0], got[1], True
+
+
 def write_hook_outputs(tree):
-    """Files gclient's hooks write into a checkout."""
-    pin = tree.chromium.rev
+    """Files gclient's hooks write into a checkout: build/util/LASTCHANGE
+    and its .committime as lastchange.py writes them for the pinned
+    commit (its Cr-Commit-Position and committer time, from the cache)."""
+    import datetime
     util = tree.tree_dir / "build" / "util"
     util.mkdir(parents=True, exist_ok=True)
-    lc = "LASTCHANGE=%s-refs/heads/main@{#0}\n" % pin
+    rev, ts, _ = lastchange_info(tree)
+    year = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).year
+    lc = "LASTCHANGE=%s\nLASTCHANGE_YEAR=%s\n" % (rev, year)
     if not (util / "LASTCHANGE").exists() or \
-            (util / "LASTCHANGE").read_text() != lc:
+            (util / "LASTCHANGE").read_text() != lc or \
+            not (util / "LASTCHANGE.committime").exists():
         (util / "LASTCHANGE").write_text(lc)
-        (util / "LASTCHANGE.committime").write_text("1767225600")
+        (util / "LASTCHANGE.committime").write_text(str(ts))
     if not (util / "LASTCHANGE.dummy").exists():
         (util / "LASTCHANGE.dummy").write_text(
             "LASTCHANGE=0000000000000000000000000000000000000000-0000000000000000000000000000000000000000\n")
@@ -254,6 +300,11 @@ def refresh_generated(args, tree, interp, produce):
         report["cxx_refresh"] = {"remade": ok, "removed": gone}
         print("cxx: %d bridge header(s) remade, %d removed" % (len(ok),
                                                                len(gone)))
+    ok = gen_misc.replace_stand_ins(tree, interp, produce)
+    if ok:
+        report["stand_ins_replaced"] = {"remade": ok}
+        print("generated: %d stand-in(s) replaced by the real generator's "
+              "output (%s)" % (len(ok), ", ".join(ok)))
     return report
 
 

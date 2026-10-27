@@ -19,7 +19,9 @@ that include its output rest partly on a stand-in (the report lists them):
   grit        only if grit itself fails on a .grd: every <message>,
               <include> and <structure> name in it and its <part> files,
               numbered from a per-header base.
-  build date  base/generated_build_date.h with a fixed date.
+  build date  base/generated_build_date.h with a fixed date, only if
+              its GN actions (base:build_date_internal, from the pinned
+              commit's time, and the copy base:build_date_header) fail.
   preloads    net/http/transport_security_state_static*.h: the real
               .template the build's generator fills (every declaration
               transport_security_state.cc compiles against), with
@@ -63,15 +65,81 @@ TOOLS = {}
 
 
 def handles_exclusively(name):
-    """Names no GN action here could make (skip looking for one)."""
-    return bool(GRIT_RE.search(name)) or name in WRITERS or \
-        name.endswith(".rs.h") or _pattern_writer(name) is not None
+    """Names no GN action here could make (skip looking for one). The
+    stand-in writers (WRITERS, PATTERN_WRITERS) are fallbacks: their GN
+    action is tried first."""
+    return bool(GRIT_RE.search(name)) or name.endswith(".rs.h")
 
 
 def handles(name):
     return bool(GRIT_RE.search(name)) or name in WRITERS or \
         name.endswith((".rs.h", "_generated.h")) or \
         _pattern_writer(name) is not None
+
+
+def is_fallback(name):
+    """Whether a stand-in writer makes `name` when its GN action can't."""
+    return name in WRITERS or _pattern_writer(name) is not None
+
+
+STANDIN_STAMPS = "standin_stamps.json"
+# Bump to retry replacing every fallback stand-in with its real generator
+# (else a failure is remembered until the pin changes).
+STANDIN_RETRY_VERSION = "1"
+
+
+def replace_stand_ins(tree, interp, produce):
+    """Remakes, with their real GN actions, the fallback stand-ins earlier
+    runs wrote (a run before the action could run here, or one where it
+    failed). A stand-in whose action fails again stays, and is not retried
+    until STANDIN_RETRY_VERSION or the pin changes. Returns the names
+    remade."""
+    gen_dir = Path(tree.gen_dir)
+    if not gen_dir.is_dir():
+        return []
+    cands = [n for n in WRITERS if (gen_dir / n).is_file()]
+    for rx, _ in PATTERN_WRITERS:
+        # The pattern writers' names, from what earlier runs wrote.
+        d = rx.pattern.lstrip("^").split("/")
+        sub = gen_dir.joinpath(*d[:-1]) if len(d) > 1 else gen_dir
+        if sub.is_dir():
+            for f in sorted(sub.iterdir()):
+                rel = str(f.relative_to(gen_dir))
+                if rx.match(rel):
+                    cands.append(rel)
+    try:
+        stamps = json.loads((Path(tree.state) / STANDIN_STAMPS).read_text())
+    except (OSError, ValueError):
+        stamps = {}
+    key = "%s %s" % (STANDIN_RETRY_VERSION, tree.chromium.rev)
+    remade = []
+    for n in cands:
+        f = gen_dir / n
+        try:
+            head = f.read_bytes()[:200]
+        except OSError:
+            continue
+        if b"compile_check STAND-IN" not in head or stamps.get(n) == key:
+            continue
+        aside = f.with_name(f.name + ".standin")
+        f.rename(aside)
+        try:
+            ok = bool(produce([n])) and f.exists()
+        except Exception:  # noqa: BLE001 - keep the stand-in
+            ok = False
+        if ok:
+            aside.unlink()
+            stamps.pop(n, None)
+            remade.append(n)
+        else:
+            if f.exists():
+                f.unlink()
+            aside.rename(f)
+            stamps[n] = key
+    Path(tree.state).mkdir(parents=True, exist_ok=True)
+    (Path(tree.state) / STANDIN_STAMPS).write_text(
+        json.dumps(stamps, indent=1, sort_keys=True))
+    return remade
 
 
 def flatbuffer_header(tree, interp, name):
@@ -679,7 +747,7 @@ WRITERS = {
     "base/generated_build_date.h": build_date,
 }
 
-# Writers for names matching a pattern.
+# Writers for names matching a pattern (fallbacks too).
 PATTERN_WRITERS = [
     (re.compile(r"^net/http/transport_security_state_static[a-z0-9_]*\.h$"),
      preload_header),

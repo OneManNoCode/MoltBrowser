@@ -22,6 +22,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -1250,7 +1251,10 @@ action("generate_transport_security_state") {
         tree = FakeTree(files)
         interp = make_interp(files)
         name = "net/http/transport_security_state_static.h"
-        self.assertTrue(gen_misc.handles_exclusively(name))
+        # A fallback: the generator's GN action is tried first.
+        self.assertFalse(gen_misc.handles_exclusively(name))
+        self.assertTrue(gen_misc.handles(name))
+        self.assertTrue(gen_misc.is_fallback(name))
         text = gen_misc.preload_header(tree, interp, name)
         self.assertTrue(text.startswith("// compile_check STAND-IN"))
         self.assertIn("kHSTSHuffmanTree[] = {0};", text)
@@ -1307,6 +1311,90 @@ action("generate_transport_security_state_pins") {
             "v8/src/init/v8.cc")
         self.assertIn("-DV8_USE_METAGEN_INSTANCE_TYPES=0", c)
         self.assertIn("V8_USE_METAGEN_INSTANCE_TYPES", scan.FALSE_ATOMS)
+
+
+class FallbackStandInsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.tree = types.SimpleNamespace(
+            gen_dir=self.tmp / "gen", state=self.tmp / "state",
+            chromium=types.SimpleNamespace(rev="pin1"))
+        f = self.tree.gen_dir / "base" / "generated_build_date.h"
+        f.parent.mkdir(parents=True)
+        f.write_text("// compile_check STAND-IN for base/x\n")
+        self.f = f
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_stand_in_replaced_when_the_action_runs(self):
+        def produce(rels):
+            self.assertFalse(self.f.exists())  # moved aside first
+            self.f.write_text("#define BASE_GENERATED_BUILD_DATE_TIMESTAMP 1\n")
+            return rels
+        self.assertEqual(gen_misc.replace_stand_ins(self.tree, None, produce),
+                         ["base/generated_build_date.h"])
+        self.assertNotIn("STAND-IN", self.f.read_text())
+        self.assertEqual(list(self.f.parent.iterdir()), [self.f])
+
+    def test_failure_keeps_it_and_is_not_retried_until_the_pin_moves(self):
+        calls = []
+
+        def produce(rels):
+            calls.append(rels)
+            return []
+        for _ in range(2):
+            self.assertEqual(gen_misc.replace_stand_ins(self.tree, None,
+                                                        produce), [])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("STAND-IN", self.f.read_text())
+        self.tree.chromium.rev = "pin2"
+        gen_misc.replace_stand_ins(self.tree, None, produce)
+        self.assertEqual(len(calls), 2)
+
+
+class CopyActionTest(unittest.TestCase):
+    def test_copy_target(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            files = {"base/BUILD.gn": """
+copy("build_date_header") {
+  sources = [ "$root_build_dir/gen/base/internal.h" ]
+  outputs = [ "$target_gen_dir/generated.h" ]
+}
+"""}
+            interp = make_interp(files)
+            tree = types.SimpleNamespace(tree_dir=tmp, materialize=None)
+            (tmp / "out/cc/gen/base").mkdir(parents=True)
+            (tmp / "out/cc/gen/base/internal.h").write_text("#define X 1\n")
+            t = [x for x in interp.run_file("//base/BUILD.gn")
+                 if x.name == "build_date_header"][0]
+            self.assertIsNone(gen_actions.run_copy(tree, interp, t))
+            self.assertEqual((tmp / "out/cc/gen/base/generated.h")
+                             .read_text(), "#define X 1\n")
+        finally:
+            shutil.rmtree(tmp)
+
+
+class LastChangeTest(unittest.TestCase):
+    COMMIT = ("tree 1\nparent 2\nauthor a <a> 1792446655 -0700\n"
+              "committer c <c> 1792446656 -0700\n\n"
+              "Incrementing VERSION to 1.2.3.4\n\n"
+              "Change-Id: I123\n"
+              "Cr-Commit-Position: refs/branch-heads/8078@{#1314}\n"
+              "Cr-Branched-From: abc-refs/heads/main@{#1706539}\n")
+
+    def test_release_commit(self):
+        self.assertEqual(compile_check.parse_lastchange("d0c0", self.COMMIT),
+                         ("d0c0-refs/branch-heads/8078@{#1314}", 1792446656))
+
+    def test_commit_lastchange_would_skip(self):
+        self.assertIsNone(compile_check.parse_lastchange(
+            "d0c0", self.COMMIT.replace("Change-Id: I123\n", "")))
+        self.assertEqual(compile_check.parse_lastchange(
+            "d0c0", self.COMMIT.replace(
+                "Cr-Commit-Position: refs/branch-heads/8078@{#1314}\n", "")),
+            ("d0c0", 1792446656))
 
 
 class UnlistedTest(unittest.TestCase):

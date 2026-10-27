@@ -212,6 +212,32 @@ def plugin_name(args):
     return None
 
 
+def run_copy(tree, interp, t):
+    """A copy() target: each source to its output (GN's
+    {{source_file_part}} placeholders). Returns None on success."""
+    import shutil as _shutil
+    srcs = t.get("sources")
+    outs = t.get("outputs")
+    if not isinstance(srcs, list) or not isinstance(outs, list) or \
+            len(outs) != 1 or not isinstance(outs[0], str):
+        return "%s: sources/outputs not computable" % t
+    for s in srcs:
+        if not isinstance(s, str):
+            return "%s: sources not computable" % t
+        a = interp.abspath(s, {"dir": t.path})[2:]
+        if not a.startswith(gn.OUT[2:] + "/"):
+            tree.materialize([a])
+        src = tree.tree_dir / a
+        if not src.exists():
+            return "%s: %s is missing" % (t, a)
+        o = interp.abspath(foreach_expand(outs[0], a, False),
+                           {"dir": t.path})[2:]
+        dst = tree.tree_dir / o
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _shutil.copyfile(src, dst)
+    return None
+
+
 def run_action(tree, interp, t, depth=0):
     """Returns None on success, else a reason."""
     # Files gn's write_file() would have written while generating.
@@ -228,6 +254,8 @@ def run_action(tree, interp, t, depth=0):
                                     hint=t.path[2:].rstrip("/") + "/BUILD.gn")
                 if failed:
                     return "%s: input %s: %s" % (t, rel, failed[rel][:300])
+    if t.func == "copy":
+        return run_copy(tree, interp, t)
     script = t.get("script")
     args = t.get("args")
     if not isinstance(script, str) or not isinstance(args, list):
