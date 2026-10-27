@@ -295,6 +295,20 @@ class Interp(gnlib.Interp):
             if isinstance(lst, list) and any(x is gnlib.UNKNOWN
                                              for x in lst):
                 return gnlib.UNKNOWN
+        if name in ("filter_labels_include", "filter_labels_exclude") and \
+                len(args) == 2:
+            # WebRTC's rtc_library() moves Abseil deps with these.
+            lst = self.eval(args[0], scope, ctx)
+            pats = self.eval(args[1], scope, ctx)
+            if not isinstance(lst, list) or not isinstance(pats, list) or \
+                    _unknownish(lst) or _unknownish(pats):
+                return gnlib.UNKNOWN
+            d = ctx.get("dir") or "//"
+            pats = [p for p in (norm_pattern(x, d) for x in pats) if p]
+            keep = name == "filter_labels_include"
+            return [x for x in lst if any(
+                label_matches(p, norm_label(x, d) or "") for p in pats)
+                == keep]
         if name == "get_target_outputs" and args and \
                 ctx.get("targets") is not None:
             # Also an action_foreach's outputs, one set per source.

@@ -462,6 +462,25 @@ if (molt_test_switch) {
         self.assertIsNotNone(gr.target("//var:switch_only"))
         self.assertEqual(gr.target("//base:base").type, "component")
 
+    def test_filter_labels(self):
+        # WebRTC's rtc_library() sorts its deps with these: a target's deps
+        # must stay known through them.
+        write_tree(self.root, {"lab/BUILD.gn": """
+d = [ ":x", "//third_party/abseil-cpp/absl/base:core", "../base" ]
+a = filter_labels_include(d, [ "//third_party/abseil-cpp/*" ])
+source_set("x") {}
+source_set("y") {
+  deps = filter_labels_exclude(d, [ "//third_party/abseil-cpp/*" ])
+  if (a != []) {
+    deps += [ "//third_party/abseil-cpp:absl" ]
+  }
+}
+"""})
+        gr, _ = self.graph()
+        self.assertEqual(gr.target("//lab:y").deps,
+                         ["//lab:x", "//base:base",
+                          "//third_party/abseil-cpp:absl"])
+
 
 class RunTest(Base):
     """run() over an overlay: a first-party file, a changed upstream file
