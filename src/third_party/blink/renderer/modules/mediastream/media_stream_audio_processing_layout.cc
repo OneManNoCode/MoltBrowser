@@ -7,6 +7,7 @@
 #include "build/build_config.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"
 
 namespace blink {
 
@@ -162,6 +163,12 @@ media::AudioProcessingSettings ComputeWebrtcProcessingSettings(
   out.multi_channel_capture_processing = multichannel_processing;
 
   out.use_loopback_aec_reference = echo_canceller.NeedSystemLoopback();
+
+  // MoltBrowser: MoltNet's renderers (the portable media process) have the
+  // microphone processed with the code that gives the same samples for the
+  // same input on every CPU, in the audio service and in the renderer alike;
+  // other windows keep the CPU's vector code.
+  out.cpu_independent = media::IsPortableMediaProcess();
 
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
   // `media::AudioParameters::VOICE_ISOLATION_SUPPORTED` is a platform

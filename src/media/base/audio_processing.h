@@ -31,6 +31,15 @@ struct MEDIA_EXPORT AudioProcessingSettings {
   // If true, voice isolation will be applied.
   bool voice_isolation = false;
 #endif
+  // MoltBrowser: process with the code that gives the same samples for the
+  // same input on every CPU (WebRTC's plain C++ paths and portable math
+  // functions instead of its SSE2, AVX2 or NEON code; third_party/webrtc/
+  // rtc_base/cpu_info.h, ScopedCpuIndependent), and without the neural
+  // residual echo estimator, whose model runs on the CPU's vector code. Set by
+  // MoltNet's renderers (ComputeWebrtcProcessingSettings in
+  // media_stream_audio_processing_layout.cc), for the processing in the audio
+  // service and in the renderer alike.
+  bool cpu_independent = false;
 
   bool operator==(const AudioProcessingSettings& b) const {
     bool equal = echo_cancellation == b.echo_cancellation &&
@@ -38,7 +47,8 @@ struct MEDIA_EXPORT AudioProcessingSettings {
                  automatic_gain_control == b.automatic_gain_control &&
                  multi_channel_capture_processing ==
                      b.multi_channel_capture_processing &&
-                 use_loopback_aec_reference == b.use_loopback_aec_reference;
+                 use_loopback_aec_reference == b.use_loopback_aec_reference &&
+                 cpu_independent == b.cpu_independent;
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
     equal = equal && voice_isolation == b.voice_isolation;
 #endif

@@ -159,6 +159,9 @@ CreateWebRtcAudioProcessingModule(
       webrtc::AudioProcessing::Config::NoiseSuppression::Level::kHigh;
   apm_config.echo_canceller.enabled = settings.echo_cancellation;
   ConfigAutomaticGainControl(settings, apm_config);
+  // MoltBrowser: the same samples for the same input on every CPU (MoltNet's
+  // streams; AudioProcessingSettings::cpu_independent).
+  apm_config.moltbrowser_cpu_independent = settings.cpu_independent;
 
   webrtc::BuiltinAudioProcessingBuilder apm_builder(apm_config);
   base::TimeDelta added_delay;
@@ -168,7 +171,9 @@ CreateWebRtcAudioProcessingModule(
   // Avoid linking the op resolver to keep Fuchsia binary size down.
   // TODO(crbug.com/450466837): Investigate if this build guard can be avoided.
 #if !BUILDFLAG(IS_FUCHSIA)
-  if (residual_echo_estimator_model) {
+  // MoltBrowser: no neural residual echo estimator in CPU-independent
+  // processing: TFLite runs its model on the CPU's vector code.
+  if (residual_echo_estimator_model && !settings.cpu_independent) {
     if (base::FeatureList::IsEnabled(
             features::kWebRtcNeuralResidualEchoEstimationAsyncInit)) {
       echo_estimator = webrtc::CreateNeuralResidualEchoEstimatorAsync(

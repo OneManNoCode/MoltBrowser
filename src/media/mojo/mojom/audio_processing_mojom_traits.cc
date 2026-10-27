@@ -32,6 +32,8 @@ bool StructTraits<media::mojom::AudioProcessingSettingsDataView,
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
   out_settings->voice_isolation = input.voice_isolation();
 #endif
+  // MoltBrowser.
+  out_settings->cpu_independent = input.cpu_independent();
   return true;
 }
 

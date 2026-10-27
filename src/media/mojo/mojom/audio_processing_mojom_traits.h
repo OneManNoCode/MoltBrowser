@@ -57,6 +57,10 @@ struct StructTraits<media::mojom::AudioProcessingSettingsDataView,
     return s.voice_isolation;
   }
 #endif
+  // MoltBrowser.
+  static bool cpu_independent(const media::AudioProcessingSettings& s) {
+    return s.cpu_independent;
+  }
   static bool Read(media::mojom::AudioProcessingSettingsDataView input,
                    media::AudioProcessingSettings* out_settings);
 };

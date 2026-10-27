@@ -25,6 +25,11 @@ struct AudioProcessingSettings {
 
   [EnableIf=chrome_wide_echo_cancellation]
   bool voice_isolation;
+
+  // MoltBrowser: process with the code that gives the same samples on every
+  // CPU (media::AudioProcessingSettings::cpu_independent). MoltNet's renderers
+  // set it.
+  bool cpu_independent;
 };
 
 // This interface is hosted in the audio service and called from the renderer.
