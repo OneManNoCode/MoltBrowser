@@ -47,6 +47,7 @@
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/download/embedder_download_data.pb.h"
 #include "content/browser/download/molt_download_isolation.h"  // MoltBrowser
+#include "content/browser/download/molt_resumed_fetch_factory.h"  // MoltBrowser
 #include "content/browser/file_system/file_system_url_loader_factory.h"
 #include "content/browser/loader/file_url_loader_factory.h"
 #include "content/browser/loader/response_head_update_params.h"
@@ -1825,8 +1826,15 @@ void DownloadManagerImpl::BeginResourceDownloadOnChecksComplete(
 
     StoragePartitionImpl* storage_partition = GetStoragePartitionForConfig(
         browser_context_, storage_partition_config);
+    // MoltBrowser: a page's Background Fetch request without its service
+    // worker's factory (a resumed one) still has its Local Network Access
+    // checked (molt_resumed_fetch_policy.h).
     pending_url_loader_factory =
-        CreatePendingSharedURLLoaderFactory(storage_partition, rfh);
+        MoltLnaFactoryForFetch(storage_partition, *params);
+    if (!pending_url_loader_factory) {
+      pending_url_loader_factory =
+          CreatePendingSharedURLLoaderFactory(storage_partition, rfh);
+    }
   }
 
   in_progress_manager_->BeginDownload(
