@@ -55,4 +55,7 @@ rtc_library("fft_size_256") {
     "fft_size_256/fft4g.cc",
     "fft_size_256/fft4g.h",
   ]
+
+  # MoltBrowser: portable math in CPU-independent processing.
+  deps = [ "../../../rtc_base:molt_math" ]
 }

@@ -24,6 +24,7 @@
 #include "modules/audio_processing/ns/ns_config.h"
 #include "modules/audio_processing/ns/suppression_params.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 
@@ -228,8 +229,9 @@ float ComputeUpperBandsGain(
   avg_prob_speech *= sum_processing_spectrum / sum_analysis_spectrum;
 
   // Compute gain based on speech probability.
-  float gain =
-      0.5f * (1.f + static_cast<float>(tanh(2.f * avg_prob_speech - 1.f)));
+  // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+  float gain = 0.5f * (1.f + static_cast<float>(molt_math::Tanh(
+                                    2.f * avg_prob_speech - 1.f)));
 
   // Combine gain with low band gain.
   if (avg_prob_speech >= 0.5f) {

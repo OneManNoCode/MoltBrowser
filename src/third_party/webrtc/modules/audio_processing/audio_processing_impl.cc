@@ -56,6 +56,7 @@
 #include "modules/audio_processing/render_queue_item_verifier.h"
 #include "modules/audio_processing/rms_level.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/cpu_info.h"
 #include "rtc_base/denormal_disabler.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/swap_queue.h"
@@ -451,6 +452,7 @@ AudioProcessingImpl::AudioProcessingImpl(
     std::unique_ptr<NeuralResidualEchoEstimator> neural_residual_echo_estimator)
     : env_(env),
       data_dumper_(new ApmDataDumper(instance_count_.fetch_add(1) + 1)),
+      cpu_independent_(config.moltbrowser_cpu_independent),
       capture_runtime_settings_(RuntimeSettingQueueSize()),
       render_runtime_settings_(RuntimeSettingQueueSize()),
       capture_runtime_settings_enqueuer_(&capture_runtime_settings_),
@@ -498,12 +500,16 @@ AudioProcessingImpl::AudioProcessingImpl(
 
   RTC_LOG(LS_INFO) << "AudioProcessing: " << config_.ToString();
 
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   Initialize();
 }
 
 AudioProcessingImpl::~AudioProcessingImpl() = default;
 
 int AudioProcessingImpl::Initialize() {
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   // Run in a single-threaded manner during initialization.
   MutexLock lock_render(&mutex_render_);
   MutexLock lock_capture(&mutex_capture_);
@@ -512,6 +518,8 @@ int AudioProcessingImpl::Initialize() {
 }
 
 int AudioProcessingImpl::Initialize(const ProcessingConfig& processing_config) {
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   // Run in a single-threaded manner during initialization.
   MutexLock lock_render(&mutex_render_);
   MutexLock lock_capture(&mutex_capture_);
@@ -673,6 +681,8 @@ void AudioProcessingImpl::InitializeLocked(const ProcessingConfig& config) {
 }
 
 void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   // Run in a single-threaded manner when applying the settings.
   MutexLock lock_render(&mutex_render_);
   MutexLock lock_capture(&mutex_capture_);
@@ -713,6 +723,8 @@ void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
       config_.capture_level_adjustment != config.capture_level_adjustment;
 
   config_ = config;
+  // MoltBrowser: fixed when the instance is built.
+  config_.moltbrowser_cpu_independent = cpu_independent_;
 
   if (aec_config_changed) {
     InitializeEchoController();
@@ -793,6 +805,8 @@ size_t AudioProcessingImpl::num_output_channels() const {
 }
 
 void AudioProcessingImpl::set_output_will_be_muted(bool muted) {
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   MutexLock lock(&mutex_capture_);
   HandleCaptureOutputUsedSetting(!muted);
 }
@@ -911,6 +925,8 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
                                        const StreamConfig& output_config,
                                        float* const* dest) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessStream_StreamConfig");
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   DenormalDisabler denormal_disabler;
   RETURN_ON_ERR(
       HandleUnsupportedAudioFormats(src, input_config, output_config, dest));
@@ -1185,6 +1201,8 @@ int AudioProcessingImpl::ProcessStream(const int16_t* const src,
                                        const StreamConfig& output_config,
                                        int16_t* const dest) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessStream_AudioFrame");
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
 
   RETURN_ON_ERR(
       HandleUnsupportedAudioFormats(src, input_config, output_config, dest));
@@ -1499,6 +1517,8 @@ int AudioProcessingImpl::AnalyzeReverseStream(
     const float* const* data,
     const StreamConfig& reverse_config) {
   TRACE_EVENT0("webrtc", "AudioProcessing::AnalyzeReverseStream_StreamConfig");
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   MutexLock lock(&mutex_render_);
   DenormalDisabler denormal_disabler;
   RTC_DCHECK(data);
@@ -1517,6 +1537,8 @@ int AudioProcessingImpl::ProcessReverseStream(const float* const* src,
                                               const StreamConfig& output_config,
                                               float* const* dest) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessReverseStream_StreamConfig");
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   MutexLock lock(&mutex_render_);
   DenormalDisabler denormal_disabler;
   RETURN_ON_ERR(
@@ -1563,6 +1585,8 @@ int AudioProcessingImpl::ProcessReverseStream(const int16_t* const src,
                                               const StreamConfig& output_config,
                                               int16_t* const dest) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessReverseStream_AudioFrame");
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
 
   MutexLock lock(&mutex_render_);
   DenormalDisabler denormal_disabler;
@@ -1677,6 +1701,8 @@ void AudioProcessingImpl::set_stream_key_pressed(bool key_pressed) {
 }
 
 void AudioProcessingImpl::set_stream_analog_level(int level) {
+  // MoltBrowser: CPU-independent processing for this instance.
+  cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   MutexLock lock_capture(&mutex_capture_);
   set_stream_analog_level_locked(level);
 }

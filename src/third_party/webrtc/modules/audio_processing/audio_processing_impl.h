@@ -188,6 +188,11 @@ class AudioProcessingImpl : public AudioProcessing {
   const std::unique_ptr<ApmDataDumper> data_dumper_;
   static std::atomic<int> instance_count_;
 
+  // MoltBrowser: Config::moltbrowser_cpu_independent as the instance was built
+  // with it. Every public method that builds or runs submodules opens a
+  // cpu_info::ScopedCpuIndependent with it.
+  const bool cpu_independent_;
+
   SwapQueue<RuntimeSetting> capture_runtime_settings_;
   SwapQueue<RuntimeSetting> render_runtime_settings_;
 

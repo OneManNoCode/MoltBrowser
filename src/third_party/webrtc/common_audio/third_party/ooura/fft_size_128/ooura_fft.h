@@ -57,6 +57,10 @@ class OouraFft {
   void cftbsub_128(float* a) const;
   void bitrv2_128(float* a) const;
   bool use_sse2_;
+#if defined(WEBRTC_HAS_NEON)
+  // MoltBrowser: false in CPU-independent processing (rtc_base/cpu_info.h).
+  bool use_neon_ = true;
+#endif
 };
 
 }  // namespace webrtc

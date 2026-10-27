@@ -46,9 +46,10 @@ AvailableCpuFeatures GetAvailableCpuFeatures() {
           /*avx2=*/cpu_info::Supports(cpu_info::ISA::kAVX2),
           /*neon=*/false};
 #elif defined(WEBRTC_HAS_NEON)
+  // MoltBrowser: the plain C++ paths in CPU-independent processing.
   return {/*sse2=*/false,
           /*avx2=*/false,
-          /*neon=*/true};
+          /*neon=*/!cpu_info::IsCpuIndependent()};
 #else
   return {/*sse2=*/false,
           /*avx2=*/false,

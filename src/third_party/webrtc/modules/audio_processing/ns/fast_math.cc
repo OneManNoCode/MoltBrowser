@@ -17,6 +17,7 @@
 #include <span>
 
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 
@@ -48,7 +49,8 @@ float SqrtFastApproximation(float f) {
 
 float Pow2Approximation(float p) {
   // TODO(peah): Add fast approximate implementation.
-  return powf(2.f, p);
+  // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+  return molt_math::Pow(2.f, p);
 }
 
 float PowApproximation(float x, float p) {

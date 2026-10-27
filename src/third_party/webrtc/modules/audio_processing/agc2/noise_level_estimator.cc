@@ -19,6 +19,7 @@
 #include "api/audio/audio_view.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 namespace {
@@ -44,7 +45,8 @@ float EnergyToDbfs(float signal_energy, int num_samples) {
   if (rms_square <= 1.0f) {
     return kMinDbfs;
   }
-  return 10.0f * std::log10(rms_square) + kMinDbfs;
+  // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+  return 10.0f * molt_math::Log10(rms_square) + kMinDbfs;
 }
 
 // Updates the noise floor with instant decay and slow attack. This tuning is

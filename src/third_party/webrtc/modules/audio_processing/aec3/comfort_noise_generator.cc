@@ -26,6 +26,7 @@
 #include "modules/audio_processing/aec3/fft_data.h"
 #include "modules/audio_processing/aec3/vector_math.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 
 // Defines WEBRTC_ARCH_X86_FAMILY, used below.
 #include "rtc_base/system/arch.h"
@@ -43,7 +44,9 @@ using std::numbers::sqrt2_v;
 float GetNoiseFloorFactor(float noise_floor_dbfs) {
   // kdBfsNormalization = 20.f*log10(32768.f).
   constexpr float kdBfsNormalization = 90.30899869919436f;
-  return 64.f * powf(10.f, (kdBfsNormalization + noise_floor_dbfs) * 0.1f);
+  // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+  return 64.f * molt_math::Pow(
+                   10.f, (kdBfsNormalization + noise_floor_dbfs) * 0.1f);
 }
 
 // Table of sqrt(2) * sin(2*pi*i/32).

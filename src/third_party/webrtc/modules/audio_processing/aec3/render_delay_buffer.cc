@@ -36,6 +36,7 @@
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 namespace {
@@ -121,8 +122,9 @@ RenderDelayBufferImpl::RenderDelayBufferImpl(const EchoCanceller3Config& config,
     : data_dumper_(new ApmDataDumper(instance_count_.fetch_add(1) + 1)),
       optimization_(DetectOptimization()),
       config_(config),
-      render_linear_amplitude_gain_(
-          std::pow(10.0f, config_.render_levels.render_power_gain_db / 20.f)),
+      // MoltBrowser: portable in CPU-independent processing.
+      render_linear_amplitude_gain_(molt_math::Pow(
+          10.0f, config_.render_levels.render_power_gain_db / 20.f)),
       delay_log_level_(config_.delay.log_warning_on_delay_changes ? LS_WARNING
                                                                   : LS_VERBOSE),
       down_sampling_factor_(config.delay.down_sampling_factor),

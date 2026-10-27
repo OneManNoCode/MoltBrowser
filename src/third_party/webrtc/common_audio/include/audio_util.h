@@ -20,6 +20,7 @@
 
 #include "api/audio/audio_view.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 
@@ -83,7 +84,8 @@ void FloatToFloatS16(const float* src, size_t size, float* dest);
 void FloatS16ToFloat(const float* src, size_t size, float* dest);
 
 inline float DbToRatio(float v) {
-  return std::pow(10.0f, v / 20.0f);
+  // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+  return molt_math::Pow(10.0f, v / 20.0f);
 }
 
 inline float DbfsToFloatS16(float v) {
@@ -100,7 +102,8 @@ inline float FloatS16ToDbfs(float v) {
     return kMinDbfs;
   }
   // Equal to 20 * log10(v / (-limits_int16::min()))
-  return 20.0f * std::log10(v) + kMinDbfs;
+  // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+  return 20.0f * molt_math::Log10(v) + kMinDbfs;
 }
 
 // Copy audio from `src` channels to `dest` channels unless `src` and `dest`

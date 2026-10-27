@@ -22,6 +22,7 @@
 #include "modules/audio_processing/agc2/interpolated_gain_curve.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/numerics/safe_minmax.h"
 
@@ -43,8 +44,9 @@ void InterpolateFirstSubframe(float last_factor,
   constexpr float p = kAttackFirstSubframeInterpolationPower;
   for (int i = 0; i < n; ++i) {
     float t = static_cast<float>(i) / n;
-    subframe[i] =
-        std::pow(1.f - t, p) * (last_factor - current_factor) + current_factor;
+    // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+    subframe[i] = molt_math::Pow(1.f - t, p) * (last_factor - current_factor) +
+                  current_factor;
   }
 }
 

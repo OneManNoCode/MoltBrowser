@@ -93,6 +93,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/cpu_info.h"
 #include "rtc_base/memory/aligned_malloc.h"
+#include "rtc_base/molt_math.h"
 #include "rtc_base/system/arch.h"
 
 namespace webrtc {
@@ -122,7 +123,10 @@ const size_t SincResampler::kKernelSize;
 // If we know the minimum architecture at compile time, avoid CPU detection.
 void SincResampler::InitializeCPUSpecificFeatures() {
 #if defined(WEBRTC_HAS_NEON)
-  convolve_proc_ = Convolve_NEON;
+  // MoltBrowser: the C convolution in CPU-independent processing
+  // (rtc_base/cpu_info.h); on x86 cpu_info::Supports() is false there.
+  convolve_proc_ =
+      cpu_info::IsCpuIndependent() ? Convolve_C : Convolve_NEON;
 #elif defined(WEBRTC_ARCH_X86_FAMILY)
   // Using AVX2 instead of SSE2 when AVX2/FMA3 supported.
   if (cpu_info::Supports(cpu_info::ISA::kAVX2) &&
@@ -215,17 +219,19 @@ void SincResampler::InitializeKernel() {
 
       // Compute Blackman window, matching the offset of the sinc().
       const float x = (i - subsample_offset) / kKernelSize;
-      const float window =
-          static_cast<float>(kA0 - kA1 * cos(2.0 * std::numbers::pi * x) +
-                             kA2 * cos(4.0 * std::numbers::pi * x));
+      // MoltBrowser: portable in CPU-independent processing.
+      const float window = static_cast<float>(
+          kA0 - kA1 * molt_math::Cos(2.0 * std::numbers::pi * x) +
+          kA2 * molt_math::Cos(4.0 * std::numbers::pi * x));
       kernel_window_storage_[idx] = window;
 
       // Compute the sinc with offset, then window the sinc() function and store
       // at the correct offset.
       kernel_storage_[idx] = static_cast<float>(
-          window * ((pre_sinc == 0)
-                        ? sinc_scale_factor
-                        : (sin(sinc_scale_factor * pre_sinc) / pre_sinc)));
+          window *
+          ((pre_sinc == 0)
+               ? sinc_scale_factor
+               : (molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc)));
     }
   }
 }
@@ -248,9 +254,10 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
       const float pre_sinc = kernel_pre_sinc_storage_[idx];
 
       kernel_storage_[idx] = static_cast<float>(
-          window * ((pre_sinc == 0)
-                        ? sinc_scale_factor
-                        : (sin(sinc_scale_factor * pre_sinc) / pre_sinc)));
+          window *
+          ((pre_sinc == 0)
+               ? sinc_scale_factor
+               : (molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc)));
     }
   }
 }

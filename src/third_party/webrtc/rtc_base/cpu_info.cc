@@ -121,9 +121,25 @@ inline void __cpuid(int cpu_info[4], int info_type) {
 
 #endif  // WEBRTC_ARCH_X86_FAMILY
 
+// MoltBrowser: whether this thread is inside a ScopedCpuIndependent(true).
+constinit thread_local bool g_cpu_independent = false;
+
 }  // namespace
 
 namespace cpu_info {
+
+ScopedCpuIndependent::ScopedCpuIndependent(bool cpu_independent)
+    : previous_(g_cpu_independent) {
+  g_cpu_independent = cpu_independent;
+}
+
+ScopedCpuIndependent::~ScopedCpuIndependent() {
+  g_cpu_independent = previous_;
+}
+
+bool IsCpuIndependent() {
+  return g_cpu_independent;
+}
 
 uint32_t DetectNumberOfCores() {
   // Statically cache the number of system cores available since if the process
@@ -135,6 +151,10 @@ uint32_t DetectNumberOfCores() {
 }
 
 bool Supports(ISA instruction_set_architecture) {
+  // MoltBrowser: the plain C++ paths in CPU-independent processing.
+  if (g_cpu_independent) {
+    return false;
+  }
 #if defined(WEBRTC_ARCH_X86_FAMILY)
   int cpu_info[4];
   __cpuid(cpu_info, 1);

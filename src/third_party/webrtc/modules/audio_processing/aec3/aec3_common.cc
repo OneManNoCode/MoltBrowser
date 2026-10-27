@@ -28,6 +28,10 @@ Aec3Optimization DetectOptimization() {
 #endif
 
 #if defined(WEBRTC_HAS_NEON)
+  // MoltBrowser: the plain C++ path in CPU-independent processing.
+  if (cpu_info::IsCpuIndependent()) {
+    return Aec3Optimization::kNone;
+  }
   return Aec3Optimization::kNeon;
 #else
   return Aec3Optimization::kNone;

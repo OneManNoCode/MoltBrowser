@@ -52,6 +52,8 @@ rtc_static_library("ns") {
     "..:audio_buffer",
     "../../../common_audio/third_party/ooura:fft_size_256",
     "../../../rtc_base:checks",
+    # MoltBrowser: portable math in CPU-independent processing.
+    "../../../rtc_base:molt_math",
   ]
 }
 

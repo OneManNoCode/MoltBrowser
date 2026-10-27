@@ -182,6 +182,8 @@ rtc_library("rnn_vad_spectral_features") {
     ":rnn_vad_ring_buffer",
     ":rnn_vad_symmetric_matrix_buffer",
     "../../../../rtc_base:checks",
+    # MoltBrowser: portable math in CPU-independent processing.
+    "../../../../rtc_base:molt_math",
     "../../../../rtc_base:safe_compare",
     "../../utility:pffft_wrapper",
   ]

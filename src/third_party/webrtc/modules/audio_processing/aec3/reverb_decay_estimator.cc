@@ -22,6 +22,7 @@
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 
@@ -188,7 +189,8 @@ void ReverbDecayEstimator::EstimateDecay(std::span<const float> filter,
   // reverb is sufficiently large.
   if (size_late_reverb >= 5) {
     if (valid_filter && late_reverb_decay_estimator_.EstimateAvailable()) {
-      float decay = std::pow(
+      // MoltBrowser: portable in CPU-independent processing.
+      float decay = molt_math::Pow(
           2.0f, late_reverb_decay_estimator_.Estimate() * kFftLengthBy2);
       constexpr float kMaxDecay = 0.95f;  // ~1 sec min RT60.
       constexpr float kMinDecay = 0.02f;  // ~15 ms max RT60.

@@ -31,7 +31,9 @@ namespace webrtc {
 
 namespace {
 
-#if !(defined(MIPS_FPU_LE) || defined(WEBRTC_HAS_NEON))
+// MoltBrowser: the C versions on NEON builds too, for CPU-independent
+// processing (rtc_base/cpu_info.h).
+#if !defined(MIPS_FPU_LE)
 void cft1st_128_C(float* a) {
   const int n = 128;
   int j, k1, k2;
@@ -319,6 +321,10 @@ OouraFft::OouraFft([[maybe_unused]] bool sse2_available) {
 #else
   use_sse2_ = false;
 #endif
+#if defined(WEBRTC_HAS_NEON)
+  // MoltBrowser: the C versions in CPU-independent processing.
+  use_neon_ = !cpu_info::IsCpuIndependent();
+#endif
 }
 
 OouraFft::OouraFft() {
@@ -326,6 +332,10 @@ OouraFft::OouraFft() {
   use_sse2_ = cpu_info::Supports(cpu_info::ISA::kSSE2);
 #else
   use_sse2_ = false;
+#endif
+#if defined(WEBRTC_HAS_NEON)
+  // MoltBrowser: the C versions in CPU-independent processing.
+  use_neon_ = !cpu_info::IsCpuIndependent();
 #endif
 }
 
@@ -352,7 +362,12 @@ void OouraFft::cft1st_128(float* a) const {
 #if defined(MIPS_FPU_LE)
   cft1st_128_mips(a);
 #elif defined(WEBRTC_HAS_NEON)
-  cft1st_128_neon(a);
+  // MoltBrowser: use_neon_ is false in CPU-independent processing.
+  if (use_neon_) {
+    cft1st_128_neon(a);
+  } else {
+    cft1st_128_C(a);
+  }
 #elif defined(WEBRTC_ARCH_X86_FAMILY)
   if (use_sse2_) {
     cft1st_128_SSE2(a);
@@ -367,7 +382,12 @@ void OouraFft::cftmdl_128(float* a) const {
 #if defined(MIPS_FPU_LE)
   cftmdl_128_mips(a);
 #elif defined(WEBRTC_HAS_NEON)
-  cftmdl_128_neon(a);
+  // MoltBrowser: use_neon_ is false in CPU-independent processing.
+  if (use_neon_) {
+    cftmdl_128_neon(a);
+  } else {
+    cftmdl_128_C(a);
+  }
 #elif defined(WEBRTC_ARCH_X86_FAMILY)
   if (use_sse2_) {
     cftmdl_128_SSE2(a);
@@ -382,7 +402,12 @@ void OouraFft::rftfsub_128(float* a) const {
 #if defined(MIPS_FPU_LE)
   rftfsub_128_mips(a);
 #elif defined(WEBRTC_HAS_NEON)
-  rftfsub_128_neon(a);
+  // MoltBrowser: use_neon_ is false in CPU-independent processing.
+  if (use_neon_) {
+    rftfsub_128_neon(a);
+  } else {
+    rftfsub_128_C(a);
+  }
 #elif defined(WEBRTC_ARCH_X86_FAMILY)
   if (use_sse2_) {
     rftfsub_128_SSE2(a);
@@ -398,7 +423,12 @@ void OouraFft::rftbsub_128(float* a) const {
 #if defined(MIPS_FPU_LE)
   rftbsub_128_mips(a);
 #elif defined(WEBRTC_HAS_NEON)
-  rftbsub_128_neon(a);
+  // MoltBrowser: use_neon_ is false in CPU-independent processing.
+  if (use_neon_) {
+    rftbsub_128_neon(a);
+  } else {
+    rftbsub_128_C(a);
+  }
 #elif defined(WEBRTC_ARCH_X86_FAMILY)
   if (use_sse2_) {
     rftbsub_128_SSE2(a);

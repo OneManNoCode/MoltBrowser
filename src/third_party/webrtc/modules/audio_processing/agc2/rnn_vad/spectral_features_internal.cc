@@ -18,6 +18,7 @@
 
 #include "modules/audio_processing/agc2/rnn_vad/common.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 #include "rtc_base/numerics/safe_compare.h"
 
 namespace webrtc {
@@ -142,7 +143,9 @@ void ComputeSmoothedLogMagnitudeSpectrum(
   };
   // Smoothing over the bands for which the band energy is defined.
   for (int i = 0; SafeLt(i, bands_energy.size()); ++i) {
-    log_bands_energy[i] = smooth(std::log10(kOneByHundred + bands_energy[i]));
+    // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+    log_bands_energy[i] =
+        smooth(molt_math::Log10(kOneByHundred + bands_energy[i]));
   }
   // Smoothing over the remaining bands (zero energy).
   for (int i = bands_energy.size(); i < kNumBands; ++i) {
@@ -155,7 +158,9 @@ std::array<float, kNumBands * kNumBands> ComputeDctTable() {
   const double k = std::sqrt(0.5);
   for (int i = 0; i < kNumBands; ++i) {
     for (int j = 0; j < kNumBands; ++j)
-      dct_table[i * kNumBands + j] = std::cos((i + 0.5) * j * kPi / kNumBands);
+      // MoltBrowser: portable in CPU-independent processing.
+      dct_table[i * kNumBands + j] =
+          molt_math::Cos((i + 0.5) * j * kPi / kNumBands);
     dct_table[i * kNumBands] *= k;
   }
   return dct_table;

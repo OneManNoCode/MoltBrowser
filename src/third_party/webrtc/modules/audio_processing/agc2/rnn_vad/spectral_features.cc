@@ -23,6 +23,7 @@
 #include "modules/audio_processing/agc2/rnn_vad/symmetric_matrix_buffer.h"
 #include "modules/audio_processing/utility/pffft_wrapper.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/molt_math.h"
 #include "rtc_base/numerics/safe_compare.h"
 
 namespace webrtc {
@@ -59,10 +60,12 @@ std::array<float, kFrameSize20ms24kHz / 2> ComputeScaledHalfVorbisWindow(
   constexpr int kHalfSize = kFrameSize20ms24kHz / 2;
   std::array<float, kHalfSize> half_window{};
   for (int i = 0; i < kHalfSize; ++i) {
+    // MoltBrowser: portable in CPU-independent processing (molt_math.h).
     half_window[i] =
         scaling *
-        std::sin(0.5 * kPi * std::sin(0.5 * kPi * (i + 0.5) / kHalfSize) *
-                 std::sin(0.5 * kPi * (i + 0.5) / kHalfSize));
+        molt_math::Sin(0.5 * kPi *
+                       molt_math::Sin(0.5 * kPi * (i + 0.5) / kHalfSize) *
+                       molt_math::Sin(0.5 * kPi * (i + 0.5) / kHalfSize));
   }
   return half_window;
 }

@@ -372,6 +372,13 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
       } fixed_digital;
     } gain_controller2;
 
+    // MoltBrowser: process with the code that computes the same samples on
+    // every CPU (the plain C++ paths instead of SSE2, AVX2 or NEON, and
+    // portable math functions; rtc_base/cpu_info.h, ScopedCpuIndependent).
+    // Read once, when the instance is built; ApplyConfig() keeps the value
+    // the instance was built with.
+    bool moltbrowser_cpu_independent = false;
+
     std::string ToString() const;
   };
 

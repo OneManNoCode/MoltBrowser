@@ -149,6 +149,8 @@ rtc_library("fixed_digital") {
     "../../../api/audio:audio_frame_api",
     "../../../rtc_base:checks",
     "../../../rtc_base:gtest_prod",
+    # MoltBrowser: portable math in CPU-independent processing.
+    "../../../rtc_base:molt_math",
     "../../../rtc_base:safe_conversions",
     "../../../rtc_base:safe_minmax",
     "../../../rtc_base:stringutils",
@@ -229,6 +231,8 @@ rtc_library("noise_level_estimator") {
     "..:apm_logging",
     "../../../api/audio:audio_frame_api",
     "../../../rtc_base:checks",
+    # MoltBrowser: portable math in CPU-independent processing.
+    "../../../rtc_base:molt_math",
   ]
 
   visibility = [

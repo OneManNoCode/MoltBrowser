@@ -21,6 +21,7 @@
 #include "modules/audio_processing/ns/ns_common.h"
 #include "modules/audio_processing/ns/prior_signal_model.h"
 #include "modules/audio_processing/ns/signal_model.h"
+#include "rtc_base/molt_math.h"
 
 namespace webrtc {
 
@@ -58,8 +59,11 @@ void SpeechProbabilityEstimator::Update(
   float width_prior = model.lrt < prior_model.lrt ? kWidthPrior1 : kWidthPrior0;
 
   // Compute indicator function: sigmoid map.
+  // MoltBrowser: tanh is portable in CPU-independent processing
+  // (molt_math.h), here and below.
   float indicator0 =
-      0.5f * (tanh(width_prior * (model.lrt - prior_model.lrt)) + 1.f);
+      0.5f * (molt_math::Tanh(width_prior * (model.lrt - prior_model.lrt)) +
+              1.f);
 
   // Spectral flatness feature: use larger width in tanh map for pause regions.
   width_prior = model.spectral_flatness > prior_model.flatness_threshold
@@ -68,9 +72,10 @@ void SpeechProbabilityEstimator::Update(
 
   // Compute indicator function: sigmoid map.
   float indicator1 =
-      0.5f * (tanh(1.f * width_prior *
-                   (prior_model.flatness_threshold - model.spectral_flatness)) +
-              1.f);
+      0.5f *
+      (molt_math::Tanh(1.f * width_prior * (prior_model.flatness_threshold -
+                                            model.spectral_flatness)) +
+       1.f);
 
   // For template spectrum-difference : use larger width in tanh map for pause
   // regions.
@@ -80,8 +85,9 @@ void SpeechProbabilityEstimator::Update(
 
   // Compute indicator function: sigmoid map.
   float indicator2 =
-      0.5f * (tanh(width_prior * (model.spectral_diff -
-                                  prior_model.template_diff_threshold)) +
+      0.5f * (molt_math::Tanh(width_prior *
+                              (model.spectral_diff -
+                               prior_model.template_diff_threshold)) +
               1.f);
 
   // Combine the indicator function with the feature weights.

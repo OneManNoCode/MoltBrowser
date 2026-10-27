@@ -291,6 +291,8 @@ Appendix :
 #include <cmath>
 #include <cstddef>
 
+#include "rtc_base/molt_math.h"
+
 namespace webrtc {
 
 namespace {
@@ -315,15 +317,16 @@ void makewt(size_t nw, size_t* ip, float* w) {
   ip[1] = 1;
   if (nw > 2) {
     nwh = nw >> 1;
-    delta = atanf(1.0f) / nwh;
+    // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+    delta = molt_math::Atan(1.0f) / nwh;
     w[0] = 1;
     w[1] = 0;
-    w[nwh] = (float)cos(delta * nwh);
+    w[nwh] = (float)molt_math::Cos(delta * nwh);
     w[nwh + 1] = w[nwh];
     if (nwh > 2) {
       for (j = 2; j < nwh; j += 2) {
-        x = (float)cos(delta * j);
-        y = (float)sin(delta * j);
+        x = (float)molt_math::Cos(delta * j);
+        y = (float)molt_math::Sin(delta * j);
         w[j] = x;
         w[j + 1] = y;
         w[nw - j] = y;
@@ -341,12 +344,13 @@ void makect(size_t nc, size_t* ip, float* c) {
   ip[1] = nc;
   if (nc > 1) {
     nch = nc >> 1;
-    delta = atanf(1.0f) / nch;
-    c[0] = (float)cos(delta * nch);
+    // MoltBrowser: portable in CPU-independent processing (molt_math.h).
+    delta = molt_math::Atan(1.0f) / nch;
+    c[0] = (float)molt_math::Cos(delta * nch);
     c[nch] = 0.5f * c[0];
     for (j = 1; j < nch; j++) {
-      c[j] = 0.5f * (float)cos(delta * j);
-      c[nc - j] = 0.5f * (float)sin(delta * j);
+      c[j] = 0.5f * (float)molt_math::Cos(delta * j);
+      c[nc - j] = 0.5f * (float)molt_math::Sin(delta * j);
     }
   }
 }

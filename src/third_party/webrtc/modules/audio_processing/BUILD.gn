@@ -179,6 +179,9 @@ rtc_library("audio_processing") {
     "../../api/task_queue",
     "../../common_audio",
     "../../rtc_base:checks",
+
+    # MoltBrowser: CPU-independent processing (ScopedCpuIndependent).
+    "../../rtc_base:cpu_info",
     "../../rtc_base:denormal_disabler",
     "../../rtc_base:event_tracer",
     "../../rtc_base:gtest_prod",

@@ -51,6 +51,8 @@ rtc_library("common_audio") {
     "../rtc_base:cpu_info",
     "../rtc_base:gtest_prod",
     "../rtc_base:logging",
+    # MoltBrowser: portable math in CPU-independent processing.
+    "../rtc_base:molt_math",
     "../rtc_base:safe_conversions",
     "../rtc_base:sanitizer",
     "../rtc_base/memory:aligned_malloc",

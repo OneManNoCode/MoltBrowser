@@ -1977,6 +1977,20 @@ rtc_library("cpu_info") {
   }
 }
 
+# MoltBrowser: the audio processing's math functions, the C library's or,
+# in CPU-independent processing (cpu_info.h), the portable library's.
+rtc_library("molt_math") {
+  visibility = [ "*" ]
+  sources = [
+    "molt_math.cc",
+    "molt_math.h",
+  ]
+  deps = [
+    ":cpu_info",
+    "//third_party/llvm-libc:molt_portable_math",
+  ]
+}
+
 if (rtc_include_tests) {
   if (rtc_enable_google_benchmarks) {
     rtc_library("base64_benchmark") {
