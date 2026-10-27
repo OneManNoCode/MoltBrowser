@@ -269,6 +269,19 @@ def rpm_digests(path):
     return rpm_query(path, '%{SHA256HEADER} %{SHA1HEADER} %{PAYLOADDIGEST}')
 
 
+# A header signature rpm verified. rpm 4 prints "Header V4 RSA/SHA256
+# Signature, key ID ...: OK", rpm 6 "Header OpenPGP V4 RSA/SHA512 signature,
+# key fingerprint: ...: OK".
+_RPM_SIGNATURE_OK = re.compile(r'(?im)^\s*Header\b.*\bsignature\b.*:\s*OK\s*$')
+
+
+def rpm_checksig_passed(returncode, out):
+    """Whether `rpmkeys --checksig -v` said the package is signed by a key
+    it has and that nothing failed."""
+    return (returncode == 0 and _RPM_SIGNATURE_OK.search(out) is not None
+            and not re.search(r'NOKEY|NOT OK|BAD', out))
+
+
 def rpm_check_signature(path, key_asc):
     """rpm's own signature check against KEY_ASC only (a scratch rpmdb)."""
     need('rpmkeys')
@@ -279,8 +292,7 @@ def rpm_check_signature(path, key_asc):
                     '_pkgverify_level all', '--checksig', '-v', path],
                    check=False)
         out = proc.stdout.decode('utf-8', 'replace')
-        if proc.returncode != 0 or 'Signature' not in out \
-                or re.search(r'NOKEY|NOT OK|BAD', out):
+        if not rpm_checksig_passed(proc.returncode, out):
             raise Error('%s: rpm signature check failed:\n%s' % (path, out.strip()))
     finally:
         shutil.rmtree(db, ignore_errors=True)

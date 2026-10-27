@@ -323,6 +323,32 @@ class ControlTest(unittest.TestCase):
     def test_rfc2822(self):
         self.assertEqual(mlr.rfc2822(0), 'Thu, 01 Jan 1970 00:00:00 UTC')
 
+    def test_rpm_checksig_output(self):
+        rpm4 = ('x.rpm:\n'
+                '    Header V4 RSA/SHA256 Signature, key ID 74669f5a: OK\n'
+                '    Header SHA256 digest: OK\n'
+                '    Payload SHA256 digest: OK\n')
+        rpm6 = ('x.rpm:\n'
+                '    Header OpenPGP V4 RSA/SHA512 signature, key fingerprint: '
+                'a5e411fd23d94db2f3b795cbda49e95f74669f5a: OK\n'
+                '    Header SHA3-256 digest: OK\n'
+                '    Header SHA256 digest: OK\n'
+                '    Payload SHA512 digest: OK\n')
+        self.assertTrue(mlr.rpm_checksig_passed(0, rpm4))
+        self.assertTrue(mlr.rpm_checksig_passed(0, rpm6))
+        # Unsigned (digests only), an unknown key, a bad signature, rpm's
+        # own failure.
+        self.assertFalse(mlr.rpm_checksig_passed(
+            0, 'x.rpm:\n    Header SHA256 digest: OK\n'))
+        self.assertFalse(mlr.rpm_checksig_passed(
+            1, rpm6.replace(': OK\n', ': NOKEY\n', 1)))
+        self.assertFalse(mlr.rpm_checksig_passed(
+            0, rpm4 + '    Payload SHA256 digest: BAD\n'))
+        self.assertFalse(mlr.rpm_checksig_passed(
+            0, rpm4.replace('Signature, key ID 74669f5a: OK',
+                            'Signature, key ID 74669f5a: NOT OK')))
+        self.assertFalse(mlr.rpm_checksig_passed(1, rpm6))
+
     @needs('gpg')
     def test_armor_roundtrip(self):
         tmp = tempfile.mkdtemp(prefix='mlr-')
