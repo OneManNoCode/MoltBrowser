@@ -4102,10 +4102,11 @@ and `blob_builder_from_stream.{h,cc}` from the registry's binding
 process) and used by `blob_storage_context.cc`; MoltNet's renderer
 processes each serve one tab (docs/MOLTNET_COMPLIANCE.md §2 *Renderer
 processes*). A Background Fetch's response, which the download service
-holds as a blob, gets its site's key (`MoltBlobSiteKeys` in the blob
-policy, from `molt_registering_site_isolation.h`'s
-`MoltBlobBudgetKeyForFetch()`, passed by `in_memory_download.cc` through
-`blob_task_proxy.{h,cc}`). The memory valve:
+holds as a blob, gets its site's key (`MoltBlobSiteKeyFromDigest()` in
+the blob policy, from `molt_registering_site_isolation.h`'s
+`MoltBlobBudgetKeyForFetch()`, a keyed hash of the site with a secret of
+the browser session, so no table of sites is kept; passed by
+`in_memory_download.cc` through `blob_task_proxy.{h,cc}`). The memory valve:
 `chrome/browser/molt_ai/tor/molt_net_memory_valve_policy.h` (when it reads
 and when it ends, std-only, + `molt_net_memory_valve_policy_unittest.cc`)
 and `molt_net_memory_valve.{h,cc}` (one per MoltNet profile; its callback

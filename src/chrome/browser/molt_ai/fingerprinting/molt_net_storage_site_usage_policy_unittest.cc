@@ -23,7 +23,7 @@ using Stale = MoltStaleStorageKeys<std::string, std::string>;
 
 // A site's usage is the sum of its cached buckets' usage, moved by each
 // change; another site's changes don't touch it.
-TEST(MoltNetStorageSiteUsageTest, TotalsFollowChanges) {
+TEST(MoltNetStorageSiteUsagePolicyTest, TotalsFollowChanges) {
   Totals totals;
   EXPECT_EQ(totals.Of("https://a.test"), 0);
   totals.Changed("https://a.test", 0, 100);  // a bucket cached
@@ -47,7 +47,7 @@ TEST(MoltNetStorageSiteUsageTest, TotalsFollowChanges) {
 
 // Stale keys are kept per site, once each, and taking a site's leaves the
 // others'.
-TEST(MoltNetStorageSiteUsageTest, StaleKeysPerSite) {
+TEST(MoltNetStorageSiteUsagePolicyTest, StaleKeysPerSite) {
   Stale stale;
   EXPECT_TRUE(stale.Take("https://a.test").empty());
   stale.Mark("https://a.test", "https://x.a.test");
@@ -69,7 +69,7 @@ TEST(MoltNetStorageSiteUsageTest, StaleKeysPerSite) {
 // The cost of reading a polite site's usage, and of the keys asked again
 // for it, doesn't grow with what a greedy site stores: a model of a quota
 // check under the budget, counting the buckets and keys it touches.
-TEST(MoltNetStorageSiteUsageTest, AGreedySiteDoesntSlowAnothersChecks) {
+TEST(MoltNetStorageSiteUsagePolicyTest, AGreedySiteDoesntSlowAnothersChecks) {
   Totals totals;
   Stale stale;
   totals.Changed("https://polite.test", 0, 1000);
@@ -89,7 +89,7 @@ TEST(MoltNetStorageSiteUsageTest, AGreedySiteDoesntSlowAnothersChecks) {
 
 // A site that is gone (a page's nonce) leaves no stale keys behind; others
 // keep theirs.
-TEST(MoltNetStorageSiteUsageTest, AGoneSitesStaleKeysGo) {
+TEST(MoltNetStorageSiteUsagePolicyTest, AGoneSitesStaleKeysGo) {
   Stale stale;
   stale.Mark("nonce-a", "https://t.test^nonce-a");
   stale.Mark("https://b.test", "https://b.test");
@@ -104,7 +104,7 @@ TEST(MoltNetStorageSiteUsageTest, AGoneSitesStaleKeysGo) {
 // runs waits for it and one more (for what was marked meanwhile); the site
 // has none running once a refresh ends with nobody waiting. Other sites'
 // refreshes run on their own.
-TEST(MoltNetStorageSiteUsageTest, OneRefreshAtATimePerSite) {
+TEST(MoltNetStorageSiteUsagePolicyTest, OneRefreshAtATimePerSite) {
   MoltSiteRefreshes<std::string, int> refreshes;
   EXPECT_FALSE(refreshes.IsRunning("a"));
   refreshes.Start("a");
@@ -129,7 +129,7 @@ TEST(MoltNetStorageSiteUsageTest, OneRefreshAtATimePerSite) {
 // whose real usage is 5 more. Two checks at once: the first takes the key
 // and asks for it; the second, reading at once, saw 50 and so more room than
 // the site had. Waiting for the refresh, it reads 55.
-TEST(MoltNetStorageSiteUsageTest, ASecondCheckReadsAfterTheRefresh) {
+TEST(MoltNetStorageSiteUsagePolicyTest, ASecondCheckReadsAfterTheRefresh) {
   Totals totals;
   Stale stale;
   MoltSiteRefreshes<std::string, int> refreshes;
