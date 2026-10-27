@@ -592,6 +592,9 @@ def produce(tree, interp, gen_rels, depth=0, hint=None):
             log("action: running %s:%s for %s" % (t.path, t.name, rel))
             err = run_action(tree, interp, t, depth)
             if err:
+                log("action: %s failed: %s" % (
+                    t, err.strip().splitlines()[-1][:300] if err.strip()
+                    else "?"))
                 failed[rel] = err
                 continue
         if (tree.gen_dir / rel).exists():

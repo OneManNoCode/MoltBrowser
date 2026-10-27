@@ -84,8 +84,20 @@ def is_fallback(name):
 
 STANDIN_STAMPS = "standin_stamps.json"
 # Bump to retry replacing every fallback stand-in with its real generator
-# (else a failure is remembered until the pin changes).
-STANDIN_RETRY_VERSION = "1"
+# (else a failure is remembered until the pin or the host tools' code
+# changes).
+STANDIN_RETRY_VERSION = "2"
+
+
+def _generators_key():
+    """What decides whether a real generator can run here: the host tools'
+    build code and their //base shims (a change retries the stand-ins)."""
+    h = hashlib.sha1()
+    for f in [HERE / "host_tools.py"] + sorted(
+            (HERE.parent / "host_shims").rglob("*")):
+        if f.is_file():
+            h.update(f.read_bytes())
+    return h.hexdigest()[:16]
 
 
 def replace_stand_ins(tree, interp, produce):
@@ -111,7 +123,8 @@ def replace_stand_ins(tree, interp, produce):
         stamps = json.loads((Path(tree.state) / STANDIN_STAMPS).read_text())
     except (OSError, ValueError):
         stamps = {}
-    key = "%s %s" % (STANDIN_RETRY_VERSION, tree.chromium.rev)
+    key = "%s %s %s" % (STANDIN_RETRY_VERSION, tree.chromium.rev,
+                        _generators_key())
     remade = []
     for n in cands:
         f = gen_dir / n

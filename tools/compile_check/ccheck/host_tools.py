@@ -15,6 +15,11 @@ proto_sources.gni) and third_party/abseil-cpp, compiled here with the
 host's clang++ once (ensure_protobuf_host). Its //base calls come from
 host_shims/proto_extras/ (a stand-in for //base, in a host tool only).
 
+The HSTS/pins preload generator (net/tools/transport_security_state_
+generator, for net/http/transport_security_state_static*.h) is built from
+its GN targets' sources and the pinned BoringSSL's libcrypto, with
+host_shims/hsts_generator/ for //base (ensure_hsts_generator).
+
 V8's generators (torque, for torque-generated/; the bytecode builtins list
 generator, for builtins-generated/) are built from the pinned V8 with the
 sources, defines and include dirs of their GN targets and of the V8
@@ -518,5 +523,125 @@ def ensure_v8_host_tool(work, tree, interp, name):
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("linking %s: %s" % (name, r.stderr[-2500:]))
+    stamp.write_text(key)
+    return exe
+
+
+# The HSTS/pins preload generator (net/tools/transport_security_state_
+# generator), for net/http/transport_security_state_static*.h.
+HSTS_TOOL = "transport_security_state_generator"
+_HSTS_DIRS = ("net/tools/transport_security_state_generator",
+              "net/tools/huffman_trie")
+# Bump when how the tool is built changes.
+_HSTS_VERSION = "1"
+
+
+def _gn_sources(interp, build_file, names, exts=(".cc",)):
+    """The sources (src-relative) of the targets `names` in a BUILD.gn."""
+    out = []
+    d = build_file.rsplit("/", 1)[0]
+    for t in interp.run_file(build_file):
+        if t.name in names:
+            out += [interp.abspath(x, {"dir": d})[2:]
+                    for x in t.get("sources") or []
+                    if isinstance(x, str) and x.endswith(exts)]
+    return out
+
+
+def ensure_boringssl_host(work, tree, interp):
+    """BoringSSL's libcrypto (the bcm and crypto sources of its generated
+    source lists, as //third_party/boringssl:boringssl compiles them,
+    without assembly) built for the host from the pinned sources. Returns
+    (library, include dir)."""
+    bs = "third_party/boringssl/src/"
+    sub = tree.sub(bs.rstrip("/"))[0]
+    out = Path(work) / "toolchain" / "boringssl_host"
+    lib = out / "libcrypto_host.a"
+    stamp = out / "stamp"
+    key = "%s 1" % (sub.commit if sub else "?")
+    inc = tree.tree_dir / bs / "include"
+    if lib.exists() and stamp.exists() and stamp.read_text() == key:
+        return lib, inc
+    srcs = _gni_list(interp, "//" + bs + "gen/sources.gni",
+                     ["bcm_sources", "crypto_sources"])
+    srcs = [bs + s for s in srcs if s.endswith((".c", ".cc"))]
+    if not srcs:
+        raise RuntimeError("no BoringSSL sources in %sgen/sources.gni" % bs)
+    tree.materialize(tree.glob_upstream(bs + "include/") +
+                     tree.glob_upstream(bs + "crypto/") +
+                     tree.glob_upstream(bs + "gen/") +
+                     tree.glob_upstream(bs + "third_party/fiat/") + srcs)
+    cxx = shutil.which("clang++") or shutil.which("g++")
+    common = ["-O1", "-w", "-fPIC", "-DOPENSSL_NO_ASM",
+              "-DBORINGSSL_IMPLEMENTATION", "-DOPENSSL_SMALL",
+              "-I" + str(inc), "-I" + str(tree.tree_dir / bs)]
+    log("building BoringSSL's libcrypto for the host (%d files; once)" %
+        len(srcs))
+    objs, failed = _compile_all(cxx, [str(tree.tree_dir / s) for s in srcs],
+                                out / "obj", ["-std=c++17"] + common,
+                                c_flags=["-std=c11"] + common)
+    if failed:
+        k = sorted(failed)[0]
+        raise RuntimeError("BoringSSL: %s: %s" % (k, failed[k][-1500:]))
+    if lib.exists():
+        lib.unlink()
+    ar = shutil.which("ar") or shutil.which("llvm-ar")
+    r = subprocess.run([ar, "rcs", str(lib)] + [str(o) for o in objs],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError("ar: " + r.stderr[-500:])
+    shutil.rmtree(out / "obj", ignore_errors=True)
+    stamp.write_text(key)
+    return lib, inc
+
+
+def ensure_hsts_generator(work, tree, interp):
+    """net/tools/transport_security_state_generator, built for the host:
+    the sources of its GN targets (and of //net/tools/huffman_trie's) as
+    they are, the pinned BoringSSL (ensure_boringssl_host), and
+    host_shims/hsts_generator/ in place of //base. Returns its path."""
+    out = Path(work) / "toolchain" / "hsts_generator"
+    exe = out / HSTS_TOOL
+    shims = SHIMS / "hsts_generator"
+    srcs = _gn_sources(interp, "//%s/BUILD.gn" % _HSTS_DIRS[0],
+                       ("transport_security_state_generator",
+                        "transport_security_state_generator_sources"))
+    srcs += _gn_sources(interp, "//%s/BUILD.gn" % _HSTS_DIRS[1],
+                        ("huffman_trie_generator_sources",))
+    if not srcs:
+        raise RuntimeError("no sources for %s in its BUILD.gn" % HSTS_TOOL)
+    tree.materialize([p for d in _HSTS_DIRS
+                      for p in tree.glob_upstream(d + "/")] +
+                     ["build/build_config.h", "build/buildflag.h"])
+    h = hashlib.sha256(_HSTS_VERSION.encode())
+    for s in sorted(p for d in _HSTS_DIRS for p in tree.glob_upstream(d + "/")
+                    if p.endswith((".cc", ".h"))):
+        h.update(s.encode() + b"\0" + (tree.read(s) or b"-"))
+    for f in sorted(shims.rglob("*.h")):
+        h.update(str(f.relative_to(shims)).encode() + b"\0" + f.read_bytes())
+    sub = tree.sub("third_party/boringssl/src")[0]
+    h.update(((sub.commit if sub else "?") + "\0").encode())
+    key = h.hexdigest()
+    stamp = out / "stamp"
+    if exe.exists() and stamp.exists() and stamp.read_text() == key:
+        return exe
+    lib, inc = ensure_boringssl_host(work, tree, interp)
+    cxx = shutil.which("clang++") or shutil.which("g++")
+    # The shims come first: //base's own headers must not be reached.
+    flags = ["-std=c++20", "-O1", "-w", "-I" + str(shims),
+             "-I" + str(tree.tree_dir), "-I" + str(inc)]
+    log("building %s for the host (%d files)" % (HSTS_TOOL, len(srcs)))
+    shutil.rmtree(out / "obj", ignore_errors=True)
+    objs, failed = _compile_all(cxx, [str(tree.tree_dir / s) for s in srcs],
+                                out / "obj", flags)
+    if failed:
+        k = sorted(failed)[0]
+        raise RuntimeError("%s: %s: %s" % (HSTS_TOOL, k, failed[k][-1500:]))
+    r = subprocess.run([cxx] + [str(o) for o in objs] +
+                       [str(lib), "-pthread", "-o", str(exe)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError("linking %s: %s" % (HSTS_TOOL, r.stderr[-2500:]))
+    shutil.rmtree(out / "obj", ignore_errors=True)
     stamp.write_text(key)
     return exe

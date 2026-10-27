@@ -280,6 +280,8 @@ def set_host_tools(args, tree, interp):
                                                          interp, n))
     gen_misc.TOOLS["flatc"] = lambda: host_tools.ensure_flatc(
         args.work, tree, interp)
+    gen_actions.HOST_EXECUTABLES[host_tools.HSTS_TOOL] = (
+        lambda: host_tools.ensure_hsts_generator(args.work, tree, interp))
     gen_actions.HOST_EXECUTABLES["vulkan_shaders_gen"] = (
         lambda: host_tools.ensure_vulkan_shaders_gen(args.work, tree,
                                                      interp))

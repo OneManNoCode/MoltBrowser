@@ -19,6 +19,7 @@ import json
 import lzma
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -1698,6 +1699,29 @@ class CleanTest(unittest.TestCase):
             self.assertIn("chromium/src/out/cc", got)
             self.assertIn("graph.json", got)
             self.assertNotIn("check/a__x.cc.log", got)
+        finally:
+            shutil.rmtree(tmp)
+
+
+class HostShimTest(unittest.TestCase):
+    """The //base stand-in of the HSTS generator behaves as //base does on
+    what the generator gives it (host_shims/hsts_generator/shim_test.cc,
+    built with the host's clang++)."""
+
+    def test_hsts_generator_shim(self):
+        cxx = shutil.which("clang++") or shutil.which("g++")
+        if cxx is None:
+            self.skipTest("no host C++ compiler")
+        d = HERE / "host_shims" / "hsts_generator"
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            exe = tmp / "shim_test"
+            r = subprocess.run([cxx, "-std=c++20", "-Wall", "-Werror",
+                                "-I" + str(d), str(d / "shim_test.cc"), "-o",
+                                str(exe)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+            r = subprocess.run([str(exe)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
         finally:
             shutil.rmtree(tmp)
 
