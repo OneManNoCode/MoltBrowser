@@ -56,11 +56,16 @@ BackgroundFetchContext::BackgroundFetchContext(
       this, data_manager_.get(), registration_notifier_.get(), &delegate_proxy_,
       *devtools_context_, service_worker_context_);
   // MoltBrowser: per-site scheduling, where the embedder asks (MoltNet;
-  // molt_background_fetch_site_policy.h).
+  // molt_background_fetch_site_policy.h), with its memory valve past the
+  // floor.
   if (storage_partition &&
       GetContentClient()->browser()->ShouldScheduleBackgroundFetchesPerSite(
           storage_partition->browser_context())) {
-    scheduler_->MoltSchedulePerSite();
+    scheduler_->MoltSchedulePerSite(
+        GetContentClient()
+            ->browser()
+            ->GetBackgroundFetchGrowthBeyondFloorCallback(
+                storage_partition->browser_context()));
   }
 }
 

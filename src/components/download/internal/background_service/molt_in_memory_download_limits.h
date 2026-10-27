@@ -9,36 +9,38 @@
 // client there. At Chromium 156 the service runs at most 2 downloads, 4
 // active or paused, and 15 live for each client
 // (Configuration: max_running_downloads, max_concurrent_downloads,
-// max_scheduled_downloads), one queue for all sites. Background Fetch's own
-// scheduler starts at most 2 at a time, so those limits didn't bind; in
-// MoltNet it schedules per site (content/browser/background_fetch/
-// molt_background_fetch_site_policy.h) and starts up to 128 at a time, and
-// the service's limits would make every site's downloads wait in one queue
-// again. So the in-memory service's limits are raised to
-// kMoltInMemoryDownloadsLimit, twice what Background Fetch starts at most
-// (cancelled downloads leave the service's counts a moment later), and
-// what decides when a download starts is Background Fetch's scheduler. In an
-// off-the-record profile other than MoltNet's, Background Fetch still starts
-// at most 2, so nothing changes there.
+// max_scheduled_downloads), one queue for all sites, and refuses a download
+// past the last (StartResult::BACKOFF). Background Fetch's own scheduler
+// starts at most 2 at a time, so those limits didn't bind; in MoltNet it
+// schedules per site with no total for all sites (content/browser/
+// background_fetch/molt_background_fetch_site_policy.h), and any limit of
+// the service's would be a total again, one every site's downloads wait in
+// or are refused by, and that a group of sites could fill. So the in-memory
+// service has no limit of its own (kMoltInMemoryDownloadsLimit, more than it
+// can count), and what decides when a download starts is Background Fetch's
+// scheduler alone; what the downloads hold is bounded per site and by the
+// memory valve there. In an off-the-record profile other than MoltNet's,
+// Background Fetch still starts at most 2, so nothing changes there.
 //
-// Std-only, so molt_ai_unittests tests it against the scheduler's total.
+// Std-only, so molt_ai_unittests tests it.
 
 #ifndef COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_IN_MEMORY_DOWNLOAD_LIMITS_H_
 #define COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_IN_MEMORY_DOWNLOAD_LIMITS_H_
 
 #include <cstdint>
+#include <limits>
 
 namespace download {
 
-// Twice MoltNet's Background Fetch total (kMoltBackgroundFetchRunningTotal,
-// 128).
-inline constexpr uint32_t kMoltInMemoryDownloadsLimit = 256;
+// No limit: the service compares its counts with its limits (a count at the
+// limit stops it), and none of its counts reaches this.
+inline constexpr uint32_t kMoltInMemoryDownloadsLimit =
+    std::numeric_limits<uint32_t>::max();
 
-// One of the in-memory service's limits: Chromium's (`chromiums`, which
-// field trials may set), but never below kMoltInMemoryDownloadsLimit.
-constexpr uint32_t MoltInMemoryDownloadLimit(uint32_t chromiums) {
-  return chromiums > kMoltInMemoryDownloadsLimit ? chromiums
-                                                 : kMoltInMemoryDownloadsLimit;
+// One of the in-memory service's limits, in place of Chromium's (which
+// field trials may set): none.
+constexpr uint32_t MoltInMemoryDownloadLimit(uint32_t /*chromiums*/) {
+  return kMoltInMemoryDownloadsLimit;
 }
 
 }  // namespace download
