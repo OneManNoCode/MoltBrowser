@@ -28,6 +28,7 @@
 #include "components/download/internal/background_service/log_sink.h"
 #include "components/download/internal/background_service/logger_impl.h"
 #include "components/download/internal/background_service/model.h"
+#include "components/download/internal/background_service/molt_restored_fetch.h"  // MoltBrowser
 #include "components/download/internal/background_service/scheduler/scheduler.h"
 #include "components/download/internal/background_service/stats.h"
 #include "components/download/network/download_http_utils.h"
@@ -1105,6 +1106,17 @@ void ControllerImpl::OnDownloadReadyToStart(const std::string& guid,
 
   if (params.isolation_info) {
     entry->request_params.isolation_info = std::move(params.isolation_info);
+  }
+
+  // MoltBrowser: a page's fetch keeps its first party on redirects, and one
+  // whose download item is from an earlier session starts again with its
+  // initiator, isolation and credentials mode rather than resuming without
+  // them, as a request with a body does (molt_restored_fetch.h).
+  if (MoltPrepareRestoredFetch(entry->request_params,
+                               driver_->Find(guid).has_value())) {
+    driver_->Remove(entry->guid, /*remove_file=*/false);
+    PrepareToStartDownload(entry);
+    return;
   }
 
   auto blockage_status = IsDownloadBlocked(entry);
