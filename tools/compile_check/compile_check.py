@@ -12,6 +12,7 @@ tools/compile_check/README.md.
   compile_check.py gen [TARGETS...]      # what the last fetch found missing
   compile_check.py check [TARGETS...]    # clang -fsyntax-only
   compile_check.py report                # summary of the last check
+  compile_check.py clean [--dry-run]     # remove stale outputs
   compile_check.py get PATH...           # materialize upstream files
 
 TARGETS are paths relative to src/ (files or directories), @changed (every
@@ -935,6 +936,206 @@ def cmd_report(args):
     print("\n" + ", ".join("%s: %d" % kv for kv in sorted(counts.items())))
 
 
+# -- clean --------------------------------------------------------------------
+
+# Per-platform generator state (platform.state_dir) that `clean --generated`
+# drops with the generated files.
+GEN_STATE = ("scan.json", "graph.json", "gen_report.json", "gen_inputs.json",
+             "mojom_index.json", "mojom_stamps.json", "mojom_parse.rsp",
+             "mojom_gen.rsp", "mojom_src", "typemaps", "grit_stamps.json",
+             "cxx_stamps.json", "buildflag_stamps.json", "action_stamps.json",
+             "standin_stamps.json")
+
+
+# Generated files no compile here reads (only headers are included; a
+# generator that needs one as an input makes it again): generated sources,
+# and the mojom parser's modules (each mojom generation parses its import
+# closure again).
+UNREAD_GENERATED = (".cc", ".cpp", ".c", ".mojom-module")
+
+
+def _size(p):
+    p = Path(p)
+    if p.is_symlink() or p.is_file():
+        try:
+            return p.lstat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for dirpath, _, files in os.walk(p):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(dirpath, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def result_names(results):
+    """The check/ file names (logs, commands, cache entries) of the results
+    in check.json, as check.run_one names them."""
+    out = set()
+    for r in results:
+        if r.get("skipped") or not r.get("platform"):
+            continue
+        name = r["target"].replace("/", "__")
+        if r["platform"] != platforms.of(r.get("via") or r["target"]):
+            name += "@" + r["platform"]
+        out.add(name)
+        if r.get("via"):
+            v = r["via"].replace("/", "__")
+            out.add(v + ("@" + r["platform"] if r["platform"] !=
+                         platforms.of(r["via"]) else ""))
+    return out
+
+
+def stale_paths(work, results, generated=False, results_too=False):
+    """[(path, why)] of what `clean` removes from a work dir:
+      * check/ logs, commands and reused results of files check.json no
+        longer has (a file no longer changed, renamed, or another
+        platform);
+      * the object files of host tools that are built (their stamp
+        matches), leftovers of interrupted runs (*.partial, *.tmp,
+        *.standin) and the unpacked .deb archives;
+      * clones and tarball extracts under repos/ no subproject uses
+        (repos/sources.json, head_fallback.json, tarball.json);
+      * generated sources and mojom parse results (UNREAD_GENERATED),
+        which no check reads;
+      * the build and state directories of platforms no longer modeled;
+      * with `generated`, every generated file and the generator state of
+        every platform (made again by the next `all`);
+      * with `results_too`, all of check/ and check.json."""
+    work = Path(work)
+    out = []
+    check_dir = work / "check"
+    if results_too:
+        out += [(check_dir, "results"), (work / "check.json", "results")]
+    elif check_dir.is_dir():
+        keep = result_names(results)
+        for sub, suffix in (("", ".log"), ("commands", ".json"),
+                            ("cache", ".json")):
+            d = check_dir / sub if sub else check_dir
+            if not d.is_dir():
+                continue
+            for f in sorted(d.iterdir()):
+                if f.is_file() and f.name.endswith(suffix) and \
+                        f.name[:-len(suffix)] not in keep:
+                    out.append((f, "result of a file no longer checked"))
+    tc = work / "toolchain"
+    built = {
+        "protobuf_host": ["libprotobuf_host.a", "stamp"],
+        "v8_tools": ["%s.stamp" % n for n in host_tools.V8_HOST_TOOLS],
+        "flatc": ["flatc", "stamp"],
+        "hsts_generator": ["transport_security_state_generator", "stamp"],
+    }
+    for d, marks in built.items():
+        if (tc / d / "obj").is_dir() and all((tc / d / m).exists()
+                                             for m in marks):
+            out.append((tc / d / "obj", "objects of a built host tool"))
+    if (tc / "debs").is_dir() and (tc / "protobuf-sys").is_dir():
+        out.append((tc / "debs", "unpacked .deb archives"))
+    for base in (work / "toolchain", work / "repos",
+                 work / "chromium" / "src" / "out"):
+        if not base.is_dir():
+            continue
+        for dirpath, dirs, files in os.walk(base):
+            for n in dirs + files:
+                if n.endswith((".partial", ".standin")) or (
+                        n.endswith(".tmp") and n in files):
+                    out.append((Path(dirpath) / n, "left by an interrupted "
+                                "run"))
+    repos = work / "repos"
+    if repos.is_dir():
+        used = set()
+        for v in sources.load_sources_state(work).values():
+            parts = (v.get("key") or "").split()
+            if len(parts) >= 2 and parts[0] in ("git", "substitute"):
+                used.add(sources.cache_name(parts[1]))
+            elif len(parts) >= 2 and parts[0] == "tarball":
+                used.add("tarball-" + parts[1])
+            elif len(parts) >= 2 and parts[0] == "head":
+                used.add(sources.cache_name(parts[1]) + "-head")
+        try:
+            info = json.loads((repos / "tarball.json").read_text())
+            if info.get("version"):
+                used.add("tarball-" + info["version"])
+        except (OSError, ValueError):
+            pass
+        for d in sorted(repos.iterdir()):
+            if d.is_dir() and d.name not in used and \
+                    not d.name.endswith(".partial"):
+                out.append((d, "no subproject comes from it"))
+    for n in platforms.all_names():
+        g = work / "chromium" / "src" / platforms.get(n).out_rel / "gen"
+        if generated or not g.is_dir():
+            continue
+        for dirpath, _, files in os.walk(g):
+            for f in files:
+                if f.endswith(UNREAD_GENERATED):
+                    out.append((Path(dirpath) / f, "generated files a check "
+                                "doesn't read"))
+    known = {platforms.get(n).out_rel.split("/")[-1]
+             for n in platforms.all_names()}
+    outd = work / "chromium" / "src" / "out"
+    if outd.is_dir():
+        for d in sorted(outd.iterdir()):
+            if d.is_dir() and d.name.startswith("cc") and d.name not in known:
+                out.append((d, "a platform no longer modeled"))
+    for d in sorted(work.glob("platform-*")):
+        if d.is_dir() and d.name[len("platform-"):] not in \
+                platforms.all_names():
+            out.append((d, "a platform no longer modeled"))
+    if generated:
+        for n in platforms.all_names():
+            plat = platforms.get(n)
+            g = work / "chromium" / "src" / plat.out_rel
+            if g.is_dir():
+                out.append((g, "generated files (--generated)"))
+            st = plat.state_dir(work)
+            for name in GEN_STATE:
+                if (st / name).exists():
+                    out.append((st / name, "generator state (--generated)"))
+    seen = set()
+    res = []
+    for p, why in out:
+        if str(p) not in seen and (p.exists() or p.is_symlink()):
+            seen.add(str(p))
+            res.append((p, why))
+    return res
+
+
+def cmd_clean(args):
+    import shutil
+    summary = args.work / "check.json"
+    try:
+        results = json.loads(summary.read_text())
+    except (OSError, ValueError):
+        results = []
+    items = stale_paths(args.work, results, generated=args.generated,
+                        results_too=args.results)
+    total = 0
+    by_why = {}
+    for p, why in items:
+        size = _size(p)
+        total += size
+        n, s = by_why.get(why, (0, 0))
+        by_why[why] = (n + 1, s + size)
+        if args.dry_run:
+            continue
+        if p.is_dir() and not p.is_symlink():
+            shutil.rmtree(p, ignore_errors=True)
+        else:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    for why, (n, s) in sorted(by_why.items()):
+        print("%-45s %6d item(s) %9.1f MB" % (why, n, s / 1e6))
+    print("%s %.1f MB in %d item(s)%s" % (
+        "would remove" if args.dry_run else "removed", total / 1e6,
+        len(items), " (dry run)" if args.dry_run else ""))
+
+
 def cmd_get(args):
     """PATH ending in / = everything under that directory."""
     tree = make_tree(args)
@@ -984,6 +1185,15 @@ def main():
         if name == "all":
             c.add_argument("--max-lines", type=int, default=5)
             c.add_argument("--markdown", action="store_true")
+    cl = sub.add_parser("clean", help="remove stale outputs from the work "
+                        "dir (see stale_paths)")
+    cl.add_argument("--dry-run", action="store_true",
+                    help="only say what would be removed")
+    cl.add_argument("--generated", action="store_true",
+                    help="also every generated file and the generator "
+                    "state (the next `all` makes them again)")
+    cl.add_argument("--results", action="store_true",
+                    help="also every result (check/ and check.json)")
     r = sub.add_parser("report")
     r.add_argument("--max-lines", type=int, default=5)
     r.add_argument("--markdown", action="store_true",
@@ -992,7 +1202,8 @@ def main():
     args.work = args.work.resolve()
     args.work.mkdir(parents=True, exist_ok=True)
     {"setup": cmd_setup, "get": cmd_get, "fetch": cmd_fetch, "gen": cmd_gen,
-     "check": cmd_check, "all": cmd_all, "report": cmd_report}[args.cmd](args)
+     "check": cmd_check, "all": cmd_all, "report": cmd_report,
+     "clean": cmd_clean}[args.cmd](args)
 
 
 if __name__ == "__main__":

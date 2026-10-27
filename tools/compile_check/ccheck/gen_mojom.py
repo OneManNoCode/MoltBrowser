@@ -480,6 +480,24 @@ def generate(tree, index, work, gen_dir, wanted, produce=None,
         return None if r.returncode == 0 else _last_line(r.stderr)
 
     log("mojom: parsing %d file(s)" % len(files))
+    try:
+        return _generate_parsed(tree, index, work, gen_dir, wanted, files,
+                                deps, feats_of, parse, todo, stamps,
+                                stamp_path, failed, generator)
+    finally:
+        # The parser's .mojom-module files are read only by the generator
+        # run that follows (every generate() parses its whole import
+        # closure again): left behind they take most of gen/'s space.
+        for p in files:
+            m = gen_dir / (p + "-module")
+            if m.exists():
+                m.unlink()
+
+
+def _generate_parsed(tree, index, work, gen_dir, wanted, files, deps,
+                     feats_of, parse, todo, stamps, stamp_path, failed,
+                     generator):
+    root = work / "mojom_src"
     parsed, bad = parse_in_order(deps, feats_of, parse)
     for p, err in sorted(bad.items()):
         if p in wanted or not failed.get(p):
