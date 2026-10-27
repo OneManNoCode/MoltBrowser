@@ -1729,6 +1729,259 @@ async function decodedVorbis() {
   }
 }
 
+// MoltNet: what pages can learn about the processor (FINGERPRINTING.md).
+// The bits Float16Array and DataView.setFloat16() store for NaNs with
+// payloads, as the page computes them at run time (a payload NaN from a
+// Float64Array, the same times one, and negated), before and after V8's
+// optimizing compilers take the storing functions. MoltNet's x86-64 V8
+// converts in software on every CPU (no F16C), which keeps the sign and
+// stores the canonical NaN (0x7e00, 0xfe00); arm64's optimized code converts
+// with the base instruction set's FCVT, which keeps the payload's top bits,
+// the same on every arm64 CPU.
+const F16_NANS = [[0x7ff80000, 0], [0xfff80000, 0], [0x7ffc0000, 0x12345678],
+  [0x7ff81234, 0x9abcdef0], [0xfffdeadb, 0xeef00d00], [0x7ff40000, 1],
+  [0xfff00000, 0x400]];
+
+function float16Nan() {
+  if (typeof Float16Array === 'undefined' ||
+      typeof DataView.prototype.setFloat16 !== 'function') {
+    return 'absent';
+  }
+  const f64 = new Float64Array(1);
+  const u32 = new Uint32Array(f64.buffer);
+  const one = Number('1');
+  const values = [];
+  for (const [hi, lo] of F16_NANS) {
+    u32[1] = hi;
+    u32[0] = lo;
+    const x = f64[0];
+    values.push(x, x * one, -x);
+  }
+  const signs = values.map((x) => {
+    f64[0] = x;
+    return u32[1] >>> 31;
+  });
+  const store = (a, i, x) => {
+    a[i] = x;
+  };
+  const setv = (dv, i, x) => {
+    dv.setFloat16(i * 2, x, true);
+  };
+  const run = () => {
+    const a = new Float16Array(values.length);
+    const dv = new DataView(new ArrayBuffer(values.length * 2));
+    for (let i = 0; i < values.length; ++i) {
+      store(a, i, values[i]);
+      setv(dv, i, values[i]);
+    }
+    const u = new Uint16Array(a.buffer);
+    const array = [];
+    const view = [];
+    for (let i = 0; i < values.length; ++i) {
+      array.push(u[i]);
+      view.push(dv.getUint16(i * 2, true));
+    }
+    return {array, view};
+  };
+  const first = run();
+  // Ordinary values until the optimizing compilers take both functions.
+  const warm = new Float16Array(64);
+  const warmView = new DataView(new ArrayBuffer(128));
+  for (let n = 0; n < 200000; ++n) {
+    store(warm, n & 63, n * 0.25);
+    setv(warmView, n & 63, n * 0.5);
+  }
+  const hot = run();
+  const hexList = (list) => list.map((h) => h.toString(16).padStart(4, '0'))
+      .join(' ');
+  const canonical = (list) => list.every((h, i) =>
+    h === (signs[i] ? 0xfe00 : 0x7e00));
+  return {
+    bits: {array: hexList(first.array), array_optimized: hexList(hot.array),
+      dataview: hexList(first.view),
+      dataview_optimized: hexList(hot.view)},
+    canonical: canonical(first.array) && canonical(hot.array) &&
+        canonical(first.view) && canonical(hot.view),
+  };
+}
+
+// A 96 x 64 synthetic picture with alpha (gradients, edges, strokes, noise),
+// lossy JPEG XL (VarDCT in XYB) made for the kit with libjxl: decoded by
+// jxl-rs, whose default code gives other pixels with SSE4.2, AVX2 and NEON
+// (MoltNet: its scalar code and portable math on every CPU).
+const JXL_PROBE =
+    '/woPwU4AUIAE+QMhaxUAgAqVUcYNXs71fPmhw2LaxnWGttq2sIQTlG2ra9DlioV1BxLTWvj9' +
+    'w1JQmNbCcwoKCgoKjmisVoGRUURBgQrRdIzEGrt2jGiMdox2jHaMdYxtjGqMxxjjPZe6As4x' +
+    'RsSPwWpXuSBdEGMMYxiDeXcAqFAAgl7+Qd3o+k+rsPu/7G+pKKooQQGIPcz2lf1jIJmmftIN' +
+    'LKuxgDTGGKMha4wxBgrSGGOMEKIxxhgUh2OMMeyExxhjfECOMcYAJBnjZNA4Rir6GGM0CRqf' +
+    'AJ9Fqdgm1DLGIf8aQi9bz1tU5g4yZTjkTBnHAX9uqnzb7zfe+iOpPE1+F+tmc8k8HobBhGcM' +
+    'JEAQHaoQ8swS4dcr/AK5vkScN8XqL3Akh5n0m30GOHd22OzQ1xW0Wwv3QdvsenuBInQy2hEq' +
+    'AxfTlnNwJeRymazhoUudMYr2zeLGJNvjjEIhwjW0ilIKNtCRbLiYE8izOg6NSRuYlvFCuMPg' +
+    'JuFn2S1JYpRSLEWoGkEpPkz0whjFBOudxFF3JNk9tskC7K0LFC2AXzLRgCLi7ur4yNM9aOSV' +
+    'XDYKIFvEiWAQ5f3//1/8P/0ZLvja7+vk//////2/BSAQkR9B/oGrwGB9dAv8f/xh/P/9//8f' +
+    '/994fgnj/+X8v/0/29bTpkOKHBr2jqn34BiIQnMa4Q79awQUNaa+G+icFBSo0d79xLg0F4At' +
+    'kcfLi3cZY4wTJ2PMlHQqAUCSaUGvAfjjg7q0x7cFyMCCFDj/2xrVT7CUUJC3dG0H7z9TuPPz' +
+    '5p9h3Ar/PjsFMSTjr3k4lAZr+25NcHWuHLeLFgZGUgRJLhREOPtAcIIYJ2c//iZOj0w3Nuwi' +
+    'B7oFPsyLjiYJjXVBM2zsPlTNmkzPDEDzdaNn/hkgQ+Lz1sC2pko0oloanYEbRdkXpHOo/fXc' +
+    'uaF0GMbWtDLZHpDJJqYDN4YHqzvze4mF6OZRnI1u/vAfKnkE4gsAcAS/szunRtriKEaLMi31' +
+    'r4cve6+7AfPf+O0gZLNOemC4puZCJz9ARwrOmunQv4PwU4CMWZ5tkiDbgMkrEMQmcha43/EP' +
+    '5sd0ei4NAvcGQhcm2Adq85UTkwInUGg7Lujdyhgdy5OBAgnDpJeqFSA/Z/u3J3j9NVD/ZTpG' +
+    'TaAVr+nSHrk334S2cW58u6sxS6bjFbgrboTAWdVcrVMnvrf5IpXAP1X1su1ODeNqJ7QdRd4y' +
+    'zRWrECwiQRrAyCRdvLv2quJUdIKV1S2zihrVrQFWgWGe+MLEhKCiMbSRIfz8B+6Vb9W3uvDT' +
+    'BD6lXCCZwOlz6O/ObN2HB8yZWttGem1q8r8HjVXqJHejRDIBk/7AACh1zqxng4JKCboFEyj3' +
+    'wW35NrTewzAAy/m9y+MiAb7Q7x8CibrO9c+8Omc4dtvP7vXUKj8EZwg2aa4q4RIVnqEHSq6O' +
+    'h90IBPxfmWkNt27JGA/JvW1mRe+9ymQAt0YRg2asJlaF1nLPhaABvS/sgREJwFcw27wnM41K' +
+    'wHUV1v/aHjCRTw8oYT1UJI/Lx1r098U/4eIpLcPR/Hatigez4AA++RGFDyhskgB1g56tTGch' +
+    'CQZ8N/e5Avs5U1X4M1yPhBiuwPB5i2c7SeltXQFOBGV3MFcGR9A1TqMfIaTiCbpv9DZy730h' +
+    'Il873qpFkLYTlFCSfV/fTrBr3CTAGGdGLdAFqaiM/MI4UgduiVBkKw1Ug63iarQ=';
+
+// The JPEG XL image decoded by WebCodecs' ImageDecoder (decoded pixels, not
+// farbled), as the frame's own planes and as RGBA.
+async function jxlPixels() {
+  if (!window.ImageDecoder) {
+    return 'absent';
+  }
+  if (!await ImageDecoder.isTypeSupported('image/jxl')) {
+    return 'unsupported';
+  }
+  const decoder = new ImageDecoder({data: base64Bytes(JXL_PROBE),
+    type: 'image/jxl'});
+  try {
+    const {image} = await decoder.decode();
+    try {
+      return await frameHashes(image);
+    } finally {
+      image.close();
+    }
+  } finally {
+    decoder.close();
+  }
+}
+
+// 1.6 s of a 32-bit float stereo WAV at 48 kHz: a waveform of period 96
+// (500 Hz, three triangle harmonics; another one on the right) whose
+// amplitude grows by a millionth per period, so that the blocks time
+// stretching compares are near ties that the sums' rounding decides.
+function stretchWav() {
+  const rate = 48000;
+  const frames = rate * 8 / 5;
+  const d = new DataView(new ArrayBuffer(44 + frames * 8));
+  const text = (at, s) => {
+    for (let i = 0; i < s.length; ++i) {
+      d.setUint8(at + i, s.charCodeAt(i));
+    }
+  };
+  text(0, 'RIFF');
+  d.setUint32(4, 36 + frames * 8, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  d.setUint32(16, 16, true);
+  d.setUint16(20, 3, true);  // IEEE float
+  d.setUint16(22, 2, true);
+  d.setUint32(24, rate, true);
+  d.setUint32(28, rate * 8, true);
+  d.setUint16(32, 8, true);
+  d.setUint16(34, 32, true);
+  text(36, 'data');
+  d.setUint32(40, frames * 8, true);
+  const tri = (p) => (p < 48 ? p : 96 - p) / 24 - 1;
+  for (let i = 0; i < frames; ++i) {
+    const p = i % 96;
+    const gain = 0.3 * (1 + 1e-6 * Math.floor(i / 96));
+    const l = gain * (tri(p) + tri((2 * p) % 96) / 2 + tri((3 * p) % 96) / 3);
+    const r = gain * (tri((p + 17) % 96) - tri((5 * p) % 96) / 4);
+    d.setFloat32(44 + i * 8, l, true);
+    d.setFloat32(48 + i * 8, r, true);
+  }
+  return new Blob([d.buffer], {type: 'audio/wav'});
+}
+
+// The WAV played by an <audio> element at playbackRate 1.5 with its pitch
+// kept (WSOLA time stretching) into Web Audio (createMediaElementSource),
+// recorded by an AudioWorklet. A worklet's input is farbled in its low 8
+// mantissa bits, so those are cleared; the stretching's choices change far
+// more. Reports a hash of 0.75 s of the left channel from the first
+// non-silent sample, or why there is none. Needs a user gesture (an unmuted
+// element), so the harness calls it after the page's collection.
+async function stretchedAudio() {
+  if (!window.AudioWorkletNode) {
+    return 'absent';
+  }
+  const ctx = new AudioContext();
+  const audio = new Audio();
+  const wav = URL.createObjectURL(stretchWav());
+  const module = URL.createObjectURL(new Blob([
+    'registerProcessor("mlk-record", class extends AudioWorkletProcessor {' +
+    'process(inputs) { const c = inputs[0]; if (c && c.length) ' +
+    '{ this.port.postMessage(c[0].slice()); } return true; } });'],
+  {type: 'text/javascript'}));
+  try {
+    await ML.timeout(ctx.audioWorklet.addModule(module), 5000);
+    await ML.timeout(ctx.resume(), 3000);
+    const chunks = [];
+    const node = new AudioWorkletNode(ctx, 'mlk-record',
+        {numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2,
+          channelCountMode: 'explicit'});
+    node.port.onmessage = (e) => chunks.push(e.data);
+    await ML.timeout(new Promise((resolve, reject) => {
+      audio.oncanplaythrough = resolve;
+      audio.onerror = () => reject(new Error('media error'));
+      audio.src = wav;
+    }), 5000);
+    audio.preservesPitch = true;
+    audio.playbackRate = 1.5;
+    ctx.createMediaElementSource(audio).connect(node);
+    const ended = new Promise((resolve) => {
+      audio.onended = resolve;
+    });
+    await ML.timeout(audio.play(), 3000);
+    await Promise.race([ended, ML.sleep(5000)]);
+    await ML.sleep(200);
+    node.port.onmessage = null;
+    let size = 0;
+    for (const c of chunks) {
+      size += c.length;
+    }
+    const all = new Float32Array(size);
+    let at = 0;
+    for (const c of chunks) {
+      all.set(c, at);
+      at += c.length;
+    }
+    const onset = all.findIndex((x) => Math.abs(x) > 1e-3);
+    const want = 36000;
+    if (onset < 0) {
+      return 'silent';
+    }
+    if (all.length - onset < want) {
+      return 'short';
+    }
+    const span = all.slice(onset, onset + want);
+    let zeros = 0;
+    for (const x of span) {
+      zeros = x === 0 ? zeros + 1 : 0;
+      if (zeros >= 64) {
+        return 'dropout';
+      }
+    }
+    const bits = new Uint32Array(span.buffer);
+    for (let i = 0; i < bits.length; ++i) {
+      bits[i] &= 0xffffff00;
+    }
+    return hex(new Uint8Array(bits.buffer));
+  } finally {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    URL.revokeObjectURL(wav);
+    URL.revokeObjectURL(module);
+    await ctx.close();
+  }
+}
+window.mlStretchedAudio = () => stretchedAudio().then(
+    (value) => ({'audio.stretched': value}),
+    (e) => ({'audio.stretched': ML.errInfo(e)}));
+
 async function cpuFeatures(v, step) {
   v['cpu.wasm_relaxed_simd'] = WebAssembly.validate(
       new Uint8Array(WASM_RELAXED_SIMD));
@@ -1744,6 +1997,17 @@ async function cpuFeatures(v, step) {
   await step('audio.math', audioMath);
   await step('pixels.p3_readback', p3Readback);
   await step('audio.decoded_vorbis', decodedVorbis);
+  // What pages can learn about the processor: Float16 NaN bits (the
+  // canonical NaN on every x86-64 CPU) and JPEG XL pixels.
+  await step('cpu.float16_nan', float16Nan);
+  const f16 = v['cpu.float16_nan'];
+  if (f16 && typeof f16 === 'object' && 'bits' in f16) {
+    v['cpu.float16_nan'] = f16.bits;
+    v['cpu.float16_nan_canonical'] = f16.canonical;
+  } else {
+    v['cpu.float16_nan_canonical'] = f16;
+  }
+  await step('pixels.jxl', jxlPixels);
 }
 
 async function mediaPixels(v, step) {

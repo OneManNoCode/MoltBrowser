@@ -194,6 +194,17 @@ GOOD_FP = {
                            'i420': 'a07b3e95c6d2148f0e6b7d31'},
     'audio.decoded_vorbis': {'frames': 12288,
                              'hash': '9c41e2b07d35a8f61e04c2b9'},
+    # What pages can learn about the processor: Float16 NaN bits, JPEG XL
+    # pixels and time-stretched audio.
+    'cpu.float16_nan': {
+        'array': '7e00 7e00 fe00 fe00 fe00 7e00',
+        'array_optimized': '7e00 7e00 fe00 fe00 fe00 7e00',
+        'dataview': '7e00 7e00 fe00 fe00 fe00 7e00',
+        'dataview_optimized': '7e00 7e00 fe00 fe00 fe00 7e00'},
+    'cpu.float16_nan_canonical': True,
+    'pixels.jxl': {'format': 'RGBA', 'planes': '6b0e2d91c4a7f3580e1b9d27',
+                   'rgba': '6b0e2d91c4a7f3580e1b9d27'},
+    'audio.stretched': 'd28a51f0c3e94b7a16f0e852',
     'canvas.hash': '0123456789abcdef01234567',
 }
 
@@ -224,7 +235,8 @@ def manifest():
         'finished': '2025-10-09T08:56:00+00:00',
         'browser': {'path': '/opt/moltbrowser/moltbrowser',
                     'product': 'MoltBrowser', 'version': '0.3.0'},
-        'host': {'os': 'Linux-6.8-x86_64', 'python': '3.12.3'},
+        'host': {'os': 'Linux-6.8-x86_64', 'arch': 'x86_64',
+                 'python': '3.12.3'},
         'options': {'dsfs': [1.0]},
         'onion': {'a': ONION_A, 'b': ONION_B},
         'net': {'ns_ipv4': NS4, 'gw_ipv4': GW4, 'ns_ipv6': 'fd6d:6c6b:7::2',
@@ -401,6 +413,13 @@ def manifest():
                  'forced_written': t(225), 'pages_kept_forced': 2,
                  'open_forced': {'running': True}, 'opened_forced': True}},
             {'name': 'extension', 'skipped': '--no-extension'},
+            {'name': 'mic_processing', 'target': 'moltnet',
+             'start': t(150), 'end': t(170),
+             'data': {'flags': ['--use-fake-device-for-media-stream',
+                                '--use-file-for-fake-audio-capture='
+                                '/run/x/mic-input.wav%noloop',
+                                '--use-fake-ui-for-media-stream'],
+                      'wav_sha256': 'aa' * 32}},
         ],
         'fingerprints': [
             {'label': 'initial', 'phase': 'main', 'dsf': 1.0, 'window': None,
@@ -424,6 +443,18 @@ def manifest():
              'values': {'tz.resolved': 'Europe/Berlin',
                         'nav.hardwareConcurrency': 8,
                         'mq.pointer_fine': True}},
+            # The mic_processing launch: the two captures disagree (a
+            # finding: the probe can't compare machines then).
+            {'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
+             'window': None, 'zoom_requested': 100, 'kind': 'mic',
+             'target': 'moltnet',
+             'values': {'audio.mic_processed': {
+                 'hash': '0f4c2a9e71b3d8565ae0c4f1', 'frames': 480},
+                 'audio.mic_processed_stable': False,
+                 'audio.mic_settings': {'echoCancellation': True,
+                                        'noiseSuppression': True,
+                                        'autoGainControl': True},
+                 'audio.mic_sample_rate': 48000}},
         ],
         'errors': [],
     }

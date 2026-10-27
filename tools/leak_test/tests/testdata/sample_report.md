@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 179 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (13 FAIL, 0 ERROR, 183 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -9,6 +9,7 @@
 | Browser | MoltBrowser 0.3.0 |
 | Window under test | moltnet |
 | OS (as pages see it) | Linux |
+| Architecture (the kit host) | x86_64 |
 | Kit | 1.0 (moltleak-report/1) |
 
 Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit could not run the check; SKIP = not applicable or not run; INFO = recorded without a verdict.
@@ -19,6 +20,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 |---|---|---|
 | FAIL | Nothing left the namespace except Tor's own connections | docs/LEAK_TESTING.md "How the capture works" |
 | PASS | The packet capture recorded traffic |  |
+| PASS | The microphone launch ran (Chromium's fake capture device; its record is checked under uniformity) | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | PASS | The seeded regular-profile settings took effect (control for the settings checks) | MOLTNET_COMPLIANCE.md §4 step 15 |
 | PASS | Tor (and only Tor) reached the network | MOLTNET_COMPLIANCE.md §4 step 4 ("only the Tor guard (or bridge) should be contacted") |
 | PASS | A MoltNet window opened (Tor bootstrapped, routing verified) | MOLTNET_COMPLIANCE.md §2 Fail-closed |
@@ -31,6 +33,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - firewall log: 12 frames
   - Tor connections: 2 frames
   - loopback packets: 34
+- **PASS** The microphone launch ran (Chromium's fake capture device; its record is checked under uniformity)
+  - browser flags: --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=/run/x/mic-input.wav%noloop --use-fake-ui-for-media-stream
+  - WAV sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 - **PASS** The seeded regular-profile settings took effect (control for the settings checks)
   - regular window: {"doNotTrack": "1", "fontSize": "24px", "js_ran_on_blocked": false, "languages": ["de-DE", "de"]}
 - **PASS** Tor (and only Tor) reached the network
@@ -272,6 +277,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 
 | Status | Check | Reference |
 |---|---|---|
+| FAIL | audio.mic_processed_stable is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | FAIL | fonts.visible is uniform | FINGERPRINTING.md "Fonts" |
 | FAIL | nav.hardwareConcurrency is uniform | FINGERPRINTING.md "Surface covered" |
 | FAIL | win.innerWidth is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
@@ -286,6 +292,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | audio.channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.mic_settings is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | PASS | audio.output_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.output_timestamp_ok is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.playback_latency_max is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
@@ -295,7 +302,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | audio.script_processor_buffer is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | autoplay.mediaelement is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | cookies.third_party is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | cpu.float16_nan_canonical is uniform | FINGERPRINTING.md "MoltNet: what pages can learn about the processor" |
 | PASS | cpu.wasm_relaxed_simd is uniform | FINGERPRINTING.md "MoltNet: CPU features" |
+| PASS | cpu.wasm_simd is uniform | FINGERPRINTING.md "MoltNet: what pages can learn about the processor" |
 | PASS | css.default_font_size is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
 | PASS | doc.characterSet_undeclared is uniform | FINGERPRINTING.md "MoltNet: the browser's UI language" |
 | PASS | eme.clearkey is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
@@ -487,6 +496,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | SKIP | Zoom level 125% could be set | docs/LEAK_TESTING.md "Zoom" |
 | INFO | Regular-window control: values that are already uniform outside MoltNet on this machine (their MoltNet check proves less here) |  |
 
+- **FAIL** audio.mic_processed_stable is uniform
+  - mic\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual false, expected true
 - **FAIL** fonts.visible is uniform
   - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)
 - **FAIL** nav.hardwareConcurrency is uniform

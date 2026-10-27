@@ -9,6 +9,7 @@ report.md and report.json. See docs/LEAK_TESTING.md for the whole flow.
 """
 
 import datetime
+import hashlib
 import json
 import os
 import platform
@@ -23,6 +24,7 @@ import time
 from . import KIT_VERSION
 from . import catalog
 from . import cdp as cdplib
+from . import micinput
 from . import netns
 from . import support
 
@@ -316,6 +318,7 @@ class Run(object):
         self.manifest['t0'] = _now()
         self.manifest['started'] = _iso(self.manifest['t0'])
         self.manifest['host'] = {'os': platform.platform(),
+                                 'arch': platform.machine(),
                                  'python': platform.python_version()}
         self.manifest['browser'] = self.browser_version()
         self.user_write('resolv.conf', RESOLV)
@@ -900,6 +903,7 @@ class Run(object):
         values.update(self.geometry(sid))
         values.update(self.audio_cadence(sid))
         values.update(self.media_clock(sid))
+        values.update(self.stretched_audio(sid))
         values.update(self.enforced_quota(sid, base))
         rec = {'label': label_prefix + 'initial', 'phase': 'main', 'dsf': dsf,
                'window': None, 'zoom_requested': 100, 'zoom_actual':
@@ -1031,6 +1035,21 @@ class Run(object):
         if not isinstance(values, dict):
             return dict((key, error) for key in keys)
         return dict((key, values.get(key, error)) for key in keys)
+
+    def stretched_audio(self, sid):
+        """Audio an <audio> element plays at playbackRate 1.5 into Web Audio
+        (fp.js mlStretchedAudio), with a user gesture so that it may play
+        unmuted (FINGERPRINTING.md "MoltNet: what pages can learn about the
+        processor")."""
+        key = 'audio.stretched'
+        try:
+            values = self.cdp.evaluate(sid, 'mlStretchedAudio()', timeout=20,
+                                       user_gesture=True)
+        except cdplib.CdpError as e:
+            return {key: {'error': 'cdp', 'message': str(e)[:200]}}
+        if not isinstance(values, dict):
+            return {key: {'error': 'no value', 'message': ''}}
+        return {key: values.get(key, {'error': 'no value', 'message': ''})}
 
     def geometry(self, sid, settle=False):
         if settle:
@@ -1854,6 +1873,53 @@ class Run(object):
             self.remove_policy(policy_dir)
         self.close_browser()
 
+    def mic_session(self):
+        """The microphone's processed samples (FINGERPRINTING.md "MoltNet:
+        the microphone's processing"): a launch with Chromium's fake capture
+        device playing the run's WAV (leakkit/micinput.py) and its fake
+        permission UI, which grants the page the microphone without a
+        prompt. mic.html reads the processed samples twice, each time from a
+        new stream, and the record (kind "mic") is compared between runs."""
+        phase = self.phase_begin('mic_processing')
+        wav = self.path('mic-input.wav')
+        with open(wav, 'wb') as f:
+            f.write(micinput.wav_bytes())
+        os.chmod(wav, 0o644)
+        os.chown(wav, self.uid, self.gid)
+        flags = ['--use-fake-device-for-media-stream',
+                 '--use-file-for-fake-audio-capture=%s%%noloop' % wav,
+                 '--use-fake-ui-for-media-stream']
+        try:
+            self.launch_browser('mic', extra_flags=flags)
+            moltnet = self.opts.target == 'moltnet'
+            if moltnet and not self.open_moltnet('open_moltnet_mic'):
+                raise RuntimeError('MoltNet did not open')
+            sid = self.moltnet[1] if moltnet else self.regular[1]
+            entry = self.tests.get('onion_https') or {}
+            base = self.bases()['BASE_HTTPS'] if moltnet else \
+                'https://127.0.0.1:%d' % LOCAL_HTTPS
+            url = '%s/t/%s/mic.html' % (base, entry.get('nonce',
+                                                        'fingerprint0'))
+            err = self.cdp.navigate(sid, url, timeout=90)
+            if err:
+                raise RuntimeError('mic.html: %s' % err)
+            values = self.cdp.evaluate(sid, 'mlMicProcessing()', timeout=60,
+                                       user_gesture=True)
+            if not isinstance(values, dict):
+                raise RuntimeError('mic.html returned %r' % (values,))
+            self.manifest['fingerprints'].append({
+                'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
+                'window': None, 'zoom_requested': 100, 'kind': 'mic',
+                'target': 'moltnet' if moltnet else 'regular',
+                'values': values})
+            phase['data']['flags'] = flags
+            phase['data']['wav_sha256'] = hashlib.sha256(
+                micinput.wav_bytes()).hexdigest()
+            self.phase_end(phase)
+        except (RuntimeError, cdplib.CdpError) as e:
+            self.phase_end(phase, str(e))
+        self.close_browser()
+
     def dsf_sessions(self):
         for dsf in self.opts.dsfs:
             if dsf == 1:
@@ -1905,6 +1971,8 @@ class Run(object):
                 if self.opts.target == 'moltnet' and \
                         self.want_phase('policy_live'):
                     self.policy_live_session()
+            if self.want_phase('mic_processing'):
+                self.mic_session()
             if self.want_phase('dsf'):
                 self.dsf_sessions()
         except KeyboardInterrupt:
