@@ -516,18 +516,29 @@ source_set("molt") {
 
 
 FAKE_CHECKDEPS = r'''
-import json, os, sys
+import json, os, re, sys
 root = sys.argv[sys.argv.index("--root") + 1]
 out = sys.argv[sys.argv.index("--json") + 1]
 assert os.path.isdir(os.path.join(root, ".svn"))
+# Allowed: the root DEPS's "+dir" rules and the file's own directory (as
+# checkdeps allows it), both relative to --root.
+top = os.path.join(root, "DEPS")
+allowed = re.findall(r'"\+([^"]+)"', open(top).read()) if os.path.isfile(
+    top) else []
 res = []
-for rel in ("app/app.cc", "molt/molt.cc"):
-    path = os.path.join(root, rel)
-    if not os.path.isfile(path):
-        continue
-    res.append({"dependee_path": path, "violations": [
-        {"include_path": l.split('"')[1], "violated_rule": ["-", "x", "y"]}
-        for l in open(path) if l.startswith("#include")]})
+for dirpath, dirnames, files in sorted(os.walk(root)):
+    dirnames[:] = [d for d in dirnames if d != ".svn"]
+    own = os.path.relpath(dirpath, root).replace(os.sep, "/")
+    for name in sorted(files):
+        if not name.endswith(".cc"):
+            continue
+        path = os.path.join(dirpath, name)
+        incs = [l.split('"')[1] for l in open(path)
+                if l.startswith("#include")]
+        res.append({"dependee_path": path, "violations": [
+            {"include_path": i, "violated_rule": ["-", "x", "y"]}
+            for i in incs if not i.startswith(own + "/") and
+            not any(i.startswith(a + "/") for a in allowed)]})
 json.dump(res, open(out, "w"))
 '''
 
@@ -572,6 +583,33 @@ class PresubmitTest(Base):
         work = self.tmp / "work" / "src"
         self.assertTrue((work / "app" / "DEPS").is_file())
         self.assertTrue((work / "DEPS").is_file())
+
+    def test_checkdeps_subproject_root(self):
+        # WebRTC's files include from WebRTC's root ("modules/...",
+        # "rtc_base/..."): they are checked in a run rooted there.
+        webrtc = "third_party/webrtc/"
+        write_tree(self.root, {"buildtools/checkdeps/checkdeps.py":
+                               FAKE_CHECKDEPS, "DEPS": "include_rules=[]\n",
+                               webrtc + "DEPS":
+                               'include_rules = [ "+rtc_base" ]\n'})
+        ov = self.overlay_with({
+            webrtc + "modules/ap/a.cc": '#include "modules/ap/a.h"\n'
+                                        '#include "rtc_base/r.h"\n'
+                                        '#include "third_party/x/x.h"\n',
+            "molt/molt.cc": '#include "base/base.h"\n',
+        })
+        findings, n = g.run_checkdeps(self.root, ov, self.tmp / "work")
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted((f.where, f.message.split('"')[1])
+                                for f in findings.errors()),
+                         [("molt/molt.cc", "base/base.h"),
+                          (webrtc + "modules/ap/a.cc", "third_party/x/x.h")])
+        work = self.tmp / "work"
+        self.assertIn("+rtc_base", (work / "third_party_webrtc" / "src" /
+                                    "DEPS").read_text())
+        self.assertTrue((work / "third_party_webrtc" / "src" / "modules" /
+                         "ap" / "a.cc").is_file())
+        self.assertFalse((work / "src" / "third_party" / "webrtc").exists())
 
     def test_added_lines_and_blink_audit(self):
         blink = "third_party/blink/renderer/core/"

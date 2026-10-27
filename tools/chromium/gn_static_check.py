@@ -1595,27 +1595,68 @@ def checkdeps_plan(overlay):
     return plan
 
 
+# DEPS subprojects whose include paths start at their own root (WebRTC's
+# "modules/...", "rtc_base/..."). Their files are checked as their own
+# repositories' presubmits check them: in a run of their own, rooted there,
+# with their DEPS files only. Chromium's checkdeps doesn't read them.
+CHECKDEPS_SUBPROJECTS = ("third_party/webrtc/",)
+
+
+def checkdeps_root_of(rel):
+    """The subproject prefix a file's checkdeps run is rooted at ("" for
+    Chromium's root)."""
+    for prefix in CHECKDEPS_SUBPROJECTS:
+        if rel.startswith(prefix):
+            return prefix
+    return ""
+
+
 def run_checkdeps(tree_root, overlay, work, log=log):
     """Runs the tree's buildtools/checkdeps/checkdeps.py over a copy of the
     tree's DEPS files with the overlay's on top and the overlay's C++ files
-    (checkdeps reads only those). Returns (findings, number of files)."""
+    (checkdeps reads only those): once at Chromium's root, and once at the
+    root of each subproject with files (CHECKDEPS_SUBPROJECTS). Returns
+    (findings, number of files)."""
     tree_root = Path(tree_root)
     script = tree_root / "buildtools" / "checkdeps" / "checkdeps.py"
     if not script.is_file():
         raise RuntimeError("no %s (run fetch)" % script)
     work = Path(work)
-    root = work / "src"
     shutil.rmtree(work, ignore_errors=True)
-    root.mkdir(parents=True)
-    for p in tree_root.rglob("DEPS"):
-        if p.is_file():
-            dst = root / p.relative_to(tree_root)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dst)
     plan = checkdeps_plan(overlay)
+    findings = Findings()
+    prefixes = sorted({checkdeps_root_of(rel) for rel in plan} | {""})
+    for prefix in prefixes:
+        group = {rel: only for rel, only in plan.items()
+                 if checkdeps_root_of(rel) == prefix}
+        sub = work / prefix.strip("/").replace("/", "_") if prefix else work
+        _checkdeps_once(script, tree_root, overlay, prefix, group, sub,
+                        findings)
+    return findings, len(plan)
+
+
+def _checkdeps_once(script, tree_root, overlay, prefix, plan, work,
+                    findings):
+    """One checkdeps run rooted at `prefix` ("" or a subproject's
+    directory) over the files of `plan` (paths under src/, all under
+    `prefix`)."""
+    root = work / "src"
+    root.mkdir(parents=True)
+    base = tree_root / prefix if prefix else tree_root
+    for p in base.rglob("DEPS"):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(base).as_posix()
+        if not prefix and checkdeps_root_of(rel):
+            continue  # read in the subproject's own run
+        dst = root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(p, dst)
     for rel in list(overlay.files):
+        if checkdeps_root_of(rel) != prefix:
+            continue
         if rel.rsplit("/", 1)[-1] == "DEPS" or rel in plan:
-            dst = root / rel
+            dst = root / rel[len(prefix):]
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(overlay.src / rel, dst)
     # checkdeps wants a repository root, and outside git it walks only the
@@ -1631,9 +1672,8 @@ def run_checkdeps(tree_root, overlay, work, log=log):
     if not out.is_file():
         raise RuntimeError("checkdeps failed (%d): %s" % (
             r.returncode, (r.stdout + r.stderr)[-2000:]))
-    findings = Findings()
     for res in json.loads(out.read_text()):
-        rel = os.path.relpath(res["dependee_path"], str(root))
+        rel = prefix + os.path.relpath(res["dependee_path"], str(root))
         only = plan.get(rel)
         for v in res["violations"]:
             inc = v["include_path"]
@@ -1646,7 +1686,6 @@ def run_checkdeps(tree_root, overlay, work, log=log):
                 "(%s)" % (inc, " ".join(str(x) for x in rule if x)),
                 "add a +rule to the nearest MoltBrowser DEPS (or a "
                 "specific_include_rules entry for this file)"), "deps")
-    return findings, len(plan)
 
 
 # ---------------------------------------------------------------------------

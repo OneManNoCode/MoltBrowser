@@ -767,7 +767,10 @@ toolchains, a third-party library's own `include_dirs`).
   *Expected:* no violation. The static run used 156's own `checkdeps.py`
   over every C++ file MoltBrowser adds and every include it adds to an
   upstream file; Skia and V8 are repositories of their own, with their own
-  rules, and were left out.
+  rules, and were left out. WebRTC's files (fp-probes2) were checked as
+  WebRTC's presubmit checks them, rooted at `third_party/webrtc` with
+  WebRTC's DEPS files; on the real tree:
+  `for d in rtc_base modules/audio_processing common_audio; do (cd third_party/webrtc && python3 ../../buildtools/checkdeps/checkdeps.py --root . "$d") || echo "CHECKDEPS FAILED: webrtc/$d"; done`.
 - [ ] Blink's presubmit audit (`audit_non_blink_usage.py`, which the build
   doesn't run): `gn_static_check.py blink-audit` runs its `check()` over the
   lines MoltBrowser adds under `third_party/blink`. MoltBrowser's entries
