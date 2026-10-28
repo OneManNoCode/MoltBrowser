@@ -30,6 +30,7 @@
 #include "media/audio/audio_device_description.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/capture/mojom/video_capture_types.mojom-blink.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -2657,5 +2658,67 @@ TEST_F(
 }
 #endif  // BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
 #endif
+
+// MoltBrowser: in MoltNet (the portable media process, media/base/
+// molt_portable_media.h) a page reads the same capabilities and settings of
+// its microphone on every OS and machine, and the processing is always
+// WebRTC's: whatever platform effects the device offers (an OS echo canceller,
+// noise suppression, gain control, voice isolation), none reaches the source
+// or the device it opens, "all" is offered and answered with WebRTC's echo
+// canceller, and voice isolation isn't offered.
+TEST_F(UserMediaClientTest, MoltNetMicrophoneHasNoPlatformEffects) {
+  media::SetPortableMediaProcessForTesting(true);
+  constexpr int kEffects = media::AudioParameters::ECHO_CANCELLER |
+                           media::AudioParameters::NOISE_SUPPRESSION |
+                           media::AudioParameters::AUTOMATIC_GAIN_CONTROL |
+                           media::AudioParameters::VOICE_ISOLATION_SUPPORTED |
+                           media::AudioParameters::DEEP_NOISE_SUPPRESSION;
+  media_devices_dispatcher_.AudioParameters().set_effects(kEffects);
+  mock_dispatcher_host_.SetAudioDeviceEffects(kEffects);
+
+  MediaStreamTrack* track = RequestLocalAudioTrackWithEchoCancellationMode(
+      EchoCancellationMode::kAll);
+  ASSERT_TRUE(track);
+
+  Vector<EchoCancellationMode> echo_cancellation_modes;
+  for (auto& mode : track->getCapabilities()->echoCancellation()) {
+    std::optional<EchoCancellationMode> ec_mode = ToEchoCancellationMode(mode);
+    ASSERT_TRUE(ec_mode.has_value());
+    echo_cancellation_modes.push_back(*ec_mode);
+  }
+  Vector<EchoCancellationMode> expected_echo_cancellation_modes = {
+      EchoCancellationMode::kDisabled, EchoCancellationMode::kBrowserDecides,
+      EchoCancellationMode::kAll};
+#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+  expected_echo_cancellation_modes.push_back(EchoCancellationMode::kRemoteOnly);
+#endif
+  EXPECT_THAT(echo_cancellation_modes, testing::UnorderedElementsAreArray(
+                                           expected_echo_cancellation_modes));
+  ASSERT_TRUE(track->getCapabilities()->hasVoiceIsolation());
+  EXPECT_THAT(track->getCapabilities()->voiceIsolation(),
+              testing::ElementsAre(false));
+
+  V8UnionBooleanOrString* echo_cancellation =
+      track->getSettings()->echoCancellation();
+  ASSERT_TRUE(echo_cancellation);
+  ASSERT_TRUE(echo_cancellation->IsString());
+  EXPECT_EQ(echo_cancellation->GetAsString(), kEchoCancellationModeAll);
+  EXPECT_TRUE(track->getSettings()->noiseSuppression());
+  EXPECT_TRUE(track->getSettings()->autoGainControl());
+  EXPECT_FALSE(track->getSettings()->voiceIsolation());
+
+  // The source opens the device without asking the OS for any processing.
+  MediaStreamAudioSource* source =
+      MediaStreamAudioSource::From(track->Component()->Source());
+  ASSERT_TRUE(source);
+  EXPECT_EQ(source->device().input.effects(),
+            media::AudioParameters::NO_EFFECTS);
+
+  blink::MediaStreamTrackPlatform::GetTrack(
+      WebMediaStreamTrack(track->Component()))
+      ->Stop();
+  blink::WebHeap::CollectGarbageForTesting();
+  media::SetPortableMediaProcessForTesting(false);
+}
 
 }  // namespace blink

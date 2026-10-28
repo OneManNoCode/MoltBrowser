@@ -8,8 +8,26 @@
 #include "base/strings/to_string.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 
 namespace blink {
+
+namespace {
+
+// MoltBrowser: the echo canceller of a MoltNet renderer (the portable media
+// process, media/base/molt_portable_media.h) for every mode that asks for
+// one: WebRTC's, in the audio service with the Chromium-wide reference where
+// Chromium runs that (Windows, macOS and Linux), in the renderer otherwise.
+// Never the OS's echo canceller, nor the OS's loopback as the reference:
+// their samples differ between OSes and machines. A page that asks for "all"
+// gets this one too, on every OS.
+EchoCanceller::Type MoltNetEchoCanceller() {
+  return media::IsChromeWideEchoCancellationEnabled()
+             ? EchoCanceller::Type::kChromeWide
+             : EchoCanceller::Type::kPeerConnection;
+}
+
+}  // namespace
 
 const char kEchoCancellationModeAll[] = "all";
 const char kEchoCancellationModeRemoteOnly[] = "remote-only";
@@ -70,6 +88,10 @@ std::string AudioProcessingProperties::ToString() const {
 
 // static
 bool EchoCanceller::IsSystemWideAecAvailable(int available_platform_effects) {
+  // MoltBrowser: "all" on every OS in MoltNet (MoltNetEchoCanceller()).
+  if (media::IsPortableMediaProcess()) {
+    return true;
+  }
   return IsPlatformAecAvailable(available_platform_effects) ||
          media::IsSystemLoopbackAsAecReferenceEnabled();
 }
@@ -137,6 +159,10 @@ const char* EchoCanceller::ToString() const {
 // static
 EchoCanceller::Type EchoCanceller::GetPreferredAec(
     int available_platform_effects) {
+  // MoltBrowser: WebRTC's in MoltNet (MoltNetEchoCanceller()).
+  if (media::IsPortableMediaProcess()) {
+    return MoltNetEchoCanceller();
+  }
   if (media::IsSystemLoopbackAsAecReferenceForcedOn()) {
     return Type::kLoopbackBased;
   }
@@ -155,6 +181,10 @@ EchoCanceller::Type EchoCanceller::GetPreferredAec(
 // static
 EchoCanceller::Type EchoCanceller::GetSystemWideAec(
     int available_platform_effects) {
+  // MoltBrowser: WebRTC's in MoltNet (MoltNetEchoCanceller()).
+  if (media::IsPortableMediaProcess()) {
+    return MoltNetEchoCanceller();
+  }
   if (media::IsSystemLoopbackAsAecReferenceEnabled()) {
     return Type::kLoopbackBased;
   }

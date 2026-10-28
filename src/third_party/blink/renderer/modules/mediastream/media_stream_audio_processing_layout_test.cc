@@ -602,6 +602,45 @@ TEST_P(EchoCancellationModeTest, AllPlatformAec) {
   }
 }
 
+// MoltBrowser: in MoltNet's renderers (the portable media process) every
+// request for echo cancellation gets WebRTC's, "all" included and offered on
+// every OS, whatever the device's effects or the loopback reference's
+// feature say: never the OS's echo canceller or its loopback.
+TEST_P(EchoCancellationModeTest, MoltNetUsesWebRtcEchoCancellation) {
+#if BUILDFLAG(SYSTEM_LOOPBACK_AS_AEC_REFERENCE)
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeatureWithParameters(
+      media::kSystemLoopbackAsAecReference, {{"forced_on", "true"}});
+#endif
+  media::SetPortableMediaProcessForTesting(true);
+  const EchoCanceller::Type webrtc =
+      media::IsChromeWideEchoCancellationEnabled()
+          ? EchoCanceller::Type::kChromeWide
+          : EchoCanceller::Type::kPeerConnection;
+  EXPECT_TRUE(EchoCanceller::IsSystemWideAecAvailable(effects_));
+  EXPECT_EQ(EchoCanceller::From(EchoCancellationMode::kBrowserDecides, effects_)
+                .type(),
+            webrtc);
+  EXPECT_EQ(EchoCanceller::From(EchoCancellationMode::kAll, effects_).type(),
+            webrtc);
+  EXPECT_EQ(
+      EchoCanceller::From(EchoCancellationMode::kRemoteOnly, effects_).type(),
+      EchoCanceller::Type::kPeerConnection);
+  EXPECT_EQ(
+      EchoCanceller::From(EchoCancellationMode::kDisabled, effects_).type(),
+      EchoCanceller::Type::kNone);
+
+  AudioProcessingProperties properties;
+  properties.echo_cancellation_mode = EchoCancellationMode::kAll;
+  MediaStreamAudioProcessingLayout layout(
+      properties, /*available_platform_effects=*/0, /*channels=*/1);
+  EXPECT_FALSE(layout.webrtc_processing_settings().use_loopback_aec_reference);
+  EXPECT_TRUE(layout.webrtc_processing_settings().echo_cancellation);
+  EXPECT_TRUE(layout.webrtc_processing_settings().cpu_independent);
+  EXPECT_EQ(layout.platform_effects(), 0);
+  media::SetPortableMediaProcessForTesting(false);
+}
+
 INSTANTIATE_TEST_SUITE_P(All,
                          EchoCancellationModeTest,
                          // Platform AEC effect on/off.
