@@ -126,6 +126,11 @@ constexpr MoltFetchTakeUp MoltOnFetchTakenUp(bool waits_for_parameters,
 // the answer comes (Take()) or the download ends (Forget()).
 class MoltFetchTakeUps {
  public:
+  MoltFetchTakeUps();
+  MoltFetchTakeUps(const MoltFetchTakeUps&) = delete;
+  MoltFetchTakeUps& operator=(const MoltFetchTakeUps&) = delete;
+  ~MoltFetchTakeUps();
+
   void Remember(const std::string& guid) { guids_.insert(guid); }
   // Whether `guid` was taken up while its answer was on its way; forgets it.
   bool Take(const std::string& guid) { return guids_.erase(guid) > 0; }
@@ -135,6 +140,11 @@ class MoltFetchTakeUps {
  private:
   std::set<std::string> guids_;
 };
+
+// Out of the class body, as Chromium's style asks of a class with members
+// that have constructors.
+inline MoltFetchTakeUps::MoltFetchTakeUps() = default;
+inline MoltFetchTakeUps::~MoltFetchTakeUps() = default;
 
 // ControllerImpl::OnDownloadReadyToStart(), once the client's parameters
 // are on `request_params` (RequestParams): a page's fetch keeps its first

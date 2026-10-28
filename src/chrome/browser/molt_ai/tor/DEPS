@@ -75,6 +75,11 @@ specific_include_rules = {
   "molt_net_storage_groups_unittest\.cc": [
     "+components/services/storage/dom_storage/molt_dom_storage_site.h",
   ],
+  # What one tab's or site's sessionStorage work makes others wait for
+  # (std-only).
+  "molt_net_dom_storage_waits_unittest\.cc": [
+    "+components/services/storage/dom_storage/molt_dom_storage_waits.h",
+  ],
   # An ended identity's network context refuses everything after the end
   # (std-only policy; a real NetworkContext and ProxyConfigServiceMojo).
   "molt_net_end_ordering_unittest\.cc": [

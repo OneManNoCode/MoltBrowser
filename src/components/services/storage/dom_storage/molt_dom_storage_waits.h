@@ -69,10 +69,11 @@ namespace storage {
 // no job before it names one of its namespaces.
 class MoltDomStorageNamespaceJobs {
  public:
-  MoltDomStorageNamespaceJobs() = default;
+  MoltDomStorageNamespaceJobs();
   MoltDomStorageNamespaceJobs(const MoltDomStorageNamespaceJobs&) = delete;
   MoltDomStorageNamespaceJobs& operator=(const MoltDomStorageNamespaceJobs&) =
       delete;
+  ~MoltDomStorageNamespaceJobs();
 
   // Adds a job naming namespaces `a` and `b` (a deletion: its namespace
   // twice), after every job there; its id, greater than theirs.
@@ -161,9 +162,10 @@ inline constexpr int64_t kMoltDomStorageTurnsWaitMs = 1000;
 // once, at its last turn or when its time is up, whichever comes first.
 class MoltDomStorageTurnWaits {
  public:
-  MoltDomStorageTurnWaits() = default;
+  MoltDomStorageTurnWaits();
   MoltDomStorageTurnWaits(const MoltDomStorageTurnWaits&) = delete;
   MoltDomStorageTurnWaits& operator=(const MoltDomStorageTurnWaits&) = delete;
+  ~MoltDomStorageTurnWaits();
 
   // Wait `id` waits for `turns` turns (more than none).
   void Wait(uint64_t id, size_t turns) { turns_left_[id] = turns; }
@@ -197,6 +199,13 @@ class MoltDomStorageTurnWaits {
  private:
   std::map<uint64_t, size_t> turns_left_;
 };
+
+// Out of the class bodies, as Chromium's style asks of a class with members
+// that have constructors.
+inline MoltDomStorageNamespaceJobs::MoltDomStorageNamespaceJobs() = default;
+inline MoltDomStorageNamespaceJobs::~MoltDomStorageNamespaceJobs() = default;
+inline MoltDomStorageTurnWaits::MoltDomStorageTurnWaits() = default;
+inline MoltDomStorageTurnWaits::~MoltDomStorageTurnWaits() = default;
 
 }  // namespace storage
 
