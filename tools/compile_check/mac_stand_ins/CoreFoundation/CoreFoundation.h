@@ -660,6 +660,79 @@ CF_EXPORT CFRunLoopRef CFRunLoopGetCurrent(void);
 CF_EXPORT CFRunLoopRef CFRunLoopGetMain(void);
 CF_EXPORT const CFStringRef kCFRunLoopDefaultMode;
 CF_EXPORT const CFStringRef kCFRunLoopCommonModes;
+
+typedef struct __CFRunLoopObserver* CFRunLoopObserverRef;
+
+typedef CF_OPTIONS(CFOptionFlags, CFRunLoopActivity){
+    kCFRunLoopEntry = (1UL << 0),         kCFRunLoopBeforeTimers = (1UL << 1),
+    kCFRunLoopBeforeSources = (1UL << 2), kCFRunLoopBeforeWaiting = (1UL << 5),
+    kCFRunLoopAfterWaiting = (1UL << 6),  kCFRunLoopExit = (1UL << 7),
+    kCFRunLoopAllActivities = 0x0FFFFFFFU};
+
+typedef CF_ENUM(SInt32, CFRunLoopRunResult){
+    kCFRunLoopRunFinished = 1, kCFRunLoopRunStopped = 2,
+    kCFRunLoopRunTimedOut = 3, kCFRunLoopRunHandledSource = 4};
+
+typedef struct {
+  CFIndex version;
+  void* info;
+  const void* (*retain)(const void* info);
+  void (*release)(const void* info);
+  CFStringRef (*copyDescription)(const void* info);
+  Boolean (*equal)(const void* info1, const void* info2);
+  CFHashCode (*hash)(const void* info);
+  void (*schedule)(void* info, CFRunLoopRef rl, CFStringRef mode);
+  void (*cancel)(void* info, CFRunLoopRef rl, CFStringRef mode);
+  void (*perform)(void* info);
+} CFRunLoopSourceContext;
+
+typedef struct {
+  CFIndex version;
+  void* info;
+  const void* (*retain)(const void* info);
+  void (*release)(const void* info);
+  CFStringRef (*copyDescription)(const void* info);
+} CFRunLoopObserverContext;
+
+typedef void (*CFRunLoopObserverCallBack)(CFRunLoopObserverRef observer,
+                                          CFRunLoopActivity activity,
+                                          void* info);
+
+CF_EXPORT CFStringRef CFRunLoopCopyCurrentMode(CFRunLoopRef rl);
+CF_EXPORT void CFRunLoopRun(void);
+CF_EXPORT CFRunLoopRunResult CFRunLoopRunInMode(
+    CFStringRef mode, CFTimeInterval seconds,
+    Boolean returnAfterSourceHandled);
+CF_EXPORT void CFRunLoopWakeUp(CFRunLoopRef rl);
+CF_EXPORT void CFRunLoopPerformBlock(CFRunLoopRef rl, CFTypeRef mode,
+                                     void (^block)(void));
+CF_EXPORT void CFRunLoopStop(CFRunLoopRef rl);
+CF_EXPORT Boolean CFRunLoopIsWaiting(CFRunLoopRef rl);
+CF_EXPORT void CFRunLoopAddSource(CFRunLoopRef rl, CFRunLoopSourceRef source,
+                                  CFStringRef mode);
+CF_EXPORT void CFRunLoopRemoveSource(CFRunLoopRef rl,
+                                     CFRunLoopSourceRef source,
+                                     CFStringRef mode);
+CF_EXPORT void CFRunLoopAddObserver(CFRunLoopRef rl,
+                                    CFRunLoopObserverRef observer,
+                                    CFStringRef mode);
+CF_EXPORT void CFRunLoopRemoveObserver(CFRunLoopRef rl,
+                                       CFRunLoopObserverRef observer,
+                                       CFStringRef mode);
+CF_EXPORT void CFRunLoopAddTimer(CFRunLoopRef rl, CFRunLoopTimerRef timer,
+                                 CFStringRef mode);
+CF_EXPORT void CFRunLoopRemoveTimer(CFRunLoopRef rl, CFRunLoopTimerRef timer,
+                                    CFStringRef mode);
+CF_EXPORT CFRunLoopSourceRef CFRunLoopSourceCreate(
+    CFAllocatorRef allocator, CFIndex order,
+    CFRunLoopSourceContext* context);
+CF_EXPORT void CFRunLoopSourceInvalidate(CFRunLoopSourceRef source);
+CF_EXPORT void CFRunLoopSourceSignal(CFRunLoopSourceRef source);
+CF_EXPORT CFRunLoopObserverRef CFRunLoopObserverCreate(
+    CFAllocatorRef allocator, CFOptionFlags activities, Boolean repeats,
+    CFIndex order, CFRunLoopObserverCallBack callout,
+    CFRunLoopObserverContext* context);
+CF_EXPORT void CFRunLoopObserverInvalidate(CFRunLoopObserverRef observer);
 typedef struct CF_BRIDGED_MUTABLE_TYPE(NSInputStream) __CFReadStream*
     CFReadStreamRef;
 typedef struct CF_BRIDGED_MUTABLE_TYPE(NSOutputStream) __CFWriteStream*
@@ -677,6 +750,13 @@ CF_EXPORT CFPropertyListRef CFPreferencesCopyAppValue(CFStringRef key,
 CF_EXPORT Boolean CFPreferencesGetAppBooleanValue(CFStringRef key,
                                                   CFStringRef applicationID,
                                                   Boolean* keyExistsAndHasValidFormat);
+CF_EXPORT CFIndex CFPreferencesGetAppIntegerValue(
+    CFStringRef key, CFStringRef applicationID,
+    Boolean* keyExistsAndHasValidFormat);
+CF_EXPORT void CFPreferencesSetAppValue(CFStringRef key,
+                                        CFPropertyListRef value,
+                                        CFStringRef applicationID);
+CF_EXPORT Boolean CFPreferencesAppSynchronize(CFStringRef applicationID);
 
 CF_EXTERN_C_END
 

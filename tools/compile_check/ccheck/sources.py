@@ -138,6 +138,12 @@ SUBPROJECTS = {
     # Chromium's FFmpeg fork (media/base/molt_portable_media.cc includes
     # libavutil/cpu.h): chromium.googlesource.com only.
     "third_party/ffmpeg": (None, "", None),
+    # Chromium's SQLite (chromium/deps/sqlite.git, googlesource.com only):
+    # third_party/sqlite/sqlite3.h includes the amalgamation's headers
+    # (amalgamation/sqlite3.h and rename_exports.h), which Chromium's
+    # scripts/generate_amalgamation.py writes and the repository carries.
+    # The SQL wrappers' includers (storage_service_impl.cc) reach them.
+    "third_party/sqlite/src": (None, "", None),
 }
 
 # Stand-ins for when neither a mirror nor a tarball has the pinned tree

@@ -1098,6 +1098,26 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   storage and Background Fetch classes define their special members out
   of the class body, and pointer fields are `raw_ptr` or marked as
   exclusions, as the plugins ask.
+- **Compile check: more on real headers, quicker re-runs**
+  (`tools/compile_check/`): the storage service's sources are now checked
+  (SQLite's amalgamation comes from Chromium's source tarball), the four
+  Mac files it couldn't compile type-check on new IOSurface and
+  AuthenticationServices stand-ins and a fuller AppKit, WebRTC's NEON
+  branches are compiled for Linux arm64, configs a target names relative
+  to its directory apply, and the HSTS and key-pin preload headers, the
+  build date and LASTCHANGE are what the build makes (Chromium's preload
+  generator, built for the host with BoringSSL; the pinned commit's
+  position and time). A re-run compiles only the files whose preprocessed
+  source, command or compiler changed, and picks up where an interrupted
+  run stopped; generated files are made again only when their inputs or
+  the GN args change; `clean` removes what no run reads; and each
+  compile's peak memory is recorded; the report also counts Blink's
+  plugin findings (`[blink-style]`). At 156, 1384 of 1437
+  file-and-platform rows are checked against real headers, 40 partly on
+  stand-ins (the Mac files, three WebUI pages' resource headers, V8's
+  instance types), 12 have Blink plugin findings (`std::vector` data
+  members in two MoltNet renderer files) and one is not checked: an iOS
+  file no build file lists.
 - Consistency hardening: the site tools' approvals, the agent's plan, the
   chat's proposals and form fills, and saved agent runs (their step labels
   and the secret checks that read them) share one list of the characters

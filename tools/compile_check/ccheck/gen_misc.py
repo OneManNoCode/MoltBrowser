@@ -7,7 +7,9 @@ grit resource headers (grit/*.h) are made by Chromium's own grit
 target expands to and the first-ids file the build makes
 (tools/gritsettings:default_resource_ids). Only the headers are written,
 not the .pak files. A header is remade when its .grd, a <part> of it, the
-first-ids file or its args change (grit_stamps.json).
+first-ids file or its args change (grit_stamps.json; the args are taken
+from the action again when the platform's GN args or MoltBrowser's GN
+files change).
 
 STAND-INS. Each writer below approximates what the build generates; checks
 that include its output rest partly on a stand-in (the report lists them):
@@ -19,7 +21,9 @@ that include its output rest partly on a stand-in (the report lists them):
   grit        only if grit itself fails on a .grd: every <message>,
               <include> and <structure> name in it and its <part> files,
               numbered from a per-header base.
-  build date  base/generated_build_date.h with a fixed date.
+  build date  base/generated_build_date.h with a fixed date, only if
+              its GN actions (base:build_date_internal, from the pinned
+              commit's time, and the copy base:build_date_header) fail.
   preloads    net/http/transport_security_state_static*.h: the real
               .template the build's generator fills (every declaration
               transport_security_state.cc compiles against), with
@@ -63,15 +67,94 @@ TOOLS = {}
 
 
 def handles_exclusively(name):
-    """Names no GN action here could make (skip looking for one)."""
-    return bool(GRIT_RE.search(name)) or name in WRITERS or \
-        name.endswith(".rs.h") or _pattern_writer(name) is not None
+    """Names no GN action here could make (skip looking for one). The
+    stand-in writers (WRITERS, PATTERN_WRITERS) are fallbacks: their GN
+    action is tried first."""
+    return bool(GRIT_RE.search(name)) or name.endswith(".rs.h")
 
 
 def handles(name):
     return bool(GRIT_RE.search(name)) or name in WRITERS or \
         name.endswith((".rs.h", "_generated.h")) or \
         _pattern_writer(name) is not None
+
+
+def is_fallback(name):
+    """Whether a stand-in writer makes `name` when its GN action can't."""
+    return name in WRITERS or _pattern_writer(name) is not None
+
+
+STANDIN_STAMPS = "standin_stamps.json"
+# Bump to retry replacing every fallback stand-in with its real generator
+# (else a failure is remembered until the pin or the host tools' code
+# changes).
+STANDIN_RETRY_VERSION = "2"
+
+
+def _generators_key():
+    """What decides whether a real generator can run here: the host tools'
+    build code and their //base shims (a change retries the stand-ins)."""
+    h = hashlib.sha1()
+    for f in [HERE / "host_tools.py"] + sorted(
+            (HERE.parent / "host_shims").rglob("*")):
+        if f.is_file():
+            h.update(f.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def replace_stand_ins(tree, interp, produce):
+    """Remakes, with their real GN actions, the fallback stand-ins earlier
+    runs wrote (a run before the action could run here, or one where it
+    failed). A stand-in whose action fails again stays, and is not retried
+    until STANDIN_RETRY_VERSION or the pin changes. Returns the names
+    remade."""
+    gen_dir = Path(tree.gen_dir)
+    if not gen_dir.is_dir():
+        return []
+    cands = [n for n in WRITERS if (gen_dir / n).is_file()]
+    for rx, _ in PATTERN_WRITERS:
+        # The pattern writers' names, from what earlier runs wrote.
+        d = rx.pattern.lstrip("^").split("/")
+        sub = gen_dir.joinpath(*d[:-1]) if len(d) > 1 else gen_dir
+        if sub.is_dir():
+            for f in sorted(sub.iterdir()):
+                rel = str(f.relative_to(gen_dir))
+                if rx.match(rel):
+                    cands.append(rel)
+    try:
+        stamps = json.loads((Path(tree.state) / STANDIN_STAMPS).read_text())
+    except (OSError, ValueError):
+        stamps = {}
+    key = "%s %s %s" % (STANDIN_RETRY_VERSION, tree.chromium.rev,
+                        _generators_key())
+    remade = []
+    for n in cands:
+        f = gen_dir / n
+        try:
+            head = f.read_bytes()[:200]
+        except OSError:
+            continue
+        if b"compile_check STAND-IN" not in head or stamps.get(n) == key:
+            continue
+        aside = f.with_name(f.name + ".standin")
+        f.rename(aside)
+        try:
+            ok = bool(produce([n])) and f.exists()
+        except Exception:  # noqa: BLE001 - keep the stand-in
+            ok = False
+        if ok:
+            aside.unlink()
+            stamps.pop(n, None)
+            remade.append(n)
+        else:
+            if f.exists():
+                f.unlink()
+            aside.rename(f)
+            stamps[n] = key
+    Path(tree.state).mkdir(parents=True, exist_ok=True)
+    (Path(tree.state) / STANDIN_STAMPS).write_text(
+        json.dumps(stamps, indent=1, sort_keys=True))
+    return remade
 
 
 def flatbuffer_header(tree, interp, name):
@@ -487,9 +570,9 @@ def run_grit(tree, gen_dir, args):
         raise RuntimeError("grit: " + (r.stderr or r.stdout)[-600:])
 
 
-def real_grit_header(tree, interp, name, t):
-    """Writes gen/<name> with Chromium's grit, run with the args of the
-    action the grit() target `t` expands to. Records its stamp."""
+def _grit_args(tree, interp, name, t):
+    """The header-writing args of the grit action the grit() target `t`
+    expands to, as GN evaluates them now."""
     from .gen_actions import find_action
     act = find_action(tree, interp, name, hint=t.path[2:] + "/BUILD.gn")
     if act is None or not str(act.get("script") or "").endswith("grit.py"):
@@ -501,6 +584,13 @@ def real_grit_header(tree, interp, name, t):
     bad = [a for a in args if not isinstance(a, str) or "<UNKNOWN>" in a]
     if bad:
         raise RuntimeError("grit args not computable: %r" % bad[:3])
+    return args
+
+
+def real_grit_header(tree, interp, name, t):
+    """Writes gen/<name> with Chromium's grit, run with the args of the
+    action the grit() target `t` expands to. Records its stamp."""
+    args = _grit_args(tree, interp, name, t)
     ensure_resource_ids(tree, interp, tree.gen_dir)
     out = tree.gen_dir / name
     if out.exists():
@@ -516,15 +606,39 @@ def real_grit_header(tree, interp, name, t):
 
 def refresh_grit(tree, interp):
     """Remakes every grit header whose .grd (or a <part>, or the first-ids
-    file, or its args) changed since it was written, and replaces the
+    file, or its args, evaluated again when the platform's GN args or
+    MoltBrowser's GN files change) changed since it was written, and
+    replaces the
     stand-ins of earlier runs where grit can make the header now. A header
     that can't be remade is removed (a check then reports it missing rather
     than compiling against an old one). Returns (remade, removed)."""
+    from .gen_buildflags import platform_key
     gen_dir = tree.gen_dir
     stamps = _load_stamps(tree)
     remade, removed = [], []
     headers = [n for n in stamps if n != RESOURCE_IDS and
                not n.startswith("_")]
+    pkey = platform_key(tree)
+    if stamps.get("_platform") != pkey:
+        # The platform's GN args or MoltBrowser's GN files changed since
+        # these were made (or the stamps predate this check): take each
+        # header's args from its action as GN evaluates it now, so one
+        # whose defines changed is remade below (and one whose action is
+        # gone is removed), and retry grit's earlier failures.
+        for n in sorted(headers):
+            t = _find_grit_target(tree, interp, n)
+            try:
+                if t is None:
+                    raise RuntimeError("no grit() target writes it now")
+                args = _grit_args(tree, interp, n, t)
+            except RuntimeError as e:
+                args = None
+                log("grit: %s: %s" % (n, e))
+            if args != stamps[n]["args"]:
+                stamps[n] = {"args": args or ["--no-action"], "key": None}
+        stamps.pop("_failed", None)
+        stamps["_platform"] = pkey
+        _save_stamps(tree, stamps)
     if headers:
         try:
             ensure_resource_ids(tree, interp, gen_dir)
@@ -679,7 +793,7 @@ WRITERS = {
     "base/generated_build_date.h": build_date,
 }
 
-# Writers for names matching a pattern.
+# Writers for names matching a pattern (fallbacks too).
 PATTERN_WRITERS = [
     (re.compile(r"^net/http/transport_security_state_static[a-z0-9_]*\.h$"),
      preload_header),

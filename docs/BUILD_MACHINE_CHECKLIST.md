@@ -503,10 +503,13 @@ listed and the deps are in (§4.9).
   Windows x64 (clang-cl against the Windows SDK), macOS arm64 (Darwin's
   headers, Apple framework stand-ins) and Linux with `molt_llama_vulkan`
   on (no checkout needed; see its README for what it can't cover).
-  *Expected:* `report` shows no ERRORS and no PLUGIN rows (at 156, round 28:
-  858 files in 1383 platform rows, 1342 checked, 36 partly on stand-ins, the
-  Mac files' Apple frameworks among them, 5 not checked: four Mac files that
-  need AuthenticationServices or IOSurface, and an iOS file).
+  *Expected:* `report` shows no ERRORS and no PLUGIN rows (at 156, round 30:
+  896 files in 1437 platform rows, 1384 checked, 40 partly on stand-ins, the
+  Mac files' Apple frameworks among them, 1 not checked: an iOS file that
+  no BUILD.gn lists, and 12 PLUGIN: `[blink-style]` on the `std::vector`
+  data members of `molt_fingerprinting/moltnet_audio_clock.h` and
+  `moltnet_fonts.cc`, to become `blink::Vector`s or be annotated
+  `ALLOW_DISCOURAGED_TYPE`).
 
 ### 4.1 Mojo: new fields, unions and interfaces
 
@@ -892,7 +895,7 @@ flags the include, add the dep there.
 | `chrome/browser/gcm/gcm_profile_service_factory.cc`, `.../instance_id/instance_id_profile_service_factory.cc` | no GCM for MoltNet | #23 |
 | `chrome/browser/media/chrome_media_session_client.cc` | `ShouldHideMetadata` | #23, rebase 156 (as above) |
 | `chrome/browser/net/net_error_diagnostics_dialog_win.cc` | no Network Diagnostics | #23, rebase 156 (as above) |
-| `chrome/browser/app_controller_mac.mm` | `OpenStartupTabsInBrowserWithProfile` skips MoltNet; the compile check can't compile it (it needs AuthenticationServices, for which `tools/compile_check/mac_stand_ins/` has no stand-in): look at it first on the Mac build | #23 |
+| `chrome/browser/app_controller_mac.mm` | `OpenStartupTabsInBrowserWithProfile` skips MoltNet; type-checks on Apple framework stand-ins (round 30; AuthenticationServices among them), not the SDK: look at it first on the Mac build | #23 |
 | `chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc` | "ask" counts as "block" | #23, rebase 156 (as above) |
 | `chrome/browser/media/webrtc/webrtc_logging_controller.cc` | `IsWebRtcTextLogAllowed` false for MoltNet | rebase 156 |
 | `chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc` | `ReduceAcceptLanguageService` gets `is_incognito` for MoltNet | rebase 156 |
