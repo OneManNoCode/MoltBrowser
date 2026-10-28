@@ -1,0 +1,22 @@
+MoltBrowser patch for media/mojo/mojom/audio_processing.mojom
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/mojo/mojom/audio_processing.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/mojo/mojom/audio_processing.mojom b/media/mojo/mojom/audio_processing.mojom
+index 7b605bb4b3155e2e380a479c1063245861e48ed5..51b4ea2e3f186efefb65d3e2df1b02b06818740b 100644
+--- a/media/mojo/mojom/audio_processing.mojom
++++ b/media/mojo/mojom/audio_processing.mojom
+@@ -25,6 +25,11 @@ struct AudioProcessingSettings {
+ 
+   [EnableIf=chrome_wide_echo_cancellation]
+   bool voice_isolation;
++
++  // MoltBrowser: process with the code that gives the same samples on every
++  // CPU (media::AudioProcessingSettings::cpu_independent). MoltNet's renderers
++  // set it.
++  bool cpu_independent;
+ };
+ 
+ // This interface is hosted in the audio service and called from the renderer.

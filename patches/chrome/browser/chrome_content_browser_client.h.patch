@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..ece0a35b61db6ccda381605d18269f589255e45a 100644
+index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..dd96001da18a4a60c7ced1b5a361c14403926620 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -723,6 +723,30 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -723,6 +723,32 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner)
        override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
@@ -34,6 +34,8 @@ index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..ece0a35b61db6ccda381605d18269f58
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
 +  base::RepeatingClosure GetDomStorageGrowthBeyondFloorCallback(
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
++  base::RepeatingClosure GetBackgroundFetchGrowthBeyondFloorCallback(
++      content::BrowserContext* browser_context) override;
 +  bool ShouldScheduleBackgroundFetchesPerSite(
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
    content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(

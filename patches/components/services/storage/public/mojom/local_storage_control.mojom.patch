@@ -5,10 +5,14 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/public/mojom/local_storage_control.mojom b/components/services/storage/public/mojom/local_storage_control.mojom
-index 34c42808e87e9ec880459f7ecefd141e5ec02691..e48fa6362f131d9c633fd29041c787a325dd8415 100644
+index 34c42808e87e9ec880459f7ecefd141e5ec02691..3605e7c40f143b9cee043980b8c491b01db4788f 100644
 --- a/components/services/storage/public/mojom/local_storage_control.mojom
 +++ b/components/services/storage/public/mojom/local_storage_control.mojom
-@@ -9,6 +9,14 @@ import "components/services/storage/public/mojom/storage_usage_info.mojom";
+@@ -6,9 +6,18 @@ module storage.mojom;
+ 
+ import "components/services/storage/public/mojom/storage_policy_update.mojom";
+ import "components/services/storage/public/mojom/storage_usage_info.mojom";
++import "mojo/public/mojom/base/unguessable_token.mojom";  // MoltBrowser
  import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
  import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
  
@@ -23,7 +27,7 @@ index 34c42808e87e9ec880459f7ecefd141e5ec02691..e48fa6362f131d9c633fd29041c787a3
  // Controls the state of Local Storage within a partition. This is a privileged
  // interface and must not be brokered to untrusted clients.
  //
-@@ -47,4 +55,16 @@ interface LocalStorageControl {
+@@ -47,4 +56,24 @@ interface LocalStorageControl {
    // called, that behavior is overridden and Local Storage data is persisted
    // for all StorageKeys.
    ForceKeepSessionState();
@@ -39,4 +43,12 @@ index 34c42808e87e9ec880459f7ecefd141e5ec02691..e48fa6362f131d9c633fd29041c787a3
 +  // MoltBrowser: with caches per site, `observer` hears when all areas
 +  // together grow past the floor.
 +  MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
++
++  // MoltBrowser: with caches per site, drops every area of the storage keys
++  // with `nonce` (a page's credentialless frames) and the records of their
++  // group, in the group's turn. With `closed`, their writes are refused from
++  // then on (the page lives on past its site's bound); without, that ends
++  // (the page is gone). components/services/storage/dom_storage/
++  // molt_dom_storage_site_policy.h.
++  MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
  };

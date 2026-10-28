@@ -5,18 +5,36 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/download/download_manager_impl.cc b/content/browser/download/download_manager_impl.cc
-index 26a84ddd62426531581cdf99a234bf137465d59d..9ede04bd29d10c140467909e46b576e82c46ab88 100644
+index 26a84ddd62426531581cdf99a234bf137465d59d..72e6f89772d2d854caa16bf5eef37e89e6ce5dbd 100644
 --- a/content/browser/download/download_manager_impl.cc
 +++ b/content/browser/download/download_manager_impl.cc
-@@ -46,6 +46,7 @@
+@@ -46,6 +46,8 @@
  #include "content/browser/data_url_loader_factory.h"
  #include "content/browser/devtools/devtools_instrumentation.h"
  #include "content/browser/download/embedder_download_data.pb.h"
 +#include "content/browser/download/molt_download_isolation.h"  // MoltBrowser
++#include "content/browser/download/molt_resumed_fetch_factory.h"  // MoltBrowser
  #include "content/browser/file_system/file_system_url_loader_factory.h"
  #include "content/browser/loader/file_url_loader_factory.h"
  #include "content/browser/loader/response_head_update_params.h"
-@@ -1876,9 +1877,14 @@ void DownloadManagerImpl::BeginDownloadInternal(
+@@ -1824,8 +1826,15 @@ void DownloadManagerImpl::BeginResourceDownloadOnChecksComplete(
+ 
+     StoragePartitionImpl* storage_partition = GetStoragePartitionForConfig(
+         browser_context_, storage_partition_config);
++    // MoltBrowser: a page's Background Fetch request without its service
++    // worker's factory (a resumed one) still has its Local Network Access
++    // checked (molt_resumed_fetch_policy.h).
+     pending_url_loader_factory =
+-        CreatePendingSharedURLLoaderFactory(storage_partition, rfh);
++        MoltLnaFactoryForFetch(storage_partition, *params);
++    if (!pending_url_loader_factory) {
++      pending_url_loader_factory =
++          CreatePendingSharedURLLoaderFactory(storage_partition, rfh);
++    }
+   }
+ 
+   in_progress_manager_->BeginDownload(
+@@ -1876,9 +1885,14 @@ void DownloadManagerImpl::BeginDownloadInternal(
      bool is_new_download,
      const std::string& serialized_embedder_download_data) {
    // Check if the renderer is permitted to request the requested URL.
@@ -34,7 +52,7 @@ index 26a84ddd62426531581cdf99a234bf137465d59d..9ede04bd29d10c140467909e46b576e8
      CreateInterruptedDownload(
          std::move(params),
          download::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST,
-@@ -1889,6 +1895,13 @@ void DownloadManagerImpl::BeginDownloadInternal(
+@@ -1889,6 +1903,13 @@ void DownloadManagerImpl::BeginDownloadInternal(
    auto* rfh = RenderFrameHost::FromID(params->render_process_host_id(),
                                        params->render_frame_host_routing_id());
  

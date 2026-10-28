@@ -1,0 +1,31 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc b/third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc
+index 59f438a6646c143e4e7c9418ffcff3309196fde7..e54a7022aad705e7fc8a48907b0537c311f33f4f 100644
+--- a/third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc
++++ b/third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc
+@@ -7,6 +7,7 @@
+ #include "build/build_config.h"
+ #include "media/base/audio_parameters.h"
+ #include "media/base/media_switches.h"
++#include "media/base/molt_portable_media.h"
+ 
+ namespace blink {
+ 
+@@ -163,6 +164,12 @@ media::AudioProcessingSettings ComputeWebrtcProcessingSettings(
+ 
+   out.use_loopback_aec_reference = echo_canceller.NeedSystemLoopback();
+ 
++  // MoltBrowser: MoltNet's renderers (the portable media process) have the
++  // microphone processed with the code that gives the same samples for the
++  // same input on every CPU, in the audio service and in the renderer alike;
++  // other windows keep the CPU's vector code.
++  out.cpu_independent = media::IsPortableMediaProcess();
++
+ #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+   // `media::AudioParameters::VOICE_ISOLATION_SUPPORTED` is a platform
+   // capability effect bit that was already taken into account when
