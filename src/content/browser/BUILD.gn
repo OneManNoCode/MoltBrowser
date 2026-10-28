@@ -113,6 +113,14 @@ source_set("molt_policies") {
   ]
 }
 
+# MoltBrowser: the browser's decision on the CPU-independent processing of a
+# renderer's microphone streams (header-only), for :browser and
+# MoltBrowser's own tests.
+source_set("molt_audio_capture_policy") {
+  sources = [ "renderer_host/media/molt_audio_capture_processing.h" ]
+  public_deps = [ "//media/mojo/mojom" ]
+}
+
 source_set("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
@@ -148,6 +156,9 @@ source_set("browser") {
   deps = [
     # MoltBrowser: the std-only policies below.
     ":molt_policies",
+
+    # MoltBrowser: RenderFrameAudioInputStreamFactory's processing decision.
+    ":molt_audio_capture_policy",
 
     ":child_process_security_policy_impl",
     "//base",

@@ -18,6 +18,13 @@ specific_include_rules = {
   "molt_net_device_values_unittest\.cc": [
     "+third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.h",
   ],
+  # The browser's decision replaces the renderer's in a stream's processing
+  # config (header-only).
+  "molt_net_audio_capture_unittest\.cc": [
+    "+content/browser/renderer_host/media/molt_audio_capture_processing.h",
+    "+media/base/audio_processing.h",
+    "+media/mojo/mojom/audio_processing.mojom.h",
+  ],
   # The browser sends the bundled fonts in the order of Blink's table.
   "molt_net_fonts_unittest\.cc": [
     "+third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.h",

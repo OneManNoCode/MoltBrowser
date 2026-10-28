@@ -375,6 +375,7 @@ group("core_hooks") {
     ":molt_ai_runtime",
     "agents:features",
     "fingerprinting",
+    "fingerprinting:audio_capture",
     "fingerprinting:device",
     "fingerprinting:storage",
     "fingerprinting:storage_values",

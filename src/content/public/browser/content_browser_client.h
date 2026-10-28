@@ -2083,6 +2083,15 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual base::RepeatingClosure GetBackgroundFetchGrowthBeyondFloorCallback(
       BrowserContext* browser_context);
 
+  // MoltBrowser: true if the microphone streams of `browser_context`'s
+  // renderers are processed with the code that gives the same samples on
+  // every CPU (media::AudioProcessingSettings::cpu_independent). The browser
+  // sets it in the processing config of each stream it creates for a
+  // renderer, whatever the renderer sent
+  // (content/browser/renderer_host/media/molt_audio_capture_processing.h).
+  virtual bool ShouldProcessAudioCaptureCpuIndependently(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

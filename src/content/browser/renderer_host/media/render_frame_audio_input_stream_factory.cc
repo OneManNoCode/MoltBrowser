@@ -24,15 +24,18 @@
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
 #include "content/browser/renderer_host/media/media_devices_manager.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
+#include "content/browser/renderer_host/media/molt_audio_capture_processing.h"  // MoltBrowser
 #include "content/browser/renderer_host/media/preferred_audio_output_device_manager.h"
 #include "content/public/browser/audio_stream_broker.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/content_browser_client.h"  // MoltBrowser
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_device_id.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents_media_capture_id.h"
+#include "content/public/common/content_client.h"  // MoltBrowser
 #include "media/audio/audio_device_description.h"
 #include "media/base/audio_parameters.h"
 #include "media/mojo/mojom/audio_processing.mojom.h"
@@ -163,6 +166,10 @@ class RenderFrameAudioInputStreamFactory::Core final
   const int process_id_;
   const int frame_id_;
   const GlobalRenderFrameHostToken main_frame_token_;
+  // MoltBrowser: whether the frame's profile has its microphone streams
+  // processed CPU-independently, which the browser decides, not the renderer
+  // (molt_audio_capture_processing.h).
+  const bool molt_cpu_independent_;
 
   mojo::Receiver<RendererAudioInputStreamFactory> receiver_{this};
   // Always null-check this weak pointer before dereferencing it.
@@ -202,7 +209,13 @@ RenderFrameAudioInputStreamFactory::Core::Core(
       process_id_(render_frame_host->GetProcess()->GetDeprecatedID()),
       frame_id_(render_frame_host->GetRoutingID()),
       main_frame_token_(
-          render_frame_host->GetMainFrame()->GetGlobalFrameToken()) {
+          render_frame_host->GetMainFrame()->GetGlobalFrameToken()),
+      // MoltBrowser: see |molt_cpu_independent_|.
+      molt_cpu_independent_(
+          GetContentClient()
+              ->browser()
+              ->ShouldProcessAudioCaptureCpuIndependently(
+                  render_frame_host->GetProcess()->GetBrowserContext())) {
   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M158);
 
   ForwardingAudioStreamFactory::Core* tmp_factory =
@@ -289,6 +302,9 @@ void RenderFrameAudioInputStreamFactory::Core::CreateStream(
       IncrementDesktopCaptureCounter(SYSTEM_LOOPBACK_AUDIO_CAPTURER_CREATED);
     return;
   } else {
+    // MoltBrowser: the browser's decision, whatever the renderer sent.
+    MoltApplyCpuIndependentProcessing(molt_cpu_independent_,
+                                      processing_config.get());
     forwarding_factory_->CreateInputStream(
         process_id_, frame_id_, device->id, audio_params, shared_memory_count,
         automatic_gain_control, std::move(processing_config),
