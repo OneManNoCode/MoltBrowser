@@ -4,7 +4,7 @@
 // MoltBrowser fingerprinting protection: the formats a MoltNet page sees of
 // a camera, whatever modes the device has. Pure and std-only (tested
 // standalone, like farbling.h); the Blink side is
-// modules/mediastream/moltnet_camera.h.
+// modules/mediastream/moltnet_camera.h, through moltnet_camera_menu.h.
 //
 // Every MoltNet camera offers formats of one menu: 640x480 and 1280x720, at
 // 30 frames a second. Chromium's constraints algorithm chooses among those

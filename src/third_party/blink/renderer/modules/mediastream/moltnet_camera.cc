@@ -4,7 +4,6 @@
 #include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"
 
 #include <algorithm>
-#include <span>
 #include <utility>
 
 #include "media/base/video_frame.h"
@@ -14,7 +13,7 @@
 #include "media/base/video_util.h"
 #include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
-#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_camera_values.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_camera_menu.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_video_device.h"
@@ -40,10 +39,8 @@ Vector<CameraMode> ToModes(const Formats& formats) {
 
 template <typename Formats>
 Formats MenuFormats(const Formats& formats) {
-  const Vector<CameraMode> modes = ToModes(formats);
   Formats menu;
-  for (const CameraMode& entry : moltnet::ReachableUniformCameraModes(
-           std::span<const CameraMode>(modes.data(), modes.size()))) {
+  for (const CameraMode& entry : UniformCameraMenu(ToModes(formats))) {
     menu.push_back(media::VideoCaptureFormat(
         gfx::Size(entry.width, entry.height), entry.frame_rate,
         media::PIXEL_FORMAT_I420));
@@ -142,16 +139,14 @@ media::VideoCaptureParams UniformCameraCaptureParams(
   if (!UsesUniformCamera(type)) {
     return params;
   }
-  const Vector<CameraMode> modes = ToModes(native_formats);
-  const std::optional<size_t> open = moltnet::UniformCameraOpenMode(
-      std::span<const CameraMode>(modes.data(), modes.size()));
+  const std::optional<UniformCameraOpening> open =
+      UniformCameraOpeningFor(ToModes(native_formats));
   if (!open) {
     return params;
   }
   media::VideoCaptureParams uniform = params;
-  uniform.requested_format = native_formats[static_cast<wtf_size_t>(*open)];
-  uniform.requested_format.frame_rate = moltnet::UniformCameraOpenFrameRate(
-      modes[static_cast<wtf_size_t>(*open)]);
+  uniform.requested_format = native_formats[open->mode];
+  uniform.requested_format.frame_rate = open->frame_rate;
   return uniform;
 }
 
