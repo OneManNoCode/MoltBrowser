@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/common/helper_sandbox_win_policy.h"
@@ -31,10 +33,7 @@
 
 #include <windows.h>
 
-#include <optional>
-
 #include "base/path_service.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/security_descriptor.h"
@@ -608,6 +607,28 @@ TEST(HelperSandboxLinuxTest, CapsOutput) {
   EXPECT_EQ(run.output.size(), 1000u);
   EXPECT_FALSE(run.timed_out);
   EXPECT_LT(base::TimeTicks::Now() - start, base::Seconds(10));
+}
+
+TEST(HelperSandboxLinuxTest, WritesNoFileLargerThanTheLimit) {
+  base::ScopedTempDir scratch;
+  ASSERT_TRUE(scratch.CreateUniqueTempDir());
+  HelperSandboxPolicy policy;
+  policy.writable_dir = scratch.GetPath();
+  // 1 KiB lines (shell builtins only), up to 4 MiB past the limit.
+  const uint64_t lines = (hsl::kMaxHelperFileBytes >> 10) + 4096;
+  const HelperRunResult run = RunSandboxedHelper(
+      Shell("i=0; while [ $i -lt " + base::NumberToString(lines) +
+            " ]; do printf '%1023s\\n' x || exit 7; i=$((i+1)); done > big; "
+            "echo done"),
+      policy, base::Seconds(60), 4096);
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_FALSE(run.timed_out);
+  // SIGXFSZ ended the shell, or its write failed (EFBIG): never "done".
+  EXPECT_EQ(run.output.find("done"), std::string::npos);
+  const std::optional<int64_t> size =
+      base::GetFileSize(scratch.GetPath().AppendASCII("big"));
+  ASSERT_TRUE(size.has_value());
+  EXPECT_EQ(static_cast<uint64_t>(*size), hsl::kMaxHelperFileBytes);
 }
 
 TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {

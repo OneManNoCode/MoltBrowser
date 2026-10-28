@@ -72,7 +72,7 @@ test suite as root and unprivileged, the tools' own test suites and
 `molt_fuzz.py check` pass; the changed C++ was compiled against Chromium
 156's headers.
 
-**Findings.** 12: 2 low, 10 informational. Fixed: the two low, and one informational (OCR runs at once).
+**Findings.** 12: 2 low, 10 informational. Fixed: the two low, and two informational (OCR runs at once; on Linux, the size of the files a helper writes).
 
 **Fixed.**
 
@@ -98,6 +98,10 @@ test suite as root and unprivileged, the tools' own test suites and
   browser, so files sent faster than they are read can't make it hold an
   unbounded number. A run's slot comes back when it answers, or when its
   callback is dropped unrun (`chrome/browser/molt_ai/ocr/ocr_service.cc`).
+- The OCR and voice helpers on Linux write no file larger than 64 MiB
+  (RLIMIT_FSIZE; past it the helper ends) and no core dump, so one that a
+  hostile input took over can't fill the disk before its deadline
+  (`chrome/browser/molt_ai/common/helper_sandbox_linux.cc`).
 
 ## 2026-10-28: PRs #75 and #76 (October 2026)
 

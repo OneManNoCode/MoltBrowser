@@ -11,6 +11,7 @@
 #include <sched.h>
 #include <stddef.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -507,6 +508,17 @@ void ApplyInChild(const Prepared& prepared) {
   // (TIOCSTI), and a process group the launcher can kill as a whole. Fails
   // only for a process group leader, which a forked child is not.
   setsid();
+
+  // No file past kMaxHelperFileBytes and no core dump: a helper a hostile
+  // input took over can't fill the disk before its deadline.
+  const struct rlimit file_size = {kMaxHelperFileBytes, kMaxHelperFileBytes};
+  if (setrlimit(RLIMIT_FSIZE, &file_size) != 0) {
+    FailInChild("setrlimit(RLIMIT_FSIZE)");
+  }
+  const struct rlimit no_core_dump = {0, 0};
+  if (setrlimit(RLIMIT_CORE, &no_core_dump) != 0) {
+    FailInChild("setrlimit(RLIMIT_CORE)");
+  }
 
   // base::LaunchProcess() sets this too; seccomp and Landlock require it.
   if (prctl(PR_SET_NO_NEW_PRIVS, 1UL, 0UL, 0UL, 0UL) != 0) {
