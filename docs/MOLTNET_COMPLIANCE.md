@@ -999,7 +999,7 @@ measured in a built browser):
 | HSTS | entries a response sets are stored by host. In MoltNet they upgrade top-level navigations only (Chromium's `HstsTopLevelNavigationsOnly`, for MoltNet's context), so a page's subresource requests can't read what other sites' responses stored; HTTPS-Only mode upgrades every plain-HTTP navigation anyway. Expect-CT no longer exists | gone (in memory) |
 | Host-name cache | keyed by top-level site at Chromium 156 (`SplitHostCacheByNetworkAnonymizationKey`; at 152 Chromium's field-trial testing config turned it off for every profile, and 156's no longer does), and MoltNet pages' host names are never looked up locally anyway: SOCKS5 sends them to Tor | cleared, then gone |
 | CORS preflight results | keyed by the request's network key; a page's credentialless frames' results (under its nonce) are dropped when the page goes (*Storage* below). **Size per site**: Chromium keeps 1,024 results for all sites and, when full, purges ten at a random place; MoltNet's context gives each site 128 of its own and purges nothing at random (*Fixed-size network caches* below) | gone |
-| Compression dictionaries | keyed by frame origin and top-level site. Chromium 156 adds one store shared by every site for the dictionaries of the well-known scripts and styles above (`PervasiveSharedDictionaries`, on in Chromium's field-trial testing config, so in MoltBrowser builds); a dictionary goes there only from a response filed under the shared cache entries, which MoltNet's context never uses, so its shared store stays empty. **Size per site**: Chromium's in-memory store keeps 1,000 dictionaries and 1% of the machine's memory (half of each per site) for all sites, evicting the least recently used of any site past the total, keeps 10 of the stores no request uses for all sites (a store pushed out loses its dictionaries), and drops them under memory pressure; MoltNet's context gives each site 100 dictionaries and 8 MiB whatever the machine, and 10 stores, of its own, never dropped for memory pressure (*Fixed-size network caches* below) | gone |
+| Compression dictionaries | keyed by frame origin and top-level site. Chromium 156 adds one store shared by every site for the dictionaries of the well-known scripts and styles above (`PervasiveSharedDictionaries`, on in Chromium's field-trial testing config, so in MoltBrowser builds); a dictionary goes there only from a response filed under the shared cache entries, which MoltNet's context never uses, so its shared store stays empty. **Size per site**: Chromium's in-memory store keeps 1,000 dictionaries and 1% of the machine's memory (half of each per site) for all sites, evicting the least recently used of any site past the total, keeps 10 of the stores no request uses for all sites (a store pushed out loses its dictionaries), and drops them under memory pressure; MoltNet's context gives each site 100 dictionaries and 4 MiB whatever the machine, and 10 stores, of its own, never dropped for memory pressure (*Fixed-size network caches* below) | gone |
 | Renderer-accessible HTTP cache (Chromium 156) | none: only for on-disk caches, and MoltNet's is in memory | — |
 | Device-bound sessions (Chromium 156, Windows and macOS) | none: MoltNet's context has no session service | — |
 | TLS client-certificate choices | none kept. Chromium remembers the certificate (or "no certificate") picked for a server by host and port, for every site; MoltNet's context answers every server's request with no certificate, at once, the same way on every site, and the browser shows no picker and applies no auto-select policy for MoltNet pages | — |
@@ -1145,7 +1145,7 @@ MoltNet's context (the `[MinVersion=1]` field
 site, for its first-party and third-party entries alike; a page its server
 sandboxed counts to the site it came from) has shares of its own: 256 TLS
 sessions, 20 authentication entries, 500 server records and 100 HTTP/1.1
-ones, 128 preflight results, 100 dictionaries and 8 MiB of them whatever
+ones, 128 preflight results, 100 dictionaries and 4 MiB of them whatever
 the machine, and 10 dictionary stores; all sites together hold 16 sites'
 full shares. A site's new entry takes the place of its own least recently
 used one, never another site's; past the total, a new entry of a site that
@@ -1174,7 +1174,7 @@ services; Reporting and Network Error Logging are not built. What a page
 can still observe: its own site's shares; and, once other sites hold a
 whole total between them (16 sites at their full shares), that a new
 entry of its own site isn't kept. What it costs: up to 16 sites' full
-shares in memory (4,096 TLS sessions and 128 MiB of dictionaries at the
+shares in memory (4,096 TLS sessions and 64 MiB of dictionaries at the
 most), also under memory pressure.
 
 **Partitioned cookies.** A third party embedded under a top-level site

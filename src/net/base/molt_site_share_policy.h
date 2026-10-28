@@ -97,13 +97,15 @@ inline constexpr MoltSiteShareLimits kMoltHttp11RequiredShares =
 // 1024 for one site.
 inline constexpr MoltSiteShareLimits kMoltPreflightShares =
     MoltSiteShareLimitsOf(128);
-// Compression dictionaries in memory: 100 dictionaries and 8 MiB per site,
+// Compression dictionaries in memory: 100 dictionaries and 4 MiB per site,
 // whatever the machine (Chromium: half of 1000, and half of 1% of the
 // machine's memory, at most 200 MiB, so a site could tell roughly how much
-// memory the machine has), 16 sites' worth in all.
+// memory the machine has), 16 sites' worth in all: 64 MiB, below what
+// Chromium allows on a machine of 6.4 GB or more. A site past its share
+// loses its own oldest dictionaries, only compressing less.
 inline constexpr MoltSiteShareLimits kMoltDictionaryShares =
     MoltSiteShareLimitsOf(100);
-inline constexpr uint64_t kMoltDictionaryBytesPerSite = 8 * 1024 * 1024;
+inline constexpr uint64_t kMoltDictionaryBytesPerSite = 4 * 1024 * 1024;
 inline constexpr uint64_t kMoltDictionaryBytesTotal =
     kMoltDictionaryBytesPerSite * kMoltSiteShareSites;
 // The dictionary storages (one per frame origin and top-level site) kept

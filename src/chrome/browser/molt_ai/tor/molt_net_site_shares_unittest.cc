@@ -50,8 +50,8 @@ TEST(MoltNetSiteSharesTest, TheLimits) {
   EXPECT_EQ(kMoltPreflightShares, (MoltSiteShareLimits{128, 2048}));
   EXPECT_EQ(kMoltDictionaryShares, (MoltSiteShareLimits{100, 1600}));
   EXPECT_EQ(kMoltDictionaryStorageShares, (MoltSiteShareLimits{10, 160}));
-  EXPECT_EQ(kMoltDictionaryBytesPerSite, 8u * 1024 * 1024);
-  EXPECT_EQ(kMoltDictionaryBytesTotal, 128u * 1024 * 1024);
+  EXPECT_EQ(kMoltDictionaryBytesPerSite, 4u * 1024 * 1024);
+  EXPECT_EQ(kMoltDictionaryBytesTotal, 64u * 1024 * 1024);
   // A site gets at least what Chromium gives all sites for the small caches.
   EXPECT_GE(kMoltHttpAuthShares.per_site, 20u);
   EXPECT_GE(kMoltServerInfoShares.per_site, 500u);
