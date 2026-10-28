@@ -117,7 +117,10 @@ file) are in a branch its own platform certainly skips and that platform
 doesn't: `utility_main.cc`'s hook in its `#if BUILDFLAG(IS_WIN)` block is
 compiled for Windows, `font_metrics.cc`'s in its `IS_APPLE` branch for the
 Mac, `browser_ai_runtime.cc`'s `BUILDFLAG(MOLT_LLAMA_VULKAN)` block on
-`linux-vulkan`. The same naming conventions keep a file off a platform
+`linux-vulkan`, and a NEON branch (`#if defined(WEBRTC_HAS_NEON)`,
+`defined(__ARM_NEON)`: WebRTC's resampler, FFT and AEC3/AGC2 CPU
+detection) on Linux arm64 rather than the Mac, like the NEON sources. The
+same naming conventions keep a file off a platform
 that can't build it (no `*_posix.cc` on Windows, no `linux/` file on the
 Mac). MoltBrowser's own sources (new files, not upstream copies) are
 compiled for Windows too, when a Windows GN target builds them
@@ -294,7 +297,9 @@ plugin findings reported.
   `include_dirs`, `cflags` (and `cflags_c`/`cflags_cc`/`cflags_objcc` by
   language) and those of the configs it adds beyond the defaults (a
   template invocation, `v8_source_set()` and the like, is expanded to the
-  target it defines): opus's `opus_private_config`, for example. Its
+  target it defines; a relative label such as WebRTC's
+  `..:apm_debug_dump` is resolved against the target's directory, as GN
+  does): opus's `opus_private_config`, for example. Its
   exception and RTTI setting comes from that target too: on when the target
   removes `//build/config/compiler:no_exceptions` (`:no_rtti`), adds
   `:exceptions` (`:rtti`) or a config of its own with `-fexceptions`

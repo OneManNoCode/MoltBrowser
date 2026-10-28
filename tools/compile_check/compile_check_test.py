@@ -511,6 +511,42 @@ class GritFreshnessTest(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class ConfigLabelTest(unittest.TestCase):
+    """Config labels resolve as GN resolves them, relative ones against
+    the target's directory."""
+
+    def test_relative_labels(self):
+        d = "//third_party/webrtc/modules/audio_processing/aec3"
+        lab = gnconfigs._label
+        self.assertEqual(
+            lab("..:apm_debug_dump", d),
+            "//third_party/webrtc/modules/audio_processing:apm_debug_dump")
+        self.assertEqual(lab(":x", d), d + ":x")
+        self.assertEqual(lab("sub:x", d), d + "/sub:x")
+        self.assertEqual(lab("../../common", d),
+                         "//third_party/webrtc/modules/common:common")
+        self.assertEqual(lab("//third_party/webrtc/:common_config", d),
+                         "//third_party/webrtc:common_config")
+        self.assertEqual(lab("//build/config/compiler:no_exceptions"
+                             "(//build/toolchain/linux:clang_x64)", d),
+                         "//build/config/compiler:no_exceptions")
+        self.assertEqual(lab("//v8", d), "//v8:v8")
+        self.assertEqual(lab(":x", "//"), "//:x")
+
+    def test_relative_config_flags_reach_the_file(self):
+        files = {
+            "w/BUILD.gn": 'config("dump") { defines = [ "DUMP=0" ] }\n',
+            "w/sub/BUILD.gn": 'source_set("s") {\n'
+                              '  sources = [ "a.cc" ]\n'
+                              '  configs += [ "..:dump" ]\n}\n',
+        }
+        tree = FakeTree(files)
+        flags = gnconfigs.own_flags(
+            [t for t in make_interp(files).run_file("//w/sub/BUILD.gn")
+             if t.name == "s"][0], make_interp(files), tree, {})
+        self.assertIn("-DDUMP=0", flags)
+
+
 class GritArgsChangeTest(unittest.TestCase):
     """When the platform's GN args change, each grit header's args are
     taken from its action again, and a header whose defines changed is
@@ -1102,6 +1138,40 @@ class ExtraPlatformsTest(unittest.TestCase):
         self.assertEqual(targets.extra_platforms("a/x_posix.cc", self.OLD,
                                                  None), ["mac"])
         self.assertEqual(targets.changed_lines(b"a\nb\nc", b"a\nc"), {1})
+
+    def test_neon_branch_on_linux_arm64(self):
+        # WebRTC's NEON branches: x64 builds skip them; Linux arm64 checks
+        # them (not the Mac too, for the same lines).
+        old = (b"void F() {\n"
+               b"#if defined(WEBRTC_ARCH_X86_FAMILY)\n  Sse();\n"
+               b"#elif defined(WEBRTC_HAS_NEON)\n  Neon();\n"
+               b"#else\n  C();\n#endif\n"
+               b"#if defined(__ARM_NEON)\n  Intrinsics();\n#endif\n"
+               b"#if defined(ARCH_CPU_ARM64)\n  Arm64();\n#endif\n"
+               b"#if BUILDFLAG(IS_MAC)\n  Mac();\n#endif\n}\n")
+        path = "third_party/webrtc/common_audio/x.cc"
+        for line in (b"  Neon();\n", b"  Intrinsics();\n"):
+            new = old.replace(line, line[:-3] + b"(1);\n")
+            self.assertEqual(targets.extra_platforms(path, new, old),
+                             ["linux-arm64"], line)
+        # A NEON line and a Mac one: both.
+        new = old.replace(b"  Neon();\n", b"  Neon(1);\n").replace(
+            b"  Mac();\n", b"  Mac(1);\n")
+        self.assertEqual(targets.extra_platforms(path, new, old),
+                         ["linux-arm64", "mac"])
+        # Other arm64 code is the Mac's, as before.
+        new = old.replace(b"  Arm64();\n", b"  Arm64(1);\n")
+        self.assertEqual(targets.extra_platforms(path, new, old), ["mac"])
+        # The x86 branch stays Linux x64's.
+        new = old.replace(b"  Sse();\n", b"  Sse(1);\n")
+        self.assertEqual(targets.extra_platforms(path, new, old), [])
+        arm = platforms.get("linux-arm64")
+        self.assertIn("defined(__ARM_NEON)", arm.true_atoms)
+        self.assertIn("defined(__ARM_NEON__)", arm.false_atoms)
+        self.assertIn("defined(__ARM_NEON__)",
+                      platforms.get("mac").true_atoms)
+        self.assertIn("defined(WEBRTC_HAS_NEON)",
+                      platforms.get("win").false_atoms)
 
     def test_vulkan_switch_variant(self):
         old = (b"void F() {\n#if BUILDFLAG(MOLT_LLAMA_VULKAN)\n  G();\n"

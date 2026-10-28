@@ -199,8 +199,13 @@ def expand(args, tree=None):
 # Platforms a file's other-platform branches are checked on, besides its own
 # (platforms.of): MoltBrowser's hooks in a Linux-built file's
 # `#if BUILDFLAG(IS_WIN)` block (utility_main.cc's warm-up) or in the
-# IS_APPLE branch of a shared file (font_metrics.cc) are compiled there.
-EXTRA_PLATFORM_CANDIDATES = ("linux", "mac", "win", "linux-vulkan")
+# IS_APPLE branch of a shared file (font_metrics.cc) are compiled there,
+# and those in the NEON branch of a file the x64 builds compile without it
+# (WebRTC's `#if defined(WEBRTC_HAS_NEON)`) on Linux arm64, as the
+# arm-only sources are (the Mac arm64 build compiles them too; Linux arm64
+# has the real headers).
+EXTRA_PLATFORM_CANDIDATES = ("linux", "linux-arm64", "mac", "win",
+                             "linux-vulkan")
 
 
 # Headers made to be included in a context (several times, after macros
@@ -259,14 +264,30 @@ def extra_platforms(path, new, old):
         return scan.live_lines(new, scan.Atoms(p.true_atoms, p.false_atoms))
 
     own_live = live(own)
+    # The own platform's lines with NEON's atoms unknown: a line dead only
+    # without them is in a NEON branch.
+    p = platforms.get(own)
+    neon_live = scan.live_lines(new, scan.Atoms(
+        p.true_atoms - platforms.NEON_ATOMS,
+        p.false_atoms - platforms.NEON_ATOMS))
     out = []
+    needs = {}
     for name in EXTRA_PLATFORM_CANDIDATES:
         if name == own or not platforms.may_build(path, name):
             continue
         other = live(name)
-        if any(not own_live[i] and other[i] for i in lines
-               if i < len(own_live) and i < len(other)):
-            out.append(name)
+        need = {i for i in lines if i < len(own_live) and i < len(other)
+                and not own_live[i] and other[i]}
+        if name == "linux-arm64":
+            need = {i for i in need if i < len(neon_live) and neon_live[i]}
+        if not need:
+            continue
+        # NEON branches are checked on Linux arm64 (above); the Mac only
+        # for lines of its own.
+        if name == "mac" and need <= needs.get("linux-arm64", set()):
+            continue
+        needs[name] = need
+        out.append(name)
     return out
 
 

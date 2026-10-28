@@ -69,6 +69,11 @@ FALSE_ATOMS = {
     # The GN switch molt_llama_vulkan is off (platforms.py: linux-vulkan).
     "BUILDFLAG(MOLT_LLAMA_VULKAN)", "BUILDFLAG(MOLT_GPU_INFERENCE)",
     "defined(MOLT_LLAMA_VULKAN)", "defined(GGML_VULKAN_MOLTBROWSER)",
+    # NEON and WebRTC's other CPUs (platforms.py: linux-arm64).
+    "defined(__ARM_NEON)", "defined(__ARM_NEON__)",
+    "defined(WEBRTC_HAS_NEON)", "defined(WEBRTC_ARCH_ARM64)",
+    "defined(WEBRTC_ARCH_ARM_FAMILY)", "defined(MIPS_FPU_LE)",
+    "defined(MIPS32_LE)",
     "0", "false",
 }
 TRUE_ATOMS = {

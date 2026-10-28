@@ -7,6 +7,8 @@ on. Here a fixed set stands for that: the configs every chrome/browser file
 gets through its dependencies (GLOBAL_CONFIGS), and those of the target a
 file belongs to, by directory (DIR_CONFIGS: Blink's inside_blink, ...).
 """
+import posixpath
+
 from .sources import log
 
 GLOBAL_CONFIGS = [
@@ -98,13 +100,20 @@ RTTI = "//build/config/compiler:rtti"
 
 
 def _label(c, base_dir):
-    """A config label as written in a target -> "//dir:name"."""
+    """A config label as written in a target -> "//dir:name". A label
+    without "//" is relative to the target's directory `base_dir`, as GN
+    resolves it (":x", "..:x", "sub:x", "../dir"); a directory alone names
+    the config called like its last part."""
     c = c.split("(")[0]
-    if c.startswith(":"):
-        return base_dir + c
-    if ":" not in c:
-        return c + ":" + c.rstrip("/").rsplit("/", 1)[-1]
-    return c
+    d, colon, name = c.partition(":")
+    if d.startswith("//"):
+        d = "//" + posixpath.normpath(d[2:]) if d[2:].strip("/") else "//"
+    else:
+        d = posixpath.normpath(posixpath.join(base_dir[2:], d))
+        d = "//" if d in (".", "") else "//" + d
+    if not colon:
+        name = d.rstrip("/").rsplit("/", 1)[-1]
+    return d + ":" + name
 
 
 def _config_cflags(interp, tree, label, cache, seen=None):
