@@ -37,14 +37,15 @@ python3 tools/compile_check/compile_check_test.py -v  # the harness's tests
 targets) and gen (the headers a build generates) until nothing new turns up,
 then checks every target with 2 parallel compiles (each capped at 6 GB;
 each result records the compile's peak memory, and `report` names the
-largest, to size `--jobs` on a shared machine), platform by platform. A
-cold run takes several hours, most of it fetching and the Linux compiles.
-Everything is cached in the work dir (default `.molt-compile-check-cache/`,
-gitignored; `--work DIR` or `MOLT_COMPILE_CHECK_DIR`), about 3 GB. The
-Chromium tree comes from the blob-less cache `tools/chromium/upstream.py`
-keeps in `.molt-chromium-cache/` (`--chromium-cache` to point elsewhere).
-When the GitHub mirror answers 5xx, fetches are retried for up to 20
-minutes.
+largest, to size `--jobs` on a shared machine: at 156 most Linux compiles
+peak under 0.5 GB, the largest, Blink's `local_frame_view.cc`, at 2.4 GB),
+platform by platform. A cold run takes several hours, most of it fetching
+and the Linux compiles. Everything is cached in the work dir (default
+`.molt-compile-check-cache/`, gitignored; `--work DIR` or
+`MOLT_COMPILE_CHECK_DIR`), about 3 GB. The Chromium tree comes from the
+blob-less cache `tools/chromium/upstream.py` keeps in
+`.molt-chromium-cache/` (`--chromium-cache` to point elsewhere). When the
+GitHub mirror answers 5xx, fetches are retried for up to 20 minutes.
 
 Re-runs are incremental, without trusting the cache for correctness:
 
@@ -56,8 +57,10 @@ Re-runs are incremental, without trusting the cache for correctness:
   output holds every header's content and path, every macro definition and
   the outcome of every header search and `__has_include`, so an edited,
   added (shadowing) or regenerated header, or another flag, compiles the
-  file again; this costs about a tenth of a compile per file. A compile
-  the memory limit or a signal stopped is never stored; `--no-cache`
+  file again; this costs about a tenth of a compile per file. Each
+  result is stored as its compile ends, so a run that was interrupted (a
+  restart) picks up where it stopped when started again; a compile the
+  memory limit or a signal stopped is never stored. `--no-cache`
   compiles everything.
 * A generated file is made again only when its inputs changed, and is
   never compiled against when they did: `check` first remakes the mojom
@@ -206,10 +209,11 @@ plugin findings reported.
      (about 5 minutes; only the files of the mounts that need it are kept,
      about 450 MB, none outside its mount) and serves the
      repositories no mirror has: the release-branch commits of dawn and
-     webrtc, Chromium's own libc++, libc++abi, ICU and dom_distiller_js,
-     libaom, and llvm-libc (Chromium pins a libc-only split of
-     llvm-project). A mount whose gitlink in that release is the pin's is
-     exact; otherwise it is the nearest public tree, a stand-in;
+     webrtc, Chromium's own libc++, libc++abi, ICU, FFmpeg, SQLite (with
+     the amalgamation its headers include) and dom_distiller_js, libaom,
+     and llvm-libc (Chromium pins a libc-only split of llvm-project). A
+     mount whose gitlink in that release is the pin's is exact; otherwise
+     it is the nearest public tree, a stand-in;
   3. a substitute (`SUBSTITUTES`) or the mirror's HEAD, both stand-ins.
 
   `repos/sources.json` records each mount's source; when it changes, the
