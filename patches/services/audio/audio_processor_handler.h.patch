@@ -1,0 +1,31 @@
+MoltBrowser patch for services/audio/audio_processor_handler.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/audio/audio_processor_handler.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/audio/audio_processor_handler.h b/services/audio/audio_processor_handler.h
+index 067fbd2ec46c44506c0ec8075cf16bc1a298a684..a241582b2ab288daaab9c66de04d18b0ccfe8767 100644
+--- a/services/audio/audio_processor_handler.h
++++ b/services/audio/audio_processor_handler.h
+@@ -180,6 +180,9 @@ class AudioProcessorHandler final : public ReferenceOutput::Listener,
+                      base::TimeDelta delay) final;
+   // Called on `owning_sequence_`.
+   void OnReferenceStreamError() final;
++  // MoltBrowser: the playout is mixed with the portable code for a MoltNet
++  // stream (reference_output.h).
++  bool IsCpuIndependent() const final;
+ 
+   // mojom::AudioProcessorControls implementation.
+   void GetStats(GetStatsCallback callback) final;
+@@ -211,6 +214,10 @@ class AudioProcessorHandler final : public ReferenceOutput::Listener,
+ 
+   SEQUENCE_CHECKER(owning_sequence_);
+ 
++  // MoltBrowser: media::AudioProcessingSettings::cpu_independent, as the
++  // handler was created with it.
++  const bool cpu_independent_;
++
+   std::unique_ptr<VoiceIsolationHandler> voice_isolation_handler_;
+ 
+   // The audio processor is accessed on all threads (OS capture thread, OS

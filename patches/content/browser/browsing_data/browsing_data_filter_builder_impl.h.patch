@@ -1,0 +1,24 @@
+MoltBrowser patch for content/browser/browsing_data/browsing_data_filter_builder_impl.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/content/browser/browsing_data/browsing_data_filter_builder_impl.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/browsing_data/browsing_data_filter_builder_impl.h b/content/browser/browsing_data/browsing_data_filter_builder_impl.h
+index 2dae2531e635dd067ffe9a06718b10857a5f6303..3ba1d73e25e7cc4b41377d618d9e30cbb60b0105 100644
+--- a/content/browser/browsing_data/browsing_data_filter_builder_impl.h
++++ b/content/browser/browsing_data/browsing_data_filter_builder_impl.h
+@@ -61,6 +61,13 @@ class CONTENT_EXPORT BrowsingDataFilterBuilderImpl
+ 
+   OriginMatchingMode GetOriginModeForTesting() const;
+ 
++  // MoltBrowser: the storage key set with SetStorageKey(), if any. A deletion
++  // that names one storage key reads only that key's usage where storage is
++  // kept per site (MoltNet: StoragePartitionImpl's DataDeletionHelper).
++  const std::optional<blink::StorageKey>& molt_storage_key() const {
++    return storage_key_;
++  }
++
+   const net::CookiePartitionKeyCollection&
+   GetCookiePartitionKeyCollectionForTesting() const;
+ 

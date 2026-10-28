@@ -5,21 +5,25 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/webrtc/BUILD.gn b/media/webrtc/BUILD.gn
-index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..7a9da8e5e15e07cc4fecdb615607a2a2d1aed351 100644
+index a9fa4df036e7738dd7a08bc2186358f8fb0b1dd2..5edc0cc0825e7220ac662144f09d94eb174e15a4 100644
 --- a/media/webrtc/BUILD.gn
 +++ b/media/webrtc/BUILD.gn
-@@ -45,6 +45,21 @@ component("webrtc") {
+@@ -45,6 +45,25 @@ component("webrtc") {
    }
  }
  
 +# MoltBrowser: microphone processing that computes the same samples on
-+# every CPU (MoltNet's streams): golden digests every CPU and OS must
-+# reproduce, in molt_ai_unittests.
++# every CPU (MoltNet's streams), and the echo reference mixed for it:
++# golden digests every CPU and OS must reproduce, in molt_ai_unittests.
 +source_set("molt_unittests") {
 +  testonly = true
-+  sources = [ "molt_cpu_independent_processing_unittest.cc" ]
++  sources = [
++    "molt_cpu_independent_processing_unittest.cc",
++    "molt_echo_reference_unittest.cc",
++  ]
 +  deps = [
 +    ":webrtc",
++    "//base",
 +    "//media",
 +    "//testing/gtest",
 +    "//third_party/webrtc_overrides:webrtc_component",

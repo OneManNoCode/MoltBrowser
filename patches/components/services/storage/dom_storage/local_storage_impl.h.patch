@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.h b/components/services/storage/dom_storage/local_storage_impl.h
-index 803764e6d25c73798e4c02f7404e6ee52f595d00..cc0c2cc196bfcbb6c674c71b2f7f408b7a77a354 100644
+index 803764e6d25c73798e4c02f7404e6ee52f595d00..8225bb5c36ca88c141db24fd592bf79811039414 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.h
 +++ b/components/services/storage/dom_storage/local_storage_impl.h
 @@ -16,9 +16,13 @@
@@ -22,7 +22,7 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..cc0c2cc196bfcbb6c674c71b2f7f408b
  #include "base/trace_event/memory_allocator_dump.h"
  #include "base/trace_event/memory_dump_provider.h"
  #include "build/build_config.h"
-@@ -94,6 +98,17 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -94,6 +98,20 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    void ApplyPolicyUpdates(
        std::vector<mojom::StoragePolicyUpdatePtr> policy_updates) override;
    void ForceKeepSessionState() override;
@@ -32,6 +32,9 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..cc0c2cc196bfcbb6c674c71b2f7f408b
 +      override;  // MoltBrowser
 +  void MoltDropNonce(const base::UnguessableToken& nonce,
 +                     bool closed) override;  // MoltBrowser
++  void MoltGetUsageForStorageKey(
++      const blink::StorageKey& storage_key,
++      MoltGetUsageForStorageKeyCallback callback) override;  // MoltBrowser
 +  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
 +  // through `scheduler` (one for the whole partition, which its host shares:
 +  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
@@ -40,7 +43,7 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..cc0c2cc196bfcbb6c674c71b2f7f408b
  
    // base::trace_event::MemoryDumpProvider implementation.
    bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
-@@ -119,6 +134,7 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -119,6 +137,7 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    friend class LocalStorageImplTest;
  
    class StorageAreaHolder;
@@ -48,7 +51,7 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..cc0c2cc196bfcbb6c674c71b2f7f408b
  
    // Does dtor work. This is a distinct function mainly to retain git history.
    void ShutDown();
-@@ -149,6 +165,46 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -149,6 +168,53 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    void GetStatistics(size_t* total_cache_size, size_t* unused_area_count);
    void OnCommitResult(DbStatus status);
  
@@ -91,11 +94,18 @@ index 803764e6d25c73798e4c02f7404e6ee52f595d00..cc0c2cc196bfcbb6c674c71b2f7f408b
 +  void MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
 +                     std::string group,
 +                     std::optional<blink::StorageKey> after);
++  // MoltBrowser: MoltGetUsageForStorageKey() once connected, and, with
++  // caches per site, its listing of `storage_key`'s area in its site's turn.
++  void MoltRetrieveUsageForStorageKey(
++      const blink::StorageKey& storage_key,
++      MoltGetUsageForStorageKeyCallback callback);
++  void MoltListStorageKey(const blink::StorageKey& storage_key,
++                          MoltGetUsageForStorageKeyCallback callback);
 +
    // These clear stale storage areas (not read/written to within 400 days) from
    // the database. See crbug.com/40281870 for more info.
    void DeleteStaleStorageAreas();
-@@ -206,12 +262,31 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -206,12 +272,31 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
    // See crbug.com/40281870 for more info.
    base::TimeDelta delete_stale_storage_areas_delay_{base::Minutes(1)};
  

@@ -43,12 +43,13 @@ void FMAC(base::span<const float> src, float scale, base::span<float> dest) {
   CHECK_LE(src.size(), dest.size());
   DCHECK(base::IsAligned(src.data(), kRequiredAlignment));
   DCHECK(base::IsAligned(dest.data(), kRequiredAlignment));
+  // MoltBrowser: the same sums on every CPU in MoltNet's renderers, where
+  // pages read what an encoder downmixed, and in the audio service's mixing
+  // that MoltNet's echo cancellers hear (media/base/molt_portable_media.h).
+  if (IsPortableAudioThread()) {
+    return FMAC_C(src, scale, dest);
+  }
   static const auto fmac_func = [] {
-    // MoltBrowser: the same sums on every CPU in MoltNet's renderers, where
-    // pages read what an encoder downmixed (media/base/molt_portable_media.h).
-    if (IsPortableMediaProcess()) {
-      return FMAC_C;
-    }
 #if defined(ARCH_CPU_X86_FAMILY)
     base::CPU cpu;
     if (cpu.has_avx2() && cpu.has_fma3())

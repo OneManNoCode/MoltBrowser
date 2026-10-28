@@ -1,0 +1,32 @@
+MoltBrowser patch for services/audio/audio_processor_handler.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/audio/audio_processor_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/audio/audio_processor_handler.cc b/services/audio/audio_processor_handler.cc
+index f1ccc0b4a8ad3a865fe0cea73be9e660b5dde537..fd1e1b16a2d982946391f480056459f3ac69878d 100644
+--- a/services/audio/audio_processor_handler.cc
++++ b/services/audio/audio_processor_handler.cc
+@@ -60,7 +60,8 @@ AudioProcessorHandler::AudioProcessorHandler(
+     media::AecdumpRecordingManager* aecdump_recording_manager,
+     raw_ptr<MlModelManager> ml_model_manager,
+     std::unique_ptr<VoiceIsolationHandler> voice_isolation_handler)
+-    : voice_isolation_handler_(std::move(voice_isolation_handler)),
++    : cpu_independent_(settings.cpu_independent),  // MoltBrowser
++      voice_isolation_handler_(std::move(voice_isolation_handler)),
+       audio_processor_(media::AudioProcessor::Create(
+           // Unretained is safe because this class owns audio_processor_, so it
+           // will be destroyed first.
+@@ -185,6 +186,11 @@ void AudioProcessorHandler::OnReferenceStreamError() {
+   reference_stream_error_callback_.Run();
+ }
+ 
++// MoltBrowser.
++bool AudioProcessorHandler::IsCpuIndependent() const {
++  return cpu_independent_;
++}
++
+ void AudioProcessorHandler::GetStats(GetStatsCallback callback) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
+   media::AudioProcessingStats stats;

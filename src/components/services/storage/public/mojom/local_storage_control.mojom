@@ -76,4 +76,13 @@ interface LocalStorageControl {
   // (the page is gone). components/services/storage/dom_storage/
   // molt_dom_storage_site_policy.h.
   MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
+
+  // MoltBrowser: as GetUsage(), for `storage_key` alone: its area, if it
+  // holds items. With caches per site it is read in the turn of the key's
+  // site, after the messages that site queued before, and costs what that
+  // site stores, not the partition (a deletion of one storage key, such as
+  // Clear-Site-Data's, asks this instead of listing every site's areas:
+  // components/services/storage/dom_storage/molt_dom_storage_split_work.h).
+  MoltGetUsageForStorageKey(blink.mojom.StorageKey storage_key)
+      => (array<StorageUsageInfo> info);
 };

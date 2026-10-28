@@ -121,15 +121,23 @@ rm -rf "$PAYLOAD_DIR"
 mkdir -p "$PAYLOAD_DIR/Payload"
 cp -R "$APP_PATH" "$PAYLOAD_DIR/Payload/MoltBrowser.app"
 
-# Sign if we have an identity
+# Sign if a team was given. A signed IPA was asked for, so a failure here
+# stops the script: an unsigned IPA must never pass for a signed one.
 if [ -n "$TEAM_ID" ]; then
   echo "Signing with team: $TEAM_ID"
-  SIGNING_IDENTITY=$(security find-identity -v -p codesigning | grep "$TEAM_ID" | head -1 | awk -F'"' '{print $2}')
-  if [ -n "$SIGNING_IDENTITY" ]; then
-    codesign --force --sign "$SIGNING_IDENTITY" \
-      --entitlements "$ROOT_DIR/src/chrome/browser/molt_ai/ios/Entitlements.plist" \
-      "$PAYLOAD_DIR/Payload/MoltBrowser.app" 2>/dev/null || true
+  ENTITLEMENTS="$ROOT_DIR/src/chrome/browser/molt_ai/ios/Entitlements.plist"
+  if [ ! -f "$ENTITLEMENTS" ]; then
+    echo "error: $ENTITLEMENTS is missing; add the app's entitlements before signing." >&2
+    exit 1
   fi
+  SIGNING_IDENTITY=$(security find-identity -v -p codesigning | grep "$TEAM_ID" | head -1 | awk -F'"' '{print $2}')
+  if [ -z "$SIGNING_IDENTITY" ]; then
+    echo "error: no code-signing identity for team $TEAM_ID in the keychain." >&2
+    exit 1
+  fi
+  codesign --force --sign "$SIGNING_IDENTITY" \
+    --entitlements "$ENTITLEMENTS" \
+    "$PAYLOAD_DIR/Payload/MoltBrowser.app"
 fi
 
 # Create IPA zip

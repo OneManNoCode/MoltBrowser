@@ -1,0 +1,28 @@
+MoltBrowser patch for components/download/internal/background_service/controller_impl.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/components/download/internal/background_service/controller_impl.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/download/internal/background_service/controller_impl.h b/components/download/internal/background_service/controller_impl.h
+index 0056defd4e9806dd2caa924b5fab74245d7b17f8..1356b56b064f0ff4b62f7a582815019ddd8579d5 100644
+--- a/components/download/internal/background_service/controller_impl.h
++++ b/components/download/internal/background_service/controller_impl.h
+@@ -22,6 +22,7 @@
+ #include "components/download/internal/background_service/entry.h"
+ #include "components/download/internal/background_service/log_source.h"
+ #include "components/download/internal/background_service/model.h"
++#include "components/download/internal/background_service/molt_restored_fetch.h"  // MoltBrowser
+ #include "components/download/internal/background_service/scheduler/device_status_listener.h"
+ #include "components/download/internal/background_service/service_config_impl.h"
+ #include "components/download/internal/background_service/startup_status.h"
+@@ -282,6 +283,9 @@ class ControllerImpl : public Controller,
+   std::set<std::string> externally_active_downloads_;
+   std::set<std::string> pending_uploads_;
+   std::set<std::string> guids_with_custom_request_params_;
++  // MoltBrowser: page fetches the client took up while their parameters
++  // were being asked for (molt_restored_fetch.h).
++  MoltFetchTakeUps molt_fetch_take_ups_;
+   std::map<std::string, DownloadParams::StartCallback> start_callbacks_;
+   std::map<DownloadTaskType, TaskFinishedCallback> task_finished_callbacks_;
+   base::CancelableOnceClosure cancel_downloads_callback_;

@@ -15,6 +15,7 @@
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "media/base/media_permission.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
@@ -1487,6 +1488,11 @@ void MediaDevices::DevicesEnumerated(
         }
         if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
             !audio_input_capabilities.empty()) {
+          // MoltBrowser: no platform effects on a MoltNet page's microphones
+          // (media/base/molt_portable_media.h, PortableCaptureEffects).
+          audio_input_capabilities[j]->parameters.set_effects(
+              media::PortableCaptureEffects(
+                  audio_input_capabilities[j]->parameters.effects()));
           input_device_info->SetAudioInputCapabilities(
               std::move(audio_input_capabilities[j]));
         }

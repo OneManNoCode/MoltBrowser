@@ -21,10 +21,11 @@ process and the tooling for it, plus the first dry run.
   Applies with `git apply -p1` from `chromium/src`.
 - `patches/series`: the patches, in order.
 - `patches/identical.txt`: `src/` files that are byte-identical to upstream at
-  the pin (50 at 156.0.8078.74, all but one `.grdp` string files). They
-  change nothing now, but after a rebase a stale copy silently reverts
-  upstream's changes. Drop them from `src/` when convenient; the rebase
-  tool refreshes them meanwhile.
+  the pin. They change nothing now, but after a rebase a stale copy silently
+  reverts upstream's changes, so drop them from `src/` (the rebase tool
+  refreshes them meanwhile). None today: the 50 there were at
+  156.0.8078.74 (49 `.grdp` string files and one header) were dropped in
+  round 32.
 - `patches/whole_files.txt`: upstream files that live in a DEPS subproject (a
   separate repo the mirror cannot diff: V8, Skia, WebRTC, the search engine
   definitions; 66 today). `src/` keeps them whole, and each entry records
@@ -213,8 +214,8 @@ full build. Expect a full rebuild after a rebase (hours); for the Linux box use
 ### Moving fully to the patch series
 
 `src/` overlay copies remain the build input until the patch path has built and
-shipped once. After that: build with `scripts/setup.sh --patches`, delete the
-`identical.txt` files and every patched file from `src/` (so `src/` is only
+shipped once. After that: build with `scripts/setup.sh --patches`, delete
+every patched file from `src/` (the identical copies are already gone, so `src/` is only
 first-party code), make `patches/` the thing people edit, and turn the
 "patch series in sync" CI job into a required check.
 

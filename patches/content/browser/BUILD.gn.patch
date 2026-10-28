@@ -5,20 +5,22 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
-index 3162721b67d5b744c2c1d7021656a862eea2c2c5..15eb151876d8722577e1c5c020e0fdd346e28e57 100644
+index 3162721b67d5b744c2c1d7021656a862eea2c2c5..fcaf4e1bec36119e4e5165766105d9ac39d91f17 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -98,6 +98,19 @@ if (is_ios) {
+@@ -98,6 +98,21 @@ if (is_ios) {
    import("//build/config/apple/mobile_config.gni")  # For `target_platform`
  }
  
 +# MoltBrowser: MoltNet's Background Fetch scheduling per site, download
-+# isolation and process-per-BrowsingInstance decisions, and which resumed
-+# Background Fetch requests get a Local Network Access factory (std-only and
-+# header-only), for :browser and MoltBrowser's own tests.
++# isolation and process-per-BrowsingInstance decisions, which resumed
++# Background Fetch requests get a Local Network Access factory, and what a
++# deletion of one storage key reads (std-only and header-only), for :browser
++# and MoltBrowser's own tests.
 +source_set("molt_policies") {
 +  sources = [
 +    "background_fetch/molt_background_fetch_site_policy.h",
++    "browsing_data/molt_one_key_deletion_policy.h",
 +    "download/molt_download_isolation_policy.h",
 +    "download/molt_resumed_fetch_policy.h",
 +    "renderer_host/molt_browsing_instance_processes_policy.h",
@@ -28,7 +30,7 @@ index 3162721b67d5b744c2c1d7021656a862eea2c2c5..15eb151876d8722577e1c5c020e0fdd3
  source_set("browser") {
    # Only the public target should depend on this. All other targets (even
    # internal content ones) should depend on the public one.
-@@ -131,6 +144,9 @@ source_set("browser") {
+@@ -131,6 +146,9 @@ source_set("browser") {
    ldflags = []
  
    deps = [
@@ -38,7 +40,7 @@ index 3162721b67d5b744c2c1d7021656a862eea2c2c5..15eb151876d8722577e1c5c020e0fdd3
      ":child_process_security_policy_impl",
      "//base",
      "//base:base_static",
-@@ -2382,6 +2398,17 @@ source_set("browser") {
+@@ -2382,6 +2400,17 @@ source_set("browser") {
      "worker_host/worker_util.h",
    ]
  

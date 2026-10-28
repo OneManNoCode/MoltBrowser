@@ -46,6 +46,23 @@ def _write_all(fd, data):
         view = view[os.write(fd, view):]
 
 
+def check_out_dir(st, path, uid, gid):
+    """Refuses the --out directory whose stat is `st` unless it belongs to
+    root, the harness or the user (`uid`) and no other account can write in
+    it (see RunDir.create())."""
+    if st.st_uid not in (0, os.geteuid(), uid):
+        raise OSError(errno.EPERM,
+                      'the --out directory belongs to another account', path)
+    mode = stat.S_IMODE(st.st_mode)
+    if mode & stat.S_IWOTH and not mode & stat.S_ISVTX:
+        raise OSError(errno.EPERM,
+                      'anyone can write in the --out directory and it is not '
+                      'sticky', path)
+    if mode & stat.S_IWGRP and st.st_gid not in (0, gid):
+        raise OSError(errno.EPERM,
+                      'another group can write in the --out directory', path)
+
+
 class RunDir(object):
     """File operations under a run directory, from a descriptor of it."""
 
@@ -56,12 +73,27 @@ class RunDir(object):
 
     @classmethod
     def create(cls, path, uid, gid):
-        """Makes the run directory `path` (it must not exist; its parents
-        may), opens it, checks that it is the directory just made, and hands
-        it to the user (`uid`, `gid`)."""
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        os.mkdir(path, 0o755)
-        fd = os.open(path, _DIR_FLAGS)
+        """Makes the run directory `path` (it must not exist; its parent, the
+        --out directory, may), opens it, checks that it is the directory just
+        made, and hands it to the user (`uid`, `gid`).
+
+        The --out directory is opened without following a link in its last
+        component, and must belong to root, the harness or the user and be
+        writable by no other account (a world-writable one must be sticky,
+        as /tmp is; a group-writable one must be root's or the user's own
+        group's). Otherwise a link put where --out was, or a directory
+        another account controls, would have root make the run directory
+        and hand it to the user wherever that leads. The run directory is
+        made and opened from the --out directory's descriptor."""
+        parent, name = os.path.split(os.path.abspath(path))
+        os.makedirs(parent, exist_ok=True)
+        pfd = os.open(parent, _DIR_FLAGS)
+        try:
+            check_out_dir(os.fstat(pfd), parent, uid, gid)
+            os.mkdir(name, 0o755, dir_fd=pfd)
+            fd = os.open(name, _DIR_FLAGS, dir_fd=pfd)
+        finally:
+            os.close(pfd)
         try:
             st = os.fstat(fd)
             if st.st_uid != os.geteuid():

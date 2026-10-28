@@ -989,6 +989,60 @@ void LocalStorageImpl::MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
   walk->MaybeFinish();
 }
 
+// MoltBrowser: see local_storage_control.mojom.
+void LocalStorageImpl::MoltGetUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  RunWhenConnected(
+      base::BindOnce(&LocalStorageImpl::MoltRetrieveUsageForStorageKey,
+                     weak_ptr_factory_.GetWeakPtr(), storage_key,
+                     std::move(callback)));
+}
+
+void LocalStorageImpl::MoltRetrieveUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  CHECK_EQ(connection_state_, ConnectionState::CONNECTION_FINISHED);
+  // Kept per site without a database: the key's area, in its site's turn
+  // (molt_dom_storage_split_work.h).
+  if (!database_ && molt_caches_per_site_ && molt_scheduler_) {
+    molt_scheduler_->Post(
+        MoltDomStorageSiteOf(storage_key),
+        base::BindOnce(&LocalStorageImpl::MoltListStorageKey,
+                       weak_ptr_factory_.GetWeakPtr(), storage_key,
+                       std::move(callback)));
+    return;
+  }
+  // Otherwise the whole listing's entry for the key.
+  RetrieveStorageUsage(base::BindOnce(
+      [](const blink::StorageKey& storage_key,
+         MoltGetUsageForStorageKeyCallback callback,
+         std::vector<mojom::StorageUsageInfoPtr> all) {
+        std::vector<mojom::StorageUsageInfoPtr> result;
+        for (mojom::StorageUsageInfoPtr& info : all) {
+          if (info->storage_key == storage_key) {
+            result.push_back(std::move(info));
+          }
+        }
+        std::move(callback).Run(std::move(result));
+      },
+      storage_key, std::move(callback)));
+}
+
+void LocalStorageImpl::MoltListStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  std::vector<mojom::StorageUsageInfoPtr> result;
+  auto area = areas_.find(storage_key);
+  if (area != areas_.end() &&
+      area->second->storage_area()->molt_holds_items()) {
+    result.emplace_back(mojom::StorageUsageInfo::New(
+        storage_key, area->second->storage_area()->storage_used(),
+        base::Time::Now()));
+  }
+  std::move(callback).Run(std::move(result));
+}
+
 // MoltBrowser:
 void LocalStorageImpl::MoltIndexArea(const blink::StorageKey& storage_key) {
   molt_group_areas_[MoltDomStorageSiteOf(storage_key)].insert(storage_key);

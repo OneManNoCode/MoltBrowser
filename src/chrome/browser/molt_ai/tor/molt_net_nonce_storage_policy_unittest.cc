@@ -91,6 +91,17 @@ TEST(MoltNetNonceStoragePolicyTest, SandboxedPagesCountToTheirOwnSite) {
   EXPECT_EQ(groups.open_count("null"), 0u);
 }
 
+// A gone page's cookie partitions are deleted again later, past the longest
+// a keepalive request of the page may set a cookie in them; a closed group's
+// page lives on, so its cookies go again when it goes.
+static_assert(kMoltNetNonceCookieSweepSeconds >
+              kMoltNetKeepaliveOutlivesPageSeconds);
+TEST(MoltNetNonceStoragePolicyTest, AGonePagesCookiesGoAgainLater) {
+  EXPECT_TRUE(MoltNetNonceSweepsCookiesLater(/*closed=*/false));
+  EXPECT_FALSE(MoltNetNonceSweepsCookiesLater(/*closed=*/true));
+  EXPECT_EQ(kMoltNetKeepaliveOutlivesPageSeconds, 30);
+}
+
 // A nonce seen again (another frame of the same page) is nothing new.
 TEST(MoltNetNonceStoragePolicyTest, ANonceCountsOnce) {
   Groups groups;

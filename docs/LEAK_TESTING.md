@@ -193,7 +193,11 @@ asks nobody in particular.
   and from then on writes there only from that open directory
   (`leakkit/rundir.py`): no symbolic link is followed at any step of a
   path, only a regular file with a single link is written or emptied, and
-  owners and modes are set on the open file, never by path. The servers'
+  owners and modes are set on the open file, never by path. The `--out`
+  directory it makes the run directory in is opened without following a
+  link and must belong to root or you and be writable by no other account
+  (a world-writable one must be sticky, as `/tmp` is); otherwise the kit
+  stops before making anything. The servers'
   certificates and the test extension are made in the root-owned directory
   under `/run/moltleak-<id>/` and copied in. When the run ends, the kit
   hands everything to you without following links.
@@ -422,7 +426,9 @@ level, and in one browser launch per device scale factor
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
-  width, the processed microphone track's sample rate.
+  width, the processed microphone track's sample rate, the microphone with
+  the default echo cancellation while the page plays, and the playing
+  contexts' state and rates.
 
 ### The microphone launch
 
@@ -442,19 +448,42 @@ buffers through `MediaStreamTrackProcessor` (exact samples: `AudioData` is
 not farbled), finds the first buffer whose peak exceeds 0.05 (the burst;
 the processing starts at the file's start whenever the page starts
 listening) and hashes the left channel of 200 buffers from there. It does
-that twice, each time with a new stream.
+that twice, each time with a new stream, then once more asking for the
+system's echo cancellation (`echoCancellation: "all"`). Then, with a
+second gesture, it plays two looped tones (three harmonics from integer
+phases, written into `AudioBuffer`s: one `AudioContext` at the default
+rate and one at 44.1 kHz, which the audio service resamples and mixes for
+the output device) and, while they play, captures with
+`echoCancellation: "remote-only"` (processed in the renderer, whose echo
+canceller hears only WebRTC's playout) and with the default echo
+cancellation (whose reference the tones are), each with a new stream.
 
 | Key | Must |
 |---|---|
 | `audio.mic_processed_stable` | be true: the two captures agree (otherwise the hash can't compare machines; a gap in the buffers' timestamps or no burst is reported instead of a hash) |
 | `audio.mic_settings` | show echo cancellation, noise suppression and gain control on |
 | `audio.mic_processed` | be the same in two runs (`diff`), on every CPU and OS: compare an x86-64 machine without AVX2 (or a VM started with `-cpu Nehalem`) with a recent one, and with an arm64 one |
+| `audio.mic_capabilities` | list the same processing capabilities on every OS: `echoCancellation` `all`, `false`, `remote-only` and `true`, gain control and noise suppression `false` and `true`, `voiceIsolation` `false` only |
+| `audio.mic_system_aec` | equal `audio.mic_processed`: `"all"` gets WebRTC's processing, the same samples on every CPU and OS family |
+| `audio.mic_system_aec_settings` | show `all`, noise suppression and gain control |
+| `audio.mic_remote_only` | equal `audio.mic_processed` while the page plays: the renderer's processing in the same mode, with nothing to cancel, the same samples on every CPU and OS family |
+| `audio.mic_remote_only_settings` | show `remote-only`, noise suppression and gain control |
+
+The default echo cancellation during the playback (`audio.mic_playback`)
+is recorded, not compared: its echo canceller adapts to the timing
+between the output and the capture, which changes from run to run on any
+machine. The mix it hears is computed the same way on every CPU; a unit
+test checks that (`MoltCpuIndependentEchoReferenceTest`, in
+`molt_ai_unittests`). The cases without playback run first, before the
+page has started any output (an output stream, even a silent one, becomes
+the reference).
 
 The fake device reads the file from the audio service, which on Linux runs
 without a sandbox by default (`AudioServiceSandbox` is off there at 156); if
 the build turns that sandbox on, the device delivers silence and the check
 reports `silent`. A regular window (`--target regular`) records the same
-values for comparison: there they differ between CPUs with and without AVX2.
+values for comparison: there they differ between CPUs with and without AVX2,
+and the capabilities and `"all"`'s processing between OSes.
 The first run on the build machine is also the probe's first test.
 
 A regular-window fingerprint is recorded as a control. The report lists the

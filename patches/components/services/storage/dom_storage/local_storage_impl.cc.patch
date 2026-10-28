@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/local_storage_impl.cc b/components/services/storage/dom_storage/local_storage_impl.cc
-index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..919fccb4876bc82269f347cb966ac92f74e44074 100644
+index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..4f9b3eab4e300f3741073ff330b6047bc1f01d71 100644
 --- a/components/services/storage/dom_storage/local_storage_impl.cc
 +++ b/components/services/storage/dom_storage/local_storage_impl.cc
 @@ -16,6 +16,8 @@
@@ -210,7 +210,7 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..919fccb4876bc82269f347cb966ac92f
        result.emplace_back(mojom::StorageUsageInfo::New(it.first, 0, now));
      }
      std::move(callback).Run(std::move(result));
-@@ -648,6 +749,302 @@ void LocalStorageImpl::OnGotWriteMetaData(
+@@ -648,6 +749,356 @@ void LocalStorageImpl::OnGotWriteMetaData(
    std::move(callback).Run(std::move(result));
  }
  
@@ -452,6 +452,60 @@ index fbf2e6067d4f3b9bf839e82c348a3d08e5d9332f..919fccb4876bc82269f347cb966ac92f
 +  }
 +  --walk->pending;
 +  walk->MaybeFinish();
++}
++
++// MoltBrowser: see local_storage_control.mojom.
++void LocalStorageImpl::MoltGetUsageForStorageKey(
++    const blink::StorageKey& storage_key,
++    MoltGetUsageForStorageKeyCallback callback) {
++  RunWhenConnected(
++      base::BindOnce(&LocalStorageImpl::MoltRetrieveUsageForStorageKey,
++                     weak_ptr_factory_.GetWeakPtr(), storage_key,
++                     std::move(callback)));
++}
++
++void LocalStorageImpl::MoltRetrieveUsageForStorageKey(
++    const blink::StorageKey& storage_key,
++    MoltGetUsageForStorageKeyCallback callback) {
++  CHECK_EQ(connection_state_, ConnectionState::CONNECTION_FINISHED);
++  // Kept per site without a database: the key's area, in its site's turn
++  // (molt_dom_storage_split_work.h).
++  if (!database_ && molt_caches_per_site_ && molt_scheduler_) {
++    molt_scheduler_->Post(
++        MoltDomStorageSiteOf(storage_key),
++        base::BindOnce(&LocalStorageImpl::MoltListStorageKey,
++                       weak_ptr_factory_.GetWeakPtr(), storage_key,
++                       std::move(callback)));
++    return;
++  }
++  // Otherwise the whole listing's entry for the key.
++  RetrieveStorageUsage(base::BindOnce(
++      [](const blink::StorageKey& storage_key,
++         MoltGetUsageForStorageKeyCallback callback,
++         std::vector<mojom::StorageUsageInfoPtr> all) {
++        std::vector<mojom::StorageUsageInfoPtr> result;
++        for (mojom::StorageUsageInfoPtr& info : all) {
++          if (info->storage_key == storage_key) {
++            result.push_back(std::move(info));
++          }
++        }
++        std::move(callback).Run(std::move(result));
++      },
++      storage_key, std::move(callback)));
++}
++
++void LocalStorageImpl::MoltListStorageKey(
++    const blink::StorageKey& storage_key,
++    MoltGetUsageForStorageKeyCallback callback) {
++  std::vector<mojom::StorageUsageInfoPtr> result;
++  auto area = areas_.find(storage_key);
++  if (area != areas_.end() &&
++      area->second->storage_area()->molt_holds_items()) {
++    result.emplace_back(mojom::StorageUsageInfo::New(
++        storage_key, area->second->storage_area()->storage_used(),
++        base::Time::Now()));
++  }
++  std::move(callback).Run(std::move(result));
 +}
 +
 +// MoltBrowser:

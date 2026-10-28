@@ -9,6 +9,7 @@
 
 #include "base/containers/span.h"
 #include "build/build_config.h"
+#include "media/base/audio_parameters.h"
 #include "media/base/molt_portable_scale.h"
 #include "media/base/video_frame.h"
 #include "media/media_buildflags.h"
@@ -27,6 +28,9 @@ namespace media {
 namespace {
 
 constinit std::atomic<bool> g_portable_media{false};
+
+// Whether this thread is inside a ScopedPortableAudioThread(true).
+constinit thread_local bool t_portable_audio = false;
 
 void SetPortable(bool portable) {
   g_portable_media.store(portable, std::memory_order_relaxed);
@@ -50,6 +54,24 @@ bool IsPortableMediaProcess() {
 
 void SetPortableMediaProcessForTesting(bool portable) {
   SetPortable(portable);
+}
+
+int PortableCaptureEffects(int platform_effects) {
+  return IsPortableMediaProcess() ? AudioParameters::NO_EFFECTS
+                                  : platform_effects;
+}
+
+ScopedPortableAudioThread::ScopedPortableAudioThread(bool portable)
+    : previous_(t_portable_audio) {
+  t_portable_audio = portable;
+}
+
+ScopedPortableAudioThread::~ScopedPortableAudioThread() {
+  t_portable_audio = previous_;
+}
+
+bool IsPortableAudioThread() {
+  return t_portable_audio || IsPortableMediaProcess();
 }
 
 bool PortableScaleFrame(const VideoFrame& src_frame, VideoFrame& dest_frame) {

@@ -6,9 +6,11 @@
 // background_service/molt_restored_fetch.h): with the fetch's parameters
 // back from Background Fetch it keeps its first party on redirects, and one
 // whose download item is from the earlier session starts again with them
-// rather than resuming without them; and one whose parameters don't come
-// back (its registration not loaded yet) waits for them. On the download
-// service's real request parameters (download::RequestParams).
+// rather than resuming without them; one whose parameters don't come back
+// (its registration not loaded yet) waits for them; and one Background Fetch
+// takes up while they are being asked for asks again once that answer
+// comes. On the download service's real request parameters
+// (download::RequestParams).
 
 #include "components/download/internal/background_service/molt_restored_fetch.h"
 
@@ -36,6 +38,16 @@ static_assert(!MoltWaitsForFetchParameters(true, true));
 static_assert(!MoltWaitsForFetchParameters(false, false));
 static_assert(!MoltWaitsForFetchParameters(false, true));
 static_assert(kMoltFetchParametersWaitSeconds >= 60);
+
+// A take-up of a fetch that waits for its parameters asks for them again now,
+// or, while they are being asked for, once that answer comes.
+static_assert(MoltOnFetchTakenUp(/*waits_for_parameters=*/false,
+                                 /*upload_pending=*/false) ==
+              MoltFetchTakeUp::kNothing);
+static_assert(MoltOnFetchTakenUp(false, true) == MoltFetchTakeUp::kNothing);
+static_assert(MoltOnFetchTakenUp(true, false) == MoltFetchTakeUp::kAskNow);
+static_assert(MoltOnFetchTakenUp(true, true) ==
+              MoltFetchTakeUp::kAskWhenAnswered);
 
 // What the download service holds for a download it read back from its
 // database (ProtoConversions::RequestParamsFromProto()): no initiator, no
@@ -102,6 +114,24 @@ TEST(MoltNetBackgroundFetchRestoredTest, AFetchWithoutItsParametersWaits) {
       /*page_fetch_client=*/true, StoredParams().initiator.has_value()));
   EXPECT_FALSE(MoltWaitsForFetchParameters(
       /*page_fetch_client=*/true, PageFetchParams().initiator.has_value()));
+}
+
+// A take-up that comes while the fetch's parameters are being asked for is
+// remembered until that answer comes, once however often it comes, and goes
+// with its download.
+TEST(MoltNetBackgroundFetchRestoredTest, ATakeUpWhileAskingIsRemembered) {
+  MoltFetchTakeUps take_ups;
+  EXPECT_FALSE(take_ups.Take("a"));
+  take_ups.Remember("a");
+  take_ups.Remember("a");
+  take_ups.Remember("b");
+  EXPECT_EQ(take_ups.size(), 2u);
+  EXPECT_TRUE(take_ups.Take("a"));
+  // The answer after that one asks nothing more.
+  EXPECT_FALSE(take_ups.Take("a"));
+  take_ups.Forget("b");
+  EXPECT_FALSE(take_ups.Take("b"));
+  EXPECT_EQ(take_ups.size(), 0u);
 }
 
 }  // namespace
