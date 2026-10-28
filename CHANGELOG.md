@@ -966,6 +966,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and names both sites, and MoltNet windows never use them.
 
 ### Fixed
+- **A Windows clock set before 1970 no longer ends the browser** when an
+  automation writes its audit timestamp (it records the epoch instead), and
+  a schedule whose time can't be converted has no next run.
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
   attached in the AI chat) was handed to tesseract as a PDF, which it can't
   read: it decodes images through leptonica, which writes PDFs but doesn't
