@@ -646,7 +646,7 @@ std::vector<base::win::Sid> HelperFilesCapability() {
 }
 
 // The confinement Windows really applies, with a stand-in helper
-// (helper_sandbox_win_test_helper.cc) in a folder set up as the installer
+// (helper_sandbox_test_helper_win.cc) in a folder set up as the installer
 // sets up <install>\ocr and <install>\whisper.
 class HelperSandboxWinTest : public testing::Test {
  protected:

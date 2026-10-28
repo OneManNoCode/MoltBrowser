@@ -118,7 +118,7 @@ source_set("helper_sandbox") {
 if (is_win) {
   executable("molt_helper_sandbox_test_helper") {
     testonly = true
-    sources = [ "helper_sandbox_win_test_helper.cc" ]
+    sources = [ "helper_sandbox_test_helper_win.cc" ]
     libs = [ "ws2_32.lib" ]
   }
 }
