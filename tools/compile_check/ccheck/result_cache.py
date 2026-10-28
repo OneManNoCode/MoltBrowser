@@ -129,7 +129,8 @@ def lookup(work, name, k):
             e.get("rc") not in _COMPLETE:
         return None
     peak = e.get("max_rss_mb")
-    return e["rc"], e["log"], peak if isinstance(peak, int) else None
+    return e["rc"], e["log"], peak if isinstance(peak, int) and peak > 0 \
+        else None
 
 
 def reusable(rc, text):

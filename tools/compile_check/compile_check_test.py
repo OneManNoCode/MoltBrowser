@@ -1985,7 +1985,8 @@ class PeakMemoryTest(unittest.TestCase):
         try:
             rc, _, mb = check.run_measured(["true"], "/")
             self.assertEqual(rc, 0)
-            self.assertLess(mb, 100)
+            # Too quick to sample, or small: never this process's 200 MB.
+            self.assertTrue(mb is None or mb < 100, mb)
             rc, _, mb = check.run_measured([
                 sys.executable, "-I", "-c",
                 "import time; x = b'1' * (120 << 20); time.sleep(0.3)"], "/")

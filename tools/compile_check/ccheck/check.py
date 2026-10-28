@@ -163,16 +163,18 @@ def _vm_hwm_kb(pid="self"):
 
 
 def run_measured(cmd, cwd, interval=0.02):
-    """(exit status, output, peak resident memory in MB) of a compile:
-    its stderr and stdout in one stream, and the compiler's own peak RSS,
-    which `report` lists to size --jobs.
+    """(exit status, output, peak resident memory in MB or None) of a
+    compile: its stderr and stdout in one stream, and the compiler's own
+    peak RSS, which `report` lists to size --jobs.
 
     wait4's maximum alone is not the compiler's: the child forked from
     this process starts with a copy of its memory (several hundred MB of
     scan state), which Linux counts in the child's maximum. So the
     compiler's VmHWM is sampled while it runs (its own, from exec on), and
     wait4's maximum used where it exceeds anything this process ever held
-    (then it can only be the compiler's)."""
+    (then it can only be the compiler's). A compile that ended before the
+    first sample (a few small files) has None: its peak is small, but not
+    known."""
     with tempfile.TemporaryFile() as out:
         p = subprocess.Popen(cmd, cwd=cwd, stdout=out,
                              stderr=subprocess.STDOUT, preexec_fn=_limit)
@@ -188,7 +190,7 @@ def run_measured(cmd, cwd, interval=0.02):
         text = out.read().decode("utf-8", "replace")
     own = _vm_hwm_kb()
     kb = ru.ru_maxrss if not own or ru.ru_maxrss > own else seen
-    return p.returncode, text, kb // 1024
+    return p.returncode, text, kb // 1024 if kb else None
 
 
 def parse_diags(text):
