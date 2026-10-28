@@ -1,0 +1,56 @@
+MoltBrowser patch for services/network/shared_dictionary/shared_dictionary_manager.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/network/shared_dictionary/shared_dictionary_manager.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/shared_dictionary/shared_dictionary_manager.cc b/services/network/shared_dictionary/shared_dictionary_manager.cc
+index 55b4a0f5a22605ea30e339b6f575074102c7dfbf..34cd933628031fa4ea255a21970c9c62ea6fff16 100644
+--- a/services/network/shared_dictionary/shared_dictionary_manager.cc
++++ b/services/network/shared_dictionary/shared_dictionary_manager.cc
+@@ -15,6 +15,7 @@
+ #include "base/trace_event/typed_macros.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "net/base/load_flags.h"
++#include "net/base/molt_site_share_policy.h"  // MoltBrowser
+ #include "net/shared_dictionary/shared_dictionary.h"
+ #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
+ #include "services/network/public/cpp/features.h"
+@@ -163,6 +164,15 @@ scoped_refptr<SharedDictionaryStorage> SharedDictionaryManager::GetStorage(
+       CreateStorage(isolation_key, previous_eviction_reason);
+   CHECK(storage);
+   storages_.emplace(isolation_key, storage.get());
++  // MoltBrowser: with per-site shares, the storage is kept in its own site's
++  // share, whatever the memory pressure, or not kept; no other site's is
++  // dropped for it (net/base/molt_site_share_policy.h).
++  if (molt_per_site_shares_) {
++    if (cached_storages_.MoltMakeRoomFor(isolation_key)) {
++      cached_storages_.Put(isolation_key, storage);
++    }
++    return storage;
++  }
+   if (memory_limit() > base::kModerateMemoryPressureThreshold) {
+     if (cached_storages_.size() >= cached_storages_.max_size()) {
+       // The cache is full. The last element will be evicted.
+@@ -269,6 +279,10 @@ bool SharedDictionaryManager::HasPreloadedSharedDictionaryInfo() const {
+ }
+ 
+ void SharedDictionaryManager::OnReleaseMemory() {
++  // MoltBrowser: with per-site shares, memory pressure drops nothing.
++  if (molt_per_site_shares_) {
++    return;
++  }
+   if (memory_limit() <= base::kModerateMemoryPressureThreshold) {
+     SharedDictionaryStorageEvictionReason eviction_reason =
+         (memory_limit() <= base::kCriticalMemoryPressureThreshold)
+@@ -285,4 +299,10 @@ void SharedDictionaryManager::OnReleaseMemory() {
+ 
+ void SharedDictionaryManager::OnUpdateMemoryLimit() {}
+ 
++// MoltBrowser: see the header.
++void SharedDictionaryManager::MoltKeepPerSiteShares() {
++  molt_per_site_shares_ = true;
++  cached_storages_.MoltKeepPerSiteShares(net::kMoltDictionaryStorageShares);
++}
++
+ }  // namespace network

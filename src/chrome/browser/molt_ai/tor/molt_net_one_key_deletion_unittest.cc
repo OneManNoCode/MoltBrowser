@@ -71,30 +71,56 @@ TEST(MoltNetOneKeyDeletionTest, ATimeRangeReadsItsOwnKeysBuckets) {
 }
 
 // A Clear-Site-Data response the browser can't place in a document or
-// worker names the key its origin's own document would have, where storage
-// is kept per site, so its deletion reads that key only.
+// worker names the key a document of its origin would have where the
+// request was made, where storage is kept per site, so its deletion reads
+// that key only.
 TEST(MoltNetOneKeyDeletionTest, AResponseWithNoDocumentNamesItsOwnKey) {
+  // A request the browser made with no partition (no network key): the
+  // origin's first-party key.
   EXPECT_EQ(MoltClearSiteDataKeyFor(/*keeps_per_site=*/true,
                                     /*has_calculated_key=*/false,
                                     /*origin_opaque=*/false,
-                                    /*request_has_nonce=*/false),
+                                    /*request_has_nonce=*/false,
+                                    /*request_has_partition=*/false),
             MoltClearSiteDataKey::kFirstParty);
+  // A page's request (a keepalive request after its page went, a
+  // download's): the key in the request's partition.
+  EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, false, false, true),
+            MoltClearSiteDataKey::kInRequestPartition);
   // A credentialless frame's request (after its page went): its nonce's.
-  EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, false, true),
+  EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, false, true, true),
             MoltClearSiteDataKey::kWithNonce);
   // A response in a document or worker keeps the key calculated for it.
-  EXPECT_EQ(MoltClearSiteDataKeyFor(true, true, false, false),
-            MoltClearSiteDataKey::kAsCalculated);
-  EXPECT_EQ(MoltClearSiteDataKeyFor(true, true, false, true),
-            MoltClearSiteDataKey::kAsCalculated);
-  // Every other profile: Chromium's (no key, the origin's listing).
-  EXPECT_EQ(MoltClearSiteDataKeyFor(false, false, false, false),
-            MoltClearSiteDataKey::kAsCalculated);
-  EXPECT_EQ(MoltClearSiteDataKeyFor(false, false, false, true),
-            MoltClearSiteDataKey::kAsCalculated);
-  // An opaque origin has no key of its own to name.
-  EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, true, false),
-            MoltClearSiteDataKey::kAsCalculated);
+  for (const bool nonce : {false, true}) {
+    for (const bool partition : {false, true}) {
+      EXPECT_EQ(MoltClearSiteDataKeyFor(true, true, false, nonce, partition),
+                MoltClearSiteDataKey::kAsCalculated);
+      // Every other profile: Chromium's (no key, the origin's listing).
+      EXPECT_EQ(MoltClearSiteDataKeyFor(false, false, false, nonce, partition),
+                MoltClearSiteDataKey::kAsCalculated);
+      // An opaque origin has no key of its own to name.
+      EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, true, nonce, partition),
+                MoltClearSiteDataKey::kAsCalculated);
+    }
+  }
+}
+
+// The key in the request's partition is the origin's first-party key only
+// for a request its own site's page made with no cross-site frame on the
+// way: a request another site's page made names the origin's storage under
+// that site, which is all a document of the origin there could delete.
+TEST(MoltNetOneKeyDeletionTest, AnotherSitesRequestNamesItsPartition) {
+  // The origin's own page: same-site partition of its own site.
+  EXPECT_FALSE(MoltClearSiteDataKeyIsCrossSite(
+      /*partition_is_third_party=*/false, /*partition_site_is_origins=*/true));
+  // Another site's page (its document's request to the origin, or a frame
+  // of the origin embedded there).
+  EXPECT_TRUE(MoltClearSiteDataKeyIsCrossSite(true, false));
+  // Its own site, under a cross-site frame (A embeds B embeds A).
+  EXPECT_TRUE(MoltClearSiteDataKeyIsCrossSite(true, true));
+  // A same-site partition of another site never makes a same-site key
+  // (blink::StorageKey::IsValid() would refuse it).
+  EXPECT_TRUE(MoltClearSiteDataKeyIsCrossSite(false, false));
 }
 
 }  // namespace

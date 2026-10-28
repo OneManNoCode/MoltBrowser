@@ -172,6 +172,11 @@ bool ListsAudioDevice(std::string_view device_id) {
   return device_id != kCommunicationsDeviceId;
 }
 
+std::string_view OutputDeviceIdToLookUp(std::string_view sink_id) {
+  return ListsAudioDevice(sink_id) ? sink_id
+                                   : std::string_view(kUnlistedDeviceId);
+}
+
 MediaCapabilitiesAnswer VideoDecodingInfo(bool has_built_in_decoder) {
   if (!has_built_in_decoder) {
     return {false, false, false};

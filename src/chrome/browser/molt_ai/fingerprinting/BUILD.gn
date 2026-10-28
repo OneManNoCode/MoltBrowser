@@ -196,11 +196,20 @@ source_set("display_capture") {
   ]
 }
 
+# Whether a profile's microphone streams are processed CPU-independently,
+# which ChromeContentBrowserClient answers content with
+# (molt_net_audio_capture.h; constexpr).
+source_set("audio_capture") {
+  sources = [ "molt_net_audio_capture.h" ]
+  public_deps = [ "//chrome/common/molt_ai/fingerprinting" ]
+}
+
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "molt_letterbox_unittest.cc",
+    "molt_net_audio_capture_unittest.cc",
     "molt_net_device_values_unittest.cc",
     "molt_net_display_capture_policy_unittest.cc",
     "molt_net_blob_budget_policy_unittest.cc",
@@ -213,6 +222,7 @@ source_set("unit_tests") {
     "molt_shields_decision_unittest.cc",
   ]
   deps = [
+    ":audio_capture",
     ":device_values",
     ":display_capture_policy",
     ":letterbox",
@@ -248,5 +258,11 @@ source_set("unit_tests") {
     "//storage/browser",
     "//storage/browser:test_support",
     "//third_party/blink/public/mojom:mojom_platform",
+
+    # The browser's decision in a stream's processing config
+    # (molt_net_audio_capture_unittest.cc; header-only).
+    "//content/browser:molt_audio_capture_policy",
+    "//media",
+    "//media/mojo/mojom",
   ]
 }

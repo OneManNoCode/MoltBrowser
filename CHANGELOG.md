@@ -421,6 +421,25 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Clear-Site-Data on a response no page shows (a download's), and a
   deletion of one storage key over a time range, read only that storage
   (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening (security review of PR #77, `docs/SECURITY_REVIEWS.md`): in
+  MoltNet, a Clear-Site-Data on a response no page shows any more (a
+  keepalive request's after its page went) clears its site's storage in
+  the page the request came from, so another site's page can't have it
+  clear the site's own storage; and on Linux a microphone stream records
+  the device the page asked for whenever the sound server doesn't say
+  which microphone a filter or virtual microphone sits on.
+- MoltNet hardening, shared network state: MoltNet's fixed-size network
+  caches (TLS sessions, HTTP authentication entries, servers' HTTP/2 and
+  HTTP/1.1 records, CORS preflight results, compression dictionaries)
+  give each site a share of its own, evicted only for that site's own new
+  entries and never for memory pressure; each partition of partitioned
+  cookies has a total of its own; MoltNet uses no QUIC, and the marks of
+  broken alternative services under a page's nonce go with the page; a
+  network context made again after the network service restarts refuses
+  the earlier context's refused nonces from the start. The leak test kit
+  accepts a group-writable `--out` directory only when no other account
+  can be in its group (`docs/MOLTNET_COMPLIANCE.md`,
+  `docs/LEAK_TESTING.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -585,6 +604,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and Arm processors (`docs/FINGERPRINTING.md`, "MoltNet: cameras,
   microphones and outputs" and "MoltNet: subnormal floats"); regular and
   incognito windows are unchanged. The leak test kit checks these too.
+- **MoltNet's cameras show one menu of formats.** In MoltNet windows every
+  camera offers 640x480 and 1280x720 at 30 frames a second (or 640x480
+  alone, when it isn't an HD camera), never its own modes: its
+  capabilities, settings and frames are those of the menu, cropped and
+  scaled from the camera's picture. A microphone's channel count follows
+  the page's request alone, microphone arrays of four or six channels work
+  and are mixed down the same way on every processor, Web Audio's IIR
+  filters settle at zero like its other nodes, Windows' "communications"
+  output can't be selected with `setSinkId()`, and the browser, not the
+  page's process, decides when a microphone's processing runs in its
+  processor-independent mode (`docs/FINGERPRINTING.md`, "MoltNet:
+  cameras, microphones and outputs" and "MoltNet: the microphone's
+  processing"); regular and incognito windows are unchanged. The leak test
+  kit checks the camera.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

@@ -22,6 +22,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/string_view_util.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/test/bind.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
@@ -698,6 +699,36 @@ TEST_F(OcrImageFileTest, DecodesThenRunsTesseract) {
                                        0x1a, '\n', 0,   0,   0,    0};
   result = OcrFile(broken);
   EXPECT_EQ(result.error, "couldn't decode this image");
+}
+
+TEST(OcrRunSlotsTest, AtMostTheLimitAtOnceAndASlotAlwaysComesBack) {
+  internal::OcrRunSlots slots;
+  std::vector<base::OnceCallback<void(OcrResult)>> runs;
+  int answered = 0;
+  for (size_t i = 0; i < internal::kMaxOcrRunsInFlight; ++i) {
+    ASSERT_TRUE(slots.TryTake());
+    runs.push_back(slots.ReleaseAfter(
+        base::BindLambdaForTesting([&](OcrResult) { ++answered; })));
+  }
+  EXPECT_FALSE(slots.TryTake());
+  EXPECT_EQ(slots.in_flight(), internal::kMaxOcrRunsInFlight);
+
+  // A run that answers gives its slot back once its callback has run.
+  std::move(runs[0]).Run(OcrResult());
+  EXPECT_EQ(answered, 1);
+  EXPECT_EQ(slots.in_flight(), internal::kMaxOcrRunsInFlight - 1);
+  EXPECT_TRUE(slots.TryTake());
+  runs[0] = slots.ReleaseAfter(base::DoNothing());
+  EXPECT_FALSE(slots.TryTake());
+
+  // So does one whose callback is dropped unrun (a decoder that never
+  // answers): OCR can't stay busy for good.
+  runs.clear();
+  EXPECT_EQ(answered, 1);
+  EXPECT_EQ(slots.in_flight(), 0u);
+  EXPECT_TRUE(slots.TryTake());
+  slots.ReleaseAfter(base::DoNothing()).Reset();
+  EXPECT_EQ(slots.in_flight(), 0u);
 }
 
 }  // namespace

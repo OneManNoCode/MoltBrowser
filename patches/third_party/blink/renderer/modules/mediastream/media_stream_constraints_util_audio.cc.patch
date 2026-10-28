@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_audio.cc b/third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_audio.cc
-index 0b1bdb0fd8e8a2b650adbff9ef6ba0269dbd2c1d..c51da21a9862883e0a9c07f0b32570bc0559dde9 100644
+index 0b1bdb0fd8e8a2b650adbff9ef6ba0269dbd2c1d..ff9f10640aee5fc42f5a0ca378623be1cd2aa3ad 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_audio.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_audio.cc
 @@ -17,6 +17,7 @@
@@ -16,7 +16,47 @@ index 0b1bdb0fd8e8a2b650adbff9ef6ba0269dbd2c1d..c51da21a9862883e0a9c07f0b32570bc
  #include "media/media_buildflags.h"
  #include "media/webrtc/constants.h"
  #include "media/webrtc/webrtc_features.h"
-@@ -1310,7 +1311,10 @@ class DeviceContainer {
+@@ -860,6 +861,19 @@ Vector<int> GetApmSupportedChannels(
+   return result;
+ }
+ 
++// MoltBrowser: the channel counts of a source without WebRTC's processing. In
++// MoltNet the CPU-independent processing converts every stream to the one
++// format (media/base/molt_portable_media.h), so a stream has one channel or,
++// when the page asks for them, two, with every effect off as with processing,
++// whatever the device has. Elsewhere the device's own channels.
++Vector<int> GetUnprocessedSupportedChannels(
++    const media::AudioParameters& device_params) {
++  if (media::IsPortableMediaProcess()) {
++    return GetApmSupportedChannels(device_params);
++  }
++  return {device_params.channels()};
++}
++
+ // This container represents the supported audio settings for a given type of
+ // audio source. In practice, there are three types of sources: processed
+ // using APM, processed without APM, and unprocessed. Processing using APM has
+@@ -939,7 +953,8 @@ class ProcessingBasedContainer {
+         /*auto_gain_control_set=*/BoolSet({false}),
+         /*noise_suppression_set=*/BoolSet({false}), voice_isolation_set,
+         /*sample_size_range=*/IntRangeSet::FromValue(GetSampleSize()),
+-        /*channels_set=*/{device_parameters.channels()},
++        // MoltBrowser: see GetUnprocessedSupportedChannels().
++        /*channels_set=*/GetUnprocessedSupportedChannels(device_parameters),
+         /*sample_rate_range=*/
+         IntRangeSet::FromValue(device_parameters.sample_rate()), source_info,
+         api, device_parameters, is_full_reconfiguration_allowed);
+@@ -960,7 +975,8 @@ class ProcessingBasedContainer {
+         /*noise_suppression_set=*/BoolSet({false}),
+         /*voice_isolation_set=*/BoolSet({false}),
+         /*sample_size_range=*/IntRangeSet::FromValue(GetSampleSize()),
+-        /*channels_set=*/{device_parameters.channels()},
++        // MoltBrowser: see GetUnprocessedSupportedChannels().
++        /*channels_set=*/GetUnprocessedSupportedChannels(device_parameters),
+         /*sample_rate_range=*/
+         IntRangeSet::FromValue(device_parameters.sample_rate()), source_info,
+         api, device_parameters, is_full_reconfiguration_allowed);
+@@ -1310,7 +1326,10 @@ class DeviceContainer {
                    AudioCaptureApi api,
                    bool is_full_reconfiguration_allowed,
                    const MediaStreamAudioTrack* current_track = nullptr)

@@ -5,20 +5,140 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/cors/preflight_cache.cc b/services/network/cors/preflight_cache.cc
-index b5566fea5ba3e78834b896a6509d539773dc7403..b3c4074d12732bf3c94ae5ac56b19ca6ecd944ca 100644
+index b5566fea5ba3e78834b896a6509d539773dc7403..eb3c103dc55c0148f00442b94651209ecbcdefbf 100644
 --- a/services/network/cors/preflight_cache.cc
 +++ b/services/network/cors/preflight_cache.cc
-@@ -181,6 +181,13 @@ void PreflightCache::ClearCache(mojom::ClearDataFilterPtr url_filter) {
+@@ -5,6 +5,7 @@
+ #include "services/network/cors/preflight_cache.h"
+ 
+ #include <iterator>
++#include <optional>  // MoltBrowser
+ #include <string>
+ 
+ #include "base/containers/flat_set.h"
+@@ -85,12 +86,31 @@ void PreflightCache::AppendEntry(
+   auto key = std::make_tuple(origin, url_spec, network_isolation_key);
+   const auto existing_entry = cache_.find(key);
+   if (existing_entry == cache_.end()) {
++    // MoltBrowser: with per-site shares, room is made inside the key's own
++    // site, or the result isn't kept (net/base/molt_site_share_policy.h);
++    // MayPurge() then purges nothing.
++    if (molt_shares_) {
++      const net::MoltNetworkKeySite site =
++          net::MoltSiteOfNetworkKey(network_isolation_key);
++      while (std::optional<MoltKey> victim =
++                 molt_shares_->NextToEvictFor(site)) {
++        cache_.erase(*victim);
++        molt_shares_->Removed(*victim);
++      }
++      if (!molt_shares_->HasRoomFor(site)) {
++        return;
++      }
++    }
+     // Since one new entry is always added below, let's purge one cache entry
+     // if cache size is larger than kMaxCacheEntries - 1 so that the size to be
+     // kMaxCacheEntries at maximum.
+     MayPurge(kMaxCacheEntries - 1, kPurgeUnit);
+   }
+   cache_[key] = std::move(preflight_result);
++  // MoltBrowser: its site's most recently used.
++  if (molt_shares_) {
++    molt_shares_->Added(net::MoltSiteOfNetworkKey(network_isolation_key), key);
++  }
+ }
+ 
+ bool PreflightCache::CheckIfRequestCanSkipPreflight(
+@@ -128,6 +148,10 @@ bool PreflightCache::CheckIfRequestCanSkipPreflight(
+       net_log.AddEvent(
+           net::NetLogEventType::CORS_PREFLIGHT_CACHED_RESULT,
+           [&cache_entry] { return cache_entry->second->NetLogParams(); });
++      // MoltBrowser: its site's most recently used.
++      if (molt_shares_) {
++        molt_shares_->Used(cache_entry->first);
++      }
+       return true;
+     }
+     RecordCacheMetricNetLog(CacheMetric::kHitAndFail, net_log);
+@@ -137,6 +161,9 @@ bool PreflightCache::CheckIfRequestCanSkipPreflight(
+ 
+   // The cache entry is either stale or not sufficient. Remove the item from the
+   // cache.
++  if (molt_shares_) {  // MoltBrowser
++    molt_shares_->Removed(cache_entry->first);
++  }
+   cache_.erase(cache_entry);
+   return false;
+ }
+@@ -152,6 +179,9 @@ bool PreflightCache::CheckIfRequestCanSkipPreflight(
+ void PreflightCache::ClearCache(mojom::ClearDataFilterPtr url_filter) {
+   if (url_filter.is_null()) {
+     cache_.clear();
++    if (molt_shares_) {  // MoltBrowser
++      molt_shares_->Clear();
++    }
+     return;
+   }
+   if (url_filter->origins.empty() && url_filter->domains.empty()) {
+@@ -160,6 +190,9 @@ void PreflightCache::ClearCache(mojom::ClearDataFilterPtr url_filter) {
+         return;  // Nothing to do
+       case mojom::ClearDataFilter_Type::KEEP_MATCHES:
+         cache_.clear();  // Remove all
++        if (molt_shares_) {  // MoltBrowser
++          molt_shares_->Clear();
++        }
+         return;
+     }
+   }
+@@ -175,12 +208,40 @@ void PreflightCache::ClearCache(mojom::ClearDataFilterPtr url_filter) {
+     auto cached_url = std::get<0>(it->first).GetURL();
+     if (net::DoesUrlMatchFilter(url_filter_type, origins, domains,
+                                 cached_url)) {
++      if (molt_shares_) {  // MoltBrowser
++        molt_shares_->Removed(it->first);
++      }
+       cache_.erase(it);
+     }
+     it = next_it;
    }
  }
  
-+// MoltBrowser: see the header.
++// MoltBrowser: see the header. (std::erase_if calls the predicate once for
++// each entry, before erasing it.)
 +void PreflightCache::MoltClearForNonce(const base::UnguessableToken& nonce) {
-+  std::erase_if(cache_, [&nonce](const auto& entry) {
-+    return std::get<2>(entry.first).GetNonce() == nonce;
++  std::erase_if(cache_, [this, &nonce](const auto& entry) {
++    const bool drop = std::get<2>(entry.first).GetNonce() == nonce;
++    if (drop && molt_shares_) {
++      molt_shares_->Removed(entry.first);
++    }
++    return drop;
 +  });
++}
++
++// MoltBrowser: see the header.
++void PreflightCache::MoltKeepPerSiteShares() {
++  if (molt_shares_) {
++    return;
++  }
++  molt_shares_ = std::make_unique<MoltShares>(net::kMoltPreflightShares);
++  // What the cache already holds counts too (nothing, for MoltNet's
++  // context, which asks before its first request).
++  for (const auto& [key, result] : cache_) {
++    molt_shares_->Added(net::MoltSiteOfNetworkKey(std::get<2>(key)), key);
++  }
 +}
 +
  size_t PreflightCache::CountEntriesForTesting() const {
    return cache_.size();
  }
+@@ -199,6 +260,11 @@ void PreflightCache::MayPurgeForTesting(size_t max_entries, size_t purge_unit) {
+ }
+ 
+ void PreflightCache::MayPurge(size_t max_entries, size_t purge_unit) {
++  // MoltBrowser: with per-site shares, nothing is purged at random (of any
++  // site); AppendEntry() made room inside the new entry's site.
++  if (molt_shares_) {
++    return;
++  }
+   if (cache_.size() <= max_entries) {
+     return;
+   }

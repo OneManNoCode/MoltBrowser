@@ -1,0 +1,21 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediastream/BUILD.gn
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/modules/mediastream/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediastream/BUILD.gn b/third_party/blink/renderer/modules/mediastream/BUILD.gn
+index baae392cd4e6051e4142478f1e0f560b2eba3e95..c41791f06b6e354a9f6585bcb4a45097c0aba021 100644
+--- a/third_party/blink/renderer/modules/mediastream/BUILD.gn
++++ b/third_party/blink/renderer/modules/mediastream/BUILD.gn
+@@ -91,6 +91,10 @@ blink_modules_sources("mediastream") {
+     "media_stream_video_source.cc",
+     "media_stream_video_track.cc",
+     "media_stream_video_track.h",
++
++    # MoltBrowser: MoltNet's cameras show one menu of formats.
++    "moltnet_camera.cc",
++    "moltnet_camera.h",
+     "navigator_media_stream.cc",
+     "navigator_media_stream.h",
+     "overconstrained_error.cc",

@@ -21,6 +21,8 @@
 #include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_address.h"
+#include "net/base/molt_network_key_site.h"  // MoltBrowser
+#include "net/base/molt_site_lru_cache.h"    // MoltBrowser
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/privacy_mode.h"
@@ -112,9 +114,27 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
   // so other sites' sessions under way are still cached.
   void MoltFlushForNonce(const base::UnguessableToken& nonce);
 
+  // MoltBrowser: from now on each site (the key's network key's top-level
+  // site) keeps a share of the cache of its own
+  // (net/base/molt_site_share_policy.h, kMoltTlsSessionShares): a new
+  // session takes the place of its own site's least recently used one, never
+  // another site's, and memory pressure evicts nothing. Called by MoltNet's
+  // network context before its first connection.
+  void MoltKeepPerSiteShares();
+  bool MoltKeepsPerSiteShares() const {
+    return cache_.MoltKeepsPerSiteShares();
+  }
+
   void SetClockForTesting(base::Clock* clock);
 
  private:
+  // MoltBrowser: a key's site, for the shares above.
+  struct MoltKeySite {
+    MoltNetworkKeySite operator()(const Key& key) const {
+      return MoltSiteOfNetworkKey(key.network_anonymization_key);
+    }
+  };
+
   struct Entry {
     Entry();
     Entry(Entry&&);
@@ -145,7 +165,9 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
   raw_ptr<base::Clock> clock_;
   uint64_t generation_number_ = 0;
   Config config_;
-  base::LRUCache<Key, Entry> cache_;
+  // MoltBrowser: a base::LRUCache<Key, Entry> that can keep per-site shares
+  // (net/base/molt_site_lru_cache.h; without them, the base's own).
+  MoltSiteLRU<base::LRUCache<Key, Entry>, MoltKeySite> cache_;
   size_t lookups_since_flush_ = 0;
   base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
 };

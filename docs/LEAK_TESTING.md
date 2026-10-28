@@ -202,6 +202,17 @@ asks nobody in particular.
   `var/home`; never the last component), and must belong to root or you
   and be writable by no other account (a world-writable one must be
   sticky, as `/tmp` is); otherwise the kit stops before making anything.
+  A group-writable `--out` that isn't sticky must be your group's or
+  root's, and no other account may be able to be in that group: the
+  group database lists no other member and no other account has it as
+  its primary group. That holds with user private groups (each account's
+  own group, the default on Debian, Ubuntu, Fedora, Arch and most other
+  distributions), not where every user's primary group is one shared
+  group such as `users`: there another account could rename the run
+  directory and put one of its own in its place, and the report you read
+  afterwards would be that one. The kit then stops and names the accounts;
+  make the directory writable by its owner only (`chmod g-w`) or choose
+  another `--out` (a sticky one, such as `/tmp`, is fine).
   The servers' certificates and the test extension are made in the
   root-owned directory under `/run/moltleak-<id>/` and copied in; the
   `resolv.conf` and `nsswitch.conf` each launch mounts over the
@@ -454,7 +465,9 @@ level, and in one browser launch per device scale factor
 
 Phase `mic_processing`, one browser launch of its own (it needs flags that
 would change the other checks), checks [FINGERPRINTING.md "MoltNet: the
-microphone's processing"](FINGERPRINTING.md#moltnet-the-microphones-processing).
+microphone's processing"](FINGERPRINTING.md#moltnet-the-microphones-processing)
+and, with the same fake capture device, [a camera's
+formats](FINGERPRINTING.md#a-cameras-formats).
 The kit writes a fixed WAV into the run directory (`leakkit/micinput.py`:
 44.1 kHz stereo, the format of Chromium's fake capture device, so it needs
 no conversion; 2 s of silence, a 30 ms burst, 3.5 s of two synthetic
@@ -485,6 +498,17 @@ gives for the microphones, and whether every label the list shows (and
 the track's) is generic, every device a group of its own and Windows'
 `communications` device absent.
 
+Last, with a third gesture, `camera.js` (which `mic.html` loads) opens the
+fake device's camera (six sizes from 96x96 to 3840x2160, at 20 fps) twice,
+with no constraints and asking for Full HD (`{width: {ideal: 1920},
+height: {ideal: 1080}}`), and reports each track's `getSettings()`
+(`width`, `height`, `frameRate`, `aspectRatio`, `resizeMode`, once the
+first frame has arrived), the first track's `getCapabilities()` ranges,
+the first frame each track hands `MediaStreamTrackProcessor` (its coded
+size, visible rectangle, display size and format), the distinct ranges of
+the cameras' `InputDeviceInfo.getCapabilities()`, and what a request for
+a width beyond the menu (`{width: {min: 1281}}`) gives.
+
 | Key | Must |
 |---|---|
 | `audio.mic_processed_stable` | be true: the two captures agree (otherwise the hash can't compare machines; a gap in the buffers' timestamps or no burst is reported instead of a hash) |
@@ -499,6 +523,13 @@ the track's) is generic, every device a group of its own and Windows'
 | `audio.mic_format_ranges` | be 48000 to 48000 Hz, 16 to 16 bits, one to two channels and 0.01 to 0.01 s |
 | `audio.mic_device_ranges` | list one set of ranges, the same as `audio.mic_format_ranges`, for every microphone |
 | `audio.mic_names` | show every label generic ("Default", or the kind and the device ID's first four characters), the track's too, every `groupId` the device's ID, and no `communications` device |
+| `video.camera_settings` | be 640x480 at 30 fps, aspect ratio 4:3, `resizeMode` `none`, whatever the device's modes (the fake device runs at 20 fps) |
+| `video.camera_capabilities` | be width 1 to 1280, height 1 to 720, frame rate 0 to 30, aspect ratio 1/720 to 1280, `resizeMode` `crop-and-scale` and `none`: the menu, not the device's 3840x2160 |
+| `video.camera_frame` | be a 640x480 I420 frame with nothing around it: coded size, visible rectangle and display size all 640x480 |
+| `video.camera_hd_settings` | be 1280x720 at 30 fps, aspect ratio 16:9, `resizeMode` `none` (the larger entry, not the device's Full HD) |
+| `video.camera_hd_frame` | be a 1280x720 I420 frame with nothing around it |
+| `video.camera_device_capabilities` | list one set of ranges for every camera, as `video.camera_capabilities` with the frame rate from 1 |
+| `video.camera_overconstrained` | be `OverconstrainedError` for `width` |
 
 The default echo cancellation during the playback (`audio.mic_playback`)
 is recorded, not compared: its echo canceller adapts to the timing
@@ -514,7 +545,9 @@ without a sandbox by default (`AudioServiceSandbox` is off there at 156); if
 the build turns that sandbox on, the device delivers silence and the check
 reports `silent`. A regular window (`--target regular`) records the same
 values for comparison: there they differ between CPUs with and without AVX2,
-and the capabilities and `"all"`'s processing between OSes.
+and the capabilities and `"all"`'s processing between OSes; its camera
+shows the fake device's own modes (3840x2160 at 20 fps, frames of the
+device mode's size) and grants the larger width.
 The first run on the build machine is also the probe's first test.
 
 A regular-window fingerprint is recorded as a control. The report lists the

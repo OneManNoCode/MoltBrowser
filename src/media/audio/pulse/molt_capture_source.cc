@@ -71,20 +71,19 @@ std::string CaptureSourceFor(std::string_view requested,
   }
   for (int depth = 0; depth < kMaxFilterDepth; ++depth) {
     const SourceInfo* under = SourceUnder(*source, sources, outputs);
-    if (!under) {
+    // Nothing the server tells, or a sink's monitor (a virtual microphone
+    // that plays applications' output): no microphone under it.
+    if (!under || under->monitor) {
       break;
     }
-    if (!IsFilterSource(*under) && !under->monitor) {
+    if (!IsFilterSource(*under)) {
       return under->name;
     }
     source = under;
   }
-  for (const SourceInfo& candidate : sources) {
-    if (candidate.hardware && !candidate.monitor &&
-        !IsFilterSource(candidate)) {
-      return candidate.name;
-    }
-  }
+  // Never another device than the one asked for: the first microphone the
+  // server lists may not be the one the filter processes, or there may be
+  // none under it at all.
   return std::string(requested);
 }
 

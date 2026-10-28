@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
@@ -2045,6 +2046,11 @@ void AudioContext::OnDevicesChanged(mojom::blink::MediaDeviceType device_type,
   if (device_type == mojom::blink::MediaDeviceType::kMediaAudioOutput) {
     output_device_ids_.clear();
     for (const auto& device : devices) {
+      // MoltBrowser: a device MoltNet doesn't list (Windows' communications
+      // device) isn't one a context can be given (moltnet_media_devices.h).
+      if (!molt_fingerprinting::ListsMediaDevice(device_type, device)) {
+        continue;
+      }
       if (device.device_id == media::AudioDeviceDescription::kDefaultDeviceId) {
         // Use the empty string to represent the default audio sink.
         output_device_ids_.insert(g_empty_string);

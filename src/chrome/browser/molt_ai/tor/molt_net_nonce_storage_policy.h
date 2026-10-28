@@ -72,10 +72,11 @@
 //    of the page outlives it), it deletes them once more and forgets the
 //    nonce (MoltNetNonceSweepsCookiesLater());
 //  * the network state kept under the nonce's network keys: idle
-//    connections and HTTP/2 sessions, TLS sessions, server properties, CORS
-//    preflight results and HTTP authentication entries, dropped by the
-//    network context with the cookies when the page goes (not when its
-//    group is closed: the page still uses them), and again with them later
+//    connections and HTTP/2 sessions, TLS sessions, server properties (and
+//    the marks of broken alternative services), CORS preflight results and
+//    HTTP authentication entries, dropped by the network context with the
+//    cookies when the page goes (not when its group is closed: the page
+//    still uses them), and again with them later
 //    (services/network/molt_nonce_drop_policy.h says how each is keyed and
 //    dropped);
 //  * media-license (CDM) data, kept per storage key: deleted for each of
@@ -97,9 +98,9 @@
 // Reporting endpoints and Network Error Logging policies (not built into
 // MoltBrowser); blob URLs go with the document that made them
 // (BlobURLStoreImpl), Web Locks and BroadcastChannels with their frames.
-// Kept under the nonce and not dropped, as no page can use them again once
-// the nonce's page is gone: marks of broken alternative services, which
-// expire on their own.
+// MoltNet's network context uses no QUIC (all its connections go through
+// Tor's SOCKS5 proxy), so it keeps no QUIC server information and makes no
+// marks of broken QUIC alternative services.
 //
 // Std-only, so molt_ai_unittests tests it. Not thread-safe: the browser uses
 // it on the UI thread.
@@ -114,6 +115,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace molt_ai::tor {
 
@@ -297,6 +299,55 @@ class MoltNetNoncePageCounts {
 
  private:
   std::map<Nonce, size_t> counts_;
+};
+
+// The nonces whose cookies each storage partition's network context refuses,
+// as the browser told it (network::mojom::MoltNonceDrop): a closed group's
+// (kClosed: its page lives on) until its page goes, and a gone page's
+// (kGone) until the context forgets it, kMoltNetNonceCookieSweepSeconds later
+// (kForget). The context keeps that in its cookie store
+// (net/cookies/molt_nonce_cookie_policy.h), so when the network service
+// restarts and the storage partition makes its network context again
+// (StoragePartitionImpl::InitNetworkContext(), which asks the embedder for
+// the context's parameters each time: ProfileNetworkContextService::
+// ConfigureNetworkContextParams()), the new context would store a closed
+// page's frames' cookies again. The browser gives the new context the
+// partition's refused nonces with its parameters
+// (NetworkContextParams::molt_refused_nonces, MoltNetRefusedNonces()), and
+// it refuses them as it makes its cookie store, before it serves any
+// request; a gone page's nonce is still forgotten when its time comes.
+// `Partition` identifies a storage partition (base::FilePath, its path, in
+// the browser); a record goes when its nonce is forgotten.
+template <typename Nonce, typename Partition>
+class MoltNetNonceRefusals {
+ public:
+  // The browser sent `partition`'s network context kClosed for `nonce`.
+  void Closed(const Nonce& nonce, const Partition& partition) {
+    refused_.insert_or_assign(nonce, partition);
+  }
+  // ... kGone: refused until kForget.
+  void Gone(const Nonce& nonce, const Partition& partition) {
+    refused_.insert_or_assign(nonce, partition);
+  }
+  // ... kForget: no longer refused.
+  void Forgotten(const Nonce& nonce) { refused_.erase(nonce); }
+
+  // What a network context made again for `partition` must refuse.
+  std::vector<Nonce> RefusedIn(const Partition& partition) const {
+    std::vector<Nonce> nonces;
+    for (const auto& [nonce, refused_in] : refused_) {
+      if (refused_in == partition) {
+        nonces.push_back(nonce);
+      }
+    }
+    return nonces;
+  }
+
+  bool IsRefused(const Nonce& nonce) const { return refused_.contains(nonce); }
+  size_t size() const { return refused_.size(); }
+
+ private:
+  std::map<Nonce, Partition> refused_;
 };
 
 }  // namespace molt_ai::tor

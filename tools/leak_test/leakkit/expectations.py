@@ -32,8 +32,8 @@ ARCH_KEYS are compared only between runs on the same architecture (x86-64
 or arm64): they legitimately differ between the two (a difference is INFO
 there).
 
-Records of kind "mic" (the mic_processing launch) are checked against
-MIC_RULES only.
+Records of kind "mic" (the mic_processing launch: the microphone's and the
+camera's values) are checked against MIC_RULES only.
 """
 
 FP = 'FINGERPRINTING.md'
@@ -425,6 +425,33 @@ MIC_FORMAT_RANGES = {'sampleRate': [48000, 48000], 'sampleSize': [16, 16],
 MIC_NAMES = {'labels': True, 'groups': True, 'track': True,
              'communications': False}
 
+# A camera in MoltNet (modules/mediastream/moltnet_camera.h): the formats of
+# one menu that it reaches, 640x480 and 1280x720 at 30 fps, never the
+# device's own modes (Chromium's fake capture device, which the kit uses,
+# has six sizes from 96x96 to 3840x2160 at 20 fps, and reaches both). A
+# track with no constraints is 640x480, one that asks for Full HD 1280x720,
+# each an entry as it is (resizeMode "none"), at the menu's rate; the track
+# and InputDeviceInfo.getCapabilities() give the menu's ranges (the track's
+# frame rate from 0, the device's from 1, as Chromium gives them); the
+# frames are new I420 frames of exactly the track's size; and a width the
+# menu doesn't have fails.
+CAMERA_SETTINGS = {'width': 640, 'height': 480, 'frameRate': 30,
+                   'aspectRatio': 640 / 480, 'resizeMode': 'none'}
+CAMERA_HD_SETTINGS = {'width': 1280, 'height': 720, 'frameRate': 30,
+                      'aspectRatio': 1280 / 720, 'resizeMode': 'none'}
+CAMERA_CAPABILITIES = {'width': [1, 1280], 'height': [1, 720],
+                       'frameRate': [0, 30], 'aspectRatio': [1 / 720, 1280],
+                       'resizeMode': ['crop-and-scale', 'none']}
+CAMERA_DEVICE_CAPABILITIES = [dict(CAMERA_CAPABILITIES, frameRate=[1, 30])]
+CAMERA_FRAME = {'codedWidth': 640, 'codedHeight': 480,
+                'visibleRect': [0, 0, 640, 480], 'displayWidth': 640,
+                'displayHeight': 480, 'format': 'I420'}
+CAMERA_HD_FRAME = {'codedWidth': 1280, 'codedHeight': 720,
+                   'visibleRect': [0, 0, 1280, 720], 'displayWidth': 1280,
+                   'displayHeight': 720, 'format': 'I420'}
+CAMERA_OVERCONSTRAINED = {'name': 'OverconstrainedError',
+                          'constraint': 'width'}
+
 # The mic_processing launch (kind "mic"): Chromium's fake capture device
 # plays the kit's WAV; the page reads the processed samples twice, each time
 # from a new stream. The two must agree (otherwise the probe can't compare
@@ -460,6 +487,15 @@ MIC_RULES = (
     ('audio.mic_format_ranges', 'eq', MIC_FORMAT_RANGES, S_MDEV),
     ('audio.mic_device_ranges', 'eq', [MIC_FORMAT_RANGES], S_MDEV),
     ('audio.mic_names', 'eq', MIC_NAMES, S_MDEV),
+    # The camera's formats from the menu, on every device and OS.
+    ('video.camera_settings', 'eq', CAMERA_SETTINGS, S_MDEV),
+    ('video.camera_capabilities', 'eq', CAMERA_CAPABILITIES, S_MDEV),
+    ('video.camera_frame', 'eq', CAMERA_FRAME, S_MDEV),
+    ('video.camera_hd_settings', 'eq', CAMERA_HD_SETTINGS, S_MDEV),
+    ('video.camera_hd_frame', 'eq', CAMERA_HD_FRAME, S_MDEV),
+    ('video.camera_device_capabilities', 'eq', CAMERA_DEVICE_CAPABILITIES,
+     S_MDEV),
+    ('video.camera_overconstrained', 'eq', CAMERA_OVERCONSTRAINED, S_MDEV),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the

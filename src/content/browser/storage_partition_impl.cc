@@ -2883,9 +2883,11 @@ void StoragePartitionImpl::OnClearSiteData(
 
   // MoltBrowser: where storage is kept per site, a response the browser
   // can't place in a document or worker (a download's, a keepalive
-  // request's after its page went) names the key its origin's own document
-  // would have, so that its deletion reads that key's usage only, not every
-  // site's (molt_one_key_deletion_policy.h).
+  // request's after its page went) names the key a document of its origin
+  // would have where the request was made (its nonce, or its cookie
+  // partition), so that its deletion reads that key's usage only, not every
+  // site's, and doesn't reach the origin's first-party storage from another
+  // site's page (molt_one_key_deletion_policy.h).
   const url::Origin molt_origin = url::Origin::Create(url);
   const base::UnguessableToken* molt_nonce =
       cookie_partition_key.has_value()
@@ -2893,14 +2895,25 @@ void StoragePartitionImpl::OnClearSiteData(
           : nullptr;
   switch (MoltClearSiteDataKeyFor(
       dom_storage_context_ && dom_storage_context_->MoltKeepsPerSite(),
-      storage_key.has_value(), molt_origin.opaque(), molt_nonce != nullptr)) {
+      storage_key.has_value(), molt_origin.opaque(), molt_nonce != nullptr,
+      cookie_partition_key.has_value())) {
     case MoltClearSiteDataKey::kAsCalculated:
       break;
     case MoltClearSiteDataKey::kFirstParty:
       storage_key = blink::StorageKey::CreateFirstParty(molt_origin);
       break;
     case MoltClearSiteDataKey::kWithNonce:
-      storage_key = blink::StorageKey::CreateWithNonce(molt_origin, *molt_nonce);
+      storage_key =
+          blink::StorageKey::CreateWithNonce(molt_origin, *molt_nonce);
+      break;
+    case MoltClearSiteDataKey::kInRequestPartition:
+      storage_key = blink::StorageKey::Create(
+          molt_origin, cookie_partition_key->site(),
+          MoltClearSiteDataKeyIsCrossSite(
+              cookie_partition_key->IsThirdParty(),
+              cookie_partition_key->site().IsSameSiteWith(molt_origin))
+              ? blink::mojom::AncestorChainBit::kCrossSite
+              : blink::mojom::AncestorChainBit::kSameSite);
       break;
   }
 

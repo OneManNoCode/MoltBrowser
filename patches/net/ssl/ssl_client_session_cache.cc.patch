@@ -5,10 +5,30 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/ssl/ssl_client_session_cache.cc b/net/ssl/ssl_client_session_cache.cc
-index 8cea62bf8e41ad5a6ba932948013836061190961..da19a984f722575667aa97a17ea5a2773fc5f6fc 100644
+index 8cea62bf8e41ad5a6ba932948013836061190961..c4078b52abbe2f10d81cce43d9b9c5a60fa6e96b 100644
 --- a/net/ssl/ssl_client_session_cache.cc
 +++ b/net/ssl/ssl_client_session_cache.cc
-@@ -159,6 +159,19 @@ void SSLClientSessionCache::Flush() {
+@@ -15,6 +15,7 @@
+ #include "base/time/clock.h"
+ #include "base/time/default_clock.h"
+ #include "net/base/features.h"
++#include "net/base/molt_site_share_policy.h"  // MoltBrowser
+ #include "third_party/boringssl/src/include/openssl/ssl.h"
+ 
+ namespace net {
+@@ -111,6 +112,11 @@ void SSLClientSessionCache::Insert(uint64_t generation_number,
+   }
+   auto iter = cache_.Get(cache_key);
+   if (iter == cache_.end()) {
++    // MoltBrowser: with per-site shares, room is made inside the key's own
++    // site, or the session isn't kept (net/base/molt_site_share_policy.h).
++    if (!cache_.MoltMakeRoomFor(cache_key)) {
++      return;
++    }
+     iter = cache_.Put(cache_key, Entry());
+   }
+ 
+@@ -159,6 +165,24 @@ void SSLClientSessionCache::Flush() {
    cache_.Clear();
  }
  
@@ -25,6 +45,33 @@ index 8cea62bf8e41ad5a6ba932948013836061190961..da19a984f722575667aa97a17ea5a277
 +  }
 +}
 +
++// MoltBrowser: see the header.
++void SSLClientSessionCache::MoltKeepPerSiteShares() {
++  cache_.MoltKeepPerSiteShares(kMoltTlsSessionShares);
++}
++
  void SSLClientSessionCache::SetClockForTesting(base::Clock* clock) {
    clock_ = clock;
  }
+@@ -228,6 +252,10 @@ void SSLClientSessionCache::FlushExpiredSessions() {
+ }
+ 
+ void SSLClientSessionCache::OnUpdateMemoryLimit() {
++  // MoltBrowser: with per-site shares, memory pressure evicts nothing.
++  if (cache_.MoltKeepsPerSiteShares()) {
++    return;
++  }
+   if (!base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
+     return;
+   }
+@@ -242,6 +270,10 @@ void SSLClientSessionCache::OnUpdateMemoryLimit() {
+ }
+ 
+ void SSLClientSessionCache::OnReleaseMemory() {
++  // MoltBrowser: with per-site shares, memory pressure evicts nothing.
++  if (cache_.MoltKeepsPerSiteShares()) {
++    return;
++  }
+   if (base::FeatureList::IsEnabled(
+           features::kIgnoreMemoryPressureForSslClientSessionCache)) {
+     // We don't want to clear the SSL session cache because the entries in it

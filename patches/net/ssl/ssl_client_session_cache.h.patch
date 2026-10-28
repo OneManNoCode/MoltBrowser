@@ -5,18 +5,22 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/ssl/ssl_client_session_cache.h b/net/ssl/ssl_client_session_cache.h
-index 2bb9379dcfb9e47128aa576b2868e7c02c005fbf..bc29d8aedfedd6d9748b934fd9ff9ee284b9d135 100644
+index 2bb9379dcfb9e47128aa576b2868e7c02c005fbf..a9a7886613594fecba39f15c1b2cdc5bc796d62c 100644
 --- a/net/ssl/ssl_client_session_cache.h
 +++ b/net/ssl/ssl_client_session_cache.h
-@@ -18,6 +18,7 @@
+@@ -18,8 +18,11 @@
  #include "base/memory/raw_ptr.h"
  #include "base/memory_coordinator/async_memory_consumer_registration.h"
  #include "base/memory_coordinator/memory_consumer.h"
 +#include "base/unguessable_token.h"  // MoltBrowser
  #include "net/base/host_port_pair.h"
  #include "net/base/ip_address.h"
++#include "net/base/molt_network_key_site.h"  // MoltBrowser
++#include "net/base/molt_site_lru_cache.h"    // MoltBrowser
  #include "net/base/net_export.h"
-@@ -105,6 +106,12 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
+ #include "net/base/network_anonymization_key.h"
+ #include "net/base/privacy_mode.h"
+@@ -105,9 +108,33 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
    // Future insertions will be ignored unless they match the new generation.
    void Flush();
  
@@ -26,6 +30,38 @@ index 2bb9379dcfb9e47128aa576b2868e7c02c005fbf..bc29d8aedfedd6d9748b934fd9ff9ee2
 +  // so other sites' sessions under way are still cached.
 +  void MoltFlushForNonce(const base::UnguessableToken& nonce);
 +
++  // MoltBrowser: from now on each site (the key's network key's top-level
++  // site) keeps a share of the cache of its own
++  // (net/base/molt_site_share_policy.h, kMoltTlsSessionShares): a new
++  // session takes the place of its own site's least recently used one, never
++  // another site's, and memory pressure evicts nothing. Called by MoltNet's
++  // network context before its first connection.
++  void MoltKeepPerSiteShares();
++  bool MoltKeepsPerSiteShares() const {
++    return cache_.MoltKeepsPerSiteShares();
++  }
++
    void SetClockForTesting(base::Clock* clock);
  
   private:
++  // MoltBrowser: a key's site, for the shares above.
++  struct MoltKeySite {
++    MoltNetworkKeySite operator()(const Key& key) const {
++      return MoltSiteOfNetworkKey(key.network_anonymization_key);
++    }
++  };
++
+   struct Entry {
+     Entry();
+     Entry(Entry&&);
+@@ -138,7 +165,9 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
+   raw_ptr<base::Clock> clock_;
+   uint64_t generation_number_ = 0;
+   Config config_;
+-  base::LRUCache<Key, Entry> cache_;
++  // MoltBrowser: a base::LRUCache<Key, Entry> that can keep per-site shares
++  // (net/base/molt_site_lru_cache.h; without them, the base's own).
++  MoltSiteLRU<base::LRUCache<Key, Entry>, MoltKeySite> cache_;
+   size_t lookups_since_flush_ = 0;
+   base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
+ };

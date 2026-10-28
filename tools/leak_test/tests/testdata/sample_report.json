@@ -152,6 +152,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"codedHeight\": 720, \"codedWidth\": 1280, \"displayHeight\": 480, \"displayWidth\": 640, \"format\": \"I420\", \"visibleRect\": [160, 0, 960, 720]}, expected {\"codedHeight\": 480, \"codedWidth\": 640, \"displayHeight\": 480, \"displayWidth\": 640, \"format\": \"I420\", \"visibleRect\": [0, "
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_frame",
+   "status": "FAIL",
+   "title": "video.camera_frame is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
    "evidence": [
     "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1401, expected a multiple of 200, at most 1400"
@@ -2157,6 +2168,72 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"aspectRatio\": [0.001388888888888889, 1280], \"frameRate\": [0, 30], \"height\": [1, 720], \"resizeMode\": [\"crop-and-scale\", \"none\"], \"width\": [1, 1280]}, expected {\"aspectRatio\": [0.001388888888888889, 1280], \"frameRate\": [0, 30], \"height\": [1, 720], \"resizeMode\": [\"crop-and-scale\","
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_capabilities",
+   "status": "PASS",
+   "title": "video.camera_capabilities is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual [{\"aspectRatio\": [0.001388888888888889, 1280], \"frameRate\": [1, 30], \"height\": [1, 720], \"resizeMode\": [\"crop-and-scale\", \"none\"], \"width\": [1, 1280]}], expected [{\"aspectRatio\": [0.001388888888888889, 1280], \"frameRate\": [1, 30], \"height\": [1, 720], \"resizeMode\": [\"crop-and-scale\""
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_device_capabilities",
+   "status": "PASS",
+   "title": "video.camera_device_capabilities is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"codedHeight\": 720, \"codedWidth\": 1280, \"displayHeight\": 720, \"displayWidth\": 1280, \"format\": \"I420\", \"visibleRect\": [0, 0, 1280, 720]}, expected {\"codedHeight\": 720, \"codedWidth\": 1280, \"displayHeight\": 720, \"displayWidth\": 1280, \"format\": \"I420\", \"visibleRect\": [0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_hd_frame",
+   "status": "PASS",
+   "title": "video.camera_hd_frame is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"aspectRatio\": 1.7777777777777777, \"frameRate\": 30, \"height\": 720, \"resizeMode\": \"none\", \"width\": 1280}, expected {\"aspectRatio\": 1.7777777777777777, \"frameRate\": 30, \"height\": 720, \"resizeMode\": \"none\", \"width\": 1280}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_hd_settings",
+   "status": "PASS",
+   "title": "video.camera_hd_settings is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"constraint\": \"width\", \"name\": \"OverconstrainedError\"}, expected {\"constraint\": \"width\", \"name\": \"OverconstrainedError\"}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_overconstrained",
+   "status": "PASS",
+   "title": "video.camera_overconstrained is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"aspectRatio\": 1.3333333333333333, \"frameRate\": 30, \"height\": 480, \"resizeMode\": \"none\", \"width\": 640}, expected {\"aspectRatio\": 1.3333333333333333, \"frameRate\": 30, \"height\": 480, \"resizeMode\": \"none\", \"width\": 640}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_settings",
+   "status": "PASS",
+   "title": "video.camera_settings is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected [false, \"absent\"]"
@@ -3331,9 +3408,9 @@
  ],
  "counts": {
   "ERROR": 0,
-  "FAIL": 14,
+  "FAIL": 15,
   "INFO": 2,
-  "PASS": 191,
+  "PASS": 197,
   "SKIP": 85
  },
  "fingerprints": [
@@ -4018,6 +4095,96 @@
      "autoGainControl": true,
      "echoCancellation": "all",
      "noiseSuppression": true
+    },
+    "video.camera_capabilities": {
+     "aspectRatio": [
+      0.001388888888888889,
+      1280
+     ],
+     "frameRate": [
+      0,
+      30
+     ],
+     "height": [
+      1,
+      720
+     ],
+     "resizeMode": [
+      "crop-and-scale",
+      "none"
+     ],
+     "width": [
+      1,
+      1280
+     ]
+    },
+    "video.camera_device_capabilities": [
+     {
+      "aspectRatio": [
+       0.001388888888888889,
+       1280
+      ],
+      "frameRate": [
+       1,
+       30
+      ],
+      "height": [
+       1,
+       720
+      ],
+      "resizeMode": [
+       "crop-and-scale",
+       "none"
+      ],
+      "width": [
+       1,
+       1280
+      ]
+     }
+    ],
+    "video.camera_frame": {
+     "codedHeight": 720,
+     "codedWidth": 1280,
+     "displayHeight": 480,
+     "displayWidth": 640,
+     "format": "I420",
+     "visibleRect": [
+      160,
+      0,
+      960,
+      720
+     ]
+    },
+    "video.camera_hd_frame": {
+     "codedHeight": 720,
+     "codedWidth": 1280,
+     "displayHeight": 720,
+     "displayWidth": 1280,
+     "format": "I420",
+     "visibleRect": [
+      0,
+      0,
+      1280,
+      720
+     ]
+    },
+    "video.camera_hd_settings": {
+     "aspectRatio": 1.7777777777777777,
+     "frameRate": 30,
+     "height": 720,
+     "resizeMode": "none",
+     "width": 1280
+    },
+    "video.camera_overconstrained": {
+     "constraint": "width",
+     "name": "OverconstrainedError"
+    },
+    "video.camera_settings": {
+     "aspectRatio": 1.3333333333333333,
+     "frameRate": 30,
+     "height": 480,
+     "resizeMode": "none",
+     "width": 640
     }
    },
    "window": null,

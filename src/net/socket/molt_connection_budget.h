@@ -55,6 +55,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "net/base/molt_network_key_site.h"
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/request_priority.h"
@@ -71,26 +72,12 @@ namespace net {
 // opaque origin was derived from. nullopt for the keys no site can be named
 // for (a one-off key derived from nothing: net::IsolationInfo::
 // CreateTransient()).
-using MoltBudgetSite = std::optional<SchemefulSite>;
+using MoltBudgetSite = MoltNetworkKeySite;
 
+// (net/base/molt_network_key_site.h, which the per-site cache shares use
+// too.)
 inline MoltBudgetSite MoltBudgetSiteFor(const NetworkAnonymizationKey& key) {
-  const std::optional<SchemefulSite>& top_frame_site = key.GetTopFrameSite();
-  if (!top_frame_site) {
-    return std::nullopt;
-  }
-  if (!top_frame_site->opaque()) {
-    return *top_frame_site;
-  }
-  const url::SchemeHostPort precursor =
-      top_frame_site->MoltGetTupleOrPrecursorTupleIfOpaque();
-  if (!precursor.IsValid()) {
-    return std::nullopt;
-  }
-  SchemefulSite site(precursor.GetURL());
-  if (site.opaque()) {
-    return std::nullopt;
-  }
-  return site;
+  return MoltSiteOfNetworkKey(key);
 }
 
 // A site of one session (one network context): what the budgets count, and

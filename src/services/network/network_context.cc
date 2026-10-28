@@ -95,6 +95,7 @@
 #include "net/extras/sqlite/cookie_crypto_delegate.h"
 #include "net/extras/sqlite/sqlite_persistent_cookie_store.h"
 #include "net/http/http_auth.h"
+#include "net/http/http_auth_cache.h"  // MoltBrowser
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_auth_preferences.h"
 #include "net/http/http_auth_scheme.h"
@@ -110,6 +111,7 @@
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
 #include "net/ssl/ech_mode_getter.h"
+#include "net/ssl/ssl_client_session_cache.h"  // MoltBrowser
 #include "net/ssl/ssl_config_service.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -670,6 +672,22 @@ void RemoveInvalidationFilterCallback(
   context->OnLogicalFilterRemoved(filter);
 }
 
+// MoltBrowser: a MoltNet context the browser makes again for a storage
+// partition (the network service restarted) refuses, from the moment its
+// cookie store is made, the nonces the partition's earlier context had been
+// told to refuse (NetworkContextParams::molt_refused_nonces), as kClosed
+// does: before the context serves any request, on any pipe
+// (services/network/molt_nonce_drop_policy.h). The store is still empty, so
+// there is nothing to delete.
+void MoltRefuseNoncesFromTheStart(net::CookieMonster& cookie_store,
+                                  const mojom::NetworkContextParams& params) {
+  static_assert(MoltNonceCookiesRefusedAfter(MoltNonceDropStep::kClosed));
+  if (!params.molt_nonce_limits || !params.molt_refused_nonces) {
+    return;
+  }
+  cookie_store.MoltRefuseNonces(*params.molt_refused_nonces);
+}
+
 // MoltBrowser: HttpAuthStaticNetworkContextParams.
 // molt_basic_and_digest_auth_only, set for MoltNet's network contexts.
 bool MoltBasicAndDigestAuthOnly(const mojom::NetworkContextParams* params) {
@@ -829,6 +847,14 @@ NetworkContext::NetworkContext(
           params_->shared_dictionary_cache_max_size,
           shared_dictionary::kDictionaryMaxCountPerNetworkContext);
     }
+  }
+  // MoltBrowser: MoltNet's compression dictionaries and CORS preflight
+  // results keep shares per site (net/base/molt_site_share_policy.h).
+  if (params_->molt_per_site_network_caches) {
+    if (shared_dictionary_manager_) {
+      shared_dictionary_manager_->MoltKeepPerSiteShares();
+    }
+    cors_preflight_controller_.MoltKeepPerSiteShares();
   }
 
   mojo::PendingRemote<mojom::URLLoaderFactory>
@@ -3377,9 +3403,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     if (params_->persist_session_cookies) {
       cookie_store->SetPersistSessionCookies(true);
     }
-    // MoltBrowser: MoltNet's limits for cookies under a page's nonce.
+    // MoltBrowser: MoltNet's limits for cookies under a page's nonce, and
+    // the nonces a context made again refuses from the start.
     if (params_->molt_nonce_limits) {
       cookie_store->MoltKeepNonceCookieLimits();
+      MoltRefuseNoncesFromTheStart(*cookie_store, *params_);
     }
 
     builder.SetCookieStore(std::move(cookie_store));
@@ -3392,6 +3420,7 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     auto molt_cookie_store =
         std::make_unique<net::CookieMonster>(/*store=*/nullptr, net_log);
     molt_cookie_store->MoltKeepNonceCookieLimits();
+    MoltRefuseNoncesFromTheStart(*molt_cookie_store, *params_);
     builder.SetCookieStore(std::move(molt_cookie_store));
   }
 
@@ -3454,6 +3483,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
   net::HttpNetworkSessionParams session_params;
   bool is_quic_force_disabled = false;
   if (network_service_ && network_service_->quic_disabled()) {
+    is_quic_force_disabled = true;
+  }
+  // MoltBrowser: no QUIC for MoltNet's context, whose every connection goes
+  // through Tor's SOCKS5 proxy, which carries none: no QUIC alternative
+  // services kept, no QUIC job tried (one would fail at once and mark the
+  // alternative service broken), no QUIC server information.
+  if (params_->molt_no_quic) {
     is_quic_force_disabled = true;
   }
 
@@ -3643,6 +3679,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
         session->MoltEndIdentity();
       }
     }
+  }
+  // MoltBrowser: MoltNet's TLS sessions, HTTP authentication entries and
+  // server properties keep shares per site (net/base/
+  // molt_site_share_policy.h).
+  if (params_->molt_per_site_network_caches) {
+    if (net::HttpNetworkSession* session =
+            result.url_request_context->http_transaction_factory()
+                ->GetSession()) {
+      session->ssl_client_context()
+          ->ssl_client_session_cache()
+          ->MoltKeepPerSiteShares();
+      session->http_auth_cache()->MoltKeepPerSiteShares();
+    }
+    result.url_request_context->http_server_properties()
+        ->MoltKeepPerSiteShares();
   }
   // MoltBrowser: MoltNet's in-memory HTTP cache keeps limits per site
   // (net/disk_cache/memory/molt_mem_backend_budget_policy.h).

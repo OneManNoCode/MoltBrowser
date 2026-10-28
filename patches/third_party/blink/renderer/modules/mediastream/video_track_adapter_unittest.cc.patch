@@ -1,0 +1,221 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc b/third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc
+index 9fb8a069ae8ee0963f5dbf116f08d160b372dcf3..8b22dc4916766f63e67653220ef8e541b1cab45c 100644
+--- a/third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc
++++ b/third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc
+@@ -1578,4 +1578,210 @@ TEST_F(VideoTrackAdapterEncodedTest,
+   });
+ }
+ 
++// MoltBrowser: the aspect ratio limit of tracks without one.
++constexpr double kNoMaxAspectRatio = std::numeric_limits<double>::max();
++// MoltBrowser: a MoltNet camera track's settings (moltnet_camera.h): its
++// frames have exactly its target size, larger than the input too, rotated
++// with the device. Other tracks' sizes are Chromium's.
++TEST(VideoTrackAdapterTest, MoltNetCameraDesiredSizeIsTheTarget) {
++  test::TaskEnvironment task_environment;
++  VideoTrackAdapterSettings settings(gfx::Size(640, 480), 0.0,
++                                     kNoMaxAspectRatio, 30.0);
++  gfx::Size desired_size;
++  // Chromium's: never larger than the input.
++  EXPECT_TRUE(VideoTrackAdapter::CalculateDesiredSize(
++      false /* is_rotated */, gfx::Size(320, 240), settings, &desired_size));
++  EXPECT_EQ(desired_size, gfx::Size(320, 240));
++
++  settings.set_molt_uniform_camera(/*reports_no_resize=*/false);
++  EXPECT_TRUE(settings.molt_uniform_camera());
++  EXPECT_FALSE(settings.molt_reports_no_resize());
++  for (const gfx::Size input :
++       {gfx::Size(320, 240), gfx::Size(1920, 1080), gfx::Size(0, 0)}) {
++    EXPECT_TRUE(VideoTrackAdapter::CalculateDesiredSize(
++        false /* is_rotated */, input, settings, &desired_size));
++    EXPECT_EQ(desired_size, gfx::Size(640, 480));
++  }
++  EXPECT_TRUE(VideoTrackAdapter::CalculateDesiredSize(
++      true /* is_rotated */, gfx::Size(1280, 720), settings, &desired_size));
++  EXPECT_EQ(desired_size, gfx::Size(480, 640));
++
++  // The mark is part of the settings: a track adapter keeps a marked track
++  // apart from an unmarked one of the same size.
++  EXPECT_FALSE(settings ==
++               VideoTrackAdapterSettings(gfx::Size(640, 480), 0.0,
++                                         kNoMaxAspectRatio, 30.0));
++  VideoTrackAdapterSettings no_resize(gfx::Size(640, 480), 0.0,
++                                      kNoMaxAspectRatio, 30.0);
++  no_resize.set_molt_uniform_camera(/*reports_no_resize=*/true);
++  EXPECT_TRUE(no_resize.molt_reports_no_resize());
++  EXPECT_FALSE(settings == no_resize);
++  VideoTrackAdapterSettings copy = no_resize;
++  EXPECT_TRUE(copy == no_resize);
++}
++
++// MoltBrowser: a MoltNet camera track's frames (moltnet_camera.h) are new
++// I420 frames of exactly the track's size, cropped to its aspect ratio and
++// scaled, up as well as down, where Chromium hands the camera's own frame on
++// with a smaller visible part (which a VideoFrame from
++// MediaStreamTrackProcessor shows as codedWidth and visibleRect). A frame
++// that already is one is handed on as it is.
++TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
++  const double kFrameRate = 30.0;
++  CreateAdapter(media::VideoCaptureFormat(gfx::Size(1280, 720), kFrameRate,
++                                          media::PIXEL_FORMAT_NV12));
++  const gfx::Size kSize(640, 480);
++  VideoTrackAdapterSettings settings(kSize, 0.0, kNoMaxAspectRatio,
++                                     kFrameRate);
++  settings.set_molt_uniform_camera(/*reports_no_resize=*/false);
++  ConfigureTrack(settings);
++
++  scoped_refptr<media::VideoFrame> delivered;
++  SetFrameValidationCallback(base::BindLambdaForTesting(
++      [&](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
++        delivered = std::move(frame);
++      }));
++  SetFrameDroppedCallback(
++      base::BindLambdaForTesting([](media::VideoCaptureFrameDropReason reason) {
++        ADD_FAILURE() << "Dropped, reason " << static_cast<int>(reason);
++      }));
++  auto expect_track_size = [&] {
++    ASSERT_TRUE(delivered);
++    EXPECT_EQ(delivered->format(), media::PIXEL_FORMAT_I420);
++    EXPECT_EQ(delivered->coded_size(), kSize);
++    EXPECT_EQ(delivered->visible_rect(), gfx::Rect(kSize));
++    EXPECT_EQ(delivered->natural_size(), kSize);
++  };
++  // Frames 100 ms apart, which the track's 30 fps keeps.
++  int frame_number = 0;
++  auto next_timestamp = [&] {
++    return base::Milliseconds(100) * ++frame_number;
++  };
++
++  // An HD camera's NV12 frame in a mappable shared image, part of it visible.
++  auto shared_image_frame = CreateTestFrame(
++      gfx::Size(1280, 960), gfx::Rect(0, 120, 1280, 720), gfx::Size(1280, 720),
++      media::VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE,
++      media::PIXEL_FORMAT_NV12, next_timestamp(), test_sii_.get());
++  DeliverAndValidateFrame(shared_image_frame, base::TimeTicks());
++  expect_track_size();
++  EXPECT_EQ(delivered->storage_type(),
++            media::VideoFrame::STORAGE_OWNED_MEMORY);
++  EXPECT_EQ(delivered->timestamp(), shared_image_frame->timestamp());
++
++  // A small camera's I420 frame, scaled up.
++  DeliverAndValidateFrame(
++      CreateTestFrame(gfx::Size(320, 240), gfx::Rect(320, 240),
++                      gfx::Size(320, 240),
++                      media::VideoFrame::STORAGE_OWNED_MEMORY,
++                      media::PIXEL_FORMAT_I420, next_timestamp(),
++                      test_sii_.get()),
++      base::TimeTicks());
++  expect_track_size();
++
++  // A frame that already is one, as it is.
++  auto exact = CreateTestFrame(kSize, gfx::Rect(kSize), kSize,
++                               media::VideoFrame::STORAGE_OWNED_MEMORY,
++                               media::PIXEL_FORMAT_I420, next_timestamp(),
++                               test_sii_.get());
++  DeliverAndValidateFrame(exact, base::TimeTicks());
++  expect_track_size();
++  EXPECT_EQ(delivered, exact);
++
++  // The captured surface size and scale Chromium's fake camera puts on its
++  // frames (its own mode) don't reach the track, converted or not.
++  for (const gfx::Size& camera_size : {gfx::Size(1280, 720), kSize}) {
++    auto fake_camera_frame = CreateTestFrame(
++        camera_size, gfx::Rect(camera_size), camera_size,
++        media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
++        next_timestamp(), test_sii_.get());
++    fake_camera_frame->metadata().source_size = camera_size;
++    fake_camera_frame->metadata().device_scale_factor = 1.0;
++    DeliverAndValidateFrame(fake_camera_frame, base::TimeTicks());
++    expect_track_size();
++    EXPECT_FALSE(delivered->metadata().source_size.has_value());
++    EXPECT_FALSE(delivered->metadata().device_scale_factor.has_value());
++    EXPECT_EQ(fake_camera_frame->metadata().source_size, camera_size);
++  }
++
++  // The crop: a 16:9 frame that is grey in its centred 4:3 part and black
++  // beside it gives a grey frame.
++  auto pillarboxed = CreateTestFrame(
++      gfx::Size(1280, 720), gfx::Rect(1280, 720), gfx::Size(1280, 720),
++      media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
++      next_timestamp(), test_sii_.get());
++  for (size_t plane = 0; plane < 3; ++plane) {
++    base::span<uint8_t> data = pillarboxed->GetWritableVisiblePlaneData(plane);
++    const int rows = pillarboxed->GetVisibleRows(plane);
++    const int columns = pillarboxed->GetVisibleRowBytes(plane);
++    // The grey part, 160 to 1120 in luma samples.
++    const int grey_begin = plane == 0 ? 160 : 80;
++    const int grey_end = plane == 0 ? 1120 : 560;
++    for (int y = 0; y < rows; ++y) {
++      for (int x = 0; x < columns; ++x) {
++        data[y * pillarboxed->stride(plane) + x] =
++            plane != 0 ? 128 : (x >= grey_begin && x < grey_end ? 200 : 0);
++      }
++    }
++  }
++  DeliverAndValidateFrame(pillarboxed, base::TimeTicks());
++  expect_track_size();
++  {
++    base::span<const uint8_t> luma = delivered->GetVisiblePlaneData(0);
++    int not_grey = 0;
++    for (int y = 0; y < delivered->GetVisibleRows(0); ++y) {
++      for (int x = 0; x < delivered->GetVisibleRowBytes(0); ++x) {
++        not_grey += luma[y * delivered->stride(0) + x] != 200;
++      }
++    }
++    EXPECT_EQ(not_grey, 0);
++  }
++
++  // The same frames for a track of another size.
++  const gfx::Size kHd(1280, 720);
++  VideoTrackAdapterSettings hd(kHd, 0.0, kNoMaxAspectRatio, kFrameRate);
++  hd.set_molt_uniform_camera(/*reports_no_resize=*/true);
++  ConfigureTrack(hd);
++  DeliverAndValidateFrame(
++      CreateTestFrame(gfx::Size(640, 480), gfx::Rect(640, 480),
++                      gfx::Size(640, 480),
++                      media::VideoFrame::STORAGE_OWNED_MEMORY,
++                      media::PIXEL_FORMAT_I420, next_timestamp(),
++                      test_sii_.get()),
++      base::TimeTicks());
++  ASSERT_TRUE(delivered);
++  EXPECT_EQ(delivered->coded_size(), kHd);
++  EXPECT_EQ(delivered->visible_rect(), gfx::Rect(kHd));
++  EXPECT_EQ(delivered->natural_size(), kHd);
++}
++
++// MoltBrowser: a frame a MoltNet camera track can't read (a texture that
++// can't be mapped) is dropped, never handed on in the camera's own size.
++TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraDropsFramesItCannotRead) {
++  const double kFrameRate = 30.0;
++  CreateAdapter(media::VideoCaptureFormat(gfx::Size(1280, 720), kFrameRate,
++                                          media::PIXEL_FORMAT_NV12));
++  VideoTrackAdapterSettings settings(gfx::Size(640, 480), 0.0,
++                                     kNoMaxAspectRatio, kFrameRate);
++  settings.set_molt_uniform_camera(/*reports_no_resize=*/false);
++  ConfigureTrack(settings);
++
++  std::optional<media::VideoCaptureFrameDropReason> dropped;
++  SetFrameValidationCallback(base::BindLambdaForTesting(
++      [](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
++        ADD_FAILURE() << "Delivered " << frame->AsHumanReadableString();
++      }));
++  SetFrameDroppedCallback(base::BindLambdaForTesting(
++      [&](media::VideoCaptureFrameDropReason reason) { dropped = reason; }));
++  DeliverAndValidateFrame(
++      CreateTestFrame(gfx::Size(1280, 720), gfx::Rect(1280, 720),
++                      gfx::Size(1280, 720), media::VideoFrame::STORAGE_OPAQUE,
++                      media::PIXEL_FORMAT_NV12, base::Milliseconds(100),
++                      test_sii_.get()),
++      base::TimeTicks());
++  EXPECT_EQ(dropped,
++            media::VideoCaptureFrameDropReason::
++                kResolutionAdapterFrameIsNotMappable);
++}
++
+ }  // namespace blink

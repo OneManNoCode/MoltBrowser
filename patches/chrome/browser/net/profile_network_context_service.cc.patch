@@ -5,19 +5,20 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
-index 028fe9924cdbfe586c8a0029ac27d53746f995ff..0352dd11d39de747187a9582b1296fb1d92e903d 100644
+index 028fe9924cdbfe586c8a0029ac27d53746f995ff..eb8ec6e4c34bb97d564a4ba0608a3c0c3aeb46eb 100644
 --- a/chrome/browser/net/profile_network_context_service.cc
 +++ b/chrome/browser/net/profile_network_context_service.cc
-@@ -37,6 +37,8 @@
+@@ -37,6 +37,9 @@
  #include "chrome/browser/content_settings/cookie_settings_factory.h"
  #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
  #include "chrome/browser/domain_reliability/service_factory.h"
 +#include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_nonce_storage.h"  // MoltBrowser
 +#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/net/system_network_context_manager.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/signin/signin_util.h"
-@@ -220,6 +222,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
+@@ -220,6 +223,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
      return true;
    }
  
@@ -32,7 +33,7 @@ index 028fe9924cdbfe586c8a0029ac27d53746f995ff..0352dd11d39de747187a9582b1296fb1
    // Non-primary OTR profiles are not used to create browser windows and are
    // only technical means for a task that does not need to leave state after
    // it's completed.
-@@ -255,7 +265,10 @@ void UpdateAntiAbuseSettings(Profile* profile) {
+@@ -255,7 +266,10 @@ void UpdateAntiAbuseSettings(Profile* profile) {
    ContentSetting content_setting =
        HostContentSettingsMapFactory::GetForProfile(profile)
            ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);
@@ -44,7 +45,7 @@ index 028fe9924cdbfe586c8a0029ac27d53746f995ff..0352dd11d39de747187a9582b1296fb1
    profile->ForEachLoadedStoragePartition(
        [&](content::StoragePartition* storage_partition) {
          storage_partition->GetNetworkContext()->SetBlockTrustTokens(
-@@ -1054,6 +1067,13 @@ ProfileNetworkContextService::GetCertificatePolicyForView() {
+@@ -1054,6 +1068,13 @@ ProfileNetworkContextService::GetCertificatePolicyForView() {
  
  bool ProfileNetworkContextService::ShouldSplitAuthCacheByNetworkIsolationKey()
      const {
@@ -58,7 +59,7 @@ index 028fe9924cdbfe586c8a0029ac27d53746f995ff..0352dd11d39de747187a9582b1296fb1
    if (profile_->GetPrefs()->GetBoolean(
            prefs::kGloballyScopeHTTPAuthCacheEnabled)) {
      return false;
-@@ -1369,6 +1389,15 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+@@ -1369,6 +1390,26 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
          net::HttpAuthPreferences::DISALLOW_DEFAULT_CREDENTIALS;
    }
  
@@ -70,11 +71,22 @@ index 028fe9924cdbfe586c8a0029ac27d53746f995ff..0352dd11d39de747187a9582b1296fb1
 +  molt_ai::tor::ApplyMoltNetNetworkContextSettings(
 +      molt_ai::tor::IsMoltNetProfile(profile_), *network_context_params,
 +      *cert_verifier_creation_params);
++  // MoltBrowser: a MoltNet network context made again for this partition
++  // (the network service restarted; StoragePartitionImpl::
++  // InitNetworkContext() asks for the parameters each time it makes one)
++  // refuses from the start the nonces its earlier context was told to
++  // refuse, and not yet to forget (molt_net_nonce_storage.h). The path is
++  // the partition's, as StoragePartitionImpl makes it.
++  if (molt_ai::tor::IsMoltNetProfile(profile_)) {
++    network_context_params->molt_refused_nonces =
++        molt_ai::tor::MoltNetRefusedNonces(
++            profile_, profile_->GetPath().Append(relative_partition_path));
++  }
 +
    network_context_params->cookie_manager_params =
        CreateCookieManagerParams(profile_, *cookie_settings_);
  
-@@ -1567,15 +1596,21 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+@@ -1567,15 +1608,21 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
    ContentSetting anti_abuse_content_setting =
        HostContentSettingsMapFactory::GetForProfile(profile_)
            ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);

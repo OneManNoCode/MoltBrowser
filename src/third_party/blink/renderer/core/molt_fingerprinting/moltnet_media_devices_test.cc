@@ -4,6 +4,7 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"
 
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -20,6 +21,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_values.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 
 namespace blink::molt_fingerprinting {
@@ -322,6 +324,28 @@ TEST_F(MoltNetMediaDevicesTest, TracksGetTheSameNames) {
   EXPECT_EQ(UniformName(normal), "Headset Microphone (Jabra Evolve2 65)");
   UseUniformGroup(normal);
   EXPECT_FALSE(normal.group_id.has_value());
+}
+
+// setSinkId(): a media element looks Windows' communications device up as an
+// ID no device has, so the browser refuses it as a device that isn't there;
+// AudioContext's own list of outputs leaves it out. Other IDs, and normal
+// windows, are unchanged.
+TEST_F(MoltNetMediaDevicesTest, CommunicationsOutputIsRefused) {
+  const String unlisted = OutputDeviceIdToLookUp("communications");
+  EXPECT_EQ(unlisted, String(moltnet::kUnlistedDeviceId));
+  EXPECT_EQ(OutputDeviceIdToLookUp("default"), "default");
+  EXPECT_EQ(OutputDeviceIdToLookUp(""), "");
+  const String device = String::FromUtf8(std::string(64, 'b'));
+  EXPECT_EQ(OutputDeviceIdToLookUp(device), device);
+  const WebMediaDeviceInfo communications =
+      Device("communications", "Communications - Speakers", "g1");
+  EXPECT_FALSE(ListsMediaDevice(mojom::MediaDeviceType::kMediaAudioOutput,
+                                communications));
+
+  SetMoltNetMediaForTesting(false);
+  EXPECT_EQ(OutputDeviceIdToLookUp("communications"), "communications");
+  EXPECT_TRUE(ListsMediaDevice(mojom::MediaDeviceType::kMediaAudioOutput,
+                               communications));
 }
 
 }  // namespace

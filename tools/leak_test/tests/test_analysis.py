@@ -166,6 +166,13 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['uniform.audio.mic_remote_only'], 'FAIL')
         self.assertEqual(status['uniform.audio.mic_remote_only_settings'],
                          'PASS')
+        # The camera's menu formats, and a frame of the device's own size.
+        for key in ('video.camera_settings', 'video.camera_capabilities',
+                    'video.camera_hd_settings', 'video.camera_hd_frame',
+                    'video.camera_device_capabilities',
+                    'video.camera_overconstrained'):
+            self.assertEqual(status['uniform.' + key], 'PASS', key)
+        self.assertEqual(status['uniform.video.camera_frame'], 'FAIL')
         self.assertEqual(rep['arch'], 'x86_64')
 
     def test_report_rebuilds_into_another_directory(self):
@@ -940,7 +947,17 @@ class Uniformity(unittest.TestCase):
                                        'track': True,
                                        'communications': False},
                    # Recorded only: the echo canceller hears the tones.
-                   'audio.mic_playback': {'hash': 'other', 'frames': 480}}}
+                   'audio.mic_playback': {'hash': 'other', 'frames': 480},
+                   # The camera's menu formats.
+                   'video.camera_settings': dict(ex.CAMERA_SETTINGS),
+                   'video.camera_capabilities': dict(ex.CAMERA_CAPABILITIES),
+                   'video.camera_frame': dict(ex.CAMERA_FRAME),
+                   'video.camera_hd_settings': dict(ex.CAMERA_HD_SETTINGS),
+                   'video.camera_hd_frame': dict(ex.CAMERA_HD_FRAME),
+                   'video.camera_device_capabilities': [
+                       dict(c) for c in ex.CAMERA_DEVICE_CAPABILITIES],
+                   'video.camera_overconstrained': dict(
+                       ex.CAMERA_OVERCONSTRAINED)}}
         res = uniformity.check_record(rec, 'Linux', 'x86_64')
         self.assertEqual(sorted(r['key'] for r in res),
                          sorted(r[0] for r in ex.MIC_RULES))
@@ -968,13 +985,28 @@ class Uniformity(unittest.TestCase):
         values['audio.mic_device_ranges'].append(
             dict(ex.MIC_FORMAT_RANGES, channelCount=[1, 4]))
         values['audio.mic_names']['labels'] = False
+        # The camera's own modes: its largest size and rate in the
+        # capabilities, its native mode in the settings (resizeMode "none"
+        # at 20 fps), its frame wrapped with a smaller visible part, Full HD
+        # granted.
+        values['video.camera_capabilities']['width'] = [1, 3840]
+        values['video.camera_settings']['frameRate'] = 20
+        values['video.camera_frame']['visibleRect'] = [160, 0, 960, 720]
+        values['video.camera_hd_settings'].update(width=1920, height=1080)
+        values['video.camera_hd_frame']['codedWidth'] = 1920
+        values['video.camera_device_capabilities'][0]['frameRate'] = [1, 20]
+        values['video.camera_overconstrained'] = 'granted'
         res = {r['key']: r['status'] for r in uniformity.check_record(
             rec, 'Linux')}
         for key in ('audio.mic_settings', 'audio.mic_system_aec',
                     'audio.mic_capabilities', 'audio.mic_remote_only',
                     'audio.mic_remote_only_settings', 'audio.mic_format',
                     'audio.mic_format_ranges', 'audio.mic_device_ranges',
-                    'audio.mic_names'):
+                    'audio.mic_names', 'video.camera_settings',
+                    'video.camera_capabilities', 'video.camera_frame',
+                    'video.camera_hd_settings', 'video.camera_hd_frame',
+                    'video.camera_device_capabilities',
+                    'video.camera_overconstrained'):
             self.assertEqual(res[key], 'FAIL', key)
         self.assertEqual(res['audio.mic_system_aec_settings'], 'PASS')
         # A case whose getUserMedia() failed is reported, not compared.
@@ -991,6 +1023,8 @@ class Uniformity(unittest.TestCase):
             fp = f.read()
         with open(os.path.join(pages, 'mic.js')) as f:
             mic = f.read()
+        with open(os.path.join(pages, 'camera.js')) as f:
+            camera = f.read()
         for key in ('cpu.wasm_simd', 'cpu.float16_nan',
                     'cpu.float16_nan_canonical', 'pixels.jxl',
                     'audio.stretched', 'audio.subnormal_graph',
@@ -1005,6 +1039,12 @@ class Uniformity(unittest.TestCase):
                     'audio.mic_remote_only_settings', 'audio.mic_playback',
                     'audio.mic_playback_tones'):
             self.assertIn("'%s'" % key, mic, key)
+        # The camera's values, every one a rule.
+        camera_keys = [r[0] for r in ex.MIC_RULES
+                       if r[0].startswith('video.camera_')]
+        self.assertEqual(len(camera_keys), 7)
+        for key in camera_keys:
+            self.assertIn("'%s'" % key, camera, key)
         for key in ('audio.stretched', 'pixels.jxl', 'cpu.float16_nan',
                     'audio.mic_processed', 'audio.subnormal_graph',
                     'audio.subnormal_resampled'):
@@ -1022,6 +1062,13 @@ class Uniformity(unittest.TestCase):
         self.assertIn('mlStretchedAudio()', source)
         self.assertLess(source.index('mlMicProcessing()'),
                         source.index('mlMicPlayback()'))
+        # The camera's values come after the microphone's cases, from
+        # mic.html, which loads camera.js.
+        self.assertLess(source.index('mlMicPlayback()'),
+                        source.index('mlCameraValues()'))
+        self.assertIn('window.mlCameraValues', camera)
+        with open(os.path.join(os.path.dirname(pages), 'mic.html')) as f:
+            self.assertIn('/static/camera.js', f.read())
         self.assertIn('window.mlStretchedAudio', fp)
         self.assertIn('window.mlMicProcessing', mic)
         self.assertIn('window.mlMicPlayback', mic)

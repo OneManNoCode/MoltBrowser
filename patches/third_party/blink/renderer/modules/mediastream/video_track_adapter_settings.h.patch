@@ -1,0 +1,36 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h b/third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h
+index f69fc9a93ea090f7530092bfb9911a82aa2ae04e..9999234d98d542e9b7bd427d82c42e89572bc88b 100644
+--- a/third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h
++++ b/third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h
+@@ -51,11 +51,25 @@ class MODULES_EXPORT VideoTrackAdapterSettings {
+     max_frame_rate_ = max_frame_rate;
+   }
+ 
++  // MoltBrowser: a MoltNet camera track's settings
++  // (molt_fingerprinting::UniformCameraSettings(), moltnet_camera.h): its
++  // frames have exactly target_size(), and its getSettings() reports
++  // resizeMode "none" when `reports_no_resize`.
++  bool molt_uniform_camera() const { return molt_uniform_camera_; }
++  bool molt_reports_no_resize() const { return molt_reports_no_resize_; }
++  void set_molt_uniform_camera(bool reports_no_resize) {
++    molt_uniform_camera_ = true;
++    molt_reports_no_resize_ = reports_no_resize;
++  }
++
+  private:
+   std::optional<gfx::Size> target_size_;
+   double min_aspect_ratio_;
+   double max_aspect_ratio_;
+   std::optional<double> max_frame_rate_;
++  // MoltBrowser: see molt_uniform_camera().
++  bool molt_uniform_camera_ = false;
++  bool molt_reports_no_resize_ = false;
+ };
+ 
+ }  // namespace blink

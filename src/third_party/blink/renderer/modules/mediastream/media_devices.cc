@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/modules/mediastream/crop_target.h"
 #include "third_party/blink/renderer/modules/mediastream/input_device_info.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/navigator_media_stream.h"
 #include "third_party/blink/renderer/modules/mediastream/restriction_target.h"
 #include "third_party/blink/renderer/modules/mediastream/scoped_media_stream_tracer.h"
@@ -1491,6 +1492,10 @@ void MediaDevices::DevicesEnumerated(
                 String::FromUtf8(device_info.group_id), device_type);
         if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
             !video_input_capabilities.empty()) {
+          // MoltBrowser: a MoltNet page's cameras show the menu formats they
+          // reach (moltnet_camera.h).
+          molt_fingerprinting::UseUniformCameraFormats(
+              *video_input_capabilities[j]);
           input_device_info->SetVideoInputCapabilities(
               std::move(video_input_capabilities[j]));
         }

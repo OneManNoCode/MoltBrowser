@@ -21,7 +21,8 @@
 // TMPDIR, PATH; Windows: TEMP, TMP, SystemRoot, SystemDrive, windir, Path).
 //
 //   Linux: no_new_privs, a new session, Landlock and seccomp-bpf, applied
-//     between fork and exec (helper_sandbox_linux.h). A layer the kernel
+//     between fork and exec (helper_sandbox_linux.h), and no file larger
+//     than 64 MiB or core dump. A layer the kernel
 //     lacks is skipped and logged once (e.g. Landlock before Linux 5.13:
 //     then files are not confined); one the kernel has but that can't be
 //     set up fails the run.

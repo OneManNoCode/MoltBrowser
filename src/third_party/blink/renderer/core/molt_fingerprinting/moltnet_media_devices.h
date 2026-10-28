@@ -97,6 +97,15 @@ CORE_EXPORT bool ListsMediaDevice(mojom::MediaDeviceType kind,
                                   const WebMediaDeviceInfo& device);
 CORE_EXPORT bool ListsCaptureDevice(const String& device_id);
 
+// The ID a media element's setSinkId() looks the output device `sink_id` up
+// by: in MoltNet, an ID no device has for a device MoltNet doesn't list
+// (Windows' communications device), so that the browser refuses it as it
+// refuses any device that isn't there (moltnet::OutputDeviceIdToLookUp()).
+// AudioContext.setSinkId() checks IDs against its own copy of the list,
+// which leaves such a device out (ListsMediaDevice(); AudioContext::
+// OnDevicesChanged). Elsewhere `sink_id` itself.
+CORE_EXPORT String OutputDeviceIdToLookUp(const String& sink_id);
+
 // enumerateDevices()' entry `device` of `kind` with MoltNet's label (where
 // Chromium shows one) and group.
 CORE_EXPORT void UseUniformNames(mojom::MediaDeviceType kind,

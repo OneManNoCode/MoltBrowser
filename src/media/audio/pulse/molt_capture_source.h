@@ -28,7 +28,12 @@
 //                   PA_SOURCE_HARDWARE flag).
 // A source without PA_SOURCE_HARDWARE but with neither sign (a null source,
 // a network tunnel, an application's virtual microphone) isn't processing a
-// microphone, and is recorded as it is.
+// microphone, and is recorded as it is. So is a filter source under which
+// the server names no microphone: one that remaps a sink's monitor (a
+// virtual microphone playing applications' output), a loopback fed by a
+// virtual sink (it has no recording stream), one whose recording stream
+// isn't linked yet. A stream never records from another device than the
+// one asked for.
 
 #ifndef MEDIA_AUDIO_PULSE_MOLT_CAPTURE_SOURCE_H_
 #define MEDIA_AUDIO_PULSE_MOLT_CAPTURE_SOURCE_H_
@@ -65,9 +70,10 @@ bool IsFilterSource(const SourceInfo& source);
 // server's default source when the page asked for the default device):
 // `requested` itself unless it is a filter source; then the source it filters
 // (device.master_device, or the source that a recording stream in its link
-// group reads), followed through up to four filters; and when that can't be
-// told, the first hardware source that isn't a monitor or a filter. Returns
-// `requested` when nothing better is found (also when it isn't listed).
+// group reads), followed through up to four filters, when that is a source
+// that is neither a filter nor a sink's monitor. Returns `requested` when
+// the server doesn't tell such a source (also when `requested` isn't
+// listed, the chain ends at a monitor, or loops): never a guess.
 std::string CaptureSourceFor(std::string_view requested,
                              std::span<const SourceInfo> sources,
                              std::span<const SourceOutputInfo> outputs);

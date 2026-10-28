@@ -21,11 +21,17 @@
 #include <cstdint>
 #include <cstring>
 #include <ios>
+#include <memory>
 #include <optional>
 #include <vector>
 
+#include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
+#include "base/time/time.h"
+#include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
+#include "media/base/channel_layout.h"
 #include "media/base/molt_portable_media.h"
 #include "media/webrtc/audio_processor.h"
 #include "media/webrtc/helpers.h"
@@ -368,6 +374,108 @@ TEST(MoltCpuIndependentProcessingTest, OneOutputFormatForEveryDevice) {
   EXPECT_EQ(AudioProcessor::GetDefaultOutputFormat(devices[1], chromium)
                 .channels(),
             2);
+}
+
+// What an AudioProcessor delivers: a digest, how many buffers, and whether
+// each was in `output`'s format.
+struct Delivery {
+  explicit Delivery(const AudioParameters& format) : output(format) {}
+  void OnAudio(const AudioBus& bus, base::TimeTicks, std::optional<double>) {
+    formats_match = formats_match && bus.channels() == output.channels() &&
+                    bus.frames() == output.frames_per_buffer();
+    for (int c = 0; c < bus.channels(); ++c) {
+      Fnv(hash, bus.channel(c).data(), bus.frames());
+    }
+    ++buffers;
+  }
+  const AudioParameters output;
+  uint64_t hash = 1469598103934665603ull;
+  int buffers = 0;
+  bool formats_match = true;
+};
+
+// Two seconds of a talker captured by `device` (a layout of several
+// channels, each the talker at another level, with noise), in the device's
+// 10 ms buffers, through an AudioProcessor with `settings` from `input` to
+// `output`; when `downmix_first`, each buffer is down-mixed to the output's
+// channels first and `input` is that layout. Returns a digest of what the
+// processor delivers, and checks its format.
+uint64_t ProcessDevice(const AudioProcessingSettings& settings,
+                       const AudioParameters& device,
+                       const AudioParameters& input,
+                       const AudioParameters& output,
+                       bool downmix_first) {
+  Delivery delivery(output);
+  std::unique_ptr<AudioProcessor> processor = AudioProcessor::Create(
+      base::BindRepeating(&Delivery::OnAudio, base::Unretained(&delivery)),
+      base::DoNothing(), settings, input, output, nullptr);
+  PortableCaptureDownmix downmix(device, output.channels());
+  Talker talker{9000000u, 9000, 5000};
+  Lcg noise{4242};
+  auto bus = AudioBus::Create(device.channels(), device.frames_per_buffer());
+  const base::TimeTicks start = base::TimeTicks::Now();
+  for (int b = 0; b < 200; ++b) {
+    for (int f = 0; f < bus->frames(); ++f) {
+      const float s = talker.Sample();
+      for (int c = 0; c < bus->channels(); ++c) {
+        bus->channel(c)[f] =
+            Quantize((1.0f - 0.1f * c) * s + 0.002f * noise.Uniform());
+      }
+    }
+    processor->ProcessCapturedAudio(
+        downmix_first ? downmix.Downmix(*bus) : *bus,
+        start + base::Milliseconds(10 * b), output.channels(), 1.0);
+  }
+  EXPECT_GT(delivery.buffers, 150);
+  EXPECT_TRUE(delivery.formats_match);
+  return delivery.hash;
+}
+
+// A device of another layout than mono, stereo and discrete (Windows' QUAD
+// and 5.1 microphone arrays): Chromium can't process it. A CPU-independent
+// stream opens it in its own layout, and its processing down-mixes it to the
+// stream's channels first: the stream gets what processing the down-mixed
+// samples gives, in its one format.
+TEST(MoltCpuIndependentProcessingTest, DownmixesOtherLayouts) {
+  for (const ChannelLayout layout : {CHANNEL_LAYOUT_QUAD, CHANNEL_LAYOUT_5_1}) {
+    const AudioParameters device(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                 ChannelLayoutConfig::FromLayout(layout),
+                                 44100, 441);
+    EXPECT_FALSE(AudioProcessor::ComputeInputFormat(device, Settings(false))
+                     .has_value());
+    const std::optional<AudioParameters> opened =
+        AudioProcessor::ComputeInputFormat(device, Settings(true));
+    ASSERT_TRUE(opened.has_value());
+    EXPECT_EQ(opened->channel_layout(), layout);
+    EXPECT_EQ(opened->channels(), device.channels());
+    EXPECT_EQ(opened->sample_rate(), 44100);
+
+    for (const bool processing : {false, true}) {
+      for (const bool stereo : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << ChannelLayoutToString(layout) << " processing="
+                     << processing << " stereo=" << stereo);
+        AudioProcessingSettings settings = Settings(true);
+        settings.echo_cancellation = processing;
+        settings.noise_suppression = processing;
+        settings.automatic_gain_control = processing;
+        settings.multi_channel_capture_processing = stereo;
+        const AudioParameters output =
+            AudioProcessor::GetDefaultOutputFormat(*opened, settings);
+        ASSERT_EQ(output.channels(), stereo ? 2 : 1);
+        ASSERT_EQ(output.sample_rate(), 48000);
+        const AudioParameters downmixed(
+            opened->format(),
+            stereo ? ChannelLayoutConfig::Stereo()
+                   : ChannelLayoutConfig::Mono(),
+            opened->sample_rate(), opened->frames_per_buffer());
+        EXPECT_EQ(ProcessDevice(settings, *opened, *opened, output,
+                                /*downmix_first=*/false),
+                  ProcessDevice(settings, *opened, downmixed, output,
+                                /*downmix_first=*/true));
+      }
+    }
+  }
 }
 
 }  // namespace

@@ -22,6 +22,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/features.h"
+#include "net/base/molt_site_share_policy.h"  // MoltBrowser
 #include "net/base/network_anonymization_key.h"
 #include "net/base/url_util.h"
 #include "net/http/http_network_session.h"
@@ -125,13 +126,18 @@ bool HttpServerProperties::QuicServerInfoMapKey::operator==(
 }
 
 HttpServerProperties::ServerInfoMap::ServerInfoMap()
-    : base::LRUCache<ServerInfoMapKey, ServerInfo>(kMaxServerInfoEntries) {}
+    : MoltServerInfoMapBase(kMaxServerInfoEntries) {}
 
 HttpServerProperties::ServerInfoMap::iterator
 HttpServerProperties::ServerInfoMap::GetOrPut(const ServerInfoMapKey& key) {
   auto it = Get(key);
   if (it != end())
     return it;
+  // MoltBrowser: with per-site shares, room is made inside the key's own
+  // site, or the entry isn't kept (net/base/molt_site_share_policy.h).
+  if (!MoltMakeRoomFor(key)) {
+    return end();
+  }
   return Put(key, ServerInfo());
 }
 
@@ -253,9 +259,17 @@ void HttpServerProperties::MoltClearForNonce(
       base::EraseIf(canonical_server_info_map_, [&nonce](const auto& entry) {
         return entry.first.network_anonymization_key.GetNonce() == nonce;
       }) > 0;
+  changed |= broken_alternative_services_.MoltClearForNonce(nonce);
   if (changed) {
     MaybeQueueWriteProperties();
   }
+}
+
+// MoltBrowser: see the header.
+void HttpServerProperties::MoltKeepPerSiteShares() {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  server_info_map_.MoltKeepPerSiteShares(kMoltServerInfoShares);
+  servers_requiring_http_11_.MoltKeepPerSiteShares(kMoltHttp11RequiredShares);
 }
 
 bool HttpServerProperties::SupportsRequestPriority(
@@ -311,6 +325,10 @@ void HttpServerProperties::SetSupportsSpdy(
 
   auto server_info = server_info_map_.GetOrPut(
       CreateServerInfoKey(server, network_anonymization_key));
+  // MoltBrowser: not kept (per-site shares, GetOrPut()).
+  if (server_info == server_info_map_.end()) {
+    return;
+  }
   // If value is already the same as `supports_spdy`, or value is unset and
   // `supports_spdy` is false, don't queue a write.
   bool queue_write =
@@ -857,8 +875,14 @@ void HttpServerProperties::SetHTTP11RequiredInternal(
   if (server.host().empty())
     return;
 
-  servers_requiring_http_11_.Put(
-      CreateServerInfoKey(std::move(server), network_anonymization_key));
+  // MoltBrowser: with per-site shares, room is made inside the key's own
+  // site, or the entry isn't kept (net/base/molt_site_share_policy.h).
+  ServerInfoMapKey molt_key =
+      CreateServerInfoKey(std::move(server), network_anonymization_key);
+  if (!servers_requiring_http_11_.MoltMakeRoomFor(molt_key)) {
+    return;
+  }
+  servers_requiring_http_11_.Put(std::move(molt_key));
   // No need to call MaybeQueueWriteProperties(), as this information is not
   // persisted to preferences.
 }
@@ -1032,6 +1056,10 @@ void HttpServerProperties::SetAlternativeServicesInternal(
 
   auto it = server_info_map_.GetOrPut(
       CreateServerInfoKey(origin, network_anonymization_key));
+  // MoltBrowser: not kept (per-site shares, GetOrPut()).
+  if (it == server_info_map_.end()) {
+    return;
+  }
   bool need_update_pref = true;
   if (it->second.alternative_services.has_value()) {
     DCHECK(!it->second.empty());
@@ -1109,6 +1137,10 @@ void HttpServerProperties::SetServerNetworkStatsInternal(
 
   auto server_info = server_info_map_.GetOrPut(
       CreateServerInfoKey(std::move(server), network_anonymization_key));
+  // MoltBrowser: not kept (per-site shares, GetOrPut()).
+  if (server_info == server_info_map_.end()) {
+    return;
+  }
   bool changed = !server_info->second.server_network_stats.has_value() ||
                  server_info->second.server_network_stats.value() != stats;
 

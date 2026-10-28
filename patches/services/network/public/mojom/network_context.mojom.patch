@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 5eb7be85b1897244caed5096c5e58922e964aae1..57aed16166b7e668fb40ba32c03149c6add45ed9 100644
+index 5eb7be85b1897244caed5096c5e58922e964aae1..0511e60fd18317a5146ae178d51d8248854e79c9 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -229,6 +229,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,7 +24,7 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..57aed16166b7e668fb40ba32c03149c6
  };
  
  struct NetworkContextFilePaths {
-@@ -661,6 +670,88 @@ struct NetworkContextParams {
+@@ -661,6 +670,105 @@ struct NetworkContextParams {
    // do not have an associated `URLLoaderFactory`.
    pending_remote<URLLoaderNetworkServiceObserver>?
        device_bound_sessions_network_observer;
@@ -97,6 +97,23 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..57aed16166b7e668fb40ba32c03149c6
 +  // molt_nonce_cookie_policy.h) and acts on MoltDropNonce()
 +  // (services/network/molt_nonce_drop_policy.h).
 +  [MinVersion=1] bool molt_nonce_limits = false;
++  // With molt_nonce_limits: the nonces this context refuses from the start,
++  // as if it had been sent MoltDropNonce(nonce, kClosed) for each before
++  // anything else. The browser sets them for a context it makes again for a
++  // storage partition (the network service restarted): what the partition's
++  // earlier context had been told to refuse and not yet to forget
++  // (chrome/browser/molt_ai/tor/molt_net_nonce_storage.h).
++  [MinVersion=1] array<mojo_base.mojom.UnguessableToken>? molt_refused_nonces;
++  // If true, this context's fixed-size network caches (TLS sessions, HTTP
++  // authentication entries, server properties, CORS preflight results,
++  // compression dictionaries and the storages that hold them) keep shares
++  // per top-level site: a site's entries are evicted only to make room for
++  // its own, never for another site's, nor for memory pressure
++  // (net/base/molt_site_share_policy.h).
++  [MinVersion=1] bool molt_per_site_network_caches = false;
++  // If true, this context uses no QUIC, as with the QuicAllowed policy off:
++  // all its connections go through a SOCKS5 proxy, which carries none.
++  [MinVersion=1] bool molt_no_quic = false;
 +};
 +
 +// MoltBrowser: what NetworkContext.MoltDropNonce() drops of what a page's
@@ -113,7 +130,7 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..57aed16166b7e668fb40ba32c03149c6
  };
  
  struct NetworkConditions {
-@@ -1942,6 +2033,11 @@ interface NetworkContext {
+@@ -1942,6 +2050,11 @@ interface NetworkContext {
    ClearNetworkRestrictions(
      array<mojo_base.mojom.UnguessableToken> network_restrictions_ids);
  

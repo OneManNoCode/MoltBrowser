@@ -749,6 +749,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context) override;  // MoltBrowser
   bool ShouldScheduleBackgroundFetchesPerSite(
       content::BrowserContext* browser_context) override;  // MoltBrowser
+  bool ShouldProcessAudioCaptureCpuIndependently(
+      content::BrowserContext* browser_context) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

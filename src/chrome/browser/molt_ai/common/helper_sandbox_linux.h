@@ -140,6 +140,13 @@ std::string_view SeccompArchName();
 // closes it before exec.
 inline constexpr int kChildRulesetFd = 3;
 
+// The largest file a helper may write (RLIMIT_FSIZE; past it the write
+// fails and SIGXFSZ ends the helper), and it writes no core dump
+// (RLIMIT_CORE 0): a helper a hostile input took over can't fill the disk
+// before its deadline. tesseract and whisper-cli write a text file of at
+// most a few hundred KiB.
+inline constexpr uint64_t kMaxHelperFileBytes = 64ULL << 20;
+
 // Exit status and stderr prefix of a child whose sandbox setup failed (the
 // helper never ran).
 inline constexpr int kSetupFailedExitCode = 125;
@@ -175,7 +182,8 @@ struct Prepared {
 bool Prepare(const Policy& policy, Prepared* prepared, std::string* error);
 
 // Child side, after fork() and before exec(), with the ruleset at
-// kChildRulesetFd: new session, no_new_privs, Landlock (adding /proc/self),
+// kChildRulesetFd: new session, the file size and core dump limits
+// (kMaxHelperFileBytes), no_new_privs, Landlock (adding /proc/self),
 // seccomp. Async-signal-safe: raw system calls only, no allocation. If a
 // step fails it writes kSetupFailedMarker + the step to stderr and calls
 // _exit(kSetupFailedExitCode).

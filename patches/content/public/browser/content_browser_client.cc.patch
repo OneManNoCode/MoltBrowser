@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..9b344aa9ce96ec27c8907d74a16ef45524adf0f3 100644
+index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..ac8a16fdadb1953b4516b23443f8506fb6471d8b 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1110,6 +1110,66 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1110,6 +1110,71 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -70,6 +70,11 @@ index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..9b344aa9ce96ec27c8907d74a16ef455
 +ContentBrowserClient::GetBackgroundFetchGrowthBeyondFloorCallback(
 +    BrowserContext*) {
 +  return base::RepeatingClosure();
++}
++
++bool ContentBrowserClient::ShouldProcessAudioCaptureCpuIndependently(
++    BrowserContext*) {
++  return false;
 +}
 +
  ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;

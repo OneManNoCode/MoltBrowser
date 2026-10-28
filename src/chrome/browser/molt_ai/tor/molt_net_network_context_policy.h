@@ -221,6 +221,31 @@ struct MoltNetNetworkContextSettings {
   // services/network/molt_nonce_drop_policy.h, molt_net_nonce_storage.h).
   bool nonce_limits = false;
 
+  // Fixed-size network caches: Chromium keeps the TLS sessions (1024), HTTP
+  // authentication entries (20), servers known to support HTTP/2 (500) and
+  // to require HTTP/1.1 (100), CORS preflight results (1024), and compression
+  // dictionaries and the storages kept for them (10, and a size from the
+  // machine's memory) for all sites together, dropping the least recently
+  // used entry of any site (preflight results: some at random) for a new
+  // one. One site could fill them to evict another's entries, which the
+  // other's server sees on the next visit: a TLS session not resumed, an
+  // authentication prompt again, parallel connections, a preflight sent
+  // again, a dictionary no longer offered. When true, each site has shares
+  // of its own and evicts only its own entries, nothing is evicted for
+  // memory pressure, and the dictionaries' limits are fixed
+  // (net/base/molt_site_share_policy.h).
+  bool per_site_network_caches = false;
+
+  // QUIC: every connection of MoltNet's context goes through Tor's SOCKS5
+  // proxy, which carries no QUIC. Chromium still keeps the QUIC alternative
+  // services servers announce and, for each, tries a QUIC job beside the
+  // connection, which fails at once and marks the alternative service
+  // broken (a record kept under the request's network key, for minutes to
+  // days). When true, the context uses no QUIC at all, as with the
+  // QuicAllowed policy off: no QUIC alternative service is kept, no job
+  // tried, no mark made. Tor Browser turns HTTP/3 off as well.
+  bool no_quic = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -248,6 +273,8 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.per_site_http_cache = is_moltnet_profile;
   settings.stop_all_when_refusing = is_moltnet_profile;
   settings.nonce_limits = is_moltnet_profile;
+  settings.per_site_network_caches = is_moltnet_profile;
+  settings.no_quic = is_moltnet_profile;
   return settings;
 }
 
@@ -371,6 +398,9 @@ void ApplyMoltNetNetworkContextSettings(
   network_context_params.molt_stop_all_when_refusing =
       settings.stop_all_when_refusing;
   network_context_params.molt_nonce_limits = settings.nonce_limits;
+  network_context_params.molt_per_site_network_caches =
+      settings.per_site_network_caches;
+  network_context_params.molt_no_quic = settings.no_quic;
 }
 
 }  // namespace molt_ai::tor
