@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <array>  // MoltBrowser
 #include <functional>
 #include <memory>
 #include <optional>
@@ -29,9 +30,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"  // MoltBrowser
 #include "base/not_fatal_until.h"
+#include "base/numerics/byte_conversions.h"  // MoltBrowser
 #include "base/numerics/safe_conversions.h"
 #include "base/observer_list.h"
+#include "base/rand_util.h"  // MoltBrowser
 #include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -129,6 +133,8 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "crypto/hash.h"  // MoltBrowser
+#include "crypto/hmac.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -362,6 +368,31 @@ void OnSessionStorageUsageInfo(
     dom_storage_context->DeleteSessionStorage(info, concurrent.CreateClosure());
   }
   std::move(concurrent).Done(std::move(done_callback));
+}
+
+// MoltBrowser: the clipboard's salt for a storage key with a nonce (one
+// page's frames'), derived rather than kept: the same each time it is asked
+// for, unique to the key and unguessable (HMAC-SHA256 of the key under a
+// secret made once per run), and no entry that outlives the page
+// (chrome/browser/molt_ai/tor/molt_net_nonce_storage_policy.h). Null for a
+// key without a nonce, or with an opaque origin, which keep Chromium's table.
+std::optional<base::UnguessableToken> MoltDerivedNonceKeyUUID(
+    const blink::StorageKey& storage_key) {
+  if (!storage_key.nonce().has_value() || storage_key.origin().opaque()) {
+    return std::nullopt;
+  }
+  static const base::NoDestructor<std::array<uint8_t, 32>> kSecret([] {
+    std::array<uint8_t, 32> secret;
+    base::RandBytes(secret);
+    return secret;
+  }());
+  const std::string serialized = storage_key.Serialize();
+  const std::array<uint8_t, crypto::hash::kSha256Size> mac =
+      crypto::hmac::SignSha256(*kSecret, base::as_byte_span(serialized));
+  const base::span<const uint8_t, crypto::hash::kSha256Size> bytes(mac);
+  return base::UnguessableToken::Deserialize(
+      base::U64FromLittleEndian(bytes.first<8>()),
+      base::U64FromLittleEndian(bytes.subspan<8, 8>()));
 }
 
 void ClearQuotaManagedData(
@@ -3883,6 +3914,15 @@ int StoragePartitionImpl::GetActiveDocumentCount(
 
 base::UnguessableToken StoragePartitionImpl::GetPartitionUUIDPerStorageKey(
     const blink::StorageKey& storage_key) {
+  // MoltBrowser: in MoltNet's partition (its storage kept per site), a key
+  // with a nonce gets a derived salt, and the table no entry per page.
+  if (GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
+          browser_context())) {
+    if (std::optional<base::UnguessableToken> derived =
+            MoltDerivedNonceKeyUUID(storage_key)) {
+      return *derived;
+    }
+  }
   auto uuid = partition_uuid_per_storage_key_.find(storage_key);
   return uuid == partition_uuid_per_storage_key_.end()
              ? partition_uuid_per_storage_key_[storage_key] =

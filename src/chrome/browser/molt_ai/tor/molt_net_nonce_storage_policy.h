@@ -38,6 +38,47 @@
 //    site's own pages only, never another site's (a page served sandboxed
 //    counts to the site it came from: MoltNetNonceGroupSite()).
 //
+// What else is kept under a page's nonce, at Chromium 156, and goes the same
+// way, at the same moment (MoltNetNonceStorageTabHelper):
+//  * cookies: a frame with a nonce keeps its cookies in partitions of its
+//    own (net::CookiePartitionKey with the nonce: one for each site a frame
+//    of the page, or one of its navigations, reached;
+//    CookiePartitionKey::FromNetworkIsolationKey() uses the frame's site for
+//    a nonce). 156 never deletes them: the network service keeps them in
+//    memory until the profile ends, and it has no total for partitioned
+//    cookies (only 180 cookies, 10 KiB, per partition and domain), so a page
+//    that reloaded itself added a partition each time. They are deleted
+//    (network::mojom::CookieManager::DeleteCookies(), partitioned cookies of
+//    those partitions only), and again kMoltNetNonceCookieSweepSeconds
+//    after the page goes, for a request of the page that set one on its
+//    way out (MoltNetNonceSweepsCookiesLater());
+//  * media-license (CDM) data, kept per storage key: deleted for each of
+//    the nonce's storage keys (StoragePartition::GetCdmStorageDataModel());
+//  * the clipboard's salt for each storage key (StoragePartitionImpl::
+//    GetPartitionUUIDPerStorageKey(): a table entry per key, for the
+//    partition's life): in MoltNet's partition a key with a nonce gets a
+//    salt derived from the key instead, so the table keeps none for it;
+//  * and what round 30 drops: DOM storage, and the storage keys' buckets
+//    (IndexedDB, Cache Storage, the origin-private file system, service
+//    worker registrations and their Background Fetches).
+// A group closed past its site's bound loses its cookies and media-license
+// data too; its page lives on, and the network service can't refuse a
+// partition's cookies, so what its frames set afterwards goes when it goes.
+// Kept by 156 for no nonce at all: HTTP cache entries (a request with a
+// nonce is never cached: HttpCache::GenerateCacheKey()), shared
+// dictionaries (none for a nonce: SharedDictionaryIsolationKey::
+// MaybeCreate()), host-cache entries (MoltNet's names are resolved by Tor),
+// Reporting endpoints and Network Error Logging policies (not built into
+// MoltBrowser); blob URLs go with the document that made them
+// (BlobURLStoreImpl), Web Locks and BroadcastChannels with their frames.
+// Kept per network key with the nonce and not dropped, as no page can use
+// them again once the nonce's page is gone: idle connections and HTTP/2
+// sessions (in the site's own pools: its 48, closed for the site's own
+// requests or the budget when they are needed, and after their idle
+// timeouts), TLS sessions, server properties and CORS preflight results
+// (the network context's caches of 1024, 500 and 1024 entries, with no room
+// of their own per nonce).
+//
 // Std-only, so molt_ai_unittests tests it. Not thread-safe: the browser uses
 // it on the UI thread.
 
@@ -45,6 +86,7 @@
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NONCE_STORAGE_POLICY_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <map>
 #include <optional>
@@ -57,6 +99,28 @@ namespace molt_ai::tor {
 // at once: far more than the pages of one site with credentialless frames a
 // person keeps open (a tab and its back/forward cache hold seven at most).
 inline constexpr size_t kMoltNetNonceGroupsPerSite = 32;
+
+// How long a request of a page may outlive it at Chromium 156: a keepalive
+// request (fetch() with keepalive, sendBeacon(), fetchLater()) is cancelled
+// this long after its page's renderer disconnects (KeepAliveURLLoader's
+// disconnected-loader timeout), and it is retried only while a page of the
+// same network key is active, which no page is once its nonce's page is gone
+// (KeepAliveURLLoader::AttemptRetryIfAllowed()).
+inline constexpr int64_t kMoltNetKeepaliveOutlivesPageSeconds = 30;
+
+// When a page's cookie partitions are deleted again after it goes: past the
+// longest one of its requests may set a cookie in them.
+inline constexpr int64_t kMoltNetNonceCookieSweepSeconds = 60;
+static_assert(kMoltNetNonceCookieSweepSeconds >
+              kMoltNetKeepaliveOutlivesPageSeconds);
+
+// Whether a nonce group's cookies are deleted again
+// kMoltNetNonceCookieSweepSeconds later: when its page has gone; a group
+// closed past its site's bound belongs to a page that lives on, whose
+// cookies go again when it goes.
+constexpr bool MoltNetNonceSweepsCookiesLater(bool closed) {
+  return !closed;
+}
 
 // The site whose bound a page's nonce groups count to, from the origin of
 // the page's main document (an outer page's, for a fenced frame): its
