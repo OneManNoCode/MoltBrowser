@@ -26,6 +26,7 @@ from . import catalog
 from . import cdp as cdplib
 from . import micinput
 from . import netns
+from . import rundir
 from . import support
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -123,6 +124,9 @@ class Run(object):
             stamp, self.run_id))
         self.procs = []
         self.sandbox = None
+        # The run directory's descriptor: every write the harness makes
+        # there goes through it (rundir.py).
+        self.rundir = None
         self.manifest = {
             'schema': 'moltleak-run/1', 'kit_version': KIT_VERSION,
             'run_id': self.run_id, 'target': opts.target,
@@ -153,8 +157,11 @@ class Run(object):
     def log(self, msg):
         line = '[%s] %s' % (datetime.datetime.now().strftime('%H:%M:%S'), msg)
         print(line, flush=True)
+        if not self.rundir:
+            return
         try:
-            with open(os.path.join(self.dir, 'harness.log'), 'a') as f:
+            with self.rundir.open_text('harness.log', append=True,
+                                       owned=False) as f:
                 f.write(line + '\n')
         except (IOError, OSError):
             pass
@@ -166,20 +173,30 @@ class Run(object):
     def path(self, *parts):
         return os.path.join(self.dir, *parts)
 
+    # The run directory and most of what is in it belong to the user, whose
+    # processes can put links there: the harness writes in it only through
+    # self.rundir (rundir.py), never by path.
+
+    def make_run_dir(self):
+        self.rundir = rundir.RunDir.create(self.dir, self.uid, self.gid)
+
     def user_mkdir(self, *parts, mode=0o755):
-        p = self.path(*parts)
-        os.makedirs(p, exist_ok=True)
-        os.chmod(p, mode)
-        os.chown(p, self.uid, self.gid)
-        return p
+        self.rundir.mkdir('/'.join(parts), mode)
+        return self.path(*parts)
 
     def user_write(self, rel, text, mode=0o644):
-        p = self.path(rel)
-        with open(p, 'w') as f:
-            f.write(text)
-        os.chmod(p, mode)
-        os.chown(p, self.uid, self.gid)
-        return p
+        self.rundir.write(rel, text, mode)
+        return self.path(rel)
+
+    def root_staging(self, name):
+        """A new directory of root's own in the sandbox's private one (in
+        /run, root's, removed with the sandbox), where files root makes with
+        other tools (openssl) are made before rundir.copy_in() copies them
+        into the run directory."""
+        path = os.path.join(self.sandbox.private_dir, name)
+        shutil.rmtree(path, ignore_errors=True)
+        os.mkdir(path, 0o700)
+        return path
 
     # ---- preflight ----------------------------------------------------------
 
@@ -222,8 +239,7 @@ class Run(object):
 
     def start(self, name, argv, cgroup='kit', env=None, ready=True,
               in_ns=True, timeout=20):
-        logf = open(self.path('logs', name + '.out'), 'w')
-        os.chown(logf.name, self.uid, self.gid)
+        logf = self.rundir.open_text('logs/%s.out' % name)
         if in_ns:
             proc = self.sandbox.launch(argv, cgroup, env or self.kit_env(),
                                        stdout=subprocess.PIPE if ready else
@@ -264,7 +280,7 @@ class Run(object):
                                  ('tcpdump-blocked', 'nflog:1',
                                   'blocked.pcap'),
                                  ('tcpdump-tor', 'nflog:2', 'tor.pcap')):
-            logf = open(self.path('logs', name + '.out'), 'w')
+            logf = self.rundir.open_text('logs/%s.out' % name, owned=False)
             proc = subprocess.Popen(
                 ['nsenter', '--net=/run/netns/' + self.sandbox.ns, '--',
                  'tcpdump', '-i', iface, '-n', '-U', '-s', '0', '-Z',
@@ -310,8 +326,7 @@ class Run(object):
     # ---- setup --------------------------------------------------------------
 
     def setup(self):
-        os.makedirs(self.dir)
-        os.chown(self.dir, self.uid, self.gid)
+        self.make_run_dir()
         for d in ('capture', 'logs', 'home', 'certs', 'onion', 'xdg'):
             self.user_mkdir(d, mode=0o700 if d in ('home', 'xdg', 'onion')
                             else 0o755)
@@ -434,10 +449,10 @@ class Run(object):
                                                             CANARY_DOMAIN)],
                'ocsp': 'http://ocsp-%s.%s/' % (aia_nonce, CANARY_DOMAIN),
                'crl': 'http://crl-%s.%s/c.crl' % (aia_nonce, CANARY_DOMAIN)}
-        self.spki = support.make_certs(self.path('certs'), names,
-                                       ['127.0.0.1'], aia)
-        for f in os.listdir(self.path('certs')):
-            os.chown(self.path('certs', f), self.uid, self.gid)
+        staging = self.root_staging('certs')
+        self.spki = support.make_certs(staging, names, ['127.0.0.1'], aia)
+        self.rundir.copy_in(staging, 'certs')
+        shutil.rmtree(staging, ignore_errors=True)
         values = dict(bases)
         values.update({'LPORT': LOOPBACK_CANARY,
                        'GW': self.manifest['net']['gw_ipv4'],
@@ -517,9 +532,8 @@ class Run(object):
         """Regular-profile settings MoltNet must not show (§4 step 15)."""
         if not self.opts.seed_settings:
             return
-        prefs_dir = self.user_mkdir('profile', 'Default', mode=0o700)
-        os.chown(self.path('profile'), self.uid, self.gid)
-        os.chmod(self.path('profile'), 0o700)
+        self.user_mkdir('profile', mode=0o700)
+        self.user_mkdir('profile', 'Default', mode=0o700)
         blocked = ['http://localhost:%d,*' % LOCAL_HTTP]
         if self.opts.target == 'moltnet':
             blocked.append('https://%s:443,*' % self.onion['a'])
@@ -542,11 +556,9 @@ class Run(object):
                                         'setting': 2} for p in blocked}}}},
             'browser': {'has_seen_welcome_page': True},
         }
-        path = os.path.join(prefs_dir, 'Preferences')
-        if not os.path.exists(path):
-            with open(path, 'w') as f:
-                json.dump(prefs, f)
-            os.chown(path, self.uid, self.gid)
+        if not self.rundir.exists('profile/Default/Preferences'):
+            self.rundir.write('profile/Default/Preferences',
+                              json.dumps(prefs))
 
     def browser_env(self):
         env = self.kit_env()
@@ -597,8 +609,7 @@ class Run(object):
         resp_r, resp_w = os.pipe()
         child_in = _high_fd(cmd_r)
         child_out = _high_fd(resp_w)
-        logf = open(self.path('logs', 'browser-%s.out' % label), 'w')
-        os.chown(logf.name, self.uid, self.gid)
+        logf = self.rundir.open_text('logs/browser-%s.out' % label)
         proc = self.sandbox.launch(
             args, 'browser', self.browser_env(), stdout=logf, stderr=logf,
             resolv=self.path('resolv.conf'),
@@ -1107,13 +1118,12 @@ class Run(object):
             return
         phase = self.phase_begin('extension')
         data = phase['data']
-        ext_dir = support.write_extension(
-            self.path('ext'), entry['nonce'], CANARY_DOMAIN,
+        staging = support.write_extension(
+            self.root_staging('ext'), entry['nonce'], CANARY_DOMAIN,
             [self.onion['a'], self.onion['b'] or self.onion['a']])
-        for root, dirs, files in os.walk(ext_dir):
-            for n in dirs + files:
-                os.chown(os.path.join(root, n), self.uid, self.gid)
-        os.chown(ext_dir, self.uid, self.gid)
+        self.rundir.copy_in(staging, 'ext')
+        shutil.rmtree(staging, ignore_errors=True)
+        ext_dir = self.path('ext')
         try:
             ext_id = self.cdp.call('Extensions.loadUnpacked',
                                    {'path': ext_dir})['id']
@@ -1266,8 +1276,8 @@ class Run(object):
 
     def tor_torrc(self):
         try:
-            with open(self.path('logs', 'tor-argv.txt')) as f:
-                argv = f.read().split('\n')
+            argv = (self.rundir.read('logs/tor-argv.txt') or b'').decode(
+                'utf-8', 'replace').split('\n')
             return argv[argv.index('-f') + 1]
         except (IOError, OSError, ValueError, IndexError):
             return None
@@ -1598,11 +1608,12 @@ class Run(object):
     def set_profile_prefs(self, updates):
         """Merges `updates` into the regular profile's Preferences file
         (with the browser closed)."""
-        path = self.path('profile', 'Default', 'Preferences')
+        rel = 'profile/Default/Preferences'
         try:
-            with open(path) as f:
-                prefs = json.load(f)
-        except (OSError, ValueError):
+            prefs = json.loads(self.rundir.read(rel) or b'{}')
+        except ValueError:
+            prefs = {}
+        if not isinstance(prefs, dict):
             prefs = {}
 
         def merge(into, src):
@@ -1612,13 +1623,8 @@ class Run(object):
                 else:
                     into[k] = v
         merge(prefs, updates)
-        prefs_dir = self.user_mkdir('profile', 'Default', mode=0o700)
-        tmp = os.path.join(prefs_dir, 'Preferences.moltleak')
-        with open(tmp, 'w') as f:
-            json.dump(prefs, f)
-        os.chmod(tmp, 0o600)
-        os.chown(tmp, self.uid, self.gid)
-        os.rename(tmp, path)
+        self.user_mkdir('profile', 'Default', mode=0o700)
+        self.rundir.replace(rel, json.dumps(prefs), mode=0o600)
 
     def wait_gone(self, targets, seconds=60):
         """Seconds until none of `targets` (target ids) is a MoltNet page
@@ -1881,11 +1887,7 @@ class Run(object):
         prompt. mic.html reads the processed samples twice, each time from a
         new stream, and the record (kind "mic") is compared between runs."""
         phase = self.phase_begin('mic_processing')
-        wav = self.path('mic-input.wav')
-        with open(wav, 'wb') as f:
-            f.write(micinput.wav_bytes())
-        os.chmod(wav, 0o644)
-        os.chown(wav, self.uid, self.gid)
+        wav = self.user_write('mic-input.wav', micinput.wav_bytes())
         flags = ['--use-fake-device-for-media-stream',
                  '--use-file-for-fake-audio-capture=%s%%noloop' % wav,
                  '--use-fake-ui-for-media-stream']
@@ -1995,10 +1997,10 @@ class Run(object):
                 for err in self.sandbox.teardown():
                     self.error('teardown: ' + err)
             self.manifest['finished'] = _iso(_now())
-            if os.path.isdir(self.dir):
+            if self.rundir:
                 self.user_write('manifest.json', json.dumps(
                     self.manifest, indent=1, sort_keys=True, default=str))
-                _chown_tree(self.dir, self.uid, self.gid)
+                self.rundir.chown_tree()
         return self.dir
 
 
@@ -2026,12 +2028,3 @@ def _drop(uid, gid):
         os.setgid(gid)
         os.setuid(uid)
     return fn
-
-
-def _chown_tree(top, uid, gid):
-    for root, dirs, files in os.walk(top):
-        for n in dirs + files:
-            try:
-                os.lchown(os.path.join(root, n), uid, gid)
-            except OSError:
-                pass

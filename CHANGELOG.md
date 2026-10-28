@@ -370,6 +370,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   after a restart) still has its Local Network Access checked, and after a
   restart a Background Fetch waits for its page's settings rather than
   going out without them.
+- Hardening (security review of PR #74, `docs/SECURITY_REVIEWS.md`): the
+  leak test kit, which runs as root, writes into the run directory it
+  gives its user only from that directory's open descriptor, following no
+  link and writing only regular files, and makes its certificates and
+  test extension in a root-owned directory. In MoltNet, a page served
+  sandboxed counts toward the bound on credentialless-frame storage of the
+  site it came from, and a `sessionStorage` copy a closed tab still owes
+  to a tab whose storage was made meanwhile is dropped quietly. The
+  compile check keeps no result of a file compiled while the working tree
+  changed.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

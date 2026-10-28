@@ -61,7 +61,9 @@ Re-runs are incremental, without trusting the cache for correctness:
   about four seconds for an average compile. Each result is stored as its
   compile ends, so a run that was interrupted (a restart) picks up where
   it stopped when started again; a compile the memory limit or a signal
-  stopped is never stored. `--no-cache` compiles everything.
+  stopped is never stored, nor one during which a C-family file of
+  `src/` (the working tree) was edited, as what it compiled may not be
+  what its key was made from. `--no-cache` compiles everything.
 * A generated file is made again only when its inputs changed, and is
   never compiled against when they did: `check` first remakes the mojom
   bindings, grit headers and cxx bridge headers whose inputs changed (an
