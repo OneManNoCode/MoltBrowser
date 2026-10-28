@@ -22,13 +22,13 @@
     // use a lower number. This number is used by UMA stats and must be updated
     // to include the full range or else not all engines will be counted in
     // stats.
-    "kMaxPrepopulatedEngineID": 116,
+    "kMaxPrepopulatedEngineID": 117,
 
     // Increment this if you change the data in ways that mean users with
     // existing data should get a new version. Otherwise, existing data may
     // continue to be used and updates made here will not always appear.
     // Also then run tools/search_engine_choice/generate_search_engine_icons.py.
-    "kCurrentDataVersion": 196
+    "kCurrentDataVersion": 215
   },
 
   // The following engines are included in country lists and are added to the
@@ -52,7 +52,7 @@
     "bing": {
       "name": "Microsoft Bing",
       "keyword": "bing.com",
-      "favicon_url": "https://www.bing.com/sa/simg/bing_p_rr_teal_min.ico",
+      "favicon_url": "https://www.bing.com/favicon.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_BING",
       "logo_url": "https://cdn.sapphire.microsoftapp.net/icons/bing_144.png",
       "search_url": "https://www.bing.com/search?q={searchTerms}",
@@ -61,6 +61,7 @@
       "new_tab_url": "https://www.bing.com/chrome/newtab",
       "image_url_post_params": "imageBin={google:imageThumbnailBase64}",
       "type": "SEARCH_ENGINE_BING",
+      "preconnect_to_search_url": "ALLOWED",
       "id": 3,
       "regulatory_extensions": [
         {
@@ -82,7 +83,8 @@
       "favicon_url": "https://cdn.search.brave.com/serp/favicon.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_BRAVE",
       "search_url": "https://search.brave.com/search?q={searchTerms}",
-      "suggest_url": "https://search.brave.com/api/suggest?q={searchTerms}",
+      "suggest_url": "https://search.brave.com/api/suggest?q={searchTerms}&rich=true&rich_verticals=true",
+      "new_tab_url": "https://search.brave.com/chrome_newtab",
       "type": "SEARCH_ENGINE_BRAVE",
       "id": 109,
       "regulatory_extensions": [
@@ -315,6 +317,30 @@
       "id": 104
     },
 
+    "perplexity": {
+      "name": "Perplexity",
+      "keyword": "perplexity.ai",
+      "favicon_url": "https://www.perplexity.ai/favicon.ico",
+      "base_builtin_resource_id": "SEARCH_ENGINE_PERPLEXITY",
+      "logo_url": "https://frontend-cdn.perplexity.ai/_agi_assets/chrome/new-tab-logo-v1.png",
+      "search_url": "https://www.perplexity.ai/search?q={searchTerms}",
+      "suggest_url": "https://suggest.perplexity.ai/suggest?q={searchTerms}",
+      "type": "SEARCH_ENGINE_PERPLEXITY",
+      "id": 117,
+      "regulatory_extensions": [
+        {
+          "variant": "RegulatoryExtensionType::kAndroidEEA",
+          "search_params": "utm_source=chrome_android",
+          "suggest_params": "source=chrome_android"
+        },
+        {
+          "variant": "RegulatoryExtensionType::kDefault",
+          "search_params": "utm_source=chrome",
+          "suggest_params": "source=chrome"
+        }
+      ]
+    },
+
     "privacywall": {
       "name": "PrivacyWall",
       "keyword": "privacywall.org",
@@ -408,7 +434,7 @@
     },
 
     "startpage": {
-      "name": "startpage",
+      "name": "Startpage",
       "keyword": "startpage.com",
       "favicon_url": "https://www.startpage.com/favicon.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_STARTPAGE",
@@ -939,21 +965,6 @@
       ]
     },
 
-    "yandex_by": {
-      "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
-      "keyword": "yandex.by",
-      "favicon_url": "https://yastatic.net/s3/web4static/_/v2/v9YNE_BX0evwMHbDyd0NZv8ReK0.png",
-      "base_builtin_resource_id": "SEARCH_ENGINE_YANDEX",
-      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_ru/logo.png",
-      "search_url": "https://yandex.by/{yandex:searchPath}?text={searchTerms}",
-      "suggest_url": "https://suggest.yandex.by/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
-      "image_url": "https://yandex.by/images/search/?rpt=imageview",
-      "image_url_post_params": "upfile={google:imageThumbnail},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},prg=1",
-      "new_tab_url": "https://yandex.by/chrome/newtab",
-      "type": "SEARCH_ENGINE_YANDEX",
-      "id": 15
-    },
-
     "yandex_com": {
       "name": "Yandex",
       "keyword": "yandex.com",
@@ -978,6 +989,21 @@
           "suggest_params": "uil=en"
         }
       ]
+    },
+
+    "yandex_by": {
+      "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
+      "keyword": "yandex.by",
+      "favicon_url": "https://yastatic.net/s3/web4static/_/v2/v9YNE_BX0evwMHbDyd0NZv8ReK0.png",
+      "base_builtin_resource_id": "SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_ru/logo.png",
+      "search_url": "https://yandex.by/{yandex:searchPath}?text={searchTerms}",
+      "suggest_url": "https://suggest.yandex.by/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
+      "image_url": "https://yandex.by/images/search/?rpt=imageview",
+      "image_url_post_params": "upfile={google:imageThumbnail},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},prg=1",
+      "new_tab_url": "https://yandex.by/chrome/newtab",
+      "type": "SEARCH_ENGINE_YANDEX",
+      "id": 15
     },
 
     "yandex_kz": {
