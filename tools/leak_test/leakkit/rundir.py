@@ -1,14 +1,15 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
-"""The run directory, as the harness (root) writes into it.
+"""The run directory, as the harness (root) writes into it and reads it.
 
 A run directory belongs to the user who runs the kit, and so does most of
 what is in it: the browser, Tor and the kit's servers run as that user and
 write there. That user's processes can therefore put a symbolic link, a
-hard link or a FIFO where the harness is about to write, or swap a
+hard link or a FIFO where the harness is about to write or read, or swap a
 directory for a link, and a write, chmod or chown made by path would reach
 some other file with root's rights (a link from logs/browser-mic.out to
-/etc/shadow, a profile/Default that leads to /root).
+/etc/shadow, a profile/Default that leads to /root), as would a read, whose
+result lands where the user reads it (the manifest, the logs).
 
 RunDir makes every such operation from a descriptor of the run directory,
 opened when the harness made it and checked to be root's own before it is
@@ -46,6 +47,76 @@ def _write_all(fd, data):
         view = view[os.write(fd, view):]
 
 
+# How many symbolic links open_out_dir() follows at most, as the kernel.
+_MAX_LINKS = 40
+# open_out_dir()'s walk: a directory it only goes through needs searching,
+# not reading (O_PATH, where there is one).
+_WALK_FLAGS = (getattr(os, 'O_PATH', os.O_RDONLY) | os.O_DIRECTORY |
+               os.O_NOFOLLOW | os.O_CLOEXEC)
+
+
+def _root_only(st):
+    """Whether only root can add, remove or replace an entry in the
+    directory whose stat is `st`."""
+    return st.st_uid == 0 and not stat.S_IMODE(st.st_mode) & (
+        stat.S_IWGRP | stat.S_IWOTH)
+
+
+def open_out_dir(path):
+    """A descriptor of the --out directory `path` (absolute), its missing
+    components made (0o755) as os.makedirs() makes them.
+
+    Each component is opened from the one before, starting at /, without
+    following a symbolic link: os.makedirs() and open() follow a link in
+    any component, so a directory on the way that a process of the user
+    (or of another account) owns, swapped for a link (~/MoltBrowser to
+    /etc), would have root make the run directory, and hand it to the user,
+    wherever the link led. A link is followed only where nobody but root
+    could have put it (a /home in / that leads to var/home), and never in
+    the last component."""
+    parts = [p for p in path.split('/') if p not in ('', '.')]
+    if not path.startswith('/') or '..' in parts:
+        raise OSError(errno.EINVAL, 'not an absolute path', path)
+    fd = os.open('/', _WALK_FLAGS)
+    walked = ''   # the path of `fd`, without a link
+    links = 0
+    try:
+        while parts:
+            part = parts.pop(0)
+            try:
+                sub = os.open(part, _WALK_FLAGS, dir_fd=fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(part, 0o755, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                sub = os.open(part, _WALK_FLAGS, dir_fd=fd)
+            except OSError:
+                st = os.stat(part, dir_fd=fd, follow_symlinks=False)
+                if not stat.S_ISLNK(st.st_mode):
+                    raise
+                if not parts or links >= _MAX_LINKS or \
+                        not _root_only(os.fstat(fd)):
+                    raise OSError(errno.ELOOP, 'a symbolic link on the way '
+                                  'to the --out directory', walked + '/' +
+                                  part)
+                links += 1
+                target = os.path.normpath(os.path.join(
+                    walked or '/', os.readlink(part, dir_fd=fd)))
+                parts = [p for p in target.split('/') if p] + parts
+                os.close(fd)
+                fd = os.open('/', _WALK_FLAGS)
+                walked = ''
+                continue
+            os.close(fd)
+            fd = sub
+            walked += '/' + part
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 def check_out_dir(st, path, uid, gid):
     """Refuses the --out directory whose stat is `st` unless it belongs to
     root, the harness or the user (`uid`) and no other account can write in
@@ -77,17 +148,18 @@ class RunDir(object):
         --out directory, may), opens it, checks that it is the directory just
         made, and hands it to the user (`uid`, `gid`).
 
-        The --out directory is opened without following a link in its last
-        component, and must belong to root, the harness or the user and be
-        writable by no other account (a world-writable one must be sticky,
-        as /tmp is; a group-writable one must be root's or the user's own
-        group's). Otherwise a link put where --out was, or a directory
-        another account controls, would have root make the run directory
-        and hand it to the user wherever that leads. The run directory is
-        made and opened from the --out directory's descriptor."""
+        The --out directory is reached from / a component at a time without
+        following a link a non-root account could have put on the way
+        (open_out_dir()), and must belong to root, the harness or the user
+        and be writable by no other account (a world-writable one must be
+        sticky, as /tmp is; a group-writable one must be root's or the
+        user's own group's). Otherwise a link put where --out was, or on the
+        way to it, or a directory another account controls, would have root
+        make the run directory and hand it to the user wherever that leads.
+        The run directory is made and opened from the --out directory's
+        descriptor."""
         parent, name = os.path.split(os.path.abspath(path))
-        os.makedirs(parent, exist_ok=True)
-        pfd = os.open(parent, _DIR_FLAGS)
+        pfd = open_out_dir(parent)
         try:
             check_out_dir(os.fstat(pfd), parent, uid, gid)
             os.mkdir(name, 0o755, dir_fd=pfd)
@@ -282,13 +354,32 @@ class RunDir(object):
 
     def chown_tree(self):
         """Gives the run directory and everything in it to the user, without
-        following links (os.fwalk works from descriptors)."""
+        following links (os.fwalk works from descriptors): each directory,
+        and each regular file with a single link, from a descriptor of it.
+        A hard link is left as it is: one a process of the user made to a
+        file of root's elsewhere on the file system (/etc/shadow, where the
+        system allows it: fs.protected_hardlinks off) would be given to the
+        user with it. So are symbolic links, FIFOs and sockets: the harness
+        makes none, and the user can remove them all the same."""
         os.fchown(self.fd, self.uid, self.gid)
         for _, dirs, files, dir_fd in os.fwalk('.', dir_fd=self.fd,
                                                follow_symlinks=False):
             for name in dirs + files:
                 try:
-                    os.chown(name, self.uid, self.gid, dir_fd=dir_fd,
-                             follow_symlinks=False)
+                    st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                    if not (stat.S_ISDIR(st.st_mode) or
+                            stat.S_ISREG(st.st_mode)):
+                        continue
+                    fd = os.open(name, os.O_RDONLY | os.O_NOCTTY |
+                                 _FILE_FLAGS, dir_fd=dir_fd)
+                except OSError:
+                    continue
+                try:
+                    st = os.fstat(fd)
+                    if stat.S_ISDIR(st.st_mode) or (
+                            stat.S_ISREG(st.st_mode) and st.st_nlink == 1):
+                        os.fchown(fd, self.uid, self.gid)
                 except OSError:
                     pass
+                finally:
+                    os.close(fd)

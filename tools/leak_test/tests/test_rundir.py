@@ -282,8 +282,77 @@ class RunDirTest(unittest.TestCase):
         self.run.chown_tree()
         st = os.lstat(self.p('logs', 'x.out'))
         self.assertEqual((st.st_uid, st.st_gid), (UID, GID))
-        self.assertEqual(os.lstat(self.p('to-file')).st_uid, UID)
+        # The links themselves are left as they are.
+        self.assertTrue(os.path.islink(self.p('to-file')))
         self.assertOutsideUntouched()
+
+    @unittest.skipUnless(os.geteuid() == 0, 'needs root to link a file of '
+                         'root\'s')
+    def test_chown_tree_leaves_a_hard_link(self):
+        # A process of the user links a file of root's into the run
+        # directory (where fs.protected_hardlinks allows it): the run's end
+        # must not give that file to the user.
+        os.link(self.secret, self.p('shadow'))
+        self.run.mkdir('logs')
+        self.run.write('logs/x.out', 'x', owned=False)
+        self.run.chown_tree()
+        self.assertEqual(os.lstat(self.secret).st_uid, 0)
+        self.assertEqual(os.lstat(self.p('logs', 'x.out')).st_uid, UID)
+        self.assertOutsideUntouched()
+
+    def test_create_refuses_a_link_on_the_way(self):
+        # A directory of the user's on the way to --out swapped for a link
+        # to a directory of root's (as ~/MoltBrowser for /etc).
+        rootonly = os.path.join(self.tmp, 'rootonly')
+        os.mkdir(rootonly, 0o755)
+        users = os.path.join(self.tmp, 'users')
+        os.mkdir(users, 0o755)
+        os.chown(users, UID, GID)
+        os.symlink(rootonly, os.path.join(users, 'MoltBrowser'))
+        with self.assertRaises(OSError) as cm:
+            rundir.RunDir.create(os.path.join(
+                users, 'MoltBrowser', 'moltleak-runs', 'run-2'), UID, GID)
+        self.assertEqual(cm.exception.errno, errno.ELOOP)
+        self.assertEqual(os.listdir(rootonly), [])
+
+    @unittest.skipUnless(os.geteuid() == 0, 'needs a directory of root\'s '
+                         'that only root can change')
+    def test_create_follows_a_link_only_root_could_put_there(self):
+        # A link in a directory of root's that no one else can write (a
+        # /home that leads to var/home) is followed, a relative one too.
+        real = os.path.join(self.tmp, 'var', 'home')
+        os.makedirs(real, 0o755)
+        top = os.path.join(self.tmp, 'top')
+        os.mkdir(top, 0o755)
+        os.symlink('../var/home', os.path.join(top, 'home'))
+        run = rundir.RunDir.create(os.path.join(top, 'home', 'u', 'run-2'),
+                                   UID, GID)
+        run.close()
+        st = os.lstat(os.path.join(real, 'u', 'run-2'))
+        self.assertEqual(st.st_uid, UID)
+        # Not once another account can write there.
+        os.chmod(top, 0o775)
+        os.chown(top, 0, GID + 1)
+        with self.assertRaises(OSError) as cm:
+            rundir.RunDir.create(os.path.join(top, 'home', 'u', 'run-3'),
+                                 UID, GID)
+        self.assertEqual(cm.exception.errno, errno.ELOOP)
+        self.assertEqual(os.listdir(os.path.join(real, 'u')), ['run-2'])
+
+    def test_open_out_dir_makes_what_is_missing(self):
+        path = os.path.join(self.tmp, 'a', 'b', 'c')
+        fd = rundir.open_out_dir(path)
+        try:
+            self.assertEqual(os.fstat(fd).st_ino, os.stat(path).st_ino)
+        finally:
+            os.close(fd)
+        with self.assertRaises(OSError):
+            rundir.open_out_dir('relative/path')
+        with open(os.path.join(self.tmp, 'a', 'file'), 'w') as f:
+            f.write('x')
+        with self.assertRaises(OSError) as cm:
+            rundir.open_out_dir(os.path.join(self.tmp, 'a', 'file', 'd'))
+        self.assertEqual(cm.exception.errno, errno.ENOTDIR)
 
 
 class HarnessWritesTest(unittest.TestCase):
