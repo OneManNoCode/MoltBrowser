@@ -392,6 +392,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   a restart while its page's settings are still being asked for asks
   again as soon as the answer comes, instead of failing after five
   minutes.
+- MoltNet hardening, per page: once a page's credentialless-frame storage
+  is closed (past its site's 32 such pages, or after its frames reach 256
+  origins), those frames store nothing more, cookies included, until the
+  page goes; their cookies have totals of their own for each site and
+  page; and what they leave in the network context (idle connections, TLS
+  sessions, server properties, HTTP authentication and CORS preflight
+  entries) goes with the page, entry by entry, flushing nothing else. A
+  Clear-Site-Data on a response no page shows (a download's), and a
+  deletion of one storage key over a time range, read only that storage
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

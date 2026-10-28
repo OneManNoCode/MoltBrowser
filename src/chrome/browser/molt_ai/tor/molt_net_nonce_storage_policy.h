@@ -36,18 +36,21 @@
 //  * a top-level site holds at most kMoltNetNonceGroupsPerSite such groups
 //    at once (the pages of the site, in its tabs and their back/forward
 //    caches, whose frames use storage keyed by their nonce). Past it, the
-//    site's oldest such page's group is closed: what it holds is dropped as
-//    if the page had gone, and from then on its frames can't make any of it
-//    again until the page goes: their DOM storage writes are refused (as a
-//    write past a quota is), their quota-managed storage gets no bucket and
-//    no room (IndexedDB, Cache Storage and the origin-private file system
-//    fail to open or to grow with a quota error, a service worker or a
-//    Storage Bucket isn't made), and the cookie store refuses their cookies
-//    (as cookies blocked by settings are; net/cookies/
-//    molt_nonce_cookie_policy.h). The page itself and its frames keep
-//    working, statelessly. What it depends on: the site's own pages only,
-//    never another site's (a page served sandboxed counts to the site it
-//    came from: MoltNetNonceGroupSite());
+//    site's oldest such page's group is closed: what its frames stored
+//    (storage and cookies) is dropped as if the page had gone, and from then
+//    on they can't make any of it again until the page goes: their DOM
+//    storage writes are refused (as a write past a quota is), their
+//    quota-managed storage gets no bucket and no room (IndexedDB, Cache
+//    Storage and the origin-private file system fail to open or to grow
+//    with a quota error, a service worker or a Storage Bucket isn't made),
+//    and the cookie store refuses their cookies (as cookies blocked by
+//    settings are; net/cookies/molt_nonce_cookie_policy.h). The page itself
+//    and its frames keep working, statelessly: their connections and the
+//    network state kept under the nonce (below) stay theirs, as any live
+//    page's do, until the page goes (refusing them would mean cutting the
+//    frames off the network). What it depends on: the site's own pages
+//    only, never another site's (a page served sandboxed counts to the site
+//    it came from: MoltNetNonceGroupSite());
 //  * a group's records are bounded too: the storage keys its frames use
 //    (one per origin), kMoltNetNonceStorageKeysPerGroup at most; a group
 //    whose frames reach more is closed the same way.
@@ -71,7 +74,8 @@
 //  * the network state kept under the nonce's network keys: idle
 //    connections and HTTP/2 sessions, TLS sessions, server properties, CORS
 //    preflight results and HTTP authentication entries, dropped by the
-//    network context with the cookies, and again with them later
+//    network context with the cookies when the page goes (not when its
+//    group is closed: the page still uses them), and again with them later
 //    (services/network/molt_nonce_drop_policy.h says how each is keyed and
 //    dropped);
 //  * media-license (CDM) data, kept per storage key: deleted for each of
