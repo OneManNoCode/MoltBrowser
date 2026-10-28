@@ -184,6 +184,30 @@ TEST_F(MoltNetStorageSiteUsageTest, AGreedySiteDoesntSlowAnothersChecks) {
   EXPECT_EQ(client_->get_bucket_usage_call_count(), asked);
 }
 
+// Two checks of one site at once, while one of its storage keys is stale
+// (a change the cache couldn't take in): the second waits for the first's
+// refresh of that key, and both answer with the room the site really has.
+// Chromium-shaped, the second read the site's count while the key's usage
+// was still being asked for, and answered with 20 MiB more room.
+TEST_F(MoltNetStorageSiteUsageTest, ConcurrentChecksDontOvershoot) {
+  const blink::StorageKey a = Key("https://a.test");
+  Store(a, 10 * kMiB);
+  ASSERT_EQ(Quota(a), kPerSite);
+  const storage::BucketLocator sub = Store(Key("https://x.a.test"), 0);
+  client_->ModifyBucketAndNotify(sub, 20 * kMiB);
+  task_environment_.RunUntilIdle();
+
+  base::test::TestFuture<blink::mojom::QuotaStatusCode, int64_t, int64_t>
+      first;
+  base::test::TestFuture<blink::mojom::QuotaStatusCode, int64_t, int64_t>
+      second;
+  quota_manager_->GetUsageAndQuota(a, first.GetCallback());
+  quota_manager_->GetUsageAndQuota(a, second.GetCallback());
+  // a uses 10 MiB; the site 30 MiB of its 60.
+  EXPECT_EQ(first.Get<2>(), 10 * kMiB + (kPerSite - 30 * kMiB));
+  EXPECT_EQ(second.Get<2>(), 10 * kMiB + (kPerSite - 30 * kMiB));
+}
+
 // Past the floor for all sites together, each quota answered tells the
 // embedder.
 TEST_F(MoltNetStorageSiteUsageTest, PastTheFloorTheEmbedderHears) {

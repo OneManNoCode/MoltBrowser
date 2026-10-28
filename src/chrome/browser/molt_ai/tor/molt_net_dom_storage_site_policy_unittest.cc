@@ -10,6 +10,7 @@
 
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -439,6 +440,129 @@ TEST(MoltNetDomStorageSitePolicyTest, WriteRateIsPerSite) {
     }
   }
   EXPECT_GT(refused, 0);
+}
+
+// ---- Records per site that are forgotten ----
+
+// What a site's areas hold has no record once they hold nothing: an area
+// shrunk to nothing, and a site whose areas all did, leave none behind.
+TEST(MoltNetDomStorageSitePolicyTest, TotalsKeepNothingForEmptyAreas) {
+  MoltDomStorageSiteTotals totals;
+  for (int i = 0; i < 1000; ++i) {
+    const std::string site = "https://s" + std::to_string(i) + ".test";
+    ASSERT_TRUE(totals.MayGrowTo(site + "/a", site, 100));
+    ASSERT_TRUE(totals.MayGrowTo(site + "/b", site, 50));
+    totals.ShrankTo(site + "/a", site, 0);
+    ASSERT_TRUE(totals.MayGrowTo(site + "/b", site, 0));
+  }
+  EXPECT_EQ(totals.area_count(), 0u);
+  EXPECT_EQ(totals.site_count(), 0u);
+  EXPECT_EQ(totals.total(), 0u);
+  // An area that grows to nothing (a write of an empty map) leaves nothing.
+  ASSERT_TRUE(totals.MayGrowTo("x", "https://x.test", 0));
+  EXPECT_EQ(totals.area_count(), 0u);
+  // Forgetting an area that holds nothing is harmless.
+  totals.Forget("x");
+  EXPECT_EQ(totals.site_count(), 0u);
+}
+
+// A write allowance is full again at a time it can tell: then a fresh one,
+// which starts full, takes exactly what it would, so it may go.
+TEST(MoltNetDomStorageSitePolicyTest, AllowanceFullAt) {
+  MoltDomStorageWriteAllowance allowance{/*at_ms=*/1000};
+  EXPECT_EQ(MoltDomStorageAllowanceFullAtMs(allowance), 1000);
+  ASSERT_TRUE(MoltDomStorageMayWrite(allowance, 1000, 0));
+  // One write: 10 ms at 100 a second.
+  EXPECT_EQ(MoltDomStorageAllowanceFullAtMs(allowance), 1010);
+  ASSERT_TRUE(MoltDomStorageMayWrite(allowance, 1000, kMiB));
+  // Two writes (20 ms) and 1 MiB (1000 ms at 1 MiB a second).
+  EXPECT_EQ(MoltDomStorageAllowanceFullAtMs(allowance), 2000);
+  // At that time it is full: as many writes and bytes as a fresh one.
+  MoltDomStorageWriteAllowance fresh{/*at_ms=*/2000};
+  for (int i = 0; i < kMoltDomStorageSiteWritesBurst; ++i) {
+    ASSERT_EQ(MoltDomStorageMayWrite(allowance, 2000, 1),
+              MoltDomStorageMayWrite(fresh, 2000, 1))
+        << i;
+  }
+  EXPECT_FALSE(MoltDomStorageMayWrite(allowance, 2000, 1));
+  EXPECT_FALSE(MoltDomStorageMayWrite(fresh, 2000, 1));
+  // A burst to empty: 10 s for the writes, about 10 s for the bytes.
+  MoltDomStorageWriteAllowance emptied{/*at_ms=*/0};
+  ASSERT_TRUE(
+      MoltDomStorageMayWrite(emptied, 0, kMoltDomStorageSiteWriteBytesBurst));
+  EXPECT_EQ(MoltDomStorageAllowanceFullAtMs(emptied),
+            (kMoltDomStorageSiteWriteBytesBurst * 1000 +
+             kMoltDomStorageSiteWriteBytesPerSecond - 1) /
+                kMoltDomStorageSiteWriteBytesPerSecond);
+}
+
+// A commit rate lets the next commit go at once from a time on; a rate made
+// afresh then is never looser than the old one.
+TEST(MoltNetDomStorageSitePolicyTest, RateFreeAt) {
+  constexpr int64_t kHour = kMoltDomStorageHourMs;
+  MoltDomStorageSiteRate rate{/*start_ms=*/5000, /*commits=*/30,
+                              /*bytes=*/0};
+  EXPECT_EQ(MoltDomStorageSiteRateFreeAtMs(rate), 5000 + kHour / 2);
+  const int64_t free_at = MoltDomStorageSiteRateFreeAtMs(rate);
+  EXPECT_EQ(MoltDomStorageSiteCommitDelayMs(rate.commits, rate.bytes,
+                                            free_at - rate.start_ms),
+            0);
+  // From then on, for any number of further commits, the old rate never
+  // asks for a longer wait than a fresh one.
+  for (int64_t later = 0; later < 3 * kHour; later += kHour / 7) {
+    for (int64_t more = 0; more < 100; ++more) {
+      const int64_t old_delay = MoltDomStorageSiteCommitDelayMs(
+          rate.commits + more, 0, free_at + later - rate.start_ms);
+      const int64_t fresh_delay =
+          MoltDomStorageSiteCommitDelayMs(more, 0, later);
+      ASSERT_LE(old_delay, fresh_delay) << later << " " << more;
+    }
+  }
+}
+
+// Records that may go do, a few at each operation, the longest due first,
+// and none before its time.
+TEST(MoltNetDomStorageSitePolicyTest, ExpiringRecords) {
+  MoltDomStorageExpiringRecords<int> records;
+  records.GetOrAdd("a", 1);
+  records.SetForgetAt("a", 100);
+  records.GetOrAdd("b", 2) = 7;
+  records.SetForgetAt("b", 50);
+  records.GetOrAdd("c", 3);
+  records.SetForgetAt("c", 1000);
+  EXPECT_EQ(records.GetOrAdd("b", 0), 7);
+  EXPECT_EQ(records.ForgetDue(49, 10), 0u);
+  EXPECT_EQ(records.ForgetDue(100, 1), 1u);
+  EXPECT_EQ(records.Find("b"), nullptr);
+  ASSERT_NE(records.Find("a"), nullptr);
+  // Moved later, it stays.
+  records.SetForgetAt("a", 500);
+  EXPECT_EQ(records.ForgetDue(499, 10), 0u);
+  EXPECT_EQ(records.ForgetDue(10000, 10), 2u);
+  EXPECT_EQ(records.size(), 0u);
+  records.GetOrAdd("d", 4);
+  records.Forget("d");
+  records.Forget("unknown");
+  EXPECT_EQ(records.size(), 0u);
+}
+
+// A site that wrote once and stopped leaves no record behind for long:
+// with every operation forgetting a few due records, 10,000 sites that each
+// wrote once, a second apart, leave only the last few seconds' worth.
+TEST(MoltNetDomStorageSitePolicyTest, AllowancesDontGrowWithSitesVisited) {
+  MoltDomStorageExpiringRecords<MoltDomStorageWriteAllowance> writes;
+  size_t most = 0;
+  for (int64_t i = 0; i < 10000; ++i) {
+    const int64_t now = i * 1000;
+    writes.ForgetDue(now, kMoltDomStorageForgetPerCall);
+    const std::string site = "https://s" + std::to_string(i) + ".test";
+    MoltDomStorageWriteAllowance& allowance =
+        writes.GetOrAdd(site, MoltDomStorageWriteAllowance{now});
+    ASSERT_TRUE(MoltDomStorageMayWrite(allowance, now, 1024));
+    writes.SetForgetAt(site, MoltDomStorageAllowanceFullAtMs(allowance));
+    most = std::max(most, writes.size());
+  }
+  EXPECT_LE(most, 2u);
 }
 
 // ---- The storage sequence in turn per site ----

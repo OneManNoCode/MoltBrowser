@@ -60,34 +60,30 @@ TEST(MoltNetBlobBudgetPolicyTest, HeldMemoryCountsLikeABlob) {
   EXPECT_EQ(MoltBlobHoldFor(kShare, kShare, 0), MoltBlobHold::kCounted);
 }
 
-// The blobs the browser makes for a site count to that site's own key:
-// apart from every renderer process (positive 31-bit ids) and every other
-// site, by construction; the browser's own key for none.
+// The blobs the browser makes for a site count to that site's own key,
+// derived from a keyed digest of the site, with nothing kept per site: apart
+// from every renderer process (positive 31-bit ids) and the browser's own
+// key, by construction; apart from other sites unless their digests' 63 bits
+// meet, which a page can't arrange (it never sees the secret or a key).
 TEST(MoltNetBlobBudgetPolicyTest, SiteKeys) {
-  storage::MoltBlobSiteKeys site_keys;
-  EXPECT_EQ(site_keys.KeyFor(""), storage::kMoltBlobBrowserKey);
-  EXPECT_EQ(site_keys.size(), 0u);
-  const uint64_t a = site_keys.KeyFor("https://a.test");
-  EXPECT_EQ(a, site_keys.KeyFor("https://a.test"));
-  EXPECT_NE(a, site_keys.KeyFor("https://b.test"));
-  EXPECT_NE(a, site_keys.KeyFor("http://a.test"));
-  EXPECT_NE(a & storage::kMoltBlobSiteKeyBit, 0u);
-  EXPECT_NE(a, storage::kMoltBlobBrowserKey);
-  EXPECT_GT(a, static_cast<uint64_t>(INT32_MAX));
-  EXPECT_EQ(site_keys.size(), 3u);
+  using storage::MoltBlobSiteKeyFromDigest;
+  for (uint64_t digest :
+       {uint64_t{0}, uint64_t{1}, uint64_t{INT32_MAX}, ~uint64_t{0},
+        uint64_t{0x8000000000000000}, uint64_t{0x123456789abcdef0}}) {
+    const uint64_t key = MoltBlobSiteKeyFromDigest(digest);
+    EXPECT_NE(key & storage::kMoltBlobSiteKeyBit, 0u);
+    EXPECT_NE(key, storage::kMoltBlobBrowserKey);
+    EXPECT_GT(key, static_cast<uint64_t>(INT32_MAX));
+    // The digest's other 63 bits are the key's.
+    EXPECT_EQ(key & ~storage::kMoltBlobSiteKeyBit,
+              digest & ~storage::kMoltBlobSiteKeyBit);
+  }
+  // Distinct digests (but for the top bit) give distinct keys.
   std::set<uint64_t> keys;
-  for (int i = 0; i < 10000; ++i) {
-    keys.insert(site_keys.KeyFor("https://s" + std::to_string(i) + ".test"));
+  for (uint64_t i = 0; i < 10000; ++i) {
+    keys.insert(MoltBlobSiteKeyFromDigest(i * 0x9e3779b97f4a7c15ULL));
   }
   EXPECT_EQ(keys.size(), 10000u);
-  EXPECT_EQ(keys.count(a), 0u);
-  for (uint64_t key : keys) {
-    EXPECT_NE(key & storage::kMoltBlobSiteKeyBit, 0u);
-  }
-  // Asked again, every site keeps its key.
-  EXPECT_EQ(site_keys.KeyFor("https://s42.test"),
-            site_keys.KeyFor("https://s42.test"));
-  EXPECT_EQ(site_keys.size(), 10003u);
 }
 
 }  // namespace

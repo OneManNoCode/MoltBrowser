@@ -6,6 +6,7 @@ module storage.mojom;
 
 import "components/services/storage/public/mojom/storage_policy_update.mojom";
 import "components/services/storage/public/mojom/storage_usage_info.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";  // MoltBrowser
 import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
 import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
 
@@ -67,4 +68,12 @@ interface LocalStorageControl {
   // MoltBrowser: with caches per site, `observer` hears when all areas
   // together grow past the floor.
   MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
+
+  // MoltBrowser: with caches per site, drops every area of the storage keys
+  // with `nonce` (a page's credentialless frames) and the records of their
+  // group, in the group's turn. With `closed`, their writes are refused from
+  // then on (the page lives on past its site's bound); without, that ends
+  // (the page is gone). components/services/storage/dom_storage/
+  // molt_dom_storage_site_policy.h.
+  MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
 };

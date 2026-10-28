@@ -20,7 +20,12 @@
 // its own site (molt_keepalive_site.h), with Chromium's three limits:
 // 2048 for the site, 256 and 512 KiB for each of its top-level frames. Its
 // requests count toward no other recorder, and no other context's or
-// site's toward its. A context's recorders go with it.
+// site's toward its. A context's recorders go with it, and a site's goes as
+// soon as nothing uses it (ForgetIfIdle(): no factory of the site is left
+// and none of its requests is in flight), so the recorders don't grow with
+// every site an identity visited. A site's limits are on what it has in
+// flight, never a rate, so a recorder made again afresh for a site that had
+// nothing in flight counts exactly what the old one would.
 //
 // Std-only (a template over the recorder type), so molt_ai_unittests and a
 // standalone harness test it.
@@ -71,6 +76,15 @@ class MoltKeepalivePartitions {
       recorder = std::make_unique<Recorder>();
     }
     return recorder.get();
+  }
+
+  // Drops `context`'s recorder of `site` if it is idle (Recorder::
+  // MoltIsIdle(): no factory registered with it and nothing in flight).
+  void ForgetIfIdle(uintptr_t context, const std::string& site) {
+    auto it = recorders_.find({context, site});
+    if (it != recorders_.end() && it->second->MoltIsIdle()) {
+      recorders_.erase(it);
+    }
   }
 
   size_t RecorderCount() const { return recorders_.size(); }

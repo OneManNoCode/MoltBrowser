@@ -103,9 +103,10 @@ class CONTENT_EXPORT BackgroundFetchScheduler
   void Shutdown();
 
   // MoltBrowser: schedules per site from now on, for a partition whose
-  // embedder asks (molt_background_fetch_site_policy.h). Called once, before
-  // any registration.
-  void MoltSchedulePerSite();
+  // embedder asks (molt_background_fetch_site_policy.h); past the floor,
+  // each request that starts runs `on_growth_beyond_floor` (may be null).
+  // Called once, before any registration.
+  void MoltSchedulePerSite(base::RepeatingClosure on_growth_beyond_floor);
 
  private:
   friend class BackgroundFetchJobControllerTest;
@@ -114,8 +115,10 @@ class CONTENT_EXPORT BackgroundFetchScheduler
 
   // Schedules a download, if possible, and returns whether successful.
   bool ScheduleDownload();
-  // MoltBrowser: the same, per site (molt_background_fetch_site_policy.h).
-  bool MoltScheduleDownload();
+  // MoltBrowser: per site (molt_background_fetch_site_policy.h), activates
+  // what `site` has room for and starts its requests while it has room;
+  // looks at `site`'s registrations only.
+  void MoltSchedule(const std::string& site);
 
   // Helper method to abandon ongoing fetches for a given service worker.
   // Abandons all of them if |service_worker_registration_id| is set to
@@ -220,12 +223,10 @@ class CONTENT_EXPORT BackgroundFetchScheduler
   int num_active_registrations_ = 0;
   int num_running_downloads_ = 0;
 
-  // MoltBrowser: each site's active registrations and downloads, when
-  // scheduling per site.
+  // MoltBrowser: each site's registrations and downloads, when scheduling
+  // per site, and what runs past the floor (the memory valve).
   std::unique_ptr<MoltBackgroundFetchSites> molt_sites_;
-  // MoltBrowser: whether a registration was made or one finished since the
-  // pending ones were last looked at (only that lets one become active).
-  bool molt_pending_changed_ = false;
+  base::RepeatingClosure molt_on_growth_beyond_floor_;
 
   base::WeakPtrFactory<BackgroundFetchScheduler> weak_ptr_factory_{this};
 };
