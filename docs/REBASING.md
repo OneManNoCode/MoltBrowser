@@ -131,7 +131,10 @@ channel moves to a new milestone again, do the big rebase to it.
 2. On a branch `rebase/<tag>`: pin the new release's source tarball
    (`PINNED_SHA256`, above) first: the rebase reads the DEPS subprojects
    no mirror carries (WebRTC) from it, as do the static GN check and the
-   compile check. Then `tools/chromium/rebase.py <tag>` and read
+   compile check. (Without the pin, the dry run marks those files
+   unavailable and quotes the SHA-256 the bucket's `.hashes` file lists,
+   saying whether that file's MD5 matches the bucket's own for the
+   tarball.) Then `tools/chromium/rebase.py <tag>` and read
    `report.md`. Same-branch respins are normally all clean; a security
    respin almost always moves V8 and often Skia and WebRTC, whose whole
    files the report lists per subproject.

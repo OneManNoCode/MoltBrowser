@@ -276,6 +276,35 @@ class TarballTest(unittest.TestCase):
                 sp.extract_paths(url, "1.2.3.4", {"a/b.cc"}, d / "out3",
                                  log=lambda m: None, pins={})
 
+    def test_published_hashes_hint(self):
+        name = "chromium-1.2.3.4-lite.tar.xz"
+        url = "https://bucket.invalid/" + name
+        sha, md5 = "b" * 64, "a" * 32
+        state = {"etag": md5, "hashes": "md5  %s  %s\nsha1  %s  %s\n"
+                 "sha256  %s  %s\n" % (md5, name, "c" * 40, name, sha, name)}
+
+        class Response(io.BytesIO):
+            def __init__(self, body=b"", headers=None):
+                super().__init__(body)
+                self.headers = headers or {}
+
+        def opener(req):
+            if isinstance(req, str):
+                if state["hashes"] is None:
+                    raise OSError("404")
+                self.assertEqual(req, url + ".hashes")
+                return Response(state["hashes"].encode())
+            self.assertEqual((req.full_url, req.get_method()), (url, "HEAD"))
+            return Response(headers={"ETag": '"%s"' % state["etag"]})
+
+        self.assertEqual(sp.published_hashes(url, opener), (sha, True))
+        state["etag"] = "d" * 32    # .hashes and the bucket disagree
+        self.assertEqual(sp.published_hashes(url, opener), (sha, False))
+        state["hashes"] = "md5  %s  %s\n" % (md5, name)   # no SHA-256
+        self.assertIsNone(sp.published_hashes(url, opener))
+        state["hashes"] = None      # unreachable
+        self.assertIsNone(sp.published_hashes(url, opener))
+
 
 class RebaseTest(unittest.TestCase):
     def setUp(self):

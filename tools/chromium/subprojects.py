@@ -195,6 +195,29 @@ def extract_paths(url, version, wanted, dest, log=up.log, opener=None,
     return dest
 
 
+def published_hashes(url, opener=None):
+    """For a tarball nobody has pinned yet: (SHA-256 its .hashes file lists,
+    whether that file's MD5 is the one the bucket reports for the tarball
+    itself, its ETag), or None if the bucket can't be asked. Only a hint
+    for the person pinning it (PINNED_SHA256); nothing is pinned here."""
+    opener = opener or urllib.request.urlopen
+    try:
+        with opener(url + ".hashes") as r:
+            text = r.read().decode("utf-8", "replace")
+        with opener(urllib.request.Request(url, method="HEAD")) as r:
+            etag = (r.headers.get("ETag") or "").strip('"').lower()
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    sums = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[2] == url.rsplit("/", 1)[-1]:
+            sums[parts[0]] = parts[1].lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sums.get("sha256", "")):
+        return None
+    return sums["sha256"], bool(etag) and sums.get("md5") == etag
+
+
 class Sources:
     """Files of DEPS subprojects at given commits. Call want() for every
     (subproject, commit, files) needed, then fetch() once (each tarball is
@@ -267,8 +290,17 @@ class Sources:
             try:
                 pinned = cctarball.pinned_sha256(url, self.tarball_pins)
             except cctarball.TarballNotVerified as e:
+                why = str(e)
+                hint = None if self.offline else published_hashes(
+                    url, self.tarball_opener)
+                if hint:
+                    why += ("; the bucket's %s.hashes lists SHA-256 %s, and "
+                            "its MD5 %s the MD5 the bucket reports for the "
+                            "tarball" % (url.rsplit("/", 1)[-1], hint[0],
+                                         "matches" if hint[1] else
+                                         "does NOT match (don't pin it)"))
                 for k in keys:
-                    self._why.setdefault(k, []).append(str(e))
+                    self._why.setdefault(k, []).append(why)
                 continue
             cached = (manifest.get("sha256") == pinned and
                       need <= set(manifest.get("wanted", ())))
