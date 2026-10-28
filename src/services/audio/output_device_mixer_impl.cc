@@ -319,6 +319,13 @@ class OutputDeviceMixerImpl::MixableOutputStream final
   raw_ptr<MixTrack> mix_track_;  // Valid only when |mixer_| is valid.
 };
 
+// MoltBrowser: ReferenceOutput::Listener's default, out of line
+// (reference_output.h has no .cc of its own; every listener is part of
+// Chromium-wide echo cancellation's code, as this file is).
+bool ReferenceOutput::Listener::IsCpuIndependent() const {
+  return false;
+}
+
 // MoltBrowser: what |mixing_graph_output_stream_| plays: |mixing_graph_|'s
 // mix, computed with the portable code (media's plain C sums and resampler
 // convolution, media/base/molt_portable_media.h) while a listener with

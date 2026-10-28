@@ -415,9 +415,11 @@ FULL_RULES = (
 # machines), and the processing the page asked for must be on. A microphone
 # has the same processing capabilities on every OS, "all" among them, and no
 # voice isolation. System echo cancellation ("all") is WebRTC's in MoltNet:
-# the same samples as the default, on every CPU and OS. So are
-# "remote-only"'s while the page plays tones: the renderer's processing,
-# whose echo canceller hears WebRTC's playout only, which MoltNet has none of.
+# the same samples as the default, so the same hash on every CPU and OS
+# family. So are "remote-only"'s while the page plays tones: the renderer's
+# processing, whose echo canceller hears WebRTC's playout only, which MoltNet
+# has none of. (The default echo cancellation while the page plays is
+# INFO_KEYS' audio.mic_playback.)
 MIC_RULES = (
     ('audio.mic_processed_stable', 'eq', True, S_MIC),
     ('audio.mic_settings', 'eq', {'echoCancellation': True,

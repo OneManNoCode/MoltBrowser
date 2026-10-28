@@ -32,9 +32,10 @@ class ReferenceOutput {
     // media::AudioProcessingSettings::cpu_independent). While such a listener
     // listens, the output it hears is mixed with the portable code
     // (media/base/molt_portable_media.h, ScopedPortableAudioThread), so that
-    // its reference is the same on every CPU and OS. Asked once, when it
-    // starts listening.
-    virtual bool IsCpuIndependent() const { return false; }
+    // its reference is the same on every CPU and OS. Asked when it starts and
+    // when it stops listening; the answer must not change in between. False
+    // by default (defined in output_device_mixer_impl.cc).
+    virtual bool IsCpuIndependent() const;
 
    protected:
     virtual ~Listener() = default;
