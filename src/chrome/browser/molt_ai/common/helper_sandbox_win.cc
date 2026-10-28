@@ -337,7 +337,7 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
   sandbox::Job job;
   const DWORD job_error =
       job.Init(sandbox::JobLevel::kLockdown, /*ui_exceptions=*/0,
-               base::checked_cast<size_t>(plan->process_memory_limit));
+               base::saturated_cast<size_t>(plan->process_memory_limit));
   if (job_error != ERROR_SUCCESS) {
     return fail(WithError("could not set up its job", job_error));
   }
