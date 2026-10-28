@@ -861,6 +861,19 @@ Vector<int> GetApmSupportedChannels(
   return result;
 }
 
+// MoltBrowser: the channel counts of a source without WebRTC's processing. In
+// MoltNet the CPU-independent processing converts every stream to the one
+// format (media/base/molt_portable_media.h), so a stream has one channel or,
+// when the page asks for them, two, with every effect off as with processing,
+// whatever the device has. Elsewhere the device's own channels.
+Vector<int> GetUnprocessedSupportedChannels(
+    const media::AudioParameters& device_params) {
+  if (media::IsPortableMediaProcess()) {
+    return GetApmSupportedChannels(device_params);
+  }
+  return {device_params.channels()};
+}
+
 // This container represents the supported audio settings for a given type of
 // audio source. In practice, there are three types of sources: processed
 // using APM, processed without APM, and unprocessed. Processing using APM has
@@ -940,7 +953,8 @@ class ProcessingBasedContainer {
         /*auto_gain_control_set=*/BoolSet({false}),
         /*noise_suppression_set=*/BoolSet({false}), voice_isolation_set,
         /*sample_size_range=*/IntRangeSet::FromValue(GetSampleSize()),
-        /*channels_set=*/{device_parameters.channels()},
+        // MoltBrowser: see GetUnprocessedSupportedChannels().
+        /*channels_set=*/GetUnprocessedSupportedChannels(device_parameters),
         /*sample_rate_range=*/
         IntRangeSet::FromValue(device_parameters.sample_rate()), source_info,
         api, device_parameters, is_full_reconfiguration_allowed);
@@ -961,7 +975,8 @@ class ProcessingBasedContainer {
         /*noise_suppression_set=*/BoolSet({false}),
         /*voice_isolation_set=*/BoolSet({false}),
         /*sample_size_range=*/IntRangeSet::FromValue(GetSampleSize()),
-        /*channels_set=*/{device_parameters.channels()},
+        // MoltBrowser: see GetUnprocessedSupportedChannels().
+        /*channels_set=*/GetUnprocessedSupportedChannels(device_parameters),
         /*sample_rate_range=*/
         IntRangeSet::FromValue(device_parameters.sample_rate()), source_info,
         api, device_parameters, is_full_reconfiguration_allowed);

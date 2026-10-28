@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>  // MoltBrowser
 #include <string>
 #include <utility>
 #include <vector>
@@ -2781,6 +2782,68 @@ TEST_F(UserMediaClientTest, MoltNetMicrophoneHasUniformFormatAndNames) {
       WebMediaStreamTrack(track->Component()))
       ->Stop();
   blink::WebHeap::CollectGarbageForTesting();
+}
+
+// MoltBrowser: in MoltNet a microphone stream's channel count follows the
+// request alone: one channel unless the page asks for two, with every effect
+// off as with processing, on a mono and a stereo device alike. Chromium gives
+// a request with every effect off the device's channels.
+TEST_F(UserMediaClientTest, MoltNetChannelCountFollowsTheRequest) {
+  media::SetPortableMediaProcessForTesting(true);
+  // A normal renderer again however the test ends.
+  struct ResetPortableMediaProcess {
+    ~ResetPortableMediaProcess() {
+      media::SetPortableMediaProcessForTesting(false);
+    }
+  } reset_portable_media_process;
+
+  // The channels the constraints select for a device of `layout`, with every
+  // effect off (`processing` false) or on, asking for `ideal_channels`.
+  auto channels_for = [&](media::ChannelLayoutConfig layout, bool processing,
+                          std::optional<int> ideal_channels) {
+    media_devices_dispatcher_.AudioParameters() = media::AudioParameters(
+        media::AudioParameters::AUDIO_PCM_LOW_LATENCY, layout,
+        media::AudioParameters::kAudioCDSampleRate, 441);
+    blink::MockConstraintFactory factory;
+    factory.basic().device_id.SetExact(fake_ids_->audio_input_1);
+    factory.basic().echo_cancellation.SetExactBoolean(processing);
+    factory.basic().noise_suppression.SetExact(processing);
+    factory.basic().auto_gain_control.SetExact(processing);
+    if (ideal_channels) {
+      factory.basic().channel_count.SetIdeal(*ideal_channels);
+    }
+    UserMediaRequest* request = UserMediaRequest::CreateForTesting(
+        factory.CreateMediaConstraints(), MediaConstraints());
+    user_media_client_impl_->RequestUserMediaForTest(request);
+    blink::AudioCaptureSettings settings =
+        user_media_processor_->AudioSettings();
+    if (!settings.HasValue() &&
+        !user_media_processor_->EligibleAudioSettings().empty()) {
+      settings = user_media_processor_->EligibleAudioSettings()[0];
+    }
+    user_media_client_impl_->CancelUserMediaRequest(request);
+    EXPECT_TRUE(settings.HasValue());
+    return settings.HasValue() ? settings.num_channels() : -1;
+  };
+
+  for (bool processing : {false, true}) {
+    for (media::ChannelLayoutConfig layout :
+         {media::ChannelLayoutConfig::Mono(),
+          media::ChannelLayoutConfig::Stereo()}) {
+      SCOPED_TRACE(testing::Message() << "processing=" << processing
+                                      << " channels=" << layout.channels());
+      EXPECT_EQ(channels_for(layout, processing, std::nullopt), 1);
+      EXPECT_EQ(channels_for(layout, processing, 2), 2);
+    }
+  }
+
+  // Normal windows: the device's channels with every effect off.
+  media::SetPortableMediaProcessForTesting(false);
+  EXPECT_EQ(
+      channels_for(media::ChannelLayoutConfig::Mono(), false, std::nullopt), 1);
+  EXPECT_EQ(
+      channels_for(media::ChannelLayoutConfig::Stereo(), false, std::nullopt),
+      2);
 }
 
 }  // namespace blink
