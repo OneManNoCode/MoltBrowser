@@ -27,7 +27,11 @@ seconds for the largest), which is all a re-run of an unchanged file costs.
 A result is stored per file and platform (check/cache/<name>.json, one
 entry each, replaced on every compile), and only when the compile ran to
 completion (exit status 0 or 1, no crash): a compile the memory limit or a
-signal stopped is never reused. `--no-cache` compiles everything again.
+signal stopped is never reused. Nor is one during which a C-family file of
+the overlay (the working tree) changed, from before its key was made to
+the compile's end (SourceTree.overlay_stamp(): each file's size,
+modification time and inode): what was compiled may then not be what the
+key was made from. `--no-cache` compiles everything again.
 """
 import hashlib
 import json

@@ -22,6 +22,7 @@ googlesource.com is not reachable from every machine, so nothing comes from
 it. `<work>/repos/sources.json` records where each mount came from; when
 that changes, the mount's materialized and generated files are dropped.
 """
+import hashlib
 import json
 import lzma
 import os
@@ -44,6 +45,11 @@ _up.FETCH_RETRY_DELAYS = (15, 60, 180, 300, 600)
 from . import tarball  # noqa: E402
 
 LLVM = "https://github.com/llvm/llvm-project"
+
+# The overlay files a compile can read (SourceTree.overlay_stamp()).
+_COMPILED_EXTS = (".h", ".hh", ".hpp", ".hxx", ".inc", ".inl", ".ipp",
+                  ".tcc", ".def", ".c", ".cc", ".cpp", ".cxx", ".m", ".mm",
+                  ".s", ".S")
 
 # mount (Chromium path) -> (git mirror, or a tuple of mirrors tried in
 # order, or None if there is none; prefix inside that repo; commit override
@@ -169,6 +175,8 @@ HEAD_FALLBACK = {"third_party/pdfium", "third_party/webrtc",
                  "third_party/dawn"}
 
 SOURCES_STATE = "sources.json"
+# <work>/chromium/pin.json: the Chromium commit whose files the tree holds.
+PIN_STATE = "pin.json"
 
 
 def cache_name(remote):
@@ -266,7 +274,87 @@ class SourceTree:
         self.unavailable = {}
         self.substituted = {}
         self._overlay_set = None
+        self._overlay_sources = None
         self._mounts = sorted(SUBPROJECTS, key=len, reverse=True)
+
+    # -- the pin ---------------------------------------------------------
+    def _chromium_tree_at(self, rev):
+        """{path: TreeEntry} of Chromium at `rev` (a commit or a tag), or
+        None if the cache can't provide it."""
+        try:
+            up = self.chromium.up
+            return up.tree(up.resolve(rev))
+        except (RuntimeError, SystemExit) as e:
+            log("chromium tree: %s unavailable (%s)" % (
+                rev, str(e).strip()[-200:]))
+            return None
+
+    def move_to_pin(self):
+        """Makes the upstream files the tree holds the pin's. Files are
+        fetched once and kept, so when chromium_version.txt moves (a
+        rebase), the ones that differ between the commit they came from
+        (chromium/pin.json) and the new pin are dropped; a fetch writes the
+        new pin's where a check needs them. Overlay links (sync_overlay) and
+        generated files are left alone (generated ones are remade from
+        their changed inputs), and so are subprojects: a moved gitlink
+        changes the mount's source (_record). A work dir from before
+        pin.json is taken to be at the pin repos/tarball.json names, or, if
+        that commit is unknown, every file is compared with the pin's.
+        Returns the paths dropped."""
+        state_f = self.work / "chromium" / PIN_STATE
+        new = self.chromium.commit
+        try:
+            old = json.loads(state_f.read_text()).get("revision")
+        except (OSError, ValueError):
+            old = None
+        if old == new:
+            return []
+        if old is None:
+            try:
+                old = json.loads((self.work / "repos" /
+                                  "tarball.json").read_text()).get("pin")
+            except (OSError, ValueError):
+                old = None
+        new_entries = self.chromium.entries
+        old_entries = self._chromium_tree_at(old) if old else None
+        if old_entries is not None:
+            paths = sorted(
+                p for p in set(old_entries) | set(new_entries)
+                if "commit" not in (getattr(old_entries.get(p), "type", ""),
+                                    getattr(new_entries.get(p), "type", ""))
+                and getattr(old_entries.get(p), "oid", None) !=
+                getattr(new_entries.get(p), "oid", None))
+        else:
+            paths = []
+            if self.tree_dir.exists():
+                for dirpath, dirnames, filenames in os.walk(self.tree_dir):
+                    rel = os.path.relpath(dirpath, self.tree_dir)
+                    rel = "" if rel == "." else rel + "/"
+                    for f in filenames:
+                        p = rel + f
+                        e = new_entries.get(p)
+                        if e is None or e.type != "blob" or \
+                                os.path.islink(os.path.join(dirpath, f)):
+                            continue
+                        with open(os.path.join(dirpath, f), "rb") as fh:
+                            if _up.blob_id(fh.read()) != e.oid:
+                                paths.append(p)
+        dropped = []
+        for p in paths:
+            d = self.tree_dir / p
+            if d.is_symlink() or not d.is_file():
+                continue
+            d.unlink()
+            dropped.append(p)
+        if old or dropped:
+            label = old[:12] if old and len(old) == 40 else \
+                (old or "an unknown commit")
+            log("chromium tree: moved from %s to the pin %s; dropped %d "
+                "upstream file(s) that differ" % (label, new[:12],
+                                                  len(dropped)))
+        state_f.parent.mkdir(parents=True, exist_ok=True)
+        state_f.write_text(json.dumps({"revision": new}))
+        return dropped
 
     # -- overlay ---------------------------------------------------------
     def overlay_set(self):
@@ -278,6 +366,27 @@ class SourceTree:
                     s.add(f if rel == "." else rel + "/" + f)
             self._overlay_set = s
         return self._overlay_set
+
+    def overlay_stamp(self):
+        """The overlay's C-family files as they are now (each one's size,
+        modification time and inode), hashed: the overlay is the working
+        tree, which may be edited while a check runs, so a result is stored
+        only if this didn't change while its file compiled
+        (result_cache.py). The files a compile can read; the generated ones
+        are made before any compile."""
+        if self._overlay_sources is None:
+            self._overlay_sources = sorted(
+                p for p in self.overlay_set() if p.endswith(_COMPILED_EXTS))
+        h = hashlib.sha256()
+        for p in self._overlay_sources:
+            try:
+                st = os.stat(self.overlay / p)
+            except OSError:
+                h.update(p.encode() + b"\0gone\n")
+                continue
+            h.update(p.encode() + b"\0%d %d %d\n" % (
+                st.st_size, st.st_mtime_ns, st.st_ino))
+        return h.hexdigest()
 
     # -- subprojects -----------------------------------------------------
     def mount_of(self, path):

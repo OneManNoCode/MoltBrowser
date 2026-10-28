@@ -1,14 +1,14 @@
 MoltBrowser patch for storage/browser/blob/blob_storage_context.cc
-Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
 Generated from src/storage/browser/blob/blob_storage_context.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_storage_context.cc b/storage/browser/blob/blob_storage_context.cc
-index 892320c8e27ca04064a82d09524e74c3f1142cc0..ac549cea490f98ca74cbad3951af6aec713413e3 100644
+index f33f28a0d806762437eaf9db0d5279d04528b171..5801ca1355592669242e10167cb2e4d8b46f7f75 100644
 --- a/storage/browser/blob/blob_storage_context.cc
 +++ b/storage/browser/blob/blob_storage_context.cc
-@@ -321,8 +321,11 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
+@@ -316,8 +316,11 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
    }
  
    // Avoid the state where we might grant only one quota.
@@ -22,7 +22,7 @@ index 892320c8e27ca04064a82d09524e74c3f1142cc0..ac549cea490f98ca74cbad3951af6aec
      CancelBuildingBlobInternal(entry, BlobStatus::ERR_OUT_OF_MEMORY);
      return handle;
    }
-@@ -333,7 +336,8 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
+@@ -328,7 +331,8 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
          memory_controller_.ReserveMemoryQuota(
              std::move(pending_copy_items),
              base::BindOnce(&BlobStorageContext::OnEnoughSpaceForCopies,
@@ -32,7 +32,7 @@ index 892320c8e27ca04064a82d09524e74c3f1142cc0..ac549cea490f98ca74cbad3951af6aec
      // Building state will be null if the blob is already finished.
      if (entry->building_state_)
        entry->building_state_->copy_quota_request = std::move(pending_request);
-@@ -346,11 +350,13 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
+@@ -341,11 +345,13 @@ std::unique_ptr<BlobDataHandle> BlobStorageContext::BuildBlobInternal(
        case TransportQuotaType::MEMORY: {
          // The blob can complete during the execution of |ReserveMemoryQuota|.
          std::vector<BlobMemoryController::FileCreationInfo> empty_files;

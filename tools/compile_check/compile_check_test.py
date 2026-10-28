@@ -733,6 +733,96 @@ class SourcesStateTest(unittest.TestCase):
         self.assertFalse(self.files.exists())
 
 
+class PinMoveTest(unittest.TestCase):
+    """SourceTree.move_to_pin: after a rebase, the upstream files fetched at
+    the old pin are dropped (a fetch writes the new pin's)."""
+
+    class FakeUp:
+        def __init__(self, trees):
+            self.trees = trees
+
+        def resolve(self, rev):
+            if rev not in self.trees:
+                raise RuntimeError("no %s in the cache" % rev)
+            return rev
+
+        def tree(self, commit):
+            return self.trees[commit]
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / "overlay" / "a").mkdir(parents=True)
+        self.tree = sources.SourceTree(self.tmp / "work", self.tmp / "cache",
+                                       overlay=self.tmp / "overlay")
+        E, bid = sources._up.TreeEntry, sources._up.blob_id
+        old = {"a/same.h": E("100644", "blob", bid(b"same")),
+               "a/changed.h": E("100644", "blob", bid(b"old")),
+               "a/gone.h": E("100644", "blob", bid(b"gone")),
+               "a/linked.h": E("100644", "blob", bid(b"upstream old")),
+               "v8": E("160000", "commit", "1" * 40)}
+        new = {"a/same.h": old["a/same.h"],
+               "a/changed.h": E("100644", "blob", bid(b"new")),
+               "a/added.h": E("100644", "blob", bid(b"added")),
+               "a/linked.h": E("100644", "blob", bid(b"upstream new")),
+               "v8": E("160000", "commit", "2" * 40)}
+        up = self.FakeUp({"o" * 40: old, "n" * 40: new,
+                          "156.0.1.2": old})
+        self.tree.chromium = types.SimpleNamespace(up=up, commit="n" * 40,
+                                                   entries=new)
+        t = self.tree.tree_dir
+        for rel, data in (("a/same.h", b"same"), ("a/changed.h", b"old"),
+                          ("a/gone.h", b"gone"),
+                          ("build/util/LASTCHANGE", b"hook output"),
+                          ("v8/include/v8.h", b"a mount's file"),
+                          ("out/cc/gen/a/x.h", b"generated")):
+            (t / rel).parent.mkdir(parents=True, exist_ok=True)
+            (t / rel).write_bytes(data)
+        (self.tmp / "overlay" / "a" / "linked.h").write_bytes(b"ours")
+        os.symlink(self.tmp / "overlay" / "a" / "linked.h", t / "a/linked.h")
+        self.state = self.tree.work / "chromium" / sources.PIN_STATE
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def kept(self):
+        t = self.tree.tree_dir
+        return sorted(str(p.relative_to(t)) for p in t.rglob("*")
+                      if p.is_file() or p.is_symlink())
+
+    def test_moved_pin_drops_changed_and_deleted_files(self):
+        self.state.write_text(json.dumps({"revision": "o" * 40}))
+        self.assertEqual(self.tree.move_to_pin(), ["a/changed.h",
+                                                   "a/gone.h"])
+        self.assertEqual(self.kept(), [
+            "a/linked.h", "a/same.h", "build/util/LASTCHANGE",
+            "out/cc/gen/a/x.h", "v8/include/v8.h"])
+        self.assertEqual(json.loads(self.state.read_text()),
+                         {"revision": "n" * 40})
+        # At the pin now: nothing more goes.
+        self.assertEqual(self.tree.move_to_pin(), [])
+
+    def test_work_dir_from_before_pin_json(self):
+        # The pin repos/tarball.json was written for.
+        tb = self.tree.work / "repos" / "tarball.json"
+        tb.parent.mkdir(parents=True)
+        tb.write_text(json.dumps({"pin": "156.0.1.2"}))
+        self.assertEqual(self.tree.move_to_pin(), ["a/changed.h",
+                                                   "a/gone.h"])
+
+    def test_unknown_old_pin_compares_contents(self):
+        # The old commit isn't in the cache: every upstream file is compared
+        # with the pin's (one deleted upstream can't be told from a hook's).
+        self.state.write_text(json.dumps({"revision": "x" * 40}))
+        self.assertEqual(self.tree.move_to_pin(), ["a/changed.h"])
+        self.assertIn("a/gone.h", self.kept())
+
+    def test_fresh_work_dir_records_the_pin(self):
+        shutil.rmtree(self.tree.tree_dir)
+        self.assertEqual(self.tree.move_to_pin(), [])
+        self.assertEqual(json.loads(self.state.read_text()),
+                         {"revision": "n" * 40})
+
+
 class ReportTest(unittest.TestCase):
     def test_classify_names_stand_ins(self):
         tmp = Path(tempfile.mkdtemp())
@@ -2044,6 +2134,12 @@ if "-E" in sys.argv or "/E" in sys.argv:
     sys.exit(int(os.environ.get("FAKE_PP_RC", "0")))
 with open(os.path.join(os.path.dirname(__file__), "compiles.txt"), "a") as f:
     f.write(src + "\n")
+# A source edited while it compiles: the compile reads the new text.
+edit = os.environ.get("FAKE_EDIT_WHILE_COMPILING")
+if edit:
+    with open(edit, "w") as f:
+        f.write("int x;\n")
+    text = open(src).read()
 if "CRASH" in text:
     sys.stderr.write("PLEASE submit a bug report\n")
     sys.exit(1)
@@ -2167,6 +2263,47 @@ class ResultCacheTest(unittest.TestCase):
         finally:
             del os.environ["FAKE_PP_RC"]
         self.assertEqual(self.compiled(), 4)
+
+    def test_an_edit_while_compiling_stores_nothing(self):
+        # The source is an overlay file (the working tree, linked into the
+        # tree as sync_overlay() does), edited after its key was made, while
+        # it compiles: the result is of the new text, not of the one the key
+        # was made from, so it isn't stored.
+        overlay = self.tmp / "overlay" / "a" / "x.cc"
+        overlay.parent.mkdir(parents=True)
+        warned = '#include "x.h"\nint x; // WARN\n'
+        overlay.write_text(warned)
+        notes = overlay.parent / "notes.md"
+        notes.write_text("not compiled")
+        self.src.unlink()
+        self.src.symlink_to(overlay)
+        os.environ["FAKE_EDIT_WHILE_COMPILING"] = str(overlay)
+        try:
+            r = self.run_one()
+        finally:
+            del os.environ["FAKE_EDIT_WHILE_COMPILING"]
+        self.assertFalse(r["reused"])
+        self.assertEqual(r["diags"], [])
+        self.assertFalse(result_cache.entry_path(self.work,
+                                                 "a__x.cc").exists())
+        # Back to the text the key was made from: compiled again, with its
+        # own warning, not the edited text's result.
+        overlay.write_text(warned)
+        r = self.run_one()
+        self.assertFalse(r["reused"])
+        self.assertEqual([d["kind"] for d in r["diags"]], ["warning"])
+        self.assertTrue(self.run_one()["reused"])
+        self.assertEqual(self.compiled(), 2)
+        # The stamp sees an edit of the same size, and not a file no
+        # compile reads.
+        stamp = self.tree.overlay_stamp()
+        self.assertEqual(self.tree.overlay_stamp(), stamp)
+        notes.write_text("not compiled, edited")
+        self.assertEqual(self.tree.overlay_stamp(), stamp)
+        st = overlay.stat()
+        overlay.write_text(warned.replace("x;", "y;"))
+        os.utime(overlay, ns=(st.st_atime_ns, st.st_mtime_ns + 1))
+        self.assertNotEqual(self.tree.overlay_stamp(), stamp)
 
     def test_entry_of_another_key_is_not_used(self):
         result_cache.store(self.work, "n", "k1", 0, "log", 512)

@@ -44,6 +44,10 @@ _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 # GitHub mirror sometimes answers with a 5xx, after a long wait for a large
 # tree fetch; a second try usually works.
 FETCH_RETRY_DELAYS = (15, 60)
+# What git prints when the mirror doesn't have the commit or ref at all
+# (a DEPS subproject's mirror without Chromium's release branch): no retry.
+NOT_ON_MIRROR = ("not our ref", "couldn't find remote ref",
+                 "no such remote ref", "Repository not found")
 
 
 def log(msg):
@@ -93,7 +97,8 @@ class Pin:
         return "%s (%s)" % (self.version, self.revision)
 
 
-def read_pin(path=PIN_FILE):
+def read_pin(path=None):
+    path = PIN_FILE if path is None else path
     values = {}
     for line in Path(path).read_text().splitlines():
         line = line.strip()
@@ -110,8 +115,9 @@ def read_pin(path=PIN_FILE):
     return Pin(version, revision)
 
 
-def write_pin(version, revision, path=PIN_FILE):
+def write_pin(version, revision, path=None):
     """Rewrites the two values in place, keeping the comment header."""
+    path = PIN_FILE if path is None else path
     text = Path(path).read_text()
     text = re.sub(r"(?m)^CHROMIUM_VERSION=.*$",
                   "CHROMIUM_VERSION=" + version, text)
@@ -157,7 +163,9 @@ def is_binary(data):
 
 def read_list(path):
     """Reads series / identical.txt / whole_files.txt: one entry per line;
-    '#' starts a comment (a whole line, or after whitespace)."""
+    '#' starts a comment (a whole line, or after whitespace). (The comment
+    after a whole_files.txt entry is the subproject commit it was merged
+    with: subprojects.read_whole_files reads it.)"""
     if not Path(path).exists():
         return []
     out = []
@@ -193,10 +201,14 @@ class TreeEntry:
 
 
 class Upstream:
+    """A bare, shallow, blob-less clone of one repository: Chromium by
+    default, or (with `name`) a DEPS subproject's mirror, kept as
+    <cache_dir>/<name>."""
+
     def __init__(self, cache_dir=DEFAULT_CACHE, remote=DEFAULT_REMOTE,
-                 offline=False):
+                 offline=False, name="chromium.git"):
         self.cache_dir = Path(cache_dir)
-        self.git_dir = self.cache_dir / "chromium.git"
+        self.git_dir = self.cache_dir / name
         self.remote = remote
         self.offline = offline
         self._trees = {}
@@ -226,12 +238,13 @@ class Upstream:
             self.git(["config", k, v])
 
     def _fetch(self, args, input=None):
-        """Runs a fetch from the mirror, retrying after FETCH_RETRY_DELAYS."""
+        """Runs a fetch from the mirror, retrying after FETCH_RETRY_DELAYS
+        (but not when the mirror says it has no such commit or ref)."""
         for delay in FETCH_RETRY_DELAYS + (None,):
             try:
                 return self.git(args, input=input)
             except RuntimeError as e:
-                if delay is None:
+                if delay is None or any(m in str(e) for m in NOT_ON_MIRROR):
                     raise
                 log("%s\nRetrying in %d s ..." % (e, delay))
                 time.sleep(delay)

@@ -35,7 +35,8 @@
 //    site's oldest such page's group is closed: its storage is dropped as if
 //    the page had gone, and its frames' writes are refused from then on (as
 //    a write past a quota is) until the page goes. What it depends on: the
-//    site's own pages only, never another site's.
+//    site's own pages only, never another site's (a page served sandboxed
+//    counts to the site it came from: MoltNetNonceGroupSite()).
 //
 // Std-only, so molt_ai_unittests tests it. Not thread-safe: the browser uses
 // it on the UI thread.
@@ -48,6 +49,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace molt_ai::tor {
 
@@ -55,6 +57,29 @@ namespace molt_ai::tor {
 // at once: far more than the pages of one site with credentialless frames a
 // person keeps open (a tab and its back/forward cache hold seven at most).
 inline constexpr size_t kMoltNetNonceGroupsPerSite = 32;
+
+// The site whose bound a page's nonce groups count to, from the origin of
+// the page's main document (an outer page's, for a fenced frame): its
+// top-level site, serialized (`site`, net::SchemefulSite::Serialize()). An
+// opaque origin (`opaque`: a page its server sandboxed) serializes as
+// "null" for every such page of every site, so it counts to the site it
+// came from instead (`precursor_site`, the serialized site of its precursor;
+// empty if it has none): a site's sandboxed pages count with its other
+// pages, and never close another site's. One with no precursor counts on
+// its own (`page`, its nonce).
+inline std::string MoltNetNonceGroupSite(bool opaque,
+                                         std::string_view site,
+                                         std::string_view precursor_site,
+                                         std::string_view page) {
+  if (!opaque) {
+    return std::string(site);
+  }
+  if (!precursor_site.empty()) {
+    return std::string(precursor_site);
+  }
+  // Never a serialized site, which has a scheme ("https://...", "null").
+  return "page " + std::string(page);
+}
 
 // The open nonce groups of each top-level site, oldest first. `Nonce` is
 // base::UnguessableToken in the browser.

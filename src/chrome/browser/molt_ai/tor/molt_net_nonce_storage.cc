@@ -35,7 +35,9 @@
 #include "net/base/schemeful_site.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/gurl.h"
 #include "url/origin.h"
+#include "url/scheme_host_port.h"
 
 namespace molt_ai::tor {
 
@@ -222,11 +224,18 @@ void MoltNetNonceStorageTabHelper::Note(
     return;
   }
   // The top-level site the page is shown under (an outer page's, for a
-  // fenced frame's).
-  const std::string site =
-      net::SchemefulSite(
-          render_frame_host->GetOutermostMainFrame()->GetLastCommittedOrigin())
-          .Serialize();
+  // fenced frame's); for a page served sandboxed, the site its origin came
+  // from (MoltNetNonceGroupSite()).
+  const url::Origin& top =
+      render_frame_host->GetOutermostMainFrame()->GetLastCommittedOrigin();
+  const url::SchemeHostPort& precursor =
+      top.GetTupleOrPrecursorTupleIfOpaque();
+  const std::string site = MoltNetNonceGroupSite(
+      top.opaque(), net::SchemefulSite(top).Serialize(),
+      top.opaque() && precursor.IsValid()
+          ? net::SchemefulSite(precursor.GetURL()).Serialize()
+          : std::string(),
+      storage_key.nonce()->ToString());
   noted->Noted(*storage_key.nonce());
   registry->Noted(site, *storage_key.nonce(), storage_key,
                   render_frame_host->GetStoragePartition()->GetConfig());

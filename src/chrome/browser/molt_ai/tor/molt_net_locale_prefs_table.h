@@ -5,7 +5,7 @@
 // chrome/app/resources/locale_settings_{win,mac,linux}.grd,
 // components/components_locale_settings.grd and
 // src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.cc
-// at Chromium 156.0.8078.48. Do not edit; change the script and rerun it with
+// at Chromium 156.0.8078.74. Do not edit; change the script and rerun it with
 // --write. Included by molt_net_locale_prefs.cc and its test only.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_LOCALE_PREFS_TABLE_H_

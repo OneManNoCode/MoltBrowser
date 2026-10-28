@@ -61,7 +61,9 @@ Re-runs are incremental, without trusting the cache for correctness:
   about four seconds for an average compile. Each result is stored as its
   compile ends, so a run that was interrupted (a restart) picks up where
   it stopped when started again; a compile the memory limit or a signal
-  stopped is never stored. `--no-cache` compiles everything.
+  stopped is never stored, nor one during which a C-family file of
+  `src/` (the working tree) was edited, as what it compiled may not be
+  what its key was made from. `--no-cache` compiles everything.
 * A generated file is made again only when its inputs changed, and is
   never compiled against when they did: `check` first remakes the mojom
   bindings, grit headers and cxx bridge headers whose inputs changed (an
@@ -84,6 +86,34 @@ clones no subproject uses and the state of platforms no longer modeled
 (`--dry-run` lists them by kind and size). `--generated` also drops every
 generated file and the generator state, to start the generators afresh;
 `--results` drops all results.
+
+### When the pin moves
+
+After a rebase (`chromium_version.txt` moves), the next run moves the work
+dir by itself; nothing needs deleting by hand:
+
+* Chromium's files: the tree keeps every upstream file once fetched, so
+  `<work>/chromium/pin.json` records the commit they came from. A run at
+  another pin drops the files that differ between the two commits (a
+  `git` tree diff from the blob-less cache; a work dir from before
+  `pin.json` is taken to be at the pin `repos/tarball.json` names), and the
+  fetch rounds write the new pin's. Generated files whose inputs changed
+  are made again (their stamps hash the inputs).
+* DEPS subprojects: a moved gitlink is a different source, so the mount's
+  files and what was generated from them are dropped and fetched again
+  (`repos/sources.json`). The tarball-sourced mounts all move to the new
+  release's tarball (pin its SHA-256 first, `ccheck/tarball.py`), which is
+  streamed once (about 5 minutes, about 600 MB kept).
+* Results: the cache is keyed by the preprocessed source, so only files
+  that see a changed header compile again.
+
+Each run moves the work dir to its own checkout's pin, so checkouts at two
+pins can share one (each switch costs a fetch of what differs). The old
+release's tarball extract stays until `clean` (which removes tarball
+extracts no mount uses), so switching back doesn't stream it again; run
+`clean` once nothing needs the old pin. A respin moves a few hundred
+Chromium files and the subprojects that moved; a milestone rebase, most of
+the tree.
 
 ### Targets
 

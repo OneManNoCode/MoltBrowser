@@ -213,6 +213,8 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
     if plat is not None and plat.name != platforms.of(target):
         name += "@" + plat.name
     # The last result, if nothing that decides it changed (result_cache).
+    # The overlay (the working tree) as it was before the key was made.
+    stamp = tree.overlay_stamp() if cache else None
     key = result_cache.key(work, cmd, tree.out_dir, _limit) if cache \
         else None
     hit = result_cache.lookup(work, name, key)
@@ -222,9 +224,11 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
         rc, text, peak = run_measured(cmd, str(tree.out_dir))
         root = str(tree.tree_dir) + "/"
         text = text.replace(root, "")
-        if cache:
+        if cache and tree.overlay_stamp() == stamp:
             result_cache.store(work, name, key, rc, text, peak)
         else:
+            # --no-cache, or a file edited while this one compiled: what
+            # was compiled may not be what the key was made from.
             result_cache.drop(work, name)
     log = out_dir / (name + ".log")
     log.write_text(text)

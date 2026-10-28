@@ -5907,6 +5907,30 @@ display; macOS with "Show scroll bars" set to always and with a mouse).
 queries, `scrollbar.overlay` per OS, the quota over the usage and the
 render quantum for `"hardware"`.
 
+### The 156.0.8078.74 respin
+
+Chrome's security respin of 2026-10-27 changes three things a page can
+observe, none of them inside MoltNet's uniform values:
+
+- **Font weight matching on macOS.** CoreText matching goes back to the
+  nearest weight (156.0.8078.48 searched heavier or lighter first, as CSS
+  Fonts 4 says). MoltNet windows never reach it: `font_cache_mac.mm`
+  serves them from the bundled uniform font set before any CoreText
+  lookup.
+- **`feDisplacementMap` over a backdrop** now leaves the backdrop
+  undisplaced, as it already did for cross-origin content: the same on
+  every install.
+- **WebAudio** processes unconnected nodes while it holds the graph lock,
+  and a paused destination can be stopped; the uniform device's channel
+  count and buffer size (`realtime_audio_destination_handler.cc`, merged
+  cleanly) are unchanged.
+
+The rest of the respin's Blink changes (form entry lists, fullscreen,
+page visibility, task signals, the permission element, image inputs,
+plugins, lazy loading, float exclusions, SVG gradients and animation,
+ImageCapture, WebXR) fix object lifetimes and crashes; none changes a
+value MoltNet makes uniform.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature

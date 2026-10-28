@@ -8,8 +8,9 @@ manual checks, the MoltNet leak kit, packaging and the offline signing.
 Windows is still at v0.2.1). Since then the October v0.3 work landed: the
 workstream merges and pull requests #2 to #55, including the rebase onto
 Chromium 152 (#11), and then the rebase onto Chromium 156.0.8078.48 (#64),
-when Chrome's Extended Stable channel moved to M156. **None of it has been
-compiled against Chromium 156.**
+when Chrome's Extended Stable channel moved to M156, and its first
+security respin, 156.0.8078.74 (round 31; "(from the .74 respin)" below).
+**None of it has been compiled against Chromium 156.**
 Each PR body and design doc lists what it still needs; this page collects
 those lists in the order you do them. (#31 changed only CI, and #42 is an
 open Dependabot PR, §11.)
@@ -198,10 +199,15 @@ what to send back.
   ```bash
   ./scripts/setup.sh --resync --target-os mac,linux 2>&1 | tee ~/molt-v0.3.0/setup.log
   ```
-  *Expected:* `chromium/src @ 156.0.8078.48 (d0c02bfad08ec92a6ffcf989e53cd995e6381a4c)`,
+  *Expected:* `chromium/src @ 156.0.8078.74 (d331de35ca8ab1358c7a17e4bd41627d55eaef51)`,
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
-  first run from an older pin means a full rebuild.
+  first run from an older pin means a full rebuild. A checkout already at
+  156.0.8078.48 needs this run too (from the .74 respin): the respin moves
+  V8 (15.6.75.25), Skia, WebRTC, ANGLE, Dawn, devtools-frontend, ICU,
+  libaom, libvpx and PDFium, so `gclient sync` fetches all of them and
+  most of the build recompiles. No Rust crate changed: gnrt needs no rerun
+  for it.
 - [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
@@ -209,7 +215,11 @@ what to send back.
 - [ ] The overlay and the patch series agree (CI runs the same check):
   `python3 tools/chromium/verify_patches.py` → `OK: patches/ reproduces the
   overlay exactly`. The build input is still the `src/` overlay copy;
-  `patches/` holds the same changes as diffs (from REBASING.md).
+  `patches/` holds the same changes as diffs (from REBASING.md). It also
+  fails while one of the 66 whole files `src/` keeps in DEPS subprojects
+  (V8, Skia, WebRTC, the search engines) is behind the pin's subproject
+  commit (from the .74 respin): *Expected:* `DEPS whole: 66 of 66 merged
+  with the pin's subproject commit`.
   - Optional, once: try the patch-based path, `python3 tools/chromium/apply_patches.py --reset`
     (restores the patched files to upstream@pin, applies `patches/series`
     all or nothing, copies the first-party files). REBASING.md "Moving fully
@@ -227,11 +237,11 @@ what to send back.
   ```
   *Expected:* `engines-ok`. If not, regenerate with `-o <that src/ path>`
   instead of `--check`, commit it in a PR, and copy it into `chromium/src`.
-  At 156 expect to regenerate (from #64): our copy was last refreshed from
-  the 148-era subproject, and 156 pins `search_engines_data` at
-  `5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c` (check `git -C
-  chromium/src/third_party/search_engines_data/resources rev-parse HEAD`),
-  which this repository's cloud tools couldn't reach.
+  Our copy was rebuilt from 156's `search_engines_data`
+  (`5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c`, which 156.0.8078.74 still
+  pins; `git -C chromium/src/third_party/search_engines_data/resources
+  rev-parse HEAD`) from the release's source tarball (from the .74
+  respin), so expect `engines-ok`; before, it was the 148-era list.
 - [ ] MoltNet's fixed en-US tables match the 156 `.grd` files (from #24,
   REBASING.md step 5):
   ```bash
@@ -627,6 +637,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `content/public/browser/dom_storage_context.h`, `content/browser/dom_storage/dom_storage_context_wrapper.{h,cc}` (both new upstream copies, the wrapper's header too), `storage/browser/quota/quota_manager_impl.{h,cc}` (`quota_manager_impl.h` a new upstream copy), `usage_tracker.{h,cc}`, `molt_storage_usage_counts.h`, `chrome/browser/molt_ai/tor/molt_net_nonce_storage.{h,cc}`, `molt_net_nonce_storage_policy.h` (new), `chrome/browser/ui/tab_helpers.cc` | `DOMStorageContext` gains a non-pure virtual `MoltDropNonce(const base::UnguessableToken&, bool)` with an empty body (the header forward-declares `base::UnguessableToken`; test fakes need nothing), which the wrapper overrides; `QuotaManagerImpl` gains `MoltDropNonce(const base::UnguessableToken&, const std::vector<blink::StorageKey>&, bool)`, `MoltIsSiteClosed()` (read by `UsageAndQuotaInfoGatherer::Completed()` through `manager()`) and `std::set<MoltBudgetSite> molt_closed_sites_` (its header includes `molt_storage_budget.h`; the site is built as `MoltBudgetSite{nonce, std::nullopt}`); `UsageTracker` gains `MoltForgetSite()`, `MoltRefreshStaleKeys()`, `MoltDidRefresh()`, `MoltMarkStale()`, `MoltSettle()` (posted delayed with `weak_factory_`), a `MoltSiteRefreshes<MoltBudgetSite, base::OnceClosure>` and a `std::set<MoltBudgetSite>`. The tab helper is a `WebContentsObserver` + `WebContentsUserData` with a `content::PageUserData` per page and a `base::SupportsUserData::Data` registry on the `BrowserContext`, and posts `&storage::QuotaManagerImpl::MoltDropNonce` to `content::GetIOThreadTaskRunner({})` with `base::WrapRefCounted()` on the `storage::QuotaManager*` (a `QuotaManagerImpl` subclass) | moltnet-shared8 |
 | `services/network/keepalive_statistics_recorder.{h,cc}`, `molt_keepalive_partitions.h`, `storage/browser/blob/molt_blob_budget_policy.h`, `components/download/internal/background_service/in_memory_download.cc`, `molt_registering_site_isolation.h` | the recorder gains `MoltIsIdle() const`, `MoltNotifyIfIdle()`, a static `MoltForgetIfIdle(base::WeakPtr<KeepaliveStatisticsRecorder>, uintptr_t, std::string)` bound with `AsWeakPtr()` into a `base::RepeatingClosure molt_on_idle_` and posted with `base::SequencedTaskRunner::GetCurrentDefault()`; the registry gains `ForgetIfIdle()`. `MoltBlobSiteKeys` is gone (supersedes moltnet-shared3's rows): `in_memory_download.cc` takes a site's key from `MoltBlobSiteKeyFromDigest()` of the first 8 bytes of `base::SHA1Hash()` over a 32-byte `base::RandBytes()` secret and the site (`base/hash/sha1.h`, `base/rand_util.h`, `base/numerics/byte_conversions.h`), and `MoltBlobBudgetKeyForFetch()` is now a template over the digest function | moltnet-shared8 |
 | `content/browser/download/download_manager_impl.cc`, `molt_resumed_fetch_factory.h` (new, header-only, in `:browser`), `molt_resumed_fetch_policy.h` (new, std-only, in `:molt_policies`); `components/download/internal/background_service/controller_impl.cc`, `molt_restored_fetch.h` | every profile: the default-factory branch of `BeginResourceDownloadOnChecksComplete()` first asks `MoltLnaFactoryForFetch()` (taking `download::DownloadUrlParameters&`: its `url_loader_factory()` isn't `const`), which builds a `network::mojom::ClientSecurityState` with `DeriveLocalNetworkAccessRequestPolicy(IPAddressSpace::kPublic, bool, LocalNetworkAccessRequestContext::kWorker)` and `OverrideLocalNetworkAccessPolicy()` (`content/browser/renderer_host/local_network_access_util.h`), `StoragePartitionImpl::CreateURLLoaderFactoryParams()` and `CreateURLLoaderNetworkObserverForServiceOrSharedWorker(network::OriginatingProcessId::renderer(network::RendererProcessId(ChildProcessHost::kInvalidUniqueID)), origin)`, then `network::WrapperPendingSharedURLLoaderFactory`. The controller (on redteam4's hook): `OnDownloadReadyToStart()` posts a delayed lambda that reaches `model_`, `pending_uploads_` and `HandleCompleteDownload()` through a `base::WeakPtr<ControllerImpl>` (a lambda in a member function may), and `StartDownload()`'s `UNEXPECTED_GUID` branch calls `UpdateDriverState()` | moltnet-shared8 |
+| `components/services/storage/dom_storage/session_storage_impl.cc`, `chrome/browser/molt_ai/tor/molt_net_nonce_storage.cc`, `molt_net_nonce_storage_policy.h` | every profile: `RegisterShallowClonedNamespace()` returns before `receiver_.ReportBadMessage()` (a populated destination) when `!mojo::IsInMessageDispatch()` (declared in `mojo/public/cpp/bindings/message.h`, `//mojo/public/cpp/bindings:bindings_base`); MoltNet: the tab helper counts a page to `MoltNetNonceGroupSite()` of its main document's origin (`url::Origin::GetTupleOrPrecursorTupleIfOpaque()`, `url::SchemeHostPort::IsValid()` and `GetURL()`, `net::SchemefulSite(const GURL&)`) | redteam5 (round 31) |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -989,6 +1000,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetBackgroundFetchCredentialsTest` (new cases: `AResumedFetchKeepsItsFirstRequests`, `OtherDownloadsResumeAsChromium`), `MoltNetBackgroundFetchCookiesTest.AResumedFetchStaysCrossSite` (new: a SameSite=Strict cookie of the test server is sent with a request resumed as Chromium 156 resumes it and not with one that keeps its first request's initiator and isolation), `MoltNetEndedContextTest.NoNameLookupForMoltNet` (new: every source refused for MoltNet, `localhost` resolved by another context, the host resolver's pipe); built standalone only: the scheduler's `MoltScheduleDownload()` verbatim against stand-ins (5 tests: the same activations as before, no pending registration's site worked out on a request's start) | redteam3 (round 29) |
   | `MoltNetDomStorageTest` (new cases: `WithoutADatabaseAnUnusedEmptyAreaGoesAtOnce`, `SessionStorageWithoutADatabaseDropsEmptyAreas`, `BindingAreasInALoopDoesntDelayAnotherSite`, `PerSitePartitionsRunOnThreadsOfTheirOwn` (real dedicated threads from the test's thread pool), `ObserversHearOfChangesInTasksOfTheirOwn`, `AClearOfManyItemsIsFreedInChunks`; `ASitePurgesItsOwn` and `IdleAreasExpire` now on a partition on disk in a temporary directory), `MoltNetHttpCacheTest` (new cases: `ExpiryFollowsAMonotonicClock`, `TheSweepDropsEntriesInStepsOfItsOwn`, `ASitePastTheCapIsNotCached`, which writes 4,097 sites; the old cases now move both the wall clock and the mock tick clock), `MoltNetHttpCacheSiteLruTest` (new: `TheSweepGoesSiteBySiteInSteps`, `ASweepStepThatDropsNothingMovesOn`, `ASweepStepStopsAtTheFirstFreshEntry`, `TheSweepsSiteMayGoBetweenSteps`, `TheTableOfSitesHasRoomForTheCap`); built standalone only: `MoltNetDomStorageSitePolicyTest.UnusedEmptyAreasGoAtOnceWithoutADatabase`, `TurnsThatArentASitesHaveTheirOwnNames`, `TheControlTurnCountsAnEighth`, `MoltNetDomStorageSplitWorkTest` (new, 2), `MoltNetDomStorageFairQueueTest.TheControlTurnHasEightShares` | moltnet-shared7 |
   | `MoltNetBackgroundFetchSchedulingTest` (rewritten, 8 cases: no total, a site's share whatever others run, its waiting registrations in order, the valve past the floor), `MoltNetNonceStoragePolicyTest` (new, 3), `MoltNetDomStorageSitePolicyTest` (new: the expiring records, totals dropped at zero), `MoltNetKeepalivePartitionsTest` (new: idle recorders go), `MoltNetBlobBudgetPolicyTest.SiteKeys` (rewritten), `MoltNetStorageSiteUsagePolicyTest` (new: one refresh at a time), `MoltNetDownloadIsolationTest.AResumedFetchKeepsItsLnaCheck`, `MoltNetBackgroundFetchRestoredTest.AFetchWithoutItsParametersWaits` (all built standalone here); needing the build: `MoltNetDomStorageTest.ANoncesStorageGoesWithItsPage`, `ACopyOfManyAreasIsCompleteWhenBound` (real dedicated threads: a copy of 200 areas made in steps, bound after it), `MoltNetStorageSiteUsageTest.ConcurrentChecksDontOvershoot`, `MoltNetBackgroundFetchRequestTest.BlobKeyIsTheSitesDigest` | moltnet-shared8 |
+  | `MoltNetNonceStoragePolicyTest` (new cases: `TheSiteAPageCountsTo`, `SandboxedPagesCountToTheirOwnSite`; built standalone here); needing the build: `MoltNetDomStorageTest.ACopyOwedToAPopulatedNamespaceIsDropped` (real dedicated threads: the copy a deletion owes, in its own task, to a namespace populated meanwhile is dropped and the partition answers) | redteam5 (round 31) |
   | `MoltNetCpuPolicyTest.*` (the requirement on x86-64, arm64 and other architectures, the sentence), `MoltNetCpuErrorTest.*` (what `base::CPU` reports; on a build machine with SSE4.1, and on every arm64 one, the sentence is empty, so a failure there means MoltNet would refuse to open) | fp-arch |
   | `MoltCpuIndependentProcessingTest.*` (WebRTC's audio processing in CPU-independent mode through `CreateWebRtcAudioProcessingModule()`: the golden digests of a talker with a far end's echo and of the talker alone, the same on every processor and OS; the setting fixed when the module is built; a CPU-independent module and one with the processor's code in turn on one thread each give what they give alone). A golden digest that differs on the build machine means the module computes otherwise there: send the digest the failure prints, the processor (`lscpu`, or the Mac's chip) and the OS | fp-probes2 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
@@ -2740,7 +2752,7 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
     --key /Volumes/MOLTKEY/molt-update-signing.key --assets-dir release-v0.3.0
   ```
   *Expected:* `sign` lists every asset and, per build, its commit, Chromium
-  156.0.8078.48, builder label and build times, and refuses unless the
+  156.0.8078.74, builder label and build times, and refuses unless the
   macOS and Linux statements cover every installer, SBOM and checksum file
   with the manifest's hashes and agree on the commit and Chromium.
 - [ ] Step 7: copy back `molt-release-manifest.json`, `.sig`,

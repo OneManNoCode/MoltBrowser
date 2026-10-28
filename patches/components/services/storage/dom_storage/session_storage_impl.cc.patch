@@ -1,11 +1,11 @@
 MoltBrowser patch for components/services/storage/dom_storage/session_storage_impl.cc
-Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
 Generated from src/components/services/storage/dom_storage/session_storage_impl.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_impl.cc b/components/services/storage/dom_storage/session_storage_impl.cc
-index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44fa06f625 100644
+index 02b6403041f5abd0f68912d2173e9900240e7d0b..042aeb7df6637c8fb37d8a22c03a5ab3c79a23e7 100644
 --- a/components/services/storage/dom_storage/session_storage_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_impl.cc
 @@ -13,6 +13,7 @@
@@ -16,7 +16,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
  #include "base/metrics/histogram_functions.h"
  #include "base/not_fatal_until.h"
  #include "base/numerics/safe_conversions.h"
-@@ -28,6 +29,9 @@
+@@ -28,8 +29,12 @@
  #include "components/services/storage/dom_storage/dom_storage_database.h"
  #include "components/services/storage/dom_storage/dom_storage_histogram_helper.h"
  #include "components/services/storage/dom_storage/features.h"
@@ -25,8 +25,11 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
 +#include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"  // MoltBrowser
  #include "components/services/storage/dom_storage/session_storage_area_impl.h"
  #include "mojo/public/cpp/bindings/callback_helpers.h"
++#include "mojo/public/cpp/bindings/message.h"  // MoltBrowser
  #include "mojo/public/cpp/bindings/self_owned_receiver.h"
-@@ -96,7 +100,11 @@ void SessionStorageImpl::BindNamespace(
+ #include "third_party/blink/public/common/storage_key/storage_key.h"
+ 
+@@ -96,7 +101,11 @@ void SessionStorageImpl::BindNamespace(
          database_.get(), metadata_.GetOrCreateNamespaceEntry(namespace_id));
    }
  
@@ -39,7 +42,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    found->second->Bind(std::move(receiver));
  }
  
-@@ -124,7 +132,17 @@ void SessionStorageImpl::BindStorageArea(
+@@ -124,7 +133,17 @@ void SessionStorageImpl::BindStorageArea(
      found->second->PopulateFromMetadata(database_.get(), namespace_entry);
    }
  
@@ -58,7 +61,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    found->second->OpenArea(storage_key, std::move(receiver), namespace_entry);
  }
  
-@@ -240,6 +258,22 @@ void SessionStorageImpl::DeleteNamespace(const std::string& namespace_id,
+@@ -240,6 +259,22 @@ void SessionStorageImpl::DeleteNamespace(const std::string& namespace_id,
        }
      }
  
@@ -81,7 +84,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
      // The object hierarchy uses iterators bound to the metadata object, so
      // make sure to delete the object hierarchy first.
      namespaces_.erase(namespace_it);
-@@ -275,6 +309,15 @@ void SessionStorageImpl::GetUsage(GetUsageCallback callback) {
+@@ -275,6 +310,15 @@ void SessionStorageImpl::GetUsage(GetUsageCallback callback) {
      return;
    }
  
@@ -97,7 +100,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    const SessionStorageMetadata::NamespaceStorageKeyMap& all_namespaces =
        metadata_.namespace_storage_key_map();
  
-@@ -323,6 +366,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
+@@ -323,6 +367,7 @@ void SessionStorageImpl::DeleteStorage(const blink::StorageKey& storage_key,
    if (map_locator->session_ids().empty()) {
      maps_to_delete.emplace_back(std::move(*map_locator));
    }
@@ -105,7 +108,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    database_->DeleteStorageKeysFromSession(
        namespace_id, /*metadata_to_delete=*/{storage_key},
        std::move(maps_to_delete),
-@@ -369,6 +413,11 @@ void SessionStorageImpl::ShutDown() {
+@@ -369,6 +414,11 @@ void SessionStorageImpl::ShutDown() {
  }
  
  void SessionStorageImpl::PurgeMemory() {
@@ -117,7 +120,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    // Purge all areas that don't have bindings.
    for (const auto& namespace_pair : namespaces_) {
      namespace_pair.second->PurgeUnboundAreas();
-@@ -437,6 +486,20 @@ bool SessionStorageImpl::OnMemoryDump(
+@@ -437,6 +487,20 @@ bool SessionStorageImpl::OnMemoryDump(
        base::StringPrintf("site_storage/sessionstorage/0x%" PRIXPTR,
                           reinterpret_cast<uintptr_t>(this));
  
@@ -138,7 +141,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    if (database_) {
      // Account for database memory usage, which actually lives in the file
      // service.
-@@ -503,10 +566,26 @@ void SessionStorageImpl::OnDataMapCreation(int64_t map_id,
+@@ -503,10 +567,26 @@ void SessionStorageImpl::OnDataMapCreation(int64_t map_id,
  
    // `map_id` must identify a unique new map that did not exist in `data_maps_`.
    CHECK(result.second);
@@ -165,7 +168,21 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
  }
  
  void SessionStorageImpl::OnCommitResult(DbStatus status) {
-@@ -582,6 +661,21 @@ void SessionStorageImpl::RegisterShallowClonedNamespace(
+@@ -574,6 +654,13 @@ void SessionStorageImpl::RegisterShallowClonedNamespace(
+   if (it != namespaces_.end()) {
+     found = true;
+     if (it->second->IsPopulated()) {
++      // MoltBrowser: called in a task of its own (a deletion's copies that
++      // MoltNet's host runs after the namespace's sites' turns:
++      // molt_dom_storage_own_thread.h), there is no message to report;
++      // the copy is dropped all the same.
++      if (!mojo::IsInMessageDispatch()) {
++        return;
++      }
+       // Assumes this method is called on a stack handling a mojo message.
+       receiver_.ReportBadMessage("Cannot clone to already populated namespace");
+       return;
+@@ -582,6 +669,21 @@ void SessionStorageImpl::RegisterShallowClonedNamespace(
  
    CHECK_EQ(connection_state_, CONNECTION_FINISHED);
  
@@ -187,7 +204,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    auto source_namespace_entry =
        metadata_.GetOrCreateNamespaceEntry(source_namespace_id);
    auto namespace_entry = metadata_.GetOrCreateNamespaceEntry(new_namespace_id);
-@@ -639,6 +733,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
+@@ -639,6 +741,9 @@ void SessionStorageImpl::DeleteNamespacesFromMetadataAndDatabase(
      }
    }
  
@@ -197,7 +214,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    // Delete the namespaces and map key/values from `database_`.
    if (!database_) {
      return;
-@@ -677,6 +774,13 @@ void SessionStorageImpl::InitiateConnection(
+@@ -677,6 +782,13 @@ void SessionStorageImpl::InitiateConnection(
    // weren't asked to stay in memory.
    in_memory_ = in_memory_only || backing_mode_ == BackingMode::kNoDisk ||
                 storage_partition_directory_.empty();
@@ -211,7 +228,7 @@ index 02b6403041f5abd0f68912d2173e9900240e7d0b..0dd6a655a3bf0cef14b2b37981375c44
    const base::FilePath dir_to_open =
        in_memory_ ? base::FilePath() : storage_partition_directory_;
  
-@@ -825,6 +929,560 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
+@@ -825,6 +937,560 @@ void SessionStorageImpl::DeleteAndRecreateDatabase(
                       /*destroy_existing_db_for_recovery=*/!in_memory_);
  }
  

@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/BUILD.gn
-Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
 Generated from src/chrome/browser/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 33a6696fd803af080bb0a7d71b66e06d6950f86d..7732dcf16096f54e4abaa16f38783793b5738a29 100644
+index 5aa5b0447d68508bd5224b84ec040617c9a136ac..5057851bd0aa4467daf4bdb16e7d5ca39c572204 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
 @@ -985,6 +985,9 @@ source_set("core") {
@@ -18,7 +18,7 @@ index 33a6696fd803af080bb0a7d71b66e06d6950f86d..7732dcf16096f54e4abaa16f38783793
      "//chrome/browser/navigation_predictor",
      "//chrome/browser/net",
      "//chrome/browser/notifications",
-@@ -2083,6 +2086,11 @@ source_set("browser") {
+@@ -2084,6 +2087,11 @@ source_set("browser") {
      "//chrome/browser/affiliations",
      "//chrome/browser/ai",
      "//chrome/browser/ai:impl",

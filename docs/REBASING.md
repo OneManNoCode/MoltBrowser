@@ -11,7 +11,7 @@ process and the tooling for it, plus the first dry run.
 |---|---|
 | The Chromium revision we build on | `chromium_version.txt` (`CHROMIUM_VERSION`, `CHROMIUM_REVISION`). The only copy: `scripts/setup.sh`, `build/docker/*`, every workflow and `tools/chromium/*` read it. Shell code uses `tools/chromium/pin.sh`. |
 | The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). |
-| MoltBrowser's own code | `src/` files that do not exist upstream (3824 today: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
+| MoltBrowser's own code | `src/` files that do not exist upstream (5243 at 156.0.8078.74: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
 | Our changes to upstream files | `src/` still holds whole copies (the build does `cp -R src/. chromium/src/`). `patches/` holds the same changes as one diff per file against the pin, generated from `src/`. |
 
 `patches/` layout:
@@ -21,13 +21,23 @@ process and the tooling for it, plus the first dry run.
   Applies with `git apply -p1` from `chromium/src`.
 - `patches/series`: the patches, in order.
 - `patches/identical.txt`: `src/` files that are byte-identical to upstream at
-  the pin (49 today, all `.grdp` string files). They change nothing now, but
-  after a rebase a stale copy silently reverts upstream's changes. Drop them
-  from `src/` when convenient; the rebase tool refreshes them meanwhile.
+  the pin (50 at 156.0.8078.74, all but one `.grdp` string files). They
+  change nothing now, but after a rebase a stale copy silently reverts
+  upstream's changes. Drop them from `src/` when convenient; the rebase
+  tool refreshes them meanwhile.
 - `patches/whole_files.txt`: upstream files that live in a DEPS subproject (a
-  separate repo the mirror cannot diff). Today only
-  `third_party/search_engines_data/resources/definitions/prepopulated_engines.json`.
-  Check it by hand on every rebase.
+  separate repo the mirror cannot diff: V8, Skia, WebRTC, the search engine
+  definitions; 66 today). `src/` keeps them whole, and each entry records
+  the subproject commit the file was last merged with and a release whose
+  DEPS pins it:
+  `v8/src/base/ieee754.cc # v8@392e4442… (156.0.8078.48)` (a tab before the
+  `#`). That commit is the base of the file's next 3-way merge.
+  `rebase.py` merges these files whenever the new tag's DEPS moves their
+  subproject, and `--apply` records the new commit; `overlay_to_patches.py`
+  keeps what is recorded (a newly imported file gets the pin's), and
+  `verify_patches.py` fails while a whole file is behind the pin's
+  subproject, since left alone it would silently revert that subproject's
+  newer changes to it.
 
 Until the build switches to the patch series, `src/` is the source of truth:
 edit `src/`, then run `tools/chromium/overlay_to_patches.py` and
@@ -38,6 +48,8 @@ edit `src/`, then run `tools/chromium/overlay_to_patches.py` and
 All of them work without a Chromium checkout. Upstream content comes from a
 bare, shallow, blob-less clone cached in `.molt-chromium-cache/` (gitignored):
 one ~20 MB tree fetch per revision, then only the files needed, in one batch.
+DEPS subprojects' files are cached under `.molt-chromium-cache/deps/`: their
+mirrors' clones, and the files kept from each release tarball streamed.
 The default remote is the GitHub mirror (`https://github.com/chromium/chromium`);
 on the build machine you can use `--remote https://chromium.googlesource.com/chromium/src.git`
 or set `MOLT_CHROMIUM_REMOTE`.
@@ -46,9 +58,9 @@ or set `MOLT_CHROMIUM_REMOTE`.
 |---|---|
 | `tools/chromium/pin.sh [revision\|version\|env]` | Prints the validated pin. |
 | `tools/chromium/overlay_to_patches.py` | Regenerates `patches/` from `src/` (deterministic). |
-| `tools/chromium/verify_patches.py` | Applies the series to upstream@pin in a scratch tree and fails unless every result equals `src/` byte for byte, `identical.txt` is still identical, and every upstream-owned `src/` file is accounted for. |
-| `tools/chromium/rebase.py TAG` | Dry run: 3-way merges every patched file (base = upstream@pin, ours = `src/`, theirs = upstream@TAG) into `.molt-chromium-cache/rebase/TAG/merged/` and writes `report.md` / `report.json`. Never touches `src/`. |
-| `tools/chromium/rebase.py TAG --apply [--allow-conflicts]` | Writes the merges (with conflict markers if allowed) into `src/` and moves `chromium_version.txt` to TAG. |
+| `tools/chromium/verify_patches.py` | Applies the series to upstream@pin in a scratch tree and fails unless every result equals `src/` byte for byte, `identical.txt` is still identical, every upstream-owned `src/` file is accounted for, and every DEPS whole file was merged with the subproject commit the pin's DEPS has. |
+| `tools/chromium/rebase.py TAG` | Dry run: 3-way merges every patched file (base = upstream@pin, ours = `src/`, theirs = upstream@TAG), and every DEPS whole file whose subproject TAG moves (base = the recorded subproject commit, theirs = the subproject at TAG's gitlink), into `.molt-chromium-cache/rebase/TAG/merged/` and writes `report.md` / `report.json`. Never touches `src/`. Subproject files come from the subproject's GitHub mirror when it carries the commit (V8, Skia), else from the release tarballs (WebRTC, search_engines_data), whose SHA-256 must be pinned first (`tools/chromium/subprojects.py`). |
+| `tools/chromium/rebase.py TAG --apply [--allow-conflicts]` | Writes the merges (with conflict markers if allowed) into `src/`, records the new subproject commits in `whole_files.txt`, and moves `chromium_version.txt` to TAG. A whole file it could not merge stays behind the pin (`verify_patches.py` names it); rerun with the pin's own tag to catch it up. |
 | `tools/chromium/apply_patches.py [--reset] [--check]` / `scripts/setup.sh --patches` | Experimental patch-based build path: applies the series to `chromium/src` and copies only first-party files. |
 
 ## Which Chromium to track
@@ -85,27 +97,32 @@ for p in win mac; do
 done
 ```
 
-State on 2026-10-23, from the Version History API and the tags on the
-mirror (chromiumdash was not reachable from the machine that ran this):
+State on 2026-10-28, from the Version History API and the tags on the
+mirror (chromiumdash and the Chrome Releases blog were not reachable from
+the machine that ran this):
 
-| Milestone | Branch | Latest tag | Its date | Reading |
-|---|---|---|---|---|
-| 158 | trunk | 158.0.8120.1 | 2026-10-22 | canary |
-| 157 | 8103 | 157.0.8103.20 | 2026-10-22 | beta (157.0.8103.15 on 0.5% of Windows stable) |
-| **156** | 8078 | 156.0.8078.69 | 2026-10-22 | **stable and extended stable**: Extended Stable serves **156.0.8078.48** on Windows and macOS since 2026-10-20 (25% of the extended population on 2026-10-22, rising); Stable rolls out 156.0.8078.47-.49 |
-| 155 | 8059 | 155.0.8059.91 | 2026-10-19 | previous stable |
-| 154 | 8037 | 154.0.8037.154 | 2026-10-13 | dead |
-| 152 | 7977 | 152.0.7977.169 | 2026-10-14 | previous extended stable, being replaced by 156 |
-| 150 | 7871 | 150.0.7871.287 | 2026-10-21 | `[M150-LTS]` merges (ChromeOS LTS), not a desktop channel |
+| Milestone | Branch | Latest tag on the mirror | Channels (Version History API) |
+|---|---|---|---|
+| 158 | trunk | 158.0.8127.3 | canary (158.0.8127.2 since 2026-10-27), dev (158.0.8117.2) |
+| 157 | 8103 | 157.0.8103.31 | beta (157.0.8103.15 since 2026-10-22) |
+| **156** | 8078 | 156.0.8078.78 | **stable and extended stable**: since 2026-10-27 Extended Stable serves **156.0.8078.74** to 25% of Windows and macOS (the rest 156.0.8078.48); Stable serves 156.0.8078.74 on Windows and macOS and 156.0.8078.73 on Linux. No desktop channel serves the newer tags (.75 to .78) yet |
+| 155 | 8059 | 155.0.8059.91 | previous stable |
+| 154 | 8037 | 154.0.8037.154 | dead |
+| 152 | 7977 | 152.0.7977.169 | previous extended stable (until 2026-10-20) |
+| 150 | 7871 | 150.0.7871.287 | `[M150-LTS]` merges (ChromeOS LTS), not a desktop channel |
 
-So **Extended Stable moved from M152 to M156** on 2026-10-20, and
-152.0.7977.169 (our pin since 2026-10-16) was its last M152 release. The
-milestone move happened earlier than "~4 releases behind stable" suggested:
-with 2-week milestones, Google moved the extended channel to the current
-stable milestone. **Target: `156.0.8078.48`**, the Extended Stable release on
-Windows and macOS (the [156 rebase](#the-156-rebase-2026-10-23)). Same-branch
-respins of it follow (`156.0.8078.*` tags that Extended Stable ships); when the
-extended channel moves to a new milestone again, do the big rebase to it.
+**Extended Stable moved from M152 to M156** on 2026-10-20 (152.0.7977.169,
+our pin from 2026-10-16, was its last M152 release): with 2-week
+milestones, Google moved the extended channel to the current stable
+milestone, earlier than "~4 releases behind stable" suggested. Its first
+security respin, 156.0.8078.74, started on 2026-10-27. **Target:
+`156.0.8078.74`** (the [156.0.8078.74 respin](#1560807874-2026-10-28); before
+it, the [156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
+respins follow (`156.0.8078.*` tags that Extended Stable ships). One pin
+serves every platform, so when Linux and the other platforms get different
+patch numbers, take the Windows and macOS one (Extended Stable's): here
+156.0.8078.73 and .74 differ only in `chrome/VERSION`. When the extended
+channel moves to a new milestone again, do the big rebase to it.
 
 ## The process
 
@@ -113,14 +130,19 @@ extended channel moves to a new milestone again, do the big rebase to it.
 
 1. Watch [Chrome Releases](https://chromereleases.googleblog.com/) (or the tag
    listing above) for a new tag on our branch, e.g. `156.0.8078.49`.
-2. On a branch `rebase/<tag>`:
-   `tools/chromium/rebase.py <tag>` and read `report.md`. Same-branch respins
-   are normally all clean.
+2. On a branch `rebase/<tag>`: pin the new release's source tarball
+   (`PINNED_SHA256`, above) first: the rebase reads the DEPS subprojects
+   no mirror carries (WebRTC) from it, as do the static GN check and the
+   compile check. (Without the pin, the dry run marks those files
+   unavailable and quotes the SHA-256 the bucket's `.hashes` file lists,
+   saying whether that file's MD5 matches the bucket's own for the
+   tarball.) Then `tools/chromium/rebase.py <tag>` and read
+   `report.md`. Same-branch respins are normally all clean; a security
+   respin almost always moves V8 and often Skia and WebRTC, whose whole
+   files the report lists per subproject.
 3. `tools/chromium/rebase.py <tag> --apply`, then
    `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`
-   and `tools/moltnet_locale/generate_tables.py` (step 5 below). Pin the
-   new release's source tarball (`PINNED_SHA256`, above) before the static
-   GN check or the compile check fetches it.
+   and `tools/moltnet_locale/generate_tables.py` (step 5 below).
 4. Compile check and smoke test on the build machine (below), then release.
    Note the Chromium version in the release notes.
 
@@ -134,7 +156,7 @@ extended channel moves to a new milestone again, do the big rebase to it.
    alone so the resolution is reviewable as its own diff.
 3. Resolve (see below), until `grep -rn '^<<<<<<< ' src/` is empty.
 4. Handle the report's other sections: deleted/moved files, identical copies,
-   collisions, the DEPS file, and the API changes in first-party code.
+   collisions, the DEPS whole files, and the API changes in first-party code.
 5. `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`,
    then `tools/moltnet_locale/generate_tables.py`: MoltNet's en-US strings
    and default fonts are generated from Chromium's `.grd` files. If it
@@ -429,3 +451,95 @@ not reach; `scripts/vendor-rust-crates.sh --check` against the hand-merged
 lock; `gn check` (new includes of `molt_net_profile_id.h` in
 `//chrome/browser/media/webrtc` and `//chrome/browser/reduce_accept_language`
 follow the existing pattern without a direct dep).
+
+
+## 156.0.8078.74 (2026-10-28)
+
+The 156 branch's first security respin. Chrome 156.0.8078.73 (Linux) and
+156.0.8078.74 (Windows and macOS) went to Stable on 2026-10-27, and
+Extended Stable started moving to .74 the same day; the two tags differ
+only in `chrome/VERSION`.
+
+`tools/chromium/rebase.py 156.0.8078.74 --apply` from 156.0.8078.48:
+
+| | Files |
+|---|---|
+| Patched upstream files | 591: 9 clean 3-way merges, 582 left alone upstream, no conflict, none deleted or moved |
+| Identical copies | 50, none changed upstream |
+| First-party paths now upstream | 0 |
+| Removed upstream symbols our code uses | 0 (757 headers scanned, 3 changed) |
+| DEPS whole files | 66; 65 in a subproject that moved: 60 unchanged in it, 5 our own |
+
+What upstream changed next to our hooks (all merged cleanly; none touches
+a MoltBrowser line):
+
+- **Blob storage** (`storage/browser/blob/blob_storage_context.{cc,h}`,
+  `blob_data_builder.h`): blob entries are reference counted
+  (`scoped_refptr<BlobEntry>`, handle counts, `ClearAndFreeMemory` gone).
+  The per-site blob budget hooks pass the builder's budget key to the
+  memory controller as before, and each key's usage still follows each
+  allocation's lifetime, as upstream's own count does.
+- **HTTP cache** (`net/http/http_cache.cc`): a transaction's entry-lock
+  timeout is cancelled before it goes back to the queue.
+- **WebAudio** (`realtime_audio_destination_handler.cc`): unconnected
+  nodes are processed under the graph lock, and stopping works from a
+  paused destination; MoltNet's uniform device hooks (channel count,
+  buffer size) are untouched.
+- **`chrome_content_browser_client.cc`** (+ `chrome/browser/BUILD.gn`):
+  lazy loading is off for headless command processing, before MoltNet's
+  web-preference override, which still runs last.
+- `chrome/browser/extensions/BUILD.gn`, `flag-metadata.json`: a test list
+  and flag expiry dates.
+
+**DEPS subprojects.** The respin moves ten: V8 (15.6.75.19 to 15.6.75.25:
+its parser and scopes, Turbofan, Turboshaft, Maglev, the Wasm graph
+assembler, map transitions, frames), Skia (`chrome/m156`: the image filter
+cache, Ganesh's resource cache, Vulkan, SkSL's raster pipeline code
+generator), WebRTC (forward error correction, the video receive stream),
+ANGLE, Dawn (Vulkan render pipelines), devtools-frontend, ICU
+(`charstr.cpp`), libaom, libvpx and PDFium (libopenjpeg). `src/` keeps
+whole files in three of them: Skia 26 (23 upstream, 3 ours), WebRTC 33 (31
+and 2) and V8 6. None of the 60 upstream ones changed between the two
+subproject commits, so the merge kept them and `whole_files.txt` records
+the new commits. V8 and Skia came from their GitHub mirrors, WebRTC from
+the .48 and .74 source tarballs (its mirrors carry no release-branch
+commits).
+
+**What the merge needed: the tools.** Until this respin `rebase.py` only
+listed the whole files whose subproject moved, and `overlay_to_patches.py`
+then recorded the new subproject commit whether or not they were merged,
+so a respin that moved V8 could quietly keep the old copies and revert
+V8's fixes to them. Now `whole_files.txt` records the commit each file was
+merged with, `rebase.py` merges them (from a mirror or the release
+tarballs, `tools/chromium/subprojects.py`), and `verify_patches.py` fails
+while one is behind the pin (`tools/chromium/patch_tools_test.py`). The
+same gap hid the search engine definitions: recorded at 156's
+`search_engines_data` (`5dc9f1a`, unchanged in the respin), the file was
+still the 148 one. It is rebuilt from 156's now (from the release
+tarball), so the build machine no longer has to. The compile check's work
+dir now moves to a new pin by itself (`tools/compile_check/README.md`,
+"When the pin moves"); before, it would have kept compiling against the
+old release's copies of the files that changed.
+
+Also: the .74 source tarball's SHA-256 is pinned (from its `.hashes` file,
+whose MD5 the bucket's own agrees with; the whole stream matched it), and
+the MoltNet locale tables are unchanged but for the version they name.
+
+Checks here: `verify_patches.py` OK (591 patches, 50 identical, 66 whole
+files at the pin's subproject commits); the compile check at .74, every
+changed file on every platform: 1437 rows, 1396 checked against the real
+headers, 40 partly on stand-ins and 1 not checked (the same Mac, grit, V8
+and iOS cases as before), 0 errors and 0 plugin findings, as at
+156.0.8078.48 (the work dir moved by itself; of 1436 compiles the result
+cache served 1211, and 225 that see a changed header compiled again, 150
+of them Blink's through WTF's hash tables); the static GN check
+at .74: 0 errors in its six configurations (one warning, the adblock
+crate the build machine vendors), `checkdeps` (1168 files) and
+`blink-audit` (251 files) clean; the patch tools', compile check's and
+static GN check's own tests, `molt_fuzz.py check`, the leak kit's tests
+and the WebUI checks pass.
+
+Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`,
+"from the .74 respin"): `./scripts/setup.sh --resync` (ten subprojects
+move, so expect a near-full rebuild), then the build and tests as for 156.
+No Rust crate changed, so gnrt needs no extra run.
