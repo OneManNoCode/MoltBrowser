@@ -3,9 +3,8 @@
 //
 // OcrService — local OCR via bundled tesseract.
 //
-// Two inputs:
-//   - Images (chat attachments): tesseract reads PNG, JPEG and WebP itself
-//     (OcrImageWithTesseract).
+// Two inputs, one way in:
+//   - Images (chat attachments, OcrImage): PNG, JPEG or WebP.
 //   - PDFs with no text layer (scans), the fallback of /pdf and of PDF
 //     attachments when the sandboxed parser finds no text (OcrPdf).
 //     tesseract can't read PDFs: it decodes its input through leptonica,
@@ -13,9 +12,16 @@
 //     supported"). So the sandboxed document parser renders the first
 //     kPdfOcrMaxPages pages at kPdfOcrDpi to PNG
 //     (DocumentParserClient::RenderPdfPages: PDFium in a kService utility
-//     process), the browser checks the PNGs without decoding them, and
-//     tesseract OCRs each page like an attached image. The pages' text is
+//     process), the browser checks the PNGs without decoding them, and each
+//     page is OCR'd like an image, one after another. The pages' text is
 //     joined with "--- Page N ---" headers.
+// tesseract never reads the image file itself. Chromium's data decoder (a
+// sandboxed utility process, which shrinks an image past 128 MiB of
+// pixels while decoding it) decodes it, and tesseract reads a binary PNM
+// the browser writes from the pixels (ocr_image.h: the format leptonica
+// reads with the least code). Its PNG, JPEG, TIFF, GIF and WebP readers
+// are never reached. A TIFF, or anything but PNG, JPEG or WebP, is refused
+// with a reason.
 //
 // Resolution (FindHelperBinary, helper_binary.h — same as VoiceService and
 // TorManager):
@@ -29,13 +35,15 @@
 // PDF), so it runs under the helper sandbox (helper_sandbox.h): it may read
 // its own directory, its tessdata and the input, write only a private
 // per-run scratch directory, never use the network, and is killed at a
-// deadline (kImageOcrTimeout per image or page). A PDF has one overall
-// deadline, kPdfOcrTimeout, for rendering and every page: rendering is
-// bounded by DocumentParserClient::kRenderTimeout (60 s), and pages not
-// reached in time are left out, which the text says.
+// deadline. An image, or one page of a PDF, has kImageOcrTimeout for
+// decoding and tesseract together. A PDF has one overall deadline,
+// kPdfOcrTimeout, for rendering and every page: rendering is bounded by
+// DocumentParserClient::kRenderTimeout (60 s), and pages not reached in
+// time are left out, which the text says.
 //
-// Threading: OcrPdf on the UI thread (it renders through its
-// DocumentParserClient there); tesseract runs on MayBlock thread-pool tasks.
+// Threading: OcrImage and OcrPdf on the UI thread (they decode, and render
+// through their DocumentParserClient, there); tesseract runs on MayBlock
+// thread-pool tasks.
 
 #ifndef CHROME_BROWSER_MOLT_AI_OCR_OCR_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_OCR_OCR_SERVICE_H_
@@ -55,6 +63,8 @@
 #include "chrome/browser/molt_ai/common/helper_sandbox.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 
+class SkBitmap;
+
 namespace base {
 template <typename T>
 class NoDestructor;
@@ -64,11 +74,11 @@ class TickClock;
 namespace molt_ai {
 namespace ocr {
 
-// Deadlines. One image, or one page of a PDF: tesseract takes a few
-// seconds per page. A whole PDF (rendering, then up to kPdfOcrMaxPages
-// pages one after another): rendering takes at most
-// DocumentParserClient::kRenderTimeout, which leaves two minutes for
-// tesseract.
+// Deadlines. One image, or one page of a PDF (decoding it and tesseract):
+// tesseract takes a few seconds per page. A whole PDF (rendering, then up
+// to kPdfOcrMaxPages pages one after another): rendering takes at most
+// DocumentParserClient::kRenderTimeout, which leaves two minutes for the
+// pages.
 inline constexpr base::TimeDelta kImageOcrTimeout = base::Seconds(60);
 inline constexpr base::TimeDelta kPdfOcrTimeout = base::Seconds(180);
 // No page is started with less time than this left before the deadline.
@@ -86,7 +96,7 @@ inline constexpr size_t kMaxTesseractOutputBytes = 256 * 1024;
 inline constexpr size_t kMaxTesseractTextFileBytes = 4 * 1024 * 1024;
 
 // Runs |bin| (tesseract) on |input| under the helper sandbox, writing
-// <|out_stem|>.txt. |input| and |out_stem| are in |scratch_dir|, the only
+// <|out_stem|>.txt. |input| and |out_stem| are in |scratch|, the only
 // directory it may write. It may read its own directory and, when
 // |tessdata_parent| is set (bundled builds), |tessdata_parent|/tessdata,
 // which it is also pointed at. A system tesseract finds its data under
@@ -94,7 +104,7 @@ inline constexpr size_t kMaxTesseractTextFileBytes = 4 * 1024 * 1024;
 molt_ai::HelperRunResult RunSandboxedTesseract(
     const base::FilePath& bin,
     const base::FilePath& tessdata_parent,
-    const base::FilePath& scratch_dir,
+    const molt_ai::HelperScratchDir& scratch,
     const base::FilePath& input,
     const base::FilePath& out_stem,
     base::TimeDelta timeout);
@@ -116,20 +126,19 @@ struct OcrResult {
   int duration_ms = 0;
 };
 
-// OCRs one image with tesseract |bin| (|tessdata_parent| as for
-// RunSandboxedTesseract): |image| holds a PNG, JPEG or WebP (tesseract
-// sniffs the format; |extension|, e.g. "png", only names the input file)
-// and is written to a fresh private scratch directory, deleted afterwards.
-// tesseract runs sandboxed and is killed after |timeout|. Its text is made
+// OCRs one decoded image with tesseract |bin| (|tessdata_parent| as for
+// RunSandboxedTesseract): writes it to a fresh private scratch directory
+// (deleted afterwards) as the PNM ocr_image.h describes, and runs
+// tesseract on that, sandboxed and killed after |timeout|. Its text is made
 // valid UTF-8 and cut to |max_chars| (SanitizeHelperText); output that is
-// only whitespace is a failure ("OCR returned no text"). Sets text, error,
+// only whitespace is a failure ("OCR returned no text"), and so is an
+// image more than kMaxOcrImageSide pixels on a side. Sets text, error,
 // binary_path and duration_ms. Blocking; MayBlock thread-pool tasks only.
-OcrResult OcrImageWithTesseract(const base::FilePath& bin,
-                                const base::FilePath& tessdata_parent,
-                                base::span<const uint8_t> image,
-                                std::string_view extension,
-                                size_t max_chars,
-                                base::TimeDelta timeout);
+OcrResult OcrBitmapWithTesseract(const base::FilePath& bin,
+                                 const base::FilePath& tessdata_parent,
+                                 const SkBitmap& bitmap,
+                                 size_t max_chars,
+                                 base::TimeDelta timeout);
 
 class OcrService {
  public:
@@ -142,9 +151,19 @@ class OcrService {
   bool IsUsingBundledTesseract() const;
   base::FilePath GetBundledOcrDir() const;
 
+  // OCRs an image file, given its bytes: a PNG, JPEG or WebP (anything
+  // else fails with ocr_image.h's reason, e.g. a TIFF's). It is decoded in
+  // the data decoder, then OCR'd as OcrBitmapWithTesseract says, within
+  // kImageOcrTimeout. The text is capped at |max_chars|. Without tesseract,
+  // binary_source is "none". |on_done| runs on the UI thread, never
+  // synchronously. UI thread only.
+  void OcrImage(std::string image,
+                size_t max_chars,
+                base::OnceCallback<void(OcrResult)> on_done);
+
   // OCRs a PDF that has no text layer, given its raw bytes (see the file
   // comment): its first kPdfOcrMaxPages pages are rendered in the sandboxed
-  // document parser and each is OCR'd with tesseract, all within
+  // document parser and each is OCR'd like an image, all within
   // kPdfOcrTimeout. The text is capped at |max_chars|, since OCR of long
   // PDFs would tank the chat context budget. |on_done| runs on the UI
   // thread, never synchronously. UI thread only.
@@ -166,41 +185,72 @@ class OcrService {
   std::unique_ptr<DocumentParserClient> document_parser_;
 };
 
-// The steps of OcrPdf, exposed for tests.
+// The steps of OcrImage and OcrPdf, exposed for tests.
 namespace internal {
 
-// OCR of one rendered page: |png|, its text cut to |max_chars|, tesseract
-// killed after |timeout|. Blocking; runs on a MayBlock thread-pool task.
-using PageOcrFunction =
-    base::RepeatingCallback<OcrResult(base::span<const uint8_t> png,
-                                      size_t max_chars,
-                                      base::TimeDelta timeout)>;
+// Decodes the image file |image| in Chromium's data decoder. |callback|
+// gets the bitmap; an empty one if the bytes aren't an image the decoder
+// takes, the decoder failed, or |timeout| passed (|timed_out|; the decoder
+// process is then let go). It runs on the calling sequence, never
+// synchronously. |image| is copied before this returns.
+using DecodedImageCallback =
+    base::OnceCallback<void(const SkBitmap& bitmap, bool timed_out)>;
+void DecodeImageForOcr(base::span<const uint8_t> image,
+                       base::TimeDelta timeout,
+                       DecodedImageCallback callback);
 
-// OCRs |pages| in order with |ocr_page| and joins the text of those that
-// have any as "--- Page N ---\n<text>" (N counts from 1), separated by a
-// blank line. A page starts only while at least kMinPageOcrTime is left
-// before |deadline| (by |clock|) and gets at most kImageOcrTimeout; a page
-// that fails is skipped. When the document has more pages (|page_count|)
-// than were OCR'd, a last line says how many were, if it fits. The text is
-// valid UTF-8 of at most |max_chars| bytes. Fails, with the last page's
-// error, when no page gave text. Blocking.
-OcrResult OcrRenderedPages(const std::vector<RenderedPdfPage>& pages,
-                           uint32_t page_count,
-                           size_t max_chars,
-                           base::TimeTicks deadline,
-                           const base::TickClock* clock,
-                           const PageOcrFunction& ocr_page);
+// Writes |bitmap| (any colour and alpha type) to the new file |path| as the
+// PNM ocr_image.h describes, row by row. Empty on success, else why not:
+// kTooLargeForOcr, or that it couldn't be read or written. Blocking.
+std::string WriteOcrPnm(const SkBitmap& bitmap, const base::FilePath& path);
+
+// OCR of one image file: |image|, its text cut to |max_chars|, decoding and
+// tesseract within |timeout|. |done| runs exactly once, on the calling
+// sequence, perhaps before this returns.
+using ImageOcrFunction =
+    base::RepeatingCallback<void(base::span<const uint8_t> image,
+                                 size_t max_chars,
+                                 base::TimeDelta timeout,
+                                 base::OnceCallback<void(OcrResult)> done)>;
+
+// The ImageOcrFunction OcrImage and OcrPdf use: |image| must be a PNG,
+// JPEG or WebP (else |done| gets ocr_image.h's reason); it is decoded with
+// DecodeImageForOcr, then OcrBitmapWithTesseract runs on a MayBlock task
+// with what is left of |timeout|. UI thread.
+void OcrImageFile(const base::FilePath& bin,
+                  const base::FilePath& tessdata_parent,
+                  base::span<const uint8_t> image,
+                  size_t max_chars,
+                  base::TimeDelta timeout,
+                  base::OnceCallback<void(OcrResult)> done);
+
+// OCRs |pages| in order with |ocr_page|, one at a time, and joins the text
+// of those that have any as "--- Page N ---\n<text>" (N counts from 1),
+// separated by a blank line. A page starts only while at least
+// kMinPageOcrTime is left before |deadline| (by |clock|, which must outlive
+// this) and gets at most kImageOcrTimeout; a page that fails is skipped.
+// When the document has more pages (|page_count|) than were OCR'd, a last
+// line says how many were, if it fits. The text is valid UTF-8 of at most
+// |max_chars| bytes. Fails, with the last page's error, when no page gave
+// text. |on_done| runs on the calling sequence, never synchronously.
+void OcrRenderedPages(std::vector<RenderedPdfPage> pages,
+                      uint32_t page_count,
+                      size_t max_chars,
+                      base::TimeTicks deadline,
+                      const base::TickClock* clock,
+                      ImageOcrFunction ocr_page,
+                      base::OnceCallback<void(OcrResult)> on_done);
 
 // OcrPdf without the singleton and with a given page OCR: renders |pdf|
 // through |parser| (which copies it before returning), then runs
-// OcrRenderedPages on a MayBlock thread-pool task. |on_done| runs on the
-// calling sequence, never synchronously, unless |parser| is destroyed while
-// rendering. Sets success, text and error only.
+// OcrRenderedPages. |on_done| runs on the calling sequence, never
+// synchronously, unless |parser| is destroyed while rendering. Sets
+// success, text and error only.
 void RenderAndOcrPdf(DocumentParserClient& parser,
                      base::span<const uint8_t> pdf,
                      size_t max_chars,
                      base::TimeTicks deadline,
-                     PageOcrFunction ocr_page,
+                     ImageOcrFunction ocr_page,
                      base::OnceCallback<void(OcrResult)> on_done);
 
 }  // namespace internal

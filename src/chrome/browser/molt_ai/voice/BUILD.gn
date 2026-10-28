@@ -3,6 +3,16 @@
 #
 # Voice mode: local speech-to-text via bundled whisper.cpp.
 
+# The chat page's recording, checked and rewritten as a canonical WAV
+# before whisper-cli reads it. Std-only: the unit tests, a standalone
+# harness and molt_recorded_wav_fuzzer build the same code.
+source_set("recorded_wav") {
+  sources = [
+    "recorded_wav.cc",
+    "recorded_wav.h",
+  ]
+}
+
 source_set("voice") {
   sources = [
     "voice_service.cc",
@@ -10,11 +20,24 @@ source_set("voice") {
   ]
 
   deps = [
+    ":recorded_wav",
     "//base",
+
     # Bundled or (Linux) root-owned system binary only; no Homebrew/PATH.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_output",
+
     # whisper-cli runs confined, with a deadline.
     "//chrome/browser/molt_ai/common:helper_sandbox",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "recorded_wav_unittest.cc" ]
+  deps = [
+    ":recorded_wav",
+    "//testing/gtest",
   ]
 }

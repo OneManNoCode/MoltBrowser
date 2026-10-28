@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/files/file_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/common/helper_output.h"
@@ -22,6 +23,21 @@ HelperRunResult::HelperRunResult() = default;
 HelperRunResult::HelperRunResult(const HelperRunResult&) = default;
 HelperRunResult& HelperRunResult::operator=(const HelperRunResult&) = default;
 HelperRunResult::~HelperRunResult() = default;
+
+HelperScratchDir::HelperScratchDir() = default;
+
+HelperScratchDir::~HelperScratchDir() {
+  if (!path_.empty()) {
+    base::DeletePathRecursively(path_);
+  }
+}
+
+HelperSandboxPolicy HelperScratchDir::MakePolicy() const {
+  HelperSandboxPolicy policy;
+  policy.writable_dir = path_;
+  policy.app_container_sid = app_container_sid_;
+  return policy;
+}
 
 std::string DescribeHelperRunFailure(const HelperRunResult& run,
                                      std::string_view name,

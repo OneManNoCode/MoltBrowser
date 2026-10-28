@@ -5,9 +5,11 @@
 //
 // The user records audio in the side-panel chat via WebAudio. The
 // audio (16-kHz mono WAV bytes) is shipped to this service over an
-// IPC, which writes it to a temp file, shells out to a bundled (or
-// system-installed) `whisper-cli` binary, and returns the
-// transcription as plaintext.
+// IPC. It checks the recording (16 kHz mono 16-bit PCM, bounded length:
+// recorded_wav.h), writes a WAV of its own with those samples to a temp
+// file, shells out to a bundled (or system-installed) `whisper-cli`
+// binary, and returns the transcription as plaintext. whisper-cli never
+// reads the bytes the page sent.
 //
 // Resolution (FindHelperBinary, helper_binary.h — same as TorManager and
 // OcrService):
@@ -79,8 +81,9 @@ class VoiceService {
   // bundled ggml-tiny.en.bin under Resources/whisper/.
   base::FilePath GetBundledModelPath() const;
 
-  // Transcribe |wav_bytes| (16-kHz mono WAV format) and return the
-  // result via |on_done| on the UI thread.
+  // Transcribe |wav_bytes| (16-kHz mono 16-bit PCM WAV, as the chat page
+  // records it; anything else fails with recorded_wav.h's reason) and
+  // return the result via |on_done| on the UI thread.
   void Transcribe(std::string wav_bytes,
                   base::OnceCallback<void(TranscribeResult)> on_done);
 

@@ -63,6 +63,7 @@
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
+#include "chrome/browser/molt_ai/voice/recorded_wav.h"
 #include "chrome/browser/molt_ai/voice/voice_service.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
@@ -4168,8 +4169,8 @@ void MoltAIChatHandler::OnPdfTextLayer(std::string callback_id,
     } else {
       // The parser crashed, hung or misbehaved on this document: never
       // hand it on to OCR too (PDFium would be a second parser for it to
-      // attack, and then tesseract, whose sandbox is looser and on Windows
-      // confines no files).
+      // attack, then the image decoder and tesseract, whose sandbox is
+      // looser than the parser's).
       out.Set("success", false);
       out.Set("error", "couldn't read this PDF: " + result.error);
     }
@@ -5362,6 +5363,9 @@ void MoltAIChatHandler::HandleTranscribeAudio(
   // headroom for a custom uploader without letting a compromised
   // WebUI OOM the browser on a gigabyte string. Code-review MEDIUM #9.
   constexpr size_t kMaxAudioB64Bytes = 8 << 20;
+  // The browser's WAV check (VoiceService) takes all that decodes to.
+  static_assert(molt_ai::voice::kMaxRecordedWavBytes ==
+                kMaxAudioB64Bytes / 4 * 3);
   if (b64.size() > kMaxAudioB64Bytes) {
     out.Set("success", false);
     out.Set("error", "audio exceeds max size (8 MiB base64)");
@@ -5496,19 +5500,6 @@ AttachmentKind DetectAttachmentKind(const std::string& lower_name,
   return AttachmentKind::kUnsupported;
 }
 
-// Temp-file extension for the tesseract input. Tesseract sniffs the
-// actual content via Leptonica, so this only needs to be plausible.
-std::string AttachmentImageExtension(const std::string& lower_name,
-                                     const std::string& lower_mime) {
-  if (lower_mime == "image/png" || base::EndsWith(lower_name, ".png")) {
-    return "png";
-  }
-  if (lower_mime == "image/webp" || base::EndsWith(lower_name, ".webp")) {
-    return "webp";
-  }
-  return "jpg";  // image/jpeg, .jpg, .jpeg
-}
-
 // Truncate |*text| to at most |max_chars| bytes, preferring a
 // whitespace boundary. Returns true when a cut was made. The hard-cut
 // fallback backs off over UTF-8 continuation bytes so the result stays
@@ -5548,37 +5539,6 @@ base::DictValue MakeAttachmentSuccess(std::string text) {
   return out;
 }
 
-// OCR an image via tesseract: OcrService's binary resolution (bundled
-// Resources/ocr first, then on Linux a root-owned system copy) and its
-// sandboxed run (molt_ai::ocr::OcrImageWithTesseract: private scratch
-// directory, helper sandbox, deadline, sanitized text). The same per-image
-// path OCRs the rendered pages of a scanned PDF (OcrService::OcrPdf). Runs
-// on a MayBlock worker.
-base::DictValue OcrAttachmentImageBlocking(const std::string& image_bytes,
-                                           const std::string& ext) {
-  auto* svc = molt_ai::ocr::OcrService::Get();
-  const base::FilePath bin = svc->ResolveTesseractBinary();
-  if (bin.value().empty()) {
-    return MakeAttachmentError(
-        "no OCR binary available — this build doesn't bundle tesseract "
-        "(scripts/bundle-tesseract.sh); on Linux, install the "
-        "tesseract-ocr package.");
-  }
-  base::FilePath tessdata;
-  if (svc->IsUsingBundledTesseract()) {
-    tessdata = svc->GetBundledOcrDir();
-  }
-  // Cut like the parser's (kMaxAttachmentParseChars), so that
-  // MakeAttachmentSuccess() sees and reports a cut.
-  molt_ai::ocr::OcrResult result = molt_ai::ocr::OcrImageWithTesseract(
-      bin, tessdata, base::as_byte_span(image_bytes), ext,
-      kMaxAttachmentParseChars, molt_ai::ocr::kImageOcrTimeout);
-  if (!result.success) {
-    return MakeAttachmentError(result.error);
-  }
-  return MakeAttachmentSuccess(std::move(result.text));
-}
-
 // The extension of a lowercased file name, without the dot: anydoc's
 // format hint (it sniffs the content first regardless).
 std::string AttachmentExtension(const std::string& lower_name) {
@@ -5590,11 +5550,12 @@ std::string AttachmentExtension(const std::string& lower_name) {
 }
 
 // What the decode worker hands back to the UI thread: the final answer,
-// or a document for the sandboxed parser.
+// or a file for a sandboxed process (the document parser, or the data
+// decoder before OCR).
 struct PreparedAttachment {
-  // Set when no parser is needed: text files, image OCR, errors.
+  // Set when no parser is needed: text files, errors.
   std::optional<base::DictValue> result;
-  // Otherwise kPdf, kDocx or kRichDoc, with the decoded file.
+  // Otherwise kPdf, kDocx, kRichDoc or kImage, with the decoded file.
   AttachmentKind kind = AttachmentKind::kUnsupported;
   std::unique_ptr<std::string> bytes;
   std::string extension;
@@ -5607,9 +5568,10 @@ PreparedAttachment AttachmentAnswer(base::DictValue result) {
 }
 
 // Runs on a MayBlock ThreadPool worker: decodes the attachment and
-// answers what needs no document parser. PDFs and Office / e-book
+// answers what needs no sandboxed process. PDFs and Office / e-book
 // documents go back to the UI thread for the sandboxed parser
-// (MoltAIChatHandler::ParseAttachmentPdf / ParseAttachmentDocument).
+// (MoltAIChatHandler::ParseAttachmentPdf / ParseAttachmentDocument), and
+// images for the data decoder and OCR (OcrAttachmentImage).
 PreparedAttachment PrepareAttachmentBlocking(const std::string& name,
                                              const std::string& mime,
                                              const std::string& b64) {
@@ -5635,10 +5597,7 @@ PreparedAttachment PrepareAttachmentBlocking(const std::string& name,
       }
       return AttachmentAnswer(MakeAttachmentSuccess(std::move(bytes)));
     }
-    case AttachmentKind::kImage: {
-      return AttachmentAnswer(OcrAttachmentImageBlocking(
-          bytes, AttachmentImageExtension(lower_name, lower_mime)));
-    }
+    case AttachmentKind::kImage:
     case AttachmentKind::kPdf:
     case AttachmentKind::kDocx:
     case AttachmentKind::kRichDoc: {
@@ -5706,6 +5665,10 @@ void MoltAIChatHandler::HandleExtractAttachment(
             }
             if (prepared.kind == AttachmentKind::kPdf) {
               self->ParseAttachmentPdf(cb_id, std::move(prepared.bytes));
+              return;
+            }
+            if (prepared.kind == AttachmentKind::kImage) {
+              self->OcrAttachmentImage(cb_id, std::move(prepared.bytes));
               return;
             }
             self->ParseAttachmentDocument(
@@ -5777,6 +5740,40 @@ void MoltAIChatHandler::ParseAttachmentPdf(const std::string& callback_id,
                     self, std::move(cb_id)));
           },
           weak_ptr_factory_.GetWeakPtr(), callback_id, std::move(pdf)));
+}
+
+// An attached image: OcrService's binary resolution (bundled Resources/ocr
+// first, then on Linux a root-owned system copy), Chromium's sandboxed data
+// decoder, then tesseract on the PNM the browser writes from the pixels,
+// sandboxed, with a deadline (OcrService::OcrImage). The same per-image path
+// OCRs the rendered pages of a scanned PDF (OcrService::OcrPdf).
+void MoltAIChatHandler::OcrAttachmentImage(const std::string& callback_id,
+                                           std::unique_ptr<std::string> image) {
+  // Cut like the parser's (kMaxAttachmentParseChars), so that
+  // MakeAttachmentSuccess() sees and reports a cut.
+  molt_ai::ocr::OcrService::Get()->OcrImage(
+      std::move(*image), kMaxAttachmentParseChars,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             molt_ai::ocr::OcrResult r) {
+            if (!self) {
+              return;
+            }
+            base::DictValue out;
+            if (r.success) {
+              out = MakeAttachmentSuccess(std::move(r.text));
+            } else if (r.binary_source == "none") {
+              out = MakeAttachmentError(
+                  "no OCR binary available — this build doesn't bundle "
+                  "tesseract (scripts/bundle-tesseract.sh); on Linux, "
+                  "install the tesseract-ocr package.");
+            } else {
+              out = MakeAttachmentError(r.error);
+            }
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(out)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id));
 }
 
 // Office / e-book / spreadsheet / CSV -> Markdown with anydoc (tables,

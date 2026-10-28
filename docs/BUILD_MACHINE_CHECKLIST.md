@@ -490,7 +490,8 @@ per attempt; a native x86_64 Linux box takes about 4 h (from
 
 Paused (CLAUDE.md). Windows-only items: `tor_control_connection.cc` on
 Windows (from #49), the LPAC process start from the NSIS install (from
-#15), the helper job object and deadline (from #16), PDFium under win32k
+#15), the OCR and voice helpers' AppContainer, job and installer grant
+(helpers-win, which replaced #16's job object; checks in §7.5), PDFium under win32k
 lockdown (from #18), the Vulkan pre-lockdown step (from #52; built by
 ai-finish, its test plan in §9), Windows signing (§11). Once a runner exists again: give it `MOLT_BUILDER_ID` in its
 `.env`, wipe its workspace once (the workflow's steps were reordered), and
@@ -689,6 +690,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `ServiceProcessHost::Options().WithProcessCallback()`; anydoc cxx sub-target visibility | | #13 |
 | document parser PDF rendering | PDFium config `version = 4`, `gfx::PNGCodec::Encode` with BGRA, spans and `base::U32FromBigEndian` | #18 |
 | `molt_ai/common/helper_sandbox_*` (Landlock and seccomp, Seatbelt, job object) | type-checked against 156's headers on Linux and Windows (clang-cl), the POSIX part for the Mac too, on Apple framework stand-ins (round 28) | #16 |
+| `molt_ai/common/helper_sandbox_win.cc` (the helpers' LPAC launch), `helper_sandbox_test_helper_win.cc` (a test `executable`), `ocr/ocr_service.cc` (the data decoder, Skia) | new deps: `//sandbox/win:sandbox` (its `AppContainerBase`, `StartupInformationHelper`, `Job`) from `chrome/browser`, `//services/data_decoder/public/cpp` and `//skia` from `molt_ai/ocr`; type-checked with clang-cl and for Linux and the Mac (round 33); `-Wunsafe-buffer-usage` isn't modelled by the compile check | helpers-win |
 | `third_party/llama_cpp:mtmd` (exception and CFI configs), `:llama_guard` (a TU built with exceptions), `:constrained_decoding` deps | | #30, #38, #52 |
 | `runtime/model_image_prep.cc` (real Skia, the data decoder), `molt_model_impl.cc`, `molt_inference_service.cc` (syntax-checked only) | | #38 |
 | `embedding_process_host`, `runtime:embedding_host`, `models:download` | | #28 |
@@ -973,6 +975,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `DocumentParserClientTest`, `DocumentParserImplTest`, `PdfTextScraperTest` (Mojo runner, real pipes) | #13 |
   | `InferenceProcessHostTest` (crash mid-stream, hang, flood, bad UTF-8, the projector handle, GPU fallback, `kBackendFailed` off the GPU) | #15, #38, #52, #53 |
   | `HelperSandboxTest`, `HelperSandboxLinuxTest`, `SeatbeltProfileTest` | #16 |
+  | `HelperSandboxWinPolicyTest` (every platform: the capability SID from its name, the SDDL, the attribute list, the mitigations), `HelperScratchDirTest`, `RecordedWavTest`, `OcrImageTest`, `OcrImageFileTest` (a fake data decoder service over real Mojo pipes, since the binary doesn't start Blink: the decode's limits, a hung or crashed decoder; the PNM written from a decoded bitmap), and `OcrRenderedPagesTest`, `RenderAndOcrPdfTest` (now asynchronous); on Windows (deferred) `HelperSandboxWinTest`, `HelperSandboxWinOutputTest` (§7.5) | helpers-win |
   | `OcrRenderedPagesTest`, `RenderAndOcrPdfTest`, `PdfPageImageSizeTest` | #18 |
   | `MoltNetContentSettingsTest` (real `HostContentSettingsMap`), `MoltNetPrefServiceTest`, `MoltNetIsolationTest` | #21 |
   | `MoltNetWebRtcBindersTest` (real mojo), `MoltNetRefusingP2PSocketManagerTest` | #22 |
@@ -1388,6 +1391,7 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   #48, #49, #53, #54; agent-replay adds `molt_automation_locators_fuzzer`,
   `molt_automation_tool_steps_fuzzer` and `molt_frame_tools_fuzzer`)
   (fonts adds `molt_moltnet_font_set_fuzzer`)
+  (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2334,6 +2338,58 @@ macOS, and for the manual steps everywhere:
   (bridges with the distribution's obfs4 and snowflake, from #6), 16 (split
   mode, shortcuts, toolbar, PDF viewer), 17 (a prepared profile), 19
   (Incognito's protections, from #23) and the manual bullets of 20.
+
+### 7.5 OCR and voice helpers (helpers-win)
+
+Every image tesseract OCRs is now decoded by Chromium's data decoder and
+handed over as a PNM the browser writes; whisper-cli reads a WAV the browser
+writes; on Windows both run as a less-privileged AppContainer per run
+(`helper_sandbox_win_policy.h`). On each OS (Windows: deferred):
+
+- [ ] OCR of attachments (helpers-win): attach a PNG, a JPEG and a WebP with
+  text in the AI chat, one with a transparent background, a phone photo
+  (12 MP or more) and a scan of more than 33.5 MP (which the decoder
+  halves on each side first). *Expected:* the text, as before. A TIFF renamed to
+  `.png` gets "TIFF images can't be read for OCR: save the image as PNG or
+  JPEG and attach that"; a GIF renamed to `.png`, "this file isn't a PNG,
+  JPEG or WebP image". While it runs, the scratch directory
+  (`molt_ocr_*` in the temp directory) holds `input.pnm`, never the file.
+- [ ] OCR of a scanned PDF (helpers-win): `/pdf` on a scanned PDF of more
+  than 20 pages. *Expected:* `--- Page N ---` headers, the "OCR read 20 of
+  N pages" line, and the browser's task manager shows a data decoder
+  process while it runs.
+- [ ] Voice (helpers-win): the mic button transcribes a few sentences.
+  *Expected:* the scratch directory (`molt_voice_*`) holds the 44-byte
+  header WAV the browser wrote. `molt_ai_unittests
+  --gtest_filter='RecordedWav*:OcrImage*:OcrImageFile*:HelperScratchDir*'`
+  passes here too.
+- [ ] Windows, the installer's grant (helpers-win, deferred): after
+  installing, `icacls "%ProgramFiles%\MoltBrowser\ocr"` and `...\whisper`
+  list `*S-1-15-3-1024-3499754957-3417772683-1255750666-3341737774-2438675945-3280382303-1781483004-2555713060:(OI)(CI)(RX)`
+  (the capability `lpacMoltBrowserHelperFiles`), and no other folder of
+  the install does.
+- [ ] Windows, the sandbox's own tests (helpers-win, deferred):
+  `molt_ai_unittests --gtest_filter='HelperSandboxWin*:HelperScratchDir*'`
+  with `molt_helper_sandbox_test_helper.exe` next to it. *Expected:* all
+  pass: the helper runs and its output is captured; it reads its scratch
+  directory and its own folder but not another file of the user's; it
+  writes only its scratch directory; a loopback connection is refused and
+  never reaches the test's listener; it can't start `whoami.exe` or
+  itself; 5 GiB is refused (the job's 4 GiB); its environment is its own;
+  the deadline kills it; from a folder without the grant it doesn't start
+  and the error names the installer.
+- [ ] Windows, OCR and voice in the AppContainer (helpers-win, deferred):
+  the two checks above with the installed build. While tesseract runs,
+  Process Explorer shows it with integrity "AppContainer", in a job, with
+  the capability above and no `internetClient`. If OCR or voice fails with
+  "couldn't start in its sandbox" and `0xC0000142`, a helper's DLL loads
+  user32 and its LPAC token can't open the desktop: report it (giving the
+  helper an alternate desktop, as Chromium's broker does, is not done).
+- [ ] Windows, the portable ZIP (helpers-win, deferred): unpack it and
+  attach an image. *Expected:* "tesseract sandbox unavailable: on Windows,
+  OCR and voice need MoltBrowser's installer, …" and no tesseract process;
+  after `icacls <unpacked>\ocr /grant "*S-1-15-3-1024-3499754957-…:(OI)(CI)(RX)"`
+  OCR works.
 
 ## 8. Leak kit and traffic capture
 

@@ -3,7 +3,19 @@
 #
 # OCR for attached images and image-only PDFs. Wraps a bundled (or system)
 # tesseract; a PDF's pages are rendered to PNG first by the sandboxed
-# document parser (tesseract can't read PDFs).
+# document parser (tesseract can't read PDFs). Every image is decoded by
+# Chromium's sandboxed data decoder, and tesseract reads only the PNM the
+# browser writes from the pixels.
+
+# What tesseract reads: the formats decoded for OCR, and the PNM written
+# from the pixels. Std-only: the unit tests, a standalone harness and
+# molt_ocr_image_fuzzer build the same code.
+source_set("ocr_image") {
+  sources = [
+    "ocr_image.cc",
+    "ocr_image.h",
+  ]
+}
 
 source_set("ocr") {
   sources = [
@@ -12,19 +24,27 @@ source_set("ocr") {
   ]
 
   # tesseract runs confined, with a deadline; ocr_service.h exposes
-  # RunSandboxedTesseract() and OcrImageWithTesseract() for the chat
-  # handler's image OCR, and takes rendered pages from the document parser.
+  # RunSandboxedTesseract() and OcrBitmapWithTesseract(), and takes
+  # rendered pages from the document parser.
   public_deps = [
     "//chrome/browser/molt_ai/common:helper_sandbox",
     "//chrome/browser/molt_ai/document_parser",
   ]
 
   deps = [
+    ":ocr_image",
     "//base",
+
     # Bundled or (Linux) root-owned system binary only; no Homebrew/PATH.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_output",
     "//chrome/services/molt_ai/document_parser/public/mojom",
+
+    # Images are decoded in the sandboxed data decoder process; Skia reads
+    # the decoded pixels back as RGBA.
+    "//services/data_decoder/public/cpp",
+    "//skia",
+    "//ui/gfx/geometry",
   ]
 }
 
@@ -32,15 +52,27 @@ source_set("ocr") {
 # with Mojo initialized).
 source_set("unit_tests") {
   testonly = true
-  sources = [ "ocr_service_unittest.cc" ]
+  sources = [
+    "ocr_image_unittest.cc",
+    "ocr_service_unittest.cc",
+  ]
   deps = [
     ":ocr",
+    ":ocr_image",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/molt_ai/document_parser",
     "//chrome/services/molt_ai/document_parser/public/mojom",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
+
+    # A fake data decoder service (not :test_support, whose in-process
+    # service decodes with Blink, which this binary doesn't start).
+    "//services/data_decoder/public/cpp",
+    "//services/data_decoder/public/mojom",
+    "//skia",
     "//testing/gtest",
+    "//ui/gfx/codec",
+    "//ui/gfx/geometry",
   ]
 }
