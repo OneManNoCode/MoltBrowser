@@ -9,6 +9,7 @@ link), and the harness's own writes go through it.
   python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test
 """
 
+import errno
 import json
 import os
 import shutil
@@ -76,6 +77,57 @@ class RunDirTest(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(st.st_mode), 0o755)
         with self.assertRaises(FileExistsError):
             rundir.RunDir.create(self.path, UID, GID)
+
+    def test_create_refuses_a_linked_out_directory(self):
+        real = os.path.join(self.tmp, 'real')
+        os.mkdir(real, 0o755)
+        linked = os.path.join(self.tmp, 'linked')
+        os.symlink(real, linked)
+        with self.assertRaises(OSError):
+            rundir.RunDir.create(os.path.join(linked, 'run-2'), UID, GID)
+        self.assertEqual(os.listdir(real), [])
+
+    def test_create_refuses_an_out_directory_anyone_can_write(self):
+        open_dir = os.path.join(self.tmp, 'open')
+        os.mkdir(open_dir)
+        os.chmod(open_dir, 0o777)
+        with self.assertRaises(OSError) as cm:
+            rundir.RunDir.create(os.path.join(open_dir, 'run-2'), UID, GID)
+        self.assertEqual(cm.exception.errno, errno.EPERM)
+        self.assertEqual(os.listdir(open_dir), [])
+        # A sticky one, as /tmp is, is fine.
+        os.chmod(open_dir, 0o1777)
+        run = rundir.RunDir.create(os.path.join(open_dir, 'run-3'), UID, GID)
+        run.close()
+        self.assertEqual(os.listdir(open_dir), ['run-3'])
+
+    @unittest.skipUnless(os.geteuid() == 0, 'needs root to give a directory '
+                         'to another account')
+    def test_create_refuses_another_accounts_out_directory(self):
+        theirs = os.path.join(self.tmp, 'theirs')
+        os.mkdir(theirs, 0o755)
+        os.chown(theirs, UID + 1, GID + 1)
+        with self.assertRaises(OSError) as cm:
+            rundir.RunDir.create(os.path.join(theirs, 'run-2'), UID, GID)
+        self.assertEqual(cm.exception.errno, errno.EPERM)
+        self.assertEqual(os.listdir(theirs), [])
+
+    def test_check_out_dir(self):
+        def st(uid, gid, mode):
+            return os.stat_result((stat.S_IFDIR | mode, 0, 0, 2, uid, gid,
+                                   0, 0, 0, 0))
+        me = os.geteuid()
+        ok = [st(0, 0, 0o755), st(me, 0, 0o755), st(UID, GID, 0o755),
+              st(UID, GID, 0o775), st(0, 0, 0o1777)]
+        for s in ok:
+            rundir.check_out_dir(s, 'x', UID, GID)
+        bad = [st(UID + 7, GID, 0o755), st(UID, GID, 0o777),
+               st(UID, GID + 7, 0o775)]
+        for s in bad:
+            if s.st_uid == me:
+                continue
+            with self.assertRaises(OSError):
+                rundir.check_out_dir(s, 'x', UID, GID)
 
     def test_writes_follow_the_directory_not_its_path(self):
         # The user renames the run directory and puts a link to another

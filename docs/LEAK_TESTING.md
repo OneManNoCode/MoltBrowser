@@ -193,7 +193,11 @@ asks nobody in particular.
   and from then on writes there only from that open directory
   (`leakkit/rundir.py`): no symbolic link is followed at any step of a
   path, only a regular file with a single link is written or emptied, and
-  owners and modes are set on the open file, never by path. The servers'
+  owners and modes are set on the open file, never by path. The `--out`
+  directory it makes the run directory in is opened without following a
+  link and must belong to root or you and be writable by no other account
+  (a world-writable one must be sticky, as `/tmp` is); otherwise the kit
+  stops before making anything. The servers'
   certificates and the test extension are made in the root-owned directory
   under `/run/moltleak-<id>/` and copied in. When the run ends, the kit
   hands everything to you without following links.
