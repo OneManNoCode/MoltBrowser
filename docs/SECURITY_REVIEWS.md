@@ -66,10 +66,11 @@ source choice, 6 tests, 3 of which the previous code fails; the
 Clear-Site-Data policy's unit tests, and the hook's choice with 156's
 matching for a response to another site's page, the origin's own page, a
 credentialless frame and a request with no partition, where the previous
-hook deleted the origin's first-party storage for another site's page.
-The leak kit's test suite as root and unprivileged, the tools' own test
-suites and `molt_fuzz.py check` pass; the changed C++ was compiled
-against Chromium 156's headers.
+hook deleted the origin's first-party storage for another site's page;
+and 7 mutants of the two fixes, each caught by the tests. The leak kit's
+test suite as root and unprivileged, the tools' own test suites and
+`molt_fuzz.py check` pass; the changed C++ was compiled against Chromium
+156's headers.
 
 **Findings.** 12: 2 low, 10 informational. Fixed: the two low.
 
