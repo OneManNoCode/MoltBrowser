@@ -1930,7 +1930,9 @@ class Run(object):
         prompt. mic.html reads the processed samples twice, each time from a
         new stream, then with system echo cancellation ("all"), then, while
         it plays two tones, with "remote-only" and with the default echo
-        cancellation; the record (kind "mic") is compared between runs."""
+        cancellation, and then the camera's values (FINGERPRINTING.md
+        "MoltNet: cameras, microphones and outputs"; camera.js); the record
+        (kind "mic") is compared between runs."""
         phase = self.phase_begin('mic_processing')
         wav = self.user_write('mic-input.wav', micinput.wav_bytes())
         flags = ['--use-fake-device-for-media-stream',
@@ -1965,6 +1967,15 @@ class Run(object):
             else:
                 values['audio.mic_remote_only'] = {
                     'error': 'mic.html returned %r' % (playback,)}
+            # The camera's values, from the same fake capture device: a
+            # gesture of their own, after the microphone's cases.
+            camera = self.cdp.evaluate(sid, 'mlCameraValues()', timeout=60,
+                                       user_gesture=True)
+            if isinstance(camera, dict):
+                values.update(camera)
+            else:
+                values['video.camera_settings'] = {
+                    'error': 'mic.html returned %r' % (camera,)}
             self.manifest['fingerprints'].append({
                 'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
                 'window': None, 'zoom_requested': 100, 'kind': 'mic',
