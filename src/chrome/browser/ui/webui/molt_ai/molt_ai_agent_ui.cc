@@ -1824,7 +1824,8 @@ function moveStep(i,dir){
 }
 function deleteStep(i){editorState.steps.splice(i,1);renderEditorSteps();renderEditorMeta();syncVariables();}
 function makeVariable(i){
-  var s=editorState.steps[i],pf=primaryOf(s.type);
+  var s=editorState.steps[i];if(!s)return;  // a button left from an earlier render
+  var pf=primaryOf(s.type);
   var base=slug(s.description||stepTitle(s)||labelFor(s.type));
   var name=base,n=2;
   while(editorState.variables.hasOwnProperty(name)&&editorState.variables[name]!==(s[pf]||'')){name=base+'_'+(n++);}
@@ -1833,7 +1834,8 @@ function makeVariable(i){
   renderEditorSteps();
 }
 function unmakeVariable(i){
-  var s=editorState.steps[i],pf=primaryOf(s.type);
+  var s=editorState.steps[i];if(!s)return;  // a button left from an earlier render
+  var pf=primaryOf(s.type);
   var name=wholeVar(s[pf]);if(name==null)return;
   s[pf]=editorState.variables[name]||'';
   renderEditorSteps();syncVariables();
