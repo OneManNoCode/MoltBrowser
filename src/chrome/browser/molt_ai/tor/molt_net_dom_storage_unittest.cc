@@ -1200,6 +1200,61 @@ TEST_F(MoltNetDomStorageTest, ACopyOwedToAPopulatedNamespaceIsDropped) {
   EXPECT_EQ(threads.CountForTesting(), 0u);
 }
 
+// Two tabs' namespaces of many areas, copied a chunk a task at the same
+// time (molt_dom_storage_waits.h): neither copy waits for the other tab's,
+// each is complete when bound, and a deletion of a tab asked for after its
+// copy runs after it.
+TEST_F(MoltNetDomStorageTest, CopiesOfTwoTabsRunSideBySide) {
+  storage::MoltDomStorageOwnThreads threads;
+  mojo::Remote<storage::mojom::SessionStorageControl> session;
+  threads.BindSessionStorageControl(session.BindNewPipeAndPassReceiver());
+  constexpr int kAreas = 200;
+  const std::vector<std::string> sites = {"a", "b"};
+  std::vector<std::string> tabs;
+  std::vector<mojo::Remote<blink::mojom::StorageArea>> areas;
+  for (const std::string& site : sites) {
+    tabs.push_back(base::Uuid::GenerateRandomV4().AsLowercaseString());
+    session->CreateNamespace(tabs.back());
+    for (int i = 0; i < kAreas; ++i) {
+      areas.emplace_back();
+      session->BindStorageArea(
+          Key(base::StringPrintf("https://o%d.%s.test", i, site.c_str())),
+          tabs.back(), areas.back().BindNewPipeAndPassReceiver());
+      ASSERT_TRUE(Put(areas.back().get(), 'k', 10));
+    }
+  }
+
+  std::vector<std::string> copies;
+  for (const std::string& tab : tabs) {
+    copies.push_back(base::Uuid::GenerateRandomV4().AsLowercaseString());
+    session->CloneNamespace(
+        tab, copies.back(),
+        storage::mojom::SessionStorageCloneType::kImmediate);
+  }
+  session->DeleteNamespace(tabs[0], /*should_persist=*/false);
+  for (size_t t = 0; t < sites.size(); ++t) {
+    for (int i : {0, kAreas - 1}) {
+      mojo::Remote<blink::mojom::StorageArea> copied;
+      session->BindStorageArea(
+          Key(base::StringPrintf("https://o%d.%s.test", i, sites[t].c_str())),
+          copies[t], copied.BindNewPipeAndPassReceiver());
+      base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+      copied->GetAll(mojo::NullRemote(), all.GetCallback());
+      EXPECT_EQ(all.Take().size(), 1u) << sites[t] << " " << i;
+    }
+  }
+
+  for (const std::string& copy : copies) {
+    session->DeleteNamespace(copy, /*should_persist=*/false);
+  }
+  session->DeleteNamespace(tabs[1], /*should_persist=*/false);
+  session.FlushForTesting();
+  areas.clear();
+  session.reset();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(threads.CountForTesting(), 0u);
+}
+
 class MoltNetSessionStorageTest : public testing::Test {
  protected:
   void SetUp() override {

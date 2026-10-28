@@ -127,6 +127,10 @@ class SessionStorageNamespaceImpl final
   void AddChildNamespaceWaitingForClone(const std::string& namespace_id);
   bool HasChildNamespacesWaitingForClone() const;
   void ClearChildNamespacesWaitingForClone();
+  // MoltBrowser: the namespaces waiting for a Clone() of this one.
+  const base::flat_set<std::string>& molt_children_waiting_for_clone() const {
+    return child_namespaces_waiting_for_clone_call_;
+  }
 
   // Drops the still in-flight `Clone()` call for `namespace_id`, which was
   // deleted before that call arrived. See `abandoned_child_namespaces_`.

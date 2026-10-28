@@ -10,15 +10,18 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/location.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/single_thread_task_runner_thread_mode.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
+#include "base/time/time.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_waits.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
 
 namespace storage {
@@ -243,6 +246,7 @@ void MoltPerSiteSessionStorage::DeleteStorage(
   }
   const std::string group = MoltDomStorageSiteOf(storage_key);
   Queued(namespace_id, group);
+  queued_deletions_[namespace_id].insert(storage_key);
   scheduler_->Post(
       group, base::BindOnce(&MoltPerSiteSessionStorage::DeleteStorageInTurn,
                             weak_factory_.GetWeakPtr(), storage_key,
@@ -254,6 +258,15 @@ void MoltPerSiteSessionStorage::DeleteStorageInTurn(
     const std::string& namespace_id,
     DeleteStorageCallback callback) {
   Dequeued(namespace_id, MoltDomStorageSiteOf(storage_key));
+  if (auto it = queued_deletions_.find(namespace_id);
+      it != queued_deletions_.end()) {
+    if (auto one = it->second.find(storage_key); one != it->second.end()) {
+      it->second.erase(one);
+    }
+    if (it->second.empty()) {
+      queued_deletions_.erase(it);
+    }
+  }
   impl_->DeleteStorage(storage_key, namespace_id, std::move(callback));
 }
 
@@ -325,7 +338,8 @@ void MoltPerSiteSessionStorage::CloneNamespace(
   // ordered by the renderer.
   if (clone_type == mojom::SessionStorageCloneType::kImmediate) {
     AfterTurnsOf(
-        namespace_id_to_clone, {namespace_id_to_clone, clone_namespace_id},
+        namespace_id_to_clone, clone_namespace_id,
+        {namespace_id_to_clone, clone_namespace_id},
         base::BindOnce(&SessionStorageImpl::CloneNamespace,
                        base::Unretained(impl_.get()), namespace_id_to_clone,
                        clone_namespace_id, clone_type));
@@ -346,7 +360,7 @@ void MoltPerSiteSessionStorage::DeleteNamespace(const std::string& namespace_id,
   // A namespace going while tabs it opened wait for their copy makes the
   // copies now: they hold what its sites queued before.
   if (impl_->MoltHasClonesWaiting(namespace_id)) {
-    AfterTurnsOf(namespace_id, {namespace_id},
+    AfterTurnsOf(namespace_id, /*copy=*/std::nullopt, {namespace_id},
                  base::BindOnce(&SessionStorageImpl::DeleteNamespace,
                                 base::Unretained(impl_.get()), namespace_id,
                                 should_persist));
@@ -416,10 +430,13 @@ void MoltPerSiteSessionStorage::Dequeued(const std::string& namespace_id,
 }
 
 void MoltPerSiteSessionStorage::AfterTurnsOf(const std::string& namespace_id,
+                                             std::optional<std::string> copy,
                                              std::vector<std::string> hold,
                                              base::OnceClosure operation) {
   const uint64_t id = next_barrier_++;
   Barrier& barrier = barriers_[id];
+  barrier.source = namespace_id;
+  barrier.copy = std::move(copy);
   barrier.operation = std::move(operation);
   for (const std::string& held : hold) {
     held_namespaces_.insert(held);
@@ -448,17 +465,25 @@ void MoltPerSiteSessionStorage::PostTurns(uint64_t barrier,
     RunBarrier(barrier);
     return;
   }
-  it->second.turns_left = groups.size();
+  turn_waits_.Wait(barrier, groups.size());
   for (const std::string& group : groups) {
     scheduler_->Post(group,
                      base::BindOnce(&MoltPerSiteSessionStorage::TurnTaken,
                                     weak_factory_.GetWeakPtr(), barrier));
   }
+  // However long a site's backlog, the copy waits
+  // kMoltDomStorageTurnsWaitMs at most for its turn
+  // (molt_dom_storage_waits.h); then in the control's turn.
+  scheduler_->RunnerFor(kMoltDomStorageControlGroup)
+      ->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&MoltPerSiteSessionStorage::TurnsTimedOut,
+                         weak_factory_.GetWeakPtr(), barrier),
+          base::Milliseconds(kMoltDomStorageTurnsWaitMs));
 }
 
 void MoltPerSiteSessionStorage::TurnTaken(uint64_t barrier) {
-  auto it = barriers_.find(barrier);
-  if (it == barriers_.end() || --it->second.turns_left > 0) {
+  if (!turn_waits_.TurnTaken(barrier)) {
     return;
   }
   // The operation itself in the control's turn.
@@ -467,14 +492,28 @@ void MoltPerSiteSessionStorage::TurnTaken(uint64_t barrier) {
                                   weak_factory_.GetWeakPtr(), barrier));
 }
 
+void MoltPerSiteSessionStorage::TurnsTimedOut(uint64_t barrier) {
+  // In the control's turn: the turns still to come count for nothing.
+  if (turn_waits_.TimedOut(barrier)) {
+    RunBarrier(barrier);
+  }
+}
+
 void MoltPerSiteSessionStorage::RunBarrier(uint64_t barrier) {
+  turn_waits_.Forget(barrier);
   auto it = barriers_.find(barrier);
   if (it == barriers_.end()) {
     return;
   }
   Barrier done = std::move(it->second);
   barriers_.erase(it);
+  // The copies it makes: the one asked for, or those owed by a namespace
+  // that goes.
+  const std::vector<std::string> copies =
+      done.copy ? std::vector<std::string>{*done.copy}
+                : impl_->MoltClonesWaitingFor(done.source);
   std::move(done.operation).Run();
+  DeleteQueuedFromCopies(done.source, copies);
   for (const std::string& held : done.hold) {
     if (auto one = held_namespaces_.find(held);
         one != held_namespaces_.end()) {
@@ -482,6 +521,27 @@ void MoltPerSiteSessionStorage::RunBarrier(uint64_t barrier) {
     }
   }
   ReplayHeld();
+}
+
+void MoltPerSiteSessionStorage::DeleteQueuedFromCopies(
+    const std::string& source,
+    const std::vector<std::string>& copies) {
+  auto queued = queued_deletions_.find(source);
+  if (queued == queued_deletions_.end()) {
+    return;
+  }
+  // Asked for before the copy, so the copy holds none of what they delete:
+  // from the copies now, while their messages are still held, as the
+  // source's own deletion waits for its site's turn
+  // (molt_dom_storage_waits.h). A copy still to be populated deletes once
+  // populated, before any of its areas is read.
+  const std::set<blink::StorageKey> keys(queued->second.begin(),
+                                         queued->second.end());
+  for (const blink::StorageKey& key : keys) {
+    for (const std::string& copy : copies) {
+      impl_->DeleteStorage(key, copy, base::DoNothing());
+    }
+  }
 }
 
 // ---- The threads ----

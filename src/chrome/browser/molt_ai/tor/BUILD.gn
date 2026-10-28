@@ -615,6 +615,7 @@ source_set("unit_tests") {
     "molt_net_cpu_unittest.cc",
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",
+    "molt_net_dom_storage_waits_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
     "molt_net_end_ordering_unittest.cc",
     "molt_net_ended_identity_network_unittest.cc",

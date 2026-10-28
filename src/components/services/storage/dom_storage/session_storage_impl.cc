@@ -1351,13 +1351,7 @@ bool SessionStorageImpl::MoltSplitsNamespaceWork() const {
 // MoltBrowser:
 bool SessionStorageImpl::MoltIsNamespaceBusy(
     const std::string& namespace_id) const {
-  for (const MoltNamespaceJob& job : molt_jobs_) {
-    if (job.source == namespace_id ||
-        (job.is_clone && job.destination == namespace_id)) {
-      return true;
-    }
-  }
-  return false;
+  return molt_job_order_.Names(namespace_id);
 }
 
 // MoltBrowser:
@@ -1388,40 +1382,67 @@ void SessionStorageImpl::MoltStartClone(const std::string& source,
   MoltAddJob(std::move(job));
 }
 
-// MoltBrowser: the first step at once if no job is under way.
+// MoltBrowser: a job waits only for the jobs before it that name one of
+// its namespaces (molt_dom_storage_waits.h). With none, its first step runs
+// at once, unless a job's step is running (it adds the job): then in a task
+// of its own.
 void SessionStorageImpl::MoltAddJob(MoltNamespaceJob job) {
-  molt_jobs_.push_back(std::move(job));
-  if (molt_jobs_.size() == 1) {
-    MoltRunJobStep(/*posted=*/false);
+  const uint64_t id = molt_job_order_.Add(
+      job.source, job.is_clone ? job.destination : job.source);
+  molt_jobs_.emplace(id, std::move(job));
+  if (!molt_job_order_.MayRun(id)) {
+    return;
   }
+  if (molt_in_job_step_) {
+    MoltPostJobStep(id);
+    return;
+  }
+  MoltRunJobStep(id);
+}
+
+// MoltBrowser: a job's next step, in its namespace's turn (a copy's
+// source's, a deletion's), as the namespace's own pipes take theirs.
+void SessionStorageImpl::MoltPostJobStep(uint64_t id) {
+  auto it = molt_jobs_.find(id);
+  if (it == molt_jobs_.end()) {
+    return;
+  }
+  molt_scheduler_->Post(
+      MoltDomStorageNamespaceGroup(it->second.source),
+      base::BindOnce(&SessionStorageImpl::MoltRunJobStep,
+                     weak_ptr_factory_.GetWeakPtr(), id));
 }
 
 // MoltBrowser:
-void SessionStorageImpl::MoltRunJobStep(bool posted) {
-  if (posted) {
-    molt_job_step_posted_ = false;
-  }
-  if (molt_jobs_.empty()) {
+void SessionStorageImpl::MoltRunJobStep(uint64_t id) {
+  auto it = molt_jobs_.find(id);
+  if (it == molt_jobs_.end()) {
     return;
   }
-  // A step may add jobs (a copy's population runs what waited for it); the
-  // job stays first, so it stays where it is.
-  MoltNamespaceJob& job = molt_jobs_.front();
+  // A step may add jobs (a copy's population runs what waited for it):
+  // they wait for this one if they name its namespaces, and take their
+  // first step in a task of their own if not. The job stays where it is
+  // (a map's elements stay put as others come and go).
+  MoltNamespaceJob& job = it->second;
+  const bool was_in_job_step = molt_in_job_step_;
+  molt_in_job_step_ = true;
   const bool more = job.is_clone ? MoltCloneStep(job) : MoltDeleteStep(job);
-  if (!more) {
-    molt_jobs_.pop_front();
-    // What waited for it runs in a task of its own.
-    if (molt_on_namespace_job_done_) {
-      molt_scheduler_->Post(kMoltDomStorageControlGroup,
-                            molt_on_namespace_job_done_);
-    }
+  molt_in_job_step_ = was_in_job_step;
+  if (more) {
+    MoltPostJobStep(id);
+    return;
   }
-  if (!molt_jobs_.empty() && !molt_job_step_posted_) {
-    molt_job_step_posted_ = true;
+  // Its namespaces are free as it goes; the jobs that waited for it (and no
+  // others) take their first step, each in its namespace's turn.
+  const std::vector<uint64_t> ready = molt_job_order_.Done(id);
+  molt_jobs_.erase(it);
+  for (const uint64_t next : ready) {
+    MoltPostJobStep(next);
+  }
+  // The control messages that waited for it run in a task of their own.
+  if (molt_on_namespace_job_done_) {
     molt_scheduler_->Post(kMoltDomStorageControlGroup,
-                          base::BindOnce(&SessionStorageImpl::MoltRunJobStep,
-                                         weak_ptr_factory_.GetWeakPtr(),
-                                         /*posted=*/true));
+                          molt_on_namespace_job_done_);
   }
 }
 
@@ -1526,7 +1547,7 @@ bool SessionStorageImpl::MoltForgetNamespaceChunk(
 
 // MoltBrowser:
 void SessionStorageImpl::MoltScrubClones(const std::string& group) {
-  for (MoltNamespaceJob& job : molt_jobs_) {
+  for (auto& [id, job] : molt_jobs_) {
     if (!job.is_clone) {
       continue;
     }
@@ -1553,6 +1574,18 @@ bool SessionStorageImpl::MoltHasClonesWaiting(
   auto found = namespaces_.find(namespace_id);
   return found != namespaces_.end() &&
          found->second->HasChildNamespacesWaitingForClone();
+}
+
+// MoltBrowser:
+std::vector<std::string> SessionStorageImpl::MoltClonesWaitingFor(
+    const std::string& namespace_id) {
+  auto found = namespaces_.find(namespace_id);
+  if (found == namespaces_.end()) {
+    return {};
+  }
+  const base::flat_set<std::string>& children =
+      found->second->molt_children_waiting_for_clone();
+  return std::vector<std::string>(children.begin(), children.end());
 }
 
 void SessionStorageImpl::GetStatistics(size_t* total_cache_size,
