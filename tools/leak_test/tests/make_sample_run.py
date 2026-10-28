@@ -444,7 +444,8 @@ def manifest():
                         'nav.hardwareConcurrency': 8,
                         'mq.pointer_fine': True}},
             # The mic_processing launch: the two captures disagree (a
-            # finding: the probe can't compare machines then).
+            # finding: the probe can't compare machines then), and so do
+            # "remote-only"'s samples while the page plays tones.
             {'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
              'window': None, 'zoom_requested': 100, 'kind': 'mic',
              'target': 'moltnet',
@@ -454,7 +455,28 @@ def manifest():
                  'audio.mic_settings': {'echoCancellation': True,
                                         'noiseSuppression': True,
                                         'autoGainControl': True},
-                 'audio.mic_sample_rate': 48000}},
+                 'audio.mic_capabilities': {
+                     'echoCancellation': ['all', 'false', 'remote-only',
+                                          'true'],
+                     'autoGainControl': ['false', 'true'],
+                     'noiseSuppression': ['false', 'true'],
+                     'voiceIsolation': ['false']},
+                 'audio.mic_sample_rate': 48000,
+                 'audio.mic_system_aec': {
+                     'hash': '0f4c2a9e71b3d8565ae0c4f1', 'frames': 480},
+                 'audio.mic_system_aec_settings': {
+                     'echoCancellation': 'all', 'noiseSuppression': True,
+                     'autoGainControl': True},
+                 'audio.mic_playback_tones': {
+                     'state': ['running', 'running'],
+                     'rates': [48000, 44100]},
+                 'audio.mic_remote_only': {
+                     'hash': '5d18e0b2c9a47f3e6b01d2a8', 'frames': 480},
+                 'audio.mic_remote_only_settings': {
+                     'echoCancellation': 'remote-only',
+                     'noiseSuppression': True, 'autoGainControl': True},
+                 'audio.mic_playback': {
+                     'hash': 'c83e5f02a9d4b7160e2f9a4c', 'frames': 480}}},
         ],
         'errors': [],
     }

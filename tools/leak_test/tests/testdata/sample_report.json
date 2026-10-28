@@ -119,6 +119,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"frames\": 480, \"hash\": \"5d18e0b2c9a47f3e6b01d2a8\"}, expected audio.mic_processed ({'frames': 480, 'hash': '0f4c2a9e71b3d8565ae0c4f1'})"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_remote_only",
+   "status": "FAIL",
+   "title": "audio.mic_remote_only is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Fonts\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"DejaVu Sans\", \"Liberation Sans\", \"Arial\", \"Ubuntu\"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)"
@@ -876,12 +887,56 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
    "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"autoGainControl\": [\"false\", \"true\"], \"echoCancellation\": [\"all\", \"false\", \"remote-only\", \"true\"], \"noiseSuppression\": [\"false\", \"true\"], \"voiceIsolation\": [\"f, expected {\"autoGainControl\": [\"false\", \"true\"], \"echoCancellation\": [\"all\", \"false\", \"remote-only\", \"true\"], \"noiseSuppression\": "
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_capabilities",
+   "status": "PASS",
+   "title": "audio.mic_capabilities is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"autoGainControl\": true, \"echoCancellation\": \"remote-only\", \"noiseSuppression\": true}, expected {\"autoGainControl\": true, \"echoCancellation\": \"remote-only\", \"noiseSuppression\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_remote_only_settings",
+   "status": "PASS",
+   "title": "audio.mic_remote_only_settings is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
     "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"autoGainControl\": true, \"echoCancellation\": true, \"noiseSuppression\": true}, expected {\"autoGainControl\": true, \"echoCancellation\": true, \"noiseSuppression\": true}"
    ],
    "group": "uniformity",
    "id": "uniform.audio.mic_settings",
    "status": "PASS",
    "title": "audio.mic_settings is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"frames\": 480, \"hash\": \"0f4c2a9e71b3d8565ae0c4f1\"}, expected audio.mic_processed ({'frames': 480, 'hash': '0f4c2a9e71b3d8565ae0c4f1'})"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_system_aec",
+   "status": "PASS",
+   "title": "audio.mic_system_aec is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"autoGainControl\": true, \"echoCancellation\": \"all\", \"noiseSuppression\": true}, expected {\"autoGainControl\": true, \"echoCancellation\": \"all\", \"noiseSuppression\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_system_aec_settings",
+   "status": "PASS",
+   "title": "audio.mic_system_aec_settings is uniform"
   },
   {
    "details": null,
@@ -3232,9 +3287,9 @@
  ],
  "counts": {
   "ERROR": 0,
-  "FAIL": 13,
+  "FAIL": 14,
   "INFO": 2,
-  "PASS": 183,
+  "PASS": 187,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3800,15 +3855,66 @@
    "phase": "mic_processing",
    "target": "moltnet",
    "values": {
+    "audio.mic_capabilities": {
+     "autoGainControl": [
+      "false",
+      "true"
+     ],
+     "echoCancellation": [
+      "all",
+      "false",
+      "remote-only",
+      "true"
+     ],
+     "noiseSuppression": [
+      "false",
+      "true"
+     ],
+     "voiceIsolation": [
+      "false"
+     ]
+    },
+    "audio.mic_playback": {
+     "frames": 480,
+     "hash": "c83e5f02a9d4b7160e2f9a4c"
+    },
+    "audio.mic_playback_tones": {
+     "rates": [
+      48000,
+      44100
+     ],
+     "state": [
+      "running",
+      "running"
+     ]
+    },
     "audio.mic_processed": {
      "frames": 480,
      "hash": "0f4c2a9e71b3d8565ae0c4f1"
     },
     "audio.mic_processed_stable": false,
+    "audio.mic_remote_only": {
+     "frames": 480,
+     "hash": "5d18e0b2c9a47f3e6b01d2a8"
+    },
+    "audio.mic_remote_only_settings": {
+     "autoGainControl": true,
+     "echoCancellation": "remote-only",
+     "noiseSuppression": true
+    },
     "audio.mic_sample_rate": 48000,
     "audio.mic_settings": {
      "autoGainControl": true,
      "echoCancellation": true,
+     "noiseSuppression": true
+    },
+    "audio.mic_system_aec": {
+     "frames": 480,
+     "hash": "0f4c2a9e71b3d8565ae0c4f1"
+    },
+    "audio.mic_system_aec_settings": {
+     "autoGainControl": true,
+     "echoCancellation": "all",
      "noiseSuppression": true
     }
    },

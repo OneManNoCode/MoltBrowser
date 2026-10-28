@@ -412,12 +412,30 @@ FULL_RULES = (
 # The mic_processing launch (kind "mic"): Chromium's fake capture device
 # plays the kit's WAV; the page reads the processed samples twice, each time
 # from a new stream. The two must agree (otherwise the probe can't compare
-# machines), and the processing the page asked for must be on.
+# machines), and the processing the page asked for must be on. A microphone
+# has the same processing capabilities on every OS, "all" among them, and no
+# voice isolation. System echo cancellation ("all") is WebRTC's in MoltNet:
+# the same samples as the default, on every CPU and OS. So are
+# "remote-only"'s while the page plays tones: the renderer's processing,
+# whose echo canceller hears WebRTC's playout only, which MoltNet has none of.
 MIC_RULES = (
     ('audio.mic_processed_stable', 'eq', True, S_MIC),
     ('audio.mic_settings', 'eq', {'echoCancellation': True,
                                   'noiseSuppression': True,
                                   'autoGainControl': True}, S_MIC),
+    ('audio.mic_capabilities', 'eq', {
+        'echoCancellation': ['all', 'false', 'remote-only', 'true'],
+        'autoGainControl': ['false', 'true'],
+        'noiseSuppression': ['false', 'true'],
+        'voiceIsolation': ['false']}, S_MIC),
+    ('audio.mic_system_aec', 'eq_key', 'audio.mic_processed', S_MIC),
+    ('audio.mic_system_aec_settings', 'eq', {'echoCancellation': 'all',
+                                             'noiseSuppression': True,
+                                             'autoGainControl': True}, S_MIC),
+    ('audio.mic_remote_only', 'eq_key', 'audio.mic_processed', S_MIC),
+    ('audio.mic_remote_only_settings', 'eq', {
+        'echoCancellation': 'remote-only', 'noiseSuppression': True,
+        'autoGainControl': True}, S_MIC),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -520,6 +538,13 @@ INFO_KEYS = {
                                     '(documented)',
     'audio.mic_sample_rate': 'the processed microphone track\'s sampleRate '
                              '(mic_processing launch)',
+    'audio.mic_playback': 'the processed microphone while the page plays '
+                          'tones, with the default echo cancellation, whose '
+                          'reference they are: the echo canceller adapts to '
+                          'the timing between playout and capture, which '
+                          'changes from run to run (mic_processing launch)',
+    'audio.mic_playback_tones': 'the playback cases\' AudioContexts: state '
+                                'and rate (mic_processing launch)',
 }
 
 
