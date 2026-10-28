@@ -1000,6 +1000,17 @@ void QuotaManagerImpl::UpdateOrCreateBucket(
     return;
   }
 
+  // MoltBrowser: a closed site (a page's nonce past its site's bound:
+  // MoltDropNonce()) gets no bucket, so its frames can't make quota-managed
+  // storage again, whether a write checks the quota or not (IndexedDB, Cache
+  // Storage and the file systems fail to open, a service worker or a
+  // Storage Bucket isn't made; chrome/browser/molt_ai/tor/
+  // molt_net_nonce_storage_policy.h).
+  if (MoltIsSiteClosed(MoltBudgetSiteOf(bucket_params.storage_key))) {
+    std::move(callback).Run(base::unexpected(QuotaError::kQuotaExceeded));
+    return;
+  }
+
   last_opened_bucket_site_ = bucket_params.storage_key;
 
   // The default bucket skips the quota check.
@@ -1747,6 +1758,33 @@ void QuotaManagerImpl::GetBucketsModifiedBetween(base::Time begin,
             return database->GetBucketsModifiedBetween(begin, end);
           },
           begin, end),
+      base::BindOnce(&QuotaManagerImpl::DidGetModifiedBetween,
+                     weak_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+// MoltBrowser: see the header; as GetBucketsModifiedBetween().
+void QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween(
+    const StorageKey& storage_key,
+    base::Time begin,
+    base::Time end,
+    GetBucketsCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  EnsureDatabaseOpened();
+
+  if (db_disabled_) {
+    std::move(callback).Run(std::set<BucketLocator>());
+    return;
+  }
+
+  PostTaskAndReplyWithResultForDBThread(
+      base::BindOnce(
+          [](const StorageKey& storage_key, base::Time begin, base::Time end,
+             QuotaDatabase* database) {
+            CHECK(database);
+            return database->MoltGetBucketsForStorageKeyModifiedBetween(
+                storage_key, begin, end);
+          },
+          storage_key, begin, end),
       base::BindOnce(&QuotaManagerImpl::DidGetModifiedBetween,
                      weak_factory_.GetWeakPtr(), std::move(callback)));
 }

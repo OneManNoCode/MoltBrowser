@@ -1,0 +1,19 @@
+MoltBrowser patch for third_party/blink/renderer/platform/audio/DEPS
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/platform/audio/DEPS by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/audio/DEPS b/third_party/blink/renderer/platform/audio/DEPS
+index 2827c970a0d50a4f433cc9b5b99997b9eeaab28a..5a59c8735858a618092532039225a5b3d99e724a 100644
+--- a/third_party/blink/renderer/platform/audio/DEPS
++++ b/third_party/blink/renderer/platform/audio/DEPS
+@@ -11,6 +11,8 @@ include_rules = [
+     "+media/base/audio_glitch_info.h",
+     "+media/base/audio_renderer_sink.h",
+     "+media/base/audio_timestamp_helper.h",
++    # MoltBrowser: subnormals in MoltNet's renderers (denormal_disabler.h).
++    "+media/base/molt_portable_media.h",
+     "+media/base/multi_channel_resampler.h",
+     "+media/base/sinc_resampler.h",
+     "+third_party/blink/renderer/platform/wtf/cross_thread_functional.h",

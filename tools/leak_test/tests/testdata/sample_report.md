@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (14 FAIL, 0 ERROR, 187 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (14 FAIL, 0 ERROR, 191 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -294,6 +294,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.mic_capabilities is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
+| PASS | audio.mic_device_ranges is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | audio.mic_format is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | audio.mic_format_ranges is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | audio.mic_names is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
 | PASS | audio.mic_remote_only_settings is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | PASS | audio.mic_settings is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | PASS | audio.mic_system_aec is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |

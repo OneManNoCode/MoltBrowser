@@ -122,8 +122,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   files or the internet, and one that makes it hang no longer ties up the
   browser. Linux uses Landlock and seccomp (kernels older than 5.13 get the
   network block only); macOS uses the system sandbox and won't run OCR or
-  voice without it; Windows gets the time limit and a job object for now.
-  Voice transcription runs on the CPU.
+  voice without it; Windows uses an AppContainer (next entry). Voice
+  transcription runs on the CPU.
+- **OCR and voice: confined on Windows, simpler input everywhere.** On
+  Windows, each tesseract or whisper run is now a locked-down AppContainer
+  of its own: it can read only the OCR and voice folders and its input,
+  write only its private scratch folder, start no other program and reach no
+  network, in a job with a memory limit. The installer gives that sandbox
+  read access to the OCR and voice folders only; the portable ZIP can't, and
+  says OCR and voice need the installer. On every platform the helpers also
+  parse less: an attached image or a scanned PDF's page is decoded in
+  Chromium's own sandboxed image decoder, and tesseract reads only
+  uncompressed pixels the browser writes (TIFF attachments, which that
+  decoder can't read, are refused with a message); whisper reads only a WAV
+  the browser builds from the recording's checked 16 kHz mono samples,
+  within the same size limit.
 - **macOS: OCR ships with its own libraries.** The bundled tesseract still
   pointed at the build machine's Homebrew libraries, so on other Macs it
   couldn't start (and the sandbox wouldn't let it load them anyway). The
@@ -392,6 +405,22 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   a restart while its page's settings are still being asked for asks
   again as soon as the answer comes, instead of failing after five
   minutes.
+- Hardening (security review of PRs #75 and #76,
+  `docs/SECURITY_REVIEWS.md`): the leak test kit, which runs as root, also
+  reads the run directory it gives its user only from that directory's
+  open descriptor, mounts only its own name-service files into a launch,
+  gives its user no file with more than one link when a run ends, and
+  reaches its `--out` directory without following a link on the way.
+- MoltNet hardening, per page: once a page's credentialless-frame storage
+  is closed (past its site's 32 such pages, or after its frames reach 256
+  origins), those frames store nothing more, cookies included, until the
+  page goes; their cookies have totals of their own for each site and
+  page; and what they leave in the network context (idle connections, TLS
+  sessions, server properties, HTTP authentication and CORS preflight
+  entries) goes with the page, entry by entry, flushing nothing else. A
+  Clear-Site-Data on a response no page shows (a download's), and a
+  deletion of one storage key over a time range, read only that storage
+  (`docs/MOLTNET_COMPLIANCE.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -542,6 +571,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (`docs/FINGERPRINTING.md`, "MoltNet: the microphone's processing").
   Regular and incognito windows keep the system's processing. The leak
   test kit checks both cases.
+- **MoltNet's microphones and audio math look alike on every machine.** In
+  MoltNet windows every microphone reports one format (48 kHz, one or two
+  channels, a 10 ms buffer), which the browser converts the device's sound
+  to; every camera, microphone and speaker a page may see gets a generic
+  name ("Microphone 3f9a") and a group of its own, and Windows'
+  "communications" device isn't listed, while pages still pick devices as
+  before. On Linux a MoltNet page records from the microphone itself when
+  a PulseAudio or PipeWire echo-cancelling or noise filter is chosen as the
+  microphone, and on Windows MoltNet never turns on the system's call
+  processing. Web Audio, resampling and the microphone's processing now
+  treat the tiniest audio values (subnormal floats) the same way on x86-64
+  and Arm processors (`docs/FINGERPRINTING.md`, "MoltNet: cameras,
+  microphones and outputs" and "MoltNet: subnormal floats"); regular and
+  incognito windows are unchanged. The leak test kit checks these too.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

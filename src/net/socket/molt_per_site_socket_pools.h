@@ -29,6 +29,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "base/values.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/proxy_chain.h"
@@ -119,6 +120,16 @@ class MoltPerSiteSocketPools : public ClientSocketPool::MoltSocketGate,
   void CloseIdleSockets(const char* net_log_reason_utf8) {
     for (auto& [key, entry] : pools_) {
       entry.pool->CloseIdleSockets(net_log_reason_utf8);
+    }
+  }
+
+  // The idle sockets of the groups whose network key carries `nonce` (a gone
+  // page's credentialless frames': services/network/molt_nonce_drop_policy.h),
+  // in every site's pools (they are in the page's site's).
+  void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
+                                   const char* net_log_reason_utf8) {
+    for (auto& [key, entry] : pools_) {
+      entry.pool->MoltCloseIdleSocketsOfNonce(nonce, net_log_reason_utf8);
     }
   }
 

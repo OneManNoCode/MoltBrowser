@@ -490,7 +490,8 @@ per attempt; a native x86_64 Linux box takes about 4 h (from
 
 Paused (CLAUDE.md). Windows-only items: `tor_control_connection.cc` on
 Windows (from #49), the LPAC process start from the NSIS install (from
-#15), the helper job object and deadline (from #16), PDFium under win32k
+#15), the OCR and voice helpers' AppContainer, job and installer grant
+(helpers-win, which replaced #16's job object; checks in §7.5), PDFium under win32k
 lockdown (from #18), the Vulkan pre-lockdown step (from #52; built by
 ai-finish, its test plan in §9), Windows signing (§11). Once a runner exists again: give it `MOLT_BUILDER_ID` in its
 `.env`, wipe its workspace once (the workflow's steps were reordered), and
@@ -538,6 +539,7 @@ listed and the deps are in (§4.9).
 | `components/services/storage/public/mojom/storage_service.mojom` (new upstream copy) | two new methods on `StorageService`, `MoltBindPerSiteLocalStorageControl(pending_receiver<LocalStorageControl>)` and `MoltBindPerSiteSessionStorageControl(pending_receiver<SessionStorageControl>)` (not `[Stable]`, no `[MinVersion]`; the interface keeps its `[ServiceSandbox]`): `StorageServiceImpl` is its only implementation in the 156 tree; a fake elsewhere would need empty overrides | moltnet-shared7 |
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` | a new method `MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed)` on both controls (both now import `mojo/public/mojom/base/unguessable_token.mojom`): as for `MoltKeepCachesPerSite()`, a test fake or mock of either control fails to compile until it gets an empty override; `LocalStorageImpl`, `SessionStorageImpl` and the own-thread hosts have it | moltnet-shared8 |
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` | a new method `MoltGetUsageForStorageKey(blink.mojom.StorageKey storage_key)` on both controls, answering `array<StorageUsageInfo>` (local) and `array<SessionStorageUsageInfo>` (session): as for `MoltKeepCachesPerSite()`, a test fake or mock of either control fails to compile until it gets an override; `LocalStorageImpl`, `SessionStorageImpl` and the own-thread hosts have it | moltnet-shared9 |
+| `services/network/public/mojom/network_context.mojom`, `services/network/test/test_network_context.h` (new upstream copy) | `[MinVersion=1] bool molt_nonce_limits` (set for MoltNet by `molt_net_network_context_policy.h`), a new `enum MoltNonceDrop { kClosed, kGone, kForget }` and a new method `MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, MoltNonceDrop drop)` on `NetworkContext` (not `[Stable]`, no `[MinVersion]`; the file already imports `unguessable_token.mojom`): every C++ implementation needs it. `network::NetworkContext` overrides it and `TestNetworkContext` has an empty override (the fakes deriving from it inherit that); another fake or mock of `NetworkContext` elsewhere in the tree (none other in the 156 files read) fails to compile until it gets one | moltnet-shared10 |
 | `media/mojo/mojom/audio_processing.mojom`, `audio_processing_mojom_traits.{h,cc}`, `media/base/audio_processing.{h,cc}` (new upstream copies) | `bool cpu_independent`, last in `AudioProcessingSettings` (not `[Stable]`, no `[MinVersion]`): the traits get a getter and `Read()` copies it; `operator==` and `ToString()` include it. Designated initialisers of the struct elsewhere (`kDummyWebrtcSettings` in Blink) leave it false | fp-probes2 |
 
 ### 4.2 `net/` and the network service (MoltNet circuits)
@@ -643,6 +645,9 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `components/services/storage/dom_storage/local_storage_impl.{h,cc}`, `session_storage_impl.{h,cc}`, `molt_dom_storage_own_thread.{h,cc}`, `content/browser/dom_storage/dom_storage_context_wrapper.{h,cc}`, `content/browser/browsing_data/browsing_data_filter_builder_impl.h` (new upstream copy), `molt_one_key_deletion_policy.h` (new, std-only, in `:molt_policies`), `content/browser/storage_partition_impl.cc` | MoltNet: `MoltGetUsageForStorageKey()` on both implementations and hosts (in the key's site's turn); the wrapper gains `MoltGetLocalStorageUsageForStorageKey()`, `MoltGetSessionStorageUsageForStorageKey()` and `MoltKeepsPerSite()`; `BrowsingDataFilterBuilderImpl` an inline `molt_storage_key()`; `ClearQuotaManagedData()`, `ClearLocalStorage()` and `ClearSessionStorage()` take a defaulted `std::optional<blink::StorageKey> molt_only_key`, and `DataDeletionHelper::ClearData()` `static_cast`s the `BrowsingDataFilterBuilder*` to the impl (its only implementation); the quota branch binds `QuotaManagerImpl::GetBucketsForStorageKey()` (`delete_expired=false`) on the IO thread with a lambda turning `QuotaErrorOr<std::set<BucketInfo>>` into `std::set<BucketLocator>` | moltnet-shared9 |
 | `components/download/internal/background_service/controller_impl.{h,cc}` (`controller_impl.h` a new upstream copy), `molt_restored_fetch.h` | every profile: `ControllerImpl` gains a member `MoltFetchTakeUps molt_fetch_take_ups_` (the header includes `molt_restored_fetch.h`); `StartDownload()`'s `UNEXPECTED_GUID` branch switches on `MoltOnFetchTakenUp()` (an `enum class` with three cases, no `default:`); `OnDownloadReadyToStart()` takes the remembered take-up before its wait and calls `UpdateDriverState()` in the wait branch; `HandleCompleteDownload()` forgets the GUID | moltnet-shared9 |
 | `components/services/storage/dom_storage/session_storage_impl.{h,cc}`, `session_storage_namespace_impl.h`, `molt_dom_storage_own_thread.{h,cc}`, `molt_dom_storage_waits.h` (new, std-only, in `//components/services/storage:storage`) | MoltNet's partition: `SessionStorageImpl`'s job queue becomes `MoltDomStorageNamespaceJobs molt_job_order_` and `std::map<uint64_t, MoltNamespaceJob> molt_jobs_` (the job holds a `std::unique_ptr<SessionStorageNamespaceImpl>` and the cloned areas: move-only, emplaced by id; the header no longer includes `<deque>`); `MoltRunJobStep(uint64_t)` and a new `MoltPostJobStep(uint64_t)` post to `MoltDomStorageNamespaceGroup()`; a new `MoltClonesWaitingFor()` returns a `std::vector<std::string>` built from the namespace's new inline `molt_children_waiting_for_clone()` (a `const base::flat_set<std::string>&`). The host's `Barrier` loses `turns_left` and gains `source` and `std::optional<std::string> copy`; `AfterTurnsOf()` takes the copy; the deadline is posted with `scheduler_->RunnerFor(kMoltDomStorageControlGroup)->PostDelayedTask(FROM_HERE, ..., base::Milliseconds(kMoltDomStorageTurnsWaitMs))`; a `std::map<std::string, std::multiset<blink::StorageKey>> queued_deletions_` | moltnet-shared9 |
+| `net/cookies/cookie_monster.{h,cc}` (new upstream copies), `net/cookies/molt_nonce_cookie_policy.h` (new, std-only, in `//net:molt_policies`), `services/network/network_context.cc` | MoltNet's context: `CookieMonster` gains `MoltKeepNonceCookieLimits()`, `MoltKeepsNonceCookieLimits() const`, `MoltDropNonce(const base::UnguessableToken&, bool refuse)` (through `DoCookieCallback()` and the store's `weak_ptr_factory_`), `MoltDropNonceNow()`, `MoltGarbageCollectNoncePartition(base::Time, const CookiePartitionKey&, const CanonicalCookie* keep)` (`CookieItVector`, `std::sort` with `LRACookieSorter`, `InternalDeletePartitionedCookie()` with `DELETE_COOKIE_EXPIRED`, `DELETE_COOKIE_EVICTED_PER_PARTITION_DOMAIN` and `DELETE_COOKIE_EXPLICIT`) and a member `std::unique_ptr<MoltNonceCookieTotals<base::UnguessableToken, CookiePartitionKey>>` (the header now includes `base/unguessable_token.h`, `net/cookies/cookie_partition_key.h` and the policy); hooks in `InternalInsertCookie()` (after `num_nonced_partitioned_cookie_bytes_`), `SetCanonicalCookie()` (an `ExclusionReason::EXCLUDE_USER_PREFERENCES` before `MaybeDeleteEquivalentCookieAndUpdateStatus()`, reading `NameValueSizeBytes()`, and the nonce partition's collection after `GarbageCollectPartitionedCookies()`) and `InternalDeletePartitionedCookie()` (the partition's `bytes_per_cookie_partition_` entry erased as it empties, before Chromium's own erase of the partition). `cookie_monster.h` is included across `//net` and `//services/network`: a large rebuild. With `molt_nonce_limits`, `MakeURLRequestContext()` makes the store of a context without a cookie file itself (`std::make_unique<net::CookieMonster>(/*store=*/nullptr, net_log)`, as `URLRequestContextBuilder::Build()` does) and calls `MoltKeepNonceCookieLimits()` on either store | moltnet-shared10 |
+| `services/network/network_context.{h,cc}`, `services/network/molt_nonce_drop_policy.h` (new, std-only, in `//services/network:network_service`), `net/http/http_network_session.{h,cc}`, `net/socket/client_socket_pool_manager.{h,cc}`, `client_socket_pool_manager_impl.{h,cc}`, `molt_per_site_socket_pools.h`, `transport_client_socket_pool.h`, `net/spdy/spdy_session_pool.{h,cc}`, `net/ssl/ssl_client_session_cache.{h,cc}`, `net/http/http_auth_cache.{h,cc}`, `net/http/http_server_properties.{h,cc}`, `services/network/cors/preflight_cache.{h,cc}`, `preflight_controller.{h,cc}` (the SPDY, TLS session, auth, server properties and CORS files new upstream copies) | `NetworkContext::MoltDropNonce()` overrides the new mojom method (a `switch` over `mojom::MoltNonceDrop` with no `default:`) and `MoltNonceCookieStore()` `static_cast`s `url_request_context_->cookie_store()` to `net::CookieMonster*` (forward-declared in `network_context.h`); `HttpNetworkSession::MoltForgetNonce()` calls a new virtual `ClientSocketPoolManager::MoltCloseIdleSocketsOfNonce(const base::UnguessableToken&, const char*)` (an empty body in the base class, overridden by `ClientSocketPoolManagerImpl`, which asks the per-site pools; a test manager elsewhere inherits the empty one), `SpdySessionPool::MoltCloseIdleSessionsOfNonce()` (as `CloseCurrentSessionsHelper()`, idle sessions only), `SSLClientSessionCache::MoltFlushForNonce()` (`base::LRUCache::Erase(iterator)`), `HttpAuthCache::MoltClearEntriesForNonce()` (`std::erase_if` on the `std::multimap`, `EntryMapKey::network_anonymization_key`) and `HttpServerProperties::MoltClearForNonce()` (`Erase(iterator)` on `server_info_map_`, `servers_requiring_http_11_` and `quic_server_info_map_`, `base::EraseIf` on the two canonical `base::flat_map`s, then `MaybeQueueWriteProperties()`; the `.cc` now includes `base/containers/flat_map.h`); `TransportClientSocketPool::MoltCloseIdleSocketsOfNonce()` is inline (reads `group_map_`, `idle_socket_count_` and `GroupId::network_anonymization_key()`, calls `CloseIdleSocketsInGroup()`); `PreflightController::MoltClearCorsPreflightCacheForNonce()` calls `PreflightCache::MoltClearForNonce()` (`std::erase_if` on the cache's `std::map`, `std::get<2>` of its `std::tuple` key, a `net::NetworkIsolationKey`). Each header that gains a method now includes `base/unguessable_token.h`; `http_network_session.h`, `ssl_client_session_cache.h`, `http_server_properties.h` and `spdy_session_pool.h` are widely included in `//net` | moltnet-shared10 |
+| `chrome/browser/molt_ai/tor/molt_net_nonce_storage.{h,cc}`, `molt_net_nonce_storage_policy.h`, `storage/browser/quota/quota_manager_impl.{h,cc}`, `quota_database.{h,cc}` (the database's new upstream copies), `content/browser/storage_partition_impl.cc`, `content/browser/browsing_data/molt_one_key_deletion_policy.h` | MoltNet: the tab helper no longer builds cookie partition keys or calls `CookieManager::DeleteCookies()`: it calls `StoragePartition::GetNetworkContext()->MoltDropNonce()` with a `network::mojom::MoltNonceDrop` (the `.cc` includes `services/network/public/mojom/network_context.mojom.h`), counts the pages using each nonce (`MoltNetNoncePageCounts`; `MoltNetNoncePage::Noted()` returns `bool`) and closes a group past `kMoltNetNonceStorageKeysPerGroup` (`MoltNetNonceGroups::Close()`); `QuotaManagerImpl::UpdateOrCreateBucket()` answers `base::unexpected(QuotaError::kQuotaExceeded)` for a closed site (`MoltIsSiteClosed(MoltBudgetSiteOf(...))`, after the expiration check); the new `QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween()` posts to the database sequence as `GetBucketsModifiedBetween()` does and replies through `DidGetModifiedBetween()`; `QuotaDatabase::MoltGetBucketsForStorageKeyModifiedBetween()` runs a cached `sql::Statement` (`BindString()`, `BindTime()`, `ColumnStringView()`); `ClearQuotaManagedData()` binds it for a one-key deletion over a range; `OnClearSiteData()` builds `blink::StorageKey::CreateFirstParty()` or `CreateWithNonce()` from `url::Origin::Create(url)` when `MoltClearSiteDataKeyFor()` says so (`base::OptionalToPtr()` on `CookiePartitionKey::nonce()`, `DOMStorageContextWrapper::MoltKeepsPerSite()`), and `DataDeletionHelper::ClearData()` reads `molt_one_key->origin().opaque()` | moltnet-shared10 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -685,6 +690,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `ServiceProcessHost::Options().WithProcessCallback()`; anydoc cxx sub-target visibility | | #13 |
 | document parser PDF rendering | PDFium config `version = 4`, `gfx::PNGCodec::Encode` with BGRA, spans and `base::U32FromBigEndian` | #18 |
 | `molt_ai/common/helper_sandbox_*` (Landlock and seccomp, Seatbelt, job object) | type-checked against 156's headers on Linux and Windows (clang-cl), the POSIX part for the Mac too, on Apple framework stand-ins (round 28) | #16 |
+| `molt_ai/common/helper_sandbox_win.cc` (the helpers' LPAC launch), `helper_sandbox_test_helper_win.cc` (a test `executable`), `ocr/ocr_service.cc` (the data decoder, Skia) | new deps: `//sandbox/win:sandbox` (its `AppContainerBase`, `StartupInformationHelper`, `Job`) from `chrome/browser`, `//services/data_decoder/public/cpp` and `//skia` from `molt_ai/ocr`; type-checked with clang-cl and for Linux and the Mac (round 33); `-Wunsafe-buffer-usage` isn't modelled by the compile check | helpers-win |
 | `third_party/llama_cpp:mtmd` (exception and CFI configs), `:llama_guard` (a TU built with exceptions), `:constrained_decoding` deps | | #30, #38, #52 |
 | `runtime/model_image_prep.cc` (real Skia, the data decoder), `molt_model_impl.cc`, `molt_inference_service.cc` (syntax-checked only) | | #38 |
 | `embedding_process_host`, `runtime:embedding_host`, `models:download` | | #28 |
@@ -722,6 +728,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | WebRTC (new upstream copies under `third_party/webrtc/`): `rtc_base/cpu_info.{h,cc}` (`ScopedCpuIndependent`, `IsCpuIndependent()`), `rtc_base/molt_math.{h,cc}` (new, target `//third_party/webrtc/rtc_base:molt_math`), `api/audio/audio_processing.h` (`Config::moltbrowser_cpu_independent`), `modules/audio_processing/audio_processing_impl.{h,cc}`, `aec3/aec3_common.cc`, `agc2/cpu_features.cc`, `common_audio/third_party/ooura/fft_size_128/ooura_fft.{h,cc}`, `common_audio/resampler/sinc_resampler.cc`, the math call sites (`common_audio/include/audio_util.h`, `fft_size_256/fft4g.cc`, three AEC3, three noise suppression and four AGC2 files) and the `BUILD.gn` files of `rtc_base`, `common_audio`, its Ooura FFTs, `modules/audio_processing`, `aec3`, `ns`, `agc2`, `agc2/rnn_vad`; `media/webrtc/helpers.cc`; Blink's `modules/mediastream/media_stream_audio_processing_layout.cc` | a `constinit thread_local bool` in `cpu_info.cc` (also in component builds, where WebRTC is one component); `OouraFft`'s C functions now build on arm64 too, and `use_neon_` exists only under `WEBRTC_HAS_NEON` (an unused-function or unused-field warning on one architecture means a branch went missing); `webrtc::molt_math` has float and double overloads only, so an integer argument at a call site would be ambiguous (none at 156); `//third_party/llvm-libc:molt_portable_math` is visible to `//third_party/webrtc/rtc_base:molt_math` only; Blink's `modules/mediastream` calls `media::IsPortableMediaProcess()` (`+media/base` is already allowed there; `media::.+` is in the Blink audit's list for `modules/mediastream`) | fp-probes2 |
 | jxl-rs: `third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/{lib.rs,x86_64/mod.rs,aarch64/mod.rs}`, `vendor/jxl-v0_7/Cargo.toml`, `src/lib.rs`, `src/moltbrowser_math.rs` (new) and six call-site files, the crate patches in `patches/jxl_simd-v0_7/` and `patches/jxl-v0_7/`, `Cargo.lock`, `third_party/rust/jxl/v0_7/BUILD.gn` (the new file; `//third_party/rust/libm/v0_2:lib`), `third_party/rust/jxl/v0_7/wrapper/lib.rs` (a new cxx bridge function: the generated `lib.rs.h` gains `jxl_rs_moltbrowser_set_portable()`), `platform/image-decoders/jxl/jxl_image_decoder.cc` (constructor) | rustc on `simd_function!`'s expansion (an early return to the scalar descriptor in every function it makes, x86-64 and arm64); the `PortableMath` trait for `f32` and `f64`; `libm`'s visibility (`//third_party/rust/*`); `scripts/vendor-rust-crates.sh` must keep the two crate patches (afterwards `moltbrowser_math.rs` must still be in the vendored crate) | fp-arch |
 | Blink's `platform/mediastream/media_stream_audio_processor_options.cc` (new upstream copy: `IsSystemWideAecAvailable`, `GetPreferredAec`, `GetSystemWideAec`), `modules/mediastream/user_media_processor.cc` (`SelectAudioDeviceSettings`, `InitializeAudioSourceObject`), `media_devices.cc` (`DevicesEnumerated`); `services/audio/reference_output.h`, `audio_processor_handler.{h,cc}`, `output_device_mixer_impl.{h,cc}`, `mixing_graph_impl.cc` (new upstream copies); `media/base/molt_portable_media.{h,cc}`, `vector_math.cc` (`FMAC`), `sinc_resampler.cc` (`Resample`, the kernel); `ui/gfx/geometry/molt_math.{h,cc}` (`PortableSin`, `PortableCos`) | Blink's `platform/mediastream` and `modules/mediastream` call `media::IsPortableMediaProcess()` and `media::PortableCaptureEffects()` (a new `MEDIA_EXPORT` function; `+media/base` is allowed in both); `media::ScopedPortableAudioThread` and `IsPortableAudioThread()` are `MEDIA_EXPORT` over a `constinit thread_local bool` in `molt_portable_media.cc` (media is a component); `ReferenceOutput::Listener::IsCpuIndependent()` is a new virtual with a default, so the services tests' mocks keep compiling (`AudioProcessorHandler` overrides it `final`); the default is defined out of line in `output_device_mixer_impl.cc` (`reference_output.h` has no `.cc`, and the style plugin refuses inline virtual bodies), which makes it `Listener`'s key function: its vtable is emitted there, and every `Listener` (all in the Chromium-wide echo cancellation sources and their tests) links with that file; `OutputDeviceMixerImpl` holds a `std::unique_ptr` to a nested class defined in the `.cc` (its destructor is out of line there) and a `std::atomic<int>`, and its output stream now plays through that class (`PortableMixing`, an `AudioSourceCallback`); `MixingGraphImpl::CreateConverter` opens a scope while the converter is built; `SincResampler::Resample` picks its `ConvolveProc` per call | fp-mic2 |
+| Subnormals: `media/base/molt_portable_subnormals.cc` (new, in `//media/base`), `molt_portable_media.h`, `sinc_resampler.cc`, `media/filters/audio_renderer_algorithm.cc`, `services/audio/sync_mixing_graph_input.cc` (new upstream copies), `output_device_mixer_impl.cc`, Blink's `platform/audio/denormal_disabler.h` and `platform/audio/DEPS`, `modules/webaudio/audio_handler.cc` (new upstream copies), `platform/image-decoders/avif/avif_image_decoder.cc`, WebRTC's `rtc_base/cpu_info.{h,cc}` and `modules/audio_processing/audio_processing_impl.{h,cc}`. The format and names: `media/base/audio_processing.h`, `media/webrtc/audio_processor.cc`, `modules/mediastream/media_stream_constraints_util_audio.cc` (new upstream copies), `user_media_processor.cc`, `media_devices.cc`, `user_media_client_test.cc`, `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` and `moltnet_media_values.{h,cc}`, `core/molt_fingerprinting/DEPS`. The platform: `media/audio/pulse/pulse_input.cc`, `pulse.sigs`, `media/audio/BUILD.gn`, `media/audio/win/audio_low_latency_input_win.cc` (new upstream copies), `media/audio/pulse/molt_capture_source.{h,cc}` and `molt_pulse_capture.{h,cc}` (new) | `denormal_disabler.h` now includes `media/base/molt_portable_media.h` (`+media/base/molt_portable_media.h` in `platform/audio/DEPS`), so much of Blink's audio rebuilds; its MSVC branch (`_DN_SAVE` in MoltNet) compiles only with MSVC's own headers. `ScopedPortableSubnormals` reads and writes MXCSR (`_mm_getcsr`) on x86 and FPCR or FPSCR with inline `mrs`/`msr` (`vmrs`/`vmsr`) on Arm, a no-op elsewhere; `ScopedCpuIndependent` does the same inside WebRTC. `AudioProcessingImpl` has six new members guarded by its two mutexes. `pulse.sigs` gained `pa_context_get_source_output_info_list`: the stub generator (`libpulse_stubs`, `link_pulseaudio = false`) must take it, and `molt_pulse_capture.cc` includes `pulse_stubs.h` under `DLOPEN_PULSEAUDIO` as `pulse_util.cc` does; the two new Pulse files are in `media/audio:audio`'s `use_pulseaudio` sources, the test in `media/audio:unit_tests`. `audio_low_latency_input_win.cc` compiles on Windows only. `core/molt_fingerprinting/moltnet_media_devices.cc` includes `media/base/audio_parameters.h` (a file-specific DEPS rule) and the blink mojom `media_devices.mojom-blink.h`; `user_media_client_test.cc` includes the generated `v8_long_range.h` and `v8_double_range.h` | fp-mic3 |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -897,6 +904,8 @@ Still worth knowing from earlier rounds:
 
 - moltnet-shared9: `//chrome/browser/molt_ai/tor:nonce_storage` gains deps `//media:media_buildflags` and `//services/network/public/mojom`; `components/services/storage/dom_storage/molt_dom_storage_waits.h` in `//components/services/storage:storage`; `content/browser/browsing_data/molt_one_key_deletion_policy.h` in `//content/browser:molt_policies`; the tor `DEPS` lets `molt_net_one_key_deletion_unittest.cc` and `molt_net_dom_storage_waits_unittest.cc` include their std-only headers; `molt_net_one_key_deletion_unittest.cc` and `molt_net_dom_storage_waits_unittest.cc` in `:unit_tests`.
 
+- moltnet-shared10: `net/cookies/molt_nonce_cookie_policy.h` in `//net:molt_policies` (a public dep of `//net`); `services/network/molt_nonce_drop_policy.h` in `//services/network:network_service`; `molt_net_nonce_cookie_policy_unittest.cc` and `molt_net_nonce_drop_policy_unittest.cc` in the tor `:unit_tests` (which depends on `//net` and `//services/network:network_service`), and the tor `DEPS` lets `molt_net_nonce_drop_policy_unittest.cc` include its std-only header; `:nonce_storage` keeps its deps (`//services/network/public/mojom` now for `NetworkContext`).
+
 ### 4.10 MoltNet's Incognito protections (`molt_net_incognito_parity.h`)
 
 Each hook keeps Chromium's check and adds `molt_ai::tor::IsMoltNetProfile()`
@@ -967,6 +976,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `DocumentParserClientTest`, `DocumentParserImplTest`, `PdfTextScraperTest` (Mojo runner, real pipes) | #13 |
   | `InferenceProcessHostTest` (crash mid-stream, hang, flood, bad UTF-8, the projector handle, GPU fallback, `kBackendFailed` off the GPU) | #15, #38, #52, #53 |
   | `HelperSandboxTest`, `HelperSandboxLinuxTest`, `SeatbeltProfileTest` | #16 |
+  | `HelperSandboxWinPolicyTest` (every platform: the capability SID from its name, the SDDL, the attribute list, the mitigations), `HelperScratchDirTest`, `RecordedWavTest`, `OcrImageTest`, `OcrImageFileTest` (a fake data decoder service over real Mojo pipes, since the binary doesn't start Blink: the decode's limits, a hung or crashed decoder; the PNM written from a decoded bitmap), and `OcrRenderedPagesTest`, `RenderAndOcrPdfTest` (now asynchronous); on Windows (deferred) `HelperSandboxWinTest`, `HelperSandboxWinOutputTest` (§7.5) | helpers-win |
   | `OcrRenderedPagesTest`, `RenderAndOcrPdfTest`, `PdfPageImageSizeTest` | #18 |
   | `MoltNetContentSettingsTest` (real `HostContentSettingsMap`), `MoltNetPrefServiceTest`, `MoltNetIsolationTest` | #21 |
   | `MoltNetWebRtcBindersTest` (real mojo), `MoltNetRefusingP2PSocketManagerTest` | #22 |
@@ -1012,9 +1022,11 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetBackgroundFetchSchedulingTest` (rewritten, 8 cases: no total, a site's share whatever others run, its waiting registrations in order, the valve past the floor), `MoltNetNonceStoragePolicyTest` (new, 3), `MoltNetDomStorageSitePolicyTest` (new: the expiring records, totals dropped at zero), `MoltNetKeepalivePartitionsTest` (new: idle recorders go), `MoltNetBlobBudgetPolicyTest.SiteKeys` (rewritten), `MoltNetStorageSiteUsagePolicyTest` (new: one refresh at a time), `MoltNetDownloadIsolationTest.AResumedFetchKeepsItsLnaCheck`, `MoltNetBackgroundFetchRestoredTest.AFetchWithoutItsParametersWaits` (all built standalone here); needing the build: `MoltNetDomStorageTest.ANoncesStorageGoesWithItsPage`, `ACopyOfManyAreasIsCompleteWhenBound` (real dedicated threads: a copy of 200 areas made in steps, bound after it), `MoltNetStorageSiteUsageTest.ConcurrentChecksDontOvershoot`, `MoltNetBackgroundFetchRequestTest.BlobKeyIsTheSitesDigest` | moltnet-shared8 |
   | `MoltNetNonceStoragePolicyTest` (new cases: `TheSiteAPageCountsTo`, `SandboxedPagesCountToTheirOwnSite`; built standalone here); needing the build: `MoltNetDomStorageTest.ACopyOwedToAPopulatedNamespaceIsDropped` (real dedicated threads: the copy a deletion owes, in its own task, to a namespace populated meanwhile is dropped and the partition answers) | redteam5 (round 31) |
   | `MoltNetNonceStoragePolicyTest.AGonePagesCookiesGoAgainLater`, `MoltNetOneKeyDeletionTest` (new), `MoltNetDomStorageWaitsTest` (new), `MoltNetBackgroundFetchRestoredTest.ATakeUpWhileAskingIsRemembered` (new; built standalone here); needing the build: `MoltNetDomStorageTest.AUsageOfOneKeyListsThatKeyOnly`, `WithoutCachesPerSiteAUsageOfOneKeyIsFiltered`, `CopiesOfTwoTabsRunSideBySide` (real dedicated threads: two tabs' copies made a chunk a task side by side, each complete when bound, a deletion of a tab after its copy), `MoltNetSessionStorageTest.AUsageOfOneKeyListsItsNamespaces` | moltnet-shared9 |
+  | `MoltNetNonceCookiePolicyTest` (new, 7: the limits, a partition's and a nonce's totals, a refused nonce, no room left by the other partitions, records gone when empty), `MoltNetNonceDropPolicyTest` (new, 3), `MoltNetNonceStoragePolicyTest` (new cases: `AGroupsKeysAreBounded`, `AGroupClosedPastItsOwnBound`, `ANonceSharedBySuccessivePages`), `MoltNetOneKeyDeletionTest` (new cases: `ATimeRangeReadsItsOwnKeysBuckets`, `AResponseWithNoDocumentNamesItsOwnKey`; `OtherDeletionsReadTheWholePartition` changed), `MoltNetNetworkContextPolicyTest` (`molt_nonce_limits` for MoltNet only); the policy suites built standalone here, `MoltNetNetworkContextPolicyTest` (real mojom parameters) needs the build | moltnet-shared10 |
   | `MoltNetCpuPolicyTest.*` (the requirement on x86-64, arm64 and other architectures, the sentence), `MoltNetCpuErrorTest.*` (what `base::CPU` reports; on a build machine with SSE4.1, and on every arm64 one, the sentence is empty, so a failure there means MoltNet would refuse to open) | fp-arch |
   | `MoltCpuIndependentProcessingTest.*` (WebRTC's audio processing in CPU-independent mode through `CreateWebRtcAudioProcessingModule()`: the golden digests of a talker with a far end's echo and of the talker alone, the same on every processor and OS; the setting fixed when the module is built; a CPU-independent module and one with the processor's code in turn on one thread each give what they give alone). A golden digest that differs on the build machine means the module computes otherwise there: send the digest the failure prints, the processor (`lscpu`, or the Mac's chip) and the OS | fp-probes2 |
   | `MoltCpuIndependentEchoReferenceTest.*` (the echo reference as the audio service mixes it while a MoltNet stream listens: a 44.1 kHz stream resampled by media's `SincResampler` and a 48 kHz one added with `vector_math::FMAC` in a `ScopedPortableAudioThread`, and WebRTC's processing in CPU-independent mode with that mix as the far end; golden digests the same on every processor and OS), `MoltMathTest.PortableEntryPointsIgnoreTheSwitch`. A golden digest that differs: send what the failure prints, the processor and the OS, as above | fp-mic2 |
+  | `MoltPortableSubnormalsTest.*` (media's `SincResampler` and WebRTC's processing in CPU-independent mode over signals that reach every range the flush modes treat differently: golden digests the same on every processor and OS, also from a thread left in a flush mode), `MoltCpuIndependentProcessingTest.ConversionGoldenDigests` and `OneOutputFormatForEveryDevice` (a MoltNet stream's one format, converted from 44.1 kHz mono, 96 kHz stereo, 16 kHz mono and 48 kHz stereo devices with every effect off: golden digests), and the processing's earlier golden digests (`MoltCpuIndependentProcessingTest.GoldenDigests`, `MoltCpuIndependentEchoReferenceTest.*`), which changed with the processing's noise floor. A golden digest that differs: send what the failure prints, the processor and the OS | fp-mic3 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1177,10 +1189,15 @@ pass except where the table below says otherwise (verify the filters).
 | `content_unittests` | `*StoragePartition*:BrowsingDataRemover*:*ClearSiteData*:DOMStorageContextWrapperTest.*:ClipboardHostImpl*` (the test embedder keeps no DOM storage per site: every deletion lists the partition as before, and every key's clipboard salt comes from the table) | moltnet-shared9 |
 | `storage_unittests` | `*LocalStorageImpl*:*SessionStorage*:StorageServiceImplTest.*` (no caches per site: no namespace job and no copy wait; `MoltGetUsageForStorageKey()` answers as `GetUsage()` filtered to the key) | moltnet-shared9 |
 | `components_unittests` | `DownloadServiceControllerImplTest.*` (every profile: a take-up while the parameters are asked for is remembered and asks again; other clients' downloads go on as before) | moltnet-shared9 |
+| `net_unittests` | `CookieMonster*:*CookieMonster*:SSLClientSessionCacheTest.*:HttpAuthCacheTest.*:HttpServerProperties*:SpdySessionPool*:TransportClientSocketPool*:ClientSocketPoolManager*:HttpNetworkSession*` (without `MoltKeepNonceCookieLimits()` the store keeps no nonce totals and keeps its size entries as before; the per-nonce methods are called by MoltNet's context only) | moltnet-shared10 |
+| `services_unittests` | `NetworkContextTest.*:*CookieManager*:PreflightCache*:PreflightController*:*Cors*` (the new field off: the context's cookie store is made as before and `MoltDropNonce()` does nothing) | moltnet-shared10 |
+| `storage_unittests` | `QuotaManagerImplTest.*:QuotaDatabaseTest.*` (no site closed outside MoltNet: buckets made as before; the new query is used by MoltNet's deletions only) | moltnet-shared10 |
+| `content_unittests` | `*StoragePartition*:BrowsingDataRemover*:*ClearSiteData*` (the test embedder keeps no DOM storage per site: a response without a document names no key, and a deletion over a range lists every bucket, as before) | moltnet-shared10 |
 | `media_unittests`, `blink_platform_unittests` | `*Wsola*:AudioRendererAlgorithm*`; `*JXL*:*Jxl*` (outside MoltNet both pick their code as before) | fp-arch |
 | `v8_unittests`, V8's `mjsunit` | `*Float16*`; the `mjsunit` tests with `float16` in their name once more with `--no-enable-f16c` (V8's software conversion everywhere) | fp-arch |
 | `blink_unittests`, `media_unittests`, `services_unittests` | `AudioProcessingPropertiesToAudioProcessingSettingsTest.*:MediaStreamAudioProcessor*:ProcessedLocalAudioSource*`; `CreateWebRtcAudioProcessingModuleTest.*:AudioProcessor*`; `AudioProcessorHandler*:InputController*:*InputStream*` (outside MoltNet the module is built and runs as before; `MoltNetAsksForCpuIndependentProcessing` is the new case) | fp-probes2 |
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `UserMediaClientTest.*:*EchoCancellationMode*:MediaStreamAudioProcessingLayout*:MediaStreamConstraintsUtilAudioTest.*:MediaStreamConstraintsRemoteAPMTest.*:MediaDevicesTest.*`; `AudioServiceAudioProcessorProxyTest.*:MediaStreamAudioTest.*`; `MoltPortableMediaTest.*:SincResampler*:VectorMath*:AudioConverter*`; `OutputDeviceMixerImplTest*:OutputDeviceMixerManagerTest.*:MixingGraphImpl.*:MixingGraphInputTest.*:AudioProcessorHandlerTest.*` (outside MoltNet the effects, the echo canceller's choice and the mixing are as before; the new cases are `UserMediaClientTest.MoltNetMicrophoneHasNoPlatformEffects`, `EchoCancellationModeTest.MoltNetUsesWebRtcEchoCancellation`, `MoltPortableMediaTest.NoCaptureEffectsInPortableMode`, `PortableAudioThreadScope`, `PortableAudioThreadMixesWithTheCCode` and `OutputDeviceMixerImplTest.MixesPortablyWhileCpuIndependentListens`) | fp-mic2 |
+| `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `MoltNetSubnormalsTest.*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:UserMediaClientTest.*:MediaDevicesTest.*:MediaStreamConstraintsUtilAudioTest.*:*WebAudio*:*AudioWorklet*:*Biquad*:*DynamicsCompressor*:*AVIF*`; `DenormalDisablerTest.*`; `MoltPortableMediaTest.*:MoltPulseCaptureSourceTest.*:SincResampler*:AudioRendererAlgorithm*:AudioProcessorTest*:*Pulse*`; `MixingGraphImpl.*:MixingGraphInputTest.*:OutputDeviceMixerImplTest*:AudioProcessorHandlerTest.*:InputController*` (outside MoltNet the flush modes, the format, the names and the device a stream opens are as before; the new cases are `MoltNetSubnormalsTest.*`, `MoltNetMediaDevicesTest.TracksGetTheSameNames` and `GenericNamesAndGroups`, `UserMediaClientTest.MoltNetMicrophoneHasUniformFormatAndNames`, `MoltPortableMediaTest.FlushTinyPortableSamplesKeepsTheFloor`, `ScopedPortableSubnormalsComputesSubnormals`, `PortableResamplerFlushesItsKernelAndInput`, `PortableCaptureParametersAreTheSameForAll`, `CommunicationsCategoryOnlyWithRawMode`, `PortableCaptureStreamEffects`, `PortableCaptureOutputFormat` and `MoltPulseCaptureSourceTest.*`, the last on Linux) | fp-mic3 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1240,8 +1257,9 @@ pass except where the table below says otherwise (verify the filters).
   `true`, `false`, `"remote-only"` and `"all"`, `autoGainControl` and
   `noiseSuppression` `true` and `false`, `voiceIsolation` only `false`;
   the settings say `echoCancellation: "all"`, `noiseSuppression: true`,
-  `autoGainControl: true`, `voiceIsolation: false` (`sampleRate`,
-  `channelCount` and `latency` are the device's). In the normal window
+  `autoGainControl: true`, `voiceIsolation: false` (and, since fp-mic3,
+  `sampleRate` 48000, `channelCount` 1 and `latency` 0.01 whatever the
+  device). In the normal window
   156's own answers (`"all"` on Windows and macOS only). Then
   `chrome://media-internals`' Audio tab: MoltNet's input stream has no
   platform effects and echo cancellation, noise suppression and gain
@@ -1271,6 +1289,69 @@ pass except where the table below says otherwise (verify the filters).
   `audio.mic_system_aec` and `audio.mic_remote_only` the same hash as on
   Linux x86-64 and arm64, the capabilities and settings as in
   docs/LEAK_TESTING.md); send the output with the Mac's chip.
+- [ ] A microphone's format and the devices' names (fp-mic3), on each OS
+  with real devices: a USB or Bluetooth headset (16 or 44.1 kHz, or a
+  96 kHz interface if you have one) and the built-in microphone. In a
+  MoltNet window and a normal one, on any https page, in the DevTools
+  console:
+  ```js
+  const s = await navigator.mediaDevices.getUserMedia({audio: true});
+  const t = s.getAudioTracks()[0];
+  const d = await navigator.mediaDevices.enumerateDevices();
+  JSON.stringify([t.label, t.getSettings(), t.getCapabilities(),
+      d.map((x) => [x.kind, x.label, x.deviceId.slice(0, 8), x.groupId.slice(0, 8),
+          x.getCapabilities ? x.getCapabilities() : null])]);
+  ```
+  *Expected* in MoltNet, the same on every device and OS: `sampleRate`
+  48000, `sampleSize` 16, `channelCount` 1, `latency` 0.01; the
+  capabilities' `sampleRate` 48000 to 48000, `channelCount` 1 to 2,
+  `latency` 0.01 to 0.01, and the same in every `audioinput`'s
+  `getCapabilities()`; labels "Default" or "Microphone", "Camera" or
+  "Speaker" and the ID's first four characters; every `groupId` its
+  device's ID; on Windows no `communications` device. In the normal
+  window the device's values and names. Then, in MoltNet:
+  `getUserMedia({audio: {deviceId: {exact: <the headset's ID>}}})` opens
+  the headset (the label says which ID), `{channelCount: 2}` gives two
+  channels from a mono headset, `{sampleRate: {exact: 44100}}` fails with
+  `OverconstrainedError`, and with every effect off
+  (`{echoCancellation: false, noiseSuppression: false, autoGainControl:
+  false}`) a recording of a 1 kHz tone at the headset's own rate plays
+  back at the right pitch and without crackle (the processing converts it).
+  Unplug the headset while recording: the track ends and `devicechange`
+  fires, as in the normal window.
+- [ ] The OS's processing outside the browser (fp-mic3). **Linux:** with
+  PipeWire, load the echo canceller (`pactl load-module
+  module-echo-cancel`, or PipeWire's `libpipewire-module-echo-cancel` in a
+  `pipewire.conf.d` file) and make its source the default (`pactl
+  set-default-source` with the "echo-cancel" source); in MoltNet record
+  10 s of speech with a video playing on the speakers in a normal window,
+  then pick the echo-cancel source explicitly by `deviceId`; then the same
+  with PulseAudio instead of pipewire-pulse if you have a machine with
+  it. *Expected:* `pactl list source-outputs` shows MoltNet's recording
+  stream on the microphone's own source (an `alsa_input...`), not on the
+  echo-cancel source, while the normal window's stream is on the
+  echo-cancel source; MoltNet's recording is cancelled by WebRTC's echo
+  canceller. Send `pactl list sources` (the filter's `device.class`,
+  `device.master_device`, `node.link-group` and flags) and `pactl list
+  source-outputs` either way. **Windows:** a microphone without raw mode
+  (Device Manager's driver, or `System.Devices.AudioDevice.RawProcessingSupported`
+  false in the device's properties; many webcam microphones), and one
+  with more than 8 channels if you have one (a microphone array or a
+  multichannel interface): `chrome://media-internals`' log for MoltNet's
+  stream shows `RawProcessingSupported=false` and no
+  `SetCommunicationsCategoryAndMaybeRawCaptureMode` on the first, and on
+  the second no `SetCommunicationsCategoryAndMaybeRawCaptureMode` (a
+  normal window's stream shows it there, with `channels` above 8); both
+  record. Note what the recordings sound like against a normal window's.
+- [ ] Subnormal floats on real arm64 hardware (fp-mic3): the leak kit's
+  `audio.subnormal_graph` and `audio.subnormal_resampled` (§8) on an
+  Apple silicon Mac (paste `ml.js` and `fp.js` into a MoltNet window's
+  console and run the page's collection, or run the kit on Linux arm64)
+  equal an x86-64 machine's. Note the CPU use of a Web Audio demo that
+  plays a long reverb tail into silence (a `ConvolverNode` or a delay
+  with feedback) in MoltNet and in a normal window, on the arm64 machine
+  and an x86-64 one: FINGERPRINTING.md "MoltNet: subnormal floats"
+  measured x86-64 only.
 
 ### 5.3 Known-expected failures, and what to do
 
@@ -1377,6 +1458,7 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   #48, #49, #53, #54; agent-replay adds `molt_automation_locators_fuzzer`,
   `molt_automation_tool_steps_fuzzer` and `molt_frame_tools_fuzzer`)
   (fonts adds `molt_moltnet_font_set_fuzzer`)
+  (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -2324,6 +2406,58 @@ macOS, and for the manual steps everywhere:
   mode, shortcuts, toolbar, PDF viewer), 17 (a prepared profile), 19
   (Incognito's protections, from #23) and the manual bullets of 20.
 
+### 7.5 OCR and voice helpers (helpers-win)
+
+Every image tesseract OCRs is now decoded by Chromium's data decoder and
+handed over as a PNM the browser writes; whisper-cli reads a WAV the browser
+writes; on Windows both run as a less-privileged AppContainer per run
+(`helper_sandbox_win_policy.h`). On each OS (Windows: deferred):
+
+- [ ] OCR of attachments (helpers-win): attach a PNG, a JPEG and a WebP with
+  text in the AI chat, one with a transparent background, a phone photo
+  (12 MP or more) and a scan of more than 33.5 MP (which the decoder
+  halves on each side first). *Expected:* the text, as before. A TIFF renamed to
+  `.png` gets "TIFF images can't be read for OCR: save the image as PNG or
+  JPEG and attach that"; a GIF renamed to `.png`, "this file isn't a PNG,
+  JPEG or WebP image". While it runs, the scratch directory
+  (`molt_ocr_*` in the temp directory) holds `input.pnm`, never the file.
+- [ ] OCR of a scanned PDF (helpers-win): `/pdf` on a scanned PDF of more
+  than 20 pages. *Expected:* `--- Page N ---` headers, the "OCR read 20 of
+  N pages" line, and the browser's task manager shows a data decoder
+  process while it runs.
+- [ ] Voice (helpers-win): the mic button transcribes a few sentences.
+  *Expected:* the scratch directory (`molt_voice_*`) holds the 44-byte
+  header WAV the browser wrote. `molt_ai_unittests
+  --gtest_filter='RecordedWav*:OcrImage*:OcrImageFile*:HelperScratchDir*'`
+  passes here too.
+- [ ] Windows, the installer's grant (helpers-win, deferred): after
+  installing, `icacls "%ProgramFiles%\MoltBrowser\ocr"` and `...\whisper`
+  list `*S-1-15-3-1024-3499754957-3417772683-1255750666-3341737774-2438675945-3280382303-1781483004-2555713060:(OI)(CI)(RX)`
+  (the capability `lpacMoltBrowserHelperFiles`), and no other folder of
+  the install does.
+- [ ] Windows, the sandbox's own tests (helpers-win, deferred):
+  `molt_ai_unittests --gtest_filter='HelperSandboxWin*:HelperScratchDir*'`
+  with `molt_helper_sandbox_test_helper.exe` next to it. *Expected:* all
+  pass: the helper runs and its output is captured; it reads its scratch
+  directory and its own folder but not another file of the user's; it
+  writes only its scratch directory; a loopback connection is refused and
+  never reaches the test's listener; it can't start `whoami.exe` or
+  itself; 5 GiB is refused (the job's 4 GiB); its environment is its own;
+  the deadline kills it; from a folder without the grant it doesn't start
+  and the error names the installer.
+- [ ] Windows, OCR and voice in the AppContainer (helpers-win, deferred):
+  the two checks above with the installed build. While tesseract runs,
+  Process Explorer shows it with integrity "AppContainer", in a job, with
+  the capability above and no `internetClient`. If OCR or voice fails with
+  "couldn't start in its sandbox" and `0xC0000142`, a helper's DLL loads
+  user32 and its LPAC token can't open the desktop: report it (giving the
+  helper an alternate desktop, as Chromium's broker does, is not done).
+- [ ] Windows, the portable ZIP (helpers-win, deferred): unpack it and
+  attach an image. *Expected:* "tesseract sandbox unavailable: on Windows,
+  OCR and voice need MoltBrowser's installer, …" and no tesseract process;
+  after `icacls <unpacked>\ocr /grant "*S-1-15-3-1024-3499754957-…:(OI)(CI)(RX)"`
+  OCR works.
+
 ## 8. Leak kit and traffic capture
 
 ### 8.1 The MoltNet leak kit (Linux)
@@ -2417,6 +2551,20 @@ Mac; use a real Linux host.
     renderer's processing gave other samples than the audio service's for
     the same input: send both hashes and `chrome://media-internals`' log of
     the two streams).
+  - Subnormal floats and the microphone's format and names (fp-mic3):
+    `uniform.audio.mic_format`, `uniform.audio.mic_format_ranges`,
+    `uniform.audio.mic_device_ranges` and `uniform.audio.mic_names` pass
+    (48 kHz, 16 bits, one channel, 10 ms; one to two channels; generic
+    labels, every device a group of its own, no `communications` device),
+    and `diff` between the three machines above, and between OSes, shows
+    no difference in `audio.subnormal_graph` or
+    `audio.subnormal_resampled`. First-run questions: an
+    `audio.mic_device_ranges` that is empty or lists more than one set
+    (send the value and `enumerateDevices()`' entries), and an
+    `audio.subnormal_resampled` with `frames` other than 9600 (the WAV
+    wasn't decoded at 44.1 kHz). With `--target regular` the subnormal
+    probes may differ between x86-64 and arm64, and the microphone's
+    format follows the fake device (44.1 kHz).
   - `identity.background_fetch_circuits` passes (moltnet-shared): each
     Background Fetch test's request went to Tor with its page's site's
     SOCKS username. First-run question: whether the fetch starts at all in

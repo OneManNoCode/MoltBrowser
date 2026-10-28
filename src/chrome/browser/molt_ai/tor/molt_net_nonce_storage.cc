@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -38,9 +37,7 @@
 #include "media/media_buildflags.h"
 #include "net/base/isolation_info.h"
 #include "net/base/schemeful_site.h"
-#include "net/cookies/cookie_partition_key.h"
-#include "net/cookies/cookie_partition_key_collection.h"
-#include "services/network/public/mojom/cookie_manager.mojom.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
@@ -57,28 +54,9 @@ namespace {
 
 const char kMoltNetNonceRegistryKey[] = "MoltNetNonceRegistry";
 
-using CookiePartitionKeys = std::set<net::CookiePartitionKey>;
-
-// Deletes the cookies of `partitions` in `partition`'s cookie store: only
-// partitioned cookies, and only in those partitions (a filter that names
-// partitions still matches every unpartitioned cookie without
-// `partitioned_state_only`: net::CookieDeletionInfo::Matches()).
-void DeleteNonceCookies(content::StoragePartition* partition,
-                        const CookiePartitionKeys& partitions) {
-  if (partitions.empty()) {
-    return;
-  }
-  auto filter = network::mojom::CookieDeletionFilter::New();
-  filter->partitioned_state_only = true;
-  filter->cookie_partition_key_collection = net::CookiePartitionKeyCollection(
-      base::flat_set<net::CookiePartitionKey>(partitions.begin(),
-                                              partitions.end()));
-  partition->GetCookieManagerForBrowserProcess()->DeleteCookies(
-      std::move(filter), base::DoNothing());
-}
-
 // A MoltNet profile's nonce groups (molt_net_nonce_storage_policy.h): which
-// are open for each top-level site, and what each one's page's frames used.
+// are open for each top-level site, how many pages use each nonce, and what
+// each group's frames used.
 class MoltNetNonceRegistry : public base::SupportsUserData::Data {
  public:
   explicit MoltNetNonceRegistry(content::BrowserContext* browser_context)
@@ -99,33 +77,42 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
     return registry;
   }
 
+  // A page uses `nonce` (noted once per page).
+  void PageUses(const base::UnguessableToken& nonce) { pages_.Uses(nonce); }
+
   // A frame of a page of top-level site `site` uses `storage_key` (with
-  // `nonce`), in the storage partition of `config`; its cookies are in the
-  // key's own partition (blink::StorageKey::ToCookiePartitionKey(): the
-  // frame's site, as the frame's network key gives them).
+  // `nonce`), in the storage partition of `config`. A group whose frames use
+  // more storage keys than it may record is closed instead
+  // (MoltNetNonceGroupFull()).
   void NotedStorageKey(const std::string& site,
                        const base::UnguessableToken& nonce,
                        const blink::StorageKey& storage_key,
                        const content::StoragePartitionConfig& config) {
     Record& record = RecordFor(site, nonce, config);
-    record.keys.insert(storage_key);
-    if (std::optional<net::CookiePartitionKey> partition =
-            storage_key.ToCookiePartitionKey()) {
-      record.cookie_partitions.insert(*partition);
+    if (record.keys.contains(storage_key)) {
+      return;
     }
+    if (MoltNetNonceGroupFull(record.keys.size())) {
+      Close(nonce, record);
+      return;
+    }
+    record.keys.insert(storage_key);
   }
 
-  // A navigation of a frame of such a page, under `nonce`, requests a URL of
-  // `cookie_partition`'s site: its response may set cookies there.
-  void NotedCookiePartition(const std::string& site,
-                            const base::UnguessableToken& nonce,
-                            const net::CookiePartitionKey& cookie_partition,
-                            const content::StoragePartitionConfig& config) {
-    RecordFor(site, nonce, config).cookie_partitions.insert(cookie_partition);
+  // A navigation of a frame of such a page requests a URL under `nonce`: its
+  // response may store cookies under it, committed or not. The network
+  // context finds the nonce's cookie partitions itself.
+  void NotedRequest(const std::string& site,
+                    const base::UnguessableToken& nonce,
+                    const content::StoragePartitionConfig& config) {
+    RecordFor(site, nonce, config);
   }
 
-  // The page that used `nonce` is gone: its group goes.
+  // A page that used `nonce` is gone: its group goes with the last of them.
   void Gone(const base::UnguessableToken& nonce) {
+    if (!pages_.Left(nonce)) {
+      return;
+    }
     auto it = records_.find(nonce);
     if (it == records_.end()) {
       return;
@@ -144,10 +131,11 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
     explicit Record(const content::StoragePartitionConfig& config)
         : config(config) {}
     content::StoragePartitionConfig config;
+    // The storage keys its frames use (for their media-license data), at
+    // most kMoltNetNonceStorageKeysPerGroup.
     std::set<blink::StorageKey> keys;
-    // The cookie partitions of the nonce: its storage keys', and those of
-    // the sites its frames' navigations requested.
-    CookiePartitionKeys cookie_partitions;
+    // Whether the group is closed: past its site's bound, or its own.
+    bool closed = false;
   };
 
   // `nonce`'s record, made (and counted to `site`'s bound) on first use.
@@ -160,6 +148,7 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
       if (std::optional<base::UnguessableToken> closed =
               groups_.Added(site, nonce)) {
         if (auto it = records_.find(*closed); it != records_.end()) {
+          it->second.closed = true;
           Drop(*closed, it->second, /*closed=*/true);
         }
       }
@@ -167,9 +156,22 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
     return record->second;
   }
 
-  // What the storage partition holds for `nonce` goes: its DOM storage (in
-  // the storage service, by nonce), its storage keys' buckets and media-
-  // license data, and its cookies; those again later if its page is gone.
+  // Closes `nonce`'s group past its own bound, as one past its site's.
+  void Close(const base::UnguessableToken& nonce, Record& record) {
+    if (record.closed) {
+      return;
+    }
+    record.closed = true;
+    groups_.Close(nonce);
+    Drop(nonce, record, /*closed=*/true);
+  }
+
+  // What the storage partition and its network context hold for `nonce`
+  // goes: its DOM storage (in the storage service, by nonce), its storage
+  // keys' buckets and media-license data, and its cookies and network state
+  // (in the network context, by nonce). With `closed`, the page lives on and
+  // all of it is refused until it goes; without, the network context drops
+  // it once more, and forgets it, a while later.
   void Drop(const base::UnguessableToken& nonce,
             const Record& record,
             bool closed) {
@@ -200,31 +202,40 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
       }
     }
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
-    DeleteNonceCookies(partition, record.cookie_partitions);
-    if (MoltNetNonceSweepsCookiesLater(closed) &&
-        !record.cookie_partitions.empty()) {
+    if (network::mojom::NetworkContext* network_context =
+            partition->GetNetworkContext()) {
+      network_context->MoltDropNonce(
+          nonce, closed ? network::mojom::MoltNonceDrop::kClosed
+                        : network::mojom::MoltNonceDrop::kGone);
+    }
+    if (MoltNetNonceSweepsCookiesLater(closed)) {
       content::GetUIThreadTaskRunner({})->PostDelayedTask(
           FROM_HERE,
-          base::BindOnce(&MoltNetNonceRegistry::SweepCookies,
-                         weak_factory_.GetWeakPtr(), record.config,
-                         record.cookie_partitions),
+          base::BindOnce(&MoltNetNonceRegistry::DropLater,
+                         weak_factory_.GetWeakPtr(), record.config, nonce),
           base::Seconds(kMoltNetNonceCookieSweepSeconds));
     }
   }
 
-  // A gone page's cookie partitions, again: what one of its requests still
-  // on its way set after the page went.
-  void SweepCookies(const content::StoragePartitionConfig& config,
-                    const CookiePartitionKeys& cookie_partitions) {
-    if (content::StoragePartition* partition =
-            browser_context_->GetStoragePartition(config,
-                                                  /*can_create=*/false)) {
-      DeleteNonceCookies(partition, cookie_partitions);
+  // A gone page's nonce, once more: what one of its requests still on its
+  // way set after the page went; then the network context forgets it.
+  void DropLater(const content::StoragePartitionConfig& config,
+                 const base::UnguessableToken& nonce) {
+    content::StoragePartition* partition =
+        browser_context_->GetStoragePartition(config, /*can_create=*/false);
+    if (!partition) {
+      return;
+    }
+    if (network::mojom::NetworkContext* network_context =
+            partition->GetNetworkContext()) {
+      network_context->MoltDropNonce(nonce,
+                                     network::mojom::MoltNonceDrop::kForget);
     }
   }
 
   const raw_ptr<content::BrowserContext> browser_context_;
   MoltNetNonceGroups<base::UnguessableToken> groups_;
+  MoltNetNoncePageCounts<base::UnguessableToken> pages_;
   std::map<base::UnguessableToken, Record> records_;
   base::WeakPtrFactory<MoltNetNonceRegistry> weak_factory_{this};
 };
@@ -243,7 +254,10 @@ class MoltNetNoncePage : public content::PageUserData<MoltNetNoncePage> {
     }
   }
 
-  void Noted(const base::UnguessableToken& nonce) { nonces_.insert(nonce); }
+  // Notes `nonce`; returns whether it is new to this page.
+  bool Noted(const base::UnguessableToken& nonce) {
+    return nonces_.insert(nonce).second;
+  }
 
  private:
   friend class content::PageUserData<MoltNetNoncePage>;
@@ -344,7 +358,9 @@ void MoltNetNonceStorageTabHelper::Note(
   if (!noted) {
     return;
   }
-  noted->Noted(*storage_key.nonce());
+  if (noted->Noted(*storage_key.nonce())) {
+    registry->PageUses(*storage_key.nonce());
+  }
   registry->NotedStorageKey(
       GroupSiteOf(render_frame_host, *storage_key.nonce()),
       *storage_key.nonce(), storage_key,
@@ -355,9 +371,10 @@ void MoltNetNonceStorageTabHelper::NoteRequest(
     content::NavigationHandle* navigation_handle) {
   // A frame's navigation with a nonce (a credentialless iframe's, a fenced
   // frame's) requests its URL with the frame's network key for that URL:
-  // the cookies its response sets are in the partition of the URL's site
-  // with the nonce (net::CookiePartitionKey::FromNetworkIsolationKey()),
-  // committed or not (a download, a 204, a redirect's own response).
+  // the cookies its response sets are in a partition of the nonce
+  // (net::CookiePartitionKey::FromNetworkIsolationKey()), committed or not
+  // (a download, a 204, a redirect's own response), so its page counts as
+  // using the nonce even if no frame commits under it.
   if (navigation_handle->IsSameDocument() ||
       !navigation_handle->GetURL().SchemeIsHTTPOrHTTPS()) {
     return;
@@ -379,13 +396,11 @@ void MoltNetNonceStorageTabHelper::NoteRequest(
   if (!noted) {
     return;
   }
-  noted->Noted(*nonce);
-  registry->NotedCookiePartition(
-      GroupSiteOf(parent, *nonce), *nonce,
-      net::CookiePartitionKey::FromWire(
-          net::SchemefulSite(navigation_handle->GetURL()),
-          net::CookiePartitionKey::AncestorChainBit::kCrossSite, *nonce),
-      parent->GetStoragePartition()->GetConfig());
+  if (noted->Noted(*nonce)) {
+    registry->PageUses(*nonce);
+  }
+  registry->NotedRequest(GroupSiteOf(parent, *nonce), *nonce,
+                         parent->GetStoragePartition()->GetConfig());
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(MoltNetNonceStorageTabHelper);

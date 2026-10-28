@@ -56,6 +56,14 @@ struct MEDIA_EXPORT AudioProcessingSettings {
   }
 
   bool NeedWebrtcAudioProcessing() const {
+    // MoltBrowser: a CPU-independent stream (MoltNet's) is always processed,
+    // also with every effect off: the processing converts the device's rate
+    // and channels to the stream's one format (media/base/
+    // molt_portable_media.h, PortableCaptureOutputFormat()), in its CPU-
+    // independent code, and the device opens in its own format.
+    if (cpu_independent) {
+      return true;
+    }
     // TODO(crbug.com/40205004): Legacy iOS-specific behavior;
     // reconsider.
 #if !BUILDFLAG(IS_IOS)

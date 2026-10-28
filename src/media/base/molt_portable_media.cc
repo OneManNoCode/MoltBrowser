@@ -61,6 +61,49 @@ int PortableCaptureEffects(int platform_effects) {
                                   : platform_effects;
 }
 
+AudioParameters PortableCaptureParameters(const AudioParameters& device) {
+  if (!IsPortableMediaProcess() || !device.IsValid()) {
+    AudioParameters unchanged = device;
+    unchanged.set_effects(PortableCaptureEffects(device.effects()));
+    return unchanged;
+  }
+  AudioParameters uniform(device.format(), ChannelLayoutConfig::Stereo(),
+                          kPortableCaptureSampleRate,
+                          kPortableCaptureFramesPerBuffer);
+  uniform.set_effects(AudioParameters::NO_EFFECTS);
+  return uniform;
+}
+
+AudioParameters PortableCaptureOutputFormat(const AudioParameters& input,
+                                            bool stereo) {
+  return AudioParameters(input.format(),
+                         stereo ? ChannelLayoutConfig::Stereo()
+                                : ChannelLayoutConfig::Mono(),
+                         kPortableCaptureSampleRate,
+                         kPortableCaptureFramesPerBuffer);
+}
+
+static_assert(kPortableCaptureEffect > AudioParameters::DEEP_NOISE_SUPPRESSION,
+              "the portable capture bit must stay clear of the platform "
+              "effects");
+
+int PortableCaptureStreamEffects() {
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  return kPortableCaptureEffect;
+#else
+  return AudioParameters::NO_EFFECTS;
+#endif
+}
+
+bool PortableCaptureMayUseCommunicationsCategory(
+    const AudioParameters& params,
+    int channels) {
+  if (!(params.effects() & kPortableCaptureEffect)) {
+    return true;
+  }
+  return channels > 0 && channels <= kPortableCaptureMaxRawChannels;
+}
+
 ScopedPortableAudioThread::ScopedPortableAudioThread(bool portable)
     : previous_(t_portable_audio) {
   t_portable_audio = portable;

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/quota/quota_manager_impl.h b/storage/browser/quota/quota_manager_impl.h
-index 2b06f4cd3aafc1af13f6a9b7d2eb6f0a7d43386d..a2ebbe83f189ffb20303804c1db3c3092dbeab6b 100644
+index 2b06f4cd3aafc1af13f6a9b7d2eb6f0a7d43386d..e35fa273f95e5836ee3343fb0876bdf1dbf6b7e7 100644
 --- a/storage/browser/quota/quota_manager_impl.h
 +++ b/storage/browser/quota/quota_manager_impl.h
 @@ -38,6 +38,7 @@
@@ -16,16 +16,35 @@ index 2b06f4cd3aafc1af13f6a9b7d2eb6f0a7d43386d..a2ebbe83f189ffb20303804c1db3c309
  #include "storage/browser/quota/quota_callbacks.h"
  #include "storage/browser/quota/quota_client_type.h"
  #include "storage/browser/quota/quota_database.h"
-@@ -337,6 +338,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+@@ -249,6 +250,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+       base::OnceCallback<void(QuotaErrorOr<std::set<BucketInfo>>)> callback,
+       bool delete_expired = false);
+ 
++  // MoltBrowser: as GetBucketsModifiedBetween(), for `storage_key`'s buckets
++  // only (QuotaDatabase::MoltGetBucketsForStorageKeyModifiedBetween()): what
++  // a deletion of one storage key over a time range reads where storage is
++  // kept per site (content/browser/browsing_data/
++  // molt_one_key_deletion_policy.h). `storage_key` mustn't have an opaque
++  // origin.
++  void MoltGetBucketsForStorageKeyModifiedBetween(
++      const blink::StorageKey& storage_key,
++      base::Time begin,
++      base::Time end,
++      GetBucketsCallback callback);
++
+   // Called by clients or webapps. Returns usage per host.
+   void GetUsageInfo(GetUsageInfoCallback callback);
+ 
+@@ -337,6 +350,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
    void DeleteStorageKeyData(const blink::StorageKey& storage_key,
                              StatusCallback callback);
  
 +  // MoltBrowser: for MoltNet's storage budget (molt_storage_budget.h).
 +  // Deletes the buckets of `storage_keys` (those with `nonce`: the storage
 +  // keys of a page's credentialless frames), and then forgets the nonce's
-+  // site. With `closed`, the nonce's storage keys get no room from then on
-+  // (their page lives on past its site's bound); without, that ends (the page
-+  // is gone).
++  // site. With `closed`, the nonce's storage keys get no room and no bucket
++  // from then on (their page lives on past its site's bound); without, that
++  // ends (the page is gone).
 +  void MoltDropNonce(const base::UnguessableToken& nonce,
 +                     const std::vector<blink::StorageKey>& storage_keys,
 +                     bool closed);
@@ -35,7 +54,7 @@ index 2b06f4cd3aafc1af13f6a9b7d2eb6f0a7d43386d..a2ebbe83f189ffb20303804c1db3c309
    // Queries QuotaDatabase for the bucket with `storage_key` and `bucket_name`
    // and deletes bucket data for all clients for the bucket. Used by the
    // Storage Bucket API for bucket deletion. If no bucket is found, it will
-@@ -856,6 +869,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
+@@ -856,6 +881,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
  
    SEQUENCE_CHECKER(sequence_checker_);
  

@@ -330,6 +330,40 @@ bool NeedEchoController(const AudioProcessing::Config& config,
 constexpr int kUnspecifiedDataDumpInputVolume = -100;
 constexpr int kBandSplitRate = AudioProcessing::kSampleRate16kHz;
 
+// MoltBrowser: the input of a CPU-independent instance as it processes it
+// (rtc_base/cpu_info.h), copied into `samples`; returns the copy's channels,
+// kept in `channels`. The samples below cpu_info::kCpuIndependentFloor become
+// zero, and every sample gets the noise floor: plus or minus
+// cpu_info::kCpuIndependentDither, the sign from `dither_state`, a linear
+// congruential generator advanced per sample, channel by channel. The
+// processing computes IEEE 754 subnormals, the same on every CPU, and this
+// keeps them out of its loops: a subnormal input never reaches them, and in
+// silence its states settle at the noise floor instead of decaying through
+// the subnormal range.
+const float* const* PrepareCpuIndependentInput(
+    const float* const* src,
+    const StreamConfig& config,
+    uint32_t& dither_state,
+    std::vector<float>& samples,
+    std::vector<const float*>& channels) {
+  const size_t num_frames = config.num_frames();
+  const size_t num_channels = config.num_channels();
+  samples.resize(num_frames * num_channels);
+  channels.resize(num_channels);
+  for (size_t ch = 0; ch < num_channels; ++ch) {
+    float* out = samples.data() + ch * num_frames;
+    for (size_t i = 0; i < num_frames; ++i) {
+      dither_state = dither_state * 1664525u + 1013904223u;
+      const float dither = (dither_state & 0x80000000u)
+                               ? cpu_info::kCpuIndependentDither
+                               : -cpu_info::kCpuIndependentDither;
+      out[i] = cpu_info::FlushTinySample(src[ch][i]) + dither;
+    }
+    channels[ch] = out;
+  }
+  return channels.data();
+}
+
 }  // namespace
 
 // Throughout webrtc, it's assumed that success is represented by zero.
@@ -927,7 +961,8 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessStream_StreamConfig");
   // MoltBrowser: CPU-independent processing for this instance.
   cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
   RETURN_ON_ERR(
       HandleUnsupportedAudioFormats(src, input_config, output_config, dest));
   MaybeInitializeCapture(input_config, output_config);
@@ -936,6 +971,13 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
 
   if (aec_dump_) {
     RecordUnprocessedCaptureStream(src);
+  }
+
+  // MoltBrowser: see PrepareCpuIndependentInput().
+  if (cpu_independent_) {
+    src = PrepareCpuIndependentInput(src, formats_.api_format.input_stream(),
+                                     molt_capture_dither_, molt_capture_input_,
+                                     molt_capture_channels_);
   }
 
   capture_.capture_audio->CopyFrom(src, formats_.api_format.input_stream());
@@ -1209,7 +1251,8 @@ int AudioProcessingImpl::ProcessStream(const int16_t* const src,
   MaybeInitializeCapture(input_config, output_config);
 
   MutexLock lock_capture(&mutex_capture_);
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
 
   if (aec_dump_) {
     RecordUnprocessedCaptureStream(src, input_config);
@@ -1238,7 +1281,8 @@ int AudioProcessingImpl::ProcessStream(const int16_t* const src,
 int AudioProcessingImpl::ProcessCaptureStreamLocked() {
   EmptyQueuedRenderAudioLocked();
   HandleCaptureRuntimeSettings();
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
 
   data_dumper_->DumpRaw(
       "applied_input_volume",
@@ -1520,7 +1564,8 @@ int AudioProcessingImpl::AnalyzeReverseStream(
   // MoltBrowser: CPU-independent processing for this instance.
   cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   MutexLock lock(&mutex_render_);
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
   RTC_DCHECK(data);
   for (size_t i = 0; i < reverse_config.num_channels(); ++i) {
     RTC_DCHECK(data[i]);
@@ -1540,7 +1585,8 @@ int AudioProcessingImpl::ProcessReverseStream(const float* const* src,
   // MoltBrowser: CPU-independent processing for this instance.
   cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
   MutexLock lock(&mutex_render_);
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
   RETURN_ON_ERR(
       HandleUnsupportedAudioFormats(src, input_config, output_config, dest));
 
@@ -1575,6 +1621,12 @@ int AudioProcessingImpl::AnalyzeReverseStreamLocked(
         formats_.api_format.reverse_input_stream().num_channels();
     aec_dump_->WriteRenderStreamMessage(src, num_channels, channel_size);
   }
+  // MoltBrowser: see PrepareCpuIndependentInput().
+  if (cpu_independent_) {
+    src = PrepareCpuIndependentInput(
+        src, formats_.api_format.reverse_input_stream(), molt_render_dither_,
+        molt_render_input_, molt_render_channels_);
+  }
   render_.render_audio->CopyFrom(src,
                                  formats_.api_format.reverse_input_stream());
   return ProcessRenderStreamLocked();
@@ -1589,7 +1641,8 @@ int AudioProcessingImpl::ProcessReverseStream(const int16_t* const src,
   cpu_info::ScopedCpuIndependent cpu_independent(cpu_independent_);
 
   MutexLock lock(&mutex_render_);
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
 
   RETURN_ON_ERR(
       HandleUnsupportedAudioFormats(src, input_config, output_config, dest));
@@ -1613,7 +1666,8 @@ int AudioProcessingImpl::ProcessRenderStreamLocked() {
   AudioBuffer* render_buffer = render_.render_audio.get();  // For brevity.
 
   HandleRenderRuntimeSettings();
-  DenormalDisabler denormal_disabler;
+  // MoltBrowser: not in CPU-independent processing (rtc_base/cpu_info.h).
+  DenormalDisabler denormal_disabler(!cpu_independent_);
 
   if (submodules_.render_pre_processor) {
     submodules_.render_pre_processor->Process(render_buffer);

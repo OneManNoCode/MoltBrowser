@@ -22,6 +22,7 @@
 #include "base/memory/scoped_refptr.h"  // MoltBrowser
 #include "base/power_monitor/power_observer.h"
 #include "base/threading/thread_checker.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "base/values.h"
 #include "build/buildflag.h"
 #include "net/base/host_port_pair.h"
@@ -305,6 +306,13 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   // handshake starts (net/socket/molt_identity_end.h). Nothing in a session
   // without per-site pools (not MoltNet's).
   void MoltEndIdentity();
+
+  // MoltBrowser: drops what this session keeps under a network key with
+  // `nonce` (a gone page's credentialless frames', which no other request
+  // carries: services/network/molt_nonce_drop_policy.h): idle connections
+  // and HTTP/2 sessions, TLS sessions, server properties and HTTP
+  // authentication entries. Connections in use stay.
+  void MoltForgetNonce(const base::UnguessableToken& nonce);
 
   // Returns the original Params used to construct this session.
   const HttpNetworkSessionParams& params() const { return params_; }

@@ -80,6 +80,11 @@ specific_include_rules = {
   "molt_net_dom_storage_waits_unittest\.cc": [
     "+components/services/storage/dom_storage/molt_dom_storage_waits.h",
   ],
+  # What MoltNet's network context drops of what a page's nonce keys
+  # (std-only).
+  "molt_net_nonce_drop_policy_unittest\.cc": [
+    "+services/network/molt_nonce_drop_policy.h",
+  ],
   # An ended identity's network context refuses everything after the end
   # (std-only policy; a real NetworkContext and ProxyConfigServiceMojo).
   "molt_net_end_ordering_unittest\.cc": [

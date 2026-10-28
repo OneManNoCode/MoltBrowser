@@ -1,0 +1,30 @@
+MoltBrowser patch for services/network/cors/preflight_cache.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/network/cors/preflight_cache.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/cors/preflight_cache.h b/services/network/cors/preflight_cache.h
+index f8a5b28d78777770567c2d26f709a57d8dbaf6d9..39caa9468cf2312790ee598bcb3db4a1d2665ea4 100644
+--- a/services/network/cors/preflight_cache.h
++++ b/services/network/cors/preflight_cache.h
+@@ -11,6 +11,7 @@
+ #include <tuple>
+ 
+ #include "base/component_export.h"
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "net/base/network_isolation_key.h"
+ #include "net/http/http_request_headers.h"
+ #include "services/network/cors/preflight_result.h"
+@@ -64,6 +65,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightCache final {
+ 
+   void ClearCache(mojom::ClearDataFilterPtr url_filter);
+ 
++  // MoltBrowser: removes the entries kept under a network key with `nonce`
++  // (a gone page's credentialless frames', which no other request carries:
++  // services/network/molt_nonce_drop_policy.h).
++  void MoltClearForNonce(const base::UnguessableToken& nonce);
++
+   // Counts cached entries for testing.
+   size_t CountEntriesForTesting() const;
+ 

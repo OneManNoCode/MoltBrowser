@@ -477,6 +477,19 @@ void HttpNetworkSession::MoltEndIdentity() {
   }
 }
 
+// MoltBrowser: see the header.
+void HttpNetworkSession::MoltForgetNonce(const base::UnguessableToken& nonce) {
+  static constexpr char kReason[] = "Network key's page gone";
+  normal_socket_pool_manager_->MoltCloseIdleSocketsOfNonce(nonce, kReason);
+  websocket_socket_pool_manager_->MoltCloseIdleSocketsOfNonce(nonce, kReason);
+  spdy_session_pool_.MoltCloseIdleSessionsOfNonce(nonce, kReason);
+  ssl_client_session_cache_.MoltFlushForNonce(nonce);
+  http_auth_cache_.MoltClearEntriesForNonce(nonce);
+  if (http_server_properties_) {
+    http_server_properties_->MoltClearForNonce(nonce);
+  }
+}
+
 void HttpNetworkSession::ApplyTestingFixedPort(
     url::SchemeHostPort& endpoint) const {
   bool using_ssl = GURL::SchemeIsCryptographic(endpoint.scheme());

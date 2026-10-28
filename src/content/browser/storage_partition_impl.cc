@@ -464,7 +464,7 @@ void ClearQuotaManagedData(
   // MoltBrowser: a deletion of one storage key over all time, where storage
   // is kept per site, reads that key's buckets only
   // (molt_one_key_deletion_policy.h); the filters above decide as before.
-  if (molt_only_key) {
+  if (molt_only_key && begin.is_null() && end.is_max()) {
     GetIOThreadTaskRunner({})->PostTask(
         FROM_HERE,
         base::BindOnce(
@@ -485,6 +485,16 @@ void ClearQuotaManagedData(
                 },
                 std::move(on_got_modified_buckets)),
             /*delete_expired=*/false));
+    return;
+  }
+  // MoltBrowser: and over a time range, that key's buckets modified in it.
+  if (molt_only_key) {
+    GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &storage::QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween,
+            std::move(quota_manager), *molt_only_key, begin, end,
+            std::move(on_got_modified_buckets)));
     return;
   }
 
@@ -2871,6 +2881,29 @@ void StoragePartitionImpl::OnClearSiteData(
           ? base::OptionalToPtr(cookie_partition_key.value().nonce())
           : nullptr);
 
+  // MoltBrowser: where storage is kept per site, a response the browser
+  // can't place in a document or worker (a download's, a keepalive
+  // request's after its page went) names the key its origin's own document
+  // would have, so that its deletion reads that key's usage only, not every
+  // site's (molt_one_key_deletion_policy.h).
+  const url::Origin molt_origin = url::Origin::Create(url);
+  const base::UnguessableToken* molt_nonce =
+      cookie_partition_key.has_value()
+          ? base::OptionalToPtr(cookie_partition_key->nonce())
+          : nullptr;
+  switch (MoltClearSiteDataKeyFor(
+      dom_storage_context_ && dom_storage_context_->MoltKeepsPerSite(),
+      storage_key.has_value(), molt_origin.opaque(), molt_nonce != nullptr)) {
+    case MoltClearSiteDataKey::kAsCalculated:
+      break;
+    case MoltClearSiteDataKey::kFirstParty:
+      storage_key = blink::StorageKey::CreateFirstParty(molt_origin);
+      break;
+    case MoltClearSiteDataKey::kWithNonce:
+      storage_key = blink::StorageKey::CreateWithNonce(molt_origin, *molt_nonce);
+      break;
+  }
+
   ClearSiteDataHandler::HandleHeader(
       browser_context()->GetWeakPtr(), weak_web_contents, GetConfig(), url,
       header_value, load_flags, cookie_partition_key, storage_key,
@@ -3202,10 +3235,15 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
               MoltDeletionReads::kOneStorageKey
           ? molt_one_key
           : std::nullopt;
+  // (Over a time range too, the key's buckets modified in it; a key with an
+  // opaque origin, which the quota database isn't asked by, keeps the whole
+  // listing.)
   const std::optional<blink::StorageKey> molt_quota_key =
-      MoltQuotaDeletionReads(molt_per_site, molt_names_one_key,
-                             begin.is_null() && end.is_max()) ==
-              MoltDeletionReads::kOneStorageKey
+      MoltQuotaDeletionReads(
+          molt_per_site,
+          molt_names_one_key && !molt_one_key->origin().opaque(),
+          begin.is_null() && end.is_max()) !=
+              MoltDeletionReads::kWholePartition
           ? molt_one_key
           : std::nullopt;
 

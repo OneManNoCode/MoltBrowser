@@ -124,6 +124,52 @@ inline void __cpuid(int cpu_info[4], int info_type) {
 // MoltBrowser: whether this thread is inside a ScopedCpuIndependent(true).
 constinit thread_local bool g_cpu_independent = false;
 
+// MoltBrowser: the calling thread's floating-point control register and its
+// flush-to-zero bits, as rtc_base/denormal_disabler.cc sets them.
+#if defined(WEBRTC_ARCH_X86_FAMILY) && defined(__clang__)
+// MXCSR: DAZ (bit 6) and FTZ (bit 15).
+constexpr uint64_t kFlushBits = 0x8040;
+uint64_t ReadFpControl() {
+  uint32_t value;
+  asm volatile("stmxcsr %0" : "=m"(value));
+  return value;
+}
+void WriteFpControl(uint64_t value) {
+  uint32_t word = static_cast<uint32_t>(value);
+  asm volatile("ldmxcsr %0" : : "m"(word));
+}
+#elif defined(WEBRTC_ARCH_ARM_FAMILY) && defined(WEBRTC_ARCH_64_BITS)
+// FPCR.FZ (bit 24).
+constexpr uint64_t kFlushBits = uint64_t{1} << 24;
+uint64_t ReadFpControl() {
+  uint64_t value;
+  asm volatile("mrs %x[value], FPCR" : [value] "=r"(value));
+  return value;
+}
+void WriteFpControl(uint64_t value) {
+  asm volatile("msr FPCR, %x[value]" : : [value] "r"(value));
+}
+#elif defined(WEBRTC_ARCH_ARM_FAMILY)
+// FPSCR.FZ (bit 24).
+constexpr uint64_t kFlushBits = uint64_t{1} << 24;
+uint64_t ReadFpControl() {
+  uint32_t value;
+  asm volatile("vmrs %[value], FPSCR" : [value] "=r"(value));
+  return value;
+}
+void WriteFpControl(uint64_t value) {
+  const uint32_t word = static_cast<uint32_t>(value);
+  asm volatile("vmsr FPSCR, %[word]" : : [word] "r"(word));
+}
+#else
+// No flush-to-zero mode this code knows of (as DenormalDisabler).
+constexpr uint64_t kFlushBits = 0;
+uint64_t ReadFpControl() {
+  return 0;
+}
+void WriteFpControl(uint64_t /* value */) {}
+#endif
+
 }  // namespace
 
 namespace cpu_info {
@@ -131,10 +177,28 @@ namespace cpu_info {
 ScopedCpuIndependent::ScopedCpuIndependent(bool cpu_independent)
     : previous_(g_cpu_independent) {
   g_cpu_independent = cpu_independent;
+  // MoltBrowser: the flush-to-zero modes off (see the header).
+  if constexpr (kFlushBits != 0) {
+    if (cpu_independent) {
+      const uint64_t control = ReadFpControl();
+      if (control & kFlushBits) {
+        saved_fp_control_ = control;
+        restore_fp_control_ = true;
+        WriteFpControl(control & ~kFlushBits);
+      }
+    }
+  }
 }
 
 ScopedCpuIndependent::~ScopedCpuIndependent() {
+  if (restore_fp_control_) {
+    WriteFpControl(saved_fp_control_);
+  }
   g_cpu_independent = previous_;
+}
+
+bool FlushModeIsOn() {
+  return (ReadFpControl() & kFlushBits) != 0;
 }
 
 bool IsCpuIndependent() {

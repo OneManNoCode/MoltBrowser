@@ -1,0 +1,32 @@
+MoltBrowser patch for net/spdy/spdy_session_pool.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/spdy/spdy_session_pool.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/spdy/spdy_session_pool.h b/net/spdy/spdy_session_pool.h
+index 842c8b06333d344532cea9da0d6ecd816070a61b..2488b2114acc77a061bfa4ec29b99483480cdcaf 100644
+--- a/net/spdy/spdy_session_pool.h
++++ b/net/spdy/spdy_session_pool.h
+@@ -19,6 +19,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/types/expected.h"
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "net/base/host_port_pair.h"
+ #include "net/base/ip_endpoint.h"
+ #include "net/base/load_timing_info.h"
+@@ -325,6 +326,13 @@ class NET_EXPORT SpdySessionPool
+   // live.
+   void CloseCurrentIdleSessions(const std::string& description);
+ 
++  // MoltBrowser: as CloseCurrentIdleSessions(), for the sessions whose key
++  // carries a network key with `nonce` (a gone page's credentialless
++  // frames', which no other request carries:
++  // services/network/molt_nonce_drop_policy.h).
++  void MoltCloseIdleSessionsOfNonce(const base::UnguessableToken& nonce,
++                                    const std::string& description);
++
+   // Repeatedly close all SpdySessions until all of them (including new ones
+   // created in the process of closing the current ones, and new ones created in
+   // the process of closing those new ones, etc.) are unavailable.

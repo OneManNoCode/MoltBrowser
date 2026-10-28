@@ -139,12 +139,11 @@ class TrafficRun(harness.Run):
                                  os.uname().release,
                                  'python': sys.version.split()[0]}
         self.manifest['browser'] = self.browser_version()
-        self.user_write('resolv.conf', harness.RESOLV)
-        self.user_write('nsswitch.conf', harness.NSSWITCH)
         self.sandbox = netns.Sandbox(self.run_id, self.uid, self.gid, self.dir,
                                      self.log)
         self.manifest['net'] = self.sandbox.setup(
             harness.LOOPBACK_CANARY, sinkhole=sinkhole.SINKHOLE_NET)
+        self.write_name_service_files()
         self.log('namespace %s, sinkhole %s' % (self.sandbox.ns,
                                                sinkhole.SINKHOLE_NET))
         self.start_captures()

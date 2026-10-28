@@ -1,0 +1,53 @@
+MoltBrowser patch for services/audio/sync_mixing_graph_input.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/audio/sync_mixing_graph_input.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/audio/sync_mixing_graph_input.cc b/services/audio/sync_mixing_graph_input.cc
+index de1f20c2a8976ae4581f2f8fae7a6fb33e20d3ac..919a10035395d480b84c8a88c30636a2da0111e3 100644
+--- a/services/audio/sync_mixing_graph_input.cc
++++ b/services/audio/sync_mixing_graph_input.cc
+@@ -4,9 +4,12 @@
+ 
+ #include "services/audio/sync_mixing_graph_input.h"
+ 
++#include <cmath>
++
+ #include "base/trace_event/trace_event.h"
+ #include "media/base/audio_pull_fifo.h"
+ #include "media/base/audio_timestamp_helper.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ 
+ namespace audio {
+ 
+@@ -52,6 +55,14 @@ double SyncMixingGraphInput::ProvideInput(
+     Render(0, audio_bus);
+   converter_render_frame_delay_ = 0;
+ 
++  // MoltBrowser: while the mix is computed portably for a MoltNet microphone
++  // stream's echo canceller (output_device_mixer_impl.cc), a volume below the
++  // portable floor is zero, so that no product of the mixing is subnormal
++  // (media/base/molt_portable_media.h; the samples: Render()).
++  if (media::IsPortableAudioThread() &&
++      std::fabs(volume_) < media::kPortableAudioFloor) {
++    return 0.0;
++  }
+   return volume_;
+ }
+ 
+@@ -95,6 +106,14 @@ void SyncMixingGraphInput::Render(int fifo_frame_delay,
+                                glitch_info_accumulator_.GetAndReset(),
+                                audio_bus,
+                                /*is_mixing=*/true);
++  // MoltBrowser: what a stream plays enters the portable mixing (a MoltNet
++  // microphone stream's echo reference) without its samples below the
++  // portable floor: the mix computes with the flush-to-zero modes off, the
++  // same on every CPU, and a page's tiny samples don't slow it down for every
++  // profile (media/base/molt_portable_media.h).
++  if (media::IsPortableAudioThread()) {
++    media::FlushTinyPortableSamples(*audio_bus);
++  }
+ }
+ 
+ }  // namespace audio

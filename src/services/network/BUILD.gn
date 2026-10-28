@@ -271,12 +271,14 @@ component("network_service") {
     "web_transport.h",
   ]
 
-  # MoltBrowser: MoltNet's ended identities, per-site keepalive requests and
-  # no sockets outside its own session (header-only).
+  # MoltBrowser: MoltNet's ended identities, per-site keepalive requests, no
+  # sockets outside its own session, and what a page's nonce keys dropped
+  # with the page (header-only).
   sources += [
     "molt_ended_identity_policy.h",
     "molt_keepalive_partitions.h",
     "molt_keepalive_site.h",
+    "molt_nonce_drop_policy.h",
     "molt_own_session_sockets_policy.h",
   ]
 

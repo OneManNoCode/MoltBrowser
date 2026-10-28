@@ -446,6 +446,42 @@ class RebaseTest(unittest.TestCase):
             rc, out = w.run(verify_patches)
             self.assertEqual(rc, 0, out)
 
+    def test_a_file_no_tarball_has_is_ours_only_by_name(self):
+        w = self.w
+        w.drop("v8/src/gone.cc")
+        (w.repo / "src/v8/src/c.cc").write_bytes(lines(5))
+        # Neither release tarball has these: a MoltBrowser file, and one a
+        # lite tarball could have left out of upstream's.
+        for rel in ("third_party/webrtc/molt_extra.cc",
+                    "third_party/webrtc/data/fixture.txt"):
+            p = w.repo / "src" / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"ours\n")
+        git(w.repo, "add", "-A")
+        with w.patches():
+            self.assertEqual(w.run(overlay_to_patches)[0], 0)
+            rc, out = w.run(rebase, NEW)
+            self.assertEqual(rc, 0, out)
+            status, data = w.report()
+            self.assertEqual(status["third_party/webrtc/molt_extra.cc"],
+                             "deps-own")
+            self.assertEqual(status["third_party/webrtc/data/fixture.txt"],
+                             "deps-unavailable")
+            self.assertIn("in neither commit's release tarball",
+                          data["files"]["third_party/webrtc/data/fixture.txt"]
+                          ["error"])
+            # From a mirror, absence is the subproject's own word.
+            self.assertEqual(status["v8/src/molt_own.cc"], "deps-own")
+            rc, out = w.run(rebase, NEW, "--apply")
+            self.assertEqual(rc, 1)        # unavailable blocks
+            rc, out = w.run(rebase, NEW, "--apply", "--allow-conflicts")
+            self.assertEqual(rc, 0, out)
+            whole = sp.read_whole_files(up.WHOLE_FILES)
+            self.assertEqual(whole["third_party/webrtc/molt_extra.cc"],
+                             sp.WholeFile("third_party/webrtc", w.t2, NEW))
+            self.assertEqual(whole["third_party/webrtc/data/fixture.txt"],
+                             sp.WholeFile("third_party/webrtc", w.t1, OLD))
+
     def test_mirror_without_the_commit_falls_back_to_the_tarball(self):
         w = self.w
         w.drop("v8/src/gone.cc")

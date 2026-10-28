@@ -211,6 +211,16 @@ struct MoltNetNetworkContextSettings {
   // (services/network/molt_ended_identity_policy.h).
   bool stop_all_when_refusing = false;
 
+  // A page's nonce (its credentialless frames'): the cookie store keeps no
+  // total for the partitions such frames use, and nothing drops their
+  // cookies, connections or network caches by the nonce. When true, each
+  // nonce partition and each nonce's partitions together have limits of
+  // their own, and the browser's tab helper can have the context delete and
+  // refuse a nonce's cookies and drop what its caches keep under it
+  // (NetworkContext::MoltDropNonce(): net/cookies/molt_nonce_cookie_policy.h,
+  // services/network/molt_nonce_drop_policy.h, molt_net_nonce_storage.h).
+  bool nonce_limits = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -237,6 +247,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.per_site_keepalive_limits = is_moltnet_profile;
   settings.per_site_http_cache = is_moltnet_profile;
   settings.stop_all_when_refusing = is_moltnet_profile;
+  settings.nonce_limits = is_moltnet_profile;
   return settings;
 }
 
@@ -359,6 +370,7 @@ void ApplyMoltNetNetworkContextSettings(
       settings.per_site_http_cache;
   network_context_params.molt_stop_all_when_refusing =
       settings.stop_all_when_refusing;
+  network_context_params.molt_nonce_limits = settings.nonce_limits;
 }
 
 }  // namespace molt_ai::tor

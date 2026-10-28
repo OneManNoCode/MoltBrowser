@@ -79,6 +79,7 @@
 #include <limits>
 #include <numbers>
 #include <numeric>
+#include <optional>
 
 #include "base/check_op.h"
 #include "base/containers/auto_spanification_helper.h"
@@ -119,6 +120,17 @@ double KernelSin(double x) {
 double KernelCos(double x) {
   return IsPortableAudioThread() ? gfx::molt_math::PortableCos(x)
                                  : gfx::molt_math::Cos(x);
+}
+
+// MoltBrowser: a kernel coefficient. Where the kernel is portable, the
+// coefficients below kPortableAudioFloor (the rounding residue at the Blackman
+// window's zeros, 1e-21 to 3e-19) are zero, so that every product of the
+// convolution with an input flushed at the floor (Resample()) is zero or a
+// normal float (media/base/molt_portable_media.h).
+float KernelValue(double value) {
+  const float coefficient = static_cast<float>(value);
+  return IsPortableAudioThread() ? FlushTinyPortableSample(coefficient)
+                                 : coefficient;
 }
 }
 
@@ -262,8 +274,8 @@ void SincResampler::InitializeKernel() {
 
       // Compute the sinc with offset, then window the sinc() function and store
       // at the correct offset.
-      // MoltBrowser: portable in MoltNet (KernelSin() above).
-      kernel_storage_[idx] = static_cast<float>(
+      // MoltBrowser: portable in MoltNet (KernelSin(), KernelValue() above).
+      kernel_storage_[idx] = KernelValue(
           window * (pre_sinc
                         ? KernelSin(sinc_scale_factor * pre_sinc) / pre_sinc
                         : sinc_scale_factor));
@@ -290,8 +302,8 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
       const float window = kernel_window_storage_[idx];
       const float pre_sinc = kernel_pre_sinc_storage_[idx];
 
-      // MoltBrowser: portable in MoltNet (KernelSin() above).
-      kernel_storage_[idx] = static_cast<float>(
+      // MoltBrowser: portable in MoltNet (KernelSin(), KernelValue() above).
+      kernel_storage_[idx] = KernelValue(
           window * (pre_sinc
                         ? KernelSin(sinc_scale_factor * pre_sinc) / pre_sinc
                         : sinc_scale_factor));
@@ -304,17 +316,22 @@ void SincResampler::Resample(base::span<float> destination) {
                "io sample rate ratio", io_sample_rate_ratio_);
   int remaining_frames = destination.size();
 
+  // MoltBrowser: on a thread that computes as MoltNet's renderers do
+  // (media/base/molt_portable_media.h), the plain C convolution, whatever this
+  // resampler picked when it was built, with the CPU's flush-to-zero modes off
+  // and the input flushed at kPortableAudioFloor where it enters.
+  const bool portable = IsPortableAudioThread();
+  const ConvolveProc convolve = portable ? Convolve_C : convolve_proc_;
+
   // Step (1) -- Prime the input buffer at the start of the input stream.
   if (!buffer_primed_ && remaining_frames) {
     read_cb_.Run(r0_.first(request_frames_));
+    // MoltBrowser: see `portable` above.
+    if (portable) {
+      FlushTinyPortableSamples(r0_.first(request_frames_));
+    }
     buffer_primed_ = true;
   }
-
-  // MoltBrowser: the plain C convolution on a thread that computes as
-  // MoltNet's renderers do (media/base/molt_portable_media.h), whatever this
-  // resampler picked when it was built.
-  const ConvolveProc convolve =
-      IsPortableAudioThread() ? Convolve_C : convolve_proc_;
 
   // Step (2) -- Resample!
   auto dest_iter = destination.begin();
@@ -322,7 +339,15 @@ void SincResampler::Resample(base::span<float> destination) {
     // Silent audio can contain non-zero samples small enough to result in
     // subnormals internally. Disabling subnormals can be significantly faster.
     {
-      cc::ScopedSubnormalFloatDisabler disable_subnormals;
+      // MoltBrowser: x86 and Arm flush differently (and cc's disabler flushes
+      // on x86 only); portable code computes with the flush modes off.
+      std::optional<cc::ScopedSubnormalFloatDisabler> disable_subnormals;
+      std::optional<ScopedPortableSubnormals> portable_subnormals;
+      if (portable) {
+        portable_subnormals.emplace();
+      } else {
+        disable_subnormals.emplace();
+      }
 
       while (virtual_source_idx_ < block_size_) {
         // |virtual_source_idx_| lies in between two kernel offsets so figure
@@ -378,6 +403,10 @@ void SincResampler::Resample(base::span<float> destination) {
 
     // Step (5) -- Refresh the buffer with more input.
     read_cb_.Run(r0_.first(request_frames_));
+    // MoltBrowser: see `portable` above.
+    if (portable) {
+      FlushTinyPortableSamples(r0_.first(request_frames_));
+    }
   }
 }
 

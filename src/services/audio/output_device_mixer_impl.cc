@@ -4,6 +4,8 @@
 
 #include "services/audio/output_device_mixer_impl.h"
 
+#include <optional>
+
 #include "base/check.h"
 #include "base/dcheck_is_on.h"
 #include "base/logging.h"
@@ -347,8 +349,17 @@ class OutputDeviceMixerImpl::PortableMixing final
                  base::TimeTicks delay_timestamp,
                  const media::AudioGlitchInfo& glitch_info,
                  media::AudioBus* dest) final {
-    media::ScopedPortableAudioThread portable(
-        cpu_independent_listeners_->load(std::memory_order_relaxed) > 0);
+    const bool portable =
+        cpu_independent_listeners_->load(std::memory_order_relaxed) > 0;
+    media::ScopedPortableAudioThread portable_thread(portable);
+    // The device's callback thread is the platform's; whatever flush-to-zero
+    // mode it runs in, the portable mix computes with the modes off (the
+    // streams' samples come in flushed at the portable floor:
+    // sync_mixing_graph_input.cc).
+    std::optional<media::ScopedPortableSubnormals> portable_subnormals;
+    if (portable) {
+      portable_subnormals.emplace();
+    }
     return mixing_graph_->OnMoreData(delay, delay_timestamp, glitch_info, dest);
   }
 

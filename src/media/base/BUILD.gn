@@ -281,6 +281,7 @@ source_set("base") {
     "molt_portable_media.h",
     "molt_portable_scale.cc",
     "molt_portable_scale.h",
+    "molt_portable_subnormals.cc",
     "multi_channel_resampler.cc",
     "multi_channel_resampler.h",
     "null_video_sink.cc",

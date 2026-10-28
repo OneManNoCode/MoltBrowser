@@ -1,0 +1,34 @@
+MoltBrowser patch for media/audio/pulse/pulse_input.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/media/audio/pulse/pulse_input.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/audio/pulse/pulse_input.cc b/media/audio/pulse/pulse_input.cc
+index 944601adb425fd60efcd6d8145f0138203ae8a50..77893ce4a458be337dba8b5afbe913ae09af4711 100644
+--- a/media/audio/pulse/pulse_input.cc
++++ b/media/audio/pulse/pulse_input.cc
+@@ -13,6 +13,7 @@
+ #include "base/strings/stringprintf.h"
+ #include "media/audio/audio_device_description.h"
+ #include "media/audio/pulse/audio_manager_pulse.h"
++#include "media/audio/pulse/molt_pulse_capture.h"  // MoltBrowser
+ #include "media/audio/pulse/pulse_util.h"
+ #include "media/base/audio_timestamp_helper.h"
+ 
+@@ -89,9 +90,14 @@ AudioInputStream::OpenOutcome PulseAudioInputStream::Open() {
+     return OpenOutcome::kFailed;
+   }
+ 
++  // MoltBrowser: a MoltNet stream records from the microphone under a filter
++  // source, never from the OS's processing of it (molt_pulse_capture.h; it
++  // takes the lock itself, and waits for the server).
++  const std::string source = pulse::MoltCaptureSource(
++      pa_mainloop_, pa_context_, source_name_, params_);
+   AutoPulseLock auto_lock(pa_mainloop_);
+   if (!pulse::CreateInputStream(pa_mainloop_, pa_context_, &handle_, params_,
+-                                source_name_, &StreamNotifyCallback, this)) {
++                                source, &StreamNotifyCallback, this)) {
+     if (ShouldLog()) {
+       SendLogMessage(base::StringPrintf(
+           "%s => (ERROR: failed to open PA stream)", __func__));

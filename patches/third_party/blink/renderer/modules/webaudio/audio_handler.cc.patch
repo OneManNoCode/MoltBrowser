@@ -1,0 +1,57 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webaudio/audio_handler.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/modules/webaudio/audio_handler.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_handler.cc b/third_party/blink/renderer/modules/webaudio/audio_handler.cc
+index 2be8ecb55bcfb5f53274e0c60e1efc3ebbcb7828..e1bea34143dcf873770e2b67b1bd8b3910017634 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_handler.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_handler.cc
+@@ -7,6 +7,7 @@
+ #include <inttypes.h>
+ 
+ #include "base/trace_event/trace_event.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
+@@ -23,6 +24,25 @@
+ 
+ namespace blink {
+ 
++namespace {
++
++// MoltBrowser: in MoltNet's renderers Web Audio computes with the CPU's
++// flush-to-zero modes off (platform/audio/denormal_disabler.h), the same on
++// every CPU. What a node passes on is flushed at the portable floor, so that
++// tiny values (a decaying feedback loop, a page's own tiny samples) don't
++// keep flowing through the graph at the cost of subnormal arithmetic
++// (media/base/molt_portable_media.h). Silent channels stay silent.
++void FlushTinySamples(AudioBus& bus) {
++  for (unsigned i = 0; i < bus.NumberOfChannels(); ++i) {
++    AudioChannel* channel = bus.Channel(i);
++    if (!channel->IsSilent()) {
++      media::FlushTinyPortableSamples(channel->MutableSpan());
++    }
++  }
++}
++
++}  // namespace
++
+ AudioHandler::AudioHandler(NodeType node_type,
+                            AudioNode& node,
+                            float sample_rate)
+@@ -334,6 +354,12 @@ void AudioHandler::ProcessIfNecessary(uint32_t frames_to_process) {
+       UnsilenceOutputs();
+       base::TimeTicks process_start_time = base::TimeTicks::Now();
+       Process(frames_to_process);
++      // MoltBrowser: see FlushTinySamples().
++      if (media::IsPortableAudioThread()) {
++        for (auto& output : outputs_) {
++          FlushTinySamples(*output->Bus());
++        }
++      }
+       base::TimeDelta process_duration =
+           base::TimeTicks::Now() - process_start_time;
+       uma_reporter_->AddProcessDuration(process_duration, frames_to_process);

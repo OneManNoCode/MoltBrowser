@@ -5,18 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..47944efac67ec7df3a95b2de3f4b8a398c8dd8d9 100644
+index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..57aa33b6249c360a99aa0b9f27ddf1f531903642 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-@@ -15,6 +15,7 @@
- #include "base/uuid.h"
- #include "build/build_config.h"
- #include "media/base/media_permission.h"
-+#include "media/base/molt_portable_media.h"  // MoltBrowser
- #include "mojo/public/cpp/bindings/remote.h"
- #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
- #include "third_party/blink/public/common/features.h"
-@@ -51,6 +52,7 @@
+@@ -51,6 +51,7 @@
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/frame/web_feature.h"
  #include "third_party/blink/renderer/core/html/html_element.h"
@@ -24,7 +16,17 @@ index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..47944efac67ec7df3a95b2de3f4b8a39
  #include "third_party/blink/renderer/modules/mediastream/crop_target.h"
  #include "third_party/blink/renderer/modules/mediastream/input_device_info.h"
  #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
-@@ -1314,8 +1316,11 @@ void MediaDevices::OnDevicesChanged(
+@@ -868,6 +869,9 @@ void MediaDevices::OnSelectAudioOutputResult(
+                                      MediaDeviceInfo>* resolver,
+     mojom::blink::SelectAudioOutputResultPtr result) {
+   if (result->status == mojom::blink::AudioOutputStatus::kSuccess) {
++    // MoltBrowser: MoltNet's name and group (moltnet_media_devices.h).
++    molt_fingerprinting::UseUniformNames(
++        mojom::blink::MediaDeviceType::kMediaAudioOutput, result->device_info);
+     MediaDeviceInfo* media_device_info = MakeGarbageCollected<MediaDeviceInfo>(
+         String::FromUtf8(result->device_info.device_id),
+         String::FromUtf8(result->device_info.label),
+@@ -1314,8 +1318,11 @@ void MediaDevices::OnDevicesChanged(
  }
  
  void MediaDevices::MaybeFireDeviceChangeEvent(bool has_permission) {
@@ -37,19 +39,31 @@ index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..47944efac67ec7df3a95b2de3f4b8a39
      ScheduleDispatchEvent(Event::Create(event_type_names::kDevicechange));
    }
  }
-@@ -1483,6 +1488,11 @@ void MediaDevices::DevicesEnumerated(
+@@ -1466,6 +1473,12 @@ void MediaDevices::DevicesEnumerated(
+       mojom::blink::MediaDeviceType device_type =
+           static_cast<mojom::blink::MediaDeviceType>(i);
+       WebMediaDeviceInfo device_info = enumeration[i][j];
++      // MoltBrowser: MoltNet's list, names and groups
++      // (moltnet_media_devices.h).
++      if (!molt_fingerprinting::ListsMediaDevice(device_type, device_info)) {
++        continue;
++      }
++      molt_fingerprinting::UseUniformNames(device_type, device_info);
+       String device_label = String::FromUtf8(device_info.label);
+       if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput ||
+           device_type == mojom::blink::MediaDeviceType::kMediaVideoInput) {
+@@ -1483,6 +1496,10 @@ void MediaDevices::DevicesEnumerated(
          }
          if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
              !audio_input_capabilities.empty()) {
-+          // MoltBrowser: no platform effects on a MoltNet page's microphones
-+          // (media/base/molt_portable_media.h, PortableCaptureEffects).
-+          audio_input_capabilities[j]->parameters.set_effects(
-+              media::PortableCaptureEffects(
-+                  audio_input_capabilities[j]->parameters.effects()));
++          // MoltBrowser: no platform effects on a MoltNet page's microphones,
++          // and one format (moltnet_media_devices.h).
++          molt_fingerprinting::UseUniformCapabilities(
++              *audio_input_capabilities[j]);
            input_device_info->SetAudioInputCapabilities(
                std::move(audio_input_capabilities[j]));
          }
-@@ -1493,6 +1503,19 @@ void MediaDevices::DevicesEnumerated(
+@@ -1493,6 +1510,19 @@ void MediaDevices::DevicesEnumerated(
              String::FromUtf8(device_info.group_id), device_type));
        }
      }

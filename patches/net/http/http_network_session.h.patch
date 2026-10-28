@@ -5,18 +5,21 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_network_session.h b/net/http/http_network_session.h
-index 0097a398b6d68a8305c2f11288d0485732a2d5f3..c8c2d56884b1177f4f99b1a9f40ef5dc7cc6f830 100644
+index 0097a398b6d68a8305c2f11288d0485732a2d5f3..0fef1b8d4f1be8e4492b6c7aee15b9036467ba2d 100644
 --- a/net/http/http_network_session.h
 +++ b/net/http/http_network_session.h
-@@ -19,6 +19,7 @@
+@@ -19,8 +19,10 @@
  #include "base/containers/unique_ptr_adapters.h"
  #include "base/functional/bind.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/memory/scoped_refptr.h"  // MoltBrowser
  #include "base/power_monitor/power_observer.h"
  #include "base/threading/thread_checker.h"
++#include "base/unguessable_token.h"  // MoltBrowser
  #include "base/values.h"
-@@ -53,6 +54,10 @@ class NetLog;
+ #include "build/buildflag.h"
+ #include "net/base/host_port_pair.h"
+@@ -53,6 +55,10 @@ class NetLog;
  #if BUILDFLAG(ENABLE_REPORTING)
  class NetworkErrorLoggingService;
  #endif
@@ -27,7 +30,7 @@ index 0097a398b6d68a8305c2f11288d0485732a2d5f3..c8c2d56884b1177f4f99b1a9f40ef5dc
  class NetworkQualityEstimator;
  class ProxyDelegate;
  class ProxyResolutionService;
-@@ -163,6 +168,21 @@ struct NET_EXPORT HttpNetworkSessionParams {
+@@ -163,6 +169,21 @@ struct NET_EXPORT HttpNetworkSessionParams {
  
    // Whether to use the ALPN information in the DNS HTTPS record.
    bool use_dns_https_svcb_alpn = true;
@@ -49,7 +52,7 @@ index 0097a398b6d68a8305c2f11288d0485732a2d5f3..c8c2d56884b1177f4f99b1a9f40ef5dc
  };
  
  // Structure with pointers to the dependencies of the HttpNetworkSession.
-@@ -227,6 +247,17 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
+@@ -227,6 +248,17 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
    ClientSocketPool* GetSocketPool(SocketPoolType pool_type,
                                    const ProxyChain& proxy_chain);
  
@@ -67,7 +70,7 @@ index 0097a398b6d68a8305c2f11288d0485732a2d5f3..c8c2d56884b1177f4f99b1a9f40ef5dc
    CertVerifier* cert_verifier() { return cert_verifier_; }
    ProxyResolutionService* proxy_resolution_service() {
      return proxy_resolution_service_;
-@@ -269,6 +300,12 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
+@@ -269,6 +301,19 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
    void CloseAllConnections(int net_error, const char* net_log_reason_utf8);
    void CloseIdleConnections(const char* net_log_reason_utf8);
  
@@ -77,10 +80,17 @@ index 0097a398b6d68a8305c2f11288d0485732a2d5f3..c8c2d56884b1177f4f99b1a9f40ef5dc
 +  // without per-site pools (not MoltNet's).
 +  void MoltEndIdentity();
 +
++  // MoltBrowser: drops what this session keeps under a network key with
++  // `nonce` (a gone page's credentialless frames', which no other request
++  // carries: services/network/molt_nonce_drop_policy.h): idle connections
++  // and HTTP/2 sessions, TLS sessions, server properties and HTTP
++  // authentication entries. Connections in use stay.
++  void MoltForgetNonce(const base::UnguessableToken& nonce);
++
    // Returns the original Params used to construct this session.
    const HttpNetworkSessionParams& params() const { return params_; }
    // Returns the original Context used to construct this session.
-@@ -336,6 +373,18 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
+@@ -336,6 +381,18 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
    SSLClientSessionCache ssl_client_session_cache_;
    SSLClientContext ssl_client_context_;
    WebSocketEndpointLockManager websocket_endpoint_lock_manager_;

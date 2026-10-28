@@ -170,39 +170,54 @@ def wait_onion_reachable(socks_port, host, timeout, log):
     return False, last
 
 
-def consensus_identities(data_dir):
-    """Hex fingerprints of the relays in the consensus Tor cached."""
+def _read_text(path, read=None):
+    """The text of the file `path`, or None. `read(path)`, if given, gives
+    its bytes or None (the harness, as root, reads a file of the run
+    directory from its descriptor: harness.Run.read_user_path()); else the
+    file is opened."""
+    if read is not None:
+        data = read(path)
+        return None if data is None else data.decode('utf-8', 'replace')
+    try:
+        with open(path, 'r', errors='replace') as f:
+            return f.read()
+    except (IOError, OSError):
+        return None
+
+
+def consensus_identities(data_dir, read=None):
+    """Hex fingerprints of the relays in the consensus Tor cached (`read`:
+    as for _read_text())."""
     out = set()
     for name in ('cached-microdesc-consensus', 'cached-consensus'):
-        path = os.path.join(data_dir, name)
-        try:
-            with open(path, 'r', errors='replace') as f:
-                for line in f:
-                    if not line.startswith('r '):
-                        continue
-                    parts = line.split()
-                    if len(parts) < 3:
-                        continue
-                    b64 = parts[2] + '=' * (-len(parts[2]) % 4)
-                    try:
-                        out.add(binascii.hexlify(
-                            base64.b64decode(b64)).decode().upper())
-                    except (ValueError, binascii.Error):
-                        continue
-        except (IOError, OSError):
+        text = _read_text(os.path.join(data_dir, name), read)
+        if text is None:
             continue
+        for line in text.splitlines():
+            if not line.startswith('r '):
+                continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            b64 = parts[2] + '=' * (-len(parts[2]) % 4)
+            try:
+                out.add(binascii.hexlify(
+                    base64.b64decode(b64)).decode().upper())
+            except (ValueError, binascii.Error):
+                continue
     return out
 
 
-def torrc_value(torrc_path, key):
-    try:
-        with open(torrc_path, 'r') as f:
-            for line in f:
-                parts = line.strip().split(None, 1)
-                if len(parts) == 2 and parts[0] == key:
-                    return parts[1]
-    except (IOError, OSError):
+def torrc_value(torrc_path, key, read=None):
+    """The value of `key` in the torrc at `torrc_path`, or None (`read`: as
+    for _read_text())."""
+    text = _read_text(torrc_path, read)
+    if text is None:
         return None
+    for line in text.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2 and parts[0] == key:
+            return parts[1]
     return None
 
 

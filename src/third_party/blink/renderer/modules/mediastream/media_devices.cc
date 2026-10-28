@@ -15,7 +15,6 @@
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "media/base/media_permission.h"
-#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
@@ -870,6 +869,9 @@ void MediaDevices::OnSelectAudioOutputResult(
                                      MediaDeviceInfo>* resolver,
     mojom::blink::SelectAudioOutputResultPtr result) {
   if (result->status == mojom::blink::AudioOutputStatus::kSuccess) {
+    // MoltBrowser: MoltNet's name and group (moltnet_media_devices.h).
+    molt_fingerprinting::UseUniformNames(
+        mojom::blink::MediaDeviceType::kMediaAudioOutput, result->device_info);
     MediaDeviceInfo* media_device_info = MakeGarbageCollected<MediaDeviceInfo>(
         String::FromUtf8(result->device_info.device_id),
         String::FromUtf8(result->device_info.label),
@@ -1471,6 +1473,12 @@ void MediaDevices::DevicesEnumerated(
       mojom::blink::MediaDeviceType device_type =
           static_cast<mojom::blink::MediaDeviceType>(i);
       WebMediaDeviceInfo device_info = enumeration[i][j];
+      // MoltBrowser: MoltNet's list, names and groups
+      // (moltnet_media_devices.h).
+      if (!molt_fingerprinting::ListsMediaDevice(device_type, device_info)) {
+        continue;
+      }
+      molt_fingerprinting::UseUniformNames(device_type, device_info);
       String device_label = String::FromUtf8(device_info.label);
       if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput ||
           device_type == mojom::blink::MediaDeviceType::kMediaVideoInput) {
@@ -1488,11 +1496,10 @@ void MediaDevices::DevicesEnumerated(
         }
         if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
             !audio_input_capabilities.empty()) {
-          // MoltBrowser: no platform effects on a MoltNet page's microphones
-          // (media/base/molt_portable_media.h, PortableCaptureEffects).
-          audio_input_capabilities[j]->parameters.set_effects(
-              media::PortableCaptureEffects(
-                  audio_input_capabilities[j]->parameters.effects()));
+          // MoltBrowser: no platform effects on a MoltNet page's microphones,
+          // and one format (moltnet_media_devices.h).
+          molt_fingerprinting::UseUniformCapabilities(
+              *audio_input_capabilities[j]);
           input_device_info->SetAudioInputCapabilities(
               std::move(audio_input_capabilities[j]));
         }

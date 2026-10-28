@@ -1,0 +1,29 @@
+MoltBrowser patch for services/network/cors/preflight_controller.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/network/cors/preflight_controller.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/cors/preflight_controller.h b/services/network/cors/preflight_controller.h
+index 121b2d21584e5295ed63e0bf53fd6c258906c95b..148e3094e1f61f4b09190dc377913346193915d0 100644
+--- a/services/network/cors/preflight_controller.h
++++ b/services/network/cors/preflight_controller.h
+@@ -16,6 +16,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/types/expected.h"
+ #include "base/types/strong_alias.h"
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "services/network/cors/preflight_cache.h"
+@@ -117,6 +118,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
+   // clears all its contents.
+   void ClearCorsPreflightCache(mojom::ClearDataFilterPtr url_filter);
+ 
++  // MoltBrowser: clears the cache's entries kept under a network key with
++  // `nonce` (PreflightCache::MoltClearForNonce()).
++  void MoltClearCorsPreflightCacheForNonce(const base::UnguessableToken& nonce);
++
+   PreflightCache& GetPreflightCacheForTesting() { return cache_; }
+ 
+  private:

@@ -6,14 +6,19 @@
 // image, whisper-cli on recorded audio). The helper gets OS-level
 // confinement and a deadline, so a malicious file that exploits it gets
 // neither the user's files nor the network, and can't hang a browser worker.
+// It also gets simple input: tesseract reads an uncompressed image the
+// browser wrote from what Chromium's sandboxed image decoder decoded
+// (ocr/ocr_image.h), whisper-cli a WAV the browser wrote from checked
+// samples (voice/recorded_wav.h).
 //
 // Policy: the helper may read beneath |read_only_paths| (its own directory
 // with its bundled libraries and data, the model or tessdata directory, the
 // input file) and the system's libraries, read and write beneath
-// |writable_dir| (a fresh scratch directory per call, which also holds the
-// input and output and is the working directory), and nothing else. Never
-// the network. Its environment is reduced to HOME and TMPDIR (both the
-// scratch directory) and PATH.
+// |writable_dir| (a fresh scratch directory per call, HelperScratchDir,
+// which also holds the input and output and is the working directory), and
+// nothing else. Never the network. Its environment is reduced to a few
+// variables naming the scratch directory and the system's (POSIX: HOME,
+// TMPDIR, PATH; Windows: TEMP, TMP, SystemRoot, SystemDrive, windir, Path).
 //
 //   Linux: no_new_privs, a new session, Landlock and seccomp-bpf, applied
 //     between fork and exec (helper_sandbox_linux.h). A layer the kernel
@@ -23,14 +28,23 @@
 //   macOS: /usr/bin/sandbox-exec with a deny-by-default Seatbelt profile
 //     (seatbelt_profile.h). Fail-closed: without sandbox-exec, or if it
 //     can't apply the profile, the helper does not run.
-//   Windows: a job object (killed with its job, UI restrictions) and the
-//     deadline only. No file system or network confinement yet; that needs
-//     an AppContainer and ACLs on the bundle and scratch directories.
+//   Windows: a less-privileged AppContainer (LPAC) of its own per run, with
+//     no network capability, no child processes, a job (one process, a
+//     memory limit, killed with the job, UI restrictions) it is in before
+//     its first instruction, and process mitigations
+//     (helper_sandbox_win_policy.h has the whole policy). It reads its own
+//     folder through a capability the installer grants there
+//     (lpacMoltBrowserHelperFiles), its scratch directory through that
+//     directory's security descriptor, and Windows' system files.
+//     Fail-closed: if the AppContainer can't run the program or reach a
+//     path it needs (the portable ZIP has no installer to grant the
+//     capability), or the attributes, job or scratch directory can't be
+//     set up, the helper does not run and the error says why.
 //   Other platforms: fail-closed.
 //
-// The deadline kills the helper and its process group. Output (stdout and
-// stderr together) is read up to |max_output_bytes|; past that, reading
-// stops and the pipe is closed (POSIX; on Windows the rest is discarded).
+// The deadline kills the helper and its process group (Windows: its job).
+// Output (stdout and stderr together) is read up to |max_output_bytes|;
+// past that, reading stops and the pipe is closed.
 //
 // Not for tor: it is long-running and needs the network.
 
@@ -60,11 +74,18 @@ struct HelperSandboxPolicy {
 
   // Absolute paths (files or directories) the helper may read beneath. The
   // helper's own directory is always readable (and its code executable);
-  // list it anyway when its libraries or data live there.
+  // list it anyway when its libraries or data live there. On Windows a
+  // path outside the helper's own folder and its scratch directory must be
+  // in a directory made by CreateHelperDataDirectory().
   std::vector<base::FilePath> read_only_paths;
   // The one directory the helper may write: an existing, private, per-call
-  // scratch directory. Also its working directory, HOME and TMPDIR.
+  // scratch directory (HelperScratchDir). Also its working directory and
+  // temp directory (POSIX: HOME and TMPDIR too).
   base::FilePath writable_dir;
+  // Windows: the AppContainer SID |writable_dir| was made for
+  // (HelperScratchDir::MakePolicy() sets both); the helper runs as it.
+  // Unused elsewhere.
+  std::string app_container_sid;
   // Network: none, always.
 };
 
@@ -90,6 +111,45 @@ struct HelperRunResult {
   std::string error;
 };
 
+// A fresh, private scratch directory for one helper run, in the temp
+// directory; deleted with what is in it when this goes. POSIX: mode 0700.
+// Windows: created with a security descriptor (never changed afterwards)
+// that gives the user full control and an AppContainer of its own the
+// rights a helper needs there, with a low integrity label so that
+// AppContainer can write (helper_sandbox_win_policy.h,
+// ScratchDirectorySddl()). Blocking: MayBlock thread-pool tasks only.
+class HelperScratchDir {
+ public:
+  HelperScratchDir();
+  HelperScratchDir(const HelperScratchDir&) = delete;
+  HelperScratchDir& operator=(const HelperScratchDir&) = delete;
+  ~HelperScratchDir();
+
+  // Creates it, named after |prefix| (1 to 32 ASCII letters, digits or
+  // underscores). False if it couldn't be, or already was.
+  bool Create(std::string_view prefix);
+
+  bool IsValid() const { return !path_.empty(); }
+  const base::FilePath& path() const { return path_; }
+
+  // A policy that writes here: |writable_dir| and, on Windows,
+  // |app_container_sid|. The caller adds the read-only paths.
+  HelperSandboxPolicy MakePolicy() const;
+
+ private:
+  base::FilePath path_;
+  std::string app_container_sid_;
+};
+
+// Creates the directory |path| (its parent must exist) for data a helper
+// reads from outside its own folder, e.g. a speech model downloaded later.
+// Windows: its security descriptor, set when it is created, lets helpers
+// (their capability) read what is put in it, as the installer does for
+// their folders (helper_sandbox_win_policy.h, DataDirectorySddl()).
+// Elsewhere a plain directory: a helper reads what its policy lists. False
+// if it couldn't be created or already exists. Blocking.
+bool CreateHelperDataDirectory(const base::FilePath& path);
+
 // Runs |cmd| (absolute program path) under |policy|, killing it after
 // |timeout|. Blocking: call from a ThreadPool task with base::MayBlock().
 // It needs no base sync primitives (it polls for the exit).
@@ -108,10 +168,10 @@ std::string DescribeHelperRunFailure(const HelperRunResult& run,
                                      std::string_view launch_error);
 
 // Reads a file the helper wrote into its scratch directory, at most
-// |max_bytes|. On POSIX it must be a regular file with a single link and
-// not a symlink, so a compromised helper can't make the browser read a
-// file outside its sandbox (a symlink or hard link to ~/.ssh/...) and pass
-// it on as "OCR text". False if it is missing or refused. Blocking.
+// |max_bytes|. It must be a regular file with a single link and not a
+// symlink (Windows: not a reparse point), so a compromised helper can't make
+// the browser read a file outside its sandbox (a link to ~/.ssh/...) and
+// pass it on as "OCR text". False if it is missing or refused. Blocking.
 bool ReadHelperOutputFile(const base::FilePath& path,
                           size_t max_bytes,
                           std::string* contents);

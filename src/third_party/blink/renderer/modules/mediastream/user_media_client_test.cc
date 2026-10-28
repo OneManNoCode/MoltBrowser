@@ -47,11 +47,14 @@
 #include "third_party/blink/public/web/modules/mediastream/web_media_stream_device_observer.h"
 #include "third_party/blink/public/web/web_heap.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_boolean_string.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_double_range.h"  // MoltBrowser
+#include "third_party/blink/renderer/bindings/modules/v8/v8_long_range.h"  // MoltBrowser
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_track_capabilities.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_track_settings.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.h"
@@ -2719,6 +2722,60 @@ TEST_F(UserMediaClientTest, MoltNetMicrophoneHasNoPlatformEffects) {
   ASSERT_TRUE(source);
   EXPECT_EQ(source->device().input.effects(),
             media::AudioParameters::NO_EFFECTS);
+
+  blink::MediaStreamTrackPlatform::GetTrack(
+      WebMediaStreamTrack(track->Component()))
+      ->Stop();
+  blink::WebHeap::CollectGarbageForTesting();
+}
+
+// MoltBrowser: in MoltNet a microphone reports one format whatever the
+// device's (here the mock's 44.1 kHz stereo): 48 kHz, one or two channels, a
+// 10 ms latency (media::PortableCaptureParameters()); and a generic label and
+// a group of its own (moltnet_media_devices.h). The source still opens the
+// device in its own format, which the CPU-independent processing converts.
+TEST_F(UserMediaClientTest, MoltNetMicrophoneHasUniformFormatAndNames) {
+  media::SetPortableMediaProcessForTesting(true);
+  molt_fingerprinting::SetMoltNetMediaForTesting(true);
+  // A normal renderer again however the test ends.
+  struct ResetMoltNet {
+    ~ResetMoltNet() {
+      molt_fingerprinting::SetMoltNetMediaForTesting(false);
+      media::SetPortableMediaProcessForTesting(false);
+    }
+  } reset_moltnet;
+
+  MediaStreamTrack* track = RequestLocalAudioTrackWithEchoCancellationMode(
+      EchoCancellationMode::kBrowserDecides);
+  ASSERT_TRUE(track);
+
+  MediaTrackCapabilities* capabilities = track->getCapabilities();
+  ASSERT_TRUE(capabilities->hasSampleRate());
+  EXPECT_EQ(capabilities->sampleRate()->min(), 48000);
+  EXPECT_EQ(capabilities->sampleRate()->max(), 48000);
+  ASSERT_TRUE(capabilities->hasChannelCount());
+  EXPECT_EQ(capabilities->channelCount()->min(), 1);
+  EXPECT_EQ(capabilities->channelCount()->max(), 2);
+  ASSERT_TRUE(capabilities->hasLatency());
+  EXPECT_DOUBLE_EQ(capabilities->latency()->min(), 0.01);
+#if !BUILDFLAG(IS_ANDROID)
+  EXPECT_DOUBLE_EQ(capabilities->latency()->max(), 0.01);
+#endif
+
+  const String id = FakeDeviceIds::GetInstance()->audio_input_1;
+  const String expected_label = "Microphone " + id.substr(0, 4);
+  EXPECT_EQ(track->label(), expected_label);
+  ASSERT_TRUE(capabilities->hasGroupId());
+  EXPECT_EQ(capabilities->groupId(), id);
+  ASSERT_TRUE(track->getSettings()->hasGroupId());
+  EXPECT_EQ(track->getSettings()->groupId(), id);
+
+  // The device itself, as the source opens it.
+  MediaStreamAudioSource* source =
+      MediaStreamAudioSource::From(track->Component()->Source());
+  ASSERT_TRUE(source);
+  EXPECT_EQ(source->device().input.sample_rate(),
+            media::AudioParameters::kAudioCDSampleRate);
 
   blink::MediaStreamTrackPlatform::GetTrack(
       WebMediaStreamTrack(track->Component()))

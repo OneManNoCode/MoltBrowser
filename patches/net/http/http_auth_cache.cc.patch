@@ -1,0 +1,25 @@
+MoltBrowser patch for net/http/http_auth_cache.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/http/http_auth_cache.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/http/http_auth_cache.cc b/net/http/http_auth_cache.cc
+index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..8d2237bdc2631f9059fbe051b2ab2d99d4e5d234 100644
+--- a/net/http/http_auth_cache.cc
++++ b/net/http/http_auth_cache.cc
+@@ -332,6 +332,14 @@ bool HttpAuthCache::ClearAllEntries() {
+   return true;
+ }
+ 
++// MoltBrowser: see the header.
++bool HttpAuthCache::MoltClearEntriesForNonce(
++    const base::UnguessableToken& nonce) {
++  return std::erase_if(entries_, [&nonce](const EntryMap::value_type& entry) {
++           return entry.first.network_anonymization_key.GetNonce() == nonce;
++         }) > 0;
++}
++
+ bool HttpAuthCache::UpdateStaleChallenge(
+     const url::SchemeHostPort& scheme_host_port,
+     HttpAuth::Target target,

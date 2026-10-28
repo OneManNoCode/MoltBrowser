@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool_manager_impl.h b/net/socket/client_socket_pool_manager_impl.h
-index 93235445ecc995486d220bc1b250448645114bbd..5a3359905cf5e40a64ef4fdea23b0af59bcf2380 100644
+index 93235445ecc995486d220bc1b250448645114bbd..bd0e0cca7914059d2afdaf47f9ab766944738083 100644
 --- a/net/socket/client_socket_pool_manager_impl.h
 +++ b/net/socket/client_socket_pool_manager_impl.h
 @@ -17,6 +17,7 @@
@@ -41,7 +41,7 @@ index 93235445ecc995486d220bc1b250448645114bbd..5a3359905cf5e40a64ef4fdea23b0af5
  
    ClientSocketPoolManagerImpl(const ClientSocketPoolManagerImpl&) = delete;
    ClientSocketPoolManagerImpl& operator=(const ClientSocketPoolManagerImpl&) =
-@@ -46,6 +59,11 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
+@@ -46,6 +59,13 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
    void CloseIdleSockets(const char* net_log_reason_utf8) override;
  
    ClientSocketPool* GetSocketPool(const ProxyChain& proxy_chain) override;
@@ -50,10 +50,12 @@ index 93235445ecc995486d220bc1b250448645114bbd..5a3359905cf5e40a64ef4fdea23b0af5
 +      const ProxyChain& proxy_chain,
 +      const NetworkAnonymizationKey& network_anonymization_key,
 +      bool molt_no_cert_fetches = false) override;
++  void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
++                                   const char* net_log_reason_utf8) override;
  
    // Creates a Value summary of the state of the socket pools.
    base::Value SocketPoolInfoToValue() const override;
-@@ -63,6 +81,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
+@@ -63,6 +83,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
  
    SocketPoolMap socket_pools_;
  

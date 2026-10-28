@@ -33,12 +33,12 @@
 //     well-formed PNGs of the size they claim (signature, chunk structure,
 //     IHDR). Each PNG is copied out of the reply before it is checked: a
 //     large BigBuffer is shared memory the service could still write to. The
-//     browser never decodes them; tesseract does, in its own sandbox.
+//     browser never decodes them; Chromium's data decoder does, in a
+//     sandboxed process of its own, before OCR (ocr_service.h).
 //
 // Not here: OCR itself runs tesseract as a helper process under its own
 // OS-level sandbox and deadline (molt_ai/ocr, molt_ai/common/
-// helper_sandbox.h), which is looser than this one (and on Windows confines
-// no files).
+// helper_sandbox.h), which is looser than this one.
 //
 // The service keeps no profile state, so incognito and MoltNet profiles need
 // nothing special. Use on the UI thread.
@@ -138,7 +138,7 @@ namespace document_parser_client_internal {
 // length within the buffer, ASCII-letter types), IHDR first and only once
 // (13 bytes: this size, 8 bits per channel, gray / RGB / gray+alpha / RGBA,
 // the standard compression and filter), at least one IDAT, and IEND last.
-// Doesn't decompress anything or check CRCs (tesseract's libpng does).
+// Doesn't decompress anything or check CRCs (the data decoder does).
 // Linear in the size. Exposed for tests.
 bool IsWellFormedPng(base::span<const uint8_t> png,
                      uint32_t width,

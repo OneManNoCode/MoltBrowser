@@ -148,6 +148,12 @@ def plan_deps(chromium, base, new, pin_version, new_version, paths, recorded,
     return plan
 
 
+def is_own_name(path):
+    """Whether a file's name marks it as MoltBrowser's own (SkMoltBrowserMath.h,
+    SkOpts_moltbrowser.cpp, molt_math.cc)."""
+    return "molt" in path.rsplit("/", 1)[-1].lower()
+
+
 def merge_deps(path, old, new, sources, tmp, merged_dir):
     """The rebase item of one DEPS whole file (and its merge, written under
     merged_dir). `old`: (subproject, commit) it was merged with; `new`: the
@@ -171,7 +177,20 @@ def merge_deps(path, old, new, sources, tmp, merged_dir):
     item["sources"] = [sources.source(*old), sources.source(*new)]
     ours = up.overlay_bytes(path)
     if base is None and theirs is None:
-        item["status"] = "deps-own"         # ours, not in the subproject
+        # In neither commit. A mirror holds the whole subproject, so the
+        # file is MoltBrowser's own; a lite release tarball leaves some
+        # upstream files out (tests, docs), so from tarballs only a file
+        # named as ours is: an upstream file the tarballs lack would
+        # otherwise keep our copy, recorded as merged whatever upstream
+        # changed in it.
+        if all(s and s.startswith("mirror ") for s in item["sources"]) or \
+                is_own_name(path):
+            item["status"] = "deps-own"     # ours, not in the subproject
+        else:
+            item["status"] = "deps-unavailable"
+            item["error"] = ("in neither commit's release tarball, which "
+                             "leave some upstream files out; a MoltBrowser "
+                             "file in a subproject needs 'molt' in its name")
     elif base is None:
         item["status"] = "deps-collision"   # ours, and now upstream's too
     elif theirs is None:

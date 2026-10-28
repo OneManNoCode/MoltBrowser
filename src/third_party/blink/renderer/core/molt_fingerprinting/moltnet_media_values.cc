@@ -138,6 +138,40 @@ UserMediaVerdict UserMediaFailureVerdict(
                  : UserMediaVerdict::kPermissionDismissed;
 }
 
+std::string DeviceLabel(DeviceKind kind, std::string_view device_id) {
+  if (device_id.empty()) {
+    return std::string();
+  }
+  if (device_id == kDefaultDeviceId) {
+    return "Default";
+  }
+  if (device_id == kCommunicationsDeviceId) {
+    return "Communications";
+  }
+  std::string label;
+  switch (kind) {
+    case DeviceKind::kMicrophone:
+      label = "Microphone ";
+      break;
+    case DeviceKind::kCamera:
+      label = "Camera ";
+      break;
+    case DeviceKind::kSpeaker:
+      label = "Speaker ";
+      break;
+  }
+  label.append(device_id.substr(0, 4));
+  return label;
+}
+
+std::string_view DeviceGroup(std::string_view device_id) {
+  return device_id;
+}
+
+bool ListsAudioDevice(std::string_view device_id) {
+  return device_id != kCommunicationsDeviceId;
+}
+
 MediaCapabilitiesAnswer VideoDecodingInfo(bool has_built_in_decoder) {
   if (!has_built_in_decoder) {
     return {false, false, false};

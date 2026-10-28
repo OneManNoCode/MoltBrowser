@@ -143,6 +143,7 @@
 #include "services/network/prefetch_url_loader_client.h"
 #include "services/network/proxy_checking_host_resolver_request.h"
 #include "services/network/molt_ended_identity_policy.h"  // MoltBrowser
+#include "services/network/molt_nonce_drop_policy.h"     // MoltBrowser
 #include "services/network/molt_own_session_sockets_policy.h"  // MoltBrowser
 #include "services/network/proxy_config_service_mojo.h"
 #include "services/network/proxy_lookup_request.h"
@@ -3376,8 +3377,22 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     if (params_->persist_session_cookies) {
       cookie_store->SetPersistSessionCookies(true);
     }
+    // MoltBrowser: MoltNet's limits for cookies under a page's nonce.
+    if (params_->molt_nonce_limits) {
+      cookie_store->MoltKeepNonceCookieLimits();
+    }
 
     builder.SetCookieStore(std::move(cookie_store));
+  }
+  // MoltBrowser: MoltNet's context keeps no cookie file, so the builder would
+  // make its store; it is made here, as URLRequestContextBuilder::Build()
+  // makes it, with the limits for cookies under a page's nonce
+  // (net/cookies/molt_nonce_cookie_policy.h).
+  if (!session_cleanup_cookie_store && params_->molt_nonce_limits) {
+    auto molt_cookie_store =
+        std::make_unique<net::CookieMonster>(/*store=*/nullptr, net_log);
+    molt_cookie_store->MoltKeepNonceCookieLimits();
+    builder.SetCookieStore(std::move(molt_cookie_store));
   }
 
   base::FilePath transport_security_persister_file_name;
@@ -4160,6 +4175,53 @@ void NetworkContext::ClearNetworkRestrictions(
   for (const auto& network_restrictions_id : network_restrictions_ids) {
     network_restrictions_ids_.erase(network_restrictions_id);
   }
+}
+
+// MoltBrowser: see network_context.mojom and molt_nonce_drop_policy.h.
+void NetworkContext::MoltDropNonce(const base::UnguessableToken& nonce,
+                                   mojom::MoltNonceDrop drop) {
+  // (A context made around a given URLRequestContext has no params.)
+  if (!params_ || !params_->molt_nonce_limits) {
+    return;
+  }
+  MoltNonceDropStep step = MoltNonceDropStep::kClosed;
+  switch (drop) {
+    case mojom::MoltNonceDrop::kClosed:
+      step = MoltNonceDropStep::kClosed;
+      break;
+    case mojom::MoltNonceDrop::kGone:
+      step = MoltNonceDropStep::kGone;
+      break;
+    case mojom::MoltNonceDrop::kForget:
+      step = MoltNonceDropStep::kForget;
+      break;
+  }
+  if (net::CookieMonster* cookie_store = MoltNonceCookieStore()) {
+    cookie_store->MoltDropNonce(nonce, MoltNonceCookiesRefusedAfter(step));
+  }
+  if (!MoltNonceNetworkStateDropped(step)) {
+    return;
+  }
+  if (net::HttpTransactionFactory* factory =
+          url_request_context_->http_transaction_factory()) {
+    if (net::HttpNetworkSession* session = factory->GetSession()) {
+      session->MoltForgetNonce(nonce);
+    }
+  }
+  cors_preflight_controller_.MoltClearCorsPreflightCacheForNonce(nonce);
+}
+
+// MoltBrowser: see the header.
+net::CookieMonster* NetworkContext::MoltNonceCookieStore() {
+  if (!params_ || !params_->molt_nonce_limits || !url_request_context_ ||
+      !url_request_context_->cookie_store()) {
+    return nullptr;
+  }
+  // With molt_nonce_limits, MakeURLRequestContext() made the context's
+  // cookie store a net::CookieMonster, and kept the limits on it.
+  auto* cookie_store =
+      static_cast<net::CookieMonster*>(url_request_context_->cookie_store());
+  return cookie_store->MoltKeepsNonceCookieLimits() ? cookie_store : nullptr;
 }
 
 void NetworkContext::Prefetch(

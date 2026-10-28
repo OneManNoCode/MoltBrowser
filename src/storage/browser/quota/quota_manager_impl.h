@@ -250,6 +250,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
       base::OnceCallback<void(QuotaErrorOr<std::set<BucketInfo>>)> callback,
       bool delete_expired = false);
 
+  // MoltBrowser: as GetBucketsModifiedBetween(), for `storage_key`'s buckets
+  // only (QuotaDatabase::MoltGetBucketsForStorageKeyModifiedBetween()): what
+  // a deletion of one storage key over a time range reads where storage is
+  // kept per site (content/browser/browsing_data/
+  // molt_one_key_deletion_policy.h). `storage_key` mustn't have an opaque
+  // origin.
+  void MoltGetBucketsForStorageKeyModifiedBetween(
+      const blink::StorageKey& storage_key,
+      base::Time begin,
+      base::Time end,
+      GetBucketsCallback callback);
+
   // Called by clients or webapps. Returns usage per host.
   void GetUsageInfo(GetUsageInfoCallback callback);
 
@@ -341,9 +353,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
   // MoltBrowser: for MoltNet's storage budget (molt_storage_budget.h).
   // Deletes the buckets of `storage_keys` (those with `nonce`: the storage
   // keys of a page's credentialless frames), and then forgets the nonce's
-  // site. With `closed`, the nonce's storage keys get no room from then on
-  // (their page lives on past its site's bound); without, that ends (the page
-  // is gone).
+  // site. With `closed`, the nonce's storage keys get no room and no bucket
+  // from then on (their page lives on past its site's bound); without, that
+  // ends (the page is gone).
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      const std::vector<blink::StorageKey>& storage_keys,
                      bool closed);

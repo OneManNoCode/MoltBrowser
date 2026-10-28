@@ -5,26 +5,28 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index 3603695f3e0c381c82589c7a7dfb4b6cfff83d59..3904c69a254637a44d4295a9d9756d7c92d14328 100644
+index 3603695f3e0c381c82589c7a7dfb4b6cfff83d59..69c45c7463ee46be7c482020807f0763cd997f26 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
-@@ -271,6 +271,15 @@ component("network_service") {
+@@ -271,6 +271,17 @@ component("network_service") {
      "web_transport.h",
    ]
  
-+  # MoltBrowser: MoltNet's ended identities, per-site keepalive requests and
-+  # no sockets outside its own session (header-only).
++  # MoltBrowser: MoltNet's ended identities, per-site keepalive requests, no
++  # sockets outside its own session, and what a page's nonce keys dropped
++  # with the page (header-only).
 +  sources += [
 +    "molt_ended_identity_policy.h",
 +    "molt_keepalive_partitions.h",
 +    "molt_keepalive_site.h",
++    "molt_nonce_drop_policy.h",
 +    "molt_own_session_sockets_policy.h",
 +  ]
 +
    if (is_p2p_enabled) {
      sources += [
        "p2p/socket.cc",
-@@ -286,6 +295,10 @@ component("network_service") {
+@@ -286,6 +297,10 @@ component("network_service") {
        "throttling/throttling_p2p_network_interceptor.cc",
        "throttling/throttling_p2p_network_interceptor.h",
      ]

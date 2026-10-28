@@ -1,0 +1,19 @@
+MoltBrowser patch for media/audio/pulse/pulse.sigs
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/media/audio/pulse/pulse.sigs by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/audio/pulse/pulse.sigs b/media/audio/pulse/pulse.sigs
+index 2edcd1152fd31b7ea09cc4cb4596fb646dd95739..ea2e47b5df59ad6ab84b4b6d7c3a164685bfcbfa 100644
+--- a/media/audio/pulse/pulse.sigs
++++ b/media/audio/pulse/pulse.sigs
+@@ -23,6 +23,8 @@ pa_operation* pa_context_get_server_info(pa_context* c, pa_server_info_cb_t cb,
+ pa_operation* pa_context_get_source_info_by_index(pa_context* c, uint32_t idx, pa_source_info_cb_t cb, void* userdata);
+ pa_operation* pa_context_get_source_info_by_name(pa_context* c, const char* name, pa_source_info_cb_t cb, void *userdata);
+ pa_operation* pa_context_get_source_info_list(pa_context* c, pa_source_info_cb_t cb, void* userdata);
++// MoltBrowser: the recording streams, for the source under a filter (molt_pulse_capture.cc).
++pa_operation* pa_context_get_source_output_info_list(pa_context* c, pa_source_output_info_cb_t cb, void* userdata);
+ pa_operation* pa_context_get_sink_info_list(pa_context* c, pa_sink_info_cb_t cb, void* userdata);
+ pa_operation* pa_context_get_sink_info_by_name(pa_context* c, const char* name, pa_sink_info_cb_t cb, void *userdata);
+ pa_context_state_t pa_context_get_state(const_pa_context_ptr c);

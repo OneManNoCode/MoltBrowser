@@ -4,6 +4,77 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-28: PRs #75 and #76 (October 2026)
+
+**Scope.** The code merged in pull requests #75 (round 31: the rebase onto
+Chromium 156.0.8078.74 and the previous review's fixes, which no one else
+had reviewed) and #76 (round 32), in this order of priority:
+
+1. The rebase and its tools: the 3-way merges of the DEPS-subproject whole
+   files and the commits they record (`tools/chromium/subprojects.py`,
+   `rebase.py`, the lag check of `verify_patches.py`), the nine patches
+   merged with upstream changes, the release tarball's pinned SHA-256, the
+   tarballs' safe extraction and a release not pinned yet; the search
+   engine definitions rebuilt from 156 and the MoltNet locale tables
+   regenerated at .74; the 50 identical copies dropped from `src/`; and
+   the compile check moving its work directory to a new pin and keeping a
+   result only when the working tree held still.
+2. The previous review's fixes: the leak kit's writes as root through the
+   run directory's descriptor, a sandboxed page's nonce storage counted to
+   its own site, a copy owed to a populated namespace dropped outside a
+   message, the Background Fetch valve's marker.
+3. A page's nonce-keyed state: its cookies deleted by partition and again
+   a minute later, the clipboard salt derived for a key with a nonce, and
+   a deletion of one storage key that reads that key's usage only, in
+   each kind of profile.
+4. `sessionStorage` jobs that wait only for their own namespaces, and a
+   copy's wait of at most a second for its sites' turns: order,
+   reentrancy, a namespace that goes during a job, a wait that never ends.
+5. Background Fetch downloads taken up again while their parameters are
+   asked for, in every profile.
+6. MoltNet's microphone: the echo canceller of each mode, the platform
+   effects masked, the output mix computed with the portable code while a
+   MoltNet stream listens (and who can ask for it), the per-call portable
+   checks of the audio math.
+7. The leak kit and scripts: the `--out` directory's checks, the
+   microphone page's playback cases, the iOS packaging script's signing.
+8. The agent studio's step buttons.
+
+**Method.** Each candidate traced from its attacker (web page, a group of
+sites, a compromised renderer, a process of the user who runs the leak kit
+as root, another local account, the download sources of the build tools)
+through MoltBrowser's code and the upstream Chromium 156 code at the pinned
+revision. The rebase was checked by comparing the lines each of the 591
+patches adds and removes before and after it (the same for all), diffing
+the nine merged files with 156.0.8078.74's, and comparing every DEPS whole
+file's import with its subproject at 156.0.8078.48, and that with .74 (the
+subprojects' mirrors and the release tarballs); the pinned SHA-256 with the
+bucket's published hashes; and the search engine file with the rewrite of
+156's. The namespace job order was exercised by a randomized standalone
+test (system g++, ASan/UBSan) that checks that jobs sharing a namespace
+never overlap and start in the order they came, and that every job ends.
+The leak kit's paths as root were exercised with links, hard links and
+swapped directories (standalone checks had the harness read a file only
+root may read into its log, and a launch mount a file in a directory its
+user can't reach), and its fixes tested with new tests and a mutant set
+each catches, run as root and unprivileged; the tools' own test suites
+and `molt_fuzz.py check` pass.
+
+**Findings.** 18: 4 low, 14 informational. Fixed: the four low.
+
+**Fixed.**
+
+- The leak test kit, which runs as root, also reads the run directory it
+  gives its user only from that directory's descriptor (its onion
+  services' addresses, which must be addresses; MoltNet's torrc and Tor's
+  consensus, inside the run directory only), mounts into a launch only
+  its own `resolv.conf` and `nsswitch.conf` (made in its root-owned
+  directory; the launcher refuses a link or another account's file), and
+  when a run ends gives its user no file with more than one link. The
+  `--out` directory is reached from `/` a component at a time without
+  following a link on the way, but one only root could have put there
+  (`tools/leak_test/leakkit/rundir.py`, `harness.py`, `launch_in_ns.sh`).
+
 ## 2026-10-28: PR #74 (October 2026)
 
 **Scope.** The code merged in pull request #74 (round 30) that the
