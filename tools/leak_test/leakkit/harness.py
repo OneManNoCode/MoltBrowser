@@ -14,6 +14,7 @@ import json
 import os
 import platform
 import pwd
+import re
 import shutil
 import signal
 import subprocess
@@ -125,8 +126,13 @@ class Run(object):
         self.procs = []
         self.sandbox = None
         # The run directory's descriptor: every write the harness makes
-        # there goes through it (rundir.py).
+        # there, and every read, goes through it (rundir.py).
         self.rundir = None
+        # What a launch mounts over the namespace's /etc/resolv.conf and
+        # /etc/nsswitch.conf: root's own, in the sandbox's private
+        # directory (netns.Sandbox.write_private()).
+        self.resolv_conf = None
+        self.nsswitch_conf = None
         self.manifest = {
             'schema': 'moltleak-run/1', 'kit_version': KIT_VERSION,
             'run_id': self.run_id, 'target': opts.target,
@@ -197,6 +203,42 @@ class Run(object):
         shutil.rmtree(path, ignore_errors=True)
         os.mkdir(path, 0o700)
         return path
+
+    def write_name_service_files(self):
+        """The files a launch mounts over the namespace's resolv.conf and
+        nsswitch.conf (launch_in_ns.sh), made as root's own in the
+        sandbox's private directory: mounted from the run directory, a link
+        a process of the user put there would have root mount any file
+        where the user's process reads it."""
+        self.resolv_conf = self.sandbox.write_private('resolv.conf', RESOLV)
+        self.nsswitch_conf = self.sandbox.write_private('nsswitch.conf',
+                                                        NSSWITCH)
+
+    def read_user_path(self, path):
+        """The bytes of the regular file `path` if it is in the run
+        directory, read from its descriptor (rundir.read(): no link
+        followed, a single link), else None. What the harness reads there
+        by path could be a link to a file only root may read, and what it
+        reads lands where the user can read it (the manifest, the logs)."""
+        if not path or not self.rundir:
+            return None
+        rel = os.path.relpath(os.path.abspath(path),
+                              os.path.abspath(self.dir))
+        if rel in (os.curdir, os.pardir) or \
+                rel.startswith(os.pardir + os.sep):
+            return None
+        return self.rundir.read(rel)
+
+    # A v3 onion service's address, as Tor writes it to its hostname file.
+    ONION_HOSTNAME_RE = re.compile(r'^[a-z2-7]{56}\.onion$')
+
+    def onion_hostname(self, name):
+        """The address the kit's Tor gave its onion service `name`
+        (onion/<name>/hostname, read through read_user_path()), or None
+        while there is none, or what is there isn't one."""
+        data = self.read_user_path(self.path('onion', name, 'hostname'))
+        host = (data or b'').decode('ascii', 'replace').strip()
+        return host if self.ONION_HOSTNAME_RE.match(host) else None
 
     # ---- preflight ----------------------------------------------------------
 
@@ -336,11 +378,10 @@ class Run(object):
                                  'arch': platform.machine(),
                                  'python': platform.python_version()}
         self.manifest['browser'] = self.browser_version()
-        self.user_write('resolv.conf', RESOLV)
-        self.user_write('nsswitch.conf', NSSWITCH)
         self.sandbox = netns.Sandbox(self.run_id, self.uid, self.gid, self.dir,
                                      self.log)
         self.manifest['net'] = self.sandbox.setup(LOOPBACK_CANARY)
+        self.write_name_service_files()
         self.log('namespace %s, gateway %s' % (self.sandbox.ns,
                                                self.manifest['net']['gw_ipv4']))
         self.start_captures()
@@ -404,11 +445,9 @@ class Run(object):
         hosts = {}
         while _now() < deadline and len(hosts) < 2:
             for name in ('a', 'b'):
-                try:
-                    with open(os.path.join(data, name, 'hostname')) as f:
-                        hosts[name] = f.read().strip()
-                except (IOError, OSError):
-                    pass
+                host = self.onion_hostname(name)
+                if host:
+                    hosts[name] = host
             time.sleep(1)
         if len(hosts) < 2:
             raise RuntimeError('the kit\'s Tor did not create its onion '
@@ -612,8 +651,7 @@ class Run(object):
         logf = self.rundir.open_text('logs/browser-%s.out' % label)
         proc = self.sandbox.launch(
             args, 'browser', self.browser_env(), stdout=logf, stderr=logf,
-            resolv=self.path('resolv.conf'),
-            nsswitch=self.path('nsswitch.conf'),
+            resolv=self.resolv_conf, nsswitch=self.nsswitch_conf,
             pipe_fds=(child_in, child_out), policy_dir=policy_dir)
         for fd in (cmd_r, resp_w, child_in, child_out):
             try:
@@ -1256,10 +1294,14 @@ class Run(object):
         try:
             res = self.molt_net_call('moltnet.getCircuit', timeout=60) or {}
             hops = res.get('hops') or []
+            # The torrc's path comes from the Tor wrapper's log, the user's
+            # like the files it names: read from the run directory only
+            # (read_user_path()).
             data_dir = support.torrc_value(self.tor_torrc() or '',
-                                           'DataDirectory')
-            known = support.consensus_identities(data_dir) if data_dir \
-                else set()
+                                           'DataDirectory',
+                                           read=self.read_user_path)
+            known = support.consensus_identities(
+                data_dir, read=self.read_user_path) if data_dir else set()
             for hop in hops:
                 fp = (hop.get('fingerprint') or '').lstrip('$').upper()
                 hop['in_consensus'] = (fp in known) if known else None
@@ -1268,7 +1310,8 @@ class Run(object):
             torrc = self.tor_torrc()
             if torrc:
                 phase['data']['tor_options'] = {
-                    key: support.torrc_value(torrc, key)
+                    key: support.torrc_value(torrc, key,
+                                             read=self.read_user_path)
                     for key in ('ConnLimit', 'MaxClientCircuitsPending')}
             self.phase_end(phase)
         except cdplib.CdpError as e:

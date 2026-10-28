@@ -188,19 +188,27 @@ asks nobody in particular.
   browser's environment is emptied except for `HOME`, `USER`, `PATH`,
   `LANG`/`LC_ALL`, `TZ`, the display and `XDG_RUNTIME_DIR`. Proxy variables
   in particular are removed.
-* **What the kit writes as root.** The run directory is yours: the browser,
-  Tor and the kit's servers write there as you. The kit makes it, opens it,
-  and from then on writes there only from that open directory
-  (`leakkit/rundir.py`): no symbolic link is followed at any step of a
-  path, only a regular file with a single link is written or emptied, and
-  owners and modes are set on the open file, never by path. The `--out`
-  directory it makes the run directory in is opened without following a
-  link and must belong to root or you and be writable by no other account
-  (a world-writable one must be sticky, as `/tmp` is); otherwise the kit
-  stops before making anything. The servers'
-  certificates and the test extension are made in the root-owned directory
-  under `/run/moltleak-<id>/` and copied in. When the run ends, the kit
-  hands everything to you without following links.
+* **What the kit writes and reads as root.** The run directory is yours:
+  the browser, Tor and the kit's servers write there as you. The kit makes
+  it, opens it, and from then on writes and reads there only from that open
+  directory (`leakkit/rundir.py`): no symbolic link is followed at any step
+  of a path, only a regular file with a single link is written, emptied or
+  read, and owners and modes are set on the open file, never by path. That
+  covers what the kit reads back: its onion services' addresses (checked to
+  be addresses), and MoltNet's torrc and Tor's consensus (only inside the
+  run directory). The `--out` directory it makes the run directory in is
+  reached from `/` a component at a time without following a link (except
+  one only root could have put there, such as a `/home` that leads to
+  `var/home`; never the last component), and must belong to root or you
+  and be writable by no other account (a world-writable one must be
+  sticky, as `/tmp` is); otherwise the kit stops before making anything.
+  The servers' certificates and the test extension are made in the
+  root-owned directory under `/run/moltleak-<id>/` and copied in; the
+  `resolv.conf` and `nsswitch.conf` each launch mounts over the
+  namespace's are root's own files there too (the launcher mounts nothing
+  else). When the run ends, the kit hands everything to you without
+  following links, except a file with more than one link, which may be a
+  file elsewhere that a process linked into the run directory.
 * **A policy set while the browser runs.** For two launches (phases
   `policy_live` and `policy_live_incognito`) the kit mounts a directory of
   the run (root-owned, under

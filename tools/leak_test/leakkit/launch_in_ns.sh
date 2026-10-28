@@ -27,8 +27,9 @@
 #   DIR        an existing directory to mount over the managed-policy
 #              directory, which must exist (the harness makes it)
 #   PROCS      the cgroup.procs file to join
-#   RESOLV     file to mount over /etc/resolv.conf, or -
-#   NSSWITCH   file to mount over /etc/nsswitch.conf, or -
+#   RESOLV     file to mount over /etc/resolv.conf, or - (a regular file
+#              of root's, not a link)
+#   NSSWITCH   file to mount over /etc/nsswitch.conf, or - (the same)
 #   IN_FD/OUT_FD  fds that become 3 and 4, or -
 set -euo pipefail
 
@@ -65,6 +66,18 @@ fi
 if [[ $policy_dir != - ]]; then
   [[ $policy_dir == /* && -d $policy_dir ]] || { echo "bad policy dir" >&2; exit 64; }
 fi
+# A file mounted below must be root's own regular file, not a link: mount
+# follows links, and a file of the run directory (the user's) could be
+# swapped for a link to any file (one only root may read, or one in a
+# directory the user can't reach) before it is mounted where the user's
+# process reads it. The harness keeps them in the sandbox's private
+# directory (netns.Sandbox.write_private()).
+for file in "$resolv" "$nsswitch"; do
+  if [[ $file != - ]]; then
+    [[ $file == /* && -f $file && ! -L $file && -O $file ]] || {
+      echo "bad file to mount: $file (a regular file of root's)" >&2; exit 64; }
+  fi
+done
 
 # The bind mounts below must never land in the caller's mount namespace:
 # re-run in a private one first.

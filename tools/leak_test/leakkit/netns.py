@@ -313,6 +313,20 @@ class Sandbox(object):
             self.undo.append(('policy_mountpoint', created))
         return path
 
+    def write_private(self, name, text):
+        """Writes `text` to a new file `name` of root's in the run's private
+        directory (root's own, in /run) and returns its path. A file root
+        uses by its path (one the launcher mounts) belongs there, never in
+        the run directory: that is the user's, whose processes could swap
+        the file for a link to any other before root uses it."""
+        path = os.path.join(self.private_dir, name)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                     os.O_NOFOLLOW | os.O_CLOEXEC, 0o644)
+        with os.fdopen(fd, 'w') as f:
+            os.fchmod(f.fileno(), 0o644)
+            f.write(text)
+        return path
+
     def write_tor_wrapper(self, real_tor, argv_log):
         path = os.path.join(self.private_dir, 'tor-wrapper')
         with open(path, 'w') as f:
