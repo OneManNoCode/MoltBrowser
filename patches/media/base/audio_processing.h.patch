@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/audio_processing.h b/media/base/audio_processing.h
-index f5933ffaa98231951c782237bc85577435e920dc..eb9e958abf0f9f9edcbae2c64e1072c95c8f209a 100644
+index f5933ffaa98231951c782237bc85577435e920dc..a8f5f360aa8e58107a433888c5552301133c591a 100644
 --- a/media/base/audio_processing.h
 +++ b/media/base/audio_processing.h
 @@ -31,6 +31,15 @@ struct MEDIA_EXPORT AudioProcessingSettings {
@@ -34,3 +34,18 @@ index f5933ffaa98231951c782237bc85577435e920dc..eb9e958abf0f9f9edcbae2c64e1072c9
  #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
      equal = equal && voice_isolation == b.voice_isolation;
  #endif
+@@ -46,6 +56,14 @@ struct MEDIA_EXPORT AudioProcessingSettings {
+   }
+ 
+   bool NeedWebrtcAudioProcessing() const {
++    // MoltBrowser: a CPU-independent stream (MoltNet's) is always processed,
++    // also with every effect off: the processing converts the device's rate
++    // and channels to the stream's one format (media/base/
++    // molt_portable_media.h, PortableCaptureOutputFormat()), in its CPU-
++    // independent code, and the device opens in its own format.
++    if (cpu_independent) {
++      return true;
++    }
+     // TODO(crbug.com/40205004): Legacy iOS-specific behavior;
+     // reconsider.
+ #if !BUILDFLAG(IS_IOS)

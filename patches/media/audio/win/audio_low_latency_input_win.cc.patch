@@ -1,0 +1,33 @@
+MoltBrowser patch for media/audio/win/audio_low_latency_input_win.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/media/audio/win/audio_low_latency_input_win.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/audio/win/audio_low_latency_input_win.cc b/media/audio/win/audio_low_latency_input_win.cc
+index 41f6cbf43ba2d4d0a4f08db7d782c240d035b74c..bb5fd9622a62cbfe01f06b784cd20cfbd95388dd 100644
+--- a/media/audio/win/audio_low_latency_input_win.cc
++++ b/media/audio/win/audio_low_latency_input_win.cc
+@@ -56,6 +56,7 @@
+ #include "media/base/channel_layout.h"
+ #include "media/base/limits.h"
+ #include "media/base/media_switches.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ #include "media/base/sample_format.h"
+ #include "media/base/timestamp_constants.h"
+ 
+@@ -910,8 +911,13 @@ AudioInputStream::OpenOutcome WASAPIAudioInputStream::Open() {
+   // audio stream. Ignoring return value since the method logs its own error
+   // messages and it should be OK to continue opening the stream even after a
+   // failure.
++  // MoltBrowser: a MoltNet stream takes the communications category only
++  // with raw mode, never with the OS's communications processing
++  // (media/base/molt_portable_media.h).
+   if (raw_processing_supported_ &&
+-      !AudioDeviceDescription::IsLoopbackDevice(device_id_) && SUCCEEDED(hr)) {
++      !AudioDeviceDescription::IsLoopbackDevice(device_id_) && SUCCEEDED(hr) &&
++      PortableCaptureMayUseCommunicationsCategory(params_,
++                                                  audio_engine_channels)) {
+     SetCommunicationsCategoryAndMaybeRawCaptureMode(audio_engine_channels);
+   }
+ 

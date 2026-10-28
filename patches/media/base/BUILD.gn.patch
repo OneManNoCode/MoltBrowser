@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/BUILD.gn b/media/base/BUILD.gn
-index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..18fcc4f7a9f6090bfe04e07af94238bf14088196 100644
+index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..506173c9f136cda1095f977a5eb94a61eb9f3b5f 100644
 --- a/media/base/BUILD.gn
 +++ b/media/base/BUILD.gn
-@@ -274,6 +274,13 @@ source_set("base") {
+@@ -274,6 +274,14 @@ source_set("base") {
      "mime_util.h",
      "mime_util_internal.cc",
      "mime_util_internal.h",
@@ -19,10 +19,11 @@ index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..18fcc4f7a9f6090bfe04e07af94238bf
 +    "molt_portable_media.h",
 +    "molt_portable_scale.cc",
 +    "molt_portable_scale.h",
++    "molt_portable_subnormals.cc",
      "multi_channel_resampler.cc",
      "multi_channel_resampler.h",
      "null_video_sink.cc",
-@@ -430,11 +437,17 @@ source_set("base") {
+@@ -430,11 +438,17 @@ source_set("base") {
      "//net",
      "//skia",
      "//third_party/libyuv",
@@ -40,7 +41,7 @@ index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..18fcc4f7a9f6090bfe04e07af94238bf
      "//url",
    ]
  
-@@ -667,6 +680,10 @@ source_set("unit_tests") {
+@@ -667,6 +681,10 @@ source_set("unit_tests") {
      "media_serializers_unittest.cc",
      "metadata_track_unittest.cc",
      "mime_util_unittest.cc",

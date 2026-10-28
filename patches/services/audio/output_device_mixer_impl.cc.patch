@@ -5,10 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/audio/output_device_mixer_impl.cc b/services/audio/output_device_mixer_impl.cc
-index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f8611f1b3fd 100644
+index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..5d2b9fe915501df754ddafc2ff6279f9539fe926 100644
 --- a/services/audio/output_device_mixer_impl.cc
 +++ b/services/audio/output_device_mixer_impl.cc
-@@ -14,6 +14,7 @@
+@@ -4,6 +4,8 @@
+ 
+ #include "services/audio/output_device_mixer_impl.h"
+ 
++#include <optional>
++
+ #include "base/check.h"
+ #include "base/dcheck_is_on.h"
+ #include "base/logging.h"
+@@ -14,6 +16,7 @@
  #include "base/trace_event/trace_event.h"
  #include "media/audio/audio_device_description.h"
  #include "media/audio/audio_io.h"
@@ -16,7 +25,7 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
  #include "third_party/perfetto/include/perfetto/tracing/track.h"
  
  namespace audio {
-@@ -318,6 +319,46 @@ class OutputDeviceMixerImpl::MixableOutputStream final
+@@ -318,6 +321,55 @@ class OutputDeviceMixerImpl::MixableOutputStream final
    raw_ptr<MixTrack> mix_track_;  // Valid only when |mixer_| is valid.
  };
  
@@ -48,8 +57,17 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
 +                 base::TimeTicks delay_timestamp,
 +                 const media::AudioGlitchInfo& glitch_info,
 +                 media::AudioBus* dest) final {
-+    media::ScopedPortableAudioThread portable(
-+        cpu_independent_listeners_->load(std::memory_order_relaxed) > 0);
++    const bool portable =
++        cpu_independent_listeners_->load(std::memory_order_relaxed) > 0;
++    media::ScopedPortableAudioThread portable_thread(portable);
++    // The device's callback thread is the platform's; whatever flush-to-zero
++    // mode it runs in, the portable mix computes with the modes off (the
++    // streams' samples come in flushed at the portable floor:
++    // sync_mixing_graph_input.cc).
++    std::optional<media::ScopedPortableSubnormals> portable_subnormals;
++    if (portable) {
++      portable_subnormals.emplace();
++    }
 +    return mixing_graph_->OnMoreData(delay, delay_timestamp, glitch_info, dest);
 +  }
 +
@@ -63,7 +81,7 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
  OutputDeviceMixerImpl::OutputDeviceMixerImpl(
      const std::string& device_id,
      const media::AudioParameters& output_params,
-@@ -333,7 +374,11 @@ OutputDeviceMixerImpl::OutputDeviceMixerImpl(
+@@ -333,7 +385,11 @@ OutputDeviceMixerImpl::OutputDeviceMixerImpl(
                                   base::Unretained(this)),
                               base::BindRepeating(
                                   &OutputDeviceMixerImpl::OnMixingGraphError,
@@ -76,7 +94,7 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
    DCHECK(mixing_graph_output_params_.IsValid());
    DCHECK_EQ(mixing_graph_output_params_.format(),
              media::AudioParameters::AUDIO_PCM_LOW_LATENCY);
-@@ -416,6 +461,8 @@ void OutputDeviceMixerImpl::ProcessDeviceChange() {
+@@ -416,6 +472,8 @@ void OutputDeviceMixerImpl::ProcessDeviceChange() {
      base::AutoLock scoped_lock(listener_lock_);
      listeners_.clear();
    }
@@ -85,7 +103,7 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
  
    // Notify MixableOutputStream users of the device change. Normally they should
    // close the current stream they are holding to, create/open a new one and
-@@ -441,6 +488,11 @@ void OutputDeviceMixerImpl::StartListening(Listener* listener) {
+@@ -441,6 +499,11 @@ void OutputDeviceMixerImpl::StartListening(Listener* listener) {
  
    // A new listener came: cancel scheduled switch to independent playback.
    switch_to_unmixed_playback_delay_timer_.Stop();
@@ -97,7 +115,7 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
    {
      base::AutoLock scoped_lock(listener_lock_);
      DCHECK(!listeners_.contains(listener));
-@@ -483,6 +535,10 @@ void OutputDeviceMixerImpl::StopListening(Listener* listener) {
+@@ -483,6 +546,10 @@ void OutputDeviceMixerImpl::StopListening(Listener* listener) {
      CHECK(iter != listeners_.end());
      listeners_.erase(iter);
    }
@@ -108,7 +126,7 @@ index 07aba0f7e2d86cc44b45e937e2c34ac6db8005c0..d6e26e74fd7b71455b517d2d71004f86
  
    if (HasListeners()) {
      // We still have some listeners left, so no need to do anything.
-@@ -706,7 +762,8 @@ void OutputDeviceMixerImpl::StartMixingGraphPlayback() {
+@@ -706,7 +773,8 @@ void OutputDeviceMixerImpl::StartMixingGraphPlayback() {
    for (MixTrack* mix_track : active_tracks_)
      mix_track->StartProvidingAudioToMixingGraph();
  

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-index fea395bd22bade54c77a65bfec31e89b1d6d22a7..f4fe095f2e70a26fb78d57444e27cdba573c062c 100644
+index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2c565fa6d 100644
 --- a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 +++ b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 @@ -21,6 +21,7 @@
@@ -25,22 +25,56 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..f4fe095f2e70a26fb78d57444e27cdba
  #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
  #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
  #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
-@@ -847,8 +850,13 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
+@@ -271,9 +274,13 @@ Vector<blink::VideoInputDeviceCapabilities> ToVideoInputDeviceCapabilities(
+         input_capabilities) {
+   Vector<blink::VideoInputDeviceCapabilities> capabilities;
+   for (const auto& capability : input_capabilities) {
+-    capabilities.emplace_back(capability->device_id, capability->group_id,
+-                              capability->control_support, capability->formats,
+-                              capability->facing_mode);
++    // MoltBrowser: MoltNet's groups (moltnet_media_devices.h).
++    capabilities.emplace_back(
++        capability->device_id,
++        molt_fingerprinting::UniformGroupId(capability->device_id,
++                                            capability->group_id),
++        capability->control_support, capability->formats,
++        capability->facing_mode);
+   }
+ 
+   return capabilities;
+@@ -824,6 +831,11 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
+   }
+ 
+   for (const auto& device : audio_input_capabilities) {
++    // MoltBrowser: no communications device in MoltNet
++    // (moltnet_media_devices.h).
++    if (!molt_fingerprinting::ListsCaptureDevice(device->device_id)) {
++      continue;
++    }
+     // Find the first occurrence of blink::ProcessedLocalAudioSource that
+     // matches the same device ID as |device|. If more than one exists, any
+     // such source will contain the same non-reconfigurable settings that limit
+@@ -847,8 +859,17 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
      if (audio_source) {
        capabilities.emplace_back(audio_source);
      } else {
+-      capabilities.emplace_back(device->device_id, device->group_id,
+-                                device->parameters);
 +      // MoltBrowser: no platform effects on a MoltNet page's microphones
-+      // (media/base/molt_portable_media.h, PortableCaptureEffects).
++      // (media/base/molt_portable_media.h, PortableCaptureEffects), and
++      // MoltNet's groups (moltnet_media_devices.h).
 +      media::AudioParameters parameters = device->parameters;
 +      parameters.set_effects(
 +          media::PortableCaptureEffects(parameters.effects()));
-       capabilities.emplace_back(device->device_id, device->group_id,
--                                device->parameters);
-+                                parameters);
++      capabilities.emplace_back(
++          device->device_id,
++          molt_fingerprinting::UniformGroupId(device->device_id,
++                                              device->group_id),
++          parameters);
      }
    }
  
-@@ -1242,6 +1250,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
+@@ -1242,6 +1263,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
          *current_request_info_->request()->GetTransferId(), &result, &response);
      GotOpenDevice(current_request_info_->request_id(), result,
                    std::move(response));
@@ -58,7 +92,39 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..f4fe095f2e70a26fb78d57444e27cdba
    } else {
      // The browser replies to this request by invoking OnStreamsGenerated().
      GetMediaStreamDispatcherHost()->GenerateStreams(
-@@ -1832,8 +1851,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+@@ -1384,6 +1416,18 @@ void UserMediaProcessor::OnStreamsGenerated(
+   current_request_info_->set_state(RequestInfo::State::kGenerated);
+   current_request_info_->set_pan_tilt_zoom_allowed(pan_tilt_zoom_allowed);
+ 
++  // MoltBrowser: the cameras' and microphones' groups as MoltNet shows them
++  // (moltnet_media_devices.h; their names: InitializeSourceObject()).
++  for (const mojom::blink::StreamDevicesPtr& stream_devices :
++       stream_devices_set->stream_devices) {
++    if (stream_devices->audio_device.has_value()) {
++      molt_fingerprinting::UseUniformGroup(*stream_devices->audio_device);
++    }
++    if (stream_devices->video_device.has_value()) {
++      molt_fingerprinting::UseUniformGroup(*stream_devices->video_device);
++    }
++  }
++
+   for (const mojom::blink::StreamDevicesPtr& stream_devices :
+        stream_devices_set->stream_devices) {
+     MaybeLogStreamDevice(request_id, label, stream_devices->audio_device);
+@@ -1622,7 +1666,11 @@ void UserMediaProcessor::OnDeviceChanged(const MediaStreamDevice& old_device,
+   }
+ 
+   WebPlatformMediaStreamSource* const source_impl = source->GetPlatformSource();
+-  source_impl->ChangeSource(new_device);
++  // MoltBrowser: the new device's group as MoltNet shows it
++  // (moltnet_media_devices.h).
++  MediaStreamDevice uniform_new_device(new_device);
++  molt_fingerprinting::UseUniformGroup(uniform_new_device);
++  source_impl->ChangeSource(uniform_new_device);
+   source = FindLocalSource(new_device);
+   if (!source) {
+     return;
+@@ -1832,8 +1880,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
            &UserMediaProcessor::OnAudioSourceStartedOnAudioThread, task_runner_,
            WrapCrossThreadWeakPersistent(this)));
  
@@ -74,7 +140,20 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..f4fe095f2e70a26fb78d57444e27cdba
    audio_source->SetStopCallback(BindOnce(
        &UserMediaProcessor::OnLocalSourceStopped, WrapWeakPersistent(this)));
  
-@@ -2254,6 +2279,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
+@@ -1863,7 +1917,11 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+ #endif  // DCHECK_IS_ON()
+ 
+   MediaStreamSource::Capabilities capabilities;
+-  media::AudioParameters device_parameters = audio_source->device().input;
++  // MoltBrowser: a MoltNet page's microphones all report one format
++  // (media/base/molt_portable_media.h, PortableCaptureParameters); the source
++  // still opens the device in its own.
++  media::AudioParameters device_parameters =
++      media::PortableCaptureParameters(audio_source->device().input);
+   capabilities.echo_cancellation = GetSupportedEchoCancellationModes(
+       device_parameters.effects(), device.type);
+   capabilities.auto_gain_control = {true, false};
+@@ -2254,6 +2312,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
        "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
        current_request_info_->request_id(), constraint_name.Ascii().c_str()));
  
@@ -107,3 +186,18 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..f4fe095f2e70a26fb78d57444e27cdba
    // Completing the getUserMedia request can lead to that the RenderFrame and
    // the UserMediaClient/UserMediaProcessor are destroyed if the JavaScript
    // code request the frame to be destroyed within the scope of the callback.
+@@ -2310,10 +2394,12 @@ MediaStreamSource* UserMediaProcessor::InitializeSourceObject(
+                                            ? MediaStreamSource::kTypeAudio
+                                            : MediaStreamSource::kTypeVideo;
+ 
++  // MoltBrowser: a camera's or microphone's label as MoltNet shows it
++  // (moltnet_media_devices.h).
+   auto* source = MakeGarbageCollected<MediaStreamSource>(
+       String::FromUtf8(device.id), device.display_id, type,
+-      String::FromUtf8(device.name), false /* remote */,
+-      std::move(platform_source));
++      String::FromUtf8(molt_fingerprinting::UniformName(device)),
++      false /* remote */, std::move(platform_source));
+   if (device.group_id) {
+     source->SetGroupId(String::FromUtf8(*device.group_id));
+   }
