@@ -64,6 +64,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
       const ProxyChain& proxy_chain,
       const NetworkAnonymizationKey& network_anonymization_key,
       bool molt_no_cert_fetches = false) override;
+  void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
+                                   const char* net_log_reason_utf8) override;
 
   // Creates a Value summary of the state of the socket pools.
   base::Value SocketPoolInfoToValue() const override;

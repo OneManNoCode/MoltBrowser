@@ -416,6 +416,23 @@ void SpdySessionPool::CloseCurrentIdleSessions(const std::string& description) {
   CloseCurrentSessionsHelper(ERR_ABORTED, description, true /* idle_only */);
 }
 
+// MoltBrowser: see the header; as CloseCurrentSessionsHelper(), idle only.
+void SpdySessionPool::MoltCloseIdleSessionsOfNonce(
+    const base::UnguessableToken& nonce,
+    const std::string& description) {
+  WeakSessionList current_sessions = GetCurrentSessions();
+  for (base::WeakPtr<SpdySession>& session : current_sessions) {
+    if (!session || session->is_active() || session->IsDraining() ||
+        session->spdy_session_key().network_anonymization_key().GetNonce() !=
+            nonce) {
+      continue;
+    }
+    session->CloseSessionOnError(ERR_ABORTED, description);
+    NotifyOnSessionClosed(session->spdy_session_key(),
+                          session->WasEverUsedToCreateStreams());
+  }
+}
+
 void SpdySessionPool::CloseAllSessions() {
   auto is_draining = [](const SpdySession* s) { return s->IsDraining(); };
   // Repeat until every SpdySession owned by |this| is draining.

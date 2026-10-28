@@ -18,6 +18,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory_coordinator/async_memory_consumer_registration.h"
 #include "base/memory_coordinator/memory_consumer.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_address.h"
 #include "net/base/net_export.h"
@@ -104,6 +105,12 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
   // Removes all entries from the cache and updates the generation number.
   // Future insertions will be ignored unless they match the new generation.
   void Flush();
+
+  // MoltBrowser: removes the entries kept under a network key with `nonce`
+  // (a gone page's credentialless frames', which no other request carries:
+  // services/network/molt_nonce_drop_policy.h). The generation number stays,
+  // so other sites' sessions under way are still cached.
+  void MoltFlushForNonce(const base::UnguessableToken& nonce);
 
   void SetClockForTesting(base::Clock* clock);
 

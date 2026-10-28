@@ -19,6 +19,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/types/expected.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/load_timing_info.h"
@@ -324,6 +325,13 @@ class NET_EXPORT SpdySessionPool
   // Let any new ones created while this method is running continue to
   // live.
   void CloseCurrentIdleSessions(const std::string& description);
+
+  // MoltBrowser: as CloseCurrentIdleSessions(), for the sessions whose key
+  // carries a network key with `nonce` (a gone page's credentialless
+  // frames', which no other request carries:
+  // services/network/molt_nonce_drop_policy.h).
+  void MoltCloseIdleSessionsOfNonce(const base::UnguessableToken& nonce,
+                                    const std::string& description);
 
   // Repeatedly close all SpdySessions until all of them (including new ones
   // created in the process of closing the current ones, and new ones created in

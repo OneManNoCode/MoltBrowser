@@ -16,6 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/types/expected.h"
 #include "base/types/strong_alias.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/cors/preflight_cache.h"
@@ -116,6 +117,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
   // It clears origins selectively when the url filter is not null, otherwise
   // clears all its contents.
   void ClearCorsPreflightCache(mojom::ClearDataFilterPtr url_filter);
+
+  // MoltBrowser: clears the cache's entries kept under a network key with
+  // `nonce` (PreflightCache::MoltClearForNonce()).
+  void MoltClearCorsPreflightCacheForNonce(const base::UnguessableToken& nonce);
 
   PreflightCache& GetPreflightCacheForTesting() { return cache_; }
 

@@ -11,6 +11,7 @@
 
 #include <vector>
 
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "base/values.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/net_export.h"
@@ -84,6 +85,13 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
       const ProxyChain& proxy_chain,
       const NetworkAnonymizationKey& network_anonymization_key,
       bool molt_no_cert_fetches = false);
+
+  // MoltBrowser: closes the idle sockets whose network key carries `nonce`
+  // (a gone page's credentialless frames':
+  // services/network/molt_nonce_drop_policy.h), in a manager with per-site
+  // pools (MoltNet's); nothing in any other.
+  virtual void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
+                                           const char* net_log_reason_utf8);
 
   // Creates a Value summary of the state of the socket pools.
   virtual base::Value SocketPoolInfoToValue() const = 0;

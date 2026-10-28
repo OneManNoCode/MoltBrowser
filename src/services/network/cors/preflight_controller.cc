@@ -644,6 +644,12 @@ void PreflightController::ClearCorsPreflightCache(
   cache_.ClearCache(std::move(url_filter));
 }
 
+// MoltBrowser: see the header.
+void PreflightController::MoltClearCorsPreflightCacheForNonce(
+    const base::UnguessableToken& nonce) {
+  cache_.MoltClearForNonce(nonce);
+}
+
 void PreflightController::RemoveLoader(PreflightLoader* loader) {
   auto it = loaders_.find(loader);
   CHECK(it != loaders_.end());

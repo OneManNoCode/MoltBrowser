@@ -23,6 +23,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/address_list.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/load_states.h"
@@ -306,6 +307,24 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
     }
     CloseOneIdleConnectionInHigherLayeredPool();
     return true;
+  }
+  // Closes the idle sockets of the groups whose network key carries `nonce`
+  // (a gone page's credentialless frames', which no other request carries:
+  // services/network/molt_nonce_drop_policy.h). Sockets in use stay.
+  void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
+                                   const char* net_log_reason_utf8) {
+    if (idle_socket_count_ == 0) {
+      return;
+    }
+    std::vector<GroupId> groups;
+    for (const auto& [group_id, group] : group_map_) {
+      if (group_id.network_anonymization_key().GetNonce() == nonce) {
+        groups.push_back(group_id);
+      }
+    }
+    for (const GroupId& group_id : groups) {
+      CloseIdleSocketsInGroup(group_id, net_log_reason_utf8);
+    }
   }
 
   bool RequestInGroupWithHandleHasJobForTesting(

@@ -17,6 +17,7 @@
 #include "base/time/default_clock.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/http/http_auth.h"
@@ -213,6 +214,12 @@ class NET_EXPORT HttpAuthCache {
 
   // Clears all added entries. Returns true if any entries were cleared.
   bool ClearAllEntries();
+
+  // MoltBrowser: clears the server entries kept under a network key with
+  // `nonce` (a gone page's credentialless frames', which no other request
+  // carries: services/network/molt_nonce_drop_policy.h). Returns true if any
+  // were cleared.
+  bool MoltClearEntriesForNonce(const base::UnguessableToken& nonce);
 
   // Updates a stale digest entry on server |scheme_host_port| for realm |realm|
   // and scheme |scheme|. The cached auth challenge is replaced with

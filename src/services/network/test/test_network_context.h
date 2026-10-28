@@ -413,6 +413,9 @@ class TestNetworkContext : public mojom::NetworkContext {
       RestrictNetworkForIdsCallback callback) override {}
   void ClearNetworkRestrictions(const std::vector<base::UnguessableToken>&
                                     network_restrictions_ids) override {}
+  // MoltBrowser:
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     mojom::MoltNonceDrop drop) override {}
   void Prefetch(
       int32_t request_id,
       uint32_t options,

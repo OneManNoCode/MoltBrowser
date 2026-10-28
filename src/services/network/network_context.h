@@ -100,6 +100,7 @@ class UnguessableToken;
 
 namespace net {
 class CertVerifier;
+class CookieMonster;  // MoltBrowser
 class HostPortPair;
 class IsolationInfo;
 class NetworkAnonymizationKey;
@@ -623,6 +624,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       RestrictNetworkForIdsCallback callback) override;
   void ClearNetworkRestrictions(const std::vector<base::UnguessableToken>&
                                     network_restrictions_ids) override;
+  // MoltBrowser: see network_context.mojom and
+  // services/network/molt_nonce_drop_policy.h.
+  void MoltDropNonce(const base::UnguessableToken& nonce,
+                     mojom::MoltNonceDrop drop) override;
   void Prefetch(
       int32_t request_id,
       uint32_t options,
@@ -687,6 +692,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   // network session, with a session of their own or none at all
   // (services/network/molt_own_session_sockets_policy.h): not MoltNet's.
   bool MoltAllowsOwnSessionSockets() const;
+  // MoltBrowser: the cookie store MakeURLRequestContext() made with
+  // MoltNet's nonce limits (NetworkContextParams::molt_nonce_limits), or
+  // null (net/cookies/molt_nonce_cookie_policy.h).
+  net::CookieMonster* MoltNonceCookieStore();
 
   void set_max_loaders_per_process_for_testing(uint32_t count) {
     max_loaders_per_process_ = count;

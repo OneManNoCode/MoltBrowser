@@ -11,6 +11,7 @@
 #include <tuple>
 
 #include "base/component_export.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/network_isolation_key.h"
 #include "net/http/http_request_headers.h"
 #include "services/network/cors/preflight_result.h"
@@ -63,6 +64,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightCache final {
       bool is_ad_auction_trusted_signals_request);
 
   void ClearCache(mojom::ClearDataFilterPtr url_filter);
+
+  // MoltBrowser: removes the entries kept under a network key with `nonce`
+  // (a gone page's credentialless frames', which no other request carries:
+  // services/network/molt_nonce_drop_policy.h).
+  void MoltClearForNonce(const base::UnguessableToken& nonce);
 
   // Counts cached entries for testing.
   size_t CountEntriesForTesting() const;

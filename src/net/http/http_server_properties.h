@@ -24,6 +24,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_address.h"
@@ -246,6 +247,14 @@ class NET_EXPORT HttpServerProperties
   // and invokes the callback asynchronously once changes have been written to
   // disk.
   void Clear(base::OnceClosure callback);
+
+  // MoltBrowser: forgets what is kept for servers under a network key with
+  // `nonce` (a gone page's credentialless frames', which no other request
+  // carries: services/network/molt_nonce_drop_policy.h): their HTTP/2
+  // support, alternative services, network statistics, HTTP/1.1 requirement,
+  // canonical hosts and QUIC server information. Marks of broken alternative
+  // services keep their own expiry.
+  void MoltClearForNonce(const base::UnguessableToken& nonce);
 
   // Returns true if `server`, in the context of `network_anonymization_key`,
   // has previously supported a network protocol which honors request

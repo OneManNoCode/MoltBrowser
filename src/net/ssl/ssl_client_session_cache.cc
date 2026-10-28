@@ -159,6 +159,19 @@ void SSLClientSessionCache::Flush() {
   cache_.Clear();
 }
 
+// MoltBrowser: see the header.
+void SSLClientSessionCache::MoltFlushForNonce(
+    const base::UnguessableToken& nonce) {
+  auto iter = cache_.begin();
+  while (iter != cache_.end()) {
+    if (iter->first.network_anonymization_key.GetNonce() == nonce) {
+      iter = cache_.Erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+}
+
 void SSLClientSessionCache::SetClockForTesting(base::Clock* clock) {
   clock_ = clock;
 }

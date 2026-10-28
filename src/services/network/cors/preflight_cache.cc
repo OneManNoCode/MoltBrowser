@@ -181,6 +181,13 @@ void PreflightCache::ClearCache(mojom::ClearDataFilterPtr url_filter) {
   }
 }
 
+// MoltBrowser: see the header.
+void PreflightCache::MoltClearForNonce(const base::UnguessableToken& nonce) {
+  std::erase_if(cache_, [&nonce](const auto& entry) {
+    return std::get<2>(entry.first).GetNonce() == nonce;
+  });
+}
+
 size_t PreflightCache::CountEntriesForTesting() const {
   return cache_.size();
 }

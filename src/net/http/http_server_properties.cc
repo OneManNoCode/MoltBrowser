@@ -8,6 +8,7 @@
 
 #include "base/check_op.h"
 #include "base/containers/adapters.h"
+#include "base/containers/flat_map.h"  // MoltBrowser
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -211,6 +212,49 @@ void HttpServerProperties::Clear(base::OnceClosure callback) {
   } else if (callback) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, std::move(callback));
+  }
+}
+
+// MoltBrowser: see the header.
+void HttpServerProperties::MoltClearForNonce(
+    const base::UnguessableToken& nonce) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  bool changed = false;
+  for (auto it = server_info_map_.begin(); it != server_info_map_.end();) {
+    if (it->first.network_anonymization_key.GetNonce() == nonce) {
+      it = server_info_map_.Erase(it);
+      changed = true;
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = servers_requiring_http_11_.begin();
+       it != servers_requiring_http_11_.end();) {
+    if (it->network_anonymization_key.GetNonce() == nonce) {
+      it = servers_requiring_http_11_.Erase(it);
+    } else {
+      ++it;
+    }
+  }
+  changed |= base::EraseIf(canonical_alt_svc_map_, [&nonce](const auto& entry) {
+               return entry.first.network_anonymization_key.GetNonce() ==
+                      nonce;
+             }) > 0;
+  for (auto it = quic_server_info_map_.begin();
+       it != quic_server_info_map_.end();) {
+    if (it->first.network_anonymization_key.GetNonce() == nonce) {
+      it = quic_server_info_map_.Erase(it);
+      changed = true;
+    } else {
+      ++it;
+    }
+  }
+  changed |=
+      base::EraseIf(canonical_server_info_map_, [&nonce](const auto& entry) {
+        return entry.first.network_anonymization_key.GetNonce() == nonce;
+      }) > 0;
+  if (changed) {
+    MaybeQueueWriteProperties();
   }
 }
 

@@ -332,6 +332,14 @@ bool HttpAuthCache::ClearAllEntries() {
   return true;
 }
 
+// MoltBrowser: see the header.
+bool HttpAuthCache::MoltClearEntriesForNonce(
+    const base::UnguessableToken& nonce) {
+  return std::erase_if(entries_, [&nonce](const EntryMap::value_type& entry) {
+           return entry.first.network_anonymization_key.GetNonce() == nonce;
+         }) > 0;
+}
+
 bool HttpAuthCache::UpdateStaleChallenge(
     const url::SchemeHostPort& scheme_host_port,
     HttpAuth::Target target,
