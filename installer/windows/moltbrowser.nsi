@@ -153,6 +153,37 @@ Section "MoltBrowser (required)" SecMain
   ; tor\ ocr\ whisper\ dirs whenever the stage step includes them.
   File /r "${STAGE_DIR}\*.*"
 
+  ; The OCR and voice helpers (tesseract in ocr\, whisper-cli in whisper\)
+  ; read untrusted files, so each run is a less-privileged AppContainer of
+  ; its own (chrome/browser/molt_ai/common/helper_sandbox_win_policy.h). It
+  ; may read and run its own folder only, through MoltBrowser's capability
+  ; lpacMoltBrowserHelperFiles, granted here on these two folders and
+  ; nowhere else:
+  ;   S-1-15-3-1024-3499754957-3417772683-1255750666-3341737774-
+  ;   2438675945-3280382303-1781483004-2555713060
+  ; (base::win::Sid::FromNamedCapability()'s derivation from the name;
+  ; HelperSandboxWinPolicyTest.TheCapabilitySidIsItsNames checks it), read
+  ; and execute inherited by files and folders, as above. After the files
+  ; are extracted, so only folders this build ships get it; icacls
+  ; propagates it to what is already in them. Best effort: if it fails, the
+  ; browser works, but OCR and voice say they need the installer. The
+  ; portable ZIP can't do this either; see
+  ; docs/design/SANDBOXED_INFERENCE.md, section 2.4a.
+  IfFileExists "$INSTDIR\ocr\*.*" 0 helperAclOcrDone
+    DetailPrint "Allowing the OCR helper's sandbox to read $INSTDIR\ocr"
+    nsExec::ExecToLog '"$SYSDIR\icacls.exe" "$INSTDIR\ocr" /grant "*S-1-15-3-1024-3499754957-3417772683-1255750666-3341737774-2438675945-3280382303-1781483004-2555713060:(OI)(CI)(RX)"'
+    Pop $0
+    StrCmp $0 "0" helperAclOcrDone 0
+      DetailPrint "Warning: icacls returned $0; OCR may not start."
+  helperAclOcrDone:
+  IfFileExists "$INSTDIR\whisper\*.*" 0 helperAclWhisperDone
+    DetailPrint "Allowing the voice helper's sandbox to read $INSTDIR\whisper"
+    nsExec::ExecToLog '"$SYSDIR\icacls.exe" "$INSTDIR\whisper" /grant "*S-1-15-3-1024-3499754957-3417772683-1255750666-3341737774-2438675945-3280382303-1781483004-2555713060:(OI)(CI)(RX)"'
+    Pop $0
+    StrCmp $0 "0" helperAclWhisperDone 0
+      DetailPrint "Warning: icacls returned $0; voice input may not start."
+  helperAclWhisperDone:
+
   ; The portable-zip stage ships the raw chrome.exe. Shortcuts and registry
   ; below all point at MoltBrowser.exe, so normalize the name here: if the
   ; staged tree did not already rename it, rename in place after extraction.
