@@ -1780,13 +1780,14 @@ void CookieMonster::SetCanonicalCookie(
   // MoltBrowser: with MoltNet's limits, a cookie for a page's nonce
   // partition is refused while its nonce is (its page went, or lives on past
   // its site's bound), and when the nonce's other partitions leave it no
-  // room; then, as for a cookie blocked by settings, nothing is stored or
-  // replaced (molt_nonce_cookie_policy.h).
+  // room (an expired one, which only deletes, takes none); then, as for a
+  // cookie blocked by settings, nothing is stored or replaced
+  // (molt_nonce_cookie_policy.h).
   if (molt_nonce_cookies_ && cc->IsPartitioned() &&
       cc->PartitionKey()->nonce() &&
-      molt_nonce_cookies_->Refuses(*cc->PartitionKey()->nonce(),
-                                   *cc->PartitionKey(),
-                                   NameValueSizeBytes(*cc))) {
+      molt_nonce_cookies_->Refuses(
+          *cc->PartitionKey()->nonce(), *cc->PartitionKey(),
+          already_expired ? size_t{0} : NameValueSizeBytes(*cc))) {
     access_result.status.AddExclusionReason(
         CookieInclusionStatus::ExclusionReason::EXCLUDE_USER_PREFERENCES);
   }
