@@ -2910,6 +2910,7 @@ and its frames. The kill switch turns it off.
 |---|---|
 | `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`), what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`), the labels and groups (`DeviceLabel`, `DeviceGroup`) and the communications device (`ListsAudioDevice`, `OutputDeviceIdToLookUp`); std-only (+ `moltnet_media_values_unittest.cc`) |
 | `core/molt_fingerprinting/moltnet_camera_values.{h,cc}` | the cameras' menu, the entries a camera shows (`ReachableUniformCameraModes`) and the mode it opens in (`UniformCameraOpenMode`); std-only (+ `moltnet_camera_values_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_camera_menu.{h,cc}` | those rules for Blink's modules, from the core component (`UniformCameraMenu`, `UniformCameraOpeningFor`) |
 | `modules/mediastream/moltnet_camera.{h,cc}` | the cameras' Blink glue: the formats constraints are checked against and capabilities come from (`UseUniformCameraFormats`, `UniformCameraFormats`), the track's settings and their mark in `VideoTrackAdapterSettings` (`UniformCameraSettings`), the mode the device opens in (`UniformCameraCaptureParams`), the frames (`UniformCameraFrameSize`, `AdaptUniformCameraFrame`) and `getSettings()` (`UseUniformCameraTrackSettings`) |
 | `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | the Blink glue: the added entries, `devicechange`, the permission request; the names and groups (`UseUniformNames`, `UniformName`, `UseUniformGroup`, `UniformGroupId`), the lists (`ListsMediaDevice`, `ListsCaptureDevice`) and `InputDeviceInfo`'s format (`UseUniformCapabilities`) (+ `moltnet_media_devices_test.cc`) |
 | `media/base/molt_portable_media.{h,cc}` | the one format: `PortableCaptureParameters()` (what pages read and constraints are checked against), `PortableCaptureOutputFormat()` (what a stream is delivered in) (+ cases in `molt_portable_media_unittest.cc`) |
@@ -4853,7 +4854,7 @@ audio_renderer_algorithm.cc` (`RunWsolaAndFill`,
 (`PortableMixing`), Blink's `platform/audio/denormal_disabler.h`
 (`DenormalModifier`, `FlushDenormalFloatToZero`) and its `DEPS`,
 `modules/webaudio/audio_handler.cc` (`ProcessIfNecessary`),
-`platform/audio/iir_filter.cc` (`IIRFilter::Process`; new in `src/`),
+`platform/audio/iir_filter.cc` (`IIRFilter::Process`),
 `platform/image-decoders/avif/avif_image_decoder.cc` (`DecodeToYUV`), and
 WebRTC's `modules/audio_processing/audio_processing_impl.{h,cc}` (the
 input's floor and noise floor; the `DenormalDisabler`s off in the mode).
