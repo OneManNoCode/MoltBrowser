@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (13 FAIL, 0 ERROR, 183 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (14 FAIL, 0 ERROR, 187 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -278,6 +278,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | Status | Check | Reference |
 |---|---|---|
 | FAIL | audio.mic_processed_stable is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
+| FAIL | audio.mic_remote_only is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | FAIL | fonts.visible is uniform | FINGERPRINTING.md "Fonts" |
 | FAIL | nav.hardwareConcurrency is uniform | FINGERPRINTING.md "Surface covered" |
 | FAIL | win.innerWidth is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
@@ -292,7 +293,11 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | audio.channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.channel_count_3 is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.max_channel_count is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
+| PASS | audio.mic_capabilities is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
+| PASS | audio.mic_remote_only_settings is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | PASS | audio.mic_settings is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
+| PASS | audio.mic_system_aec is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
+| PASS | audio.mic_system_aec_settings is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | PASS | audio.output_latency is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.output_timestamp_ok is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | audio.playback_latency_max is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
@@ -498,6 +503,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 
 - **FAIL** audio.mic_processed_stable is uniform
   - mic\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual false, expected true
+- **FAIL** audio.mic_remote_only is uniform
+  - mic\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual {"frames": 480, "hash": "5d18e0b2c9a47f3e6b01d2a8"}, expected audio.mic_processed ({'frames': 480, 'hash': '0f4c2a9e71b3d8565ae0c4f1'})
 - **FAIL** fonts.visible is uniform
   - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)
 - **FAIL** nav.hardwareConcurrency is uniform

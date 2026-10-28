@@ -577,15 +577,66 @@
    "phase": "mic_processing",
    "target": "moltnet",
    "values": {
+    "audio.mic_capabilities": {
+     "autoGainControl": [
+      "false",
+      "true"
+     ],
+     "echoCancellation": [
+      "all",
+      "false",
+      "remote-only",
+      "true"
+     ],
+     "noiseSuppression": [
+      "false",
+      "true"
+     ],
+     "voiceIsolation": [
+      "false"
+     ]
+    },
+    "audio.mic_playback": {
+     "frames": 480,
+     "hash": "c83e5f02a9d4b7160e2f9a4c"
+    },
+    "audio.mic_playback_tones": {
+     "rates": [
+      48000,
+      44100
+     ],
+     "state": [
+      "running",
+      "running"
+     ]
+    },
     "audio.mic_processed": {
      "frames": 480,
      "hash": "0f4c2a9e71b3d8565ae0c4f1"
     },
     "audio.mic_processed_stable": false,
+    "audio.mic_remote_only": {
+     "frames": 480,
+     "hash": "5d18e0b2c9a47f3e6b01d2a8"
+    },
+    "audio.mic_remote_only_settings": {
+     "autoGainControl": true,
+     "echoCancellation": "remote-only",
+     "noiseSuppression": true
+    },
     "audio.mic_sample_rate": 48000,
     "audio.mic_settings": {
      "autoGainControl": true,
      "echoCancellation": true,
+     "noiseSuppression": true
+    },
+    "audio.mic_system_aec": {
+     "frames": 480,
+     "hash": "0f4c2a9e71b3d8565ae0c4f1"
+    },
+    "audio.mic_system_aec_settings": {
+     "autoGainControl": true,
+     "echoCancellation": "all",
      "noiseSuppression": true
     }
    },

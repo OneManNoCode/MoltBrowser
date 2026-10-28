@@ -21,6 +21,7 @@
 #include "build/build_config.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/capture/video_capture_types.h"
 #include "media/media_buildflags.h"
 #include "media/webrtc/constants.h"
@@ -849,8 +850,13 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
     if (audio_source) {
       capabilities.emplace_back(audio_source);
     } else {
+      // MoltBrowser: no platform effects on a MoltNet page's microphones
+      // (media/base/molt_portable_media.h, PortableCaptureEffects).
+      media::AudioParameters parameters = device->parameters;
+      parameters.set_effects(
+          media::PortableCaptureEffects(parameters.effects()));
       capabilities.emplace_back(device->device_id, device->group_id,
-                                device->parameters);
+                                parameters);
     }
   }
 
@@ -1845,8 +1851,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
           &UserMediaProcessor::OnAudioSourceStartedOnAudioThread, task_runner_,
           WrapCrossThreadWeakPersistent(this)));
 
+  // MoltBrowser: the source opens a MoltNet page's microphone without
+  // platform effects, and its capabilities say so
+  // (media/base/molt_portable_media.h, PortableCaptureEffects).
+  MediaStreamDevice uniform_device(device);
+  uniform_device.input.set_effects(
+      media::PortableCaptureEffects(device.input.effects()));
   std::unique_ptr<blink::MediaStreamAudioSource> audio_source =
-      CreateAudioSource(device, std::move(source_ready));
+      CreateAudioSource(uniform_device, std::move(source_ready));
   audio_source->SetStopCallback(BindOnce(
       &UserMediaProcessor::OnLocalSourceStopped, WrapWeakPersistent(this)));
 

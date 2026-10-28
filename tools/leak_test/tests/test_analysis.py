@@ -159,6 +159,13 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['uniform.audio.mic_settings'], 'PASS')
         self.assertEqual(status['uniform.audio.mic_processed_stable'],
                          'FAIL')
+        self.assertEqual(status['uniform.audio.mic_capabilities'], 'PASS')
+        self.assertEqual(status['uniform.audio.mic_system_aec'], 'PASS')
+        self.assertEqual(status['uniform.audio.mic_system_aec_settings'],
+                         'PASS')
+        self.assertEqual(status['uniform.audio.mic_remote_only'], 'FAIL')
+        self.assertEqual(status['uniform.audio.mic_remote_only_settings'],
+                         'PASS')
         self.assertEqual(rep['arch'], 'x86_64')
 
     def test_report_rebuilds_into_another_directory(self):
@@ -903,20 +910,61 @@ class Uniformity(unittest.TestCase):
         self.assertEqual(uniformity.arch_of(None), 'unknown')
 
     def test_mic_record_rules(self):
+        processing = {'echoCancellation': True, 'noiseSuppression': True,
+                      'autoGainControl': True}
+        plain = {'hash': '0f4c2a9e71b3d8565ae0c4f1', 'frames': 480}
         rec = {'label': 'mic', 'kind': 'mic', 'target': 'moltnet',
-               'values': {'audio.mic_processed_stable': True,
-                          'audio.mic_settings': {
-                              'echoCancellation': True,
-                              'noiseSuppression': True,
-                              'autoGainControl': True}}}
+               'values': {
+                   'audio.mic_processed': dict(plain),
+                   'audio.mic_processed_stable': True,
+                   'audio.mic_settings': dict(processing),
+                   'audio.mic_capabilities': {
+                       'echoCancellation': ['all', 'false', 'remote-only',
+                                            'true'],
+                       'autoGainControl': ['false', 'true'],
+                       'noiseSuppression': ['false', 'true'],
+                       'voiceIsolation': ['false']},
+                   'audio.mic_system_aec': dict(plain),
+                   'audio.mic_system_aec_settings': dict(
+                       processing, echoCancellation='all'),
+                   'audio.mic_remote_only': dict(plain),
+                   'audio.mic_remote_only_settings': dict(
+                       processing, echoCancellation='remote-only'),
+                   # Recorded only: the echo canceller hears the tones.
+                   'audio.mic_playback': {'hash': 'other', 'frames': 480}}}
         res = uniformity.check_record(rec, 'Linux', 'x86_64')
         self.assertEqual(sorted(r['key'] for r in res),
                          sorted(r[0] for r in ex.MIC_RULES))
         self.assertTrue(all(r['status'] == 'PASS' for r in res), res)
-        rec['values']['audio.mic_settings']['noiseSuppression'] = False
+        # The same on every OS (no per-OS expectations).
+        for os_name in ('Windows', 'macOS'):
+            self.assertTrue(all(r['status'] == 'PASS' for r in
+                                uniformity.check_record(rec, os_name)))
+        self.assertNotIn('audio.mic_playback',
+                         [r[0] for r in ex.MIC_RULES])
+        self.assertIn('audio.mic_playback', ex.INFO_KEYS)
+        values = rec['values']
+        values['audio.mic_settings']['noiseSuppression'] = False
+        # System echo cancellation that isn't WebRTC's gives other samples,
+        # and a platform's voice isolation shows in the capabilities.
+        values['audio.mic_system_aec'] = {'hash': 'other', 'frames': 480}
+        values['audio.mic_capabilities']['voiceIsolation'] = ['false',
+                                                              'true']
+        values['audio.mic_remote_only'] = 'silent'
+        values['audio.mic_remote_only_settings']['echoCancellation'] = True
         res = {r['key']: r['status'] for r in uniformity.check_record(
             rec, 'Linux')}
-        self.assertEqual(res['audio.mic_settings'], 'FAIL')
+        for key in ('audio.mic_settings', 'audio.mic_system_aec',
+                    'audio.mic_capabilities', 'audio.mic_remote_only',
+                    'audio.mic_remote_only_settings'):
+            self.assertEqual(res[key], 'FAIL', key)
+        self.assertEqual(res['audio.mic_system_aec_settings'], 'PASS')
+        # A case whose getUserMedia() failed is reported, not compared.
+        values['audio.mic_remote_only'] = {'error': 'NotReadableError',
+                                           'message': ''}
+        res = {r['key']: r['status'] for r in uniformity.check_record(
+            rec, 'Linux')}
+        self.assertEqual(res['audio.mic_remote_only'], 'SKIP')
 
     def test_new_probes_are_collected(self):
         # Every new key a rule or the diff covers is reported by a page.
@@ -930,7 +978,11 @@ class Uniformity(unittest.TestCase):
                     'audio.stretched'):
             self.assertIn("'%s'" % key, fp, key)
         for key in ('audio.mic_processed', 'audio.mic_processed_stable',
-                    'audio.mic_settings', 'audio.mic_sample_rate'):
+                    'audio.mic_settings', 'audio.mic_sample_rate',
+                    'audio.mic_capabilities', 'audio.mic_system_aec',
+                    'audio.mic_system_aec_settings', 'audio.mic_remote_only',
+                    'audio.mic_remote_only_settings', 'audio.mic_playback',
+                    'audio.mic_playback_tones'):
             self.assertIn("'%s'" % key, mic, key)
         for key in ('audio.stretched', 'pixels.jxl', 'cpu.float16_nan',
                     'audio.mic_processed'):
@@ -938,11 +990,16 @@ class Uniformity(unittest.TestCase):
         self.assertNotIn('cpu.wasm_simd', ex.INFO_KEYS)
         self.assertTrue(set(ex.ARCH_KEYS) <= set(ex.DIFF_KEYS) |
                         set(r[0] for r in ex.FULL_RULES))
-        # The harness times the stretched audio with a user gesture.
+        # The harness times the stretched audio with a user gesture, and
+        # runs the microphone's playback cases after the others.
         with open(harness.__file__) as f:
-            self.assertIn('mlStretchedAudio()', f.read())
+            source = f.read()
+        self.assertIn('mlStretchedAudio()', source)
+        self.assertLess(source.index('mlMicProcessing()'),
+                        source.index('mlMicPlayback()'))
         self.assertIn('window.mlStretchedAudio', fp)
         self.assertIn('window.mlMicProcessing', mic)
+        self.assertIn('window.mlMicPlayback', mic)
 
     def test_every_rule_has_a_doc_and_known_operator(self):
         ops = set()
@@ -989,14 +1046,22 @@ class Uniformity(unittest.TestCase):
         mic = [{'label': 'mic', 'dsf': 1.0, 'window': None,
                 'zoom_requested': 100, 'target': 'moltnet', 'kind': 'mic',
                 'values': {'audio.mic_processed': {'hash': 'a'},
-                           'audio.mic_sample_rate': 48000}}]
+                           'audio.mic_sample_rate': 48000,
+                           'audio.mic_system_aec': {'hash': 'a'},
+                           'audio.mic_remote_only': {'hash': 'a'},
+                           'audio.mic_playback': {'hash': 'c'}}}]
         mic_b = copy.deepcopy(mic)
-        mic_b[0]['values']['audio.mic_processed'] = {'hash': 'b'}
+        for key in ('audio.mic_processed', 'audio.mic_system_aec',
+                    'audio.mic_remote_only', 'audio.mic_playback'):
+            mic_b[0]['values'][key] = {'hash': 'b'}
         mic_b[0]['values']['audio.mic_sample_rate'] = 44100
         _, diffs = uniformity.diff_records(mic, mic_b)
         self.assertEqual(sorted((d['key'], d['severity']) for d in diffs),
-                         [('audio.mic_processed', 'fail'),
-                          ('audio.mic_sample_rate', 'info')])
+                         [('audio.mic_playback', 'info'),
+                          ('audio.mic_processed', 'fail'),
+                          ('audio.mic_remote_only', 'fail'),
+                          ('audio.mic_sample_rate', 'info'),
+                          ('audio.mic_system_aec', 'fail')])
 
     def test_diff_reports(self):
         tmp = tempfile.mkdtemp()

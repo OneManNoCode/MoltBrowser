@@ -1885,7 +1885,9 @@ class Run(object):
         device playing the run's WAV (leakkit/micinput.py) and its fake
         permission UI, which grants the page the microphone without a
         prompt. mic.html reads the processed samples twice, each time from a
-        new stream, and the record (kind "mic") is compared between runs."""
+        new stream, then with system echo cancellation ("all"), then, while
+        it plays two tones, with "remote-only" and with the default echo
+        cancellation; the record (kind "mic") is compared between runs."""
         phase = self.phase_begin('mic_processing')
         wav = self.user_write('mic-input.wav', micinput.wav_bytes())
         flags = ['--use-fake-device-for-media-stream',
@@ -1905,10 +1907,21 @@ class Run(object):
             err = self.cdp.navigate(sid, url, timeout=90)
             if err:
                 raise RuntimeError('mic.html: %s' % err)
-            values = self.cdp.evaluate(sid, 'mlMicProcessing()', timeout=60,
+            values = self.cdp.evaluate(sid, 'mlMicProcessing()', timeout=90,
                                        user_gesture=True)
             if not isinstance(values, dict):
                 raise RuntimeError('mic.html returned %r' % (values,))
+            # The playback cases start two AudioContexts: a gesture of
+            # their own, and only after the cases above, which must hear
+            # nothing played (an output stream, even a silent one, becomes
+            # the echo canceller's reference).
+            playback = self.cdp.evaluate(sid, 'mlMicPlayback()', timeout=90,
+                                         user_gesture=True)
+            if isinstance(playback, dict):
+                values.update(playback)
+            else:
+                values['audio.mic_remote_only'] = {
+                    'error': 'mic.html returned %r' % (playback,)}
             self.manifest['fingerprints'].append({
                 'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
                 'window': None, 'zoom_requested': 100, 'kind': 'mic',
