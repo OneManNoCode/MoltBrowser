@@ -409,6 +409,22 @@ FULL_RULES = (
     ('cpu.float16_nan_canonical', 'per_arch_eq', {'x86_64': True}, S_ARCH),
 )
 
+# A microphone's format in MoltNet, whatever the device's (moltnet_media_
+# devices.h, media::PortableCaptureParameters()): getSettings() of a
+# processed track the page asked no channel count for (48 kHz, 16 bits, one
+# channel, a 10 ms buffer), and the ranges getCapabilities() and
+# enumerateDevices()' InputDeviceInfo.getCapabilities() give, as [min, max]
+# (one or two channels).
+MIC_FORMAT = {'sampleRate': 48000, 'sampleSize': 16, 'channelCount': 1,
+              'latency': 0.01}
+MIC_FORMAT_RANGES = {'sampleRate': [48000, 48000], 'sampleSize': [16, 16],
+                     'channelCount': [1, 2], 'latency': [0.01, 0.01]}
+# Device names once the page may see them: every label generic ("Default",
+# or the kind and the ID's first four characters), the track's too, every
+# device a group of its own, and no Windows communications device.
+MIC_NAMES = {'labels': True, 'groups': True, 'track': True,
+             'communications': False}
+
 # The mic_processing launch (kind "mic"): Chromium's fake capture device
 # plays the kit's WAV; the page reads the processed samples twice, each time
 # from a new stream. The two must agree (otherwise the probe can't compare
@@ -438,6 +454,12 @@ MIC_RULES = (
     ('audio.mic_remote_only_settings', 'eq', {
         'echoCancellation': 'remote-only', 'noiseSuppression': True,
         'autoGainControl': True}, S_MIC),
+    # One format and generic names for every microphone, on every device and
+    # OS.
+    ('audio.mic_format', 'eq', MIC_FORMAT, S_MDEV),
+    ('audio.mic_format_ranges', 'eq', MIC_FORMAT_RANGES, S_MDEV),
+    ('audio.mic_device_ranges', 'eq', [MIC_FORMAT_RANGES], S_MDEV),
+    ('audio.mic_names', 'eq', MIC_NAMES, S_MDEV),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -515,6 +537,10 @@ DIFF_KEYS = (
     # processing").
     'audio.stretched', 'pixels.jxl', 'cpu.float16_nan',
     'audio.mic_processed',
+    # Web Audio whose intermediates are subnormal floats, rendered by a graph
+    # and resampled by decodeAudioData(): the same on every CPU and OS family
+    # (FINGERPRINTING.md "MoltNet: subnormal floats").
+    'audio.subnormal_graph', 'audio.subnormal_resampled',
 )
 
 # Keys that legitimately differ between x86-64 and arm64 (and only there):
@@ -538,8 +564,6 @@ INFO_KEYS = {
     'nav.webdriver': 'navigator.webdriver under the kit\'s DevTools pipe',
     'mq.prefers_color_scheme_dark': 'dark while the dark toolbar is on '
                                     '(documented)',
-    'audio.mic_sample_rate': 'the processed microphone track\'s sampleRate '
-                             '(mic_processing launch)',
     'audio.mic_playback': 'the processed microphone while the page plays '
                           'tones, with the default echo cancellation, whose '
                           'reference they are: the echo canceller adapts to '

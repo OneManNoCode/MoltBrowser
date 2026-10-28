@@ -930,6 +930,15 @@ class Uniformity(unittest.TestCase):
                    'audio.mic_remote_only': dict(plain),
                    'audio.mic_remote_only_settings': dict(
                        processing, echoCancellation='remote-only'),
+                   # One format and generic names for every microphone.
+                   'audio.mic_format': {'sampleRate': 48000,
+                                        'sampleSize': 16, 'channelCount': 1,
+                                        'latency': 0.01},
+                   'audio.mic_format_ranges': dict(ex.MIC_FORMAT_RANGES),
+                   'audio.mic_device_ranges': [dict(ex.MIC_FORMAT_RANGES)],
+                   'audio.mic_names': {'labels': True, 'groups': True,
+                                       'track': True,
+                                       'communications': False},
                    # Recorded only: the echo canceller hears the tones.
                    'audio.mic_playback': {'hash': 'other', 'frames': 480}}}
         res = uniformity.check_record(rec, 'Linux', 'x86_64')
@@ -952,11 +961,20 @@ class Uniformity(unittest.TestCase):
                                                               'true']
         values['audio.mic_remote_only'] = 'silent'
         values['audio.mic_remote_only_settings']['echoCancellation'] = True
+        # The device's own format, its range of rates, a second microphone
+        # with another range, and the device's own name.
+        values['audio.mic_format']['sampleRate'] = 44100
+        values['audio.mic_format_ranges']['sampleRate'] = [44100, 48000]
+        values['audio.mic_device_ranges'].append(
+            dict(ex.MIC_FORMAT_RANGES, channelCount=[1, 4]))
+        values['audio.mic_names']['labels'] = False
         res = {r['key']: r['status'] for r in uniformity.check_record(
             rec, 'Linux')}
         for key in ('audio.mic_settings', 'audio.mic_system_aec',
                     'audio.mic_capabilities', 'audio.mic_remote_only',
-                    'audio.mic_remote_only_settings'):
+                    'audio.mic_remote_only_settings', 'audio.mic_format',
+                    'audio.mic_format_ranges', 'audio.mic_device_ranges',
+                    'audio.mic_names'):
             self.assertEqual(res[key], 'FAIL', key)
         self.assertEqual(res['audio.mic_system_aec_settings'], 'PASS')
         # A case whose getUserMedia() failed is reported, not compared.
@@ -975,18 +993,25 @@ class Uniformity(unittest.TestCase):
             mic = f.read()
         for key in ('cpu.wasm_simd', 'cpu.float16_nan',
                     'cpu.float16_nan_canonical', 'pixels.jxl',
-                    'audio.stretched'):
+                    'audio.stretched', 'audio.subnormal_graph',
+                    'audio.subnormal_resampled'):
             self.assertIn("'%s'" % key, fp, key)
         for key in ('audio.mic_processed', 'audio.mic_processed_stable',
-                    'audio.mic_settings', 'audio.mic_sample_rate',
+                    'audio.mic_settings', 'audio.mic_format',
+                    'audio.mic_format_ranges', 'audio.mic_device_ranges',
+                    'audio.mic_names',
                     'audio.mic_capabilities', 'audio.mic_system_aec',
                     'audio.mic_system_aec_settings', 'audio.mic_remote_only',
                     'audio.mic_remote_only_settings', 'audio.mic_playback',
                     'audio.mic_playback_tones'):
             self.assertIn("'%s'" % key, mic, key)
         for key in ('audio.stretched', 'pixels.jxl', 'cpu.float16_nan',
-                    'audio.mic_processed'):
+                    'audio.mic_processed', 'audio.subnormal_graph',
+                    'audio.subnormal_resampled'):
             self.assertIn(key, ex.DIFF_KEYS)
+        # The microphone's format is promised now, not only recorded.
+        self.assertNotIn('audio.mic_sample_rate', ex.INFO_KEYS)
+        self.assertNotIn("'audio.mic_sample_rate'", mic)
         self.assertNotIn('cpu.wasm_simd', ex.INFO_KEYS)
         self.assertTrue(set(ex.ARCH_KEYS) <= set(ex.DIFF_KEYS) |
                         set(r[0] for r in ex.FULL_RULES))
@@ -1046,7 +1071,7 @@ class Uniformity(unittest.TestCase):
         mic = [{'label': 'mic', 'dsf': 1.0, 'window': None,
                 'zoom_requested': 100, 'target': 'moltnet', 'kind': 'mic',
                 'values': {'audio.mic_processed': {'hash': 'a'},
-                           'audio.mic_sample_rate': 48000,
+                           'audio.mic_format': dict(ex.MIC_FORMAT),
                            'audio.mic_system_aec': {'hash': 'a'},
                            'audio.mic_remote_only': {'hash': 'a'},
                            'audio.mic_playback': {'hash': 'c'}}}]
@@ -1054,13 +1079,14 @@ class Uniformity(unittest.TestCase):
         for key in ('audio.mic_processed', 'audio.mic_system_aec',
                     'audio.mic_remote_only', 'audio.mic_playback'):
             mic_b[0]['values'][key] = {'hash': 'b'}
-        mic_b[0]['values']['audio.mic_sample_rate'] = 44100
+        mic_b[0]['values']['audio.mic_format'] = dict(ex.MIC_FORMAT,
+                                                      sampleRate=44100)
         _, diffs = uniformity.diff_records(mic, mic_b)
         self.assertEqual(sorted((d['key'], d['severity']) for d in diffs),
-                         [('audio.mic_playback', 'info'),
+                         [('audio.mic_format', 'fail'),
+                          ('audio.mic_playback', 'info'),
                           ('audio.mic_processed', 'fail'),
                           ('audio.mic_remote_only', 'fail'),
-                          ('audio.mic_sample_rate', 'info'),
                           ('audio.mic_system_aec', 'fail')])
 
     def test_diff_reports(self):
