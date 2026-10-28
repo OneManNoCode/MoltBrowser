@@ -22,8 +22,8 @@
 // those its modes can be cropped and scaled down to, at the menu's rate. One
 // whose largest mode is 640x480 shows 640x480 alone; one that reaches no
 // entry (a 320x240 camera) shows the smallest entry, to which its frames are
-// scaled up. So a page tells two kinds of camera apart, HD and not, and
-// nothing of a device's own modes.
+// scaled up. Either way a page sees entries of the menu, never a device's
+// own modes.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_CAMERA_VALUES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_CAMERA_VALUES_H_
