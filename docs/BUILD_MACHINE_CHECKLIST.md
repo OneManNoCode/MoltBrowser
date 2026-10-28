@@ -524,6 +524,7 @@ listed and the deps are in (§4.9).
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` | a new interface `MoltDomStorageGrowthObserver` (`OnGrowthBeyondFloor()`) in `local_storage_control.mojom`, which `session_storage_control.mojom` now imports, and a new method `MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver>)` on both controls: as for `MoltKeepCachesPerSite()`, a test fake or mock of either control fails to compile until it gets an empty override | moltnet-shared4 |
 | `components/services/storage/public/mojom/storage_service.mojom` (new upstream copy) | two new methods on `StorageService`, `MoltBindPerSiteLocalStorageControl(pending_receiver<LocalStorageControl>)` and `MoltBindPerSiteSessionStorageControl(pending_receiver<SessionStorageControl>)` (not `[Stable]`, no `[MinVersion]`; the interface keeps its `[ServiceSandbox]`): `StorageServiceImpl` is its only implementation in the 156 tree; a fake elsewhere would need empty overrides | moltnet-shared7 |
 | `components/services/storage/public/mojom/local_storage_control.mojom`, `session_storage_control.mojom` | a new method `MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed)` on both controls (both now import `mojo/public/mojom/base/unguessable_token.mojom`): as for `MoltKeepCachesPerSite()`, a test fake or mock of either control fails to compile until it gets an empty override; `LocalStorageImpl`, `SessionStorageImpl` and the own-thread hosts have it | moltnet-shared8 |
+| `media/mojo/mojom/audio_processing.mojom`, `audio_processing_mojom_traits.{h,cc}`, `media/base/audio_processing.{h,cc}` (new upstream copies) | `bool cpu_independent`, last in `AudioProcessingSettings` (not `[Stable]`, no `[MinVersion]`): the traits get a getter and `Read()` copies it; `operator==` and `ToString()` include it. Designated initialisers of the struct elsewhere (`kDummyWebrtcSettings` in Blink) leave it false | fp-probes2 |
 
 ### 4.2 `net/` and the network service (MoltNet circuits)
 
@@ -699,6 +700,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `third_party/blink/renderer/modules/mediastream/user_media_processor.cc` (`GenerateStreamForCurrentRequestInfo`), `core/molt_net/molt_net_renderer.{h,cc}` (+ test), `core/molt_fingerprinting/moltnet_uniformity.{h,cc}` (`ReportsPermissionDenied`, + test), `chrome/browser/media/webrtc/media_capture_devices_dispatcher.cc` (imported from 156; `ProcessMediaAccessRequest`), new `chrome/browser/molt_ai/fingerprinting/molt_net_display_capture{,_policy}.h` (+ `_policy_unittest.cc`) | no screen, window or tab capture in MoltNet. `//chrome/browser/media/webrtc:webrtc` includes the header-only `molt_net_display_capture.h` without a dep, as it includes `molt_net_profile_id.h` (4.10): if `gn check` flags it, add `//chrome/browser/molt_ai/fingerprinting:display_capture` there. `moltnet_uniformity.cc` now includes `core/molt_net/molt_net_renderer.h` (both in core) | fp-geometry |
 | `chrome/browser/molt_ai/tor/molt_net_cpu_policy.h`, `molt_net_cpu.{h,cc}` (new; targets `:cpu_policy` and `:cpu`, which `:tor` depends on publicly), the checks in `molt_net_window.cc` (`OpenImpl`, `NewIdentity`), `molt_net_routing.cc` (`GetOrCreateMoltNetProfile`), `tor_manager.cc` (`Launch`), and the sentence up front in `ui/webui/molt_ai/molt_net_handler.cc` (`StatusDict`), `molt_ai_settings_ui.cc` (`TorUnavailableReason`) and `molt_ai_chat_handler_tor.cc` (`HandleGetTorStatus`, whose lambda now captures one more `std::string`) | `base::CPU::GetInstanceNoAllocation()` and `has_sse3()`, `has_ssse3()`, `has_sse41()` exist only under `ARCH_CPU_X86_FAMILY` (the call sits under `ARCH_CPU_X86_64`); a function-local `static const base::NoDestructor<std::string>`; `if (const std::string& e = MoltNetCpuError(); !e.empty())` in each check | fp-arch |
 | `media/filters/wsola_internals.cc` (new upstream copy: `MultiChannelDotProduct`, `GetPeriodicHanningWindow`), `media/base/molt_portable_media.h` (a comment), `core/molt_fingerprinting/moltnet_cpu.h` (`--no-enable-f16c` in `kMoltNetV8Flags`) | `//media/filters` calls `media::IsPortableMediaProcess()` and `gfx::molt_math::Cos(float)` (both already used inside `//media`); V8 defines `enable_f16c` on every architecture, so arm64 builds take the flag too (`MoltNetCpuTest.Flags` fails if `SetFlagsFromString` rejects one) | fp-arch |
+| WebRTC (new upstream copies under `third_party/webrtc/`): `rtc_base/cpu_info.{h,cc}` (`ScopedCpuIndependent`, `IsCpuIndependent()`), `rtc_base/molt_math.{h,cc}` (new, target `//third_party/webrtc/rtc_base:molt_math`), `api/audio/audio_processing.h` (`Config::moltbrowser_cpu_independent`), `modules/audio_processing/audio_processing_impl.{h,cc}`, `aec3/aec3_common.cc`, `agc2/cpu_features.cc`, `common_audio/third_party/ooura/fft_size_128/ooura_fft.{h,cc}`, `common_audio/resampler/sinc_resampler.cc`, the math call sites (`common_audio/include/audio_util.h`, `fft_size_256/fft4g.cc`, three AEC3, three noise suppression and four AGC2 files) and the `BUILD.gn` files of `rtc_base`, `common_audio`, its Ooura FFTs, `modules/audio_processing`, `aec3`, `ns`, `agc2`, `agc2/rnn_vad`; `media/webrtc/helpers.cc`; Blink's `modules/mediastream/media_stream_audio_processing_layout.cc` | a `constinit thread_local bool` in `cpu_info.cc` (also in component builds, where WebRTC is one component); `OouraFft`'s C functions now build on arm64 too, and `use_neon_` exists only under `WEBRTC_HAS_NEON` (an unused-function or unused-field warning on one architecture means a branch went missing); `webrtc::molt_math` has float and double overloads only, so an integer argument at a call site would be ambiguous (none at 156); `//third_party/llvm-libc:molt_portable_math` is visible to `//third_party/webrtc/rtc_base:molt_math` only; Blink's `modules/mediastream` calls `media::IsPortableMediaProcess()` (`+media/base` is already allowed there; `media::.+` is in the Blink audit's list for `modules/mediastream`) | fp-probes2 |
 | jxl-rs: `third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/{lib.rs,x86_64/mod.rs,aarch64/mod.rs}`, `vendor/jxl-v0_7/Cargo.toml`, `src/lib.rs`, `src/moltbrowser_math.rs` (new) and six call-site files, the crate patches in `patches/jxl_simd-v0_7/` and `patches/jxl-v0_7/`, `Cargo.lock`, `third_party/rust/jxl/v0_7/BUILD.gn` (the new file; `//third_party/rust/libm/v0_2:lib`), `third_party/rust/jxl/v0_7/wrapper/lib.rs` (a new cxx bridge function: the generated `lib.rs.h` gains `jxl_rs_moltbrowser_set_portable()`), `platform/image-decoders/jxl/jxl_image_decoder.cc` (constructor) | rustc on `simd_function!`'s expansion (an early return to the scalar descriptor in every function it makes, x86-64 and arm64); the `PortableMath` trait for `f32` and `f64`; `libm`'s visibility (`//third_party/rust/*`); `scripts/vendor-rust-crates.sh` must keep the two crate patches (afterwards `moltbrowser_math.rs` must still be in the vendored crate) | fp-arch |
 
 ### 4.8 WebUI handlers and the agents
@@ -771,7 +773,10 @@ toolchains, a third-party library's own `include_dirs`).
   *Expected:* no violation. The static run used 156's own `checkdeps.py`
   over every C++ file MoltBrowser adds and every include it adds to an
   upstream file; Skia and V8 are repositories of their own, with their own
-  rules, and were left out.
+  rules, and were left out. WebRTC's files (fp-probes2) were checked as
+  WebRTC's presubmit checks them, rooted at `third_party/webrtc` with
+  WebRTC's DEPS files; on the real tree:
+  `for d in rtc_base modules/audio_processing common_audio; do (cd third_party/webrtc && python3 ../../buildtools/checkdeps/checkdeps.py --root . "$d") || echo "CHECKDEPS FAILED: webrtc/$d"; done`.
 - [ ] Blink's presubmit audit (`audit_non_blink_usage.py`, which the build
   doesn't run): `gn_static_check.py blink-audit` runs its `check()` over the
   lines MoltBrowser adds under `third_party/blink`. MoltBrowser's entries
@@ -781,6 +786,14 @@ toolchains, a third-party library's own `include_dirs`).
 How the graph fits together since round 28, where a reviewer may want it
 otherwise:
 
+- WebRTC's audio processing reaches the portable math library through one
+  new target, `//third_party/webrtc/rtc_base:molt_math` (which depends on
+  `:cpu_info` and `//third_party/llvm-libc:molt_portable_math`); the
+  `common_audio`, Ooura FFT, AEC3, noise suppression, AGC2 and RNN VAD
+  targets depend on it, and `modules/audio_processing:audio_processing` on
+  `rtc_base:cpu_info` (fp-probes2). `//media/webrtc:molt_unittests` (the
+  golden digests) is a test-only target that only `molt_ai_unittests`
+  sees.
 - `//chrome/browser:core` depends on `//chrome/browser/molt_ai:core_hooks`,
   a group of the MoltBrowser targets whose headers the hooks in
   `chrome/browser/` include (the runtime, the agents' features,
@@ -974,6 +987,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetDomStorageTest` (new cases: `WithoutADatabaseAnUnusedEmptyAreaGoesAtOnce`, `SessionStorageWithoutADatabaseDropsEmptyAreas`, `BindingAreasInALoopDoesntDelayAnotherSite`, `PerSitePartitionsRunOnThreadsOfTheirOwn` (real dedicated threads from the test's thread pool), `ObserversHearOfChangesInTasksOfTheirOwn`, `AClearOfManyItemsIsFreedInChunks`; `ASitePurgesItsOwn` and `IdleAreasExpire` now on a partition on disk in a temporary directory), `MoltNetHttpCacheTest` (new cases: `ExpiryFollowsAMonotonicClock`, `TheSweepDropsEntriesInStepsOfItsOwn`, `ASitePastTheCapIsNotCached`, which writes 4,097 sites; the old cases now move both the wall clock and the mock tick clock), `MoltNetHttpCacheSiteLruTest` (new: `TheSweepGoesSiteBySiteInSteps`, `ASweepStepThatDropsNothingMovesOn`, `ASweepStepStopsAtTheFirstFreshEntry`, `TheSweepsSiteMayGoBetweenSteps`, `TheTableOfSitesHasRoomForTheCap`); built standalone only: `MoltNetDomStorageSitePolicyTest.UnusedEmptyAreasGoAtOnceWithoutADatabase`, `TurnsThatArentASitesHaveTheirOwnNames`, `TheControlTurnCountsAnEighth`, `MoltNetDomStorageSplitWorkTest` (new, 2), `MoltNetDomStorageFairQueueTest.TheControlTurnHasEightShares` | moltnet-shared7 |
   | `MoltNetBackgroundFetchSchedulingTest` (rewritten, 8 cases: no total, a site's share whatever others run, its waiting registrations in order, the valve past the floor), `MoltNetNonceStoragePolicyTest` (new, 3), `MoltNetDomStorageSitePolicyTest` (new: the expiring records, totals dropped at zero), `MoltNetKeepalivePartitionsTest` (new: idle recorders go), `MoltNetBlobBudgetPolicyTest.SiteKeys` (rewritten), `MoltNetStorageSiteUsagePolicyTest` (new: one refresh at a time), `MoltNetDownloadIsolationTest.AResumedFetchKeepsItsLnaCheck`, `MoltNetBackgroundFetchRestoredTest.AFetchWithoutItsParametersWaits` (all built standalone here); needing the build: `MoltNetDomStorageTest.ANoncesStorageGoesWithItsPage`, `ACopyOfManyAreasIsCompleteWhenBound` (real dedicated threads: a copy of 200 areas made in steps, bound after it), `MoltNetStorageSiteUsageTest.ConcurrentChecksDontOvershoot`, `MoltNetBackgroundFetchRequestTest.BlobKeyIsTheSitesDigest` | moltnet-shared8 |
   | `MoltNetCpuPolicyTest.*` (the requirement on x86-64, arm64 and other architectures, the sentence), `MoltNetCpuErrorTest.*` (what `base::CPU` reports; on a build machine with SSE4.1, and on every arm64 one, the sentence is empty, so a failure there means MoltNet would refuse to open) | fp-arch |
+  | `MoltCpuIndependentProcessingTest.*` (WebRTC's audio processing in CPU-independent mode through `CreateWebRtcAudioProcessingModule()`: the golden digests of a talker with a far end's echo and of the talker alone, the same on every processor and OS; the setting fixed when the module is built; a CPU-independent module and one with the processor's code in turn on one thread each give what they give alone). A golden digest that differs on the build machine means the module computes otherwise there: send the digest the failure prints, the processor (`lscpu`, or the Mac's chip) and the OS | fp-probes2 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1135,6 +1149,7 @@ pass except where the table below says otherwise (verify the filters).
 | `services_unittests` | `*KeepaliveStatisticsRecorder*:NetworkContextTest.*` (without per-site contexts no recorder is made or forgotten) | moltnet-shared8 |
 | `media_unittests`, `blink_platform_unittests` | `*Wsola*:AudioRendererAlgorithm*`; `*JXL*:*Jxl*` (outside MoltNet both pick their code as before) | fp-arch |
 | `v8_unittests`, V8's `mjsunit` | `*Float16*`; the `mjsunit` tests with `float16` in their name once more with `--no-enable-f16c` (V8's software conversion everywhere) | fp-arch |
+| `blink_unittests`, `media_unittests`, `services_unittests` | `AudioProcessingPropertiesToAudioProcessingSettingsTest.*:MediaStreamAudioProcessor*:ProcessedLocalAudioSource*`; `CreateWebRtcAudioProcessingModuleTest.*:AudioProcessor*`; `AudioProcessorHandler*:InputController*:*InputStream*` (outside MoltNet the module is built and runs as before; `MoltNetAsksForCpuIndependentProcessing` is the new case) | fp-probes2 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1162,6 +1177,21 @@ pass except where the table below says otherwise (verify the filters).
   `.onion` address's "Open in MoltNet" (a message box with it); `ps`
   shows no `tor` started by MoltBrowser. On Penryn it is `true` and
   MoltNet opens and loads a page.
+
+- [ ] The microphone in MoltNet and in a normal window at once
+  (fp-probes2). With speakers (not headphones) playing a video in a normal
+  window, record 10 s in a MoltNet window and in a normal window at the
+  same time on a voice-memo page (or `webrtc.github.io`'s getUserMedia
+  sample with "echo cancellation" on, or the leak kit's `mic.html`), on an
+  x86-64 machine and on an Apple silicon Mac. *Expected:* both recordings
+  have the video's sound cancelled the same way (Chromium-wide echo
+  cancellation works for MoltNet's stream too) and no dropouts;
+  `chrome://media-internals`' Audio tab shows both input streams with echo
+  cancellation, noise suppression and gain control. Note the audio
+  service's CPU use (the task manager's "Audio Service" row) with one
+  MoltNet stream against one normal stream: FINGERPRINTING.md "MoltNet: the
+  microphone's processing" measured about 0.25 ms against 0.1 ms per 10 ms
+  of audio on a 2.1 GHz Xeon; correct it with what you see.
 
 ### 5.3 Known-expected failures, and what to do
 
@@ -2268,6 +2298,27 @@ Mac; use a real Linux host.
     promised value, nor in the codec support it compares (`mc.opus`,
     `mc.h264`, `mc.hevc`, `media.can_play`, `webcodecs.decoder_software`,
     `webcodecs.encoder_*`) between two machines of an OS.
+  - What pages can learn about the processor and the microphone
+    (fp-probes2): `uniform.cpu.wasm_simd` passes (a plain SIMD module
+    validates), `uniform.cpu.float16_nan_canonical` passes on x86-64 (INFO
+    on arm64, where the optimized code keeps payload bits: compare
+    `cpu.float16_nan` between two arm64 runs), `harness.mic_processing`
+    passes and so do `uniform.audio.mic_processed_stable` and
+    `uniform.audio.mic_settings`. Run the kit on an x86-64 machine without
+    AVX2 (or a VM started with `-cpu Nehalem`), a recent x86-64 machine and
+    an arm64 one, then `diff` each pair: no difference in `pixels.jxl`,
+    `audio.stretched` or `audio.mic_processed` (and in `cpu.float16_nan`
+    between machines of one architecture; `diff` shows the architectures
+    and lists a Float16 difference between them as information). First-run
+    questions, report them with the values: `pixels.jxl` reading
+    `unsupported` (the build has no JPEG XL), `audio.stretched` reading
+    `silent`, `short` or `dropout` (the element didn't play into Web Audio
+    in time), `audio.mic_processed` reading `silent` (the fake device
+    couldn't read the WAV: is the audio service sandboxed?), `gap` (a
+    dropped buffer) or a hash with `audio.mic_processed_stable` false (the
+    two captures started at different points of the file). With
+    `--target regular` the same values differ between processors with and
+    without AVX2 (a check of the probes themselves).
   - `identity.background_fetch_circuits` passes (moltnet-shared): each
     Background Fetch test's request went to Tor with its page's site's
     SOCKS username. First-run question: whether the fetch starts at all in

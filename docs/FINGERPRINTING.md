@@ -383,6 +383,7 @@ back/forward, and a MoltNet window with Shields off.
 | `MediaRecorder`: the default codec, `isTypeSupported()`, the encoder and its threads | the GPU's encoders where it has them; threads by the machine's cores | **the build's software encoders**, threads for **4** cores ([details](#moltnet-mediarecorder)) | `video_track_recorder.cc`, `media_recorder_handler.cc`, `media/base/video_encoder.cc` |
 | Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
 | WebAssembly relaxed SIMD, `Math.pow` and `Math.tanh`, colours read back in another colour space, images with a colour profile, decoded audio (`AudioData`); how much heap V8 gives a page | the CPU's vector extensions (relaxed SIMD's results, the code Skia, skcms, Symphonia, FFmpeg and the C library pick); the machine's memory | **one code path for every CPU**: relaxed SIMD off, V8's own `Math` code, portable colour and audio code; V8 configured as on a 4 GB machine ([details](#moltnet-cpu-features)) | `flag-definitions.h`, `function-body-decoder-impl.h`, `ieee754.cc`, `v8.cc`, `isolate_holder.cc`, `chrome_content_renderer_client.cc`; Skia, skcms, Symphonia, `molt_portable_media.cc` |
+| The microphone's processed samples (echo cancellation, noise suppression, gain control) | the processor's extensions (AVX2 and FMA, SSE2, NEON) and the C library's math | **the same on every processor**: WebRTC's plain C++ code and portable math functions for MoltNet's streams, in the audio service every profile shares ([details](#moltnet-the-microphones-processing)) | `media_stream_audio_processing_layout.cc`; `helpers.cc`; WebRTC's `audio_processing_impl.cc`, `cpu_info.cc` and the dispatch and math call sites |
 | Whether WebAssembly SIMD validates; the bits a `Float16Array` stores for a NaN; audio played at another `playbackRate`; JPEG XL pixels | the processor's extensions (SSE4.1 for SIMD, F16C, AVX2 and FMA, the code jxl-rs picks) | **the same on every processor MoltNet opens on**: MoltNet needs SSE4.1 on x86-64 and says so where it would open; V8's software half-float conversion, one way to time-stretch, jxl-rs's portable mode ([details](#moltnet-what-pages-can-learn-about-the-processor)) | `molt_net_cpu.cc`, `molt_net_window.cc`, `molt_net_routing.cc`, `tor_manager.cc`; `moltnet_cpu.h`; `wsola_internals.cc`; jxl-rs, `jxl_image_decoder.cc` |
 | `Math`'s trigonometry, exponentials and logarithms on arm64; CSS math functions, `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas and SVG transforms and their interpolation; Web Audio's filters, analyser, oscillators, panners, compressor, convolution and resampling; WebRTC audio levels | the OS's C library (glibc, the Windows C runtime and macOS's differ, and pick FMA versions by CPU), V8's math code with fused multiply-adds on arm64, Web Audio's AVX, SSE, NEON and Accelerate code | **one portable math library and Web Audio's scalar code**: the same results on every CPU and OS ([details](#moltnet-portable-math)) | `molt_portable_math.cc`, `ui/gfx/geometry/molt_math.cc`, `ieee754.cc`; the call sites in Blink, `ui/gfx` and `media` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
@@ -3420,6 +3421,7 @@ whose result a page can read. **Changed here**:
 | The bits `Float16Array` and `DataView.setFloat16()` store for a NaN | on x86-64, optimized code converts with F16C (Intel from Ivy Bridge, AMD from Piledriver and Jaguar), which keeps part of a NaN's payload; other code, and processors without F16C, store the canonical NaN | **V8's software conversion on every x86-64 processor** (`--no-enable-f16c`); every other value converts the same either way |
 | Audio a media element plays at another `playbackRate` (time stretching, read through Web Audio or `captureStream()`) | WSOLA's block search sums with AVX2 and FMA on processors that have both (8 lanes, fused), with SSE or NEON on others (4 lanes, not fused), so it picks other blocks | **the 4-lane sums on every processor** (they're what non-AVX2 x86-64 and arm64 already did), and the Hann window from the portable `cos()` |
 | JPEG XL pixels (`<img>`, CSS, canvases, WebCodecs' `ImageDecoder`) | jxl-rs picks AVX-512, AVX2 + FMA + F16C, SSE4.2 or NEON code (they fuse multiply-adds or not, look tables up in bf16, convert half floats differently), and its transfer functions and weights call the C library's `powf`, `exp`, `log2`, `cbrt` and `hypot` | **jxl-rs's scalar code and the libm crate's functions** (the crates' portable mode, set when a decoder is made in a MoltNet renderer) |
+| The microphone's processed samples (with a permission) | WebRTC's echo cancellation, gain control and resampler in AVX2 + FMA, SSE2 or NEON code, the C library's math | **the plain C++ code and portable math functions** ([the microphone's processing](#moltnet-the-microphones-processing)) |
 
 **Already alike in MoltNet** (other sections): relaxed SIMD (off),
 `Math.pow` and `Math.tanh`, Skia's and skcms's colour code, decoded audio
@@ -3448,10 +3450,12 @@ capabilities](#moltnet-audio-drm-and-media-capabilities)).
 | GPU canvases and WebGL | drawn by the GPU, and farbled; MoltNet has no WebGPU adapter |
 | WebNN, built-in AI | WebNN is off; the built-in AI APIs say `"unavailable"` in MoltNet |
 
-Microphone audio is processed (echo cancellation, noise suppression, gain)
-by WebRTC's code for the processor, like camera frames converted on the GPU
-([CPU features](#moltnet-cpu-features)): it exists only after the user
-grants a permission, and carries the room's sound.
+Microphone audio, which a page gets only once the user lets it use the
+microphone, is processed (echo cancellation, noise suppression, gain) with
+the same code on every processor in MoltNet: [the microphone's
+processing](#moltnet-the-microphones-processing). Camera frames are still
+converted on the GPU where the platform delivers them there ([CPU
+features](#moltnet-cpu-features)).
 
 ### What it costs MoltNet users
 
@@ -3560,7 +3564,221 @@ linking (Rust included), `molt_ai_unittests` (`MoltNetCpuPolicyTest.*`,
 `media_unittests` and `blink_platform_unittests` (time stretching and JPEG
 XL outside MoltNet unchanged), and the checks in
 `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-arch" (MoltNet on a virtual
-machine with a Core 2 processor).
+machine with a Core 2 processor) and "fp-probes2" (the kit on machines of
+different processor generations). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): a module with one SIMD instruction
+validates (`cpu.wasm_simd`); `Float16Array` and `DataView.setFloat16()`
+store NaNs with payloads as the canonical NaN, before and after the storing
+functions are optimized (`cpu.float16_nan_canonical`, on x86-64: arm64's
+optimized code keeps payload bits, as on every arm64 CPU, so its bits,
+`cpu.float16_nan`, are compared between arm64 runs); compared between
+runs: a JPEG XL image decoded by `ImageDecoder` (`pixels.jxl`; the kit's
+image, a 96 x 64 lossy one, decodes to three different results in
+Chromium's jxl-rs on the CPUs above, to one in portable mode) and audio a
+media element plays at `playbackRate` 1.5 into Web Audio
+(`audio.stretched`).
+
+## MoltNet: the microphone's processing
+
+Once a page may use the microphone, the audio it receives has been
+processed: echo cancellation (WebRTC's AEC3), noise suppression, automatic
+gain control (AGC2, with its voice activity detector), and the resampling
+between the device's rate and the processing's. At 156 that code picks its
+SSE2, AVX2 + FMA or NEON paths at run time and calls the C library's math
+functions, so the same sound comes out as other samples on different
+processors. In MoltNet windows it computes the same samples for the same
+input on every processor:
+
+| What a page receives | Chromium 156 | MoltNet |
+|---|---|---|
+| The microphone's samples with echo cancellation, noise suppression or gain control on (`getUserMedia()`'s defaults), as `MediaStreamTrackProcessor`, Web Audio's `MediaStreamAudioSourceNode` and `MediaRecorder` get them | AEC3's adaptive and matched filters, FFT and vector math, AGC2's voice detector and the resampler in their AVX2 + FMA or SSE2 versions on x86-64 and NEON on arm64; levels, gains and windows from the C library's `pow`, `log10`, `tanh`, `sin` and `cos` (FMA variants on CPUs with FMA3); a neural residual echo estimator where its model is installed | **the plain C++ versions and MoltBrowser's portable math functions on every processor**, and no neural echo estimator: the same samples on every x86-64 and arm64 CPU, and on every OS |
+
+Normal and Incognito windows keep the processor's fast paths, also where
+they share the audio service with MoltNet. MoltNet ignores Shields off, as
+elsewhere, and the kill switch turns it off.
+
+### Where 156 processes it
+
+With Chromium-wide echo cancellation (`ChromeWideEchoCancellation`, on by
+default on Windows, macOS and Linux) the processing runs in the audio
+service, so that the echo canceller hears everything the browser plays on
+the output device: one `media::AudioProcessor` per input stream, built by
+`CreateWebRtcAudioProcessingModule()` and run by `AudioProcessorHandler` on
+the stream's capture thread or a processing thread of its own. The audio
+service is one process for every profile. Only `echoCancellation:
+"remote-only"` and the platform's echo cancellation put the processing in
+the renderer (`EchoCanceller::GetApmLocation()`). Either way the renderer
+decides what a stream gets (`MediaStreamAudioProcessingLayout`) and sends
+the settings with it (`media.mojom.AudioProcessingSettings`).
+
+### What MoltNet does
+
+* **The setting.** MoltNet's renderers (the portable media process of
+  [pixels and encoded bytes](#moltnet-pixels-and-encoded-bytes)) mark every
+  stream's settings `cpu_independent` (`ComputeWebrtcProcessingSettings`).
+  The setting travels with the stream to the audio service, and reaches
+  the renderer's own processing where that runs.
+* **The module.** `CreateWebRtcAudioProcessingModule()` builds WebRTC's
+  module with `Config::moltbrowser_cpu_independent`, and without the
+  neural residual echo estimator (TFLite runs its model on the processor's
+  vector code): a module for MoltNet never takes a model, also where one
+  is installed.
+* **Per instance.** The module reads the setting once, when it is built,
+  and in every method that builds or runs its parts (`ProcessStream`,
+  `AnalyzeReverseStream`, `ProcessReverseStream`, `Initialize`,
+  `ApplyConfig`, ...) opens a scope on the calling thread
+  (`webrtc::cpu_info::ScopedCpuIndependent`, thread-local). Inside it
+  WebRTC's processor detection (`cpu_info::Supports()`) finds no SSE2,
+  AVX2, FMA or NEON, and the places that choose NEON when the build targets
+  arm64 ask the scope first: AEC3 (`DetectOptimization()`: its adaptive and
+  matched filters, vector math and FFT data), the 128-point Ooura FFT
+  (whose C code now also builds for arm64), AGC2's voice detector
+  (`GetAvailableCpuFeatures()`) and the sinc resampler. The audio service
+  runs a MoltNet stream's module and a normal window's side by side, on any
+  threads, each with its own code; a module built without the setting runs
+  exactly as before.
+* **Math functions.** The calls whose results reach the samples go through
+  `webrtc::molt_math` (`rtc_base/molt_math.h`): the C library's functions
+  outside a scope, the [portable math library](#moltnet-portable-math)'s
+  inside one. They are the noise suppressor's gain (`tanh`) and speech
+  probability (`tanh`, `powf`), AGC2's levels and gains (`log10`, `pow`,
+  through `common_audio`'s `DbToRatio` and `FloatS16ToDbfs`), its limiter's
+  interpolation and noise level estimator, its voice detector's window and
+  DCT tables and band energies (`sin`, `cos`, `log10`), AEC3's comfort noise
+  level, reverb decay and render gain (`pow`), the resampler's kernel and
+  the 256-point FFT's tables (`sin`, `cos`, `atan`). Calls that only feed
+  statistics (echo return loss, histograms) and the legacy gain control
+  and voice detector, which Chromium's configuration doesn't run, keep the
+  C library.
+
+**Why not in the renderer.** MoltNet's renderers already have a portable
+mode; moving MoltNet's processing there would have needed no change in
+WebRTC. But in the renderer the echo canceller only hears what WebRTC
+plays, which in MoltNet is nothing: echo of a page's own playback, or of
+another tab, would no longer be cancelled. In the audio service MoltNet's
+streams keep Chromium-wide echo cancellation.
+
+**What the input is.** The processing's inputs are the microphone's signal
+and, for echo cancellation, what the browser plays on that output device,
+mixed in the audio service: sound from the machine and the room. MoltNet
+makes the processing compute the same samples from the same input; the
+input itself still carries the room, the microphone and the device's rate.
+
+### What was already the same
+
+* The integer code (the 32 kHz band split's QMF filters and WebRTC's
+  `WebRtcSpl_*` functions, also in their NEON versions) and the rest of
+  the plain C++ code, which Chromium compiles without contraction into
+  fused multiply-adds (`-ffp-contract=off`) on every architecture.
+* AGC2's spectral features use PFFFT, built for the architecture (SSE on
+  x86-64, NEON on arm64) with the same operations per lane: part of the
+  comparison below, which shows no difference.
+* Measured with Chromium 156's code: NEON gives the same samples as SSE2
+  for the signals below; AVX2 + FMA gives others.
+
+### What it costs
+
+Measured on one core of a 2.1 GHz Xeon (a cloud VM), with echo cancellation
+analysing a far end, noise suppression and gain control, 48 kHz stereo in,
+mono out: 0.25 ms of CPU per 10 ms of audio in MoltNet, against 0.105 ms
+with the AVX2 code Chromium picks there (2.5% of a core instead of 1%);
+slower processors pay proportionally more. Memory: none.
+
+### Which contexts
+
+Every microphone stream a MoltNet renderer opens (windows and frames, the
+only contexts with `getUserMedia()`), processed in the audio service or in
+the renderer. Normal and Incognito windows' streams keep the processor's
+code. The kill switch turns it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `third_party/webrtc/rtc_base/cpu_info.{h,cc}` | `ScopedCpuIndependent`, `IsCpuIndependent()`; `Supports()` false in a scope |
+| `third_party/webrtc/rtc_base/molt_math.{h,cc}` | the audio processing's math functions: the C library's, or in a scope the portable library's |
+| `media/webrtc/molt_cpu_independent_processing_unittest.cc` | golden digests of the module in this mode, which every processor and OS must reproduce, the setting fixed at build time, and two modules of both kinds in turn on one thread (`MoltCpuIndependentProcessingTest`, in `molt_ai_unittests`) |
+
+Upstream hooks (each marked `MoltBrowser:`; all new in `src/`):
+
+* WebRTC: `api/audio/audio_processing.h` (`Config::moltbrowser_cpu_independent`),
+  `modules/audio_processing/audio_processing_impl.{h,cc}` (the scope in the
+  constructor and the public processing methods; `ApplyConfig` keeps the
+  setting), `aec3/aec3_common.cc` (`DetectOptimization`),
+  `agc2/cpu_features.cc` (`GetAvailableCpuFeatures`),
+  `common_audio/third_party/ooura/fft_size_128/ooura_fft.{h,cc}` (`use_neon_`,
+  the C functions on arm64 too), `common_audio/resampler/sinc_resampler.cc`
+  (`InitializeCPUSpecificFeatures`, the kernel's `sin` and `cos`), and the
+  math call sites in `common_audio/include/audio_util.h`,
+  `fft_size_256/fft4g.cc`, `aec3/comfort_noise_generator.cc`,
+  `render_delay_buffer.cc`, `reverb_decay_estimator.cc`,
+  `ns/fast_math.cc`, `noise_suppressor.cc`,
+  `speech_probability_estimator.cc`, `agc2/limiter.cc`,
+  `noise_level_estimator.cc`, `rnn_vad/spectral_features.cc` and
+  `spectral_features_internal.cc`; the `BUILD.gn` files of `rtc_base`
+  (`:molt_math`), `common_audio`, its Ooura FFTs, `modules/audio_processing`,
+  `aec3`, `ns`, `agc2` and `rnn_vad`; `third_party/llvm-libc/BUILD.gn`
+  (visibility).
+* Chromium: `media/base/audio_processing.{h,cc}` (`cpu_independent`),
+  `media/mojo/mojom/audio_processing.mojom` and
+  `audio_processing_mojom_traits.{h,cc}`, `media/webrtc/helpers.cc`
+  (`CreateWebRtcAudioProcessingModule`), `media/webrtc/BUILD.gn` (the test),
+  and `third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc`
+  (`ComputeWebrtcProcessingSettings`; + a case in
+  `media_stream_audio_processing_layout_test.cc`).
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory):
+Chromium 156's WebRTC audio processing module (every source of
+`modules/audio_processing` and `common_audio` but tests, tools and the
+neural estimator, with PFFFT and rnnoise's weights), built with clang and
+Chromium's flags for x86-64 (`-msse3`, `-ffp-contract=off`, the AVX2 files
+with `-mavx2 -mfma`) and arm64, once from the tarball and once with
+MoltBrowser's files, configured as `CreateWebRtcAudioProcessingModule()`
+configures it, on fixed synthetic signals: a near-end talker with a far
+end's echo (the far end analysed), the talker alone, the same with the
+stream delay changing every 10 ms, and the talker after 1 to 4 s of
+silence. Run natively (a Xeon with AVX-512) and under qemu on emulated
+Core 2 (Conroe), Nehalem, Sandy Bridge, Haswell and EPYC CPUs and arm64
+Cortex-A53, Cortex-A76 and qemu's `max` CPU:
+
+* Chromium's code gives two results for every signal: one on the CPUs with
+  AVX2 and FMA (Haswell, EPYC, the Xeon) and another on the rest and on
+  arm64. MoltBrowser's files with the setting off give the same as
+  Chromium's on every CPU.
+* With the setting on: one result for every signal, on every CPU of both
+  architectures. The stream delay Chromium reports with each buffer doesn't
+  change the output when nothing is played; the length of a silence before
+  the sound does (the module's state keeps moving in silence), which the
+  leak kit's probe allows for.
+* `MoltCpuIndependentProcessingTest`'s golden digests come from the same
+  harness (its signal code extracted from the test), the same on every CPU
+  above; two modules of both kinds processing in turn on one thread each
+  give what they give alone.
+* The leak kit's WAV, processed as the fake capture device delivers it
+  (44.1 kHz stereo in 10 ms buffers, to 48 kHz mono) and hashed as its
+  page hashes it: with the setting, one digest on every CPU above, the
+  silence before the burst processed to exact zeros and the burst found
+  in the same buffer however late the page starts listening; Chromium's
+  code gives two digests (with and without AVX2).
+
+Every changed C++ file compiles against Chromium 156's real headers
+(`tools/compile_check`).
+**Needs the build machine:** compiling and linking, `molt_ai_unittests`
+(`MoltCpuIndependentProcessingTest.*`), `blink_unittests`
+(`AudioProcessingPropertiesToAudioProcessingSettingsTest.*`, with
+`MoltNetAsksForCpuIndependentProcessing`), `media_unittests` and
+`services_unittests` (`AudioProcessor*`, `AudioProcessorHandler*`,
+`InputController*`: unchanged outside MoltNet), WebRTC's own
+`modules_unittests` (`*AudioProcessing*`, `*Aec3*`, `*Agc2*`, `*Ns*`) and
+the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-probes2" (a
+call or a recording through a microphone in MoltNet and in a normal window
+at once). **Automated** by [`tools/leak_test`](LEAK_TESTING.md): the
+`mic_processing` launch plays a fixed WAV through Chromium's fake capture
+device and compares a hash of the processed samples between runs
+(`audio.mic_processed`; `audio.mic_processed_stable`, the same in two
+captures, and `audio.mic_settings`, the processing on).
 
 ## MoltNet: portable math
 
@@ -5839,7 +6057,9 @@ Honest list; anything not in the table above is not covered.
 * (Closed: in MoltNet, WebAssembly SIMD's support on x86-64 processors
   without SSE4.1 (MoltNet needs it), half-float conversion of NaNs, time
   stretching and JPEG XL decoding, see [what pages can learn about the
-  processor](#moltnet-what-pages-can-learn-about-the-processor).)
+  processor](#moltnet-what-pages-can-learn-about-the-processor), and the
+  microphone's processing, see [the microphone's
+  processing](#moltnet-the-microphones-processing).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -5996,6 +6216,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_memory_values.{h,cc}`, `moltnet_memory.{h,cc}`; `src/sandbox/policy/linux/molt_data_limit.h` | MoltNet's `performance.memory`, memory measurement and the 4 GiB machine V8 is configured as (pure, + `moltnet_memory_values_unittest.cc`; glue, + `moltnet_memory_test.cc`); the renderer's data limit on Linux (+ `chrome/common/molt_ai/fingerprinting/molt_data_limit_unittest.cc`) |
 | `src/third_party/llvm-libc/molt_portable_math.{h,cc}`; `src/ui/gfx/geometry/molt_math.{h,cc}`, `molt_complex_math.h` | MoltNet's portable math: llvm-libc without fused multiply-adds (+ `molt_portable_math_unittest.cc`) and the process-wide switch Blink, `ui/gfx` and `media` call through (+ `molt_math_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_cpu.{h,cc}`; `src/third_party/skia/src/opts/SkOpts_moltbrowser.cpp` | MoltNet's CPU features, set before V8 starts: V8's flags, the heap's machine, skcms's and Skia's portable code (+ `moltnet_cpu_test.cc`); Skia's portable raster pipeline |
+| `src/third_party/webrtc/rtc_base/cpu_info.{h,cc}`, `molt_math.{h,cc}`; `src/media/webrtc/molt_cpu_independent_processing_unittest.cc` | MoltNet's microphone processing: WebRTC's CPU-independent mode per audio processing instance and its math switch (+ the golden digests every processor and OS must reproduce) |
 | `src/chrome/browser/molt_ai/tor/molt_net_cpu_policy.h`, `molt_net_cpu.{h,cc}` | the processor MoltNet needs, read once in the browser, and the sentence it shows (+ `molt_net_cpu_policy_unittest.cc`, `molt_net_cpu_unittest.cc`) |
 | `src/third_party/rust/chromium_crates_io/vendor/jxl-v0_7/src/moltbrowser_math.rs`, `jxl_simd-v0_7/src/lib.rs` | jxl-rs's portable mode (crate patches in `chromium_crates_io/patches/jxl-v0_7/`, `jxl_simd-v0_7/`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_encoders.{h,cc}` | MoltNet's MediaRecorder encoders and software encoder threads (+ `moltnet_encoders_test.cc`) |
@@ -6185,4 +6406,9 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    libaom, libwebp or libjpeg-turbo roll, or V8 gates a WebAssembly
    feature on a processor extension, repeat the audit of [what pages can
    learn about the processor](#moltnet-what-pages-can-learn-about-the-processor)
-   (and check that vendoring the jxl crates kept their patches).
+   (and check that vendoring the jxl crates kept their patches). When
+   WebRTC rolls, repeat the comparison of [the microphone's
+   processing](#moltnet-the-microphones-processing) and look for new
+   processor dispatch (`cpu_info::Supports`, `WEBRTC_HAS_NEON`, new
+   `*_avx2`, `*_sse2` or `*_neon` files) and new C library math in
+   `modules/audio_processing` and `common_audio`.

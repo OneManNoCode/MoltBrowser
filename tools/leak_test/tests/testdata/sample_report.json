@@ -1,4 +1,5 @@
 {
+ "arch": "x86_64",
  "checks": [
   {
    "details": null,
@@ -107,6 +108,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_processed_stable",
+   "status": "FAIL",
+   "title": "audio.mic_processed_stable is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Fonts\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"DejaVu Sans\", \"Liberation Sans\", \"Arial\", \"Ubuntu\"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)"
@@ -151,6 +163,18 @@
    "id": "harness.capture",
    "status": "PASS",
    "title": "The packet capture recorded traffic"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "browser flags: --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=/run/x/mic-input.wav%noloop --use-fake-ui-for-media-stream",
+    "WAV sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   ],
+   "group": "harness",
+   "id": "harness.mic_processing",
+   "status": "PASS",
+   "title": "The microphone launch ran (Chromium's fake capture device; its record is checked under uniformity)"
   },
   {
    "details": null,
@@ -850,6 +874,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the microphone's processing\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"autoGainControl\": true, \"echoCancellation\": true, \"noiseSuppression\": true}, expected {\"autoGainControl\": true, \"echoCancellation\": true, \"noiseSuppression\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.audio.mic_settings",
+   "status": "PASS",
+   "title": "audio.mic_settings is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: audio, DRM and media capabilities\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0.024, expected 0.024"
@@ -949,6 +984,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: what pages can learn about the processor\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.cpu.float16_nan_canonical",
+   "status": "PASS",
+   "title": "cpu.float16_nan_canonical is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: CPU features\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
@@ -957,6 +1003,17 @@
    "id": "uniform.cpu.wasm_relaxed_simd",
    "status": "PASS",
    "title": "cpu.wasm_relaxed_simd is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: what pages can learn about the processor\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.cpu.wasm_simd",
+   "status": "PASS",
+   "title": "cpu.wasm_simd is uniform"
   },
   {
    "details": null,
@@ -3175,9 +3232,9 @@
  ],
  "counts": {
   "ERROR": 0,
-  "FAIL": 12,
+  "FAIL": 13,
   "INFO": 2,
-  "PASS": 179,
+  "PASS": 183,
   "SKIP": 85
  },
  "fingerprints": [
@@ -3225,6 +3282,7 @@
     "audio.sample_rate": 48000,
     "audio.script_processor_buffer": 2048,
     "audio.sink_id": "",
+    "audio.stretched": "d28a51f0c3e94b7a16f0e852",
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
@@ -3247,6 +3305,13 @@
      "127.75deg"
     ],
     "cpu.dommatrix": "6e3a90c1d2b7f4085a1c9e37",
+    "cpu.float16_nan": {
+     "array": "7e00 7e00 fe00 fe00 fe00 7e00",
+     "array_optimized": "7e00 7e00 fe00 fe00 fe00 7e00",
+     "dataview": "7e00 7e00 fe00 fe00 fe00 7e00",
+     "dataview_optimized": "7e00 7e00 fe00 fe00 fe00 7e00"
+    },
+    "cpu.float16_nan_canonical": true,
     "cpu.math": "5d0c1e7a92b4f3608e2d17c4",
     "cpu.math_cross_arch": "b81f0d6e2a94c3570e1d8f42",
     "cpu.wasm_relaxed_simd": false,
@@ -3481,6 +3546,11 @@
      "bytes": 4283,
      "chunks": 26,
      "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.jxl": {
+     "format": "RGBA",
+     "planes": "6b0e2d91c4a7f3580e1b9d27",
+     "rgba": "6b0e2d91c4a7f3580e1b9d27"
     },
     "pixels.p3_readback": {
      "i420": "a07b3e95c6d2148f0e6b7d31",
@@ -3722,6 +3792,28 @@
    },
    "window": null,
    "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "mic",
+   "label": "mic",
+   "phase": "mic_processing",
+   "target": "moltnet",
+   "values": {
+    "audio.mic_processed": {
+     "frames": 480,
+     "hash": "0f4c2a9e71b3d8565ae0c4f1"
+    },
+    "audio.mic_processed_stable": false,
+    "audio.mic_sample_rate": 48000,
+    "audio.mic_settings": {
+     "autoGainControl": true,
+     "echoCancellation": true,
+     "noiseSuppression": true
+    }
+   },
+   "window": null,
+   "zoom_requested": 100
   }
  ],
  "kit_version": "1.0",
@@ -3858,6 +3950,7 @@
   },
   "finished": "2025-10-09T08:56:00+00:00",
   "host": {
+   "arch": "x86_64",
    "os": "Linux-6.8-x86_64",
    "python": "3.12.3"
   },

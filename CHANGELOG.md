@@ -496,6 +496,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   processor; JPEG XL images there decode up to about twice as slowly
   (`docs/FINGERPRINTING.md`, "MoltNet: what pages can learn about the
   processor"); regular and incognito windows are unchanged.
+- **MoltNet's microphone processing is the same on every processor.** In
+  MoltNet windows the echo cancellation, noise suppression and gain
+  control a page's microphone stream gets compute the same samples from
+  the same sound on every x86-64 and Arm processor, and still cancel
+  what the browser plays. The audio service uses about 1.5% more of one
+  core while a MoltNet page records (`docs/FINGERPRINTING.md`, "MoltNet:
+  the microphone's processing"); regular and incognito windows are
+  unchanged. The leak test kit now checks these answers too.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
