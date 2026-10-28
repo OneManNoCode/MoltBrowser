@@ -11,7 +11,7 @@ process and the tooling for it, plus the first dry run.
 |---|---|
 | The Chromium revision we build on | `chromium_version.txt` (`CHROMIUM_VERSION`, `CHROMIUM_REVISION`). The only copy: `scripts/setup.sh`, `build/docker/*`, every workflow and `tools/chromium/*` read it. Shell code uses `tools/chromium/pin.sh`. |
 | The SHA-256 of the release's source tarball | `PINNED_SHA256` in `tools/compile_check/ccheck/tarball.py`. The static GN check and the compile check stream Chromium's official source tarball and refuse one without a pin or with other bytes. When the pin moves, add the new release's (from its `.hashes` file in the bucket, checked against the MD5 the bucket reports for the tarball). |
-| MoltBrowser's own code | `src/` files that do not exist upstream (3824 today: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
+| MoltBrowser's own code | `src/` files that do not exist upstream (5243 at 156.0.8078.74: `chrome/browser/molt_ai/`, `ui/webui/molt_ai/`, toolbar `molt_*`, vendored llama.cpp, the anydoc Rust crates, ...) |
 | Our changes to upstream files | `src/` still holds whole copies (the build does `cp -R src/. chromium/src/`). `patches/` holds the same changes as one diff per file against the pin, generated from `src/`. |
 
 `patches/` layout:
@@ -21,21 +21,23 @@ process and the tooling for it, plus the first dry run.
   Applies with `git apply -p1` from `chromium/src`.
 - `patches/series`: the patches, in order.
 - `patches/identical.txt`: `src/` files that are byte-identical to upstream at
-  the pin (49 today, all `.grdp` string files). They change nothing now, but
-  after a rebase a stale copy silently reverts upstream's changes. Drop them
-  from `src/` when convenient; the rebase tool refreshes them meanwhile.
+  the pin (50 at 156.0.8078.74, all but one `.grdp` string files). They
+  change nothing now, but after a rebase a stale copy silently reverts
+  upstream's changes. Drop them from `src/` when convenient; the rebase
+  tool refreshes them meanwhile.
 - `patches/whole_files.txt`: upstream files that live in a DEPS subproject (a
   separate repo the mirror cannot diff: V8, Skia, WebRTC, the search engine
   definitions; 66 today). `src/` keeps them whole, and each entry records
   the subproject commit the file was last merged with and a release whose
   DEPS pins it:
   `v8/src/base/ieee754.cc # v8@392e4442… (156.0.8078.48)` (a tab before the
-  `#`). That commit is the base of the file's next 3-way merge. `rebase.py` merges these files
-  whenever the new tag's DEPS moves their subproject, and `--apply` records
-  the new commit; `overlay_to_patches.py` keeps what is recorded (a newly
-  imported file gets the pin's), and `verify_patches.py` fails while a whole
-  file is behind the pin's subproject, since left alone it would silently
-  revert that subproject's newer changes to it.
+  `#`). That commit is the base of the file's next 3-way merge.
+  `rebase.py` merges these files whenever the new tag's DEPS moves their
+  subproject, and `--apply` records the new commit; `overlay_to_patches.py`
+  keeps what is recorded (a newly imported file gets the pin's), and
+  `verify_patches.py` fails while a whole file is behind the pin's
+  subproject, since left alone it would silently revert that subproject's
+  newer changes to it.
 
 Until the build switches to the patch series, `src/` is the source of truth:
 edit `src/`, then run `tools/chromium/overlay_to_patches.py` and
@@ -449,3 +451,95 @@ not reach; `scripts/vendor-rust-crates.sh --check` against the hand-merged
 lock; `gn check` (new includes of `molt_net_profile_id.h` in
 `//chrome/browser/media/webrtc` and `//chrome/browser/reduce_accept_language`
 follow the existing pattern without a direct dep).
+
+
+## 156.0.8078.74 (2026-10-28)
+
+The 156 branch's first security respin. Chrome 156.0.8078.73 (Linux) and
+156.0.8078.74 (Windows and macOS) went to Stable on 2026-10-27, and
+Extended Stable started moving to .74 the same day; the two tags differ
+only in `chrome/VERSION`.
+
+`tools/chromium/rebase.py 156.0.8078.74 --apply` from 156.0.8078.48:
+
+| | Files |
+|---|---|
+| Patched upstream files | 591: 9 clean 3-way merges, 582 left alone upstream, no conflict, none deleted or moved |
+| Identical copies | 50, none changed upstream |
+| First-party paths now upstream | 0 |
+| Removed upstream symbols our code uses | 0 (757 headers scanned, 3 changed) |
+| DEPS whole files | 66; 65 in a subproject that moved: 60 unchanged in it, 5 our own |
+
+What upstream changed next to our hooks (all merged cleanly; none touches
+a MoltBrowser line):
+
+- **Blob storage** (`storage/browser/blob/blob_storage_context.{cc,h}`,
+  `blob_data_builder.h`): blob entries are reference counted
+  (`scoped_refptr<BlobEntry>`, handle counts, `ClearAndFreeMemory` gone).
+  The per-site blob budget hooks pass the builder's budget key to the
+  memory controller as before, and each key's usage still follows each
+  allocation's lifetime, as upstream's own count does.
+- **HTTP cache** (`net/http/http_cache.cc`): a transaction's entry-lock
+  timeout is cancelled before it goes back to the queue.
+- **WebAudio** (`realtime_audio_destination_handler.cc`): unconnected
+  nodes are processed under the graph lock, and stopping works from a
+  paused destination; MoltNet's uniform device hooks (channel count,
+  buffer size) are untouched.
+- **`chrome_content_browser_client.cc`** (+ `chrome/browser/BUILD.gn`):
+  lazy loading is off for headless command processing, before MoltNet's
+  web-preference override, which still runs last.
+- `chrome/browser/extensions/BUILD.gn`, `flag-metadata.json`: a test list
+  and flag expiry dates.
+
+**DEPS subprojects.** The respin moves ten: V8 (15.6.75.19 to 15.6.75.25:
+its parser and scopes, Turbofan, Turboshaft, Maglev, the Wasm graph
+assembler, map transitions, frames), Skia (`chrome/m156`: the image filter
+cache, Ganesh's resource cache, Vulkan, SkSL's raster pipeline code
+generator), WebRTC (forward error correction, the video receive stream),
+ANGLE, Dawn (Vulkan render pipelines), devtools-frontend, ICU
+(`charstr.cpp`), libaom, libvpx and PDFium (libopenjpeg). `src/` keeps
+whole files in three of them: Skia 26 (23 upstream, 3 ours), WebRTC 33 (31
+and 2) and V8 6. None of the 60 upstream ones changed between the two
+subproject commits, so the merge kept them and `whole_files.txt` records
+the new commits. V8 and Skia came from their GitHub mirrors, WebRTC from
+the .48 and .74 source tarballs (its mirrors carry no release-branch
+commits).
+
+**What the merge needed: the tools.** Until this respin `rebase.py` only
+listed the whole files whose subproject moved, and `overlay_to_patches.py`
+then recorded the new subproject commit whether or not they were merged,
+so a respin that moved V8 could quietly keep the old copies and revert
+V8's fixes to them. Now `whole_files.txt` records the commit each file was
+merged with, `rebase.py` merges them (from a mirror or the release
+tarballs, `tools/chromium/subprojects.py`), and `verify_patches.py` fails
+while one is behind the pin (`tools/chromium/patch_tools_test.py`). The
+same gap hid the search engine definitions: recorded at 156's
+`search_engines_data` (`5dc9f1a`, unchanged in the respin), the file was
+still the 148 one. It is rebuilt from 156's now (from the release
+tarball), so the build machine no longer has to. The compile check's work
+dir now moves to a new pin by itself (`tools/compile_check/README.md`,
+"When the pin moves"); before, it would have kept compiling against the
+old release's copies of the files that changed.
+
+Also: the .74 source tarball's SHA-256 is pinned (from its `.hashes` file,
+whose MD5 the bucket's own agrees with; the whole stream matched it), and
+the MoltNet locale tables are unchanged but for the version they name.
+
+Checks here: `verify_patches.py` OK (591 patches, 50 identical, 66 whole
+files at the pin's subproject commits); the compile check at .74, every
+changed file on every platform: 1437 rows, 1396 checked against the real
+headers, 40 partly on stand-ins and 1 not checked (the same Mac, grit, V8
+and iOS cases as before), 0 errors and 0 plugin findings, as at
+156.0.8078.48 (the work dir moved by itself; of 1436 compiles the result
+cache served 1211, and 225 that see a changed header compiled again, 150
+of them Blink's through WTF's hash tables); the static GN check
+at .74: 0 errors in its six configurations (one warning, the adblock
+crate the build machine vendors), `checkdeps` (1168 files) and
+`blink-audit` (251 files) clean; the patch tools', compile check's and
+static GN check's own tests, `molt_fuzz.py check`, the leak kit's tests
+and the WebUI checks pass.
+
+Still to do on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md`,
+"from the .74 respin"): `./scripts/setup.sh --resync` (ten subprojects
+move, so expect a near-full rebuild), then the build and tests as for 156.
+No Rust crate changed, so gnrt needs no extra run.
