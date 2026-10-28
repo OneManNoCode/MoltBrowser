@@ -696,6 +696,96 @@
      "autoGainControl": true,
      "echoCancellation": "all",
      "noiseSuppression": true
+    },
+    "video.camera_capabilities": {
+     "aspectRatio": [
+      0.001388888888888889,
+      1280
+     ],
+     "frameRate": [
+      0,
+      30
+     ],
+     "height": [
+      1,
+      720
+     ],
+     "resizeMode": [
+      "crop-and-scale",
+      "none"
+     ],
+     "width": [
+      1,
+      1280
+     ]
+    },
+    "video.camera_device_capabilities": [
+     {
+      "aspectRatio": [
+       0.001388888888888889,
+       1280
+      ],
+      "frameRate": [
+       1,
+       30
+      ],
+      "height": [
+       1,
+       720
+      ],
+      "resizeMode": [
+       "crop-and-scale",
+       "none"
+      ],
+      "width": [
+       1,
+       1280
+      ]
+     }
+    ],
+    "video.camera_frame": {
+     "codedHeight": 720,
+     "codedWidth": 1280,
+     "displayHeight": 480,
+     "displayWidth": 640,
+     "format": "I420",
+     "visibleRect": [
+      160,
+      0,
+      960,
+      720
+     ]
+    },
+    "video.camera_hd_frame": {
+     "codedHeight": 720,
+     "codedWidth": 1280,
+     "displayHeight": 720,
+     "displayWidth": 1280,
+     "format": "I420",
+     "visibleRect": [
+      0,
+      0,
+      1280,
+      720
+     ]
+    },
+    "video.camera_hd_settings": {
+     "aspectRatio": 1.7777777777777777,
+     "frameRate": 30,
+     "height": 720,
+     "resizeMode": "none",
+     "width": 1280
+    },
+    "video.camera_overconstrained": {
+     "constraint": "width",
+     "name": "OverconstrainedError"
+    },
+    "video.camera_settings": {
+     "aspectRatio": 1.3333333333333333,
+     "frameRate": 30,
+     "height": 480,
+     "resizeMode": "none",
+     "width": 640
     }
    },
    "window": null,

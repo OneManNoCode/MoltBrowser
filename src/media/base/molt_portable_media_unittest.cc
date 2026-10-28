@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <ios>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -25,6 +26,8 @@
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
+#include "media/base/channel_layout.h"
+#include "media/base/channel_mixer.h"
 #include "media/base/decoder_factory.h"
 #include "media/base/media_util.h"
 #include "media/base/molt_portable_scale.h"
@@ -443,6 +446,30 @@ TEST_F(MoltPortableMediaTest, FlushTinyPortableSamplesKeepsTheFloor) {
   }
 }
 
+// The same floor for doubles (an IIR filter's history): below 2^-63 a zero of
+// the sign, far above the subnormal doubles; everything else stays.
+TEST_F(MoltPortableMediaTest, FlushTinyPortableSampleFloorsDoubles) {
+  const double floor = 0x1p-63;
+  EXPECT_EQ(FlushTinyPortableSample(floor), floor);
+  EXPECT_EQ(FlushTinyPortableSample(-floor), -floor);
+  EXPECT_EQ(FlushTinyPortableSample(0x1.fffffffffffffp-64), 0.0);
+  const double negative = FlushTinyPortableSample(-0x1p-64);
+  EXPECT_EQ(negative, 0.0);
+  EXPECT_TRUE(std::signbit(negative));
+  EXPECT_EQ(FlushTinyPortableSample(std::numeric_limits<double>::min()), 0.0);
+  EXPECT_EQ(FlushTinyPortableSample(std::numeric_limits<double>::denorm_min()),
+            0.0);
+  // Doubles at or above the floor stay with all their bits, also ones a float
+  // can't hold.
+  EXPECT_EQ(FlushTinyPortableSample(0x1.0000000000001p-63),
+            0x1.0000000000001p-63);
+  EXPECT_EQ(FlushTinyPortableSample(1e300), 1e300);
+  EXPECT_TRUE(std::isinf(
+      FlushTinyPortableSample(std::numeric_limits<double>::infinity())));
+  EXPECT_TRUE(std::isnan(
+      FlushTinyPortableSample(std::numeric_limits<double>::quiet_NaN())));
+}
+
 // Sets the CPU's flush-to-zero modes the way Chromium's disablers do (x86:
 // MXCSR FTZ and DAZ; arm64: FPCR.FZ) for a test, and puts back the mode it
 // found.
@@ -628,6 +655,124 @@ TEST_F(MoltPortableMediaTest, PortableCaptureOutputFormat) {
   EXPECT_EQ(stereo.sample_rate(), 48000);
   EXPECT_EQ(stereo.frames_per_buffer(), 480);
   EXPECT_EQ(stereo.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
+}
+
+// BEGIN DOWNMIX SIGNAL (the standalone harness extracts this block)
+// Fills `bus` with the next frames of a fixed signal: every sample from a
+// 32-bit LCG, in [-0.5, 0.5) with all 24 bits of the mantissa in use, so that
+// a fused and a separate multiply-add round apart.
+void FillDownmixSignal(uint32_t& state, AudioBus& bus) {
+  for (int f = 0; f < bus.frames(); ++f) {
+    for (int c = 0; c < bus.channels(); ++c) {
+      state = state * 1664525u + 1013904223u;
+      bus.channel(c)[f] = static_cast<int32_t>(state) / 4294967296.0f;
+    }
+  }
+}
+
+// FNV-1a over the bits of every sample of `bus`, channel by channel.
+void FnvDownmix(uint64_t& hash, const AudioBus& bus) {
+  for (int c = 0; c < bus.channels(); ++c) {
+    for (float sample : bus.channel(c)) {
+      uint32_t bits;
+      std::memcpy(&bits, &sample, sizeof(bits));
+      for (int i = 0; i < 4; ++i) {
+        hash ^= (bits >> (8 * i)) & 0xff;
+        hash *= 1099511628211ull;
+      }
+    }
+  }
+}
+
+// The digest of `buffers` buffers of `frames` frames of the signal on
+// `channels` channels as `mix` (const AudioBus& -> const AudioBus&) mixes
+// them.
+template <typename Mix>
+uint64_t DigestDownmix(Mix&& mix, int channels, int frames, int buffers) {
+  uint32_t state = 2026;
+  uint64_t hash = 1469598103934665603ull;
+  auto input = AudioBus::Create(channels, frames);
+  for (int b = 0; b < buffers; ++b) {
+    FillDownmixSignal(state, *input);
+    FnvDownmix(hash, mix(*input));
+  }
+  return hash;
+}
+
+// The layouts of the golden digests below: Windows' QUAD and 5.1 microphone
+// arrays, at 44.1 kHz in 10 ms buffers, down-mixed to one and two channels.
+struct DownmixGolden {
+  ChannelLayout layout;
+  int channels;
+  uint64_t digest;
+};
+// END DOWNMIX SIGNAL
+
+// Computed with Chromium 156's ChannelMixer and MoltBrowser's vector_math.cc
+// built standalone (x86-64 natively, with AVX2, FMA and AVX-512, and under
+// qemu on Core 2, Nehalem, Haswell and EPYC models; arm64 under qemu on
+// Cortex-A53 and the max CPU), all of which agree, also from a thread left in
+// a flush mode. Chromium's own dispatch of the multiply-adds gives other
+// digests on the CPUs with AVX2 and FMA.
+constexpr DownmixGolden kDownmixGoldens[] = {
+    {CHANNEL_LAYOUT_QUAD, 1, 0x75deaebc8f7a7033ull},
+    {CHANNEL_LAYOUT_QUAD, 2, 0x4f1655f56506a6d9ull},
+    {CHANNEL_LAYOUT_5_1, 1, 0x172ebd2bea51f2acull},
+    {CHANNEL_LAYOUT_5_1, 2, 0x17611a79a9527093ull},
+};
+
+// A device of another layout than mono, stereo and discrete is down-mixed;
+// those three aren't.
+TEST_F(MoltPortableMediaTest, PortableCaptureNeedsDownmix) {
+  EXPECT_FALSE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_MONO));
+  EXPECT_FALSE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_STEREO));
+  EXPECT_FALSE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_DISCRETE));
+  EXPECT_FALSE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_NONE));
+  EXPECT_FALSE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_UNSUPPORTED));
+  EXPECT_FALSE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_BITSTREAM));
+  EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_QUAD));
+  EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_5_1));
+  EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_7_1));
+  EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_2_1));
+  EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_STEREO_DOWNMIX));
+}
+
+// The down-mix computes the same samples on every CPU: from a thread outside
+// any portable scope, and from one left in a flush mode, it gives the golden
+// digests; and it gives what media's ChannelMixer gives in a portable scope.
+TEST_F(MoltPortableMediaTest, DownmixGoldenDigests) {
+  for (const DownmixGolden& golden : kDownmixGoldens) {
+    const AudioParameters device(
+        AudioParameters::AUDIO_PCM_LOW_LATENCY,
+        ChannelLayoutConfig::FromLayout(golden.layout), 44100, 441);
+    PortableCaptureDownmix downmix(device, golden.channels);
+    EXPECT_EQ(downmix.channels(), golden.channels);
+    const auto portable = [&downmix](const AudioBus& in) -> const AudioBus& {
+      return downmix.Downmix(in);
+    };
+    ASSERT_FALSE(IsPortableAudioThread());
+    const uint64_t digest =
+        DigestDownmix(portable, device.channels(), 441, 200);
+    EXPECT_EQ(digest, golden.digest)
+        << ChannelLayoutToString(golden.layout) << " to "
+        << golden.channels << ": " << std::hex << digest;
+    {
+      ScopedFlushModeForTesting flush;
+      EXPECT_EQ(DigestDownmix(portable, device.channels(), 441, 200),
+                digest);
+    }
+
+    ChannelMixer mixer(device.channel_layout_config(),
+                       golden.channels == 1 ? ChannelLayoutConfig::Mono()
+                                            : ChannelLayoutConfig::Stereo());
+    auto output = AudioBus::Create(golden.channels, 441);
+    const auto reference = [&](const AudioBus& in) -> const AudioBus& {
+      ScopedPortableAudioThread portable_code(true);
+      mixer.Transform(&in, output.get());
+      return *output;
+    };
+    EXPECT_EQ(DigestDownmix(reference, device.channels(), 441, 200), digest);
+  }
 }
 
 }  // namespace

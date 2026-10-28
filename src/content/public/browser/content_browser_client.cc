@@ -1170,6 +1170,11 @@ ContentBrowserClient::GetBackgroundFetchGrowthBeyondFloorCallback(
   return base::RepeatingClosure();
 }
 
+bool ContentBrowserClient::ShouldProcessAudioCaptureCpuIndependently(
+    BrowserContext*) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

@@ -126,6 +126,7 @@
 #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_audio_capture.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_storage.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_storage_values.h"  // MoltBrowser
@@ -7273,6 +7274,15 @@ bool ChromeContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(
          molt_ai::tor::ScheduleBackgroundFetchesPerSite(
              molt_ai::tor::IsMoltNetProfile(
                  Profile::FromBrowserContext(browser_context)));
+}
+
+bool ChromeContentBrowserClient::ShouldProcessAudioCaptureCpuIndependently(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: MoltNet's microphone streams are processed with the code
+  // that gives the same samples on every CPU, as the browser decides from
+  // the profile (molt_ai/fingerprinting/molt_net_audio_capture.h).
+  return molt_ai::fingerprinting::ProcessesAudioCaptureCpuIndependently(
+      molt_ai::fingerprinting::ModeForBrowserContext(browser_context));
 }
 
 base::RepeatingClosure

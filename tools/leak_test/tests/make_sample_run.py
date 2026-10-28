@@ -450,7 +450,10 @@ def manifest():
                         'mq.pointer_fine': True}},
             # The mic_processing launch: the two captures disagree (a
             # finding: the probe can't compare machines then), and so do
-            # "remote-only"'s samples while the page plays tones.
+            # "remote-only"'s samples while the page plays tones; the
+            # camera's first frame is the device's own, with a smaller
+            # visible part (Chromium's frames), where MoltNet's are exactly
+            # the track's size.
             {'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
              'window': None, 'zoom_requested': 100, 'kind': 'mic',
              'target': 'moltnet',
@@ -491,7 +494,19 @@ def manifest():
                      'echoCancellation': 'remote-only',
                      'noiseSuppression': True, 'autoGainControl': True},
                  'audio.mic_playback': {
-                     'hash': 'c83e5f02a9d4b7160e2f9a4c', 'frames': 480}}},
+                     'hash': 'c83e5f02a9d4b7160e2f9a4c', 'frames': 480},
+                 'video.camera_settings': dict(ex.CAMERA_SETTINGS),
+                 'video.camera_capabilities': dict(ex.CAMERA_CAPABILITIES),
+                 'video.camera_frame': {
+                     'codedWidth': 1280, 'codedHeight': 720,
+                     'visibleRect': [160, 0, 960, 720], 'displayWidth': 640,
+                     'displayHeight': 480, 'format': 'I420'},
+                 'video.camera_hd_settings': dict(ex.CAMERA_HD_SETTINGS),
+                 'video.camera_hd_frame': dict(ex.CAMERA_HD_FRAME),
+                 'video.camera_device_capabilities': [
+                     dict(c) for c in ex.CAMERA_DEVICE_CAPABILITIES],
+                 'video.camera_overconstrained': dict(
+                     ex.CAMERA_OVERCONSTRAINED)}},
         ],
         'errors': [],
     }

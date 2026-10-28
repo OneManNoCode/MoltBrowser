@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_audio_sink.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
@@ -115,10 +116,15 @@ void SetSinkIdResolver::Start() {
 void SetSinkIdResolver::DoSetSinkId() {
   auto set_sink_id_completion_callback =
       BindOnce(&SetSinkIdResolver::OnSetSinkIdComplete, WrapPersistent(this));
+  // MoltBrowser: the ID the device is looked up by. In MoltNet a device that
+  // isn't listed (Windows' communications device) is refused as any device
+  // that isn't there (moltnet_media_devices.h).
+  const String lookup_id =
+      molt_fingerprinting::OutputDeviceIdToLookUp(sink_id_);
   WebMediaPlayer* web_media_player = element_->GetWebMediaPlayer();
   if (web_media_player) {
     if (web_media_player->SetSinkId(
-            sink_id_, std::move(set_sink_id_completion_callback))) {
+            lookup_id, std::move(set_sink_id_completion_callback))) {
       element_->DidAudioOutputSinkChanged(sink_id_);
     }
     return;
@@ -135,16 +141,16 @@ void SetSinkIdResolver::DoSetSinkId() {
     // MoltBrowser: every MoltNet machine has the default output device, so
     // it is never looked for (moltnet_audio_sink.h).
     std::optional<media::OutputDeviceStatus> status =
-        molt_fingerprinting::UniformDefaultOutputStatus(sink_id_.Utf8());
+        molt_fingerprinting::UniformDefaultOutputStatus(lookup_id.Utf8());
     if (!status.has_value()) {
       status =
-          web_frame->Client()->CheckIfAudioSinkExistsAndIsAuthorized(sink_id_);
+          web_frame->Client()->CheckIfAudioSinkExistsAndIsAuthorized(lookup_id);
     }
 
     if (!status.has_value()) {
       status = AudioDeviceFactory::GetInstance()
                    ->GetOutputDeviceInfo(web_frame->GetLocalFrameToken(),
-                                         sink_id_.Utf8())
+                                         lookup_id.Utf8())
                    .device_status();
     }
     std::move(ConvertToOutputDeviceStatusCB(

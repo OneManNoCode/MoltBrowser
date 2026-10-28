@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (14 FAIL, 0 ERROR, 191 PASS, 85 SKIP, 2 INFO)
+**Verdict: FAIL**  (15 FAIL, 0 ERROR, 197 PASS, 85 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -281,6 +281,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | FAIL | audio.mic_remote_only is uniform | FINGERPRINTING.md "MoltNet: the microphone's processing" |
 | FAIL | fonts.visible is uniform | FINGERPRINTING.md "Fonts" |
 | FAIL | nav.hardwareConcurrency is uniform | FINGERPRINTING.md "Surface covered" |
+| FAIL | video.camera_frame is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
 | FAIL | win.innerWidth is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | ai.LanguageModel is uniform | FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | ai.Rewriter is uniform | FINGERPRINTING.md "Built-in AI APIs" |
@@ -404,6 +405,12 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | tz.resolved is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | ua.reduced is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | uad.high_entropy is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
+| PASS | video.camera_capabilities is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | video.camera_device_capabilities is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | video.camera_hd_frame is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | video.camera_hd_settings is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | video.camera_overconstrained is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
+| PASS | video.camera_settings is uniform | FINGERPRINTING.md "MoltNet: cameras, microphones and outputs" |
 | PASS | webcodecs.decoder_hardware is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | webcodecs.encoder_hardware is uniform | FINGERPRINTING.md "MoltNet: audio, DRM and media capabilities" |
 | PASS | webgl.debug_renderer_info is uniform | FINGERPRINTING.md "WebGL and WebGPU in MoltNet windows" |
@@ -513,6 +520,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual ["DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu"], expected a subset of the 55 allowed (not on the list: DejaVu Sans, Ubuntu)
 - **FAIL** nav.hardwareConcurrency is uniform
   - initial\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual 8, expected 4
+- **FAIL** video.camera_frame is uniform
+  - mic\|dsf=1.0\|window=initial\|zoom=100\|moltnet: actual {"codedHeight": 720, "codedWidth": 1280, "displayHeight": 480, "displayWidth": 640, "format": "I420", "visibleRect": [160, 0, 960, 720]}, expected {"codedHeight": 480, "codedWidth": 640, "displayHeight": 480, "displayWidth": 640, "format": "I420", "visibleRect": [0, 
 - **FAIL** win.innerWidth is uniform
   - window\|dsf=1.0\|window=1280x800\|zoom=100\|moltnet: actual 1401, expected a multiple of 200, at most 1400
 - **INFO** Regular-window control: values that are already uniform outside MoltNet on this machine (their MoltNet check proves less here)

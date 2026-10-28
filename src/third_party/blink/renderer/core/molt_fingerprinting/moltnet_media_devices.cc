@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "media/base/audio_parameters.h"
@@ -191,6 +192,16 @@ bool ListsMediaDevice(mojom::MediaDeviceType kind,
 bool ListsCaptureDevice(const String& device_id) {
   return !UsesUniformMediaDevices() ||
          moltnet::ListsAudioDevice(device_id.Utf8());
+}
+
+String OutputDeviceIdToLookUp(const String& sink_id) {
+  if (!UsesUniformMediaDevices()) {
+    return sink_id;
+  }
+  const std::string id = sink_id.Utf8();
+  const std::string_view lookup = moltnet::OutputDeviceIdToLookUp(id);
+  return lookup == id ? sink_id
+                      : String::FromUtf8(std::string(lookup));
 }
 
 void UseUniformNames(mojom::MediaDeviceType kind, WebMediaDeviceInfo& device) {

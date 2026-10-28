@@ -277,6 +277,7 @@ source_set("base") {
 
     # MoltBrowser: media that look and sound the same on every machine
     # (MoltNet's renderers).
+    "molt_portable_downmix.cc",
     "molt_portable_media.cc",
     "molt_portable_media.h",
     "molt_portable_scale.cc",
