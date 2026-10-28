@@ -50,14 +50,20 @@
 //    in it, or with a bind or a deletion for it queued, so the copy holds
 //    every write those sites queued before it; and a namespace that goes
 //    while tabs it opened wait for their copy (DeleteNamespace()) does the
-//    same. Meanwhile, every other control message that names either
-//    namespace waits too, in the order it came (a bind of the copy, the
-//    source's deletion), and runs after it; messages for other namespaces
-//    don't wait. So do the control messages that name a namespace copied
-//    or deleted a chunk a task (molt_dom_storage_split_work.h), until that
-//    ends. A renderer's own copy (window.open(), SessionStorageNamespace
-//    Clone()) is ordered after its writes by the renderer itself (it pauses
-//    the namespace's pipe until each area's pipe is flushed).
+//    same. It waits kMoltDomStorageTurnsWaitMs at most: a site whose turn
+//    hasn't come by then (one with a backlog) is copied as its areas are,
+//    less what a deletion asked for before the copy deletes
+//    (molt_dom_storage_waits.h). Meanwhile, every other control message
+//    that names either namespace waits too, in the order it came (a bind of
+//    the copy, the source's deletion), and runs after it; messages for
+//    other namespaces don't wait. So do the control messages that name a
+//    namespace copied or deleted a chunk a task
+//    (molt_dom_storage_split_work.h), until that ends; such a job waits
+//    only for the jobs before it that name its namespaces, and takes its
+//    steps in its namespace's turn (molt_dom_storage_waits.h). A renderer's
+//    own copy (window.open(), SessionStorageNamespace Clone()) is ordered
+//    after its writes by the renderer itself (it pauses the namespace's
+//    pipe until each area's pipe is flushed).
 //
 // What a page can still observe: the work of the task in service on
 // MoltNet's thread (one message of another site, or one control message),
@@ -71,6 +77,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -81,6 +88,7 @@
 #include "base/threading/sequence_bound.h"
 #include "base/unguessable_token.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"
+#include "components/services/storage/dom_storage/molt_dom_storage_waits.h"
 #include "components/services/storage/public/mojom/local_storage_control.mojom.h"
 #include "components/services/storage/public/mojom/session_storage_control.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -125,6 +133,9 @@ class MoltPerSiteLocalStorage : public mojom::LocalStorageControl {
       override;
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      bool closed) override;
+  void MoltGetUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback) override;
 
   LocalStorageImpl* storage_for_testing() { return impl_.get(); }
 
@@ -178,6 +189,9 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
       override;
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      bool closed) override;
+  void MoltGetUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback) override;
   void CreateNamespace(const std::string& namespace_id) override;
   void CloneNamespace(const std::string& namespace_id_to_clone,
                       const std::string& clone_namespace_id,
@@ -211,36 +225,50 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
   void Queued(const std::string& namespace_id, const std::string& group);
   void Dequeued(const std::string& namespace_id, const std::string& group);
   // Runs `operation` in the control's turn once each site with areas in
-  // `namespace_id`, or a message for it queued, has had a turn; the
-  // namespaces in `hold` hold their control messages until then.
+  // `namespace_id`, or a message for it queued, has had a turn, or
+  // kMoltDomStorageTurnsWaitMs after the turns are asked for, whichever
+  // comes first; the namespaces in `hold` hold their control messages
+  // until then. `operation` copies `namespace_id` into `copy`, or, with
+  // none, into the namespaces waiting for a copy of it.
   void AfterTurnsOf(const std::string& namespace_id,
+                    std::optional<std::string> copy,
                     std::vector<std::string> hold,
                     base::OnceClosure operation);
   void PostTurns(uint64_t barrier,
                  const std::string& namespace_id,
                  std::set<std::string> groups);
   void TurnTaken(uint64_t barrier);
+  void TurnsTimedOut(uint64_t barrier);
   void RunBarrier(uint64_t barrier);
+  // The deletions of `source`'s areas still queued in their sites' turns
+  // (asked for before a copy whose wait ended first) go from `copies` too.
+  void DeleteQueuedFromCopies(const std::string& source,
+                              const std::vector<std::string>& copies);
 
   const scoped_refptr<MoltDomStorageFairScheduler> scheduler_;
   mojo::Remote<mojom::SessionStorageControl> impl_pipe_;
   std::unique_ptr<SessionStorageImpl> impl_;
   // The groups of each namespace's messages queued in their sites' turns
-  // (BindStorageArea(), DeleteStorage()).
+  // (BindStorageArea(), DeleteStorage()), and the storage keys of the
+  // deletions among them.
   std::map<std::string, std::multiset<std::string>> queued_;
-  // Copies (and deletions) waiting for their sites' turns: the turns still
-  // to come, the operation, and the namespaces held; the held namespaces
-  // and their control messages, in the order they came.
+  std::map<std::string, std::multiset<blink::StorageKey>> queued_deletions_;
+  // Copies (and deletions) waiting for their sites' turns: the namespace
+  // copied and its copy (none: the namespaces waiting for one), the
+  // operation, and the namespaces held; the turns still to come; the held
+  // namespaces and their control messages, in the order they came.
   struct Barrier {
     Barrier();
     Barrier(Barrier&&);
     Barrier& operator=(Barrier&&);
     ~Barrier();
-    size_t turns_left = 0;
+    std::string source;
+    std::optional<std::string> copy;
     base::OnceClosure operation;
     std::vector<std::string> hold;
   };
   std::map<uint64_t, Barrier> barriers_;
+  MoltDomStorageTurnWaits turn_waits_;
   uint64_t next_barrier_ = 0;
   std::multiset<std::string> held_namespaces_;
   struct HeldMessage {

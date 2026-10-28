@@ -52,6 +52,17 @@
 // download it doesn't know. Every other client's download goes on as in
 // Chromium.
 //
+// Background Fetch may take the download up while the download service is
+// still asking for its parameters (ControllerImpl's pending uploads: the
+// answer is posted, and Background Fetch's own answer may be posted too).
+// That answer can be from before Background Fetch knew the download, so it
+// names no initiator; and while it is on its way, asking again does nothing
+// (ControllerImpl::UpdateDriverState() returns while an upload is pending).
+// So a take-up that comes then is remembered (MoltFetchTakeUps), and when
+// the answer comes without the parameters, the download asks again at once
+// rather than waiting kMoltFetchParametersWaitSeconds and failing
+// (MoltOnFetchTakenUp(), ControllerImpl::OnDownloadReadyToStart()).
+//
 // Header-only and templated on the request parameters (RequestParams), so
 // the download service's target needs no new dependency and
 // molt_ai_unittests tests it.
@@ -59,7 +70,10 @@
 #ifndef COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_RESTORED_FETCH_H_
 #define COMPONENTS_DOWNLOAD_INTERNAL_BACKGROUND_SERVICE_MOLT_RESTORED_FETCH_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <set>
+#include <string>
 
 namespace download {
 
@@ -83,6 +97,54 @@ constexpr bool MoltWaitsForFetchParameters(bool page_fetch_client,
 // How long such a download waits before it fails. A registration loads
 // within seconds of the browser's start; this is far longer.
 inline constexpr int64_t kMoltFetchParametersWaitSeconds = 5 * 60;
+
+// What ControllerImpl::StartDownload() does when the client takes up a
+// download the service has already (refused as UNEXPECTED_GUID).
+enum class MoltFetchTakeUp {
+  // Nothing: not a page's fetch waiting for its parameters.
+  kNothing,
+  // Ask for its parameters again now.
+  kAskNow,
+  // An answer is on its way: ask again when it comes, if it has none.
+  kAskWhenAnswered,
+};
+
+// For a download that `waits_for_parameters` (MoltWaitsForFetchParameters(),
+// its parameters not had yet) while its parameters are being asked for
+// (`upload_pending`) or not.
+constexpr MoltFetchTakeUp MoltOnFetchTakenUp(bool waits_for_parameters,
+                                             bool upload_pending) {
+  if (!waits_for_parameters) {
+    return MoltFetchTakeUp::kNothing;
+  }
+  return upload_pending ? MoltFetchTakeUp::kAskWhenAnswered
+                        : MoltFetchTakeUp::kAskNow;
+}
+
+// The downloads (by GUID) the client took up while their parameters were
+// being asked for (MoltFetchTakeUp::kAskWhenAnswered). An entry lives until
+// the answer comes (Take()) or the download ends (Forget()).
+class MoltFetchTakeUps {
+ public:
+  MoltFetchTakeUps();
+  MoltFetchTakeUps(const MoltFetchTakeUps&) = delete;
+  MoltFetchTakeUps& operator=(const MoltFetchTakeUps&) = delete;
+  ~MoltFetchTakeUps();
+
+  void Remember(const std::string& guid) { guids_.insert(guid); }
+  // Whether `guid` was taken up while its answer was on its way; forgets it.
+  bool Take(const std::string& guid) { return guids_.erase(guid) > 0; }
+  void Forget(const std::string& guid) { guids_.erase(guid); }
+  size_t size() const { return guids_.size(); }
+
+ private:
+  std::set<std::string> guids_;
+};
+
+// Out of the class body, as Chromium's style asks of a class with members
+// that have constructors.
+inline MoltFetchTakeUps::MoltFetchTakeUps() = default;
+inline MoltFetchTakeUps::~MoltFetchTakeUps() = default;
 
 // ControllerImpl::OnDownloadReadyToStart(), once the client's parameters
 // are on `request_params` (RequestParams): a page's fetch keeps its first

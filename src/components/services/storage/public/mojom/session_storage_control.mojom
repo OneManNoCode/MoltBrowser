@@ -95,6 +95,13 @@ interface SessionStorageControl {
   // the tabs it opened made of them).
   MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
 
+  // MoltBrowser: as GetUsage(), for `storage_key` alone: each namespace with
+  // an area of it. With caches per site it is read in the turn of the key's
+  // site and costs what that site stores, not the partition (see
+  // LocalStorageControl.MoltGetUsageForStorageKey()).
+  MoltGetUsageForStorageKey(blink.mojom.StorageKey storage_key)
+      => (array<SessionStorageUsageInfo> info);
+
   // Creates a new namespace which can later be manipulated by other requests
   // on this interface.
   CreateNamespace(string namespace_id);

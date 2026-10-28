@@ -505,7 +505,7 @@ source_set("nonce_storage_policy") {
 
 # The tab helper that applies it to MoltNet's tabs (attached by
 # tab_helpers.cc): it notes the nonces a page's frames use and drops their
-# storage when the page goes.
+# storage, media-license data and cookies when the page goes.
 source_set("nonce_storage") {
   sources = [
     "molt_net_nonce_storage.cc",
@@ -516,7 +516,14 @@ source_set("nonce_storage") {
     ":nonce_storage_policy",
     "//base",
     "//chrome/browser/profiles:profile",
+
+    # ENABLE_LIBRARY_CDMS (the media-license data of the nonce's keys).
+    "//media:media_buildflags",
     "//net",
+
+    # The cookie store deletes the nonce's partitions
+    # (network::mojom::CookieManager::DeleteCookies()).
+    "//services/network/public/mojom",
 
     # The quota manager drops the nonce's buckets
     # (storage::QuotaManagerImpl::MoltDropNonce()).
@@ -608,6 +615,7 @@ source_set("unit_tests") {
     "molt_net_cpu_unittest.cc",
     "molt_net_dom_storage_site_policy_unittest.cc",
     "molt_net_dom_storage_unittest.cc",
+    "molt_net_dom_storage_waits_unittest.cc",
     "molt_net_download_isolation_unittest.cc",
     "molt_net_end_ordering_unittest.cc",
     "molt_net_ended_identity_network_unittest.cc",
@@ -624,6 +632,7 @@ source_set("unit_tests") {
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
     "molt_net_nonce_storage_policy_unittest.cc",
+    "molt_net_one_key_deletion_unittest.cc",
     "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
@@ -697,8 +706,9 @@ source_set("unit_tests") {
     "//components/download/internal/background_service:molt_site_isolation",
     "//components/download/public/background_service:public",
 
-    # Background Fetch scheduling, download isolation and processes per
-    # BrowsingInstance (content's std-only policies).
+    # Background Fetch scheduling, download isolation, processes per
+    # BrowsingInstance and what a deletion of one storage key reads
+    # (content's std-only policies).
     "//content/browser:molt_policies",
 
     # A Background Fetch's buffer counts against its site's blob share

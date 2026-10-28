@@ -380,6 +380,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   to a tab whose storage was made meanwhile is dropped quietly. The
   compile check keeps no result of a file compiled while the working tree
   changed.
+- MoltNet hardening, per site: when a page goes, its credentialless
+  frames' cookies and media-license data go with it too (the cookies
+  again a minute later), and MoltNet keeps no clipboard entry per such
+  page; a site's Clear-Site-Data reads only its own storage, not every
+  site's; a tab's `sessionStorage` copied or deleted in steps no longer
+  waits for other tabs' copies and deletions, and a duplicated tab's
+  copy waits at most a second for a site with a backlog of writes
+  (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening, in every profile: a Background Fetch taken up again after
+  a restart while its page's settings are still being asked for asks
+  again as soon as the answer comes, instead of failing after five
+  minutes.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

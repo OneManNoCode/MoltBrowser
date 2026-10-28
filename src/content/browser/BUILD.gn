@@ -99,12 +99,14 @@ if (is_ios) {
 }
 
 # MoltBrowser: MoltNet's Background Fetch scheduling per site, download
-# isolation and process-per-BrowsingInstance decisions, and which resumed
-# Background Fetch requests get a Local Network Access factory (std-only and
-# header-only), for :browser and MoltBrowser's own tests.
+# isolation and process-per-BrowsingInstance decisions, which resumed
+# Background Fetch requests get a Local Network Access factory, and what a
+# deletion of one storage key reads (std-only and header-only), for :browser
+# and MoltBrowser's own tests.
 source_set("molt_policies") {
   sources = [
     "background_fetch/molt_background_fetch_site_policy.h",
+    "browsing_data/molt_one_key_deletion_policy.h",
     "download/molt_download_isolation_policy.h",
     "download/molt_resumed_fetch_policy.h",
     "renderer_host/molt_browsing_instance_processes_policy.h",
