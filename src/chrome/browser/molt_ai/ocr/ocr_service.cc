@@ -17,6 +17,7 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -435,6 +436,13 @@ void OcrService::OcrImage(std::string image,
     ReplyLater(std::move(on_done), std::move(result));
     return;
   }
+  if (!run_slots_.TryTake()) {
+    OcrResult result;
+    result.error = std::string(internal::kOcrBusyError);
+    ReplyLater(std::move(on_done), std::move(result));
+    return;
+  }
+  on_done = run_slots_.ReleaseAfter(std::move(on_done));
   // bundle-tesseract.sh drops eng.traineddata into Resources/ocr/tessdata/;
   // tesseract takes the *parent* of the tessdata dir (TESSDATA_PREFIX).
   const base::FilePath tessdata =
@@ -464,6 +472,13 @@ void OcrService::OcrPdf(std::string pdf_bytes,
     ReplyLater(std::move(on_done), std::move(result));
     return;
   }
+  if (!run_slots_.TryTake()) {
+    OcrResult result;
+    result.error = std::string(internal::kOcrBusyError);
+    ReplyLater(std::move(on_done), std::move(result));
+    return;
+  }
+  on_done = run_slots_.ReleaseAfter(std::move(on_done));
   const base::FilePath tessdata =
       found.bundled ? GetBundledOcrDir() : base::FilePath();
   if (!document_parser_) {
@@ -478,6 +493,37 @@ void OcrService::OcrPdf(std::string pdf_bytes,
 }
 
 namespace internal {
+
+OcrRunSlots::OcrRunSlots() = default;
+OcrRunSlots::~OcrRunSlots() = default;
+
+bool OcrRunSlots::TryTake() {
+  size_t in_flight = in_flight_.load();
+  do {
+    if (in_flight >= kMaxOcrRunsInFlight) {
+      return false;
+    }
+  } while (!in_flight_.compare_exchange_weak(in_flight, in_flight + 1));
+  return true;
+}
+
+base::OnceCallback<void(OcrResult)> OcrRunSlots::ReleaseAfter(
+    base::OnceCallback<void(OcrResult)> done) {
+  // The runner gives the slot back after |done| has run, or when the
+  // wrapper is destroyed unrun.
+  return base::BindOnce(
+      [](base::ScopedClosureRunner /*release*/,
+         base::OnceCallback<void(OcrResult)> done, OcrResult result) {
+        std::move(done).Run(std::move(result));
+      },
+      base::ScopedClosureRunner(
+          base::BindOnce(&OcrRunSlots::Release, base::Unretained(this))),
+      std::move(done));
+}
+
+void OcrRunSlots::Release() {
+  in_flight_.fetch_sub(1);
+}
 
 void DecodeImageForOcr(base::span<const uint8_t> image,
                        base::TimeDelta timeout,

@@ -48,6 +48,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_OCR_OCR_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_OCR_OCR_SERVICE_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -140,6 +141,41 @@ OcrResult OcrBitmapWithTesseract(const base::FilePath& bin,
                                  size_t max_chars,
                                  base::TimeDelta timeout);
 
+namespace internal {
+
+// How many OCR runs (OcrImage, OcrPdf) may be under way at once. Each holds
+// a decoder or document parser process, and up to 128 MiB of decoded image
+// in the browser, so attachments sent faster than they are read (or by a
+// compromised chat page) can't make it hold an unbounded number.
+inline constexpr size_t kMaxOcrRunsInFlight = 2;
+inline constexpr std::string_view kOcrBusyError =
+    "OCR is already reading two other files: try again once they finish";
+
+// The runs under way, at most kMaxOcrRunsInFlight. Thread-safe.
+class OcrRunSlots {
+ public:
+  OcrRunSlots();
+  OcrRunSlots(const OcrRunSlots&) = delete;
+  OcrRunSlots& operator=(const OcrRunSlots&) = delete;
+  ~OcrRunSlots();
+
+  // Takes a slot for one more run; false if every slot is taken.
+  bool TryTake();
+  // |done| wrapped to give a taken slot back once it has run, or when it is
+  // destroyed unrun, so a run that never answers can't keep its slot. This
+  // must outlive the wrapper.
+  base::OnceCallback<void(OcrResult)> ReleaseAfter(
+      base::OnceCallback<void(OcrResult)> done);
+  size_t in_flight() const { return in_flight_.load(); }
+
+ private:
+  void Release();
+
+  std::atomic<size_t> in_flight_{0};
+};
+
+}  // namespace internal
+
 class OcrService {
  public:
   static OcrService* Get();
@@ -183,6 +219,9 @@ class OcrService {
   // Renders PDF pages for OcrPdf, one sandboxed process per PDF. Created on
   // first use, on the UI thread; this singleton is never destroyed.
   std::unique_ptr<DocumentParserClient> document_parser_;
+
+  // The runs OcrImage and OcrPdf have under way.
+  internal::OcrRunSlots run_slots_;
 };
 
 // The steps of OcrImage and OcrPdf, exposed for tests.

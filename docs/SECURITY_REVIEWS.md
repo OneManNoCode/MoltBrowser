@@ -72,7 +72,7 @@ test suite as root and unprivileged, the tools' own test suites and
 `molt_fuzz.py check` pass; the changed C++ was compiled against Chromium
 156's headers.
 
-**Findings.** 12: 2 low, 10 informational. Fixed: the two low.
+**Findings.** 12: 2 low, 10 informational. Fixed: the two low, and one informational (OCR runs at once).
 
 **Fixed.**
 
@@ -92,6 +92,12 @@ test suite as root and unprivileged, the tools' own test suites and
   keeps under that site, never its first-party storage
   (`content/browser/browsing_data/molt_one_key_deletion_policy.h`,
   `storage_partition_impl.cc`).
+- OCR: at most two runs (image attachments and scanned PDFs) are under way
+  at once; another gets "busy" at once. Each run holds a decoder or
+  document parser process and up to 128 MiB of decoded image in the
+  browser, so files sent faster than they are read can't make it hold an
+  unbounded number. A run's slot comes back when it answers, or when its
+  callback is dropped unrun (`chrome/browser/molt_ai/ocr/ocr_service.cc`).
 
 ## 2026-10-28: PRs #75 and #76 (October 2026)
 
