@@ -27,6 +27,7 @@
 #include "base/thread_annotations.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/fonts.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_font_set.h"
+#include "third_party/blink/renderer/platform/allow_discouraged_type.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
@@ -396,12 +397,17 @@ class BundledFonts final : public FontPlatformData::UniformFontSet {
   // The generated table (another one in tests only).
   std::atomic<const BundledFontTable*> table_;
   mutable base::Lock lock_;
-  // Written once, with ready_.
-  std::vector<std::unique_ptr<base::MemoryMappedFile>> files_ GUARDED_BY(lock_);
-  std::vector<sk_sp<SkData>> data_ GUARDED_BY(lock_);
-  mutable std::vector<CachedTypeface> typefaces_ GUARDED_BY(lock_);
+  // Written once, with ready_. The table is one for the process, shared by
+  // every renderer thread under lock_, and holds //base and Skia types.
+  std::vector<std::unique_ptr<base::MemoryMappedFile>> files_ GUARDED_BY(lock_)
+      ALLOW_DISCOURAGED_TYPE("process-wide, shared across threads");
+  std::vector<sk_sp<SkData>> data_ GUARDED_BY(lock_)
+      ALLOW_DISCOURAGED_TYPE("process-wide, shared across threads");
+  mutable std::vector<CachedTypeface> typefaces_ GUARDED_BY(lock_)
+      ALLOW_DISCOURAGED_TYPE("process-wide, shared across threads");
   // Threads that looked a font up before the files came.
-  mutable WaitingThreads waiting_threads_ GUARDED_BY(lock_);
+  mutable WaitingThreads waiting_threads_ GUARDED_BY(lock_)
+      ALLOW_DISCOURAGED_TYPE("process-wide, shared across threads");
   std::atomic<bool> ready_{false};
 };
 
