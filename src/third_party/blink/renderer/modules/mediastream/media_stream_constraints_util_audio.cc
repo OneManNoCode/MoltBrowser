@@ -17,6 +17,7 @@
 #include "media/base/audio_parameters.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/media_buildflags.h"
 #include "media/webrtc/constants.h"
 #include "media/webrtc/webrtc_features.h"
@@ -1310,7 +1311,10 @@ class DeviceContainer {
                   AudioCaptureApi api,
                   bool is_full_reconfiguration_allowed,
                   const MediaStreamAudioTrack* current_track = nullptr)
-      : device_parameters_(capability.Parameters()) {
+      // MoltBrowser: a MoltNet page's microphones all have one format, which
+      // constraints are checked against (media/base/molt_portable_media.h).
+      : device_parameters_(
+            media::PortableCaptureParameters(capability.Parameters())) {
     if (!capability.DeviceID().empty()) {
       device_id_container_ =
           StringContainer(StringSet({capability.DeviceID().Utf8()}));

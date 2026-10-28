@@ -39,6 +39,10 @@ specific_include_rules = {
     "+ui/gfx/color_space.h",
     "+ui/gfx/display_color_spaces.h",
   ],
+  # The one microphone format MoltNet's pages see (moltnet_media_devices.h).
+  "moltnet_media_devices\.cc": [
+    "+media/base/audio_parameters.h",
+  ],
   # MoltNet's bundled fonts, mapped from the read-only files the browser
   # sends (moltnet_fonts.h).
   "moltnet_fonts(_test)?\.(cc|h)": [

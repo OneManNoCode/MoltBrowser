@@ -30,15 +30,20 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEDIA_DEVICES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEDIA_DEVICES_H_
 
+#include <string>
+
 #include "base/functional/callback.h"
+#include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/mediastream/media_devices.mojom-shared.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom-shared.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
 class LocalDOMWindow;
+struct MediaStreamDevice;
 struct WebMediaDeviceInfo;
 
 namespace molt_fingerprinting {
@@ -74,6 +79,52 @@ CORE_EXPORT bool ConfirmUserMediaFailure(
     bool video,
     mojom::MediaStreamRequestResult result,
     base::OnceCallback<void(mojom::MediaStreamRequestResult)> done);
+
+// --- Names and groups once the page may see the devices -----------------------
+//
+// MoltNet's generic device names and groups (moltnet_media_values.h,
+// DeviceLabel(), DeviceGroup(), ListsAudioDevice()), wherever a page reads
+// them: enumerateDevices() (MediaDevices::DevicesEnumerated), a track's label
+// (UserMediaProcessor::InitializeSourceObject), its getSettings() and
+// getCapabilities() groups (UserMediaProcessor::OnStreamsGenerated and
+// OnDeviceChanged), and the groups getUserMedia()'s `groupId` constraints are
+// checked against (UserMediaProcessor's device capabilities). Elsewhere
+// everything is unchanged.
+
+// Whether enumerateDevices() lists `device` of `kind`, and getUserMedia() may
+// select it: in MoltNet, not Windows' communications device.
+CORE_EXPORT bool ListsMediaDevice(mojom::MediaDeviceType kind,
+                                  const WebMediaDeviceInfo& device);
+CORE_EXPORT bool ListsCaptureDevice(const String& device_id);
+
+// enumerateDevices()' entry `device` of `kind` with MoltNet's label (where
+// Chromium shows one) and group.
+CORE_EXPORT void UseUniformNames(mojom::MediaDeviceType kind,
+                                 WebMediaDeviceInfo& device);
+
+// The label of a track of the camera or microphone `device` getUserMedia()
+// opened; other capture (screens, windows, tabs) keeps its name. The device
+// itself keeps the browser's name: the renderer matches the browser's
+// messages about a device to its own copy by it (MediaStreamDevice::
+// IsSameDevice()).
+CORE_EXPORT std::string UniformName(const MediaStreamDevice& device);
+
+// A camera or microphone getUserMedia() opened, with MoltNet's group (its
+// tracks' getSettings() and getCapabilities()). Other capture is unchanged.
+CORE_EXPORT void UseUniformGroup(MediaStreamDevice& device);
+
+// The group a `groupId` constraint is checked against for the capture device
+// `device_id` whose group Chromium reports as `group_id`.
+CORE_EXPORT String UniformGroupId(const String& device_id,
+                                  const String& group_id);
+
+// enumerateDevices()' InputDeviceInfo.getCapabilities() of a microphone in
+// MoltNet: its sampleRate, channelCount and latency ranges from the one
+// format every MoltNet microphone has (media::PortableCaptureParameters()),
+// and no platform effects. Elsewhere unchanged but for the effects
+// (media::PortableCaptureEffects()).
+CORE_EXPORT void UseUniformCapabilities(
+    mojom::blink::AudioInputDeviceCapabilities& capabilities);
 
 }  // namespace molt_fingerprinting
 }  // namespace blink
