@@ -20,6 +20,8 @@
 //               nothing for WebRTC (which MoltNet doesn't offer).
 //   WebCodecs   software codecs only, so "prefer-hardware" is never
 //               supported.
+//   Devices     generic device names, every device in a group of its own,
+//               no Windows communications device.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEDIA_VALUES_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_MEDIA_VALUES_H_
@@ -27,6 +29,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
+#include <string_view>
 
 namespace blink::molt_fingerprinting::moltnet {
 
@@ -143,6 +147,44 @@ enum class UserMediaVerdict {
 };
 UserMediaVerdict UserMediaFailureVerdict(
     std::span<const PermissionAnswer> answers);
+
+// --- Device names and groups, once a page may see them ----------------------
+//
+// Chromium shows a page that may use a kind of device the OS's names for the
+// devices ("MacBook Pro Microphone", "Headset (Jabra Evolve2 65)", "Default -
+// Microphone (Realtek(R) Audio)") in enumerateDevices() and as the track's
+// label, and groups a headset's microphone with its speakers (groupId).
+// MoltNet shows generic names and puts every device in a group of its own:
+// the same strings on every OS for the same IDs, and nothing about the
+// hardware. The IDs themselves stay Chromium's (salted per site), so a
+// `deviceId` constraint picks the same device as before.
+enum class DeviceKind { kMicrophone, kCamera, kSpeaker };
+
+// The default device's ID (media::AudioDeviceDescription::kDefaultDeviceId),
+// and Windows' communications device's, which only Windows lists.
+inline constexpr char kDefaultDeviceId[] = "default";
+inline constexpr char kCommunicationsDeviceId[] = "communications";
+
+// The label of the device of `kind` whose ID the page sees is `device_id`:
+// "Default" for the default device (and "Communications" for Windows'
+// communications device, which a page only meets when the user picks it in
+// selectAudioOutput()'s chooser), otherwise the kind ("Microphone",
+// "Camera", "Speaker"), a space and the ID's first four characters, so that a
+// page's own device menu still tells the devices apart. Empty for an empty
+// ID (a page that may not see the devices gets no labels).
+std::string DeviceLabel(DeviceKind kind, std::string_view device_id);
+
+// The group of the device whose ID the page sees is `device_id`: the ID
+// itself (every device a physical device of its own), so a headset's
+// microphone and speakers aren't tied together and no OS's device topology
+// shows.
+std::string_view DeviceGroup(std::string_view device_id);
+
+// Whether MoltNet lists the audio device `device_id` at all: not Windows'
+// "communications" device (the other OSes have none; the user still picks
+// any real device, and the default one, as usual). getUserMedia() then can't
+// select it either.
+bool ListsAudioDevice(std::string_view device_id);
 
 // --- Encrypted Media Extensions ---------------------------------------------
 //

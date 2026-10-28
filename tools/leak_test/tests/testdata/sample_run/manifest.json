@@ -60,6 +60,15 @@
     "audio.script_processor_buffer": 2048,
     "audio.sink_id": "",
     "audio.stretched": "d28a51f0c3e94b7a16f0e852",
+    "audio.subnormal_graph": {
+     "hash": "2b7e90c4d1a53f86e0c17a4d",
+     "nonzero": 7936
+    },
+    "audio.subnormal_resampled": {
+     "frames": 9600,
+     "hash": "e4a1c07b93d25f680b3e1c97",
+     "nonzero": 3216
+    },
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
@@ -596,6 +605,56 @@
       "false"
      ]
     },
+    "audio.mic_device_ranges": [
+     {
+      "channelCount": [
+       1,
+       2
+      ],
+      "latency": [
+       0.01,
+       0.01
+      ],
+      "sampleRate": [
+       48000,
+       48000
+      ],
+      "sampleSize": [
+       16,
+       16
+      ]
+     }
+    ],
+    "audio.mic_format": {
+     "channelCount": 1,
+     "latency": 0.01,
+     "sampleRate": 48000,
+     "sampleSize": 16
+    },
+    "audio.mic_format_ranges": {
+     "channelCount": [
+      1,
+      2
+     ],
+     "latency": [
+      0.01,
+      0.01
+     ],
+     "sampleRate": [
+      48000,
+      48000
+     ],
+     "sampleSize": [
+      16,
+      16
+     ]
+    },
+    "audio.mic_names": {
+     "communications": false,
+     "groups": true,
+     "labels": true,
+     "track": true
+    },
     "audio.mic_playback": {
      "frames": 480,
      "hash": "c83e5f02a9d4b7160e2f9a4c"
@@ -624,7 +683,6 @@
      "echoCancellation": "remote-only",
      "noiseSuppression": true
     },
-    "audio.mic_sample_rate": 48000,
     "audio.mic_settings": {
      "autoGainControl": true,
      "echoCancellation": true,

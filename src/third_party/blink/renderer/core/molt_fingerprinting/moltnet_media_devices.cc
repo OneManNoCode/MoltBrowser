@@ -4,10 +4,16 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media_devices.h"
 
 #include <array>
+#include <optional>
 #include <span>
+#include <string>
 #include <utility>
 
+#include "media/base/audio_parameters.h"
+#include "media/base/molt_portable_media.h"
 #include "third_party/blink/public/common/mediastream/media_devices.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
+#include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
@@ -171,6 +177,92 @@ bool ConfirmUserMediaFailure(
                                                      std::move(done))
       ->Start(*window, audio, video);
   return true;
+}
+
+bool ListsMediaDevice(mojom::MediaDeviceType kind,
+                      const WebMediaDeviceInfo& device) {
+  if (!UsesUniformMediaDevices() ||
+      kind == mojom::MediaDeviceType::kMediaVideoInput) {
+    return true;
+  }
+  return moltnet::ListsAudioDevice(device.device_id);
+}
+
+bool ListsCaptureDevice(const String& device_id) {
+  return !UsesUniformMediaDevices() ||
+         moltnet::ListsAudioDevice(device_id.Utf8());
+}
+
+void UseUniformNames(mojom::MediaDeviceType kind, WebMediaDeviceInfo& device) {
+  if (!UsesUniformMediaDevices()) {
+    return;
+  }
+  moltnet::DeviceKind device_kind = moltnet::DeviceKind::kMicrophone;
+  switch (kind) {
+    case mojom::MediaDeviceType::kMediaAudioInput:
+      device_kind = moltnet::DeviceKind::kMicrophone;
+      break;
+    case mojom::MediaDeviceType::kMediaVideoInput:
+      device_kind = moltnet::DeviceKind::kCamera;
+      break;
+    case mojom::MediaDeviceType::kMediaAudioOutput:
+      device_kind = moltnet::DeviceKind::kSpeaker;
+      break;
+    case mojom::MediaDeviceType::kNumMediaDeviceTypes:
+      return;
+  }
+  if (!device.label.empty()) {
+    device.label = moltnet::DeviceLabel(device_kind, device.device_id);
+  }
+  device.group_id = std::string(moltnet::DeviceGroup(device.device_id));
+}
+
+namespace {
+
+// The kind of a capture device MoltNet names: cameras and microphones, not
+// screens, windows or tabs.
+std::optional<moltnet::DeviceKind> NamedCaptureKind(
+    const MediaStreamDevice& device) {
+  if (!UsesUniformMediaDevices()) {
+    return std::nullopt;
+  }
+  switch (device.type) {
+    case mojom::MediaStreamType::DEVICE_AUDIO_CAPTURE:
+      return moltnet::DeviceKind::kMicrophone;
+    case mojom::MediaStreamType::DEVICE_VIDEO_CAPTURE:
+      return moltnet::DeviceKind::kCamera;
+    default:
+      return std::nullopt;
+  }
+}
+
+}  // namespace
+
+std::string UniformName(const MediaStreamDevice& device) {
+  const std::optional<moltnet::DeviceKind> kind = NamedCaptureKind(device);
+  return kind ? moltnet::DeviceLabel(*kind, device.id) : device.name;
+}
+
+void UseUniformGroup(MediaStreamDevice& device) {
+  if (NamedCaptureKind(device)) {
+    device.group_id = std::string(moltnet::DeviceGroup(device.id));
+  }
+}
+
+String UniformGroupId(const String& device_id, const String& group_id) {
+  return UsesUniformMediaDevices() ? device_id : group_id;
+}
+
+void UseUniformCapabilities(
+    mojom::blink::AudioInputDeviceCapabilities& capabilities) {
+  capabilities.parameters =
+      media::PortableCaptureParameters(capabilities.parameters);
+  if (!media::IsPortableMediaProcess() || !capabilities.is_valid) {
+    return;
+  }
+  capabilities.channels = capabilities.parameters.channels();
+  capabilities.sample_rate = capabilities.parameters.sample_rate();
+  capabilities.latency = capabilities.parameters.GetBufferDuration();
 }
 
 }  // namespace blink::molt_fingerprinting

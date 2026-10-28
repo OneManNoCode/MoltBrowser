@@ -1982,6 +1982,126 @@ window.mlStretchedAudio = () => stretchedAudio().then(
     (value) => ({'audio.stretched': value}),
     (e) => ({'audio.stretched': ML.errInfo(e)}));
 
+// Rendered or decoded Web Audio samples with the 8 low mantissa bits cleared
+// (AudioBuffers are farbled there), hashed, and how many are not zero.
+async function maskedSamples(samples) {
+  const data = Float32Array.from(samples);
+  const bits = new Uint32Array(data.buffer);
+  let nonzero = 0;
+  for (let i = 0; i < bits.length; ++i) {
+    nonzero += data[i] !== 0 ? 1 : 0;
+    bits[i] &= 0xffffff00;
+  }
+  return {nonzero, hash: await hex(new Uint8Array(bits.buffer))};
+}
+
+// Web Audio whose intermediates fall below the normal float range
+// (FINGERPRINTING.md "MoltNet: subnormal floats"). Three paths into one
+// output:
+//   * a product that rounds up to the smallest normal float, FLT_MIN
+//     ((1 - 2^-23) times FLT_MIN (1 + 2^-23)): a CPU flushing to zero keeps
+//     it on x86-64 (tininess after rounding) and flushes it on arm64 (before
+//     rounding); scaled back up by 2^140;
+//   * a burst ringing through a resonant low-pass and a delay line feeding
+//     back at one half, whose tails decay through the subnormals within the
+//     0.4 s rendered;
+//   * the same ring at 2^-120, scaled back up by 2^140.
+// Reports how many samples aren't zero and a hash of them.
+async function audioSubnormalGraph() {
+  if (!window.OfflineAudioContext) {
+    return 'absent';
+  }
+  const ctx = new OfflineAudioContext(1, 19200, 48000);
+  const scaledUp = () => {
+    const first = new GainNode(ctx, {gain: 2 ** 70});
+    first.connect(new GainNode(ctx, {gain: 2 ** 70}))
+        .connect(ctx.destination);
+    return first;
+  };
+  const near = new ConstantSourceNode(ctx, {offset: 1 - 2 ** -23});
+  near.connect(new GainNode(ctx, {gain: 2 ** -126 * (1 + 2 ** -23)}))
+      .connect(scaledUp());
+  const osc = new OscillatorNode(ctx, {type: 'triangle', frequency: 1500});
+  const ring = (level) => {
+    const burst = new GainNode(ctx, {gain: 0});
+    burst.gain.setValueAtTime(level, 0);
+    burst.gain.setValueAtTime(0, 0.002);
+    const filter = new BiquadFilterNode(ctx, {type: 'lowpass',
+      frequency: 3000, Q: 30});
+    osc.connect(burst).connect(filter);
+    return filter;
+  };
+  const loud = ring(0.5);
+  loud.connect(ctx.destination);
+  const delay = new DelayNode(ctx, {delayTime: 0.0007});
+  const feedback = new GainNode(ctx, {gain: 0.5});
+  loud.connect(delay).connect(feedback).connect(delay);
+  delay.connect(ctx.destination);
+  ring(2 ** -120).connect(scaledUp());
+  near.start();
+  osc.start();
+  const rendered = await ctx.startRendering();
+  return maskedSamples(rendered.getChannelData(0));
+}
+
+// 0.2 s of a 32-bit float mono WAV at 44.1 kHz: a triangle wave decaying
+// from 2^-100 through FLT_MIN to the smallest subnormal and below, values
+// on and around FLT_MIN (subnormal ones among them), and a loud sweep.
+function subnormalWav() {
+  const rate = 44100;
+  const frames = rate / 5;
+  const d = new DataView(new ArrayBuffer(44 + frames * 4));
+  const text = (at, s) => {
+    for (let i = 0; i < s.length; ++i) {
+      d.setUint8(at + i, s.charCodeAt(i));
+    }
+  };
+  text(0, 'RIFF');
+  d.setUint32(4, 36 + frames * 4, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  d.setUint32(16, 16, true);
+  d.setUint16(20, 3, true);  // IEEE float
+  d.setUint16(22, 1, true);
+  d.setUint32(24, rate, true);
+  d.setUint32(28, rate * 4, true);
+  d.setUint16(32, 4, true);
+  d.setUint16(34, 32, true);
+  text(36, 'data');
+  d.setUint32(40, frames * 4, true);
+  const tri = (p) => (p < 48 ? p : 96 - p) / 24 - 1;
+  let amplitude = 2 ** -100;
+  for (let i = 0; i < frames; ++i) {
+    let x;
+    if (i < frames / 3) {
+      x = amplitude * tri((i * 7) % 96);
+      amplitude *= 0.985;
+    } else if (i < 2 * frames / 3) {
+      x = ((i % 9) - 4) * 2 ** -128 * (1 + (i % 5) * 2 ** -22);
+    } else {
+      x = 0.5 * tri(Math.floor(i * (1 + i / frames)) % 96);
+    }
+    d.setFloat32(44 + i * 4, x, true);
+  }
+  return new Blob([d.buffer], {type: 'audio/wav'});
+}
+
+// The WAV decoded into a 48 kHz context: decodeAudioData() resamples it
+// with the SincResampler, the code that also resamples a page's streams
+// (a context's output for the device, a stream into a context of another
+// rate), whose sums see the subnormal samples. Reports the decoded length,
+// how many samples aren't zero and a hash of them.
+async function audioSubnormalResampled() {
+  if (!window.OfflineAudioContext) {
+    return 'absent';
+  }
+  const ctx = new OfflineAudioContext(1, 48000, 48000);
+  const decoded = await ctx.decodeAudioData(
+      await subnormalWav().arrayBuffer());
+  return Object.assign({frames: decoded.length},
+      await maskedSamples(decoded.getChannelData(0)));
+}
+
 async function cpuFeatures(v, step) {
   v['cpu.wasm_relaxed_simd'] = WebAssembly.validate(
       new Uint8Array(WASM_RELAXED_SIMD));
@@ -1997,6 +2117,9 @@ async function cpuFeatures(v, step) {
   await step('audio.math', audioMath);
   await step('pixels.p3_readback', p3Readback);
   await step('audio.decoded_vorbis', decodedVorbis);
+  // Subnormal floats: a Web Audio graph and a resampled WAV.
+  await step('audio.subnormal_graph', audioSubnormalGraph);
+  await step('audio.subnormal_resampled', audioSubnormalResampled);
   // What pages can learn about the processor: Float16 NaN bits (the
   // canonical NaN on every x86-64 CPU) and JPEG XL pixels.
   await step('cpu.float16_nan', float16Nan);

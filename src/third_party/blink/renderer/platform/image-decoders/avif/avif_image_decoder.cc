@@ -22,6 +22,7 @@
 #include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/base/video_color_space.h"
 #include "skia/ext/cicp.h"
 #include "third_party/blink/renderer/platform/image-decoders/fast_shared_buffer_reader.h"
@@ -345,9 +346,18 @@ void AVIFImageDecoder::DecodeToYUV() {
 
   // Disable subnormal floats which can occur when converting to half float.
   std::unique_ptr<cc::ScopedSubnormalFloatDisabler> disable_subnormals;
+  // MoltBrowser: cc's disabler flushes on x86 only, so in MoltNet's renderers
+  // the conversion computes with the flush modes off on every CPU instead
+  // (media/base/molt_portable_media.h). For AVIF's 10 and 12 bits the
+  // smallest product it computes, 2^-112 / 4095, is a normal float anyway.
+  std::optional<media::ScopedPortableSubnormals> portable_subnormals;
   const bool is_f16 = image_planes_->color_type() == kA16_float_SkColorType;
   if (is_f16) {
-    disable_subnormals = std::make_unique<cc::ScopedSubnormalFloatDisabler>();
+    if (media::IsPortableMediaProcess()) {
+      portable_subnormals.emplace();
+    } else {
+      disable_subnormals = std::make_unique<cc::ScopedSubnormalFloatDisabler>();
+    }
   }
   const float kHighBitDepthMultiplier =
       (is_f16 ? 1.0f : 65535.0f) / ((1 << bit_depth_) - 1);

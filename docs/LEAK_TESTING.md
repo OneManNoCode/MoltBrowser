@@ -416,6 +416,19 @@ level, and in one browser launch per device scale factor
   an SVG path's arcs (`cpu.dommatrix`); Biquad and IIR filter frequency
   responses and a compressor's `reduction` after rendering a sawtooth
   (`audio.math`).
+* **Subnormal floats** (once per launch), compared between runs, on every
+  CPU and OS family: an `OfflineAudioContext` graph whose intermediates
+  fall below the normal float range (a product that rounds up to
+  `FLT_MIN`, which a CPU's flush-to-zero mode keeps on x86-64 and flushes
+  on arm64; a burst ringing through a resonant low-pass and a delay line
+  feeding back, whose tails decay through the subnormals; the same ring at
+  2^-120; the tiny paths scaled back up by 2^140) (`audio.subnormal_graph`),
+  and a 44.1 kHz 32-bit float WAV (a wave decaying from 2^-100 through
+  `FLT_MIN` to below the smallest subnormal, values on and around
+  `FLT_MIN`, a loud sweep) decoded into a 48 kHz context, which resamples
+  it (`audio.subnormal_resampled`). Each reports how many samples aren't
+  zero and a hash of the samples with the 8 low mantissa bits cleared
+  (Web Audio's output is farbled there), the resampled one its length too.
 * **Geometry** (once per launch), compared between runs: where the edges
   of 40 canvas arcs and rotated ellipses (`isPointInPath()`) and of a
   stroked curve with every join, cap and a dash pattern
@@ -434,9 +447,8 @@ level, and in one browser launch per device scale factor
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
-  width, the processed microphone track's sample rate, the microphone with
-  the default echo cancellation while the page plays, and the playing
-  contexts' state and rates.
+  width, the microphone with the default echo cancellation while the page
+  plays, and the playing contexts' state and rates.
 
 ### The microphone launch
 
@@ -465,6 +477,13 @@ the output device) and, while they play, captures with
 `echoCancellation: "remote-only"` (processed in the renderer, whose echo
 canceller hears only WebRTC's playout) and with the default echo
 cancellation (whose reference the tones are), each with a new stream.
+After the first capture, with the permission granted, the page also
+reports the track's format (`getSettings()`' `sampleRate`, `sampleSize`,
+`channelCount` and `latency`) and `getCapabilities()`' ranges, the
+distinct ranges `enumerateDevices()`' `InputDeviceInfo.getCapabilities()`
+gives for the microphones, and whether every label the list shows (and
+the track's) is generic, every device a group of its own and Windows'
+`communications` device absent.
 
 | Key | Must |
 |---|---|
@@ -476,6 +495,10 @@ cancellation (whose reference the tones are), each with a new stream.
 | `audio.mic_system_aec_settings` | show `all`, noise suppression and gain control |
 | `audio.mic_remote_only` | equal `audio.mic_processed` while the page plays: the renderer's processing in the same mode, with nothing to cancel, the same samples on every CPU and OS family |
 | `audio.mic_remote_only_settings` | show `remote-only`, noise suppression and gain control |
+| `audio.mic_format` | be 48 kHz, 16 bits, one channel and 10 ms (`latency` 0.01) on every machine, whatever the device's format (the fake device's is 44.1 kHz stereo) |
+| `audio.mic_format_ranges` | be 48000 to 48000 Hz, 16 to 16 bits, one to two channels and 0.01 to 0.01 s |
+| `audio.mic_device_ranges` | list one set of ranges, the same as `audio.mic_format_ranges`, for every microphone |
+| `audio.mic_names` | show every label generic ("Default", or the kind and the device ID's first four characters), the track's too, every `groupId` the device's ID, and no `communications` device |
 
 The default echo cancellation during the playback (`audio.mic_playback`)
 is recorded, not compared: its echo canceller adapts to the timing

@@ -194,6 +194,11 @@ GOOD_FP = {
                            'i420': 'a07b3e95c6d2148f0e6b7d31'},
     'audio.decoded_vorbis': {'frames': 12288,
                              'hash': '9c41e2b07d35a8f61e04c2b9'},
+    # Subnormal floats: a Web Audio graph and a resampled WAV.
+    'audio.subnormal_graph': {'nonzero': 7936,
+                              'hash': '2b7e90c4d1a53f86e0c17a4d'},
+    'audio.subnormal_resampled': {'frames': 9600, 'nonzero': 3216,
+                                  'hash': 'e4a1c07b93d25f680b3e1c97'},
     # What pages can learn about the processor: Float16 NaN bits, JPEG XL
     # pixels and time-stretched audio.
     'cpu.float16_nan': {
@@ -461,7 +466,17 @@ def manifest():
                      'autoGainControl': ['false', 'true'],
                      'noiseSuppression': ['false', 'true'],
                      'voiceIsolation': ['false']},
-                 'audio.mic_sample_rate': 48000,
+                 'audio.mic_format': {'sampleRate': 48000,
+                                      'sampleSize': 16, 'channelCount': 1,
+                                      'latency': 0.01},
+                 'audio.mic_format_ranges': {
+                     'sampleRate': [48000, 48000], 'sampleSize': [16, 16],
+                     'channelCount': [1, 2], 'latency': [0.01, 0.01]},
+                 'audio.mic_device_ranges': [{
+                     'sampleRate': [48000, 48000], 'sampleSize': [16, 16],
+                     'channelCount': [1, 2], 'latency': [0.01, 0.01]}],
+                 'audio.mic_names': {'labels': True, 'groups': True,
+                                     'track': True, 'communications': False},
                  'audio.mic_system_aec': {
                      'hash': '0f4c2a9e71b3d8565ae0c4f1', 'frames': 480},
                  'audio.mic_system_aec_settings': {

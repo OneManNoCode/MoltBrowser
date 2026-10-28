@@ -3,9 +3,13 @@
 
 #include "media/base/molt_portable_media.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -17,7 +21,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
+#include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/decoder_factory.h"
 #include "media/base/media_util.h"
@@ -37,6 +43,10 @@
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
+
+#if defined(ARCH_CPU_X86_64)
+#include <xmmintrin.h>
+#endif
 
 // MoltBrowser's hook in third_party/opus/src/celt/celt.c.
 extern "C" int opus_moltbrowser_portable(void);
@@ -377,6 +387,247 @@ TEST_F(MoltPortableMediaTest, PortableAudioThreadMixesWithTheCCode) {
   SetPortableMediaProcessForTesting(true);
   const std::vector<float> in_portable_process = resample(false);
   EXPECT_EQ(in_scope, in_portable_process);
+}
+
+uint32_t Bits(float f) {
+  uint32_t b;
+  std::memcpy(&b, &f, sizeof(b));
+  return b;
+}
+
+// The portable floor: magnitudes below 2^-63 become zeros of their sign; the
+// floor itself and everything else, infinities and NaNs included, stay.
+TEST_F(MoltPortableMediaTest, FlushTinyPortableSamplesKeepsTheFloor) {
+  EXPECT_EQ(kPortableAudioFloor * kPortableAudioFloor,
+            std::numeric_limits<float>::min());
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  std::vector<float> samples = {0x1p-63f,
+                                -0x1p-63f,
+                                0x1.fffffep-64f,
+                                -0x1p-64f,
+                                std::numeric_limits<float>::min(),
+                                std::numeric_limits<float>::denorm_min(),
+                                -1e-40f,
+                                0.0f,
+                                -0.0f,
+                                1.0f,
+                                -3e-19f,
+                                inf,
+                                -inf,
+                                nan};
+  const std::vector<float> in = samples;
+  FlushTinyPortableSamples(samples);
+  const std::vector<uint32_t> expected = {
+      Bits(0x1p-63f), Bits(-0x1p-63f), Bits(0.0f),  Bits(-0.0f), Bits(0.0f),
+      Bits(0.0f),     Bits(-0.0f),     Bits(0.0f),  Bits(-0.0f), Bits(1.0f),
+      Bits(-3e-19f),  Bits(inf),       Bits(-inf),  Bits(nan)};
+  ASSERT_EQ(samples.size(), expected.size());
+  for (size_t i = 0; i < samples.size(); ++i) {
+    EXPECT_EQ(Bits(samples[i]), expected[i]) << i;
+    EXPECT_EQ(Bits(FlushTinyPortableSample(in[i])), expected[i]) << i;
+  }
+
+  // Every channel of a bus.
+  auto bus = AudioBus::Create(2, 3);
+  for (int ch = 0; ch < 2; ++ch) {
+    bus->channel(ch)[0] = 1e-30f;
+    bus->channel(ch)[1] = 0.5f;
+    bus->channel(ch)[2] = -1e-25f;
+  }
+  FlushTinyPortableSamples(*bus);
+  for (int ch = 0; ch < 2; ++ch) {
+    EXPECT_EQ(Bits(bus->channel(ch)[0]), Bits(0.0f));
+    EXPECT_EQ(bus->channel(ch)[1], 0.5f);
+    EXPECT_EQ(Bits(bus->channel(ch)[2]), Bits(-0.0f));
+  }
+}
+
+// Sets the CPU's flush-to-zero modes the way Chromium's disablers do (x86:
+// MXCSR FTZ and DAZ; arm64: FPCR.FZ) for a test, and puts back the mode it
+// found.
+class ScopedFlushModeForTesting {
+ public:
+  ScopedFlushModeForTesting() {
+#if defined(ARCH_CPU_X86_64)
+    saved_ = _mm_getcsr();
+    _mm_setcsr(saved_ | 0x8040u);
+#elif defined(ARCH_CPU_ARM64)
+    uint64_t control;
+    asm volatile("mrs %x[c], fpcr" : [c] "=r"(control));
+    saved_ = control;
+    control |= uint64_t{1} << 24;
+    asm volatile("msr fpcr, %x[c]" : : [c] "r"(control));
+#endif
+  }
+  ~ScopedFlushModeForTesting() {
+#if defined(ARCH_CPU_X86_64)
+    _mm_setcsr(static_cast<unsigned int>(saved_));
+#elif defined(ARCH_CPU_ARM64)
+    asm volatile("msr fpcr, %x[c]" : : [c] "r"(saved_));
+#endif
+  }
+
+ private:
+  uint64_t saved_ = 0;
+};
+
+// ScopedPortableSubnormals turns the flush modes off while it lives and puts
+// back what it found: inside it a product below FLT_MIN is the IEEE 754
+// subnormal on every CPU.
+TEST_F(MoltPortableMediaTest, ScopedPortableSubnormalsComputesSubnormals) {
+#if defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_ARM64)
+  volatile float tiny = 0x1p-70f;
+  const auto product = [&tiny] { return tiny * tiny; };  // 2^-140
+  ASSERT_FALSE(ScopedPortableSubnormals::FlushModeIsOn());
+  EXPECT_EQ(product(), 0x1p-140f);
+  {
+    ScopedFlushModeForTesting flush;
+    EXPECT_TRUE(ScopedPortableSubnormals::FlushModeIsOn());
+    EXPECT_EQ(product(), 0.0f);
+    {
+      ScopedPortableSubnormals portable;
+      EXPECT_FALSE(ScopedPortableSubnormals::FlushModeIsOn());
+      EXPECT_EQ(product(), 0x1p-140f);
+      {
+        ScopedPortableSubnormals nested;
+        EXPECT_EQ(product(), 0x1p-140f);
+      }
+      EXPECT_FALSE(ScopedPortableSubnormals::FlushModeIsOn());
+    }
+    EXPECT_TRUE(ScopedPortableSubnormals::FlushModeIsOn());
+    EXPECT_EQ(product(), 0.0f);
+  }
+  EXPECT_FALSE(ScopedPortableSubnormals::FlushModeIsOn());
+  // Without a flush mode, the scope changes nothing.
+  {
+    ScopedPortableSubnormals portable;
+    EXPECT_FALSE(ScopedPortableSubnormals::FlushModeIsOn());
+  }
+  EXPECT_FALSE(ScopedPortableSubnormals::FlushModeIsOn());
+#else
+  GTEST_SKIP() << "no flush-to-zero mode to test on this architecture";
+#endif
+}
+
+// Where a SincResampler computes portably, its kernel has no coefficient
+// below the floor (the window's zeros are zeros), and an input below the floor
+// resamples exactly as silence does; elsewhere the kernel and the input are
+// the CPU's, as before.
+TEST_F(MoltPortableMediaTest, PortableResamplerFlushesItsKernelAndInput) {
+  auto run = [](bool portable, float level) {
+    ScopedPortableAudioThread scope(portable);
+    SincResampler resampler(
+        176400.0 / 48000.0, 441,
+        base::BindRepeating(
+            [](float level, base::span<float> dest) {
+              for (size_t i = 0; i < dest.size(); ++i) {
+                dest[i] = (i & 1) ? level : -level;
+              }
+            },
+            level));
+    size_t tiny_coefficients = 0;
+    for (float k : resampler.get_kernel_for_testing()) {
+      if (k != 0.0f && std::fabs(k) < kPortableAudioFloor) {
+        ++tiny_coefficients;
+      }
+    }
+    std::vector<float> out(480 * 4);
+    for (size_t at = 0; at < out.size(); at += 480) {
+      resampler.Resample(base::span(out).subspan(at, 480u));
+    }
+    return std::make_pair(tiny_coefficients, out);
+  };
+  // 176.4 kHz to 48 kHz has coefficients of 4.7e-21 at the window's zeros.
+  EXPECT_GT(run(false, 0.0f).first, 0u);
+  EXPECT_EQ(run(true, 0.0f).first, 0u);
+
+  const std::vector<float> silence = run(true, 0.0f).second;
+  EXPECT_EQ(run(true, 0x1p-64f).second, silence);
+  EXPECT_EQ(run(true, -1e-30f).second, silence);
+  EXPECT_NE(run(true, 0x1p-62f).second, silence);
+  // Unchanged outside the portable code.
+  EXPECT_NE(run(false, 1e-30f).second, run(false, 0.0f).second);
+}
+
+// A microphone's format as a portable process's pages see it: the same for
+// every device; other processes see the device's own.
+TEST_F(MoltPortableMediaTest, PortableCaptureParametersAreTheSameForAll) {
+  AudioParameters mono_44k(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, ChannelLayoutConfig::Mono(),
+      44100, 441, AudioParameters::HardwareCapabilities(128, 4096, 441, false));
+  mono_44k.set_effects(AudioParameters::ECHO_CANCELLER |
+                       AudioParameters::NOISE_SUPPRESSION);
+  const AudioParameters stereo_96k(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                   ChannelLayoutConfig::Stereo(), 96000, 256);
+  EXPECT_TRUE(PortableCaptureParameters(mono_44k).Equals(mono_44k));
+  EXPECT_TRUE(PortableCaptureParameters(stereo_96k).Equals(stereo_96k));
+
+  SetPortableMediaProcessForTesting(true);
+  const AudioParameters uniform = PortableCaptureParameters(mono_44k);
+  EXPECT_EQ(uniform.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
+  EXPECT_EQ(uniform.sample_rate(), kPortableCaptureSampleRate);
+  EXPECT_EQ(uniform.sample_rate(), 48000);
+  EXPECT_EQ(uniform.channel_layout(), CHANNEL_LAYOUT_STEREO);
+  EXPECT_EQ(uniform.channels(), kPortableCaptureChannels);
+  EXPECT_EQ(uniform.frames_per_buffer(), 480);
+  EXPECT_EQ(uniform.effects(), AudioParameters::NO_EFFECTS);
+  EXPECT_FALSE(uniform.hardware_capabilities().has_value());
+  EXPECT_TRUE(PortableCaptureParameters(stereo_96k).Equals(uniform));
+
+  // No device: still no device, and no effects.
+  AudioParameters unavailable;
+  unavailable.set_effects(AudioParameters::ECHO_CANCELLER);
+  EXPECT_FALSE(PortableCaptureParameters(unavailable).IsValid());
+  EXPECT_EQ(PortableCaptureParameters(unavailable).effects(),
+            AudioParameters::NO_EFFECTS);
+}
+
+// Windows: a portable process's stream never takes the communications
+// category without raw mode (more than 8 channels); others keep Chromium's.
+TEST_F(MoltPortableMediaTest, CommunicationsCategoryOnlyWithRawMode) {
+  AudioParameters chromium(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                           ChannelLayoutConfig::Stereo(), 48000, 480);
+  AudioParameters portable = chromium;
+  portable.set_effects(kPortableCaptureEffect);
+  for (const int channels : {1, 2, 8}) {
+    EXPECT_TRUE(PortableCaptureMayUseCommunicationsCategory(chromium,
+                                                            channels));
+    EXPECT_TRUE(PortableCaptureMayUseCommunicationsCategory(portable,
+                                                            channels));
+  }
+  EXPECT_TRUE(PortableCaptureMayUseCommunicationsCategory(chromium, 16));
+  EXPECT_FALSE(PortableCaptureMayUseCommunicationsCategory(portable, 9));
+  EXPECT_FALSE(PortableCaptureMayUseCommunicationsCategory(portable, 16));
+  EXPECT_FALSE(PortableCaptureMayUseCommunicationsCategory(portable, 0));
+}
+
+// The device of a portable process's stream opens with no platform effect,
+// marked where the platform code reads the mark; on Android, where any effect
+// asks for the OS's communication mode, with none at all.
+TEST_F(MoltPortableMediaTest, PortableCaptureStreamEffects) {
+  EXPECT_EQ(PortableCaptureStreamEffects() & ~kPortableCaptureEffect,
+            AudioParameters::NO_EFFECTS);
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  EXPECT_EQ(PortableCaptureStreamEffects(), kPortableCaptureEffect);
+#else
+  EXPECT_EQ(PortableCaptureStreamEffects(), AudioParameters::NO_EFFECTS);
+#endif
+}
+
+TEST_F(MoltPortableMediaTest, PortableCaptureOutputFormat) {
+  const AudioParameters mono_16k(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                 ChannelLayoutConfig::Mono(), 16000, 160);
+  const AudioParameters mono = PortableCaptureOutputFormat(mono_16k, false);
+  EXPECT_EQ(mono.sample_rate(), 48000);
+  EXPECT_EQ(mono.channel_layout(), CHANNEL_LAYOUT_MONO);
+  EXPECT_EQ(mono.frames_per_buffer(), 480);
+  // Stereo when asked for, from a mono device too.
+  const AudioParameters stereo = PortableCaptureOutputFormat(mono_16k, true);
+  EXPECT_EQ(stereo.channel_layout(), CHANNEL_LAYOUT_STEREO);
+  EXPECT_EQ(stereo.sample_rate(), 48000);
+  EXPECT_EQ(stereo.frames_per_buffer(), 480);
+  EXPECT_EQ(stereo.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
 }
 
 }  // namespace

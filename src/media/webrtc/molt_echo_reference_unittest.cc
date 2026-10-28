@@ -261,7 +261,7 @@ uint64_t ProcessWithReference(webrtc::AudioProcessing& apm,
 // END REFERENCE SIGNAL
 
 constexpr uint64_t kGoldenMix = 0xb7ebaa29303bc2fbull;
-constexpr uint64_t kGoldenProcessed = 0x074b61a8868b53caull;
+constexpr uint64_t kGoldenProcessed = 0xad248a8258bbe543ull;
 
 webrtc::scoped_refptr<webrtc::AudioProcessing> CreateCpuIndependent() {
   AudioProcessingSettings settings;

@@ -274,9 +274,13 @@ Vector<blink::VideoInputDeviceCapabilities> ToVideoInputDeviceCapabilities(
         input_capabilities) {
   Vector<blink::VideoInputDeviceCapabilities> capabilities;
   for (const auto& capability : input_capabilities) {
-    capabilities.emplace_back(capability->device_id, capability->group_id,
-                              capability->control_support, capability->formats,
-                              capability->facing_mode);
+    // MoltBrowser: MoltNet's groups (moltnet_media_devices.h).
+    capabilities.emplace_back(
+        capability->device_id,
+        molt_fingerprinting::UniformGroupId(capability->device_id,
+                                            capability->group_id),
+        capability->control_support, capability->formats,
+        capability->facing_mode);
   }
 
   return capabilities;
@@ -827,6 +831,11 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
   }
 
   for (const auto& device : audio_input_capabilities) {
+    // MoltBrowser: no communications device in MoltNet
+    // (moltnet_media_devices.h).
+    if (!molt_fingerprinting::ListsCaptureDevice(device->device_id)) {
+      continue;
+    }
     // Find the first occurrence of blink::ProcessedLocalAudioSource that
     // matches the same device ID as |device|. If more than one exists, any
     // such source will contain the same non-reconfigurable settings that limit
@@ -851,12 +860,16 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
       capabilities.emplace_back(audio_source);
     } else {
       // MoltBrowser: no platform effects on a MoltNet page's microphones
-      // (media/base/molt_portable_media.h, PortableCaptureEffects).
+      // (media/base/molt_portable_media.h, PortableCaptureEffects), and
+      // MoltNet's groups (moltnet_media_devices.h).
       media::AudioParameters parameters = device->parameters;
       parameters.set_effects(
           media::PortableCaptureEffects(parameters.effects()));
-      capabilities.emplace_back(device->device_id, device->group_id,
-                                parameters);
+      capabilities.emplace_back(
+          device->device_id,
+          molt_fingerprinting::UniformGroupId(device->device_id,
+                                              device->group_id),
+          parameters);
     }
   }
 
@@ -1403,6 +1416,18 @@ void UserMediaProcessor::OnStreamsGenerated(
   current_request_info_->set_state(RequestInfo::State::kGenerated);
   current_request_info_->set_pan_tilt_zoom_allowed(pan_tilt_zoom_allowed);
 
+  // MoltBrowser: the cameras' and microphones' groups as MoltNet shows them
+  // (moltnet_media_devices.h; their names: InitializeSourceObject()).
+  for (const mojom::blink::StreamDevicesPtr& stream_devices :
+       stream_devices_set->stream_devices) {
+    if (stream_devices->audio_device.has_value()) {
+      molt_fingerprinting::UseUniformGroup(*stream_devices->audio_device);
+    }
+    if (stream_devices->video_device.has_value()) {
+      molt_fingerprinting::UseUniformGroup(*stream_devices->video_device);
+    }
+  }
+
   for (const mojom::blink::StreamDevicesPtr& stream_devices :
        stream_devices_set->stream_devices) {
     MaybeLogStreamDevice(request_id, label, stream_devices->audio_device);
@@ -1641,7 +1666,11 @@ void UserMediaProcessor::OnDeviceChanged(const MediaStreamDevice& old_device,
   }
 
   WebPlatformMediaStreamSource* const source_impl = source->GetPlatformSource();
-  source_impl->ChangeSource(new_device);
+  // MoltBrowser: the new device's group as MoltNet shows it
+  // (moltnet_media_devices.h).
+  MediaStreamDevice uniform_new_device(new_device);
+  molt_fingerprinting::UseUniformGroup(uniform_new_device);
+  source_impl->ChangeSource(uniform_new_device);
   source = FindLocalSource(new_device);
   if (!source) {
     return;
@@ -1888,7 +1917,11 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
 #endif  // DCHECK_IS_ON()
 
   MediaStreamSource::Capabilities capabilities;
-  media::AudioParameters device_parameters = audio_source->device().input;
+  // MoltBrowser: a MoltNet page's microphones all report one format
+  // (media/base/molt_portable_media.h, PortableCaptureParameters); the source
+  // still opens the device in its own.
+  media::AudioParameters device_parameters =
+      media::PortableCaptureParameters(audio_source->device().input);
   capabilities.echo_cancellation = GetSupportedEchoCancellationModes(
       device_parameters.effects(), device.type);
   capabilities.auto_gain_control = {true, false};
@@ -2361,10 +2394,12 @@ MediaStreamSource* UserMediaProcessor::InitializeSourceObject(
                                            ? MediaStreamSource::kTypeAudio
                                            : MediaStreamSource::kTypeVideo;
 
+  // MoltBrowser: a camera's or microphone's label as MoltNet shows it
+  // (moltnet_media_devices.h).
   auto* source = MakeGarbageCollected<MediaStreamSource>(
       String::FromUtf8(device.id), device.display_id, type,
-      String::FromUtf8(device.name), false /* remote */,
-      std::move(platform_source));
+      String::FromUtf8(molt_fingerprinting::UniformName(device)),
+      false /* remote */, std::move(platform_source));
   if (device.group_id) {
     source->SetGroupId(String::FromUtf8(*device.group_id));
   }

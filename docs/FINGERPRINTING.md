@@ -384,6 +384,8 @@ back/forward, and a MoltNet window with Shields off.
 | Decoded video read back (`VideoFrame.copyTo()`, `new VideoFrame(video)`, `drawImage(video)`, `texImage2D(video)`); the bytes `VideoEncoder`, `AudioEncoder` and `MediaRecorder` write for input they scale or resample, and Opus | the GPU's video decoder and colour conversion, the CPU's vector instructions | **software decoding, CPU conversion, an integer scaler, C kernels**: the same on every machine of an OS ([details](#moltnet-pixels-and-encoded-bytes)) | `default_decoder_factory.cc`, `mappable_shared_image_video_frame_pool.cc`, `paint_canvas_video_renderer.cc`, `video_frame_converter_internals.cc`, `sinc_resampler.cc`, `vector_math.cc`; libopus |
 | WebAssembly relaxed SIMD, `Math.pow` and `Math.tanh`, colours read back in another colour space, images with a colour profile, decoded audio (`AudioData`); how much heap V8 gives a page | the CPU's vector extensions (relaxed SIMD's results, the code Skia, skcms, Symphonia, FFmpeg and the C library pick); the machine's memory | **one code path for every CPU**: relaxed SIMD off, V8's own `Math` code, portable colour and audio code; V8 configured as on a 4 GB machine ([details](#moltnet-cpu-features)) | `flag-definitions.h`, `function-body-decoder-impl.h`, `ieee754.cc`, `v8.cc`, `isolate_holder.cc`, `chrome_content_renderer_client.cc`; Skia, skcms, Symphonia, `molt_portable_media.cc` |
 | The microphone's processed samples (echo cancellation, noise suppression, gain control), also when a page asks for the system's processing or plays something meanwhile; the processing capabilities and settings | the processor's extensions (AVX2 and FMA, SSE2, NEON) and the C library's math; the OS's processing where a device reports it or a page asks for it; the echo reference mixed with the processor's extensions | **the same on every processor and OS**: WebRTC's plain C++ code and portable math functions for MoltNet's streams, in the audio service every profile shares, never the OS's processing, and the echo reference mixed with the plain code ([details](#moltnet-the-microphones-processing)) | `media_stream_audio_processing_layout.cc`, `media_stream_audio_processor_options.cc`, `user_media_processor.cc`, `media_devices.cc`; `helpers.cc`, `molt_portable_media.cc`, `output_device_mixer_impl.cc`; WebRTC's `audio_processing_impl.cc`, `cpu_info.cc` and the dispatch and math call sites |
+| A microphone's format (`getSettings()`' `sampleRate`, `channelCount` and `latency`, `getCapabilities()`' ranges, `enumerateDevices()`' `InputDeviceInfo.getCapabilities()`); device labels and `groupId`s once a page may see them; Windows' communications device; the OS's processing of the microphone outside the browser (a PulseAudio or PipeWire filter source, Windows' communications processing) | the device's format and the OS's names, groups and processing | **one format, generic names**: 48 kHz, one or two channels and 10 ms, converted from the device's by the CPU-independent processing; "Default", or the kind and the ID's first four characters, every device a group of its own, no communications device; the microphone under a filter source, no communications category without raw mode ([details](#moltnet-cameras-microphones-and-outputs), [the platform's processing](#the-platforms-processing)) | `user_media_processor.cc`, `media_devices.cc`, `media_stream_constraints_util_audio.cc`; `audio_processor.cc`, `audio_processing.h`, `molt_portable_media.cc`; `pulse_input.cc`, `audio_low_latency_input_win.cc` |
+| Audio with values below the normal float range (subnormals): Web Audio's nodes and `AudioWorklet`, resampling (`decodeAudioData()`, a context's output, the echo reference's mix), time stretching, the microphone's processing | the CPU's flush-to-zero modes around the loops, which x86-64 and arm64 apply differently (and some on x86-64 only) | **the same on every CPU**: the modes off, and samples below 2^-63 zero where they enter ([details](#moltnet-subnormal-floats)) | `denormal_disabler.h`, `audio_handler.cc`, `sinc_resampler.cc`, `audio_renderer_algorithm.cc`, `sync_mixing_graph_input.cc`, `output_device_mixer_impl.cc`, `avif_image_decoder.cc`; WebRTC's `audio_processing_impl.cc` and `cpu_info.cc` |
 | Whether WebAssembly SIMD validates; the bits a `Float16Array` stores for a NaN; audio played at another `playbackRate`; JPEG XL pixels | the processor's extensions (SSE4.1 for SIMD, F16C, AVX2 and FMA, the code jxl-rs picks) | **the same on every processor MoltNet opens on**: MoltNet needs SSE4.1 on x86-64 and says so where it would open; V8's software half-float conversion, one way to time-stretch, jxl-rs's portable mode ([details](#moltnet-what-pages-can-learn-about-the-processor)) | `molt_net_cpu.cc`, `molt_net_window.cc`, `molt_net_routing.cc`, `tor_manager.cc`; `moltnet_cpu.h`; `wsola_internals.cc`; jxl-rs, `jxl_image_decoder.cc` |
 | `Math`'s trigonometry, exponentials and logarithms on arm64; CSS math functions, `DOMMatrix`, `SVGMatrix`, CSSOM `toMatrix()`, canvas and SVG transforms and their interpolation; Web Audio's filters, analyser, oscillators, panners, compressor, convolution and resampling; WebRTC audio levels | the OS's C library (glibc, the Windows C runtime and macOS's differ, and pick FMA versions by CPU), V8's math code with fused multiply-adds on arm64, Web Audio's AVX, SSE, NEON and Accelerate code | **one portable math library and Web Audio's scalar code**: the same results on every CPU and OS ([details](#moltnet-portable-math)) | `molt_portable_math.cc`, `ui/gfx/geometry/molt_math.cc`, `ieee754.cc`; the call sites in Blink, `ui/gfx` and `media` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
@@ -2664,9 +2666,11 @@ time starts moving (`media.clock_start_ms`).
 
 Before a page may use a camera or microphone, Chromium tells it which
 kinds of device the machine has, and answers some `getUserMedia()` calls
-without asking the user. In MoltNet windows every machine now has one
+without asking the user; once it may, it shows the devices' own format and
+the OS's names for them. In MoltNet windows every machine has one
 microphone, one camera and one output device until the user lets a page
-use them:
+use them, and afterwards every microphone has one format and every device
+a generic name:
 
 | What a page reads | Before, in MoltNet | Now |
 |---|---|---|
@@ -2674,6 +2678,11 @@ use them:
 | `getUserMedia()` for a kind the machine has none of | `NotFoundError` at once, no prompt | **the permission prompt** of any request; then `NotAllowedError` if the user blocks or dismisses it, `NotFoundError` if they allow it |
 | `getUserMedia()` with constraints no device meets (an exact size the camera doesn't have) | `OverconstrainedError` at once, no prompt | the same: **the prompt** first |
 | `devicechange` | fires when devices change, before any permission unless Chromium's `DeviceChangeRequiresPermission` is on | fires only once the page may use the devices |
+| A microphone track's `getSettings()`: `sampleRate`, `channelCount`, `latency` | the device's rate and buffer (48 kHz and 10 ms with processing on), one channel unless more are asked for and the device has them | **48 kHz, one channel or two when asked for, 10 ms**, whatever the device ([below](#a-microphones-format-and-names)) |
+| The `sampleRate`, `channelCount` and `latency` ranges of a microphone track's `getCapabilities()` and of `enumerateDevices()`' `InputDeviceInfo.getCapabilities()` | from the device's rate, channel count and buffer sizes | **48 kHz, one to two channels, 10 ms** for every microphone |
+| Labels once a page may see the devices (`enumerateDevices()`, a track's `label`) | the OS's names ("MacBook Pro Microphone", "Default - Headset Microphone (Jabra Evolve2 65)") | **"Default"**, or **"Microphone", "Camera" or "Speaker", a space and the device ID's first four characters** |
+| `groupId` (`enumerateDevices()`, a track's settings and capabilities) | shared by the devices of one product (a headset's microphone and earpieces) | **the device ID**: every device a group of its own |
+| Windows' `communications` device | listed with the microphones and outputs, selectable | **not listed**, not selectable |
 
 Normal and Incognito windows keep Chromium's behaviour. MoltNet ignores
 Shields off, and the kill switch turns it off.
@@ -2719,45 +2728,144 @@ decides, and after that the page may see the devices anyway.
 about one when a page wants it, and if they allow it the page then finds
 none. Pages see a `devicechange` only once they may use the devices.
 
+### A microphone's format and names
+
+At 156 what a page reads about a microphone it may use follows the device:
+`getSettings()` gives its rate and buffer duration, `getCapabilities()`
+and `InputDeviceInfo.getCapabilities()` build their ranges from its rate,
+channel count and buffer sizes (a 16 kHz Bluetooth headset, a 44.1 kHz USB
+microphone, a 96 kHz interface and a laptop's array each show their own),
+and the labels and groups are the OS's. In MoltNet:
+
+* **One format.** A microphone stream is delivered at 48 kHz, in 10 ms
+  buffers, with one channel, or two when the page asks for more than one
+  (`channelCount`), whatever the device's. The device opens in its own
+  format, and the stream's processing converts it in its CPU-independent
+  code ([the microphone's processing](#moltnet-the-microphones-processing)),
+  so no OS or processor-specific converter sits in between. A MoltNet
+  stream is processed also with every effect off (`echoCancellation`,
+  `noiseSuppression` and `autoGainControl` all false), which Chromium
+  delivers in the device's own format; then the processing only converts.
+  A stereo stream of a mono device has the channel twice, as Chromium's
+  upmix gives it. (With processing on, Chromium's streams are at 48 kHz
+  too, with the device's channels.)
+* **The same values everywhere.** `getSettings()` reports `sampleRate`
+  48000, `channelCount` 1 or 2 and `latency` 0.01 (`sampleSize` is 16 for
+  every microphone at 156); both `getCapabilities()` report 48000 to
+  48000, one to two channels and 0.01 to 0.01 s (to 0.02 on Android,
+  Chromium's fallback latency there; `media::PortableCaptureParameters()`).
+  Constraints are checked against the same format, so a request
+  is met, or refused with `OverconstrainedError`, the same way on every
+  machine: `channelCount: 2` with a mono microphone works, `sampleRate:
+  {exact: 44100}` fails.
+* **Generic labels.** "Default" for the default device, otherwise
+  "Microphone", "Camera" or "Speaker", a space and the first four
+  characters of the device ID the page sees (salted per site, as in
+  Chromium), so that a page's device menu still tells the devices apart.
+  A track's `label` is its device's.
+* **Every device a group of its own.** `groupId` is the device ID in
+  `enumerateDevices()`, a track's `getSettings()` and `getCapabilities()`,
+  and the groups `groupId` constraints are checked against; a headset's
+  microphone and earpieces aren't tied together.
+* **No communications device.** Windows lists a "communications" device
+  next to the default one; MoltNet's lists don't, and a request can't
+  select it. The other OSes have none.
+* **Selection unchanged.** Device IDs stay Chromium's: `deviceId`
+  constraints pick the same devices as before, a page's own device menu
+  works, and `devicechange` fires as described above. The renderer keeps
+  the browser's names in its own records of the devices, which it matches
+  the browser's messages to (a device unplugged or changed); only what
+  pages read changes.
+
+**Firefox and Tor Browser.** Firefox's `privacy.resistFingerprinting`
+shows one device of each kind under fixed names ("Internal Microphone",
+"Internal Camera", "Internal Speaker") and groups (one for the audio
+devices, one for the camera), and drops every constraint of a request but
+the media source and the facing mode, so a page can't pick a device or a
+format (the user picks the device in the prompt). Tor Browser leaves
+`getUserMedia()` off. MoltNet keeps the
+page's choice of microphone and camera (a headset or the laptop's own,
+picked in the page's menu or by `deviceId`), gives every device a name
+that says nothing about the hardware, and gives every microphone one
+format.
+
+**What it costs.** A device's other rate is converted (a 16 kHz headset
+up, a 96 kHz interface down), in the CPU-independent code: with every
+effect off, 34 to 74 ns per frame on one core of a 2.1 GHz Xeon (0.16 to
+0.36% of the core; a 48 kHz stereo device, only mixed down, 23 ns),
+against 14 to 43 ns with the processor's vector code. A page can't ask
+for another rate.
+
 ### Which contexts
 
 Windows and their frames, the only contexts these APIs exist in, in the
-whole MoltNet renderer process. The kill switch turns it off.
+whole MoltNet renderer process. The format: every microphone stream such a
+renderer opens. The kill switch turns it off.
 
 ### Code
 
 | Where | What |
 |---|---|
-| `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`) and what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`); std-only (+ `moltnet_media_values_unittest.cc`) |
-| `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | the Blink glue: the added entries, `devicechange`, the permission request (+ `moltnet_media_devices_test.cc`) |
+| `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`), what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`), the labels and groups (`DeviceLabel`, `DeviceGroup`) and the communications device (`ListsAudioDevice`); std-only (+ `moltnet_media_values_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | the Blink glue: the added entries, `devicechange`, the permission request; the names and groups (`UseUniformNames`, `UniformName`, `UseUniformGroup`, `UniformGroupId`), the lists (`ListsMediaDevice`, `ListsCaptureDevice`) and `InputDeviceInfo`'s format (`UseUniformCapabilities`) (+ `moltnet_media_devices_test.cc`) |
+| `media/base/molt_portable_media.{h,cc}` | the one format: `PortableCaptureParameters()` (what pages read and constraints are checked against), `PortableCaptureOutputFormat()` (what a stream is delivered in) (+ cases in `molt_portable_media_unittest.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`):
 `modules/mediastream/media_devices.cc` (`DevicesEnumerated`: an entry per
-kind; `MaybeFireDeviceChangeEvent`) and
+kind, the list, names, groups and `InputDeviceInfo`'s format;
+`OnSelectAudioOutputResult`; `MaybeFireDeviceChangeEvent`),
 `modules/mediastream/user_media_processor.cc`
-(`GetUserMediaRequestFailed`). `user_media_processor.cc` is new in
-`src/`.
+(`GetUserMediaRequestFailed`; `SelectAudioDeviceSettings` and
+`ToVideoInputDeviceCapabilities`: the list and the groups constraints see;
+`OnStreamsGenerated` and `OnDeviceChanged`: the groups;
+`InitializeSourceObject`: the label; `InitializeAudioSourceObject`: the
+format), `modules/mediastream/media_stream_constraints_util_audio.cc`
+(`DeviceContainer`: the format constraints are checked against),
+`media/webrtc/audio_processor.cc` (`GetDefaultOutputFormat`: the stream's
+format; `ProcessData`: a mono device's stereo stream) and
+`media/base/audio_processing.h` (`NeedWebrtcAudioProcessing`: a MoltNet
+stream is always processed); a test in `user_media_client_test.cc`.
+`user_media_processor.cc`, `media_stream_constraints_util_audio.cc` and
+`audio_processor.cc` are new in `src/`.
 
 ### Verification
 
-Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (14
-tests, the list rule and the verdict for every mix of answers included)
-passes with g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`).
-Every changed C++ file, the tests included, compiles without errors
-against Chromium 156's real headers (`tools/compile_check`).
+Standalone (no Chromium checkout): `moltnet_media_values_unittest.cc` (17
+tests, the list rule, the verdict for every mix of answers, the labels,
+groups and the communications device included) passes with g++
+(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`). The conversion of
+a MoltNet stream with every effect off, for 44.1 kHz mono, 96 kHz stereo,
+16 kHz mono and 48 kHz stereo devices, gives the same samples on every
+CPU of the harness of [the microphone's
+processing](#moltnet-the-microphones-processing) (x86-64 natively and on
+five emulated models, arm64 on three); without the
+CPU-independent mode they differ between x86-64 CPUs with and without
+AVX2. `MoltCpuIndependentProcessingTest.ConversionGoldenDigests` holds
+those digests. Every changed C++ file, the tests included, compiles
+without errors against Chromium 156's real headers
+(`tools/compile_check`).
 
 **Needs the build machine:** `blink_unittests`
 (`MoltNetMediaDevicesTest.*`, which runs the permission request against a
-fake permission service in a real window, and the upstream
-`MediaDevices` and `UserMediaProcessor` suites), and the checks in
+fake permission service in a real window, `UserMediaClientTest.
+MoltNetMicrophoneHasUniformFormatAndNames`, and the upstream
+`MediaDevices`, `UserMediaProcessor`, `UserMediaClient` and
+`MediaStreamConstraintsUtilAudio` suites), `media_unittests`
+(`MoltPortableMediaTest.*`), `molt_ai_unittests`
+(`MoltCpuIndependentProcessingTest.*`), and the checks in
 `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (machines with
 no camera or no microphone, the prompt and its three answers,
-`devicechange`). **Automated** by [`tools/leak_test`](LEAK_TESTING.md):
-the device kinds, their order and blank fields (`media.devices`,
-`media.device_order`, `media.device_blank`) and `getUserMedia()` before a
-permission, for a camera and microphone and with constraints no camera
-meets (`media.gum`, `media.gum_overconstrained`: still waiting after
-1.5 s, or refused).
+`devicechange`) and "fp-mic3" (a real microphone of another rate, a mono
+one asked for stereo, a headset's names and groups, device selection by
+`deviceId`, Windows' communications device). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): the device kinds, their order and
+blank fields (`media.devices`, `media.device_order`, `media.device_blank`)
+and `getUserMedia()` before a permission, for a camera and microphone and
+with constraints no camera meets (`media.gum`,
+`media.gum_overconstrained`: still waiting after 1.5 s, or refused); in
+the microphone launch, the format, both kinds of ranges, and the labels
+and groups (`audio.mic_format`, `audio.mic_format_ranges`,
+`audio.mic_device_ranges`, `audio.mic_names`).
 
 ## MoltNet: performance.memory
 
@@ -3726,6 +3834,48 @@ A page reads the same on every OS: `getCapabilities()` with
 suppression and gain control `true` and `false`, and `voiceIsolation`
 `false`; `getSettings()` with what it asked for.
 
+The OS can also process the microphone before the browser gets it. In
+MoltNet:
+
+* **The format the device opens in.** `AudioProcessor::ComputeInputFormat()`
+  opens a MoltNet stream's device without platform effects, also where the
+  audio service asks the device for its format itself (Chromium-wide echo
+  cancellation), and on Linux and Windows marks the format for the platform
+  code (`media::kPortableCaptureEffect`; Android takes any effect as a
+  request for its communication mode, so there the format carries none).
+* **Linux: filter sources.** A PulseAudio or PipeWire filter source (an
+  echo canceller: PulseAudio's `module-echo-cancel`, PipeWire's echo-cancel
+  module; a noise filter in a PipeWire filter chain; a remapped or virtual
+  source), picked as the microphone or set as the default source, records
+  the filter's output. A marked stream records from the source under the
+  filter instead (`media/audio/pulse/molt_capture_source.h`): the source
+  `device.master_device` names on PulseAudio; on pipewire-pulse the source
+  read by the filter's own recording stream, which shares the filter's
+  `node.link-group`; followed through up to four filters; where neither
+  tells, the first hardware source that is neither a monitor nor a
+  filter. A filter source is one with `device.class` "filter", a
+  `device.master_device` or a `node.link-group`. On PulseAudio the
+  modules that make filter sources set the first two. On pipewire-pulse
+  neither is set (every source's driver is "PipeWire"), and the link group,
+  which PipeWire's echo canceller ("echo-cancel-" and its ids) and filter
+  chains give their source and their capture stream, is the sign; neither
+  server marks such a source as hardware (`PA_SOURCE_HARDWARE`). A source
+  that isn't hardware and has neither sign (a null source, a network
+  tunnel, an application's virtual microphone) processes no microphone and
+  is recorded as it is. The server is asked when the stream opens
+  (`PulseAudioInputStream::Open()`).
+* **Windows: the communications category.** Chromium asks Windows for raw
+  capture (`AUDCLNT_STREAMOPTIONS_RAW`: no processing but the device's
+  always-on effects) with the communications category where a device
+  supports raw mode, but on a device with more than 8 channels for the
+  communications category alone, which turns the OS's communications
+  processing on (Voice Clarity on Windows 11 24H2, where the device has none
+  of its own). A marked stream takes the communications category only with
+  raw mode; on such a device it stays in the default category
+  (`PortableCaptureMayUseCommunicationsCategory()`), as on a device without
+  raw mode, whose default-mode effects are part of the device's signal
+  path, like a headset's own processing.
+
 ### The echo reference
 
 With Chromium-wide echo cancellation the echo canceller's reference is
@@ -3802,7 +3952,9 @@ switch turns it off.
 | `third_party/webrtc/rtc_base/cpu_info.{h,cc}` | `ScopedCpuIndependent`, `IsCpuIndependent()`; `Supports()` false in a scope |
 | `third_party/webrtc/rtc_base/molt_math.{h,cc}` | the audio processing's math functions: the C library's, or in a scope the portable library's |
 | `media/webrtc/molt_cpu_independent_processing_unittest.cc` | golden digests of the module in this mode, which every processor and OS must reproduce, the setting fixed at build time, and two modules of both kinds in turn on one thread (`MoltCpuIndependentProcessingTest`, in `molt_ai_unittests`) |
-| `media/base/molt_portable_media.{h,cc}` | `PortableCaptureEffects()`: no platform effects for a microphone in MoltNet's renderers; `ScopedPortableAudioThread` and `IsPortableAudioThread()`: media's mixing code (`FMAC`, the resampler's convolution and kernel) in its portable versions on one thread (+ cases in `molt_portable_media_unittest.cc`) |
+| `media/base/molt_portable_media.{h,cc}` | `PortableCaptureEffects()`: no platform effects for a microphone in MoltNet's renderers; `kPortableCaptureEffect`, `PortableCaptureStreamEffects()` and `PortableCaptureMayUseCommunicationsCategory()`: the mark for the platform code and Windows' rule; `ScopedPortableAudioThread` and `IsPortableAudioThread()`: media's mixing code (`FMAC`, the resampler's convolution and kernel) in its portable versions on one thread (+ cases in `molt_portable_media_unittest.cc`) |
+| `media/audio/pulse/molt_capture_source.{h,cc}` | which PulseAudio source a marked stream records from; std-only (+ `molt_capture_source_unittest.cc`: PulseAudio's and PipeWire's filters, chains, fallbacks, loops) |
+| `media/audio/pulse/molt_pulse_capture.{h,cc}` | the PulseAudio side: the server's sources and recording streams with their properties |
 | `ui/gfx/geometry/molt_math.{h,cc}` | `PortableSin()`, `PortableCos()`: the portable functions in any process (+ a case in `molt_math_unittest.cc`) |
 | `media/webrtc/molt_echo_reference_unittest.cc` | golden digests of a mix as the audio service computes it for a MoltNet listener, and of the processing with that mix as its reference, which every processor and OS must reproduce (`MoltCpuIndependentEchoReferenceTest`, in `molt_ai_unittests`) |
 
@@ -3821,11 +3973,18 @@ listener's default answer; the count of such listeners in
 `StartListening`, `StopListening` and `ProcessDeviceChange`; the mixing
 graph played through `PortableMixing` in `StartMixingGraphPlayback`) and
 `mixing_graph_impl.cc`
-(`CreateConverter`); tests in `user_media_client_test.cc`,
+(`CreateConverter`); for the OS's processing outside the browser,
+`media/webrtc/audio_processor.cc` (`ComputeInputFormat`),
+`media/audio/pulse/pulse_input.cc` (`Open`), `pulse.sigs`
+(`pa_context_get_source_output_info_list`), `media/audio/BUILD.gn` and
+`media/audio/win/audio_low_latency_input_win.cc` (`Open`); tests in
+`user_media_client_test.cc`,
 `media_stream_audio_processing_layout_test.cc` and
 `output_device_mixer_impl_unittest.cc`. New in `src/`:
 `media_stream_audio_processor_options.cc`, the six audio service files,
-`user_media_client_test.cc` and `output_device_mixer_impl_unittest.cc`.
+`user_media_client_test.cc`, `output_device_mixer_impl_unittest.cc`,
+`audio_processor.cc`, `pulse_input.cc`, `pulse.sigs`, `media/audio/BUILD.gn`
+and `audio_low_latency_input_win.cc`.
 
 Upstream hooks (each marked `MoltBrowser:`; all new in `src/`):
 
@@ -3887,7 +4046,9 @@ Cortex-A53, Cortex-A76 and qemu's `max` CPU:
 * The leak kit's WAV, processed as the fake capture device delivers it
   (44.1 kHz stereo in 10 ms buffers, to 48 kHz mono) and hashed as its
   page hashes it: with the setting, one digest on every CPU above, the
-  silence before the burst processed to exact zeros and the burst found
+  silence before the burst processed to values below 3.2e-10 (the
+  processing's noise floor, [subnormal floats](#moltnet-subnormal-floats))
+  and the burst found
   in the same buffer however late the page starts listening; Chromium's
   code gives two digests (with and without AVX2).
 
@@ -3941,7 +4102,15 @@ at once); for the platform's processing and the echo reference,
 (`OutputDeviceMixerImplTest.MixesPortablyWhileCpuIndependentListens`) and
 the checks tagged "fp-mic2" (a real microphone on each OS: capabilities,
 settings, no platform effects in the stream's log, echo cancelled with
-`"all"`). **Automated** by [`tools/leak_test`](LEAK_TESTING.md): the
+`"all"`); for the OS's processing outside the browser, `media_unittests`
+(`MoltPulseCaptureSourceTest.*`, `MoltPortableMediaTest.*`), `molt_ai_unittests`
+(`MoltCpuIndependentProcessingTest.OneOutputFormatForEveryDevice`) and the
+checks tagged "fp-mic3" (a PipeWire echo-cancel source and a PulseAudio
+`module-echo-cancel` source as the microphone and as the default source on
+Linux; a device without raw mode and one with more than 8 channels on
+Windows). The choice of source passes standalone (5 tests, g++ with
+ASan/UBSan, `-Wall -Wextra`). **Automated** by
+[`tools/leak_test`](LEAK_TESTING.md): the
 `mic_processing` launch plays a fixed WAV through Chromium's fake capture
 device and compares a hash of the processed samples between runs
 (`audio.mic_processed`; `audio.mic_processed_stable`, the same in two
@@ -4357,6 +4526,172 @@ and points and `offset-path` positions (`geom.path_length`), text laid
 out around `shape-outside` gradients, an SVG image with filters, a
 rounded polygon and a margin-box with radii (`geom.shape_outside`), and
 `contrast-color()` around its threshold (`geom.contrast_color`).
+
+## MoltNet: subnormal floats
+
+Floats below the smallest normal float (`FLT_MIN`, 2^-126) are subnormal:
+they lose precision gradually down to 2^-149. They arise in audio wherever
+a signal decays (a filter's tail, a delay line's feedback, a fade, a
+resampler's sums over a quiet input) or a page makes them (tiny gains,
+tiny samples). Processors can flush them to zero, and at 156 Chromium
+turns that on around its audio loops, because x86 takes tens to hundreds
+of cycles per operation on a subnormal operand or result. The flush modes
+don't agree between architectures: x86-64's (MXCSR's FTZ and DAZ) decides
+that a result is tiny after rounding it and reads subnormal operands as
+zero; arm64's (FPCR's FZ) decides before rounding. A product whose exact
+value lies just below `FLT_MIN` but rounds up to it is `FLT_MIN` on
+x86-64 and zero on arm64. Some of Chromium's code sets the modes on x86
+only (`cc::ScopedSubnormalFloatDisabler`), so there arm64 computes the
+subnormals and x86-64 flushes them. With the modes off, IEEE 754
+subnormal arithmetic gives the same results on both. In MoltNet windows
+the audio code computes the same way on every processor:
+
+| What a page computes or plays | Chromium 156 | MoltNet |
+|---|---|---|
+| Web Audio's nodes (`AudioContext` and `OfflineAudioContext`) | the flush modes on (`DenormalDisabler`: x86-64 FTZ and DAZ, arm64 FZ); filter and compressor states left to the modes | **the modes off**; what a node passes on, and a filter's or compressor's state, zero below 2^-63 |
+| Resampling: `decodeAudioData()` to the context's rate, a context's output for the device, a stream into a context of another rate | the modes on x86-64 only (`cc::ScopedSubnormalFloatDisabler`) | **the modes off**; the input and the kernel's coefficients zero below 2^-63 |
+| A media element's audio at another `playbackRate` with its pitch kept (time stretching) | the modes on x86-64 only | **the modes off**; the blocks it compares zero below 2^-63 |
+| The microphone's processing ([above](#moltnet-the-microphones-processing)) | the modes on (WebRTC's `DenormalDisabler`) | **the modes off**; the input zero below 2^-63, plus a fixed noise floor of 2^-32 |
+| The echo reference the audio service mixes while a MoltNet stream listens | the device thread's mode, which the platform decides | **the modes off**; the streams' samples and volumes zero below 2^-63 |
+| AVIF images decoded to half floats | the modes on x86-64 only | **the modes off** (10- and 12-bit images give no subnormal there) |
+
+Normal and Incognito windows, and the audio service's other work, keep
+Chromium's modes. MoltNet ignores Shields off, and the kill switch turns it
+off.
+
+### What MoltNet does
+
+* **The modes off.** Where Chromium's code turns the flush modes on, the
+  portable code turns them off for its loops and puts back what it found
+  (`media::ScopedPortableSubnormals`; inside WebRTC's
+  `cpu_info::ScopedCpuIndependent`): Blink's `DenormalModifier` in
+  MoltNet's renderers (the Web Audio rendering threads; an
+  `AudioWorklet`'s JavaScript, which 156 already runs with the modes off,
+  stays so whatever `AudioWorkletJSDenormalEnabler` says), the
+  resampler's convolution, the time stretching, the AVIF
+  conversion, the CPU-independent processing and the portable mix in the
+  audio service. A thread a platform left in a flush mode changes nothing.
+* **A floor where samples enter.** Off, the modes no longer keep
+  subnormals out of the loops, and a page could make every operation slow,
+  in its renderer and, through the echo reference, in the audio service
+  every profile shares. So the portable code sets every sample whose
+  magnitude is below 2^-63 (about 1.1e-19, -379 dBFS) to zero where it
+  enters (`media::FlushTinyPortableSamples()`): the resampler's input and
+  the kernel's tiny coefficients (the rounding residue at the window's
+  zeros), the time stretching's blocks, what each Web Audio node passes on
+  and its filters' and compressor's states (`FlushDenormalFloatToZero()`),
+  each stream's samples and volume in the echo reference's mix, and the
+  processing's input. The floor's square is `FLT_MIN`, so the product of
+  two values at or above it is a normal float. The floor is far below any
+  sound: 24-bit audio's smallest step is -144 dBFS.
+* **The microphone's processing in silence.** With the input floored, the
+  processing's own state (the echo canceller's filters, the gain
+  control's voice detector, the band split) still decayed through the
+  subnormals in long silences. The processing adds a noise floor of 2^-32
+  (about -193 dBFS) to its input, with a sign per sample from a fixed
+  sequence each instance starts the same way, so its state settles at that
+  floor; the same samples on every processor. Digital silence comes out
+  as values below 3.2e-10 (-190 dBFS) instead of zeros.
+
+### What it costs
+
+Measured on one core of a 2.1 GHz Xeon (a cloud VM), with input built to
+cost the most (noise decaying through the subnormals, values around
+`FLT_MIN`, bursts with decaying tails, a reference and a microphone silent
+in turn), per 48 kHz frame:
+
+| Work | Chromium 156 | MoltNet | The modes off without the floor |
+|---|---|---|---|
+| Resampling 44.1 kHz stereo to 48 kHz | 96 to 99 ns | 96 to 108 ns, whatever the input | up to 5397 ns, for subnormal input (52 times) |
+| The microphone's processing (echo cancellation with a reference, noise suppression, gain control), CPU-independent, 48 kHz stereo in | 385 to 563 ns | 395 to 540 ns, whatever the input | up to 3667 ns (9 times) |
+| Web Audio: a gain of 2^-70 on a signal at the floor (every product subnormal) | 0.2 ns | 10 ns | 10 ns |
+| Web Audio: a gain of 0.5 on subnormal input | 0.2 ns | 0.4 ns | 10 ns |
+| Web Audio: a delay line feeding back at 0.5, on subnormal input | 0.3 ns | 0.6 ns | 9.6 ns |
+| Web Audio: a biquad on subnormal input | 6.0 ns | 6.5 ns | 6.7 ns |
+| Web Audio: the floor's pass over a node's output | | 0.3 ns | |
+
+The floor alone (without the noise floor) left the processing up to 2.3
+times slower in a silence after a bursty reference; the noise floor brings
+it back to the table's figures. A page that multiplies by tiny gains pays
+for one subnormal product per sample and node, in its own renderer only:
+the next node gets zeros.
+
+### Which contexts
+
+The whole MoltNet renderer process: windows, frames, workers and
+worklets (the audio rendering threads included), and media decoded or
+resampled there. In the audio service, the CPU-independent processing of
+MoltNet's microphone streams and the echo reference's mix while one
+listens. Normal and Incognito windows, and every other process's audio,
+keep Chromium's flush modes. The kill switch turns it off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `media/base/molt_portable_media.h`, `molt_portable_subnormals.cc` | `kPortableAudioFloor`, `FlushTinyPortableSamples()`, `ScopedPortableSubnormals` (+ cases in `molt_portable_media_unittest.cc`) |
+| `third_party/webrtc/rtc_base/cpu_info.{h,cc}` | `ScopedCpuIndependent` turns the modes off; `kCpuIndependentFloor`, `FlushTinySample()`, `kCpuIndependentDither`, `FlushModeIsOn()` |
+| `media/webrtc/molt_portable_subnormals_unittest.cc` | golden digests of the resampler and the processing over signals that reach every range the modes treat differently, which every processor and OS must reproduce, also from a thread left in a flush mode (`MoltPortableSubnormalsTest`, in `molt_ai_unittests`) |
+| `core/molt_fingerprinting/moltnet_subnormals_test.cc` | Blink's `DenormalModifier` and `FlushDenormalFloatToZero()` in normal windows and in MoltNet (`MoltNetSubnormalsTest`, in `blink_unittests`) |
+
+Upstream hooks (each marked `MoltBrowser:`): `media/base/sinc_resampler.cc`
+(the kernel's coefficients, `Resample()`), `media/filters/
+audio_renderer_algorithm.cc` (`RunWsolaAndFill`,
+`PeekAudioWithZeroPrepend`), `services/audio/sync_mixing_graph_input.cc`
+(`ProvideInput`, `Render`), `output_device_mixer_impl.cc`
+(`PortableMixing`), Blink's `platform/audio/denormal_disabler.h`
+(`DenormalModifier`, `FlushDenormalFloatToZero`) and its `DEPS`,
+`modules/webaudio/audio_handler.cc` (`ProcessIfNecessary`),
+`platform/image-decoders/avif/avif_image_decoder.cc` (`DecodeToYUV`), and
+WebRTC's `modules/audio_processing/audio_processing_impl.{h,cc}` (the
+input's floor and noise floor; the `DenormalDisabler`s off in the mode).
+`audio_renderer_algorithm.cc`, `sync_mixing_graph_input.cc`,
+`denormal_disabler.h`, `platform/audio/DEPS` and `audio_handler.cc` are new
+in `src/`. The earlier golden digests of the processing
+(`MoltCpuIndependentProcessingTest`, `MoltCpuIndependentEchoReferenceTest`)
+are the module's with its noise floor.
+
+### Verification
+
+Standalone (no Chromium checkout; harnesses in a scratch directory), with
+Chromium 156's media and WebRTC code and MoltBrowser's files, built with
+Chromium's clang and flags for x86-64 and arm64, run natively (a Xeon with
+AVX-512) and under qemu on emulated Core 2, Nehalem, Sandy Bridge, Haswell
+and EPYC CPUs and arm64 Cortex-A53, Cortex-A76 and qemu's `max` CPU,
+over the golden test's signals (noise decaying one binade at a time
+through the subnormals, values just above `FLT_MIN`, the largest and
+smallest subnormals, values around the floor, built from their bits):
+
+* **Chromium's handling.** The resampler gives one digest on x86-64 and
+  another on arm64, where it also follows the calling thread's mode
+  (x86-64's emulation under qemu flushes as arm64 does, so x86-64 was
+  measured natively). The flush modes themselves were checked on a product
+  that rounds up to `FLT_MIN`: kept on x86-64, flushed on arm64.
+* **MoltNet's.** The resampler and the processing each give one digest on
+  every CPU of both architectures, also called from a thread left in a
+  flush mode. `MoltPortableSubnormalsTest`'s golden digests come from the
+  same harness. The processing's earlier golden digests, recomputed with
+  its noise floor, agree on every CPU too.
+* **Blink.** `moltnet_subnormals_test.cc` and every changed file compile
+  against Chromium 156's real headers (`tools/compile_check`), as do the
+  media, audio service and WebRTC files.
+
+**Needs the build machine:** compiling and linking, `molt_ai_unittests`
+(`MoltPortableSubnormalsTest.*`, `MoltCpuIndependentProcessingTest.*`,
+`MoltCpuIndependentEchoReferenceTest.*`), `media_unittests`
+(`MoltPortableMediaTest.*` and the `SincResampler` and
+`AudioRendererAlgorithm` suites), `blink_unittests`
+(`MoltNetSubnormalsTest.*` and the Web Audio suites), WebRTC's
+`modules_unittests`, and the checks in `docs/BUILD_MACHINE_CHECKLIST.md`
+tagged "fp-mic3" (an x86-64 and an arm64 machine, the cost on real
+arm64 hardware). **Automated** by [`tools/leak_test`](LEAK_TESTING.md),
+compared between runs on every CPU and OS family: a Web Audio graph whose
+intermediates are subnormal (a product that rounds up to `FLT_MIN`, a
+resonant filter's and a delay line's tails, a ring at 2^-120, scaled back
+up) and a 32-bit float WAV with decaying and `FLT_MIN`-sized samples
+resampled by `decodeAudioData()` (`audio.subnormal_graph`,
+`audio.subnormal_resampled`, with the 8 low mantissa bits cleared, where
+Web Audio's output is farbled).
 
 ## MoltNet: storage limits
 
@@ -6255,6 +6590,13 @@ Honest list; anything not in the table above is not covered.
   processor](#moltnet-what-pages-can-learn-about-the-processor), and the
   microphone's processing, see [the microphone's
   processing](#moltnet-the-microphones-processing).)
+* (Closed: in MoltNet, subnormal floats in audio, which x86-64 and arm64
+  flushed differently, see [subnormal floats](#moltnet-subnormal-floats);
+  a microphone's format and the devices' labels and groups once a page may
+  see them, see [cameras, microphones and
+  outputs](#moltnet-cameras-microphones-and-outputs); a Linux filter source
+  and Windows' communications processing on devices with more than 8
+  channels, see [the platform's processing](#the-platforms-processing).)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 * WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
@@ -6606,4 +6948,11 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    processing](#moltnet-the-microphones-processing) and look for new
    processor dispatch (`cpu_info::Supports`, `WEBRTC_HAS_NEON`, new
    `*_avx2`, `*_sse2` or `*_neon` files) and new C library math in
-   `modules/audio_processing` and `common_audio`.
+   `modules/audio_processing` and `common_audio`. At every rebase, look
+   for new setters of the flush-to-zero modes (`cc::ScopedSubnormalFloatDisabler`,
+   Blink's and WebRTC's `DenormalDisabler`, writes of MXCSR or FPCR,
+   `fesetenv`, `_controlfp`) in code MoltNet's renderers or the audio
+   service's portable scopes run ([subnormal
+   floats](#moltnet-subnormal-floats)), and when `media/audio/pulse` or
+   `media/audio/win` change, check the hooks of [the platform's
+   processing](#the-platforms-processing).

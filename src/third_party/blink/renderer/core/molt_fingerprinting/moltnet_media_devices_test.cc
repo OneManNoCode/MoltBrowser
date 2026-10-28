@@ -12,6 +12,7 @@
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/mediastream/media_devices.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
@@ -230,6 +231,97 @@ TEST_F(MoltNetMediaDevicesTest, OtherFailuresStayAsTheyAre) {
   EXPECT_EQ(Fail(true, false, MediaStreamRequestResult::NO_HARDWARE),
             std::nullopt);
   EXPECT_TRUE(service_.asked.empty());
+}
+
+WebMediaDeviceInfo Device(std::string id, std::string label,
+                          std::string group) {
+  WebMediaDeviceInfo device;
+  device.device_id = std::move(id);
+  device.label = std::move(label);
+  device.group_id = std::move(group);
+  return device;
+}
+
+// enumerateDevices() once the page may see the devices: generic labels,
+// every device in a group of its own, no communications device.
+TEST_F(MoltNetMediaDevicesTest, GenericNamesAndGroups) {
+  WebMediaDeviceInfo mic =
+      Device("3f9a0c1d", "Headset Microphone (Jabra Evolve2 65)", "g1");
+  UseUniformNames(mojom::MediaDeviceType::kMediaAudioInput, mic);
+  EXPECT_EQ(mic.device_id, "3f9a0c1d");
+  EXPECT_EQ(mic.label, "Microphone 3f9a");
+  EXPECT_EQ(mic.group_id, "3f9a0c1d");
+
+  WebMediaDeviceInfo speaker =
+      Device("default", "Default - Headset Earphone (Jabra Evolve2 65)", "g1");
+  UseUniformNames(mojom::MediaDeviceType::kMediaAudioOutput, speaker);
+  EXPECT_EQ(speaker.label, "Default");
+  EXPECT_EQ(speaker.group_id, "default");
+
+  WebMediaDeviceInfo camera = Device("c0ffee12", "FaceTime HD Camera", "g2");
+  UseUniformNames(mojom::MediaDeviceType::kMediaVideoInput, camera);
+  EXPECT_EQ(camera.label, "Camera c0ff");
+  EXPECT_EQ(camera.group_id, "c0ffee12");
+
+  // A page that may not see labels gets none.
+  WebMediaDeviceInfo hidden = Device("3f9a0c1d", "", "g1");
+  UseUniformNames(mojom::MediaDeviceType::kMediaAudioInput, hidden);
+  EXPECT_EQ(hidden.label, "");
+
+  const WebMediaDeviceInfo communications =
+      Device("communications", "Communications - Microphone", "g1");
+  EXPECT_FALSE(ListsMediaDevice(mojom::MediaDeviceType::kMediaAudioInput,
+                                communications));
+  EXPECT_FALSE(ListsMediaDevice(mojom::MediaDeviceType::kMediaAudioOutput,
+                                communications));
+  EXPECT_TRUE(ListsMediaDevice(mojom::MediaDeviceType::kMediaAudioInput, mic));
+  EXPECT_FALSE(ListsCaptureDevice("communications"));
+  EXPECT_TRUE(ListsCaptureDevice("default"));
+  EXPECT_EQ(UniformGroupId("3f9a0c1d", "g1"), "3f9a0c1d");
+
+  // Normal windows: Chromium's names and groups.
+  SetMoltNetMediaForTesting(false);
+  WebMediaDeviceInfo normal =
+      Device("3f9a0c1d", "Headset Microphone (Jabra Evolve2 65)", "g1");
+  UseUniformNames(mojom::MediaDeviceType::kMediaAudioInput, normal);
+  EXPECT_EQ(normal.label, "Headset Microphone (Jabra Evolve2 65)");
+  EXPECT_EQ(normal.group_id, "g1");
+  EXPECT_TRUE(ListsMediaDevice(mojom::MediaDeviceType::kMediaAudioInput,
+                               communications));
+  EXPECT_TRUE(ListsCaptureDevice("communications"));
+  EXPECT_EQ(UniformGroupId("3f9a0c1d", "g1"), "g1");
+}
+
+// A track's label and group: the same as enumerateDevices() shows; screen
+// capture keeps its own. The device keeps the browser's name, by which the
+// renderer matches the browser's messages about it.
+TEST_F(MoltNetMediaDevicesTest, TracksGetTheSameNames) {
+  MediaStreamDevice mic(mojom::MediaStreamType::DEVICE_AUDIO_CAPTURE,
+                        "3f9a0c1d", "Headset Microphone (Jabra Evolve2 65)");
+  mic.group_id = "g1";
+  EXPECT_EQ(UniformName(mic), "Microphone 3f9a");
+  UseUniformGroup(mic);
+  EXPECT_EQ(mic.group_id, "3f9a0c1d");
+  EXPECT_EQ(mic.name, "Headset Microphone (Jabra Evolve2 65)");
+
+  MediaStreamDevice camera(mojom::MediaStreamType::DEVICE_VIDEO_CAPTURE,
+                           "c0ffee12", "FaceTime HD Camera");
+  EXPECT_EQ(UniformName(camera), "Camera c0ff");
+  UseUniformGroup(camera);
+  EXPECT_EQ(camera.group_id, "c0ffee12");
+
+  MediaStreamDevice screen(mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE,
+                           "screen:0:0", "Screen 1");
+  EXPECT_EQ(UniformName(screen), "Screen 1");
+  UseUniformGroup(screen);
+  EXPECT_FALSE(screen.group_id.has_value());
+
+  SetMoltNetMediaForTesting(false);
+  MediaStreamDevice normal(mojom::MediaStreamType::DEVICE_AUDIO_CAPTURE,
+                           "3f9a0c1d", "Headset Microphone (Jabra Evolve2 65)");
+  EXPECT_EQ(UniformName(normal), "Headset Microphone (Jabra Evolve2 65)");
+  UseUniformGroup(normal);
+  EXPECT_FALSE(normal.group_id.has_value());
 }
 
 }  // namespace

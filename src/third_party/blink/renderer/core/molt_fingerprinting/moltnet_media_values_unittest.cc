@@ -237,5 +237,35 @@ TEST(MoltNetMediaValuesTest, UserMediaFailsOnlyAfterAsking) {
   EXPECT_EQ(UserMediaFailureVerdict({}), V::kPermissionDenied);
 }
 
+TEST(MoltNetMediaValuesTest, GenericDeviceLabels) {
+  constexpr char kId[] =
+      "3f9a0c1d27e64b5893aa11c0de4f5e6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4";
+  EXPECT_EQ(DeviceLabel(DeviceKind::kMicrophone, kId), "Microphone 3f9a");
+  EXPECT_EQ(DeviceLabel(DeviceKind::kCamera, kId), "Camera 3f9a");
+  EXPECT_EQ(DeviceLabel(DeviceKind::kSpeaker, kId), "Speaker 3f9a");
+  // The default device, of either audio kind.
+  EXPECT_EQ(DeviceLabel(DeviceKind::kMicrophone, "default"), "Default");
+  EXPECT_EQ(DeviceLabel(DeviceKind::kSpeaker, "default"), "Default");
+  EXPECT_EQ(DeviceLabel(DeviceKind::kSpeaker, "communications"),
+            "Communications");
+  // No ID (no permission yet): no label.
+  EXPECT_EQ(DeviceLabel(DeviceKind::kMicrophone, ""), "");
+  // A short ID is used whole.
+  EXPECT_EQ(DeviceLabel(DeviceKind::kCamera, "ab"), "Camera ab");
+}
+
+TEST(MoltNetMediaValuesTest, EveryDeviceIsAGroupOfItsOwn) {
+  EXPECT_EQ(DeviceGroup("3f9a0c1d"), "3f9a0c1d");
+  EXPECT_EQ(DeviceGroup("default"), "default");
+  EXPECT_EQ(DeviceGroup(""), "");
+}
+
+TEST(MoltNetMediaValuesTest, NoCommunicationsDevice) {
+  EXPECT_FALSE(ListsAudioDevice("communications"));
+  EXPECT_TRUE(ListsAudioDevice("default"));
+  EXPECT_TRUE(ListsAudioDevice("3f9a0c1d"));
+  EXPECT_TRUE(ListsAudioDevice(""));
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting::moltnet
