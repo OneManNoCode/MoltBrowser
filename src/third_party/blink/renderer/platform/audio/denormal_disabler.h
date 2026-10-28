@@ -28,6 +28,7 @@
 
 #include <float.h>
 #include "build/build_config.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
@@ -56,9 +57,24 @@ class DenormalModifier {
  public:
   virtual ~DenormalModifier() = default;
 
+  // MoltBrowser: x86 (FTZ, tiny after rounding, and DAZ) and Arm (FZ, tiny
+  // before rounding) flush differently, so in MoltNet's renderers, the
+  // portable media process, DisableDenormals() turns the flush modes off
+  // instead: Web Audio's nodes, the AudioWorklet's JavaScript and V8's code
+  // for it compute IEEE 754 subnormals, the same on every CPU. Software keeps
+  // subnormals out of the loops there, the same way on every CPU
+  // (AudioHandler::ProcessIfNecessary(), FlushDenormalFloatToZero();
+  // media/base/molt_portable_media.h).
+  static bool MoltKeepsSubnormals() { return media::IsPortableAudioThread(); }
+
 #if defined(COMPILER_GCC) && defined(ARCH_CPU_X86_FAMILY)
  public:
   static void DisableDenormals() {
+    // MoltBrowser: see MoltKeepsSubnormals().
+    if (MoltKeepsSubnormals()) {
+      EnableDenormals();
+      return;
+    }
     unsigned old_csr = GetCsr();
     SetCsr(old_csr | 0x8040);
   }
@@ -82,7 +98,10 @@ class DenormalModifier {
 
 #elif BUILDFLAG(IS_WIN) && defined(COMPILER_MSVC)
  public:
-  static void DisableDenormals() { SetCsr(_DN_FLUSH); }
+  static void DisableDenormals() {
+    // MoltBrowser: see MoltKeepsSubnormals().
+    SetCsr(MoltKeepsSubnormals() ? _DN_SAVE : _DN_FLUSH);
+  }
 
   static void EnableDenormals() { SetCsr(_DN_SAVE); }
 
@@ -102,6 +121,11 @@ class DenormalModifier {
 #elif defined(ARCH_CPU_ARM_FAMILY)
  public:
   static void DisableDenormals() {
+    // MoltBrowser: see MoltKeepsSubnormals().
+    if (MoltKeepsSubnormals()) {
+      EnableDenormals();
+      return;
+    }
     unsigned old_csr = GetCsr();
     // Bit 24 is the flush-to-zero mode control bit. Setting it to 1 flushes
     // denormals to 0.
@@ -147,7 +171,12 @@ class DenormalDisabler final : public DenormalModifier {
   ~DenormalDisabler() final { SetCsr(saved_csr_); }
 
   // This is a nop if we can flush denormals to zero in hardware.
-  static inline float FlushDenormalFloatToZero(float f) { return f; }
+  // MoltBrowser: in MoltNet's renderers, where the hardware doesn't flush
+  // (MoltKeepsSubnormals()), it flushes at the portable floor in software, so
+  // a filter's or a compressor's state doesn't linger in tiny values.
+  static inline float FlushDenormalFloatToZero(float f) {
+    return MoltKeepsSubnormals() ? media::FlushTinyPortableSample(f) : f;
+  }
 
  private:
   unsigned saved_csr_ = 0;
@@ -185,7 +214,11 @@ class DenormalDisabler final {
 
   // Assume the worst case that other architectures and compilers
   // need to flush denormals to zero manually.
+  // MoltBrowser: at the portable floor in MoltNet's renderers, as above.
   static inline float FlushDenormalFloatToZero(float f) {
+    if (media::IsPortableAudioThread()) {
+      return media::FlushTinyPortableSample(f);
+    }
     return (fabs(f) < FLT_MIN) ? 0.0f : f;
   }
 };

@@ -11,6 +11,8 @@ include_rules = [
     "+media/base/audio_glitch_info.h",
     "+media/base/audio_renderer_sink.h",
     "+media/base/audio_timestamp_helper.h",
+    # MoltBrowser: subnormals in MoltNet's renderers (denormal_disabler.h).
+    "+media/base/molt_portable_media.h",
     "+media/base/multi_channel_resampler.h",
     "+media/base/sinc_resampler.h",
     "+third_party/blink/renderer/platform/wtf/cross_thread_functional.h",

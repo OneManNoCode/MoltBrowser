@@ -71,6 +71,7 @@ blink_core_tests_molt_fingerprinting = [
   "shields_decision_test.cc",
   "moltnet_encoders_test.cc",
   "moltnet_pixels_test.cc",
+  "moltnet_subnormals_test.cc",
   "moltnet_cpu_test.cc",
   "moltnet_fonts_test.cc",
 ]

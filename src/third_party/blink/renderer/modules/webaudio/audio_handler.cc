@@ -7,6 +7,7 @@
 #include <inttypes.h>
 
 #include "base/trace_event/trace_event.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
@@ -22,6 +23,25 @@
 #endif
 
 namespace blink {
+
+namespace {
+
+// MoltBrowser: in MoltNet's renderers Web Audio computes with the CPU's
+// flush-to-zero modes off (platform/audio/denormal_disabler.h), the same on
+// every CPU. What a node passes on is flushed at the portable floor, so that
+// tiny values (a decaying feedback loop, a page's own tiny samples) don't
+// keep flowing through the graph at the cost of subnormal arithmetic
+// (media/base/molt_portable_media.h). Silent channels stay silent.
+void FlushTinySamples(AudioBus& bus) {
+  for (unsigned i = 0; i < bus.NumberOfChannels(); ++i) {
+    AudioChannel* channel = bus.Channel(i);
+    if (!channel->IsSilent()) {
+      media::FlushTinyPortableSamples(channel->MutableSpan());
+    }
+  }
+}
+
+}  // namespace
 
 AudioHandler::AudioHandler(NodeType node_type,
                            AudioNode& node,
@@ -334,6 +354,12 @@ void AudioHandler::ProcessIfNecessary(uint32_t frames_to_process) {
       UnsilenceOutputs();
       base::TimeTicks process_start_time = base::TimeTicks::Now();
       Process(frames_to_process);
+      // MoltBrowser: see FlushTinySamples().
+      if (media::IsPortableAudioThread()) {
+        for (auto& output : outputs_) {
+          FlushTinySamples(*output->Bus());
+        }
+      }
       base::TimeDelta process_duration =
           base::TimeTicks::Now() - process_start_time;
       uma_reporter_->AddProcessDuration(process_duration, frames_to_process);
