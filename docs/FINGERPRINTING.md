@@ -3816,10 +3816,11 @@ marked `MoltBrowser:`): Blink's
 (`FMAC`) and `sinc_resampler.cc` (the kernel's `sin` and `cos`,
 `Resample()`'s convolution); the audio service's `reference_output.h`
 (`Listener::IsCpuIndependent()`), `audio_processor_handler.{h,cc}` (from
-the stream's settings), `output_device_mixer_impl.{h,cc}` (the count of
-such listeners in `StartListening`, `StopListening` and
-`ProcessDeviceChange`; the mixing graph played through `PortableMixing`
-in `StartMixingGraphPlayback`) and `mixing_graph_impl.cc`
+the stream's settings), `output_device_mixer_impl.{h,cc}` (the
+listener's default answer; the count of such listeners in
+`StartListening`, `StopListening` and `ProcessDeviceChange`; the mixing
+graph played through `PortableMixing` in `StartMixingGraphPlayback`) and
+`mixing_graph_impl.cc`
 (`CreateConverter`); tests in `user_media_client_test.cc`,
 `media_stream_audio_processing_layout_test.cc` and
 `output_device_mixer_impl_unittest.cc`. New in `src/`:
