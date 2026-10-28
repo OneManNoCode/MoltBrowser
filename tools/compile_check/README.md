@@ -57,11 +57,11 @@ Re-runs are incremental, without trusting the cache for correctness:
   output holds every header's content and path, every macro definition and
   the outcome of every header search and `__has_include`, so an edited,
   added (shadowing) or regenerated header, or another flag, compiles the
-  file again; this costs about a tenth of a compile per file. Each
-  result is stored as its compile ends, so a run that was interrupted (a
-  restart) picks up where it stopped when started again; a compile the
-  memory limit or a signal stopped is never stored. `--no-cache`
-  compiles everything.
+  file again. Preprocessing takes under a second a file here, against
+  about four seconds for an average compile. Each result is stored as its
+  compile ends, so a run that was interrupted (a restart) picks up where
+  it stopped when started again; a compile the memory limit or a signal
+  stopped is never stored. `--no-cache` compiles everything.
 * A generated file is made again only when its inputs changed, and is
   never compiled against when they did: `check` first remakes the mojom
   bindings, grit headers and cxx bridge headers whose inputs changed (an
@@ -163,35 +163,40 @@ command), `<work>/[platform-<name>/]gen_report.json` (what could not be
 generated and why), `scan.json` (headers found nowhere),
 `<work>/repos/sources.json` (where each subproject came from).
 
-### Coverage at 156 (round 28)
+### Coverage at 156 (round 30)
 
-A whole run (`all`) over every changed source (858 files; a file built on
+A whole run (`all`) over every changed source (896 files; a file built on
 several platforms has a row for each):
 
 | Platform | rows | checked | partly on stand-ins | not checked | ERRORS | PLUGIN |
 |---|---|---|---|---|---|---|
-| Linux x64 | 837 | 831 | 6 | 0 | 0 | 0 |
-| Linux arm64 | 2 | 2 | 0 | 0 | 0 | 0 |
+| Linux x64 | 875 | 871 | 4 | 0 | 0 | 0 |
+| Linux arm64 | 6 | 6 | 0 | 0 | 0 | 0 |
 | Linux x64, `molt_llama_vulkan` | 6 | 6 | 0 | 0 | 0 | 0 |
-| macOS arm64 | 34 | 0 | 30 | 4 | 0 | 0 |
-| Windows x64 | 503 | 503 | 0 | 0 | 0 | 0 |
+| macOS arm64 | 36 | 0 | 36 | 0 | 0 | 0 |
+| Windows x64 | 513 | 513 | 0 | 0 | 0 | 0 |
 | none | 1 | 0 | 0 | 1 | 0 | 0 |
-| **all** | **1383** | **1342** | **36** | **5** | **0** | **0** |
+| **all** | **1437** | **1396** | **40** | **1** | **0** | **0** |
 
-Partly on stand-ins: every Mac file (the Apple frameworks), three WebUI
-pages' grit resource headers, the HSTS/pins preload headers
-(`transport_security_state.cc`), the build date
-(`transport_security_state.cc`, `network_context.cc`) and V8's instance
-types from Torque (`v8.cc`). Not checked: `app_controller_mac.mm` and
-`chrome_browser_main_mac.mm` (AuthenticationServices),
-`browser_frame_view_mac.mm` and `native_widget_ns_window_bridge.mm`
-(IOSurface, then much of AppKit), all Apple frameworks with no stand-in
-here; and `chrome/browser/molt_ai/ios/MoltAIChatViewController.mm` (iOS,
-not modeled). The round before (Linux only, the files then listed):
-861 files, 806 checked, 39 partly on stand-ins, 16 not checked (the
-Windows and Mac files, opus's C files, llvm-libc, CrabbyAvif, V8, the cxx
-bridge, protobuf and proto_extras headers, the preload headers), and no
-plugin findings reported.
+Partly on stand-ins: every Mac file (the Apple frameworks), the grit
+resource headers of three WebUI pages (the omnibox popup's, the new tab
+page's and the bookmarks side panel's, in `location_bar_view.cc`,
+`new_tab_page_ui.cc` and `bookmarks_side_panel_ui.cc`) and V8's instance
+types from Torque (`v8.cc`). Not checked:
+`chrome/browser/molt_ai/ios/MoltAIChatViewController.mm`: iOS is not
+modeled, and no BUILD.gn lists the file, so no build compiles it.
+
+With every file compiled, the run took about an hour and a quarter here
+(4 cores, `--jobs 2`): Linux about 11 minutes of generating and 30 of
+compiling, Windows 3 and 17, the other platforms 2 in all. Run again
+after the round's other changes were merged, with 157 rows to compile,
+it took 24 minutes (Linux 8 and 9, Windows 1.5 and 3.5), every other
+result reused.
+Before this round's changes to the check (1400 rows then): 1356 checked,
+38 partly on stand-ins (the HSTS/pins preload headers and the build date
+among them), 6 not checked (the four Mac files whose frameworks had no
+stand-in, `storage_service_impl.cc`, which needs SQLite's amalgamation,
+and the iOS file).
 
 ## How it works
 
