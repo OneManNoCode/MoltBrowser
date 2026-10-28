@@ -3851,9 +3851,12 @@ MoltNet:
   filter instead (`media/audio/pulse/molt_capture_source.h`): the source
   `device.master_device` names on PulseAudio; on pipewire-pulse the source
   read by the filter's own recording stream, which shares the filter's
-  `node.link-group`; followed through up to four filters; where neither
-  tells, the first hardware source that is neither a monitor nor a
-  filter. A filter source is one with `device.class` "filter", a
+  `node.link-group`; followed through up to four filters. Where neither
+  tells, or what is under the filter is a sink's monitor (a virtual
+  microphone that plays applications' output: a `module-remap-source` of a
+  null sink's monitor, a PipeWire loopback fed by a virtual sink), the
+  stream records the source it asked for: never another device in its
+  place. A filter source is one with `device.class` "filter", a
   `device.master_device` or a `node.link-group`. On PulseAudio the
   modules that make filter sources set the first two. On pipewire-pulse
   neither is set (every source's driver is "PipeWire"), and the link group,
@@ -3953,7 +3956,7 @@ switch turns it off.
 | `third_party/webrtc/rtc_base/molt_math.{h,cc}` | the audio processing's math functions: the C library's, or in a scope the portable library's |
 | `media/webrtc/molt_cpu_independent_processing_unittest.cc` | golden digests of the module in this mode, which every processor and OS must reproduce, the setting fixed at build time, and two modules of both kinds in turn on one thread (`MoltCpuIndependentProcessingTest`, in `molt_ai_unittests`) |
 | `media/base/molt_portable_media.{h,cc}` | `PortableCaptureEffects()`: no platform effects for a microphone in MoltNet's renderers; `kPortableCaptureEffect`, `PortableCaptureStreamEffects()` and `PortableCaptureMayUseCommunicationsCategory()`: the mark for the platform code and Windows' rule; `ScopedPortableAudioThread` and `IsPortableAudioThread()`: media's mixing code (`FMAC`, the resampler's convolution and kernel) in its portable versions on one thread (+ cases in `molt_portable_media_unittest.cc`) |
-| `media/audio/pulse/molt_capture_source.{h,cc}` | which PulseAudio source a marked stream records from; std-only (+ `molt_capture_source_unittest.cc`: PulseAudio's and PipeWire's filters, chains, fallbacks, loops) |
+| `media/audio/pulse/molt_capture_source.{h,cc}` | which PulseAudio source a marked stream records from; std-only (+ `molt_capture_source_unittest.cc`: PulseAudio's and PipeWire's filters, chains, virtual microphones, loops; never another device) |
 | `media/audio/pulse/molt_pulse_capture.{h,cc}` | the PulseAudio side: the server's sources and recording streams with their properties |
 | `ui/gfx/geometry/molt_math.{h,cc}` | `PortableSin()`, `PortableCos()`: the portable functions in any process (+ a case in `molt_math_unittest.cc`) |
 | `media/webrtc/molt_echo_reference_unittest.cc` | golden digests of a mix as the audio service computes it for a MoltNet listener, and of the processing with that mix as its reference, which every processor and OS must reproduce (`MoltCpuIndependentEchoReferenceTest`, in `molt_ai_unittests`) |
