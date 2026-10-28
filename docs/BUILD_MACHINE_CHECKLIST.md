@@ -716,6 +716,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `media/filters/wsola_internals.cc` (new upstream copy: `MultiChannelDotProduct`, `GetPeriodicHanningWindow`), `media/base/molt_portable_media.h` (a comment), `core/molt_fingerprinting/moltnet_cpu.h` (`--no-enable-f16c` in `kMoltNetV8Flags`) | `//media/filters` calls `media::IsPortableMediaProcess()` and `gfx::molt_math::Cos(float)` (both already used inside `//media`); V8 defines `enable_f16c` on every architecture, so arm64 builds take the flag too (`MoltNetCpuTest.Flags` fails if `SetFlagsFromString` rejects one) | fp-arch |
 | WebRTC (new upstream copies under `third_party/webrtc/`): `rtc_base/cpu_info.{h,cc}` (`ScopedCpuIndependent`, `IsCpuIndependent()`), `rtc_base/molt_math.{h,cc}` (new, target `//third_party/webrtc/rtc_base:molt_math`), `api/audio/audio_processing.h` (`Config::moltbrowser_cpu_independent`), `modules/audio_processing/audio_processing_impl.{h,cc}`, `aec3/aec3_common.cc`, `agc2/cpu_features.cc`, `common_audio/third_party/ooura/fft_size_128/ooura_fft.{h,cc}`, `common_audio/resampler/sinc_resampler.cc`, the math call sites (`common_audio/include/audio_util.h`, `fft_size_256/fft4g.cc`, three AEC3, three noise suppression and four AGC2 files) and the `BUILD.gn` files of `rtc_base`, `common_audio`, its Ooura FFTs, `modules/audio_processing`, `aec3`, `ns`, `agc2`, `agc2/rnn_vad`; `media/webrtc/helpers.cc`; Blink's `modules/mediastream/media_stream_audio_processing_layout.cc` | a `constinit thread_local bool` in `cpu_info.cc` (also in component builds, where WebRTC is one component); `OouraFft`'s C functions now build on arm64 too, and `use_neon_` exists only under `WEBRTC_HAS_NEON` (an unused-function or unused-field warning on one architecture means a branch went missing); `webrtc::molt_math` has float and double overloads only, so an integer argument at a call site would be ambiguous (none at 156); `//third_party/llvm-libc:molt_portable_math` is visible to `//third_party/webrtc/rtc_base:molt_math` only; Blink's `modules/mediastream` calls `media::IsPortableMediaProcess()` (`+media/base` is already allowed there; `media::.+` is in the Blink audit's list for `modules/mediastream`) | fp-probes2 |
 | jxl-rs: `third_party/rust/chromium_crates_io/vendor/jxl_simd-v0_7/src/{lib.rs,x86_64/mod.rs,aarch64/mod.rs}`, `vendor/jxl-v0_7/Cargo.toml`, `src/lib.rs`, `src/moltbrowser_math.rs` (new) and six call-site files, the crate patches in `patches/jxl_simd-v0_7/` and `patches/jxl-v0_7/`, `Cargo.lock`, `third_party/rust/jxl/v0_7/BUILD.gn` (the new file; `//third_party/rust/libm/v0_2:lib`), `third_party/rust/jxl/v0_7/wrapper/lib.rs` (a new cxx bridge function: the generated `lib.rs.h` gains `jxl_rs_moltbrowser_set_portable()`), `platform/image-decoders/jxl/jxl_image_decoder.cc` (constructor) | rustc on `simd_function!`'s expansion (an early return to the scalar descriptor in every function it makes, x86-64 and arm64); the `PortableMath` trait for `f32` and `f64`; `libm`'s visibility (`//third_party/rust/*`); `scripts/vendor-rust-crates.sh` must keep the two crate patches (afterwards `moltbrowser_math.rs` must still be in the vendored crate) | fp-arch |
+| Blink's `platform/mediastream/media_stream_audio_processor_options.cc` (new upstream copy: `IsSystemWideAecAvailable`, `GetPreferredAec`, `GetSystemWideAec`), `modules/mediastream/user_media_processor.cc` (`SelectAudioDeviceSettings`, `InitializeAudioSourceObject`), `media_devices.cc` (`DevicesEnumerated`); `services/audio/reference_output.h`, `audio_processor_handler.{h,cc}`, `output_device_mixer_impl.{h,cc}`, `mixing_graph_impl.cc` (new upstream copies); `media/base/molt_portable_media.{h,cc}`, `vector_math.cc` (`FMAC`), `sinc_resampler.cc` (`Resample`, the kernel); `ui/gfx/geometry/molt_math.{h,cc}` (`PortableSin`, `PortableCos`) | Blink's `platform/mediastream` and `modules/mediastream` call `media::IsPortableMediaProcess()` and `media::PortableCaptureEffects()` (a new `MEDIA_EXPORT` function; `+media/base` is allowed in both); `media::ScopedPortableAudioThread` and `IsPortableAudioThread()` are `MEDIA_EXPORT` over a `constinit thread_local bool` in `molt_portable_media.cc` (media is a component); `ReferenceOutput::Listener::IsCpuIndependent()` is a new virtual with a default, so the services tests' mocks keep compiling (`AudioProcessorHandler` overrides it `final`); `OutputDeviceMixerImpl` holds a `std::unique_ptr` to a nested class defined in the `.cc` (its destructor is out of line there) and a `std::atomic<int>`, and its output stream now plays through that class (`PortableMixing`, an `AudioSourceCallback`); `MixingGraphImpl::CreateConverter` opens a scope while the converter is built; `SincResampler::Resample` picks its `ConvolveProc` per call | fp-mic2 |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -807,7 +808,9 @@ otherwise:
   targets depend on it, and `modules/audio_processing:audio_processing` on
   `rtc_base:cpu_info` (fp-probes2). `//media/webrtc:molt_unittests` (the
   golden digests) is a test-only target that only `molt_ai_unittests`
-  sees.
+  sees; since fp-mic2 it also holds the echo reference's goldens
+  (`molt_echo_reference_unittest.cc`, which uses media's `SincResampler`
+  and `vector_math` and `//base` directly).
 - `//chrome/browser:core` depends on `//chrome/browser/molt_ai:core_hooks`,
   a group of the MoltBrowser targets whose headers the hooks in
   `chrome/browser/` include (the runtime, the agents' features,
@@ -1003,6 +1006,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetNonceStoragePolicyTest` (new cases: `TheSiteAPageCountsTo`, `SandboxedPagesCountToTheirOwnSite`; built standalone here); needing the build: `MoltNetDomStorageTest.ACopyOwedToAPopulatedNamespaceIsDropped` (real dedicated threads: the copy a deletion owes, in its own task, to a namespace populated meanwhile is dropped and the partition answers) | redteam5 (round 31) |
   | `MoltNetCpuPolicyTest.*` (the requirement on x86-64, arm64 and other architectures, the sentence), `MoltNetCpuErrorTest.*` (what `base::CPU` reports; on a build machine with SSE4.1, and on every arm64 one, the sentence is empty, so a failure there means MoltNet would refuse to open) | fp-arch |
   | `MoltCpuIndependentProcessingTest.*` (WebRTC's audio processing in CPU-independent mode through `CreateWebRtcAudioProcessingModule()`: the golden digests of a talker with a far end's echo and of the talker alone, the same on every processor and OS; the setting fixed when the module is built; a CPU-independent module and one with the processor's code in turn on one thread each give what they give alone). A golden digest that differs on the build machine means the module computes otherwise there: send the digest the failure prints, the processor (`lscpu`, or the Mac's chip) and the OS | fp-probes2 |
+  | `MoltCpuIndependentEchoReferenceTest.*` (the echo reference as the audio service mixes it while a MoltNet stream listens: a 44.1 kHz stream resampled by media's `SincResampler` and a 48 kHz one added with `vector_math::FMAC` in a `ScopedPortableAudioThread`, and WebRTC's processing in CPU-independent mode with that mix as the far end; golden digests the same on every processor and OS), `MoltMathTest.PortableEntryPointsIgnoreTheSwitch`. A golden digest that differs: send what the failure prints, the processor and the OS, as above | fp-mic2 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1165,6 +1169,7 @@ pass except where the table below says otherwise (verify the filters).
 | `media_unittests`, `blink_platform_unittests` | `*Wsola*:AudioRendererAlgorithm*`; `*JXL*:*Jxl*` (outside MoltNet both pick their code as before) | fp-arch |
 | `v8_unittests`, V8's `mjsunit` | `*Float16*`; the `mjsunit` tests with `float16` in their name once more with `--no-enable-f16c` (V8's software conversion everywhere) | fp-arch |
 | `blink_unittests`, `media_unittests`, `services_unittests` | `AudioProcessingPropertiesToAudioProcessingSettingsTest.*:MediaStreamAudioProcessor*:ProcessedLocalAudioSource*`; `CreateWebRtcAudioProcessingModuleTest.*:AudioProcessor*`; `AudioProcessorHandler*:InputController*:*InputStream*` (outside MoltNet the module is built and runs as before; `MoltNetAsksForCpuIndependentProcessing` is the new case) | fp-probes2 |
+| `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `UserMediaClientTest.*:*EchoCancellationMode*:MediaStreamAudioProcessingLayout*:MediaStreamConstraintsUtilAudioTest.*:MediaStreamConstraintsRemoteAPMTest.*:MediaDevicesTest.*`; `AudioServiceAudioProcessorProxyTest.*:MediaStreamAudioTest.*`; `MoltPortableMediaTest.*:SincResampler*:VectorMath*:AudioConverter*`; `OutputDeviceMixerImplTest*:OutputDeviceMixerManagerTest.*:MixingGraphImpl.*:MixingGraphInputTest.*:AudioProcessorHandlerTest.*` (outside MoltNet the effects, the echo canceller's choice and the mixing are as before; the new cases are `UserMediaClientTest.MoltNetMicrophoneHasNoPlatformEffects`, `EchoCancellationModeTest.MoltNetUsesWebRtcEchoCancellation`, `MoltPortableMediaTest.NoCaptureEffectsInPortableMode`, `PortableAudioThreadScope`, `PortableAudioThreadMixesWithTheCCode` and `OutputDeviceMixerImplTest.MixesPortablyWhileCpuIndependentListens`) | fp-mic2 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1207,6 +1212,54 @@ pass except where the table below says otherwise (verify the filters).
   MoltNet stream against one normal stream: FINGERPRINTING.md "MoltNet: the
   microphone's processing" measured about 0.25 ms against 0.1 ms per 10 ms
   of audio on a 2.1 GHz Xeon; correct it with what you see.
+
+- [ ] The microphone's platform processing, on each OS (fp-mic2), with a
+  real microphone: a Mac's built-in one (macOS reports its noise
+  reduction), a Windows laptop's (once more with
+  `--enable-features=EnforceSystemEchoCancellation`, which makes Windows
+  report its communications effects), and Linux with PipeWire (and
+  PulseAudio where you have it). In a MoltNet window and in a normal
+  window, on any https page, run in the DevTools console:
+  ```js
+  const s = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: 'all'}});
+  const t = s.getAudioTracks()[0];
+  JSON.stringify([t.getCapabilities(), t.getSettings()]);
+  ```
+  *Expected* in MoltNet, the same on every OS: `echoCancellation` lists
+  `true`, `false`, `"remote-only"` and `"all"`, `autoGainControl` and
+  `noiseSuppression` `true` and `false`, `voiceIsolation` only `false`;
+  the settings say `echoCancellation: "all"`, `noiseSuppression: true`,
+  `autoGainControl: true`, `voiceIsolation: false` (`sampleRate`,
+  `channelCount` and `latency` are the device's). In the normal window
+  156's own answers (`"all"` on Windows and macOS only). Then
+  `chrome://media-internals`' Audio tab: MoltNet's input stream has no
+  platform effects and echo cancellation, noise suppression and gain
+  control in the audio service; its log shows no system echo cancellation
+  (on Windows no "attempting to enable system AEC", and
+  `RawProcessingSupported=true` on a device that has raw mode; on macOS
+  "No voice processing requested"). Record 10 s of speech in MoltNet with
+  a video playing on the speakers in a normal window, with
+  `echoCancellation: 'all'` and with the default: the video's sound is
+  cancelled the same way in both. On the Mac, record with a fan or
+  background noise in MoltNet and in a normal window, one after the other
+  and then at once: MoltNet's recording is denoised by WebRTC's
+  suppressor (the stream turns the microphone's own noise reduction off
+  while it runs, a setting of the device); note what the normal window's
+  recording sounds like meanwhile.
+- [ ] The kit's microphone cases on macOS (fp-mic2; the leak kit itself
+  runs on Linux). Write the kit's WAV
+  (`python3 -I -c "import sys; sys.path.insert(0, 'tools/leak_test'); from leakkit import micinput; open('/tmp/mic-input.wav', 'wb').write(micinput.wav_bytes())"`),
+  start the app with `--use-fake-device-for-media-stream
+  --use-file-for-fake-audio-capture=/tmp/mic-input.wav%noloop
+  --use-fake-ui-for-media-stream --disable-features=AudioServiceSandbox`
+  (the sandboxed audio service can't read the file), open a MoltNet
+  window on any https page, paste `tools/leak_test/pages/static/ml.js` and
+  then `mic.js` into its DevTools console, and run
+  `await mlMicProcessing()`, then `await mlMicPlayback()`. *Expected:* the
+  values the kit records on Linux (`audio.mic_processed`,
+  `audio.mic_system_aec` and `audio.mic_remote_only` the same hash as on
+  Linux x86-64 and arm64, the capabilities and settings as in
+  docs/LEAK_TESTING.md); send the output with the Mac's chip.
 
 ### 5.3 Known-expected failures, and what to do
 
@@ -2334,6 +2387,25 @@ Mac; use a real Linux host.
     two captures started at different points of the file). With
     `--target regular` the same values differ between processors with and
     without AVX2 (a check of the probes themselves).
+  - The microphone's platform processing and playback (fp-mic2):
+    `uniform.audio.mic_capabilities`, `uniform.audio.mic_system_aec`,
+    `uniform.audio.mic_system_aec_settings`,
+    `uniform.audio.mic_remote_only` and
+    `uniform.audio.mic_remote_only_settings` pass, and `diff` between the
+    three machines above shows no difference in `audio.mic_system_aec` or
+    `audio.mic_remote_only` (both are also checked against
+    `audio.mic_processed` in each run). `audio.mic_playback` (the default
+    echo cancellation while the page plays two tones) is recorded only:
+    report its value from two runs on one machine and from the three
+    machines (it is expected to change from run to run; a value equal to
+    `audio.mic_processed` would mean the echo canceller heard no
+    reference), and `audio.mic_playback_tones` (both contexts `running`,
+    48000 and 44100). First-run questions: `audio.mic_remote_only` reading
+    `silent`, `short` or `gap`, or an error from `getUserMedia()` (send the
+    value), and `uniform.audio.mic_remote_only` failing with a hash (the
+    renderer's processing gave other samples than the audio service's for
+    the same input: send both hashes and `chrome://media-internals`' log of
+    the two streams).
   - `identity.background_fetch_circuits` passes (moltnet-shared): each
     Background Fetch test's request went to Tor with its page's site's
     SOCKS username. First-run question: whether the fetch starts at all in
