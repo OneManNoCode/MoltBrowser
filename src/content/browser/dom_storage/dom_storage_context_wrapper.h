@@ -83,6 +83,19 @@ class CONTENT_EXPORT DOMStorageContextWrapper
       base::OnceCallback<void(const std::vector<SessionStorageUsageInfo>&)>;
   void GetSessionStorageUsage(GetSessionStorageUsageCallback callback);
 
+  // MoltBrowser: whether this partition's DOM storage is kept per site
+  // (MoltNet's: ContentBrowserClient::ShouldKeepDomStorageCachesPerSite());
+  // and, there, GetLocalStorageUsage() and GetSessionStorageUsage() for one
+  // storage key, read in its site's turn at what that site stores
+  // (local_storage_control.mojom: MoltGetUsageForStorageKey()).
+  bool MoltKeepsPerSite() const;
+  void MoltGetLocalStorageUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      GetLocalStorageUsageCallback callback);
+  void MoltGetSessionStorageUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      GetSessionStorageUsageCallback callback);
+
   // DOMStorageContext implementation.
   void GetLocalStorageUsage(GetLocalStorageUsageCallback callback) override;
   void DeleteLocalStorage(const blink::StorageKey& storage_key,

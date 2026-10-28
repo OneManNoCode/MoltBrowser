@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -1057,6 +1058,45 @@ TEST_F(MoltNetDomStorageTest, ANoncesStorageGoesWithItsPage) {
   EXPECT_TRUE(Write(key, 100));
 }
 
+// A deletion of one storage key (Clear-Site-Data) reads that key's usage
+// only (molt_one_key_deletion_policy.h): its area if it holds items, in its
+// site's turn, never another site's.
+TEST_F(MoltNetDomStorageTest, AUsageOfOneKeyListsThatKeyOnly) {
+  storage_->MoltKeepCachesPerSite();
+  const blink::StorageKey key = Key("https://a.test");
+  const blink::StorageKey other = Key("https://b.test");
+  const blink::StorageKey empty = Key("https://c.test");
+  ASSERT_TRUE(Write(key, 10));
+  ASSERT_TRUE(Write(other, 20));
+  mojo::Remote<blink::mojom::StorageArea> open;
+  storage_->BindStorageArea(empty, open.BindNewPipeAndPassReceiver());
+  open.FlushForTesting();
+
+  base::test::TestFuture<std::vector<storage::mojom::StorageUsageInfoPtr>>
+      usage;
+  storage_->MoltGetUsageForStorageKey(key, usage.GetCallback());
+  const std::vector<storage::mojom::StorageUsageInfoPtr> infos = usage.Take();
+  ASSERT_EQ(infos.size(), 1u);
+  EXPECT_EQ(infos[0]->storage_key, key);
+  EXPECT_EQ(infos[0]->total_size_bytes, 11);
+
+  storage_->MoltGetUsageForStorageKey(empty, usage.GetCallback());
+  EXPECT_TRUE(usage.Take().empty());
+}
+
+// The same in a partition on disk: the whole listing's entry for the key.
+TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteAUsageOfOneKeyIsFiltered) {
+  const blink::StorageKey key = Key("https://a.test");
+  ASSERT_TRUE(Write(key, 10));
+  ASSERT_TRUE(Write(Key("https://b.test"), 20));
+  base::test::TestFuture<std::vector<storage::mojom::StorageUsageInfoPtr>>
+      usage;
+  storage_->MoltGetUsageForStorageKey(key, usage.GetCallback());
+  const std::vector<storage::mojom::StorageUsageInfoPtr> infos = usage.Take();
+  ASSERT_EQ(infos.size(), 1u);
+  EXPECT_EQ(infos[0]->storage_key, key);
+}
+
 // A tab's sessionStorage of many areas, copied at once (a tab duplicated),
 // is copied a chunk a task, and deleted so (molt_dom_storage_split_work.h):
 // the copy holds every area, and a bind of the copy sent right after the
@@ -1251,6 +1291,32 @@ TEST_F(MoltNetSessionStorageTest, AFloodingSiteDoesntDelayAnothersRead) {
                                        : 0;
                           })),
             2u);
+}
+
+// A deletion of one storage key reads the namespaces holding that key only,
+// copies included, in its site's turn.
+TEST_F(MoltNetSessionStorageTest, AUsageOfOneKeyListsItsNamespaces) {
+  storage_->MoltKeepCachesPerSite();
+  const blink::StorageKey key = Key("https://a.test");
+  const blink::StorageKey other = Key("https://b.test");
+  const std::string first = NewNamespace();
+  const std::string second = NewNamespace();
+  mojo::Remote<blink::mojom::StorageArea> area = Area(first, key);
+  ASSERT_TRUE(Put(area.get(), 'k', 10));
+  mojo::Remote<blink::mojom::StorageArea> other_area = Area(second, other);
+  ASSERT_TRUE(Put(other_area.get(), 'k', 10));
+  const std::string copy = CloneOf(first);
+  task_environment_.RunUntilIdle();
+
+  base::test::TestFuture<std::vector<storage::mojom::SessionStorageUsageInfoPtr>>
+      usage;
+  storage_->MoltGetUsageForStorageKey(key, usage.GetCallback());
+  std::set<std::string> namespaces;
+  for (const storage::mojom::SessionStorageUsageInfoPtr& info : usage.Take()) {
+    EXPECT_EQ(info->storage_key, key);
+    namespaces.insert(info->namespace_id);
+  }
+  EXPECT_EQ(namespaces, (std::set<std::string>{first, copy}));
 }
 
 // Chromium 156: the copy has its own 10 MiB, like every area.

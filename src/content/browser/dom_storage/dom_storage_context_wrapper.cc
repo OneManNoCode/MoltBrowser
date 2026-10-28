@@ -197,6 +197,40 @@ void DOMStorageContextWrapper::GetSessionStorageUsage(
       base::BindOnce(&AdaptSessionStorageUsageInfo, std::move(callback)));
 }
 
+// MoltBrowser:
+bool DOMStorageContextWrapper::MoltKeepsPerSite() const {
+  return partition_ &&
+         GetContentClient()->browser()->ShouldKeepDomStorageCachesPerSite(
+             partition_->browser_context());
+}
+
+// MoltBrowser:
+void DOMStorageContextWrapper::MoltGetLocalStorageUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    GetLocalStorageUsageCallback callback) {
+  if (!local_storage_control_) {
+    // Shutdown() has been called.
+    std::move(callback).Run(std::vector<StorageUsageInfo>());
+    return;
+  }
+  local_storage_control_->MoltGetUsageForStorageKey(
+      storage_key, base::BindOnce(&AdaptStorageUsageInfo, std::move(callback)));
+}
+
+// MoltBrowser:
+void DOMStorageContextWrapper::MoltGetSessionStorageUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    GetSessionStorageUsageCallback callback) {
+  if (!session_storage_control_) {
+    // Shutdown() has been called.
+    std::move(callback).Run(std::vector<SessionStorageUsageInfo>());
+    return;
+  }
+  session_storage_control_->MoltGetUsageForStorageKey(
+      storage_key,
+      base::BindOnce(&AdaptSessionStorageUsageInfo, std::move(callback)));
+}
+
 void DOMStorageContextWrapper::DeleteLocalStorage(
     const blink::StorageKey& storage_key,
     base::OnceClosure callback) {

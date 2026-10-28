@@ -102,6 +102,9 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
       override;  // MoltBrowser
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      bool closed) override;  // MoltBrowser
+  void MoltGetUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback) override;  // MoltBrowser
   // MoltBrowser: gives `callback` the groups (molt_dom_storage_site.h) of
   // namespace `namespace_id`'s areas, for a clone that waits for their
   // turns (molt_dom_storage_own_thread.h): a chunk of areas a task in the
@@ -269,6 +272,10 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
                      std::string group,
                      std::optional<int64_t> after);
+  // MoltBrowser: MoltGetUsageForStorageKey()'s listing of `storage_key`'s
+  // areas, in its site's turn.
+  void MoltListStorageKey(const blink::StorageKey& storage_key,
+                          MoltGetUsageForStorageKeyCallback callback);
   void MoltCollectGroupsStep(
       std::string namespace_id,
       std::optional<blink::StorageKey> after,

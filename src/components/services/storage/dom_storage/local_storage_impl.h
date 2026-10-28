@@ -104,6 +104,9 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
       override;  // MoltBrowser
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      bool closed) override;  // MoltBrowser
+  void MoltGetUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback) override;  // MoltBrowser
   // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
   // through `scheduler` (one for the whole partition, which its host shares:
   // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
@@ -204,6 +207,13 @@ class LocalStorageImpl : public base::trace_event::MemoryDumpProvider,
   void MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
                      std::string group,
                      std::optional<blink::StorageKey> after);
+  // MoltBrowser: MoltGetUsageForStorageKey() once connected, and, with
+  // caches per site, its listing of `storage_key`'s area in its site's turn.
+  void MoltRetrieveUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback);
+  void MoltListStorageKey(const blink::StorageKey& storage_key,
+                          MoltGetUsageForStorageKeyCallback callback);
 
   // These clear stale storage areas (not read/written to within 400 days) from
   // the database. See crbug.com/40281870 for more info.

@@ -136,6 +136,13 @@ void MoltPerSiteLocalStorage::MoltDropNonce(
   impl_->MoltDropNonce(nonce, closed);
 }
 
+void MoltPerSiteLocalStorage::MoltGetUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  // In the key's site's turn (LocalStorageImpl::MoltGetUsageForStorageKey()).
+  impl_->MoltGetUsageForStorageKey(storage_key, std::move(callback));
+}
+
 // ---- sessionStorage ----
 
 MoltPerSiteSessionStorage::Barrier::Barrier() = default;
@@ -281,6 +288,14 @@ void MoltPerSiteSessionStorage::MoltDropNonce(
     bool closed) {
   // In the nonce's group's turn (SessionStorageImpl::MoltDropNonce()).
   impl_->MoltDropNonce(nonce, closed);
+}
+
+void MoltPerSiteSessionStorage::MoltGetUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  // In the key's site's turn
+  // (SessionStorageImpl::MoltGetUsageForStorageKey()).
+  impl_->MoltGetUsageForStorageKey(storage_key, std::move(callback));
 }
 
 void MoltPerSiteSessionStorage::CreateNamespace(

@@ -56,7 +56,9 @@
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/bluetooth/bluetooth_allowed_devices_map.h"
 #include "content/browser/broadcast_channel/broadcast_channel_service.h"
+#include "content/browser/browsing_data/browsing_data_filter_builder_impl.h"  // MoltBrowser
 #include "content/browser/browsing_data/clear_site_data_handler.h"
+#include "content/browser/browsing_data/molt_one_key_deletion_policy.h"  // MoltBrowser
 #include "content/browser/browsing_data/storage_partition_code_cache_data_remover.h"
 #include "content/browser/buckets/bucket_manager.h"
 #include "content/browser/cache_storage/cache_storage_control_wrapper.h"
@@ -371,7 +373,8 @@ void ClearQuotaManagedData(
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy,
     StoragePartition::StorageKeyPolicyMatcherFunction storage_key_matcher,
     bool perform_storage_cleanup,
-    base::OnceClosure callback) {
+    base::OnceClosure callback,
+    std::optional<blink::StorageKey> molt_only_key = std::nullopt) {
   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
 
   auto on_got_modified_buckets = base::BindOnce(
@@ -427,6 +430,33 @@ void ClearQuotaManagedData(
       std::move(quota_client_types), perform_storage_cleanup,
       std::move(callback));
 
+  // MoltBrowser: a deletion of one storage key over all time, where storage
+  // is kept per site, reads that key's buckets only
+  // (molt_one_key_deletion_policy.h); the filters above decide as before.
+  if (molt_only_key) {
+    GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &storage::QuotaManagerImpl::GetBucketsForStorageKey,
+            std::move(quota_manager), *molt_only_key,
+            base::BindOnce(
+                [](base::OnceCallback<void(
+                       const std::set<storage::BucketLocator>&)> next,
+                   storage::QuotaErrorOr<std::set<storage::BucketInfo>>
+                       result) {
+                  std::set<storage::BucketLocator> buckets;
+                  if (result.has_value()) {
+                    for (const storage::BucketInfo& bucket : *result) {
+                      buckets.insert(bucket.ToBucketLocator());
+                    }
+                  }
+                  std::move(next).Run(buckets);
+                },
+                std::move(on_got_modified_buckets)),
+            /*delete_expired=*/false));
+    return;
+  }
+
   GetIOThreadTaskRunner({})->PostTask(
       FROM_HERE,
       base::BindOnce(&storage::QuotaManager::GetBucketsModifiedBetween,
@@ -442,7 +472,8 @@ void ClearLocalStorage(
     bool perform_storage_cleanup,
     const base::Time begin,
     const base::Time end,
-    base::OnceClosure callback) {
+    base::OnceClosure callback,
+    std::optional<blink::StorageKey> molt_only_key = std::nullopt) {
   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
 
   if (!storage_key.origin().opaque()) {
@@ -457,6 +488,19 @@ void ClearLocalStorage(
     return;
   }
 
+  // MoltBrowser: a deletion of one storage key, where storage is kept per
+  // site, lists that key's area only, in its site's turn
+  // (molt_one_key_deletion_policy.h); the filter decides as before.
+  if (molt_only_key) {
+    dom_storage_context->MoltGetLocalStorageUsageForStorageKey(
+        *molt_only_key,
+        base::BindOnce(&OnLocalStorageUsageInfo, dom_storage_context,
+                       special_storage_policy, std::move(storage_key_matcher),
+                       perform_storage_cleanup, begin, end,
+                       std::move(callback)));
+    return;
+  }
+
   dom_storage_context->GetLocalStorageUsage(
       base::BindOnce(&OnLocalStorageUsageInfo, dom_storage_context,
                      special_storage_policy, std::move(storage_key_matcher),
@@ -467,8 +511,19 @@ void ClearSessionStorage(
     const scoped_refptr<DOMStorageContextWrapper>& dom_storage_context,
     StoragePartition::StorageKeyMatcherFunction storage_key_matcher,
     bool perform_storage_cleanup,
-    base::OnceClosure callback) {
+    base::OnceClosure callback,
+    std::optional<blink::StorageKey> molt_only_key = std::nullopt) {
   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
+
+  // MoltBrowser: as in ClearLocalStorage(), that key's areas only.
+  if (molt_only_key) {
+    dom_storage_context->MoltGetSessionStorageUsageForStorageKey(
+        *molt_only_key,
+        base::BindOnce(&OnSessionStorageUsageInfo, dom_storage_context,
+                       std::move(storage_key_matcher), perform_storage_cleanup,
+                       std::move(callback)));
+    return;
+  }
 
   dom_storage_context->GetSessionStorageUsage(
       base::BindOnce(&OnSessionStorageUsageInfo, dom_storage_context,
@@ -3091,6 +3146,38 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
   }
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
+  // MoltBrowser: the one storage key this deletion names, if it names one
+  // (Clear-Site-Data's filter does), and whether its listings read that
+  // key's usage only (molt_one_key_deletion_policy.h).
+  // BrowsingDataFilterBuilderImpl is the filter builders' only
+  // implementation (as its IsEqual() assumes).
+  const BrowsingDataFilterBuilderImpl* molt_filter =
+      static_cast<const BrowsingDataFilterBuilderImpl*>(filter_builder);
+  const bool molt_names_one_key = MoltDeletionNamesOneStorageKey(
+      !storage_key_origin_empty,
+      filter_builder &&
+          filter_builder->GetMode() == BrowsingDataFilterBuilder::Mode::kDelete,
+      molt_filter && molt_filter->molt_storage_key().has_value());
+  std::optional<blink::StorageKey> molt_one_key;
+  if (molt_names_one_key) {
+    molt_one_key = !storage_key_origin_empty
+                       ? storage_key
+                       : *molt_filter->molt_storage_key();
+  }
+  const bool molt_per_site =
+      dom_storage_context && dom_storage_context->MoltKeepsPerSite();
+  const std::optional<blink::StorageKey> molt_dom_storage_key =
+      MoltDomStorageDeletionReads(molt_per_site, molt_names_one_key) ==
+              MoltDeletionReads::kOneStorageKey
+          ? molt_one_key
+          : std::nullopt;
+  const std::optional<blink::StorageKey> molt_quota_key =
+      MoltQuotaDeletionReads(molt_per_site, molt_names_one_key,
+                             begin.is_null() && end.is_max()) ==
+              MoltDeletionReads::kOneStorageKey
+          ? molt_one_key
+          : std::nullopt;
+
   if (remove_mask_ & REMOVE_DATA_MASK_INDEXEDDB ||
       remove_mask_ & REMOVE_DATA_MASK_FILE_SYSTEMS ||
       remove_mask_ & REMOVE_DATA_MASK_SERVICE_WORKERS ||
@@ -3100,7 +3187,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
         StoragePartitionImpl::GenerateQuotaClientTypes(remove_mask_),
         storage_key, storage_policy_ref, combined_storage_key_matcher,
         perform_storage_cleanup,
-        CreateTaskCompletionClosure(TracingDataType::kQuota));
+        CreateTaskCompletionClosure(TracingDataType::kQuota), molt_quota_key);
   }
 
   if (remove_mask_ & REMOVE_DATA_MASK_LOCAL_STORAGE) {
@@ -3109,7 +3196,8 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
         combined_storage_key_matcher, storage_key, perform_storage_cleanup,
         begin, end,
         mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-            CreateTaskCompletionClosure(TracingDataType::kLocalStorage)));
+            CreateTaskCompletionClosure(TracingDataType::kLocalStorage)),
+        molt_dom_storage_key);
 
     // TODO(crbug.com/41457196): Sometimes SessionStorage fails to call its
     // callback. Figure out why.
@@ -3117,7 +3205,8 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
         base::WrapRefCounted(dom_storage_context), generic_filter,
         perform_storage_cleanup,
         mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-            CreateTaskCompletionClosure(TracingDataType::kSessionStorage)));
+            CreateTaskCompletionClosure(TracingDataType::kSessionStorage)),
+        molt_dom_storage_key);
   }
 
   if ((remove_mask_ & REMOVE_DATA_MASK_SHADER_CACHE) &&

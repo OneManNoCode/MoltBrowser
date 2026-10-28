@@ -1179,6 +1179,70 @@ void SessionStorageImpl::MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
   walk->MaybeFinish();
 }
 
+// MoltBrowser: see session_storage_control.mojom.
+void SessionStorageImpl::MoltGetUsageForStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  if (connection_state_ != CONNECTION_FINISHED) {
+    RunWhenConnected(
+        base::BindOnce(&SessionStorageImpl::MoltGetUsageForStorageKey,
+                       weak_ptr_factory_.GetWeakPtr(), storage_key,
+                       std::move(callback)));
+    return;
+  }
+  // Kept per site without a database: the key's site's maps, in its turn
+  // (molt_dom_storage_split_work.h).
+  if (molt_caches_per_site_ && molt_scheduler_ && !database_) {
+    molt_scheduler_->Post(
+        MoltDomStorageSiteOf(storage_key),
+        base::BindOnce(&SessionStorageImpl::MoltListStorageKey,
+                       weak_ptr_factory_.GetWeakPtr(), storage_key,
+                       std::move(callback)));
+    return;
+  }
+  // Otherwise the whole listing's entries for the key.
+  GetUsage(base::BindOnce(
+      [](const blink::StorageKey& storage_key,
+         MoltGetUsageForStorageKeyCallback callback,
+         std::vector<mojom::SessionStorageUsageInfoPtr> all) {
+        std::vector<mojom::SessionStorageUsageInfoPtr> result;
+        for (mojom::SessionStorageUsageInfoPtr& info : all) {
+          if (info->storage_key == storage_key) {
+            result.push_back(std::move(info));
+          }
+        }
+        std::move(callback).Run(std::move(result));
+      },
+      storage_key, std::move(callback)));
+}
+
+// MoltBrowser: each of the site's maps of `storage_key`, in every namespace
+// that uses it, as MoltListGroup() lists them.
+void SessionStorageImpl::MoltListStorageKey(
+    const blink::StorageKey& storage_key,
+    MoltGetUsageForStorageKeyCallback callback) {
+  std::vector<mojom::SessionStorageUsageInfoPtr> result;
+  if (auto it = molt_group_maps_.find(MoltDomStorageSiteOf(storage_key));
+      it != molt_group_maps_.end()) {
+    for (int64_t map_id : it->second) {
+      auto map = data_maps_.find(map_id);
+      if (map == data_maps_.end()) {
+        continue;
+      }
+      const DomStorageDatabase::SharedMapLocator& locator =
+          map->second->map_locator();
+      if (locator.storage_key() != storage_key) {
+        continue;
+      }
+      for (const std::string& namespace_id : locator.session_ids()) {
+        result.push_back(
+            mojom::SessionStorageUsageInfo::New(storage_key, namespace_id));
+      }
+    }
+  }
+  std::move(callback).Run(std::move(result));
+}
+
 // MoltBrowser:
 void SessionStorageImpl::MoltIndexMap(int64_t map_id,
                                       SessionStorageDataMap* map) {

@@ -61,6 +61,13 @@ class CONTENT_EXPORT BrowsingDataFilterBuilderImpl
 
   OriginMatchingMode GetOriginModeForTesting() const;
 
+  // MoltBrowser: the storage key set with SetStorageKey(), if any. A deletion
+  // that names one storage key reads only that key's usage where storage is
+  // kept per site (MoltNet: StoragePartitionImpl's DataDeletionHelper).
+  const std::optional<blink::StorageKey>& molt_storage_key() const {
+    return storage_key_;
+  }
+
   const net::CookiePartitionKeyCollection&
   GetCookiePartitionKeyCollectionForTesting() const;
 

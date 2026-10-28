@@ -125,6 +125,9 @@ class MoltPerSiteLocalStorage : public mojom::LocalStorageControl {
       override;
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      bool closed) override;
+  void MoltGetUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback) override;
 
   LocalStorageImpl* storage_for_testing() { return impl_.get(); }
 
@@ -178,6 +181,9 @@ class MoltPerSiteSessionStorage : public mojom::SessionStorageControl {
       override;
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      bool closed) override;
+  void MoltGetUsageForStorageKey(
+      const blink::StorageKey& storage_key,
+      MoltGetUsageForStorageKeyCallback callback) override;
   void CreateNamespace(const std::string& namespace_id) override;
   void CloneNamespace(const std::string& namespace_id_to_clone,
                       const std::string& clone_namespace_id,

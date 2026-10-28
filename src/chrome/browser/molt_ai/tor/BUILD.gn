@@ -624,6 +624,7 @@ source_set("unit_tests") {
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
     "molt_net_nonce_storage_policy_unittest.cc",
+    "molt_net_one_key_deletion_unittest.cc",
     "molt_net_partitioning_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
@@ -697,8 +698,9 @@ source_set("unit_tests") {
     "//components/download/internal/background_service:molt_site_isolation",
     "//components/download/public/background_service:public",
 
-    # Background Fetch scheduling, download isolation and processes per
-    # BrowsingInstance (content's std-only policies).
+    # Background Fetch scheduling, download isolation, processes per
+    # BrowsingInstance and what a deletion of one storage key reads
+    # (content's std-only policies).
     "//content/browser:molt_policies",
 
     # A Background Fetch's buffer counts against its site's blob share

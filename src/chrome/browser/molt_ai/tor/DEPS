@@ -20,6 +20,10 @@ specific_include_rules = {
     "+content/browser/download/molt_download_isolation_policy.h",
     "+content/browser/download/molt_resumed_fetch_policy.h",
   ],
+  # What a deletion of one storage key reads (std-only).
+  "molt_net_one_key_deletion_unittest\.cc": [
+    "+content/browser/browsing_data/molt_one_key_deletion_policy.h",
+  ],
   # Which renderer processes serve one BrowsingInstance (std-only).
   "molt_net_process_policy_unittest\.cc": [
     "+content/browser/renderer_host/molt_browsing_instance_processes_policy.h",
