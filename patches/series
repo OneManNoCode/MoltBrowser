@@ -273,6 +273,7 @@ content/browser/loader/keep_alive_url_loader.cc.patch
 content/browser/loader/keep_alive_url_loader_service.cc.patch
 content/browser/network/browser_online_state_observer.cc.patch
 content/browser/network/network_quality_observer_impl.cc.patch
+content/browser/renderer_host/media/render_frame_audio_input_stream_factory.cc.patch
 content/browser/renderer_host/render_process_host_impl.cc.patch
 content/browser/security/cpsp/child_process_security_policy_impl.cc.patch
 content/browser/security/cpsp/child_process_security_policy_impl.h.patch
@@ -497,12 +498,19 @@ third_party/blink/renderer/modules/media/audio/audio_device_factory.cc.patch
 third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc.patch
 third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc.patch
 third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc.patch
+third_party/blink/renderer/modules/mediastream/BUILD.gn.patch
+third_party/blink/renderer/modules/mediastream/apply_constraints_processor.cc.patch
 third_party/blink/renderer/modules/mediastream/media_devices.cc.patch
 third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc.patch
 third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout_test.cc.patch
 third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_audio.cc.patch
+third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc.patch
 third_party/blink/renderer/modules/mediastream/user_media_client_test.cc.patch
 third_party/blink/renderer/modules/mediastream/user_media_processor.cc.patch
+third_party/blink/renderer/modules/mediastream/video_track_adapter.cc.patch
+third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.cc.patch
+third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h.patch
+third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc.patch
 third_party/blink/renderer/modules/peerconnection/peer_connection_util.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
 third_party/blink/renderer/modules/permissions/permission_status_listener.cc.patch

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2c565fa6d 100644
+index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b5258807d 100644
 --- a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 +++ b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 @@ -21,6 +21,7 @@
@@ -25,7 +25,15 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
  #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
  #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
  #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
-@@ -271,9 +274,13 @@ Vector<blink::VideoInputDeviceCapabilities> ToVideoInputDeviceCapabilities(
+@@ -52,6 +55,7 @@
+ #include "third_party/blink/renderer/modules/mediastream/media_stream_utils.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_stream_video_capturer_source.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
++#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/mediastream/processed_local_audio_source.h"
+ #include "third_party/blink/renderer/modules/mediastream/scoped_media_stream_tracer.h"
+ #include "third_party/blink/renderer/modules/mediastream/user_media_client.h"
+@@ -271,9 +275,13 @@ Vector<blink::VideoInputDeviceCapabilities> ToVideoInputDeviceCapabilities(
          input_capabilities) {
    Vector<blink::VideoInputDeviceCapabilities> capabilities;
    for (const auto& capability : input_capabilities) {
@@ -42,7 +50,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    }
  
    return capabilities;
-@@ -824,6 +831,11 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
+@@ -824,6 +832,11 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
    }
  
    for (const auto& device : audio_input_capabilities) {
@@ -54,7 +62,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
      // Find the first occurrence of blink::ProcessedLocalAudioSource that
      // matches the same device ID as |device|. If more than one exists, any
      // such source will contain the same non-reconfigurable settings that limit
-@@ -847,8 +859,17 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
+@@ -847,8 +860,17 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
      if (audio_source) {
        capabilities.emplace_back(audio_source);
      } else {
@@ -74,7 +82,39 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
      }
    }
  
-@@ -1242,6 +1263,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
+@@ -1118,6 +1140,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
+     }
+   }
+ 
++  // MoltBrowser: a MoltNet page's cameras have the menu formats they
++  // reach, never their own (moltnet_camera.h).
++  molt_fingerprinting::UseUniformCameraFormats(capabilities);
++
+   // Do constraints processing.
+   if (ShouldDeferDeviceSettingsSelection(
+           user_media_request->MediaRequestType(),
+@@ -1137,6 +1163,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
+       return;
+     }
+ 
++    // MoltBrowser: and their tracks' frames are exactly the size selected
++    // (moltnet_camera.h).
++    molt_fingerprinting::UseUniformCameraSettings(eligible_settings.value());
++
+     std::vector<std::string> eligible_ids;
+     eligible_ids.reserve(eligible_settings->size());
+     for (const auto& settings : eligible_settings.value()) {
+@@ -1160,6 +1190,9 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
+       GetUserMediaRequestFailed(result, failed_constraint_name);
+       return;
+     }
++    // MoltBrowser: see above.
++    settings = molt_fingerprinting::UniformCameraSettings(
++        settings, mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+     current_request_info_->stream_controls()->video.device_ids = {
+         settings.device_id()};
+     current_request_info_->SetVideoCaptureSettings(
+@@ -1242,6 +1275,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
          *current_request_info_->request()->GetTransferId(), &result, &response);
      GotOpenDevice(current_request_info_->request_id(), result,
                    std::move(response));
@@ -92,7 +132,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    } else {
      // The browser replies to this request by invoking OnStreamsGenerated().
      GetMediaStreamDispatcherHost()->GenerateStreams(
-@@ -1384,6 +1416,18 @@ void UserMediaProcessor::OnStreamsGenerated(
+@@ -1384,6 +1428,18 @@ void UserMediaProcessor::OnStreamsGenerated(
    current_request_info_->set_state(RequestInfo::State::kGenerated);
    current_request_info_->set_pan_tilt_zoom_allowed(pan_tilt_zoom_allowed);
  
@@ -111,7 +151,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    for (const mojom::blink::StreamDevicesPtr& stream_devices :
         stream_devices_set->stream_devices) {
      MaybeLogStreamDevice(request_id, label, stream_devices->audio_device);
-@@ -1622,7 +1666,11 @@ void UserMediaProcessor::OnDeviceChanged(const MediaStreamDevice& old_device,
+@@ -1622,7 +1678,11 @@ void UserMediaProcessor::OnDeviceChanged(const MediaStreamDevice& old_device,
    }
  
    WebPlatformMediaStreamSource* const source_impl = source->GetPlatformSource();
@@ -124,7 +164,20 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    source = FindLocalSource(new_device);
    if (!source) {
      return;
-@@ -1832,8 +1880,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+@@ -1782,7 +1842,11 @@ MediaStreamSource* UserMediaProcessor::InitializeVideoSourceObject(
+       // TODO(crbug.com/704136): Change ComputeCapabilitiesForVideoSource to
+       // operate over Vector.
+       String::FromUtf8(device.id),
+-      ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
++      // MoltBrowser: a MoltNet camera's from the menu formats it reaches
++      // (moltnet_camera.h).
++      molt_fingerprinting::UniformCameraFormats(
++          ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
++          device.type),
+       static_cast<mojom::blink::FacingMode>(device.video_facing),
+       current_request_info_->is_video_device_capture(), device.group_id));
+   local_sources_.push_back(source);
+@@ -1832,8 +1896,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
            &UserMediaProcessor::OnAudioSourceStartedOnAudioThread, task_runner_,
            WrapCrossThreadWeakPersistent(this)));
  
@@ -140,7 +193,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    audio_source->SetStopCallback(BindOnce(
        &UserMediaProcessor::OnLocalSourceStopped, WrapWeakPersistent(this)));
  
-@@ -1863,7 +1917,11 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+@@ -1863,7 +1933,11 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
  #endif  // DCHECK_IS_ON()
  
    MediaStreamSource::Capabilities capabilities;
@@ -153,7 +206,22 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    capabilities.echo_cancellation = GetSupportedEchoCancellationModes(
        device_parameters.effects(), device.type);
    capabilities.auto_gain_control = {true, false};
-@@ -2254,6 +2312,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
+@@ -2006,7 +2080,13 @@ UserMediaProcessor::CreateVideoSource(
+   return std::make_unique<blink::MediaStreamVideoCapturerSource>(
+       frame_->GetTaskRunner(TaskType::kInternalMediaRealTime), frame_,
+       std::move(stop_callback), device,
+-      current_request_info_->video_capture_settings().capture_params(),
++      // MoltBrowser: a MoltNet camera opens in its mode that reaches every
++      // format it shows (moltnet_camera.h).
++      molt_fingerprinting::UniformCameraCaptureParams(
++          current_request_info_->video_capture_settings().capture_params(),
++          *current_request_info_->GetNativeVideoFormats(
++              String(device.id.data())),
++          device.type),
+       blink::BindRepeating(
+           &blink::LocalVideoCapturerSource::Create,
+           frame_->GetTaskRunner(blink::TaskType::kInternalMedia),
+@@ -2254,6 +2334,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
        "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
        current_request_info_->request_id(), constraint_name.Ascii().c_str()));
  
@@ -186,7 +254,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..9f61787d489037d2dd6b3e9f275114f2
    // Completing the getUserMedia request can lead to that the RenderFrame and
    // the UserMediaClient/UserMediaProcessor are destroyed if the JavaScript
    // code request the frame to be destroyed within the scope of the callback.
-@@ -2310,10 +2394,12 @@ MediaStreamSource* UserMediaProcessor::InitializeSourceObject(
+@@ -2310,10 +2416,12 @@ MediaStreamSource* UserMediaProcessor::InitializeSourceObject(
                                             ? MediaStreamSource::kTypeAudio
                                             : MediaStreamSource::kTypeVideo;
  

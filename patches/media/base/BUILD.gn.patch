@@ -5,16 +5,17 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/media/base/BUILD.gn b/media/base/BUILD.gn
-index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..506173c9f136cda1095f977a5eb94a61eb9f3b5f 100644
+index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..ac61cadfdf0a00afadaf1b15dff4fa14d38f7769 100644
 --- a/media/base/BUILD.gn
 +++ b/media/base/BUILD.gn
-@@ -274,6 +274,14 @@ source_set("base") {
+@@ -274,6 +274,15 @@ source_set("base") {
      "mime_util.h",
      "mime_util_internal.cc",
      "mime_util_internal.h",
 +
 +    # MoltBrowser: media that look and sound the same on every machine
 +    # (MoltNet's renderers).
++    "molt_portable_downmix.cc",
 +    "molt_portable_media.cc",
 +    "molt_portable_media.h",
 +    "molt_portable_scale.cc",
@@ -23,7 +24,7 @@ index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..506173c9f136cda1095f977a5eb94a61
      "multi_channel_resampler.cc",
      "multi_channel_resampler.h",
      "null_video_sink.cc",
-@@ -430,11 +438,17 @@ source_set("base") {
+@@ -430,11 +439,17 @@ source_set("base") {
      "//net",
      "//skia",
      "//third_party/libyuv",
@@ -41,7 +42,7 @@ index cc0dd6bdb08d34d16ffa321535a8e30b17eeeb10..506173c9f136cda1095f977a5eb94a61
      "//url",
    ]
  
-@@ -667,6 +681,10 @@ source_set("unit_tests") {
+@@ -667,6 +682,10 @@ source_set("unit_tests") {
      "media_serializers_unittest.cc",
      "metadata_track_unittest.cc",
      "mime_util_unittest.cc",

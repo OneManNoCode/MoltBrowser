@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..c22e84e88e6d8199a2efb536f95032ae5ab046aa 100644
+index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..f5021dd8c3efdb5a55522a6209ac1cb3a17e8ec0 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -723,6 +723,32 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -723,6 +723,34 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner)
        override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
@@ -37,6 +37,8 @@ index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..c22e84e88e6d8199a2efb536f95032ae
 +  base::RepeatingClosure GetBackgroundFetchGrowthBeyondFloorCallback(
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
 +  bool ShouldScheduleBackgroundFetchesPerSite(
++      content::BrowserContext* browser_context) override;  // MoltBrowser
++  bool ShouldProcessAudioCaptureCpuIndependently(
 +      content::BrowserContext* browser_context) override;  // MoltBrowser
    content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
        content::RenderFrameHost* frame) override;
