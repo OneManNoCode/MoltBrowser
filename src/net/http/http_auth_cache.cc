@@ -429,6 +429,11 @@ void HttpAuthCache::CopyProxyEntriesFrom(const HttpAuthCache& other) {
     Entry* entry = Add(e.scheme_host_port(), it->first.target, e.realm(),
                        e.scheme(), it->first.network_anonymization_key,
                        e.auth_challenge(), e.credentials(), e.paths_.back());
+    // MoltBrowser: with per-site shares Add() may keep no entry
+    // (net/base/molt_site_share_policy.h); there is then nothing to copy to.
+    if (!entry) {
+      continue;
+    }
     // Copy all other paths.
     for (auto it2 = std::next(e.paths_.rbegin()); it2 != e.paths_.rend(); ++it2)
       entry->AddPath(*it2);
