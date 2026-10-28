@@ -129,27 +129,33 @@ class AudioProcessorCaptureBus {
 // It avoids the FIFO when the source and destination frames match. If
 // |source_channels| is larger than |destination_channels|, only the first
 // |destination_channels| are kept from the source.
+// MoltBrowser: unless |downmix| is given, which then down-mixes the source to
+// |destination_channels| (media/base/molt_portable_media.h).
 // Does not support concurrent access.
 class AudioProcessorCaptureFifo {
  public:
-  AudioProcessorCaptureFifo(int source_channels,
-                            int destination_channels,
-                            int source_frames,
-                            int destination_frames,
-                            int sample_rate)
+  AudioProcessorCaptureFifo(
+      int source_channels,
+      int destination_channels,
+      int source_frames,
+      int destination_frames,
+      int sample_rate,
+      std::unique_ptr<PortableCaptureDownmix> downmix = nullptr)
       :
 #if DCHECK_IS_ON()
         source_channels_(source_channels),
         source_frames_(source_frames),
 #endif
         sample_rate_(sample_rate),
+        downmix_(std::move(downmix)),
         destination_(
             std::make_unique<AudioProcessorCaptureBus>(destination_channels,
                                                        destination_frames)),
         data_available_(false) {
     DCHECK_GE(source_channels, destination_channels);
+    DCHECK(!downmix_ || downmix_->channels() == destination_channels);
 
-    if (source_channels > destination_channels) {
+    if (source_channels > destination_channels && !downmix_) {
       audio_source_intermediate_ =
           media::AudioBus::CreateWrapper(destination_channels);
     }
@@ -164,6 +170,9 @@ class AudioProcessorCaptureFifo {
     }
   }
 
+  // MoltBrowser: whether the source is down-mixed (|downmix_|).
+  bool downmixes() const { return !!downmix_; }
+
   void Push(const media::AudioBus& source, base::TimeDelta audio_delay) {
 #if DCHECK_IS_ON()
     DCHECK_EQ(source.channels(), source_channels_);
@@ -171,7 +180,10 @@ class AudioProcessorCaptureFifo {
 #endif
     const media::AudioBus* source_to_push = &source;
 
-    if (audio_source_intermediate_) {
+    // MoltBrowser: see |downmix_|.
+    if (downmix_) {
+      source_to_push = &downmix_->Downmix(source);
+    } else if (audio_source_intermediate_) {
       audio_source_intermediate_->set_frames(source.frames());
       audio_source_intermediate_->SetAllChannels(source.AllChannels());
       source_to_push = audio_source_intermediate_.get();
@@ -224,6 +236,9 @@ class AudioProcessorCaptureFifo {
   const int source_frames_;
 #endif
   const int sample_rate_;
+  // MoltBrowser: a CPU-independent stream's down-mix of a device of another
+  // layout (QUAD, 5.1) to the stream's channels, or null.
+  const std::unique_ptr<PortableCaptureDownmix> downmix_;
   std::unique_ptr<media::AudioBus> audio_source_intermediate_;
   std::unique_ptr<AudioProcessorCaptureBus> destination_;
   std::unique_ptr<media::AudioFifo> fifo_;
@@ -324,10 +339,22 @@ AudioProcessor::AudioProcessor(
   SendLogMessage(base::StringPrintf(
       "%s => (capture FIFO: fifo_output_frames_per_buffer=%d)", __func__,
       fifo_output_frames_per_buffer));
+  // MoltBrowser: a CPU-independent stream from a device of another layout
+  // (QUAD, 5.1; ComputeInputFormat()) is down-mixed to the output's channels
+  // before the processing (media/base/molt_portable_media.h).
+  std::unique_ptr<PortableCaptureDownmix> downmix;
+  if (webrtc_audio_processing_ &&
+      webrtc_audio_processing_->GetConfig().moltbrowser_cpu_independent &&
+      PortableCaptureNeedsDownmix(input_format_.channel_layout())) {
+    downmix = std::make_unique<PortableCaptureDownmix>(
+        input_format_, std::min(output_format_.channels(), 2));
+  }
+  const int processing_channels =
+      downmix ? downmix->channels() : input_format_.channels();
   capture_fifo_ = std::make_unique<AudioProcessorCaptureFifo>(
-      input_format.channels(), input_format_.channels(),
+      input_format.channels(), processing_channels,
       input_format.frames_per_buffer(), fifo_output_frames_per_buffer,
-      input_format.sample_rate());
+      input_format.sample_rate(), std::move(downmix));
 
   if (webrtc_audio_processing_) {
     output_bus_ = std::make_unique<AudioProcessorCaptureBus>(
@@ -556,18 +583,27 @@ std::optional<double> AudioProcessor::ProcessData(
   // Limit number of apm output channels to 2 to avoid potential problems with
   // discrete channel mapping.
   num_apm_output_channels = std::min(num_apm_output_channels, 2);
+  // MoltBrowser: a stream down-mixed before the processing (a device of
+  // another layout; the constructor) gives APM the channels of
+  // `process_ptrs`.
+  const webrtc::StreamConfig apm_input_config =
+      capture_fifo_->downmixes()
+          ? webrtc::StreamConfig(input_format_.sample_rate(),
+                                 process_ptrs.size())
+          : CreateStreamConfig(input_format_);
   // MoltBrowser: a MoltNet stream may be stereo from a mono device
   // (GetDefaultOutputFormat()); APM outputs one channel or as many as it gets,
   // and the upmix below copies it.
   num_apm_output_channels =
-      std::min(num_apm_output_channels, input_format_.channels());
+      std::min(num_apm_output_channels,
+               static_cast<int>(apm_input_config.num_channels()));
 
   CHECK_GE(num_apm_output_channels, 1);
   const webrtc::StreamConfig apm_output_config = webrtc::StreamConfig(
       output_format_.sample_rate(), num_apm_output_channels);
 
   int err =
-      ap->ProcessStream(process_ptrs.data(), CreateStreamConfig(input_format_),
+      ap->ProcessStream(process_ptrs.data(), apm_input_config,
                         apm_output_config, output_bus->channel_ptrs().data());
   DCHECK_EQ(err, 0) << "ProcessStream() error: " << err;
 
@@ -606,9 +642,14 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
   const ChannelLayout channel_layout = device_format.channel_layout();
 
   // The audio processor can only handle up to two channels.
+  // MoltBrowser: a CPU-independent stream opens a device of another named
+  // layout (QUAD, 5.1) in it and down-mixes it to the stream's channels before
+  // the processing (the constructor; media/base/molt_portable_media.h).
   if (channel_layout != CHANNEL_LAYOUT_MONO &&
       channel_layout != CHANNEL_LAYOUT_STEREO &&
-      channel_layout != CHANNEL_LAYOUT_DISCRETE) {
+      channel_layout != CHANNEL_LAYOUT_DISCRETE &&
+      !(audio_processing_settings.cpu_independent &&
+        PortableCaptureNeedsDownmix(channel_layout))) {
     return std::nullopt;
   }
 

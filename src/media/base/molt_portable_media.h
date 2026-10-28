@@ -47,7 +47,9 @@
 //   * every microphone has one format as the page sees it (48 kHz, one or
 //     two channels, 10 ms; PortableCaptureParameters() below), and its
 //     stream is delivered in it, converted from the device's by the
-//     CPU-independent processing (PortableCaptureOutputFormat());
+//     CPU-independent processing (PortableCaptureOutputFormat()), which also
+//     down-mixes a device of another layout, such as QUAD or 5.1
+//     (PortableCaptureDownmix);
 //   * the device opens without the OS's processing also where the audio
 //     service opens it, and the platform code keeps the OS's processing out
 //     of the stream: on Linux it records from the microphone under a
@@ -72,14 +74,17 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 
 #include "base/containers/span.h"
+#include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
 
 namespace media {
 
 class AudioBus;
 class AudioParameters;
+class ChannelMixer;
 class VideoFrame;
 
 MEDIA_EXPORT void SetPortableMediaProcess();
@@ -252,6 +257,44 @@ class MEDIA_EXPORT ScopedPortableSubnormals {
  private:
   uint64_t saved_ = 0;
   bool restore_ = false;
+};
+
+// Microphones of other layouts.
+//
+// The audio processing takes mono, stereo and discrete (unnamed) channels,
+// and Chromium fails a processed stream from a device of another layout:
+// some Windows microphone arrays report QUAD or 5.1, and a PulseAudio source
+// of 4 or 6 channels gets those layouts too. A CPU-independent stream (a
+// portable media process's, AudioProcessingSettings::cpu_independent) opens
+// such a device in its own layout instead (AudioProcessor::
+// ComputeInputFormat()), and its processing down-mixes the device's channels
+// to the stream's, one or two, before anything else, with media's
+// ChannelMixer computing the same samples on every CPU: its multiply-adds in
+// their plain C versions (ScopedPortableAudioThread) and the flush-to-zero
+// modes off (ScopedPortableSubnormals).
+
+// Whether a device of `layout` is down-mixed so: a named layout other than
+// mono and stereo.
+MEDIA_EXPORT bool PortableCaptureNeedsDownmix(ChannelLayout layout);
+
+class MEDIA_EXPORT PortableCaptureDownmix {
+ public:
+  // `device`: the format the device delivers (a layout
+  // PortableCaptureNeedsDownmix() accepts); `channels`: the stream's, 1 or 2.
+  PortableCaptureDownmix(const AudioParameters& device, int channels);
+  ~PortableCaptureDownmix();
+  PortableCaptureDownmix(const PortableCaptureDownmix&) = delete;
+  PortableCaptureDownmix& operator=(const PortableCaptureDownmix&) = delete;
+
+  int channels() const;
+
+  // `source`, the device's channels for at most the device's buffer of
+  // frames, down-mixed. The bus stays valid until the next call.
+  const AudioBus& Downmix(const AudioBus& source);
+
+ private:
+  std::unique_ptr<ChannelMixer> mixer_;
+  std::unique_ptr<AudioBus> output_;
 };
 
 // Scales every plane of `dest_frame` from the same plane of `src_frame` with
