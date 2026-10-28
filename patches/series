@@ -190,6 +190,7 @@ components/download/internal/background_service/BUILD.gn.patch
 components/download/internal/background_service/blob_task_proxy.cc.patch
 components/download/internal/background_service/blob_task_proxy.h.patch
 components/download/internal/background_service/controller_impl.cc.patch
+components/download/internal/background_service/controller_impl.h.patch
 components/download/internal/background_service/in_memory_download.cc.patch
 components/download/internal/background_service/in_memory_download.h.patch
 components/download/internal/background_service/in_memory_download_unittest.cc.patch
@@ -262,6 +263,7 @@ content/browser/background_fetch/background_fetch_scheduler.cc.patch
 content/browser/background_fetch/background_fetch_scheduler.h.patch
 content/browser/blob_storage/blob_registry_wrapper.cc.patch
 content/browser/blob_storage/chrome_blob_storage_context.cc.patch
+content/browser/browsing_data/browsing_data_filter_builder_impl.h.patch
 content/browser/client_hints/client_hints.cc.patch
 content/browser/dom_storage/dom_storage_context_wrapper.cc.patch
 content/browser/dom_storage/dom_storage_context_wrapper.h.patch

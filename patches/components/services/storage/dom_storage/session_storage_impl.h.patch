@@ -5,14 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_impl.h b/components/services/storage/dom_storage/session_storage_impl.h
-index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9fa2842724 100644
+index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..9c35da512b00c9c8028136167078651c351b72d0 100644
 --- a/components/services/storage/dom_storage/session_storage_impl.h
 +++ b/components/services/storage/dom_storage/session_storage_impl.h
-@@ -7,13 +7,16 @@
- 
- #include <stdint.h>
- 
-+#include <deque>  // MoltBrowser
+@@ -10,10 +10,12 @@
  #include <map>
  #include <memory>
  #include <optional>
@@ -25,17 +21,18 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
  #include "base/functional/callback_forward.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory/scoped_refptr.h"
-@@ -24,6 +27,9 @@
+@@ -24,6 +26,10 @@
  #include "components/services/storage/dom_storage/async_dom_storage_database.h"
  #include "components/services/storage/dom_storage/db_status.h"
  #include "components/services/storage/dom_storage/dom_storage_database.h"
 +#include "base/unguessable_token.h"  // MoltBrowser
 +#include "components/services/storage/dom_storage/molt_dom_storage_fair_scheduler.h"  // MoltBrowser
 +#include "components/services/storage/dom_storage/molt_dom_storage_site_budget.h"  // MoltBrowser
++#include "components/services/storage/dom_storage/molt_dom_storage_waits.h"  // MoltBrowser
  #include "components/services/storage/dom_storage/session_storage_data_map.h"
  #include "components/services/storage/dom_storage/session_storage_metadata.h"
  #include "components/services/storage/dom_storage/session_storage_namespace_impl.h"
-@@ -90,6 +96,33 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -90,6 +96,39 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    void ScavengeUnusedNamespaces() override;
    void Flush() override;
    void PurgeMemory() override;
@@ -45,6 +42,9 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
 +      override;  // MoltBrowser
 +  void MoltDropNonce(const base::UnguessableToken& nonce,
 +                     bool closed) override;  // MoltBrowser
++  void MoltGetUsageForStorageKey(
++      const blink::StorageKey& storage_key,
++      MoltGetUsageForStorageKeyCallback callback) override;  // MoltBrowser
 +  // MoltBrowser: gives `callback` the groups (molt_dom_storage_site.h) of
 +  // namespace `namespace_id`'s areas, for a clone that waits for their
 +  // turns (molt_dom_storage_own_thread.h): a chunk of areas a task in the
@@ -53,14 +53,17 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
 +      const std::string& namespace_id,
 +      base::OnceCallback<void(std::set<std::string>)> callback);
 +  // MoltBrowser: whether a copy or a deletion of namespace `namespace_id`
-+  // (or one it is copied from) is under way a chunk a task, and `callback`
-+  // to be posted in the control's turn as each ends: the control messages
-+  // naming such a namespace wait for it (molt_dom_storage_split_work.h).
++  // (or one it is copied from) made a chunk a task is under way or waiting
++  // for another, and `callback` to be posted in the control's turn as each
++  // ends: the control messages naming such a namespace wait for it
++  // (molt_dom_storage_split_work.h, molt_dom_storage_waits.h).
 +  bool MoltIsNamespaceBusy(const std::string& namespace_id) const;
 +  void MoltSetOnNamespaceJobDone(base::RepeatingClosure callback);
 +  // MoltBrowser: whether namespace `namespace_id` has namespaces waiting for
-+  // a clone of it.
++  // a clone of it, and which.
 +  bool MoltHasClonesWaiting(const std::string& namespace_id);
++  std::vector<std::string> MoltClonesWaitingFor(
++      const std::string& namespace_id);
 +  // MoltBrowser: as MoltKeepCachesPerSite(), taking the sequence in turn
 +  // through `scheduler` (one for the whole partition, which its host shares:
 +  // molt_dom_storage_own_thread.h), or a scheduler of its own if null.
@@ -69,7 +72,7 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
    void CreateNamespace(const std::string& namespace_id) override;
    void CloneNamespace(const std::string& namespace_id_to_clone,
                        const std::string& clone_namespace_id,
-@@ -129,6 +162,7 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -129,6 +168,7 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    void SetDatabaseOpenCallbackForTesting(base::OnceClosure callback);
  
   private:
@@ -77,7 +80,7 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
    friend class DOMStorageBrowserTest;
    FRIEND_TEST_ALL_PREFIXES(SessionStorageImplTest,
                             ClearDiskStateOnOpenWithEmptyPathUsesInMemory);
-@@ -137,8 +171,34 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -137,8 +177,34 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    void OnDataMapCreation(int64_t map_id, SessionStorageDataMap* map) override;
    void OnDataMapDestruction(int64_t map_id) override;
    void OnCommitResult(DbStatus status) override;
@@ -112,7 +115,7 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
    scoped_refptr<SessionStorageDataMap> MaybeGetExistingDataMapForId(
        int64_t map_id) override;
    void RegisterShallowClonedNamespace(
-@@ -177,6 +237,80 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -177,6 +243,87 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
  
    void GetStatistics(size_t* total_cache_size, size_t* unused_areas_count);
  
@@ -148,16 +151,21 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
 +  void MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
 +                     std::string group,
 +                     std::optional<int64_t> after);
++  // MoltBrowser: MoltGetUsageForStorageKey()'s listing of `storage_key`'s
++  // areas, in its site's turn.
++  void MoltListStorageKey(const blink::StorageKey& storage_key,
++                          MoltGetUsageForStorageKeyCallback callback);
 +  void MoltCollectGroupsStep(
 +      std::string namespace_id,
 +      std::optional<blink::StorageKey> after,
 +      std::set<std::string> groups,
 +      base::OnceCallback<void(std::set<std::string>)> callback);
 +
-+  // MoltBrowser: a namespace copied or deleted a chunk a task, in the
-+  // control's turn, one job at a time in the order they came
-+  // (molt_dom_storage_split_work.h); only for a partition kept per site
-+  // without a database on the host that holds its control messages
++  // MoltBrowser: a namespace copied or deleted a chunk a task
++  // (molt_dom_storage_split_work.h), each job after the jobs before it that
++  // name one of its namespaces, in the turn of its namespace
++  // (molt_dom_storage_waits.h); only for a partition kept per site without
++  // a database on the host that holds its control messages
 +  // (molt_dom_storage_own_thread.h).
 +  struct MoltNamespaceJob {
 +    MoltNamespaceJob();
@@ -180,26 +188,30 @@ index 8d7e8b3415306f1e31b14ab8aa5a6091c2693532..a9a40da6e6b8e041a2ac81ccc8b20a9f
 +  void MoltStartClone(const std::string& source,
 +                      const std::string& destination);
 +  void MoltAddJob(MoltNamespaceJob job);
-+  void MoltRunJobStep(bool posted);
++  void MoltPostJobStep(uint64_t id);
++  void MoltRunJobStep(uint64_t id);
 +  bool MoltCloneStep(MoltNamespaceJob& job);
 +  bool MoltDeleteStep(MoltNamespaceJob& job);
 +  bool MoltForgetNamespaceChunk(const std::string& namespace_id);
 +  // The copies under way lose `group`'s areas (MoltDropGroup()).
 +  void MoltScrubClones(const std::string& group);
 +  bool molt_splits_namespace_work_ = false;
-+  bool molt_job_step_posted_ = false;
++  // Whether a job's step is running.
++  bool molt_in_job_step_ = false;
 +  base::RepeatingClosure molt_on_namespace_job_done_;
 +
    void OnReceiverDisconnected();
  
    void ShutDown();
-@@ -227,6 +361,9 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
+@@ -227,6 +374,11 @@ class SessionStorageImpl : public base::trace_event::MemoryDumpProvider,
    // DeleteNamespace.
    std::map<std::string, std::unique_ptr<SessionStorageNamespaceImpl>>
        namespaces_;
-+  // MoltBrowser: the jobs (MoltNamespaceJob), the first under way; after
-+  // the maps and their indexes, which their areas tell as they go.
-+  std::deque<MoltNamespaceJob> molt_jobs_;
++  // MoltBrowser: the jobs (MoltNamespaceJob) by id, the order they came
++  // in, and which of them may run; after the maps and their indexes, which
++  // their areas tell as they go.
++  MoltDomStorageNamespaceJobs molt_job_order_;
++  std::map<uint64_t, MoltNamespaceJob> molt_jobs_;
  
    // Scavenging only happens once.
    bool has_scavenged_ = false;

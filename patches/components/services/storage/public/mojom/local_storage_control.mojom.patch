@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/public/mojom/local_storage_control.mojom b/components/services/storage/public/mojom/local_storage_control.mojom
-index 34c42808e87e9ec880459f7ecefd141e5ec02691..3605e7c40f143b9cee043980b8c491b01db4788f 100644
+index 34c42808e87e9ec880459f7ecefd141e5ec02691..c07bee9f8a955dc68e1dd9ef7936a384e210e54d 100644
 --- a/components/services/storage/public/mojom/local_storage_control.mojom
 +++ b/components/services/storage/public/mojom/local_storage_control.mojom
 @@ -6,9 +6,18 @@ module storage.mojom;
@@ -27,7 +27,7 @@ index 34c42808e87e9ec880459f7ecefd141e5ec02691..3605e7c40f143b9cee043980b8c491b0
  // Controls the state of Local Storage within a partition. This is a privileged
  // interface and must not be brokered to untrusted clients.
  //
-@@ -47,4 +56,24 @@ interface LocalStorageControl {
+@@ -47,4 +56,33 @@ interface LocalStorageControl {
    // called, that behavior is overridden and Local Storage data is persisted
    // for all StorageKeys.
    ForceKeepSessionState();
@@ -51,4 +51,13 @@ index 34c42808e87e9ec880459f7ecefd141e5ec02691..3605e7c40f143b9cee043980b8c491b0
 +  // (the page is gone). components/services/storage/dom_storage/
 +  // molt_dom_storage_site_policy.h.
 +  MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
++
++  // MoltBrowser: as GetUsage(), for `storage_key` alone: its area, if it
++  // holds items. With caches per site it is read in the turn of the key's
++  // site, after the messages that site queued before, and costs what that
++  // site stores, not the partition (a deletion of one storage key, such as
++  // Clear-Site-Data's, asks this instead of listing every site's areas:
++  // components/services/storage/dom_storage/molt_dom_storage_split_work.h).
++  MoltGetUsageForStorageKey(blink.mojom.StorageKey storage_key)
++      => (array<StorageUsageInfo> info);
  };

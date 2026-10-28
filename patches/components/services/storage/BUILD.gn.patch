@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/BUILD.gn b/components/services/storage/BUILD.gn
-index ee6e3c4329e99430c4510b4665b5320ddd3c8d3a..0347a7cbdfd1a106256d9e18a81d3200d1533009 100644
+index ee6e3c4329e99430c4510b4665b5320ddd3c8d3a..df6957ad123da20b64d23685d141a36d9cd4ba7a 100644
 --- a/components/services/storage/BUILD.gn
 +++ b/components/services/storage/BUILD.gn
-@@ -101,6 +101,19 @@ source_set("storage") {
+@@ -101,6 +101,20 @@ source_set("storage") {
      "storage_service_impl.h",
    ]
  
@@ -23,6 +23,7 @@ index ee6e3c4329e99430c4510b4665b5320ddd3c8d3a..0347a7cbdfd1a106256d9e18a81d3200
 +    "dom_storage/molt_dom_storage_site_budget.h",
 +    "dom_storage/molt_dom_storage_site_policy.h",
 +    "dom_storage/molt_dom_storage_split_work.h",
++    "dom_storage/molt_dom_storage_waits.h",
 +  ]
 +
    public_deps = [
