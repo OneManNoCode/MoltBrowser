@@ -740,6 +740,46 @@ QuotaErrorOr<std::set<BucketLocator>> QuotaDatabase::GetBucketsModifiedBetween(
   return buckets;
 }
 
+// MoltBrowser: see the header. The same rows GetBucketsModifiedBetween()
+// reads, of one storage key: the deletion's filter then picks from the same
+// buckets it would have picked from that listing.
+QuotaErrorOr<std::set<BucketLocator>>
+QuotaDatabase::MoltGetBucketsForStorageKeyModifiedBetween(
+    const StorageKey& storage_key,
+    base::Time begin,
+    base::Time end) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  QuotaError open_error = EnsureOpened();
+  if (open_error != QuotaError::kNone) {
+    return base::unexpected(open_error);
+  }
+
+  CHECK(!begin.is_max());
+  CHECK(end != base::Time());
+  // clang-format off
+  static constexpr char kSql[] =
+      "SELECT id, storage_key, name FROM buckets "
+        "WHERE storage_key = ? AND last_modified >= ? AND last_modified < ?";
+  // clang-format on
+  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+  statement.BindString(0, storage_key.Serialize());
+  statement.BindTime(1, begin);
+  statement.BindTime(2, end);
+
+  std::set<BucketLocator> buckets;
+  while (statement.Step()) {
+    std::optional<StorageKey> read_storage_key =
+        StorageKey::Deserialize(statement.ColumnStringView(1));
+    if (!read_storage_key.has_value()) {
+      continue;
+    }
+    buckets.emplace(BucketId(statement.ColumnInt64(0)),
+                    read_storage_key.value(),
+                    statement.ColumnStringView(2) == kDefaultBucketName);
+  }
+  return buckets;
+}
+
 QuotaErrorOr<std::set<BucketInfo>> QuotaDatabase::GetExpiredBuckets(
     SpecialStoragePolicy* special_storage_policy) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

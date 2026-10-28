@@ -1762,6 +1762,33 @@ void QuotaManagerImpl::GetBucketsModifiedBetween(base::Time begin,
                      weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
+// MoltBrowser: see the header; as GetBucketsModifiedBetween().
+void QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween(
+    const StorageKey& storage_key,
+    base::Time begin,
+    base::Time end,
+    GetBucketsCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  EnsureDatabaseOpened();
+
+  if (db_disabled_) {
+    std::move(callback).Run(std::set<BucketLocator>());
+    return;
+  }
+
+  PostTaskAndReplyWithResultForDBThread(
+      base::BindOnce(
+          [](const StorageKey& storage_key, base::Time begin, base::Time end,
+             QuotaDatabase* database) {
+            CHECK(database);
+            return database->MoltGetBucketsForStorageKeyModifiedBetween(
+                storage_key, begin, end);
+          },
+          storage_key, begin, end),
+      base::BindOnce(&QuotaManagerImpl::DidGetModifiedBetween,
+                     weak_factory_.GetWeakPtr(), std::move(callback)));
+}
+
 bool QuotaManagerImpl::ResetUsageTracker() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 

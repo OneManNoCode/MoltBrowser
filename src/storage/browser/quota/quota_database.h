@@ -176,6 +176,17 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaDatabase {
       base::Time begin,
       base::Time end);
 
+  // MoltBrowser: as GetBucketsModifiedBetween(), for the buckets of
+  // `storage_key` only, through the storage key's index: what a deletion of
+  // one storage key over a time range reads where storage is kept per site
+  // (content/browser/browsing_data/molt_one_key_deletion_policy.h).
+  // `storage_key` mustn't have an opaque origin (it is serialized).
+  QuotaErrorOr<std::set<BucketLocator>>
+  MoltGetBucketsForStorageKeyModifiedBetween(
+      const blink::StorageKey& storage_key,
+      base::Time begin,
+      base::Time end);
+
   // Returns a set of all expired or stale (not accessed or modified in 400 days
   // and not persisted) buckets.
   // See crbug.com/40281870 for more info.

@@ -250,6 +250,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
       base::OnceCallback<void(QuotaErrorOr<std::set<BucketInfo>>)> callback,
       bool delete_expired = false);
 
+  // MoltBrowser: as GetBucketsModifiedBetween(), for `storage_key`'s buckets
+  // only (QuotaDatabase::MoltGetBucketsForStorageKeyModifiedBetween()): what
+  // a deletion of one storage key over a time range reads where storage is
+  // kept per site (content/browser/browsing_data/
+  // molt_one_key_deletion_policy.h). `storage_key` mustn't have an opaque
+  // origin.
+  void MoltGetBucketsForStorageKeyModifiedBetween(
+      const blink::StorageKey& storage_key,
+      base::Time begin,
+      base::Time end,
+      GetBucketsCallback callback);
+
   // Called by clients or webapps. Returns usage per host.
   void GetUsageInfo(GetUsageInfoCallback callback);
 

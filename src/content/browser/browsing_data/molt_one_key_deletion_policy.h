@@ -24,14 +24,36 @@
 // that key's usage only: its DOM storage areas, in the turn of its site in
 // the storage service (DOMStorageContextWrapper::
 // MoltGetLocalStorageUsageForStorageKey(),
-// MoltGetSessionStorageUsageForStorageKey()), and its buckets
-// (QuotaManagerImpl::GetBucketsForStorageKey(), for a deletion over all
-// time, as Clear-Site-Data's is; a deletion over a time range keeps
-// Chromium's listing, which reads the modification times). What is deleted
-// doesn't change: the same filter decides, on a list that holds everything
-// the filter can match. The callers that want everything (the browser's
-// site settings and site data dialogs, clearing browsing data, counting it)
-// are the browser's own and read the whole listing as before.
+// MoltGetSessionStorageUsageForStorageKey()), and its buckets: over all
+// time (Clear-Site-Data's) every bucket of the key
+// (QuotaManagerImpl::GetBucketsForStorageKey()), over a time range those of
+// the key modified in it, through the key's index in the quota database
+// (QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween(): the rows
+// Chromium's listing reads, of one key). What is deleted doesn't change: the
+// same filter decides, on a list that holds everything the filter can
+// match. (A key with an opaque origin, which the quota database can't be
+// asked by, keeps Chromium's listing of buckets.)
+//
+// Which callers list a whole partition, at Chromium 156.0.8078.74: the
+// browser's site data counter (clearing browsing data's dialog:
+// SiteDataCountingHelper), its site settings and site data dialogs
+// (BrowsingDataModel::PopulateFromDisk(), LocalStorageHelper), an installed
+// web app's size (GetProgressiveWebAppSizeJob, regular profiles only), and
+// StoragePartitionImpl's deletions that name no key: the browser's own
+// (clearing browsing data, a site's data deleted in the settings, the
+// extension and DevTools APIs), and one a page could cause:
+// Clear-Site-Data on a response the browser can't place in a document or
+// worker (StoragePartitionImpl::CalculateStorageKey() gives no key for a
+// request the browser makes itself, such as a download's, or one whose
+// document has gone, such as a keepalive request's after its page went).
+// Such a deletion names the response's origin with no storage key, and its
+// filter matches that origin's storage and everything embedded on its site,
+// so it read every site's areas and buckets. Where storage is kept per
+// site, it names the key the browser would give the origin's own document
+// instead (MoltClearSiteDataKeyFor(): its first-party key, or under the
+// request's nonce), and reads that key's usage only, like any
+// Clear-Site-Data; what it deletes is then what that origin's own page
+// would have deleted with the header.
 //
 // Std-only, so molt_ai_unittests tests it.
 
@@ -46,6 +68,9 @@ enum class MoltDeletionReads {
   kWholePartition,
   // The usage of the one storage key the deletion names.
   kOneStorageKey,
+  // The usage of the one storage key the deletion names, of what was
+  // modified in the deletion's time range (buckets).
+  kOneStorageKeyModifiedBetween,
 };
 
 // Whether a deletion names one storage key: the key itself
@@ -66,15 +91,45 @@ constexpr MoltDeletionReads MoltDomStorageDeletionReads(bool keeps_per_site,
                                          : MoltDeletionReads::kWholePartition;
 }
 
-// What a deletion of quota-managed data reads; one key's buckets only over
-// all time (`all_time`: no begin, no end), since the bucket list for one key
-// carries no modification times to select by.
+// What a deletion of quota-managed data reads: one key's buckets, all of
+// them over all time (`all_time`: no begin, no end), else those modified in
+// the range.
 constexpr MoltDeletionReads MoltQuotaDeletionReads(bool keeps_per_site,
                                                    bool names_one_key,
                                                    bool all_time) {
-  return keeps_per_site && names_one_key && all_time
-             ? MoltDeletionReads::kOneStorageKey
-             : MoltDeletionReads::kWholePartition;
+  if (!keeps_per_site || !names_one_key) {
+    return MoltDeletionReads::kWholePartition;
+  }
+  return all_time ? MoltDeletionReads::kOneStorageKey
+                  : MoltDeletionReads::kOneStorageKeyModifiedBetween;
+}
+
+// The storage key a Clear-Site-Data response names.
+enum class MoltClearSiteDataKey {
+  // The key Chromium calculates for it (StoragePartitionImpl::
+  // CalculateStorageKey()), or none.
+  kAsCalculated,
+  // The response origin's first-party key.
+  kFirstParty,
+  // The response origin's key under the request's nonce (a credentialless
+  // frame's request).
+  kWithNonce,
+};
+
+// Which: where storage is kept per site (`keeps_per_site`), a response the
+// browser can calculate no key for (`has_calculated_key` false) names the
+// key the origin's own document would have, under the request's nonce if
+// it has one (`request_has_nonce`). An opaque origin (`origin_opaque`), which
+// no Clear-Site-Data response has, names none.
+constexpr MoltClearSiteDataKey MoltClearSiteDataKeyFor(bool keeps_per_site,
+                                                       bool has_calculated_key,
+                                                       bool origin_opaque,
+                                                       bool request_has_nonce) {
+  if (!keeps_per_site || has_calculated_key || origin_opaque) {
+    return MoltClearSiteDataKey::kAsCalculated;
+  }
+  return request_has_nonce ? MoltClearSiteDataKey::kWithNonce
+                           : MoltClearSiteDataKey::kFirstParty;
 }
 
 }  // namespace content
