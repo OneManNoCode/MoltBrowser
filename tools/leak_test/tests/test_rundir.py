@@ -29,6 +29,26 @@ else:
     UID, GID = os.getuid(), os.getgid()
 
 
+def _free_ids(count, start=61001):
+    """`count` ids for the fake accounts below that are none of the ones the
+    checks treat as the user's own (root, UID, the process's own uid) and
+    not GID: on a CI runner the real user is often uid 1001, which a fixed
+    id would collide with."""
+    taken = {0, UID, GID, os.getuid(), os.geteuid(), os.getgid()}
+    ids = []
+    candidate = start
+    while len(ids) < count:
+        if candidate not in taken:
+            ids.append(candidate)
+        candidate += 1
+    return ids
+
+
+# The fake accounts' ids (alice, bob, and the many accounts of one test).
+ALICE_ID, BOB_ID = _free_ids(2)
+MANY_IDS = _free_ids(10, start=62001)
+
+
 class RunDirTest(unittest.TestCase):
 
     def setUp(self):
@@ -426,10 +446,10 @@ def UserPrivateGroups(gid=None):
     with no other member. The user's is `gid` (GID by default)."""
     gid = GID if gid is None else gid
     return Accounts(
-        {0: ('root', []), gid: ('moltuser', []), 1001: ('alice', []),
-         1002: ('bob', []), 100: ('users', ['alice', 'bob'])},
-        [('root', 0, 0), ('moltuser', UID, gid), ('alice', 1001, 1001),
-         ('bob', 1002, 1002), ('daemon', 1, 1)])
+        {0: ('root', []), gid: ('moltuser', []), ALICE_ID: ('alice', []),
+         BOB_ID: ('bob', []), 100: ('users', ['alice', 'bob'])},
+        [('root', 0, 0), ('moltuser', UID, gid), ('alice', ALICE_ID, ALICE_ID),
+         ('bob', BOB_ID, BOB_ID), ('daemon', 1, 1)])
 
 
 def SharedUsersGroup(gid=None):
@@ -439,8 +459,8 @@ def SharedUsersGroup(gid=None):
     gid = GID if gid is None else gid
     return Accounts(
         {0: ('root', []), gid: ('users', [])},
-        [('root', 0, 0), ('moltuser', UID, gid), ('alice', 1001, gid),
-         ('bob', 1002, gid)])
+        [('root', 0, 0), ('moltuser', UID, gid), ('alice', ALICE_ID, gid),
+         ('bob', BOB_ID, gid)])
 
 
 class OtherAccountsInGroupTest(unittest.TestCase):
@@ -517,7 +537,7 @@ class OtherAccountsInGroupTest(unittest.TestCase):
 
     def test_many_others_are_summarised(self):
         accounts = SharedUsersGroup()
-        accounts.listed += [('u%d' % i, 2000 + i, GID) for i in range(10)]
+        accounts.listed += [('u%d' % i, MANY_IDS[i], GID) for i in range(10)]
         with self.assertRaises(OSError) as cm:
             rundir.check_out_dir(st(UID, GID, 0o775), 'x', UID, GID,
                                  accounts)
