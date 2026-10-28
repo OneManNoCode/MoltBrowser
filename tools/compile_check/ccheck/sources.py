@@ -22,6 +22,7 @@ googlesource.com is not reachable from every machine, so nothing comes from
 it. `<work>/repos/sources.json` records where each mount came from; when
 that changes, the mount's materialized and generated files are dropped.
 """
+import hashlib
 import json
 import lzma
 import os
@@ -44,6 +45,11 @@ _up.FETCH_RETRY_DELAYS = (15, 60, 180, 300, 600)
 from . import tarball  # noqa: E402
 
 LLVM = "https://github.com/llvm/llvm-project"
+
+# The overlay files a compile can read (SourceTree.overlay_stamp()).
+_COMPILED_EXTS = (".h", ".hh", ".hpp", ".hxx", ".inc", ".inl", ".ipp",
+                  ".tcc", ".def", ".c", ".cc", ".cpp", ".cxx", ".m", ".mm",
+                  ".s", ".S")
 
 # mount (Chromium path) -> (git mirror, or a tuple of mirrors tried in
 # order, or None if there is none; prefix inside that repo; commit override
@@ -266,6 +272,7 @@ class SourceTree:
         self.unavailable = {}
         self.substituted = {}
         self._overlay_set = None
+        self._overlay_sources = None
         self._mounts = sorted(SUBPROJECTS, key=len, reverse=True)
 
     # -- overlay ---------------------------------------------------------
@@ -278,6 +285,27 @@ class SourceTree:
                     s.add(f if rel == "." else rel + "/" + f)
             self._overlay_set = s
         return self._overlay_set
+
+    def overlay_stamp(self):
+        """The overlay's C-family files as they are now (each one's size,
+        modification time and inode), hashed: the overlay is the working
+        tree, which may be edited while a check runs, so a result is stored
+        only if this didn't change while its file compiled
+        (result_cache.py). The files a compile can read; the generated ones
+        are made before any compile."""
+        if self._overlay_sources is None:
+            self._overlay_sources = sorted(
+                p for p in self.overlay_set() if p.endswith(_COMPILED_EXTS))
+        h = hashlib.sha256()
+        for p in self._overlay_sources:
+            try:
+                st = os.stat(self.overlay / p)
+            except OSError:
+                h.update(p.encode() + b"\0gone\n")
+                continue
+            h.update(p.encode() + b"\0%d %d %d\n" % (
+                st.st_size, st.st_mtime_ns, st.st_ino))
+        return h.hexdigest()
 
     # -- subprojects -----------------------------------------------------
     def mount_of(self, path):

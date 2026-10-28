@@ -188,6 +188,15 @@ asks nobody in particular.
   browser's environment is emptied except for `HOME`, `USER`, `PATH`,
   `LANG`/`LC_ALL`, `TZ`, the display and `XDG_RUNTIME_DIR`. Proxy variables
   in particular are removed.
+* **What the kit writes as root.** The run directory is yours: the browser,
+  Tor and the kit's servers write there as you. The kit makes it, opens it,
+  and from then on writes there only from that open directory
+  (`leakkit/rundir.py`): no symbolic link is followed at any step of a
+  path, only a regular file with a single link is written or emptied, and
+  owners and modes are set on the open file, never by path. The servers'
+  certificates and the test extension are made in the root-owned directory
+  under `/run/moltleak-<id>/` and copied in. When the run ends, the kit
+  hands everything to you without following links.
 * **A policy set while the browser runs.** For two launches (phases
   `policy_live` and `policy_live_incognito`) the kit mounts a directory of
   the run (root-owned, under

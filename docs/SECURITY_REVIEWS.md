@@ -4,6 +4,96 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-28: PR #74 (October 2026)
+
+**Scope.** The code merged in pull request #74 (round 30) that the
+previous review didn't cover, in this order of priority:
+
+1. MoltNet's Background Fetch with no total for all sites: each site's
+   share, the memory valve told of each download past the floor, the
+   in-memory download service with no limits of its own (in every
+   off-the-record profile), the scheduler's new per-site queues and its
+   hooks, starvation, counts that could drift or overflow, the controllers'
+   lifetime; whether one site can hold unbounded memory or tasks before the
+   valve acts, or end an identity at will.
+2. Storage under a page's nonce: the tab helper's tracking (frames as they
+   are made and as they commit, the page going, pages in the back/forward
+   cache and prerendered ones), the bound of 32 groups per site, the drop
+   in the storage service and the quota manager and who can ask for it,
+   closed groups.
+3. DOM storage in short turns: the usage walk and the memory dump, a tab's
+   `sessionStorage` copied or deleted a chunk a task, control messages held
+   and the order they are replayed in, reentrancy, a namespace or area that
+   goes during a job, a message never replayed.
+4. Per-site records forgotten: whether a site can reset its write
+   allowance or commit rate by emptying its storage, or make records come
+   and go to cost processor time; keepalive recorders and quota marks.
+5. Local Network Access for Background Fetch requests made without the
+   worker's factory, and fetches taken up after a restart, in every
+   profile: the factory, the wait for a fetch's parameters, its deadline
+   and the second request for them, with the previous review's restart; a
+   permission prompt out of context; downloads made to fail for other
+   sites.
+6. MoltNet's microphone processing: the per-instance scope in WebRTC (other
+   instances on one thread, components made later or on other threads),
+   the setting carried over Mojo from either kind of profile, the residual
+   echo estimator left out, the portable math calls and WebRTC's other
+   vector code (the signal processing library, PFFFT).
+7. The leak test kit: the microphone launch's flags and input file, and
+   how the harness handles what pages answer.
+8. The build tools: the compile check's result cache (stale or planted
+   results), the HSTS generator built and run on the host, the paths
+   `clean` removes.
+
+**Method.** Each candidate traced from its attacker (web page, a group of
+sites, a compromised renderer, a local process of the user who runs the
+leak kit, a source edited during a check) through MoltBrowser's code and
+the upstream Chromium 156 code at the pinned revision, and WebRTC's and
+PFFFT's at the revisions it pins (read from the release's source tarball);
+fixes tested with the leak kit's test suite and new tests that put links,
+hard links, FIFOs and a moved run directory where the harness writes,
+with a mutant set each test catches, run as root and unprivileged; the
+nonce policy's unit tests built standalone (system gtest, g++
+ASan/UBSan) with mutants they catch; the namespace harness of the
+previous round (`SessionStorageImpl`'s and `SessionStorageNamespaceImpl`'s
+copy and deletion verbatim, 156's and this branch's, clang ASan/UBSan)
+with new tests of a copy owed to a populated namespace, in a message and
+outside one, and mutants they catch, and a unit test of the storage
+service's per-site host, which needs a Chromium build; the compile
+check's test suite with a new test that edits a source while it
+compiles, and mutants it catches; and the compile check against Chromium
+156's headers.
+
+**Findings.** 14: 3 low, 11 informational. Fixed: the three low and one
+informational.
+
+**Fixed.**
+
+- The leak test kit: the harness, which runs as root, writes into the run
+  directory it gives the invoking user only through a descriptor of that
+  directory opened when it is made: no symbolic link is followed at any
+  step of a path, only regular files with a single link are written or
+  emptied, and owners and modes are set on the open file
+  (`tools/leak_test/leakkit/rundir.py`). That covers the microphone
+  launch's input file, every launch's and server's log, the profile's
+  settings and the run's manifest; the servers' certificates and the test
+  extension are made in the root-owned directory under `/run` and copied
+  in.
+- MoltNet: a page its server sandboxed (an opaque origin) counts toward the
+  bound of the site its origin came from on how many pages keep storage
+  under their nonce, rather than toward one bound that every site's
+  sandboxed pages shared.
+- MoltNet's DOM storage: a tab's `sessionStorage` deletion makes the
+  copies still owed to tabs it opened, in a task of its own after its
+  sites' turns. A copy owed to a namespace that was populated meanwhile is
+  now dropped there without reporting a message, none being handled, as
+  Chromium drops it while handling one (`session_storage_impl.cc`).
+- The compile check: a file's result is stored under the key made from
+  what preprocessing read, and the compile reads the working tree again.
+  A result is now stored only if no C-family file of the working tree
+  changed (size, modification time or inode) from before its key was made
+  to the end of its compile (`ccheck/check.py`, `ccheck/sources.py`).
+
 ## 2026-10-27: PR #73 (October 2026)
 
 **Scope.** The code merged in pull request #73 (rounds 28 and 29) that

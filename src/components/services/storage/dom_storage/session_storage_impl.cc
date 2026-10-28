@@ -34,6 +34,7 @@
 #include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/session_storage_area_impl.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "mojo/public/cpp/bindings/message.h"  // MoltBrowser
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
@@ -653,6 +654,13 @@ void SessionStorageImpl::RegisterShallowClonedNamespace(
   if (it != namespaces_.end()) {
     found = true;
     if (it->second->IsPopulated()) {
+      // MoltBrowser: called in a task of its own (a deletion's copies that
+      // MoltNet's host runs after the namespace's sites' turns:
+      // molt_dom_storage_own_thread.h), there is no message to report;
+      // the copy is dropped all the same.
+      if (!mojo::IsInMessageDispatch()) {
+        return;
+      }
       // Assumes this method is called on a stack handling a mojo message.
       receiver_.ReportBadMessage("Cannot clone to already populated namespace");
       return;
