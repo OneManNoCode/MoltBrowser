@@ -4,9 +4,12 @@
 
 #include "services/audio/sync_mixing_graph_input.h"
 
+#include <cmath>
+
 #include "base/trace_event/trace_event.h"
 #include "media/base/audio_pull_fifo.h"
 #include "media/base/audio_timestamp_helper.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 
 namespace audio {
 
@@ -52,6 +55,14 @@ double SyncMixingGraphInput::ProvideInput(
     Render(0, audio_bus);
   converter_render_frame_delay_ = 0;
 
+  // MoltBrowser: while the mix is computed portably for a MoltNet microphone
+  // stream's echo canceller (output_device_mixer_impl.cc), a volume below the
+  // portable floor is zero, so that no product of the mixing is subnormal
+  // (media/base/molt_portable_media.h; the samples: Render()).
+  if (media::IsPortableAudioThread() &&
+      std::fabs(volume_) < media::kPortableAudioFloor) {
+    return 0.0;
+  }
   return volume_;
 }
 
@@ -95,6 +106,14 @@ void SyncMixingGraphInput::Render(int fifo_frame_delay,
                                glitch_info_accumulator_.GetAndReset(),
                                audio_bus,
                                /*is_mixing=*/true);
+  // MoltBrowser: what a stream plays enters the portable mixing (a MoltNet
+  // microphone stream's echo reference) without its samples below the
+  // portable floor: the mix computes with the flush-to-zero modes off, the
+  // same on every CPU, and a page's tiny samples don't slow it down for every
+  // profile (media/base/molt_portable_media.h).
+  if (media::IsPortableAudioThread()) {
+    media::FlushTinyPortableSamples(*audio_bus);
+  }
 }
 
 }  // namespace audio

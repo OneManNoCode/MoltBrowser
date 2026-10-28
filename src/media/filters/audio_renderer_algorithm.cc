@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -17,6 +18,7 @@
 #include "media/base/audio_bus.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/limits.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/filters/wsola_internals.h"
 
 namespace media {
@@ -267,7 +269,17 @@ int AudioRendererAlgorithm::RunWsolaAndFill(AudioBus* dest,
   // Silent audio can contain non-zero samples small enough to result in
   // subnormals internalls. Disabling subnormals can be significantly faster in
   // these cases.
-  cc::ScopedSubnormalFloatDisabler disable_subnormals;
+  // MoltBrowser: x86 and Arm flush differently (and cc's disabler flushes on
+  // x86 only), so in MoltNet's renderers the stretching computes with the
+  // flush modes off, its input flushed at the portable floor instead
+  // (PeekAudioWithZeroPrepend(); media/base/molt_portable_media.h).
+  std::optional<cc::ScopedSubnormalFloatDisabler> disable_subnormals;
+  std::optional<ScopedPortableSubnormals> portable_subnormals;
+  if (IsPortableAudioThread()) {
+    portable_subnormals.emplace();
+  } else {
+    disable_subnormals.emplace();
+  }
 
   // WSOLA doesn't actually consume input frames until the WSOLA iteration
   // completes; see RemoveOldInputFrames() in RunOneWsolaIteration().
@@ -669,6 +681,12 @@ void AudioRendererAlgorithm::PeekAudioWithZeroPrepend(
   }
   audio_buffer_.PeekFrames(num_frames_to_read, read_offset_frames,
                            write_offset, dest);
+  // MoltBrowser: the blocks the stretching computes with, in MoltNet's
+  // renderers without the samples below the portable floor (see
+  // RunWsolaAndFill()).
+  if (IsPortableAudioThread()) {
+    FlushTinyPortableSamples(*dest);
+  }
 }
 
 void AudioRendererAlgorithm::CreateSearchWrappers() {
