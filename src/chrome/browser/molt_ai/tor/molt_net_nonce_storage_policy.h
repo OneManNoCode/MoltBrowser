@@ -75,9 +75,9 @@
 // them again once the nonce's page is gone: idle connections and HTTP/2
 // sessions (in the site's own pools: its 48, closed for the site's own
 // requests or the budget when they are needed, and after their idle
-// timeouts), TLS sessions, server properties and CORS preflight results
-// (the network context's caches of 1024, 500 and 1024 entries, with no room
-// of their own per nonce).
+// timeouts), TLS sessions, server properties, CORS preflight results and
+// HTTP authentication entries (the network context's caches of 1024, 500,
+// 1024 and 20 entries, with no room of their own per nonce).
 //
 // Std-only, so molt_ai_unittests tests it. Not thread-safe: the browser uses
 // it on the UI thread.
