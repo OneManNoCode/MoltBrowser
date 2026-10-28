@@ -73,7 +73,9 @@ mkdir -p "$DIST_DIR"
 echo ""
 echo "--- Creating simulator bundle ---"
 SIM_DIR="$DIST_DIR/MoltBrowser-$VERSION-ios-sim"
-rm -rf "$SIM_DIR"
+# The copy goes to $SIM_DIR.app: remove that, or a second run would copy
+# the app into the stale bundle instead of replacing it.
+rm -rf "$SIM_DIR" "$SIM_DIR.app"
 cp -R "$APP_PATH" "$SIM_DIR.app"
 echo "Simulator app: $SIM_DIR.app"
 echo "Install: xcrun simctl install booted $SIM_DIR.app"
@@ -140,7 +142,10 @@ if [ -n "$TEAM_ID" ]; then
     "$PAYLOAD_DIR/Payload/MoltBrowser.app"
 fi
 
-# Create IPA zip
+# Create IPA zip. zip adds to an existing archive, so remove one from an
+# earlier run first: an unsigned build would otherwise keep that build's
+# _CodeSignature/ next to its own binaries.
+rm -f "$IPA_PATH"
 cd "$PAYLOAD_DIR"
 zip -r -9 "$IPA_PATH" Payload/
 cd "$ROOT_DIR"
