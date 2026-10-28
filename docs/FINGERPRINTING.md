@@ -2669,8 +2669,8 @@ kinds of device the machine has, and answers some `getUserMedia()` calls
 without asking the user; once it may, it shows the devices' own format and
 the OS's names for them. In MoltNet windows every machine has one
 microphone, one camera and one output device until the user lets a page
-use them, and afterwards every microphone has one format and every device
-a generic name:
+use them, and afterwards every microphone has one format, every camera the
+formats of one menu, and every device a generic name:
 
 | What a page reads | Before, in MoltNet | Now |
 |---|---|---|
@@ -2680,9 +2680,13 @@ a generic name:
 | `devicechange` | fires when devices change, before any permission unless Chromium's `DeviceChangeRequiresPermission` is on | fires only once the page may use the devices |
 | A microphone track's `getSettings()`: `sampleRate`, `channelCount`, `latency` | the device's rate and buffer (48 kHz and 10 ms with processing on), one channel unless more are asked for and the device has them | **48 kHz, one channel or two when asked for, 10 ms**, whatever the device ([below](#a-microphones-format-and-names)) |
 | The `sampleRate`, `channelCount` and `latency` ranges of a microphone track's `getCapabilities()` and of `enumerateDevices()`' `InputDeviceInfo.getCapabilities()` | from the device's rate, channel count and buffer sizes | **48 kHz, one to two channels, 10 ms** for every microphone |
+| A microphone track's `channelCount` with every effect off, when the page asks for none | the device's channels (two on a stereo device) | **one**, as with processing; two when asked for |
+| A camera track's `getCapabilities()` and `enumerateDevices()`' `InputDeviceInfo.getCapabilities()`: `width`, `height`, `frameRate`, `aspectRatio` | from the device's modes: its largest size and fastest rate (a 4K webcam's 3840 by 2160, a 60 fps camera's 60) | **the menu: 640x480 and 1280x720 at 30 fps**, the entries the camera reaches ([below](#a-cameras-formats)) |
+| A camera track's `getSettings()`: `width`, `height`, `frameRate`, `aspectRatio`, `resizeMode` | the device mode the constraints chose, at the device's rate | **a menu entry, or a size cropped and scaled from one**, at 30 fps or the lower rate asked for |
+| A camera track's frames (a `VideoFrame`'s `codedWidth`, `codedHeight`, `visibleRect`, `format`) | the device's own frame, with the part the track shows as its visible part | **new I420 frames of exactly the track's size** |
 | Labels once a page may see the devices (`enumerateDevices()`, a track's `label`) | the OS's names ("MacBook Pro Microphone", "Default - Headset Microphone (Jabra Evolve2 65)") | **"Default"**, or **"Microphone", "Camera" or "Speaker", a space and the device ID's first four characters** |
 | `groupId` (`enumerateDevices()`, a track's settings and capabilities) | shared by the devices of one product (a headset's microphone and earpieces) | **the device ID**: every device a group of its own |
-| Windows' `communications` device | listed with the microphones and outputs, selectable | **not listed**, not selectable |
+| Windows' `communications` device | listed with the microphones and outputs, selectable | **not listed**, not selectable; `setSinkId("communications")` is refused as for a device that isn't there |
 
 Normal and Incognito windows keep Chromium's behaviour. MoltNet ignores
 Shields off, and the kill switch turns it off.
@@ -2748,7 +2752,18 @@ and the labels and groups are the OS's. In MoltNet:
   delivers in the device's own format; then the processing only converts.
   A stereo stream of a mono device has the channel twice, as Chromium's
   upmix gives it. (With processing on, Chromium's streams are at 48 kHz
-  too, with the device's channels.)
+  too, with the device's channels.) The channel count follows the request
+  alone, with every effect off as with processing: one unless the page
+  asks for more (Chromium gives a request with every effect off the
+  device's channels).
+* **Microphones of other layouts.** Some Windows microphone arrays report
+  QUAD or 5.1, and a PulseAudio source of four or six channels gets those
+  layouts; the processing takes mono, stereo and unnamed (discrete)
+  channels only, and Chromium fails such a stream when it is processed. A
+  MoltNet stream opens the device in its own layout and down-mixes it to
+  the stream's channels before anything else, with media's channel mixer
+  in its CPU-independent code ([the microphone's
+  processing](#microphones-of-other-layouts)).
 * **The same values everywhere.** `getSettings()` reports `sampleRate`
   48000, `channelCount` 1 or 2 and `latency` 0.01 (`sampleSize` is 16 for
   every microphone at 156); both `getCapabilities()` report 48000 to
@@ -2769,7 +2784,15 @@ and the labels and groups are the OS's. In MoltNet:
   microphone and earpieces aren't tied together.
 * **No communications device.** Windows lists a "communications" device
   next to the default one; MoltNet's lists don't, and a request can't
-  select it. The other OSes have none.
+  select it. The other OSes have none. A media element's
+  `setSinkId("communications")` looks the device up by an ID of the form
+  every device's ID has that no device has (`moltnet::kUnlistedDeviceId`),
+  so the browser refuses it as it refuses any device that isn't there
+  (`NotAllowedError` without the permission to see the devices,
+  `NotFoundError` with it, as on the other OSes); `AudioContext` checks a
+  sink against its own list of outputs, which leaves the device out
+  (`setSinkId()` and the constructor's `sinkId` fail as for an unlisted
+  ID).
 * **Selection unchanged.** Device IDs stay Chromium's: `deviceId`
   constraints pick the same devices as before, a page's own device menu
   works, and `devicechange` fires as described above. The renderer keeps
@@ -2796,17 +2819,98 @@ effect off, 34 to 74 ns per frame on one core of a 2.1 GHz Xeon (0.16 to
 against 14 to 43 ns with the processor's vector code. A page can't ask
 for another rate.
 
+### A camera's formats
+
+At 156 a page that may use a camera reads the device's modes:
+`getCapabilities()` and `InputDeviceInfo.getCapabilities()` give the
+largest width, height and frame rate among them, `getSettings()` the mode
+the constraints chose and its rate, and each frame a track delivers is
+the camera's own frame with a smaller visible part, which a `VideoFrame`
+from `MediaStreamTrackProcessor` shows (`codedWidth`, `codedHeight` and
+`visibleRect` are the device mode's). A camera smaller than what a track
+asks for gives frames of its own size. In MoltNet a camera offers formats
+of one menu:
+
+* **The menu.** 640x480 and 1280x720, at 30 frames a second
+  (`moltnet::kUniformCameraMenu`). A camera shows the entries it reaches:
+  those one of its modes is at least as wide and as tall as, among its
+  modes at 30 fps (29.97 counts; all its modes when none is that fast).
+  An HD camera shows both. One whose largest mode is 640x480, or between
+  the two entries (800x600), shows 640x480 alone; one that reaches
+  neither (a 352x288 camera) shows 640x480 as well, to which its frames
+  are scaled up. What a camera shows comes from the menu alone, never
+  from its own modes.
+* **Chromium's constraints algorithm on the menu.** `getUserMedia()` and
+  `applyConstraints()` choose among the entries as among a camera's
+  modes: no constraints give 640x480 at 30 fps; `{width: 1920, height:
+  1080}` gives 1280x720; an exact 800x600 is cropped and scaled from
+  1280x720; `resizeMode: "none"` gives an entry as it is; `frameRate: 15`
+  halves the rate; `{width: {min: 1281}}` and `{frameRate: {exact: 60}}`
+  fail with `OverconstrainedError` on every camera. `getCapabilities()`
+  gives width 1 to 1280, height 1 to 720, frame rate up to 30 and aspect
+  ratio 1/720 to 1280 for an HD camera, the same with 640 and 480 for the
+  others, and `InputDeviceInfo.getCapabilities()` the same ranges (its
+  frame rate from 1, as Chromium gives it).
+  `getSettings()` gives the track's size, from the start, the menu's rate
+  or the lower one asked for, and `resizeMode` "none" for an entry as it
+  is, else "crop-and-scale".
+* **Frames of exactly that size.** The track adapter crops each camera
+  frame to the track's aspect ratio (the largest centred part) and scales
+  it, down or up, into a new I420 frame of exactly the track's size, with
+  media's frame converter, whose scaler computes the same values on every
+  processor in MoltNet ([pixels and encoded
+  bytes](#moltnet-pixels-and-encoded-bytes)); tracks of one size share
+  the conversion. A frame that already is one goes on as it is. A frame
+  the CPU can't read (a texture that can't be mapped) is dropped. The
+  size and scale a screen capture's frames carry for the Captured Surface
+  Resolution API, which Chromium's fake camera sets to its own mode, are
+  dropped from a camera's frames.
+* **The device's own mode.** The device opens in its smallest mode that
+  reaches the largest entry the camera shows, at 30 fps or below
+  (`moltnet::UniformCameraOpenMode()`), whatever entry the track takes.
+  The adapter then only scales down (but for a camera below the menu); a
+  second `getUserMedia()` on the open camera, which Chromium answers from
+  the open mode, sees the same entries; and `applyConstraints()`
+  reconfigures the track on the running device instead of reopening it
+  in another mode.
+* **Unchanged.** `facingMode`, pan, tilt and zoom (behind their own
+  permission), the device IDs, and screen, window and tab capture
+  (refused in MoltNet).
+
+**Firefox.** With `privacy.resistFingerprinting` Firefox drops a
+request's constraints but the media source and the facing mode (as for a
+microphone, above), so a camera opens in its mode closest to the default
+640x480 at 30 fps and reports it: `getSettings()` gives that mode's size
+and rate, and its facing mode as "user"; `getCapabilities()` gives the
+device's largest width, height and frame rate. MoltNet keeps the page's
+constraints, on the menu, and reports the menu.
+
+**What it costs.** Chromium hands a camera's frame on without touching a
+pixel; MoltNet converts the frames of a track whose size differs from the
+camera's mode, once per size. On one core of a 2.1 GHz Xeon (a cloud VM),
+with the portable scaler: a 640x480 track from a 1280x720 mode, 2.1 ms
+per frame from I420 (Linux's usual format; 6% of the core at 30 fps) and
+2.5 ms from NV12 (macOS's and Windows'; 7.5%); from 1920x1080, 3.6 to
+4.4 ms; a 1280x720 track from 1920x1080, 6.7 ms (20%); a frame of the
+track's size taken from NV12 or a larger buffer, 0.02 to 0.25 ms; a
+352x288 camera scaled up to 640x480, about 1 ms. An HD camera also runs
+at 1280x720 for a 640x480 track, which costs the capture its larger
+frames (an MJPEG camera's decoding).
+
 ### Which contexts
 
 Windows and their frames, the only contexts these APIs exist in, in the
 whole MoltNet renderer process. The format: every microphone stream such a
-renderer opens. The kill switch turns it off.
+renderer opens. The menu: every camera track `getUserMedia()` opens there,
+and its frames. The kill switch turns it off.
 
 ### Code
 
 | Where | What |
 |---|---|
-| `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`), what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`), the labels and groups (`DeviceLabel`, `DeviceGroup`) and the communications device (`ListsAudioDevice`); std-only (+ `moltnet_media_values_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`), what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`), the labels and groups (`DeviceLabel`, `DeviceGroup`) and the communications device (`ListsAudioDevice`, `OutputDeviceIdToLookUp`); std-only (+ `moltnet_media_values_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_camera_values.{h,cc}` | the cameras' menu, the entries a camera shows (`ReachableUniformCameraModes`) and the mode it opens in (`UniformCameraOpenMode`); std-only (+ `moltnet_camera_values_unittest.cc`) |
+| `modules/mediastream/moltnet_camera.{h,cc}` | the cameras' Blink glue: the formats constraints are checked against and capabilities come from (`UseUniformCameraFormats`, `UniformCameraFormats`), the track's settings and their mark in `VideoTrackAdapterSettings` (`UniformCameraSettings`), the mode the device opens in (`UniformCameraCaptureParams`), the frames (`UniformCameraFrameSize`, `AdaptUniformCameraFrame`) and `getSettings()` (`UseUniformCameraTrackSettings`) |
 | `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | the Blink glue: the added entries, `devicechange`, the permission request; the names and groups (`UseUniformNames`, `UniformName`, `UseUniformGroup`, `UniformGroupId`), the lists (`ListsMediaDevice`, `ListsCaptureDevice`) and `InputDeviceInfo`'s format (`UseUniformCapabilities`) (+ `moltnet_media_devices_test.cc`) |
 | `media/base/molt_portable_media.{h,cc}` | the one format: `PortableCaptureParameters()` (what pages read and constraints are checked against), `PortableCaptureOutputFormat()` (what a stream is delivered in) (+ cases in `molt_portable_media_unittest.cc`) |
 
@@ -2826,7 +2930,24 @@ format; `ProcessData`: a mono device's stereo stream) and
 `media/base/audio_processing.h` (`NeedWebrtcAudioProcessing`: a MoltNet
 stream is always processed); a test in `user_media_client_test.cc`.
 `user_media_processor.cc`, `media_stream_constraints_util_audio.cc` and
-`audio_processor.cc` are new in `src/`.
+`audio_processor.cc` are new in `src/`. The channel count:
+`media_stream_constraints_util_audio.cc` (the channels of the containers
+without processing). The outputs:
+`modules/audio_output_devices/html_media_element_audio_output_device.cc`
+(`SetSinkIdResolver::DoSetSinkId`) and `modules/webaudio/audio_context.cc`
+(`OnDevicesChanged`). The cameras: `user_media_processor.cc`
+(`SelectVideoDeviceSettings`, `InitializeVideoSourceObject`,
+`CreateVideoSource`), `media_devices.cc` (`DevicesEnumerated`),
+`apply_constraints_processor.cc` (`ProcessVideoDeviceRequest`,
+`SelectVideoDeviceSettings`), `video_track_adapter_settings.{h,cc}` (the
+mark), `video_track_adapter.cc` (`CalculateDesiredSize`,
+`VideoFrameResolutionAdapter::AdaptFrameResolution`),
+`media_stream_video_track.cc` (`GetSettings`) and
+`modules/mediastream/BUILD.gn`; tests in `user_media_client_test.cc` and
+`video_track_adapter_unittest.cc`. New in `src/`:
+`apply_constraints_processor.cc`, `video_track_adapter.cc`,
+`video_track_adapter_settings.{h,cc}`, `media_stream_video_track.cc`,
+`modules/mediastream/BUILD.gn` and `video_track_adapter_unittest.cc`.
 
 ### Verification
 
@@ -2845,19 +2966,42 @@ those digests. Every changed C++ file, the tests included, compiles
 without errors against Chromium 156's real headers
 (`tools/compile_check`).
 
+The cameras: `moltnet_camera_values_unittest.cc` (9 tests: the menu,
+HD, VGA and smaller cameras, frame rates, portrait modes, the order of the
+modes, unusable modes, and the open mode showing the same entries)
+passes standalone with g++ (ASan/UBSan) and clang (UBSan trap,
+`-fno-exceptions`). A harness with 156's capability and frame code
+(`ComputeCapabilitiesForVideoSource`, `CalculateDesiredSize`,
+`ComputeLetterboxRect`) shows, for seven cameras (a 1080p webcam, 720p
+and 1080p laptops, a 4:3 1600x1200 camera, a VGA and a CIF camera,
+Chromium's fake device), the device's largest mode in the capabilities
+and, for a 640x480 track from a 16:9-only camera, frames with a coded
+size of 1280x720 and a visible part of 960x720; with MoltBrowser's code,
+the menu entries above and frames of 640x480. The cost above comes from a
+harness of the scaler (`media/base/molt_portable_scale.cc`) on the same
+frames.
+
 **Needs the build machine:** `blink_unittests`
 (`MoltNetMediaDevicesTest.*`, which runs the permission request against a
 fake permission service in a real window, `UserMediaClientTest.
-MoltNetMicrophoneHasUniformFormatAndNames`, and the upstream
-`MediaDevices`, `UserMediaProcessor`, `UserMediaClient` and
-`MediaStreamConstraintsUtilAudio` suites), `media_unittests`
+MoltNetMicrophoneHasUniformFormatAndNames`,
+`MoltNetChannelCountFollowsTheRequest`, `MoltNetCameraTrackReportsTheMenu`
+and `MoltNetApplyConstraintsKeepsTheCameraOpen`, `MoltNetCameraTest.*`,
+`MoltNetCameraValuesTest.*`, `VideoTrackAdapterTest.
+MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.
+MoltNetCamera*`, and the upstream `MediaDevices`, `UserMediaProcessor`,
+`UserMediaClient`, `ApplyConstraintsProcessor`, `VideoTrackAdapter`,
+`MediaStreamVideoTrack`, `MediaStreamConstraintsUtilAudio` and
+`MediaStreamConstraintsUtilVideoDevice` suites), `media_unittests`
 (`MoltPortableMediaTest.*`), `molt_ai_unittests`
-(`MoltCpuIndependentProcessingTest.*`), and the checks in
-`docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock" (machines with
-no camera or no microphone, the prompt and its three answers,
-`devicechange`) and "fp-mic3" (a real microphone of another rate, a mono
-one asked for stereo, a headset's names and groups, device selection by
-`deviceId`, Windows' communications device). **Automated** by
+(`MoltCpuIndependentProcessingTest.*`, `MoltNetCameraValuesTest.*`), and
+the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock"
+(machines with no camera or no microphone, the prompt and its three
+answers, `devicechange`), "fp-mic3" (a real microphone of another rate, a
+mono one asked for stereo, a headset's names and groups, device selection
+by `deviceId`, Windows' communications device) and "fp-media4" (a real
+camera on each OS, a QUAD or 5.1 microphone array, `setSinkId
+("communications")` on Windows). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md): the device kinds, their order and
 blank fields (`media.devices`, `media.device_order`, `media.device_blank`)
 and `getUserMedia()` before a permission, for a camera and microphone and
@@ -2865,7 +3009,13 @@ with constraints no camera meets (`media.gum`,
 `media.gum_overconstrained`: still waiting after 1.5 s, or refused); in
 the microphone launch, the format, both kinds of ranges, and the labels
 and groups (`audio.mic_format`, `audio.mic_format_ranges`,
-`audio.mic_device_ranges`, `audio.mic_names`).
+`audio.mic_device_ranges`, `audio.mic_names`), and the camera's settings,
+capabilities and frames from Chromium's fake capture device, with no
+constraints and with Full HD asked for, its `InputDeviceInfo` ranges and
+a width beyond the menu (`video.camera_settings`,
+`video.camera_capabilities`, `video.camera_frame`,
+`video.camera_hd_settings`, `video.camera_hd_frame`,
+`video.camera_device_capabilities`, `video.camera_overconstrained`).
 
 ## MoltNet: performance.memory
 
@@ -3730,6 +3880,24 @@ the settings with it (`media.mojom.AudioProcessingSettings`).
   stream's settings `cpu_independent` (`ComputeWebrtcProcessingSettings`).
   The setting travels with the stream to the audio service, and reaches
   the renderer's own processing where that runs.
+* **Who sets it.** The audio service, which every profile shares, picks
+  the code it runs from the setting, so the browser sets it itself, from
+  the profile of the renderer process that opens the stream, and replaces
+  what the renderer sent: `RenderFrameAudioInputStreamFactory` asks
+  `ContentBrowserClient::ShouldProcessAudioCaptureCpuIndependently()`
+  when it is created, on the UI thread, with the frame's process's
+  `BrowserContext`, and sets the answer in the processing configuration
+  of every stream it creates (Chrome answers from the profile's renderer
+  mode: MoltNet's). A normal window's renderer can't put a stream, and
+  with it the device's mix of every profile's playback ([the echo
+  reference](#the-echo-reference)), on the portable code, and a MoltNet
+  renderer can't leave it off. At 156 that factory is the one path by
+  which a stream with a processing configuration reaches the audio
+  service (through `ForwardingAudioStreamFactory` and
+  `AudioInputStreamBroker`); loopback capture, `audio::CreateInputDevice()`
+  (speech recognition, the browser's own microphone preview) and cast
+  mirroring create streams without one, which the service doesn't
+  process.
 * **The module.** `CreateWebRtcAudioProcessingModule()` builds WebRTC's
   module with `Config::moltbrowser_cpu_independent`, and without the
   neural residual echo estimator (TFLite runs its model on the processor's
@@ -3769,6 +3937,23 @@ WebRTC. But in the renderer the echo canceller only hears what WebRTC
 plays, which in MoltNet is nothing: echo of a page's own playback, or of
 another tab, would no longer be cancelled. In the audio service MoltNet's
 streams keep Chromium-wide echo cancellation.
+
+### Microphones of other layouts
+
+The processing takes mono, stereo and discrete (unnamed) channels. A
+device of another layout, a Windows microphone array that reports QUAD or
+5.1 or a PulseAudio source of four or six channels, fails a processed
+stream at 156 (`AudioProcessor::ComputeInputFormat()`), and a MoltNet
+stream is always processed. A CPU-independent stream opens such a device
+in its own layout instead, and its processing down-mixes the device's
+channels to the stream's one or two before anything else
+(`media::PortableCaptureDownmix`), with media's `ChannelMixer` and its
+matrix for the layout, its multiply-adds in their plain C versions
+(`ScopedPortableAudioThread`) and the flush modes off
+(`ScopedPortableSubnormals`): the same samples on every processor. The
+processing then runs on the down-mixed samples as on a mono or stereo
+device's. It costs 0.5 to 1.8 ns per frame on one core of a 2.1 GHz Xeon
+(against 0.3 to 0.6 ns with media's vector code).
 
 **What the input is.** The processing's inputs are the microphone's signal
 and, for echo cancellation, what the browser plays on that output device,
@@ -3957,6 +4142,9 @@ switch turns it off.
 | `media/audio/pulse/molt_pulse_capture.{h,cc}` | the PulseAudio side: the server's sources and recording streams with their properties |
 | `ui/gfx/geometry/molt_math.{h,cc}` | `PortableSin()`, `PortableCos()`: the portable functions in any process (+ a case in `molt_math_unittest.cc`) |
 | `media/webrtc/molt_echo_reference_unittest.cc` | golden digests of a mix as the audio service computes it for a MoltNet listener, and of the processing with that mix as its reference, which every processor and OS must reproduce (`MoltCpuIndependentEchoReferenceTest`, in `molt_ai_unittests`) |
+| `content/browser/renderer_host/media/molt_audio_capture_processing.h` | the browser's decision set in a renderer's processing configuration (`MoltApplyCpuIndependentProcessing`; header-only, `//content/browser:molt_audio_capture_policy`) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_audio_capture.h` | Chrome's answer from the profile's renderer mode (`ProcessesAudioCaptureCpuIndependently`) (+ `molt_net_audio_capture_unittest.cc`, in `molt_ai_unittests`) |
+| `media/base/molt_portable_downmix.cc` | `PortableCaptureNeedsDownmix()`, `PortableCaptureDownmix` (declared in `molt_portable_media.h`; + golden digests in `molt_portable_media_unittest.cc` and the processing of a QUAD and a 5.1 device in `molt_cpu_independent_processing_unittest.cc`) |
 
 Upstream hooks for the platform's processing and the echo reference (each
 marked `MoltBrowser:`): Blink's
@@ -4006,6 +4194,14 @@ Upstream hooks (each marked `MoltBrowser:`; all new in `src/`):
   (`:molt_math`), `common_audio`, its Ooura FFTs, `modules/audio_processing`,
   `aec3`, `ns`, `agc2` and `rnn_vad`; `third_party/llvm-libc/BUILD.gn`
   (visibility).
+* Who sets it: `content/public/browser/content_browser_client.{h,cc}`
+  (`ShouldProcessAudioCaptureCpuIndependently`),
+  `content/browser/renderer_host/media/render_frame_audio_input_stream_factory.cc`
+  (`Core`'s constructor and `CreateStream`; new in `src/`),
+  `content/browser/BUILD.gn`, and `chrome/browser/chrome_content_browser_client.{h,cc}`.
+* Microphones of other layouts: `media/webrtc/audio_processor.cc`
+  (`ComputeInputFormat`, the constructor and `AudioProcessorCaptureFifo`,
+  `ProcessData`) and `media/base/BUILD.gn`.
 * Chromium: `media/base/audio_processing.{h,cc}` (`cpu_independent`),
   `media/mojo/mojom/audio_processing.mojom` and
   `audio_processing_mojom_traits.{h,cc}`, `media/webrtc/helpers.cc`
@@ -4082,10 +4278,22 @@ the leak kit's page:
   above; with Chromium's mixing they differ between CPUs with and
   without AVX2.
 
+Microphones of other layouts, with media's `ChannelMixer`,
+`ChannelMixingMatrix` and `vector_math` (MoltBrowser's files) in the same
+harness: a QUAD and a 5.1 device down-mixed to one and two channels give
+one digest each on every CPU above, also from a thread left in a flush
+mode; media's own dispatch gives others on the CPUs with AVX2 and FMA.
+`MoltPortableMediaTest.DownmixGoldenDigests` holds those digests.
+
 Every changed C++ file compiles against Chromium 156's real headers
 (`tools/compile_check`).
 **Needs the build machine:** compiling and linking, `molt_ai_unittests`
-(`MoltCpuIndependentProcessingTest.*`), `blink_unittests`
+(`MoltCpuIndependentProcessingTest.*`, with `DownmixesOtherLayouts`,
+`MoltNetAudioCaptureTest.*`), `media_unittests`
+(`MoltPortableMediaTest.PortableCaptureNeedsDownmix`,
+`DownmixGoldenDigests`), `content_unittests`
+(`RenderFrameAudioInputStreamFactory*`: unchanged outside MoltNet),
+`blink_unittests`
 (`AudioProcessingPropertiesToAudioProcessingSettingsTest.*`, with
 `MoltNetAsksForCpuIndependentProcessing`), `media_unittests` and
 `services_unittests` (`AudioProcessor*`, `AudioProcessorHandler*`,
@@ -4548,7 +4756,7 @@ the audio code computes the same way on every processor:
 
 | What a page computes or plays | Chromium 156 | MoltNet |
 |---|---|---|
-| Web Audio's nodes (`AudioContext` and `OfflineAudioContext`) | the flush modes on (`DenormalDisabler`: x86-64 FTZ and DAZ, arm64 FZ); filter and compressor states left to the modes | **the modes off**; what a node passes on, and a filter's or compressor's state, zero below 2^-63 |
+| Web Audio's nodes (`AudioContext` and `OfflineAudioContext`) | the flush modes on (`DenormalDisabler`: x86-64 FTZ and DAZ, arm64 FZ); filter and compressor states left to the modes | **the modes off**; what a node passes on, and a filter's or compressor's state (`IIRFilterNode`'s double-precision history too), zero below 2^-63 |
 | Resampling: `decodeAudioData()` to the context's rate, a context's output for the device, a stream into a context of another rate | the modes on x86-64 only (`cc::ScopedSubnormalFloatDisabler`) | **the modes off**; the input and the kernel's coefficients zero below 2^-63 |
 | A media element's audio at another `playbackRate` with its pitch kept (time stretching) | the modes on x86-64 only | **the modes off**; the blocks it compares zero below 2^-63 |
 | The microphone's processing ([above](#moltnet-the-microphones-processing)) | the modes on (WebRTC's `DenormalDisabler`) | **the modes off**; the input zero below 2^-63, plus a fixed noise floor of 2^-32 |
@@ -4579,7 +4787,9 @@ off.
   enters (`media::FlushTinyPortableSamples()`): the resampler's input and
   the kernel's tiny coefficients (the rounding residue at the window's
   zeros), the time stretching's blocks, what each Web Audio node passes on
-  and its filters' and compressor's states (`FlushDenormalFloatToZero()`),
+  and its filters' and compressor's states (`FlushDenormalFloatToZero()`;
+  `IIRFilterNode` keeps its inputs and outputs in doubles, which take the
+  same floor, `IIRFilter::Process()`),
   each stream's samples and volume in the echo reference's mix, and the
   processing's input. The floor's square is `FLT_MIN`, so the product of
   two values at or above it is a normal float. The floor is far below any
@@ -4609,6 +4819,7 @@ in turn), per 48 kHz frame:
 | Web Audio: a delay line feeding back at 0.5, on subnormal input | 0.3 ns | 0.6 ns | 9.6 ns |
 | Web Audio: a biquad on subnormal input | 6.0 ns | 6.5 ns | 6.7 ns |
 | Web Audio: the floor's pass over a node's output | | 0.3 ns | |
+| Web Audio: an `IIRFilterNode` (one pole at 0.99) after an impulse | 4.2 ns; its history zero after 550 quanta | 7.3 ns; zero after 34 quanta | 48 ns while its history is subnormal, which it stays: the smallest subnormal times 0.99 rounds back to itself |
 
 The floor alone (without the noise floor) left the processing up to 2.3
 times slower in a silence after a bursty reference; the noise floor brings
@@ -4632,7 +4843,7 @@ keep Chromium's flush modes. The kill switch turns it off.
 | `media/base/molt_portable_media.h`, `molt_portable_subnormals.cc` | `kPortableAudioFloor`, `FlushTinyPortableSamples()`, `ScopedPortableSubnormals` (+ cases in `molt_portable_media_unittest.cc`) |
 | `third_party/webrtc/rtc_base/cpu_info.{h,cc}` | `ScopedCpuIndependent` turns the modes off; `kCpuIndependentFloor`, `FlushTinySample()`, `kCpuIndependentDither`, `FlushModeIsOn()` |
 | `media/webrtc/molt_portable_subnormals_unittest.cc` | golden digests of the resampler and the processing over signals that reach every range the modes treat differently, which every processor and OS must reproduce, also from a thread left in a flush mode (`MoltPortableSubnormalsTest`, in `molt_ai_unittests`) |
-| `core/molt_fingerprinting/moltnet_subnormals_test.cc` | Blink's `DenormalModifier` and `FlushDenormalFloatToZero()` in normal windows and in MoltNet (`MoltNetSubnormalsTest`, in `blink_unittests`) |
+| `core/molt_fingerprinting/moltnet_subnormals_test.cc` | Blink's `DenormalModifier` and `FlushDenormalFloatToZero()` in normal windows and in MoltNet, and `IIRFilterNode`'s history (`MoltNetSubnormalsTest`, in `blink_unittests`) |
 
 Upstream hooks (each marked `MoltBrowser:`): `media/base/sinc_resampler.cc`
 (the kernel's coefficients, `Resample()`), `media/filters/
@@ -4642,6 +4853,7 @@ audio_renderer_algorithm.cc` (`RunWsolaAndFill`,
 (`PortableMixing`), Blink's `platform/audio/denormal_disabler.h`
 (`DenormalModifier`, `FlushDenormalFloatToZero`) and its `DEPS`,
 `modules/webaudio/audio_handler.cc` (`ProcessIfNecessary`),
+`platform/audio/iir_filter.cc` (`IIRFilter::Process`; new in `src/`),
 `platform/image-decoders/avif/avif_image_decoder.cc` (`DecodeToYUV`), and
 WebRTC's `modules/audio_processing/audio_processing_impl.{h,cc}` (the
 input's floor and noise floor; the `DenormalDisabler`s off in the mode).
@@ -4675,6 +4887,13 @@ smallest subnormals, values around the floor, built from their bits):
 * **Blink.** `moltnet_subnormals_test.cc` and every changed file compile
   against Chromium 156's real headers (`tools/compile_check`), as do the
   media, audio service and WebRTC files.
+* **`IIRFilterNode`.** 156's `IIRFilter::Process()` loop, in a harness
+  with the modes off: after an impulse, a one-pole filter's history stays
+  among the subnormal doubles for good (1,449 of 2,000 quanta and 1,656
+  subnormal floats written, then the smallest subnormal forever), each
+  quantum 11 times slower on x86-64; with the floor it is zero after 34
+  quanta, on x86-64 and arm64 alike; with 156's flush modes on, after
+  550.
 
 **Needs the build machine:** compiling and linking, `molt_ai_unittests`
 (`MoltPortableSubnormalsTest.*`, `MoltCpuIndependentProcessingTest.*`,
