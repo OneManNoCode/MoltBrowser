@@ -44,8 +44,7 @@ std::string CapabilitySid(std::string_view name) {
   return sid;
 }
 
-constexpr char kPackageSid[] =
-    "S-1-15-2-1-22-333-4444-55555-666666-4294967295";
+constexpr char kPackageSid[] = "S-1-15-2-1-22-333-4444-55555-666666-4294967295";
 constexpr char kUserSid[] = "S-1-5-21-1004336348-1177238915-682003330-1001";
 
 TEST(HelperSandboxWinPolicyTest, TheCapabilitySidIsItsNames) {
@@ -108,13 +107,13 @@ TEST(HelperSandboxWinPolicyTest, PackageSids) {
   EXPECT_TRUE(IsAppContainerSid(AppContainerSid({})));
   EXPECT_TRUE(IsSddlSid(sid));
 
-  for (const char* bad : {
-           "", "S-1-15-2", "S-1-15-2-", "S-1-15-2-1-2-3-4-5-6",
-           "S-1-15-2-1-2-3-4-5-6-7-8", "S-1-15-2-1-2-3-4-5-6-4294967296",
-           "S-1-15-2-1-2-3-4-5-6-07x", "S-1-15-2-1-2-3-4-5--6",
-           "S-1-15-2-1-2-3-4-5-6-7-", "S-1-15-3-1-2-3-4-5-6-7",
-           "s-1-15-2-1-2-3-4-5-6-7", "S-1-15-2-1-2-3-4-5-6-7)(A;;FA;;;WD)",
-           "S-1-15-2-1-2-3-4-5-6-12345678901"}) {
+  for (const char* bad :
+       {"", "S-1-15-2", "S-1-15-2-", "S-1-15-2-1-2-3-4-5-6",
+        "S-1-15-2-1-2-3-4-5-6-7-8", "S-1-15-2-1-2-3-4-5-6-4294967296",
+        "S-1-15-2-1-2-3-4-5-6-07x", "S-1-15-2-1-2-3-4-5--6",
+        "S-1-15-2-1-2-3-4-5-6-7-", "S-1-15-3-1-2-3-4-5-6-7",
+        "s-1-15-2-1-2-3-4-5-6-7", "S-1-15-2-1-2-3-4-5-6-7)(A;;FA;;;WD)",
+        "S-1-15-2-1-2-3-4-5-6-12345678901"}) {
     EXPECT_FALSE(IsAppContainerSid(bad)) << bad;
   }
 }
@@ -136,15 +135,14 @@ TEST(HelperSandboxWinPolicyTest, SddlSids) {
 TEST(HelperSandboxWinPolicyTest, ScratchDirectorySecurityDescriptor) {
   const std::string sddl = ScratchDirectorySddl(kUserSid, kPackageSid);
   const std::string pkg = kPackageSid;
-  EXPECT_EQ(sddl,
-            "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" +
-                std::string(kUserSid) + ")(A;;0x1200ef;;;" + pkg +
-                ")(A;CIIO;0x1300ef;;;" + pkg + ")(A;OIIO;0x13019f;;;" + pkg +
-                ")S:(ML;OICI;NW;;;LW)");
+  EXPECT_EQ(sddl, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" +
+                      std::string(kUserSid) + ")(A;;0x1200ef;;;" + pkg +
+                      ")(A;CIIO;0x1300ef;;;" + pkg + ")(A;OIIO;0x13019f;;;" +
+                      pkg + ")S:(ML;OICI;NW;;;LW)");
   // Nothing for everyone, any app package, the helpers' capability or
   // another run.
-  for (const char* other : {";WD)", ";AC)", "S-1-15-2-1)", "S-1-15-2-2)",
-                            "S-1-15-3-", "S-1-1-0"}) {
+  for (const char* other :
+       {";WD)", ";AC)", "S-1-15-2-1)", "S-1-15-2-2)", "S-1-15-3-", "S-1-1-0"}) {
     EXPECT_EQ(sddl.find(other), std::string::npos) << other;
   }
   // The run may not run what it wrote, change security, or remove or
@@ -174,7 +172,8 @@ TEST(HelperSandboxWinPolicyTest, DataDirectorySecurityDescriptor) {
 TEST(HelperSandboxWinPolicyTest, ScratchDirectoryNames) {
   EXPECT_EQ(ScratchDirectoryName("molt_ocr", 0x0123456789abcdefull),
             "molt_ocr_0123456789abcdef");
-  EXPECT_EQ(ScratchDirectoryName("molt_voice", 0), "molt_voice_0000000000000000");
+  EXPECT_EQ(ScratchDirectoryName("molt_voice", 0),
+            "molt_voice_0000000000000000");
   for (const char* bad : {"", "..", "a/b", "a\\b", "molt ocr", "molt-ocr",
                           "abcdefghijklmnopqrstuvwxyz0123456"}) {
     EXPECT_EQ(ScratchDirectoryName(bad, 1), "") << bad;
@@ -197,8 +196,8 @@ TEST(HelperSandboxWinPolicyTest, AccessChecks) {
             checks[3].desired_access);
   EXPECT_EQ(PlanAccessChecks(0).size(), 2u);
 
-  const std::string program =
-      DescribeAccessFailure(AccessTarget::kProgram, "C:\\x\\ocr\\tesseract.exe");
+  const std::string program = DescribeAccessFailure(
+      AccessTarget::kProgram, "C:\\x\\ocr\\tesseract.exe");
   EXPECT_NE(program.find("installer"), std::string::npos);
   EXPECT_NE(program.find("portable ZIP"), std::string::npos);
   EXPECT_NE(program.find("C:\\x\\ocr\\tesseract.exe"), std::string::npos);
@@ -209,8 +208,8 @@ TEST(HelperSandboxWinPolicyTest, AccessChecks) {
 }
 
 TEST(HelperSandboxWinPolicyTest, Environment) {
-  const EnvironmentVariables variables =
-      HelperEnvironment(L"C:\\Windows", L"C:\\Users\\u\\AppData\\Local\\Temp\\s");
+  const EnvironmentVariables variables = HelperEnvironment(
+      L"C:\\Windows", L"C:\\Users\\u\\AppData\\Local\\Temp\\s");
   const EnvironmentVariables expected = {
       {L"Path", L"C:\\Windows\\System32;C:\\Windows"},
       {L"SystemDrive", L"C:"},
@@ -230,7 +229,8 @@ TEST(HelperSandboxWinPolicyTest, Environment) {
       L"TMP=C:\\Users\\u\\AppData\\Local\\Temp\\s\0"
       L"windir=C:\\Windows\0";
   // The literal's own terminator is the block's final NUL.
-  EXPECT_EQ(EnvironmentBlock(variables), std::wstring(kBlock, std::size(kBlock)));
+  EXPECT_EQ(EnvironmentBlock(variables),
+            std::wstring(kBlock, std::size(kBlock)));
 }
 
 TEST(HelperSandboxWinPolicyTest, EnvironmentBlocks) {
@@ -240,8 +240,7 @@ TEST(HelperSandboxWinPolicyTest, EnvironmentBlocks) {
   EXPECT_EQ(EnvironmentBlock({{L"b", L"2"}, {L"A", L"1"}, {L"c", L""}}),
             std::wstring(kSorted, std::size(kSorted)));
   for (const EnvironmentVariables& bad :
-       {EnvironmentVariables{{L"", L"x"}},
-        EnvironmentVariables{{L"A=B", L"x"}},
+       {EnvironmentVariables{{L"", L"x"}}, EnvironmentVariables{{L"A=B", L"x"}},
         EnvironmentVariables{{std::wstring(L"A\0B", 3), L"x"}},
         EnvironmentVariables{{L"A", std::wstring(L"x\0y", 3)}}}) {
     EXPECT_EQ(EnvironmentBlock(bad), L"");
@@ -249,8 +248,8 @@ TEST(HelperSandboxWinPolicyTest, EnvironmentBlocks) {
 }
 
 TEST(HelperSandboxWinPolicyTest, StartFailures) {
-  for (uint32_t status : {0xC0000135u, 0xC0000142u, 0xC0000022u, 0xC000007Bu,
-                          0xC0000139u}) {
+  for (uint32_t status :
+       {0xC0000135u, 0xC0000142u, 0xC0000022u, 0xC000007Bu, 0xC0000139u}) {
     EXPECT_FALSE(DescribeStartFailure(status).empty()) << status;
   }
   // Exits and crashes of the helper itself.

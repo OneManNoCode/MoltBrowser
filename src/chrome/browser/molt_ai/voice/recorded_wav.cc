@@ -23,9 +23,9 @@ constexpr size_t kPcmFormatBytes = 16;
 constexpr uint16_t kBlockAlign =
     kRecordedWavChannels * kRecordedWavBitsPerSample / 8;
 
-static_assert(kCanonicalWavHeaderBytes ==
-              kRiffHeaderBytes + kChunkHeaderBytes + kPcmFormatBytes +
-                  kChunkHeaderBytes);
+static_assert(kCanonicalWavHeaderBytes == kRiffHeaderBytes + kChunkHeaderBytes +
+                                              kPcmFormatBytes +
+                                              kChunkHeaderBytes);
 
 uint16_t ReadLe16(std::string_view bytes, size_t at) {
   return static_cast<uint16_t>(static_cast<uint8_t>(bytes[at]) |
@@ -121,8 +121,8 @@ std::string CanonicalWav(std::string_view samples) {
   std::string wav;
   wav.reserve(kCanonicalWavHeaderBytes + samples.size());
   wav += "RIFF";
-  AppendLe32(&wav, static_cast<uint32_t>(kCanonicalWavHeaderBytes - 8) +
-                       data_bytes);
+  AppendLe32(&wav,
+             static_cast<uint32_t>(kCanonicalWavHeaderBytes - 8) + data_bytes);
   wav += "WAVE";
   wav += "fmt ";
   AppendLe32(&wav, static_cast<uint32_t>(kPcmFormatBytes));

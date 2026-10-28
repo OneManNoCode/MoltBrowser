@@ -26,7 +26,9 @@
 #endif
 
 #if BUILDFLAG(IS_WIN)
+// winsock2.h before windows.h, which would otherwise bring in winsock.h.
 #include <winsock2.h>
+
 #include <windows.h>
 
 #include <optional>
@@ -255,9 +257,8 @@ TEST(HelperScratchDirTest, AFreshPrivateDirectoryPerRun) {
   // Gone, with what was in it.
   EXPECT_FALSE(base::PathExists(path));
 
-  for (const char* prefix :
-       {"", "..", "a/b", "a\\b", "molt ocr", "molt-ocr",
-        "abcdefghijklmnopqrstuvwxyz0123456"}) {
+  for (const char* prefix : {"", "..", "a/b", "a\\b", "molt ocr", "molt-ocr",
+                             "abcdefghijklmnopqrstuvwxyz0123456"}) {
     HelperScratchDir scratch;
     EXPECT_FALSE(scratch.Create(prefix)) << prefix;
     EXPECT_FALSE(scratch.IsValid());
@@ -746,16 +747,16 @@ TEST_F(HelperSandboxWinTest, CantConnect) {
   sockaddr_in address = {};
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  ASSERT_EQ(bind(listener, reinterpret_cast<sockaddr*>(&address),
-                 sizeof(address)),
-            0);
+  ASSERT_EQ(
+      bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)),
+      0);
   ASSERT_EQ(listen(listener, 1), 0);
   int length = sizeof(address);
   ASSERT_EQ(
       getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length), 0);
 
-  const std::string output = Output(
-      {L"connect", base::NumberToWString(ntohs(address.sin_port))});
+  const std::string output =
+      Output({L"connect", base::NumberToWString(ntohs(address.sin_port))});
   EXPECT_TRUE(output.starts_with("REFUSED")) << output;
   // Nothing reached the listener.
   u_long non_blocking = 1;
@@ -826,7 +827,8 @@ TEST_F(HelperSandboxWinTest, OnlyItsOwnScratchDirectory) {
   // A directory not made for a helper.
   HelperSandboxPolicy policy;
   policy.writable_dir = elsewhere_.GetPath();
-  HelperRunResult run = RunSandboxedHelper(cmd, policy, base::Seconds(30), 4096);
+  HelperRunResult run =
+      RunSandboxedHelper(cmd, policy, base::Seconds(30), 4096);
   EXPECT_TRUE(run.sandbox_failed);
   EXPECT_FALSE(run.launched);
   // Another run's: this run's AppContainer may not write there.
@@ -849,8 +851,9 @@ TEST_F(HelperSandboxWinTest, TheScratchDirectoryIsTheRunsAlone) {
   const std::optional<std::wstring> sddl = descriptor->ToSddl(
       DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION);
   ASSERT_TRUE(sddl);
-  EXPECT_NE(sddl->find(base::ASCIIToWide(scratch_.MakePolicy().app_container_sid)),
-            std::wstring::npos)
+  EXPECT_NE(
+      sddl->find(base::ASCIIToWide(scratch_.MakePolicy().app_container_sid)),
+      std::wstring::npos)
       << *sddl;
   EXPECT_NE(sddl->find(L"(ML;OICI;NW;;;LW)"), std::wstring::npos) << *sddl;
   EXPECT_EQ(sddl->find(L";WD)"), std::wstring::npos) << *sddl;
@@ -897,8 +900,8 @@ TEST(HelperSandboxWinOutputTest, ReadsOnlyPlainFilesTheHelperMade) {
   EXPECT_EQ(contents, "recognized text");
   EXPECT_TRUE(ReadHelperOutputFile(text, 4, &contents));
   EXPECT_EQ(contents, "reco");
-  EXPECT_FALSE(ReadHelperOutputFile(dir.GetPath().AppendASCII("missing"),
-                                    1024, &contents));
+  EXPECT_FALSE(ReadHelperOutputFile(dir.GetPath().AppendASCII("missing"), 1024,
+                                    &contents));
   EXPECT_FALSE(ReadHelperOutputFile(dir.GetPath(), 1024, &contents));
   // A hard link to a file outside the scratch directory.
   const base::FilePath secret = dir.GetPath().AppendASCII("secret");

@@ -243,7 +243,7 @@ ReadEnd ReadOutput(HANDLE pipe,
     DWORD available = 0;
     if (!::PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) {
       return ::GetLastError() == ERROR_BROKEN_PIPE ? ReadEnd::kEof
-                                                    : ReadEnd::kError;
+                                                   : ReadEnd::kError;
     }
     if (available == 0) {
       // Everything a helper wrote is in the pipe once it has exited, even
@@ -256,9 +256,9 @@ ReadEnd ReadOutput(HANDLE pipe,
         return ReadEnd::kDeadline;
       }
       exited = ::WaitForSingleObject(
-                   process, base::saturated_cast<DWORD>(
-                                std::min(pause, remaining)
-                                    .InMillisecondsRoundedUp())) ==
+                   process,
+                   base::saturated_cast<DWORD>(
+                       std::min(pause, remaining).InMillisecondsRoundedUp())) ==
                WAIT_OBJECT_0;
       pause = std::min(pause * 2, base::Milliseconds(50));
       continue;
@@ -271,7 +271,7 @@ ReadEnd ReadOutput(HANDLE pipe,
     if (!::ReadFile(pipe, buffer.data(), static_cast<DWORD>(wanted), &bytes,
                     nullptr)) {
       return ::GetLastError() == ERROR_BROKEN_PIPE ? ReadEnd::kEof
-                                                    : ReadEnd::kError;
+                                                   : ReadEnd::kError;
     }
     output->append(buffer.data(), bytes);
     if (output->size() > max_bytes) {

@@ -24,7 +24,9 @@
 #pragma allow_unsafe_buffers
 #endif
 
+// winsock2.h before windows.h, which would otherwise bring in winsock.h.
 #include <winsock2.h>
+
 #include <windows.h>
 
 #include <fcntl.h>
@@ -63,8 +65,8 @@ int Read(const wchar_t* path) {
 }
 
 int Write(const wchar_t* path) {
-  HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0,
-                            nullptr);
+  HANDLE file =
+      CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     PrintError("DENIED");
     return 0;
@@ -92,8 +94,7 @@ int Connect(const wchar_t* port) {
   address.sin_family = AF_INET;
   address.sin_port = htons(static_cast<u_short>(wcstoul(port, nullptr, 10)));
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  if (connect(s, reinterpret_cast<sockaddr*>(&address), sizeof(address)) ==
-      0) {
+  if (connect(s, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0) {
     Print("CONNECTED\n");
   } else {
     printf("REFUSED %d\n", WSAGetLastError());
@@ -124,8 +125,8 @@ int Spawn(const wchar_t* program) {
 int Alloc(const wchar_t* mib) {
   const SIZE_T bytes =
       static_cast<SIZE_T>(wcstoull(mib, nullptr, 10)) * 1024 * 1024;
-  void* memory = VirtualAlloc(nullptr, bytes, MEM_COMMIT | MEM_RESERVE,
-                              PAGE_READWRITE);
+  void* memory =
+      VirtualAlloc(nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
   if (!memory) {
     PrintError("FAILED");
     return 0;

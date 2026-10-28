@@ -97,9 +97,8 @@ std::string BuildRiff(FuzzedDataProvider& p) {
     }
     chunks += id;
     // Usually the true size; sometimes one that lies.
-    PutLe32(&chunks, p.ConsumeBool()
-                         ? static_cast<uint32_t>(body.size())
-                         : p.ConsumeIntegral<uint32_t>());
+    PutLe32(&chunks, p.ConsumeBool() ? static_cast<uint32_t>(body.size())
+                                     : p.ConsumeIntegral<uint32_t>());
     chunks += body;
     if (body.size() % 2 && p.ConsumeBool()) {
       chunks.push_back('\0');

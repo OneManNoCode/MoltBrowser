@@ -121,20 +121,20 @@ TEST(RecordedWavTest, SkipsOtherChunks) {
   // format and the data, a second format chunk that is ignored.
   Format other;
   other.channels = 2;
-  const std::string wav = Riff(Chunk("LIST", "INFOISFT\x05\x00\x00\x00Lavf") +
-                               Chunk("fmt ", FormatBody(Format())) +
-                               Chunk("junk", "odd") +
-                               Chunk("fmt ", FormatBody(other)) +
-                               Chunk("data", samples) + Chunk("LIST", "tail"));
+  const std::string wav =
+      Riff(Chunk("LIST", "INFOISFT\x05\x00\x00\x00Lavf") +
+           Chunk("fmt ", FormatBody(Format())) + Chunk("junk", "odd") +
+           Chunk("fmt ", FormatBody(other)) + Chunk("data", samples) +
+           Chunk("LIST", "tail"));
   std::string_view parsed;
   ASSERT_EQ(ParseRecordedWav(wav, &parsed), RecordedWavError::kNone);
   EXPECT_EQ(parsed, samples);
   EXPECT_EQ(CanonicalWav(parsed), PageWav({0, 977, 1954, 2931, 3908}));
 
   // A longer format chunk (an extension size after the PCM fields).
-  const std::string extended = Riff(
-      Chunk("fmt ", FormatBody(Format()) + std::string("\x00\x00", 2)) +
-      Chunk("data", samples));
+  const std::string extended =
+      Riff(Chunk("fmt ", FormatBody(Format()) + std::string("\x00\x00", 2)) +
+           Chunk("data", samples));
   EXPECT_EQ(Parse(extended), RecordedWavError::kNone);
 }
 
@@ -230,10 +230,10 @@ TEST(RecordedWavTest, SizeLimit) {
   EXPECT_EQ(ParseRecordedWav(largest, &samples), RecordedWavError::kNone);
   EXPECT_EQ(CanonicalWav(samples).size(), kMaxRecordedWavBytes);
   // One sample more, or anything that long.
-  EXPECT_EQ(Parse(Riff(format + Chunk("data", std::string(
-                                                  kMaxRecordedWavBytes - 42,
-                                                  'x')))),
-            RecordedWavError::kTooLarge);
+  EXPECT_EQ(
+      Parse(Riff(format +
+                 Chunk("data", std::string(kMaxRecordedWavBytes - 42, 'x')))),
+      RecordedWavError::kTooLarge);
   EXPECT_EQ(Parse(std::string(kMaxRecordedWavBytes + 1, 'R')),
             RecordedWavError::kTooLarge);
 }
