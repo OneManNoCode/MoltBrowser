@@ -186,6 +186,20 @@ std::string_view DeviceGroup(std::string_view device_id);
 // select it either.
 bool ListsAudioDevice(std::string_view device_id);
 
+// An output device ID no device has: 64 hex digits, the form of every
+// device's ID, but no device's.
+inline constexpr char kUnlistedDeviceId[] =
+    "0000000000000000000000000000000000000000000000000000000000000000";
+
+// The ID a media element's setSinkId() looks the output device `sink_id` up
+// by. A device MoltNet doesn't list (Windows' communications device,
+// ListsAudioDevice()) is looked up as kUnlistedDeviceId, so that the browser
+// refuses it as it refuses any device that isn't there: NotAllowedError
+// without the permission to see the devices, NotFoundError with it, on every
+// OS (what Chromium answers for "communications" where the OS has no such
+// device). Every other ID is looked up as itself.
+std::string_view OutputDeviceIdToLookUp(std::string_view sink_id);
+
 // --- Encrypted Media Extensions ---------------------------------------------
 //
 // Every requestMediaKeySystemAccess() (and every Media Capabilities query

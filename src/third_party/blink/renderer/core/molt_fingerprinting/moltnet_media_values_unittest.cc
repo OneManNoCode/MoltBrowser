@@ -267,5 +267,22 @@ TEST(MoltNetMediaValuesTest, NoCommunicationsDevice) {
   EXPECT_TRUE(ListsAudioDevice(""));
 }
 
+// setSinkId("communications") is looked up as an ID of the form every device
+// has (64 lower-case hex digits) that no device has; every other ID as
+// itself.
+TEST(MoltNetMediaValuesTest, CommunicationsOutputIsLookedUpAsUnlisted) {
+  const std::string_view unlisted = OutputDeviceIdToLookUp("communications");
+  EXPECT_EQ(unlisted, kUnlistedDeviceId);
+  ASSERT_EQ(unlisted.size(), 64u);
+  for (char c : unlisted) {
+    EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+  }
+  EXPECT_TRUE(ListsAudioDevice(unlisted));
+  EXPECT_EQ(OutputDeviceIdToLookUp("default"), "default");
+  EXPECT_EQ(OutputDeviceIdToLookUp(""), "");
+  const std::string device(64, 'a');
+  EXPECT_EQ(OutputDeviceIdToLookUp(device), device);
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting::moltnet
