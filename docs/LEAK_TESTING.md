@@ -202,6 +202,17 @@ asks nobody in particular.
   `var/home`; never the last component), and must belong to root or you
   and be writable by no other account (a world-writable one must be
   sticky, as `/tmp` is); otherwise the kit stops before making anything.
+  A group-writable `--out` that isn't sticky must be your group's or
+  root's, and no other account may be able to be in that group: the
+  group database lists no other member and no other account has it as
+  its primary group. That holds with user private groups (each account's
+  own group, the default on Debian, Ubuntu, Fedora, Arch and most other
+  distributions), not where every user's primary group is one shared
+  group such as `users`: there another account could rename the run
+  directory and put one of its own in its place, and the report you read
+  afterwards would be that one. The kit then stops and names the accounts;
+  make the directory writable by its owner only (`chmod g-w`) or choose
+  another `--out` (a sticky one, such as `/tmp`, is fine).
   The servers' certificates and the test extension are made in the
   root-owned directory under `/run/moltleak-<id>/` and copied in; the
   `resolv.conf` and `nsswitch.conf` each launch mounts over the
