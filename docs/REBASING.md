@@ -38,7 +38,10 @@ process and the tooling for it, plus the first dry run.
   keeps what is recorded (a newly imported file gets the pin's), and
   `verify_patches.py` fails while a whole file is behind the pin's
   subproject, since left alone it would silently revert that subproject's
-  newer changes to it.
+  newer changes to it. A file in neither commit of its subproject is
+  MoltBrowser's own (`deps-own`) when a mirror says so; the lite release
+  tarballs leave some upstream files out, so from tarballs only a file with
+  `molt` in its name is ours, and any other is reported unavailable.
 
 Until the build switches to the patch series, `src/` is the source of truth:
 edit `src/`, then run `tools/chromium/overlay_to_patches.py` and
