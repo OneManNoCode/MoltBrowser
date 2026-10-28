@@ -260,6 +260,13 @@ FUZZERS = {
         smoke_runs=100000,
     ),
     # --- The browser: what OCR and voice helpers read --------------------
+    "molt_ocr_image_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/ocr/ocr_image.cc"],
+        tier="std",
+        max_len=8192,
+        smoke_runs=1000000,
+    ),
     "molt_recorded_wav_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/voice/recorded_wav.cc"],
