@@ -49,11 +49,15 @@
 // Such a deletion names the response's origin with no storage key, and its
 // filter matches that origin's storage and everything embedded on its site,
 // so it read every site's areas and buckets. Where storage is kept per
-// site, it names the key the browser would give the origin's own document
-// instead (MoltClearSiteDataKeyFor(): its first-party key, or under the
-// request's nonce), and reads that key's usage only, like any
-// Clear-Site-Data; what it deletes is then what that origin's own page
-// would have deleted with the header.
+// site, it names the key the browser would give a document of the origin
+// where the request was made instead (MoltClearSiteDataKeyFor(): under the
+// request's nonce, or in the request's cookie partition, else the origin's
+// first-party key), and reads that key's usage only, like any
+// Clear-Site-Data; what it deletes is then what a document of that origin
+// there would have deleted with the header. A response to a request another
+// site's page made (a keepalive request sent as that page went) doesn't
+// reach the origin's first-party storage, which a document of the origin in
+// that page couldn't have deleted.
 //
 // Std-only, so molt_ai_unittests tests it.
 
@@ -109,27 +113,54 @@ enum class MoltClearSiteDataKey {
   // The key Chromium calculates for it (StoragePartitionImpl::
   // CalculateStorageKey()), or none.
   kAsCalculated,
-  // The response origin's first-party key.
+  // The response origin's first-party key: the request has no partition
+  // (net::CookiePartitionKey) the browser could place it in.
   kFirstParty,
   // The response origin's key under the request's nonce (a credentialless
   // frame's request).
   kWithNonce,
+  // The response origin's key in the request's partition: the top-level
+  // site of the request's cookie partition key, and cross-site unless that
+  // is the origin's own site with no cross-site frame on the way
+  // (MoltClearSiteDataKeyIsCrossSite()). A request a page made, from its
+  // own document or one it embeds, names what a document of the origin in
+  // that frame would name: a request another site's page made of the
+  // origin (a keepalive request sent as that page went) deletes only what
+  // the origin keeps under that site, never its first-party storage.
+  kInRequestPartition,
 };
 
 // Which: where storage is kept per site (`keeps_per_site`), a response the
 // browser can calculate no key for (`has_calculated_key` false) names the
-// key the origin's own document would have, under the request's nonce if
-// it has one (`request_has_nonce`). An opaque origin (`origin_opaque`), which
-// no Clear-Site-Data response has, names none.
-constexpr MoltClearSiteDataKey MoltClearSiteDataKeyFor(bool keeps_per_site,
-                                                       bool has_calculated_key,
-                                                       bool origin_opaque,
-                                                       bool request_has_nonce) {
+// key a document of the origin would have where the request was made: under
+// the request's nonce if it has one (`request_has_nonce`), else in the
+// request's cookie partition if it has one (`request_has_partition`), else
+// the origin's first-party key. An opaque origin (`origin_opaque`), which no
+// Clear-Site-Data response has, names none.
+constexpr MoltClearSiteDataKey MoltClearSiteDataKeyFor(
+    bool keeps_per_site,
+    bool has_calculated_key,
+    bool origin_opaque,
+    bool request_has_nonce,
+    bool request_has_partition) {
   if (!keeps_per_site || has_calculated_key || origin_opaque) {
     return MoltClearSiteDataKey::kAsCalculated;
   }
-  return request_has_nonce ? MoltClearSiteDataKey::kWithNonce
-                           : MoltClearSiteDataKey::kFirstParty;
+  if (request_has_nonce) {
+    return MoltClearSiteDataKey::kWithNonce;
+  }
+  return request_has_partition ? MoltClearSiteDataKey::kInRequestPartition
+                               : MoltClearSiteDataKey::kFirstParty;
+}
+
+// For kInRequestPartition: whether the key is a cross-site one
+// (blink::mojom::AncestorChainBit::kCrossSite): unless the request's
+// partition is a first-party one (`partition_is_third_party` false: its
+// ancestor chain bit) of the origin's own site (`partition_site_is_origins`).
+// A same-site key needs both (blink::StorageKey::IsValid()).
+constexpr bool MoltClearSiteDataKeyIsCrossSite(bool partition_is_third_party,
+                                               bool partition_site_is_origins) {
+  return partition_is_third_party || !partition_site_is_origins;
 }
 
 }  // namespace content
