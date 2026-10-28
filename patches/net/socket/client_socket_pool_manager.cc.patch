@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool_manager.cc b/net/socket/client_socket_pool_manager.cc
-index 7c7946b3b98a7fa6c47584c77a674ac756d19a1b..343311853bc374095fccbf0f2091d2da311142df 100644
+index 7c7946b3b98a7fa6c47584c77a674ac756d19a1b..ee5c5eb43b7f493ed09e9e9488570727674a4801 100644
 --- a/net/socket/client_socket_pool_manager.cc
 +++ b/net/socket/client_socket_pool_manager.cc
 @@ -109,8 +109,14 @@ int InitSocketPoolHelper(
@@ -25,7 +25,7 @@ index 7c7946b3b98a7fa6c47584c77a674ac756d19a1b..343311853bc374095fccbf0f2091d2da
    ClientSocketPool::RespectLimits respect_limits =
        ClientSocketPool::RespectLimits::ENABLED;
    if ((request_load_flags & LOAD_IGNORE_LIMITS) != 0)
-@@ -137,6 +143,15 @@ int InitSocketPoolHelper(
+@@ -137,6 +143,20 @@ int InitSocketPoolHelper(
  ClientSocketPoolManager::ClientSocketPoolManager() = default;
  ClientSocketPoolManager::~ClientSocketPoolManager() = default;
  
@@ -37,6 +37,11 @@ index 7c7946b3b98a7fa6c47584c77a674ac756d19a1b..343311853bc374095fccbf0f2091d2da
 +    bool molt_no_cert_fetches) {
 +  return GetSocketPool(proxy_chain);
 +}
++
++// MoltBrowser: see the header.
++void ClientSocketPoolManager::MoltCloseIdleSocketsOfNonce(
++    const base::UnguessableToken& nonce,
++    const char* net_log_reason_utf8) {}
 +
  // static
  size_t ClientSocketPoolManager::socket_soft_cap_per_pool(

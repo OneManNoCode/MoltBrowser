@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/quota/quota_manager_impl.cc b/storage/browser/quota/quota_manager_impl.cc
-index 5c661f4973419fdc125531dd525ce22117d0a2bb..bbe2616b849a225002581d9c32bf2534cfc92817 100644
+index 5c661f4973419fdc125531dd525ce22117d0a2bb..b24160d67075b5ca5ac6c3a5a92bd08de84bc6a6 100644
 --- a/storage/browser/quota/quota_manager_impl.cc
 +++ b/storage/browser/quota/quota_manager_impl.cc
 @@ -59,6 +59,8 @@
@@ -76,7 +76,59 @@ index 5c661f4973419fdc125531dd525ce22117d0a2bb..bbe2616b849a225002581d9c32bf2534
    int64_t desired_storage_key_quota_ = 0;
    int64_t usage_ = 0;
    blink::mojom::UsageBreakdownPtr usage_breakdown_;
-@@ -1924,6 +1964,48 @@ void QuotaManagerImpl::RegisterClient(
+@@ -960,6 +1000,17 @@ void QuotaManagerImpl::UpdateOrCreateBucket(
+     return;
+   }
+ 
++  // MoltBrowser: a closed site (a page's nonce past its site's bound:
++  // MoltDropNonce()) gets no bucket, so its frames can't make quota-managed
++  // storage again, whether a write checks the quota or not (IndexedDB, Cache
++  // Storage and the file systems fail to open, a service worker or a
++  // Storage Bucket isn't made; chrome/browser/molt_ai/tor/
++  // molt_net_nonce_storage_policy.h).
++  if (MoltIsSiteClosed(MoltBudgetSiteOf(bucket_params.storage_key))) {
++    std::move(callback).Run(base::unexpected(QuotaError::kQuotaExceeded));
++    return;
++  }
++
+   last_opened_bucket_site_ = bucket_params.storage_key;
+ 
+   // The default bucket skips the quota check.
+@@ -1711,6 +1762,33 @@ void QuotaManagerImpl::GetBucketsModifiedBetween(base::Time begin,
+                      weak_factory_.GetWeakPtr(), std::move(callback)));
+ }
+ 
++// MoltBrowser: see the header; as GetBucketsModifiedBetween().
++void QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween(
++    const StorageKey& storage_key,
++    base::Time begin,
++    base::Time end,
++    GetBucketsCallback callback) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  EnsureDatabaseOpened();
++
++  if (db_disabled_) {
++    std::move(callback).Run(std::set<BucketLocator>());
++    return;
++  }
++
++  PostTaskAndReplyWithResultForDBThread(
++      base::BindOnce(
++          [](const StorageKey& storage_key, base::Time begin, base::Time end,
++             QuotaDatabase* database) {
++            CHECK(database);
++            return database->MoltGetBucketsForStorageKeyModifiedBetween(
++                storage_key, begin, end);
++          },
++          storage_key, begin, end),
++      base::BindOnce(&QuotaManagerImpl::DidGetModifiedBetween,
++                     weak_factory_.GetWeakPtr(), std::move(callback)));
++}
++
+ bool QuotaManagerImpl::ResetUsageTracker() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+ 
+@@ -1924,6 +2002,48 @@ void QuotaManagerImpl::RegisterClient(
    client_types_.insert({client_ptr, client_type});
  }
  

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..b77bab01f3a4fa3a1bb5106162a14e5b3b579900 100644
+index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..347917d1c21b06b4a347fc33083a7dc107468d5d 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
 @@ -55,6 +55,7 @@
@@ -16,7 +16,26 @@ index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..b77bab01f3a4fa3a1bb5106162a14e5b
  #include "services/network/logical_invalidation_store.h"
  #include "services/network/network_qualities_pref_delegate.h"
  #include "services/network/oblivious_http_request_handler.h"
-@@ -672,6 +673,21 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -99,6 +100,7 @@ class UnguessableToken;
+ 
+ namespace net {
+ class CertVerifier;
++class CookieMonster;  // MoltBrowser
+ class HostPortPair;
+ class IsolationInfo;
+ class NetworkAnonymizationKey;
+@@ -622,6 +624,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+       RestrictNetworkForIdsCallback callback) override;
+   void ClearNetworkRestrictions(const std::vector<base::UnguessableToken>&
+                                     network_restrictions_ids) override;
++  // MoltBrowser: see network_context.mojom and
++  // services/network/molt_nonce_drop_policy.h.
++  void MoltDropNonce(const base::UnguessableToken& nonce,
++                     mojom::MoltNonceDrop drop) override;
+   void Prefetch(
+       int32_t request_id,
+       uint32_t options,
+@@ -672,6 +678,25 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    void LoaderDestroyed(const OriginatingProcessId& process_id);
    bool CanCreateLoader(const OriginatingProcessId& process_id);
  
@@ -34,11 +53,15 @@ index ff3c2a037b5b2441d7c82c540cb0dcb7415bf5a6..b77bab01f3a4fa3a1bb5106162a14e5b
 +  // network session, with a session of their own or none at all
 +  // (services/network/molt_own_session_sockets_policy.h): not MoltNet's.
 +  bool MoltAllowsOwnSessionSockets() const;
++  // MoltBrowser: the cookie store MakeURLRequestContext() made with
++  // MoltNet's nonce limits (NetworkContextParams::molt_nonce_limits), or
++  // null (net/cookies/molt_nonce_cookie_policy.h).
++  net::CookieMonster* MoltNonceCookieStore();
 +
    void set_max_loaders_per_process_for_testing(uint32_t count) {
      max_loaders_per_process_ = count;
    }
-@@ -1155,6 +1171,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -1155,6 +1180,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    // calls to DestroyURLLoaderFactory().
    bool is_destructing_ = false;
  

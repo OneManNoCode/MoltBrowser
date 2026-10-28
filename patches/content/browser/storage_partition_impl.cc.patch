@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/storage_partition_impl.cc b/content/browser/storage_partition_impl.cc
-index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833b5e0271b 100644
+index 8efd6fe771b3922b76071aa9d97b42044ab72280..a9693297b3f2f13b0c682956c37d59cbd547c266 100644
 --- a/content/browser/storage_partition_impl.cc
 +++ b/content/browser/storage_partition_impl.cc
 @@ -6,6 +6,7 @@
@@ -89,14 +89,14 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
  
    auto on_got_modified_buckets = base::BindOnce(
-@@ -427,6 +461,33 @@ void ClearQuotaManagedData(
+@@ -427,6 +461,43 @@ void ClearQuotaManagedData(
        std::move(quota_client_types), perform_storage_cleanup,
        std::move(callback));
  
 +  // MoltBrowser: a deletion of one storage key over all time, where storage
 +  // is kept per site, reads that key's buckets only
 +  // (molt_one_key_deletion_policy.h); the filters above decide as before.
-+  if (molt_only_key) {
++  if (molt_only_key && begin.is_null() && end.is_max()) {
 +    GetIOThreadTaskRunner({})->PostTask(
 +        FROM_HERE,
 +        base::BindOnce(
@@ -119,11 +119,21 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
 +            /*delete_expired=*/false));
 +    return;
 +  }
++  // MoltBrowser: and over a time range, that key's buckets modified in it.
++  if (molt_only_key) {
++    GetIOThreadTaskRunner({})->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            &storage::QuotaManagerImpl::MoltGetBucketsForStorageKeyModifiedBetween,
++            std::move(quota_manager), *molt_only_key, begin, end,
++            std::move(on_got_modified_buckets)));
++    return;
++  }
 +
    GetIOThreadTaskRunner({})->PostTask(
        FROM_HERE,
        base::BindOnce(&storage::QuotaManager::GetBucketsModifiedBetween,
-@@ -442,7 +503,8 @@ void ClearLocalStorage(
+@@ -442,7 +513,8 @@ void ClearLocalStorage(
      bool perform_storage_cleanup,
      const base::Time begin,
      const base::Time end,
@@ -133,7 +143,7 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
  
    if (!storage_key.origin().opaque()) {
-@@ -457,6 +519,19 @@ void ClearLocalStorage(
+@@ -457,6 +529,19 @@ void ClearLocalStorage(
      return;
    }
  
@@ -153,7 +163,7 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    dom_storage_context->GetLocalStorageUsage(
        base::BindOnce(&OnLocalStorageUsageInfo, dom_storage_context,
                       special_storage_policy, std::move(storage_key_matcher),
-@@ -467,9 +542,20 @@ void ClearSessionStorage(
+@@ -467,9 +552,20 @@ void ClearSessionStorage(
      const scoped_refptr<DOMStorageContextWrapper>& dom_storage_context,
      StoragePartition::StorageKeyMatcherFunction storage_key_matcher,
      bool perform_storage_cleanup,
@@ -175,7 +185,37 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    dom_storage_context->GetSessionStorageUsage(
        base::BindOnce(&OnSessionStorageUsageInfo, dom_storage_context,
                       std::move(storage_key_matcher), perform_storage_cleanup,
-@@ -3091,6 +3177,38 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
+@@ -2785,6 +2881,29 @@ void StoragePartitionImpl::OnClearSiteData(
+           ? base::OptionalToPtr(cookie_partition_key.value().nonce())
+           : nullptr);
+ 
++  // MoltBrowser: where storage is kept per site, a response the browser
++  // can't place in a document or worker (a download's, a keepalive
++  // request's after its page went) names the key its origin's own document
++  // would have, so that its deletion reads that key's usage only, not every
++  // site's (molt_one_key_deletion_policy.h).
++  const url::Origin molt_origin = url::Origin::Create(url);
++  const base::UnguessableToken* molt_nonce =
++      cookie_partition_key.has_value()
++          ? base::OptionalToPtr(cookie_partition_key->nonce())
++          : nullptr;
++  switch (MoltClearSiteDataKeyFor(
++      dom_storage_context_ && dom_storage_context_->MoltKeepsPerSite(),
++      storage_key.has_value(), molt_origin.opaque(), molt_nonce != nullptr)) {
++    case MoltClearSiteDataKey::kAsCalculated:
++      break;
++    case MoltClearSiteDataKey::kFirstParty:
++      storage_key = blink::StorageKey::CreateFirstParty(molt_origin);
++      break;
++    case MoltClearSiteDataKey::kWithNonce:
++      storage_key = blink::StorageKey::CreateWithNonce(molt_origin, *molt_nonce);
++      break;
++  }
++
+   ClearSiteDataHandler::HandleHeader(
+       browser_context()->GetWeakPtr(), weak_web_contents, GetConfig(), url,
+       header_value, load_flags, cookie_partition_key, storage_key,
+@@ -3091,6 +3210,43 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
    }
  #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
  
@@ -204,17 +244,22 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
 +              MoltDeletionReads::kOneStorageKey
 +          ? molt_one_key
 +          : std::nullopt;
++  // (Over a time range too, the key's buckets modified in it; a key with an
++  // opaque origin, which the quota database isn't asked by, keeps the whole
++  // listing.)
 +  const std::optional<blink::StorageKey> molt_quota_key =
-+      MoltQuotaDeletionReads(molt_per_site, molt_names_one_key,
-+                             begin.is_null() && end.is_max()) ==
-+              MoltDeletionReads::kOneStorageKey
++      MoltQuotaDeletionReads(
++          molt_per_site,
++          molt_names_one_key && !molt_one_key->origin().opaque(),
++          begin.is_null() && end.is_max()) !=
++              MoltDeletionReads::kWholePartition
 +          ? molt_one_key
 +          : std::nullopt;
 +
    if (remove_mask_ & REMOVE_DATA_MASK_INDEXEDDB ||
        remove_mask_ & REMOVE_DATA_MASK_FILE_SYSTEMS ||
        remove_mask_ & REMOVE_DATA_MASK_SERVICE_WORKERS ||
-@@ -3100,7 +3218,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
+@@ -3100,7 +3256,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
          StoragePartitionImpl::GenerateQuotaClientTypes(remove_mask_),
          storage_key, storage_policy_ref, combined_storage_key_matcher,
          perform_storage_cleanup,
@@ -223,7 +268,7 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    }
  
    if (remove_mask_ & REMOVE_DATA_MASK_LOCAL_STORAGE) {
-@@ -3109,7 +3227,8 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
+@@ -3109,7 +3265,8 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
          combined_storage_key_matcher, storage_key, perform_storage_cleanup,
          begin, end,
          mojo::WrapCallbackWithDefaultInvokeIfNotRun(
@@ -233,7 +278,7 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
  
      // TODO(crbug.com/41457196): Sometimes SessionStorage fails to call its
      // callback. Figure out why.
-@@ -3117,7 +3236,8 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
+@@ -3117,7 +3274,8 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
          base::WrapRefCounted(dom_storage_context), generic_filter,
          perform_storage_cleanup,
          mojo::WrapCallbackWithDefaultInvokeIfNotRun(
@@ -243,7 +288,7 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    }
  
    if ((remove_mask_ & REMOVE_DATA_MASK_SHADER_CACHE) &&
-@@ -3487,6 +3607,15 @@ void StoragePartitionImpl::GetQuotaSettings(
+@@ -3487,6 +3645,15 @@ void StoragePartitionImpl::GetQuotaSettings(
      return;
    }
  
@@ -259,7 +304,7 @@ index 8efd6fe771b3922b76071aa9d97b42044ab72280..e3602cfa20ab5362e918c20d8660e833
    storage::GetNominalDynamicSettings(
        GetPath(), browser_context_->IsOffTheRecord(),
        storage::GetDefaultDeviceInfoHelper(), std::move(callback));
-@@ -3785,6 +3914,15 @@ int StoragePartitionImpl::GetActiveDocumentCount(
+@@ -3785,6 +3952,15 @@ int StoragePartitionImpl::GetActiveDocumentCount(
  
  base::UnguessableToken StoragePartitionImpl::GetPartitionUUIDPerStorageKey(
      const blink::StorageKey& storage_key) {

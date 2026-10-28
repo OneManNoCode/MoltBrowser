@@ -1,0 +1,31 @@
+MoltBrowser patch for net/ssl/ssl_client_session_cache.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/ssl/ssl_client_session_cache.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/ssl/ssl_client_session_cache.h b/net/ssl/ssl_client_session_cache.h
+index 2bb9379dcfb9e47128aa576b2868e7c02c005fbf..bc29d8aedfedd6d9748b934fd9ff9ee284b9d135 100644
+--- a/net/ssl/ssl_client_session_cache.h
++++ b/net/ssl/ssl_client_session_cache.h
+@@ -18,6 +18,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory_coordinator/async_memory_consumer_registration.h"
+ #include "base/memory_coordinator/memory_consumer.h"
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "net/base/host_port_pair.h"
+ #include "net/base/ip_address.h"
+ #include "net/base/net_export.h"
+@@ -105,6 +106,12 @@ class NET_EXPORT SSLClientSessionCache : public base::MemoryConsumer {
+   // Future insertions will be ignored unless they match the new generation.
+   void Flush();
+ 
++  // MoltBrowser: removes the entries kept under a network key with `nonce`
++  // (a gone page's credentialless frames', which no other request carries:
++  // services/network/molt_nonce_drop_policy.h). The generation number stays,
++  // so other sites' sessions under way are still cached.
++  void MoltFlushForNonce(const base::UnguessableToken& nonce);
++
+   void SetClockForTesting(base::Clock* clock);
+ 
+  private:

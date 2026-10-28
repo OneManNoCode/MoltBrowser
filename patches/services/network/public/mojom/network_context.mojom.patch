@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 5eb7be85b1897244caed5096c5e58922e964aae1..7018e29ffae659742f606a965d3bcc05cf2c225c 100644
+index 5eb7be85b1897244caed5096c5e58922e964aae1..57aed16166b7e668fb40ba32c03149c6add45ed9 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -229,6 +229,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,7 +24,7 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..7018e29ffae659742f606a965d3bcc05
  };
  
  struct NetworkContextFilePaths {
-@@ -661,6 +670,70 @@ struct NetworkContextParams {
+@@ -661,6 +670,88 @@ struct NetworkContextParams {
    // do not have an associated `URLLoaderFactory`.
    pending_remote<URLLoaderNetworkServiceObserver>?
        device_bound_sessions_network_observer;
@@ -92,6 +92,36 @@ index 5eb7be85b1897244caed5096c5e58922e964aae1..7018e29ffae659742f606a965d3bcc05
 +  // it had under way is sent afterwards
 +  // (services/network/molt_ended_identity_policy.h).
 +  [MinVersion=1] bool molt_stop_all_when_refusing = false;
++  // If true, this context keeps limits on the cookies kept under a page's
++  // nonce (a credentialless frame's partitions; net/cookies/
++  // molt_nonce_cookie_policy.h) and acts on MoltDropNonce()
++  // (services/network/molt_nonce_drop_policy.h).
++  [MinVersion=1] bool molt_nonce_limits = false;
++};
++
++// MoltBrowser: what NetworkContext.MoltDropNonce() drops of what a page's
++// nonce keys (services/network/molt_nonce_drop_policy.h).
++enum MoltNonceDrop {
++  // The page lives on past its site's bound: its cookies are deleted, and
++  // further ones refused.
++  kClosed,
++  // The page has gone: the same, and the idle connections and the network
++  // caches kept under the nonce are dropped.
++  kGone,
++  // A while after it went: both again, and the nonce is forgotten.
++  kForget,
  };
  
  struct NetworkConditions {
+@@ -1942,6 +2033,11 @@ interface NetworkContext {
+   ClearNetworkRestrictions(
+     array<mojo_base.mojom.UnguessableToken> network_restrictions_ids);
+ 
++  // MoltBrowser: for a context with NetworkContextParams.molt_nonce_limits
++  // (MoltNet's), drops what it keeps under `nonce`, a page's credentialless
++  // frames' (see MoltNonceDrop). Any other context ignores it.
++  MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, MoltNonceDrop drop);
++
+   // Request that `request` be performed and cached as a prefetch. If a matching
+   // request is subseqently received from a render process, the prefetch will
+   // be consumed. `request_id`, `options` and `traffic_annotation` will be

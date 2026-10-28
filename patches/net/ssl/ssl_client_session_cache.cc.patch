@@ -1,0 +1,30 @@
+MoltBrowser patch for net/ssl/ssl_client_session_cache.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/ssl/ssl_client_session_cache.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/ssl/ssl_client_session_cache.cc b/net/ssl/ssl_client_session_cache.cc
+index 8cea62bf8e41ad5a6ba932948013836061190961..da19a984f722575667aa97a17ea5a2773fc5f6fc 100644
+--- a/net/ssl/ssl_client_session_cache.cc
++++ b/net/ssl/ssl_client_session_cache.cc
+@@ -159,6 +159,19 @@ void SSLClientSessionCache::Flush() {
+   cache_.Clear();
+ }
+ 
++// MoltBrowser: see the header.
++void SSLClientSessionCache::MoltFlushForNonce(
++    const base::UnguessableToken& nonce) {
++  auto iter = cache_.begin();
++  while (iter != cache_.end()) {
++    if (iter->first.network_anonymization_key.GetNonce() == nonce) {
++      iter = cache_.Erase(iter);
++    } else {
++      ++iter;
++    }
++  }
++}
++
+ void SSLClientSessionCache::SetClockForTesting(base::Clock* clock) {
+   clock_ = clock;
+ }

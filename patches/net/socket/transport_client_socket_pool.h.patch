@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/transport_client_socket_pool.h b/net/socket/transport_client_socket_pool.h
-index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..f5351d6b434cf79410ae198f716e9e845565e469 100644
+index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..7c0a4c4a4fafb0c38dd2a745f08be6fc0731f57c 100644
 --- a/net/socket/transport_client_socket_pool.h
 +++ b/net/socket/transport_client_socket_pool.h
-@@ -38,6 +38,7 @@
+@@ -23,6 +23,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/time/time.h"
+ #include "base/timer/timer.h"
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "net/base/address_list.h"
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/load_states.h"
+@@ -38,6 +39,7 @@
  #include "net/socket/client_socket_pool.h"
  #include "net/socket/connect_job.h"
  #include "net/socket/connection_attempts.h"
@@ -16,7 +24,7 @@ index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..f5351d6b434cf79410ae198f716e9e84
  #include "net/socket/socket_tag.h"
  #include "net/socket/ssl_client_socket.h"
  #include "net/socket/stream_socket.h"
-@@ -233,6 +234,80 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+@@ -233,6 +235,98 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
    bool HasActiveSocket(const GroupId& group_id) const override;
    size_t SocketsInUse() const override;
  
@@ -93,11 +101,29 @@ index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..f5351d6b434cf79410ae198f716e9e84
 +    CloseOneIdleConnectionInHigherLayeredPool();
 +    return true;
 +  }
++  // Closes the idle sockets of the groups whose network key carries `nonce`
++  // (a gone page's credentialless frames', which no other request carries:
++  // services/network/molt_nonce_drop_policy.h). Sockets in use stay.
++  void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
++                                   const char* net_log_reason_utf8) {
++    if (idle_socket_count_ == 0) {
++      return;
++    }
++    std::vector<GroupId> groups;
++    for (const auto& [group_id, group] : group_map_) {
++      if (group_id.network_anonymization_key().GetNonce() == nonce) {
++        groups.push_back(group_id);
++      }
++    }
++    for (const GroupId& group_id : groups) {
++      CloseIdleSocketsInGroup(group_id, net_log_reason_utf8);
++    }
++  }
 +
    bool RequestInGroupWithHandleHasJobForTesting(
        const GroupId& group_id,
        const ClientSocketHandle* handle) const {
-@@ -416,6 +491,21 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+@@ -416,6 +510,21 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
      // NULL if there are no unbound requests.
      const Request* GetNextUnboundRequest() const;
  
@@ -119,7 +145,7 @@ index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..f5351d6b434cf79410ae198f716e9e84
      // Gets and removes the next unbound request. Returns NULL if
      // there are no unbound requests.
      std::unique_ptr<Request> PopNextUnboundRequest();
-@@ -655,6 +745,14 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+@@ -655,6 +764,14 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
    // by `this`.
    bool FindTopStalledGroup(Group** group, GroupId* group_id);
  
@@ -134,7 +160,7 @@ index 1004c6bece5b35bb0a67c03f83d12363dd4782aa..f5351d6b434cf79410ae198f716e9e84
    // Removes |job| from |group|, which must already own |job|.
    void RemoveConnectJob(ConnectJob* job, Group* group);
  
-@@ -807,6 +905,9 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+@@ -807,6 +924,9 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
    // TODO(vandebo) Remove when backup jobs move to TransportClientSocketPool
    bool connect_backup_jobs_enabled_;
  

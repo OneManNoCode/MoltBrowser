@@ -1,0 +1,207 @@
+MoltBrowser patch for net/cookies/cookie_monster.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/cookies/cookie_monster.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/cookies/cookie_monster.cc b/net/cookies/cookie_monster.cc
+index 83db80e1586859eb7eea229e294f25c5c87346a0..094857ed5021d59784a725e861fb28cd163ff2a6 100644
+--- a/net/cookies/cookie_monster.cc
++++ b/net/cookies/cookie_monster.cc
+@@ -1665,6 +1665,11 @@ CookieMonster::InternalInsertCookie(const std::string& key,
+     bytes_per_cookie_partition_[partition_key] += n_bytes;
+     if (partition_key.nonce()) {
+       num_nonced_partitioned_cookie_bytes_ += n_bytes;
++      // MoltBrowser: counted under its nonce (molt_nonce_cookie_policy.h).
++      if (molt_nonce_cookies_) {
++        molt_nonce_cookies_->Added(*partition_key.nonce(), partition_key,
++                                   n_bytes);
++      }
+     }
+ 
+     PartitionedCookieMap::iterator partition_it =
+@@ -1772,6 +1777,23 @@ void CookieMonster::SetCanonicalCookie(
+     }
+   }
+ 
++  // MoltBrowser: with MoltNet's limits, a cookie for a page's nonce
++  // partition is refused while its nonce is (its page went, or lives on past
++  // its site's bound), and when the nonce's other partitions leave it no
++  // room (an expired one, which only deletes, takes none); then, as for a
++  // cookie blocked by settings, nothing is stored or replaced
++  // (molt_nonce_cookie_policy.h).
++  if (molt_nonce_cookies_ && cc->IsPartitioned() &&
++      cc->PartitionKey()->nonce() &&
++      molt_nonce_cookies_->Refuses(
++          *cc->PartitionKey()->nonce(), *cc->PartitionKey(),
++          already_expired ? size_t{0} : NameValueSizeBytes(*cc))) {
++    access_result.status.AddExclusionReason(
++        CookieInclusionStatus::ExclusionReason::EXCLUDE_USER_PREFERENCES);
++  }
++  // MoltBrowser: the cookie stored below, which the limits never evict.
++  const CanonicalCookie* const molt_stored = cc.get();
++
+   CookieChangeObservability observability =
+       CookieChangeObservability::kWebObservable;
+ 
+@@ -1845,6 +1867,12 @@ void CookieMonster::SetCanonicalCookie(
+     if (cookie_partition_key.has_value()) {
+       GarbageCollectPartitionedCookies(creation_date,
+                                        cookie_partition_key.value(), key);
++      // MoltBrowser: then MoltNet's limits for a nonce partition, and for
++      // its nonce's partitions together (molt_nonce_cookie_policy.h).
++      if (molt_nonce_cookies_ && !already_expired) {
++        MoltGarbageCollectNoncePartition(
++            creation_date, cookie_partition_key.value(), molt_stored);
++      }
+     } else {
+       GarbageCollect(creation_date, key);
+     }
+@@ -2061,6 +2089,12 @@ void CookieMonster::InternalDeletePartitionedCookie(
+   if (CookiePartitionKey::HasNonce(cc->PartitionKey())) {
+     num_nonced_partitioned_cookie_bytes_ -= n_bytes;
+   }
++  // MoltBrowser: with MoltNet's limits, the cookie no longer counts under
++  // its nonce (molt_nonce_cookie_policy.h).
++  if (molt_nonce_cookies_ && cc->PartitionKey()->nonce()) {
++    molt_nonce_cookies_->Removed(*cc->PartitionKey()->nonce(),
++                                 *cc->PartitionKey(), n_bytes);
++  }
+ 
+   DCHECK(partition_it->second->find(cookie_it->first) !=
+          partition_it->second->end())
+@@ -2072,6 +2106,13 @@ void CookieMonster::InternalDeletePartitionedCookie(
+   }
+   CHECK_GE(num_partitioned_cookies_, num_nonced_partitioned_cookies_);
+ 
++  // MoltBrowser: with MoltNet's limits, the partition's size entry goes
++  // with its last cookie, rather than staying for the store's life (one for
++  // every page's nonce partition: molt_nonce_cookie_policy.h).
++  if (molt_nonce_cookies_ && partition_it->second->empty()) {
++    bytes_per_cookie_partition_.erase(partition_it->first);
++  }
++
+   if (partition_it->second->empty())
+     partitioned_cookies_.erase(partition_it);
+ }
+@@ -2381,6 +2422,120 @@ size_t CookieMonster::GarbageCollectPartitionedCookies(
+   return num_deleted;
+ }
+ 
++// MoltBrowser: see the header and molt_nonce_cookie_policy.h.
++size_t CookieMonster::MoltGarbageCollectNoncePartition(
++    base::Time current,
++    const CookiePartitionKey& cookie_partition_key,
++    const CanonicalCookie* keep) {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  const std::optional<base::UnguessableToken>& nonce =
++      cookie_partition_key.nonce();
++  if (!molt_nonce_cookies_ || !nonce ||
++      !molt_nonce_cookies_->Over(*nonce, cookie_partition_key)) {
++    return 0;
++  }
++  PartitionedCookieMap::iterator cookie_partition_it =
++      partitioned_cookies_.find(cookie_partition_key);
++  if (cookie_partition_it == partitioned_cookies_.end()) {
++    return 0;
++  }
++
++  // The partition's own cookies, other than `keep`: the expired ones go
++  // first. The partition is never emptied here, so `cookie_partition_it`
++  // stays valid (it holds `keep`, which isn't expired).
++  size_t num_deleted = 0;
++  CookieItVector candidates;
++  CookieMap& cookies = *cookie_partition_it->second;
++  for (CookieMap::iterator it = cookies.begin(); it != cookies.end();) {
++    CookieMap::iterator current_it = it++;
++    if (current_it->second.get() == keep) {
++      continue;
++    }
++    if (current_it->second->IsExpired(current) && cookies.size() > 1) {
++      InternalDeletePartitionedCookie(cookie_partition_it, current_it,
++                                      /*sync_to_store=*/true,
++                                      DELETE_COOKIE_EXPIRED);
++      ++num_deleted;
++    } else {
++      candidates.push_back(current_it);
++    }
++  }
++
++  // Then the least recently used, until neither the partition nor its nonce
++  // holds more than it may.
++  std::sort(candidates.begin(), candidates.end(), LRACookieSorter);
++  for (CookieMap::iterator victim : candidates) {
++    if (!molt_nonce_cookies_->Over(*nonce, cookie_partition_key) ||
++        cookies.size() <= 1) {
++      break;
++    }
++    InternalDeletePartitionedCookie(cookie_partition_it, victim,
++                                    /*sync_to_store=*/true,
++                                    DELETE_COOKIE_EVICTED_PER_PARTITION_DOMAIN);
++    ++num_deleted;
++  }
++  return num_deleted;
++}
++
++// MoltBrowser: see the header.
++void CookieMonster::MoltKeepNonceCookieLimits() {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  if (molt_nonce_cookies_) {
++    return;
++  }
++  molt_nonce_cookies_ = std::make_unique<
++      MoltNonceCookieTotals<base::UnguessableToken, CookiePartitionKey>>();
++  // Whatever the store already holds counts too (nothing, for MoltNet's
++  // context, which calls this as it makes the store).
++  for (const auto& [partition_key, cookie_map] : partitioned_cookies_) {
++    if (!partition_key.nonce()) {
++      continue;
++    }
++    for (const auto& [domain_key, cookie] : *cookie_map) {
++      molt_nonce_cookies_->Added(*partition_key.nonce(), partition_key,
++                                 NameValueSizeBytes(*cookie));
++    }
++  }
++}
++
++// MoltBrowser: see the header.
++void CookieMonster::MoltDropNonce(const base::UnguessableToken& nonce,
++                                  bool refuse) {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  if (!molt_nonce_cookies_) {
++    return;
++  }
++  // Once the store holds what it loads, as for any deletion.
++  DoCookieCallback(base::BindOnce(&CookieMonster::MoltDropNonceNow,
++                                  weak_ptr_factory_.GetWeakPtr(), nonce,
++                                  refuse));
++}
++
++void CookieMonster::MoltDropNonceNow(const base::UnguessableToken& nonce,
++                                     bool refuse) {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  molt_nonce_cookies_->SetRefused(nonce, refuse);
++  // The nonce's partitions are known without a pass over every partition.
++  for (const CookiePartitionKey& partition_key :
++       molt_nonce_cookies_->PartitionsOf(nonce)) {
++    PartitionedCookieMap::iterator partition_it =
++        partitioned_cookies_.find(partition_key);
++    if (partition_it == partitioned_cookies_.end()) {
++      continue;
++    }
++    // Deleting the last cookie erases the partition, so neither it nor its
++    // map is used after that.
++    CookieMap& cookies = *partition_it->second;
++    CookieMap::iterator it = cookies.begin();
++    for (size_t left = cookies.size(); left > 0; --left) {
++      CookieMap::iterator current_it = it++;
++      InternalDeletePartitionedCookie(partition_it, current_it,
++                                      /*sync_to_store=*/true,
++                                      DELETE_COOKIE_EXPLICIT);
++    }
++  }
++}
++
+ size_t CookieMonster::PurgeLeastRecentMatches(CookieItVector& cookies,
+                                               CookiePriority priority,
+                                               size_t to_protect,

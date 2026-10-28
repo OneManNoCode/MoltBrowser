@@ -1,0 +1,33 @@
+MoltBrowser patch for net/http/http_server_properties.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/http/http_server_properties.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/http/http_server_properties.h b/net/http/http_server_properties.h
+index 22e445c9b0643fff57de2348a58c135d43034807..1fdad2537c7f2bc3285ab9e4a3ffa852d0d01a57 100644
+--- a/net/http/http_server_properties.h
++++ b/net/http/http_server_properties.h
+@@ -24,6 +24,7 @@
+ #include "base/threading/thread_checker.h"
+ #include "base/time/time.h"
+ #include "base/timer/timer.h"
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "base/values.h"
+ #include "net/base/host_port_pair.h"
+ #include "net/base/ip_address.h"
+@@ -247,6 +248,14 @@ class NET_EXPORT HttpServerProperties
+   // disk.
+   void Clear(base::OnceClosure callback);
+ 
++  // MoltBrowser: forgets what is kept for servers under a network key with
++  // `nonce` (a gone page's credentialless frames', which no other request
++  // carries: services/network/molt_nonce_drop_policy.h): their HTTP/2
++  // support, alternative services, network statistics, HTTP/1.1 requirement,
++  // canonical hosts and QUIC server information. Marks of broken alternative
++  // services keep their own expiry.
++  void MoltClearForNonce(const base::UnguessableToken& nonce);
++
+   // Returns true if `server`, in the context of `network_anonymization_key`,
+   // has previously supported a network protocol which honors request
+   // prioritization. `server` must have either http:// or https:// schemes.

@@ -1,0 +1,20 @@
+MoltBrowser patch for services/network/test/test_network_context.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/network/test/test_network_context.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
+index cb0bb823df252231630d2e15e6ff428913b80cc4..8f5e22ab77cc8a7e0736f84743ae07e64bebd8c6 100644
+--- a/services/network/test/test_network_context.h
++++ b/services/network/test/test_network_context.h
+@@ -413,6 +413,9 @@ class TestNetworkContext : public mojom::NetworkContext {
+       RestrictNetworkForIdsCallback callback) override {}
+   void ClearNetworkRestrictions(const std::vector<base::UnguessableToken>&
+                                     network_restrictions_ids) override {}
++  // MoltBrowser:
++  void MoltDropNonce(const base::UnguessableToken& nonce,
++                     mojom::MoltNonceDrop drop) override {}
+   void Prefetch(
+       int32_t request_id,
+       uint32_t options,

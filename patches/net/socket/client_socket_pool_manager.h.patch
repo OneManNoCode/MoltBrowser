@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/socket/client_socket_pool_manager.h b/net/socket/client_socket_pool_manager.h
-index 9ce5cf88813fe0cbb75e06f3c000bc7f0c272d79..38b8a62ded311e42460faad3eb4d5ae98aa24262 100644
+index 9ce5cf88813fe0cbb75e06f3c000bc7f0c272d79..e049b4a57a98d391145e20e8e8e1a95ff59ff2a8 100644
 --- a/net/socket/client_socket_pool_manager.h
 +++ b/net/socket/client_socket_pool_manager.h
-@@ -74,6 +74,17 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
+@@ -11,6 +11,7 @@
+ 
+ #include <vector>
+ 
++#include "base/unguessable_token.h"  // MoltBrowser
+ #include "base/values.h"
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/net_export.h"
+@@ -74,6 +75,24 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
    // ProxyChain::Direct()).
    virtual ClientSocketPool* GetSocketPool(const ProxyChain& proxy_chain) = 0;
  
@@ -22,6 +30,13 @@ index 9ce5cf88813fe0cbb75e06f3c000bc7f0c272d79..38b8a62ded311e42460faad3eb4d5ae9
 +      const ProxyChain& proxy_chain,
 +      const NetworkAnonymizationKey& network_anonymization_key,
 +      bool molt_no_cert_fetches = false);
++
++  // MoltBrowser: closes the idle sockets whose network key carries `nonce`
++  // (a gone page's credentialless frames':
++  // services/network/molt_nonce_drop_policy.h), in a manager with per-site
++  // pools (MoltNet's); nothing in any other.
++  virtual void MoltCloseIdleSocketsOfNonce(const base::UnguessableToken& nonce,
++                                           const char* net_log_reason_utf8);
 +
    // Creates a Value summary of the state of the socket pools.
    virtual base::Value SocketPoolInfoToValue() const = 0;

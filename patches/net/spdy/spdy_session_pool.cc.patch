@@ -1,0 +1,34 @@
+MoltBrowser patch for net/spdy/spdy_session_pool.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/spdy/spdy_session_pool.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/spdy/spdy_session_pool.cc b/net/spdy/spdy_session_pool.cc
+index 94189c50ffa9315b3aa653a63d7bf082f5343602..b901ef88d8ec6cdb25ef00257141705f5398dcb1 100644
+--- a/net/spdy/spdy_session_pool.cc
++++ b/net/spdy/spdy_session_pool.cc
+@@ -416,6 +416,23 @@ void SpdySessionPool::CloseCurrentIdleSessions(const std::string& description) {
+   CloseCurrentSessionsHelper(ERR_ABORTED, description, true /* idle_only */);
+ }
+ 
++// MoltBrowser: see the header; as CloseCurrentSessionsHelper(), idle only.
++void SpdySessionPool::MoltCloseIdleSessionsOfNonce(
++    const base::UnguessableToken& nonce,
++    const std::string& description) {
++  WeakSessionList current_sessions = GetCurrentSessions();
++  for (base::WeakPtr<SpdySession>& session : current_sessions) {
++    if (!session || session->is_active() || session->IsDraining() ||
++        session->spdy_session_key().network_anonymization_key().GetNonce() !=
++            nonce) {
++      continue;
++    }
++    session->CloseSessionOnError(ERR_ABORTED, description);
++    NotifyOnSessionClosed(session->spdy_session_key(),
++                          session->WasEverUsedToCreateStreams());
++  }
++}
++
+ void SpdySessionPool::CloseAllSessions() {
+   auto is_draining = [](const SpdySession* s) { return s->IsDraining(); };
+   // Repeat until every SpdySession owned by |this| is draining.
