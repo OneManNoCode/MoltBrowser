@@ -154,6 +154,21 @@ fuzzer_test("molt_memory_query_fuzzer") {
   libfuzzer_options = [ "max_len=4096" ]
 }
 
+# --- What OCR and voice helpers read -------------------------------------------
+
+# The chat page's voice recording (a WebUI renderer, which a compromise
+# could control), checked and rewritten before whisper-cli reads it.
+fuzzer_test("molt_recorded_wav_fuzzer") {
+  sources = [ "molt_recorded_wav_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/voice:recorded_wav",
+  ]
+  dict = "dicts/wav.dict"
+  seed_corpus = "corpus/molt_recorded_wav_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # --- Agents and workflows ------------------------------------------------------
 
 fuzzer_test("molt_agent_actions_fuzzer") {
@@ -389,6 +404,7 @@ group("fuzzers") {
     ":molt_http_cache_site_fuzzer",
     ":molt_onion_location_fuzzer",
     ":molt_page_translate_fuzzer",
+    ":molt_recorded_wav_fuzzer",
     ":molt_release_manifest_fuzzer",
     ":molt_gpu_driver_record_fuzzer",
     ":molt_stream_validator_fuzzer",

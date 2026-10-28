@@ -1,0 +1,22 @@
+# RIFF/WAVE chunks and format fields (libFuzzer dictionary).
+"RIFF"
+"RIFX"
+"WAVE"
+"fmt "
+"data"
+"LIST"
+"INFO"
+"fact"
+"junk"
+# Format chunk size 16, PCM, mono, 16000 Hz, 32000 bytes/s, align 2, 16 bits.
+"\x10\x00\x00\x00"
+"\x01\x00\x01\x00"
+"\x80\x3e\x00\x00"
+"\x00\x7d\x00\x00"
+"\x02\x00\x10\x00"
+# Other formats: stereo, 44.1 kHz, float, extensible.
+"\x02\x00"
+"\x44\xac\x00\x00"
+"\x03\x00"
+"\xfe\xff"
+"\xff\xff\xff\xff"

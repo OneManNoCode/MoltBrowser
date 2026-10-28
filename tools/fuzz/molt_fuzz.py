@@ -259,6 +259,15 @@ FUZZERS = {
         max_len=4096,
         smoke_runs=100000,
     ),
+    # --- The browser: what OCR and voice helpers read --------------------
+    "molt_recorded_wav_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/voice/recorded_wav.cc"],
+        tier="std",
+        dict="dicts/wav.dict",
+        max_len=65536,
+        smoke_runs=1000000,
+    ),
     # --- The browser: agents and workflows (//base stand-ins) -------------
     "molt_agent_actions_fuzzer": dict(
         dir=BROWSER,

@@ -5,7 +5,10 @@
 
 #include "build/build_config.h"
 
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
@@ -19,6 +22,7 @@
 #include "chrome/browser/molt_ai/common/helper_binary.h"
 #include "chrome/browser/molt_ai/common/helper_output.h"
 #include "chrome/browser/molt_ai/common/helper_sandbox.h"
+#include "chrome/browser/molt_ai/voice/recorded_wav.h"
 
 namespace molt_ai {
 namespace voice {
@@ -76,6 +80,15 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
     r.error = "no audio bytes";
     return r;
   }
+  // The page's recording is checked here, and whisper-cli reads a WAV the
+  // browser writes itself (recorded_wav.h): never what the page sent.
+  std::string_view samples;
+  const RecordedWavError wav_error = ParseRecordedWav(wav_bytes, &samples);
+  if (wav_error != RecordedWavError::kNone) {
+    r.error = std::string(DescribeRecordedWavError(wav_error));
+    return r;
+  }
+  const std::string canonical_wav = CanonicalWav(samples);
 
   // Create a private 0700 scratch directory so the audio + the .txt
   // output whisper-cli writes alongside it can't be raced by a local-
@@ -87,7 +100,7 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
     return r;
   }
   base::FilePath wav_path = scratch_dir.AppendASCII("input.wav");
-  if (!base::WriteFile(wav_path, wav_bytes)) {
+  if (!base::WriteFile(wav_path, canonical_wav)) {
     r.error = "could not write temp audio";
     base::DeletePathRecursively(scratch_dir);
     return r;
