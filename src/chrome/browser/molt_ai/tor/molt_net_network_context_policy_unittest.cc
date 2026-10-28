@@ -34,6 +34,7 @@ TEST(MoltNetNetworkContextPolicyTest, OtherProfilesKeepChromiumsBehaviour) {
   EXPECT_FALSE(settings.per_site_keepalive_limits);
   EXPECT_FALSE(settings.per_site_http_cache);
   EXPECT_FALSE(settings.stop_all_when_refusing);
+  EXPECT_FALSE(settings.nonce_limits);
 }
 
 TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
@@ -57,6 +58,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
   EXPECT_TRUE(settings.per_site_keepalive_limits);
   EXPECT_TRUE(settings.per_site_http_cache);
   EXPECT_TRUE(settings.stop_all_when_refusing);
+  EXPECT_TRUE(settings.nonce_limits);
 }
 
 // Private State Tokens: ProfileNetworkContextService asks this when it
@@ -158,6 +160,8 @@ TEST(MoltNetNetworkContextPolicyTest, IsAConstantExpression) {
       !MoltNetNetworkContextSettingsFor(false).send_no_client_certificates);
   static_assert(MoltNetNetworkContextSettingsFor(true).no_doh_probes);
   static_assert(!MoltNetNetworkContextSettingsFor(false).no_doh_probes);
+  static_assert(MoltNetNetworkContextSettingsFor(true).nonce_limits);
+  static_assert(!MoltNetNetworkContextSettingsFor(false).nonce_limits);
 }
 
 // What ProfileNetworkContextService hands the network service and the
@@ -195,6 +199,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetParamsSetTheFlags) {
   EXPECT_TRUE(params.network_context->molt_per_site_keepalive_limits);
   EXPECT_TRUE(params.network_context->molt_per_site_http_cache);
   EXPECT_TRUE(params.network_context->molt_stop_all_when_refusing);
+  EXPECT_TRUE(params.network_context->molt_nonce_limits);
 }
 
 // One password per network context: the hook runs once for each context
@@ -239,6 +244,7 @@ TEST(MoltNetNetworkContextPolicyTest, EachMoltNetContextGetsItsOwnPassword) {
   EXPECT_TRUE(second_identity.network_context->molt_per_site_keepalive_limits);
   EXPECT_TRUE(second_identity.network_context->molt_per_site_http_cache);
   EXPECT_TRUE(second_identity.network_context->molt_stop_all_when_refusing);
+  EXPECT_TRUE(second_identity.network_context->molt_nonce_limits);
   EXPECT_TRUE(second_identity.cert_verifier->molt_isolate_each_cert_fetch);
 }
 
@@ -259,6 +265,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_per_site_keepalive_limits);
   EXPECT_FALSE(params.network_context->molt_per_site_http_cache);
   EXPECT_FALSE(params.network_context->molt_stop_all_when_refusing);
+  EXPECT_FALSE(params.network_context->molt_nonce_limits);
 
   // And the hook writes them off for any other profile, even over a stale
   // value.
@@ -276,6 +283,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   params.network_context->molt_per_site_keepalive_limits = true;
   params.network_context->molt_per_site_http_cache = true;
   params.network_context->molt_stop_all_when_refusing = true;
+  params.network_context->molt_nonce_limits = true;
   ApplyMoltNetNetworkContextSettings(/*is_moltnet_profile=*/false,
                                      *params.network_context,
                                      *params.cert_verifier);
@@ -294,6 +302,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_per_site_keepalive_limits);
   EXPECT_FALSE(params.network_context->molt_per_site_http_cache);
   EXPECT_FALSE(params.network_context->molt_stop_all_when_refusing);
+  EXPECT_FALSE(params.network_context->molt_nonce_limits);
 }
 
 }  // namespace

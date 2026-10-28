@@ -50,10 +50,51 @@ TEST(MoltNetOneKeyDeletionTest, OtherDeletionsReadTheWholePartition) {
             MoltDeletionReads::kWholePartition);
   EXPECT_EQ(MoltQuotaDeletionReads(true, false, true),
             MoltDeletionReads::kWholePartition);
-  // A time range: the buckets' modification times decide, which only the
-  // whole listing reads.
-  EXPECT_EQ(MoltQuotaDeletionReads(true, true, /*all_time=*/false),
+  // A time range in another profile, or naming no key: the whole listing.
+  EXPECT_EQ(MoltQuotaDeletionReads(false, true, /*all_time=*/false),
             MoltDeletionReads::kWholePartition);
+  EXPECT_EQ(MoltQuotaDeletionReads(true, false, /*all_time=*/false),
+            MoltDeletionReads::kWholePartition);
+}
+
+// A deletion of one key over a time range reads that key's buckets modified
+// in the range (the rows Chromium's listing reads, of that key), not every
+// site's.
+TEST(MoltNetOneKeyDeletionTest, ATimeRangeReadsItsOwnKeysBuckets) {
+  EXPECT_EQ(MoltQuotaDeletionReads(/*keeps_per_site=*/true,
+                                   /*names_one_key=*/true,
+                                   /*all_time=*/false),
+            MoltDeletionReads::kOneStorageKeyModifiedBetween);
+  // Its DOM storage reads its own areas whatever the range.
+  EXPECT_EQ(MoltDomStorageDeletionReads(true, true),
+            MoltDeletionReads::kOneStorageKey);
+}
+
+// A Clear-Site-Data response the browser can't place in a document or
+// worker names the key its origin's own document would have, where storage
+// is kept per site, so its deletion reads that key only.
+TEST(MoltNetOneKeyDeletionTest, AResponseWithNoDocumentNamesItsOwnKey) {
+  EXPECT_EQ(MoltClearSiteDataKeyFor(/*keeps_per_site=*/true,
+                                    /*has_calculated_key=*/false,
+                                    /*origin_opaque=*/false,
+                                    /*request_has_nonce=*/false),
+            MoltClearSiteDataKey::kFirstParty);
+  // A credentialless frame's request (after its page went): its nonce's.
+  EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, false, true),
+            MoltClearSiteDataKey::kWithNonce);
+  // A response in a document or worker keeps the key calculated for it.
+  EXPECT_EQ(MoltClearSiteDataKeyFor(true, true, false, false),
+            MoltClearSiteDataKey::kAsCalculated);
+  EXPECT_EQ(MoltClearSiteDataKeyFor(true, true, false, true),
+            MoltClearSiteDataKey::kAsCalculated);
+  // Every other profile: Chromium's (no key, the origin's listing).
+  EXPECT_EQ(MoltClearSiteDataKeyFor(false, false, false, false),
+            MoltClearSiteDataKey::kAsCalculated);
+  EXPECT_EQ(MoltClearSiteDataKeyFor(false, false, false, true),
+            MoltClearSiteDataKey::kAsCalculated);
+  // An opaque origin has no key of its own to name.
+  EXPECT_EQ(MoltClearSiteDataKeyFor(true, false, true, false),
+            MoltClearSiteDataKey::kAsCalculated);
 }
 
 }  // namespace

@@ -172,10 +172,12 @@ source_set("chrome_root_store_data") {
   }
 }
 
-# MoltBrowser: how MoltNet splits socket pools and the memory cache by site
-# (std-only and header-only), for :net and MoltBrowser's own targets.
+# MoltBrowser: how MoltNet splits socket pools and the memory cache by site,
+# and what its cookie store keeps under a page's nonce (std-only and
+# header-only), for :net and MoltBrowser's own targets.
 source_set("molt_policies") {
   sources = [
+    "cookies/molt_nonce_cookie_policy.h",
     "disk_cache/memory/molt_mem_backend_budget_policy.h",
     "socket/molt_per_site_socket_pool_policy.h",
   ]

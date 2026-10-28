@@ -152,6 +152,11 @@ ClientSocketPool* ClientSocketPoolManager::GetSocketPoolForSite(
   return GetSocketPool(proxy_chain);
 }
 
+// MoltBrowser: see the header.
+void ClientSocketPoolManager::MoltCloseIdleSocketsOfNonce(
+    const base::UnguessableToken& nonce,
+    const char* net_log_reason_utf8) {}
+
 // static
 size_t ClientSocketPoolManager::socket_soft_cap_per_pool(
     HttpNetworkSession::SocketPoolType pool_type) {

@@ -102,6 +102,60 @@ TEST(MoltNetNonceStoragePolicyTest, AGonePagesCookiesGoAgainLater) {
   EXPECT_EQ(kMoltNetKeepaliveOutlivesPageSeconds, 30);
 }
 
+// A group's record of storage keys is bounded: once it holds
+// kMoltNetNonceStorageKeysPerGroup, another one closes the group.
+TEST(MoltNetNonceStoragePolicyTest, AGroupsKeysAreBounded) {
+  EXPECT_EQ(kMoltNetNonceStorageKeysPerGroup, 256u);
+  EXPECT_FALSE(MoltNetNonceGroupFull(0));
+  EXPECT_FALSE(MoltNetNonceGroupFull(kMoltNetNonceStorageKeysPerGroup - 1));
+  EXPECT_TRUE(MoltNetNonceGroupFull(kMoltNetNonceStorageKeysPerGroup));
+}
+
+// A group closed past its own bound no longer counts to its site's, and is
+// its page's until the page goes.
+TEST(MoltNetNonceStoragePolicyTest, AGroupClosedPastItsOwnBound) {
+  Groups groups;
+  for (size_t i = 0; i < kMoltNetNonceGroupsPerSite; ++i) {
+    ASSERT_FALSE(groups.Added(kSite, Nonce(i)).has_value());
+  }
+  EXPECT_TRUE(groups.Close(Nonce(3)));
+  EXPECT_FALSE(groups.Close(Nonce(3)));
+  EXPECT_TRUE(groups.IsTracked(Nonce(3)));
+  EXPECT_EQ(groups.open_count(kSite), kMoltNetNonceGroupsPerSite - 1);
+  // So the next page of the site closes no other group.
+  EXPECT_FALSE(groups.Added(kSite, "next").has_value());
+  groups.Gone(Nonce(3));
+  EXPECT_FALSE(groups.IsTracked(Nonce(3)));
+  EXPECT_FALSE(groups.Close("unknown"));
+  // A site's last open group closed leaves no record for the site.
+  Groups one;
+  ASSERT_FALSE(one.Added(kOther, "only").has_value());
+  EXPECT_TRUE(one.Close("only"));
+  EXPECT_EQ(one.site_count(), 0u);
+  one.Gone("only");
+  EXPECT_EQ(one.nonce_count(), 0u);
+}
+
+// A nonce that successive pages share (a fenced frame navigating itself)
+// goes with the last of them, not the first.
+TEST(MoltNetNonceStoragePolicyTest, ANonceSharedBySuccessivePages) {
+  MoltNetNoncePageCounts<std::string> pages;
+  pages.Uses("fenced");   // its first document's page
+  pages.Uses("fenced");   // the next one, made before the first goes
+  EXPECT_EQ(pages.PagesOf("fenced"), 2u);
+  EXPECT_FALSE(pages.Left("fenced"));
+  pages.Uses("fenced");   // and another
+  EXPECT_FALSE(pages.Left("fenced"));
+  EXPECT_TRUE(pages.Left("fenced"));
+  EXPECT_EQ(pages.size(), 0u);
+  // A credentialless frame's nonce is its page's alone.
+  pages.Uses("credentialless");
+  EXPECT_TRUE(pages.Left("credentialless"));
+  // One no page noted goes at once.
+  EXPECT_TRUE(pages.Left("unknown"));
+  EXPECT_EQ(pages.size(), 0u);
+}
+
 // A nonce seen again (another frame of the same page) is nothing new.
 TEST(MoltNetNonceStoragePolicyTest, ANonceCountsOnce) {
   Groups groups;

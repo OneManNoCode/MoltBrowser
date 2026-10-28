@@ -84,6 +84,17 @@ void ClientSocketPoolManagerImpl::CloseIdleSockets(
   }
 }
 
+// MoltBrowser: see client_socket_pool_manager.h. Only the per-site pools
+// hold MoltNet's sockets.
+void ClientSocketPoolManagerImpl::MoltCloseIdleSocketsOfNonce(
+    const base::UnguessableToken& nonce,
+    const char* net_log_reason_utf8) {
+  if (molt_per_site_pools_) {
+    molt_per_site_pools_->MoltCloseIdleSocketsOfNonce(nonce,
+                                                      net_log_reason_utf8);
+  }
+}
+
 // MoltBrowser: a site's own pool for a proxy chain, where this manager has
 // per-site pools (net/socket/molt_per_site_socket_pool_policy.h).
 ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPoolForSite(
