@@ -542,6 +542,20 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (`docs/FINGERPRINTING.md`, "MoltNet: the microphone's processing").
   Regular and incognito windows keep the system's processing. The leak
   test kit checks both cases.
+- **MoltNet's microphones and audio math look alike on every machine.** In
+  MoltNet windows every microphone reports one format (48 kHz, one or two
+  channels, a 10 ms buffer), which the browser converts the device's sound
+  to; every camera, microphone and speaker a page may see gets a generic
+  name ("Microphone 3f9a") and a group of its own, and Windows'
+  "communications" device isn't listed, while pages still pick devices as
+  before. On Linux a MoltNet page records from the microphone itself when
+  a PulseAudio or PipeWire echo-cancelling or noise filter is chosen as the
+  microphone, and on Windows MoltNet never turns on the system's call
+  processing. Web Audio, resampling and the microphone's processing now
+  treat the tiniest audio values (subnormal floats) the same way on x86-64
+  and Arm processors (`docs/FINGERPRINTING.md`, "MoltNet: cameras,
+  microphones and outputs" and "MoltNet: subnormal floats"); regular and
+  incognito windows are unchanged. The leak test kit checks these too.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
