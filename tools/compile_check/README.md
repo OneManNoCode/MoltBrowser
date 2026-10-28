@@ -149,10 +149,11 @@ against real headers), **partly on stand-ins** (its include closure reaches
 one of the stand-ins below; which one is named), **ERRORS**, **PLUGIN**
 (it compiles, but Chromium's clang plugins report something in
 MoltBrowser's code, a file of the `src/` overlay: `[chromium-style]`,
-`[chromium-rawptr]`, ...; listed. Warnings in these configs, which set
-`treat_warnings_as_errors = false`; errors in a `-Werror` build such as
-Chromium's CQ), or **not checked** (a header it needs can't be had here,
-or its platform isn't modeled; named, with the reason when one is known:
+`[chromium-rawptr]`, `[blink-style]`, ...; listed. Warnings in these
+configs, which set `treat_warnings_as_errors = false`; errors in a
+`-Werror` build such as Chromium's CQ), or **not checked** (a header it
+needs can't be had here, or its platform isn't modeled; named, with the
+reason when one is known:
 the generator's failure from `gen_report.json`, an Apple framework
 `mac_stand_ins/` has no stand-in for, the Apple declarations a Mac file
 needs that the stand-ins lack, or that no GN target lists the file with
@@ -170,13 +171,13 @@ several platforms has a row for each):
 
 | Platform | rows | checked | partly on stand-ins | not checked | ERRORS | PLUGIN |
 |---|---|---|---|---|---|---|
-| Linux x64 | 875 | 871 | 4 | 0 | 0 | 0 |
+| Linux x64 | 875 | 865 | 4 | 0 | 0 | 6 |
 | Linux arm64 | 6 | 6 | 0 | 0 | 0 | 0 |
 | Linux x64, `molt_llama_vulkan` | 6 | 6 | 0 | 0 | 0 | 0 |
 | macOS arm64 | 36 | 0 | 36 | 0 | 0 | 0 |
-| Windows x64 | 513 | 513 | 0 | 0 | 0 | 0 |
+| Windows x64 | 513 | 507 | 0 | 0 | 0 | 6 |
 | none | 1 | 0 | 0 | 1 | 0 | 0 |
-| **all** | **1437** | **1396** | **40** | **1** | **0** | **0** |
+| **all** | **1437** | **1384** | **40** | **1** | **0** | **12** |
 
 Partly on stand-ins: every Mac file (the Apple frameworks), the grit
 resource headers of three WebUI pages (the omnibox popup's, the new tab
@@ -184,7 +185,12 @@ page's and the bookmarks side panel's, in `location_bar_view.cc`,
 `new_tab_page_ui.cc` and `bookmarks_side_panel_ui.cc`) and V8's instance
 types from Torque (`v8.cc`). Not checked:
 `chrome/browser/molt_ai/ios/MoltAIChatViewController.mm`: iOS is not
-modeled, and no BUILD.gn lists the file, so no build compiles it.
+modeled, and no BUILD.gn lists the file, so no build compiles it. PLUGIN:
+Blink's `[blink-style]` check on `std::vector` data members in the
+renderer (it wants `blink::Vector` or an `ALLOW_DISCOURAGED_TYPE`
+annotation), in `molt_fingerprinting/moltnet_audio_clock.h` (reached from
+five files) and `moltnet_fonts.cc`, on Linux and Windows; before round 30
+the report counted only `[chromium-*]` diagnostics.
 
 With every file compiled, the run took about an hour and a quarter here
 (4 cores, `--jobs 2`): Linux about 11 minutes of generating and 30 of

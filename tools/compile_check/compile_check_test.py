@@ -1975,6 +1975,13 @@ class SkippedReportTest(unittest.TestCase):
         st = compile_check.classify(res("base/not_in_the_overlay.h"), {},
                                     Path("/x"))
         self.assertEqual(st[0], "checked")
+        # Blink's checks too.
+        r = res("net/socket/molt_identity_end.h")
+        r["diags"][0]["msg"] = ("[blink-style] 'std::vector' is discouraged "
+                                "for data members in blink renderer.")
+        st = compile_check.classify(r, {}, Path("/x"))
+        self.assertEqual(st[:2], ("PLUGIN", "1 [blink-style] "
+                                  "diagnostic(s) in MoltBrowser code"))
 
     def test_plugin_flags_per_platform(self):
         lin = config.plugin_flags("linux", "/r")

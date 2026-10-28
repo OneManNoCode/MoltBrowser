@@ -504,9 +504,12 @@ listed and the deps are in (§4.9).
   headers, Apple framework stand-ins) and Linux with `molt_llama_vulkan`
   on (no checkout needed; see its README for what it can't cover).
   *Expected:* `report` shows no ERRORS and no PLUGIN rows (at 156, round 30:
-  896 files in 1437 platform rows, 1396 checked, 40 partly on stand-ins, the
+  896 files in 1437 platform rows, 1384 checked, 40 partly on stand-ins, the
   Mac files' Apple frameworks among them, 1 not checked: an iOS file that
-  no BUILD.gn lists).
+  no BUILD.gn lists, and 12 PLUGIN: `[blink-style]` on the `std::vector`
+  data members of `molt_fingerprinting/moltnet_audio_clock.h` and
+  `moltnet_fonts.cc`, to become `blink::Vector`s or be annotated
+  `ALLOW_DISCOURAGED_TYPE`).
 
 ### 4.1 Mojo: new fields, unions and interfaces
 

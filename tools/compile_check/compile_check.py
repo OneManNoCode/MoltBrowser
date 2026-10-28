@@ -744,7 +744,10 @@ APPLE_MISSING_RE = re.compile(
 
 # Chromium's clang plugins prefix what they report: [chromium-style]
 # (find-bad-constructs), [chromium-rawptr], [chromium-raw-ref], ...
-PLUGIN_DIAG_RE = re.compile(r"^\[chromium-[a-z-]+\]")
+# The clang plugins' diagnostics: find-bad-constructs' [chromium-style],
+# [chromium-rawptr], [chromium-ipc] ... and its Blink checks' [blink-style]
+# (a discouraged data member type in the renderer).
+PLUGIN_DIAG_RE = re.compile(r"^\[(chromium|blink)-[a-z-]+\]")
 
 
 def plugin_diags(r):
