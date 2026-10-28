@@ -30,7 +30,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/no_destructor.h"  // MoltBrowser
 #include "base/not_fatal_until.h"
 #include "base/numerics/byte_conversions.h"  // MoltBrowser
 #include "base/numerics/safe_conversions.h"
@@ -381,14 +380,15 @@ std::optional<base::UnguessableToken> MoltDerivedNonceKeyUUID(
   if (!storage_key.nonce().has_value() || storage_key.origin().opaque()) {
     return std::nullopt;
   }
-  static const base::NoDestructor<std::array<uint8_t, 32>> kSecret([] {
+  // Trivially destructible: no exit-time destructor.
+  static const std::array<uint8_t, 32> kSecret = [] {
     std::array<uint8_t, 32> secret;
     base::RandBytes(secret);
     return secret;
-  }());
+  }();
   const std::string serialized = storage_key.Serialize();
   const std::array<uint8_t, crypto::hash::kSha256Size> mac =
-      crypto::hmac::SignSha256(*kSecret, base::as_byte_span(serialized));
+      crypto::hmac::SignSha256(kSecret, base::as_byte_span(serialized));
   const base::span<const uint8_t, crypto::hash::kSha256Size> bytes(mac);
   return base::UnguessableToken::Deserialize(
       base::U64FromLittleEndian(bytes.first<8>()),
