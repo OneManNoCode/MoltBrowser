@@ -631,6 +631,7 @@ source_set("unit_tests") {
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
     "molt_net_network_context_policy_unittest.cc",
+    "molt_net_nonce_cookie_policy_unittest.cc",
     "molt_net_nonce_storage_policy_unittest.cc",
     "molt_net_one_key_deletion_unittest.cc",
     "molt_net_partitioning_policy_unittest.cc",

@@ -28,12 +28,15 @@
 #include "base/rand_util.h"
 #include "base/thread_annotations.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/net_export.h"
 #include "net/base/schemeful_site.h"
 #include "net/cookies/cookie_access_delegate.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_monster_change_dispatcher.h"
+#include "net/cookies/cookie_partition_key.h"       // MoltBrowser
 #include "net/cookies/cookie_store.h"
+#include "net/cookies/molt_nonce_cookie_policy.h"  // MoltBrowser
 #include "net/log/net_log_with_source.h"
 #include "url/gurl.h"
 
@@ -275,6 +278,20 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // Triggers immediate recording of stats that are typically reported
   // periodically.
   bool DoRecordPeriodicStatsForTesting() { return DoRecordPeriodicStats(); }
+
+  // MoltBrowser: MoltNet's limits for the cookies kept under a page's nonce
+  // (molt_nonce_cookie_policy.h): from now on each nonce partition, and each
+  // nonce's partitions together, hold at most what that says, the
+  // partition written evicting its own least recently used cookies past it,
+  // and a nonce can be refused (MoltDropNonce()). Called once, before the
+  // store is first used (NetworkContext, for MoltNet's context).
+  void MoltKeepNonceCookieLimits();
+  bool MoltKeepsNonceCookieLimits() const { return !!molt_nonce_cookies_; }
+
+  // MoltBrowser: deletes every cookie of the partitions keyed by `nonce` and,
+  // with `refuse`, refuses cookies for such partitions from then on;
+  // without, that ends. Does nothing without MoltKeepNonceCookieLimits().
+  void MoltDropNonce(const base::UnguessableToken& nonce, bool refuse);
 
  private:
   // For garbage collection constants.
@@ -686,6 +703,18 @@ class NET_EXPORT CookieMonster : public CookieStore {
       const CookiePartitionKey& cookie_partition_key,
       const std::string& key);
 
+  // MoltBrowser: with MoltNet's limits, while the nonce partition
+  // `cookie_partition_key` or its nonce's partitions hold more than they may
+  // (molt_nonce_cookie_policy.h), deletes that partition's least recently
+  // used cookies, expired ones first, never `keep` (the cookie just set).
+  // Returns the number of cookies deleted.
+  size_t MoltGarbageCollectNoncePartition(
+      base::Time current,
+      const CookiePartitionKey& cookie_partition_key,
+      const CanonicalCookie* keep);
+  // MoltBrowser: MoltDropNonce() once cookies can be read.
+  void MoltDropNonceNow(const base::UnguessableToken& nonce, bool refuse);
+
   // Helper for GarbageCollect(). Deletes up to |purge_goal| cookies with a
   // priority less than or equal to |priority| from |cookies|, while ensuring
   // that at least the |to_protect| most-recent cookies are retained.
@@ -852,6 +881,12 @@ class NET_EXPORT CookieMonster : public CookieStore {
   size_t num_nonced_partitioned_cookie_bytes_ = 0u;
   // Cookie jar sizes per partition.
   std::map<CookiePartitionKey, size_t> bytes_per_cookie_partition_;
+
+  // MoltBrowser: with MoltNet's limits (MoltKeepNonceCookieLimits()), the
+  // cookies held under each nonce and the nonces refused; else null.
+  std::unique_ptr<
+      MoltNonceCookieTotals<base::UnguessableToken, CookiePartitionKey>>
+      molt_nonce_cookies_;
 
   CookieMonsterChangeDispatcher change_dispatcher_;
 
