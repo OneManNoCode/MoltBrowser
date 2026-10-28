@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -149,6 +150,58 @@ class TorWrapper(unittest.TestCase):
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, cwd=self.tmp)
             self.assertEqual(proc.returncode, 64, args)
+
+    def test_launcher_mounts_only_roots_own_files(self):
+        """A file to mount over resolv.conf or nsswitch.conf that is a link
+        (or, as root, a file of another account's) is refused before
+        anything is mounted: a process of the user could swap a file of the
+        run directory for a link to any file."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        secret_dir = os.path.join(tmp, 'private')
+        os.mkdir(secret_dir, 0o700)
+        secret = os.path.join(secret_dir, 'secret')
+        with open(secret, 'w') as f:
+            f.write('nameserver 10.9.9.9 # only root reaches this\n')
+        os.chmod(secret, 0o644)
+        linked = os.path.join(tmp, 'resolv.conf')
+        os.symlink(secret, linked)
+        cases = [[linked, '-'], ['-', linked]]
+        if os.geteuid() == 0:
+            users = os.path.join(tmp, 'nsswitch.conf')
+            with open(users, 'w') as f:
+                f.write('hosts: files dns\n')
+            os.chown(users, 65534, 65534)
+            cases += [[users, '-'], ['-', users]]
+        for resolv, nss in cases:
+            proc = subprocess.run(
+                ['bash', netns.LAUNCHER, os.path.join(tmp, 'procs'), resolv,
+                 nss, '0', '0', '-', '-', '--', 'cat', '/etc/resolv.conf'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True)
+            self.assertEqual(proc.returncode, 64, (resolv, nss, proc.stderr))
+            self.assertNotIn('10.9.9.9', proc.stdout)
+            self.assertFalse(os.path.exists(os.path.join(tmp, 'procs')))
+
+    @unittest.skipUnless(os.geteuid() == 0, 'needs root')
+    def test_private_files_are_roots_own(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        box = netns.Sandbox('t0', 54321, 54321, tmp, lambda *a: None)
+        box.private_dir = os.path.join(tmp, 'private')
+        os.mkdir(box.private_dir, 0o755)
+        path = box.write_private('resolv.conf', 'nameserver 127.0.0.1\n')
+        self.assertEqual(path, os.path.join(box.private_dir, 'resolv.conf'))
+        st = os.lstat(path)
+        self.assertTrue(stat.S_ISREG(st.st_mode))
+        self.assertEqual((st.st_uid, stat.S_IMODE(st.st_mode)), (0, 0o644))
+        with open(path) as f:
+            self.assertEqual(f.read(), 'nameserver 127.0.0.1\n')
+        # Never over something already there, a link included.
+        os.symlink('/etc/passwd', os.path.join(box.private_dir, 'x'))
+        for name in ('resolv.conf', 'x'):
+            with self.assertRaises(FileExistsError):
+                box.write_private(name, 'y')
 
     @unittest.skipUnless(os.geteuid() == 0 and shutil.which('unshare') and
                          os.path.exists('/etc/resolv.conf'), 'needs root')

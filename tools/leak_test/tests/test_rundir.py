@@ -19,6 +19,7 @@ import unittest
 
 from leakkit import harness
 from leakkit import rundir
+from leakkit import support
 
 # As root the tests hand files to another user, as the harness does; as
 # anyone else, to themselves (the owner checks then only see the mode).
@@ -427,6 +428,78 @@ class HarnessWritesTest(unittest.TestCase):
         before = self.secret_state()
         self.run.log('not there')   # refused quietly, as a failed log write
         self.assertEqual(self.secret_state(), before)
+
+
+class HarnessReadsTest(unittest.TestCase):
+    """What the harness reads in the run directory (the kit's onion service
+    addresses, MoltNet's torrc and Tor's consensus) it reads through
+    RunDir too: read by path, a link a process of the user put there would
+    have root read a file only root may read, and what it read lands in the
+    manifest and the logs, which the user reads."""
+
+    ONION = 'a' * 56 + '.onion'
+    CONSENSUS = 'r name AAECAwQFBgcICQoLDA0ODxAREhM= x\n'
+    RELAY = '000102030405060708090A0B0C0D0E0F10111213'
+
+    def setUp(self):
+        HarnessWritesTest.setUp(self)
+        # Files only root may read, whose contents the harness would take
+        # if it read them.
+        self.root_files = {}
+        for name, text in (('hostname', self.ONION + '\n'),
+                           ('torrc', 'ConnLimit 4242\n'),
+                           ('cached-consensus', self.CONSENSUS)):
+            path = os.path.join(self.outside, name)
+            with open(path, 'w') as f:
+                f.write(text)
+            os.chmod(path, 0o600)
+            self.root_files[name] = path
+
+    def test_onion_hostname_is_read_through_the_descriptor(self):
+        self.run.user_mkdir('onion', mode=0o700)
+        self.run.user_mkdir('onion', 'a', mode=0o700)
+        hostname = self.run.path('onion', 'a', 'hostname')
+        self.assertIsNone(self.run.onion_hostname('a'))
+        os.symlink(self.root_files['hostname'], hostname)
+        self.assertIsNone(self.run.onion_hostname('a'))
+        os.unlink(hostname)
+        os.link(self.root_files['hostname'], hostname)
+        self.assertIsNone(self.run.onion_hostname('a'))
+        os.unlink(hostname)
+        self.run.rundir.write('onion/a/hostname', 'root:x\n')
+        self.assertIsNone(self.run.onion_hostname('a'))   # not an address
+        self.run.rundir.write('onion/a/hostname', self.ONION + '\n')
+        self.assertEqual(self.run.onion_hostname('a'), self.ONION)
+
+    def test_read_user_path_stays_in_the_run_directory(self):
+        self.run.rundir.write('torrc', 'DataDirectory %s\nConnLimit 9\n' %
+                              self.run.path('tor'))
+        torrc = self.run.path('torrc')
+        self.assertEqual(support.torrc_value(torrc, 'ConnLimit',
+                                             read=self.run.read_user_path),
+                         '9')
+        outside_torrc = self.root_files['torrc']
+        for outside in (outside_torrc, self.run.path('..', 'outside',
+                                                     'torrc'),
+                        self.run.dir, '', None):
+            self.assertIsNone(self.run.read_user_path(outside), outside)
+        # A torrc the user's processes named (the Tor wrapper's log is
+        # theirs) outside the run directory, or a link to one, isn't read.
+        os.symlink(outside_torrc, self.run.path('linked-torrc'))
+        for path in (outside_torrc, self.run.path('linked-torrc')):
+            self.assertIsNone(support.torrc_value(
+                path, 'ConnLimit', read=self.run.read_user_path), path)
+        # Nor a consensus that is a link to one.
+        self.run.user_mkdir('tor')
+        consensus = self.run.path('tor', 'cached-consensus')
+        os.symlink(self.root_files['cached-consensus'], consensus)
+        self.assertEqual(support.consensus_identities(
+            self.run.path('tor'), read=self.run.read_user_path), set())
+        os.unlink(consensus)
+        self.run.rundir.write('tor/cached-consensus', self.CONSENSUS)
+        self.assertEqual(support.consensus_identities(
+            self.run.path('tor'), read=self.run.read_user_path),
+            {self.RELAY})
 
 
 if __name__ == '__main__':
