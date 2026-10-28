@@ -103,36 +103,72 @@ TEST(MoltPulseCaptureSourceTest, RecordsUnderPipeWiresFilters) {
   EXPECT_EQ(CaptureSourceFor("alsa_input.usb-Headset-00.mono-fallback",
                              sources, outputs),
             "alsa_input.usb-Headset-00.mono-fallback");
+  // The canceller on the headset: the headset, though it is listed second.
+  const std::vector<SourceOutputInfo> on_headset = {
+      Output(42, "echo-cancel-1234-21")};
+  EXPECT_EQ(CaptureSourceFor("echo-cancel-source", sources, on_headset),
+            "alsa_input.usb-Headset-00.mono-fallback");
 }
 
-TEST(MoltPulseCaptureSourceTest, FallsBackToTheFirstMicrophone) {
-  // The canceller's capture stream isn't there (not linked yet): the first
-  // hardware source that isn't a monitor.
+// A filter under which the server names no microphone is recorded as asked:
+// never the first microphone the server lists, which may not be the one the
+// filter processes, or there may be none under it.
+TEST(MoltPulseCaptureSourceTest, NeverGuessesAnotherDevice) {
+  // The canceller's capture stream isn't there (not linked yet).
   EXPECT_EQ(CaptureSourceFor("echo-cancel-source", PipeWireSources(), {}),
-            "alsa_input.pci-0000_00_1f.3.analog-stereo");
+            "echo-cancel-source");
   // A master that isn't listed.
   std::vector<SourceInfo> sources = PulseAudioSources();
   sources[3].master_device = "gone";
   EXPECT_EQ(CaptureSourceFor("echo-cancel-source", sources, {}),
-            "alsa_input.pci-0000_00_1f.3.analog-stereo");
-  // No microphone at all besides the filter: the filter, as asked.
+            "echo-cancel-source");
+  // No microphone at all besides the filter.
   const std::vector<SourceInfo> only_filter = {
       Make("echo-cancel-source", 3, false, false, "filter")};
   EXPECT_EQ(CaptureSourceFor("echo-cancel-source", only_filter, {}),
             "echo-cancel-source");
 }
 
+// A virtual microphone that plays applications' output: what the user picked,
+// never a real microphone in its place.
+TEST(MoltPulseCaptureSourceTest, RecordsVirtualMicrophonesAsAsked) {
+  // PulseAudio: module-null-sink and a module-remap-source of its monitor.
+  std::vector<SourceInfo> pulse = PulseAudioSources();
+  pulse.push_back(Make("virtual_speaker.monitor", 5, false, true, "monitor"));
+  pulse.push_back(Make("virtual_mic", 6, false, false, "filter",
+                       "virtual_speaker.monitor"));
+  EXPECT_EQ(CaptureSourceFor("virtual_mic", pulse, {}), "virtual_mic");
+  // A filter on top of it.
+  pulse.push_back(
+      Make("virtual_mic_mono", 7, false, false, "filter", "virtual_mic"));
+  EXPECT_EQ(CaptureSourceFor("virtual_mic_mono", pulse, {}),
+            "virtual_mic_mono");
+  // pipewire-pulse: a loopback whose capture side is a virtual sink, so no
+  // recording stream shares its link group.
+  std::vector<SourceInfo> pipewire = PipeWireSources();
+  pipewire.push_back(
+      Make("virtual-mic", 58, false, false, "", "", "loopback-1234-30"));
+  const std::vector<SourceOutputInfo> outputs = {
+      Output(41, "echo-cancel-1234-21")};
+  EXPECT_EQ(CaptureSourceFor("virtual-mic", pipewire, outputs), "virtual-mic");
+  // A loopback that records a sink's monitor (index 40).
+  const std::vector<SourceOutputInfo> from_monitor = {
+      Output(40, "loopback-1234-30")};
+  EXPECT_EQ(CaptureSourceFor("virtual-mic", pipewire, from_monitor),
+            "virtual-mic");
+}
+
 TEST(MoltPulseCaptureSourceTest, LoopsEnd) {
-  // Two filters naming each other.
+  // Two filters naming each other: as asked.
   const std::vector<SourceInfo> sources = {
       Make("a", 1, false, false, "", "b"), Make("b", 2, false, false, "", "a"),
       Make("mic", 3, true)};
-  EXPECT_EQ(CaptureSourceFor("a", sources, {}), "mic");
+  EXPECT_EQ(CaptureSourceFor("a", sources, {}), "a");
   // A link group whose capture stream reads the filter itself.
   const std::vector<SourceInfo> self = {
       Make("f", 7, false, false, "", "", "g"), Make("mic", 8, true)};
   const std::vector<SourceOutputInfo> outputs = {Output(7, "g")};
-  EXPECT_EQ(CaptureSourceFor("f", self, outputs), "mic");
+  EXPECT_EQ(CaptureSourceFor("f", self, outputs), "f");
 }
 
 }  // namespace

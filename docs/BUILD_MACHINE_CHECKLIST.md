@@ -1333,7 +1333,17 @@ pass except where the table below says otherwise (verify the filters).
   echo-cancel source; MoltNet's recording is cancelled by WebRTC's echo
   canceller. Send `pactl list sources` (the filter's `device.class`,
   `device.master_device`, `node.link-group` and flags) and `pactl list
-  source-outputs` either way. **Windows:** a microphone without raw mode
+  source-outputs` either way. Then (redteam7) a virtual microphone that
+  plays applications' output (`pactl load-module module-null-sink
+  sink_name=virtual_speaker`, `pactl load-module module-remap-source
+  master=virtual_speaker.monitor source_name=virtual_mic`; on PipeWire
+  also a `pw-loopback --capture-props='media.class=Audio/Sink'
+  --playback-props='media.class=Audio/Source'`), picked by `deviceId` in
+  MoltNet with every effect off while a video plays into
+  `virtual_speaker`: *Expected:* `pactl
+  list source-outputs` shows MoltNet's stream on `virtual_mic` (or the
+  loopback's source), never on an `alsa_input...` microphone, and the
+  recording is the video's sound. **Windows:** a microphone without raw mode
   (Device Manager's driver, or `System.Devices.AudioDevice.RawProcessingSupported`
   false in the device's properties; many webcam microphones), and one
   with more than 8 channels if you have one (a microphone array or a
