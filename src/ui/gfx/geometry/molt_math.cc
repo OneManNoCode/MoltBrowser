@@ -31,6 +31,14 @@ bool IsPortable() {
   return Portable();
 }
 
+double PortableSin(double x) {
+  return molt_portable_math::Sin(x);
+}
+
+double PortableCos(double x) {
+  return molt_portable_math::Cos(x);
+}
+
 #define MOLT_MATH_1(T, Name, std_name)                                 \
   T Name(T x) {                                                        \
     return Portable() ? molt_portable_math::Name(x) : std::std_name(x); \

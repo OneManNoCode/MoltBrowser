@@ -128,6 +128,19 @@ TEST_F(MoltMathTest, OnIsPortable) {
   EXPECT_EQ(Bits(Pow(9.628, -4.64)), 0x3efca42b3c54ccf2ull);
 }
 
+// PortableSin() and PortableCos() are the portable functions whether the
+// process chose them or not (media's resampler kernels in the audio service's
+// mixing for MoltNet's echo reference).
+TEST_F(MoltMathTest, PortableEntryPointsIgnoreTheSwitch) {
+  for (bool portable : {false, true}) {
+    SetPortable(portable);
+    for (double x : kArgs) {
+      EXPECT_EQ(Bits(PortableSin(x)), Bits(molt_portable_math::Sin(x))) << x;
+      EXPECT_EQ(Bits(PortableCos(x)), Bits(molt_portable_math::Cos(x))) << x;
+    }
+  }
+}
+
 // The complex functions: std::'s when off; libc++'s formulas with the
 // portable functions when on, NaN and infinity handling included.
 TEST_F(MoltMathTest, Complex) {

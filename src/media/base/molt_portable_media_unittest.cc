@@ -10,14 +10,21 @@
 
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
+#include "base/memory/aligned_memory.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/task_environment.h"
+#include "base/threading/thread.h"
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
+#include "media/base/audio_parameters.h"
 #include "media/base/decoder_factory.h"
 #include "media/base/media_util.h"
 #include "media/base/molt_portable_scale.h"
+#include "media/base/sinc_resampler.h"
+#include "media/base/vector_math.h"
+#include "media/base/vector_math_testing.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_converter.h"
@@ -277,6 +284,99 @@ TEST_F(MoltPortableMediaTest, NoGpuYuvConversionInPortableMode) {
   auto frame = Frame(PIXEL_FORMAT_I420, gfx::Size(16, 16), 4);
   EXPECT_FALSE(PaintCanvasVideoRenderer::CanUseCopyVideoFrameToSharedImage(
       *frame));
+}
+
+// A microphone has no platform effects in a portable media process; other
+// processes keep the device's.
+TEST_F(MoltPortableMediaTest, NoCaptureEffectsInPortableMode) {
+  constexpr int kEffects = AudioParameters::ECHO_CANCELLER |
+                           AudioParameters::NOISE_SUPPRESSION |
+                           AudioParameters::AUTOMATIC_GAIN_CONTROL |
+                           AudioParameters::VOICE_ISOLATION_SUPPORTED;
+  EXPECT_EQ(PortableCaptureEffects(kEffects), kEffects);
+  SetPortableMediaProcessForTesting(true);
+  EXPECT_EQ(PortableCaptureEffects(kEffects), AudioParameters::NO_EFFECTS);
+}
+
+// ScopedPortableAudioThread: the portable audio code on the calling thread
+// while it lives; scopes nest, and other threads don't see them.
+TEST_F(MoltPortableMediaTest, PortableAudioThreadScope) {
+  EXPECT_FALSE(IsPortableAudioThread());
+  {
+    ScopedPortableAudioThread on(true);
+    EXPECT_TRUE(IsPortableAudioThread());
+    {
+      ScopedPortableAudioThread off(false);
+      EXPECT_FALSE(IsPortableAudioThread());
+    }
+    EXPECT_TRUE(IsPortableAudioThread());
+    bool other_thread_portable = true;
+    base::Thread thread("other");
+    ASSERT_TRUE(thread.Start());
+    base::RunLoop run_loop;
+    thread.task_runner()->PostTaskAndReply(
+        FROM_HERE,
+        base::BindOnce([](bool* out) { *out = IsPortableAudioThread(); },
+                       &other_thread_portable),
+        run_loop.QuitClosure());
+    run_loop.Run();
+    EXPECT_FALSE(other_thread_portable);
+  }
+  EXPECT_FALSE(IsPortableAudioThread());
+  // A portable media process computes portably on every thread.
+  SetPortableMediaProcessForTesting(true);
+  EXPECT_TRUE(IsPortableAudioThread());
+}
+
+// In a scope, the audio service's mixing code computes as a portable media
+// process does: FMAC is the plain C sum, and a SincResampler built in one
+// gives the samples of one built and run in a portable media process (the
+// portable kernel, the C convolution).
+TEST_F(MoltPortableMediaTest, PortableAudioThreadMixesWithTheCCode) {
+  constexpr size_t kFrames = 480;
+  auto src =
+      base::AlignedUninit<float>(kFrames, vector_math::kRequiredAlignment);
+  auto scoped =
+      base::AlignedUninit<float>(kFrames, vector_math::kRequiredAlignment);
+  auto plain =
+      base::AlignedUninit<float>(kFrames, vector_math::kRequiredAlignment);
+  uint32_t s = 7;
+  for (size_t i = 0; i < kFrames; ++i) {
+    s = s * 1664525u + 1013904223u;
+    src[i] = static_cast<int32_t>(s) / 2147483648.0f;
+    scoped[i] = plain[i] = 0.25f - i / 4096.0f;
+  }
+  {
+    ScopedPortableAudioThread on(true);
+    vector_math::FMAC(src, 0.7071f, scoped);
+  }
+  vector_math::FMAC_C(src, 0.7071f, plain);
+  EXPECT_EQ(base::span(scoped), base::span(plain));
+
+  // 44.1 kHz to 48 kHz, as the mixing resamples a 44.1 kHz stream.
+  auto resample = [](bool scope) {
+    ScopedPortableAudioThread on(scope);
+    uint32_t phase = 0;
+    SincResampler resampler(
+        44100.0 / 48000.0, 441,
+        base::BindRepeating(
+            [](uint32_t* phase, base::span<float> dest) {
+              for (float& x : dest) {
+                *phase += 97391548u;  // about 1 kHz at 44.1 kHz
+                x = static_cast<int32_t>(*phase) / 4294967296.0f;
+              }
+            },
+            &phase));
+    std::vector<float> out(480 * 20);
+    for (size_t at = 0; at < out.size(); at += 480) {
+      resampler.Resample(base::span(out).subspan(at, 480u));
+    }
+    return out;
+  };
+  const std::vector<float> in_scope = resample(true);
+  SetPortableMediaProcessForTesting(true);
+  const std::vector<float> in_portable_process = resample(false);
+  EXPECT_EQ(in_scope, in_portable_process);
 }
 
 }  // namespace

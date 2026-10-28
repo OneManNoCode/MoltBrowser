@@ -106,6 +106,20 @@
 namespace media {
 namespace {
 constexpr size_t kAlignment = 32;
+
+// MoltBrowser: the kernel's sine and cosine: the portable math functions in
+// MoltNet's renderers and on a thread inside a ScopedPortableAudioThread (the
+// audio service's mixing for MoltNet's echo reference), else the C library's
+// (media/base/molt_portable_media.h, ui/gfx/geometry/molt_math.h).
+double KernelSin(double x) {
+  return IsPortableAudioThread() ? gfx::molt_math::PortableSin(x)
+                                 : gfx::molt_math::Sin(x);
+}
+
+double KernelCos(double x) {
+  return IsPortableAudioThread() ? gfx::molt_math::PortableCos(x)
+                                 : gfx::molt_math::Cos(x);
+}
 }
 
 static double SincScaleFactor(double io_ratio, size_t kernel_size) {
@@ -240,20 +254,19 @@ void SincResampler::InitializeKernel() {
 
       // Compute Blackman window, matching the offset of the sinc().
       const float x = (i - subsample_offset) / signed_kernel_size;
-      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
-      const float window = static_cast<float>(
-          kA0 - kA1 * gfx::molt_math::Cos(2.0 * std::numbers::pi * x) +
-          kA2 * gfx::molt_math::Cos(4.0 * std::numbers::pi * x));
+      // MoltBrowser: portable in MoltNet (KernelCos() above).
+      const float window =
+          static_cast<float>(kA0 - kA1 * KernelCos(2.0 * std::numbers::pi * x) +
+                             kA2 * KernelCos(4.0 * std::numbers::pi * x));
       kernel_window_storage_[idx] = window;
 
       // Compute the sinc with offset, then window the sinc() function and store
       // at the correct offset.
-      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      // MoltBrowser: portable in MoltNet (KernelSin() above).
       kernel_storage_[idx] = static_cast<float>(
-          window *
-          (pre_sinc
-               ? gfx::molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc
-               : sinc_scale_factor));
+          window * (pre_sinc
+                        ? KernelSin(sinc_scale_factor * pre_sinc) / pre_sinc
+                        : sinc_scale_factor));
     }
   }
 }
@@ -277,12 +290,11 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
       const float window = kernel_window_storage_[idx];
       const float pre_sinc = kernel_pre_sinc_storage_[idx];
 
-      // MoltBrowser: portable in MoltNet (ui/gfx/geometry/molt_math.h).
+      // MoltBrowser: portable in MoltNet (KernelSin() above).
       kernel_storage_[idx] = static_cast<float>(
-          window *
-          (pre_sinc
-               ? gfx::molt_math::Sin(sinc_scale_factor * pre_sinc) / pre_sinc
-               : sinc_scale_factor));
+          window * (pre_sinc
+                        ? KernelSin(sinc_scale_factor * pre_sinc) / pre_sinc
+                        : sinc_scale_factor));
     }
   }
 }
@@ -297,6 +309,12 @@ void SincResampler::Resample(base::span<float> destination) {
     read_cb_.Run(r0_.first(request_frames_));
     buffer_primed_ = true;
   }
+
+  // MoltBrowser: the plain C convolution on a thread that computes as
+  // MoltNet's renderers do (media/base/molt_portable_media.h), whatever this
+  // resampler picked when it was built.
+  const ConvolveProc convolve =
+      IsPortableAudioThread() ? Convolve_C : convolve_proc_;
 
   // Step (2) -- Resample!
   auto dest_iter = destination.begin();
@@ -335,7 +353,7 @@ void SincResampler::Resample(base::span<float> destination) {
         const double kernel_interpolation_factor =
             virtual_offset_idx - offset_idx;
         *dest_iter++ =
-            convolve_proc_(input_span, k1, k2, kernel_interpolation_factor);
+            convolve(input_span, k1, k2, kernel_interpolation_factor);
 
         // Advance the virtual index.
         virtual_source_idx_ += io_sample_rate_ratio_;

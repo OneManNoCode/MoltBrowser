@@ -32,6 +32,13 @@ namespace gfx::molt_math {
 COMPONENT_EXPORT(GEOMETRY) void SetPortable(bool portable);
 COMPONENT_EXPORT(GEOMETRY) bool IsPortable();
 
+// The portable functions themselves, whatever the process chose, for a caller
+// that decides per thread: media's resampler kernel on a thread inside a
+// media::ScopedPortableAudioThread (the audio service's mixing for MoltNet's
+// echo reference; media/base/molt_portable_media.h).
+COMPONENT_EXPORT(GEOMETRY) double PortableSin(double x);
+COMPONENT_EXPORT(GEOMETRY) double PortableCos(double x);
+
 // double
 COMPONENT_EXPORT(GEOMETRY) double Sin(double x);
 COMPONENT_EXPORT(GEOMETRY) double Cos(double x);
