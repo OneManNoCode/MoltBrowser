@@ -1000,6 +1000,17 @@ void QuotaManagerImpl::UpdateOrCreateBucket(
     return;
   }
 
+  // MoltBrowser: a closed site (a page's nonce past its site's bound:
+  // MoltDropNonce()) gets no bucket, so its frames can't make quota-managed
+  // storage again, whether a write checks the quota or not (IndexedDB, Cache
+  // Storage and the file systems fail to open, a service worker or a
+  // Storage Bucket isn't made; chrome/browser/molt_ai/tor/
+  // molt_net_nonce_storage_policy.h).
+  if (MoltIsSiteClosed(MoltBudgetSiteOf(bucket_params.storage_key))) {
+    std::move(callback).Run(base::unexpected(QuotaError::kQuotaExceeded));
+    return;
+  }
+
   last_opened_bucket_site_ = bucket_params.storage_key;
 
   // The default bucket skips the quota check.

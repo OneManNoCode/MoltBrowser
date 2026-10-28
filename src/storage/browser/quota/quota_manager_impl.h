@@ -341,9 +341,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManagerImpl
   // MoltBrowser: for MoltNet's storage budget (molt_storage_budget.h).
   // Deletes the buckets of `storage_keys` (those with `nonce`: the storage
   // keys of a page's credentialless frames), and then forgets the nonce's
-  // site. With `closed`, the nonce's storage keys get no room from then on
-  // (their page lives on past its site's bound); without, that ends (the page
-  // is gone).
+  // site. With `closed`, the nonce's storage keys get no room and no bucket
+  // from then on (their page lives on past its site's bound); without, that
+  // ends (the page is gone).
   void MoltDropNonce(const base::UnguessableToken& nonce,
                      const std::vector<blink::StorageKey>& storage_keys,
                      bool closed);

@@ -505,7 +505,7 @@ source_set("nonce_storage_policy") {
 
 # The tab helper that applies it to MoltNet's tabs (attached by
 # tab_helpers.cc): it notes the nonces a page's frames use and drops their
-# storage, media-license data and cookies when the page goes.
+# storage, media-license data, cookies and network state when the page goes.
 source_set("nonce_storage") {
   sources = [
     "molt_net_nonce_storage.cc",
@@ -521,8 +521,8 @@ source_set("nonce_storage") {
     "//media:media_buildflags",
     "//net",
 
-    # The cookie store deletes the nonce's partitions
-    # (network::mojom::CookieManager::DeleteCookies()).
+    # The network context drops the nonce's cookies and network state
+    # (network::mojom::NetworkContext::MoltDropNonce()).
     "//services/network/public/mojom",
 
     # The quota manager drops the nonce's buckets

@@ -7,17 +7,17 @@
 //
 // Attached to every tab of a MoltNet profile (tab_helpers.cc). It sees each
 // frame of the tab as it is made and as it commits a navigation, and notes,
-// on the frame's page (content::PageUserData), the storage keys with a nonce
-// its frames use (a credentialless iframe's, a fenced frame's), and the
-// cookie partitions their navigations' requests may set cookies in (one per
-// URL requested, redirects included, committed or not). When the page goes,
-// the storage partition drops what they stored
-// (content::DOMStorageContext::MoltDropNonce(), storage::QuotaManager::
-// MoltDropNonce(), the media-license data of each storage key) and the
-// cookie store their cookies (network::mojom::CookieManager::
-// DeleteCookies()), those again a minute later; past a site's bound, its
-// oldest such page's group is closed the same way, its storage writes
-// refused until it goes.
+// on the frame's page (content::PageUserData), the nonces its frames use (a
+// credentialless iframe's, a fenced frame's), through their storage keys
+// and their navigations' requests (committed or not), and the storage keys
+// (at most kMoltNetNonceStorageKeysPerGroup a group). When the last page
+// that used a nonce goes, the storage partition drops what its frames
+// stored (content::DOMStorageContext::MoltDropNonce(),
+// storage::QuotaManager::MoltDropNonce(), the media-license data of each
+// storage key) and the network context their cookies and the network state
+// kept under the nonce (network::mojom::NetworkContext::MoltDropNonce()),
+// again a minute later; past a site's bound, or its own, a group is closed
+// the same way, everything it could store refused until its page goes.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NONCE_STORAGE_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NONCE_STORAGE_H_
