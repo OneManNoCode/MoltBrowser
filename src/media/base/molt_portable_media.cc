@@ -83,6 +83,27 @@ AudioParameters PortableCaptureOutputFormat(const AudioParameters& input,
                          kPortableCaptureFramesPerBuffer);
 }
 
+static_assert(kPortableCaptureEffect > AudioParameters::DEEP_NOISE_SUPPRESSION,
+              "the portable capture bit must stay clear of the platform "
+              "effects");
+
+int PortableCaptureStreamEffects() {
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  return kPortableCaptureEffect;
+#else
+  return AudioParameters::NO_EFFECTS;
+#endif
+}
+
+bool PortableCaptureMayUseCommunicationsCategory(
+    const AudioParameters& params,
+    int channels) {
+  if (!(params.effects() & kPortableCaptureEffect)) {
+    return true;
+  }
+  return channels > 0 && channels <= kPortableCaptureMaxRawChannels;
+}
+
 ScopedPortableAudioThread::ScopedPortableAudioThread(bool portable)
     : previous_(t_portable_audio) {
   t_portable_audio = portable;

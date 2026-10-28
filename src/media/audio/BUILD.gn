@@ -330,6 +330,12 @@ source_set("audio") {
     sources += [
       "pulse/audio_manager_pulse.cc",
       "pulse/audio_manager_pulse.h",
+
+      # MoltBrowser: the source a MoltNet microphone stream records from.
+      "pulse/molt_capture_source.cc",
+      "pulse/molt_capture_source.h",
+      "pulse/molt_pulse_capture.cc",
+      "pulse/molt_pulse_capture.h",
       "pulse/pulse_input.cc",
       "pulse/pulse_input.h",
       "pulse/pulse_loopback.cc",
@@ -523,6 +529,11 @@ source_set("unit_tests") {
       "cras/cras_input_unittest.cc",
       "cras/cras_unified_unittest.cc",
     ]
+  }
+
+  # MoltBrowser: the source a MoltNet microphone stream records from.
+  if (use_pulseaudio) {
+    sources += [ "pulse/molt_capture_source_unittest.cc" ]
   }
 
   if (is_win) {

@@ -619,6 +619,13 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
           audio_processing_settings.NeedWebrtcAudioProcessing(),
           device_format));
   params.set_effects(device_format.effects());
+  // MoltBrowser: a CPU-independent stream (MoltNet's) opens the device
+  // without the OS's processing, also where the audio service asks the device
+  // for its parameters itself, and marked for the platform code
+  // (media/base/molt_portable_media.h, kPortableCaptureEffect).
+  if (audio_processing_settings.cpu_independent) {
+    params.set_effects(PortableCaptureStreamEffects());
+  }
   if (channel_layout == CHANNEL_LAYOUT_DISCRETE) {
     DCHECK_LE(device_format.channels(), 2);
   }

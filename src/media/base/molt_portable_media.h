@@ -48,6 +48,11 @@
 //     two channels, 10 ms; PortableCaptureParameters() below), and its
 //     stream is delivered in it, converted from the device's by the
 //     CPU-independent processing (PortableCaptureOutputFormat());
+//   * the device opens without the OS's processing also where the audio
+//     service opens it, and the platform code keeps the OS's processing out
+//     of the stream: on Linux it records from the microphone under a
+//     PulseAudio or PipeWire filter source, on Windows it never takes the
+//     communications category without raw mode (kPortableCaptureEffect);
 //   * the playout its echo canceller hears, which the audio service mixes for
 //     the output device, is mixed with the plain C code while a stream of such
 //     a process listens (ScopedPortableAudioThread below);
@@ -121,6 +126,40 @@ PortableCaptureParameters(const AudioParameters& device);
 // and latency are read from it.
 MEDIA_EXPORT AudioParameters
 PortableCaptureOutputFormat(const AudioParameters& input, bool stereo);
+
+// How the audio service's platform code knows a microphone stream comes from
+// a portable media process: the effects of the format it opens the device in
+// are this bit alone (no platform effects; AudioParameters::
+// PlatformEffectsMask uses none this high, and no platform code reads it
+// otherwise). AudioProcessor::ComputeInputFormat() sets them for a
+// CPU-independent stream (PortableCaptureStreamEffects()), in the renderer
+// and in the audio service alike. Then:
+//   * Linux (PulseAudio and pipewire-pulse): the stream records from the
+//     microphone under a filter source (an echo canceller's, a noise filter's)
+//     instead of the filter (media/audio/pulse/molt_capture_source.h);
+//   * Windows: the stream never takes the communications category without
+//     raw mode (PortableCaptureMayUseCommunicationsCategory() below).
+inline constexpr int kPortableCaptureEffect = 1 << 30;
+
+// The effects a CPU-independent stream opens its device with: no platform
+// effects, and kPortableCaptureEffect on Linux and Windows, whose platform
+// code reads it. Elsewhere none at all: Android's audio code takes any effect
+// as a request for the OS's communication mode and its processing.
+MEDIA_EXPORT int PortableCaptureStreamEffects();
+
+// Windows: whether a capture stream opened with `params` may ask for the
+// communications category on a device with raw mode (WASAPIAudioInputStream).
+// Chromium asks for it with raw mode on devices of up to 8 channels and
+// without raw mode, so with the OS's communications processing (Voice Clarity
+// on Windows 11 24H2 when the device has none of its own), on devices with
+// more. A portable media process's stream (kPortableCaptureEffect) takes it
+// only with raw mode: on a device with more channels it stays in the default
+// category, as on a device without raw mode. `channels`: the audio engine's
+// channel count for the device.
+inline constexpr int kPortableCaptureMaxRawChannels = 8;
+MEDIA_EXPORT bool PortableCaptureMayUseCommunicationsCategory(
+    const AudioParameters& params,
+    int channels);
 
 // The audio service's mixing for a portable process's echo canceller.
 //

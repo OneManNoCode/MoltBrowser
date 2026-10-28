@@ -583,6 +583,38 @@ TEST_F(MoltPortableMediaTest, PortableCaptureParametersAreTheSameForAll) {
             AudioParameters::NO_EFFECTS);
 }
 
+// Windows: a portable process's stream never takes the communications
+// category without raw mode (more than 8 channels); others keep Chromium's.
+TEST_F(MoltPortableMediaTest, CommunicationsCategoryOnlyWithRawMode) {
+  AudioParameters chromium(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                           ChannelLayoutConfig::Stereo(), 48000, 480);
+  AudioParameters portable = chromium;
+  portable.set_effects(kPortableCaptureEffect);
+  for (const int channels : {1, 2, 8}) {
+    EXPECT_TRUE(PortableCaptureMayUseCommunicationsCategory(chromium,
+                                                            channels));
+    EXPECT_TRUE(PortableCaptureMayUseCommunicationsCategory(portable,
+                                                            channels));
+  }
+  EXPECT_TRUE(PortableCaptureMayUseCommunicationsCategory(chromium, 16));
+  EXPECT_FALSE(PortableCaptureMayUseCommunicationsCategory(portable, 9));
+  EXPECT_FALSE(PortableCaptureMayUseCommunicationsCategory(portable, 16));
+  EXPECT_FALSE(PortableCaptureMayUseCommunicationsCategory(portable, 0));
+}
+
+// The device of a portable process's stream opens with no platform effect,
+// marked where the platform code reads the mark; on Android, where any effect
+// asks for the OS's communication mode, with none at all.
+TEST_F(MoltPortableMediaTest, PortableCaptureStreamEffects) {
+  EXPECT_EQ(PortableCaptureStreamEffects() & ~kPortableCaptureEffect,
+            AudioParameters::NO_EFFECTS);
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  EXPECT_EQ(PortableCaptureStreamEffects(), kPortableCaptureEffect);
+#else
+  EXPECT_EQ(PortableCaptureStreamEffects(), AudioParameters::NO_EFFECTS);
+#endif
+}
+
 TEST_F(MoltPortableMediaTest, PortableCaptureOutputFormat) {
   const AudioParameters mono_16k(AudioParameters::AUDIO_PCM_LOW_LATENCY,
                                  ChannelLayoutConfig::Mono(), 16000, 160);

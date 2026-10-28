@@ -56,6 +56,7 @@
 #include "media/base/channel_layout.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/base/sample_format.h"
 #include "media/base/timestamp_constants.h"
 
@@ -910,8 +911,13 @@ AudioInputStream::OpenOutcome WASAPIAudioInputStream::Open() {
   // audio stream. Ignoring return value since the method logs its own error
   // messages and it should be OK to continue opening the stream even after a
   // failure.
+  // MoltBrowser: a MoltNet stream takes the communications category only
+  // with raw mode, never with the OS's communications processing
+  // (media/base/molt_portable_media.h).
   if (raw_processing_supported_ &&
-      !AudioDeviceDescription::IsLoopbackDevice(device_id_) && SUCCEEDED(hr)) {
+      !AudioDeviceDescription::IsLoopbackDevice(device_id_) && SUCCEEDED(hr) &&
+      PortableCaptureMayUseCommunicationsCategory(params_,
+                                                  audio_engine_channels)) {
     SetCommunicationsCategoryAndMaybeRawCaptureMode(audio_engine_channels);
   }
 

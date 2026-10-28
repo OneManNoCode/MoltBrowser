@@ -21,10 +21,12 @@
 #include <cstdint>
 #include <cstring>
 #include <ios>
+#include <optional>
 #include <vector>
 
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
+#include "media/base/molt_portable_media.h"
 #include "media/webrtc/audio_processor.h"
 #include "media/webrtc/helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -341,6 +343,22 @@ TEST(MoltCpuIndependentProcessingTest, OneOutputFormatForEveryDevice) {
                       .Equals(out));
     }
   }
+  // The device opens in its own format, without the OS's processing, marked
+  // for the platform code (kPortableCaptureEffect on Linux and Windows).
+  AudioParameters with_effects = devices[0];
+  with_effects.set_effects(AudioParameters::NOISE_SUPPRESSION |
+                           AudioParameters::ECHO_CANCELLER);
+  const std::optional<AudioParameters> opened =
+      AudioProcessor::ComputeInputFormat(with_effects, Settings(true));
+  ASSERT_TRUE(opened.has_value());
+  EXPECT_EQ(opened->sample_rate(), 44100);
+  EXPECT_EQ(opened->channels(), 1);
+  EXPECT_EQ(opened->effects(), PortableCaptureStreamEffects());
+  const std::optional<AudioParameters> opened_by_chromium =
+      AudioProcessor::ComputeInputFormat(with_effects, Settings(false));
+  ASSERT_TRUE(opened_by_chromium.has_value());
+  EXPECT_EQ(opened_by_chromium->effects(), with_effects.effects());
+
   // Without the mode: Chromium's, which follows the device.
   AudioProcessingSettings chromium = Settings(false);
   chromium.multi_channel_capture_processing = true;
