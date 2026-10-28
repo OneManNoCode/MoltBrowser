@@ -32,6 +32,7 @@
 #include "media/base/video_util.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_gfx.h"
@@ -516,6 +517,14 @@ VideoTrackAdapter::VideoFrameResolutionAdapter::AdaptFrameResolution(
     scoped_refptr<media::VideoFrame> video_frame,
     bool is_device_rotated) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(video_sequence_checker_);
+  // MoltBrowser: a MoltNet camera track's frames are cropped and scaled to
+  // exactly its size, into new frames (moltnet_camera.h).
+  if (std::optional<gfx::Size> uniform_size =
+          molt_fingerprinting::UniformCameraFrameSize(is_device_rotated,
+                                                      settings_)) {
+    return molt_fingerprinting::AdaptUniformCameraFrame(
+        std::move(video_frame), *uniform_size, frame_pool_, frame_converter_);
+  }
   // If the frame holds a SharedImage that is not CPU-mappable we don't apply
   // cropping/scaling and deliver the frame as-is, leaving it up to the
   // destination to rescale it. Otherwise, cropping and scaling is soft-applied
@@ -976,6 +985,13 @@ bool VideoTrackAdapter::CalculateDesiredSize(
     const gfx::Size& original_input_size,
     const VideoTrackAdapterSettings& settings,
     gfx::Size* desired_size) {
+  // MoltBrowser: a MoltNet camera track's frames have exactly its size
+  // (moltnet_camera.h).
+  if (std::optional<gfx::Size> uniform_size =
+          molt_fingerprinting::UniformCameraFrameSize(is_rotated, settings)) {
+    *desired_size = *uniform_size;
+    return true;
+  }
   // Perform all the rescaling computations as if the device was never rotated.
   int width =
       is_rotated ? original_input_size.height() : original_input_size.width();

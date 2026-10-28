@@ -51,11 +51,25 @@ class MODULES_EXPORT VideoTrackAdapterSettings {
     max_frame_rate_ = max_frame_rate;
   }
 
+  // MoltBrowser: a MoltNet camera track's settings
+  // (molt_fingerprinting::UniformCameraSettings(), moltnet_camera.h): its
+  // frames have exactly target_size(), and its getSettings() reports
+  // resizeMode "none" when `reports_no_resize`.
+  bool molt_uniform_camera() const { return molt_uniform_camera_; }
+  bool molt_reports_no_resize() const { return molt_reports_no_resize_; }
+  void set_molt_uniform_camera(bool reports_no_resize) {
+    molt_uniform_camera_ = true;
+    molt_reports_no_resize_ = reports_no_resize;
+  }
+
  private:
   std::optional<gfx::Size> target_size_;
   double min_aspect_ratio_;
   double max_aspect_ratio_;
   std::optional<double> max_frame_rate_;
+  // MoltBrowser: see molt_uniform_camera().
+  bool molt_uniform_camera_ = false;
+  bool molt_reports_no_resize_ = false;
 };
 
 }  // namespace blink

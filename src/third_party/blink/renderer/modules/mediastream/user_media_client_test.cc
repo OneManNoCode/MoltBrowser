@@ -57,16 +57,20 @@
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
+#include "third_party/blink/renderer/modules/mediastream/input_device_info.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_video_content.h"
+#include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_video_device.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track_impl.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_constraint_factory.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_media_stream_video_source.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_mojo_media_stream_dispatcher_host.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/user_media_request.h"
+#include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_source.h"
@@ -443,9 +447,21 @@ class MockMediaDevicesDispatcherHost
     std::move(callback).Run("");
   }
 
+  // MoltBrowser: the formats GetAllVideoInputDeviceFormats() reports from
+  // now on (the camera's modes of MoltNet's tests).
+  void SetAllVideoInputDeviceFormats(
+      Vector<media::VideoCaptureFormat> formats) {
+    all_video_input_device_formats_ = std::move(formats);
+  }
+
   void GetAllVideoInputDeviceFormats(
       const String&,
       GetAllVideoInputDeviceFormatsCallback callback) override {
+    // MoltBrowser: see SetAllVideoInputDeviceFormats().
+    if (all_video_input_device_formats_) {
+      std::move(callback).Run(*all_video_input_device_formats_);
+      return;
+    }
     Vector<media::VideoCaptureFormat> formats;
     formats.push_back(media::VideoCaptureFormat(gfx::Size(640, 480), 30.0f,
                                                 media::PIXEL_FORMAT_I420));
@@ -483,6 +499,9 @@ class MockMediaDevicesDispatcherHost
   // GetVideoInputCapabilities()
   Vector<blink::mojom::blink::VideoInputDeviceCapabilitiesPtr>
       video_input_capabilities_;
+  // MoltBrowser: GetAllVideoInputDeviceFormats(), when set.
+  std::optional<Vector<media::VideoCaptureFormat>>
+      all_video_input_device_formats_;
 };
 
 enum RequestState {
@@ -2844,6 +2863,414 @@ TEST_F(UserMediaClientTest, MoltNetChannelCountFollowsTheRequest) {
   EXPECT_EQ(
       channels_for(media::ChannelLayoutConfig::Stereo(), false, std::nullopt),
       2);
+}
+
+// MoltBrowser: MoltNet's cameras (moltnet_camera.h). A camera's modes, as
+// the browser reports them.
+Vector<media::VideoCaptureFormat> MoltNetHdCameraModes() {
+  return {
+      media::VideoCaptureFormat(gfx::Size(1920, 1080), 30.0f,
+                                media::PIXEL_FORMAT_MJPEG),
+      media::VideoCaptureFormat(gfx::Size(1280, 720), 60.0f,
+                                media::PIXEL_FORMAT_NV12),
+      media::VideoCaptureFormat(gfx::Size(1280, 720), 30.0f,
+                                media::PIXEL_FORMAT_MJPEG),
+      media::VideoCaptureFormat(gfx::Size(960, 540), 30.0f,
+                                media::PIXEL_FORMAT_NV12),
+      media::VideoCaptureFormat(gfx::Size(640, 480), 30.0f,
+                                media::PIXEL_FORMAT_NV12),
+      media::VideoCaptureFormat(gfx::Size(320, 180), 15.0f,
+                                media::PIXEL_FORMAT_NV12),
+  };
+}
+
+// MoltNet's media again however a test ends.
+struct ScopedMoltNetCameras {
+  ScopedMoltNetCameras() {
+    media::SetPortableMediaProcessForTesting(true);
+    molt_fingerprinting::SetMoltNetMediaForTesting(true);
+  }
+  ~ScopedMoltNetCameras() {
+    molt_fingerprinting::SetMoltNetMediaForTesting(false);
+    media::SetPortableMediaProcessForTesting(false);
+  }
+};
+
+// The settings for a camera with `modes`, as getUserMedia() selects them
+// with `constraints`.
+VideoCaptureSettings SelectCameraSettings(
+    const Vector<media::VideoCaptureFormat>& modes,
+    const MediaConstraints& constraints) {
+  VideoDeviceCaptureCapabilities capabilities;
+  capabilities.device_capabilities.emplace_back(
+      "camera", "group", media::VideoCaptureControlSupport(), modes,
+      mojom::blink::FacingMode::kUser);
+  capabilities.noise_reduction_capabilities = {std::optional<bool>()};
+  molt_fingerprinting::UseUniformCameraFormats(capabilities);
+  return molt_fingerprinting::UniformCameraSettings(
+      SelectSettingsVideoDeviceCapture(
+          capabilities, constraints, MediaStreamVideoSource::kDefaultWidth,
+          MediaStreamVideoSource::kDefaultHeight,
+          MediaStreamVideoSource::kDefaultFrameRate),
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+}
+
+// The size a track with `settings` delivers.
+gfx::Size TrackSize(const VideoCaptureSettings& settings) {
+  EXPECT_TRUE(settings.track_adapter_settings().target_size().has_value());
+  return settings.track_adapter_settings().target_size().value_or(
+      gfx::Size());
+}
+
+// MoltBrowser: in MoltNet Chromium's constraints algorithm chooses among the
+// menu formats a camera reaches as among its own modes: an HD camera's are
+// 640x480 and 1280x720 at 30 fps, whatever modes it has, and the track gets
+// exactly the size chosen; constraints no menu format meets fail on every
+// camera. Normal windows choose among the camera's modes.
+TEST(MoltNetCameraTest, ConstraintsChooseAmongTheMenu) {
+  test::TaskEnvironment task_environment;
+  ScopedMoltNetCameras moltnet;
+  const Vector<media::VideoCaptureFormat> hd = MoltNetHdCameraModes();
+
+  // No constraints: 640x480 at 30 fps, the entry as it is.
+  VideoCaptureSettings settings = SelectCameraSettings(
+      hd, MockConstraintFactory().CreateMediaConstraints());
+  ASSERT_TRUE(settings.HasValue());
+  EXPECT_EQ(settings.Format().frame_size, gfx::Size(640, 480));
+  EXPECT_EQ(settings.Format().frame_rate, 30.0f);
+  EXPECT_EQ(TrackSize(settings), gfx::Size(640, 480));
+  EXPECT_TRUE(settings.track_adapter_settings().molt_uniform_camera());
+  EXPECT_TRUE(settings.track_adapter_settings().molt_reports_no_resize());
+  EXPECT_EQ(settings.track_adapter_settings().max_frame_rate(), 30.0);
+
+  // Full HD asked for: the larger entry, as it is.
+  {
+    MockConstraintFactory factory;
+    factory.basic().width.SetIdeal(1920);
+    factory.basic().height.SetIdeal(1080);
+    factory.basic().frame_rate.SetIdeal(60.0);
+    settings = SelectCameraSettings(hd, factory.CreateMediaConstraints());
+    ASSERT_TRUE(settings.HasValue());
+    EXPECT_EQ(settings.Format().frame_size, gfx::Size(1280, 720));
+    EXPECT_EQ(TrackSize(settings), gfx::Size(1280, 720));
+    EXPECT_TRUE(settings.track_adapter_settings().molt_reports_no_resize());
+    EXPECT_EQ(settings.track_adapter_settings().max_frame_rate(), 30.0);
+  }
+  // A size between the entries, cropped and scaled from the larger one, at a
+  // lower rate.
+  {
+    MockConstraintFactory factory;
+    factory.basic().width.SetExact(800);
+    factory.basic().height.SetExact(600);
+    factory.basic().frame_rate.SetExact(15.0);
+    settings = SelectCameraSettings(hd, factory.CreateMediaConstraints());
+    ASSERT_TRUE(settings.HasValue());
+    EXPECT_EQ(settings.Format().frame_size, gfx::Size(1280, 720));
+    EXPECT_EQ(TrackSize(settings), gfx::Size(800, 600));
+    EXPECT_FALSE(settings.track_adapter_settings().molt_reports_no_resize());
+    EXPECT_EQ(settings.track_adapter_settings().max_frame_rate(), 15.0);
+  }
+  // resizeMode "none": an entry's own size, the closest.
+  {
+    MockConstraintFactory factory;
+    factory.basic().resize_mode.SetExact(
+        String(WebMediaStreamTrack::kResizeModeNone));
+    factory.basic().width.SetIdeal(800);
+    settings = SelectCameraSettings(hd, factory.CreateMediaConstraints());
+    ASSERT_TRUE(settings.HasValue());
+    EXPECT_EQ(TrackSize(settings), gfx::Size(640, 480));
+    EXPECT_TRUE(settings.track_adapter_settings().molt_reports_no_resize());
+  }
+  // Beyond the menu: the camera's own 1920x1080 and 60 fps aren't there.
+  {
+    MockConstraintFactory factory;
+    factory.basic().width.SetMin(1281);
+    settings = SelectCameraSettings(hd, factory.CreateMediaConstraints());
+    EXPECT_FALSE(settings.HasValue());
+    EXPECT_STREQ(settings.failed_constraint_name(), "width");
+  }
+  {
+    MockConstraintFactory factory;
+    factory.basic().frame_rate.SetExact(60.0);
+    settings = SelectCameraSettings(hd, factory.CreateMediaConstraints());
+    EXPECT_FALSE(settings.HasValue());
+    EXPECT_STREQ(settings.failed_constraint_name(), "frameRate");
+  }
+
+  // A camera whose largest mode is 640x480 reaches 640x480 alone: HD asked
+  // for gives 640x480, HD required fails.
+  const Vector<media::VideoCaptureFormat> vga = {
+      media::VideoCaptureFormat(gfx::Size(640, 480), 30.0f,
+                                media::PIXEL_FORMAT_YUY2),
+      media::VideoCaptureFormat(gfx::Size(320, 240), 30.0f,
+                                media::PIXEL_FORMAT_YUY2)};
+  {
+    MockConstraintFactory factory;
+    factory.basic().width.SetIdeal(1280);
+    factory.basic().height.SetIdeal(720);
+    settings = SelectCameraSettings(vga, factory.CreateMediaConstraints());
+    ASSERT_TRUE(settings.HasValue());
+    EXPECT_EQ(settings.Format().frame_size, gfx::Size(640, 480));
+    EXPECT_EQ(TrackSize(settings), gfx::Size(640, 480));
+  }
+  {
+    MockConstraintFactory factory;
+    factory.basic().width.SetMin(641);
+    settings = SelectCameraSettings(vga, factory.CreateMediaConstraints());
+    EXPECT_FALSE(settings.HasValue());
+    EXPECT_STREQ(settings.failed_constraint_name(), "width");
+  }
+  // A camera below the menu still works: its frames are scaled up to the
+  // smallest entry.
+  settings = SelectCameraSettings(
+      {media::VideoCaptureFormat(gfx::Size(320, 240), 30.0f,
+                                 media::PIXEL_FORMAT_I420)},
+      MockConstraintFactory().CreateMediaConstraints());
+  ASSERT_TRUE(settings.HasValue());
+  EXPECT_EQ(TrackSize(settings), gfx::Size(640, 480));
+
+  // Screen capture keeps its settings; so do normal windows.
+  VideoCaptureSettings other = molt_fingerprinting::UniformCameraSettings(
+      settings, mojom::blink::MediaStreamType::DISPLAY_VIDEO_CAPTURE);
+  EXPECT_TRUE(other.track_adapter_settings() ==
+              settings.track_adapter_settings());
+  molt_fingerprinting::SetMoltNetMediaForTesting(false);
+  {
+    MockConstraintFactory factory;
+    factory.basic().width.SetIdeal(1920);
+    factory.basic().height.SetIdeal(1080);
+    settings = SelectCameraSettings(hd, factory.CreateMediaConstraints());
+    ASSERT_TRUE(settings.HasValue());
+    EXPECT_EQ(settings.Format().frame_size, gfx::Size(1920, 1080));
+    EXPECT_FALSE(settings.track_adapter_settings().molt_uniform_camera());
+  }
+}
+
+// MoltBrowser: a MoltNet camera opens in its smallest mode that reaches
+// every menu format it shows, at no more than 30 fps, whatever entry the
+// page's track takes (moltnet::UniformCameraOpenMode()).
+TEST(MoltNetCameraTest, OpensInTheModeThatReachesTheMenu) {
+  test::TaskEnvironment task_environment;
+  ScopedMoltNetCameras moltnet;
+  media::VideoCaptureParams params;
+  params.requested_format = media::VideoCaptureFormat(
+      gfx::Size(640, 480), 30.0f, media::PIXEL_FORMAT_I420);
+
+  media::VideoCaptureParams opened =
+      molt_fingerprinting::UniformCameraCaptureParams(
+          params, MoltNetHdCameraModes(),
+          mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+  EXPECT_EQ(opened.requested_format.frame_size, gfx::Size(1280, 720));
+  EXPECT_EQ(opened.requested_format.frame_rate, 30.0f);
+  EXPECT_EQ(opened.requested_format.pixel_format, media::PIXEL_FORMAT_MJPEG);
+
+  // A mode faster than the menu asks for its rate.
+  opened = molt_fingerprinting::UniformCameraCaptureParams(
+      params,
+      {media::VideoCaptureFormat(gfx::Size(1280, 720), 60.0f,
+                                 media::PIXEL_FORMAT_NV12)},
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+  EXPECT_EQ(opened.requested_format.frame_size, gfx::Size(1280, 720));
+  EXPECT_EQ(opened.requested_format.frame_rate, 30.0f);
+
+  // Without a mode, and for screen capture and normal windows, the
+  // selection's parameters.
+  EXPECT_EQ(molt_fingerprinting::UniformCameraCaptureParams(
+                params, {}, mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE)
+                .requested_format,
+            params.requested_format);
+  EXPECT_EQ(molt_fingerprinting::UniformCameraCaptureParams(
+                params, MoltNetHdCameraModes(),
+                mojom::blink::MediaStreamType::DISPLAY_VIDEO_CAPTURE)
+                .requested_format,
+            params.requested_format);
+  molt_fingerprinting::SetMoltNetMediaForTesting(false);
+  EXPECT_EQ(molt_fingerprinting::UniformCameraCaptureParams(
+                params, MoltNetHdCameraModes(),
+                mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE)
+                .requested_format,
+            params.requested_format);
+}
+
+// MoltBrowser: enumerateDevices()' InputDeviceInfo.getCapabilities() of a
+// MoltNet camera describes the menu formats it reaches.
+TEST(MoltNetCameraTest, InputDeviceInfoShowsTheMenu) {
+  test::TaskEnvironment task_environment;
+  ScopedMoltNetCameras moltnet;
+  auto info = [](const Vector<media::VideoCaptureFormat>& modes) {
+    auto capabilities = mojom::blink::VideoInputDeviceCapabilities::New();
+    capabilities->device_id = "camera";
+    capabilities->group_id = "group";
+    capabilities->facing_mode = mojom::blink::FacingMode::kUser;
+    capabilities->formats = modes;
+    molt_fingerprinting::UseUniformCameraFormats(*capabilities);
+    auto* device = MakeGarbageCollected<InputDeviceInfo>(
+        "camera", "Camera", "group",
+        mojom::blink::MediaDeviceType::kMediaVideoInput);
+    device->SetVideoInputCapabilities(std::move(capabilities));
+    return device->getCapabilities();
+  };
+  MediaTrackCapabilities* hd = info(MoltNetHdCameraModes());
+  EXPECT_EQ(hd->width()->min(), 1);
+  EXPECT_EQ(hd->width()->max(), 1280);
+  EXPECT_EQ(hd->height()->min(), 1);
+  EXPECT_EQ(hd->height()->max(), 720);
+  EXPECT_EQ(hd->frameRate()->max(), 30.0);
+  EXPECT_DOUBLE_EQ(hd->aspectRatio()->max(), 1280.0);
+
+  MediaTrackCapabilities* small = info({media::VideoCaptureFormat(
+      gfx::Size(352, 288), 15.0f, media::PIXEL_FORMAT_I420)});
+  EXPECT_EQ(small->width()->max(), 640);
+  EXPECT_EQ(small->height()->max(), 480);
+  EXPECT_EQ(small->frameRate()->max(), 30.0);
+}
+
+// MoltBrowser: a MoltNet page's camera track reports the menu: its
+// capabilities are those of the menu formats the camera reaches and its
+// settings those of the format chosen, the track's size exactly, at 30 fps,
+// with resizeMode "none" for an entry as it is.
+TEST_F(UserMediaClientTest, MoltNetCameraTrackReportsTheMenu) {
+  ScopedMoltNetCameras moltnet;
+  // Requests the camera with `video`; nullptr if the request failed.
+  auto request_camera =
+      [&](const String& device_id,
+          const Vector<media::VideoCaptureFormat>& modes,
+          const MediaConstraints& video) -> MediaStreamTrackImpl* {
+    Vector<mojom::blink::VideoInputDeviceCapabilitiesPtr> capabilities;
+    auto camera = mojom::blink::VideoInputDeviceCapabilities::New();
+    camera->device_id = device_id;
+    camera->group_id = String("camera");
+    camera->facing_mode = mojom::blink::FacingMode::kUser;
+    camera->formats = modes;
+    capabilities.push_back(std::move(camera));
+    media_devices_dispatcher_.SetVideoInputCapabilities(
+        std::move(capabilities));
+    media_devices_dispatcher_.SetAllVideoInputDeviceFormats(modes);
+    UserMediaRequest* request =
+        UserMediaRequest::CreateForTesting(MediaConstraints(), video);
+    user_media_client_impl_->RequestUserMediaForTest(request);
+    StartMockedVideoSource(user_media_processor_);
+    if (request_state() != kRequestSucceeded) {
+      return nullptr;
+    }
+    auto video_components =
+        user_media_processor_->last_generated_descriptor()->VideoComponents();
+    EXPECT_EQ(video_components.size(), 1u);
+    return MakeGarbageCollected<MediaStreamTrackImpl>(
+        /*execution_context=*/nullptr, video_components[0]);
+  };
+
+  MediaStreamTrackImpl* track = request_camera(
+      fake_ids_->video_input_1, MoltNetHdCameraModes(),
+      CreateDefaultConstraints());
+  ASSERT_TRUE(track);
+  MediaTrackCapabilities* capabilities = track->getCapabilities();
+  EXPECT_EQ(capabilities->width()->min(), 1);
+  EXPECT_EQ(capabilities->width()->max(), 1280);
+  EXPECT_EQ(capabilities->height()->min(), 1);
+  EXPECT_EQ(capabilities->height()->max(), 720);
+  EXPECT_EQ(capabilities->frameRate()->max(), 30.0);
+  EXPECT_DOUBLE_EQ(capabilities->aspectRatio()->min(), 1.0 / 720);
+  EXPECT_DOUBLE_EQ(capabilities->aspectRatio()->max(), 1280.0);
+  MediaTrackSettings* settings = track->getSettings();
+  EXPECT_EQ(settings->width(), 640);
+  EXPECT_EQ(settings->height(), 480);
+  EXPECT_EQ(settings->frameRate(), 30.0);
+  EXPECT_DOUBLE_EQ(settings->aspectRatio(), 640.0 / 480);
+  EXPECT_EQ(settings->resizeMode(), WebMediaStreamTrack::kResizeModeNone);
+  // The source opens in the camera's own mode (here the mock's, which
+  // ignores it); the track's frames are cropped and scaled to its size.
+  MediaStreamVideoTrack* platform_track =
+      MediaStreamVideoTrack::From(track->Component());
+  EXPECT_TRUE(platform_track->adapter_settings().molt_uniform_camera());
+  MediaStreamTrackPlatform::GetTrack(WebMediaStreamTrack(track->Component()))
+      ->Stop();
+
+  // A size between the entries, cropped and scaled.
+  MockConstraintFactory factory;
+  factory.basic().width.SetExact(800);
+  factory.basic().height.SetExact(600);
+  track = request_camera(fake_ids_->video_input_2, MoltNetHdCameraModes(),
+                         factory.CreateMediaConstraints());
+  ASSERT_TRUE(track);
+  settings = track->getSettings();
+  EXPECT_EQ(settings->width(), 800);
+  EXPECT_EQ(settings->height(), 600);
+  EXPECT_EQ(settings->frameRate(), 30.0);
+  EXPECT_EQ(settings->resizeMode(), WebMediaStreamTrack::kResizeModeRescale);
+  MediaStreamTrackPlatform::GetTrack(WebMediaStreamTrack(track->Component()))
+      ->Stop();
+
+  // A camera below the menu reports 640x480 as well.
+  track = request_camera(fake_ids_->video_input_3,
+                         {media::VideoCaptureFormat(gfx::Size(320, 240), 15.0f,
+                                                    media::PIXEL_FORMAT_I420)},
+                         CreateDefaultConstraints());
+  ASSERT_TRUE(track);
+  capabilities = track->getCapabilities();
+  EXPECT_EQ(capabilities->width()->max(), 640);
+  EXPECT_EQ(capabilities->height()->max(), 480);
+  EXPECT_EQ(capabilities->frameRate()->max(), 30.0);
+  settings = track->getSettings();
+  EXPECT_EQ(settings->width(), 640);
+  EXPECT_EQ(settings->height(), 480);
+  EXPECT_EQ(settings->frameRate(), 30.0);
+  EXPECT_EQ(settings->resizeMode(), WebMediaStreamTrack::kResizeModeNone);
+  MediaStreamTrackPlatform::GetTrack(WebMediaStreamTrack(track->Component()))
+      ->Stop();
+
+  // Normal windows report the camera's own modes.
+  molt_fingerprinting::SetMoltNetMediaForTesting(false);
+  track = request_camera(fake_ids_->video_input_1, MoltNetHdCameraModes(),
+                         CreateDefaultConstraints());
+  ASSERT_TRUE(track);
+  capabilities = track->getCapabilities();
+  EXPECT_EQ(capabilities->width()->max(), 1920);
+  EXPECT_EQ(capabilities->height()->max(), 1080);
+  EXPECT_EQ(capabilities->frameRate()->max(), 60.0);
+  EXPECT_FALSE(MediaStreamVideoTrack::From(track->Component())
+                   ->adapter_settings()
+                   .molt_uniform_camera());
+  MediaStreamTrackPlatform::GetTrack(WebMediaStreamTrack(track->Component()))
+      ->Stop();
+  blink::WebHeap::CollectGarbageForTesting();
+}
+
+// MoltBrowser: applyConstraints() on a MoltNet camera track chooses among
+// the menu formats too, and reconfigures the track on the running source:
+// the camera opened in a mode that reaches every format it shows, so the
+// device is never reopened. Normal windows reopen it in another mode
+// (ApplyConstraintsVideoDeviceSingleTrack).
+TEST_F(UserMediaClientTest, MoltNetApplyConstraintsKeepsTheCameraOpen) {
+  ScopedMoltNetCameras moltnet;
+  // The mock camera: 640x480 and 800x600 at 30 fps, 1024x768 at 20 fps,
+  // which reach 640x480 alone, from 640x480.
+  MediaStreamTrack* track = RequestLocalVideoTrack();
+  MediaStreamComponent* component = track->Component();
+  auto* source = static_cast<MockMediaStreamVideoSource*>(
+      MediaStreamVideoTrack::From(component)->source());
+  media_devices_dispatcher_.SetVideoSource(source);
+  // The mock source opens in no mode; put it in the one the camera opens in.
+  source->StopForRestart(base::DoNothing());
+  base::RunLoop().RunUntilIdle();
+  source->Restart(media::VideoCaptureFormat(gfx::Size(640, 480), 30.0f,
+                                            media::PIXEL_FORMAT_I420),
+                  base::DoNothing());
+  base::RunLoop().RunUntilIdle();
+  const int restarts = source->restart_count();
+
+  ApplyConstraintsVideoMode(track, 320, 240);
+  CheckVideoSourceAndTrack(source, 640, 480, 30.0, component, 320, 240, 30.0);
+  ApplyConstraintsVideoMode(track, 640, 480, 15.0);
+  CheckVideoSourceAndTrack(source, 640, 480, 30.0, component, 640, 480, 15.0);
+  // 1024x768 is the camera's, not the menu's: the request fails and the
+  // track keeps its settings.
+  ApplyConstraintsVideoMode(track, 1024, 768);
+  CheckVideoSourceAndTrack(source, 640, 480, 30.0, component, 640, 480, 15.0);
+  EXPECT_EQ(source->restart_count(), restarts);
+  EXPECT_TRUE(
+      MediaStreamVideoTrack::From(component)->adapter_settings()
+          .molt_uniform_camera());
 }
 
 }  // namespace blink

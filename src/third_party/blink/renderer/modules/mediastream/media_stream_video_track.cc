@@ -25,6 +25,7 @@
 #include "third_party/blink/public/web/modules/mediastream/media_stream_video_sink.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_video_device.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
@@ -1154,6 +1155,10 @@ void MediaStreamVideoTrack::GetSettings(
   settings.resize_mode = WebString::FromAscii(std::string(
       adapter_settings().target_size() ? WebMediaStreamTrack::kResizeModeRescale
                                        : WebMediaStreamTrack::kResizeModeNone));
+  // MoltBrowser: a MoltNet camera's frame rate and resize mode as the menu
+  // formats its track was selected from give them (moltnet_camera.h).
+  molt_fingerprinting::UseUniformCameraTrackSettings(adapter_settings(),
+                                                     settings);
   if (source_->device().display_media_info) {
     const auto& info = source_->device().display_media_info;
     settings.display_surface = info->display_surface;

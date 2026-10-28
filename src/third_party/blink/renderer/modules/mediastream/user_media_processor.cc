@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/modules/mediastream/media_stream_utils.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_capturer_source.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/processed_local_audio_source.h"
 #include "third_party/blink/renderer/modules/mediastream/scoped_media_stream_tracer.h"
 #include "third_party/blink/renderer/modules/mediastream/user_media_client.h"
@@ -1139,6 +1140,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
     }
   }
 
+  // MoltBrowser: a MoltNet page's cameras have the menu formats they
+  // reach, never their own (moltnet_camera.h).
+  molt_fingerprinting::UseUniformCameraFormats(capabilities);
+
   // Do constraints processing.
   if (ShouldDeferDeviceSettingsSelection(
           user_media_request->MediaRequestType(),
@@ -1157,6 +1162,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
       GetUserMediaRequestFailed(result, failed_constraint_name);
       return;
     }
+
+    // MoltBrowser: and their tracks' frames are exactly the size selected
+    // (moltnet_camera.h).
+    molt_fingerprinting::UseUniformCameraSettings(eligible_settings.value());
 
     std::vector<std::string> eligible_ids;
     eligible_ids.reserve(eligible_settings->size());
@@ -1181,6 +1190,9 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
       GetUserMediaRequestFailed(result, failed_constraint_name);
       return;
     }
+    // MoltBrowser: see above.
+    settings = molt_fingerprinting::UniformCameraSettings(
+        settings, mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
     current_request_info_->stream_controls()->video.device_ids = {
         settings.device_id()};
     current_request_info_->SetVideoCaptureSettings(
@@ -1830,7 +1842,11 @@ MediaStreamSource* UserMediaProcessor::InitializeVideoSourceObject(
       // TODO(crbug.com/704136): Change ComputeCapabilitiesForVideoSource to
       // operate over Vector.
       String::FromUtf8(device.id),
-      ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
+      // MoltBrowser: a MoltNet camera's from the menu formats it reaches
+      // (moltnet_camera.h).
+      molt_fingerprinting::UniformCameraFormats(
+          ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
+          device.type),
       static_cast<mojom::blink::FacingMode>(device.video_facing),
       current_request_info_->is_video_device_capture(), device.group_id));
   local_sources_.push_back(source);
@@ -2064,7 +2080,13 @@ UserMediaProcessor::CreateVideoSource(
   return std::make_unique<blink::MediaStreamVideoCapturerSource>(
       frame_->GetTaskRunner(TaskType::kInternalMediaRealTime), frame_,
       std::move(stop_callback), device,
-      current_request_info_->video_capture_settings().capture_params(),
+      // MoltBrowser: a MoltNet camera opens in its mode that reaches every
+      // format it shows (moltnet_camera.h).
+      molt_fingerprinting::UniformCameraCaptureParams(
+          current_request_info_->video_capture_settings().capture_params(),
+          *current_request_info_->GetNativeVideoFormats(
+              String(device.id.data())),
+          device.type),
       blink::BindRepeating(
           &blink::LocalVideoCapturerSource::Create,
           frame_->GetTaskRunner(blink::TaskType::kInternalMedia),

@@ -52,7 +52,10 @@ bool VideoTrackAdapterSettings::operator==(
   return target_size_ == other.target_size_ &&
          min_aspect_ratio_ == other.min_aspect_ratio_ &&
          max_aspect_ratio_ == other.max_aspect_ratio_ &&
-         max_frame_rate_ == other.max_frame_rate_;
+         max_frame_rate_ == other.max_frame_rate_ &&
+         // MoltBrowser: see molt_uniform_camera().
+         molt_uniform_camera_ == other.molt_uniform_camera_ &&
+         molt_reports_no_resize_ == other.molt_reports_no_resize_;
 }
 
 }  // namespace blink

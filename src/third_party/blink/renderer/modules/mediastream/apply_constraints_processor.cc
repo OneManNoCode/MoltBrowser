@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_video_device.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_utils.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_source.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
@@ -171,6 +172,14 @@ void ApplyConstraintsProcessor::ProcessVideoDeviceRequest() {
   // TODO(crbug.com/768205): Support restarting the source even if there is more
   // than one track in the source.
   if (video_source_->NumTracks() > 1U) {
+    FinalizeVideoRequest();
+    return;
+  }
+
+  // MoltBrowser: a MoltNet camera opened in a mode that reaches every format
+  // it shows, so its track is reconfigured on the running source
+  // (moltnet_camera.h).
+  if (molt_fingerprinting::UsesUniformCamera(video_source_->device().type)) {
     FinalizeVideoRequest();
     return;
   }
@@ -400,7 +409,12 @@ ApplyConstraintsProcessor::SelectVideoDeviceSettings(
           ? static_cast<mojom::blink::FacingMode>(
                 GetCurrentVideoSource()->device().video_facing)
           : mojom::blink::FacingMode::kNone;
-  device_capabilities.formats = std::move(formats);
+  // MoltBrowser: a MoltNet camera's formats are the menu entries it reaches
+  // (moltnet_camera.h).
+  device_capabilities.formats = molt_fingerprinting::UniformCameraFormats(
+      formats, GetCurrentVideoSource()
+                   ? GetCurrentVideoSource()->device().type
+                   : mojom::blink::MediaStreamType::NO_SERVICE);
 
   blink::VideoDeviceCaptureCapabilities video_capabilities;
   video_capabilities.noise_reduction_capabilities.push_back(
@@ -418,9 +432,15 @@ ApplyConstraintsProcessor::SelectVideoDeviceSettings(
   settings.frame_rate = blink::MediaStreamVideoSource::kDefaultFrameRate;
   GetCurrentVideoTrack()->GetSettings(settings);
 
-  return SelectSettingsVideoDeviceCapture(
-      video_capabilities, current_request_->Constraints(), settings.width,
-      settings.height, settings.frame_rate);
+  // MoltBrowser: and the track's frames are exactly the size selected
+  // (moltnet_camera.h).
+  return molt_fingerprinting::UniformCameraSettings(
+      SelectSettingsVideoDeviceCapture(video_capabilities,
+                                       current_request_->Constraints(),
+                                       settings.width, settings.height,
+                                       settings.frame_rate),
+      GetCurrentVideoSource() ? GetCurrentVideoSource()->device().type
+                              : mojom::blink::MediaStreamType::NO_SERVICE);
 }
 
 blink::VideoCaptureSettings
