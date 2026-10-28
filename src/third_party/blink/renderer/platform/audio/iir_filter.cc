@@ -12,6 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/numerics/safe_conversions.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
 #include "third_party/fdlibm/ieee754.h"
@@ -86,6 +87,14 @@ void IIRFilter::Process(base::span<const float> source,
   int feedforward_length = feedforward_->size();
   int min_length = std::min(feedback_length, feedforward_length);
 
+  // MoltBrowser: in MoltNet's renderers, where the flush-to-zero modes stay
+  // off (denormal_disabler.h), the double-precision history is zero below the
+  // portable floor, as the other nodes' states are
+  // (DenormalDisabler::FlushDenormalFloatToZero()), so that it settles at
+  // zero instead of decaying into the subnormals
+  // (media/base/molt_portable_media.h).
+  const bool floor_history = media::IsPortableAudioThread();
+
   for (size_t n = 0; n < frames_to_process; ++n) {
     // To help minimize roundoff, we compute using double's, even though the
     // filter coefficients only have single precision values.
@@ -108,9 +117,16 @@ void IIRFilter::Process(base::span<const float> source,
       yn -= feedback[k] * y_buffer_[(buffer_index_ - k) & (kBufferLength - 1)];
     }
 
+    // MoltBrowser: see `floor_history` above.
+    double xn = source[n];
+    if (floor_history) {
+      xn = media::FlushTinyPortableSample(xn);
+      yn = media::FlushTinyPortableSample(yn);
+    }
+
     // Save the current input and output values in the memory buffers for the
     // next output.
-    x_buffer_[buffer_index_] = source[n];
+    x_buffer_[buffer_index_] = xn;
     y_buffer_[buffer_index_] = yn;
 
     buffer_index_ = (buffer_index_ + 1) & (kBufferLength - 1);

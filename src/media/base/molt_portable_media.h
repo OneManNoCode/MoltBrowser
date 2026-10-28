@@ -217,6 +217,16 @@ inline float FlushTinyPortableSample(float sample) {
                                                  : sample;
 }
 
+// The same floor for state kept in doubles (the history of Web Audio's
+// IIRFilterNode): a zero of its sign below kPortableAudioFloor, so that a
+// decaying state settles at zero instead of decaying on into the subnormal
+// doubles. Infinities and NaNs are unchanged.
+inline double FlushTinyPortableSample(double sample) {
+  return std::fabs(sample) < static_cast<double>(kPortableAudioFloor)
+             ? std::copysign(0.0, sample)
+             : sample;
+}
+
 // FlushTinyPortableSample() on every sample of `samples`, or of every channel
 // of `bus`.
 MEDIA_EXPORT void FlushTinyPortableSamples(base::span<float> samples);

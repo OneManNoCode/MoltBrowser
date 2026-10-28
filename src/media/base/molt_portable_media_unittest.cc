@@ -443,6 +443,30 @@ TEST_F(MoltPortableMediaTest, FlushTinyPortableSamplesKeepsTheFloor) {
   }
 }
 
+// The same floor for doubles (an IIR filter's history): below 2^-63 a zero of
+// the sign, far above the subnormal doubles; everything else stays.
+TEST_F(MoltPortableMediaTest, FlushTinyPortableSampleFloorsDoubles) {
+  const double floor = 0x1p-63;
+  EXPECT_EQ(FlushTinyPortableSample(floor), floor);
+  EXPECT_EQ(FlushTinyPortableSample(-floor), -floor);
+  EXPECT_EQ(FlushTinyPortableSample(0x1.fffffffffffffp-64), 0.0);
+  const double negative = FlushTinyPortableSample(-0x1p-64);
+  EXPECT_EQ(negative, 0.0);
+  EXPECT_TRUE(std::signbit(negative));
+  EXPECT_EQ(FlushTinyPortableSample(std::numeric_limits<double>::min()), 0.0);
+  EXPECT_EQ(FlushTinyPortableSample(std::numeric_limits<double>::denorm_min()),
+            0.0);
+  // Doubles at or above the floor stay with all their bits, also ones a float
+  // can't hold.
+  EXPECT_EQ(FlushTinyPortableSample(0x1.0000000000001p-63),
+            0x1.0000000000001p-63);
+  EXPECT_EQ(FlushTinyPortableSample(1e300), 1e300);
+  EXPECT_TRUE(std::isinf(
+      FlushTinyPortableSample(std::numeric_limits<double>::infinity())));
+  EXPECT_TRUE(std::isnan(
+      FlushTinyPortableSample(std::numeric_limits<double>::quiet_NaN())));
+}
+
 // Sets the CPU's flush-to-zero modes the way Chromium's disablers do (x86:
 // MXCSR FTZ and DAZ; arm64: FPCR.FZ) for a test, and puts back the mode it
 // found.
