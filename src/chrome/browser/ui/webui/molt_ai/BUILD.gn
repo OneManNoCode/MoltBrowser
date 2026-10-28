@@ -93,6 +93,7 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/shield:settings_handler",
     "//chrome/browser/molt_ai/vault",
     "//chrome/browser/molt_ai/voice",
+    "//chrome/browser/molt_ai/voice:recorded_wav",
 
     # "Sites using on-device AI" on molt://ai-settings.
     "//chrome/browser/molt_ai/web_ai",

@@ -63,6 +63,7 @@
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
+#include "chrome/browser/molt_ai/voice/recorded_wav.h"
 #include "chrome/browser/molt_ai/voice/voice_service.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
@@ -5362,6 +5363,9 @@ void MoltAIChatHandler::HandleTranscribeAudio(
   // headroom for a custom uploader without letting a compromised
   // WebUI OOM the browser on a gigabyte string. Code-review MEDIUM #9.
   constexpr size_t kMaxAudioB64Bytes = 8 << 20;
+  // The browser's WAV check (VoiceService) takes all that decodes to.
+  static_assert(molt_ai::voice::kMaxRecordedWavBytes ==
+                kMaxAudioB64Bytes / 4 * 3);
   if (b64.size() > kMaxAudioB64Bytes) {
     out.Set("success", false);
     out.Set("error", "audio exceeds max size (8 MiB base64)");
