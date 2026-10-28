@@ -73,7 +73,8 @@ MoltBrowser
  |    |   timeout (60 s to render pages) + kill, untrusted-reply validation
  |    |   (UTF-8; page limits and PNG structure, checked on a copy)
  |    +-- OcrService (molt_ai/ocr): tesseract on attached images and on the
- |        rendered pages of a scan (tesseract can't read PDFs), sandboxed
+ |        rendered pages of a scan (tesseract can't read PDFs), sandboxed;
+ |        images decoded by the data decoder, tesseract reads a PNM
  |
  +-- MemoryService (molt_ai/memory) — opt-in, encrypted SQLite store +
  |    in-memory index, HashingEmbedder v3 (Unicode-aware keyword hashing)
@@ -87,7 +88,7 @@ MoltBrowser
  |    +-- WebUINavigationThrottle: web pages can't open chrome:// or molt://
  |    +-- trusted_binary / helper_binary: which tor/OCR/whisper may run
  |    +-- helper_sandbox: tesseract/whisper confined (Landlock + seccomp,
- |        Seatbelt, job object) with a deadline
+ |        Seatbelt, less-privileged AppContainer) with a deadline
  |
  +-- OmniboxAI (@ai prefix; never sent to the search engine)
  |    +-- AiPromptProvider -> chrome://molt-ai/?q=...
@@ -227,11 +228,12 @@ repo/
   pages must keep every mojom limit, come in page order and be well-formed
   PNGs of their stated size (signature, chunk structure, IHDR); each is
   copied out of the reply before the check, since a large `BigBuffer` is
-  shared memory. The browser never decodes them. The chat handler keeps
-  base64 decoding, size limits and plain-text files on a worker thread.
+  shared memory. The browser process never decodes them (the data decoder
+  does, before OCR). The chat handler keeps base64 decoding, size limits
+  and plain-text files on a worker thread.
 - OCR of a scan (no text layer): tesseract can't read PDFs (leptonica has no
   PDF reader), so `molt_ai/ocr/OcrService::OcrPdf` has the parser render the
-  pages, then OCRs each PNG in the helper sandbox below, joining the text
+  pages, then OCRs each PNG like an attached image (below), joining the text
   with `--- Page N ---` headers, cut to the caller's budget and sanitized.
   One deadline (180 s) covers rendering and every page; a page gets at most
   60 s, and pages not reached are left out (the text says so). A PDF that
@@ -251,6 +253,14 @@ repo/
   files it leaves are read back only if they are plain single-link files
   (no symlink or hard link out of the sandbox). Callers get `timed out` / `sandbox unavailable`
   errors in the same result structs and JSON as before.
+- What the helpers read is written by the browser: an attached image (PNG,
+  JPEG or WebP; a TIFF or anything else is refused with a reason) or a
+  rendered page is decoded by Chromium's sandboxed data decoder, and
+  tesseract reads a binary PNM the browser writes from the pixels
+  (`ocr/ocr_image.*`), so its image decoders are never reached. A voice
+  recording is checked in the browser (16 kHz mono 16-bit PCM WAV, bounded;
+  `voice/recorded_wav.*`) and whisper-cli reads a canonical WAV the browser
+  writes.
 - Linux, between fork and exec (`base::LaunchOptions::pre_exec_delegate`,
   `helper_sandbox_linux.*`, prepared in the parent): a new session (no
   controlling terminal), no_new_privs, Landlock (read+execute /usr, /lib,
@@ -269,9 +279,19 @@ repo/
   the helper's directory and inputs readable, scratch read-write, no
   network, Mach lookups or IOKit. Fail-closed: without sandbox-exec, or if
   it can't apply the profile, the helper doesn't run.
-- Windows: a job object (killed on close, UI restrictions) and the deadline
-  only. No file or network confinement yet; that needs an AppContainer and
-  ACLs on the bundle and scratch directories, as the inference sandbox will.
+- Windows (`helper_sandbox_win.cc`; its decisions in the pure, tested
+  `helper_sandbox_win_policy.*`): a less-privileged AppContainer per run
+  (fresh package SID, no network capability), started through Chromium's
+  `sandbox::StartupInformationHelper`: no child processes, the
+  all-application-packages opt-out, only the output pipe inherited,
+  mitigations, and a job (killed on close, UI restrictions, one process,
+  4 GiB) assigned before its first instruction. It reads `ocr\` and
+  `whisper\` through the capability `lpacMoltBrowserHelperFiles`, which the
+  installer grants there only, and writes only its scratch directory,
+  created with a security descriptor for that run's package SID. An access
+  check simulating the AppContainer runs first: the portable ZIP has no
+  installer grant, so there OCR and voice don't run and the error says
+  why. Fail-closed like the others.
 - whisper runs on the CPU (`-ng`): the sandboxes give it no GPU.
 
 ### WebUI Architecture

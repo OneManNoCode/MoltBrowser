@@ -122,8 +122,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   files or the internet, and one that makes it hang no longer ties up the
   browser. Linux uses Landlock and seccomp (kernels older than 5.13 get the
   network block only); macOS uses the system sandbox and won't run OCR or
-  voice without it; Windows gets the time limit and a job object for now.
-  Voice transcription runs on the CPU.
+  voice without it; Windows uses an AppContainer (next entry). Voice
+  transcription runs on the CPU.
+- **OCR and voice: confined on Windows, simpler input everywhere.** On
+  Windows, each tesseract or whisper run is now a locked-down AppContainer
+  of its own: it can read only the OCR and voice folders and its input,
+  write only its private scratch folder, start no other program and reach no
+  network, in a job with a memory limit. The installer gives that sandbox
+  read access to the OCR and voice folders only; the portable ZIP can't, and
+  says OCR and voice need the installer. On every platform the helpers also
+  parse less: an attached image or a scanned PDF's page is decoded in
+  Chromium's own sandboxed image decoder, and tesseract reads only
+  uncompressed pixels the browser writes (TIFF attachments, which that
+  decoder can't read, are refused with a message); whisper reads only a WAV
+  the browser builds from the recording's checked 16 kHz mono samples,
+  within the same size limit.
 - **macOS: OCR ships with its own libraries.** The bundled tesseract still
   pointed at the build machine's Homebrew libraries, so on other Macs it
   couldn't start (and the sandbox wouldn't let it load them anyway). The
