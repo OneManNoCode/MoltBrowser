@@ -58,6 +58,13 @@
 //  * kForget: kMoltNetNonceCookieSweepSeconds after it went, past the
 //    longest a request of the page outlives it. Both again, for what such a
 //    request added meanwhile, and the nonce is forgotten.
+// A context the browser makes again for a storage partition (the network
+// service restarted) starts with the nonces the partition's earlier context
+// had been sent kClosed or kGone for and not yet kForget
+// (NetworkContextParams::molt_refused_nonces): its cookie store refuses
+// them as it is made, before the context serves any request
+// (CookieMonster::MoltRefuseNonces()); kForget comes later, as for the
+// earlier context.
 //
 // Std-only, so molt_ai_unittests tests it.
 

@@ -670,6 +670,22 @@ void RemoveInvalidationFilterCallback(
   context->OnLogicalFilterRemoved(filter);
 }
 
+// MoltBrowser: a MoltNet context the browser makes again for a storage
+// partition (the network service restarted) refuses, from the moment its
+// cookie store is made, the nonces the partition's earlier context had been
+// told to refuse (NetworkContextParams::molt_refused_nonces), as kClosed
+// does: before the context serves any request, on any pipe
+// (services/network/molt_nonce_drop_policy.h). The store is still empty, so
+// there is nothing to delete.
+void MoltRefuseNoncesFromTheStart(net::CookieMonster& cookie_store,
+                                  const mojom::NetworkContextParams& params) {
+  static_assert(MoltNonceCookiesRefusedAfter(MoltNonceDropStep::kClosed));
+  if (!params.molt_nonce_limits || !params.molt_refused_nonces) {
+    return;
+  }
+  cookie_store.MoltRefuseNonces(*params.molt_refused_nonces);
+}
+
 // MoltBrowser: HttpAuthStaticNetworkContextParams.
 // molt_basic_and_digest_auth_only, set for MoltNet's network contexts.
 bool MoltBasicAndDigestAuthOnly(const mojom::NetworkContextParams* params) {
@@ -3377,9 +3393,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     if (params_->persist_session_cookies) {
       cookie_store->SetPersistSessionCookies(true);
     }
-    // MoltBrowser: MoltNet's limits for cookies under a page's nonce.
+    // MoltBrowser: MoltNet's limits for cookies under a page's nonce, and
+    // the nonces a context made again refuses from the start.
     if (params_->molt_nonce_limits) {
       cookie_store->MoltKeepNonceCookieLimits();
+      MoltRefuseNoncesFromTheStart(*cookie_store, *params_);
     }
 
     builder.SetCookieStore(std::move(cookie_store));
@@ -3392,6 +3410,7 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     auto molt_cookie_store =
         std::make_unique<net::CookieMonster>(/*store=*/nullptr, net_log);
     molt_cookie_store->MoltKeepNonceCookieLimits();
+    MoltRefuseNoncesFromTheStart(*molt_cookie_store, *params_);
     builder.SetCookieStore(std::move(molt_cookie_store));
   }
 

@@ -294,6 +294,15 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // without, that ends. Does nothing without MoltKeepNonceCookieLimits().
   void MoltDropNonce(const base::UnguessableToken& nonce, bool refuse);
 
+  // MoltBrowser: refuses cookies for the partitions keyed by each of
+  // `nonces` from now on, as MoltDropNonce(nonce, /*refuse=*/true) does, in
+  // a store that holds none of them: called right after
+  // MoltKeepNonceCookieLimits(), as the store is made, by a network context
+  // made again for a storage partition (its earlier context's refusals).
+  // Unlike MoltDropNonce(), it doesn't wait for the store to be loaded, nor
+  // mark it initialized. Does nothing without MoltKeepNonceCookieLimits().
+  void MoltRefuseNonces(const std::vector<base::UnguessableToken>& nonces);
+
  private:
   // For garbage collection constants.
   FRIEND_TEST_ALL_PREFIXES(CookieMonsterTest, TestHostGarbageCollection);

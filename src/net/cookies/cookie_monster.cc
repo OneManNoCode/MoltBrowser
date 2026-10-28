@@ -2522,6 +2522,20 @@ void CookieMonster::MoltDropNonce(const base::UnguessableToken& nonce,
                                   refuse));
 }
 
+// MoltBrowser: see the header. A partition key with a nonce can't be
+// serialized (CookiePartitionKey::IsSerializeable()), so no persistent store
+// keeps such cookies, and none can be loaded later either.
+void CookieMonster::MoltRefuseNonces(
+    const std::vector<base::UnguessableToken>& nonces) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (!molt_nonce_cookies_) {
+    return;
+  }
+  for (const base::UnguessableToken& nonce : nonces) {
+    molt_nonce_cookies_->SetRefused(nonce, true);
+  }
+}
+
 void CookieMonster::MoltDropNonceNow(const base::UnguessableToken& nonce,
                                      bool refuse) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);

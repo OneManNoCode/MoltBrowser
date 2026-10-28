@@ -38,6 +38,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_nonce_storage.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -1397,6 +1398,17 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   molt_ai::tor::ApplyMoltNetNetworkContextSettings(
       molt_ai::tor::IsMoltNetProfile(profile_), *network_context_params,
       *cert_verifier_creation_params);
+  // MoltBrowser: a MoltNet network context made again for this partition
+  // (the network service restarted; StoragePartitionImpl::
+  // InitNetworkContext() asks for the parameters each time it makes one)
+  // refuses from the start the nonces its earlier context was told to
+  // refuse, and not yet to forget (molt_net_nonce_storage.h). The path is
+  // the partition's, as StoragePartitionImpl makes it.
+  if (molt_ai::tor::IsMoltNetProfile(profile_)) {
+    network_context_params->molt_refused_nonces =
+        molt_ai::tor::MoltNetRefusedNonces(
+            profile_, profile_->GetPath().Append(relative_partition_path));
+  }
 
   network_context_params->cookie_manager_params =
       CreateCookieManagerParams(profile_, *cookie_settings_);

@@ -511,10 +511,13 @@ source_set("nonce_storage") {
     "molt_net_nonce_storage.cc",
     "molt_net_nonce_storage.h",
   ]
-  public_deps = [ "//content/public/browser" ]
+  public_deps = [
+    # MoltNetRefusedNonces() returns base::UnguessableTokens.
+    "//base",
+    "//content/public/browser",
+  ]
   deps = [
     ":nonce_storage_policy",
-    "//base",
     "//chrome/browser/profiles:profile",
 
     # ENABLE_LIBRARY_CDMS (the media-license data of the nonce's keys).

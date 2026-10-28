@@ -17,21 +17,45 @@
 // storage key) and the network context their cookies and the network state
 // kept under the nonce (network::mojom::NetworkContext::MoltDropNonce()),
 // again a minute later; past a site's bound, or its own, a group is closed
-// the same way, everything it could store refused until its page goes.
+// the same way, everything it could store refused until its page goes. The
+// nonces the network context refuses are kept here too, for a network
+// context made again after the network service restarts
+// (MoltNetRefusedNonces()).
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NONCE_STORAGE_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_NONCE_STORAGE_H_
 
+#include <vector>
+
+#include "base/unguessable_token.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
+namespace base {
+class FilePath;
+}  // namespace base
+
 namespace content {
+class BrowserContext;
 class NavigationHandle;
 class RenderFrameHost;
 class WebContents;
 }  // namespace content
 
 namespace molt_ai::tor {
+
+// The nonces whose cookies the network context of `browser_context`'s
+// storage partition at `partition_path` (content::StoragePartition::
+// GetPath()) has been told to refuse, and not yet to forget: a closed
+// group's, and a gone page's until a while after it went
+// (molt_net_nonce_storage_policy.h, MoltNetNonceRefusals). A network context
+// made again for that partition, after the network service restarted, gets
+// them with its parameters (ProfileNetworkContextService) and refuses them
+// before it serves any request. Empty for a profile whose tabs used no
+// nonce.
+std::vector<base::UnguessableToken> MoltNetRefusedNonces(
+    content::BrowserContext* browser_context,
+    const base::FilePath& partition_path);
 
 class MoltNetNonceStorageTabHelper
     : public content::WebContentsObserver,

@@ -739,6 +739,13 @@ struct NetworkContextParams {
   // molt_nonce_cookie_policy.h) and acts on MoltDropNonce()
   // (services/network/molt_nonce_drop_policy.h).
   [MinVersion=1] bool molt_nonce_limits = false;
+  // With molt_nonce_limits: the nonces this context refuses from the start,
+  // as if it had been sent MoltDropNonce(nonce, kClosed) for each before
+  // anything else. The browser sets them for a context it makes again for a
+  // storage partition (the network service restarted): what the partition's
+  // earlier context had been told to refuse and not yet to forget
+  // (chrome/browser/molt_ai/tor/molt_net_nonce_storage.h).
+  [MinVersion=1] array<mojo_base.mojom.UnguessableToken>? molt_refused_nonces;
 };
 
 // MoltBrowser: what NetworkContext.MoltDropNonce() drops of what a page's
