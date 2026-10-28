@@ -215,17 +215,28 @@ void ControllerImpl::StartDownload(DownloadParams params) {
   if (start_callbacks_.find(params.guid) != start_callbacks_.end() ||
       model_->Get(params.guid) != nullptr) {
     // MoltBrowser: a page's fetch waiting for its parameters asks for them
-    // again now that its client takes it up (molt_restored_fetch.h).
+    // again now that its client takes it up, or, while they are being
+    // asked for, once that answer comes (molt_restored_fetch.h).
     Entry* molt_waiting = model_->Get(params.guid);
     HandleStartDownloadResponse(params.client, params.guid,
                                 DownloadParams::StartResult::UNEXPECTED_GUID,
                                 std::move(params.callback));
-    if (molt_waiting &&
-        MoltWaitsForFetchParameters(
-            molt_waiting->client == DownloadClient::BACKGROUND_FETCH,
-            molt_waiting->request_params.initiator.has_value()) &&
-        !guids_with_custom_request_params_.contains(molt_waiting->guid)) {
-      UpdateDriverState(molt_waiting);
+    if (molt_waiting) {
+      switch (MoltOnFetchTakenUp(
+          MoltWaitsForFetchParameters(
+              molt_waiting->client == DownloadClient::BACKGROUND_FETCH,
+              molt_waiting->request_params.initiator.has_value()) &&
+              !guids_with_custom_request_params_.contains(molt_waiting->guid),
+          pending_uploads_.contains(molt_waiting->guid))) {
+        case MoltFetchTakeUp::kNothing:
+          break;
+        case MoltFetchTakeUp::kAskNow:
+          UpdateDriverState(molt_waiting);
+          break;
+        case MoltFetchTakeUp::kAskWhenAnswered:
+          molt_fetch_take_ups_.Remember(molt_waiting->guid);
+          break;
+      }
     }
     return;
   }
@@ -1094,6 +1105,9 @@ void ControllerImpl::OnDownloadReadyToStart(const std::string& guid,
   DCHECK(pending_uploads_.find(guid) != pending_uploads_.end());
   pending_uploads_.erase(guid);
   guids_with_custom_request_params_.insert(guid);
+  // MoltBrowser: whether the client took it up while this answer was on its
+  // way (molt_restored_fetch.h).
+  const bool molt_taken_up = molt_fetch_take_ups_.Take(guid);
 
   auto* entry = model_->Get(guid);
   if (!entry) {
@@ -1121,12 +1135,16 @@ void ControllerImpl::OnDownloadReadyToStart(const std::string& guid,
   // MoltBrowser: a page's fetch whose parameters didn't come back (its
   // registration isn't loaded yet) waits for them rather than going out
   // without them: it asks again when its client takes it up
-  // (StartDownload()), and fails if that doesn't happen
-  // (molt_restored_fetch.h).
+  // (StartDownload()), at once if that happened while this answer was on
+  // its way, and fails if it doesn't happen (molt_restored_fetch.h).
   if (MoltWaitsForFetchParameters(
           entry->client == DownloadClient::BACKGROUND_FETCH,
           entry->request_params.initiator.has_value())) {
     guids_with_custom_request_params_.erase(guid);
+    if (molt_taken_up) {
+      UpdateDriverState(entry);
+      return;
+    }
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(
@@ -1313,6 +1331,7 @@ void ControllerImpl::HandleCompleteDownload(CompletionType type,
     // happens and we have no driver entry.
     driver_->Remove(entry->guid, false);
     guids_with_custom_request_params_.erase(guid);
+    molt_fetch_take_ups_.Forget(guid);  // MoltBrowser
     model_->Remove(guid);
   }
 

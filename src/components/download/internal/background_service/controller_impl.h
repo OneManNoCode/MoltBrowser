@@ -22,6 +22,7 @@
 #include "components/download/internal/background_service/entry.h"
 #include "components/download/internal/background_service/log_source.h"
 #include "components/download/internal/background_service/model.h"
+#include "components/download/internal/background_service/molt_restored_fetch.h"  // MoltBrowser
 #include "components/download/internal/background_service/scheduler/device_status_listener.h"
 #include "components/download/internal/background_service/service_config_impl.h"
 #include "components/download/internal/background_service/startup_status.h"
@@ -282,6 +283,9 @@ class ControllerImpl : public Controller,
   std::set<std::string> externally_active_downloads_;
   std::set<std::string> pending_uploads_;
   std::set<std::string> guids_with_custom_request_params_;
+  // MoltBrowser: page fetches the client took up while their parameters
+  // were being asked for (molt_restored_fetch.h).
+  MoltFetchTakeUps molt_fetch_take_ups_;
   std::map<std::string, DownloadParams::StartCallback> start_callbacks_;
   std::map<DownloadTaskType, TaskFinishedCallback> task_finished_callbacks_;
   base::CancelableOnceClosure cancel_downloads_callback_;
