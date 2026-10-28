@@ -392,6 +392,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   a restart while its page's settings are still being asked for asks
   again as soon as the answer comes, instead of failing after five
   minutes.
+- Hardening (security review of PRs #75 and #76,
+  `docs/SECURITY_REVIEWS.md`): the leak test kit, which runs as root, also
+  reads the run directory it gives its user only from that directory's
+  open descriptor, mounts only its own name-service files into a launch,
+  gives its user no file with more than one link when a run ends, and
+  reaches its `--out` directory without following a link on the way.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
