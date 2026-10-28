@@ -15,7 +15,10 @@ order. Also written:
                           from src/ once the patch flow is the default.
   patches/whole_files.txt upstream files that live in a DEPS subproject (a
                           separate repo the mirror cannot diff); they stay
-                          whole-file overlays.
+                          whole-file overlays. Each keeps the subproject
+                          commit it was last merged with (a new one gets the
+                          pin's gitlink): rebase.py merges from there and
+                          moves it, never this script.
 
 First-party files (not in upstream) are not touched; they stay as files.
 src/ remains the source of truth until the build switches to the series:
@@ -31,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import upstream as up  # noqa: E402
+import subprojects as sp  # noqa: E402
 
 
 def main():
@@ -97,12 +101,14 @@ def main():
         "above. Safe to drop\n# from src/; left in place they REVERT "
         "upstream changes after a rebase.\n"
         + "".join(p + "\n" for p in identical))
-    up.WHOLE_FILES.write_text(
-        header + "# Upstream files inside DEPS subprojects (separate repos): "
-        "kept as whole-file\n# overlays, not diffed. Check them by hand on "
-        "every rebase.\n"
-        + "".join("%s\t# %s@%s\n" % ((p,) + chromium.gitlink_for(commit, p))
-                  for p in deps))
+    # A whole file keeps the subproject commit it was merged with; only a
+    # new one (just imported at the pin) takes the pin's gitlink.
+    recorded = sp.read_whole_files()
+    entries = {p: sp.kept_entry(recorded.get(p),
+                                chromium.gitlink_for(commit, p), pin.version)
+               for p in deps}
+    sp.write_whole_files(pin, entries)
+    behind = sp.behind(chromium, commit, entries)
 
     first_party = len(by_kind.get(up.FIRST_PARTY, []))
     print("Upstream base:      %s" % pin)
@@ -116,6 +122,15 @@ def main():
           % first_party)
     if stale:
         print("Removed %d stale patch file(s)." % len(stale))
+    if behind:
+        print("\n%d DEPS whole file(s) were merged with an older subproject "
+              "commit than the pin's\n(verify_patches.py fails until they "
+              "are merged): run\n  tools/chromium/rebase.py %s --apply"
+              % (len(behind), pin.version))
+        for path, rec, link in behind:
+            print("  src/%s: %s@%s, pin has %s" % (
+                path, rec.subproject, rec.commit[:12],
+                "%s@%s" % (link[0], link[1][:12]) if link else "none"))
     if identical:
         print("\nIdentical to upstream (can be dropped from src/ later):")
         for p in identical:

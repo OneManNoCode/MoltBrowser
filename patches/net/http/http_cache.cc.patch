@@ -1,11 +1,11 @@
 MoltBrowser patch for net/http/http_cache.cc
-Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
 Generated from src/net/http/http_cache.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_cache.cc b/net/http/http_cache.cc
-index 13ef0046a811ed079d453fc6a5f3da44a71bdf0a..edd689a9349633f38d332b188085614c2d39d031 100644
+index fb45d1fd8c42100f55cddd3a22c3b923d04b874b..fd5dc9d7b5224c5e149596361b3b42b8fe670ace 100644
 --- a/net/http/http_cache.cc
 +++ b/net/http/http_cache.cc
 @@ -641,6 +641,15 @@ disk_cache::Backend* HttpCache::GetCurrentBackend() const {
@@ -24,7 +24,7 @@ index 13ef0046a811ed079d453fc6a5f3da44a71bdf0a..edd689a9349633f38d332b188085614c
  // static
  bool HttpCache::ParseResponseInfo(base::span<const uint8_t> data,
                                    HttpResponseInfo* response_info,
-@@ -1874,6 +1883,10 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
+@@ -1881,6 +1890,10 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
      backend_factory_.reset();  // Reclaim memory.
      if (result == OK) {
        disk_cache_ = std::move(pending_op->backend);

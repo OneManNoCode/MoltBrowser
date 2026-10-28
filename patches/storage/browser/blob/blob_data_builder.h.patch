@@ -1,11 +1,11 @@
 MoltBrowser patch for storage/browser/blob/blob_data_builder.h
-Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
 Generated from src/storage/browser/blob/blob_data_builder.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/blob/blob_data_builder.h b/storage/browser/blob/blob_data_builder.h
-index a2863e518b82cacb2a1977f507a9a639866904bc..68686b83ddce690c73fad2d532905055a29ad57d 100644
+index 40290d32401d8f1d1382f4013f16fc50e7a63d3c..5261ba9780a8990643e016beccc88e447295b811 100644
 --- a/storage/browser/blob/blob_data_builder.h
 +++ b/storage/browser/blob/blob_data_builder.h
 @@ -234,6 +234,12 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobDataBuilder {

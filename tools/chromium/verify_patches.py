@@ -10,6 +10,10 @@
 3. Compares every patched file, and every identical.txt file, with src/.
 4. Checks the series is complete: every src/ file that exists upstream at
    the pin is either patched, listed as identical, or a DEPS whole file.
+5. Checks every DEPS whole file (patches/whole_files.txt) was merged with
+   its subproject at the commit the pin's DEPS has: one still at an older
+   commit would silently revert that subproject's newer changes to it
+   (merge it with tools/chromium/rebase.py <pin version> --apply).
 
 Exits non-zero on any mismatch; run tools/chromium/overlay_to_patches.py to
 regenerate after changing an upstream file under src/.
@@ -23,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import upstream as up  # noqa: E402
+import subprojects as sp  # noqa: E402
 
 
 def main():
@@ -41,7 +46,8 @@ def main():
 
     patched = up.series_paths()
     identical = up.read_list(up.IDENTICAL)
-    whole = up.read_list(up.WHOLE_FILES)
+    recorded = sp.read_whole_files()
+    whole = sorted(recorded)
     problems = []
 
     # Every patch must say it was made against the current pin.
@@ -101,6 +107,27 @@ def main():
             if kind != up.FIRST_PARTY and path not in listed:
                 problems.append("src/%s is an upstream file (%s) but is not "
                                 "in patches/ - regenerate" % (path, kind))
+
+        # DEPS whole files: each must be merged with the subproject commit
+        # the pin's DEPS has.
+        lagging = sp.behind(chromium, commit, recorded)
+        current = len(whole) - len(lagging)
+        for path, rec, link in lagging:
+            if not (up.OVERLAY_DIR / path).exists():
+                problems.append("src/%s is gone but still in "
+                                "patches/whole_files.txt" % path)
+            elif rec.commit is None:
+                problems.append("patches/whole_files.txt does not record "
+                                "the subproject commit of %s" % path)
+            elif link is None:
+                problems.append("src/%s is no longer inside a DEPS "
+                                "subproject at the pin" % path)
+            else:
+                problems.append(
+                    "src/%s was merged with %s@%s, but the pin has %s@%s: "
+                    "merge it with tools/chromium/rebase.py %s --apply"
+                    % (path, rec.subproject, rec.commit[:12], link[0],
+                       link[1][:12], pin.version))
     finally:
         if args.keep:
             up.log("Scratch tree kept at %s" % scratch)
@@ -112,7 +139,8 @@ def main():
           % (len(patched), reproduced))
     print("Identical:      %d of %d still identical to upstream"
           % (same, len(identical)))
-    print("DEPS whole:     %d (not diffed)" % len(whole))
+    print("DEPS whole:     %d of %d merged with the pin's subproject commit"
+          % (current, len(whole)))
     if problems:
         for p in problems:
             print("FAIL: " + p)

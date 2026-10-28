@@ -175,6 +175,8 @@ HEAD_FALLBACK = {"third_party/pdfium", "third_party/webrtc",
                  "third_party/dawn"}
 
 SOURCES_STATE = "sources.json"
+# <work>/chromium/pin.json: the Chromium commit whose files the tree holds.
+PIN_STATE = "pin.json"
 
 
 def cache_name(remote):
@@ -274,6 +276,85 @@ class SourceTree:
         self._overlay_set = None
         self._overlay_sources = None
         self._mounts = sorted(SUBPROJECTS, key=len, reverse=True)
+
+    # -- the pin ---------------------------------------------------------
+    def _chromium_tree_at(self, rev):
+        """{path: TreeEntry} of Chromium at `rev` (a commit or a tag), or
+        None if the cache can't provide it."""
+        try:
+            up = self.chromium.up
+            return up.tree(up.resolve(rev))
+        except (RuntimeError, SystemExit) as e:
+            log("chromium tree: %s unavailable (%s)" % (
+                rev, str(e).strip()[-200:]))
+            return None
+
+    def move_to_pin(self):
+        """Makes the upstream files the tree holds the pin's. Files are
+        fetched once and kept, so when chromium_version.txt moves (a
+        rebase), the ones that differ between the commit they came from
+        (chromium/pin.json) and the new pin are dropped; a fetch writes the
+        new pin's where a check needs them. Overlay links (sync_overlay) and
+        generated files are left alone (generated ones are remade from
+        their changed inputs), and so are subprojects: a moved gitlink
+        changes the mount's source (_record). A work dir from before
+        pin.json is taken to be at the pin repos/tarball.json names, or, if
+        that commit is unknown, every file is compared with the pin's.
+        Returns the paths dropped."""
+        state_f = self.work / "chromium" / PIN_STATE
+        new = self.chromium.commit
+        try:
+            old = json.loads(state_f.read_text()).get("revision")
+        except (OSError, ValueError):
+            old = None
+        if old == new:
+            return []
+        if old is None:
+            try:
+                old = json.loads((self.work / "repos" /
+                                  "tarball.json").read_text()).get("pin")
+            except (OSError, ValueError):
+                old = None
+        new_entries = self.chromium.entries
+        old_entries = self._chromium_tree_at(old) if old else None
+        if old_entries is not None:
+            paths = sorted(
+                p for p in set(old_entries) | set(new_entries)
+                if "commit" not in (getattr(old_entries.get(p), "type", ""),
+                                    getattr(new_entries.get(p), "type", ""))
+                and getattr(old_entries.get(p), "oid", None) !=
+                getattr(new_entries.get(p), "oid", None))
+        else:
+            paths = []
+            if self.tree_dir.exists():
+                for dirpath, dirnames, filenames in os.walk(self.tree_dir):
+                    rel = os.path.relpath(dirpath, self.tree_dir)
+                    rel = "" if rel == "." else rel + "/"
+                    for f in filenames:
+                        p = rel + f
+                        e = new_entries.get(p)
+                        if e is None or e.type != "blob" or \
+                                os.path.islink(os.path.join(dirpath, f)):
+                            continue
+                        with open(os.path.join(dirpath, f), "rb") as fh:
+                            if _up.blob_id(fh.read()) != e.oid:
+                                paths.append(p)
+        dropped = []
+        for p in paths:
+            d = self.tree_dir / p
+            if d.is_symlink() or not d.is_file():
+                continue
+            d.unlink()
+            dropped.append(p)
+        if old or dropped:
+            label = old[:12] if old and len(old) == 40 else \
+                (old or "an unknown commit")
+            log("chromium tree: moved from %s to the pin %s; dropped %d "
+                "upstream file(s) that differ" % (label, new[:12],
+                                                  len(dropped)))
+        state_f.parent.mkdir(parents=True, exist_ok=True)
+        state_f.write_text(json.dumps({"revision": new}))
+        return dropped
 
     # -- overlay ---------------------------------------------------------
     def overlay_set(self):
