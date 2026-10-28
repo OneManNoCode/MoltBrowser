@@ -5,6 +5,7 @@
 #ifndef SERVICES_AUDIO_OUTPUT_DEVICE_MIXER_IMPL_H_
 #define SERVICES_AUDIO_OUTPUT_DEVICE_MIXER_IMPL_H_
 
+#include <atomic>
 #include <memory>
 #include <set>
 #include <string>
@@ -80,6 +81,9 @@ class OutputDeviceMixerImpl final : public OutputDeviceMixer {
  private:
   class MixTrack;
   class MixableOutputStream;
+  // MoltBrowser: plays `mixing_graph_`, with the portable code while a
+  // CPU-independent listener listens.
+  class PortableMixing;
 
   struct StreamAutoClose {
     void operator()(media::AudioOutputStream* stream) {
@@ -155,6 +159,15 @@ class OutputDeviceMixerImpl final : public OutputDeviceMixer {
   // |mixing_output_stream_| for playback.
   const std::unique_ptr<MixingGraph> mixing_graph_
       GUARDED_BY_CONTEXT(owning_sequence_);
+
+  // MoltBrowser: how many of `listeners_` hear the mix with CPU-independent
+  // processing (ReferenceOutput::Listener::IsCpuIndependent(): MoltNet's
+  // microphone streams). Written on `owning_sequence_`, read on the device's
+  // audio thread: while it is above zero, `portable_mixing_` mixes inside a
+  // media::ScopedPortableAudioThread, so that their echo reference is the same
+  // on every CPU and OS.
+  std::atomic<int> cpu_independent_listeners_{0};
+  const std::unique_ptr<PortableMixing> portable_mixing_;
 
   // Stream to render the audio mix. Non-null if and only if the playback is
   // being mixed at the moment.

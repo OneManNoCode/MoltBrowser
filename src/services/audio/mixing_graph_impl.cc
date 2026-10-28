@@ -10,6 +10,7 @@
 #include "base/trace_event/trace_event.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/loopback_audio_converter.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/base/vector_math.h"
 #include "services/audio/sync_mixing_graph_input.h"
 
@@ -18,6 +19,13 @@ namespace {
 std::unique_ptr<media::LoopbackAudioConverter> CreateConverter(
     const media::AudioParameters& input_params,
     const media::AudioParameters& output_params) {
+  // MoltBrowser: the converter's resamplers compute their kernel with the
+  // portable math functions, so that whenever a MoltNet microphone stream's
+  // echo canceller listens, the mix it hears is the same on every CPU and OS
+  // (media/base/molt_portable_media.h; output_device_mixer_impl.cc mixes in a
+  // ScopedPortableAudioThread then). Only the kernel: the mixing itself keeps
+  // the CPU's code at other times.
+  media::ScopedPortableAudioThread portable_kernels(true);
   return std::make_unique<media::LoopbackAudioConverter>(
       input_params, output_params, /*disable_fifo=*/false);
 }

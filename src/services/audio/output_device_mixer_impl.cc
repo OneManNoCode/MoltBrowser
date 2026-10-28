@@ -14,6 +14,7 @@
 #include "base/trace_event/trace_event.h"
 #include "media/audio/audio_device_description.h"
 #include "media/audio/audio_io.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace audio {
@@ -318,6 +319,39 @@ class OutputDeviceMixerImpl::MixableOutputStream final
   raw_ptr<MixTrack> mix_track_;  // Valid only when |mixer_| is valid.
 };
 
+// MoltBrowser: what |mixing_graph_output_stream_| plays: |mixing_graph_|'s
+// mix, computed with the portable code (media's plain C sums and resampler
+// convolution, media/base/molt_portable_media.h) while a listener with
+// CPU-independent processing listens, so that the reference a MoltNet
+// microphone stream's echo canceller hears is the same on every CPU and OS.
+// Other times the graph mixes with the CPU's fast code, as before.
+class OutputDeviceMixerImpl::PortableMixing final
+    : public media::AudioOutputStream::AudioSourceCallback {
+ public:
+  PortableMixing(MixingGraph* mixing_graph,
+                 const std::atomic<int>* cpu_independent_listeners)
+      : mixing_graph_(mixing_graph),
+        cpu_independent_listeners_(cpu_independent_listeners) {}
+  PortableMixing(const PortableMixing&) = delete;
+  PortableMixing& operator=(const PortableMixing&) = delete;
+  ~PortableMixing() final = default;
+
+  int OnMoreData(base::TimeDelta delay,
+                 base::TimeTicks delay_timestamp,
+                 const media::AudioGlitchInfo& glitch_info,
+                 media::AudioBus* dest) final {
+    media::ScopedPortableAudioThread portable(
+        cpu_independent_listeners_->load(std::memory_order_relaxed) > 0);
+    return mixing_graph_->OnMoreData(delay, delay_timestamp, glitch_info, dest);
+  }
+
+  void OnError(ErrorType type) final { mixing_graph_->OnError(type); }
+
+ private:
+  const raw_ptr<MixingGraph> mixing_graph_;
+  const raw_ptr<const std::atomic<int>> cpu_independent_listeners_;
+};
+
 OutputDeviceMixerImpl::OutputDeviceMixerImpl(
     const std::string& device_id,
     const media::AudioParameters& output_params,
@@ -333,7 +367,11 @@ OutputDeviceMixerImpl::OutputDeviceMixerImpl(
                                  base::Unretained(this)),
                              base::BindRepeating(
                                  &OutputDeviceMixerImpl::OnMixingGraphError,
-                                 base::Unretained(this)))) {
+                                 base::Unretained(this)))),
+      // MoltBrowser.
+      portable_mixing_(
+          std::make_unique<PortableMixing>(mixing_graph_.get(),
+                                           &cpu_independent_listeners_)) {
   DCHECK(mixing_graph_output_params_.IsValid());
   DCHECK_EQ(mixing_graph_output_params_.format(),
             media::AudioParameters::AUDIO_PCM_LOW_LATENCY);
@@ -416,6 +454,8 @@ void OutputDeviceMixerImpl::ProcessDeviceChange() {
     base::AutoLock scoped_lock(listener_lock_);
     listeners_.clear();
   }
+  // MoltBrowser: none left.
+  cpu_independent_listeners_.store(0, std::memory_order_relaxed);
 
   // Notify MixableOutputStream users of the device change. Normally they should
   // close the current stream they are holding to, create/open a new one and
@@ -441,6 +481,11 @@ void OutputDeviceMixerImpl::StartListening(Listener* listener) {
 
   // A new listener came: cancel scheduled switch to independent playback.
   switch_to_unmixed_playback_delay_timer_.Stop();
+  // MoltBrowser: the mix is computed with the portable code from the next
+  // callback on (PortableMixing).
+  if (listener->IsCpuIndependent()) {
+    cpu_independent_listeners_.fetch_add(1, std::memory_order_relaxed);
+  }
   {
     base::AutoLock scoped_lock(listener_lock_);
     DCHECK(!listeners_.contains(listener));
@@ -482,6 +527,10 @@ void OutputDeviceMixerImpl::StopListening(Listener* listener) {
     auto iter = listeners_.find(listener);
     CHECK(iter != listeners_.end());
     listeners_.erase(iter);
+  }
+  // MoltBrowser.
+  if (listener->IsCpuIndependent()) {
+    cpu_independent_listeners_.fetch_sub(1, std::memory_order_relaxed);
   }
 
   if (HasListeners()) {
@@ -706,7 +755,8 @@ void OutputDeviceMixerImpl::StartMixingGraphPlayback() {
   for (MixTrack* mix_track : active_tracks_)
     mix_track->StartProvidingAudioToMixingGraph();
 
-  mixing_graph_output_stream_->Start(mixing_graph_.get());
+  // MoltBrowser: through PortableMixing.
+  mixing_graph_output_stream_->Start(portable_mixing_.get());
 
   DVLOG(1) << " Mixing started for device [" << device_id() << "]";
 }

@@ -60,7 +60,8 @@ AudioProcessorHandler::AudioProcessorHandler(
     media::AecdumpRecordingManager* aecdump_recording_manager,
     raw_ptr<MlModelManager> ml_model_manager,
     std::unique_ptr<VoiceIsolationHandler> voice_isolation_handler)
-    : voice_isolation_handler_(std::move(voice_isolation_handler)),
+    : cpu_independent_(settings.cpu_independent),  // MoltBrowser
+      voice_isolation_handler_(std::move(voice_isolation_handler)),
       audio_processor_(media::AudioProcessor::Create(
           // Unretained is safe because this class owns audio_processor_, so it
           // will be destroyed first.
@@ -183,6 +184,11 @@ void AudioProcessorHandler::OnPlayoutData(const media::AudioBus& audio_bus,
 void AudioProcessorHandler::OnReferenceStreamError() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
   reference_stream_error_callback_.Run();
+}
+
+// MoltBrowser.
+bool AudioProcessorHandler::IsCpuIndependent() const {
+  return cpu_independent_;
 }
 
 void AudioProcessorHandler::GetStats(GetStatsCallback callback) {

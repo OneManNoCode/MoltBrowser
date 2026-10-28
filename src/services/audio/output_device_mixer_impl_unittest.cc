@@ -10,6 +10,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/test/task_environment.h"
 #include "media/base/audio_bus.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -1178,6 +1179,54 @@ TEST_F(OutputDeviceMixerImplTest, OnMoreDataDeliversCallbacks) {
   ExpectMixingGraphOutputStreamStopped();
   ExpectMixingGraphOutputStreamClosed();
   mixer->StopListening(&listener2);
+}
+
+// MoltBrowser: a listener whose processing computes the same samples on every
+// CPU (a MoltNet microphone stream's echo canceller).
+class MockCpuIndependentListener : public MockListener {
+ public:
+  bool IsCpuIndependent() const override { return true; }
+};
+
+// MoltBrowser: the device's mix is computed with the portable code
+// (media::IsPortableAudioThread() while the mixing graph mixes) exactly while
+// a CPU-independent listener listens; the mixing thread is left as it was.
+TEST_F(OutputDeviceMixerImplTest, MixesPortablyWhileCpuIndependentListens) {
+  std::unique_ptr<OutputDeviceMixer> mixer = CreateMixerUnderTest();
+  MockListener listener;
+  MockCpuIndependentListener cpu_independent_listener;
+
+  ExpectMixingGraphOutputStreamOpen();
+  mixer->StartListening(&listener);
+  VerifyAndClearAllExpectations();
+
+  StreamUnderTest stream_under_test = CreateNextStreamUnderTest(mixer.get());
+  OpenAndVerifyStreamUnderTest(stream_under_test, PlaybackMode::kMixing);
+  StartAndVerifyStreamUnderTest(stream_under_test, PlaybackMode::kMixing);
+
+  auto expect_mix = [&](bool portable) {
+    EXPECT_CALL(*mock_mixing_graph_, OnMoreData(_, _, _, _))
+        .WillOnce([portable](base::TimeDelta, base::TimeTicks,
+                             const media::AudioGlitchInfo&, media::AudioBus*) {
+          EXPECT_EQ(media::IsPortableAudioThread(), portable);
+          return 0;
+        });
+    mock_mixing_graph_output_stream_.SimulateOnMoreData();
+    VerifyAndClearAllExpectations();
+    EXPECT_FALSE(media::IsPortableAudioThread());
+  };
+  expect_mix(false);
+  mixer->StartListening(&cpu_independent_listener);
+  expect_mix(true);
+  mixer->StopListening(&cpu_independent_listener);
+  expect_mix(false);
+
+  StopAndVerifyStreamUnderTest(stream_under_test, PlaybackMode::kMixing);
+  CloseAndVerifyStreamUnderTest(stream_under_test);
+
+  ExpectMixingGraphOutputStreamStopped();
+  ExpectMixingGraphOutputStreamClosed();
+  mixer->StopListening(&listener);
 }
 
 TEST_F(OutputDeviceMixerImplTest,

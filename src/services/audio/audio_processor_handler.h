@@ -180,6 +180,9 @@ class AudioProcessorHandler final : public ReferenceOutput::Listener,
                      base::TimeDelta delay) final;
   // Called on `owning_sequence_`.
   void OnReferenceStreamError() final;
+  // MoltBrowser: the playout is mixed with the portable code for a MoltNet
+  // stream (reference_output.h).
+  bool IsCpuIndependent() const final;
 
   // mojom::AudioProcessorControls implementation.
   void GetStats(GetStatsCallback callback) final;
@@ -210,6 +213,10 @@ class AudioProcessorHandler final : public ReferenceOutput::Listener,
                               std::optional<double> new_volume);
 
   SEQUENCE_CHECKER(owning_sequence_);
+
+  // MoltBrowser: media::AudioProcessingSettings::cpu_independent, as the
+  // handler was created with it.
+  const bool cpu_independent_;
 
   std::unique_ptr<VoiceIsolationHandler> voice_isolation_handler_;
 

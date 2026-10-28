@@ -27,6 +27,15 @@ class ReferenceOutput {
     // sequence as StartListening.
     virtual void OnReferenceStreamError() = 0;
 
+    // MoltBrowser: true if this listener's processing computes the same
+    // samples on every CPU (a MoltNet microphone stream's echo canceller,
+    // media::AudioProcessingSettings::cpu_independent). While such a listener
+    // listens, the output it hears is mixed with the portable code
+    // (media/base/molt_portable_media.h, ScopedPortableAudioThread), so that
+    // its reference is the same on every CPU and OS. Asked once, when it
+    // starts listening.
+    virtual bool IsCpuIndependent() const { return false; }
+
    protected:
     virtual ~Listener() = default;
   };
