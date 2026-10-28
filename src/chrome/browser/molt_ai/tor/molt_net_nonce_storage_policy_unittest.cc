@@ -60,6 +60,37 @@ TEST(MoltNetNonceStoragePolicyTest, ASitesBoundClosesItsOwnOldest) {
   EXPECT_FALSE(groups.Added(kSite, "room").has_value());
 }
 
+// A page counts to its top-level site; a page served sandboxed (an opaque
+// origin, which serializes as "null" whatever site served it) to the site it
+// came from; one with no such site on its own.
+TEST(MoltNetNonceStoragePolicyTest, TheSiteAPageCountsTo) {
+  EXPECT_EQ(MoltNetNonceGroupSite(false, kSite, "", "n1"), kSite);
+  EXPECT_EQ(MoltNetNonceGroupSite(true, "null", kSite, "n1"), kSite);
+  EXPECT_EQ(MoltNetNonceGroupSite(true, "null", kOther, "n1"), kOther);
+  EXPECT_EQ(MoltNetNonceGroupSite(true, "null", "", "n1"), "page n1");
+  EXPECT_NE(MoltNetNonceGroupSite(true, "null", "", "n1"),
+            MoltNetNonceGroupSite(true, "null", "", "n2"));
+  EXPECT_NE(MoltNetNonceGroupSite(true, "null", "", "n1"), "null");
+}
+
+// One site's sandboxed pages, however many, never close another site's
+// sandboxed page's group: they count to their own site's bound.
+TEST(MoltNetNonceStoragePolicyTest, SandboxedPagesCountToTheirOwnSite) {
+  Groups groups;
+  ASSERT_FALSE(
+      groups.Added(MoltNetNonceGroupSite(true, "null", kOther, "victim"),
+                   "victim")
+          .has_value());
+  for (int i = 0; i < 4 * static_cast<int>(kMoltNetNonceGroupsPerSite); ++i) {
+    const std::optional<std::string> closed = groups.Added(
+        MoltNetNonceGroupSite(true, "null", kSite, Nonce(i)), Nonce(i));
+    EXPECT_NE(closed, std::optional<std::string>("victim")) << i;
+  }
+  EXPECT_EQ(groups.open_count(kOther), 1u);
+  EXPECT_EQ(groups.open_count(kSite), kMoltNetNonceGroupsPerSite);
+  EXPECT_EQ(groups.open_count("null"), 0u);
+}
+
 // A nonce seen again (another frame of the same page) is nothing new.
 TEST(MoltNetNonceStoragePolicyTest, ANonceCountsOnce) {
   Groups groups;
