@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3. -->
+<!-- MoltNet leak kit test page: the microphone's processed samples, in the
+     mic_processing launch (Chromium's fake capture device playing the run's
+     WAV). Served by leakkit/services.py, which fills in the {{...}}
+     values for this test. -->
+<html lang="en" data-nonce="{{NONCE}}" data-canary="{{CANARY}}">
+<head>
+<meta charset="utf-8">
+<title>moltleak: microphone</title>
+<script src="/static/ml.js"></script>
+</head>
+<body>
+<script src="/static/mic.js"></script>
+</body>
+</html>

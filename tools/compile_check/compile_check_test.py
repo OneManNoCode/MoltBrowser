@@ -7,8 +7,8 @@ exception/RTTI flags and own configs from its GN target, mojom freshness
 and the parser bisection, the tarball source, grit header freshness, cxx
 bridge headers' cfgs and freshness, where subprojects came from, the
 platforms (which files, their atoms, buildflags in the scan, the compile
-command of each platform and language), the Windows SDK's layout, and the
-report's stand-in labels.
+command of each platform and language), the Windows SDK's layout, the
+report's stand-in labels, and when a check result is reused.
 
 Run: python3 tools/compile_check/compile_check_test.py -v
 """
@@ -19,9 +19,11 @@ import json
 import lzma
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -30,8 +32,9 @@ sys.path.insert(0, str(HERE))
 
 import compile_check  # noqa: E402
 from ccheck import check, config, gen_actions, gen_misc, gen_mojom  # noqa
+from ccheck import gen_buildflags  # noqa: E402
 from ccheck import gn, gnconfigs, platforms, scan, sdks, sources  # noqa
-from ccheck import tarball, targets  # noqa: E402
+from ccheck import host_tools, result_cache, tarball, targets  # noqa: E402
 
 BUILDCONFIG = """
 default_compiler_configs = [
@@ -360,6 +363,13 @@ class TarballTest(unittest.TestCase):
             top + "/third_party/icu/source/data/x.txt", top, mounts))
         self.assertIsNone(tarball.member_dest("other/third_party/icu/a.h",
                                               top, mounts))
+        # Nothing that would be written outside its mount.
+        for bad in ("third_party/webrtc/../../../x.h",
+                    "third_party/webrtc/a/../../b.h",
+                    "third_party/webrtc/./a.h", "third_party/webrtc//a.h",
+                    "third_party/webrtc/"):
+            self.assertIsNone(tarball.member_dest(top + "/" + bad, top,
+                                                  mounts), bad)
 
     def test_extract_and_dir_repo(self):
         top = "chromium-1.2.3.4"
@@ -376,8 +386,10 @@ class TarballTest(unittest.TestCase):
             dest = tmp / "tarball-1.2.3.4"
             tarball.extract("mem://x", "1.2.3.4", ["third_party/webrtc"],
                             dest, lambda m: None,
-                            opener=lambda url: io.BytesIO(blob))
+                            opener=lambda url: io.BytesIO(blob),
+                            pins={"x": hashlib.sha256(blob).hexdigest()})
             man = json.loads((dest / tarball.MANIFEST).read_text())
+            self.assertEqual(man["sha256"], hashlib.sha256(blob).hexdigest())
             files = man["mounts"]["third_party/webrtc"]
             self.assertEqual(sorted(files), ["api/x.h", "tools/gen.py"])
             self.assertEqual(files["tools/gen.py"][0], "100755")
@@ -391,6 +403,75 @@ class TarballTest(unittest.TestCase):
             self.assertEqual(repo.commit, "c0ffee")
         finally:
             shutil.rmtree(tmp)
+
+
+class TarballPinTest(unittest.TestCase):
+    """Nothing from a tarball is used unless the whole tarball matches its
+    pinned SHA-256."""
+
+    def setUp(self):
+        self.top = "chromium-1.2.3.4"
+        self.blob = make_tarball({
+            "third_party/webrtc/api/x.h": b"int x;\n",
+            "third_party/webrtc/tools/gen.py": b"print(1)\n",
+        }, self.top)
+        self.tmp = Path(tempfile.mkdtemp())
+        self.dest = self.tmp / "tarball-1.2.3.4"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def extract(self, pins, blob=None):
+        data = self.blob if blob is None else blob
+        return tarball.extract(
+            tarball.BUCKET + "chromium-1.2.3.4-lite.tar.xz", "1.2.3.4",
+            ["third_party/webrtc"], self.dest, lambda m: None,
+            opener=lambda url: io.BytesIO(data), pins=pins)
+
+    def assertNothingKept(self):
+        self.assertFalse(self.dest.exists())
+        self.assertFalse((self.tmp / "tarball-1.2.3.4.partial").exists())
+
+    def test_pinned(self):
+        self.extract({"chromium-1.2.3.4-lite.tar.xz":
+                      hashlib.sha256(self.blob).hexdigest()})
+        self.assertTrue((self.dest / "third_party/webrtc/api/x.h").exists())
+
+    def test_unpinned_is_refused(self):
+        with self.assertRaises(tarball.TarballNotVerified):
+            self.extract({})
+        self.assertNothingKept()
+
+    def test_another_tarball_is_refused(self):
+        # The same files, after the archive's end the hash covers too.
+        with self.assertRaises(tarball.TarballNotVerified):
+            self.extract({"chromium-1.2.3.4-lite.tar.xz":
+                          hashlib.sha256(self.blob).hexdigest()},
+                         blob=self.blob + lzma.compress(b"\0" * 1024))
+        self.assertNothingKept()
+
+    def test_the_pin_of_the_pinned_release(self):
+        pin = sources._up.read_pin(sources.REPO_ROOT / "chromium_version.txt")
+        name = "chromium-%s-lite.tar.xz" % pin.version
+        self.assertRegex(tarball.pinned_sha256(tarball.BUCKET + name),
+                         "^[0-9a-f]{64}$")
+
+    def test_reader_hashes_what_tarfile_leaves(self):
+        # tarfile stops at the archive's end; what follows it (here bytes
+        # that don't compress) is hashed too.
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode="w") as tf:
+            info = tarfile.TarInfo(self.top + "/third_party/webrtc/a.h")
+            info.size = 2
+            tf.addfile(info, io.BytesIO(b"a\n"))
+        blob = lzma.compress(raw.getvalue() + os.urandom(1 << 18))
+        f = io.BytesIO(blob)
+        r = tarball.HashingReader(f)
+        with tarfile.open(fileobj=r, mode="r|xz") as tf:
+            names = [m.name for m in tf]
+        self.assertEqual(len(names), 1)
+        self.assertLess(f.tell(), len(blob))
+        self.assertEqual(r.drain(), hashlib.sha256(blob).hexdigest())
 
 
 class GritFreshnessTest(unittest.TestCase):
@@ -426,6 +507,138 @@ class GritFreshnessTest(unittest.TestCase):
             ids.parent.mkdir(parents=True)
             ids.write_text("{}")
             self.assertNotEqual(k2, gen_misc._grit_key(tree, tmp, args))
+        finally:
+            shutil.rmtree(tmp)
+
+
+class ConfigLabelTest(unittest.TestCase):
+    """Config labels resolve as GN resolves them, relative ones against
+    the target's directory."""
+
+    def test_relative_labels(self):
+        d = "//third_party/webrtc/modules/audio_processing/aec3"
+        lab = gnconfigs._label
+        self.assertEqual(
+            lab("..:apm_debug_dump", d),
+            "//third_party/webrtc/modules/audio_processing:apm_debug_dump")
+        self.assertEqual(lab(":x", d), d + ":x")
+        self.assertEqual(lab("sub:x", d), d + "/sub:x")
+        self.assertEqual(lab("../../common", d),
+                         "//third_party/webrtc/modules/common:common")
+        self.assertEqual(lab("//third_party/webrtc/:common_config", d),
+                         "//third_party/webrtc:common_config")
+        self.assertEqual(lab("//build/config/compiler:no_exceptions"
+                             "(//build/toolchain/linux:clang_x64)", d),
+                         "//build/config/compiler:no_exceptions")
+        self.assertEqual(lab("//v8", d), "//v8:v8")
+        self.assertEqual(lab(":x", "//"), "//:x")
+
+    def test_relative_config_flags_reach_the_file(self):
+        files = {
+            "w/BUILD.gn": 'config("dump") { defines = [ "DUMP=0" ] }\n',
+            "w/sub/BUILD.gn": 'source_set("s") {\n'
+                              '  sources = [ "a.cc" ]\n'
+                              '  configs += [ "..:dump" ]\n}\n',
+        }
+        tree = FakeTree(files)
+        flags = gnconfigs.own_flags(
+            [t for t in make_interp(files).run_file("//w/sub/BUILD.gn")
+             if t.name == "s"][0], make_interp(files), tree, {})
+        self.assertIn("-DDUMP=0", flags)
+
+
+class GritArgsChangeTest(unittest.TestCase):
+    """When the platform's GN args change, each grit header's args are
+    taken from its action again, and a header whose defines changed is
+    remade with them."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.tree = FakeTree({"a/x.grd": "<grit/>"})
+        self.tree.state = self.tmp / "state"
+        self.tree.gen_dir = self.tmp / "gen"
+        self.tree.platform = platforms.get("linux")
+        self.tree.chromium = types.SimpleNamespace(rev="pin")
+        self.saved = {n: getattr(gen_misc, n) for n in (
+            "_find_grit_target", "_grit_args", "run_grit",
+            "ensure_resource_ids")}
+        self.defines = ["-D", "x=1"]
+        self.ran = []
+        gen_misc._find_grit_target = lambda tree, interp, n: "target"
+        gen_misc._grit_args = lambda tree, interp, n, t: (
+            ["-i", "../../a/x.grd", "build"] + self.defines)
+        gen_misc.ensure_resource_ids = lambda tree, interp, gen_dir: None
+
+        def run_grit(tree, gen_dir, args):
+            self.ran.append(args)
+            (gen_dir / "a/grit/x.h").write_text("// %s\n" % args)
+        gen_misc.run_grit = run_grit
+        h = self.tree.gen_dir / "a/grit/x.h"
+        h.parent.mkdir(parents=True)
+        h.write_text("// old\n")
+        args = ["-i", "../../a/x.grd", "build", "-D", "x=1"]
+        gen_misc._save_stamps(self.tree, {"a/grit/x.h": {
+            "args": args,
+            "key": gen_misc._grit_key(self.tree, self.tree.gen_dir, args)}})
+
+    def tearDown(self):
+        for n, f in self.saved.items():
+            setattr(gen_misc, n, f)
+        shutil.rmtree(self.tmp)
+
+    def test_defines_follow_the_args(self):
+        # Stamps from before the platform key: args evaluated, unchanged.
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None), ([], []))
+        self.assertEqual(self.ran, [])
+        # The args file changes a define: remade with the new one.
+        self.tree.platform = types.SimpleNamespace(
+            name="linux", extra_args={"x": 2}, args_file="configs/none.gn")
+        self.defines = ["-D", "x=2"]
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None),
+                         (["a/grit/x.h"], []))
+        self.assertEqual(self.ran[-1][-1], "x=2")
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None), ([], []))
+        self.assertEqual(len(self.ran), 1)
+
+    def test_header_without_an_action_removed(self):
+        self.tree.platform = types.SimpleNamespace(
+            name="linux", extra_args={"x": 2}, args_file="configs/none.gn")
+        gen_misc._find_grit_target = lambda tree, interp, n: None
+
+        def fail(tree, gen_dir, args):
+            raise RuntimeError("grit: no .grd")
+        gen_misc.run_grit = fail
+        self.assertEqual(gen_misc.refresh_grit(self.tree, None),
+                         ([], ["a/grit/x.h"]))
+        self.assertFalse((self.tree.gen_dir / "a/grit/x.h").exists())
+
+
+class MojomIndexArgsTest(unittest.TestCase):
+    """The mojom index (with each target's enabled_features) is read again
+    when the platform's GN args change, not only its BUILD.gn files."""
+
+    def test_args_change_reindexes(self):
+        files = {"a/BUILD.gn": 'declare_args() { use_x = false }\n'
+                               'source_set("m") {\n'
+                               '  sources = [ "x.mojom" ]\n'
+                               '  enabled_features = []\n'
+                               '  if (use_x) { enabled_features += '
+                               '[ "use_x" ] }\n}\n'}
+        tree = FakeTree(files)
+        tree.platform = types.SimpleNamespace(
+            name="linux", extra_args={}, args_file="configs/none.gn")
+        tree.chromium = types.SimpleNamespace(rev="pin")
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            cache = tmp / "mojom_index.json"
+            idx = gen_mojom.build_index(tree, make_interp(files), cache)
+            self.assertEqual(idx.mojoms["a/x.mojom"]["enabled_features"], [])
+            it = make_interp(files)
+            it.args = {"use_x": True}
+            tree.platform.extra_args = {"use_x": True}
+            idx = gen_mojom.build_index(tree, it, cache)
+            self.assertEqual(idx.mojoms["a/x.mojom"]["enabled_features"],
+                             ["use_x"])
         finally:
             shutil.rmtree(tmp)
 
@@ -787,6 +1000,16 @@ class CxxBridgeTest(unittest.TestCase):
                          ([], ["base/old.rs.h"]))
         self.assertFalse(other.exists())
 
+    def test_install_takes_the_locked_dependencies(self):
+        # cxxbridge-cmd's dependencies are the versions its Cargo.lock
+        # pins, not the newest crates.io has.
+        cmd = host_tools.cxxbridge_install_cmd(
+            "cargo", Path("/v/cxxbridge-cmd-v1"), Path("/w/cxxbridge"))
+        self.assertEqual(cmd[:2], ["cargo", "install"])
+        self.assertIn("--locked", cmd)
+        self.assertEqual(cmd[cmd.index("--path") + 1], "/v/cxxbridge-cmd-v1")
+        self.assertNotIn("--offline", cmd)
+
 
 class CompileCommandTest(unittest.TestCase):
     def setUp(self):
@@ -915,6 +1138,40 @@ class ExtraPlatformsTest(unittest.TestCase):
         self.assertEqual(targets.extra_platforms("a/x_posix.cc", self.OLD,
                                                  None), ["mac"])
         self.assertEqual(targets.changed_lines(b"a\nb\nc", b"a\nc"), {1})
+
+    def test_neon_branch_on_linux_arm64(self):
+        # WebRTC's NEON branches: x64 builds skip them; Linux arm64 checks
+        # them (not the Mac too, for the same lines).
+        old = (b"void F() {\n"
+               b"#if defined(WEBRTC_ARCH_X86_FAMILY)\n  Sse();\n"
+               b"#elif defined(WEBRTC_HAS_NEON)\n  Neon();\n"
+               b"#else\n  C();\n#endif\n"
+               b"#if defined(__ARM_NEON)\n  Intrinsics();\n#endif\n"
+               b"#if defined(ARCH_CPU_ARM64)\n  Arm64();\n#endif\n"
+               b"#if BUILDFLAG(IS_MAC)\n  Mac();\n#endif\n}\n")
+        path = "third_party/webrtc/common_audio/x.cc"
+        for line in (b"  Neon();\n", b"  Intrinsics();\n"):
+            new = old.replace(line, line[:-3] + b"(1);\n")
+            self.assertEqual(targets.extra_platforms(path, new, old),
+                             ["linux-arm64"], line)
+        # A NEON line and a Mac one: both.
+        new = old.replace(b"  Neon();\n", b"  Neon(1);\n").replace(
+            b"  Mac();\n", b"  Mac(1);\n")
+        self.assertEqual(targets.extra_platforms(path, new, old),
+                         ["linux-arm64", "mac"])
+        # Other arm64 code is the Mac's, as before.
+        new = old.replace(b"  Arm64();\n", b"  Arm64(1);\n")
+        self.assertEqual(targets.extra_platforms(path, new, old), ["mac"])
+        # The x86 branch stays Linux x64's.
+        new = old.replace(b"  Sse();\n", b"  Sse(1);\n")
+        self.assertEqual(targets.extra_platforms(path, new, old), [])
+        arm = platforms.get("linux-arm64")
+        self.assertIn("defined(__ARM_NEON)", arm.true_atoms)
+        self.assertIn("defined(__ARM_NEON__)", arm.false_atoms)
+        self.assertIn("defined(__ARM_NEON__)",
+                      platforms.get("mac").true_atoms)
+        self.assertIn("defined(WEBRTC_HAS_NEON)",
+                      platforms.get("win").false_atoms)
 
     def test_vulkan_switch_variant(self):
         old = (b"void F() {\n#if BUILDFLAG(MOLT_LLAMA_VULKAN)\n  G();\n"
@@ -1250,7 +1507,10 @@ action("generate_transport_security_state") {
         tree = FakeTree(files)
         interp = make_interp(files)
         name = "net/http/transport_security_state_static.h"
-        self.assertTrue(gen_misc.handles_exclusively(name))
+        # A fallback: the generator's GN action is tried first.
+        self.assertFalse(gen_misc.handles_exclusively(name))
+        self.assertTrue(gen_misc.handles(name))
+        self.assertTrue(gen_misc.is_fallback(name))
         text = gen_misc.preload_header(tree, interp, name)
         self.assertTrue(text.startswith("// compile_check STAND-IN"))
         self.assertIn("kHSTSHuffmanTree[] = {0};", text)
@@ -1309,6 +1569,359 @@ action("generate_transport_security_state_pins") {
         self.assertIn("V8_USE_METAGEN_INSTANCE_TYPES", scan.FALSE_ATOMS)
 
 
+class FallbackStandInsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.tree = types.SimpleNamespace(
+            gen_dir=self.tmp / "gen", state=self.tmp / "state",
+            chromium=types.SimpleNamespace(rev="pin1"))
+        f = self.tree.gen_dir / "base" / "generated_build_date.h"
+        f.parent.mkdir(parents=True)
+        f.write_text("// compile_check STAND-IN for base/x\n")
+        self.f = f
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_stand_in_replaced_when_the_action_runs(self):
+        def produce(rels):
+            self.assertFalse(self.f.exists())  # moved aside first
+            self.f.write_text("#define BASE_GENERATED_BUILD_DATE_TIMESTAMP 1\n")
+            return rels
+        self.assertEqual(gen_misc.replace_stand_ins(self.tree, None, produce),
+                         ["base/generated_build_date.h"])
+        self.assertNotIn("STAND-IN", self.f.read_text())
+        self.assertEqual(list(self.f.parent.iterdir()), [self.f])
+
+    def test_failure_keeps_it_and_is_not_retried_until_the_pin_moves(self):
+        calls = []
+
+        def produce(rels):
+            calls.append(rels)
+            return []
+        for _ in range(2):
+            self.assertEqual(gen_misc.replace_stand_ins(self.tree, None,
+                                                        produce), [])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("STAND-IN", self.f.read_text())
+        self.tree.chromium.rev = "pin2"
+        gen_misc.replace_stand_ins(self.tree, None, produce)
+        self.assertEqual(len(calls), 2)
+
+
+class CopyActionTest(unittest.TestCase):
+    def test_copy_target(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            files = {"base/BUILD.gn": """
+copy("build_date_header") {
+  sources = [ "$root_build_dir/gen/base/internal.h" ]
+  outputs = [ "$target_gen_dir/generated.h" ]
+}
+"""}
+            interp = make_interp(files)
+            tree = types.SimpleNamespace(tree_dir=tmp, materialize=None)
+            (tmp / "out/cc/gen/base").mkdir(parents=True)
+            (tmp / "out/cc/gen/base/internal.h").write_text("#define X 1\n")
+            t = [x for x in interp.run_file("//base/BUILD.gn")
+                 if x.name == "build_date_header"][0]
+            self.assertIsNone(gen_actions.run_copy(tree, interp, t))
+            self.assertEqual((tmp / "out/cc/gen/base/generated.h")
+                             .read_text(), "#define X 1\n")
+        finally:
+            shutil.rmtree(tmp)
+
+
+class ActionFreshnessTest(unittest.TestCase):
+    """An action's outputs are made again when what it read changed."""
+
+    BUILD = """
+action("gen") {
+  script = "gen.py"
+  inputs = [ "in.txt" ]
+  outputs = [ "$target_gen_dir/out.h" ]
+  args = [ rebase_path("in.txt", root_build_dir),
+           rebase_path("$target_gen_dir/out.h", root_build_dir) ]
+}
+"""
+    SCRIPT = ("import sys\n"
+              "open(sys.argv[2], 'w').write('// ' + open(sys.argv[1]).read())\n")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        src = self.tmp / "src"
+        (src / "a").mkdir(parents=True)
+        (src / "a/BUILD.gn").write_text(self.BUILD)
+        (src / "a/gen.py").write_text(self.SCRIPT)
+        (src / "a/in.txt").write_text("one\n")
+        files = {"a/BUILD.gn": self.BUILD}
+
+        class Tree:
+            tree_dir = src
+            out_dir = src / "out/cc"
+            gen_dir = src / "out/cc/gen"
+            state = self.tmp / "state"
+            platform = platforms.get("linux")
+            chromium = types.SimpleNamespace(rev="pin")
+
+            def local_path(self, p):
+                return src / p
+
+            def read(self, p):
+                f = src / p
+                return f.read_bytes() if f.exists() else None
+
+            def exists(self, p):
+                return (src / p).exists()
+
+            def glob_upstream(self, prefix, suffix=""):
+                d = src / prefix
+                return sorted(str(f.relative_to(src)) for f in d.rglob("*")
+                              if f.is_file() and str(f).endswith(suffix)) \
+                    if d.is_dir() else []
+
+            def materialize(self, paths):
+                return 0
+
+            def chromium_files(self, pred):
+                return [p for p in files if pred(p)]
+
+            def overlay_set(self):
+                return set()
+
+            def mount_of(self, p):
+                return None
+
+        self.tree = Tree()
+        self.interp = gn.Interp(lambda p: files.get(p[2:]), {},
+                                root=str(src))
+        self.interp.globals.set("root_build_dir", gn.OUT)
+        gen_actions._py_deps_done = True
+        gen_actions._build_texts = None
+        gen_actions._stamps.clear()
+        self.out = self.tree.gen_dir / "a/out.h"
+
+    def tearDown(self):
+        gen_actions._py_deps_done = False
+        gen_actions._stamps.clear()
+        shutil.rmtree(self.tmp)
+
+    def test_made_again_only_when_an_input_changed(self):
+        w, f = gen_actions.produce(self.tree, self.interp, ["a/out.h"])
+        self.assertEqual((w, f), (["a/out.h"], {}))
+        self.assertEqual(self.out.read_text(), "// one\n")
+        self.assertEqual(gen_actions.refresh(self.tree, self.interp),
+                         ([], []))
+        (self.tree.tree_dir / "a/in.txt").write_text("two\n")
+        self.assertEqual(gen_actions.refresh(self.tree, self.interp),
+                         (["a/out.h"], []))
+        self.assertEqual(self.out.read_text(), "// two\n")
+        # Its script changing counts too; a failing run leaves no output.
+        (self.tree.tree_dir / "a/gen.py").write_text("raise SystemExit(1)\n")
+        self.assertEqual(gen_actions.refresh(self.tree, self.interp),
+                         ([], ["a/out.h"]))
+        self.assertFalse(self.out.exists())
+        # The stamps outlive the process.
+        gen_actions._stamps.clear()
+        self.assertEqual(gen_actions.refresh(self.tree, self.interp),
+                         ([], []))
+
+
+class BuildflagFreshnessTest(unittest.TestCase):
+    """A buildflag header is written again when its flags changed."""
+
+    WRITER = """import argparse, os, shlex
+p = argparse.ArgumentParser()
+for a in ("--output", "--rulename", "--gen-dir", "--definitions"):
+    p.add_argument(a)
+a = p.parse_args()
+flags = shlex.split(open(a.definitions).read())[1:]
+out = os.path.join(a.gen_dir, a.output)
+open(out, "w").write("// Generated by build/write_buildflag_header.py\\n"
+                     '// From "%s"\\n' % a.rulename +
+                     "".join("#define %s\\n" % f for f in flags))
+"""
+
+    def build(self, value):
+        return ('buildflag_header("buildflags") {\n'
+                '  header = "buildflags.h"\n'
+                '  flags = [ "ENABLE_X=%s" ]\n}\n' % value)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        src = self.tmp / "src"
+        (src / "build").mkdir(parents=True)
+        (src / "build/write_buildflag_header.py").write_text(self.WRITER)
+        (src / "a").mkdir()
+        self.src = src
+        self.files = {}
+        self.set_build("true")
+        files = self.files
+
+        class Tree:
+            state = self.tmp / "state"
+            platform = platforms.get("linux")
+            chromium = types.SimpleNamespace(rev="pin")
+
+            def local_path(self, p):
+                return src / p
+
+            def read(self, p):
+                f = src / p
+                return f.read_bytes() if f.exists() else None
+
+            def exists(self, p):
+                return (src / p).exists()
+
+            def materialize(self, paths):
+                return 0
+
+            def overlay_set(self):
+                return {"a/BUILD.gn"}
+
+        self.tree = Tree()
+        self.gen = src / "out/cc/gen"
+        self.gen.mkdir(parents=True)
+        self.files = files
+
+    def set_build(self, value):
+        self.files["a/BUILD.gn"] = self.build(value)
+        (self.src / "a/BUILD.gn").write_text(self.files["a/BUILD.gn"])
+
+    def interp(self):
+        files = dict(self.files)
+        it = gn.Interp(lambda p: files.get(p[2:]), {}, root=str(self.src))
+        it.exec_block(gn.Parser("template(\"buildflag_header\") {}")
+                      .parse_file(), it.globals,
+                      {"dir": "//build", "targets": None})
+        return it
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_rewritten_when_the_flags_change(self):
+        w, f = gen_buildflags.generate(self.tree, self.interp(), self.gen,
+                                       ["a/buildflags.h"], [""])
+        self.assertEqual((w, f), (["a/buildflags.h"], {}))
+        h = self.gen / "a/buildflags.h"
+        self.assertIn("ENABLE_X=true", h.read_text())
+        self.assertEqual(gen_buildflags.refresh(self.tree, self.interp(),
+                                                self.gen), ([], []))
+        self.set_build("false")
+        self.assertEqual(gen_buildflags.refresh(self.tree, self.interp(),
+                                                self.gen),
+                         (["a/buildflags.h"], []))
+        self.assertIn("ENABLE_X=false", h.read_text())
+        # A header made before stamps is found by its label and checked.
+        (self.tree.state / gen_buildflags.STAMPS).unlink()
+        self.assertEqual(gen_buildflags.refresh(self.tree, self.interp(),
+                                                self.gen), ([], []))
+        self.assertTrue((self.tree.state / gen_buildflags.STAMPS).exists())
+
+
+class CleanTest(unittest.TestCase):
+    def test_stale_outputs(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            w = tmp / "work"
+            for f in ("check/a__x.cc.log", "check/a__gone.cc.log",
+                      "check/commands/a__x.cc.json",
+                      "check/commands/a__gone.cc.json",
+                      "check/cache/a__x.cc@win.json",
+                      "check/cache/a__gone.cc.json",
+                      "toolchain/protobuf_host/obj/x.o",
+                      "toolchain/protobuf_host/libprotobuf_host.a",
+                      "toolchain/protobuf_host/stamp",
+                      "toolchain/flatc/obj/y.o",
+                      "repos/perfetto/HEAD", "repos/oldclone/HEAD",
+                      "repos/tarball-1.2.3.4/manifest.json",
+                      "repos/tarball-1.2.3.3/manifest.json",
+                      "chromium/src/out/cc/gen/a.h",
+                      "chromium/src/out/cc/gen/a.pb.cc",
+                      "chromium/src/out/cc/gen/m/x.mojom-module",
+                      "chromium/src/out/cc/gen/b.h.standin",
+                      "chromium/src/out/cc-old/gen/a.h",
+                      "platform-old/scan.json", "graph.json"):
+                (w / f).parent.mkdir(parents=True, exist_ok=True)
+                (w / f).write_text("x")
+            (w / "repos/sources.json").write_text(json.dumps({
+                "third_party/perfetto": {
+                    "key": "git https://github.com/google/perfetto c1"},
+                "third_party/webrtc": {"key": "tarball 1.2.3.4 c2"}}))
+            res = [{"target": "a/x.cc", "platform": "linux"},
+                   {"target": "a/x.cc", "platform": "win"}]
+            got = {str(p.relative_to(w)) for p, _ in
+                   compile_check.stale_paths(w, res)}
+            self.assertEqual(got, {
+                "check/a__gone.cc.log", "check/commands/a__gone.cc.json",
+                "check/cache/a__gone.cc.json", "toolchain/protobuf_host/obj",
+                "repos/oldclone", "repos/tarball-1.2.3.3",
+                "chromium/src/out/cc/gen/b.h.standin",
+                "chromium/src/out/cc/gen/a.pb.cc",
+                "chromium/src/out/cc/gen/m/x.mojom-module",
+                "chromium/src/out/cc-old", "platform-old"})
+            got = {str(p.relative_to(w)) for p, _ in
+                   compile_check.stale_paths(w, res, generated=True)}
+            self.assertIn("chromium/src/out/cc", got)
+            self.assertIn("graph.json", got)
+            self.assertNotIn("check/a__x.cc.log", got)
+        finally:
+            shutil.rmtree(tmp)
+
+
+class HostShimTest(unittest.TestCase):
+    """The //base stand-in of the HSTS generator behaves as //base does on
+    what the generator gives it (host_shims/hsts_generator/shim_test.cc,
+    built with the host's clang++)."""
+
+    def test_hsts_generator_shim(self):
+        cxx = shutil.which("clang++") or shutil.which("g++")
+        if cxx is None:
+            self.skipTest("no host C++ compiler")
+        d = HERE / "host_shims" / "hsts_generator"
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            exe = tmp / "shim_test"
+            r = subprocess.run([cxx, "-std=c++20", "-Wall", "-Werror",
+                                "-I" + str(d), str(d / "shim_test.cc"), "-o",
+                                str(exe)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+            r = subprocess.run([str(exe)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+        finally:
+            shutil.rmtree(tmp)
+
+
+class LastChangeTest(unittest.TestCase):
+    COMMIT = ("tree 1\nparent 2\nauthor a <a> 1792446655 -0700\n"
+              "committer c <c> 1792446656 -0700\n\n"
+              "Incrementing VERSION to 1.2.3.4\n\n"
+              "Change-Id: I123\n"
+              "Cr-Commit-Position: refs/branch-heads/8078@{#1314}\n"
+              "Cr-Branched-From: abc-refs/heads/main@{#1706539}\n")
+
+    def test_release_commit(self):
+        self.assertEqual(compile_check.parse_lastchange("d0c0", self.COMMIT),
+                         ("d0c0-refs/branch-heads/8078@{#1314}", 1792446656))
+
+    def test_commit_lastchange_would_skip(self):
+        self.assertIsNone(compile_check.parse_lastchange(
+            "d0c0", self.COMMIT.replace("Change-Id: I123\n", "")))
+        self.assertEqual(compile_check.parse_lastchange(
+            "d0c0", self.COMMIT.replace(
+                "Cr-Commit-Position: refs/branch-heads/8078@{#1314}\n", "")),
+            ("d0c0", 1792446656))
+
+
+class UnlistedTest(unittest.TestCase):
+    def test_files_no_build_file_names(self):
+        tree = FakeTree({
+            "a/BUILD.gn": 'source_set("a") { sources = [ "ios/x.mm" ] }',
+            "b/BUILD.gn": 'group("b") {}'})
+        self.assertEqual(compile_check.unlisted(
+            tree, ["a/ios/x.mm", "c/ios/Lonely.mm"]), ["c/ios/Lonely.mm"])
+
+
 class SkippedReportTest(unittest.TestCase):
     def test_skipped_and_sdk_stand_ins(self):
         r = {"target": "x_android.cc", "skipped": "built for android only",
@@ -1362,6 +1975,13 @@ class SkippedReportTest(unittest.TestCase):
         st = compile_check.classify(res("base/not_in_the_overlay.h"), {},
                                     Path("/x"))
         self.assertEqual(st[0], "checked")
+        # Blink's checks too.
+        r = res("net/socket/molt_identity_end.h")
+        r["diags"][0]["msg"] = ("[blink-style] 'std::vector' is discouraged "
+                                "for data members in blink renderer.")
+        st = compile_check.classify(r, {}, Path("/x"))
+        self.assertEqual(st[:2], ("PLUGIN", "1 [blink-style] "
+                                  "diagnostic(s) in MoltBrowser code"))
 
     def test_plugin_flags_per_platform(self):
         lin = config.plugin_flags("linux", "/r")
@@ -1388,10 +2008,13 @@ class SkippedReportTest(unittest.TestCase):
         self.assertEqual(st[:2], ("not checked", "header not available "
                                   "here: a/b.mojom-shared.h (mojom parser: "
                                   "bad enum)"))
+        st = compile_check.classify(missing("Metal/Metal.h", "mac"), {},
+                                    Path("/x"))
+        self.assertIn("no stand-in for it", st[1])
         st = compile_check.classify(missing(
             "AuthenticationServices/AuthenticationServices.h", "mac"), {},
                                     Path("/x"))
-        self.assertIn("no stand-in for it", st[1])
+        self.assertNotIn("no stand-in for it", st[1])
         st = compile_check.classify(missing("CoreText/CoreText.h", "mac"),
                                     {}, Path("/x"))
         self.assertEqual(st[1], "header not available here: "
@@ -1400,6 +2023,159 @@ class SkippedReportTest(unittest.TestCase):
                                     Path("/x"))
         self.assertIn("no GN target lists the file with configs/linux-x64.gn",
                       st[1])
+
+
+# A stand-in for clang: with -E it prints the source and the files it
+# includes ("#include "x"" lines, from the source's directory); otherwise it
+# counts the compile (in compiles.txt next to it) and warns about "WARN".
+FAKE_CLANG = r"""#!/usr/bin/env python3
+import os, re, sys
+src = sys.argv[-1]
+text = open(src).read()
+if "-E" in sys.argv or "/E" in sys.argv:
+    sys.stdout.write(text)
+    for inc in re.findall(r'#include "([^"]+)"', text):
+        p = os.path.join(os.path.dirname(src), inc)
+        if not os.path.exists(p):
+            sys.stderr.write("%s:1:10: fatal error: '%s' file not found\n"
+                             % (src, inc))
+            sys.exit(1)
+        sys.stdout.write(open(p).read())
+    sys.exit(int(os.environ.get("FAKE_PP_RC", "0")))
+with open(os.path.join(os.path.dirname(__file__), "compiles.txt"), "a") as f:
+    f.write(src + "\n")
+if "CRASH" in text:
+    sys.stderr.write("PLEASE submit a bug report\n")
+    sys.exit(1)
+if "WARN" in text:
+    sys.stderr.write("%s:1:1: warning: a warning\n" % src)
+"""
+
+
+@unittest.skipUnless(Path("/proc/self/status").exists(), "needs /proc")
+class PeakMemoryTest(unittest.TestCase):
+    """The peak memory of a compile is the compiler's, not the copy of the
+    harness's memory its fork starts with."""
+
+    def test_child_peak_not_the_parents(self):
+        ballast = b"\x01" * (200 << 20)  # this process: 200 MB more
+        try:
+            rc, _, mb = check.run_measured(["true"], "/")
+            self.assertEqual(rc, 0)
+            # Too quick to sample, or small: never this process's 200 MB.
+            self.assertTrue(mb is None or mb < 100, mb)
+            rc, _, mb = check.run_measured([
+                sys.executable, "-I", "-c",
+                "import time; x = b'1' * (120 << 20); time.sleep(0.3)"], "/")
+            self.assertEqual(rc, 0)
+            self.assertGreaterEqual(mb, 115)
+            self.assertLess(mb, 200)
+        finally:
+            del ballast
+
+
+class ResultCacheTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.work = self.tmp / "work"
+        bindir = self.work / "toolchain" / "clang" / "bin"
+        bindir.mkdir(parents=True)
+        (bindir.parent / "cr_build_revision").write_text("r1-1\n")
+        for exe in ("clang++", "clang", "clang-cl"):
+            (bindir / exe).write_text(FAKE_CLANG)
+            (bindir / exe).chmod(0o755)
+        self.compiles = bindir / "compiles.txt"
+        self.tree = sources.SourceTree(self.work, self.tmp / "cache",
+                                       overlay=self.tmp / "overlay",
+                                       platform="linux")
+        self.tree.system_dirs = []
+        self.tree.out_dir.mkdir(parents=True)
+        (self.work / "check").mkdir(parents=True)
+        self.src = self.tree.tree_dir / "a" / "x.cc"
+        self.src.parent.mkdir(parents=True)
+        self.src.write_text('#include "x.h"\nint x;\n')
+        (self.src.parent / "x.h").write_text("int y;\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def run_one(self, cache=True):
+        return check.run_one(self.tree, self.work, "a/x.cc",
+                             self.work / "check", plugins=True, cache=cache)
+
+    def compiled(self):
+        return len(self.compiles.read_text().splitlines()) \
+            if self.compiles.exists() else 0
+
+    def test_preprocess_command(self):
+        cmd = ["clang++", "-fsyntax-only", "-DA", "-Xclang", "-add-plugin",
+               "-Xclang", "find-bad-constructs", "-Xclang",
+               "-plugin-arg-find-bad-constructs", "-Xclang", "check-ipc",
+               "-Xclang", "-fno-x", "/src/a.cc"]
+        self.assertEqual(result_cache.preprocess_command(cmd),
+                         ["clang++", "-E", "-DA", "-Xclang", "-fno-x", "-dD",
+                          "/src/a.cc"])
+        self.assertEqual(result_cache.preprocess_command(
+            ["clang-cl", "/Zs", "/W4", "a.cc"]),
+            ["clang-cl", "/E", "/W4", "/clang:-dD", "a.cc"])
+
+    def test_unchanged_input_reuses_the_result(self):
+        self.src.write_text('#include "x.h"\nint x; // WARN\n')
+        r1 = self.run_one()
+        self.assertFalse(r1["reused"])
+        self.assertEqual([d["kind"] for d in r1["diags"]], ["warning"])
+        r2 = self.run_one()
+        self.assertTrue(r2["reused"])
+        self.assertEqual(r2["diags"], r1["diags"])
+        self.assertEqual(self.compiled(), 1)
+        # An included header changes: compiled again.
+        (self.src.parent / "x.h").write_text("int y, z;\n")
+        self.assertFalse(self.run_one()["reused"])
+        self.assertEqual(self.compiled(), 2)
+        self.assertTrue(self.run_one()["reused"])
+        # So does the compiler, or the command (plugins off).
+        (self.work / "toolchain/clang/cr_build_revision").write_text("r2-1")
+        self.assertFalse(self.run_one()["reused"])
+        r = check.run_one(self.tree, self.work, "a/x.cc",
+                          self.work / "check", plugins=False)
+        self.assertFalse(r["reused"])
+        self.assertEqual(self.compiled(), 4)
+        # --no-cache compiles, and forgets the entry.
+        self.assertFalse(self.run_one(cache=False)["reused"])
+        self.assertFalse(self.run_one()["reused"])
+        self.assertEqual(self.compiled(), 6)
+
+    def test_new_header_that_preprocessing_finds(self):
+        self.src.write_text('#include "y.h"\nint x;\n')
+        self.run_one()
+        self.run_one()
+        self.assertEqual(self.compiled(), 1)
+        (self.src.parent / "y.h").write_text("int w;\n")
+        self.assertFalse(self.run_one()["reused"])
+
+    def test_crash_and_failed_preprocessing_are_not_stored(self):
+        self.src.write_text("int x; // CRASH\n")
+        self.run_one()
+        self.assertFalse(result_cache.entry_path(self.work,
+                                                 "a__x.cc").exists())
+        self.assertFalse(self.run_one()["reused"])
+        self.src.write_text("int x;\n")
+        os.environ["FAKE_PP_RC"] = "2"
+        try:
+            self.run_one()
+            self.assertFalse(self.run_one()["reused"])
+        finally:
+            del os.environ["FAKE_PP_RC"]
+        self.assertEqual(self.compiled(), 4)
+
+    def test_entry_of_another_key_is_not_used(self):
+        result_cache.store(self.work, "n", "k1", 0, "log", 512)
+        self.assertEqual(result_cache.lookup(self.work, "n", "k1"),
+                         (0, "log", 512))
+        self.assertIsNone(result_cache.lookup(self.work, "n", "k2"))
+        self.assertIsNone(result_cache.lookup(self.work, "n", None))
+        result_cache.store(self.work, "n", "k1", -9, "killed")
+        self.assertIsNone(result_cache.lookup(self.work, "n", "k1"))
 
 
 if __name__ == "__main__":

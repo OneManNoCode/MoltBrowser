@@ -8,9 +8,12 @@
 #include <string>
 #include <string_view>
 
+#include "base/containers/span.h"             // MoltBrowser
 #include "base/functional/bind.h"
-#include "base/no_destructor.h"  // MoltBrowser
-#include "base/synchronization/lock.h"  // MoltBrowser
+#include "base/hash/sha1.h"                  // MoltBrowser
+#include "base/no_destructor.h"              // MoltBrowser
+#include "base/numerics/byte_conversions.h"  // MoltBrowser
+#include "base/rand_util.h"                  // MoltBrowser
 #include "base/task/single_thread_task_runner.h"
 #include "components/download/internal/background_service/blob_task_proxy.h"
 #include "components/download/internal/background_service/molt_registering_site_isolation.h"  // MoltBrowser
@@ -26,14 +29,24 @@ namespace download {
 
 namespace {
 
+// MoltBrowser: 64 bits of a keyed digest of `site`, under a secret of this
+// browser process's own, made at random (molt_blob_budget_policy.h:
+// MoltBlobSiteKeyFromDigest()). Its outputs never leave the process.
+uint64_t MoltSiteDigest(std::string_view site) {
+  static const base::NoDestructor<std::string> secret(
+      base::RandBytesAsString(32));
+  std::string input = *secret;
+  input.append(site);
+  const base::SHA1Digest digest = base::SHA1Hash(base::as_byte_span(input));
+  return base::U64FromLittleEndian(base::span(digest).first<8>());
+}
+
 // MoltBrowser: the blob budget key of the site a fetch's response is for,
-// one per site for the whole browser (molt_blob_budget_policy.h).
+// the same for that site everywhere in the browser, with no record kept per
+// site (molt_blob_budget_policy.h).
 uint64_t MoltBlobBudgetKeyFor(
     const std::optional<net::IsolationInfo>& isolation_info) {
-  static base::NoDestructor<base::Lock> lock;
-  static base::NoDestructor<storage::MoltBlobSiteKeys> keys;
-  base::AutoLock auto_lock(*lock);
-  return MoltBlobBudgetKeyForFetch(isolation_info, *keys);
+  return MoltBlobBudgetKeyForFetch(isolation_info, &MoltSiteDigest);
 }
 
 }  // namespace

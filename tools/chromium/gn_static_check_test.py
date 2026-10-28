@@ -13,6 +13,7 @@ plumbing of the checkdeps and Blink-audit runs (with stand-in scripts).
 
 Run: python3 tools/chromium/gn_static_check_test.py -v
 """
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -462,6 +463,25 @@ if (molt_test_switch) {
         self.assertIsNotNone(gr.target("//var:switch_only"))
         self.assertEqual(gr.target("//base:base").type, "component")
 
+    def test_filter_labels(self):
+        # WebRTC's rtc_library() sorts its deps with these: a target's deps
+        # must stay known through them.
+        write_tree(self.root, {"lab/BUILD.gn": """
+d = [ ":x", "//third_party/abseil-cpp/absl/base:core", "../base" ]
+a = filter_labels_include(d, [ "//third_party/abseil-cpp/*" ])
+source_set("x") {}
+source_set("y") {
+  deps = filter_labels_exclude(d, [ "//third_party/abseil-cpp/*" ])
+  if (a != []) {
+    deps += [ "//third_party/abseil-cpp:absl" ]
+  }
+}
+"""})
+        gr, _ = self.graph()
+        self.assertEqual(gr.target("//lab:y").deps,
+                         ["//lab:x", "//base:base",
+                          "//third_party/abseil-cpp:absl"])
+
 
 class RunTest(Base):
     """run() over an overlay: a first-party file, a changed upstream file
@@ -516,18 +536,29 @@ source_set("molt") {
 
 
 FAKE_CHECKDEPS = r'''
-import json, os, sys
+import json, os, re, sys
 root = sys.argv[sys.argv.index("--root") + 1]
 out = sys.argv[sys.argv.index("--json") + 1]
 assert os.path.isdir(os.path.join(root, ".svn"))
+# Allowed: the root DEPS's "+dir" rules and the file's own directory (as
+# checkdeps allows it), both relative to --root.
+top = os.path.join(root, "DEPS")
+allowed = re.findall(r'"\+([^"]+)"', open(top).read()) if os.path.isfile(
+    top) else []
 res = []
-for rel in ("app/app.cc", "molt/molt.cc"):
-    path = os.path.join(root, rel)
-    if not os.path.isfile(path):
-        continue
-    res.append({"dependee_path": path, "violations": [
-        {"include_path": l.split('"')[1], "violated_rule": ["-", "x", "y"]}
-        for l in open(path) if l.startswith("#include")]})
+for dirpath, dirnames, files in sorted(os.walk(root)):
+    dirnames[:] = [d for d in dirnames if d != ".svn"]
+    own = os.path.relpath(dirpath, root).replace(os.sep, "/")
+    for name in sorted(files):
+        if not name.endswith(".cc"):
+            continue
+        path = os.path.join(dirpath, name)
+        incs = [l.split('"')[1] for l in open(path)
+                if l.startswith("#include")]
+        res.append({"dependee_path": path, "violations": [
+            {"include_path": i, "violated_rule": ["-", "x", "y"]}
+            for i in incs if not i.startswith(own + "/") and
+            not any(i.startswith(a + "/") for a in allowed)]})
 json.dump(res, open(out, "w"))
 '''
 
@@ -573,6 +604,33 @@ class PresubmitTest(Base):
         self.assertTrue((work / "app" / "DEPS").is_file())
         self.assertTrue((work / "DEPS").is_file())
 
+    def test_checkdeps_subproject_root(self):
+        # WebRTC's files include from WebRTC's root ("modules/...",
+        # "rtc_base/..."): they are checked in a run rooted there.
+        webrtc = "third_party/webrtc/"
+        write_tree(self.root, {"buildtools/checkdeps/checkdeps.py":
+                               FAKE_CHECKDEPS, "DEPS": "include_rules=[]\n",
+                               webrtc + "DEPS":
+                               'include_rules = [ "+rtc_base" ]\n'})
+        ov = self.overlay_with({
+            webrtc + "modules/ap/a.cc": '#include "modules/ap/a.h"\n'
+                                        '#include "rtc_base/r.h"\n'
+                                        '#include "third_party/x/x.h"\n',
+            "molt/molt.cc": '#include "base/base.h"\n',
+        })
+        findings, n = g.run_checkdeps(self.root, ov, self.tmp / "work")
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted((f.where, f.message.split('"')[1])
+                                for f in findings.errors()),
+                         [("molt/molt.cc", "base/base.h"),
+                          (webrtc + "modules/ap/a.cc", "third_party/x/x.h")])
+        work = self.tmp / "work"
+        self.assertIn("+rtc_base", (work / "third_party_webrtc" / "src" /
+                                    "DEPS").read_text())
+        self.assertTrue((work / "third_party_webrtc" / "src" / "modules" /
+                         "ap" / "a.cc").is_file())
+        self.assertFalse((work / "src" / "third_party" / "webrtc").exists())
+
     def test_added_lines_and_blink_audit(self):
         blink = "third_party/blink/renderer/core/"
         (self.root / blink).mkdir(parents=True)
@@ -606,11 +664,13 @@ class FetchTest(unittest.TestCase):
                 info = tarfile.TarInfo("chromium-1.2.3.4/" + name)
                 info.size = len(data)
                 tf.addfile(info, io.BytesIO(data))
+        name = "chromium-1.2.3.4-lite.tar.xz"
+        pins = {name: hashlib.sha256(buf.getvalue()).hexdigest()}
         tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-fetch-"))
         try:
             dest = tmp / "1.2.3.4"
             g.fetch("1.2.3.4", dest, ["a/c.cc"], log=lambda m: None,
-                    opener=lambda url: io.BytesIO(buf.getvalue()))
+                    opener=lambda url: io.BytesIO(buf.getvalue()), pins=pins)
             kept = sorted(str(p.relative_to(dest / "tree"))
                           for p in (dest / "tree").rglob("*") if p.is_file())
             self.assertEqual(kept, ["BUILD.gn", "a/DEPS", "a/b.gni", "a/c.cc",
@@ -618,6 +678,44 @@ class FetchTest(unittest.TestCase):
                                     "chrome/VERSION"])
             self.assertEqual(len(g.load_paths(dest / "paths.txt")), 7)
             self.assertFalse((tmp / "1.2.3.4.partial").exists())
+
+            # Nothing is kept from a tarball that isn't the pinned one, or
+            # that has no pin.
+            other = tmp / "other"
+            bad = {name: "0" * 64}
+            for kwargs in ({"pins": bad}, {"pins": {}}):
+                with self.assertRaises(g.cctarball.TarballNotVerified):
+                    g.fetch("1.2.3.4", other, ["a/c.cc"], log=lambda m: None,
+                            opener=lambda url: io.BytesIO(buf.getvalue()),
+                            **kwargs)
+                self.assertFalse(other.exists())
+                self.assertFalse((tmp / "other.partial").exists())
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_fetch_keeps_nothing_outside_the_tree(self):
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:xz") as tf:
+            for name in ("chromium-1.2.3.4/a/../../escape.gn",
+                         "chromium-1.2.3.4/./a/dot.gn",
+                         "chromium-1.2.3.4/a/ok.gn"):
+                info = tarfile.TarInfo(name)
+                info.size = 2
+                tf.addfile(info, io.BytesIO(b"#\n"))
+        tmp = Path(tempfile.mkdtemp(prefix="gn-static-check-fetch-"))
+        try:
+            dest = tmp / "d" / "1.2.3.4"
+            g.fetch("1.2.3.4", dest, [], log=lambda m: None,
+                    opener=lambda url: io.BytesIO(buf.getvalue()),
+                    pins={"chromium-1.2.3.4-lite.tar.xz":
+                          hashlib.sha256(buf.getvalue()).hexdigest()})
+            written = sorted(str(p.relative_to(tmp))
+                             for p in tmp.rglob("*") if p.is_file())
+            self.assertEqual(written, ["d/1.2.3.4/paths.txt",
+                                       "d/1.2.3.4/tree/a/ok.gn",
+                                       "d/1.2.3.4/version.txt"])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

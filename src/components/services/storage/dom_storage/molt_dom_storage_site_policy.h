@@ -100,8 +100,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace storage {
 
@@ -309,8 +311,9 @@ constexpr bool MoltDomStorageGrowthNotifies(size_t old_total,
 // What a partition's areas of one kind hold, per area and per site. An area
 // is named by `area` (a localStorage area's storage key, a sessionStorage
 // map's id; what it holds is in the database whether or not it is cached),
-// its site by `site` (its storage key's top-level site). Not thread-safe:
-// the storage service uses it on its sequence.
+// its site by `site` (its storage key's top-level site). An area or a site
+// that holds nothing has no record: what is counted is never more than what
+// is held. Not thread-safe: the storage service uses it on its sequence.
 class MoltDomStorageSiteTotals {
  public:
   MoltDomStorageSiteTotals();
@@ -339,6 +342,9 @@ class MoltDomStorageSiteTotals {
     total_ = total_ - counted.bytes + new_bytes;
     site_bytes = others + new_bytes;
     counted.bytes = new_bytes;
+    if (new_bytes == 0) {
+      Forget(area);
+    }
     return true;
   }
 
@@ -364,6 +370,9 @@ class MoltDomStorageSiteTotals {
     total_ -= gone;
     sites_[it->second.site] -= gone;
     it->second.bytes = new_bytes;
+    if (new_bytes == 0) {
+      Forget(area);
+    }
   }
 
   // `area` and what it held are gone (deleted from the database).
@@ -373,8 +382,6 @@ class MoltDomStorageSiteTotals {
       return;
     }
     total_ -= it->second.bytes;
-    // An area left empty (cleared) may outlive its site's entry, which goes
-    // once the site's other areas are forgotten.
     if (auto site = sites_.find(it->second.site); site != sites_.end()) {
       site->second -= it->second.bytes;
       if (site->second == 0) {
@@ -389,6 +396,8 @@ class MoltDomStorageSiteTotals {
     auto it = sites_.find(site);
     return it == sites_.end() ? 0 : it->second;
   }
+  size_t area_count() const { return areas_.size(); }
+  size_t site_count() const { return sites_.size(); }
 
  private:
   struct Area {
@@ -443,6 +452,20 @@ struct MoltDomStorageSiteRate {
   int64_t commits = 0;
   int64_t bytes = 0;
 };
+
+// When `rate` lets its site's next commit go at once
+// (MoltDomStorageSiteCommitDelayMs() is 0 from then on). A rate made afresh
+// then, with nothing committed, is no looser: its first commit goes at once
+// too, and every later one waits as long or longer (the old rate may have
+// built up room since). So the rate may be forgotten then.
+constexpr int64_t MoltDomStorageSiteRateFreeAtMs(
+    const MoltDomStorageSiteRate& rate) {
+  return rate.start_ms + MoltDomStorageSiteCommitDelayMs(rate.commits,
+                                                         rate.bytes, 0);
+}
+static_assert(MoltDomStorageSiteRateFreeAtMs({0, 0, 0}) == 0);
+static_assert(MoltDomStorageSiteRateFreeAtMs({1000, 60, 0}) ==
+              1000 + kMoltDomStorageHourMs);
 
 // ---- One write rate per site ----
 
@@ -512,6 +535,116 @@ constexpr bool MoltDomStorageMayWrite(MoltDomStorageWriteAllowance& allowance,
   allowance.bytes_milli -= cost;
   return true;
 }
+
+// When `allowance` is full again (both its writes and its bytes), on the
+// caller's clock. An allowance made afresh is full, so a full one may be
+// forgotten: one made again for the site when it next writes takes exactly
+// what the old one would have, and a site that empties its storage gains
+// nothing by it.
+constexpr int64_t MoltDomStorageAllowanceFullAtMs(
+    const MoltDomStorageWriteAllowance& allowance) {
+  constexpr int64_t kWritesFull = kMoltDomStorageSiteWritesBurst * 1000;
+  constexpr int64_t kBytesFull = kMoltDomStorageSiteWriteBytesBurst * 1000;
+  const int64_t writes_missing =
+      allowance.writes_milli < kWritesFull
+          ? kWritesFull - allowance.writes_milli
+          : 0;
+  const int64_t bytes_missing =
+      allowance.bytes_milli < kBytesFull ? kBytesFull - allowance.bytes_milli
+                                         : 0;
+  // A millisecond refills the rate's number of thousandths.
+  const int64_t writes_ms =
+      (writes_missing + kMoltDomStorageSiteWritesPerSecond - 1) /
+      kMoltDomStorageSiteWritesPerSecond;
+  const int64_t bytes_ms =
+      (bytes_missing + kMoltDomStorageSiteWriteBytesPerSecond - 1) /
+      kMoltDomStorageSiteWriteBytesPerSecond;
+  return allowance.at_ms + (writes_ms > bytes_ms ? writes_ms : bytes_ms);
+}
+static_assert(MoltDomStorageAllowanceFullAtMs(MoltDomStorageWriteAllowance{
+                  /*at_ms=*/7}) == 7);
+
+// ---- Forgetting records ----
+
+// How many records one call of a site's operation forgets at most, of those
+// that are due (MoltDomStorageExpiringRecords::ForgetDue()): more than one
+// operation adds, so the records due never pile up, and few enough that an
+// operation's cost doesn't depend on other sites.
+inline constexpr size_t kMoltDomStorageForgetPerCall = 4;
+
+// Records per site that may be forgotten from a time on (a write allowance
+// once it is full again, a commit rate once it lets a commit go at once):
+// each carries that time, and the records whose time has come go a few at
+// a time (ForgetDue()), so a site that stops writing leaves nothing behind
+// for long, and none is forgotten while forgetting it would loosen its
+// limit. Not thread-safe.
+template <typename Value>
+class MoltDomStorageExpiringRecords {
+ public:
+  MoltDomStorageExpiringRecords() = default;
+  MoltDomStorageExpiringRecords(const MoltDomStorageExpiringRecords&) =
+      delete;
+  MoltDomStorageExpiringRecords& operator=(
+      const MoltDomStorageExpiringRecords&) = delete;
+  ~MoltDomStorageExpiringRecords() = default;
+
+  // `site`'s record, made with `value` if it has none.
+  Value& GetOrAdd(std::string_view site, const Value& value) {
+    auto it = records_.find(site);
+    if (it == records_.end()) {
+      it = records_.emplace(std::string(site), Record{value, 0}).first;
+      due_.insert({0, it->first});
+    }
+    return it->second.value;
+  }
+
+  // `site`'s record may be forgotten from `at_ms` on.
+  void SetForgetAt(std::string_view site, int64_t at_ms) {
+    auto it = records_.find(site);
+    if (it == records_.end() || it->second.forget_at_ms == at_ms) {
+      return;
+    }
+    due_.erase({it->second.forget_at_ms, it->first});
+    it->second.forget_at_ms = at_ms;
+    due_.insert({at_ms, it->first});
+  }
+
+  // Forgets at most `max` records whose time has come by `now_ms`, the
+  // longest due first; returns how many.
+  size_t ForgetDue(int64_t now_ms, size_t max) {
+    size_t forgotten = 0;
+    while (forgotten < max && !due_.empty() &&
+           due_.begin()->first <= now_ms) {
+      records_.erase(due_.begin()->second);
+      due_.erase(due_.begin());
+      ++forgotten;
+    }
+    return forgotten;
+  }
+
+  void Forget(std::string_view site) {
+    auto it = records_.find(site);
+    if (it == records_.end()) {
+      return;
+    }
+    due_.erase({it->second.forget_at_ms, it->first});
+    records_.erase(it);
+  }
+
+  const Value* Find(std::string_view site) const {
+    auto it = records_.find(site);
+    return it == records_.end() ? nullptr : &it->second.value;
+  }
+  size_t size() const { return records_.size(); }
+
+ private:
+  struct Record {
+    Value value;
+    int64_t forget_at_ms = 0;
+  };
+  std::map<std::string, Record, std::less<>> records_;
+  std::set<std::pair<int64_t, std::string>> due_;
+};
 
 }  // namespace storage
 

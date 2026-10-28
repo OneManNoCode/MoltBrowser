@@ -1028,6 +1028,73 @@ TEST_F(MoltNetDomStorageTest, WithoutCachesPerSiteEachAreaHasItsOwn) {
   }
 }
 
+// What a page's credentialless frames stored under its nonce goes with the
+// page; closed (its site holding too many such pages), the nonce's writes
+// are refused until the page goes. Another page's nonce keeps its own
+// (molt_net_nonce_storage_policy.h).
+TEST_F(MoltNetDomStorageTest, ANoncesStorageGoesWithItsPage) {
+  storage_->MoltKeepCachesPerSite();
+  const url::Origin tracker = url::Origin::Create(GURL("https://t.test"));
+  const base::UnguessableToken page = base::UnguessableToken::Create();
+  const base::UnguessableToken other = base::UnguessableToken::Create();
+  const blink::StorageKey key =
+      blink::StorageKey::CreateWithNonce(tracker, page);
+  const blink::StorageKey other_key =
+      blink::StorageKey::CreateWithNonce(tracker, other);
+  ASSERT_TRUE(Write(key, 100));
+  ASSERT_TRUE(Write(other_key, 100));
+
+  storage_->MoltDropNonce(page, /*closed=*/true);
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(ReadAll(key).empty());
+  EXPECT_FALSE(Write(key, 100));
+  EXPECT_EQ(ReadAll(other_key).size(), 1u);
+
+  // The page goes: what it stored goes, and its closing ends.
+  storage_->MoltDropNonce(page, /*closed=*/false);
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(Write(key, 100));
+}
+
+// A tab's sessionStorage of many areas, copied at once (a tab duplicated),
+// is copied a chunk a task, and deleted so (molt_dom_storage_split_work.h):
+// the copy holds every area, and a bind of the copy sent right after the
+// copy waits for it.
+TEST_F(MoltNetDomStorageTest, ACopyOfManyAreasIsCompleteWhenBound) {
+  storage::MoltDomStorageOwnThreads threads;
+  mojo::Remote<storage::mojom::SessionStorageControl> session;
+  threads.BindSessionStorageControl(session.BindNewPipeAndPassReceiver());
+  const std::string tab = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session->CreateNamespace(tab);
+  constexpr int kAreas = 200;
+  std::vector<mojo::Remote<blink::mojom::StorageArea>> areas(kAreas);
+  for (int i = 0; i < kAreas; ++i) {
+    session->BindStorageArea(Key(base::StringPrintf("https://o%d.a.test", i)),
+                             tab, areas[i].BindNewPipeAndPassReceiver());
+    ASSERT_TRUE(Put(areas[i].get(), 'k', 10));
+  }
+
+  const std::string copy = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session->CloneNamespace(tab, copy,
+                          storage::mojom::SessionStorageCloneType::kImmediate);
+  for (int i : {0, kAreas - 1}) {
+    mojo::Remote<blink::mojom::StorageArea> copied;
+    session->BindStorageArea(Key(base::StringPrintf("https://o%d.a.test", i)),
+                             copy, copied.BindNewPipeAndPassReceiver());
+    base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+    copied->GetAll(mojo::NullRemote(), all.GetCallback());
+    EXPECT_EQ(all.Take().size(), 1u) << i;
+  }
+
+  session->DeleteNamespace(copy, /*should_persist=*/false);
+  session->DeleteNamespace(tab, /*should_persist=*/false);
+  session.FlushForTesting();
+  areas.clear();
+  session.reset();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(threads.CountForTesting(), 0u);
+}
+
 class MoltNetSessionStorageTest : public testing::Test {
  protected:
   void SetUp() override {

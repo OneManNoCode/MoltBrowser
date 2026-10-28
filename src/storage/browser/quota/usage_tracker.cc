@@ -11,6 +11,10 @@
 
 #include "base/barrier_closure.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"  // MoltBrowser
+#include "base/location.h"                     // MoltBrowser
+#include "base/task/sequenced_task_runner.h"   // MoltBrowser
+#include "base/time/time.h"                    // MoltBrowser
 #include "components/services/storage/public/cpp/buckets/constants.h"
 #include "storage/browser/quota/client_usage_tracker.h"
 #include "storage/browser/quota/quota_client_type.h"
@@ -112,7 +116,7 @@ void UsageTracker::UpdateBucketUsageCache(QuotaClientType client_type,
   // for its site's count (molt_storage_budget.h).
   if (molt_counting_ && (!delta.has_value() ||
                          !GetClient(client_type).MoltHasCachedUsage(bucket))) {
-    molt_stale_.Mark(MoltBudgetSiteOf(bucket.storage_key), bucket.storage_key);
+    MoltMarkStale(bucket.storage_key);
   }
 
   GetClient(client_type).UpdateBucketUsageCache(bucket, delta);
@@ -182,7 +186,7 @@ void UsageTracker::SetUsageCacheEnabled(QuotaClientType client_type,
   // MoltBrowser: a storage key whose cache comes back on is counted again
   // (molt_storage_budget.h).
   if (molt_counting_ && enabled) {
-    molt_stale_.Mark(MoltBudgetSiteOf(storage_key), storage_key);
+    MoltMarkStale(storage_key);
   }
 
   GetClient(client_type).SetUsageCacheEnabled(storage_key, enabled);
@@ -383,13 +387,29 @@ void UsageTracker::MoltRefreshSiteUsage(const MoltBudgetSite& site,
     return;
   }
 
+  // One refresh at a time per site: a check whose site's refresh is running
+  // waits for it and one more (molt_storage_usage_counts.h).
+  if (molt_refreshes_.IsRunning(site)) {
+    molt_refreshes_.Wait(site, std::move(callback));
+    return;
+  }
+  molt_refreshes_.Start(site);
+  MoltRefreshStaleKeys(site, std::move(callback));
+}
+
+void UsageTracker::MoltRefreshStaleKeys(const MoltBudgetSite& site,
+                                        base::OnceClosure done) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  base::OnceClosure finished =
+      base::BindOnce(&UsageTracker::MoltDidRefresh, weak_factory_.GetWeakPtr(),
+                     site, std::move(done));
   const std::vector<blink::StorageKey> stale = molt_stale_.Take(site);
   if (stale.empty()) {
-    std::move(callback).Run();
+    std::move(finished).Run();
     return;
   }
   base::RepeatingClosure barrier =
-      base::BarrierClosure(stale.size(), std::move(callback));
+      base::BarrierClosure(stale.size(), std::move(finished));
   for (const blink::StorageKey& storage_key : stale) {
     GetStorageKeyUsageWithBreakdown(
         storage_key,
@@ -397,6 +417,52 @@ void UsageTracker::MoltRefreshSiteUsage(const MoltBudgetSite& site,
                           blink::mojom::UsageBreakdownPtr) { barrier.Run(); },
                        barrier));
   }
+}
+
+void UsageTracker::MoltDidRefresh(const MoltBudgetSite& site,
+                                  base::OnceClosure done) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  std::move(done).Run();
+  std::vector<base::OnceClosure> waiters = molt_refreshes_.Finished(site);
+  if (waiters.empty()) {
+    return;
+  }
+  // Those that waited: one more refresh, for what was marked meanwhile.
+  MoltRefreshStaleKeys(
+      site, base::BindOnce(
+                [](std::vector<base::OnceClosure> waiters) {
+                  for (base::OnceClosure& waiter : waiters) {
+                    std::move(waiter).Run();
+                  }
+                },
+                std::move(waiters)));
+}
+
+void UsageTracker::MoltMarkStale(const blink::StorageKey& storage_key) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  const MoltBudgetSite site = MoltBudgetSiteOf(storage_key);
+  molt_stale_.Mark(site, storage_key);
+  // A refresh of the site's own follows, whether or not it checks again.
+  if (molt_settles_.insert(site).second) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&UsageTracker::MoltSettle, weak_factory_.GetWeakPtr(),
+                       site),
+        base::Seconds(kMoltStaleSettleDelaySeconds));
+  }
+}
+
+void UsageTracker::MoltSettle(const MoltBudgetSite& site) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  molt_settles_.erase(site);
+  if (molt_stale_.HasAny(site)) {
+    MoltRefreshSiteUsage(site, base::DoNothing());
+  }
+}
+
+void UsageTracker::MoltForgetSite(const MoltBudgetSite& site) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  molt_stale_.Forget(site);
 }
 
 void UsageTracker::MoltDidCountEverything(base::OnceClosure callback,

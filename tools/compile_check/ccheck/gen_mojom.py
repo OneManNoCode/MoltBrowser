@@ -82,11 +82,15 @@ class Index:
 
 def build_index(tree, interp, cache_path):
     """Reads every BUILD.gn mentioning .mojom; cached by the content hash of
-    those files."""
+    those files and of what decides their values besides them (the
+    platform's args and MoltBrowser's GN files), so a target's
+    enabled_features, and with them its outputs' stamps, follow an args
+    change."""
     files = sorted(set(tree.chromium_files(
         lambda p: p.endswith("BUILD.gn")) + [
             p for p in tree.overlay_set() if p.endswith("BUILD.gn")]))
-    h = hashlib.sha1()
+    from . import gen_buildflags  # the same platform key
+    h = hashlib.sha1(gen_buildflags.platform_key(tree).encode())
     relevant = []
     for p in files:
         data = tree.read(p)
@@ -480,6 +484,24 @@ def generate(tree, index, work, gen_dir, wanted, produce=None,
         return None if r.returncode == 0 else _last_line(r.stderr)
 
     log("mojom: parsing %d file(s)" % len(files))
+    try:
+        return _generate_parsed(tree, index, work, gen_dir, wanted, files,
+                                deps, feats_of, parse, todo, stamps,
+                                stamp_path, failed, generator)
+    finally:
+        # The parser's .mojom-module files are read only by the generator
+        # run that follows (every generate() parses its whole import
+        # closure again): left behind they take most of gen/'s space.
+        for p in files:
+            m = gen_dir / (p + "-module")
+            if m.exists():
+                m.unlink()
+
+
+def _generate_parsed(tree, index, work, gen_dir, wanted, files, deps,
+                     feats_of, parse, todo, stamps, stamp_path, failed,
+                     generator):
+    root = work / "mojom_src"
     parsed, bad = parse_in_order(deps, feats_of, parse)
     for p, err in sorted(bad.items()):
         if p in wanted or not failed.get(p):

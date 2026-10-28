@@ -79,13 +79,15 @@ if (use_blink) {
   }
 }
 
-# MoltBrowser: MoltNet's in-memory Background Fetch limits and the site a
-# registering page's fetches are isolated to (header-only), for :internal,
+# MoltBrowser: MoltNet's in-memory Background Fetch limits, the site a
+# registering page's fetches are isolated to, and what a page's fetch taken
+# up again in a later session carries (header-only), for :internal,
 # //components/download/content/factory and MoltBrowser's own tests.
 source_set("molt_site_isolation") {
   sources = [
     "molt_in_memory_download_limits.h",
     "molt_registering_site_isolation.h",
+    "molt_restored_fetch.h",
   ]
   public_deps = [
     "//net",

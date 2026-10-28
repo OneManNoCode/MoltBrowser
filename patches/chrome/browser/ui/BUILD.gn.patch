@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 238f8625e42d8703c72c266c36e32bbfb2113095..4d42082b0c31e6166d513c268d602a6a4733591e 100644
+index 238f8625e42d8703c72c266c36e32bbfb2113095..36ca37782bfd4a5bf67bbc59407b4aa991fef0d0 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -1335,6 +1335,13 @@ source_set("tab_helpers_impl") {
+@@ -1335,6 +1335,14 @@ source_set("tab_helpers_impl") {
      "//chrome/browser/login_detection",
      "//chrome/browser/lookalikes",
      "//chrome/browser/media",
@@ -17,12 +17,13 @@ index 238f8625e42d8703c72c266c36e32bbfb2113095..4d42082b0c31e6166d513c268d602a6a
 +    "//chrome/browser/molt_ai/anti_rage",
 +    "//chrome/browser/molt_ai/consent",
 +    "//chrome/browser/molt_ai/memory",
++    "//chrome/browser/molt_ai/tor:nonce_storage",
 +    "//chrome/browser/molt_ai/tor:onion",
 +    "//chrome/browser/molt_ai/tor:requests_policy",
      "//chrome/browser/net",
      "//chrome/browser/optimization_guide",
      "//chrome/browser/page_content_annotations",
-@@ -1651,6 +1658,17 @@ static_library("ui") {
+@@ -1651,6 +1659,17 @@ static_library("ui") {
      "//chrome/browser/media/router:media_router_feature",
      "//chrome/browser/metrics",
      "//chrome/browser/metrics:impl",
@@ -40,7 +41,7 @@ index 238f8625e42d8703c72c266c36e32bbfb2113095..4d42082b0c31e6166d513c268d602a6a
      "//chrome/browser/new_tab_page/chrome_colors:selected_colors_info",
      "//chrome/browser/omnibox",
      "//chrome/browser/optimization_guide",
-@@ -1867,6 +1885,11 @@ static_library("ui") {
+@@ -1867,6 +1886,11 @@ static_library("ui") {
      # - c/b/ui/browser.h
      # - c/b/ui/views/frame/browser_view.h
      "//chrome/browser/ui/views/file_system_access:impl",

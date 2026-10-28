@@ -36,6 +36,10 @@ OUT = "//out/cc"
 EXEC_SCRIPTS = {
     "//build/util/version.py": ["//build/util/android_chrome_version.py",
                                 "//chrome/VERSION"],
+    # build/timestamp.gni's build_timestamp: from the pinned commit's time
+    # (build/util/LASTCHANGE.committime, compile_check.write_hook_outputs).
+    "//build/compute_build_timestamp.py": [
+        "//build/util/LASTCHANGE.committime"],
 }
 
 # ---------------------------------------------------------------------------

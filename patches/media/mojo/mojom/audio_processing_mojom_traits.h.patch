@@ -1,0 +1,21 @@
+MoltBrowser patch for media/mojo/mojom/audio_processing_mojom_traits.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/mojo/mojom/audio_processing_mojom_traits.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/mojo/mojom/audio_processing_mojom_traits.h b/media/mojo/mojom/audio_processing_mojom_traits.h
+index 7a0c6917ccbaec45d34a32bf4d4d4d9eacbaf423..7e2bf23c7515592d130be2c050ee97fd199c737f 100644
+--- a/media/mojo/mojom/audio_processing_mojom_traits.h
++++ b/media/mojo/mojom/audio_processing_mojom_traits.h
+@@ -57,6 +57,10 @@ struct StructTraits<media::mojom::AudioProcessingSettingsDataView,
+     return s.voice_isolation;
+   }
+ #endif
++  // MoltBrowser.
++  static bool cpu_independent(const media::AudioProcessingSettings& s) {
++    return s.cpu_independent;
++  }
+   static bool Read(media::mojom::AudioProcessingSettingsDataView input,
+                    media::AudioProcessingSettings* out_settings);
+ };

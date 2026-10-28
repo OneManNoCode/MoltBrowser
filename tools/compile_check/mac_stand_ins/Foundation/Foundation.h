@@ -6,6 +6,7 @@
 #define COMPILE_CHECK_STAND_IN_FOUNDATION_H_
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -32,7 +33,7 @@
 #define NS_ENUM(_type, _name) CF_ENUM(_type, _name)
 #define NS_CLOSED_ENUM(_type, _name) CF_CLOSED_ENUM(_type, _name)
 #define NS_OPTIONS(_type, _name) CF_OPTIONS(_type, _name)
-#define NS_ERROR_ENUM(_type, _name, _domain) CF_ENUM(_type, _name)
+#define NS_ERROR_ENUM(_domain, _name) CF_ENUM(NSInteger, _name)
 #define NS_STRING_ENUM
 #define NS_EXTENSIBLE_STRING_ENUM
 #define NS_TYPED_ENUM
@@ -64,6 +65,11 @@
 #define NS_AUTOMATED_REFCOUNT_UNAVAILABLE
 #define NS_HEADER_AUDIT_BEGIN(...)
 #define NS_HEADER_AUDIT_END(...)
+#define NS_VALID_UNTIL_END_OF_SCOPE __attribute__((objc_precise_lifetime))
+#define NS_SWIFT_BRIDGED_TYPEDEF
+#define NS_SWIFT_NONISOLATED
+#define NS_SWIFT_DISABLE_ASYNC
+#define NS_SWIFT_ASYNC_NAME(x)
 
 typedef double NSTimeInterval;
 
@@ -97,12 +103,174 @@ enum {
   NSUTF32StringEncoding = 0x8c000100,
 };
 
+typedef NS_OPTIONS(NSUInteger, NSEnumerationOptions){
+    NSEnumerationConcurrent = (1UL << 0),
+    NSEnumerationReverse = (1UL << 1),
+};
+
+typedef NS_OPTIONS(NSUInteger, NSSortOptions){
+    NSSortConcurrent = (1UL << 0),
+    NSSortStable = (1UL << 4),
+};
+
 typedef NS_OPTIONS(NSUInteger, NSStringCompareOptions){
     NSCaseInsensitiveSearch = 1,     NSLiteralSearch = 2,
     NSBackwardsSearch = 4,           NSAnchoredSearch = 8,
     NSNumericSearch = 64,            NSDiacriticInsensitiveSearch = 128,
     NSWidthInsensitiveSearch = 256,  NSForcedOrderingSearch = 512,
     NSRegularExpressionSearch = 1024};
+
+// -- NSGeometry.h ------------------------------------------------------------
+
+typedef CGPoint NSPoint;
+typedef NSPoint* NSPointPointer;
+typedef NSPoint* NSPointArray;
+typedef CGSize NSSize;
+typedef NSSize* NSSizePointer;
+typedef NSSize* NSSizeArray;
+typedef CGRect NSRect;
+typedef NSRect* NSRectPointer;
+typedef NSRect* NSRectArray;
+
+typedef NS_ENUM(NSUInteger, NSRectEdge){
+    NSRectEdgeMinX = CGRectMinXEdge, NSRectEdgeMinY = CGRectMinYEdge,
+    NSRectEdgeMaxX = CGRectMaxXEdge, NSRectEdgeMaxY = CGRectMaxYEdge,
+    NSMinXEdge = NSRectEdgeMinX,     NSMinYEdge = NSRectEdgeMinY,
+    NSMaxXEdge = NSRectEdgeMaxX,     NSMaxYEdge = NSRectEdgeMaxY};
+
+typedef struct NSEdgeInsets {
+  CGFloat top;
+  CGFloat left;
+  CGFloat bottom;
+  CGFloat right;
+} NSEdgeInsets;
+
+typedef NS_OPTIONS(unsigned long long, NSAlignmentOptions){
+    NSAlignMinXInward = 1ULL << 0,
+    NSAlignMinYInward = 1ULL << 1,
+    NSAlignMaxXInward = 1ULL << 2,
+    NSAlignMaxYInward = 1ULL << 3,
+    NSAlignWidthInward = 1ULL << 4,
+    NSAlignHeightInward = 1ULL << 5,
+    NSAlignMinXOutward = 1ULL << 8,
+    NSAlignMinYOutward = 1ULL << 9,
+    NSAlignMaxXOutward = 1ULL << 10,
+    NSAlignMaxYOutward = 1ULL << 11,
+    NSAlignWidthOutward = 1ULL << 12,
+    NSAlignHeightOutward = 1ULL << 13,
+    NSAlignMinXNearest = 1ULL << 16,
+    NSAlignMinYNearest = 1ULL << 17,
+    NSAlignMaxXNearest = 1ULL << 18,
+    NSAlignMaxYNearest = 1ULL << 19,
+    NSAlignWidthNearest = 1ULL << 20,
+    NSAlignHeightNearest = 1ULL << 21,
+    NSAlignRectFlipped = 1ULL << 63,
+    NSAlignAllEdgesInward = NSAlignMinXInward | NSAlignMaxXInward |
+                            NSAlignMinYInward | NSAlignMaxYInward,
+    NSAlignAllEdgesOutward = NSAlignMinXOutward | NSAlignMaxXOutward |
+                             NSAlignMinYOutward | NSAlignMaxYOutward,
+    NSAlignAllEdgesNearest = NSAlignMinXNearest | NSAlignMaxXNearest |
+                             NSAlignMinYNearest | NSAlignMaxYNearest,
+};
+
+FOUNDATION_EXPORT const NSPoint NSZeroPoint;
+FOUNDATION_EXPORT const NSSize NSZeroSize;
+FOUNDATION_EXPORT const NSRect NSZeroRect;
+FOUNDATION_EXPORT const NSEdgeInsets NSEdgeInsetsZero;
+
+NS_INLINE NSPoint NSMakePoint(CGFloat x, CGFloat y) {
+  NSPoint p;
+  p.x = x;
+  p.y = y;
+  return p;
+}
+NS_INLINE NSSize NSMakeSize(CGFloat w, CGFloat h) {
+  NSSize s;
+  s.width = w;
+  s.height = h;
+  return s;
+}
+NS_INLINE NSRect NSMakeRect(CGFloat x, CGFloat y, CGFloat w, CGFloat h) {
+  NSRect r;
+  r.origin.x = x;
+  r.origin.y = y;
+  r.size.width = w;
+  r.size.height = h;
+  return r;
+}
+NS_INLINE CGFloat NSMaxX(NSRect aRect) {
+  return aRect.origin.x + aRect.size.width;
+}
+NS_INLINE CGFloat NSMaxY(NSRect aRect) {
+  return aRect.origin.y + aRect.size.height;
+}
+NS_INLINE CGFloat NSMidX(NSRect aRect) {
+  return aRect.origin.x + aRect.size.width * (CGFloat)0.5;
+}
+NS_INLINE CGFloat NSMidY(NSRect aRect) {
+  return aRect.origin.y + aRect.size.height * (CGFloat)0.5;
+}
+NS_INLINE CGFloat NSMinX(NSRect aRect) {
+  return aRect.origin.x;
+}
+NS_INLINE CGFloat NSMinY(NSRect aRect) {
+  return aRect.origin.y;
+}
+NS_INLINE CGFloat NSWidth(NSRect aRect) {
+  return aRect.size.width;
+}
+NS_INLINE CGFloat NSHeight(NSRect aRect) {
+  return aRect.size.height;
+}
+NS_INLINE NSRect NSRectFromCGRect(CGRect cgrect) {
+  return cgrect;
+}
+NS_INLINE CGRect NSRectToCGRect(NSRect nsrect) {
+  return nsrect;
+}
+NS_INLINE NSPoint NSPointFromCGPoint(CGPoint cgpoint) {
+  return cgpoint;
+}
+NS_INLINE CGPoint NSPointToCGPoint(NSPoint nspoint) {
+  return nspoint;
+}
+NS_INLINE NSSize NSSizeFromCGSize(CGSize cgsize) {
+  return cgsize;
+}
+NS_INLINE CGSize NSSizeToCGSize(NSSize nssize) {
+  return nssize;
+}
+NS_INLINE NSEdgeInsets NSEdgeInsetsMake(CGFloat top, CGFloat left,
+                                        CGFloat bottom, CGFloat right) {
+  NSEdgeInsets e;
+  e.top = top;
+  e.left = left;
+  e.bottom = bottom;
+  e.right = right;
+  return e;
+}
+
+FOUNDATION_EXPORT BOOL NSEqualPoints(NSPoint aPoint, NSPoint bPoint);
+FOUNDATION_EXPORT BOOL NSEqualSizes(NSSize aSize, NSSize bSize);
+FOUNDATION_EXPORT BOOL NSEqualRects(NSRect aRect, NSRect bRect);
+FOUNDATION_EXPORT BOOL NSIsEmptyRect(NSRect aRect);
+FOUNDATION_EXPORT BOOL NSEdgeInsetsEqual(NSEdgeInsets aInsets,
+                                         NSEdgeInsets bInsets);
+FOUNDATION_EXPORT NSRect NSInsetRect(NSRect aRect, CGFloat dX, CGFloat dY);
+FOUNDATION_EXPORT NSRect NSIntegralRect(NSRect aRect);
+FOUNDATION_EXPORT NSRect NSIntegralRectWithOptions(NSRect aRect,
+                                                   NSAlignmentOptions opts);
+FOUNDATION_EXPORT NSRect NSUnionRect(NSRect aRect, NSRect bRect);
+FOUNDATION_EXPORT NSRect NSIntersectionRect(NSRect aRect, NSRect bRect);
+FOUNDATION_EXPORT NSRect NSOffsetRect(NSRect aRect, CGFloat dX, CGFloat dY);
+FOUNDATION_EXPORT void NSDivideRect(NSRect inRect, NSRect* slice,
+                                    NSRect* rem, CGFloat amount,
+                                    NSRectEdge edge);
+FOUNDATION_EXPORT BOOL NSPointInRect(NSPoint aPoint, NSRect aRect);
+FOUNDATION_EXPORT BOOL NSMouseInRect(NSPoint aPoint, NSRect aRect,
+                                     BOOL flipped);
+FOUNDATION_EXPORT BOOL NSContainsRect(NSRect aRect, NSRect bRect);
+FOUNDATION_EXPORT BOOL NSIntersectsRect(NSRect aRect, NSRect bRect);
 
 #if defined(__OBJC__)
 
@@ -253,6 +421,9 @@ FOUNDATION_EXPORT SEL NSSelectorFromString(NSString* aSelectorName);
 FOUNDATION_EXPORT NSString* NSStringFromClass(Class aClass);
 FOUNDATION_EXPORT Class _Nullable NSClassFromString(NSString* aClassName);
 FOUNDATION_EXPORT NSString* NSStringFromRange(NSRange range);
+FOUNDATION_EXPORT NSString* NSStringFromPoint(NSPoint aPoint);
+FOUNDATION_EXPORT NSString* NSStringFromSize(NSSize aSize);
+FOUNDATION_EXPORT NSString* NSStringFromRect(NSRect aRect);
 FOUNDATION_EXPORT void NSLog(NSString* format, ...) NS_FORMAT_FUNCTION(1, 2);
 
 // -- NSValue, NSNumber -------------------------------------------------------
@@ -262,6 +433,17 @@ FOUNDATION_EXPORT void NSLog(NSString* format, ...) NS_FORMAT_FUNCTION(1, 2);
 + (NSValue*)valueWithRange:(NSRange)range;
 @property(nullable, readonly) void* pointerValue;
 @property(readonly) NSRange rangeValue;
+@end
+
+@interface NSValue (NSValueGeometryExtensions)
++ (NSValue*)valueWithPoint:(NSPoint)point;
++ (NSValue*)valueWithSize:(NSSize)size;
++ (NSValue*)valueWithRect:(NSRect)rect;
++ (NSValue*)valueWithEdgeInsets:(NSEdgeInsets)insets;
+@property(readonly) NSPoint pointValue;
+@property(readonly) NSSize sizeValue;
+@property(readonly) NSRect rectValue;
+@property(readonly) NSEdgeInsets edgeInsetsValue;
 @end
 
 @interface NSNumber : NSValue
@@ -598,6 +780,12 @@ FOUNDATION_EXPORT NSErrorUserInfoKey const NSLocalizedDescriptionKey;
 @interface NSRunLoop : NSObject
 @property(class, readonly, strong) NSRunLoop* currentRunLoop;
 @property(class, readonly, strong) NSRunLoop* mainRunLoop;
+@property(nullable, readonly, copy) NSRunLoopMode currentMode;
+- (CFRunLoopRef)getCFRunLoop CF_RETURNS_NOT_RETAINED;
+- (void)addTimer:(NSTimer*)timer forMode:(NSRunLoopMode)mode;
+- (void)run;
+- (void)runUntilDate:(NSDate*)limitDate;
+- (BOOL)runMode:(NSRunLoopMode)mode beforeDate:(NSDate*)limitDate;
 @end
 FOUNDATION_EXPORT NSRunLoopMode const NSDefaultRunLoopMode;
 FOUNDATION_EXPORT NSRunLoopMode const NSRunLoopCommonModes;
@@ -606,6 +794,57 @@ FOUNDATION_EXPORT NSRunLoopMode const NSRunLoopCommonModes;
 @property(readonly, copy) NSNotificationName name;
 @property(nullable, readonly, retain) id object;
 @property(nullable, readonly, copy) NSDictionary* userInfo;
++ (instancetype)notificationWithName:(NSNotificationName)aName
+                              object:(nullable id)anObject;
++ (instancetype)notificationWithName:(NSNotificationName)aName
+                              object:(nullable id)anObject
+                            userInfo:(nullable NSDictionary*)aUserInfo;
+@end
+
+// -- NSKeyValueObserving.h ---------------------------------------------------
+
+typedef NS_OPTIONS(NSUInteger, NSKeyValueObservingOptions){
+    NSKeyValueObservingOptionNew = 0x01,
+    NSKeyValueObservingOptionOld = 0x02,
+    NSKeyValueObservingOptionInitial = 0x04,
+    NSKeyValueObservingOptionPrior = 0x08};
+
+typedef NS_ENUM(NSUInteger, NSKeyValueChange){
+    NSKeyValueChangeSetting = 1, NSKeyValueChangeInsertion = 2,
+    NSKeyValueChangeRemoval = 3, NSKeyValueChangeReplacement = 4};
+
+typedef NSString* NSKeyValueChangeKey NS_STRING_ENUM;
+FOUNDATION_EXPORT NSKeyValueChangeKey const NSKeyValueChangeKindKey;
+FOUNDATION_EXPORT NSKeyValueChangeKey const NSKeyValueChangeNewKey;
+FOUNDATION_EXPORT NSKeyValueChangeKey const NSKeyValueChangeOldKey;
+FOUNDATION_EXPORT NSKeyValueChangeKey const NSKeyValueChangeIndexesKey;
+FOUNDATION_EXPORT NSKeyValueChangeKey const
+    NSKeyValueChangeNotificationIsPriorKey;
+
+@interface NSObject (NSKeyValueObserving)
+- (void)observeValueForKeyPath:(nullable NSString*)keyPath
+                      ofObject:(nullable id)object
+                        change:(nullable NSDictionary<NSKeyValueChangeKey,
+                                                      id>*)change
+                       context:(nullable void*)context;
+@end
+
+@interface NSObject (NSKeyValueObserverRegistration)
+- (void)addObserver:(NSObject*)observer
+         forKeyPath:(NSString*)keyPath
+            options:(NSKeyValueObservingOptions)options
+            context:(nullable void*)context;
+- (void)removeObserver:(NSObject*)observer
+            forKeyPath:(NSString*)keyPath
+               context:(nullable void*)context;
+- (void)removeObserver:(NSObject*)observer forKeyPath:(NSString*)keyPath;
+@end
+
+@interface NSObject (NSKeyValueCoding)
+- (nullable id)valueForKey:(NSString*)key;
+- (void)setValue:(nullable id)value forKey:(NSString*)key;
+- (nullable id)valueForKeyPath:(NSString*)keyPath;
+- (void)setValue:(nullable id)value forKeyPath:(NSString*)keyPath;
 @end
 
 @interface NSNotificationCenter : NSObject
@@ -683,6 +922,17 @@ FOUNDATION_EXPORT NSString* NSTemporaryDirectory(void);
 
 @interface NSUserDefaults : NSObject
 @property(class, readonly, strong) NSUserDefaults* standardUserDefaults;
+- (void)registerDefaults:
+    (NSDictionary<NSString*, id>*)registrationDictionary;
+- (void)removeObjectForKey:(NSString*)defaultName;
+- (nullable NSString*)stringForKey:(NSString*)defaultName;
+- (NSInteger)integerForKey:(NSString*)defaultName;
+- (double)doubleForKey:(NSString*)defaultName;
+- (nullable NSArray*)arrayForKey:(NSString*)defaultName;
+- (nullable NSDictionary<NSString*, id>*)dictionaryForKey:
+    (NSString*)defaultName;
+- (void)setInteger:(NSInteger)value forKey:(NSString*)defaultName;
+- (void)setDouble:(double)value forKey:(NSString*)defaultName;
 - (nullable id)objectForKey:(NSString*)defaultName;
 - (BOOL)boolForKey:(NSString*)defaultName;
 - (void)setObject:(nullable id)value forKey:(NSString*)defaultName;
@@ -692,6 +942,63 @@ FOUNDATION_EXPORT NSString* NSTemporaryDirectory(void);
 @interface NSThread : NSObject
 @property(class, readonly) BOOL isMainThread;
 @end
+
+// -- NSCoder.h, NSKeyedArchiver.h --------------------------------------------
+
+@interface NSCoder : NSObject
+- (void)encodeObject:(nullable id)object forKey:(NSString*)key;
+- (void)encodeBool:(BOOL)value forKey:(NSString*)key;
+- (void)encodeInteger:(NSInteger)value forKey:(NSString*)key;
+- (void)encodeDouble:(double)value forKey:(NSString*)key;
+- (nullable id)decodeObjectForKey:(NSString*)key;
+- (nullable id)decodeObjectOfClass:(Class)aClass forKey:(NSString*)key;
+- (BOOL)decodeBoolForKey:(NSString*)key;
+- (NSInteger)decodeIntegerForKey:(NSString*)key;
+- (double)decodeDoubleForKey:(NSString*)key;
+- (BOOL)containsValueForKey:(NSString*)key;
+@property(readonly) BOOL allowsKeyedCoding;
+@property(readonly) BOOL requiresSecureCoding;
+@end
+
+@interface NSKeyedArchiver : NSCoder
+- (instancetype)initRequiringSecureCoding:(BOOL)requiresSecureCoding;
++ (nullable NSData*)archivedDataWithRootObject:(id)object
+                         requiringSecureCoding:(BOOL)requiresSecureCoding
+                                         error:(NSError**)error;
+- (void)finishEncoding;
+@property(readonly, strong) NSData* encodedData;
+@property(readwrite) BOOL requiresSecureCoding;
+@end
+
+@interface NSKeyedUnarchiver : NSCoder
+- (nullable instancetype)initForReadingFromData:(NSData*)data
+                                          error:(NSError**)error;
++ (nullable id)unarchivedObjectOfClass:(Class)cls
+                              fromData:(NSData*)data
+                                 error:(NSError**)error;
++ (nullable id)unarchivedObjectOfClasses:(NSSet<Class>*)classes
+                                fromData:(NSData*)data
+                                   error:(NSError**)error;
+- (void)finishDecoding;
+@property(readwrite) BOOL requiresSecureCoding;
+@end
+
+// -- NSUserActivity.h --------------------------------------------------------
+
+@interface NSUserActivity : NSObject
+- (instancetype)initWithActivityType:(NSString*)activityType;
+@property(readonly, copy) NSString* activityType;
+@property(nullable, copy) NSString* title;
+@property(nullable, copy) NSDictionary* userInfo;
+@property(nullable, copy) NSURL* webpageURL;
+@property(nullable, copy) NSURL* referrerURL;
+@property(getter=isEligibleForHandoff) BOOL eligibleForHandoff;
+- (void)becomeCurrent;
+- (void)resignCurrent;
+- (void)invalidate;
+@end
+
+FOUNDATION_EXPORT NSString* const NSUserActivityTypeBrowsingWeb;
 
 @interface NSAutoreleasePool : NSObject
 @end

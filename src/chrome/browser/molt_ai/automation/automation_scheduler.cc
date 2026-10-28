@@ -97,10 +97,14 @@ base::Time NextCronFire(const std::string& expression,
   const std::time_t kCap = t + 366 * 24 * 60 * 60;
   while (t < kCap) {
     std::tm local{};
+    // A time the C library can't convert (on Windows, before 1970) has no
+    // next fire time.
 #if BUILDFLAG(IS_WIN)
-    localtime_s(&local, &t);
+    if (localtime_s(&local, &t) != 0)
+      return base::Time();
 #else
-    localtime_r(&t, &local);
+    if (!localtime_r(&t, &local))
+      return base::Time();
 #endif
     auto ex = Explode(local);
     if (minutes.count(ex.minute) && hours.count(ex.hour) &&

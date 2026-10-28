@@ -5,15 +5,16 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/dom_storage/session_storage_namespace_impl.cc b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-index 3314b24c0712085f29dd517888898120745a216f..f43b010bf047d1ae2e5149141d01d684a7d35836 100644
+index 3314b24c0712085f29dd517888898120745a216f..4fe87f2ff3dfe4a65e907806734fc471a1abc31e 100644
 --- a/components/services/storage/dom_storage/session_storage_namespace_impl.cc
 +++ b/components/services/storage/dom_storage/session_storage_namespace_impl.cc
-@@ -10,10 +10,19 @@
+@@ -10,10 +10,20 @@
  
  #include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
 +#include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 +#include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
++#include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"  // MoltBrowser
  #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
  
  namespace storage {
@@ -28,7 +29,95 @@ index 3314b24c0712085f29dd517888898120745a216f..f43b010bf047d1ae2e5149141d01d684
  SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
      std::string namespace_id,
      SessionStorageDataMap::Listener* data_map_listener,
-@@ -118,7 +127,10 @@ void SessionStorageNamespaceImpl::Bind(
+@@ -107,6 +117,87 @@ void SessionStorageNamespaceImpl::PopulateAsClone(
+   }
+ }
+ 
++// MoltBrowser:
++void SessionStorageNamespaceImpl::MoltPopulateWithClonedAreas(
++    AsyncDomStorageDatabase* database,
++    SessionStorageMetadata::NamespaceEntry namespace_metadata,
++    StorageKeyAreas areas) {
++  CHECK_EQ(namespace_metadata->first, namespace_id_);
++  CHECK(!IsPopulated());
++
++  database_ = database;
++  state_ = State::kPopulated;
++  pending_population_from_parent_namespace_.clear();
++  storage_key_areas_ = std::move(areas);
++  if (!run_after_population_.empty()) {
++    for (AfterPopulationCallback& callback : run_after_population_) {
++      std::move(callback).Run(namespace_metadata);
++    }
++    run_after_population_.clear();
++  }
++}
++
++// MoltBrowser:
++void SessionStorageNamespaceImpl::MoltCloseReceivers() {
++  receivers_.Clear();
++}
++
++namespace {
++
++// MoltBrowser: what freeing `area` frees at once: its map's items and bytes
++// if no other namespace's area shares the map and it isn't freed a chunk a
++// task anyway (molt_dom_storage_split_work.h).
++std::pair<size_t, size_t> MoltFreedAtOnce(SessionStorageAreaImpl& area) {
++  SessionStorageDataMap* map = area.data_map();
++  if (!map || !map->HasOneRef() || !map->storage_area()) {
++    return {0, 0};
++  }
++  const StorageAreaImpl& storage_area = *map->storage_area();
++  const size_t items = storage_area.molt_item_count();
++  const size_t bytes = storage_area.storage_used();
++  if (MoltDomStorageFreesInChunks(items, bytes)) {
++    return {0, 0};
++  }
++  return {items, bytes};
++}
++
++}  // namespace
++
++// MoltBrowser:
++bool SessionStorageNamespaceImpl::MoltFitsOneFreeStep() {
++  size_t areas = 0;
++  size_t items = 0;
++  size_t bytes = 0;
++  for (auto& storage_key_area : storage_key_areas_) {
++    if (MoltDomStorageFreeStepIsFull(areas, items, bytes)) {
++      return false;
++    }
++    const auto [area_items, area_bytes] =
++        MoltFreedAtOnce(*storage_key_area.second);
++    ++areas;
++    items += area_items;
++    bytes += area_bytes;
++  }
++  return true;
++}
++
++// MoltBrowser:
++bool SessionStorageNamespaceImpl::MoltFreeAreasChunk() {
++  size_t areas = 0;
++  size_t items = 0;
++  size_t bytes = 0;
++  while (!storage_key_areas_.empty() &&
++         !MoltDomStorageFreeStepIsFull(areas, items, bytes)) {
++    auto first = storage_key_areas_.begin();
++    const auto [area_items, area_bytes] = MoltFreedAtOnce(*first->second);
++    storage_key_areas_.erase(first);
++    ++areas;
++    items += area_items;
++    bytes += area_bytes;
++  }
++  return !storage_key_areas_.empty();
++}
++
+ void SessionStorageNamespaceImpl::Bind(
+     mojo::PendingReceiver<blink::mojom::SessionStorageNamespace> receiver) {
+   if (!IsPopulated()) {
+@@ -118,7 +209,10 @@ void SessionStorageNamespaceImpl::Bind(
      return;
    }
    DCHECK(IsPopulated());
@@ -40,7 +129,7 @@ index 3314b24c0712085f29dd517888898120745a216f..f43b010bf047d1ae2e5149141d01d684
    bind_waiting_on_population_ = false;
  }
  
-@@ -132,6 +144,34 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
+@@ -132,6 +226,34 @@ void SessionStorageNamespaceImpl::PurgeUnboundAreas() {
    }
  }
  

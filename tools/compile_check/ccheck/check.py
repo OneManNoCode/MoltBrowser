@@ -7,12 +7,15 @@ language: C with clang and -std=c11, C++ with clang++, Objective-C++ with
 ARC, Windows files with clang-cl against the Windows SDK."""
 import concurrent.futures
 import json
+import os
 import re
 import resource
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 
-from . import config, platforms, sdks, toolchain
+from . import config, platforms, result_cache, sdks, toolchain
 
 DIAG_RE = re.compile(r"^(?P<file>[^:\n(]+?)(?::(?P<line>\d+):(?P<col>\d+)|"
                      r"\((?P<wline>\d+),(?P<wcol>\d+)\)): "
@@ -146,6 +149,50 @@ def _limit():
     resource.setrlimit(resource.RLIMIT_AS, (6 << 30, 6 << 30))
 
 
+def _vm_hwm_kb(pid="self"):
+    """A process's peak resident memory so far (VmHWM), in KB; 0 if
+    unknown."""
+    try:
+        with open("/proc/%s/status" % pid) as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def run_measured(cmd, cwd, interval=0.02):
+    """(exit status, output, peak resident memory in MB or None) of a
+    compile: its stderr and stdout in one stream, and the compiler's own
+    peak RSS, which `report` lists to size --jobs.
+
+    wait4's maximum alone is not the compiler's: the child forked from
+    this process starts with a copy of its memory (several hundred MB of
+    scan state), which Linux counts in the child's maximum. So the
+    compiler's VmHWM is sampled while it runs (its own, from exec on), and
+    wait4's maximum used where it exceeds anything this process ever held
+    (then it can only be the compiler's). A compile that ended before the
+    first sample (a few small files) has None: its peak is small, but not
+    known."""
+    with tempfile.TemporaryFile() as out:
+        p = subprocess.Popen(cmd, cwd=cwd, stdout=out,
+                             stderr=subprocess.STDOUT, preexec_fn=_limit)
+        seen = 0
+        while True:
+            pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+            if pid:
+                break
+            seen = max(seen, _vm_hwm_kb(p.pid))
+            time.sleep(interval)
+        p.returncode = os.waitstatus_to_exitcode(status)
+        out.seek(0)
+        text = out.read().decode("utf-8", "replace")
+    own = _vm_hwm_kb()
+    kb = ru.ru_maxrss if not own or ru.ru_maxrss > own else seen
+    return p.returncode, text, kb // 1024 if kb else None
+
+
 def parse_diags(text):
     diags = []
     for m in DIAG_RE.finditer(text):
@@ -159,24 +206,34 @@ def parse_diags(text):
 
 
 def run_one(tree, work, target, out_dir, plugins=True, dev=False,
-            gn_flags=None, lang=None):
+            gn_flags=None, lang=None, cache=True):
     cmd = compile_command(tree, work, target, plugins, dev, gn_flags, lang)
-    r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
-                       text=True, preexec_fn=_limit)
-    text = r.stderr + r.stdout
-    root = str(tree.tree_dir) + "/"
-    text = text.replace(root, "")
     plat = getattr(tree, "platform", None)
     name = target.replace("/", "__")
     if plat is not None and plat.name != platforms.of(target):
         name += "@" + plat.name
+    # The last result, if nothing that decides it changed (result_cache).
+    key = result_cache.key(work, cmd, tree.out_dir, _limit) if cache \
+        else None
+    hit = result_cache.lookup(work, name, key)
+    if hit is not None:
+        rc, text, peak = hit  # the peak measured when it was compiled
+    else:
+        rc, text, peak = run_measured(cmd, str(tree.out_dir))
+        root = str(tree.tree_dir) + "/"
+        text = text.replace(root, "")
+        if cache:
+            result_cache.store(work, name, key, rc, text, peak)
+        else:
+            result_cache.drop(work, name)
     log = out_dir / (name + ".log")
     log.write_text(text)
     (out_dir / "commands").mkdir(parents=True, exist_ok=True)
     (out_dir / "commands" / (name + ".json")).write_text(json.dumps(
         {"directory": str(tree.out_dir), "arguments": cmd}, indent=1))
-    res = {"target": target, "rc": r.returncode, "diags": parse_diags(text),
-           "log": str(log),
+    res = {"target": target, "rc": rc, "diags": parse_diags(text),
+           "log": str(log), "reused": hit is not None,
+           "max_rss_mb": peak,
            "platform": plat.name if plat else platforms.DEFAULT,
            "lang": platforms.language(target)}
     if lang:
@@ -187,7 +244,7 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
 
 
 def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None,
-        target_flags=None):
+        target_flags=None, cache=True):
     out_dir = Path(work) / "check"
     out_dir.mkdir(parents=True, exist_ok=True)
     tree.out_dir.mkdir(parents=True, exist_ok=True)
@@ -195,14 +252,21 @@ def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None,
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
         futs = {ex.submit(run_one, tree, work, t, out_dir, plugins, dev,
-                          gn_flags, (target_flags or {}).get(t)): t
+                          gn_flags, (target_flags or {}).get(t), cache): t
                 for t in targets}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()
             results.append(res)
             n_err = sum(1 for d in res["diags"] if "error" in d["kind"])
-            print("[%d/%d] %s (%s): %d error(s)" % (
-                i + 1, len(targets), res["target"], res["platform"], n_err),
-                flush=True)
+            print("[%d/%d] %s (%s): %d error(s)%s" % (
+                i + 1, len(targets), res["target"], res["platform"], n_err,
+                " (unchanged: last result)" if res.get("reused") else
+                ", %d MB" % res["max_rss_mb"] if res.get("max_rss_mb")
+                else ""), flush=True)
+    n = sum(1 for r in results if r.get("reused"))
+    if n:
+        print("%s: %d of %d result(s) reused (inputs unchanged)" % (
+            getattr(tree, "platform", None) and tree.platform.name or "",
+            n, len(results)))
     results.sort(key=lambda r: r["target"])
     return results

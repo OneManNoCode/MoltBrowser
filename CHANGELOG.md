@@ -341,6 +341,31 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   is split into short tasks; and the in-memory HTTP cache sweeps unused
   entries site by site, in small steps, on a monotonic clock
   (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening (security review of PR #73, `docs/SECURITY_REVIEWS.md`): in
+  every profile, a Background Fetch that continues after the browser
+  restarts keeps the page's origin, network key and credentials setting
+  (a download that was under way starts again from the beginning rather
+  than resuming without them), and keeps its first party on redirects.
+  The build tools use Chromium's source tarball only if it matches a
+  SHA-256 pinned in the repository, write none of its files outside
+  their directory, and build their Rust helper with the dependency
+  versions its lock file pins; Windows component builds link the Blob
+  registry's delegate again.
+- MoltNet hardening, per site: a site's Background Fetch share is its own
+  whatever other sites run, with no total for all sites that one party
+  could fill (the memory valve watches past 128 downloads); what a page's
+  credentialless frames store goes with the page, and a site keeps such
+  storage for at most 32 of its pages at once; the records MoltNet keeps
+  per site go once they limit nothing; listing what MoltNet's
+  `localStorage` and `sessionStorage` hold, and copying or deleting a tab's
+  `sessionStorage`, run in short steps, in order with each site's own
+  writes; and two storage quota checks of one site at once both see its
+  current usage (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening, in every profile: a Background Fetch request resumed without
+  its service worker's network settings (after a response ended early, or
+  after a restart) still has its Local Network Access checked, and after a
+  restart a Background Fetch waits for its page's settings rather than
+  going out without them.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -471,6 +496,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   processor; JPEG XL images there decode up to about twice as slowly
   (`docs/FINGERPRINTING.md`, "MoltNet: what pages can learn about the
   processor"); regular and incognito windows are unchanged.
+- **MoltNet's microphone processing is the same on every processor.** In
+  MoltNet windows the echo cancellation, noise suppression and gain
+  control a page's microphone stream gets compute the same samples from
+  the same sound on every x86-64 and Arm processor, and still cancel
+  what the browser plays. The audio service uses about 1.5% more of one
+  core while a MoltNet page records (`docs/FINGERPRINTING.md`, "MoltNet:
+  the microphone's processing"); regular and incognito windows are
+  unchanged. The leak test kit now checks these answers too.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
@@ -933,6 +966,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and names both sites, and MoltNet windows never use them.
 
 ### Fixed
+- **A Windows clock set before 1970 no longer ends the browser** when an
+  automation writes its audit timestamp (it records the epoch instead), and
+  a schedule whose time can't be converted has no next run.
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
   attached in the AI chat) was handed to tesseract as a PDF, which it can't
   read: it decodes images through leptonica, which writes PDFs but doesn't
@@ -1062,6 +1098,26 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   storage and Background Fetch classes define their special members out
   of the class body, and pointer fields are `raw_ptr` or marked as
   exclusions, as the plugins ask.
+- **Compile check: more on real headers, quicker re-runs**
+  (`tools/compile_check/`): the storage service's sources are now checked
+  (SQLite's amalgamation comes from Chromium's source tarball), the four
+  Mac files it couldn't compile type-check on new IOSurface and
+  AuthenticationServices stand-ins and a fuller AppKit, WebRTC's NEON
+  branches are compiled for Linux arm64, configs a target names relative
+  to its directory apply, and the HSTS and key-pin preload headers, the
+  build date and LASTCHANGE are what the build makes (Chromium's preload
+  generator, built for the host with BoringSSL; the pinned commit's
+  position and time). A re-run compiles only the files whose preprocessed
+  source, command or compiler changed, and picks up where an interrupted
+  run stopped; generated files are made again only when their inputs or
+  the GN args change; `clean` removes what no run reads; and each
+  compile's peak memory is recorded; the report also counts Blink's
+  plugin findings (`[blink-style]`). At 156, 1384 of 1437
+  file-and-platform rows are checked against real headers, 40 partly on
+  stand-ins (the Mac files, three WebUI pages' resource headers, V8's
+  instance types), 12 have Blink plugin findings (`std::vector` data
+  members in two MoltNet renderer files) and one is not checked: an iOS
+  file no build file lists.
 - Consistency hardening: the site tools' approvals, the agent's plan, the
   chat's proposals and form fills, and saved agent runs (their step labels
   and the secret checks that read them) share one list of the characters

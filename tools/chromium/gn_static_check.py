@@ -76,6 +76,8 @@ Two presubmit checks run over the same overlay:
 
 Usage:
   tools/chromium/gn_static_check.py fetch      # stream the pin's GN files once
+                                    # (kept if the tarball matches its
+                                    # pinned SHA-256: ccheck/tarball.py)
   tools/chromium/gn_static_check.py check [--platform CONFIGS] [--tree DIR]
                                     [--warnings] [--json OUT] [FILE...]
   tools/chromium/gn_static_check.py checkdeps [--json OUT]
@@ -107,6 +109,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools" / "compile_check"))
 
 import upstream as up  # noqa: E402
 from ccheck import gn as gnlib  # noqa: E402
+from ccheck import tarball as cctarball  # noqa: E402
 
 DEFAULT_CACHE = REPO_ROOT / ".molt-gn-check-cache"
 BUCKET = ("https://commondatastorage.googleapis.com/"
@@ -295,6 +298,20 @@ class Interp(gnlib.Interp):
             if isinstance(lst, list) and any(x is gnlib.UNKNOWN
                                              for x in lst):
                 return gnlib.UNKNOWN
+        if name in ("filter_labels_include", "filter_labels_exclude") and \
+                len(args) == 2:
+            # WebRTC's rtc_library() moves Abseil deps with these.
+            lst = self.eval(args[0], scope, ctx)
+            pats = self.eval(args[1], scope, ctx)
+            if not isinstance(lst, list) or not isinstance(pats, list) or \
+                    _unknownish(lst) or _unknownish(pats):
+                return gnlib.UNKNOWN
+            d = ctx.get("dir") or "//"
+            pats = [p for p in (norm_pattern(x, d) for x in pats) if p]
+            keep = name == "filter_labels_include"
+            return [x for x in lst if any(
+                label_matches(p, norm_label(x, d) or "") for p in pats)
+                == keep]
         if name == "get_target_outputs" and args and \
                 ctx.get("targets") is not None:
             # Also an action_foreach's outputs, one set per source.
@@ -1512,16 +1529,20 @@ def check_build_file(g, ug, overlay, bf, dot, findings):
 # fetch: Chromium's GN files from the official source tarball
 
 
-def fetch(version, dest, overlay_files, log=log, opener=None):
+def fetch(version, dest, overlay_files, log=log, opener=None, pins=None):
     """Streams chromium-<version>-lite.tar.xz once and keeps every BUILD.gn,
     .gn, .gni and DEPS file, //chrome/VERSION and build/util (gn runs
     version.py), checkdeps, and the upstream copy of every overlay path;
-    writes paths.txt (every file in the tarball)."""
+    writes paths.txt (every file in the tarball). Kept only if the whole
+    tarball matches its pinned SHA-256 (ccheck/tarball.py: PINNED_SHA256,
+    or `pins`): checkdeps, the DEPS files it reads and version.py run
+    here."""
+    url = BUCKET + "chromium-%s-lite.tar.xz" % version
+    expected = cctarball.pinned_sha256(url, pins)
     dest = Path(dest)
     tmp = dest.with_name(dest.name + ".partial")
     shutil.rmtree(tmp, ignore_errors=True)
     (tmp / "tree").mkdir(parents=True)
-    url = BUCKET + "chromium-%s-lite.tar.xz" % version
     top = "chromium-%s/" % version
     keep_prefix = ("buildtools/checkdeps/", "build/util/")
     want = set(overlay_files)
@@ -1529,28 +1550,34 @@ def fetch(version, dest, overlay_files, log=log, opener=None):
     log("fetch: streaming %s (about 5 minutes)" % url)
     n = kept = 0
     opener = opener or urllib.request.urlopen
-    with open(tmp / "paths.txt", "w") as paths, opener(url) as r, \
-            tarfile.open(fileobj=r, mode="r|xz") as tf:
-        for m in tf:
-            n += 1
-            if not m.name.startswith(top):
-                continue
-            rel = m.name[len(top):]
-            if not rel or ".." in rel.split("/"):
-                continue
-            if m.isfile() or m.issym():
-                paths.write(rel + "\n")
-            if not m.isfile():
-                continue
-            base = rel.rsplit("/", 1)[-1]
-            if not (base.endswith((".gn", ".gni")) or base == "DEPS" or
-                    rel == "chrome/VERSION" or rel.startswith(keep_prefix)
-                    or rel in want):
-                continue
-            out = tmp / "tree" / rel
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(tf.extractfile(m).read())
-            kept += 1
+    with open(tmp / "paths.txt", "w") as paths, opener(url) as r:
+        hashed = cctarball.HashingReader(r)
+        with tarfile.open(fileobj=hashed, mode="r|xz") as tf:
+            for m in tf:
+                n += 1
+                if not m.name.startswith(top):
+                    continue
+                rel = m.name[len(top):]
+                if cctarball.safe_relpath(rel) is None:
+                    continue
+                if m.isfile() or m.issym():
+                    paths.write(rel + "\n")
+                if not m.isfile():
+                    continue
+                base = rel.rsplit("/", 1)[-1]
+                if not (base.endswith((".gn", ".gni")) or base == "DEPS" or
+                        rel == "chrome/VERSION" or rel.startswith(keep_prefix)
+                        or rel in want):
+                    continue
+                out = tmp / "tree" / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(tf.extractfile(m).read())
+                kept += 1
+        got = hashed.drain()
+    if got != expected:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise cctarball.TarballNotVerified(
+            "%s: SHA-256 %s, not the pinned %s" % (url, got, expected))
     (tmp / "version.txt").write_text(version + "\n")
     shutil.rmtree(dest, ignore_errors=True)
     tmp.rename(dest)
@@ -1595,27 +1622,68 @@ def checkdeps_plan(overlay):
     return plan
 
 
+# DEPS subprojects whose include paths start at their own root (WebRTC's
+# "modules/...", "rtc_base/..."). Their files are checked as their own
+# repositories' presubmits check them: in a run of their own, rooted there,
+# with their DEPS files only. Chromium's checkdeps doesn't read them.
+CHECKDEPS_SUBPROJECTS = ("third_party/webrtc/",)
+
+
+def checkdeps_root_of(rel):
+    """The subproject prefix a file's checkdeps run is rooted at ("" for
+    Chromium's root)."""
+    for prefix in CHECKDEPS_SUBPROJECTS:
+        if rel.startswith(prefix):
+            return prefix
+    return ""
+
+
 def run_checkdeps(tree_root, overlay, work, log=log):
     """Runs the tree's buildtools/checkdeps/checkdeps.py over a copy of the
     tree's DEPS files with the overlay's on top and the overlay's C++ files
-    (checkdeps reads only those). Returns (findings, number of files)."""
+    (checkdeps reads only those): once at Chromium's root, and once at the
+    root of each subproject with files (CHECKDEPS_SUBPROJECTS). Returns
+    (findings, number of files)."""
     tree_root = Path(tree_root)
     script = tree_root / "buildtools" / "checkdeps" / "checkdeps.py"
     if not script.is_file():
         raise RuntimeError("no %s (run fetch)" % script)
     work = Path(work)
-    root = work / "src"
     shutil.rmtree(work, ignore_errors=True)
-    root.mkdir(parents=True)
-    for p in tree_root.rglob("DEPS"):
-        if p.is_file():
-            dst = root / p.relative_to(tree_root)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dst)
     plan = checkdeps_plan(overlay)
+    findings = Findings()
+    prefixes = sorted({checkdeps_root_of(rel) for rel in plan} | {""})
+    for prefix in prefixes:
+        group = {rel: only for rel, only in plan.items()
+                 if checkdeps_root_of(rel) == prefix}
+        sub = work / prefix.strip("/").replace("/", "_") if prefix else work
+        _checkdeps_once(script, tree_root, overlay, prefix, group, sub,
+                        findings)
+    return findings, len(plan)
+
+
+def _checkdeps_once(script, tree_root, overlay, prefix, plan, work,
+                    findings):
+    """One checkdeps run rooted at `prefix` ("" or a subproject's
+    directory) over the files of `plan` (paths under src/, all under
+    `prefix`)."""
+    root = work / "src"
+    root.mkdir(parents=True)
+    base = tree_root / prefix if prefix else tree_root
+    for p in base.rglob("DEPS"):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(base).as_posix()
+        if not prefix and checkdeps_root_of(rel):
+            continue  # read in the subproject's own run
+        dst = root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(p, dst)
     for rel in list(overlay.files):
+        if checkdeps_root_of(rel) != prefix:
+            continue
         if rel.rsplit("/", 1)[-1] == "DEPS" or rel in plan:
-            dst = root / rel
+            dst = root / rel[len(prefix):]
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(overlay.src / rel, dst)
     # checkdeps wants a repository root, and outside git it walks only the
@@ -1631,9 +1699,8 @@ def run_checkdeps(tree_root, overlay, work, log=log):
     if not out.is_file():
         raise RuntimeError("checkdeps failed (%d): %s" % (
             r.returncode, (r.stdout + r.stderr)[-2000:]))
-    findings = Findings()
     for res in json.loads(out.read_text()):
-        rel = os.path.relpath(res["dependee_path"], str(root))
+        rel = prefix + os.path.relpath(res["dependee_path"], str(root))
         only = plan.get(rel)
         for v in res["violations"]:
             inc = v["include_path"]
@@ -1646,7 +1713,6 @@ def run_checkdeps(tree_root, overlay, work, log=log):
                 "(%s)" % (inc, " ".join(str(x) for x in rule if x)),
                 "add a +rule to the nearest MoltBrowser DEPS (or a "
                 "specific_include_rules entry for this file)"), "deps")
-    return findings, len(plan)
 
 
 # ---------------------------------------------------------------------------
@@ -1786,7 +1852,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     version = getattr(a, "version", None) or up.read_pin().version
     if a.cmd == "fetch":
-        fetch(version, default_tree_dir(a.cache, version), up.overlay_files())
+        try:
+            fetch(version, default_tree_dir(a.cache, version),
+                  up.overlay_files())
+        except cctarball.TarballNotVerified as e:
+            log("fetch: %s" % e)
+            return 2
         return 0
     if a.tree:
         root = Path(a.tree)

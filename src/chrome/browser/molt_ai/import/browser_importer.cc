@@ -287,6 +287,7 @@ void ReadBookmarks(const base::FilePath& profile_dir,
 // Password decryption — shared constants + per-platform backend.
 // ---------------------------------------------------------------------------
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 // Chromium's AES-CBC (mac/linux) password IV: 16 spaces.
 constexpr std::array<uint8_t, crypto::aes_cbc::kBlockSize> kCbcIv = {
     ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
@@ -299,9 +300,10 @@ constexpr std::array<uint8_t, 9> kPbkdfSalt = {'s', 'a', 'l', 't', 'y',
 constexpr size_t kCbcKeySize = 16;  // AES-128 (mac + linux).
 
 constexpr char kPrefixV10[] = "v10";
+#if BUILDFLAG(IS_LINUX)
 constexpr char kPrefixV11[] = "v11";  // linux keyring-derived.
+#endif
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 // AES-CBC decrypt of a "v10"/"v11" blob given an already-derived key. Strips the
 // 3-byte prefix. Returns plaintext or nullopt. Never logs plaintext.
 std::optional<std::string> DecryptCbcBlob(base::span<const uint8_t> key,

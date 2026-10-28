@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +20,7 @@ import unittest
 from leakkit import catalog
 from leakkit import expectations as ex
 from leakkit import harness
+from leakkit import micinput
 from leakkit import report
 from leakkit import traffic
 from leakkit import uniformity
@@ -150,6 +152,14 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['uniform.webgl.p.MAX_VARYING_VECTORS'],
                          'PASS')
         self.assertEqual(status['background.must_not_appear'], 'FAIL')
+        # What pages can learn about the processor, and the microphone.
+        self.assertEqual(status['uniform.cpu.wasm_simd'], 'PASS')
+        self.assertEqual(status['uniform.cpu.float16_nan_canonical'], 'PASS')
+        self.assertEqual(status['harness.mic_processing'], 'PASS')
+        self.assertEqual(status['uniform.audio.mic_settings'], 'PASS')
+        self.assertEqual(status['uniform.audio.mic_processed_stable'],
+                         'FAIL')
+        self.assertEqual(rep['arch'], 'x86_64')
 
     def test_report_rebuilds_into_another_directory(self):
         tmp = tempfile.mkdtemp()
@@ -869,9 +879,74 @@ class Uniformity(unittest.TestCase):
         self.assertEqual(self.check({'u': {'error': 'TypeError'}}, ua)[
             'status'], 'SKIP')
 
+    def test_per_arch(self):
+        rule = ('cpu.float16_nan_canonical', 'per_arch_eq',
+                {'x86_64': True}, '')
+        v = {'cpu.float16_nan_canonical': True}
+        self.assertEqual(uniformity.check_rule(v, rule, 'Linux', 'x86_64')[
+            'status'], 'PASS')
+        self.assertEqual(uniformity.check_rule(
+            {'cpu.float16_nan_canonical': False}, rule, 'Linux',
+            'x86_64')['status'], 'FAIL')
+        for arch in ('arm64', 'unknown', None):
+            res = uniformity.check_rule(v, rule, 'Linux', arch)
+            self.assertEqual(res['status'], 'INFO', arch)
+            self.assertIn('same architecture', res['note'])
+        self.assertEqual(uniformity.arch_of({'arch': 'aarch64'}), 'arm64')
+        self.assertEqual(uniformity.arch_of({'arch': 'AMD64'}), 'x86_64')
+        self.assertEqual(uniformity.arch_of(
+            {'os': 'Linux-6.8.0-45-generic-x86_64-with-glibc2.39'}),
+            'x86_64')
+        self.assertEqual(uniformity.arch_of(
+            {'os': 'Linux-6.1.0-arm64-aarch64-with-glibc2.36'}), 'arm64')
+        self.assertEqual(uniformity.arch_of({}), 'unknown')
+        self.assertEqual(uniformity.arch_of(None), 'unknown')
+
+    def test_mic_record_rules(self):
+        rec = {'label': 'mic', 'kind': 'mic', 'target': 'moltnet',
+               'values': {'audio.mic_processed_stable': True,
+                          'audio.mic_settings': {
+                              'echoCancellation': True,
+                              'noiseSuppression': True,
+                              'autoGainControl': True}}}
+        res = uniformity.check_record(rec, 'Linux', 'x86_64')
+        self.assertEqual(sorted(r['key'] for r in res),
+                         sorted(r[0] for r in ex.MIC_RULES))
+        self.assertTrue(all(r['status'] == 'PASS' for r in res), res)
+        rec['values']['audio.mic_settings']['noiseSuppression'] = False
+        res = {r['key']: r['status'] for r in uniformity.check_record(
+            rec, 'Linux')}
+        self.assertEqual(res['audio.mic_settings'], 'FAIL')
+
+    def test_new_probes_are_collected(self):
+        # Every new key a rule or the diff covers is reported by a page.
+        pages = os.path.join(os.path.dirname(HERE), 'pages', 'static')
+        with open(os.path.join(pages, 'fp.js')) as f:
+            fp = f.read()
+        with open(os.path.join(pages, 'mic.js')) as f:
+            mic = f.read()
+        for key in ('cpu.wasm_simd', 'cpu.float16_nan',
+                    'cpu.float16_nan_canonical', 'pixels.jxl',
+                    'audio.stretched'):
+            self.assertIn("'%s'" % key, fp, key)
+        for key in ('audio.mic_processed', 'audio.mic_processed_stable',
+                    'audio.mic_settings', 'audio.mic_sample_rate'):
+            self.assertIn("'%s'" % key, mic, key)
+        for key in ('audio.stretched', 'pixels.jxl', 'cpu.float16_nan',
+                    'audio.mic_processed'):
+            self.assertIn(key, ex.DIFF_KEYS)
+        self.assertNotIn('cpu.wasm_simd', ex.INFO_KEYS)
+        self.assertTrue(set(ex.ARCH_KEYS) <= set(ex.DIFF_KEYS) |
+                        set(r[0] for r in ex.FULL_RULES))
+        # The harness times the stretched audio with a user gesture.
+        with open(harness.__file__) as f:
+            self.assertIn('mlStretchedAudio()', f.read())
+        self.assertIn('window.mlStretchedAudio', fp)
+        self.assertIn('window.mlMicProcessing', mic)
+
     def test_every_rule_has_a_doc_and_known_operator(self):
         ops = set()
-        for rule in ex.GEOMETRY_RULES + ex.FULL_RULES:
+        for rule in ex.GEOMETRY_RULES + ex.FULL_RULES + ex.MIC_RULES:
             self.assertEqual(len(rule), 4, rule)
             self.assertTrue(rule[3], rule)
             ops.add(rule[1])
@@ -894,6 +969,34 @@ class Uniformity(unittest.TestCase):
         got = sorted((d['key'], d['severity']) for d in diffs)
         self.assertEqual(got, [('intl.locale', 'fail'),
                                ('storage.quota', 'info')])
+        # The Float16 NaN bits are compared between runs of one
+        # architecture; between x86-64 and arm64 a difference is info.
+        b = copy.deepcopy(a)
+        b[0]['values']['cpu.float16_nan'] = {'array_optimized': '7e7f'}
+        b[0]['values']['cpu.float16_nan_canonical'] = False
+        b[0]['values']['pixels.jxl'] = {'rgba': 'other'}
+        for archs, severity in (((None, None), 'fail'),
+                                (('x86_64', 'x86_64'), 'fail'),
+                                (('x86_64', 'unknown'), 'fail'),
+                                (('x86_64', 'arm64'), 'info')):
+            _, diffs = uniformity.diff_records(a, b, *archs)
+            got = dict((d['key'], d['severity']) for d in diffs)
+            self.assertEqual(got['cpu.float16_nan'], severity, archs)
+            self.assertEqual(got['cpu.float16_nan_canonical'], severity,
+                             archs)
+            self.assertEqual(got['pixels.jxl'], 'fail', archs)
+        # Records of the microphone launch are compared too.
+        mic = [{'label': 'mic', 'dsf': 1.0, 'window': None,
+                'zoom_requested': 100, 'target': 'moltnet', 'kind': 'mic',
+                'values': {'audio.mic_processed': {'hash': 'a'},
+                           'audio.mic_sample_rate': 48000}}]
+        mic_b = copy.deepcopy(mic)
+        mic_b[0]['values']['audio.mic_processed'] = {'hash': 'b'}
+        mic_b[0]['values']['audio.mic_sample_rate'] = 44100
+        _, diffs = uniformity.diff_records(mic, mic_b)
+        self.assertEqual(sorted((d['key'], d['severity']) for d in diffs),
+                         [('audio.mic_processed', 'fail'),
+                          ('audio.mic_sample_rate', 'info')])
 
     def test_diff_reports(self):
         tmp = tempfile.mkdtemp()
@@ -912,6 +1015,30 @@ class Uniformity(unittest.TestCase):
             self.assertEqual(verdict, 'PASS')
         finally:
             shutil.rmtree(tmp)
+
+
+class MicInput(unittest.TestCase):
+    """The fake capture device's WAV (leakkit/micinput.py)."""
+
+    def test_wav(self):
+        data = micinput.wav_bytes()
+        self.assertEqual(data[:4], b'RIFF')
+        self.assertEqual(data[8:16], b'WAVEfmt ')
+        fmt, channels, rate, byte_rate, align, bits = struct.unpack(
+            '<HHIIHH', data[20:36])
+        self.assertEqual((fmt, channels, rate, bits), (1, 2, 44100, 16))
+        self.assertEqual((byte_rate, align), (44100 * 4, 4))
+        samples = micinput.samples_cache()
+        self.assertEqual(len(data), 44 + 2 * len(samples))
+        lead = int(micinput.LEAD_S * micinput.RATE) * 2
+        self.assertTrue(all(x == 0 for x in samples[:lead]))
+        # The burst starts right after the silence and is loud.
+        self.assertGreater(max(abs(x) for x in samples[lead:lead + 2000]),
+                           8000)
+        self.assertTrue(all(-32768 <= x <= 32767 for x in samples))
+        # Integer arithmetic only: the same bytes everywhere.
+        self.assertEqual(hashlib.sha256(data).hexdigest()[:16],
+                         '16399ecd8c0d4d36')
 
 
 class Catalog(unittest.TestCase):

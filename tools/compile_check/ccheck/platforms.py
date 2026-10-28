@@ -120,16 +120,29 @@ _COMMON_FALSE = {
     "BUILDFLAG(USE_BLINK_V8_BINDING_TRACE)",
     # config.STAND_IN_FLAGS: V8 is checked on Torque's instance types.
     "V8_USE_METAGEN_INSTANCE_TYPES",
+    # WebRTC's MIPS builds (GN defines for current_cpu == "mipsel").
+    "defined(MIPS_FPU_LE)", "defined(MIPS32_LE)",
     "0", "false",
 }
 _COMMON_TRUE = {"defined(__clang__)", "defined(__cplusplus)", "1", "true"}
 _X64_TRUE = {"defined(__x86_64__)"}
+# NEON code: clang predefines __ARM_NEON on arm64 (__ARM_NEON__ on Apple's
+# only); WebRTC's common_config defines WEBRTC_HAS_NEON and
+# WEBRTC_ARCH_ARM64 for current_cpu == "arm64" (only in WebRTC's targets,
+# so they are not certainly on there), and rtc_base/system/arch.h
+# WEBRTC_ARCH_ARM_FAMILY or WEBRTC_ARCH_X86_FAMILY by the CPU.
+NEON_ATOMS = frozenset({
+    "defined(__ARM_NEON)", "defined(__ARM_NEON__)",
+    "defined(WEBRTC_HAS_NEON)", "defined(WEBRTC_ARCH_ARM64)",
+    "defined(WEBRTC_ARCH_ARM_FAMILY)"})
 _X64_FALSE = {"defined(__aarch64__)", "defined(ARCH_CPU_ARM64)",
-              "defined(_M_ARM64)", "PA_BUILDFLAG(PA_ARCH_CPU_ARM64)"}
+              "defined(_M_ARM64)",
+              "PA_BUILDFLAG(PA_ARCH_CPU_ARM64)"} | NEON_ATOMS
 _ARM64_TRUE = {"defined(__aarch64__)", "defined(ARCH_CPU_ARM64)",
-               "PA_BUILDFLAG(PA_ARCH_CPU_ARM64)"}
+               "PA_BUILDFLAG(PA_ARCH_CPU_ARM64)", "defined(__ARM_NEON)"}
 _ARM64_FALSE = {"defined(__x86_64__)", "defined(_M_X64)",
-                "defined(_M_ARM64)"}
+                "defined(_M_ARM64)", "defined(WEBRTC_ARCH_X86_FAMILY)",
+                "defined(WEBRTC_ARCH_X86_64)"}
 _POSIX_NOT_APPLE_FALSE = {
     "defined(OS_WIN)", "defined(OS_MAC)", "defined(_WIN32)",
     "defined(_WIN64)", "defined(WIN32)", "defined(_MSC_VER)",
@@ -175,7 +188,7 @@ PLATFORMS = {
         "//build/toolchain/linux:clang_arm64",
         _linux_t | _COMMON_TRUE | _ARM64_TRUE | _LINUX_TRUE,
         _linux_f | _COMMON_FALSE | _ARM64_FALSE | _POSIX_NOT_APPLE_FALSE |
-        _VULKAN,
+        _VULKAN | {"defined(__ARM_NEON__)"},
         extra_args={"target_cpu": "arm64"}),
     "win": Platform(
         "win", "Windows x64", "configs/windows-x64.gn", "out/cc-win", "win",
@@ -196,6 +209,7 @@ PLATFORMS = {
         "mac", "macOS arm64", "configs/macos-arm64.gn", "out/cc-mac", "mac",
         "arm64", "//build/toolchain/mac:clang_arm64",
         _mac_t | _COMMON_TRUE | _ARM64_TRUE | {
+            "defined(__ARM_NEON__)",
             "defined(OS_MAC)", "defined(OS_POSIX)", "defined(__APPLE__)",
             "defined(__MACH__)", "PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)",
             "PERFETTO_BUILDFLAG(PERFETTO_OS_MAC)"},

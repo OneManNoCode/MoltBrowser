@@ -92,11 +92,14 @@ inline void MoltCarryFetchCredentialsAndInitiator(
 // isolation's top-level site; for a page its server sandboxed, the site its
 // origin came from), so it counts against that site's own share of blob
 // memory, not the one the browser's other blobs share
-// (storage/browser/blob/molt_blob_budget_policy.h), from `keys`; the
-// browser's key for a request with no site.
-inline uint64_t MoltBlobBudgetKeyForFetch(
+// (storage/browser/blob/molt_blob_budget_policy.h), from `digest` (a
+// callable from the serialized site to 64 bits of its keyed digest:
+// storage::MoltBlobSiteKeyFromDigest()); the browser's key for a request
+// with no site.
+template <typename Digest>
+uint64_t MoltBlobBudgetKeyForFetch(
     const std::optional<net::IsolationInfo>& isolation_info,
-    storage::MoltBlobSiteKeys& keys) {
+    const Digest& digest) {
   if (!isolation_info || !isolation_info->top_frame_origin()) {
     return storage::kMoltBlobBrowserKey;
   }
@@ -105,7 +108,8 @@ inline uint64_t MoltBlobBudgetKeyForFetch(
   if (!tuple.IsValid()) {
     return storage::kMoltBlobBrowserKey;
   }
-  return keys.KeyFor(net::SchemefulSite(tuple.GetURL()).Serialize());
+  return storage::MoltBlobSiteKeyFromDigest(
+      digest(net::SchemefulSite(tuple.GetURL()).Serialize()));
 }
 
 }  // namespace download

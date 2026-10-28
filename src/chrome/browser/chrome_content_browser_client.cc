@@ -7270,6 +7270,20 @@ bool ChromeContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(
                  Profile::FromBrowserContext(browser_context)));
 }
 
+base::RepeatingClosure
+ChromeContentBrowserClient::GetBackgroundFetchGrowthBeyondFloorCallback(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: as GetFixedQuotaSettings(), for the requests Background
+  // Fetch has downloading: past their floor the identity's memory valve
+  // hears of each one that starts (molt_ai/tor/molt_net_memory_valve.h).
+  if (!browser_context) {
+    return base::RepeatingClosure();
+  }
+  return molt_ai::tor::MoltNetMemoryValveCallback(
+      Profile::FromBrowserContext(browser_context),
+      molt_ai::fingerprinting::kMoltNetStorageMemoryReserveBytes);
+}
+
 bool ChromeContentBrowserClient::ShouldKeepBrowsingInstancesInOwnProcesses(
     content::BrowserContext* browser_context,
     const GURL& site_url) {

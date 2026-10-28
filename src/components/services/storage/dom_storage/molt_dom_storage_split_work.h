@@ -25,6 +25,38 @@
 // with one observer's notification, or its reply (a read of the whole
 // area): each bounded by one area's limit, whatever the site does otherwise.
 //
+// Walks over the whole partition are split too. Listing what a partition
+// stores (GetUsage(): what Clear-Site-Data and the browser's settings read
+// before they delete) walked every area of every site in one task at
+// Chromium 156, and so did the memory dump provider. Here the listing walks
+// the partition's groups (sites) kMoltDomStorageGroupsPerTask a task in the
+// control's turn, and lists each group's areas in that group's own turn,
+// kMoltDomStorageAreasPerTask a task (MoltDomStorageNextChunk()), so it is
+// also in order with each group's own messages: a group's areas are listed
+// after the messages it queued before the listing reached it, and a clear
+// that follows deletes what they stored. The memory dump reports the
+// partition's totals, which are kept as they change, and names no area.
+//
+// So is the work on a sessionStorage namespace (a tab's), which holds an
+// area for each storage key its pages used: possibly thousands, which a
+// site can make the browser copy and delete at will (a popup it opens on a
+// gesture copies its tab's namespace; closing the popup deletes the copy).
+// At Chromium 156 a copy registered and cloned every area in one task
+// (SessionStorageImpl::RegisterShallowClonedNamespace()), and a deletion
+// freed every area and forgot every key in one
+// (SessionStorageImpl::DeleteNamespace()). Here, in a partition taken in
+// turn per site, a copy of more than kMoltDomStorageAreasPerTask keys
+// registers and clones that many a task, the copy holding what is asked of
+// it until it is complete (as a copy the renderer is still to make does);
+// and a deletion frees areas until a task's worth
+// (MoltDomStorageFreeStepIsFull()), then forgets
+// kMoltDomStorageAreasPerTask keys a task. These jobs run one at a time, in
+// the order they came, in the control's turn, and the control messages that
+// name their namespaces wait for them (molt_dom_storage_own_thread.h). A
+// namespace that fits one task is copied or deleted at once, as Chromium
+// does. Gathering a namespace's sites, for a copy that waits for their
+// turns, takes kMoltDomStorageAreasPerTask areas a task too.
+//
 // Std-only, so molt_ai_unittests and a standalone harness test it.
 
 #ifndef COMPONENTS_SERVICES_STORAGE_DOM_STORAGE_MOLT_DOM_STORAGE_SPLIT_WORK_H_
@@ -91,6 +123,56 @@ bool MoltDomStorageFreeChunk(Map& map) {
     ++items;
   }
   return !map.empty();
+}
+
+// ---- Walks over a partition ----
+
+// How many groups (sites) a walk's step reaches, and how many of one
+// group's areas a step lists, in one task. A step's groups are ready at
+// once, each with its first chunk, so a read sent between two steps by a
+// site with nothing queued waits for at most kMoltDomStorageGroupsPerTask
+// chunks: about a thousand areas listed, however many the partition holds.
+inline constexpr size_t kMoltDomStorageGroupsPerTask = 16;
+inline constexpr size_t kMoltDomStorageAreasPerTask = 64;
+
+// Whether a step that freed `areas` of a namespace's areas, whose maps held
+// `items` items and `bytes` bytes freed at once (a big map is freed a chunk
+// a task anyway: MoltDomStorageFreesInChunks()), is full.
+constexpr bool MoltDomStorageFreeStepIsFull(size_t areas,
+                                            size_t items,
+                                            size_t bytes) {
+  return areas >= kMoltDomStorageAreasPerTask ||
+         items >= kMoltDomStorageFreeItemsPerTask ||
+         bytes >= kMoltDomStorageFreeBytesPerTask;
+}
+
+// The key of a sorted container's element: a set's element, or a map's key.
+template <typename Key>
+const Key& MoltDomStorageKeyOf(const Key& key) {
+  return key;
+}
+template <typename Key, typename Value>
+const Key& MoltDomStorageKeyOf(const std::pair<const Key, Value>& item) {
+  return item.first;
+}
+
+// Of `sorted` (a std::set or std::map), the next at most `max` keys after
+// `after` (from the first if null): one step of a walk that resumes after
+// the last key it reached, however the container changed meanwhile. `more`
+// says whether keys follow.
+template <typename Sorted>
+std::vector<typename Sorted::key_type> MoltDomStorageNextChunk(
+    const Sorted& sorted,
+    const typename Sorted::key_type* after,
+    size_t max,
+    bool* more) {
+  std::vector<typename Sorted::key_type> chunk;
+  auto it = after ? sorted.upper_bound(*after) : sorted.begin();
+  for (; it != sorted.end() && chunk.size() < max; ++it) {
+    chunk.push_back(MoltDomStorageKeyOf(*it));
+  }
+  *more = it != sorted.end();
+  return chunk;
 }
 
 }  // namespace storage

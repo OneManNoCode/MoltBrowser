@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/services/storage/public/mojom/session_storage_control.mojom b/components/services/storage/public/mojom/session_storage_control.mojom
-index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..6cead82274312bcc40c49648a58412491cd3d1ea 100644
+index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..eeeb11fed2ba0088fe24a529a48776526d73ee62 100644
 --- a/components/services/storage/public/mojom/session_storage_control.mojom
 +++ b/components/services/storage/public/mojom/session_storage_control.mojom
-@@ -4,6 +4,7 @@
+@@ -4,6 +4,8 @@
  
  module storage.mojom;
  
 +import "components/services/storage/public/mojom/local_storage_control.mojom";  // MoltBrowser
++import "mojo/public/mojom/base/unguessable_token.mojom";  // MoltBrowser
  import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
  import "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom";
  import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
-@@ -76,6 +77,18 @@ interface SessionStorageControl {
+@@ -76,6 +78,23 @@ interface SessionStorageControl {
    // next access to a StorageArea will reload data from the backing database.
    PurgeMemory();
  
@@ -31,6 +32,11 @@ index d9320a76bed5cd28f73ed6b52a74991b60ad9ac6..6cead82274312bcc40c49648a5841249
 +  // MoltBrowser: with caches per site, `observer` hears when all areas
 +  // together grow past the floor.
 +  MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
++
++  // MoltBrowser: as LocalStorageControl.MoltDropNonce(), for the areas of the
++  // storage keys with `nonce` in every namespace (a tab's, and the copies
++  // the tabs it opened made of them).
++  MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
 +
    // Creates a new namespace which can later be manipulated by other requests
    // on this interface.

@@ -16,6 +16,8 @@
 #include "base/byte_size.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"  // MoltBrowser
+#include "base/memory/ref_counted.h"           // MoltBrowser
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
@@ -33,6 +35,7 @@
 #include "components/services/storage/dom_storage/leveldb_status_helper.h"
 #include "components/services/storage/dom_storage/molt_dom_storage_site.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/molt_dom_storage_site_policy.h"  // MoltBrowser
+#include "components/services/storage/dom_storage/molt_dom_storage_split_work.h"  // MoltBrowser
 #include "components/services/storage/dom_storage/storage_area_impl.h"
 #include "net/base/schemeful_site.h"  // MoltBrowser
 #include "storage/common/database/database_identifier.h"
@@ -83,9 +86,15 @@ class LocalStorageImpl::StorageAreaHolder final
               base::MakeRefCounted<DomStorageDatabase::SharedMapLocator>(
                   DomStorageDatabase::MapLocator(storage_key_)),
               this,
-              createOptions()) {}
+              createOptions()) {
+    // MoltBrowser: in its group's index, with caches per site.
+    if (context_->molt_caches_per_site_) {
+      context_->MoltIndexArea(storage_key_);
+    }
+  }
 
   ~StorageAreaHolder() override {
+    context_->MoltUnindexArea(storage_key_);  // MoltBrowser
     // If we already wrote last_accessed we can skip writing it again.
     if (has_written_access_meta_data_) {
       return;
@@ -411,6 +420,20 @@ bool LocalStorageImpl::OnMemoryDump(
       base::StringPrintf("site_storage/localstorage/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
+  // MoltBrowser: kept per site without a database, the partition's totals,
+  // kept as they change: no walk over every site's areas in one task, and no
+  // area named (molt_dom_storage_split_work.h).
+  if (molt_caches_per_site_ && !database_) {
+    auto* mad = pmd->CreateAllocatorDump(context_name + "/cache_size");
+    mad->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                   base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                   molt_site_budget_.totals().total());
+    mad->AddScalar("total_areas",
+                   base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+                   areas_.size());
+    return true;
+  }
+
   if (database_) {
     // Account for database memory usage, which actually lives in the file
     // service.
@@ -654,6 +677,14 @@ void LocalStorageImpl::RetrieveStorageUsage(GetUsageCallback callback) {
   CHECK_EQ(connection_state_, ConnectionState::CONNECTION_FINISHED);
 
   if (!database_) {
+    // MoltBrowser: kept per site without a database on purpose, the areas
+    // holding items are what is stored, listed group by group in their own
+    // turns, a step at a time (molt_dom_storage_split_work.h).
+    if (molt_caches_per_site_ && molt_scheduler_) {
+      MoltWalkGroups(base::MakeRefCounted<MoltUsageWalk>(std::move(callback)),
+                     std::nullopt);
+      return;
+    }
     // If for whatever reason no database is available, no storage is
     // used, so return an array only containing the current areas.
     std::vector<mojom::StorageUsageInfoPtr> result;
@@ -728,10 +759,12 @@ void LocalStorageImpl::MoltSetGrowthObserver(
 // group (molt_dom_storage_site.h).
 bool LocalStorageImpl::MoltMayGrowTo(const blink::StorageKey& storage_key,
                                      size_t new_bytes) {
-  return !molt_caches_per_site_ ||
-         molt_site_budget_.MayGrowTo(storage_key.Serialize(),
-                                     MoltDomStorageSiteOf(storage_key),
-                                     new_bytes);
+  if (!molt_caches_per_site_) {
+    return true;
+  }
+  const std::string site = MoltDomStorageSiteOf(storage_key);
+  return !molt_closed_groups_.contains(site) &&
+         molt_site_budget_.MayGrowTo(storage_key.Serialize(), site, new_bytes);
 }
 
 void LocalStorageImpl::MoltShrankTo(const blink::StorageKey& storage_key,
@@ -761,8 +794,12 @@ void LocalStorageImpl::MoltSiteCommitted(const blink::StorageKey& storage_key,
 
 bool LocalStorageImpl::MoltMayWrite(const blink::StorageKey& storage_key,
                                     size_t bytes) {
-  return !molt_caches_per_site_ ||
-         molt_site_budget_.MayWrite(MoltDomStorageSiteOf(storage_key), bytes);
+  if (!molt_caches_per_site_) {
+    return true;
+  }
+  const std::string site = MoltDomStorageSiteOf(storage_key);
+  return !molt_closed_groups_.contains(site) &&
+         molt_site_budget_.MayWrite(site, bytes);
 }
 
 scoped_refptr<base::SequencedTaskRunner> LocalStorageImpl::MoltTaskRunnerFor(
@@ -794,6 +831,9 @@ void LocalStorageImpl::MoltKeepCachesPerSiteOn(
       scheduler ? std::move(scheduler)
                 : base::MakeRefCounted<MoltDomStorageFairScheduler>(
                       base::SequencedTaskRunner::GetCurrentDefault());
+  for (const auto& area : areas_) {
+    MoltIndexArea(area.first);
+  }
   molt_idle_sweep_.Start(
       FROM_HERE, base::Seconds(kMoltDomStorageSweepIntervalSeconds),
       base::BindRepeating(&LocalStorageImpl::MoltSweepIdleAreas,
@@ -865,6 +905,144 @@ void LocalStorageImpl::MoltSweepIdleAreas() {
       ++it;
     }
   }
+}
+
+// MoltBrowser: a GetUsage() walked in turns, its result gathered from each
+// group's turn (molt_dom_storage_split_work.h).
+class LocalStorageImpl::MoltUsageWalk
+    : public base::RefCounted<LocalStorageImpl::MoltUsageWalk> {
+ public:
+  explicit MoltUsageWalk(GetUsageCallback callback)
+      : callback_(std::move(callback)) {}
+
+  std::vector<mojom::StorageUsageInfoPtr> result;
+  // The groups reached whose areas are still to be listed, and whether every
+  // group was reached.
+  size_t pending = 0;
+  bool walked = false;
+
+  void MaybeFinish() {
+    if (walked && pending == 0 && callback_) {
+      std::move(callback_).Run(std::move(result));
+    }
+  }
+
+ private:
+  friend class base::RefCounted<MoltUsageWalk>;
+  ~MoltUsageWalk() = default;
+
+  GetUsageCallback callback_;
+};
+
+// MoltBrowser:
+void LocalStorageImpl::MoltWalkGroups(scoped_refptr<MoltUsageWalk> walk,
+                                      std::optional<std::string> after) {
+  bool more = false;
+  const std::vector<std::string> groups = MoltDomStorageNextChunk(
+      molt_group_areas_, after ? &*after : nullptr,
+      kMoltDomStorageGroupsPerTask, &more);
+  for (const std::string& group : groups) {
+    ++walk->pending;
+    molt_scheduler_->Post(
+        group, base::BindOnce(&LocalStorageImpl::MoltListGroup,
+                              weak_ptr_factory_.GetWeakPtr(), walk, group,
+                              std::optional<blink::StorageKey>()));
+  }
+  if (more) {
+    molt_scheduler_->Post(
+        kMoltDomStorageControlGroup,
+        base::BindOnce(&LocalStorageImpl::MoltWalkGroups,
+                       weak_ptr_factory_.GetWeakPtr(), walk, groups.back()));
+    return;
+  }
+  walk->walked = true;
+  walk->MaybeFinish();
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltListGroup(scoped_refptr<MoltUsageWalk> walk,
+                                     std::string group,
+                                     std::optional<blink::StorageKey> after) {
+  bool more = false;
+  std::vector<blink::StorageKey> keys;
+  if (auto it = molt_group_areas_.find(group); it != molt_group_areas_.end()) {
+    keys = MoltDomStorageNextChunk(it->second, after ? &*after : nullptr,
+                                   kMoltDomStorageAreasPerTask, &more);
+  }
+  const base::Time now = base::Time::Now();
+  for (const blink::StorageKey& key : keys) {
+    auto area = areas_.find(key);
+    if (area != areas_.end() &&
+        area->second->storage_area()->molt_holds_items()) {
+      walk->result.emplace_back(mojom::StorageUsageInfo::New(
+          key, area->second->storage_area()->storage_used(), now));
+    }
+  }
+  if (more) {
+    molt_scheduler_->Post(
+        group, base::BindOnce(&LocalStorageImpl::MoltListGroup,
+                              weak_ptr_factory_.GetWeakPtr(), walk, group,
+                              keys.back()));
+    return;
+  }
+  --walk->pending;
+  walk->MaybeFinish();
+}
+
+// MoltBrowser:
+void LocalStorageImpl::MoltIndexArea(const blink::StorageKey& storage_key) {
+  molt_group_areas_[MoltDomStorageSiteOf(storage_key)].insert(storage_key);
+}
+
+void LocalStorageImpl::MoltUnindexArea(const blink::StorageKey& storage_key) {
+  if (molt_group_areas_.empty()) {
+    return;
+  }
+  auto it = molt_group_areas_.find(MoltDomStorageSiteOf(storage_key));
+  if (it == molt_group_areas_.end()) {
+    return;
+  }
+  it->second.erase(storage_key);
+  if (it->second.empty()) {
+    molt_group_areas_.erase(it);
+  }
+}
+
+// MoltBrowser: see local_storage_control.mojom.
+void LocalStorageImpl::MoltDropNonce(const base::UnguessableToken& nonce,
+                                     bool closed) {
+  if (!molt_caches_per_site_ || !molt_scheduler_) {
+    return;
+  }
+  const std::string group =
+      MoltDomStorageGroupName(MoltDomStorageGroupKind::kNonce, nonce.ToString());
+  molt_scheduler_->Post(group,
+                        base::BindOnce(&LocalStorageImpl::MoltDropGroup,
+                                       weak_ptr_factory_.GetWeakPtr(), group,
+                                       closed));
+}
+
+void LocalStorageImpl::MoltDropGroup(const std::string& group, bool closed) {
+  if (closed) {
+    molt_closed_groups_.insert(group);
+  } else {
+    molt_closed_groups_.erase(group);
+  }
+  if (auto it = molt_group_areas_.find(group); it != molt_group_areas_.end()) {
+    const std::vector<blink::StorageKey> keys(it->second.begin(),
+                                              it->second.end());
+    for (const blink::StorageKey& key : keys) {
+      auto area = areas_.find(key);
+      if (area == areas_.end()) {
+        continue;
+      }
+      area->second->storage_area()->DeleteAll(
+          /*source=*/nullptr, /*new_observer=*/mojo::NullRemote(),
+          base::DoNothing());
+      MoltDropIfUnused(key);
+    }
+  }
+  molt_site_budget_.ForgetSite(group);
 }
 
 void LocalStorageImpl::GetStatistics(size_t* total_cache_size,

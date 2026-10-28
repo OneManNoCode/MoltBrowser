@@ -43,15 +43,19 @@ bool IsValidScriptId(const std::string& id) {
   return true;
 }
 
-// ISO-8601 in UTC for audit timestamps.
+// ISO-8601 in UTC for audit timestamps. A clock the C library can't convert
+// (on Windows, one set before 1970) gives the epoch: strftime() on the
+// fields a failed conversion leaves ends the process there.
 std::string NowISO8601() {
   std::time_t t = std::time(nullptr);
-  std::tm gmt;
+  std::tm gmt{};
 #if BUILDFLAG(IS_WIN)
-  gmtime_s(&gmt, &t);
+  const bool converted = gmtime_s(&gmt, &t) == 0;
 #else
-  gmtime_r(&t, &gmt);
+  const bool converted = gmtime_r(&t, &gmt) != nullptr;
 #endif
+  if (!converted)
+    return "1970-01-01T00:00:00Z";
   char buf[32];
   std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &gmt);
   return std::string(buf);

@@ -71,6 +71,9 @@ test("molt_ai_unittests") {
     "//third_party/llvm-libc:molt_portable_math_unittests",
     "//ui/gfx/geometry:molt_math_unittests",
 
+    # MoltNet's microphone processing: the same samples on every CPU.
+    "//media/webrtc:molt_unittests",
+
     # MoltNet's en-US renderer strings, checked against the en-US paks.
     "//chrome/renderer/molt_ai/fingerprinting:unit_tests",
 

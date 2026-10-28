@@ -2075,6 +2075,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldScheduleBackgroundFetchesPerSite(
       BrowserContext* browser_context);
 
+  // MoltBrowser: for a context whose Background Fetch is scheduled per site
+  // (above), what runs when a request starts while all sites together
+  // download more than the floor
+  // (content/browser/background_fetch/molt_background_fetch_site_policy.h);
+  // null for none.
+  virtual base::RepeatingClosure GetBackgroundFetchGrowthBeyondFloorCallback(
+      BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

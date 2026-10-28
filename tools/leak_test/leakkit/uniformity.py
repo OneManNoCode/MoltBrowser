@@ -12,6 +12,10 @@ A record is what the harness stores per collection:
 
 Results are dicts {"key", "status": PASS|FAIL|SKIP|INFO, "expected",
 "actual", "doc", "note"}.
+
+Rules with per_arch_eq, and the diff of ARCH_KEYS, need the architecture of
+the machine that ran the browser: the kit's host (manifest "host", report
+"arch"; arch_of()).
 """
 
 import re
@@ -121,7 +125,23 @@ def _check_hints(value, allowed):
     return PASS, ''
 
 
-def check_rule(values, rule, os_name=None):
+def arch_of(host):
+    """'x86_64', 'arm64' or 'unknown' from a manifest's "host" entry (its
+    "arch", or the machine at the end of platform.platform()'s "os")."""
+    host = host or {}
+    machine = str(host.get('arch') or '')
+    if not machine:
+        for part in str(host.get('os') or '').split('-'):
+            if part in ('x86_64', 'AMD64', 'amd64', 'aarch64', 'arm64'):
+                machine = part
+    if machine in ('x86_64', 'AMD64', 'amd64'):
+        return 'x86_64'
+    if machine in ('aarch64', 'arm64'):
+        return 'arm64'
+    return 'unknown'
+
+
+def check_rule(values, rule, os_name=None, arch=None):
     key, op, expected, doc = rule
     value = _get(values, key)
     if op == 'blank_ua':
@@ -201,18 +221,28 @@ def check_rule(values, rule, os_name=None):
                            'no expectation for %s' % os_name)
         expected = expected[os_name]
         status = PASS if value == expected else FAIL
+    elif op == 'per_arch_eq':
+        if arch not in expected:
+            return _result(key, INFO, expected, value, doc,
+                           'no expectation for %s; compared between runs on '
+                           'the same architecture' % (arch or 'unknown'))
+        expected = expected[arch]
+        status = PASS if value == expected else FAIL
     else:
         return _result(key, SKIP, expected, value, doc, 'unknown rule ' + op)
     return _result(key, status, expected, value, doc, note)
 
 
-def check_record(record, os_name):
+def check_record(record, os_name, arch=None):
     """All rules that apply to one record."""
     values = record.get('values') or {}
-    rules = list(ex.GEOMETRY_RULES)
-    if record.get('kind') == 'full':
-        rules += list(ex.FULL_RULES)
-    return [check_rule(values, rule, os_name) for rule in rules]
+    if record.get('kind') == 'mic':
+        rules = list(ex.MIC_RULES)
+    else:
+        rules = list(ex.GEOMETRY_RULES)
+        if record.get('kind') == 'full':
+            rules += list(ex.FULL_RULES)
+    return [check_rule(values, rule, os_name, arch) for rule in rules]
 
 
 def os_of(values):
@@ -237,17 +267,21 @@ def record_id(record):
         record.get('zoom_requested'), record.get('target'))
 
 
-def diff_records(records_a, records_b):
+def diff_records(records_a, records_b, arch_a=None, arch_b=None):
     """Compares two runs' MoltNet records. Returns (compared, diffs), where
     each diff is {"record", "key", "a", "b", "severity"}: "fail" for a key a
-    rule or DIFF_KEYS covers, "info" for INFO_KEYS."""
+    rule or DIFF_KEYS covers, "info" for INFO_KEYS, and for ARCH_KEYS when
+    the runs' architectures (arch_a, arch_b) are known to differ."""
     index_b = {}
     for rec in records_b:
         if rec.get('target') == 'moltnet':
             index_b[record_id(rec)] = rec
     compared = 0
     diffs = []
-    rule_keys = set(r[0] for r in ex.GEOMETRY_RULES + ex.FULL_RULES)
+    rule_keys = set(r[0] for r in ex.GEOMETRY_RULES + ex.FULL_RULES +
+                    ex.MIC_RULES)
+    other_arch = bool(arch_a and arch_b and 'unknown' not in (arch_a, arch_b)
+                      and arch_a != arch_b)
     uniform_keys = rule_keys | set(ex.DIFF_KEYS)
     for rec_a in records_a:
         if rec_a.get('target') != 'moltnet':
@@ -264,7 +298,7 @@ def diff_records(records_a, records_b):
             b = vb.get(key, None)
             if a == b or key in ex.FARBLED_KEYS:
                 continue
-            if key in ex.INFO_KEYS:
+            if key in ex.INFO_KEYS or (other_arch and key in ex.ARCH_KEYS):
                 severity = 'info'
             elif key in uniform_keys:
                 severity = 'fail'

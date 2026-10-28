@@ -40,6 +40,7 @@
 #include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 #include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 #include "chrome/browser/molt_ai/memory/memory_recorder.h"
+#include "chrome/browser/molt_ai/tor/molt_net_nonce_storage.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
@@ -552,6 +553,12 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
   // MoltBrowser: offers a site's Onion-Location as an infobar (never an
   // automatic redirect).
   molt_ai::tor::OnionLocationTabHelper::CreateForWebContents(web_contents);
+
+  // MoltBrowser: in a MoltNet tab, storage keyed by a page's nonce (its
+  // credentialless frames') goes with the page
+  // (molt_net_nonce_storage_policy.h).
+  molt_ai::tor::MoltNetNonceStorageTabHelper::MaybeCreateForWebContents(
+      web_contents);
 
   // NO! Do not just add your tab helper here. This is a large alphabetized
   // block; please insert your tab helper above in alphabetical order.

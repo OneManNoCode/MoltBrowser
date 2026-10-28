@@ -5,23 +5,24 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index f7e2862c79baa94717de88c8a188816441be3324..10a2fb5a58361124242744ddb5ed52eb147bda89 100644
+index f7e2862c79baa94717de88c8a188816441be3324..e70dd7349172eac99a5352f0fc0a6eb2d41ec076 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -37,6 +37,12 @@
+@@ -37,6 +37,13 @@
  #include "chrome/browser/login_detection/login_detection_tab_helper.h"
  #include "chrome/browser/lookalikes/safety_tip_web_contents_observer.h"
  #include "chrome/browser/media/media_engagement_service.h"
 +#include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 +#include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 +#include "chrome/browser/molt_ai/memory/memory_recorder.h"
++#include "chrome/browser/molt_ai/tor/molt_net_nonce_storage.h"
 +#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 +#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 +#include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
  #include "chrome/browser/net/net_error_tab_helper.h"
  #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
  #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
-@@ -356,9 +362,17 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -356,9 +363,17 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
  #endif  // BUILDFLAG(IS_ANDROID)
    client_hints::ClientHintsWebContentsObserver::CreateForWebContents(
        web_contents);
@@ -40,7 +41,7 @@ index f7e2862c79baa94717de88c8a188816441be3324..10a2fb5a58361124242744ddb5ed52eb
        ISOLATED_WORLD_ID_CHROME_INTERNAL);
    content_settings::PageSpecificContentSettings::CreateForWebContents(
        web_contents,
-@@ -519,6 +533,26 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -519,6 +534,32 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
    vr::VrTabHelper::CreateForWebContents(web_contents);
    OneTimePermissionsTrackerHelper::CreateForWebContents(web_contents);
  
@@ -63,6 +64,12 @@ index f7e2862c79baa94717de88c8a188816441be3324..10a2fb5a58361124242744ddb5ed52eb
 +  // MoltBrowser: offers a site's Onion-Location as an infobar (never an
 +  // automatic redirect).
 +  molt_ai::tor::OnionLocationTabHelper::CreateForWebContents(web_contents);
++
++  // MoltBrowser: in a MoltNet tab, storage keyed by a page's nonce (its
++  // credentialless frames') goes with the page
++  // (molt_net_nonce_storage_policy.h).
++  molt_ai::tor::MoltNetNonceStorageTabHelper::MaybeCreateForWebContents(
++      web_contents);
 +
    // NO! Do not just add your tab helper here. This is a large alphabetized
    // block; please insert your tab helper above in alphabetical order.

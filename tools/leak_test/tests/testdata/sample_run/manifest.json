@@ -59,6 +59,7 @@
     "audio.sample_rate": 48000,
     "audio.script_processor_buffer": 2048,
     "audio.sink_id": "",
+    "audio.stretched": "d28a51f0c3e94b7a16f0e852",
     "autoplay.mediaelement": "allowed-muted",
     "canvas.hash": "0123456789abcdef01234567",
     "cookies.third_party": false,
@@ -81,6 +82,13 @@
      "127.75deg"
     ],
     "cpu.dommatrix": "6e3a90c1d2b7f4085a1c9e37",
+    "cpu.float16_nan": {
+     "array": "7e00 7e00 fe00 fe00 fe00 7e00",
+     "array_optimized": "7e00 7e00 fe00 fe00 fe00 7e00",
+     "dataview": "7e00 7e00 fe00 fe00 fe00 7e00",
+     "dataview_optimized": "7e00 7e00 fe00 fe00 fe00 7e00"
+    },
+    "cpu.float16_nan_canonical": true,
     "cpu.math": "5d0c1e7a92b4f3608e2d17c4",
     "cpu.math_cross_arch": "b81f0d6e2a94c3570e1d8f42",
     "cpu.wasm_relaxed_simd": false,
@@ -315,6 +323,11 @@
      "bytes": 4283,
      "chunks": 26,
      "hash": "bbcab34ea3e06d12e5058b12"
+    },
+    "pixels.jxl": {
+     "format": "RGBA",
+     "planes": "6b0e2d91c4a7f3580e1b9d27",
+     "rgba": "6b0e2d91c4a7f3580e1b9d27"
     },
     "pixels.p3_readback": {
      "i420": "a07b3e95c6d2148f0e6b7d31",
@@ -556,10 +569,33 @@
    },
    "window": null,
    "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "mic",
+   "label": "mic",
+   "phase": "mic_processing",
+   "target": "moltnet",
+   "values": {
+    "audio.mic_processed": {
+     "frames": 480,
+     "hash": "0f4c2a9e71b3d8565ae0c4f1"
+    },
+    "audio.mic_processed_stable": false,
+    "audio.mic_sample_rate": 48000,
+    "audio.mic_settings": {
+     "autoGainControl": true,
+     "echoCancellation": true,
+     "noiseSuppression": true
+    }
+   },
+   "window": null,
+   "zoom_requested": 100
   }
  ],
  "finished": "2025-10-09T08:56:00+00:00",
  "host": {
+  "arch": "x86_64",
   "os": "Linux-6.8-x86_64",
   "python": "3.12.3"
  },
@@ -904,6 +940,20 @@
   {
    "name": "extension",
    "skipped": "--no-extension"
+  },
+  {
+   "data": {
+    "flags": [
+     "--use-fake-device-for-media-stream",
+     "--use-file-for-fake-audio-capture=/run/x/mic-input.wav%noloop",
+     "--use-fake-ui-for-media-stream"
+    ],
+    "wav_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "end": 1760000170.0,
+   "name": "mic_processing",
+   "start": 1760000150.0,
+   "target": "moltnet"
   }
  ],
  "run_id": "sample",

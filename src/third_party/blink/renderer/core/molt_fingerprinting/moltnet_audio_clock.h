@@ -28,6 +28,18 @@
 #include <span>
 #include <vector>
 
+// Blink's style check accepts the ring's std::vector with the annotation
+// ALLOW_DISCOURAGED_TYPE() makes (third_party/blink/renderer/platform/
+// allow_discouraged_type.h). That header is Blink platform's, and this one
+// is std-only (the :farbling target, built and tested outside Blink too),
+// so it spells the annotation out; undefined again at the end.
+#if defined(__clang__)
+#define MOLTNET_AUDIO_STD_MEMBER \
+  __attribute__((annotate("allow_discouraged_type")))
+#else
+#define MOLTNET_AUDIO_STD_MEMBER
+#endif
+
 namespace blink::molt_fingerprinting::moltnet {
 
 // --- The clock ---------------------------------------------------------------
@@ -84,7 +96,7 @@ class OutputRing {
   int read_ = 0;
   int level_ = 0;
   // channels_ * capacity_ samples, channel after channel.
-  std::vector<float> samples_;
+  std::vector<float> samples_ MOLTNET_AUDIO_STD_MEMBER;
 };
 
 // The ring size for a clock tick of `tick_frames` and a device that reads
@@ -171,5 +183,7 @@ class DriftControl {
 };
 
 }  // namespace blink::molt_fingerprinting::moltnet
+
+#undef MOLTNET_AUDIO_STD_MEMBER
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLTNET_AUDIO_CLOCK_H_
