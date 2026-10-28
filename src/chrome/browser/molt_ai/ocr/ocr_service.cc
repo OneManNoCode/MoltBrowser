@@ -113,7 +113,7 @@ void OnPdfPagesRendered(size_t max_chars,
 
 HelperRunResult RunSandboxedTesseract(const base::FilePath& bin,
                                       const base::FilePath& tessdata_parent,
-                                      const base::FilePath& scratch_dir,
+                                      const HelperScratchDir& scratch,
                                       const base::FilePath& input,
                                       const base::FilePath& out_stem,
                                       base::TimeDelta timeout) {
@@ -122,7 +122,7 @@ HelperRunResult RunSandboxedTesseract(const base::FilePath& bin,
   cmd.AppendArgPath(out_stem);
   cmd.AppendArg("-l");
   cmd.AppendArg("eng");
-  HelperSandboxPolicy policy;
+  HelperSandboxPolicy policy = scratch.MakePolicy();
   // Its own directory: bundled libraries (and data, for a bundled copy).
   policy.read_only_paths.push_back(bin.DirName());
   if (!tessdata_parent.empty()) {
@@ -136,7 +136,6 @@ HelperRunResult RunSandboxedTesseract(const base::FilePath& bin,
     policy.read_only_paths.push_back(tessdata);
   }
   policy.read_only_paths.push_back(input);
-  policy.writable_dir = scratch_dir;
   return RunSandboxedHelper(cmd, policy, timeout, kMaxTesseractOutputBytes);
 }
 
@@ -164,19 +163,18 @@ OcrResult OcrImageWithTesseract(const base::FilePath& bin,
     return finish();
   }
 
-  // A private 0700 scratch directory per run, so the input and tesseract's
-  // .txt output can't be raced by a local-user symlink attack (code review
-  // MEDIUM #5+#6), and one run can't touch another's files.
-  base::FilePath scratch_dir;
-  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("molt_ocr"),
-                                    &scratch_dir)) {
+  // A private scratch directory per run, so the input and tesseract's .txt
+  // output can't be raced by a local-user symlink attack (code review
+  // MEDIUM #5+#6), and one run can't touch another's files. Deleted when
+  // this returns.
+  HelperScratchDir scratch;
+  if (!scratch.Create("molt_ocr")) {
     r.error = "could not create scratch directory";
     return finish();
   }
   const base::FilePath input =
-      scratch_dir.AppendASCII("input." + InputExtension(extension));
+      scratch.path().AppendASCII("input." + InputExtension(extension));
   if (!base::WriteFile(input, image)) {
-    base::DeletePathRecursively(scratch_dir);
     r.error = "could not write temp image";
     return finish();
   }
@@ -184,11 +182,10 @@ OcrResult OcrImageWithTesseract(const base::FilePath& bin,
   // tesseract <input> <output-stem> [args], sandboxed, with a deadline.
   const base::FilePath out_stem = input.RemoveExtension();
   const HelperRunResult run = RunSandboxedTesseract(
-      bin, tessdata_parent, scratch_dir, input, out_stem, timeout);
+      bin, tessdata_parent, scratch, input, out_stem, timeout);
   const std::string failure =
       DescribeHelperRunFailure(run, "tesseract", "failed to launch tesseract");
   if (!failure.empty()) {
-    base::DeletePathRecursively(scratch_dir);
     r.error = failure;
     return finish();
   }
@@ -196,7 +193,6 @@ OcrResult OcrImageWithTesseract(const base::FilePath& bin,
   std::string text;
   ReadHelperOutputFile(out_stem.AddExtensionASCII(".txt"),
                        kMaxTesseractTextFileBytes, &text);
-  base::DeletePathRecursively(scratch_dir);
 
   // tesseract ends each page with a form feed; a page without text is just
   // that.

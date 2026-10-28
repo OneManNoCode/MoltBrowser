@@ -16,12 +16,28 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/common/helper_sandbox_win_policy.h"
 #include "chrome/browser/molt_ai/common/seatbelt_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_POSIX)
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include <winsock2.h>
+#include <windows.h>
+
+#include <optional>
+
+#include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/win/security_descriptor.h"
+#include "base/win/security_util.h"
+#include "base/win/sid.h"
 #endif
 
 #if BUILDFLAG(IS_LINUX)
@@ -199,6 +215,64 @@ TEST(HelperSandboxTest, DescribesEachFailure) {
   run.launched = true;
   run.exit_code = 0;
   EXPECT_EQ(DescribeHelperRunFailure(run, "whisper", "x"), "");
+}
+
+TEST(HelperScratchDirTest, AFreshPrivateDirectoryPerRun) {
+  base::FilePath path;
+  {
+    HelperScratchDir scratch;
+    EXPECT_FALSE(scratch.IsValid());
+    ASSERT_TRUE(scratch.Create("molt_test"));
+    EXPECT_FALSE(scratch.Create("molt_test"));  // Once only.
+    path = scratch.path();
+    EXPECT_TRUE(path.IsAbsolute());
+    EXPECT_TRUE(base::DirectoryExists(path));
+    EXPECT_TRUE(path.BaseName().MaybeAsASCII().starts_with("molt_test"));
+    ASSERT_TRUE(base::WriteFile(path.AppendASCII("input.png"), "image"));
+
+    const HelperSandboxPolicy policy = scratch.MakePolicy();
+    EXPECT_EQ(policy.writable_dir, path);
+    EXPECT_TRUE(policy.read_only_paths.empty());
+#if BUILDFLAG(IS_WIN)
+    EXPECT_TRUE(helper_sandbox_win::IsAppContainerSid(policy.app_container_sid))
+        << policy.app_container_sid;
+#else
+    EXPECT_TRUE(policy.app_container_sid.empty());
+    struct stat info = {};
+    ASSERT_EQ(stat(path.value().c_str(), &info), 0);
+    EXPECT_EQ(info.st_mode & 07777, 0700u);
+#endif
+
+    // Another run gets another directory (and on Windows another
+    // AppContainer).
+    HelperScratchDir other;
+    ASSERT_TRUE(other.Create("molt_test"));
+    EXPECT_NE(other.path(), path);
+#if BUILDFLAG(IS_WIN)
+    EXPECT_NE(other.MakePolicy().app_container_sid, policy.app_container_sid);
+#endif
+  }
+  // Gone, with what was in it.
+  EXPECT_FALSE(base::PathExists(path));
+
+  for (const char* prefix :
+       {"", "..", "a/b", "a\\b", "molt ocr", "molt-ocr",
+        "abcdefghijklmnopqrstuvwxyz0123456"}) {
+    HelperScratchDir scratch;
+    EXPECT_FALSE(scratch.Create(prefix)) << prefix;
+    EXPECT_FALSE(scratch.IsValid());
+  }
+}
+
+TEST(HelperScratchDirTest, DataDirectories) {
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  const base::FilePath data = parent.GetPath().AppendASCII("models");
+  ASSERT_TRUE(CreateHelperDataDirectory(data));
+  EXPECT_TRUE(base::DirectoryExists(data));
+  // Never one that is already there.
+  EXPECT_FALSE(CreateHelperDataDirectory(data));
+  EXPECT_TRUE(base::WriteFile(data.AppendASCII("model.bin"), "weights"));
 }
 
 #if BUILDFLAG(IS_POSIX)
@@ -536,14 +610,13 @@ TEST(HelperSandboxLinuxTest, CapsOutput) {
 }
 
 TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {
-  base::ScopedTempDir scratch;
+  HelperScratchDir scratch;
   base::ScopedTempDir elsewhere;
-  ASSERT_TRUE(scratch.CreateUniqueTempDir());
+  ASSERT_TRUE(scratch.Create("molt_test"));
   ASSERT_TRUE(elsewhere.CreateUniqueTempDir());
   const base::FilePath secret = elsewhere.GetPath().AppendASCII("secret");
   ASSERT_TRUE(base::WriteFile(secret, "secret"));
-  HelperSandboxPolicy policy;
-  policy.writable_dir = scratch.GetPath();
+  const HelperSandboxPolicy policy = scratch.MakePolicy();
   const HelperRunResult run =
       RunSandboxedHelper(Shell("cat '" + secret.value() +
                                "' && echo READ; "
@@ -561,6 +634,281 @@ TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {
   }
 }
 #endif  // BUILDFLAG(IS_LINUX)
+
+#if BUILDFLAG(IS_WIN)
+namespace hsw = helper_sandbox_win;
+
+std::vector<base::win::Sid> HelperFilesCapability() {
+  std::vector<base::win::Sid> sids;
+  sids.push_back(*base::win::Sid::FromSddlString(
+      base::ASCIIToWide(hsw::kHelperFilesCapabilitySid)));
+  return sids;
+}
+
+// The confinement Windows really applies, with a stand-in helper
+// (helper_sandbox_win_test_helper.cc) in a folder set up as the installer
+// sets up <install>\ocr and <install>\whisper.
+class HelperSandboxWinTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    base::FilePath exe_dir;
+    ASSERT_TRUE(base::PathService::Get(base::DIR_EXE, &exe_dir));
+    const base::FilePath source =
+        exe_dir.AppendASCII("molt_helper_sandbox_test_helper.exe");
+    ASSERT_TRUE(base::PathExists(source)) << source;
+    // moltbrowser.nsi: icacls <dir> /grant *<capability>:(OI)(CI)(RX).
+    ASSERT_TRUE(bundle_.CreateUniqueTempDir());
+    ASSERT_TRUE(base::win::GrantAccessToPath(
+        bundle_.GetPath(), HelperFilesCapability(),
+        FILE_GENERIC_READ | FILE_GENERIC_EXECUTE,
+        OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE));
+    helper_ = bundle_.GetPath().AppendASCII("helper.exe");
+    ASSERT_TRUE(base::CopyFile(source, helper_));
+    ASSERT_TRUE(scratch_.Create("molt_test"));
+    // Somewhere else in the user's profile (%TEMP% is in it).
+    ASSERT_TRUE(elsewhere_.CreateUniqueTempDir());
+  }
+
+  HelperRunResult Run(const std::vector<std::wstring>& args,
+                      base::TimeDelta timeout = base::Seconds(30)) {
+    base::CommandLine cmd(helper_);
+    for (const std::wstring& arg : args) {
+      cmd.AppendArgNative(arg);
+    }
+    HelperSandboxPolicy policy = scratch_.MakePolicy();
+    policy.read_only_paths.push_back(bundle_.GetPath());
+    return RunSandboxedHelper(cmd, policy, timeout, 4096);
+  }
+
+  // What a run printed; empty (and a failure) if it didn't run.
+  std::string Output(const std::vector<std::wstring>& args) {
+    const HelperRunResult run = Run(args);
+    EXPECT_TRUE(run.launched) << run.error;
+    return run.output;
+  }
+
+  base::ScopedTempDir bundle_;
+  base::ScopedTempDir elsewhere_;
+  base::FilePath helper_;
+  HelperScratchDir scratch_;
+};
+
+TEST_F(HelperSandboxWinTest, TheCapabilityIsWindows) {
+  EXPECT_EQ(base::win::Sid::FromNamedCapability(
+                base::ASCIIToWide(hsw::kHelperFilesCapability)),
+            HelperFilesCapability()[0]);
+}
+
+TEST_F(HelperSandboxWinTest, RunsAndCapturesOutput) {
+  const HelperRunResult run = Run({L"echo", L"hello"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_FALSE(run.sandbox_failed);
+  EXPECT_FALSE(run.timed_out);
+  EXPECT_EQ(run.exit_code, 3);
+  // stdout, then stderr: one pipe.
+  EXPECT_EQ(run.output, "hello\nhello\n");
+}
+
+TEST_F(HelperSandboxWinTest, ReadsItsOwnFilesOnly) {
+  const base::FilePath input = scratch_.path().AppendASCII("input.txt");
+  ASSERT_TRUE(base::WriteFile(input, "scratch text"));
+  EXPECT_EQ(Output({L"read", input.value()}), "READ scratch text\n");
+  // Its own folder, through the capability.
+  EXPECT_TRUE(Output({L"read", helper_.value()}).starts_with("READ "));
+  // A file of the user's anywhere else.
+  const base::FilePath secret = elsewhere_.GetPath().AppendASCII("secret.txt");
+  ASSERT_TRUE(base::WriteFile(secret, "secret"));
+  const std::string denied = Output({L"read", secret.value()});
+  EXPECT_TRUE(denied.starts_with("DENIED")) << denied;
+  EXPECT_EQ(denied.find("secret"), std::string::npos);
+}
+
+TEST_F(HelperSandboxWinTest, WritesItsScratchDirectoryOnly) {
+  const base::FilePath out = scratch_.path().AppendASCII("out.txt");
+  EXPECT_EQ(Output({L"write", out.value()}), "WROTE\n");
+  std::string text;
+  EXPECT_TRUE(ReadHelperOutputFile(out, 1024, &text));
+  EXPECT_EQ(text, "written\n");
+  for (const base::FilePath& path :
+       {elsewhere_.GetPath().AppendASCII("new.txt"),
+        bundle_.GetPath().AppendASCII("new.txt")}) {
+    const std::string output = Output({L"write", path.value()});
+    EXPECT_TRUE(output.starts_with("DENIED")) << path << ": " << output;
+    EXPECT_FALSE(base::PathExists(path)) << path;
+  }
+}
+
+TEST_F(HelperSandboxWinTest, CantConnect) {
+  WSADATA data;
+  ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &data), 0);
+  const SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  ASSERT_NE(listener, INVALID_SOCKET);
+  sockaddr_in address = {};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_EQ(bind(listener, reinterpret_cast<sockaddr*>(&address),
+                 sizeof(address)),
+            0);
+  ASSERT_EQ(listen(listener, 1), 0);
+  int length = sizeof(address);
+  ASSERT_EQ(
+      getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length), 0);
+
+  const std::string output = Output(
+      {L"connect", base::NumberToWString(ntohs(address.sin_port))});
+  EXPECT_TRUE(output.starts_with("REFUSED")) << output;
+  // Nothing reached the listener.
+  u_long non_blocking = 1;
+  ASSERT_EQ(ioctlsocket(listener, FIONBIO, &non_blocking), 0);
+  EXPECT_EQ(accept(listener, nullptr, nullptr), INVALID_SOCKET);
+  closesocket(listener);
+  WSACleanup();
+}
+
+TEST_F(HelperSandboxWinTest, CantStartAProcess) {
+  base::FilePath system;
+  ASSERT_TRUE(base::PathService::Get(base::DIR_SYSTEM, &system));
+  for (const base::FilePath& program :
+       {system.AppendASCII("whoami.exe"), helper_}) {
+    const std::string output = Output({L"spawn", program.value()});
+    EXPECT_TRUE(output.starts_with("DENIED")) << program << ": " << output;
+  }
+}
+
+TEST_F(HelperSandboxWinTest, MemoryLimit) {
+  EXPECT_EQ(Output({L"alloc", L"64"}), "ALLOCATED\n");
+  // More than the job's limit.
+  EXPECT_TRUE(Output({L"alloc", L"5120"}).starts_with("FAILED"));
+}
+
+TEST_F(HelperSandboxWinTest, OnlyItsOwnEnvironment) {
+  const std::string output = Output({L"env"});
+  EXPECT_NE(output.find("TEMP=" + scratch_.path().AsUTF8Unsafe() + "\n"),
+            std::string::npos)
+      << output;
+  for (const char* gone :
+       {"USERPROFILE=", "APPDATA=", "LOCALAPPDATA=", "USERNAME="}) {
+    EXPECT_EQ(output.find(gone), std::string::npos) << gone;
+  }
+}
+
+TEST_F(HelperSandboxWinTest, KillsAtTheDeadline) {
+  const base::TimeTicks start = base::TimeTicks::Now();
+  const HelperRunResult run = Run({L"spin"}, base::Milliseconds(300));
+  EXPECT_TRUE(run.launched);
+  EXPECT_TRUE(run.timed_out);
+  EXPECT_EQ(run.error, "timed out after 300 ms");
+  EXPECT_LT(base::TimeTicks::Now() - start, base::Seconds(10));
+}
+
+TEST_F(HelperSandboxWinTest, ThePortableZipCantRunIt) {
+  // A folder without the installer's grant, as a ZIP unpacks to.
+  base::ScopedTempDir portable;
+  ASSERT_TRUE(portable.CreateUniqueTempDir());
+  const base::FilePath helper = portable.GetPath().AppendASCII("helper.exe");
+  ASSERT_TRUE(base::CopyFile(helper_, helper));
+  base::CommandLine cmd(helper);
+  cmd.AppendArg("echo");
+  cmd.AppendArg("ran");
+  const HelperRunResult run =
+      RunSandboxedHelper(cmd, scratch_.MakePolicy(), base::Seconds(30), 4096);
+  EXPECT_TRUE(run.sandbox_failed);
+  EXPECT_FALSE(run.launched);
+  EXPECT_TRUE(run.output.empty());
+  EXPECT_NE(run.error.find("installer"), std::string::npos) << run.error;
+  EXPECT_NE(run.error.find(helper.AsUTF8Unsafe()), std::string::npos);
+}
+
+TEST_F(HelperSandboxWinTest, OnlyItsOwnScratchDirectory) {
+  base::CommandLine cmd(helper_);
+  cmd.AppendArg("echo");
+  cmd.AppendArg("ran");
+  // A directory not made for a helper.
+  HelperSandboxPolicy policy;
+  policy.writable_dir = elsewhere_.GetPath();
+  HelperRunResult run = RunSandboxedHelper(cmd, policy, base::Seconds(30), 4096);
+  EXPECT_TRUE(run.sandbox_failed);
+  EXPECT_FALSE(run.launched);
+  // Another run's: this run's AppContainer may not write there.
+  HelperScratchDir other;
+  ASSERT_TRUE(other.Create("molt_test"));
+  policy = scratch_.MakePolicy();
+  policy.writable_dir = other.path();
+  run = RunSandboxedHelper(cmd, policy, base::Seconds(30), 4096);
+  EXPECT_TRUE(run.sandbox_failed);
+  EXPECT_NE(run.error.find("can't write to"), std::string::npos) << run.error;
+}
+
+TEST_F(HelperSandboxWinTest, TheScratchDirectoryIsTheRunsAlone) {
+  std::optional<base::win::SecurityDescriptor> descriptor =
+      base::win::SecurityDescriptor::FromFile(
+          scratch_.path(),
+          DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION);
+  ASSERT_TRUE(descriptor);
+  EXPECT_TRUE(descriptor->dacl_protected());
+  const std::optional<std::wstring> sddl = descriptor->ToSddl(
+      DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION);
+  ASSERT_TRUE(sddl);
+  EXPECT_NE(sddl->find(base::ASCIIToWide(scratch_.MakePolicy().app_container_sid)),
+            std::wstring::npos)
+      << *sddl;
+  EXPECT_NE(sddl->find(L"(ML;OICI;NW;;;LW)"), std::wstring::npos) << *sddl;
+  EXPECT_EQ(sddl->find(L";WD)"), std::wstring::npos) << *sddl;
+  EXPECT_EQ(sddl->find(L";AC)"), std::wstring::npos) << *sddl;
+}
+
+TEST_F(HelperSandboxWinTest, ReadsADataDirectory) {
+  const base::FilePath data = elsewhere_.GetPath().AppendASCII("models");
+  ASSERT_TRUE(CreateHelperDataDirectory(data));
+  const base::FilePath model = data.AppendASCII("model.bin");
+  ASSERT_TRUE(base::WriteFile(model, "weights"));
+  base::CommandLine cmd(helper_);
+  cmd.AppendArg("read");
+  cmd.AppendArgPath(model);
+  HelperSandboxPolicy policy = scratch_.MakePolicy();
+  policy.read_only_paths.push_back(model);
+  const HelperRunResult run =
+      RunSandboxedHelper(cmd, policy, base::Seconds(30), 4096);
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_EQ(run.output, "READ weights\n");
+  // Read only.
+  const std::string output =
+      Output({L"write", data.AppendASCII("new.bin").value()});
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+
+  // A model anywhere else is refused before the helper starts.
+  const base::FilePath stray = elsewhere_.GetPath().AppendASCII("stray.bin");
+  ASSERT_TRUE(base::WriteFile(stray, "weights"));
+  policy.read_only_paths.back() = stray;
+  const HelperRunResult refused =
+      RunSandboxedHelper(cmd, policy, base::Seconds(30), 4096);
+  EXPECT_TRUE(refused.sandbox_failed);
+  EXPECT_NE(refused.error.find("can't read"), std::string::npos)
+      << refused.error;
+}
+
+TEST(HelperSandboxWinOutputTest, ReadsOnlyPlainFilesTheHelperMade) {
+  base::ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  const base::FilePath text = dir.GetPath().AppendASCII("input.txt");
+  ASSERT_TRUE(base::WriteFile(text, "recognized text"));
+  std::string contents;
+  EXPECT_TRUE(ReadHelperOutputFile(text, 1024, &contents));
+  EXPECT_EQ(contents, "recognized text");
+  EXPECT_TRUE(ReadHelperOutputFile(text, 4, &contents));
+  EXPECT_EQ(contents, "reco");
+  EXPECT_FALSE(ReadHelperOutputFile(dir.GetPath().AppendASCII("missing"),
+                                    1024, &contents));
+  EXPECT_FALSE(ReadHelperOutputFile(dir.GetPath(), 1024, &contents));
+  // A hard link to a file outside the scratch directory.
+  const base::FilePath secret = dir.GetPath().AppendASCII("secret");
+  ASSERT_TRUE(base::WriteFile(secret, "secret"));
+  const base::FilePath hardlink = dir.GetPath().AppendASCII("hardlink.txt");
+  ASSERT_TRUE(base::CreateWinHardLink(hardlink, secret));
+  EXPECT_FALSE(ReadHelperOutputFile(hardlink, 1024, &contents));
+  EXPECT_EQ(contents, "");
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace
 }  // namespace molt_ai

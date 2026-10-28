@@ -56,9 +56,10 @@ constexpr base::TimeDelta kWhisperTimeout = base::Seconds(300);
 // back: an hour of speech is well under 1 MiB of text.
 constexpr size_t kMaxWhisperOutputBytes = 1u << 20;
 
-// Sync, blocking: write WAV to a temp file, run whisper-cli, capture
-// stdout, delete the temp file. Returns the transcription text or
-// an empty string on failure (with |err| set).
+// Sync, blocking: check the recording, write the WAV whisper-cli reads to a
+// scratch directory, run whisper-cli, read its text, delete the directory.
+// Returns the transcription text or an empty string on failure (with
+// |error| set).
 TranscribeResult RunWhisperBlocking(std::string wav_bytes,
                                      base::FilePath bin,
                                      base::FilePath model) {
@@ -90,19 +91,18 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   }
   const std::string canonical_wav = CanonicalWav(samples);
 
-  // Create a private 0700 scratch directory so the audio + the .txt
-  // output whisper-cli writes alongside it can't be raced by a local-
-  // user attacker placing symlinks. Code-review MEDIUM #5+#6.
-  base::FilePath scratch_dir;
-  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("molt_voice"),
-                                     &scratch_dir)) {
+  // A private scratch directory for the audio and the .txt whisper-cli
+  // writes next to it, so neither can be raced by a local-user attacker
+  // placing symlinks (code review MEDIUM #5+#6), and the only place
+  // whisper-cli may write. Deleted when this returns.
+  HelperScratchDir scratch;
+  if (!scratch.Create("molt_voice")) {
     r.error = "could not create scratch directory";
     return r;
   }
-  base::FilePath wav_path = scratch_dir.AppendASCII("input.wav");
+  base::FilePath wav_path = scratch.path().AppendASCII("input.wav");
   if (!base::WriteFile(wav_path, canonical_wav)) {
     r.error = "could not write temp audio";
-    base::DeletePathRecursively(scratch_dir);
     return r;
   }
 
@@ -131,20 +131,18 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   // Sandboxed (helper_sandbox.h): it reads its own directory (and model)
   // and the audio, writes only the scratch directory, has no network, and
   // is killed after kWhisperTimeout.
-  molt_ai::HelperSandboxPolicy policy;
+  molt_ai::HelperSandboxPolicy policy = scratch.MakePolicy();
   policy.read_only_paths.push_back(bin.DirName());
   if (!model.value().empty()) {
     policy.read_only_paths.push_back(model);
   }
   policy.read_only_paths.push_back(wav_path);
-  policy.writable_dir = scratch_dir;
   const molt_ai::HelperRunResult run = molt_ai::RunSandboxedHelper(
       cmd, policy, kWhisperTimeout, kMaxWhisperOutputBytes);
   const std::string failure = molt_ai::DescribeHelperRunFailure(
       run, "whisper", "failed to launch whisper subprocess");
   if (!failure.empty()) {
     r.error = failure;
-    base::DeletePathRecursively(scratch_dir);
     return r;
   }
 
@@ -157,7 +155,6 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
     // Older whisper builds dump stdout directly. Use that as fallback.
     transcription = run.output;
   }
-  base::DeletePathRecursively(scratch_dir);
 
   // Trim leading/trailing whitespace.
   std::string trimmed;

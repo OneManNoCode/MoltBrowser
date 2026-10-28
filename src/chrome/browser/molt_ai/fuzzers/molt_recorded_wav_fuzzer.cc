@@ -16,9 +16,9 @@
 // larger than the limit; a refused file leaves no samples and has a
 // description.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <string>
 #include <string_view>
 
@@ -34,6 +34,18 @@ using molt_ai::voice::kCanonicalWavHeaderBytes;
 using molt_ai::voice::kMaxRecordedWavBytes;
 using molt_ai::voice::ParseRecordedWav;
 using molt_ai::voice::RecordedWavError;
+
+// Where |part| (a view into |whole|) starts in |whole|; npos if it isn't
+// inside it.
+size_t OffsetIn(std::string_view whole, std::string_view part) {
+  const uintptr_t start = reinterpret_cast<uintptr_t>(whole.data());
+  const uintptr_t at = reinterpret_cast<uintptr_t>(part.data());
+  if (at < start || at - start > whole.size() ||
+      part.size() > whole.size() - (at - start)) {
+    return std::string_view::npos;
+  }
+  return at - start;
+}
 
 uint32_t Le32(std::string_view bytes, size_t at) {
   uint32_t value = 0;
@@ -63,15 +75,16 @@ void PutLe16(std::string* out, uint16_t value) {
 // A RIFF file built from the input: a few chunks with ids, sizes and
 // bodies chosen by the fuzzer, often a well-formed format chunk.
 std::string BuildRiff(FuzzedDataProvider& p) {
-  static constexpr const char* kIds[] = {"fmt ", "data", "LIST", "fact",
-                                         "junk", "fmt\0", "DATA"};
+  static constexpr std::array<std::string_view, 7> kIds = {
+      "fmt ", "data", "LIST", "fact", "junk", std::string_view("fmt\0", 4),
+      "DATA"};
   std::string chunks;
   const size_t count = p.ConsumeIntegralInRange<size_t>(0, 5);
   for (size_t i = 0; i < count && chunks.size() < 65536; ++i) {
-    const char* id = kIds[p.ConsumeIntegralInRange<size_t>(
-        0, sizeof(kIds) / sizeof(kIds[0]) - 1)];
+    const std::string_view id =
+        kIds[p.ConsumeIntegralInRange<size_t>(0, kIds.size() - 1)];
     std::string body;
-    if (std::memcmp(id, "fmt ", 4) == 0 && p.ConsumeBool()) {
+    if (id == "fmt " && p.ConsumeBool()) {
       PutLe16(&body, p.ConsumeBool() ? 1 : p.ConsumeIntegral<uint16_t>());
       PutLe16(&body, p.ConsumeBool() ? 1 : p.ConsumeIntegral<uint16_t>());
       PutLe32(&body, p.ConsumeBool() ? 16000 : p.ConsumeIntegral<uint32_t>());
@@ -82,7 +95,7 @@ std::string BuildRiff(FuzzedDataProvider& p) {
     } else {
       body = p.ConsumeRandomLengthString(4096);
     }
-    chunks.append(id, 4);
+    chunks += id;
     // Usually the true size; sometimes one that lies.
     PutLe32(&chunks, p.ConsumeBool()
                          ? static_cast<uint32_t>(body.size())
@@ -106,7 +119,7 @@ bool FormatPrecedes(std::string_view wav, size_t data_at) {
   size_t at = 12;
   while (at + 8 <= data_at - 8) {
     const uint32_t size = Le32(wav, at + 4);
-    if (std::memcmp(wav.data() + at, "fmt ", 4) == 0) {
+    if (wav.substr(at, 4) == "fmt ") {
       const size_t body = at + 8;
       return size >= 16 && Le16(wav, body) == 1 && Le16(wav, body + 2) == 1 &&
              Le32(wav, body + 4) == 16000 && Le32(wav, body + 8) == 32000 &&
@@ -140,10 +153,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // format chunk the page could have written.
   CHECK(wav.size() <= kMaxRecordedWavBytes);
   CHECK(!samples.empty() && samples.size() % 2 == 0);
-  CHECK(samples.data() >= wav.data() + kCanonicalWavHeaderBytes);
-  CHECK(samples.data() + samples.size() <= wav.data() + wav.size());
-  const size_t data_at = static_cast<size_t>(samples.data() - wav.data());
-  CHECK(std::memcmp(wav.data() + data_at - 8, "data", 4) == 0);
+  const size_t data_at = OffsetIn(wav, samples);
+  CHECK(data_at != std::string_view::npos);
+  CHECK(data_at >= kCanonicalWavHeaderBytes);
+  CHECK(std::string_view(wav).substr(data_at - 8, 4) == "data");
   CHECK(Le32(wav, data_at - 4) / 2 * 2 == samples.size());
   CHECK(FormatPrecedes(wav, data_at));
 
@@ -151,11 +164,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const std::string canonical = CanonicalWav(samples);
   CHECK(canonical.size() == kCanonicalWavHeaderBytes + samples.size());
   CHECK(canonical.size() <= kMaxRecordedWavBytes);
-  static constexpr char kHeaderStart[] =
+  static constexpr std::string_view kHeader(
       "RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0\x7d\0\0\x02\0"
-      "\x10\0data";
-  CHECK(std::memcmp(canonical.data(), kHeaderStart, 4) == 0);
-  CHECK(std::memcmp(canonical.data() + 8, kHeaderStart + 8, 32) == 0);
+      "\x10\0data",
+      40);
+  const std::string_view header = std::string_view(canonical).substr(0, 40);
+  CHECK(header.substr(0, 4) == kHeader.substr(0, 4));
+  CHECK(header.substr(8) == kHeader.substr(8));
   CHECK(Le32(canonical, 4) == 36 + samples.size());
   CHECK(Le32(canonical, 40) == samples.size());
   CHECK(std::string_view(canonical).substr(kCanonicalWavHeaderBytes) ==

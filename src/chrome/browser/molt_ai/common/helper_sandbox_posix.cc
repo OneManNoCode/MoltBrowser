@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -380,6 +381,30 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
 }
 
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+
+bool HelperScratchDir::Create(std::string_view prefix) {
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
+  if (!path_.empty() || prefix.empty() || prefix.size() > 32 ||
+      !std::all_of(prefix.begin(), prefix.end(), [](char c) {
+        return base::IsAsciiAlphaNumeric(c) || c == '_';
+      })) {
+    return false;
+  }
+  // mkdtemp(): a new directory of the browser's user, mode 0700.
+  base::FilePath path;
+  if (!base::CreateNewTempDirectory(prefix, &path)) {
+    return false;
+  }
+  path_ = path;
+  return true;
+}
+
+bool CreateHelperDataDirectory(const base::FilePath& path) {
+  base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
+                                                base::BlockingType::MAY_BLOCK);
+  return mkdir(path.value().c_str(), 0700) == 0;
+}
 
 bool ReadHelperOutputFile(const base::FilePath& path,
                           size_t max_bytes,

@@ -86,7 +86,7 @@ inline constexpr size_t kMaxTesseractOutputBytes = 256 * 1024;
 inline constexpr size_t kMaxTesseractTextFileBytes = 4 * 1024 * 1024;
 
 // Runs |bin| (tesseract) on |input| under the helper sandbox, writing
-// <|out_stem|>.txt. |input| and |out_stem| are in |scratch_dir|, the only
+// <|out_stem|>.txt. |input| and |out_stem| are in |scratch|, the only
 // directory it may write. It may read its own directory and, when
 // |tessdata_parent| is set (bundled builds), |tessdata_parent|/tessdata,
 // which it is also pointed at. A system tesseract finds its data under
@@ -94,7 +94,7 @@ inline constexpr size_t kMaxTesseractTextFileBytes = 4 * 1024 * 1024;
 molt_ai::HelperRunResult RunSandboxedTesseract(
     const base::FilePath& bin,
     const base::FilePath& tessdata_parent,
-    const base::FilePath& scratch_dir,
+    const molt_ai::HelperScratchDir& scratch,
     const base::FilePath& input,
     const base::FilePath& out_stem,
     base::TimeDelta timeout);

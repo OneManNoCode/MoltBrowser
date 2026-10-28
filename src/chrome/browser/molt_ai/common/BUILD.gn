@@ -73,6 +73,17 @@ source_set("seatbelt_profile") {
   ]
 }
 
+# The Windows confinement for OCR and voice helpers, as data: the LPAC
+# AppContainer, its attribute list, job, security descriptors and
+# environment. Pure C++, built everywhere so its tests run everywhere;
+# helper_sandbox_win.cc applies it.
+source_set("helper_sandbox_win_policy") {
+  sources = [
+    "helper_sandbox_win_policy.cc",
+    "helper_sandbox_win_policy.h",
+  ]
+}
+
 # RunSandboxedHelper(): tesseract and whisper-cli with OS-level confinement
 # and a deadline.
 source_set("helper_sandbox") {
@@ -83,15 +94,33 @@ source_set("helper_sandbox") {
   if (is_posix) {
     sources += [ "helper_sandbox_posix.cc" ]
   }
-  if (is_win) {
-    sources += [ "helper_sandbox_win.cc" ]
-  }
   public_deps = [ "//base" ]
   deps = [
     ":helper_output",
     ":helper_sandbox_linux",
     ":seatbelt_profile",
   ]
+  if (is_win) {
+    sources += [ "helper_sandbox_win.cc" ]
+
+    # The sandbox library's AppContainer (and its LPAC access check),
+    # attribute-list builder and job levels.
+    deps += [
+      ":helper_sandbox_win_policy",
+      "//sandbox/win:sandbox",
+    ]
+  }
+}
+
+# A stand-in helper for the Windows tests: one action per command line
+# (print, read, write, connect, start a process, allocate, spin), reporting
+# what the sandbox let it do. Only system libraries.
+if (is_win) {
+  executable("molt_helper_sandbox_test_helper") {
+    testonly = true
+    sources = [ "helper_sandbox_win_test_helper.cc" ]
+    libs = [ "ws2_32.lib" ]
+  }
 }
 
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
@@ -100,6 +129,7 @@ source_set("unit_tests") {
   sources = [
     "helper_output_unittest.cc",
     "helper_sandbox_unittest.cc",
+    "helper_sandbox_win_policy_unittest.cc",
     "molt_user_click_unittest.cc",
   ]
   deps = [
@@ -107,12 +137,20 @@ source_set("unit_tests") {
     ":helper_output",
     ":helper_sandbox",
     ":helper_sandbox_linux",
+    ":helper_sandbox_win_policy",
     ":seatbelt_profile",
     "//base",
+    "//crypto",
     "//testing/gtest",
   ]
   if (is_posix) {
     sources += [ "trusted_binary_unittest.cc" ]
     deps += [ ":trusted_binary" ]
+  }
+  if (is_win) {
+    # HelperSandboxWinTest runs it under the real confinement, and listens
+    # on loopback for it.
+    data_deps = [ ":molt_helper_sandbox_test_helper" ]
+    libs = [ "ws2_32.lib" ]
   }
 }
