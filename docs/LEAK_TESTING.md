@@ -81,7 +81,10 @@ scale factor, window size and zoom. A difference in a promised value fails.
 A difference in a value nothing promises (`[info]`, for example the storage
 quota or the number of speech voices) is listed for you to look at. Farbled
 values (canvas, audio) are not compared, because they change every session
-by design.
+by design. A few values legitimately differ between x86-64 and arm64 (the
+bits a Float16 NaN is stored with): they are compared only between runs on
+the same architecture, the kit host's, which `report.md` shows; between an
+x86-64 and an arm64 run a difference there is listed as information.
 
 ### What it needs
 
@@ -362,8 +365,26 @@ level, and in one browser launch per device scale factor
   `Math.tanh` among them), a 64 x 32 sRGB frame, as RGBA and as I420, read
   back in Display P3 (`VideoFrame.copyTo()`), and a quarter second of
   stereo Vorbis decoded by WebCodecs' `AudioDecoder` (`cpu.*`,
-  `pixels.p3_readback`, `audio.decoded_vorbis`). Recorded: whether a plain
-  SIMD module validates.
+  `pixels.p3_readback`, `audio.decoded_vorbis`).
+* **What pages can learn about the processor** (once per launch): a
+  WebAssembly module with one plain SIMD instruction (`f32x4.add`)
+  validates (`cpu.wasm_simd`: MoltNet opens only on processors where it
+  does). `Float16Array` and `DataView.setFloat16()` store NaNs with
+  payloads, computed at run time, as the canonical NaN with their sign,
+  before and after V8's optimizing compilers take the storing functions
+  (`cpu.float16_nan_canonical`, checked on x86-64; arm64's optimized code
+  keeps payload bits, the same on every arm64 CPU, so there it is compared
+  between arm64 runs, as the bits themselves, `cpu.float16_nan`, are on
+  both). Compared between runs: a 96 x 64 lossy JPEG XL image (made for the
+  kit) decoded by WebCodecs' `ImageDecoder`, as the frame's planes and as
+  RGBA (`pixels.jxl`; `unsupported` in a build without JPEG XL), and a
+  32-bit float WAV played by an `<audio>` element at `playbackRate` 1.5 with
+  its pitch kept (time stretching) into Web Audio and recorded by an
+  `AudioWorklet` (`audio.stretched`: a hash of 0.75 s from the first sound,
+  with the 8 low mantissa bits cleared because a worklet's input is
+  farbled there; the stretching's choices change far more; with a user
+  gesture, after the page's collection, like the media clock).
+* **The microphone** (a launch of its own, [below](#the-microphone-launch)).
 * **Portable math** (once per launch), compared between runs: `Math`'s
   `sin`, `tan`, `atan` and `atan2` at arguments where x86-64 and arm64
   builds of V8's math code differed, and a sweep of 2000 more
@@ -392,7 +413,40 @@ level, and in one browser launch per device scale factor
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
   layout, WebRTC codecs, `system-ui` width, the test page's own scrollbar
-  width.
+  width, the processed microphone track's sample rate.
+
+### The microphone launch
+
+Phase `mic_processing`, one browser launch of its own (it needs flags that
+would change the other checks), checks [FINGERPRINTING.md "MoltNet: the
+microphone's processing"](FINGERPRINTING.md#moltnet-the-microphones-processing).
+The kit writes a fixed WAV into the run directory (`leakkit/micinput.py`:
+44.1 kHz stereo, the format of Chromium's fake capture device, so it needs
+no conversion; 2 s of silence, a 30 ms burst, 3.5 s of two synthetic
+voices, 1 s of silence; integer arithmetic only, the same bytes on every
+machine) and starts the browser with `--use-fake-device-for-media-stream`,
+`--use-file-for-fake-audio-capture=<the WAV>%noloop` and
+`--use-fake-ui-for-media-stream` (the permission is granted without a
+prompt). In a MoltNet window, `mic.html` asks for the microphone with echo
+cancellation, noise suppression and gain control, reads the processed 10 ms
+buffers through `MediaStreamTrackProcessor` (exact samples: `AudioData` is
+not farbled), finds the first buffer whose peak exceeds 0.05 (the burst;
+the processing starts at the file's start whenever the page starts
+listening) and hashes the left channel of 200 buffers from there. It does
+that twice, each time with a new stream.
+
+| Key | Must |
+|---|---|
+| `audio.mic_processed_stable` | be true: the two captures agree (otherwise the hash can't compare machines; a gap in the buffers' timestamps or no burst is reported instead of a hash) |
+| `audio.mic_settings` | show echo cancellation, noise suppression and gain control on |
+| `audio.mic_processed` | be the same in two runs (`diff`), on every CPU and OS: compare an x86-64 machine without AVX2 (or a VM started with `-cpu Nehalem`) with a recent one, and with an arm64 one |
+
+The fake device reads the file from the audio service, which on Linux runs
+without a sandbox by default (`AudioServiceSandbox` is off there at 156); if
+the build turns that sandbox on, the device delivers silence and the check
+reports `silent`. A regular window (`--target regular`) records the same
+values for comparison: there they differ between CPUs with and without AVX2.
+The first run on the build machine is also the probe's first test.
 
 A regular-window fingerprint is recorded as a control. The report lists the
 values that are already uniform outside MoltNet on this machine (for
@@ -576,10 +630,11 @@ multiple monitors, and the fingerprinting suites named in FINGERPRINTING.md
 | `leakkit/traffic.py`, `background.py` | classification, attribution |
 | `leakkit/catalog.py` | the network tests and the §4 step map |
 | `leakkit/expectations.py`, `uniformity.py` | promised values, comparison, run diff |
+| `leakkit/micinput.py` | the microphone launch's WAV |
 | `leakkit/report.py` | report.json / report.md |
 | `leakkit/bgcapture.py`, `sinkhole.py` | the regular-window traffic capture: its steps, resolver and sinkhole |
 | `leakkit/bganalysis.py`, `hostlist.py` | its comparison with NETWORK_TRAFFIC.md and its report; the allow-list (`hosts [--write]`) |
-| `pages/` | the test pages (templated per test; `bg_*.html` for the capture) |
+| `pages/` | the test pages (templated per test; `bg_*.html` for the capture; `mic.html` for the microphone launch) |
 | `tests/` | unit tests and the recorded sample run (`make_sample_run.py`) |
 
 The kit's own tests need no root and no browser. CI runs them

@@ -6,6 +6,7 @@
 // std-only).
 
 #include "content/browser/download/molt_download_isolation_policy.h"
+#include "content/browser/download/molt_resumed_fetch_policy.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -93,6 +94,24 @@ TEST(MoltNetDownloadIsolationTest, ARetryWithoutIsolationIsOneOff) {
                      /*is_retry=*/true),
               kTransient);
   }
+}
+
+// In every profile, a page's Background Fetch request that comes without
+// its service worker's URL loader factory (one resumed by the download item,
+// or after a restart) gets one that checks Local Network Access; one with
+// the worker's factory keeps it, and nothing else changes: other downloads
+// (no initiator, or not the download service's), or Background Fetch
+// without the feature.
+TEST(MoltNetDownloadIsolationTest, AResumedFetchKeepsItsLnaCheck) {
+  EXPECT_TRUE(MoltFetchNeedsLnaFactory(true, true, false, true));
+  EXPECT_FALSE(MoltFetchNeedsLnaFactory(true, true, /*has_factory=*/true,
+                                        true));
+  EXPECT_FALSE(MoltFetchNeedsLnaFactory(true, /*has_initiator=*/false, false,
+                                        true));
+  EXPECT_FALSE(MoltFetchNeedsLnaFactory(/*from_download_service=*/false, true,
+                                        false, true));
+  EXPECT_FALSE(MoltFetchNeedsLnaFactory(true, true, false,
+                                        /*lna_checked=*/false));
 }
 
 }  // namespace

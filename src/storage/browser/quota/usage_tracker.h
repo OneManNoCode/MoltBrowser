@@ -119,18 +119,27 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
   // sites are molt_storage_budget.h's). Asks again for the usage of
   // `site`'s stale storage keys, then runs
   // `callback`; the first time, counts the cache per site from then on and
-  // asks for every bucket's usage instead. MoltSiteUsage() and
+  // asks for every bucket's usage instead. One refresh at a time per site:
+  // while one runs, `callback` waits for it and one more. MoltSiteUsage() and
   // MoltTotalUsage() then read the counts, costing a lookup per client.
   void MoltRefreshSiteUsage(const MoltBudgetSite& site,
                             base::OnceClosure callback);
   int64_t MoltSiteUsage(const MoltBudgetSite& site) const;
   int64_t MoltTotalUsage() const;
+  // MoltBrowser: `site` is gone (a page's nonce, its buckets deleted):
+  // nothing of it stays stale.
+  void MoltForgetSite(const MoltBudgetSite& site);
 
  private:
   // MoltBrowser:
   void MoltDidCountEverything(base::OnceClosure callback,
                               int64_t usage,
                               int64_t unlimited_usage);
+  void MoltRefreshStaleKeys(const MoltBudgetSite& site,
+                            base::OnceClosure done);
+  void MoltDidRefresh(const MoltBudgetSite& site, base::OnceClosure done);
+  void MoltMarkStale(const blink::StorageKey& storage_key);
+  void MoltSettle(const MoltBudgetSite& site);
 
   struct AccumulateInfo;
   friend class ClientUsageTracker;
@@ -178,6 +187,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
   bool molt_counting_ = false;
   bool molt_counted_everything_ = false;
   MoltStaleStorageKeys<MoltBudgetSite, blink::StorageKey> molt_stale_;
+  // MoltBrowser: the sites whose stale keys are being asked for, with the
+  // checks waiting for the next refresh; and those with a refresh of their
+  // own due (kMoltStaleSettleDelaySeconds).
+  MoltSiteRefreshes<MoltBudgetSite, base::OnceClosure> molt_refreshes_;
+  std::set<MoltBudgetSite> molt_settles_;
 
   base::WeakPtrFactory<UsageTracker> weak_factory_{this};
 };

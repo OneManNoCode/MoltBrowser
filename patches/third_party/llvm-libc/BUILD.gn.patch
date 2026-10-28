@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/llvm-libc/BUILD.gn b/third_party/llvm-libc/BUILD.gn
-index 1c036893d34693e2e5bb3af3487d495de8ace89b..fb20c2c0fed000ed34131263f5b4dde73f7fa8b9 100644
+index 1c036893d34693e2e5bb3af3487d495de8ace89b..8c3369ea01a3363b392c15da3ad10b368e4f4278 100644
 --- a/third_party/llvm-libc/BUILD.gn
 +++ b/third_party/llvm-libc/BUILD.gn
-@@ -18,4 +18,45 @@ group("llvm-libc-shared") {
+@@ -18,4 +18,49 @@ group("llvm-libc-shared") {
  group("headers") {
    visibility = [ "//v8:v8_libbase" ]
    public_configs = [ ":config" ]
@@ -21,7 +21,8 @@ index 1c036893d34693e2e5bb3af3487d495de8ace89b..fb20c2c0fed000ed34131263f5b4dde7
 +# and rounding instructions, so that it gives the same results on every CPU
 +# and OS (molt_portable_math.h). Pure functions; who calls them is decided
 +# per process by V8's --portable-math, gfx::molt_math and Skia's
-+# SkMoltBrowserMath.
++# SkMoltBrowserMath, and per audio processing instance by WebRTC's
++# webrtc::molt_math.
 +config("molt_portable_math_config") {
 +  visibility = [ ":*" ]
 +  include_dirs = [ "src" ]
@@ -40,6 +41,9 @@ index 1c036893d34693e2e5bb3af3487d495de8ace89b..fb20c2c0fed000ed34131263f5b4dde7
 +  visibility = [
 +    ":*",
 +    "//skia:*",
++
++    # WebRTC's audio processing in CPU-independent mode (rtc_base/molt_math.h).
++    "//third_party/webrtc/rtc_base:molt_math",
 +    "//ui/gfx/geometry:*",
 +  ]
 +}

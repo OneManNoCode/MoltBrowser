@@ -6,8 +6,9 @@
 // background_service/molt_restored_fetch.h): with the fetch's parameters
 // back from Background Fetch it keeps its first party on redirects, and one
 // whose download item is from the earlier session starts again with them
-// rather than resuming without them. On the download service's real
-// request parameters (download::RequestParams).
+// rather than resuming without them; and one whose parameters don't come
+// back (its registration not loaded yet) waits for them. On the download
+// service's real request parameters (download::RequestParams).
 
 #include "components/download/internal/background_service/molt_restored_fetch.h"
 
@@ -26,6 +27,15 @@ static_assert(MoltRestartsRestoredFetch(/*has_initiator=*/true,
 static_assert(!MoltRestartsRestoredFetch(true, false));
 static_assert(!MoltRestartsRestoredFetch(false, true));
 static_assert(!MoltRestartsRestoredFetch(false, false));
+
+// A page's fetch without its parameters waits; with them, or another
+// client's download, goes on.
+static_assert(MoltWaitsForFetchParameters(/*page_fetch_client=*/true,
+                                          /*has_initiator=*/false));
+static_assert(!MoltWaitsForFetchParameters(true, true));
+static_assert(!MoltWaitsForFetchParameters(false, false));
+static_assert(!MoltWaitsForFetchParameters(false, true));
+static_assert(kMoltFetchParametersWaitSeconds >= 60);
 
 // What the download service holds for a download it read back from its
 // database (ProtoConversions::RequestParamsFromProto()): no initiator, no
@@ -71,9 +81,10 @@ TEST(MoltNetBackgroundFetchRestoredTest, AFreshStartKeepsItsFirstParty) {
   EXPECT_FALSE(params.update_first_party_url_on_redirect);
 }
 
-// Downloads of the download service's other clients, and a fetch whose
-// parameters didn't come back, go on as in Chromium: resumed, and their
-// first party unchanged.
+// Downloads of the download service's other clients go on as in Chromium:
+// resumed, and their first party unchanged. (A page's fetch whose
+// parameters didn't come back waits for them before this:
+// MoltWaitsForFetchParameters().)
 TEST(MoltNetBackgroundFetchRestoredTest, OtherDownloadsGoOnAsChromium) {
   for (const bool has_driver_entry : {false, true}) {
     RequestParams params = StoredParams();
@@ -81,6 +92,16 @@ TEST(MoltNetBackgroundFetchRestoredTest, OtherDownloadsGoOnAsChromium) {
     EXPECT_TRUE(params.update_first_party_url_on_redirect);
     EXPECT_FALSE(params.initiator.has_value());
   }
+}
+
+// What the download service holds for a page's fetch read back from its
+// database, before Background Fetch gives anything back, is what makes it
+// wait; once the fetch's parameters are on it, it goes on.
+TEST(MoltNetBackgroundFetchRestoredTest, AFetchWithoutItsParametersWaits) {
+  EXPECT_TRUE(MoltWaitsForFetchParameters(
+      /*page_fetch_client=*/true, StoredParams().initiator.has_value()));
+  EXPECT_FALSE(MoltWaitsForFetchParameters(
+      /*page_fetch_client=*/true, PageFetchParams().initiator.has_value()));
 }
 
 }  // namespace

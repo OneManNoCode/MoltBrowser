@@ -264,6 +264,7 @@ content/browser/blob_storage/blob_registry_wrapper.cc.patch
 content/browser/blob_storage/chrome_blob_storage_context.cc.patch
 content/browser/client_hints/client_hints.cc.patch
 content/browser/dom_storage/dom_storage_context_wrapper.cc.patch
+content/browser/dom_storage/dom_storage_context_wrapper.h.patch
 content/browser/download/download_manager_impl.cc.patch
 content/browser/download/save_file_manager.cc.patch
 content/browser/loader/keep_alive_url_loader.cc.patch
@@ -285,6 +286,7 @@ content/public/browser/client_hints_controller_delegate.cc.patch
 content/public/browser/client_hints_controller_delegate.h.patch
 content/public/browser/content_browser_client.cc.patch
 content/public/browser/content_browser_client.h.patch
+content/public/browser/dom_storage_context.h.patch
 content/renderer/worker/embedded_shared_worker_stub.cc.patch
 content/utility/on_device_model/BUILD.gn.patch
 content/utility/on_device_model/on_device_model_sandbox_init.cc.patch
@@ -298,6 +300,8 @@ extensions/browser/permissions/active_tab_permission_granter.cc.patch
 gin/isolate_holder.cc.patch
 gin/public/isolate_holder.h.patch
 media/base/BUILD.gn.patch
+media/base/audio_processing.cc.patch
+media/base/audio_processing.h.patch
 media/base/sinc_resampler.cc.patch
 media/base/vector_math.cc.patch
 media/base/video_encoder.cc.patch
@@ -308,7 +312,12 @@ media/filters/symphonia_decoder_bridge.rs.patch
 media/filters/wsola_internals.cc.patch
 media/gfx/mappable_shared_image_video_frame_pool.cc.patch
 media/gfx/paint_canvas_video_renderer.cc.patch
+media/mojo/mojom/audio_processing.mojom.patch
+media/mojo/mojom/audio_processing_mojom_traits.cc.patch
+media/mojo/mojom/audio_processing_mojom_traits.h.patch
 media/renderers/default_decoder_factory.cc.patch
+media/webrtc/BUILD.gn.patch
+media/webrtc/helpers.cc.patch
 net/BUILD.gn.patch
 net/base/features.cc.patch
 net/base/schemeful_site.h.patch
@@ -380,6 +389,7 @@ storage/browser/blob/blob_storage_context.h.patch
 storage/browser/quota/client_usage_tracker.cc.patch
 storage/browser/quota/client_usage_tracker.h.patch
 storage/browser/quota/quota_manager_impl.cc.patch
+storage/browser/quota/quota_manager_impl.h.patch
 storage/browser/quota/quota_settings.h.patch
 storage/browser/quota/quota_temporary_storage_evictor.cc.patch
 storage/browser/quota/usage_tracker.cc.patch
@@ -449,6 +459,8 @@ third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc.patc
 third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc.patch
 third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc.patch
 third_party/blink/renderer/modules/mediastream/media_devices.cc.patch
+third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc.patch
+third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout_test.cc.patch
 third_party/blink/renderer/modules/mediastream/user_media_processor.cc.patch
 third_party/blink/renderer/modules/peerconnection/peer_connection_util.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch

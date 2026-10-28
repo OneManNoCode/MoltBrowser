@@ -1,0 +1,19 @@
+MoltBrowser patch for content/browser/dom_storage/dom_storage_context_wrapper.h
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/content/browser/dom_storage/dom_storage_context_wrapper.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/dom_storage/dom_storage_context_wrapper.h b/content/browser/dom_storage/dom_storage_context_wrapper.h
+index 879c71d9221326fe40f8baa56a2f81804328d934..4aa4e43651e48a0749f0f59ae95e4b77c879e898 100644
+--- a/content/browser/dom_storage/dom_storage_context_wrapper.h
++++ b/content/browser/dom_storage/dom_storage_context_wrapper.h
+@@ -89,6 +89,8 @@ class CONTENT_EXPORT DOMStorageContextWrapper
+                           base::OnceClosure callback) override;
+   void DeleteSessionStorage(const SessionStorageUsageInfo& usage_info,
+                             base::OnceClosure callback) override;
++  void MoltDropNonce(const base::UnguessableToken& nonce,
++                     bool closed) override;  // MoltBrowser
+   scoped_refptr<SessionStorageNamespaceHandle> RecreateSessionStorage(
+       const std::string& namespace_id) override;
+   void StartScavengingUnusedSessionStorage() override;

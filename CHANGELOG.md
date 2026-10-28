@@ -351,6 +351,21 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   their directory, and build their Rust helper with the dependency
   versions its lock file pins; Windows component builds link the Blob
   registry's delegate again.
+- MoltNet hardening, per site: a site's Background Fetch share is its own
+  whatever other sites run, with no total for all sites that one party
+  could fill (the memory valve watches past 128 downloads); what a page's
+  credentialless frames store goes with the page, and a site keeps such
+  storage for at most 32 of its pages at once; the records MoltNet keeps
+  per site go once they limit nothing; listing what MoltNet's
+  `localStorage` and `sessionStorage` hold, and copying or deleting a tab's
+  `sessionStorage`, run in short steps, in order with each site's own
+  writes; and two storage quota checks of one site at once both see its
+  current usage (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening, in every profile: a Background Fetch request resumed without
+  its service worker's network settings (after a response ended early, or
+  after a restart) still has its Local Network Access checked, and after a
+  restart a Background Fetch waits for its page's settings rather than
+  going out without them.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -481,6 +496,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   processor; JPEG XL images there decode up to about twice as slowly
   (`docs/FINGERPRINTING.md`, "MoltNet: what pages can learn about the
   processor"); regular and incognito windows are unchanged.
+- **MoltNet's microphone processing is the same on every processor.** In
+  MoltNet windows the echo cancellation, noise suppression and gain
+  control a page's microphone stream gets compute the same samples from
+  the same sound on every x86-64 and Arm processor, and still cancel
+  what the browser plays. The audio service uses about 1.5% more of one
+  core while a MoltNet page records (`docs/FINGERPRINTING.md`, "MoltNet:
+  the microphone's processing"); regular and incognito windows are
+  unchanged. The leak test kit now checks these answers too.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

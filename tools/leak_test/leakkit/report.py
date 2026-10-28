@@ -282,6 +282,11 @@ def _judge_open(data):
     return (PASS if ok else FAIL), ev
 
 
+def _judge_mic(data):
+    return PASS, ['browser flags: %s' % ' '.join(data.get('flags') or []),
+                  'WAV sha256: %s' % data.get('wav_sha256')]
+
+
 def _judge_identity(data):
     ev = []
     status = PASS
@@ -982,6 +987,11 @@ def _phase_checks(manifest):
                      'harness', 'The seeded regular-profile settings took '
                      'effect (control for the settings checks)',
                      'MOLTNET_COMPLIANCE.md §4 step 15', _judge_seed),
+        _phase_check(manifest, 'mic_processing', 'harness.mic_processing',
+                     'harness', 'The microphone launch ran (Chromium\'s fake '
+                     'capture device; its record is checked under '
+                     'uniformity)', 'FINGERPRINTING.md "MoltNet: the '
+                     'microphone\'s processing"', _judge_mic),
     ]
     return out
 
@@ -1315,8 +1325,9 @@ def _uniformity_checks(manifest):
     os_names = set(uniformity.os_of(r.get('values') or {}) for r in records
                    if r.get('kind') == 'full') or set(['unknown'])
     os_name = sorted(os_names)[0]
+    arch = uniformity.arch_of(manifest.get('host'))
     for rec in records:
-        for res in uniformity.check_record(rec, os_name):
+        for res in uniformity.check_record(rec, os_name, arch):
             per_key.setdefault(res['key'], []).append((rec, res))
     detail = []
     for key in sorted(per_key):
@@ -1382,7 +1393,8 @@ def _control_checks(manifest):
     weak = []
     values = regular[0].get('values') or {}
     for rule in uniformity.ex.FULL_RULES:
-        res = uniformity.check_rule(values, rule, uniformity.os_of(values))
+        res = uniformity.check_rule(values, rule, uniformity.os_of(values),
+                                    uniformity.arch_of(manifest.get('host')))
         if res['status'] == PASS and not rule[0].startswith(('webgl', 'ai.')):
             weak.append(rule[0])
     return [check('uniformity.control', 'uniformity',
@@ -1440,6 +1452,7 @@ def build(run_dir):
             'run_id', 'started', 'finished', 'target', 'browser', 'host',
             'options', 'onion')},
         'os': os_names,
+        'arch': uniformity.arch_of(manifest.get('host')),
         'checks': checks,
         'traffic': tr,
         'fingerprints': manifest.get('fingerprints') or [],
@@ -1473,6 +1486,8 @@ def to_markdown(rep):
             browser.get('product', ''), browser.get('version', ''))),
         '| Window under test | %s |' % _md_escape(run.get('target')),
         '| OS (as pages see it) | %s |' % _md_escape(', '.join(rep['os'])),
+        '| Architecture (the kit host) | %s |' % _md_escape(
+            rep.get('arch', 'unknown')),
         '| Kit | %s (%s) |' % (rep['kit_version'], rep['schema']),
         '',
         'Statuses: FAIL = a promise is broken (or traffic needs triage); '
@@ -1538,8 +1553,9 @@ def diff_reports(path_a, path_b):
         a = json.load(f)
     with open(path_b, 'r') as f:
         b = json.load(f)
-    compared, diffs = uniformity.diff_records(a.get('fingerprints') or [],
-                                              b.get('fingerprints') or [])
+    compared, diffs = uniformity.diff_records(
+        a.get('fingerprints') or [], b.get('fingerprints') or [],
+        a.get('arch'), b.get('arch'))
     fails = [d for d in diffs if d['severity'] == 'fail']
     lines = ['# MoltNet uniformity diff', '',
              'A: %s (%s)' % (path_a, ', '.join(a.get('os') or [])),
@@ -1551,6 +1567,10 @@ def diff_reports(path_a, path_b):
         lines += ['The runs are on different operating systems: the user '
                   'agent, fonts and form-control sizes are expected to '
                   'differ.', '']
+    if a.get('arch') and b.get('arch') and a.get('arch') != b.get('arch'):
+        lines += ['The runs are on different architectures (%s, %s): the '
+                  'Float16 NaN bits are expected to differ (shown as info).'
+                  % (a.get('arch'), b.get('arch')), '']
     for d in diffs:
         lines.append('- [%s] %s %s: A=%s B=%s' % (
             d['severity'], d['record'], d['key'],

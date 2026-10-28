@@ -1340,6 +1340,7 @@ source_set("tab_helpers_impl") {
     "//chrome/browser/molt_ai/anti_rage",
     "//chrome/browser/molt_ai/consent",
     "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/tor:nonce_storage",
     "//chrome/browser/molt_ai/tor:onion",
     "//chrome/browser/molt_ai/tor:requests_policy",
     "//chrome/browser/net",

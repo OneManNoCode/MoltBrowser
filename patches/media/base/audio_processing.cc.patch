@@ -1,0 +1,27 @@
+MoltBrowser patch for media/base/audio_processing.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/media/base/audio_processing.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/media/base/audio_processing.cc b/media/base/audio_processing.cc
+index 780f05d0c0bd113ae965d87237e5427e5578f827..9e9f5fa1ca3b5c49732de7f2240f9e94b82482b9 100644
+--- a/media/base/audio_processing.cc
++++ b/media/base/audio_processing.cc
+@@ -17,12 +17,12 @@ std::string AudioProcessingSettings::ToString() const {
+        ", gain control: ", bool_to_yes_no(automatic_gain_control),
+        ", multichannel capture processing: ",
+        bool_to_yes_no(multi_channel_capture_processing),
+-       ", loopback aec: ", bool_to_yes_no(use_loopback_aec_reference)
++       ", loopback aec: ", bool_to_yes_no(use_loopback_aec_reference),
+ #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+-                               ,
+-       ", voice isolation: ", bool_to_yes_no(voice_isolation)
++       ", voice isolation: ", bool_to_yes_no(voice_isolation),
+ #endif
+-      });
++       // MoltBrowser.
++       ", cpu independent: ", bool_to_yes_no(cpu_independent)});
+ }
+ 
+ }  // namespace media

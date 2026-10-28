@@ -5,6 +5,7 @@
 module storage.mojom;
 
 import "components/services/storage/public/mojom/local_storage_control.mojom";  // MoltBrowser
+import "mojo/public/mojom/base/unguessable_token.mojom";  // MoltBrowser
 import "third_party/blink/public/mojom/dom_storage/storage_area.mojom";
 import "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom";
 import "third_party/blink/public/mojom/storage_key/storage_key.mojom";
@@ -88,6 +89,11 @@ interface SessionStorageControl {
   // MoltBrowser: with caches per site, `observer` hears when all areas
   // together grow past the floor.
   MoltSetGrowthObserver(pending_remote<MoltDomStorageGrowthObserver> observer);
+
+  // MoltBrowser: as LocalStorageControl.MoltDropNonce(), for the areas of the
+  // storage keys with `nonce` in every namespace (a tab's, and the copies
+  // the tabs it opened made of them).
+  MoltDropNonce(mojo_base.mojom.UnguessableToken nonce, bool closed);
 
   // Creates a new namespace which can later be manipulated by other requests
   // on this interface.

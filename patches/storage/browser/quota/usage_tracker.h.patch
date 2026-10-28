@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/storage/browser/quota/usage_tracker.h b/storage/browser/quota/usage_tracker.h
-index e3c78bf9f843fa1e066b0d5db6ec7e2e49bf71aa..b4be633ff56a23ba1bc2bb13cd99c607f479fa9d 100644
+index e3c78bf9f843fa1e066b0d5db6ec7e2e49bf71aa..1922a2ce4a1998fcea8a77c98ac78480e6716ef9 100644
 --- a/storage/browser/quota/usage_tracker.h
 +++ b/storage/browser/quota/usage_tracker.h
 @@ -22,6 +22,8 @@
@@ -17,7 +17,7 @@ index e3c78bf9f843fa1e066b0d5db6ec7e2e49bf71aa..b4be633ff56a23ba1bc2bb13cd99c607
  #include "storage/browser/quota/quota_callbacks.h"
  #include "storage/browser/quota/quota_client_type.h"
  #include "storage/browser/quota/quota_manager_impl.h"
-@@ -113,7 +115,23 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
+@@ -113,7 +115,32 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
                              const blink::StorageKey& storage_key,
                              bool enabled);
  
@@ -25,23 +25,32 @@ index e3c78bf9f843fa1e066b0d5db6ec7e2e49bf71aa..b4be633ff56a23ba1bc2bb13cd99c607
 +  // sites are molt_storage_budget.h's). Asks again for the usage of
 +  // `site`'s stale storage keys, then runs
 +  // `callback`; the first time, counts the cache per site from then on and
-+  // asks for every bucket's usage instead. MoltSiteUsage() and
++  // asks for every bucket's usage instead. One refresh at a time per site:
++  // while one runs, `callback` waits for it and one more. MoltSiteUsage() and
 +  // MoltTotalUsage() then read the counts, costing a lookup per client.
 +  void MoltRefreshSiteUsage(const MoltBudgetSite& site,
 +                            base::OnceClosure callback);
 +  int64_t MoltSiteUsage(const MoltBudgetSite& site) const;
 +  int64_t MoltTotalUsage() const;
++  // MoltBrowser: `site` is gone (a page's nonce, its buckets deleted):
++  // nothing of it stays stale.
++  void MoltForgetSite(const MoltBudgetSite& site);
 +
   private:
 +  // MoltBrowser:
 +  void MoltDidCountEverything(base::OnceClosure callback,
 +                              int64_t usage,
 +                              int64_t unlimited_usage);
++  void MoltRefreshStaleKeys(const MoltBudgetSite& site,
++                            base::OnceClosure done);
++  void MoltDidRefresh(const MoltBudgetSite& site, base::OnceClosure done);
++  void MoltMarkStale(const blink::StorageKey& storage_key);
++  void MoltSettle(const MoltBudgetSite& site);
 +
    struct AccumulateInfo;
    friend class ClientUsageTracker;
  
-@@ -154,6 +172,13 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
+@@ -154,6 +181,18 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) UsageTracker
    std::map<BucketLocator, std::vector<UsageWithBreakdownCallback>>
        bucket_usage_callbacks_;
  
@@ -51,6 +60,11 @@ index e3c78bf9f843fa1e066b0d5db6ec7e2e49bf71aa..b4be633ff56a23ba1bc2bb13cd99c607
 +  bool molt_counting_ = false;
 +  bool molt_counted_everything_ = false;
 +  MoltStaleStorageKeys<MoltBudgetSite, blink::StorageKey> molt_stale_;
++  // MoltBrowser: the sites whose stale keys are being asked for, with the
++  // checks waiting for the next refresh; and those with a refresh of their
++  // own due (kMoltStaleSettleDelaySeconds).
++  MoltSiteRefreshes<MoltBudgetSite, base::OnceClosure> molt_refreshes_;
++  std::set<MoltBudgetSite> molt_settles_;
 +
    base::WeakPtrFactory<UsageTracker> weak_factory_{this};
  };

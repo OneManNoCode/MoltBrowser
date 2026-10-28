@@ -200,7 +200,7 @@ def main(argv=None):
     r.add_argument('--phases', default=None,
                    help='comma-separated phases: identity,new_identity,'
                    'fail_closed,restart,override,partitioning_override,'
-                   'policy_live,dsf (default all)')
+                   'policy_live,mic_processing,dsf (default all)')
     r.add_argument('--browser-arg', action='append', default=[],
                    help='extra browser flag (repeatable)')
     r.add_argument('--tor', default=None,

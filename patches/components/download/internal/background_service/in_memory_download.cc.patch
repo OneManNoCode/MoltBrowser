@@ -5,35 +5,49 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/download/internal/background_service/in_memory_download.cc b/components/download/internal/background_service/in_memory_download.cc
-index 3bd11ee31de6032a46afe80c050e11f30309e3f8..bf934023523b2b7c61481182706d8f6348eca1ab 100644
+index 3bd11ee31de6032a46afe80c050e11f30309e3f8..5433bd142bac970fdf0ad794f3c44f6f4799f67c 100644
 --- a/components/download/internal/background_service/in_memory_download.cc
 +++ b/components/download/internal/background_service/in_memory_download.cc
-@@ -9,8 +9,11 @@
+@@ -8,9 +8,15 @@
+ #include <string>
  #include <string_view>
  
++#include "base/containers/span.h"             // MoltBrowser
  #include "base/functional/bind.h"
-+#include "base/no_destructor.h"  // MoltBrowser
-+#include "base/synchronization/lock.h"  // MoltBrowser
++#include "base/hash/sha1.h"                  // MoltBrowser
++#include "base/no_destructor.h"              // MoltBrowser
++#include "base/numerics/byte_conversions.h"  // MoltBrowser
++#include "base/rand_util.h"                  // MoltBrowser
  #include "base/task/single_thread_task_runner.h"
  #include "components/download/internal/background_service/blob_task_proxy.h"
 +#include "components/download/internal/background_service/molt_registering_site_isolation.h"  // MoltBrowser
  #include "net/base/load_flags.h"
  #include "net/traffic_annotation/network_traffic_annotation.h"
  #include "services/network/public/cpp/resource_request.h"
-@@ -21,6 +24,20 @@
+@@ -21,6 +27,30 @@
  
  namespace download {
  
 +namespace {
 +
++// MoltBrowser: 64 bits of a keyed digest of `site`, under a secret of this
++// browser process's own, made at random (molt_blob_budget_policy.h:
++// MoltBlobSiteKeyFromDigest()). Its outputs never leave the process.
++uint64_t MoltSiteDigest(std::string_view site) {
++  static const base::NoDestructor<std::string> secret(
++      base::RandBytesAsString(32));
++  std::string input = *secret;
++  input.append(site);
++  const base::SHA1Digest digest = base::SHA1Hash(base::as_byte_span(input));
++  return base::U64FromLittleEndian(base::span(digest).first<8>());
++}
++
 +// MoltBrowser: the blob budget key of the site a fetch's response is for,
-+// one per site for the whole browser (molt_blob_budget_policy.h).
++// the same for that site everywhere in the browser, with no record kept per
++// site (molt_blob_budget_policy.h).
 +uint64_t MoltBlobBudgetKeyFor(
 +    const std::optional<net::IsolationInfo>& isolation_info) {
-+  static base::NoDestructor<base::Lock> lock;
-+  static base::NoDestructor<storage::MoltBlobSiteKeys> keys;
-+  base::AutoLock auto_lock(*lock);
-+  return MoltBlobBudgetKeyForFetch(isolation_info, *keys);
++  return MoltBlobBudgetKeyForFetch(isolation_info, &MoltSiteDigest);
 +}
 +
 +}  // namespace
@@ -41,7 +55,7 @@ index 3bd11ee31de6032a46afe80c050e11f30309e3f8..bf934023523b2b7c61481182706d8f63
  InMemoryDownload::InMemoryDownload(const std::string& guid)
      : guid_(guid),
        state_(State::INITIAL),
-@@ -135,6 +152,53 @@ void InMemoryDownloadImpl::OnDataReceived(std::string_view string_piece,
+@@ -135,6 +165,53 @@ void InMemoryDownloadImpl::OnDataReceived(std::string_view string_piece,
    data_.append(string_piece);
    bytes_downloaded_ += string_piece.size();
  
@@ -95,7 +109,7 @@ index 3bd11ee31de6032a46afe80c050e11f30309e3f8..bf934023523b2b7c61481182706d8f63
    if (paused_) {
      // Read data later and cache the resumption callback when paused.
      resume_callback_ = std::move(resume);
-@@ -158,6 +222,7 @@ void InMemoryDownloadImpl::OnComplete(bool success) {
+@@ -158,6 +235,7 @@ void InMemoryDownloadImpl::OnComplete(bool success) {
  
    // Release download data.
    data_.clear();
@@ -103,7 +117,7 @@ index 3bd11ee31de6032a46afe80c050e11f30309e3f8..bf934023523b2b7c61481182706d8f63
  
    // OnComplete() called without OnResponseStarted(). This will happen when the
    // request was aborted.
-@@ -182,7 +247,11 @@ void InMemoryDownloadImpl::SaveAsBlob() {
+@@ -182,7 +260,11 @@ void InMemoryDownloadImpl::SaveAsBlob() {
    auto callback = base::BindOnce(&InMemoryDownloadImpl::OnSaveBlobDone,
                                   weak_ptr_factory_.GetWeakPtr());
    auto data = std::make_unique<std::string>(std::move(data_));
@@ -116,7 +130,7 @@ index 3bd11ee31de6032a46afe80c050e11f30309e3f8..bf934023523b2b7c61481182706d8f63
  }
  
  void InMemoryDownloadImpl::OnSaveBlobDone(
-@@ -231,6 +300,13 @@ void InMemoryDownloadImpl::SendRequest() {
+@@ -231,6 +313,13 @@ void InMemoryDownloadImpl::SendRequest() {
      request->site_for_cookies =
          request_params_.isolation_info->site_for_cookies();
    }
@@ -130,7 +144,7 @@ index 3bd11ee31de6032a46afe80c050e11f30309e3f8..bf934023523b2b7c61481182706d8f63
  
    url_chain_.push_back(request_params_.url);
  
-@@ -273,6 +349,7 @@ void InMemoryDownloadImpl::OnUploadProgress(uint64_t position, uint64_t total) {
+@@ -273,6 +362,7 @@ void InMemoryDownloadImpl::OnUploadProgress(uint64_t position, uint64_t total) {
  
  void InMemoryDownloadImpl::Reset() {
    data_.clear();

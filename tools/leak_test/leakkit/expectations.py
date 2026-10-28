@@ -20,11 +20,20 @@ fp.js reports. Operators (uniformity.py):
   orientation         landscape-primary iff screen.width > screen.height
   regex               the string matches
   per_os_eq           equals expected[<the run's OS>] (INFO on another OS)
+  per_arch_eq         equals expected[<the run's architecture>] (INFO on
+                      another one); the architecture is the kit host's
+                      (report.json "arch"), which runs the browser
 
 DIFF_KEYS lists what two runs (two machines, two OS locales) must report
 identically even where the docs promise no fixed value; INFO_KEYS are
 recorded and shown when they differ, without a verdict, because nothing
 promises them (they are listed so the owner sees what still varies).
+ARCH_KEYS are compared only between runs on the same architecture (x86-64
+or arm64): they legitimately differ between the two (a difference is INFO
+there).
+
+Records of kind "mic" (the mic_processing launch) are checked against
+MIC_RULES only.
 """
 
 FP = 'FINGERPRINTING.md'
@@ -174,6 +183,8 @@ S_MDEV = FP + ' "MoltNet: cameras, microphones and outputs"'
 S_MEM = FP + ' "MoltNet: performance.memory"'
 S_PIXELS = FP + ' "MoltNet: pixels and encoded bytes"'
 S_CPU = FP + ' "MoltNet: CPU features"'
+S_ARCH = FP + ' "MoltNet: what pages can learn about the processor"'
+S_MIC = FP + ' "MoltNet: the microphone\'s processing"'
 
 # MoltNet's scrollbar style: each platform's default (moltnet_values.h,
 # UsesOverlayScrollbars).
@@ -388,6 +399,25 @@ FULL_RULES = (
     ('pixels.video_frame_format', 'eq', 'I420', S_PIXELS),
     # WebAssembly relaxed SIMD fails validation on every machine.
     ('cpu.wasm_relaxed_simd', 'eq', False, S_CPU),
+    # MoltNet opens only on processors with SSE4.1 (x86-64) or any arm64
+    # one: plain WebAssembly SIMD validates on every one of them.
+    ('cpu.wasm_simd', 'eq', True, S_ARCH),
+    # Float16Array and DataView.setFloat16() store the canonical NaN (sign
+    # kept) for NaNs with payloads, interpreted and optimized, on every
+    # x86-64 CPU (no F16C). arm64's optimized code keeps payload bits, the
+    # same on every arm64 CPU: compared between arm64 runs only.
+    ('cpu.float16_nan_canonical', 'per_arch_eq', {'x86_64': True}, S_ARCH),
+)
+
+# The mic_processing launch (kind "mic"): Chromium's fake capture device
+# plays the kit's WAV; the page reads the processed samples twice, each time
+# from a new stream. The two must agree (otherwise the probe can't compare
+# machines), and the processing the page asked for must be on.
+MIC_RULES = (
+    ('audio.mic_processed_stable', 'eq', True, S_MIC),
+    ('audio.mic_settings', 'eq', {'echoCancellation': True,
+                                  'noiseSuppression': True,
+                                  'autoGainControl': True}, S_MIC),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the
@@ -457,7 +487,20 @@ DIFF_KEYS = (
     # set's per-script lists, and local() finds the set's faces: the same on
     # every machine and OS (FINGERPRINTING.md "Fonts").
     'fonts.fallback_widths', 'fonts.local_bundled',
+    # What pages can learn about the processor: audio a media element time
+    # stretches (WSOLA) into Web Audio, JPEG XL pixels, the Float16 NaN bits
+    # (the last per architecture, ARCH_KEYS), and the microphone's processed
+    # samples from the fake capture device (FINGERPRINTING.md "MoltNet: what
+    # pages can learn about the processor", "MoltNet: the microphone's
+    # processing").
+    'audio.stretched', 'pixels.jxl', 'cpu.float16_nan',
+    'audio.mic_processed',
 )
+
+# Keys that legitimately differ between x86-64 and arm64 (and only there):
+# compared between runs of the same architecture; between architectures a
+# difference is shown as INFO.
+ARCH_KEYS = ('cpu.float16_nan', 'cpu.float16_nan_canonical')
 
 # Recorded and diffed, but nothing promises them uniform. A difference
 # between two runs is reported as a finding to look at, not as a failure.
@@ -475,7 +518,8 @@ INFO_KEYS = {
     'nav.webdriver': 'navigator.webdriver under the kit\'s DevTools pipe',
     'mq.prefers_color_scheme_dark': 'dark while the dark toolbar is on '
                                     '(documented)',
-    'cpu.wasm_simd': 'WebAssembly.validate() of a plain SIMD module',
+    'audio.mic_sample_rate': 'the processed microphone track\'s sampleRate '
+                             '(mic_processing launch)',
 }
 
 

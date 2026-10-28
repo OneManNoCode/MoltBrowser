@@ -17,7 +17,7 @@
 //    so a key is one site in one tab);
 //  * for a blob the browser makes for a site (a Background Fetch's
 //    response, which the in-memory download service holds as a blob), that
-//    site's own key (MoltBlobSiteKeys);
+//    site's own key (MoltBlobSiteKeyFromDigest());
 //  * the browser's other blobs (kMoltBlobBrowserKey), which no site's page
 //    can make in MoltNet.
 // Memory the browser holds for a site before it becomes a blob (a
@@ -42,10 +42,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <map>
-#include <string>
-#include <string_view>
 
 namespace storage {
 
@@ -56,37 +52,21 @@ inline constexpr uint64_t kMoltBlobBrowserKey = 0;
 // process ids (positive, 31 bits) never do.
 inline constexpr uint64_t kMoltBlobSiteKeyBit = uint64_t{1} << 63;
 
-// The budget keys of the sites the browser makes blobs for: one per site (a
-// serialized SchemefulSite), handed out in order the first time the site
-// needs one, so no two sites ever share a key (a hash of the site could be
-// made to collide by a site that picks its domain), and none is a renderer
-// process's. The browser's key for no site. Not thread-safe: its user keeps
-// it on one sequence, or locks.
-class MoltBlobSiteKeys {
- public:
-  MoltBlobSiteKeys();
-  ~MoltBlobSiteKeys();
-
-  uint64_t KeyFor(std::string_view site) {
-    if (site.empty()) {
-      return kMoltBlobBrowserKey;
-    }
-    if (auto it = keys_.find(site); it != keys_.end()) {
-      return it->second;
-    }
-    const uint64_t key = kMoltBlobSiteKeyBit | ++last_;
-    keys_.emplace(std::string(site), key);
-    return key;
-  }
-  size_t size() const { return keys_.size(); }
-
- private:
-  std::map<std::string, uint64_t, std::less<>> keys_;
-  uint64_t last_ = 0;
-};
-
-inline MoltBlobSiteKeys::MoltBlobSiteKeys() = default;
-inline MoltBlobSiteKeys::~MoltBlobSiteKeys() = default;
+// The budget key of a site the browser makes blobs for, from `digest`: 64
+// bits of a keyed digest of the site (a serialized SchemefulSite) under a
+// secret of the browser process's own, made at random when it starts
+// (in_memory_download.cc). Kept nowhere: the same site always gets the same
+// key, and no record per site is kept, however many sites an identity
+// visits (the keys used to be handed out in order and kept for the
+// browser's life). Never a renderer process's (the bit) or the browser's
+// own. Two sites share a key only by chance, about once in 2^63 for a pair,
+// and a page can't pick names that do: it never sees a key, and the digest
+// depends on the secret.
+constexpr uint64_t MoltBlobSiteKeyFromDigest(uint64_t digest) {
+  return kMoltBlobSiteKeyBit | (digest & ~kMoltBlobSiteKeyBit);
+}
+static_assert(MoltBlobSiteKeyFromDigest(0) == kMoltBlobSiteKeyBit);
+static_assert(MoltBlobSiteKeyFromDigest(~uint64_t{0}) == ~uint64_t{0});
 
 // Whether blob memory is counted in shares.
 constexpr bool MoltUsesBlobBudget(uint64_t per_key) {

@@ -5,21 +5,37 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/keepalive_statistics_recorder.cc b/services/network/keepalive_statistics_recorder.cc
-index afbcd6f7d0e5bffa8183d316c228804be266e8cd..50d9a5b54d8cfa6f1712077f7b0b27efe6d90137 100644
+index afbcd6f7d0e5bffa8183d316c228804be266e8cd..7371ff5e8ad52966557d5530eeeb4b8c65cfb094 100644
 --- a/services/network/keepalive_statistics_recorder.cc
 +++ b/services/network/keepalive_statistics_recorder.cc
-@@ -5,6 +5,7 @@
+@@ -5,7 +5,12 @@
  #include "services/network/keepalive_statistics_recorder.h"
  
  #include <algorithm>
 +#include <cstdint>
++#include <utility>  // MoltBrowser
  
++#include "base/functional/bind.h"           // MoltBrowser
++#include "base/location.h"                  // MoltBrowser
++#include "base/task/sequenced_task_runner.h"  // MoltBrowser
  
  namespace network {
-@@ -65,6 +66,24 @@ void KeepaliveStatisticsRecorder::OnLoadFinished(
-   --num_inflight_requests_;
- }
  
+@@ -31,6 +36,7 @@ void KeepaliveStatisticsRecorder::Unregister(
+ 
+   if (it->second.num_registrations == 1) {
+     per_top_level_frame_records_.erase(it);
++    MoltNotifyIfIdle();  // MoltBrowser
+     return;
+   }
+   --it->second.num_registrations;
+@@ -63,6 +69,48 @@ void KeepaliveStatisticsRecorder::OnLoadFinished(
+     it->second.total_request_size -= request_size;
+   }
+   --num_inflight_requests_;
++  MoltNotifyIfIdle();  // MoltBrowser
++}
++
 +// MoltBrowser:
 +void KeepaliveStatisticsRecorder::MoltAddPartitionedContext(
 +    const void* context) {
@@ -34,10 +50,31 @@ index afbcd6f7d0e5bffa8183d316c228804be266e8cd..50d9a5b54d8cfa6f1712077f7b0b27ef
 +KeepaliveStatisticsRecorder* KeepaliveStatisticsRecorder::MoltRecorderFor(
 +    const void* context,
 +    const std::string& site) {
-+  return molt_partitions_.RecorderFor(reinterpret_cast<uintptr_t>(context),
-+                                      site, this);
++  const uintptr_t key = reinterpret_cast<uintptr_t>(context);
++  KeepaliveStatisticsRecorder* recorder =
++      molt_partitions_.RecorderFor(key, site, this);
++  if (recorder != this && !recorder->molt_on_idle_) {
++    recorder->molt_on_idle_ = base::BindRepeating(
++        &KeepaliveStatisticsRecorder::MoltForgetIfIdle, AsWeakPtr(), key, site);
++  }
++  return recorder;
 +}
 +
++void KeepaliveStatisticsRecorder::MoltNotifyIfIdle() {
++  if (molt_on_idle_ && MoltIsIdle()) {
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
++                                                             molt_on_idle_);
++  }
++}
++
++// static
++void KeepaliveStatisticsRecorder::MoltForgetIfIdle(
++    base::WeakPtr<KeepaliveStatisticsRecorder> root,
++    uintptr_t context,
++    std::string site) {
++  if (root) {
++    root->molt_partitions_.ForgetIfIdle(context, site);
++  }
+ }
+ 
  int KeepaliveStatisticsRecorder::NumInflightRequestsPerTopLevelFrame(
-     const base::UnguessableToken& top_level_frame_id) const {
-   auto it = per_top_level_frame_records_.find(top_level_frame_id);

@@ -1164,6 +1164,12 @@ bool ContentBrowserClient::ShouldScheduleBackgroundFetchesPerSite(
   return false;
 }
 
+base::RepeatingClosure
+ContentBrowserClient::GetBackgroundFetchGrowthBeyondFloorCallback(
+    BrowserContext*) {
+  return base::RepeatingClosure();
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

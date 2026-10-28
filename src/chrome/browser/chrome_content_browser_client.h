@@ -745,6 +745,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context) override;  // MoltBrowser
   base::RepeatingClosure GetDomStorageGrowthBeyondFloorCallback(
       content::BrowserContext* browser_context) override;  // MoltBrowser
+  base::RepeatingClosure GetBackgroundFetchGrowthBeyondFloorCallback(
+      content::BrowserContext* browser_context) override;
   bool ShouldScheduleBackgroundFetchesPerSite(
       content::BrowserContext* browser_context) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
