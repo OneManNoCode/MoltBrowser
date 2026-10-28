@@ -5,18 +5,20 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/BUILD.gn b/net/BUILD.gn
-index ba081007c657a63434ed1fefdfddcbb00b2b40e0..8c4d0ceec166c4b665be1f93a52db8670f086556 100644
+index ba081007c657a63434ed1fefdfddcbb00b2b40e0..719676dfa74d73da219d14471b147d3bb6ee91ab 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -172,6 +172,17 @@ source_set("chrome_root_store_data") {
+@@ -172,6 +172,19 @@ source_set("chrome_root_store_data") {
    }
  }
  
 +# MoltBrowser: how MoltNet splits socket pools and the memory cache by site,
-+# and what its cookie store keeps under a page's nonce (std-only and
-+# header-only), for :net and MoltBrowser's own targets.
++# what its cookie store keeps under a page's nonce, and the per-site shares
++# of its fixed-size caches (std-only and header-only), for :net and
++# MoltBrowser's own targets.
 +source_set("molt_policies") {
 +  sources = [
++    "base/molt_site_share_policy.h",
 +    "cookies/molt_nonce_cookie_policy.h",
 +    "disk_cache/memory/molt_mem_backend_budget_policy.h",
 +    "socket/molt_per_site_socket_pool_policy.h",
@@ -26,16 +28,19 @@ index ba081007c657a63434ed1fefdfddcbb00b2b40e0..8c4d0ceec166c4b665be1f93a52db867
  component("net") {
    sources = [
      "base/address_family.cc",
-@@ -1236,6 +1247,20 @@ component("net") {
+@@ -1236,6 +1249,23 @@ component("net") {
      "url_request/websocket_handshake_userdata_key.h",
    ]
  
 +  # MoltBrowser: MoltNet's per-site certificate fetches, connection budgets
-+  # and socket pools, its HTTP cache's per-site eviction lists, and the end
-+  # of an identity (header-only but for the
-+  # process's Tor capacity; the std-only policies they follow are
++  # and socket pools, its HTTP cache's per-site eviction lists, the site a
++  # network key counts against and the containers that keep per-site shares
++  # of the fixed-size caches, and the end of an identity (header-only but
++  # for the process's Tor capacity; the std-only policies they follow are
 +  # :molt_policies).
 +  sources += [
++    "base/molt_network_key_site.h",
++    "base/molt_site_lru_cache.h",
 +    "cert/molt_cert_fetch_site.h",
 +    "disk_cache/memory/molt_mem_backend_site_lru.h",
 +    "socket/molt_connection_budget.cc",
@@ -47,7 +52,7 @@ index ba081007c657a63434ed1fefdfddcbb00b2b40e0..8c4d0ceec166c4b665be1f93a52db867
    if (is_posix || is_fuchsia) {
      sources += [ "base/net_errors_posix.cc" ]
    }
-@@ -1264,6 +1289,10 @@ component("net") {
+@@ -1264,6 +1294,10 @@ component("net") {
    ]
  
    public_deps = [

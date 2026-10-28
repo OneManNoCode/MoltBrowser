@@ -1,0 +1,57 @@
+MoltBrowser patch for net/http/broken_alternative_services.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/net/http/broken_alternative_services.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/http/broken_alternative_services.cc b/net/http/broken_alternative_services.cc
+index 89325cbdfb51c5555d18632c7212bc68d7fbae4c..f2c27415b8afa4b8484bab5c5a02993018764a99 100644
+--- a/net/http/broken_alternative_services.cc
++++ b/net/http/broken_alternative_services.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "net/http/broken_alternative_services.h"
+ 
++#include <set>  // MoltBrowser
++
+ #include "base/containers/adapters.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+@@ -105,6 +107,37 @@ void BrokenAlternativeServices::Clear() {
+   recently_broken_alternative_services_.Clear();
+ }
+ 
++// MoltBrowser: see the header.
++bool BrokenAlternativeServices::MoltClearForNonce(
++    const base::UnguessableToken& nonce) {
++  bool changed = false;
++  for (auto it = broken_alternative_service_list_.begin();
++       it != broken_alternative_service_list_.end();) {
++    if (it->first.network_anonymization_key.GetNonce() == nonce) {
++      broken_alternative_service_map_.erase(it->first);
++      it = broken_alternative_service_list_.erase(it);
++      changed = true;
++    } else {
++      ++it;
++    }
++  }
++  for (auto it = recently_broken_alternative_services_.begin();
++       it != recently_broken_alternative_services_.end();) {
++    if (it->first.network_anonymization_key.GetNonce() == nonce) {
++      it = recently_broken_alternative_services_.Erase(it);
++      changed = true;
++    } else {
++      ++it;
++    }
++  }
++  changed |= std::erase_if(broken_alternative_services_on_default_network_,
++                           [&nonce](const BrokenAlternativeService& service) {
++                             return service.network_anonymization_key
++                                        .GetNonce() == nonce;
++                           }) > 0;
++  return changed;
++}
++
+ void BrokenAlternativeServices::MarkBrokenUntilDefaultNetworkChanges(
+     const BrokenAlternativeService& broken_alternative_service) {
+   DCHECK(!broken_alternative_service.alternative_service.host.empty());

@@ -340,6 +340,8 @@ net/disk_cache/memory/mem_backend_impl.h.patch
 net/disk_cache/memory/mem_entry_impl.cc.patch
 net/disk_cache/memory/mem_entry_impl.h.patch
 net/dns/host_resolver_manager.cc.patch
+net/http/broken_alternative_services.cc.patch
+net/http/broken_alternative_services.h.patch
 net/http/http_auth_cache.cc.patch
 net/http/http_auth_cache.h.patch
 net/http/http_cache.cc.patch
@@ -402,6 +404,10 @@ services/network/public/cpp/cert_verifier/cert_verifier_mojom_traits.cc.patch
 services/network/public/cpp/cert_verifier/cert_verifier_mojom_traits.h.patch
 services/network/public/mojom/cert_verifier_service.mojom.patch
 services/network/public/mojom/network_context.mojom.patch
+services/network/shared_dictionary/shared_dictionary_manager.cc.patch
+services/network/shared_dictionary/shared_dictionary_manager.h.patch
+services/network/shared_dictionary/shared_dictionary_manager_in_memory.cc.patch
+services/network/shared_dictionary/shared_dictionary_manager_in_memory.h.patch
 services/network/test/test_network_context.h.patch
 services/network/url_loader_factory.cc.patch
 services/network/url_loader_factory.h.patch

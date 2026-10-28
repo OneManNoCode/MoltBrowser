@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/cors/preflight_controller.h b/services/network/cors/preflight_controller.h
-index 121b2d21584e5295ed63e0bf53fd6c258906c95b..148e3094e1f61f4b09190dc377913346193915d0 100644
+index 121b2d21584e5295ed63e0bf53fd6c258906c95b..5c64e92b3c816b139e4db72e0ead72f86705d9d7 100644
 --- a/services/network/cors/preflight_controller.h
 +++ b/services/network/cors/preflight_controller.h
 @@ -16,6 +16,7 @@
@@ -16,13 +16,17 @@ index 121b2d21584e5295ed63e0bf53fd6c258906c95b..148e3094e1f61f4b09190dc377913346
  #include "mojo/public/cpp/bindings/remote.h"
  #include "net/traffic_annotation/network_traffic_annotation.h"
  #include "services/network/cors/preflight_cache.h"
-@@ -117,6 +118,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
+@@ -117,6 +118,14 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
    // clears all its contents.
    void ClearCorsPreflightCache(mojom::ClearDataFilterPtr url_filter);
  
 +  // MoltBrowser: clears the cache's entries kept under a network key with
 +  // `nonce` (PreflightCache::MoltClearForNonce()).
 +  void MoltClearCorsPreflightCacheForNonce(const base::UnguessableToken& nonce);
++
++  // MoltBrowser: per-site shares of the cache, for MoltNet's network context
++  // (PreflightCache::MoltKeepPerSiteShares()).
++  void MoltKeepPerSiteShares();
 +
    PreflightCache& GetPreflightCacheForTesting() { return cache_; }
  

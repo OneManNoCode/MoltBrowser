@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/cors/preflight_controller.cc b/services/network/cors/preflight_controller.cc
-index 10f7b85177da92870a18b212359f9b2e54436b58..af0ce4f8b7e47f919c259abf2f502f3646649d46 100644
+index 10f7b85177da92870a18b212359f9b2e54436b58..982ee554780f7ede4bb87a94b7dbaf5f4d123b2f 100644
 --- a/services/network/cors/preflight_controller.cc
 +++ b/services/network/cors/preflight_controller.cc
-@@ -644,6 +644,12 @@ void PreflightController::ClearCorsPreflightCache(
+@@ -644,6 +644,17 @@ void PreflightController::ClearCorsPreflightCache(
    cache_.ClearCache(std::move(url_filter));
  }
  
@@ -16,6 +16,11 @@ index 10f7b85177da92870a18b212359f9b2e54436b58..af0ce4f8b7e47f919c259abf2f502f36
 +void PreflightController::MoltClearCorsPreflightCacheForNonce(
 +    const base::UnguessableToken& nonce) {
 +  cache_.MoltClearForNonce(nonce);
++}
++
++// MoltBrowser: see the header.
++void PreflightController::MoltKeepPerSiteShares() {
++  cache_.MoltKeepPerSiteShares();
 +}
 +
  void PreflightController::RemoveLoader(PreflightLoader* loader) {

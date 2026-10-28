@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/cookies/cookie_monster.h b/net/cookies/cookie_monster.h
-index c5249984334c44b593b3bd9e7d834be82260cea2..f9cd11681629403adccdfaff307027c27c01209d 100644
+index c5249984334c44b593b3bd9e7d834be82260cea2..2268a91cd4144e25d64d601704ad89f07047ee7d 100644
 --- a/net/cookies/cookie_monster.h
 +++ b/net/cookies/cookie_monster.h
 @@ -28,12 +28,15 @@
@@ -24,7 +24,7 @@ index c5249984334c44b593b3bd9e7d834be82260cea2..f9cd11681629403adccdfaff307027c2
  #include "net/log/net_log_with_source.h"
  #include "url/gurl.h"
  
-@@ -276,6 +279,20 @@ class NET_EXPORT CookieMonster : public CookieStore {
+@@ -276,6 +279,30 @@ class NET_EXPORT CookieMonster : public CookieStore {
    // periodically.
    bool DoRecordPeriodicStatsForTesting() { return DoRecordPeriodicStats(); }
  
@@ -32,8 +32,9 @@ index c5249984334c44b593b3bd9e7d834be82260cea2..f9cd11681629403adccdfaff307027c2
 +  // (molt_nonce_cookie_policy.h): from now on each nonce partition, and each
 +  // nonce's partitions together, hold at most what that says, the
 +  // partition written evicting its own least recently used cookies past it,
-+  // and a nonce can be refused (MoltDropNonce()). Called once, before the
-+  // store is first used (NetworkContext, for MoltNet's context).
++  // and a nonce can be refused (MoltDropNonce()); every other partition
++  // holds at most its own total, purged the same way. Called once, before
++  // the store is first used (NetworkContext, for MoltNet's context).
 +  void MoltKeepNonceCookieLimits();
 +  bool MoltKeepsNonceCookieLimits() const { return !!molt_nonce_cookies_; }
 +
@@ -42,18 +43,28 @@ index c5249984334c44b593b3bd9e7d834be82260cea2..f9cd11681629403adccdfaff307027c2
 +  // without, that ends. Does nothing without MoltKeepNonceCookieLimits().
 +  void MoltDropNonce(const base::UnguessableToken& nonce, bool refuse);
 +
++  // MoltBrowser: refuses cookies for the partitions keyed by each of
++  // `nonces` from now on, as MoltDropNonce(nonce, /*refuse=*/true) does, in
++  // a store that holds none of them: called right after
++  // MoltKeepNonceCookieLimits(), as the store is made, by a network context
++  // made again for a storage partition (its earlier context's refusals).
++  // Unlike MoltDropNonce(), it doesn't wait for the store to be loaded, nor
++  // mark it initialized. Does nothing without MoltKeepNonceCookieLimits().
++  void MoltRefuseNonces(const std::vector<base::UnguessableToken>& nonces);
++
   private:
    // For garbage collection constants.
    FRIEND_TEST_ALL_PREFIXES(CookieMonsterTest, TestHostGarbageCollection);
-@@ -686,6 +703,18 @@ class NET_EXPORT CookieMonster : public CookieStore {
+@@ -686,6 +713,19 @@ class NET_EXPORT CookieMonster : public CookieStore {
        const CookiePartitionKey& cookie_partition_key,
        const std::string& key);
  
 +  // MoltBrowser: with MoltNet's limits, while the nonce partition
 +  // `cookie_partition_key` or its nonce's partitions hold more than they may
 +  // (molt_nonce_cookie_policy.h), deletes that partition's least recently
-+  // used cookies, expired ones first, never `keep` (the cookie just set).
-+  // Returns the number of cookies deleted.
++  // used cookies, expired ones first, never `keep` (the cookie just set); a
++  // partition without a nonce past its own total, down to what its purge
++  // leaves. Returns the number of cookies deleted.
 +  size_t MoltGarbageCollectNoncePartition(
 +      base::Time current,
 +      const CookiePartitionKey& cookie_partition_key,
@@ -64,12 +75,13 @@ index c5249984334c44b593b3bd9e7d834be82260cea2..f9cd11681629403adccdfaff307027c2
    // Helper for GarbageCollect(). Deletes up to |purge_goal| cookies with a
    // priority less than or equal to |priority| from |cookies|, while ensuring
    // that at least the |to_protect| most-recent cookies are retained.
-@@ -853,6 +882,12 @@ class NET_EXPORT CookieMonster : public CookieStore {
+@@ -853,6 +893,13 @@ class NET_EXPORT CookieMonster : public CookieStore {
    // Cookie jar sizes per partition.
    std::map<CookiePartitionKey, size_t> bytes_per_cookie_partition_;
  
 +  // MoltBrowser: with MoltNet's limits (MoltKeepNonceCookieLimits()), the
-+  // cookies held under each nonce and the nonces refused; else null.
++  // cookies held under each nonce, the nonces refused and what each other
++  // partition holds; else null.
 +  std::unique_ptr<
 +      MoltNonceCookieTotals<base::UnguessableToken, CookiePartitionKey>>
 +      molt_nonce_cookies_;
