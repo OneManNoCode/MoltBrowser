@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -126,6 +127,13 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
     return weak_factory_.GetWeakPtr();
   }
 
+  // The nonces the network context of the storage partition at
+  // `partition_path` refuses (MoltNetNonceRefusals).
+  std::vector<base::UnguessableToken> RefusedIn(
+      const base::FilePath& partition_path) const {
+    return refusals_.RefusedIn(partition_path);
+  }
+
  private:
   struct Record {
     explicit Record(const content::StoragePartitionConfig& config)
@@ -181,6 +189,13 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
     if (!partition) {
       return;
     }
+    // What the partition's network context refuses from now on, for a
+    // context made again (MoltNetRefusedNonces()).
+    if (closed) {
+      refusals_.Closed(nonce, partition->GetPath());
+    } else {
+      refusals_.Gone(nonce, partition->GetPath());
+    }
     if (content::DOMStorageContext* dom_storage =
             partition->GetDOMStorageContext()) {
       dom_storage->MoltDropNonce(nonce, closed);
@@ -221,6 +236,7 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
   // way set after the page went; then the network context forgets it.
   void DropLater(const content::StoragePartitionConfig& config,
                  const base::UnguessableToken& nonce) {
+    refusals_.Forgotten(nonce);
     content::StoragePartition* partition =
         browser_context_->GetStoragePartition(config, /*can_create=*/false);
     if (!partition) {
@@ -237,6 +253,7 @@ class MoltNetNonceRegistry : public base::SupportsUserData::Data {
   MoltNetNonceGroups<base::UnguessableToken> groups_;
   MoltNetNoncePageCounts<base::UnguessableToken> pages_;
   std::map<base::UnguessableToken, Record> records_;
+  MoltNetNonceRefusals<base::UnguessableToken, base::FilePath> refusals_;
   base::WeakPtrFactory<MoltNetNonceRegistry> weak_factory_{this};
 };
 
@@ -300,6 +317,16 @@ MoltNetNoncePage* NoncePageOf(content::Page& page,
 }
 
 }  // namespace
+
+std::vector<base::UnguessableToken> MoltNetRefusedNonces(
+    content::BrowserContext* browser_context,
+    const base::FilePath& partition_path) {
+  // No registry yet: nothing refused (and none is made here).
+  auto* registry = static_cast<MoltNetNonceRegistry*>(
+      browser_context->GetUserData(kMoltNetNonceRegistryKey));
+  return registry ? registry->RefusedIn(partition_path)
+                  : std::vector<base::UnguessableToken>();
+}
 
 // static
 void MoltNetNonceStorageTabHelper::MaybeCreateForWebContents(

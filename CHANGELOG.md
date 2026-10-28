@@ -428,6 +428,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   clear the site's own storage; and on Linux a microphone stream records
   the device the page asked for whenever the sound server doesn't say
   which microphone a filter or virtual microphone sits on.
+- MoltNet hardening, shared network state: MoltNet's fixed-size network
+  caches (TLS sessions, HTTP authentication entries, servers' HTTP/2 and
+  HTTP/1.1 records, CORS preflight results, compression dictionaries)
+  give each site a share of its own, evicted only for that site's own new
+  entries and never for memory pressure; each partition of partitioned
+  cookies has a total of its own; MoltNet uses no QUIC, and the marks of
+  broken alternative services under a page's nonce go with the page; a
+  network context made again after the network service restarts refuses
+  the earlier context's refused nonces from the start. The leak test kit
+  accepts a group-writable `--out` directory only when no other account
+  can be in its group (`docs/MOLTNET_COMPLIANCE.md`,
+  `docs/LEAK_TESTING.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

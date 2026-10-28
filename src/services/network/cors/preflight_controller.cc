@@ -650,6 +650,11 @@ void PreflightController::MoltClearCorsPreflightCacheForNonce(
   cache_.MoltClearForNonce(nonce);
 }
 
+// MoltBrowser: see the header.
+void PreflightController::MoltKeepPerSiteShares() {
+  cache_.MoltKeepPerSiteShares();
+}
+
 void PreflightController::RemoveLoader(PreflightLoader* loader) {
   auto it = loaders_.find(loader);
   CHECK(it != loaders_.end());

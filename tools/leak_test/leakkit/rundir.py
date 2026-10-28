@@ -23,7 +23,9 @@ private directory and copied in (copy_in()).
 """
 
 import errno
+import grp
 import os
+import pwd
 import stat
 
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -117,10 +119,74 @@ def open_out_dir(path):
     return fd
 
 
-def check_out_dir(st, path, uid, gid):
+class AccountDatabase(object):
+    """The system's group and account databases, as other_accounts_in_group()
+    reads them (grp and pwd, so NSS: /etc/group and /etc/passwd, and any
+    directory service the system lists accounts from). Tests pass a stand-in
+    with the same three methods."""
+
+    @staticmethod
+    def group_name(gid):
+        """The name of group `gid`, or None if the group database has no such
+        group."""
+        try:
+            return grp.getgrgid(gid).gr_name
+        except KeyError:
+            return None
+
+    @staticmethod
+    def group_members(gid):
+        """The names the group database lists as members of group `gid`, or
+        None if it has no such group."""
+        try:
+            return list(grp.getgrgid(gid).gr_mem)
+        except KeyError:
+            return None
+
+    @staticmethod
+    def uid_of(name):
+        """The uid of the account `name`, or None if there is none."""
+        try:
+            return pwd.getpwnam(name).pw_uid
+        except KeyError:
+            return None
+
+    @staticmethod
+    def accounts():
+        """Every account the account database lists, as (name, uid, primary
+        gid)."""
+        return [(p.pw_name, p.pw_uid, p.pw_gid) for p in pwd.getpwall()]
+
+
+def other_accounts_in_group(gid, uid, accounts=None):
+    """The accounts other than root and the user (`uid`) that can be in group
+    `gid`, by name: the group's members in the group database and the
+    accounts whose primary group it is (user private groups, the default on
+    most distributions, have none; a group every user shares, such as
+    `users`, has the other users). A member the account database doesn't
+    know counts as another account, and so does every account when the group
+    database has no group `gid` (who could be in it can't be told)."""
+    accounts = accounts or AccountDatabase()
+    ours = (0, uid, os.geteuid())
+    members = accounts.group_members(gid)
+    if members is None:
+        return ['(group %d is not in the group database)' % gid]
+    others = []
+    for name in members:
+        if accounts.uid_of(name) not in ours:
+            others.append(name)
+    for name, account_uid, account_gid in accounts.accounts():
+        if account_gid == gid and account_uid not in ours and \
+                name not in others:
+            others.append(name)
+    return others
+
+
+def check_out_dir(st, path, uid, gid, accounts=None):
     """Refuses the --out directory whose stat is `st` unless it belongs to
     root, the harness or the user (`uid`) and no other account can write in
-    it (see RunDir.create())."""
+    it (see RunDir.create()). `accounts`: the account databases
+    (AccountDatabase, the system's, if None)."""
     if st.st_uid not in (0, os.geteuid(), uid):
         raise OSError(errno.EPERM,
                       'the --out directory belongs to another account', path)
@@ -129,9 +195,33 @@ def check_out_dir(st, path, uid, gid):
         raise OSError(errno.EPERM,
                       'anyone can write in the --out directory and it is not '
                       'sticky', path)
-    if mode & stat.S_IWGRP and st.st_gid not in (0, gid):
-        raise OSError(errno.EPERM,
-                      'another group can write in the --out directory', path)
+    # A sticky directory lets no one but an entry's owner (and the
+    # directory's, and root) rename or remove the entry, as /tmp: the run
+    # directory, the user's, stays where the kit made it, whoever else can
+    # write there.
+    if mode & stat.S_IWGRP and not mode & stat.S_ISVTX:
+        if st.st_gid not in (0, gid):
+            raise OSError(errno.EPERM,
+                          'another group can write in the --out directory',
+                          path)
+        # The user's or root's group: an account in it could rename the run
+        # directory and put another in its place, whose report the kit
+        # would then read (it reads the report by path, as the user).
+        accounts = accounts or AccountDatabase()
+        others = other_accounts_in_group(st.st_gid, uid, accounts)
+        if others:
+            name = accounts.group_name(st.st_gid)
+            group = '%s (gid %d)' % (name, st.st_gid) if name else \
+                'gid %d' % st.st_gid
+            shown = ', '.join(others[:5]) + (
+                ' and %d more' % (len(others) - 5) if len(others) > 5 else '')
+            raise OSError(errno.EPERM,
+                          'the --out directory is writable by its group, %s, '
+                          'which other accounts can be in (%s), so one of '
+                          'them could replace the run directory and the '
+                          'report the kit reads from it; make the directory '
+                          'writable by its owner only (chmod g-w) or choose '
+                          'another --out' % (group, shown), path)
 
 
 class RunDir(object):
@@ -143,7 +233,7 @@ class RunDir(object):
         self.gid = gid
 
     @classmethod
-    def create(cls, path, uid, gid):
+    def create(cls, path, uid, gid, accounts=None):
         """Makes the run directory `path` (it must not exist; its parent, the
         --out directory, may), opens it, checks that it is the directory just
         made, and hands it to the user (`uid`, `gid`).
@@ -152,16 +242,19 @@ class RunDir(object):
         following a link a non-root account could have put on the way
         (open_out_dir()), and must belong to root, the harness or the user
         and be writable by no other account (a world-writable one must be
-        sticky, as /tmp is; a group-writable one must be root's or the
-        user's own group's). Otherwise a link put where --out was, or on the
-        way to it, or a directory another account controls, would have root
-        make the run directory and hand it to the user wherever that leads.
-        The run directory is made and opened from the --out directory's
-        descriptor."""
+        sticky, as /tmp is; a group-writable one that isn't must be root's or
+        the user's own group's, and no other account may be in that group:
+        check_out_dir(), with `accounts` the account databases). Otherwise a
+        link put where --out was, or on the way to it, or a directory another
+        account controls, would have root make the run directory and hand it
+        to the user wherever that leads, and an account that can rename
+        entries in --out could put another run directory in the place of
+        this one, whose report the kit would read. The run directory is made
+        and opened from the --out directory's descriptor."""
         parent, name = os.path.split(os.path.abspath(path))
         pfd = open_out_dir(parent)
         try:
-            check_out_dir(os.fstat(pfd), parent, uid, gid)
+            check_out_dir(os.fstat(pfd), parent, uid, gid, accounts)
             os.mkdir(name, 0o755, dir_fd=pfd)
             fd = os.open(name, _DIR_FLAGS, dir_fd=pfd)
         finally:

@@ -4,10 +4,11 @@
 // What MoltNet's cookie store keeps under a page's nonce
 // (net/cookies/molt_nonce_cookie_policy.h, std-only): totals per nonce
 // partition and per nonce, the cookies refused, and records that go once
-// they hold nothing.
+// they hold nothing; and the totals of the other partitions.
 
 #include "net/cookies/molt_nonce_cookie_policy.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -169,6 +170,97 @@ TEST(MoltNetNonceCookiePolicyTest, ManyPagesLeaveNoRecords) {
     }
     totals.SetRefused(nonce, false);
   }
+  EXPECT_EQ(totals.size(), 0u);
+}
+
+// A partition without a nonce (a top-level site's partition of third-party
+// cookies) holds Chromium's limit for a whole store of unpartitioned
+// cookies, and 18 domains at its per-domain byte limit for a partition; the
+// purge leaves room for a cookie.
+TEST(MoltNetNonceCookiePolicyTest, ThePartitionLimits) {
+  EXPECT_EQ(kMoltPartitionMaxCookies, 3300u);
+  EXPECT_EQ(kMoltPartitionPurgeCookies, 300u);
+  EXPECT_EQ(kMoltPartitionMaxCookieBytes, 18u * 10240);
+  EXPECT_EQ(kMoltPartitionPurgeCookieBytes, 18u * 1024);
+  // Many domains at Chromium's limits for one domain in a partition.
+  EXPECT_GE(kMoltPartitionMaxCookies, 18u * 180);
+  EXPECT_GE(kMoltPartitionMaxCookieBytes - kMoltPartitionPurgeCookieBytes,
+            kMoltCookieMaxNameValueBytes);
+}
+
+// A partition without a nonce is over past its limits; while it is purged
+// it evicts down to what the purge leaves, by count and by bytes.
+TEST(MoltNetNonceCookiePolicyTest, APartitionWithoutANonce) {
+  EXPECT_FALSE(MoltPartitionCookiesOver({kMoltPartitionMaxCookies, 0}));
+  EXPECT_TRUE(MoltPartitionCookiesOver({kMoltPartitionMaxCookies + 1, 0}));
+  EXPECT_FALSE(MoltPartitionCookiesOver({1, kMoltPartitionMaxCookieBytes}));
+  EXPECT_TRUE(MoltPartitionCookiesOver({1, kMoltPartitionMaxCookieBytes + 1}));
+  EXPECT_TRUE(MoltPartitionCookiesAboveTarget(
+      {kMoltPartitionMaxCookies - kMoltPartitionPurgeCookies + 1, 0}));
+  EXPECT_FALSE(MoltPartitionCookiesAboveTarget(
+      {kMoltPartitionMaxCookies - kMoltPartitionPurgeCookies, 0}));
+  EXPECT_TRUE(MoltPartitionCookiesAboveTarget(
+      {1, kMoltPartitionMaxCookieBytes - kMoltPartitionPurgeCookieBytes + 1}));
+  EXPECT_FALSE(MoltPartitionCookiesAboveTarget(
+      {1, kMoltPartitionMaxCookieBytes - kMoltPartitionPurgeCookieBytes}));
+
+  Totals totals;
+  for (size_t i = 0; i < kMoltPartitionMaxCookies; ++i) {
+    totals.AddedToPartition(kPartition, 10);
+  }
+  const std::optional<std::string> no_nonce;
+  EXPECT_FALSE(totals.OverLimits(no_nonce, kPartition));
+  totals.AddedToPartition(kPartition, 10);
+  EXPECT_TRUE(totals.OverLimits(no_nonce, kPartition));
+  EXPECT_TRUE(totals.AboveTarget(no_nonce, kPartition));
+  // Another partition, and the nonces, count on their own.
+  EXPECT_FALSE(totals.OverLimits(no_nonce, kSecondPartition));
+  EXPECT_FALSE(totals.OverLimits(std::optional<std::string>(kNonce),
+                                 kPartition));
+  for (size_t i = 0; i <= kMoltPartitionPurgeCookies; ++i) {
+    totals.RemovedFromPartition(kPartition, 10);
+  }
+  EXPECT_FALSE(totals.AboveTarget(no_nonce, kPartition));
+  EXPECT_EQ(totals.OfPartitionWithoutNonce(kPartition).cookies,
+            kMoltPartitionMaxCookies - kMoltPartitionPurgeCookies);
+  // Such a cookie is never refused: the partition makes room.
+  EXPECT_FALSE(totals.Refuses(kNonce, kPartition, 10));
+}
+
+// A nonce's partition keeps round 33's limits through the same functions:
+// collected past its limits, until within them (no purge below).
+TEST(MoltNetNonceCookiePolicyTest, ANoncePartitionThroughTheSameFunctions) {
+  Totals totals;
+  const std::optional<std::string> nonce(kNonce);
+  for (size_t i = 0; i <= kMoltNoncePartitionMaxCookies; ++i) {
+    totals.Added(kNonce, kPartition, 10);
+  }
+  EXPECT_TRUE(totals.OverLimits(nonce, kPartition));
+  EXPECT_TRUE(totals.AboveTarget(nonce, kPartition));
+  totals.Removed(kNonce, kPartition, 10);
+  EXPECT_FALSE(totals.OverLimits(nonce, kPartition));
+  EXPECT_FALSE(totals.AboveTarget(nonce, kPartition));
+  // The nonce's partitions aren't partitions without a nonce.
+  EXPECT_EQ(totals.partitions_without_nonce(), 0u);
+}
+
+// A partition's record goes with its last cookie, so partitions of sites
+// visited once leave none behind.
+TEST(MoltNetNonceCookiePolicyTest, PartitionRecordsGoWhenEmpty) {
+  Totals totals;
+  for (int site = 0; site < 1000; ++site) {
+    const std::string partition = "https://t" + std::to_string(site);
+    totals.AddedToPartition(partition, 40);
+    totals.AddedToPartition(partition, 60);
+    EXPECT_EQ(totals.OfPartitionWithoutNonce(partition),
+              (MoltNonceCookieCounts{2, 100}));
+    totals.RemovedFromPartition(partition, 40);
+    totals.RemovedFromPartition(partition, 60);
+  }
+  EXPECT_EQ(totals.partitions_without_nonce(), 0u);
+  // Removing what isn't counted changes nothing.
+  totals.RemovedFromPartition(kPartition, 10);
+  EXPECT_EQ(totals.partitions_without_nonce(), 0u);
   EXPECT_EQ(totals.size(), 0u);
 }
 

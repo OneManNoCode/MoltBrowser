@@ -114,21 +114,54 @@ class RunDirTest(unittest.TestCase):
         self.assertEqual(os.listdir(theirs), [])
 
     def test_check_out_dir(self):
-        def st(uid, gid, mode):
-            return os.stat_result((stat.S_IFDIR | mode, 0, 0, 2, uid, gid,
-                                   0, 0, 0, 0))
         me = os.geteuid()
+        # The user's group is a private one (UserPrivateGroups below).
+        upg = UserPrivateGroups()
         ok = [st(0, 0, 0o755), st(me, 0, 0o755), st(UID, GID, 0o755),
-              st(UID, GID, 0o775), st(0, 0, 0o1777)]
+              st(UID, GID, 0o775), st(0, 0, 0o1777), st(0, 0, 0o775)]
         for s in ok:
-            rundir.check_out_dir(s, 'x', UID, GID)
+            rundir.check_out_dir(s, 'x', UID, GID, upg)
         bad = [st(UID + 7, GID, 0o755), st(UID, GID, 0o777),
                st(UID, GID + 7, 0o775)]
         for s in bad:
             if s.st_uid == me:
                 continue
             with self.assertRaises(OSError):
-                rundir.check_out_dir(s, 'x', UID, GID)
+                rundir.check_out_dir(s, 'x', UID, GID, upg)
+
+    def test_create_refuses_a_group_writable_out_directory_of_a_shared_group(
+            self):
+        # Every user's primary group is `users`: another account in it could
+        # rename the run directory and put another in its place.
+        shared = os.path.join(self.tmp, 'shared')
+        os.mkdir(shared)
+        os.chmod(shared, 0o775)
+        gid = os.stat(shared).st_gid
+        with self.assertRaises(OSError) as cm:
+            rundir.RunDir.create(os.path.join(shared, 'run-2'), UID, gid,
+                                 SharedUsersGroup(gid))
+        self.assertEqual(cm.exception.errno, errno.EPERM)
+        self.assertIn('alice', str(cm.exception))
+        self.assertIn('chmod g-w', str(cm.exception))
+        self.assertEqual(os.listdir(shared), [])
+        # Writable by its owner only, or sticky, it is fine.
+        for mode in (0o755, 0o1775):
+            os.chmod(shared, mode)
+            run = rundir.RunDir.create(os.path.join(shared, 'run-%o' % mode),
+                                       UID, gid, SharedUsersGroup(gid))
+            run.close()
+        self.assertEqual(sorted(os.listdir(shared)), ['run-1775', 'run-755'])
+
+    def test_create_takes_a_group_writable_out_directory_of_a_private_group(
+            self):
+        private = os.path.join(self.tmp, 'private')
+        os.mkdir(private)
+        os.chmod(private, 0o775)
+        gid = os.stat(private).st_gid
+        run = rundir.RunDir.create(os.path.join(private, 'run-2'), UID, gid,
+                                   UserPrivateGroups(gid))
+        run.close()
+        self.assertEqual(os.listdir(private), ['run-2'])
 
     def test_writes_follow_the_directory_not_its_path(self):
         # The user renames the run directory and puts a link to another
@@ -354,6 +387,147 @@ class RunDirTest(unittest.TestCase):
         with self.assertRaises(OSError) as cm:
             rundir.open_out_dir(os.path.join(self.tmp, 'a', 'file', 'd'))
         self.assertEqual(cm.exception.errno, errno.ENOTDIR)
+
+
+def st(uid, gid, mode):
+    """A directory's stat with `uid`, `gid` and `mode`."""
+    return os.stat_result((stat.S_IFDIR | mode, 0, 0, 2, uid, gid, 0, 0, 0,
+                           0))
+
+
+class Accounts(object):
+    """A stand-in for the system's group and account databases
+    (rundir.AccountDatabase): `groups` maps a gid to (name, members), and
+    `accounts` lists (name, uid, primary gid)."""
+
+    def __init__(self, groups, accounts):
+        self.groups = groups
+        self.listed = accounts
+
+    def group_name(self, gid):
+        return self.groups[gid][0] if gid in self.groups else None
+
+    def group_members(self, gid):
+        return list(self.groups[gid][1]) if gid in self.groups else None
+
+    def uid_of(self, name):
+        for account, uid, _ in self.listed:
+            if account == name:
+                return uid
+        return None
+
+    def accounts(self):
+        return list(self.listed)
+
+
+def UserPrivateGroups(gid=None):
+    """A system with user private groups (Debian, Ubuntu, Fedora, Arch and
+    most others): every account's primary group is its own, named after it,
+    with no other member. The user's is `gid` (GID by default)."""
+    gid = GID if gid is None else gid
+    return Accounts(
+        {0: ('root', []), gid: ('moltuser', []), 1001: ('alice', []),
+         1002: ('bob', []), 100: ('users', ['alice', 'bob'])},
+        [('root', 0, 0), ('moltuser', UID, gid), ('alice', 1001, 1001),
+         ('bob', 1002, 1002), ('daemon', 1, 1)])
+
+
+def SharedUsersGroup(gid=None):
+    """A system where every user's primary group is one shared group
+    (`users`, as on systems without user private groups): `gid` (GID by
+    default)."""
+    gid = GID if gid is None else gid
+    return Accounts(
+        {0: ('root', []), gid: ('users', [])},
+        [('root', 0, 0), ('moltuser', UID, gid), ('alice', 1001, gid),
+         ('bob', 1002, gid)])
+
+
+class OtherAccountsInGroupTest(unittest.TestCase):
+    """rundir.other_accounts_in_group() and the --out check it gives, on
+    both kinds of system."""
+
+    def test_user_private_groups(self):
+        upg = UserPrivateGroups()
+        self.assertEqual(rundir.other_accounts_in_group(GID, UID, upg), [])
+        rundir.check_out_dir(st(UID, GID, 0o775), 'x', UID, GID, upg)
+        # Root's group has root alone.
+        self.assertEqual(rundir.other_accounts_in_group(0, UID, upg), [])
+        rundir.check_out_dir(st(0, 0, 0o775), 'x', UID, GID, upg)
+
+    def test_a_shared_primary_group(self):
+        shared = SharedUsersGroup()
+        self.assertEqual(rundir.other_accounts_in_group(GID, UID, shared),
+                         ['alice', 'bob'])
+        with self.assertRaises(OSError) as cm:
+            rundir.check_out_dir(st(UID, GID, 0o775), '/home/out', UID, GID,
+                                 shared)
+        self.assertEqual(cm.exception.errno, errno.EPERM)
+        message = str(cm.exception)
+        for part in ('users (gid %d)' % GID, 'alice, bob', 'chmod g-w',
+                     'another --out', '/home/out'):
+            self.assertIn(part, message)
+        # Not group-writable, or sticky as /tmp is: no one else can rename
+        # the run directory.
+        rundir.check_out_dir(st(UID, GID, 0o755), 'x', UID, GID, shared)
+        rundir.check_out_dir(st(UID, GID, 0o1775), 'x', UID, GID, shared)
+        rundir.check_out_dir(st(0, 0, 0o1777), 'x', UID, GID, shared)
+
+    def test_another_member_of_a_private_group(self):
+        # A user private group that lists another account as a member.
+        accounts = UserPrivateGroups()
+        accounts.groups[GID] = ('moltuser', ['moltuser', 'bob'])
+        self.assertEqual(rundir.other_accounts_in_group(GID, UID, accounts),
+                         ['bob'])
+        with self.assertRaises(OSError):
+            rundir.check_out_dir(st(UID, GID, 0o775), 'x', UID, GID,
+                                 accounts)
+        # A member no account has (removed, or not yet made) counts too.
+        accounts.groups[GID] = ('moltuser', ['ghost'])
+        self.assertEqual(rundir.other_accounts_in_group(GID, UID, accounts),
+                         ['ghost'])
+
+    def test_root_and_the_user_dont_count(self):
+        accounts = UserPrivateGroups()
+        accounts.groups[GID] = ('moltuser', ['root', 'moltuser'])
+        accounts.listed.append(('toor', 0, GID))
+        accounts.listed.append(('moltuser2', UID, GID))
+        self.assertEqual(rundir.other_accounts_in_group(GID, UID, accounts),
+                         [])
+
+    def test_root_group_with_system_accounts(self):
+        # Root's group as the primary group of other accounts (sync,
+        # shutdown, halt and operator have gid 0 on Fedora and RHEL).
+        accounts = UserPrivateGroups()
+        accounts.listed += [('sync', 5, 0), ('operator', 11, 0)]
+        self.assertEqual(rundir.other_accounts_in_group(0, UID, accounts),
+                         ['sync', 'operator'])
+        with self.assertRaises(OSError):
+            rundir.check_out_dir(st(0, 0, 0o775), 'x', UID, GID, accounts)
+        rundir.check_out_dir(st(0, 0, 0o1777), 'x', UID, GID, accounts)
+        rundir.check_out_dir(st(0, 0, 0o755), 'x', UID, GID, accounts)
+
+    def test_a_group_the_database_doesnt_list(self):
+        accounts = Accounts({}, [('root', 0, 0), ('moltuser', UID, GID)])
+        self.assertTrue(rundir.other_accounts_in_group(GID, UID, accounts))
+        with self.assertRaises(OSError) as cm:
+            rundir.check_out_dir(st(UID, GID, 0o775), 'x', UID, GID,
+                                 accounts)
+        self.assertIn('gid %d' % GID, str(cm.exception))
+
+    def test_many_others_are_summarised(self):
+        accounts = SharedUsersGroup()
+        accounts.listed += [('u%d' % i, 2000 + i, GID) for i in range(10)]
+        with self.assertRaises(OSError) as cm:
+            rundir.check_out_dir(st(UID, GID, 0o775), 'x', UID, GID,
+                                 accounts)
+        self.assertIn('and 7 more', str(cm.exception))
+
+    def test_the_systems_own_databases(self):
+        # The real databases answer without error, whatever this system
+        # has; root is never another account.
+        others = rundir.other_accounts_in_group(0, os.getuid())
+        self.assertNotIn('root', others)
 
 
 class HarnessWritesTest(unittest.TestCase):

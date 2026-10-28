@@ -28,6 +28,8 @@
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_address.h"
+#include "net/base/molt_network_key_site.h"  // MoltBrowser
+#include "net/base/molt_site_lru_cache.h"    // MoltBrowser
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/privacy_mode.h"
@@ -176,8 +178,21 @@ class NET_EXPORT HttpServerProperties
     NetworkAnonymizationKey network_anonymization_key;
   };
 
-  class NET_EXPORT ServerInfoMap
-      : public base::LRUCache<ServerInfoMapKey, ServerInfo> {
+  // MoltBrowser: a key's site, for MoltNet's per-site shares
+  // (net/base/molt_site_share_policy.h).
+  struct MoltServerInfoKeySite {
+    MoltNetworkKeySite operator()(const ServerInfoMapKey& key) const {
+      return MoltSiteOfNetworkKey(key.network_anonymization_key);
+    }
+  };
+  // MoltBrowser: a base::LRUCache<ServerInfoMapKey, ServerInfo> that can keep
+  // per-site shares (net/base/molt_site_lru_cache.h; without them, the
+  // base's own).
+  using MoltServerInfoMapBase =
+      MoltSiteLRU<base::LRUCache<ServerInfoMapKey, ServerInfo>,
+                  MoltServerInfoKeySite>;
+
+  class NET_EXPORT ServerInfoMap : public MoltServerInfoMapBase {
    public:
     ServerInfoMap();
 
@@ -187,6 +202,7 @@ class NET_EXPORT HttpServerProperties
     // If there's an entry corresponding to |key|, brings that entry to the
     // front and returns an iterator to it. Otherwise, inserts an empty
     // ServerInfo using |key|, and returns an iterator to it.
+    // MoltBrowser: with per-site shares, end() if a new entry isn't kept.
     iterator GetOrPut(const ServerInfoMapKey& key);
 
     // Erases the ServerInfo identified by |server_info_it| if no fields have
@@ -252,9 +268,19 @@ class NET_EXPORT HttpServerProperties
   // `nonce` (a gone page's credentialless frames', which no other request
   // carries: services/network/molt_nonce_drop_policy.h): their HTTP/2
   // support, alternative services, network statistics, HTTP/1.1 requirement,
-  // canonical hosts and QUIC server information. Marks of broken alternative
-  // services keep their own expiry.
+  // canonical hosts and QUIC server information, and the marks of their
+  // broken alternative services.
   void MoltClearForNonce(const base::UnguessableToken& nonce);
+
+  // MoltBrowser: from now on each site (the network key's top-level site)
+  // keeps a share of its own of the servers known to support HTTP/2 (and
+  // their alternative services) and of those that required HTTP/1.1
+  // (net/base/molt_site_share_policy.h: kMoltServerInfoShares,
+  // kMoltHttp11RequiredShares): a new entry takes the place of its own
+  // site's least recently used one, never another site's, or isn't kept.
+  // Called by MoltNet's network context, which keeps its properties in
+  // memory only, before its first request.
+  void MoltKeepPerSiteShares();
 
   // Returns true if `server`, in the context of `network_anonymization_key`,
   // has previously supported a network protocol which honors request
@@ -701,8 +727,10 @@ class NET_EXPORT HttpServerProperties
   // separate from ServerInfoMap because it's generally empty, and has to be
   // checked on every network request, rather than only when establishing
   // connections.
-  base::LRUCacheSet<ServerInfoMapKey> servers_requiring_http_11_{
-      kMaxServersRequiringHttp11Entries};
+  // MoltBrowser: a base::LRUCacheSet<ServerInfoMapKey> that can keep
+  // per-site shares (net/base/molt_site_lru_cache.h).
+  MoltSiteLRU<base::LRUCacheSet<ServerInfoMapKey>, MoltServerInfoKeySite>
+      servers_requiring_http_11_{kMaxServersRequiringHttp11Entries};
 
   BrokenAlternativeServices broken_alternative_services_;
 

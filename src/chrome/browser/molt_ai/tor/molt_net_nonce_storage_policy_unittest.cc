@@ -10,6 +10,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -166,6 +167,56 @@ TEST(MoltNetNonceStoragePolicyTest, ANonceCountsOnce) {
   groups.Gone("x");
   groups.Gone("unknown");
   EXPECT_EQ(groups.nonce_count(), 0u);
+}
+
+using Refusals = MoltNetNonceRefusals<std::string, std::string>;
+
+const char kPartition[] = "/profile";
+const char kOtherPartition[] = "/profile/Storage/ext/app";
+
+// What a partition's network context made again refuses: a closed group's
+// nonce while its page lives on, a gone page's until it is forgotten, and
+// nothing of another partition's.
+TEST(MoltNetNonceStoragePolicyTest, RefusalsForAContextMadeAgain) {
+  Refusals refusals;
+  EXPECT_TRUE(refusals.RefusedIn(kPartition).empty());
+  refusals.Closed("closed", kPartition);
+  refusals.Gone("gone", kPartition);
+  refusals.Closed("elsewhere", kOtherPartition);
+  EXPECT_EQ(refusals.RefusedIn(kPartition),
+            (std::vector<std::string>{"closed", "gone"}));
+  EXPECT_EQ(refusals.RefusedIn(kOtherPartition),
+            std::vector<std::string>{"elsewhere"});
+  // The closed group's page goes: still refused, until forgotten.
+  refusals.Gone("closed", kPartition);
+  EXPECT_TRUE(refusals.IsRefused("closed"));
+  refusals.Forgotten("closed");
+  refusals.Forgotten("gone");
+  EXPECT_TRUE(refusals.RefusedIn(kPartition).empty());
+  EXPECT_FALSE(refusals.IsRefused("gone"));
+  EXPECT_EQ(refusals.size(), 1u);
+}
+
+// The record follows the steps the network context is sent (kClosed and
+// kGone refuse, kForget no longer does), so it never refuses what the
+// context doesn't, and records go once forgotten.
+TEST(MoltNetNonceStoragePolicyTest, RefusalsFollowTheSteps) {
+  static_assert(MoltNetNonceSweepsCookiesLater(/*closed=*/false));
+  static_assert(!MoltNetNonceSweepsCookiesLater(/*closed=*/true));
+  Refusals refusals;
+  for (int page = 0; page < 1000; ++page) {
+    const std::string nonce = Nonce(page);
+    if (page % 3 == 0) {
+      refusals.Closed(nonce, kPartition);
+    }
+    refusals.Gone(nonce, kPartition);
+    EXPECT_TRUE(refusals.IsRefused(nonce));
+    refusals.Forgotten(nonce);
+  }
+  EXPECT_EQ(refusals.size(), 0u);
+  // Forgetting what isn't refused changes nothing.
+  refusals.Forgotten("unknown");
+  EXPECT_EQ(refusals.size(), 0u);
 }
 
 }  // namespace

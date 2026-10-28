@@ -179,7 +179,8 @@ class NET_EXPORT HttpAuthCache {
   //   |credentials| - login information for the realm.
   //   |path|     - absolute path for a resource contained in the protection
   //                space; this will be added to the list of known paths.
-  //   returns    - the entry that was just added/updated.
+  //   returns    - the entry that was just added/updated (MoltBrowser: null
+  //                for a new server entry per-site shares don't keep).
   Entry* Add(const url::SchemeHostPort& scheme_host_port,
              HttpAuth::Target target,
              const std::string& realm,
@@ -220,6 +221,17 @@ class NET_EXPORT HttpAuthCache {
   // carries: services/network/molt_nonce_drop_policy.h). Returns true if any
   // were cleared.
   bool MoltClearEntriesForNonce(const base::UnguessableToken& nonce);
+
+  // MoltBrowser: from now on each site (the server entry's network key's
+  // top-level site) keeps a share of the server entries of its own
+  // (net/base/molt_site_share_policy.h, kMoltHttpAuthShares) instead of the
+  // kMaxNumRealmEntries all sites shared: a new server entry takes the place
+  // of its own site's least recently used one, never another site's, or
+  // isn't kept (Add() then returns null). Proxy entries, the browser's own
+  // and keyed by no site, are kept as they come. Called by MoltNet's network
+  // context, whose server entries are keyed by site, before its first
+  // request.
+  void MoltKeepPerSiteShares();
 
   // Updates a stale digest entry on server |scheme_host_port| for realm |realm|
   // and scheme |scheme|. The cached auth challenge is replaced with
@@ -283,9 +295,18 @@ class NET_EXPORT HttpAuthCache {
 
   void EvictLeastRecentlyUsedEntry();
 
+  // MoltBrowser: with per-site shares, makes room for a new entry of
+  // `target` under `entry_key_nak` (the key it will have) inside its own
+  // site; returns whether it is kept.
+  bool MoltMakeRoomFor(HttpAuth::Target target,
+                       const NetworkAnonymizationKey& entry_key_nak);
+
   bool key_server_entries_by_network_anonymization_key_;
 
   EntryMap entries_;
+
+  // MoltBrowser: per-site shares (MoltKeepPerSiteShares()).
+  bool molt_per_site_shares_ = false;
 };
 
 // An authentication realm entry.
