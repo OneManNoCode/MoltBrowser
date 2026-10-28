@@ -461,8 +461,8 @@ page's tools from the browser process, and there is no
 `WebContentsObserver` or `ContentBrowserClient` hook for them.
 
 **What 156 changed** (`model_context.idl`, `model_context_tool.idl`,
-`model_context.cc` at 156.0.8078.48), and what the agent's scripts do about
-it:
+`model_context.cc` at 156.0.8078.48, unchanged at 156.0.8078.74), and what
+the agent's scripts do about it:
 
 | 156 | The agent |
 |---|---|

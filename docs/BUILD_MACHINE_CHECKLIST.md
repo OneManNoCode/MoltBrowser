@@ -8,8 +8,9 @@ manual checks, the MoltNet leak kit, packaging and the offline signing.
 Windows is still at v0.2.1). Since then the October v0.3 work landed: the
 workstream merges and pull requests #2 to #55, including the rebase onto
 Chromium 152 (#11), and then the rebase onto Chromium 156.0.8078.48 (#64),
-when Chrome's Extended Stable channel moved to M156. **None of it has been
-compiled against Chromium 156.**
+when Chrome's Extended Stable channel moved to M156, and its first
+security respin, 156.0.8078.74 (round 31; "(from the .74 respin)" below).
+**None of it has been compiled against Chromium 156.**
 Each PR body and design doc lists what it still needs; this page collects
 those lists in the order you do them. (#31 changed only CI, and #42 is an
 open Dependabot PR, §11.)
@@ -198,10 +199,15 @@ what to send back.
   ```bash
   ./scripts/setup.sh --resync --target-os mac,linux 2>&1 | tee ~/molt-v0.3.0/setup.log
   ```
-  *Expected:* `chromium/src @ 156.0.8078.48 (d0c02bfad08ec92a6ffcf989e53cd995e6381a4c)`,
+  *Expected:* `chromium/src @ 156.0.8078.74 (d331de35ca8ab1358c7a17e4bd41627d55eaef51)`,
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
-  first run from an older pin means a full rebuild.
+  first run from an older pin means a full rebuild. A checkout already at
+  156.0.8078.48 needs this run too (from the .74 respin): the respin moves
+  V8 (15.6.75.25), Skia, WebRTC, ANGLE, Dawn, devtools-frontend, ICU,
+  libaom, libvpx and PDFium, so `gclient sync` fetches all of them and
+  most of the build recompiles. No Rust crate changed: gnrt needs no rerun
+  for it.
 - [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
@@ -209,7 +215,11 @@ what to send back.
 - [ ] The overlay and the patch series agree (CI runs the same check):
   `python3 tools/chromium/verify_patches.py` → `OK: patches/ reproduces the
   overlay exactly`. The build input is still the `src/` overlay copy;
-  `patches/` holds the same changes as diffs (from REBASING.md).
+  `patches/` holds the same changes as diffs (from REBASING.md). It also
+  fails while one of the 66 whole files `src/` keeps in DEPS subprojects
+  (V8, Skia, WebRTC, the search engines) is behind the pin's subproject
+  commit (from the .74 respin): *Expected:* `DEPS whole: 66 of 66 merged
+  with the pin's subproject commit`.
   - Optional, once: try the patch-based path, `python3 tools/chromium/apply_patches.py --reset`
     (restores the patched files to upstream@pin, applies `patches/series`
     all or nothing, copies the first-party files). REBASING.md "Moving fully
@@ -227,11 +237,11 @@ what to send back.
   ```
   *Expected:* `engines-ok`. If not, regenerate with `-o <that src/ path>`
   instead of `--check`, commit it in a PR, and copy it into `chromium/src`.
-  At 156 expect to regenerate (from #64): our copy was last refreshed from
-  the 148-era subproject, and 156 pins `search_engines_data` at
-  `5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c` (check `git -C
-  chromium/src/third_party/search_engines_data/resources rev-parse HEAD`),
-  which this repository's cloud tools couldn't reach.
+  Our copy was rebuilt from 156's `search_engines_data`
+  (`5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c`, which 156.0.8078.74 still
+  pins; `git -C chromium/src/third_party/search_engines_data/resources
+  rev-parse HEAD`) from the release's source tarball (from the .74
+  respin), so expect `engines-ok`; before, it was the 148-era list.
 - [ ] MoltNet's fixed en-US tables match the 156 `.grd` files (from #24,
   REBASING.md step 5):
   ```bash
@@ -2740,7 +2750,7 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
     --key /Volumes/MOLTKEY/molt-update-signing.key --assets-dir release-v0.3.0
   ```
   *Expected:* `sign` lists every asset and, per build, its commit, Chromium
-  156.0.8078.48, builder label and build times, and refuses unless the
+  156.0.8078.74, builder label and build times, and refuses unless the
   macOS and Linux statements cover every installer, SBOM and checksum file
   with the manifest's hashes and agree on the commit and Chromium.
 - [ ] Step 7: copy back `molt-release-manifest.json`, `.sig`,

@@ -95,27 +95,32 @@ for p in win mac; do
 done
 ```
 
-State on 2026-10-23, from the Version History API and the tags on the
-mirror (chromiumdash was not reachable from the machine that ran this):
+State on 2026-10-28, from the Version History API and the tags on the
+mirror (chromiumdash and the Chrome Releases blog were not reachable from
+the machine that ran this):
 
-| Milestone | Branch | Latest tag | Its date | Reading |
-|---|---|---|---|---|
-| 158 | trunk | 158.0.8120.1 | 2026-10-22 | canary |
-| 157 | 8103 | 157.0.8103.20 | 2026-10-22 | beta (157.0.8103.15 on 0.5% of Windows stable) |
-| **156** | 8078 | 156.0.8078.69 | 2026-10-22 | **stable and extended stable**: Extended Stable serves **156.0.8078.48** on Windows and macOS since 2026-10-20 (25% of the extended population on 2026-10-22, rising); Stable rolls out 156.0.8078.47-.49 |
-| 155 | 8059 | 155.0.8059.91 | 2026-10-19 | previous stable |
-| 154 | 8037 | 154.0.8037.154 | 2026-10-13 | dead |
-| 152 | 7977 | 152.0.7977.169 | 2026-10-14 | previous extended stable, being replaced by 156 |
-| 150 | 7871 | 150.0.7871.287 | 2026-10-21 | `[M150-LTS]` merges (ChromeOS LTS), not a desktop channel |
+| Milestone | Branch | Latest tag on the mirror | Channels (Version History API) |
+|---|---|---|---|
+| 158 | trunk | 158.0.8127.3 | canary (158.0.8127.2 since 2026-10-27), dev (158.0.8117.2) |
+| 157 | 8103 | 157.0.8103.31 | beta (157.0.8103.15 since 2026-10-22) |
+| **156** | 8078 | 156.0.8078.78 | **stable and extended stable**: since 2026-10-27 Extended Stable serves **156.0.8078.74** to 25% of Windows and macOS (the rest 156.0.8078.48); Stable serves 156.0.8078.74 on Windows and macOS and 156.0.8078.73 on Linux. No desktop channel serves the newer tags (.75 to .78) yet |
+| 155 | 8059 | 155.0.8059.91 | previous stable |
+| 154 | 8037 | 154.0.8037.154 | dead |
+| 152 | 7977 | 152.0.7977.169 | previous extended stable (until 2026-10-20) |
+| 150 | 7871 | 150.0.7871.287 | `[M150-LTS]` merges (ChromeOS LTS), not a desktop channel |
 
-So **Extended Stable moved from M152 to M156** on 2026-10-20, and
-152.0.7977.169 (our pin since 2026-10-16) was its last M152 release. The
-milestone move happened earlier than "~4 releases behind stable" suggested:
-with 2-week milestones, Google moved the extended channel to the current
-stable milestone. **Target: `156.0.8078.48`**, the Extended Stable release on
-Windows and macOS (the [156 rebase](#the-156-rebase-2026-10-23)). Same-branch
-respins of it follow (`156.0.8078.*` tags that Extended Stable ships); when the
-extended channel moves to a new milestone again, do the big rebase to it.
+**Extended Stable moved from M152 to M156** on 2026-10-20 (152.0.7977.169,
+our pin from 2026-10-16, was its last M152 release): with 2-week
+milestones, Google moved the extended channel to the current stable
+milestone, earlier than "~4 releases behind stable" suggested. Its first
+security respin, 156.0.8078.74, started on 2026-10-27. **Target:
+`156.0.8078.74`** (the [156.0.8078.74 respin](#1560807874-2026-10-28); before
+it, the [156 rebase](#the-156-rebase-2026-10-23) to 156.0.8078.48). Same-branch
+respins follow (`156.0.8078.*` tags that Extended Stable ships). One pin
+serves every platform, so when Linux and the other platforms get different
+patch numbers, take the Windows and macOS one (Extended Stable's): here
+156.0.8078.73 and .74 differ only in `chrome/VERSION`. When the extended
+channel moves to a new milestone again, do the big rebase to it.
 
 ## The process
 
