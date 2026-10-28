@@ -122,6 +122,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
   // `nonce` (PreflightCache::MoltClearForNonce()).
   void MoltClearCorsPreflightCacheForNonce(const base::UnguessableToken& nonce);
 
+  // MoltBrowser: per-site shares of the cache, for MoltNet's network context
+  // (PreflightCache::MoltKeepPerSiteShares()).
+  void MoltKeepPerSiteShares();
+
   PreflightCache& GetPreflightCacheForTesting() { return cache_; }
 
  private:

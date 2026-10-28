@@ -15,6 +15,7 @@
 #include "base/trace_event/typed_macros.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "net/base/load_flags.h"
+#include "net/base/molt_site_share_policy.h"  // MoltBrowser
 #include "net/shared_dictionary/shared_dictionary.h"
 #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
 #include "services/network/public/cpp/features.h"
@@ -163,6 +164,15 @@ scoped_refptr<SharedDictionaryStorage> SharedDictionaryManager::GetStorage(
       CreateStorage(isolation_key, previous_eviction_reason);
   CHECK(storage);
   storages_.emplace(isolation_key, storage.get());
+  // MoltBrowser: with per-site shares, the storage is kept in its own site's
+  // share, whatever the memory pressure, or not kept; no other site's is
+  // dropped for it (net/base/molt_site_share_policy.h).
+  if (molt_per_site_shares_) {
+    if (cached_storages_.MoltMakeRoomFor(isolation_key)) {
+      cached_storages_.Put(isolation_key, storage);
+    }
+    return storage;
+  }
   if (memory_limit() > base::kModerateMemoryPressureThreshold) {
     if (cached_storages_.size() >= cached_storages_.max_size()) {
       // The cache is full. The last element will be evicted.
@@ -269,6 +279,10 @@ bool SharedDictionaryManager::HasPreloadedSharedDictionaryInfo() const {
 }
 
 void SharedDictionaryManager::OnReleaseMemory() {
+  // MoltBrowser: with per-site shares, memory pressure drops nothing.
+  if (molt_per_site_shares_) {
+    return;
+  }
   if (memory_limit() <= base::kModerateMemoryPressureThreshold) {
     SharedDictionaryStorageEvictionReason eviction_reason =
         (memory_limit() <= base::kCriticalMemoryPressureThreshold)
@@ -284,5 +298,11 @@ void SharedDictionaryManager::OnReleaseMemory() {
 }
 
 void SharedDictionaryManager::OnUpdateMemoryLimit() {}
+
+// MoltBrowser: see the header.
+void SharedDictionaryManager::MoltKeepPerSiteShares() {
+  molt_per_site_shares_ = true;
+  cached_storages_.MoltKeepPerSiteShares(net::kMoltDictionaryStorageShares);
+}
 
 }  // namespace network

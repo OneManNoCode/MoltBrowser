@@ -12,6 +12,8 @@
 #include "base/memory/raw_ref.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
+#include "net/base/molt_network_key_site.h"   // MoltBrowser
+#include "net/base/molt_site_share_policy.h"  // MoltBrowser
 #include "url/gurl.h"
 #include "url/scheme_host_port.h"
 #include "url/url_constants.h"
@@ -175,6 +177,17 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
   HttpAuthCache::Entry* entry = Lookup(scheme_host_port, target, realm, scheme,
                                        network_anonymization_key);
   if (!entry) {
+    // MoltBrowser: with per-site shares, room is made inside the new entry's
+    // own site, or it isn't kept (net/base/molt_site_share_policy.h); the
+    // eviction below, of any site's entry, isn't made.
+    if (molt_per_site_shares_ &&
+        !MoltMakeRoomFor(
+            target, target == HttpAuth::AUTH_SERVER &&
+                            key_server_entries_by_network_anonymization_key_
+                        ? network_anonymization_key
+                        : NetworkAnonymizationKey())) {
+      return nullptr;
+    }
     // Failsafe to prevent unbounded memory growth of the cache.
     //
     // Data was collected in June of 2019, before entries were keyed on either
@@ -183,7 +196,7 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
     // entries in the cache exceed kMaxNumRealmEntries. The evicted entry is
     // roughly half an hour old (median), and it's been around 25 minutes since
     // its last use (median).
-    if (entries_.size() >= kMaxNumRealmEntries) {
+    if (!molt_per_site_shares_ && entries_.size() >= kMaxNumRealmEntries) {
       DLOG(WARNING) << "Num auth cache entries reached limit -- evicting";
       EvictLeastRecentlyUsedEntry();
     }
@@ -338,6 +351,49 @@ bool HttpAuthCache::MoltClearEntriesForNonce(
   return std::erase_if(entries_, [&nonce](const EntryMap::value_type& entry) {
            return entry.first.network_anonymization_key.GetNonce() == nonce;
          }) > 0;
+}
+
+// MoltBrowser: see the header.
+void HttpAuthCache::MoltKeepPerSiteShares() {
+  molt_per_site_shares_ = true;
+}
+
+// MoltBrowser: see the header. The cache holds at most
+// kMoltHttpAuthShares.total server entries (and the browser's few proxy
+// ones), and an entry is added only once a server's challenge is answered,
+// so a pass over them is cheap next to the round trip before it.
+bool HttpAuthCache::MoltMakeRoomFor(
+    HttpAuth::Target target,
+    const NetworkAnonymizationKey& entry_key_nak) {
+  if (target != HttpAuth::AUTH_SERVER) {
+    return true;
+  }
+  const MoltSiteShareLimits limits = kMoltHttpAuthShares;
+  const MoltNetworkKeySite site = MoltSiteOfNetworkKey(entry_key_nak);
+  while (true) {
+    size_t site_holds = 0;
+    size_t all_hold = 0;
+    EntryMap::iterator oldest = entries_.end();
+    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+      if (it->first.target != HttpAuth::AUTH_SERVER) {
+        continue;
+      }
+      ++all_hold;
+      if (MoltSiteOfNetworkKey(it->first.network_anonymization_key) != site) {
+        continue;
+      }
+      ++site_holds;
+      if (oldest == entries_.end() ||
+          it->second.last_use_time_ticks_ <
+              oldest->second.last_use_time_ticks_) {
+        oldest = it;
+      }
+    }
+    if (!MoltSiteShareEvictsOwn(limits, site_holds, all_hold)) {
+      return MoltSiteShareHasRoom(limits, site_holds, all_hold);
+    }
+    entries_.erase(oldest);
+  }
 }
 
 bool HttpAuthCache::UpdateStaleChallenge(

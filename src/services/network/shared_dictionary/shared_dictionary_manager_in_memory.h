@@ -70,6 +70,13 @@ class SharedDictionaryManagerInMemory : public SharedDictionaryManager {
                             uint64_t max_count,
                             uint64_t count_low_watermark);
 
+  // MoltBrowser: with per-site shares (MoltKeepPerSiteShares()), after a
+  // dictionary of `top_frame_site` was added: while that site, or all sites,
+  // hold more than their shares, the site's own least recently used
+  // dictionaries go, its newest last, never another site's
+  // (net/base/molt_site_share_policy.h: MoltSiteDictionariesOver()).
+  void MoltRunCacheEvictionForSite(const net::SchemefulSite& top_frame_site);
+
   std::optional<base::ByteSize> cache_max_size_;
   const uint64_t cache_max_count_;
   base::WeakPtrFactory<SharedDictionaryManagerInMemory> weak_factory_{this};

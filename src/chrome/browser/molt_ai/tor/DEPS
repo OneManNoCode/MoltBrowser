@@ -96,4 +96,10 @@ specific_include_rules = {
     "+services/network/molt_own_session_sockets_policy.h",
     "+services/network/proxy_config_service_mojo.h",
   ],
+  # The per-site shares of MoltNet's fixed-size caches, on the network
+  # service's own CORS preflight cache.
+  "molt_net_site_shares_caches_unittest\.cc": [
+    "+services/network/cors/preflight_cache.h",
+    "+services/network/cors/preflight_result.h",
+  ],
 }

@@ -95,6 +95,7 @@
 #include "net/extras/sqlite/cookie_crypto_delegate.h"
 #include "net/extras/sqlite/sqlite_persistent_cookie_store.h"
 #include "net/http/http_auth.h"
+#include "net/http/http_auth_cache.h"  // MoltBrowser
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_auth_preferences.h"
 #include "net/http/http_auth_scheme.h"
@@ -110,6 +111,7 @@
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
 #include "net/ssl/ech_mode_getter.h"
+#include "net/ssl/ssl_client_session_cache.h"  // MoltBrowser
 #include "net/ssl/ssl_config_service.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -845,6 +847,14 @@ NetworkContext::NetworkContext(
           params_->shared_dictionary_cache_max_size,
           shared_dictionary::kDictionaryMaxCountPerNetworkContext);
     }
+  }
+  // MoltBrowser: MoltNet's compression dictionaries and CORS preflight
+  // results keep shares per site (net/base/molt_site_share_policy.h).
+  if (params_->molt_per_site_network_caches) {
+    if (shared_dictionary_manager_) {
+      shared_dictionary_manager_->MoltKeepPerSiteShares();
+    }
+    cors_preflight_controller_.MoltKeepPerSiteShares();
   }
 
   mojo::PendingRemote<mojom::URLLoaderFactory>
@@ -3475,6 +3485,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
   if (network_service_ && network_service_->quic_disabled()) {
     is_quic_force_disabled = true;
   }
+  // MoltBrowser: no QUIC for MoltNet's context, whose every connection goes
+  // through Tor's SOCKS5 proxy, which carries none: no QUIC alternative
+  // services kept, no QUIC job tried (one would fail at once and mark the
+  // alternative service broken), no QUIC server information.
+  if (params_->molt_no_quic) {
+    is_quic_force_disabled = true;
+  }
 
   auto quic_context = std::make_unique<net::QuicContext>();
   if (params_->quic_idle_connection_timeout_seconds &&
@@ -3662,6 +3679,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
         session->MoltEndIdentity();
       }
     }
+  }
+  // MoltBrowser: MoltNet's TLS sessions, HTTP authentication entries and
+  // server properties keep shares per site (net/base/
+  // molt_site_share_policy.h).
+  if (params_->molt_per_site_network_caches) {
+    if (net::HttpNetworkSession* session =
+            result.url_request_context->http_transaction_factory()
+                ->GetSession()) {
+      session->ssl_client_context()
+          ->ssl_client_session_cache()
+          ->MoltKeepPerSiteShares();
+      session->http_auth_cache()->MoltKeepPerSiteShares();
+    }
+    result.url_request_context->http_server_properties()
+        ->MoltKeepPerSiteShares();
   }
   // MoltBrowser: MoltNet's in-memory HTTP cache keeps limits per site
   // (net/disk_cache/memory/molt_mem_backend_budget_policy.h).

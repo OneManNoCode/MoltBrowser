@@ -602,9 +602,10 @@ source_set("onion") {
 # which extensions it admits, which profiles count as MoltNet and get
 # Incognito's protections, what MoltNet windows may cause outside Tor),
 # MoltNet's pref service against real pref stores and a real
-# HostContentSettingsMap, and the WebRTC, image-description and location
-# binders over real mojo pipes. Picked up by
-# //chrome/browser/molt_ai/test:molt_ai_unittests.
+# HostContentSettingsMap, the WebRTC, image-description and location
+# binders over real mojo pipes, and the per-site shares of MoltNet's
+# fixed-size network caches on net's and the network service's real caches.
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
@@ -645,6 +646,8 @@ source_set("unit_tests") {
     "molt_net_proxy_policy_unittest.cc",
     "molt_net_request_binders_unittest.cc",
     "molt_net_requests_policy_unittest.cc",
+    "molt_net_site_shares_caches_unittest.cc",
+    "molt_net_site_shares_unittest.cc",
     "molt_net_socket_pool_policy_unittest.cc",
     "molt_net_socket_pools_unittest.cc",
     "molt_net_storage_groups_unittest.cc",

@@ -24,8 +24,10 @@
 //    flushes them by server only (FlushForServers());
 //  * server properties (HTTP/2 support, alternative services, network
 //    statistics, servers requiring HTTP/1.1, canonical hosts, QUIC server
-//    information): keyed by server and network anonymization key; 156 clears
-//    them all or one server's statistics;
+//    information, marks of broken alternative services): keyed by server
+//    (or alternative service) and network anonymization key; 156 clears
+//    them all or one server's statistics, and the marks expire on their own
+//    (five minutes, doubling; at most 200 kept as recently broken);
 //  * CORS preflight results: network::cors::PreflightCache is keyed by
 //    origin, URL and network isolation key; 156 clears them by URL filter
 //    only;
@@ -36,18 +38,20 @@
 // requires (net::features::kPartitionConnectionsByNetworkIsolationKey and
 // the split HTTP authentication cache: chrome/browser/molt_ai/tor/
 // molt_net_partitioning_policy.h), so once the nonce's page is gone none of
-// it can be used again, but it stayed until a cache's own eviction (1,024
-// TLS sessions, 500 server entries, 1,024 preflight results and 20
-// authentication entries, shared by every site) or an idle timeout. Here
-// the network context drops each by the nonce, with one small method per
-// cache (MoltCloseIdleSocketsOfNonce(), MoltCloseIdleSessionsOfNonce(),
-// MoltFlushForNonce(), MoltClearForNonce(), MoltClearEntriesForNonce(),
-// MoltClearCorsPreflightCacheForNonce()), each a pass over that cache, of a
-// size fixed for the whole context. Connections in use stay (a request that
-// outlives its page); they go idle afterwards and are dropped the next time.
-// Marks of broken alternative services keep Chromium's own expiry (five
-// minutes, doubling; at most 200 kept as recently broken). Nothing is
-// flushed for every key.
+// it can be used again, but it stayed until a cache's own eviction (at 156,
+// 1,024 TLS sessions, 500 server entries, 1,024 preflight results and 20
+// authentication entries, shared by every site; MoltNet's context keeps
+// per-site shares of them instead: net/base/molt_site_share_policy.h) or an
+// idle timeout. Here the network context drops each by the nonce, with one
+// small method per cache (MoltCloseIdleSocketsOfNonce(),
+// MoltCloseIdleSessionsOfNonce(), MoltFlushForNonce(), MoltClearForNonce(),
+// which drops the marks of broken alternative services too,
+// MoltClearEntriesForNonce(), MoltClearCorsPreflightCacheForNonce()), each
+// a pass over that cache, of a size bounded for the whole context.
+// Connections in use stay (a request that outlives its page); they go idle
+// afterwards and are dropped the next time. (MoltNet's context uses no
+// QUIC, so it makes no marks of broken QUIC alternative services and keeps
+// no QUIC server information.) Nothing is flushed for every key.
 //
 // The steps (network::mojom::MoltNonceDrop):
 //  * kClosed: the page lives on past its site's bound (its group closed:

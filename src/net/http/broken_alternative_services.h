@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/unguessable_token.h"  // MoltBrowser
 #include "net/base/network_anonymization_key.h"
 #include "net/http/alternative_service.h"
 
@@ -95,6 +96,14 @@ class NET_EXPORT_PRIVATE BrokenAlternativeServices {
   // Clears all broken and recently-broken alternative services (i.e. mark all
   // as not broken nor recently-broken).
   void Clear();
+
+  // MoltBrowser: forgets the marks kept under a network anonymization key
+  // with `nonce` (a gone page's credentialless frames', which no other
+  // request carries: services/network/molt_nonce_drop_policy.h): broken,
+  // broken until the default network changes, and recently broken. Returns
+  // whether there were any. The expiration timer needs nothing: if it was set
+  // for one of them, it finds nothing due and is set for the next.
+  bool MoltClearForNonce(const base::UnguessableToken& nonce);
 
   // Marks |broken_alternative_service| as broken until an expiration delay
   // (determined by how many consecutive times it's been marked broken before).

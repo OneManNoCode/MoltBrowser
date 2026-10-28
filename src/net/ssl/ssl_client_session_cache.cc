@@ -15,6 +15,7 @@
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
 #include "net/base/features.h"
+#include "net/base/molt_site_share_policy.h"  // MoltBrowser
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 
 namespace net {
@@ -111,6 +112,11 @@ void SSLClientSessionCache::Insert(uint64_t generation_number,
   }
   auto iter = cache_.Get(cache_key);
   if (iter == cache_.end()) {
+    // MoltBrowser: with per-site shares, room is made inside the key's own
+    // site, or the session isn't kept (net/base/molt_site_share_policy.h).
+    if (!cache_.MoltMakeRoomFor(cache_key)) {
+      return;
+    }
     iter = cache_.Put(cache_key, Entry());
   }
 
@@ -170,6 +176,11 @@ void SSLClientSessionCache::MoltFlushForNonce(
       ++iter;
     }
   }
+}
+
+// MoltBrowser: see the header.
+void SSLClientSessionCache::MoltKeepPerSiteShares() {
+  cache_.MoltKeepPerSiteShares(kMoltTlsSessionShares);
 }
 
 void SSLClientSessionCache::SetClockForTesting(base::Clock* clock) {
@@ -241,6 +252,10 @@ void SSLClientSessionCache::FlushExpiredSessions() {
 }
 
 void SSLClientSessionCache::OnUpdateMemoryLimit() {
+  // MoltBrowser: with per-site shares, memory pressure evicts nothing.
+  if (cache_.MoltKeepsPerSiteShares()) {
+    return;
+  }
   if (!base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
     return;
   }
@@ -255,6 +270,10 @@ void SSLClientSessionCache::OnUpdateMemoryLimit() {
 }
 
 void SSLClientSessionCache::OnReleaseMemory() {
+  // MoltBrowser: with per-site shares, memory pressure evicts nothing.
+  if (cache_.MoltKeepsPerSiteShares()) {
+    return;
+  }
   if (base::FeatureList::IsEnabled(
           features::kIgnoreMemoryPressureForSslClientSessionCache)) {
     // We don't want to clear the SSL session cache because the entries in it

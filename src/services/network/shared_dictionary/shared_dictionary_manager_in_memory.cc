@@ -5,11 +5,15 @@
 #include "services/network/shared_dictionary/shared_dictionary_manager_in_memory.h"
 
 #include <algorithm>
+#include <cstdint>  // MoltBrowser
+#include <vector>   // MoltBrowser
 
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory_coordinator/traits.h"
 #include "base/notreached.h"
+#include "net/base/molt_network_key_site.h"   // MoltBrowser
+#include "net/base/molt_site_share_policy.h"  // MoltBrowser
 #include "services/network/shared_dictionary/shared_dictionary_storage_in_memory.h"
 
 namespace network {
@@ -111,6 +115,11 @@ SharedDictionaryManagerInMemory::CreateStorage(
 
 void SharedDictionaryManagerInMemory::SetCacheMaxSize(
     std::optional<base::ByteSize> cache_max_size) {
+  // MoltBrowser: with per-site shares, the limits are fixed: the size the
+  // browser derives from the machine's memory isn't used.
+  if (MoltKeepsPerSiteShares()) {
+    return;
+  }
   cache_max_size_ = cache_max_size;
   MaybeRunCacheEviction();
 }
@@ -153,6 +162,11 @@ void SharedDictionaryManagerInMemory::ClearDataForIsolationKey(
 
 void SharedDictionaryManagerInMemory::MaybeRunCacheEvictionPerSite(
     const net::SchemefulSite& top_frame_site) {
+  // MoltBrowser: with per-site shares, the site's own shares.
+  if (MoltKeepsPerSiteShares()) {
+    MoltRunCacheEvictionForSite(top_frame_site);
+    return;
+  }
   const std::optional<base::ByteSize> max_size_per_site =
       cache_max_size_.transform([](base::ByteSize size) { return size / 2; });
   RunCacheEvictionImpl(top_frame_site, max_size_per_site, max_size_per_site,
@@ -160,6 +174,12 @@ void SharedDictionaryManagerInMemory::MaybeRunCacheEvictionPerSite(
 }
 
 void SharedDictionaryManagerInMemory::MaybeRunCacheEviction() {
+  // MoltBrowser: with per-site shares, nothing for all sites together: the
+  // site that added a dictionary kept the total
+  // (MoltRunCacheEvictionForSite()).
+  if (MoltKeepsPerSiteShares()) {
+    return;
+  }
   RunCacheEvictionImpl(
       std::nullopt, cache_max_size_,
       cache_max_size_.transform([](base::ByteSize size) { return size * 0.9; }),
@@ -229,6 +249,59 @@ void SharedDictionaryManagerInMemory::RunCacheEvictionImpl(
     }
   }
   dictionaries.clear();  // Unneeded, and may ref. about-to-be-deleted things.
+  for (auto& candidate : eviction_candidates) {
+    candidate.storage()->DeleteDictionary(candidate.host(), candidate.match(),
+                                          candidate.match_dest());
+  }
+}
+
+// MoltBrowser: see the header.
+void SharedDictionaryManagerInMemory::MoltRunCacheEvictionForSite(
+    const net::SchemefulSite& top_frame_site) {
+  const net::MoltNetworkKeySite site =
+      net::MoltSiteOfTopFrameSite(top_frame_site);
+  size_t site_count = 0;
+  size_t all_count = 0;
+  uint64_t site_bytes = 0;
+  uint64_t all_bytes = 0;
+  std::vector<DictionaryReference> own;
+  for (auto& it1 : storages()) {
+    SharedDictionaryStorageInMemory* storage =
+        reinterpret_cast<SharedDictionaryStorageInMemory*>(it1.second.get());
+    const bool is_own =
+        net::MoltSiteOfTopFrameSite(it1.first.top_frame_site()) == site;
+    for (auto& it2 : storage->GetDictionaryMap()) {
+      for (auto& it3 : it2.second) {
+        ++all_count;
+        all_bytes += it3.second.size();
+        if (is_own) {
+          ++site_count;
+          site_bytes += it3.second.size();
+          own.emplace_back(storage, &it3.second);
+        }
+      }
+    }
+  }
+  if (!net::MoltSiteDictionariesOver(site_count, site_bytes, all_count,
+                                     all_bytes)) {
+    return;
+  }
+  std::sort(own.begin(), own.end(), LastUsedTimeLess{});
+  std::vector<EvictionCandidate> eviction_candidates;
+  for (auto& dict_ref : own) {
+    if (!net::MoltSiteDictionariesOver(site_count, site_bytes, all_count,
+                                       all_bytes)) {
+      break;
+    }
+    --site_count;
+    --all_count;
+    site_bytes -= dict_ref.dict()->size();
+    all_bytes -= dict_ref.dict()->size();
+    eviction_candidates.emplace_back(
+        dict_ref.storage(), url::SchemeHostPort(dict_ref.dict()->url()),
+        dict_ref.dict()->match(), dict_ref.dict()->match_dest());
+  }
+  own.clear();  // As above: may ref. about-to-be-deleted things.
   for (auto& candidate : eviction_candidates) {
     candidate.storage()->DeleteDictionary(candidate.host(), candidate.match(),
                                           candidate.match_dest());

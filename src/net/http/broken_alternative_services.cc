@@ -4,6 +4,8 @@
 
 #include "net/http/broken_alternative_services.h"
 
+#include <set>  // MoltBrowser
+
 #include "base/containers/adapters.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -103,6 +105,37 @@ void BrokenAlternativeServices::Clear() {
   broken_alternative_service_list_.clear();
   broken_alternative_service_map_.clear();
   recently_broken_alternative_services_.Clear();
+}
+
+// MoltBrowser: see the header.
+bool BrokenAlternativeServices::MoltClearForNonce(
+    const base::UnguessableToken& nonce) {
+  bool changed = false;
+  for (auto it = broken_alternative_service_list_.begin();
+       it != broken_alternative_service_list_.end();) {
+    if (it->first.network_anonymization_key.GetNonce() == nonce) {
+      broken_alternative_service_map_.erase(it->first);
+      it = broken_alternative_service_list_.erase(it);
+      changed = true;
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = recently_broken_alternative_services_.begin();
+       it != recently_broken_alternative_services_.end();) {
+    if (it->first.network_anonymization_key.GetNonce() == nonce) {
+      it = recently_broken_alternative_services_.Erase(it);
+      changed = true;
+    } else {
+      ++it;
+    }
+  }
+  changed |= std::erase_if(broken_alternative_services_on_default_network_,
+                           [&nonce](const BrokenAlternativeService& service) {
+                             return service.network_anonymization_key
+                                        .GetNonce() == nonce;
+                           }) > 0;
+  return changed;
 }
 
 void BrokenAlternativeServices::MarkBrokenUntilDefaultNetworkChanges(

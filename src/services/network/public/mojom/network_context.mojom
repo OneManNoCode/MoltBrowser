@@ -746,6 +746,16 @@ struct NetworkContextParams {
   // earlier context had been told to refuse and not yet to forget
   // (chrome/browser/molt_ai/tor/molt_net_nonce_storage.h).
   [MinVersion=1] array<mojo_base.mojom.UnguessableToken>? molt_refused_nonces;
+  // If true, this context's fixed-size network caches (TLS sessions, HTTP
+  // authentication entries, server properties, CORS preflight results,
+  // compression dictionaries and the storages that hold them) keep shares
+  // per top-level site: a site's entries are evicted only to make room for
+  // its own, never for another site's, nor for memory pressure
+  // (net/base/molt_site_share_policy.h).
+  [MinVersion=1] bool molt_per_site_network_caches = false;
+  // If true, this context uses no QUIC, as with the QuicAllowed policy off:
+  // all its connections go through a SOCKS5 proxy, which carries none.
+  [MinVersion=1] bool molt_no_quic = false;
 };
 
 // MoltBrowser: what NetworkContext.MoltDropNonce() drops of what a page's

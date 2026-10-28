@@ -173,10 +173,12 @@ source_set("chrome_root_store_data") {
 }
 
 # MoltBrowser: how MoltNet splits socket pools and the memory cache by site,
-# and what its cookie store keeps under a page's nonce (std-only and
-# header-only), for :net and MoltBrowser's own targets.
+# what its cookie store keeps under a page's nonce, and the per-site shares
+# of its fixed-size caches (std-only and header-only), for :net and
+# MoltBrowser's own targets.
 source_set("molt_policies") {
   sources = [
+    "base/molt_site_share_policy.h",
     "cookies/molt_nonce_cookie_policy.h",
     "disk_cache/memory/molt_mem_backend_budget_policy.h",
     "socket/molt_per_site_socket_pool_policy.h",
@@ -1248,11 +1250,14 @@ component("net") {
   ]
 
   # MoltBrowser: MoltNet's per-site certificate fetches, connection budgets
-  # and socket pools, its HTTP cache's per-site eviction lists, and the end
-  # of an identity (header-only but for the
-  # process's Tor capacity; the std-only policies they follow are
+  # and socket pools, its HTTP cache's per-site eviction lists, the site a
+  # network key counts against and the containers that keep per-site shares
+  # of the fixed-size caches, and the end of an identity (header-only but
+  # for the process's Tor capacity; the std-only policies they follow are
   # :molt_policies).
   sources += [
+    "base/molt_network_key_site.h",
+    "base/molt_site_lru_cache.h",
     "cert/molt_cert_fetch_site.h",
     "disk_cache/memory/molt_mem_backend_site_lru.h",
     "socket/molt_connection_budget.cc",

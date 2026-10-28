@@ -22,6 +22,8 @@
 #include "base/memory_coordinator/traits.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "net/base/molt_network_key_site.h"  // MoltBrowser
+#include "net/base/molt_site_lru_cache.h"    // MoltBrowser
 #include "net/disk_cache/disk_cache.h"
 #include "net/extras/shared_dictionary/shared_dictionary_usage_info.h"
 #include "net/shared_dictionary/shared_dictionary_getter.h"
@@ -131,6 +133,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) SharedDictionaryManager
           preload_handle);
   bool HasPreloadedSharedDictionaryInfo() const;
 
+  // MoltBrowser: from now on each site (the isolation key's top-level site)
+  // keeps shares of its own (net/base/molt_site_share_policy.h): of the
+  // storages kept when no request uses them (kMoltDictionaryStorageShares;
+  // Chromium keeps 10 for all sites, and drops the least recently used of
+  // any site, with its dictionaries) and, in memory, of the dictionaries
+  // (SharedDictionaryManagerInMemory); memory pressure drops none, and the
+  // limits don't depend on the machine (SetCacheMaxSize() is ignored).
+  // Called by MoltNet's network context, whose manager is in memory, before
+  // its first request.
+  void MoltKeepPerSiteShares();
+  bool MoltKeepsPerSiteShares() const { return molt_per_site_shares_; }
+
  protected:
   SharedDictionaryManager(std::string_view consumer_name,
                           const base::MemoryConsumerTraits& traits);
@@ -172,9 +186,21 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) SharedDictionaryManager
 
   scoped_refptr<SharedDictionaryStorage> pervasive_storage_;
 
-  base::LRUCache<net::SharedDictionaryIsolationKey,
-                 scoped_refptr<SharedDictionaryStorage>>
+  // MoltBrowser: an isolation key's site, for the shares above.
+  struct MoltIsolationKeySite {
+    net::MoltNetworkKeySite operator()(
+        const net::SharedDictionaryIsolationKey& key) const {
+      return net::MoltSiteOfTopFrameSite(key.top_frame_site());
+    }
+  };
+  // MoltBrowser: a base::LRUCache of the same that can keep per-site shares
+  // (net/base/molt_site_lru_cache.h; without them, the base's own).
+  net::MoltSiteLRU<base::LRUCache<net::SharedDictionaryIsolationKey,
+                                  scoped_refptr<SharedDictionaryStorage>>,
+                   MoltIsolationKeySite>
       cached_storages_;
+  // MoltBrowser: MoltKeepPerSiteShares().
+  bool molt_per_site_shares_ = false;
 
   std::map<net::SharedDictionaryIsolationKey, raw_ptr<SharedDictionaryStorage>>
       storages_;

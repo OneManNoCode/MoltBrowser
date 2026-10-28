@@ -72,10 +72,11 @@
 //    of the page outlives it), it deletes them once more and forgets the
 //    nonce (MoltNetNonceSweepsCookiesLater());
 //  * the network state kept under the nonce's network keys: idle
-//    connections and HTTP/2 sessions, TLS sessions, server properties, CORS
-//    preflight results and HTTP authentication entries, dropped by the
-//    network context with the cookies when the page goes (not when its
-//    group is closed: the page still uses them), and again with them later
+//    connections and HTTP/2 sessions, TLS sessions, server properties (and
+//    the marks of broken alternative services), CORS preflight results and
+//    HTTP authentication entries, dropped by the network context with the
+//    cookies when the page goes (not when its group is closed: the page
+//    still uses them), and again with them later
 //    (services/network/molt_nonce_drop_policy.h says how each is keyed and
 //    dropped);
 //  * media-license (CDM) data, kept per storage key: deleted for each of
@@ -97,9 +98,9 @@
 // Reporting endpoints and Network Error Logging policies (not built into
 // MoltBrowser); blob URLs go with the document that made them
 // (BlobURLStoreImpl), Web Locks and BroadcastChannels with their frames.
-// Kept under the nonce and not dropped, as no page can use them again once
-// the nonce's page is gone: marks of broken alternative services, which
-// expire on their own.
+// MoltNet's network context uses no QUIC (all its connections go through
+// Tor's SOCKS5 proxy), so it keeps no QUIC server information and makes no
+// marks of broken QUIC alternative services.
 //
 // Std-only, so molt_ai_unittests tests it. Not thread-safe: the browser uses
 // it on the UI thread.
