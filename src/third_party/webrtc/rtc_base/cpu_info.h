@@ -11,6 +11,7 @@
 #ifndef RTC_BASE_CPU_INFO_H_
 #define RTC_BASE_CPU_INFO_H_
 
+#include <cmath>
 #include <cstdint>
 
 namespace webrtc {
@@ -44,6 +45,20 @@ bool Supports(ISA instruction_set_architecture);
 // (moltbrowser_cpu_independent), so the choice holds per instance: the audio
 // service runs MoltNet's streams and other windows' streams side by side, on
 // threads of their own or not. Scopes nest; the innermost one decides.
+//
+// Subnormal floats: the CPU's flush-to-zero modes don't agree between
+// architectures (x86's FTZ decides a result is tiny after rounding and its
+// DAZ reads subnormal operands as zero; Arm's FZ decides before rounding), so
+// a ScopedCpuIndependent(true) also turns them off on the thread while it
+// lives (MXCSR's FTZ and DAZ, FPCR's or FPSCR's FZ) and puts back what it
+// found when it ends; AudioProcessingImpl then doesn't turn them on (its
+// DenormalDisabler). IEEE 754 subnormal arithmetic gives the same results on
+// every CPU; to keep its cost out of the loops, the instance sets the samples
+// of its input below kCpuIndependentFloor to zero (FlushTinySample()) and
+// adds a deterministic noise floor of kCpuIndependentDither to them, so that
+// its filters, adaptive filters and level estimates settle at that floor in
+// silence instead of decaying through the subnormal range, where x86 takes
+// microcode assists.
 class ScopedCpuIndependent {
  public:
   explicit ScopedCpuIndependent(bool cpu_independent);
@@ -53,7 +68,33 @@ class ScopedCpuIndependent {
 
  private:
   const bool previous_;
+  uint64_t saved_fp_control_ = 0;
+  bool restore_fp_control_ = false;
 };
+
+// MoltBrowser: the smallest input magnitude CPU-independent processing keeps
+// (2^-63, about 1.1e-19 or -379 dBFS; its square is FLT_MIN, so the product
+// of two values at or above it is a normal float). The same floor as
+// Chromium's media::kPortableAudioFloor.
+inline constexpr float kCpuIndependentFloor = 0x1p-63f;
+
+// `sample`, or a zero of its sign when its magnitude is below
+// kCpuIndependentFloor. Infinities and NaNs are unchanged.
+inline float FlushTinySample(float sample) {
+  return std::fabs(sample) < kCpuIndependentFloor
+             ? std::copysign(0.0f, sample)
+             : sample;
+}
+
+// MoltBrowser: the magnitude of the noise floor CPU-independent processing
+// adds to its input (2^-32, about 2.3e-10 or -193 dBFS: far below any
+// microphone's or converter's own noise, 24-bit audio's included), with a
+// pseudo-random sign per sample from a generator each instance seeds the
+// same way.
+inline constexpr float kCpuIndependentDither = 0x1p-32f;
+
+// MoltBrowser: whether a flush-to-zero mode is on on the calling thread.
+bool FlushModeIsOn();
 
 // Whether the calling thread is inside a ScopedCpuIndependent(true).
 bool IsCpuIndependent();

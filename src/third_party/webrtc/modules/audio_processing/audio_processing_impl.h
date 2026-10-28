@@ -193,6 +193,18 @@ class AudioProcessingImpl : public AudioProcessing {
   // cpu_info::ScopedCpuIndependent with it.
   const bool cpu_independent_;
 
+  // MoltBrowser: in CPU-independent processing, the capture and render input
+  // as the instance processes it (PrepareCpuIndependentInput() in the .cc:
+  // the samples, a pointer per channel, and the noise floor's generator).
+  std::vector<float> molt_capture_input_ RTC_GUARDED_BY(mutex_capture_);
+  std::vector<const float*> molt_capture_channels_
+      RTC_GUARDED_BY(mutex_capture_);
+  uint32_t molt_capture_dither_ RTC_GUARDED_BY(mutex_capture_) = 0x4d6f6c74u;
+  std::vector<float> molt_render_input_ RTC_GUARDED_BY(mutex_render_);
+  std::vector<const float*> molt_render_channels_
+      RTC_GUARDED_BY(mutex_render_);
+  uint32_t molt_render_dither_ RTC_GUARDED_BY(mutex_render_) = 0x4e657421u;
+
   SwapQueue<RuntimeSetting> capture_runtime_settings_;
   SwapQueue<RuntimeSetting> render_runtime_settings_;
 
