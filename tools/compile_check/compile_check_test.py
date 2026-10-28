@@ -2044,6 +2044,12 @@ if "-E" in sys.argv or "/E" in sys.argv:
     sys.exit(int(os.environ.get("FAKE_PP_RC", "0")))
 with open(os.path.join(os.path.dirname(__file__), "compiles.txt"), "a") as f:
     f.write(src + "\n")
+# A source edited while it compiles: the compile reads the new text.
+edit = os.environ.get("FAKE_EDIT_WHILE_COMPILING")
+if edit:
+    with open(edit, "w") as f:
+        f.write("int x;\n")
+    text = open(src).read()
 if "CRASH" in text:
     sys.stderr.write("PLEASE submit a bug report\n")
     sys.exit(1)
@@ -2167,6 +2173,47 @@ class ResultCacheTest(unittest.TestCase):
         finally:
             del os.environ["FAKE_PP_RC"]
         self.assertEqual(self.compiled(), 4)
+
+    def test_an_edit_while_compiling_stores_nothing(self):
+        # The source is an overlay file (the working tree, linked into the
+        # tree as sync_overlay() does), edited after its key was made, while
+        # it compiles: the result is of the new text, not of the one the key
+        # was made from, so it isn't stored.
+        overlay = self.tmp / "overlay" / "a" / "x.cc"
+        overlay.parent.mkdir(parents=True)
+        warned = '#include "x.h"\nint x; // WARN\n'
+        overlay.write_text(warned)
+        notes = overlay.parent / "notes.md"
+        notes.write_text("not compiled")
+        self.src.unlink()
+        self.src.symlink_to(overlay)
+        os.environ["FAKE_EDIT_WHILE_COMPILING"] = str(overlay)
+        try:
+            r = self.run_one()
+        finally:
+            del os.environ["FAKE_EDIT_WHILE_COMPILING"]
+        self.assertFalse(r["reused"])
+        self.assertEqual(r["diags"], [])
+        self.assertFalse(result_cache.entry_path(self.work,
+                                                 "a__x.cc").exists())
+        # Back to the text the key was made from: compiled again, with its
+        # own warning, not the edited text's result.
+        overlay.write_text(warned)
+        r = self.run_one()
+        self.assertFalse(r["reused"])
+        self.assertEqual([d["kind"] for d in r["diags"]], ["warning"])
+        self.assertTrue(self.run_one()["reused"])
+        self.assertEqual(self.compiled(), 2)
+        # The stamp sees an edit of the same size, and not a file no
+        # compile reads.
+        stamp = self.tree.overlay_stamp()
+        self.assertEqual(self.tree.overlay_stamp(), stamp)
+        notes.write_text("not compiled, edited")
+        self.assertEqual(self.tree.overlay_stamp(), stamp)
+        st = overlay.stat()
+        overlay.write_text(warned.replace("x;", "y;"))
+        os.utime(overlay, ns=(st.st_atime_ns, st.st_mtime_ns + 1))
+        self.assertNotEqual(self.tree.overlay_stamp(), stamp)
 
     def test_entry_of_another_key_is_not_used(self):
         result_cache.store(self.work, "n", "k1", 0, "log", 512)
