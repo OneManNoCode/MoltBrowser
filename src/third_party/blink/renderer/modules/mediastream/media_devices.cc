@@ -871,7 +871,7 @@ void MediaDevices::OnSelectAudioOutputResult(
   if (result->status == mojom::blink::AudioOutputStatus::kSuccess) {
     // MoltBrowser: MoltNet's name and group (moltnet_media_devices.h).
     molt_fingerprinting::UseUniformNames(
-        mojom::MediaDeviceType::kMediaAudioOutput, result->device_info);
+        mojom::blink::MediaDeviceType::kMediaAudioOutput, result->device_info);
     MediaDeviceInfo* media_device_info = MakeGarbageCollected<MediaDeviceInfo>(
         String::FromUtf8(result->device_info.device_id),
         String::FromUtf8(result->device_info.label),

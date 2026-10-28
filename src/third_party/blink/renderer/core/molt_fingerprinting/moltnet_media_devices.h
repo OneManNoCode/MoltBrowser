@@ -80,7 +80,7 @@ CORE_EXPORT bool ConfirmUserMediaFailure(
     mojom::MediaStreamRequestResult result,
     base::OnceCallback<void(mojom::MediaStreamRequestResult)> done);
 
-// --- Names and groups once the page may see the devices -----------------------
+// --- Names and groups once the page may see the devices ---------------------
 //
 // MoltNet's generic device names and groups (moltnet_media_values.h,
 // DeviceLabel(), DeviceGroup(), ListsAudioDevice()), wherever a page reads
