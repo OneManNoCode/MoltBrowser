@@ -54,6 +54,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_area.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -1090,6 +1091,70 @@ TEST_F(MoltNetDomStorageTest, ACopyOfManyAreasIsCompleteWhenBound) {
   session->DeleteNamespace(tab, /*should_persist=*/false);
   session.FlushForTesting();
   areas.clear();
+  session.reset();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(threads.CountForTesting(), 0u);
+}
+
+// A tab's deletion makes the copies still owed to tabs it opened; kept per
+// site, in a task of its own after its sites' turns. A copy owed to a
+// namespace populated meanwhile (a Clone() of it on another namespace's
+// pipe) is dropped there, as one in a message is, and the partition goes
+// on answering: the namespace keeps what it holds.
+TEST_F(MoltNetDomStorageTest, ACopyOwedToAPopulatedNamespaceIsDropped) {
+  storage::MoltDomStorageOwnThreads threads;
+  mojo::Remote<storage::mojom::SessionStorageControl> session;
+  threads.BindSessionStorageControl(session.BindNewPipeAndPassReceiver());
+  const blink::StorageKey key = Key("https://a.test");
+  const std::string opener =
+      base::Uuid::GenerateRandomV4().AsLowercaseString();
+  const std::string other = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session->CreateNamespace(opener);
+  session->CreateNamespace(other);
+  mojo::Remote<blink::mojom::StorageArea> opener_area;
+  session->BindStorageArea(key, opener,
+                           opener_area.BindNewPipeAndPassReceiver());
+  ASSERT_TRUE(Put(opener_area.get(), 'o', 1));
+  mojo::Remote<blink::mojom::StorageArea> other_area;
+  session->BindStorageArea(key, other, other_area.BindNewPipeAndPassReceiver());
+  ASSERT_TRUE(Put(other_area.get(), 'x', 1));
+
+  // A tab the opener opened, waiting for the Clone() of the opener's
+  // renderer; a Clone() of it comes on the other namespace's pipe instead.
+  const std::string opened =
+      base::Uuid::GenerateRandomV4().AsLowercaseString();
+  session->CloneNamespace(
+      opener, opened,
+      storage::mojom::SessionStorageCloneType::kWaitForCloneOnNamespace);
+  mojo::Remote<blink::mojom::SessionStorageNamespace> other_namespace;
+  session->BindNamespace(other, other_namespace.BindNewPipeAndPassReceiver());
+  session.FlushForTesting();
+  other_namespace->Clone(opened);
+  other_namespace.FlushForTesting();
+
+  // The opener goes, with the copy it owes. A deletion naming it, sent
+  // after, waits for that and is answered.
+  session->DeleteNamespace(opener, /*should_persist=*/false);
+  base::test::TestFuture<void> after;
+  session->DeleteStorage(Key("https://b.test"), opener, after.GetCallback());
+  EXPECT_TRUE(after.Wait());
+
+  mojo::Remote<blink::mojom::StorageArea> opened_area;
+  session->BindStorageArea(key, opened,
+                           opened_area.BindNewPipeAndPassReceiver());
+  base::test::TestFuture<std::vector<blink::mojom::KeyValuePtr>> all;
+  opened_area->GetAll(mojo::NullRemote(), all.GetCallback());
+  const std::vector<blink::mojom::KeyValuePtr> items = all.Take();
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0]->key, std::vector<uint8_t>({'x'}));
+
+  session->DeleteNamespace(opened, /*should_persist=*/false);
+  session->DeleteNamespace(other, /*should_persist=*/false);
+  session.FlushForTesting();
+  opener_area.reset();
+  other_area.reset();
+  opened_area.reset();
+  other_namespace.reset();
   session.reset();
   task_environment_.RunUntilIdle();
   EXPECT_EQ(threads.CountForTesting(), 0u);
