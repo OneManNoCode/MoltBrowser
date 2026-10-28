@@ -550,5 +550,53 @@ TEST_F(MoltPortableMediaTest, PortableResamplerFlushesItsKernelAndInput) {
   EXPECT_NE(run(false, 1e-30f).second, run(false, 0.0f).second);
 }
 
+// A microphone's format as a portable process's pages see it: the same for
+// every device; other processes see the device's own.
+TEST_F(MoltPortableMediaTest, PortableCaptureParametersAreTheSameForAll) {
+  AudioParameters mono_44k(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, ChannelLayoutConfig::Mono(),
+      44100, 441, AudioParameters::HardwareCapabilities(128, 4096, 441, false));
+  mono_44k.set_effects(AudioParameters::ECHO_CANCELLER |
+                       AudioParameters::NOISE_SUPPRESSION);
+  const AudioParameters stereo_96k(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                   ChannelLayoutConfig::Stereo(), 96000, 256);
+  EXPECT_TRUE(PortableCaptureParameters(mono_44k).Equals(mono_44k));
+  EXPECT_TRUE(PortableCaptureParameters(stereo_96k).Equals(stereo_96k));
+
+  SetPortableMediaProcessForTesting(true);
+  const AudioParameters uniform = PortableCaptureParameters(mono_44k);
+  EXPECT_EQ(uniform.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
+  EXPECT_EQ(uniform.sample_rate(), kPortableCaptureSampleRate);
+  EXPECT_EQ(uniform.sample_rate(), 48000);
+  EXPECT_EQ(uniform.channel_layout(), CHANNEL_LAYOUT_STEREO);
+  EXPECT_EQ(uniform.channels(), kPortableCaptureChannels);
+  EXPECT_EQ(uniform.frames_per_buffer(), 480);
+  EXPECT_EQ(uniform.effects(), AudioParameters::NO_EFFECTS);
+  EXPECT_FALSE(uniform.hardware_capabilities().has_value());
+  EXPECT_TRUE(PortableCaptureParameters(stereo_96k).Equals(uniform));
+
+  // No device: still no device, and no effects.
+  AudioParameters unavailable;
+  unavailable.set_effects(AudioParameters::ECHO_CANCELLER);
+  EXPECT_FALSE(PortableCaptureParameters(unavailable).IsValid());
+  EXPECT_EQ(PortableCaptureParameters(unavailable).effects(),
+            AudioParameters::NO_EFFECTS);
+}
+
+TEST_F(MoltPortableMediaTest, PortableCaptureOutputFormat) {
+  const AudioParameters mono_16k(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                 ChannelLayoutConfig::Mono(), 16000, 160);
+  const AudioParameters mono = PortableCaptureOutputFormat(mono_16k, false);
+  EXPECT_EQ(mono.sample_rate(), 48000);
+  EXPECT_EQ(mono.channel_layout(), CHANNEL_LAYOUT_MONO);
+  EXPECT_EQ(mono.frames_per_buffer(), 480);
+  // Stereo when asked for, from a mono device too.
+  const AudioParameters stereo = PortableCaptureOutputFormat(mono_16k, true);
+  EXPECT_EQ(stereo.channel_layout(), CHANNEL_LAYOUT_STEREO);
+  EXPECT_EQ(stereo.sample_rate(), 48000);
+  EXPECT_EQ(stereo.frames_per_buffer(), 480);
+  EXPECT_EQ(stereo.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
+}
+
 }  // namespace
 }  // namespace media

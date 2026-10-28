@@ -44,6 +44,10 @@
 //   * a microphone has no platform effects (PortableCaptureEffects() below):
 //     its processing is always WebRTC's, never the OS's, and the page reads
 //     the same processing settings and capabilities on every OS;
+//   * every microphone has one format as the page sees it (48 kHz, one or
+//     two channels, 10 ms; PortableCaptureParameters() below), and its
+//     stream is delivered in it, converted from the device's by the
+//     CPU-independent processing (PortableCaptureOutputFormat());
 //   * the playout its echo canceller hears, which the audio service mixes for
 //     the output device, is mixed with the plain C code while a stream of such
 //     a process listens (ScopedPortableAudioThread below);
@@ -70,6 +74,7 @@
 namespace media {
 
 class AudioBus;
+class AudioParameters;
 class VideoFrame;
 
 MEDIA_EXPORT void SetPortableMediaProcess();
@@ -87,6 +92,35 @@ MEDIA_EXPORT void SetPortableMediaProcessForTesting(bool portable);
 // OSes and machines. Without them the processing is always WebRTC's, in the
 // mode above. Other processes: `platform_effects`, unchanged.
 MEDIA_EXPORT int PortableCaptureEffects(int platform_effects);
+
+// The format of every microphone as a portable media process's pages see it:
+// 48 kHz, stereo, a 10 ms buffer.
+inline constexpr int kPortableCaptureSampleRate = 48000;
+inline constexpr int kPortableCaptureChannels = 2;
+inline constexpr int kPortableCaptureFramesPerBuffer = 480;
+
+// An audio capture device's parameters as a portable media process's pages
+// read them and constraints are checked against (getCapabilities()'
+// sampleRate, channelCount and latency ranges, those of enumerateDevices()'
+// InputDeviceInfo, and what a request may ask for): the format above with no
+// platform effects (PortableCaptureEffects()) and no hardware buffer range,
+// whatever the device. `device` itself is still what the stream opens with:
+// its own rate and channels, which the CPU-independent processing converts
+// to the stream's (PortableCaptureOutputFormat()), so that no OS or
+// CPU-dependent converter sits in between. Other processes, and parameters
+// that aren't valid (no device): `device` with only the effects changed as
+// PortableCaptureEffects() changes them.
+MEDIA_EXPORT AudioParameters
+PortableCaptureParameters(const AudioParameters& device);
+
+// The format a microphone stream of a portable media process is delivered
+// in, whatever the device's (`input`, of which only the sample format is
+// kept): kPortableCaptureSampleRate, stereo when the page asked for more than
+// one channel (`stereo`) and mono otherwise, kPortableCaptureFramesPerBuffer
+// frames (the processing's 10 ms). getSettings()' sampleRate, channelCount
+// and latency are read from it.
+MEDIA_EXPORT AudioParameters
+PortableCaptureOutputFormat(const AudioParameters& input, bool stereo);
 
 // The audio service's mixing for a portable process's echo canceller.
 //

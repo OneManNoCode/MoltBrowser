@@ -33,6 +33,7 @@
 #include "media/base/channel_layout.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
+#include "media/base/molt_portable_media.h"  // MoltBrowser
 #include "media/webrtc/constants.h"
 #include "media/webrtc/helpers.h"
 #include "media/webrtc/ml_model_handle.h"
@@ -555,6 +556,11 @@ std::optional<double> AudioProcessor::ProcessData(
   // Limit number of apm output channels to 2 to avoid potential problems with
   // discrete channel mapping.
   num_apm_output_channels = std::min(num_apm_output_channels, 2);
+  // MoltBrowser: a MoltNet stream may be stereo from a mono device
+  // (GetDefaultOutputFormat()); APM outputs one channel or as many as it gets,
+  // and the upmix below copies it.
+  num_apm_output_channels =
+      std::min(num_apm_output_channels, input_format_.channels());
 
   CHECK_GE(num_apm_output_channels, 1);
   const webrtc::StreamConfig apm_output_config = webrtc::StreamConfig(
@@ -628,6 +634,13 @@ std::optional<AudioParameters> AudioProcessor::ComputeInputFormat(
 AudioParameters AudioProcessor::GetDefaultOutputFormat(
     const AudioParameters& input_format,
     const AudioProcessingSettings& settings) {
+  // MoltBrowser: MoltNet's streams come out in one format whatever the
+  // device's, converted by the CPU-independent processing
+  // (media/base/molt_portable_media.h).
+  if (settings.cpu_independent) {
+    return PortableCaptureOutputFormat(
+        input_format, settings.multi_channel_capture_processing);
+  }
   const bool need_webrtc_audio_processing =
       settings.NeedWebrtcAudioProcessing();
   // TODO(crbug.com/1336055): Investigate why chromecast devices need special

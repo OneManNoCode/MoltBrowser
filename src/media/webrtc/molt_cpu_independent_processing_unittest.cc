@@ -9,7 +9,9 @@
 // CreateWebRtcAudioProcessingModule() configures it for getUserMedia(),
 // produces in CPU-independent mode for the fixed signals below: a near-end
 // talker with the far end's echo (the far end analyzed as the playout
-// reference), and the talker alone. Every CPU and OS must reproduce them;
+// reference), the talker alone, and the talker as devices of other formats
+// capture it, converted to the stream's format with every effect off. Every
+// CPU and OS must reproduce them;
 // they were computed with Chromium 156's WebRTC built standalone (x86-64
 // natively and under qemu on Core 2, Nehalem, Sandy Bridge, Haswell and EPYC
 // models, and arm64 under qemu on Cortex-A53, Cortex-A76 and the max CPU),
@@ -21,7 +23,9 @@
 #include <ios>
 #include <vector>
 
+#include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
+#include "media/webrtc/audio_processor.h"
 #include "media/webrtc/helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/webrtc/api/audio/audio_processing.h"
@@ -150,10 +154,57 @@ uint64_t ProcessFixedSignal(webrtc::AudioProcessing& apm,
   }
   return hash;
 }
+
+// Delivers `seconds` of a talker captured by a device of `rate` and
+// `channels` (1 or 2) in 10 ms chunks, and has the module convert them to
+// 48 kHz mono, as AudioProcessor::ProcessData() asks for a MoltNet stream of
+// that device (whose stereo, when asked for, copies the mono). Returns a
+// digest of the converted samples.
+uint64_t ConvertFixedSignal(webrtc::AudioProcessing& apm,
+                            int rate,
+                            int channels,
+                            int seconds) {
+  Talker near{9000000u, 9000, 5000};
+  Lcg noise{777};
+  const int frames = rate / 100;
+  std::vector<float> cap_l(frames), cap_r(frames), out(kFrame);
+  const webrtc::StreamConfig in_cfg(rate, channels), out_cfg(kRate, 1);
+  uint64_t hash = 1469598103934665603ull;
+  for (int f = 0; f < seconds * 100; ++f) {
+    for (int i = 0; i < frames; ++i) {
+      const float m = near.Sample() + 0.004f * noise.Uniform();
+      cap_l[i] = Quantize(m);
+      cap_r[i] = Quantize(0.9f * m);
+    }
+    apm.set_stream_delay_ms(40);
+    apm.set_stream_analog_level(255);
+    const float* cp[2] = {cap_l.data(), cap_r.data()};
+    float* op[1] = {out.data()};
+    apm.ProcessStream(cp, in_cfg, out_cfg, op);
+    apm.recommended_stream_analog_level();
+    Fnv(hash, out.data(), kFrame);
+  }
+  return hash;
+}
 // END SIGNAL
 
 constexpr uint64_t kGoldenEcho = 0xc9d01531b05d1f69ull;
 constexpr uint64_t kGoldenTalker = 0x25b2f3f2e9fa4b69ull;
+
+// ConvertFixedSignal() with every effect off: the device's format converted
+// to the stream's (same harness and CPUs as above; without the mode the
+// digests differ between x86-64 CPUs with and without AVX2).
+struct ConversionGolden {
+  int rate;
+  int channels;
+  uint64_t digest;
+};
+constexpr ConversionGolden kGoldenConversions[] = {
+    {44100, 1, 0x3ac2c4bdfe88eff1ull},
+    {96000, 2, 0xff520cc86ccfe7bcull},
+    {16000, 1, 0x8d062c19f2041c5cull},
+    {48000, 2, 0xe04dcc6f375570d5ull},
+};
 
 AudioProcessingSettings Settings(bool cpu_independent) {
   AudioProcessingSettings settings;
@@ -231,6 +282,74 @@ TEST(MoltCpuIndependentProcessingTest, InstancesDontShareTheMode) {
     EXPECT_EQ(ProcessFixedSignal(*independent, true, 1), alone[0][call]);
     EXPECT_EQ(ProcessFixedSignal(*fast, true, 1), alone[1][call]);
   }
+}
+
+// The conversion of a MoltNet stream with every effect off computes the same
+// samples on every CPU.
+TEST(MoltCpuIndependentProcessingTest, ConversionGoldenDigests) {
+  AudioProcessingSettings raw;
+  raw.echo_cancellation = false;
+  raw.noise_suppression = false;
+  raw.automatic_gain_control = false;
+  raw.cpu_independent = true;
+  for (const ConversionGolden& golden : kGoldenConversions) {
+    auto apm = CreateWebRtcAudioProcessingModule(raw, nullptr).first;
+    ASSERT_TRUE(apm);
+    EXPECT_EQ(ConvertFixedSignal(*apm, golden.rate, golden.channels, 3),
+              golden.digest)
+        << golden.rate << " Hz, " << golden.channels << " channel(s): "
+        << std::hex
+        << ConvertFixedSignal(
+               *CreateWebRtcAudioProcessingModule(raw, nullptr).first,
+               golden.rate, golden.channels, 3);
+  }
+}
+
+// A CPU-independent stream (MoltNet's) is always processed, with every
+// effect off too: the module converts the device's format to the stream's,
+// which is the same for every device (48 kHz, mono, or stereo when the page
+// asked for more than one channel, 10 ms).
+TEST(MoltCpuIndependentProcessingTest, OneOutputFormatForEveryDevice) {
+  AudioProcessingSettings raw;
+  raw.echo_cancellation = false;
+  raw.noise_suppression = false;
+  raw.automatic_gain_control = false;
+  raw.multi_channel_capture_processing = false;
+  EXPECT_FALSE(raw.NeedWebrtcAudioProcessing());
+  raw.cpu_independent = true;
+  EXPECT_TRUE(raw.NeedWebrtcAudioProcessing());
+  EXPECT_TRUE(CreateWebRtcAudioProcessingModule(raw, nullptr).first);
+
+  const AudioParameters devices[] = {
+      AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                      ChannelLayoutConfig::Mono(), 44100, 441),
+      AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                      ChannelLayoutConfig::Stereo(), 96000, 960),
+      AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                      ChannelLayoutConfig::Mono(), 16000, 160)};
+  for (const AudioParameters& device : devices) {
+    for (const bool stereo : {false, true}) {
+      AudioProcessingSettings settings = Settings(true);
+      settings.multi_channel_capture_processing = stereo;
+      const AudioParameters out =
+          AudioProcessor::GetDefaultOutputFormat(device, settings);
+      EXPECT_EQ(out.sample_rate(), 48000);
+      EXPECT_EQ(out.channels(), stereo ? 2 : 1);
+      EXPECT_EQ(out.frames_per_buffer(), 480);
+      raw.multi_channel_capture_processing = stereo;
+      EXPECT_TRUE(AudioProcessor::GetDefaultOutputFormat(device, raw)
+                      .Equals(out));
+    }
+  }
+  // Without the mode: Chromium's, which follows the device.
+  AudioProcessingSettings chromium = Settings(false);
+  chromium.multi_channel_capture_processing = true;
+  EXPECT_EQ(AudioProcessor::GetDefaultOutputFormat(devices[0], chromium)
+                .channels(),
+            1);
+  EXPECT_EQ(AudioProcessor::GetDefaultOutputFormat(devices[1], chromium)
+                .channels(),
+            2);
 }
 
 }  // namespace
