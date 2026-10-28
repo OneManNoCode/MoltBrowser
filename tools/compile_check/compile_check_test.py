@@ -733,6 +733,96 @@ class SourcesStateTest(unittest.TestCase):
         self.assertFalse(self.files.exists())
 
 
+class PinMoveTest(unittest.TestCase):
+    """SourceTree.move_to_pin: after a rebase, the upstream files fetched at
+    the old pin are dropped (a fetch writes the new pin's)."""
+
+    class FakeUp:
+        def __init__(self, trees):
+            self.trees = trees
+
+        def resolve(self, rev):
+            if rev not in self.trees:
+                raise RuntimeError("no %s in the cache" % rev)
+            return rev
+
+        def tree(self, commit):
+            return self.trees[commit]
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / "overlay" / "a").mkdir(parents=True)
+        self.tree = sources.SourceTree(self.tmp / "work", self.tmp / "cache",
+                                       overlay=self.tmp / "overlay")
+        E, bid = sources._up.TreeEntry, sources._up.blob_id
+        old = {"a/same.h": E("100644", "blob", bid(b"same")),
+               "a/changed.h": E("100644", "blob", bid(b"old")),
+               "a/gone.h": E("100644", "blob", bid(b"gone")),
+               "a/linked.h": E("100644", "blob", bid(b"upstream old")),
+               "v8": E("160000", "commit", "1" * 40)}
+        new = {"a/same.h": old["a/same.h"],
+               "a/changed.h": E("100644", "blob", bid(b"new")),
+               "a/added.h": E("100644", "blob", bid(b"added")),
+               "a/linked.h": E("100644", "blob", bid(b"upstream new")),
+               "v8": E("160000", "commit", "2" * 40)}
+        up = self.FakeUp({"o" * 40: old, "n" * 40: new,
+                          "156.0.1.2": old})
+        self.tree.chromium = types.SimpleNamespace(up=up, commit="n" * 40,
+                                                   entries=new)
+        t = self.tree.tree_dir
+        for rel, data in (("a/same.h", b"same"), ("a/changed.h", b"old"),
+                          ("a/gone.h", b"gone"),
+                          ("build/util/LASTCHANGE", b"hook output"),
+                          ("v8/include/v8.h", b"a mount's file"),
+                          ("out/cc/gen/a/x.h", b"generated")):
+            (t / rel).parent.mkdir(parents=True, exist_ok=True)
+            (t / rel).write_bytes(data)
+        (self.tmp / "overlay" / "a" / "linked.h").write_bytes(b"ours")
+        os.symlink(self.tmp / "overlay" / "a" / "linked.h", t / "a/linked.h")
+        self.state = self.tree.work / "chromium" / sources.PIN_STATE
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def kept(self):
+        t = self.tree.tree_dir
+        return sorted(str(p.relative_to(t)) for p in t.rglob("*")
+                      if p.is_file() or p.is_symlink())
+
+    def test_moved_pin_drops_changed_and_deleted_files(self):
+        self.state.write_text(json.dumps({"revision": "o" * 40}))
+        self.assertEqual(self.tree.move_to_pin(), ["a/changed.h",
+                                                   "a/gone.h"])
+        self.assertEqual(self.kept(), [
+            "a/linked.h", "a/same.h", "build/util/LASTCHANGE",
+            "out/cc/gen/a/x.h", "v8/include/v8.h"])
+        self.assertEqual(json.loads(self.state.read_text()),
+                         {"revision": "n" * 40})
+        # At the pin now: nothing more goes.
+        self.assertEqual(self.tree.move_to_pin(), [])
+
+    def test_work_dir_from_before_pin_json(self):
+        # The pin repos/tarball.json was written for.
+        tb = self.tree.work / "repos" / "tarball.json"
+        tb.parent.mkdir(parents=True)
+        tb.write_text(json.dumps({"pin": "156.0.1.2"}))
+        self.assertEqual(self.tree.move_to_pin(), ["a/changed.h",
+                                                   "a/gone.h"])
+
+    def test_unknown_old_pin_compares_contents(self):
+        # The old commit isn't in the cache: every upstream file is compared
+        # with the pin's (one deleted upstream can't be told from a hook's).
+        self.state.write_text(json.dumps({"revision": "x" * 40}))
+        self.assertEqual(self.tree.move_to_pin(), ["a/changed.h"])
+        self.assertIn("a/gone.h", self.kept())
+
+    def test_fresh_work_dir_records_the_pin(self):
+        shutil.rmtree(self.tree.tree_dir)
+        self.assertEqual(self.tree.move_to_pin(), [])
+        self.assertEqual(json.loads(self.state.read_text()),
+                         {"revision": "n" * 40})
+
+
 class ReportTest(unittest.TestCase):
     def test_classify_names_stand_ins(self):
         tmp = Path(tempfile.mkdtemp())

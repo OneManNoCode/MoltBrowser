@@ -54,6 +54,9 @@ def make_tree(args, platform=None):
     llvm = toolchain.llvm_commit(args.work)
     tree = sources.SourceTree(args.work, args.chromium_cache,
                               clang_llvm_commit=llvm, platform=platform)
+    # After a rebase, the files fetched at the old pin go (README, "When
+    # the pin moves").
+    tree.move_to_pin()
     tree.sync_overlay()
     tree.system_dirs = []
     return tree
