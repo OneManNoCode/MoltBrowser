@@ -4180,7 +4180,8 @@ void NetworkContext::ClearNetworkRestrictions(
 // MoltBrowser: see network_context.mojom and molt_nonce_drop_policy.h.
 void NetworkContext::MoltDropNonce(const base::UnguessableToken& nonce,
                                    mojom::MoltNonceDrop drop) {
-  if (!params_->molt_nonce_limits) {
+  // (A context made around a given URLRequestContext has no params.)
+  if (!params_ || !params_->molt_nonce_limits) {
     return;
   }
   MoltNonceDropStep step = MoltNonceDropStep::kClosed;
@@ -4212,7 +4213,7 @@ void NetworkContext::MoltDropNonce(const base::UnguessableToken& nonce,
 
 // MoltBrowser: see the header.
 net::CookieMonster* NetworkContext::MoltNonceCookieStore() {
-  if (!params_->molt_nonce_limits || !url_request_context_ ||
+  if (!params_ || !params_->molt_nonce_limits || !url_request_context_ ||
       !url_request_context_->cookie_store()) {
     return nullptr;
   }
