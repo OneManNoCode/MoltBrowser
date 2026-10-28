@@ -66,6 +66,10 @@ MANIFEST = "manifest.json"
 PINNED_SHA256 = {
     "chromium-156.0.8078.48-lite.tar.xz":
         "63042065e7d52ed00e4375f6e989be4caf29fcd4ca0a9e3cadf32ec55462bd9f",
+    # 2,009,678,452 bytes; MD5 917a9d7e1010876117c875b24977e887 (the
+    # bucket's and the .hashes file's agree).
+    "chromium-156.0.8078.74-lite.tar.xz":
+        "db3c09af522e140e6c3851394f269f979552ded4fceac7047e5b66be54328346",
 }
 
 
