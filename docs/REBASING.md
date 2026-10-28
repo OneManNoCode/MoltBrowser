@@ -25,9 +25,17 @@ process and the tooling for it, plus the first dry run.
   after a rebase a stale copy silently reverts upstream's changes. Drop them
   from `src/` when convenient; the rebase tool refreshes them meanwhile.
 - `patches/whole_files.txt`: upstream files that live in a DEPS subproject (a
-  separate repo the mirror cannot diff). Today only
-  `third_party/search_engines_data/resources/definitions/prepopulated_engines.json`.
-  Check it by hand on every rebase.
+  separate repo the mirror cannot diff: V8, Skia, WebRTC, the search engine
+  definitions; 66 today). `src/` keeps them whole, and each entry records
+  the subproject commit the file was last merged with and a release whose
+  DEPS pins it:
+  `v8/src/base/ieee754.cc # v8@392e4442… (156.0.8078.48)` (a tab before the
+  `#`). That commit is the base of the file's next 3-way merge. `rebase.py` merges these files
+  whenever the new tag's DEPS moves their subproject, and `--apply` records
+  the new commit; `overlay_to_patches.py` keeps what is recorded (a newly
+  imported file gets the pin's), and `verify_patches.py` fails while a whole
+  file is behind the pin's subproject, since left alone it would silently
+  revert that subproject's newer changes to it.
 
 Until the build switches to the patch series, `src/` is the source of truth:
 edit `src/`, then run `tools/chromium/overlay_to_patches.py` and
@@ -38,6 +46,8 @@ edit `src/`, then run `tools/chromium/overlay_to_patches.py` and
 All of them work without a Chromium checkout. Upstream content comes from a
 bare, shallow, blob-less clone cached in `.molt-chromium-cache/` (gitignored):
 one ~20 MB tree fetch per revision, then only the files needed, in one batch.
+DEPS subprojects' files are cached under `.molt-chromium-cache/deps/`: their
+mirrors' clones, and the files kept from each release tarball streamed.
 The default remote is the GitHub mirror (`https://github.com/chromium/chromium`);
 on the build machine you can use `--remote https://chromium.googlesource.com/chromium/src.git`
 or set `MOLT_CHROMIUM_REMOTE`.
@@ -46,9 +56,9 @@ or set `MOLT_CHROMIUM_REMOTE`.
 |---|---|
 | `tools/chromium/pin.sh [revision\|version\|env]` | Prints the validated pin. |
 | `tools/chromium/overlay_to_patches.py` | Regenerates `patches/` from `src/` (deterministic). |
-| `tools/chromium/verify_patches.py` | Applies the series to upstream@pin in a scratch tree and fails unless every result equals `src/` byte for byte, `identical.txt` is still identical, and every upstream-owned `src/` file is accounted for. |
-| `tools/chromium/rebase.py TAG` | Dry run: 3-way merges every patched file (base = upstream@pin, ours = `src/`, theirs = upstream@TAG) into `.molt-chromium-cache/rebase/TAG/merged/` and writes `report.md` / `report.json`. Never touches `src/`. |
-| `tools/chromium/rebase.py TAG --apply [--allow-conflicts]` | Writes the merges (with conflict markers if allowed) into `src/` and moves `chromium_version.txt` to TAG. |
+| `tools/chromium/verify_patches.py` | Applies the series to upstream@pin in a scratch tree and fails unless every result equals `src/` byte for byte, `identical.txt` is still identical, every upstream-owned `src/` file is accounted for, and every DEPS whole file was merged with the subproject commit the pin's DEPS has. |
+| `tools/chromium/rebase.py TAG` | Dry run: 3-way merges every patched file (base = upstream@pin, ours = `src/`, theirs = upstream@TAG), and every DEPS whole file whose subproject TAG moves (base = the recorded subproject commit, theirs = the subproject at TAG's gitlink), into `.molt-chromium-cache/rebase/TAG/merged/` and writes `report.md` / `report.json`. Never touches `src/`. Subproject files come from the subproject's GitHub mirror when it carries the commit (V8, Skia), else from the release tarballs (WebRTC, search_engines_data), whose SHA-256 must be pinned first (`tools/chromium/subprojects.py`). |
+| `tools/chromium/rebase.py TAG --apply [--allow-conflicts]` | Writes the merges (with conflict markers if allowed) into `src/`, records the new subproject commits in `whole_files.txt`, and moves `chromium_version.txt` to TAG. A whole file it could not merge stays behind the pin (`verify_patches.py` names it); rerun with the pin's own tag to catch it up. |
 | `tools/chromium/apply_patches.py [--reset] [--check]` / `scripts/setup.sh --patches` | Experimental patch-based build path: applies the series to `chromium/src` and copies only first-party files. |
 
 ## Which Chromium to track
@@ -113,14 +123,16 @@ extended channel moves to a new milestone again, do the big rebase to it.
 
 1. Watch [Chrome Releases](https://chromereleases.googleblog.com/) (or the tag
    listing above) for a new tag on our branch, e.g. `156.0.8078.49`.
-2. On a branch `rebase/<tag>`:
-   `tools/chromium/rebase.py <tag>` and read `report.md`. Same-branch respins
-   are normally all clean.
+2. On a branch `rebase/<tag>`: pin the new release's source tarball
+   (`PINNED_SHA256`, above) first: the rebase reads the DEPS subprojects
+   no mirror carries (WebRTC) from it, as do the static GN check and the
+   compile check. Then `tools/chromium/rebase.py <tag>` and read
+   `report.md`. Same-branch respins are normally all clean; a security
+   respin almost always moves V8 and often Skia and WebRTC, whose whole
+   files the report lists per subproject.
 3. `tools/chromium/rebase.py <tag> --apply`, then
    `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`
-   and `tools/moltnet_locale/generate_tables.py` (step 5 below). Pin the
-   new release's source tarball (`PINNED_SHA256`, above) before the static
-   GN check or the compile check fetches it.
+   and `tools/moltnet_locale/generate_tables.py` (step 5 below).
 4. Compile check and smoke test on the build machine (below), then release.
    Note the Chromium version in the release notes.
 
@@ -134,7 +146,7 @@ extended channel moves to a new milestone again, do the big rebase to it.
    alone so the resolution is reviewable as its own diff.
 3. Resolve (see below), until `grep -rn '^<<<<<<< ' src/` is empty.
 4. Handle the report's other sections: deleted/moved files, identical copies,
-   collisions, the DEPS file, and the API changes in first-party code.
+   collisions, the DEPS whole files, and the API changes in first-party code.
 5. `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`,
    then `tools/moltnet_locale/generate_tables.py`: MoltNet's en-US strings
    and default fonts are generated from Chromium's `.grd` files. If it

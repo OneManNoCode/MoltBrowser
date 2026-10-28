@@ -5,9 +5,11 @@ name: Lint
 #     (blocking)
 #   * shellcheck on the build/release shell scripts (non-blocking for now:
 #     scripts owned by several people still carry a few warnings)
-#   * patches/ still reproduces the src/ overlay byte-for-byte
-#     (tools/chromium/verify_patches.py; non-blocking until the patch series
-#     becomes the build input, see docs/REBASING.md)
+#   * patches/ still reproduces the src/ overlay byte-for-byte, and every
+#     DEPS-subproject whole file was merged with the subproject commit the
+#     pin has (tools/chromium/verify_patches.py; non-blocking until the
+#     patch series becomes the build input, see docs/REBASING.md); the
+#     patch tools' own tests run in the compile-check-harness job (blocking)
 #   * the macOS helper dylib bundler (scripts/macho_bundle_deps.py) against
 #     arm64 Mach-O fixtures built with clang + lld (blocking)
 #   * the release SBOM generator (tools/sbom/) against its fixtures and this
@@ -216,6 +218,11 @@ jobs:
       # source tarball once, so it runs on a developer machine).
       - name: tools/chromium/gn_static_check_test.py
         run: python3 tools/chromium/gn_static_check_test.py -v
+      # The patch tools (overlay_to_patches, verify_patches, rebase) and
+      # their DEPS-subproject whole files, against a fake Chromium, its
+      # mirrors and release tarballs built in the test.
+      - name: tools/chromium/patch_tools_test.py
+        run: python3 tools/chromium/patch_tools_test.py -v
 
   leak-test-kit:
     runs-on: ubuntu-latest
