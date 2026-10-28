@@ -2668,6 +2668,12 @@ TEST_F(
 // canceller, and voice isolation isn't offered.
 TEST_F(UserMediaClientTest, MoltNetMicrophoneHasNoPlatformEffects) {
   media::SetPortableMediaProcessForTesting(true);
+  // A normal renderer again however the test ends.
+  struct ResetPortableMediaProcess {
+    ~ResetPortableMediaProcess() {
+      media::SetPortableMediaProcessForTesting(false);
+    }
+  } reset_portable_media_process;
   constexpr int kEffects = media::AudioParameters::ECHO_CANCELLER |
                            media::AudioParameters::NOISE_SUPPRESSION |
                            media::AudioParameters::AUTOMATIC_GAIN_CONTROL |
@@ -2718,7 +2724,6 @@ TEST_F(UserMediaClientTest, MoltNetMicrophoneHasNoPlatformEffects) {
       WebMediaStreamTrack(track->Component()))
       ->Stop();
   blink::WebHeap::CollectGarbageForTesting();
-  media::SetPortableMediaProcessForTesting(false);
 }
 
 }  // namespace blink

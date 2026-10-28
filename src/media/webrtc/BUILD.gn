@@ -46,13 +46,17 @@ component("webrtc") {
 }
 
 # MoltBrowser: microphone processing that computes the same samples on
-# every CPU (MoltNet's streams): golden digests every CPU and OS must
-# reproduce, in molt_ai_unittests.
+# every CPU (MoltNet's streams), and the echo reference mixed for it:
+# golden digests every CPU and OS must reproduce, in molt_ai_unittests.
 source_set("molt_unittests") {
   testonly = true
-  sources = [ "molt_cpu_independent_processing_unittest.cc" ]
+  sources = [
+    "molt_cpu_independent_processing_unittest.cc",
+    "molt_echo_reference_unittest.cc",
+  ]
   deps = [
     ":webrtc",
+    "//base",
     "//media",
     "//testing/gtest",
     "//third_party/webrtc_overrides:webrtc_component",
