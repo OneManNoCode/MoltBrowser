@@ -308,6 +308,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // decoded file.
   void ParseAttachmentPdf(const std::string& callback_id,
                           std::unique_ptr<std::string> pdf);
+  // An attached image: decoded in the data decoder, then OCR'd
+  // (OcrService::OcrImage).
+  void OcrAttachmentImage(const std::string& callback_id,
+                          std::unique_ptr<std::string> image);
   void ParseAttachmentDocument(const std::string& callback_id,
                                std::unique_ptr<std::string> document,
                                const std::string& extension,

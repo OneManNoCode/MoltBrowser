@@ -5,34 +5,50 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/containers/span.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/string_view_util.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
+#include "chrome/browser/molt_ai/ocr/ocr_image.h"
 #include "chrome/services/molt_ai/document_parser/public/mojom/document_parser.mojom.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
+#include "services/data_decoder/public/cpp/decode_image.h"
+#include "services/data_decoder/public/cpp/service_provider.h"
+#include "services/data_decoder/public/mojom/data_decoder_service.mojom.h"
+#include "services/data_decoder/public/mojom/image_decoder.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkRect.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace molt_ai {
 namespace ocr {
 namespace {
 
+using internal::ImageOcrFunction;
 using internal::OcrRenderedPages;
-using internal::PageOcrFunction;
 
 // A rendered page whose "PNG" is just |marker| (the fake OCR reads it back).
 RenderedPdfPage FakePage(uint32_t index, std::string_view marker) {
@@ -66,63 +82,89 @@ OcrResult Error(std::string error) {
   return result;
 }
 
-// Stands in for tesseract: the page's text is its marker, except "fail",
-// which fails. Records each call's timeout, and advances |clock| by
-// |seconds_per_page|.
+// Stands in for decoding and tesseract: the page's text is its marker,
+// except "fail", which fails. Records each call's timeout, advances |clock|
+// by |seconds_per_page|, and answers at once or (|answer_later|) from a
+// task of its own.
 class FakeOcr {
  public:
   explicit FakeOcr(base::SimpleTestTickClock* clock = nullptr,
-                   int seconds_per_page = 0)
-      : clock_(clock), seconds_per_page_(seconds_per_page) {}
+                   int seconds_per_page = 0,
+                   bool answer_later = false)
+      : clock_(clock),
+        seconds_per_page_(seconds_per_page),
+        answer_later_(answer_later) {}
 
-  PageOcrFunction Function() {
+  ImageOcrFunction Function() {
     return base::BindRepeating(&FakeOcr::Run, base::Unretained(this));
   }
 
   const std::vector<base::TimeDelta>& timeouts() const { return timeouts_; }
 
  private:
-  OcrResult Run(base::span<const uint8_t> png,
-                size_t max_chars,
-                base::TimeDelta timeout) {
+  void Run(base::span<const uint8_t> png,
+           size_t max_chars,
+           base::TimeDelta timeout,
+           base::OnceCallback<void(OcrResult)> done) {
     timeouts_.push_back(timeout);
     if (clock_) {
       clock_->Advance(base::Seconds(seconds_per_page_));
     }
     const std::string marker(base::as_string_view(png));
-    if (marker == "fail") {
-      return Error("tesseract exit=1: bad page");
+    OcrResult result = marker == "fail" ? Error("tesseract exit=1: bad page")
+                                        : Text(marker.substr(0, max_chars));
+    if (answer_later_) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, base::BindOnce(std::move(done), std::move(result)));
+      return;
     }
-    return Text(marker.substr(0, max_chars));
+    std::move(done).Run(std::move(result));
   }
 
   raw_ptr<base::SimpleTestTickClock> clock_;
   const int seconds_per_page_;
+  const bool answer_later_;
   std::vector<base::TimeDelta> timeouts_;
 };
 
 class OcrRenderedPagesTest : public testing::Test {
  protected:
-  OcrResult Run(const std::vector<RenderedPdfPage>& pages,
+  OcrResult Run(std::vector<RenderedPdfPage> pages,
                 uint32_t page_count,
                 size_t max_chars,
                 FakeOcr& ocr) {
-    return OcrRenderedPages(pages, page_count, max_chars,
-                            clock_.NowTicks() + kPdfOcrTimeout, &clock_,
-                            ocr.Function());
+    return RunUntil(std::move(pages), page_count, max_chars,
+                    clock_.NowTicks() + kPdfOcrTimeout, ocr);
   }
 
+  OcrResult RunUntil(std::vector<RenderedPdfPage> pages,
+                     uint32_t page_count,
+                     size_t max_chars,
+                     base::TimeTicks deadline,
+                     FakeOcr& ocr) {
+    base::test::TestFuture<OcrResult> future;
+    OcrRenderedPages(std::move(pages), page_count, max_chars, deadline, &clock_,
+                     ocr.Function(), future.GetCallback());
+    // Never synchronously.
+    EXPECT_FALSE(future.IsReady());
+    return future.Take();
+  }
+
+  base::test::TaskEnvironment task_environment_;
   base::SimpleTestTickClock clock_;
 };
 
 TEST_F(OcrRenderedPagesTest, JoinsPagesWithHeaders) {
-  FakeOcr ocr;
-  // tesseract ends a page with a form feed; page 2 has no text.
-  OcrResult result = Run(
-      FakePages({{0, "Hello\f"}, {1, " \n\f"}, {2, "World\n"}}), 3, 1000, ocr);
-  ASSERT_TRUE(result.success) << result.error;
-  EXPECT_EQ(result.text, "--- Page 1 ---\nHello\n\n--- Page 3 ---\nWorld");
-  EXPECT_TRUE(result.error.empty());
+  for (bool answer_later : {false, true}) {
+    FakeOcr ocr(nullptr, 0, answer_later);
+    // tesseract ends a page with a form feed; page 2 has no text.
+    OcrResult result =
+        Run(FakePages({{0, "Hello\f"}, {1, " \n\f"}, {2, "World\n"}}), 3, 1000,
+            ocr);
+    ASSERT_TRUE(result.success) << result.error;
+    EXPECT_EQ(result.text, "--- Page 1 ---\nHello\n\n--- Page 3 ---\nWorld");
+    EXPECT_TRUE(result.error.empty());
+  }
 }
 
 TEST_F(OcrRenderedPagesTest, SaysWhenPagesWereLeftOut) {
@@ -196,17 +238,16 @@ TEST_F(OcrRenderedPagesTest, OneDeadlineForAllPages) {
 
 TEST_F(OcrRenderedPagesTest, NoTimeLeft) {
   FakeOcr ocr;
-  OcrResult result = OcrRenderedPages(
-      FakePages({{0, "one"}}), 1, 1000,
-      clock_.NowTicks() + kMinPageOcrTime - base::Seconds(1), &clock_,
-      ocr.Function());
+  OcrResult result =
+      RunUntil(FakePages({{0, "one"}}), 1, 1000,
+               clock_.NowTicks() + kMinPageOcrTime - base::Seconds(1), ocr);
   EXPECT_FALSE(result.success);
   EXPECT_EQ(result.error, "OCR ran out of time");
   EXPECT_TRUE(ocr.timeouts().empty());
 }
 
-// The whole of OcrPdf but the singleton and tesseract: a fake document
-// parser renders, a fake OCR reads the "PNGs".
+// The whole of OcrPdf but the singleton, the decoder and tesseract: a fake
+// document parser renders, a fake OCR reads the "PNGs".
 class RenderAndOcrPdfTest : public testing::Test,
                             public mojom::DocumentParser {
  protected:
@@ -281,17 +322,19 @@ class RenderAndOcrPdfTest : public testing::Test,
   }
 
   // The fake OCR: the IDAT data of the PNG (see Png()), or a failure.
-  static OcrResult ReadMarker(base::span<const uint8_t> png,
-                              size_t max_chars,
-                              base::TimeDelta timeout) {
+  static void ReadMarker(base::span<const uint8_t> png,
+                         size_t max_chars,
+                         base::TimeDelta timeout,
+                         base::OnceCallback<void(OcrResult)> done) {
     const std::string bytes(base::as_string_view(png));
     // Signature (8) + IHDR chunk (25) + IDAT length and type (8).
     const size_t start = 8 + 25 + 8;
     const size_t end = bytes.size() - 12 - 4;  // IEND, IDAT's CRC.
     if (bytes.size() < start + 16 || end < start) {
-      return Error("not one of ours");
+      std::move(done).Run(Error("not one of ours"));
+      return;
     }
-    return Text(bytes.substr(start, end - start));
+    std::move(done).Run(Text(bytes.substr(start, end - start)));
   }
 
   void SetPages(std::vector<std::string> markers, uint32_t page_count) {
@@ -358,7 +401,7 @@ TEST_F(RenderAndOcrPdfTest, ARenderCrashFails) {
 
 TEST_F(RenderAndOcrPdfTest, AHostileReplyIsNeverOcrd) {
   // A "page" that isn't a PNG: the client rejects the whole reply, so
-  // nothing reaches tesseract.
+  // nothing reaches the decoder or tesseract.
   reply_ = mojom::PdfPageImages::New();
   reply_->success = true;
   reply_->page_count = 1;
@@ -373,9 +416,10 @@ TEST_F(RenderAndOcrPdfTest, AHostileReplyIsNeverOcrd) {
       parser_, base::as_byte_span(std::string("%PDF-")), 1000,
       base::TimeTicks::Now() + kPdfOcrTimeout,
       base::BindRepeating(
-          [](bool* ran, base::span<const uint8_t>, size_t, base::TimeDelta) {
+          [](bool* ran, base::span<const uint8_t>, size_t, base::TimeDelta,
+             base::OnceCallback<void(OcrResult)> done) {
             *ran = true;
-            return Text("never");
+            std::move(done).Run(Text("never"));
           },
           &ocr_ran),
       future.GetCallback());
@@ -383,6 +427,277 @@ TEST_F(RenderAndOcrPdfTest, AHostileReplyIsNeverOcrd) {
   EXPECT_FALSE(result.success);
   EXPECT_NE(result.error.find("malformed"), std::string::npos);
   EXPECT_FALSE(ocr_ran);
+}
+
+SkBitmap Solid(int width, int height, SkColor color) {
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(width, height);
+  bitmap.eraseColor(color);
+  return bitmap;
+}
+
+std::vector<uint8_t> PngOf(const SkBitmap& bitmap) {
+  std::optional<std::vector<uint8_t>> png =
+      gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, /*discard_transparency=*/false);
+  EXPECT_TRUE(png);
+  return png.value_or(std::vector<uint8_t>());
+}
+
+// Stands in for the data decoder process. The browser side is real
+// (DecodeImageForOcr and the data_decoder::DataDecoder it owns, over Mojo);
+// this end decodes PNGs with gfx::PNGCodec, since the real service decodes
+// with Blink, which this test binary doesn't start. It records what it was
+// asked, and can hold its answers back or drop the connection unanswered,
+// as a hung or crashed decoder process would.
+class FakeDataDecoder : public data_decoder::ServiceProvider,
+                        public data_decoder::mojom::DataDecoderService,
+                        public data_decoder::mojom::ImageDecoder {
+ public:
+  FakeDataDecoder() { data_decoder::ServiceProvider::Set(this); }
+  FakeDataDecoder(const FakeDataDecoder&) = delete;
+  FakeDataDecoder& operator=(const FakeDataDecoder&) = delete;
+  ~FakeDataDecoder() override {
+    data_decoder::ServiceProvider::Set(nullptr);
+    // The pipes close before any answer held back goes, as Mojo wants.
+    decoders_.Clear();
+    services_.Clear();
+  }
+
+  void set_hold_answers(bool hold) { hold_answers_ = hold; }
+  void set_crash(bool crash) { crash_ = crash; }
+  // Sends the answers held back.
+  void AnswerHeld() {
+    for (auto& [bitmap, callback] : held_) {
+      std::move(callback).Run(bitmap);
+    }
+    held_.clear();
+  }
+
+  int decodes() const { return decodes_; }
+  data_decoder::mojom::ImageCodec last_codec() const { return last_codec_; }
+  bool last_shrink_to_fit() const { return last_shrink_to_fit_; }
+  int64_t last_max_size() const { return last_max_size_; }
+  const gfx::Size& last_frame_size() const { return last_frame_size_; }
+
+ private:
+  // data_decoder::ServiceProvider:
+  void BindDataDecoderService(
+      mojo::PendingReceiver<data_decoder::mojom::DataDecoderService> receiver)
+      override {
+    services_.Add(this, std::move(receiver));
+  }
+
+  // data_decoder::mojom::DataDecoderService: images only.
+  void BindImageDecoder(mojo::PendingReceiver<data_decoder::mojom::ImageDecoder>
+                            receiver) override {
+    if (crash_) {
+      return;  // Dropped: the client sees the pipe close.
+    }
+    decoders_.Add(this, std::move(receiver));
+  }
+  void BindXmlParser(
+      mojo::PendingReceiver<data_decoder::mojom::XmlParser>) override {}
+  void BindWebBundleParserFactory(
+      mojo::PendingReceiver<web_package::mojom::WebBundleParserFactory>)
+      override {}
+  void BindGzipper(
+      mojo::PendingReceiver<data_decoder::mojom::Gzipper>) override {}
+  void BindStructuredHeadersParser(
+      mojo::PendingReceiver<data_decoder::mojom::StructuredHeadersParser>)
+      override {}
+
+  // data_decoder::mojom::ImageDecoder:
+  void DecodeImage(mojo_base::BigBuffer encoded_data,
+                   data_decoder::mojom::ImageCodec codec,
+                   bool shrink_to_fit,
+                   int64_t max_size_in_bytes,
+                   const gfx::Size& desired_image_frame_size,
+                   DecodeImageCallback callback) override {
+    ++decodes_;
+    last_codec_ = codec;
+    last_shrink_to_fit_ = shrink_to_fit;
+    last_max_size_ = max_size_in_bytes;
+    last_frame_size_ = desired_image_frame_size;
+    SkBitmap bitmap =
+        gfx::PNGCodec::Decode(base::span<const uint8_t>(encoded_data));
+    if (hold_answers_) {
+      held_.emplace_back(std::move(bitmap), std::move(callback));
+      return;
+    }
+    std::move(callback).Run(bitmap);
+  }
+  void DecodeAnimation(mojo_base::BigBuffer,
+                       bool,
+                       int64_t,
+                       DecodeAnimationCallback callback) override {
+    std::move(callback).Run({});
+  }
+
+  mojo::ReceiverSet<data_decoder::mojom::DataDecoderService> services_;
+  mojo::ReceiverSet<data_decoder::mojom::ImageDecoder> decoders_;
+  bool hold_answers_ = false;
+  bool crash_ = false;
+  std::vector<std::pair<SkBitmap, DecodeImageCallback>> held_;
+  int decodes_ = 0;
+  data_decoder::mojom::ImageCodec last_codec_ =
+      data_decoder::mojom::ImageCodec::kPng;
+  bool last_shrink_to_fit_ = false;
+  int64_t last_max_size_ = 0;
+  gfx::Size last_frame_size_{-1, -1};
+};
+
+// Images are decoded in the data decoder (FakeDataDecoder here) and written
+// as the PNM tesseract reads.
+class OcrImageFileTest : public testing::Test {
+ protected:
+  void SetUp() override { ASSERT_TRUE(dir_.CreateUniqueTempDir()); }
+
+  std::string ReadBack(const base::FilePath& path) {
+    std::string contents;
+    EXPECT_TRUE(base::ReadFileToString(path, &contents));
+    return contents;
+  }
+
+  OcrResult OcrFile(base::span<const uint8_t> image) {
+    base::test::TestFuture<OcrResult> future;
+    // No tesseract here: a file that gets that far fails at the run.
+    internal::OcrImageFile(base::FilePath(), base::FilePath(), image, 1000,
+                           kImageOcrTimeout, future.GetCallback());
+    EXPECT_FALSE(future.IsReady());
+    return future.Take();
+  }
+
+  base::test::TaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  FakeDataDecoder decoder_;
+  base::ScopedTempDir dir_;
+};
+
+TEST_F(OcrImageFileTest, DecodesAPngFile) {
+  SkBitmap bitmap = Solid(40, 20, SK_ColorWHITE);
+  bitmap.erase(SK_ColorBLACK, SkIRect::MakeXYWH(5, 5, 10, 3));
+  base::test::TestFuture<SkBitmap, bool> future;
+  internal::DecodeImageForOcr(PngOf(bitmap), kImageOcrTimeout,
+                              future.GetCallback<const SkBitmap&, bool>());
+  const SkBitmap& decoded = future.Get<0>();
+  EXPECT_FALSE(future.Get<1>());
+  ASSERT_FALSE(decoded.drawsNothing());
+  EXPECT_EQ(decoded.width(), 40);
+  EXPECT_EQ(decoded.height(), 20);
+  EXPECT_EQ(decoded.getColor(6, 6), SK_ColorBLACK);
+  EXPECT_EQ(decoded.getColor(30, 15), SK_ColorWHITE);
+  // Chromium's own decoders and limits: a huge image is shrunk while it is
+  // decoded, never handed over at full size.
+  EXPECT_EQ(decoder_.decodes(), 1);
+  EXPECT_EQ(decoder_.last_codec(), data_decoder::mojom::ImageCodec::kDefault);
+  EXPECT_TRUE(decoder_.last_shrink_to_fit());
+  EXPECT_EQ(decoder_.last_max_size(),
+            static_cast<int64_t>(data_decoder::kDefaultMaxSizeInBytes));
+  EXPECT_EQ(decoder_.last_frame_size(), gfx::Size());
+}
+
+TEST_F(OcrImageFileTest, NotAnImageDecodesToNothing) {
+  const std::vector<uint8_t> junk = {0x89, 'P',  'N', 'G', '\r', '\n',
+                                     0x1a, '\n', 1,   2,   3,    4};
+  base::test::TestFuture<SkBitmap, bool> future;
+  internal::DecodeImageForOcr(junk, kImageOcrTimeout,
+                              future.GetCallback<const SkBitmap&, bool>());
+  EXPECT_TRUE(future.Get<0>().drawsNothing());
+  EXPECT_FALSE(future.Get<1>());
+}
+
+TEST_F(OcrImageFileTest, AHungDecoderTimesOut) {
+  decoder_.set_hold_answers(true);
+  base::test::TestFuture<SkBitmap, bool> future;
+  internal::DecodeImageForOcr(PngOf(Solid(8, 8, SK_ColorWHITE)),
+                              base::Seconds(10),
+                              future.GetCallback<const SkBitmap&, bool>());
+  task_environment_.FastForwardBy(base::Seconds(9));
+  EXPECT_FALSE(future.IsReady());
+  task_environment_.FastForwardBy(base::Seconds(1));
+  ASSERT_TRUE(future.IsReady());
+  EXPECT_TRUE(future.Get<0>().drawsNothing());
+  EXPECT_TRUE(future.Get<1>());
+  // An answer after the deadline goes nowhere.
+  decoder_.AnswerHeld();
+  task_environment_.RunUntilIdle();
+
+  // Through OcrImageFile, the chat sees why.
+  base::test::TestFuture<OcrResult> result;
+  internal::OcrImageFile(base::FilePath(), base::FilePath(),
+                         PngOf(Solid(8, 8, SK_ColorWHITE)), 1000,
+                         base::Seconds(10), result.GetCallback());
+  task_environment_.FastForwardBy(base::Seconds(10));
+  ASSERT_TRUE(result.IsReady());
+  EXPECT_EQ(result.Get().error, "decoding the image timed out");
+  decoder_.AnswerHeld();
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(OcrImageFileTest, ACrashedDecoderDecodesNothing) {
+  decoder_.set_crash(true);
+  base::test::TestFuture<SkBitmap, bool> future;
+  internal::DecodeImageForOcr(PngOf(Solid(8, 8, SK_ColorWHITE)),
+                              kImageOcrTimeout,
+                              future.GetCallback<const SkBitmap&, bool>());
+  EXPECT_TRUE(future.Get<0>().drawsNothing());
+  EXPECT_FALSE(future.Get<1>());
+  EXPECT_EQ(decoder_.decodes(), 0);
+}
+
+TEST_F(OcrImageFileTest, WritesThePnmTesseractReads) {
+  // Gray: P5. Black in the top-left corner, white elsewhere.
+  SkBitmap gray = Solid(3, 2, SK_ColorWHITE);
+  gray.erase(SK_ColorBLACK, SkIRect::MakeXYWH(0, 0, 1, 1));
+  const base::FilePath gray_path = dir_.GetPath().AppendASCII("gray.pnm");
+  EXPECT_EQ(internal::WriteOcrPnm(gray, gray_path), "");
+  EXPECT_EQ(ReadBack(gray_path),
+            std::string("P5\n3 2\n255\n\x00\xff\xff\xff\xff\xff", 17));
+  // Colour: P6.
+  const base::FilePath red_path = dir_.GetPath().AppendASCII("red.pnm");
+  EXPECT_EQ(internal::WriteOcrPnm(Solid(2, 1, SK_ColorRED), red_path), "");
+  EXPECT_EQ(ReadBack(red_path),
+            std::string("P6\n2 1\n255\n\xff\x00\x00\xff\x00\x00", 17));
+  // Transparent: white, as tesseract composites a PNG's alpha.
+  const base::FilePath clear_path = dir_.GetPath().AppendASCII("clear.pnm");
+  EXPECT_EQ(internal::WriteOcrPnm(Solid(1, 1, SK_ColorTRANSPARENT), clear_path),
+            "");
+  EXPECT_EQ(ReadBack(clear_path), std::string("P5\n1 1\n255\n\xff", 12));
+  // The same bytes as ocr_image.h's writer gives for the same pixels.
+  EXPECT_EQ(ReadBack(red_path),
+            OcrPnmFromRgba(2, 1, std::string("\xff\0\0\xff\xff\0\0\xff", 8)));
+
+  // Too wide for tesseract; an empty bitmap; never over an existing file.
+  SkBitmap wide;
+  wide.allocN32Pixels(32768, 1);
+  const base::FilePath wide_path = dir_.GetPath().AppendASCII("wide.pnm");
+  EXPECT_EQ(internal::WriteOcrPnm(wide, wide_path), kTooLargeForOcr);
+  EXPECT_FALSE(base::PathExists(wide_path));
+  EXPECT_EQ(internal::WriteOcrPnm(SkBitmap(), wide_path),
+            "couldn't decode this image");
+  EXPECT_EQ(internal::WriteOcrPnm(gray, gray_path),
+            "could not write temp image");
+}
+
+TEST_F(OcrImageFileTest, OnlyPngJpegAndWebpAreDecoded) {
+  const std::string tiff("II*\0\x08\0\0\0", 8);
+  OcrResult result = OcrFile(base::as_byte_span(tiff));
+  EXPECT_FALSE(result.success);
+  EXPECT_NE(result.error.find("TIFF"), std::string::npos) << result.error;
+  result = OcrFile(base::as_byte_span(std::string("GIF89a\1\0\1\0")));
+  EXPECT_EQ(result.error, "this file isn't a PNG, JPEG or WebP image");
+}
+
+TEST_F(OcrImageFileTest, DecodesThenRunsTesseract) {
+  // A PNG that decodes reaches the tesseract run (here: no tesseract).
+  OcrResult result = OcrFile(PngOf(Solid(16, 16, SK_ColorWHITE)));
+  EXPECT_FALSE(result.success);
+  EXPECT_EQ(result.error, "no tesseract binary available");
+  // One that doesn't decode never does.
+  const std::vector<uint8_t> broken = {0x89, 'P',  'N', 'G', '\r', '\n',
+                                       0x1a, '\n', 0,   0,   0,    0};
+  result = OcrFile(broken);
+  EXPECT_EQ(result.error, "couldn't decode this image");
 }
 
 }  // namespace

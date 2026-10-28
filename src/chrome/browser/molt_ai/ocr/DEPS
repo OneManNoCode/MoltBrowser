@@ -1,3 +1,17 @@
 include_rules = [
   "+chrome/services/molt_ai/document_parser/public",
+  # Images are decoded in the sandboxed data decoder; Skia reads the pixels.
+  "+services/data_decoder/public/cpp/data_decoder.h",
+  "+services/data_decoder/public/cpp/decode_image.h",
+  "+third_party/skia/include/core",
+  "+ui/gfx/geometry/size.h",
 ]
+
+specific_include_rules = {
+  "ocr_service_unittest\.cc": [
+    # A fake data decoder service, which decodes PNGs with gfx::PNGCodec.
+    "+services/data_decoder/public/cpp/service_provider.h",
+    "+services/data_decoder/public/mojom",
+    "+ui/gfx/codec/png_codec.h",
+  ],
+}
