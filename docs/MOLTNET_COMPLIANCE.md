@@ -1284,16 +1284,42 @@ stored something, made MoltNet hold a new group of storage, with its
 records, for every reload. In MoltNet, a tab notes the nonces its pages'
 frames use, and when a page goes, its nonces' storage goes with it: their
 DOM storage areas and records in the storage service, in each nonce's own
-turn, and their buckets in the quota system, with the usage counted for
-them (`chrome/browser/molt_ai/tor/molt_net_nonce_storage.{h,cc}`, a tab
-helper for MoltNet's tabs; `DOMStorageContext::MoltDropNonce()`, the storage
-controls' `MoltDropNonce()` and `QuotaManagerImpl::MoltDropNonce()`). A
+turn, their buckets in the quota system, with the usage counted for them,
+and their storage keys' media-license data
+(`chrome/browser/molt_ai/tor/molt_net_nonce_storage.{h,cc}`, a tab helper
+for MoltNet's tabs; `DOMStorageContext::MoltDropNonce()`, the storage
+controls' `MoltDropNonce()`, `QuotaManagerImpl::MoltDropNonce()` and
+`CdmStorageDataModel::DeleteDataForStorageKey()`). So do their cookies.
+Such frames keep cookies in partitions of their own, under the nonce, one
+for each site their documents and navigations reach; Chromium 156 kept
+those in memory until the profile ended, with no total for partitioned
+cookies, so a page that reloaded itself added partitions each time. The
+tab helper notes each storage key's partition, and the partition of each
+URL a navigation under the nonce requests (as it starts and at each
+redirect: the response may set cookies there, whether the navigation
+commits or not); when the page goes, those partitions' cookies are deleted
+(`CookieManager::DeleteCookies()`, partitioned cookies only), and again a
+minute later, past the 30 seconds a keepalive request may outlive its page.
+In the harness, 1,000 reloads of a page left 3,000 such partitions (5,000
+cookies) before and none now, the user's other cookies untouched. In
+MoltNet's partition, the clipboard's salt for a storage key with a nonce
+(`StoragePartitionImpl::GetPartitionUUIDPerStorageKey()`, a table entry per
+key for the partition's life at 156) is derived from the key under a
+secret made once per run, so the table keeps no entry per page. The rest
+of what 156 keys by a nonce needs nothing: it is never kept for one (HTTP
+cache entries, shared dictionaries), goes with its document (blob URLs,
+Web Locks), or sits in caches of fixed size that no page can reach again
+once the nonce's page is gone (idle connections, TLS sessions, server
+properties, CORS preflight results); the inventory is in
+`molt_net_nonce_storage_policy.h`. A
 top-level site holds such storage for at most 32 of its pages at once
 (`molt_net_nonce_storage_policy.h`; a page its server sandboxed, whose
 origin is opaque, counts to the site it came from, so no site's pages count
 against another's): past that, the oldest page's is dropped
 and its further writes are refused (its quota is what it holds, its DOM
-storage takes no writes) until that page goes. What a page can still
+storage takes no writes) until that page goes; its cookies and
+media-license data are deleted then too, and what its frames set
+afterwards goes when the page goes. What a page can still
 observe: its own frames' storage, while it lives. What it costs: a page
 with credentialless frames on a site with 32 newer such pages open loses
 what its frames stored there, as if it had been reloaded.
@@ -1562,10 +1588,29 @@ partition stores (`GetUsage()`, which Clear-Site-Data and the settings read
 before they delete) is listed site by site, each site's areas in its own
 turn, after the messages it queued before: a write queued in a site's turn
 when the listing came was missed at 156, and so was not deleted by the
-clear that followed; now it is listed. A tab's `sessionStorage` copied at
+clear that followed; now it is listed. A deletion that names one storage
+key (Clear-Site-Data's, which a site can send on any response) reads that
+key's areas only, in its site's turn, and, over all time, that key's
+buckets only; at 156 each one listed every site's areas, in one Mojo
+reply, and every bucket (`MoltGetUsageForStorageKey()` on both storage
+controls; `content/browser/browsing_data/molt_one_key_deletion_policy.h`).
+In the harness, a Clear-Site-Data in a partition of 100,000 areas took
+4,250 tasks and 108 ms of listing before, 2 tasks and 32 µs now. The
+callers that want every site's data (the site settings and site data
+dialogs, clearing browsing data, counting it) are the browser's own and
+keep Chromium's listing. A tab's `sessionStorage` copied at
 once (a duplicated tab), or deleted while tabs it opened wait for their
 copy, waits for a turn of each site with areas in it (or a bind or deletion
-for it queued), so the copy holds what those sites wrote before; the
+for it queued), so the copy holds what those sites wrote before, for one
+second at most: a site whose turn hasn't come by then (one with a backlog
+of its own making) is copied as its areas are, and its writes still queued
+then land in the source only, as Chromium allows for a copy the browser
+makes (`kImmediate`: "strict ordering against mutations is irrelevant");
+a deletion of the source's areas asked for before the copy applies to the
+copy at once (`molt_dom_storage_waits.h`). Round 30's copy waited for the
+whole backlog: in the harness, a site with 100,000 writes queued held a
+duplicated tab's copy, and the binds of its pages of every site, for
+100 s; now for 1 s. The
 control messages that name the namespaces involved (a bind of the copy,
 the source's deletion) wait for it, in the order they came, and messages
 for other namespaces don't. A renderer's own copy (`window.open()`) was
@@ -1588,8 +1633,9 @@ split too: the listing above reaches 16 sites a task in the control's turn
 and lists 64 of a site's areas a task in that site's turn (in the
 harness, 100,000 areas were walked in one task of about 50 ms; now in
 tasks of 0.1 to 2 ms, a read sent between two steps waiting for at most
-16 of them; the reply, one message listing every area that holds an item,
-is still built in one task, as at 156), and the memory dump reports the
+16 of them; for the browser's own callers that want every area, the
+reply, one message listing every area that holds an item, is still built
+in one task, as at 156), and the memory dump reports the
 partition's totals, kept as they change, without walking or naming
 areas. So is the work on a tab's
 `sessionStorage` namespace, which holds an area per storage key its pages
@@ -1598,9 +1644,15 @@ popup it opens) and delete (the popup closed) at will: a copy of more than
 64 keys registers and clones 64 a task, the copy holding binds until it is
 complete, as a copy the renderer is still to make does; a deletion frees
 areas up to 64, or 1024 items or 1 MiB, a task, then forgets its keys 64 a
-task; one such job at a time, in the control's turn, the messages naming
-its namespaces waiting for it; gathering a namespace's sites for a copy
-that waits for their turns takes 64 areas a task. In the harness, with
+task; each job after the jobs before it that name one of its namespaces
+(those run one at a time, in the order they came), in its namespace's own
+turn, the messages naming its namespaces waiting for it; gathering a
+namespace's sites for a copy that waits for their turns takes 64 areas a
+task. Round 30 ran one job at a time for the whole partition, in the
+control's turn, so a tab's job waited for every other tab's before it: in
+the harness, a tab's two-step copy queued behind another tab's
+thousand-step copy finished after 100 ms, now after 0.4 ms
+(`molt_dom_storage_waits.h`). In the harness, with
 Chromium 156's copy and deletion and the new ones on stand-ins with 156's
 shapes, a namespace of 5,000 areas took 6 to 9 ms of processor time to
 copy and 1 to 1.5 ms to delete, in one task each; now no task took more
@@ -1739,7 +1791,11 @@ top-level site). Each now carries the key of where it came from:
   without any of the page's parameters, waits for them and then starts
   again with them, or fails after five minutes if its registration is gone
   (`components/download/internal/background_service/molt_restored_fetch.h`).
-  Both in every profile.
+  A take-up that comes while the download service is still asking for the
+  parameters (the answer on its way, when asking again did nothing) is
+  remembered, and the parameters are asked for again as soon as that
+  answer comes without them; before, the take-up was lost and the fetch
+  failed after its five minutes. Both in every profile.
 - A download a page starts without navigating (a link with `download`,
   "Save link as", "Save image as" or "Save video as" in a top-level page, a
   link dragged out): the key of the frame it came from, as that frame's
@@ -2030,6 +2086,10 @@ gpg-verified steps documented in that script.
 | Long tasks split (§2 *The storage service's sequence, in turn per site*): a change of 64 KiB or more to an area open in more than one tab notifies each in a task of its own, in order with the area's other notifications; big maps freed 1,024 items or 1 MiB a task; smaller changes and one tab as Chromium | Unit tests (`molt_ai_unittests`: three observers hear every change in order, a gone one nothing; a clear of 900 items; the rules built standalone here); the harness above: one 10 MiB write over a 10 MiB value with eight tabs open went from one task of 13.5 ms (180 MiB copied) to 2.2 ms and 1.5 ms per tab, with one tab unchanged (3 ms); a clear of 90,000 items from one task of 10 ms to 19 µs and steps of 0.2 ms | Partly: the standalone tests pass; the real-service tests need a Chromium build |
 | `localStorage` and `sessionStorage` areas holding nothing go when unused (§2 *DOM storage caches*): kept per site without a database, an area left unused that holds nothing goes in its site's turn, one in use or holding an item stays; no purge on opening and no sweep there; with a database the per-site purge and sweep as before | Unit tests (`molt_ai_unittests`: real `LocalStorageImpl` and `SessionStorageImpl`; the purge and expiry tests on a partition on disk, which keeps a database; the rule built standalone here); type-checked against Chromium 156's headers | Partly: the real-service tests need a Chromium build |
 | The HTTP cache's sweep per site, its monotonic clock and its table of sites (§2 *HTTP cache*): the sweep goes site by site, at most 64 entries of one site a task; expiry reads a monotonic clock, also when the wall clock goes back or forward; adding a site never rehashes the table; a site past 4,096 gets no entry | Unit tests (`molt_ai_unittests`: Chromium's real `MemBackendImpl`; the site lists with a stand-in entry, built standalone here, 6 tests under ASan/UBSan); standalone harness: the lists with Chromium 156's real `base::LinkedList` and a model of `MemBackendImpl` and `MemEntryImpl` with both clocks: 200 random runs of 3,000 operations keep the same entries as round 28's sweep; with the wall clock an hour back, round 28's sweep left 100 expired entries, this one none; with 100,000 other sites' entries expiring, the longest sweep task went from 28 ms to 65 µs; 9 rehashes against none while adding 4,096 sites | Partly: the standalone tests pass; the real-backend tests need a Chromium build |
+| What else a page's nonce keys goes with it (§2 *Storage*): its frames' cookies (each storage key's partition and that of each URL their navigations request; partitioned cookies only, and again a minute later) and media-license data are deleted when the page goes, and when its group is closed past its site's bound; in MoltNet's partition a nonce key's clipboard salt is derived, not kept; the inventory of what else 156 keys by a nonce (`molt_net_nonce_storage_policy.h`); other profiles unchanged | Unit tests (`molt_ai_unittests`: the bound, the site a page counts to and the second deletion's timing against the keepalive timeout, 6 tests, built standalone with g++ ASan/UBSan and clang `-fno-exceptions`); standalone harnesses: 156's cookie code verbatim (`CookiePartitionKey::FromNetworkIsolationKey()`, `FromStorageKeyComponents()`, `StorageKey::ToCookiePartitionKey()`, the network service's `DeletionFilterToInfo()`, `CookieDeletionInfo::Matches()`, `CookieMonster::DeleteMatchingCookies()`) against stand-ins, 4 tests: the tab helper's partitions are the ones the network stack stores in, 1,000 reloads left 3,000 partitions (5,000 cookies) before and none now, the user's other cookies kept (a filter without `partitioned_state_only` deletes every unpartitioned cookie), a late keepalive response's cookie taken by the second deletion; `GetPartitionUUIDPerStorageKey()` at 156 and hooked, 3 tests: 10,000 reloads kept 10,000 entries before and none now, each salt the same for its key and different from other keys' | Partly: the tab helper in a running browser needs a Chromium build |
+| A deletion of one storage key reads that key's usage only (§2 *The storage service's sequence, in turn per site*): Clear-Site-Data, and any deletion naming one key, lists that key's `localStorage` and `sessionStorage` areas in its site's turn and, over all time, its buckets; the same filter decides what goes; the callers that want every site's data, and other profiles, unchanged | Unit tests (`molt_ai_unittests`: the policy, built standalone; `MoltNetDomStorageTest.AUsageOfOneKeyListsThatKeyOnly`, `WithoutCachesPerSiteAUsageOfOneKeyIsFiltered` and `MoltNetSessionStorageTest.AUsageOfOneKeyListsItsNamespaces` on the real implementations); standalone harness: `LocalStorageImpl`'s listing verbatim with the real fair queue, a Clear-Site-Data in a partition of 100,000 areas: 4,250 tasks and 108 ms of listing before, 2 tasks and 32 µs now, after the site's queued writes and listing nothing else | Partly: the real-service tests and `StoragePartitionImpl`'s hooks need a Chromium build |
+| A Background Fetch taken up while its parameters are asked for (§2 *Downloads and Background Fetch*), every profile: the take-up is remembered and the parameters asked for again as soon as the answer without them comes, instead of the fetch failing after five minutes; other downloads unchanged | Unit tests (`molt_ai_unittests`: the remembered take-ups, 5 tests, built standalone); standalone harness: `ControllerImpl::StartDownload()`, `UpdateDriverState()`, `PrepareToStartDownload()` and `OnDownloadReadyToStart()` verbatim, before and now, against stand-ins with 156's shapes and Background Fetch's answers as at 156, 7 tests: before, a take-up during the question was lost and the fetch failed after five minutes; now it starts as soon as the answer comes | Partly: the download service's suites need a Chromium build |
+| `sessionStorage` jobs and copies independent of other tabs and sites (§2 *The storage service's sequence, in turn per site*): a namespace job waits only for the jobs before it that name one of its namespaces and takes its steps in its namespace's turn; a copy made at once waits one second at most for its sites' turns, a deletion asked for before it applying to the copy; jobs of one namespace keep their order and the control messages naming them still wait; other profiles unchanged | Unit tests (`molt_ai_unittests`: the job order and the waits, 6 tests, built standalone with g++ ASan/UBSan and clang `-fno-exceptions`; `MoltNetDomStorageTest.CopiesOfTwoTabsRunSideBySide` on the real host); standalone harness: round 31's and this round's `SessionStorageImpl` job code and `MoltPerSiteSessionStorage` copy waits verbatim, with the real fair queue, in virtual time, 11 tests: a tab's two-step copy behind another tab's thousand-step copy finished after 100.2 ms before, 0.4 ms now; a duplicated tab's copy behind a site's 100,000 queued writes ran after 100 s before, 1.001 s now, without the area a deletion asked for before; a site with a few writes queued is copied with them, as before; 5 mutants caught | Partly: the real-host test needs a Chromium build |
 | The same in a running browser: language policies change nothing in MoltNet; Incognito turned off closes MoltNet with DevTools open in a window of its own and an unanswered "Leave site?", MoltNet refuses to open, and opens again once allowed; Incognito only keeps it open (§4 step 9) | Needs a Chromium build; the leak kit's `identity.language_policy_ignored`, `identity.incognito_off_closes`, `identity.incognito_forced_allows` | **Not yet done** |
 | No Autofill server traffic and no address-format downloads in MoltNet (§2 *Requests outside Tor*): no query and no vote (Autofill's or the password manager's), also with `AutofillServerCommunication` turned on; no address rules downloaded or read from the shared file, for Autofill or the payment sheet; every other profile keeps Chromium's | Unit tests (`molt_ai_unittests`); `molt_net_autofill.cc` and `chrome_payment_request_delegate.cc` type-checked against Chromium 156's headers, and the two hooked functions of `chrome_autofill_client.cc` too (copied verbatim into a stand-in of the class: the checker can't generate one header the whole file needs) | Pass (built standalone; not yet built in the Chromium tree) |
 | The same in a running browser (§4 step 20) | Needs a Chromium build; the leak kit's `net.autofill_server` | **Not yet done** |
