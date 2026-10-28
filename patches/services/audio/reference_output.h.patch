@@ -1,0 +1,27 @@
+MoltBrowser patch for services/audio/reference_output.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/services/audio/reference_output.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/audio/reference_output.h b/services/audio/reference_output.h
+index 92ffaef7ea1d6fdb9f84ab05cbbd74bcb5d6e4fb..be0cb51be06a304a4d108825cc7954f34e90a2d3 100644
+--- a/services/audio/reference_output.h
++++ b/services/audio/reference_output.h
+@@ -27,6 +27,16 @@ class ReferenceOutput {
+     // sequence as StartListening.
+     virtual void OnReferenceStreamError() = 0;
+ 
++    // MoltBrowser: true if this listener's processing computes the same
++    // samples on every CPU (a MoltNet microphone stream's echo canceller,
++    // media::AudioProcessingSettings::cpu_independent). While such a listener
++    // listens, the output it hears is mixed with the portable code
++    // (media/base/molt_portable_media.h, ScopedPortableAudioThread), so that
++    // its reference is the same on every CPU and OS. Asked when it starts and
++    // when it stops listening; the answer must not change in between. False
++    // by default (defined in output_device_mixer_impl.cc).
++    virtual bool IsCpuIndependent() const;
++
+    protected:
+     virtual ~Listener() = default;
+   };

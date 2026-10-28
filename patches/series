@@ -355,6 +355,13 @@ net/socket/transport_client_socket_pool.h.patch
 sandbox/policy/BUILD.gn.patch
 sandbox/policy/linux/sandbox_linux.cc.patch
 sandbox/policy/win/sandbox_win.cc.patch
+services/audio/audio_processor_handler.cc.patch
+services/audio/audio_processor_handler.h.patch
+services/audio/mixing_graph_impl.cc.patch
+services/audio/output_device_mixer_impl.cc.patch
+services/audio/output_device_mixer_impl.h.patch
+services/audio/output_device_mixer_impl_unittest.cc.patch
+services/audio/reference_output.h.patch
 services/cert_verifier/cert_net_url_loader/BUILD.gn.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc.patch
 services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h.patch
@@ -461,6 +468,7 @@ third_party/blink/renderer/modules/mediarecorder/video_track_recorder.cc.patch
 third_party/blink/renderer/modules/mediastream/media_devices.cc.patch
 third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout.cc.patch
 third_party/blink/renderer/modules/mediastream/media_stream_audio_processing_layout_test.cc.patch
+third_party/blink/renderer/modules/mediastream/user_media_client_test.cc.patch
 third_party/blink/renderer/modules/mediastream/user_media_processor.cc.patch
 third_party/blink/renderer/modules/peerconnection/peer_connection_util.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
@@ -535,6 +543,7 @@ third_party/blink/renderer/platform/image-decoders/avif/avif_image_decoder.cc.pa
 third_party/blink/renderer/platform/image-decoders/jxl/jxl_image_decoder.cc.patch
 third_party/blink/renderer/platform/language.cc.patch
 third_party/blink/renderer/platform/language.h.patch
+third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc.patch
 third_party/blink/renderer/platform/network/network_state_notifier.cc.patch
 third_party/blink/renderer/platform/network/network_state_notifier.h.patch
 third_party/blink/renderer/platform/peerconnection/rtc_rtp_source.cc.patch

@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-index fea395bd22bade54c77a65bfec31e89b1d6d22a7..79038fe97de31f6416cf2071dd76d2ffd4962b23 100644
+index fea395bd22bade54c77a65bfec31e89b1d6d22a7..f4fe095f2e70a26fb78d57444e27cdba573c062c 100644
 --- a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 +++ b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-@@ -39,6 +39,8 @@
+@@ -21,6 +21,7 @@
+ #include "build/build_config.h"
+ #include "media/base/audio_parameters.h"
+ #include "media/base/media_switches.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ #include "media/capture/video_capture_types.h"
+ #include "media/media_buildflags.h"
+ #include "media/webrtc/constants.h"
+@@ -39,6 +40,8 @@
  #include "third_party/blink/renderer/core/frame/dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -17,7 +25,22 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..79038fe97de31f6416cf2071dd76d2ff
  #include "third_party/blink/renderer/modules/mediastream/local_media_stream_audio_source.h"
  #include "third_party/blink/renderer/modules/mediastream/local_video_capturer_source.h"
  #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
-@@ -1242,6 +1244,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
+@@ -847,8 +850,13 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
+     if (audio_source) {
+       capabilities.emplace_back(audio_source);
+     } else {
++      // MoltBrowser: no platform effects on a MoltNet page's microphones
++      // (media/base/molt_portable_media.h, PortableCaptureEffects).
++      media::AudioParameters parameters = device->parameters;
++      parameters.set_effects(
++          media::PortableCaptureEffects(parameters.effects()));
+       capabilities.emplace_back(device->device_id, device->group_id,
+-                                device->parameters);
++                                parameters);
+     }
+   }
+ 
+@@ -1242,6 +1250,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
          *current_request_info_->request()->GetTransferId(), &result, &response);
      GotOpenDevice(current_request_info_->request_id(), result,
                    std::move(response));
@@ -35,7 +58,23 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..79038fe97de31f6416cf2071dd76d2ff
    } else {
      // The browser replies to this request by invoking OnStreamsGenerated().
      GetMediaStreamDispatcherHost()->GenerateStreams(
-@@ -2254,6 +2267,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
+@@ -1832,8 +1851,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+           &UserMediaProcessor::OnAudioSourceStartedOnAudioThread, task_runner_,
+           WrapCrossThreadWeakPersistent(this)));
+ 
++  // MoltBrowser: the source opens a MoltNet page's microphone without
++  // platform effects, and its capabilities say so
++  // (media/base/molt_portable_media.h, PortableCaptureEffects).
++  MediaStreamDevice uniform_device(device);
++  uniform_device.input.set_effects(
++      media::PortableCaptureEffects(device.input.effects()));
+   std::unique_ptr<blink::MediaStreamAudioSource> audio_source =
+-      CreateAudioSource(device, std::move(source_ready));
++      CreateAudioSource(uniform_device, std::move(source_ready));
+   audio_source->SetStopCallback(BindOnce(
+       &UserMediaProcessor::OnLocalSourceStopped, WrapWeakPersistent(this)));
+ 
+@@ -2254,6 +2279,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
        "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
        current_request_info_->request_id(), constraint_name.Ascii().c_str()));
  

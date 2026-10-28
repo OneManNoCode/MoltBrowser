@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..b17d8d5e43eff8144c078705efab6c462de22423 100644
+index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..47944efac67ec7df3a95b2de3f4b8a398c8dd8d9 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-@@ -51,6 +51,7 @@
+@@ -15,6 +15,7 @@
+ #include "base/uuid.h"
+ #include "build/build_config.h"
+ #include "media/base/media_permission.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/public/common/features.h"
+@@ -51,6 +52,7 @@
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/frame/web_feature.h"
  #include "third_party/blink/renderer/core/html/html_element.h"
@@ -16,7 +24,7 @@ index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..b17d8d5e43eff8144c078705efab6c46
  #include "third_party/blink/renderer/modules/mediastream/crop_target.h"
  #include "third_party/blink/renderer/modules/mediastream/input_device_info.h"
  #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
-@@ -1314,8 +1315,11 @@ void MediaDevices::OnDevicesChanged(
+@@ -1314,8 +1316,11 @@ void MediaDevices::OnDevicesChanged(
  }
  
  void MediaDevices::MaybeFireDeviceChangeEvent(bool has_permission) {
@@ -29,7 +37,19 @@ index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..b17d8d5e43eff8144c078705efab6c46
      ScheduleDispatchEvent(Event::Create(event_type_names::kDevicechange));
    }
  }
-@@ -1493,6 +1497,19 @@ void MediaDevices::DevicesEnumerated(
+@@ -1483,6 +1488,11 @@ void MediaDevices::DevicesEnumerated(
+         }
+         if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
+             !audio_input_capabilities.empty()) {
++          // MoltBrowser: no platform effects on a MoltNet page's microphones
++          // (media/base/molt_portable_media.h, PortableCaptureEffects).
++          audio_input_capabilities[j]->parameters.set_effects(
++              media::PortableCaptureEffects(
++                  audio_input_capabilities[j]->parameters.effects()));
+           input_device_info->SetAudioInputCapabilities(
+               std::move(audio_input_capabilities[j]));
+         }
+@@ -1493,6 +1503,19 @@ void MediaDevices::DevicesEnumerated(
              String::FromUtf8(device_info.group_id), device_type));
        }
      }

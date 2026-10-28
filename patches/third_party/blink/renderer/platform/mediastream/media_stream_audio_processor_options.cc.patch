@@ -1,0 +1,71 @@
+MoltBrowser patch for third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc b/third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc
+index 398a1b3a7993dc77bcf6621b9fc7bd04b4bd0e21..ea371ee640882590479b71edc2f345f4c18bee59 100644
+--- a/third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc
++++ b/third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.cc
+@@ -8,9 +8,27 @@
+ #include "base/strings/to_string.h"
+ #include "media/base/audio_parameters.h"
+ #include "media/base/media_switches.h"
++#include "media/base/molt_portable_media.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
++namespace {
++
++// MoltBrowser: the echo canceller of a MoltNet renderer (the portable media
++// process, media/base/molt_portable_media.h) for every mode that asks for
++// one: WebRTC's, in the audio service with the Chromium-wide reference where
++// Chromium runs that (Windows, macOS and Linux), in the renderer otherwise.
++// Never the OS's echo canceller, nor the OS's loopback as the reference:
++// their samples differ between OSes and machines. A page that asks for "all"
++// gets this one too, on every OS.
++EchoCanceller::Type MoltNetEchoCanceller() {
++  return media::IsChromeWideEchoCancellationEnabled()
++             ? EchoCanceller::Type::kChromeWide
++             : EchoCanceller::Type::kPeerConnection;
++}
++
++}  // namespace
++
+ const char kEchoCancellationModeAll[] = "all";
+ const char kEchoCancellationModeRemoteOnly[] = "remote-only";
+ 
+@@ -70,6 +88,10 @@ std::string AudioProcessingProperties::ToString() const {
+ 
+ // static
+ bool EchoCanceller::IsSystemWideAecAvailable(int available_platform_effects) {
++  // MoltBrowser: "all" on every OS in MoltNet (MoltNetEchoCanceller()).
++  if (media::IsPortableMediaProcess()) {
++    return true;
++  }
+   return IsPlatformAecAvailable(available_platform_effects) ||
+          media::IsSystemLoopbackAsAecReferenceEnabled();
+ }
+@@ -137,6 +159,10 @@ const char* EchoCanceller::ToString() const {
+ // static
+ EchoCanceller::Type EchoCanceller::GetPreferredAec(
+     int available_platform_effects) {
++  // MoltBrowser: WebRTC's in MoltNet (MoltNetEchoCanceller()).
++  if (media::IsPortableMediaProcess()) {
++    return MoltNetEchoCanceller();
++  }
+   if (media::IsSystemLoopbackAsAecReferenceForcedOn()) {
+     return Type::kLoopbackBased;
+   }
+@@ -155,6 +181,10 @@ EchoCanceller::Type EchoCanceller::GetPreferredAec(
+ // static
+ EchoCanceller::Type EchoCanceller::GetSystemWideAec(
+     int available_platform_effects) {
++  // MoltBrowser: WebRTC's in MoltNet (MoltNetEchoCanceller()).
++  if (media::IsPortableMediaProcess()) {
++    return MoltNetEchoCanceller();
++  }
+   if (media::IsSystemLoopbackAsAecReferenceEnabled()) {
+     return Type::kLoopbackBased;
+   }
