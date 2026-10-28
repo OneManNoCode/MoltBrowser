@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc
-Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
 Generated from src/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc b/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc
-index 35171b5cb9646574726d69e1cb641cc7410fe3f4..7354b13cf1394bcb1186d45e1e5d35e44009d922 100644
+index 6c2a1e35ad2ed931cdf00c21811a08e0d8b81f19..0649e1f2ea7529319b2b140ff0f8b0dfa9683e33 100644
 --- a/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc
 +++ b/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc
 @@ -12,6 +12,7 @@
@@ -27,7 +27,7 @@ index 35171b5cb9646574726d69e1cb641cc7410fe3f4..7354b13cf1394bcb1186d45e1e5d35e4
  }
  
  double RealtimeAudioDestinationHandler::SampleRate() const {
-@@ -350,6 +353,13 @@ uint32_t RealtimeAudioDestinationHandler::GetCallbackBufferSize() const {
+@@ -351,6 +354,13 @@ uint32_t RealtimeAudioDestinationHandler::GetCallbackBufferSize() const {
    DCHECK(IsMainThread());
    DCHECK(IsInitialized());
  
@@ -41,7 +41,7 @@ index 35171b5cb9646574726d69e1cb641cc7410fe3f4..7354b13cf1394bcb1186d45e1e5d35e4
    return platform_destination_->CallbackBufferSize();
  }
  
-@@ -357,6 +367,12 @@ int RealtimeAudioDestinationHandler::GetFramesPerBuffer() const {
+@@ -358,6 +368,12 @@ int RealtimeAudioDestinationHandler::GetFramesPerBuffer() const {
    DCHECK(IsMainThread());
    DCHECK(IsInitialized());
  
