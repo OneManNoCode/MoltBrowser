@@ -283,8 +283,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // (molt_nonce_cookie_policy.h): from now on each nonce partition, and each
   // nonce's partitions together, hold at most what that says, the
   // partition written evicting its own least recently used cookies past it,
-  // and a nonce can be refused (MoltDropNonce()). Called once, before the
-  // store is first used (NetworkContext, for MoltNet's context).
+  // and a nonce can be refused (MoltDropNonce()); every other partition
+  // holds at most its own total, purged the same way. Called once, before
+  // the store is first used (NetworkContext, for MoltNet's context).
   void MoltKeepNonceCookieLimits();
   bool MoltKeepsNonceCookieLimits() const { return !!molt_nonce_cookies_; }
 
@@ -706,8 +707,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // MoltBrowser: with MoltNet's limits, while the nonce partition
   // `cookie_partition_key` or its nonce's partitions hold more than they may
   // (molt_nonce_cookie_policy.h), deletes that partition's least recently
-  // used cookies, expired ones first, never `keep` (the cookie just set).
-  // Returns the number of cookies deleted.
+  // used cookies, expired ones first, never `keep` (the cookie just set); a
+  // partition without a nonce past its own total, down to what its purge
+  // leaves. Returns the number of cookies deleted.
   size_t MoltGarbageCollectNoncePartition(
       base::Time current,
       const CookiePartitionKey& cookie_partition_key,
@@ -883,7 +885,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
   std::map<CookiePartitionKey, size_t> bytes_per_cookie_partition_;
 
   // MoltBrowser: with MoltNet's limits (MoltKeepNonceCookieLimits()), the
-  // cookies held under each nonce and the nonces refused; else null.
+  // cookies held under each nonce, the nonces refused and what each other
+  // partition holds; else null.
   std::unique_ptr<
       MoltNonceCookieTotals<base::UnguessableToken, CookiePartitionKey>>
       molt_nonce_cookies_;

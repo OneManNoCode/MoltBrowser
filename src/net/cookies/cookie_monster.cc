@@ -1670,6 +1670,9 @@ CookieMonster::InternalInsertCookie(const std::string& key,
         molt_nonce_cookies_->Added(*partition_key.nonce(), partition_key,
                                    n_bytes);
       }
+    } else if (molt_nonce_cookies_) {
+      // MoltBrowser: or in its partition's own total.
+      molt_nonce_cookies_->AddedToPartition(partition_key, n_bytes);
     }
 
     PartitionedCookieMap::iterator partition_it =
@@ -1868,7 +1871,8 @@ void CookieMonster::SetCanonicalCookie(
       GarbageCollectPartitionedCookies(creation_date,
                                        cookie_partition_key.value(), key);
       // MoltBrowser: then MoltNet's limits for a nonce partition, and for
-      // its nonce's partitions together (molt_nonce_cookie_policy.h).
+      // its nonce's partitions together, or for any other partition
+      // (molt_nonce_cookie_policy.h).
       if (molt_nonce_cookies_ && !already_expired) {
         MoltGarbageCollectNoncePartition(
             creation_date, cookie_partition_key.value(), molt_stored);
@@ -2094,6 +2098,9 @@ void CookieMonster::InternalDeletePartitionedCookie(
   if (molt_nonce_cookies_ && cc->PartitionKey()->nonce()) {
     molt_nonce_cookies_->Removed(*cc->PartitionKey()->nonce(),
                                  *cc->PartitionKey(), n_bytes);
+  } else if (molt_nonce_cookies_) {
+    // MoltBrowser: or in its partition's own total.
+    molt_nonce_cookies_->RemovedFromPartition(*cc->PartitionKey(), n_bytes);
   }
 
   DCHECK(partition_it->second->find(cookie_it->first) !=
@@ -2428,10 +2435,11 @@ size_t CookieMonster::MoltGarbageCollectNoncePartition(
     const CookiePartitionKey& cookie_partition_key,
     const CanonicalCookie* keep) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  // A nonce's partition, or one without a nonce (its own total).
   const std::optional<base::UnguessableToken>& nonce =
       cookie_partition_key.nonce();
-  if (!molt_nonce_cookies_ || !nonce ||
-      !molt_nonce_cookies_->Over(*nonce, cookie_partition_key)) {
+  if (!molt_nonce_cookies_ ||
+      !molt_nonce_cookies_->OverLimits(nonce, cookie_partition_key)) {
     return 0;
   }
   PartitionedCookieMap::iterator cookie_partition_it =
@@ -2462,10 +2470,11 @@ size_t CookieMonster::MoltGarbageCollectNoncePartition(
   }
 
   // Then the least recently used, until neither the partition nor its nonce
-  // holds more than it may.
+  // holds more than it may (a partition without a nonce: until it holds what
+  // its purge leaves).
   std::sort(candidates.begin(), candidates.end(), LRACookieSorter);
   for (CookieMap::iterator victim : candidates) {
-    if (!molt_nonce_cookies_->Over(*nonce, cookie_partition_key) ||
+    if (!molt_nonce_cookies_->AboveTarget(nonce, cookie_partition_key) ||
         cookies.size() <= 1) {
       break;
     }
@@ -2488,12 +2497,14 @@ void CookieMonster::MoltKeepNonceCookieLimits() {
   // Whatever the store already holds counts too (nothing, for MoltNet's
   // context, which calls this as it makes the store).
   for (const auto& [partition_key, cookie_map] : partitioned_cookies_) {
-    if (!partition_key.nonce()) {
-      continue;
-    }
     for (const auto& [domain_key, cookie] : *cookie_map) {
-      molt_nonce_cookies_->Added(*partition_key.nonce(), partition_key,
-                                 NameValueSizeBytes(*cookie));
+      if (partition_key.nonce()) {
+        molt_nonce_cookies_->Added(*partition_key.nonce(), partition_key,
+                                   NameValueSizeBytes(*cookie));
+      } else {
+        molt_nonce_cookies_->AddedToPartition(partition_key,
+                                              NameValueSizeBytes(*cookie));
+      }
     }
   }
 }

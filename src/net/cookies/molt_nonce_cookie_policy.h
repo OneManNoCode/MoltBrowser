@@ -44,10 +44,36 @@
 // domain hold 180 cookies in a partition, and a typical embed's partition
 // holds a few dozen.
 //
+// Every other partition (partitioned cookies, CHIPS: a top-level site's
+// partition, holding the cookies its embedded third parties set there) has
+// the same per-domain limits at Chromium 156 and no total either, so a third
+// party under one top-level site could keep adding domains to it. In
+// MoltNet's store each such partition holds at most
+// kMoltPartitionMaxCookies cookies and kMoltPartitionMaxCookieBytes bytes
+// (MoltPartitionCookiesOver()), Chromium's own limit for a whole store of
+// unpartitioned cookies (CookieMonster::kMaxCookies) and 18 domains at its
+// per-domain limit for a partition (kPerPartitionDomainMaxCookieBytes):
+// real sites hold a few dozen there. Past either, the partition evicts its
+// own least recently used cookies (expired ones first), never another
+// partition's and never the cookie just set, down to
+// kMoltPartitionPurgeCookies and kMoltPartitionPurgeCookieBytes below the
+// limits (MoltPartitionCookiesAboveTarget()), as Chromium purges a domain or
+// the whole store past its limit, so that a page setting cookies at the limit
+// costs one pass over the partition per purge, not per cookie. Such a cookie
+// is never refused: one cookie always fits a partition
+// (kMoltCookieMaxNameValueBytes). The same functions keep the records
+// (MoltNonceCookieTotals::AddedToPartition()), and the same collection
+// applies them (CookieMonster::MoltGarbageCollectNoncePartition()); a
+// partition's record goes with its last cookie.
+//
 // What it costs: the store keeps a record per nonce with cookies (its
-// totals, and those of each of its partitions), and one per refused nonce
-// until the browser forgets it. A cookie stored at a limit sorts the
-// cookies of its own partition, at most kMoltNoncePartitionMaxCookies + 1.
+// totals, and those of each of its partitions), one per refused nonce
+// until the browser forgets it, and one per other partition with cookies. A
+// cookie stored at a nonce partition's limit sorts the cookies of its own
+// partition, at most kMoltNoncePartitionMaxCookies + 1; one that takes
+// another partition past its limit sorts that partition's cookies, at most
+// kMoltPartitionMaxCookies + 1, and the purge leaves room for at least
+// kMoltPartitionPurgeCookies more before the next.
 //
 // Std-only templates (Nonce: base::UnguessableToken, PartitionKey:
 // net::CookiePartitionKey in the store), so molt_ai_unittests and a
@@ -78,6 +104,28 @@ static_assert(kMoltNoncePartitionMaxCookieBytes <= kMoltNonceMaxCookieBytes);
 inline constexpr size_t kMoltCookieMaxNameValueBytes = 4096;
 static_assert(kMoltCookieMaxNameValueBytes <=
               kMoltNoncePartitionMaxCookieBytes);
+
+// What a partition without a nonce may hold (a top-level site's partition
+// of third-party cookies), and how far below that a partition past it is
+// purged: Chromium's limit and purge for a whole store of unpartitioned
+// cookies (CookieMonster::kMaxCookies, kPurgeCookies), and 18 domains at its
+// limit per domain in a partition (kPerPartitionDomainMaxCookieBytes,
+// 10 KiB), purged by a tenth.
+inline constexpr size_t kMoltPartitionMaxCookies = 3300;
+inline constexpr size_t kMoltPartitionPurgeCookies = 300;
+inline constexpr size_t kMoltPartitionMaxCookieBytes = 18 * 10240;
+inline constexpr size_t kMoltPartitionPurgeCookieBytes =
+    kMoltPartitionMaxCookieBytes / 10;
+static_assert(kMoltPartitionPurgeCookies < kMoltPartitionMaxCookies);
+static_assert(kMoltPartitionPurgeCookieBytes < kMoltPartitionMaxCookieBytes);
+// One cookie always fits, also once the partition is purged.
+static_assert(kMoltCookieMaxNameValueBytes <=
+              kMoltPartitionMaxCookieBytes - kMoltPartitionPurgeCookieBytes);
+// The limits for a partition without a nonce are never below those for a
+// nonce's partition.
+static_assert(kMoltNoncePartitionMaxCookies <= kMoltPartitionMaxCookies);
+static_assert(kMoltNoncePartitionMaxCookieBytes <=
+              kMoltPartitionMaxCookieBytes);
 
 // Cookies and their bytes (name and value).
 struct MoltNonceCookieCounts {
@@ -117,6 +165,24 @@ constexpr bool MoltNonceCookiesOver(MoltNonceCookieCounts nonce,
          partition.bytes > kMoltNoncePartitionMaxCookieBytes ||
          nonce.cookies > kMoltNonceMaxCookies ||
          nonce.bytes > kMoltNonceMaxCookieBytes;
+}
+
+// Whether a partition without a nonce (`partition`) holds more than it may:
+// it is then purged (MoltPartitionCookiesAboveTarget()).
+constexpr bool MoltPartitionCookiesOver(MoltNonceCookieCounts partition) {
+  return partition.cookies > kMoltPartitionMaxCookies ||
+         partition.bytes > kMoltPartitionMaxCookieBytes;
+}
+
+// Whether a partition without a nonce that is being purged still holds more
+// than the purge leaves: it evicts its own least recently used cookies
+// until it doesn't.
+constexpr bool MoltPartitionCookiesAboveTarget(
+    MoltNonceCookieCounts partition) {
+  return partition.cookies >
+             kMoltPartitionMaxCookies - kMoltPartitionPurgeCookies ||
+         partition.bytes >
+             kMoltPartitionMaxCookieBytes - kMoltPartitionPurgeCookieBytes;
 }
 
 // The cookies a store holds under each nonce, per partition, and the nonces
@@ -230,6 +296,56 @@ class MoltNonceCookieTotals {
   // How many nonces have a record (for tests).
   size_t size() const { return records_.size(); }
 
+  // Partitions without a nonce (a top-level site's partition of third-party
+  // cookies): a cookie of `bytes` was stored in `partition`, or left it.
+  void AddedToPartition(const PartitionKey& partition, size_t bytes) {
+    MoltNonceCookieCounts& counts = partitions_[partition];
+    counts.cookies += 1;
+    counts.bytes += bytes;
+  }
+  void RemovedFromPartition(const PartitionKey& partition, size_t bytes) {
+    auto it = partitions_.find(partition);
+    if (it == partitions_.end()) {
+      return;
+    }
+    Subtract(it->second, bytes);
+    if (it->second.cookies == 0) {
+      partitions_.erase(it);
+    }
+  }
+
+  // What a partition without a nonce holds.
+  MoltNonceCookieCounts OfPartitionWithoutNonce(
+      const PartitionKey& partition) const {
+    auto it = partitions_.find(partition);
+    return it == partitions_.end() ? MoltNonceCookieCounts() : it->second;
+  }
+
+  // Whether `partition`, of `nonce` (nullopt: a partition without a nonce),
+  // holds more than its limits let it (MoltNonceCookiesOver(),
+  // MoltPartitionCookiesOver()): it is then collected.
+  template <typename OptionalNonce>
+  bool OverLimits(const OptionalNonce& nonce,
+                  const PartitionKey& partition) const {
+    return nonce ? Over(*nonce, partition)
+                 : MoltPartitionCookiesOver(
+                       OfPartitionWithoutNonce(partition));
+  }
+
+  // Whether a partition being collected still evicts: a nonce's partition
+  // until it is within its limits, one without a nonce until it is within
+  // what its purge leaves (MoltPartitionCookiesAboveTarget()).
+  template <typename OptionalNonce>
+  bool AboveTarget(const OptionalNonce& nonce,
+                   const PartitionKey& partition) const {
+    return nonce ? Over(*nonce, partition)
+                 : MoltPartitionCookiesAboveTarget(
+                       OfPartitionWithoutNonce(partition));
+  }
+
+  // How many partitions without a nonce have a record (for tests).
+  size_t partitions_without_nonce() const { return partitions_.size(); }
+
  private:
   struct Record {
     MoltNonceCookieCounts counts;
@@ -257,6 +373,8 @@ class MoltNonceCookieTotals {
   }
 
   Records records_;
+  // The partitions without a nonce that hold cookies, and what each holds.
+  std::map<PartitionKey, MoltNonceCookieCounts> partitions_;
 };
 
 // Out of the class body, as Chromium's style asks of a class with members
