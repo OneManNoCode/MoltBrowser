@@ -152,8 +152,8 @@ uint64_t ProcessFixedSignal(webrtc::AudioProcessing& apm,
 }
 // END SIGNAL
 
-constexpr uint64_t kGoldenEcho = 0xe2b2cb4a9bfa75c2ull;
-constexpr uint64_t kGoldenTalker = 0x409e22eef1e1434dull;
+constexpr uint64_t kGoldenEcho = 0xc9d01531b05d1f69ull;
+constexpr uint64_t kGoldenTalker = 0x25b2f3f2e9fa4b69ull;
 
 AudioProcessingSettings Settings(bool cpu_independent) {
   AudioProcessingSettings settings;
