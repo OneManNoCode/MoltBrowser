@@ -19,6 +19,7 @@ DevTools pipe (harness.Run); only the servers and the steps differ.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -129,8 +130,7 @@ class TrafficRun(harness.Run):
         super().preflight()
 
     def setup(self):
-        os.makedirs(self.dir)
-        os.chown(self.dir, self.uid, self.gid)
+        self.make_run_dir()
         for d in ('capture', 'logs', 'home', 'certs', 'xdg'):
             self.user_mkdir(d, mode=0o700 if d in ('home', 'xdg') else 0o755)
         self.manifest['t0'] = time.time()
@@ -148,16 +148,20 @@ class TrafficRun(harness.Run):
         self.log('namespace %s, sinkhole %s' % (self.sandbox.ns,
                                                sinkhole.SINKHOLE_NET))
         self.start_captures()
-        certs = self.path('certs')
-        self.spki = support.make_certs(certs, ['localhost'], ['127.0.0.1'], {
+        # Made as root in a directory of root's own, then copied into the run
+        # directory (harness.Run.root_staging(), rundir.py).
+        staging = self.root_staging('certs')
+        self.spki = support.make_certs(staging, ['localhost'], ['127.0.0.1'], {
             'ca_issuers': ['http://aia.%s/i.crt' % harness.CANARY_DOMAIN],
             'ocsp': 'http://ocsp.%s/' % harness.CANARY_DOMAIN,
             'crl': 'http://crl.%s/c.crl' % harness.CANARY_DOMAIN})
-        ecert, ekey = make_expired_cert(certs)
-        for f in os.listdir(certs):
-            os.chown(os.path.join(certs, f), self.uid, self.gid)
+        make_expired_cert(staging)
+        self.rundir.copy_in(staging, 'certs')
+        shutil.rmtree(staging, ignore_errors=True)
         cert, key = self.path('certs', 'server.crt'), self.path('certs',
                                                                 'server.key')
+        ecert, ekey = self.path('certs', 'expired.crt'), self.path(
+            'certs', 'expired.key')
         self.service('fakedns', 'fakedns', '--listen', '127.0.0.1', '--port',
                      '53', '--log', self.path('logs', 'fakedns.jsonl'))
         self.service('sinkhole', 'sinkhole', '--ports',
@@ -378,10 +382,10 @@ class TrafficRun(harness.Run):
                 for err in self.sandbox.teardown():
                     self.error('teardown: ' + err)
             self.manifest['finished'] = harness._iso(time.time())
-            if os.path.isdir(self.dir):
+            if self.rundir:
                 self.user_write('manifest.json', json.dumps(
                     self.manifest, indent=1, sort_keys=True, default=str))
-                harness._chown_tree(self.dir, self.uid, self.gid)
+                self.rundir.chown_tree()
         return self.dir
 
 
