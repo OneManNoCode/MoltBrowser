@@ -421,6 +421,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Clear-Site-Data on a response no page shows (a download's), and a
   deletion of one storage key over a time range, read only that storage
   (`docs/MOLTNET_COMPLIANCE.md`).
+- Hardening (security review of PR #77, `docs/SECURITY_REVIEWS.md`): in
+  MoltNet, a Clear-Site-Data on a response no page shows any more (a
+  keepalive request's after its page went) clears its site's storage in
+  the page the request came from, so another site's page can't have it
+  clear the site's own storage; and on Linux a microphone stream records
+  the device the page asked for whenever the sound server doesn't say
+  which microphone a filter or virtual microphone sits on.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

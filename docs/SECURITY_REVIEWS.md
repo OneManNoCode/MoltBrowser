@@ -4,6 +4,94 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-28: PR #77 (October 2026)
+
+**Scope.** The code merged in pull request #77 (round 33), which only its
+authors had reviewed, in this order of priority:
+
+1. Cookies under a page's nonce: the cookie store's totals for each nonce
+   partition and each nonce, kept on every path that stores or deletes a
+   cookie; the eviction inside a partition (iterators and partitions while
+   it deletes), a refused nonce, the size entry dropped with a partition's
+   last cookie; whether a page or a site can evict or refuse another's
+   cookies, or leave its own unable to be stored, and whether any of it
+   runs in a regular profile.
+2. The network context's drop of what a nonce keys: who can ask for it,
+   its cast to the cookie store, and each cache it drops from (socket
+   pools, HTTP/2 sessions, TLS sessions, HTTP authentication entries,
+   server properties, CORS preflight results): the nonce's idle entries
+   only, never a connection in use, safely while it iterates.
+3. The quota manager's refusal of buckets for a closed nonce group; the
+   tab helper's bound of 256 storage keys a group, pages that share a
+   nonce, and the timers after a page goes, at tab and profile shutdown.
+4. Deletions of one storage key: the listing of a time range through the
+   quota database's index by key, and Clear-Site-Data on a response the
+   browser can't place in a document.
+5. Subnormal floats in the portable audio code: the scopes that turn the
+   flush-to-zero modes off (restored on every path, or leaking to other
+   work on the thread), regular profiles, the floors in the resampler,
+   WSOLA, Web Audio and the mixer, and WebRTC's noise floor.
+6. MoltNet's microphones: the capture bit the platform code reads (what a
+   renderer of any profile gains by setting it, Android included), the
+   generic labels and groups wherever a page reads them, the PulseAudio
+   source choice (locks, server errors, which source it picks), the
+   Windows category condition.
+7. The OCR and voice helpers: on Windows the less-privileged AppContainer
+   (its package SID, the security descriptors built from SIDs, the
+   scratch directory's rights and label, handle inheritance, the job, the
+   mitigations, the environment, the check before launch, every failure,
+   the read of the helper's output file) and the installer's grant; on
+   every OS the hand-off to Chromium's data decoder (sizes, deadlines,
+   processes per image and page), the PNM writer, the TIFF refusal, the
+   PDF page loop and its deadline, the WAV check and its rewrite.
+8. The leak kit and tools: the previous review's fixes (the `--out`
+   directory reached without links, reads from the run directory's
+   descriptor, the run's ownership, root's own name-service files and the
+   launcher's checks of them), `rebase.py`'s rule for files the release
+   tarballs lack, and the iOS packaging script.
+
+**Method.** Each candidate traced from its attacker (web page, a
+third-party or credentialless frame, another site's page, a site's server,
+a compromised renderer or helper, a process of the user who runs the leak
+kit as root) through MoltBrowser's code and the upstream Chromium 156 code
+at the pinned revision: the cookie store, the network context and the
+caches it drops from, the quota manager and database, the Clear-Site-Data
+handler with its filter builder and storage keys, PageImpl's nonce, the
+audio service's mixer, the PulseAudio and WASAPI input streams, and the
+sandbox library's AppContainer, job and attribute list. A PulseAudio 16.1
+server showed what it reports for a virtual microphone (a remapped null
+sink's monitor: a filter whose master device is a monitor). Fixes tested
+with standalone harnesses (system gtest, g++ ASan/UBSan): the PulseAudio
+source choice, 6 tests, 3 of which the previous code fails; the
+Clear-Site-Data policy's unit tests, and the hook's choice with 156's
+matching for a response to another site's page, the origin's own page, a
+credentialless frame and a request with no partition, where the previous
+hook deleted the origin's first-party storage for another site's page.
+The leak kit's test suite as root and unprivileged, the tools' own test
+suites and `molt_fuzz.py check` pass; the changed C++ was compiled
+against Chromium 156's headers.
+
+**Findings.** 12: 2 low, 10 informational. Fixed: the two low.
+
+**Fixed.**
+
+- MoltNet's microphones on Linux: a stream records from the microphone
+  under a PulseAudio or PipeWire filter source only when the server says
+  which it is. Otherwise (the filter's recording stream isn't listed, its
+  master isn't, the chain loops, or a sink's monitor is under it: a
+  virtual microphone that plays applications' output) it records the
+  source it asked for, never another device in its place
+  (`media/audio/pulse/molt_capture_source.cc`).
+- MoltNet's Clear-Site-Data on a response the browser can't place in a
+  document or worker (a keepalive request's after its page went) names
+  the key a document of its origin would have where the request was made:
+  in the request's cookie partition, under a credentialless frame's nonce,
+  or the origin's own key for a request with no partition. A response to a
+  request another site's page made of the origin deletes what the origin
+  keeps under that site, never its first-party storage
+  (`content/browser/browsing_data/molt_one_key_deletion_policy.h`,
+  `storage_partition_impl.cc`).
+
 ## 2026-10-28: PRs #75 and #76 (October 2026)
 
 **Scope.** The code merged in pull requests #75 (round 31: the rebase onto
