@@ -50,9 +50,7 @@ class TreeBuilder {
                 std::string_view url,
                 std::string_view label = std::string_view());
   uint32_t Heading(uint32_t parent, int level, std::string_view text);
-  uint32_t Button(uint32_t parent,
-                  std::string_view name,
-                  uint32_t states = 0);
+  uint32_t Button(uint32_t parent, std::string_view name, uint32_t states = 0);
 
   PageNode& node(uint32_t index);
   void SetBounds(uint32_t index, float x, float y, float width, float height);

@@ -65,16 +65,16 @@ size_t DecodeUtf8(std::string_view s, size_t i, uint32_t* cp) {
         !IsContinuation(at(3))) {
       return 0;
     }
-    *cp = ((b0 & 0x07u) << 18) | ((b1 & 0x3Fu) << 12) |
-          ((at(2) & 0x3Fu) << 6) | (at(3) & 0x3Fu);
+    *cp = ((b0 & 0x07u) << 18) | ((b1 & 0x3Fu) << 12) | ((at(2) & 0x3Fu) << 6) |
+          (at(3) & 0x3Fu);
     return 4;
   }
   return 0;
 }
 
 bool IsSpaceLike(uint32_t cp) {
-  return cp == 0x09 || cp == 0x0A || cp == 0x0B || cp == 0x0C ||
-         cp == 0x0D || cp == 0x20 || cp == 0xA0 || cp == 0x1680 ||
+  return cp == 0x09 || cp == 0x0A || cp == 0x0B || cp == 0x0C || cp == 0x0D ||
+         cp == 0x20 || cp == 0xA0 || cp == 0x1680 ||
          (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 || cp == 0x2029 ||
          cp == 0x202F || cp == 0x205F || cp == 0x3000;
 }
@@ -357,8 +357,7 @@ bool IsYear(std::string_view token) {
 
 bool LooksLikeNumericDate(std::string_view t, char sep) {
   std::vector<std::string_view> parts = Tokens(t, std::string_view(&sep, 1), 3);
-  if (parts.size() != 3 ||
-      std::count(t.begin(), t.end(), sep) != 2) {
+  if (parts.size() != 3 || std::count(t.begin(), t.end(), sep) != 2) {
     return false;
   }
   for (std::string_view part : parts) {
@@ -593,7 +592,8 @@ std::optional<ParsedCount> ParseCount(std::string_view text) {
     return std::nullopt;
   }
   for (std::string_view word : words) {
-    if (word.size() > 20 || !std::all_of(word.begin(), word.end(), IsAsciiAlpha) ||
+    if (word.size() > 20 ||
+        !std::all_of(word.begin(), word.end(), IsAsciiAlpha) ||
         IsTimeUnit(word) || word == "ago") {
       return std::nullopt;
     }

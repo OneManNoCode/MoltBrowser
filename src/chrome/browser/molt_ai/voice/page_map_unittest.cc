@@ -202,10 +202,10 @@ TEST(PageMapTest, FindsTheSearchResults) {
   EXPECT_EQ(results.label, "Search Results");
   EXPECT_TRUE(results.in_main);
   ASSERT_EQ(results.entries.size(), static_cast<size_t>(test::kGoogleResults));
-  const char* const kSites[] = {"Wikipedia",    "YouTube",      "Wikipedia",
-                                "Genius",       "BBC",          "AllMusic",
-                                "The Guardian", "Ultimate Guitar", "Spotify",
-                                "Queen Online"};
+  const char* const kSites[] = {
+      "Wikipedia", "YouTube",     "Wikipedia",    "Genius",
+      "BBC",       "AllMusic",    "The Guardian", "Ultimate Guitar",
+      "Spotify",   "Queen Online"};
   for (int i = 0; i < test::kGoogleResults; ++i) {
     SCOPED_TRACE(i);
     // The h3 inside the link is the title; the site named in the link is
@@ -282,13 +282,13 @@ TEST(PageMapTest, ReadsAnArticlesStructure) {
   for (const PageHeading& heading : map.headings) {
     headings.emplace_back(heading.level, heading.text);
   }
-  EXPECT_EQ(headings, (std::vector<std::pair<int, std::string>>{
-                          {1, "Bohemian Rhapsody"},
-                          {2, "Background"},
-                          {2, "Composition"},
-                          {3, "Ballad"},
-                          {3, "Opera"},
-                          {2, "References"}}));
+  EXPECT_EQ(headings,
+            (std::vector<std::pair<int, std::string>>{{1, "Bohemian Rhapsody"},
+                                                      {2, "Background"},
+                                                      {2, "Composition"},
+                                                      {3, "Ballad"},
+                                                      {3, "Opera"},
+                                                      {2, "References"}}));
   std::vector<LandmarkKind> landmarks;
   for (const PageLandmark& landmark : map.landmarks) {
     landmarks.push_back(landmark.kind);
@@ -496,12 +496,11 @@ TEST(PageMapTest, LabelsFromNameTextOrPlaceholder) {
   const uint32_t link = b.Add(root, PageRole::kLink, "", kStateFocusable);
   b.Add(link, PageRole::kImage, "Queen logo");
   // A field named only by its placeholder.
-  const uint32_t field = b.Add(root, PageRole::kSearchBox, "",
-                               kStateFocusable | kStateEditable);
+  const uint32_t field =
+      b.Add(root, PageRole::kSearchBox, "", kStateFocusable | kStateEditable);
   b.node(field).placeholder = "Search videos";
   // An editable region (contenteditable) is a text field.
-  b.Add(root, PageRole::kGeneric, "Comment",
-        kStateFocusable | kStateEditable);
+  b.Add(root, PageRole::kGeneric, "Comment", kStateFocusable | kStateEditable);
   // Hostile text: a bidi override, zero-width spaces, control characters,
   // and far too much of it.
   std::string hostile = "\xE2\x80\xAEPlay\xE2\x80\x8B\x01 now";
@@ -556,9 +555,9 @@ TEST(PageMapTest, CyclesSharedChildrenAndBadIndices) {
   const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
   const uint32_t a = b.Add(root, PageRole::kGeneric);
   const uint32_t link = b.Link(a, "Once", "https://a.example/");
-  b.AppendChild(a, root);    // a cycle back to the root
-  b.AppendChild(a, a);       // and to itself
-  b.AppendChild(root, link);  // the link listed under two parents
+  b.AppendChild(a, root);                   // a cycle back to the root
+  b.AppendChild(a, a);                      // and to itself
+  b.AppendChild(root, link);                // the link listed under two parents
   b.node(root).children.push_back(123456);  // out of range
   const PageMap map = Map(b.Take());
   ASSERT_EQ(map.items.size(), 1u);

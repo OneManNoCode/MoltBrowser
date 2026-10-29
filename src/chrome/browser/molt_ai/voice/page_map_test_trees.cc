@@ -17,37 +17,36 @@ constexpr std::array<VideoFixture, kVideoResults> kVideos = {{
      "Queen Official", "6:00", 360, "2.1B views", 2100000000, "15 years ago"},
     {"Bohemian Rhapsody (Remastered 2011)", "Queen - Topic", "5:55", 355,
      "312M views", 312000000, "11 years ago"},
-    {"Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)",
-     "Queen Official", "5:44", 344, "48M views", 48000000, "3 years ago"},
-    {"Queen - Bohemian Rhapsody (Live Aid 1985)", "Queen Official", "2:31",
-     151, "97M views", 97000000, "7 years ago"},
+    {"Queen - Bohemian Rhapsody (Live at Rock Montreal 1981)", "Queen Official",
+     "5:44", 344, "48M views", 48000000, "3 years ago"},
+    {"Queen - Bohemian Rhapsody (Live Aid 1985)", "Queen Official", "2:31", 151,
+     "97M views", 97000000, "7 years ago"},
     {"Bohemian Rhapsody | Muppet Music Video | The Muppets", "The Muppets",
      "4:47", 287, "88M views", 88000000, "15 years ago"},
-    {"Wayne's World - Bohemian Rhapsody scene", "Paramount Movies", "3:12",
-     192, "21M views", 21000000, "9 years ago"},
+    {"Wayne's World - Bohemian Rhapsody scene", "Paramount Movies", "3:12", 192,
+     "21M views", 21000000, "9 years ago"},
     {"Bohemian Rhapsody | Official Trailer [HD] | 20th Century FOX",
-     "20th Century Studios", "2:32", 152, "31M views", 31000000,
-     "6 years ago"},
+     "20th Century Studios", "2:32", 152, "31M views", 31000000, "6 years ago"},
     {"Panic! At The Disco - Bohemian Rhapsody (Official Video)",
      "Fueled By Ramen", "6:08", 368, "60M views", 60000000, "9 years ago"},
-    {"Bohemian Rhapsody - Pentatonix", "Pentatonix", "5:57", 357,
-     "45M views", 45000000, "7 years ago"},
+    {"Bohemian Rhapsody - Pentatonix", "Pentatonix", "5:57", 357, "45M views",
+     45000000, "7 years ago"},
     {"Bohemian Rhapsody | Piano Tutorial", "Piano Lessons Daily", "8:15", 495,
      "1.2M views", 1200000, "2 years ago"},
     {"Bohemian Rhapsody (Lyrics)", "Lyric Vibes", "5:59", 359, "18M views",
      18000000, "4 years ago"},
     {"Queen - Bohemian Rhapsody (Live at Wembley Stadium 1986)",
      "Queen Official", "5:58", 358, "35M views", 35000000, "5 years ago"},
-    {"Bohemian Rhapsody - Rami Malek Live Aid scene", "Movieclips", "4:20",
-     260, "12M views", 12000000, "5 years ago"},
+    {"Bohemian Rhapsody - Rami Malek Live Aid scene", "Movieclips", "4:20", 260,
+     "12M views", 12000000, "5 years ago"},
     {"How Queen wrote Bohemian Rhapsody", "Polyphonic", "11:46", 706,
      "6.4M views", 6400000, "6 years ago"},
     {"Bohemian Rhapsody - Marching Band", "Ohio State Marching Band", "4:02",
      242, "9.1M views", 9100000, "8 years ago"},
     {"Bohemian Rhapsody on Classical Guitar", "Marcin", "6:12", 372,
      "14M views", 14000000, "3 years ago"},
-    {"Bohemian Rhapsody - Kanye West at Glastonbury 2015", "BBC Music",
-     "1:45", 105, "8.3M views", 8300000, "9 years ago"},
+    {"Bohemian Rhapsody - Kanye West at Glastonbury 2015", "BBC Music", "1:45",
+     105, "8.3M views", 8300000, "9 years ago"},
     {"Bohemian Rhapsody - Queen + Adam Lambert (Rock in Rio 2015)",
      "Queen Official", "6:21", 381, "5.2M views", 5200000, "1 year ago"},
     {"The Story of Bohemian Rhapsody (BBC documentary)", "BBC", "58:43", 3523,
@@ -91,7 +90,8 @@ uint32_t AddVideo(TreeBuilder& b, uint32_t parent, int index, float y) {
   const uint32_t dismissible = b.Wrapper(renderer);
   // The thumbnail: an image link with the duration overlaid.
   const uint32_t thumbnail = b.Wrapper(dismissible);  // ytd-thumbnail
-  const uint32_t thumb_link = b.Add(thumbnail, PageRole::kLink, "", kStateFocusable);
+  const uint32_t thumb_link =
+      b.Add(thumbnail, PageRole::kLink, "", kStateFocusable);
   b.node(thumb_link).url = watch;
   b.SetBounds(thumb_link, 264, y, 360, 202);
   b.Add(thumb_link, PageRole::kImage, "", kStateIgnored);  // alt=""
@@ -104,8 +104,8 @@ uint32_t AddVideo(TreeBuilder& b, uint32_t parent, int index, float y) {
   b.node(h3).heading_level = 3;
   // The title link's aria-label says everything; its text is the title.
   const std::string aria = std::string(v.title) + " by " +
-                           std::string(v.channel) + " " +
-                           std::string(v.views) + " " + std::string(v.age);
+                           std::string(v.channel) + " " + std::string(v.views) +
+                           " " + std::string(v.age);
   b.node(h3).name = aria;
   const uint32_t title = b.Link(h3, v.title, watch, aria);
   b.node(title).description = std::string(v.title);  // the title attribute
@@ -116,9 +116,9 @@ uint32_t AddVideo(TreeBuilder& b, uint32_t parent, int index, float y) {
   b.Text(b.Wrapper(line), v.age);
   // The channel: an avatar link (aria-label only) and the name link.
   const uint32_t channel_info = b.Wrapper(text_wrapper);
-  const uint32_t avatar = b.Add(channel_info, PageRole::kLink,
-                                "Go to channel " + std::string(v.channel),
-                                kStateFocusable);
+  const uint32_t avatar =
+      b.Add(channel_info, PageRole::kLink,
+            "Go to channel " + std::string(v.channel), kStateFocusable);
   b.node(avatar).url = channel_url;
   b.Add(avatar, PageRole::kImage, "", kStateIgnored);
   const uint32_t channel_name = b.Wrapper(channel_info);  // ytd-channel-name
@@ -238,9 +238,8 @@ const VideoFixture& VideoResult(int index) {
 
 PageTree YouTubeLikeResults() {
   TreeBuilder b("bohemian rhapsody - YouTube");
-  const uint32_t root =
-      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea,
-            "bohemian rhapsody - YouTube", kStateFocusable);
+  const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea,
+                              "bohemian rhapsody - YouTube", kStateFocusable);
   b.SetBounds(root, 0, 0, kViewportWidth, kViewportHeight);
   const uint32_t app = b.Wrapper(root);  // ytd-app
 
@@ -281,8 +280,8 @@ PageTree YouTubeLikeResults() {
     for (int e = 0; e < 4 && kGuide[s][e]; ++e) {
       const uint32_t entry = b.Wrapper(items);  // ytd-guide-entry-renderer
       b.SetBounds(entry, 12, 64 + 40.0f * (s * 4 + e), 216, 40);
-      const uint32_t link = b.Add(entry, PageRole::kLink, kGuide[s][e],
-                                  kStateFocusable);
+      const uint32_t link =
+          b.Add(entry, PageRole::kLink, kGuide[s][e], kStateFocusable);
       b.node(link).url = std::string("/feed/") + kGuide[s][e];
       b.Add(b.Wrapper(link), PageRole::kImage, "", kStateIgnored);
       b.Text(link, kGuide[s][e]);
@@ -294,9 +293,8 @@ PageTree YouTubeLikeResults() {
   const uint32_t search = b.Wrapper(page);          // ytd-search
   const uint32_t chips = b.Wrapper(b.Wrapper(search));
   b.SetBounds(chips, 264, 56, 1000, 56);
-  for (const char* chip :
-       {"All", "Shorts", "Videos", "Unwatched", "Watched",
-        "Recently uploaded"}) {
+  for (const char* chip : {"All", "Shorts", "Videos", "Unwatched", "Watched",
+                           "Recently uploaded"}) {
     const uint32_t wrapper = b.Wrapper(chips);
     b.SetBounds(wrapper, 264, 64, 90, 32);
     b.Text(b.Button(wrapper, chip), chip);
@@ -317,7 +315,8 @@ PageTree YouTubeLikeResults() {
         const uint32_t card = b.Wrapper(row);  // ytd-grid-video-renderer
         b.SetBounds(card, 264 + 250.0f * k, y + 40, 240, 260);
         const std::string url = "/watch?v=shelf" + std::to_string(k + 1);
-        const uint32_t thumb = b.Add(card, PageRole::kLink, "", kStateFocusable);
+        const uint32_t thumb =
+            b.Add(card, PageRole::kLink, "", kStateFocusable);
         b.node(thumb).url = url;
         b.Text(b.Wrapper(thumb), "3:3" + std::to_string(k));
         const uint32_t heading = b.Add(card, PageRole::kHeading, "", 0);
@@ -347,9 +346,9 @@ PageTree GoogleLikeResults() {
   // The search form.
   const uint32_t search = b.Add(body, PageRole::kSearch, "", 0);
   const uint32_t form = b.Add(search, PageRole::kForm, "", 0);
-  const uint32_t field = b.Add(b.Wrapper(form), PageRole::kComboBox, "Search",
-                               kStateFocusable | kStateEditable |
-                                   kStateMultiline);
+  const uint32_t field =
+      b.Add(b.Wrapper(form), PageRole::kComboBox, "Search",
+            kStateFocusable | kStateEditable | kStateMultiline);
   b.node(field).value = "bohemian rhapsody";
   b.node(field).html_tag = "textarea";
   b.Button(form, "Clear");
@@ -360,8 +359,8 @@ PageTree GoogleLikeResults() {
   b.node(submit).html_tag = "input";
 
   // The filters.
-  const uint32_t filters = b.Add(body, PageRole::kNavigation,
-                                 "Filters and topics", 0);
+  const uint32_t filters =
+      b.Add(body, PageRole::kNavigation, "Filters and topics", 0);
   for (const char* f : {"All", "Images", "Videos", "News", "Shopping"}) {
     const uint32_t wrapper = b.Wrapper(filters);
     b.Link(wrapper, f, std::string("/search?tbm=") + f);
@@ -407,8 +406,8 @@ PageTree GoogleLikeResults() {
        "https://open.spotify.com/track/bohemian-rhapsody",
        "Queen \xC2\xB7 Song \xC2\xB7 1975", nullptr},
       {"Bohemian Rhapsody | Queen Official", "Queen Online",
-       "https://www.queenonline.com/bohemian-rhapsody",
-       "The official site.", nullptr},
+       "https://www.queenonline.com/bohemian-rhapsody", "The official site.",
+       nullptr},
   };
   for (int i = 0; i < kGoogleResults; ++i) {
     const auto& r = kResults[i];
@@ -418,11 +417,10 @@ PageTree GoogleLikeResults() {
     const uint32_t top = b.Wrapper(g);
     const std::string host =
         std::string(r.url).substr(8, std::string(r.url).find('/', 8) - 8);
-    const std::string cite =
-        "https://" + host + " \xE2\x80\xBA " + "music";
-    const uint32_t link = b.Add(top, PageRole::kLink,
-                                std::string(r.title) + " " + r.site + " " + cite,
-                                kStateFocusable);
+    const std::string cite = "https://" + host + " \xE2\x80\xBA " + "music";
+    const uint32_t link = b.Add(
+        top, PageRole::kLink, std::string(r.title) + " " + r.site + " " + cite,
+        kStateFocusable);
     b.node(link).url = r.url;
     b.Heading(link, 3, r.title);
     const uint32_t source = b.Wrapper(link);
@@ -465,9 +463,8 @@ PageTree GoogleLikeResults() {
 
 PageTree WikipediaArticle() {
   TreeBuilder b("Bohemian Rhapsody - Wikipedia");
-  const uint32_t root =
-      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea,
-            "Bohemian Rhapsody - Wikipedia", kStateFocusable);
+  const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea,
+                              "Bohemian Rhapsody - Wikipedia", kStateFocusable);
   b.SetBounds(root, 0, 0, kViewportWidth, kViewportHeight);
   b.Link(root, "Jump to content", "#bodyContent");
 
@@ -475,9 +472,8 @@ PageTree WikipediaArticle() {
   b.Button(banner, "Main menu");
   b.Link(banner, "Wikipedia The Free Encyclopedia", "/wiki/Main_Page");
   const uint32_t search = b.Add(banner, PageRole::kSearch, "", 0);
-  const uint32_t field =
-      b.Add(search, PageRole::kSearchBox, "Search Wikipedia",
-            kStateFocusable | kStateEditable);
+  const uint32_t field = b.Add(search, PageRole::kSearchBox, "Search Wikipedia",
+                               kStateFocusable | kStateEditable);
   b.node(field).placeholder = "Search Wikipedia";
   b.node(field).input_type = "search";
   b.Button(search, "Search");
@@ -497,9 +493,8 @@ PageTree WikipediaArticle() {
   b.Heading(main, 1, "Bohemian Rhapsody");
   const uint32_t toc = b.Add(main, PageRole::kNavigation, "Contents", 0);
   const uint32_t toc_list = b.Add(toc, PageRole::kList, "", 0);
-  for (const char* section :
-       {"(Top)", "Background", "Composition", "Release", "Legacy",
-        "References"}) {
+  for (const char* section : {"(Top)", "Background", "Composition", "Release",
+                              "Legacy", "References"}) {
     const uint32_t li = b.Add(toc_list, PageRole::kListItem, "", 0);
     b.SetBounds(li, 8, 0, 160, 20);
     b.Link(li, section, std::string("#") + section);
@@ -563,8 +558,8 @@ PageTree PasswordForm() {
   const uint32_t form = b.Add(main, PageRole::kForm, "Sign in", 0);
   const uint32_t field_states = kStateFocusable | kStateEditable;
 
-  const uint32_t email = b.Add(form, PageRole::kTextField, "Email",
-                               field_states | kStateRequired);
+  const uint32_t email =
+      b.Add(form, PageRole::kTextField, "Email", field_states | kStateRequired);
   b.node(email).input_type = "email";
   b.node(email).autocomplete = "username";
   b.node(email).value = "ana@example.com";
@@ -575,14 +570,12 @@ PageTree PasswordForm() {
   b.node(password).autocomplete = "current-password";
   b.node(password).value = "hunter2-hunter2";
 
-  const uint32_t otp = b.Add(form, PageRole::kTextField, "Code",
-                             field_states);
+  const uint32_t otp = b.Add(form, PageRole::kTextField, "Code", field_states);
   b.node(otp).input_type = "text";
   b.node(otp).autocomplete = "one-time-code";
   b.node(otp).value = "123456";
 
-  const uint32_t card = b.Add(form, PageRole::kTextField, "Card",
-                              field_states);
+  const uint32_t card = b.Add(form, PageRole::kTextField, "Card", field_states);
   b.node(card).input_type = "text";
   b.node(card).autocomplete = "billing cc-number";
   b.node(card).value = "4111 1111 1111 1111";

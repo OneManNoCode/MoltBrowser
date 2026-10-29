@@ -44,7 +44,7 @@ constexpr size_t kMaxLabelSiblings = 3;
 constexpr double kMaxItemsPerEntry = 12;
 
 struct Visit {
-  uint32_t node = 0;  // index into PageTree::nodes
+  uint32_t node = 0;         // index into PageTree::nodes
   uint32_t parent = kNoPos;  // position in the order
   uint32_t depth = 0;
   uint8_t context = 0;
@@ -175,7 +175,7 @@ CredentialKind CredentialFromLabel(std::string_view text) {
       FoldForCompare(text.substr(0, kMaxSpeechScanBytes));
   for (std::string_view word :
        {"password", "passcode", "passphrase", "pin", "passwort", "kennwort",
-        "contrase\xC3\xB1" "a", "mot de passe"}) {
+        "contraseña", "mot de passe"}) {
     if (HasWords(folded, word)) {
       return CredentialKind::kPassword;
     }
@@ -288,8 +288,7 @@ class Builder {
   // Visible: shown on the page (ignored nodes are kept for structure, but
   // are not items, headings or entries themselves).
   bool Shown(uint32_t pos) const {
-    return !NodeAt(pos).Has(kStateInvisible) &&
-           !NodeAt(pos).Has(kStateIgnored);
+    return !NodeAt(pos).Has(kStateInvisible) && !NodeAt(pos).Has(kStateIgnored);
   }
 
   // A pre-order walk of the tree from nodes[0], bounded in nodes, depth and
@@ -437,8 +436,8 @@ class Builder {
       const PageNode& node = NodeAt(static_cast<uint32_t>(p));
       if (Shown(static_cast<uint32_t>(p))) {
         std::optional<ItemKind> kind = RoleItemKind(node.role);
-        if (!kind && node.Has(kStateEditable) &&
-            node.Has(kStateFocusable) && node.role == PageRole::kGeneric) {
+        if (!kind && node.Has(kStateEditable) && node.Has(kStateFocusable) &&
+            node.role == PageRole::kGeneric) {
           kind = ItemKind::kTextField;  // an editable root
         }
         if (!kind && node.Has(kStateHasDefaultAction) && !below[p] &&
@@ -513,16 +512,15 @@ class Builder {
     if (text_field) {
       item.credential = ClassifyCredential(node);
       item.filled = !node.value.empty();
-      item.writable = node.Has(kStateEditable) &&
-                      !node.Has(kStateReadOnly) &&
+      item.writable = node.Has(kStateEditable) && !node.Has(kStateReadOnly) &&
                       !node.Has(kStateDisabled) &&
                       item.credential == CredentialKind::kNone;
     }
     // A protected node's value is never kept, whatever its role.
     if (item.credential == CredentialKind::kNone &&
         !node.Has(kStateProtected) &&
-        (text_field || kind == ItemKind::kSelect ||
-         kind == ItemKind::kSlider || kind == ItemKind::kOption)) {
+        (text_field || kind == ItemKind::kSelect || kind == ItemKind::kSlider ||
+         kind == ItemKind::kOption)) {
       item.value = SpeechSafeText(node.value, kMaxItemValueChars);
     }
     if (item.credential != CredentialKind::kNone) {
@@ -542,10 +540,9 @@ class Builder {
       if (node.role == PageRole::kHeading && Shown(p)) {
         if (map_.headings.size() < limits_.max_headings) {
           PageHeading heading;
-          heading.level =
-              node.heading_level >= 1 && node.heading_level <= 6
-                  ? node.heading_level
-                  : 2;
+          heading.level = node.heading_level >= 1 && node.heading_level <= 6
+                              ? node.heading_level
+                              : 2;
           heading.text = SpeechSafeText(node.name, kMaxHeadingChars);
           if (heading.text.empty()) {
             heading.text = GatherText(p, kMaxLabelScan, kMaxHeadingChars);
@@ -598,12 +595,12 @@ class Builder {
       if (IsListContainer(node.role)) {
         Candidate c;
         c.container = p;
-        c.kind = node.role == PageRole::kFeed
-                     ? ListKind::kFeed
-                     : (node.role == PageRole::kTable ||
-                                node.role == PageRole::kGrid
-                            ? ListKind::kTable
-                            : ListKind::kList);
+        c.kind =
+            node.role == PageRole::kFeed
+                ? ListKind::kFeed
+                : (node.role == PageRole::kTable || node.role == PageRole::kGrid
+                       ? ListKind::kTable
+                       : ListKind::kList);
         c.entries = SemanticEntries(p);
         if (c.entries.size() >= limits_.min_semantic_entries) {
           candidates.push_back(std::move(c));
@@ -879,11 +876,11 @@ class Builder {
       entry.position = static_cast<int>(list.entries.size() + 1);
       area += std::min(entry.bounds.Area(), 1e6);
       with_title += entry.title.empty() ? 0 : 1;
-      with_fields += (!entry.channel.empty() || entry.duration_seconds >= 0 ||
-                      !entry.date.empty() || !entry.counts.empty() ||
-                      !entry.texts.empty())
-                         ? 1
-                         : 0;
+      with_fields +=
+          (!entry.channel.empty() || entry.duration_seconds >= 0 ||
+           !entry.date.empty() || !entry.counts.empty() || !entry.texts.empty())
+              ? 1
+              : 0;
       with_heading += has_heading ? 1 : 0;
       with_action += entry.number > 0 ? 1 : 0;
       items += items_before_[end_[e]] - items_before_[e];
@@ -897,7 +894,8 @@ class Builder {
           2 * (static_cast<double>(with_fields) / n) +
           2 * (static_cast<double>(with_heading) / n) +
           2 * (static_cast<double>(with_action) / n) + (list.in_main ? 3 : 0) -
-          (list.in_navigation ? 4 : 0) + (list.kind == ListKind::kFeed ? 1 : 0) -
+          (list.in_navigation ? 4 : 0) +
+          (list.kind == ListKind::kFeed ? 1 : 0) -
           (static_cast<double>(items) / n > kMaxItemsPerEntry ? 4 : 0);
     }
     return list;
@@ -970,10 +968,10 @@ class Builder {
 
     // One pass over the entry: its actions, headings and text runs, with
     // the link, heading and control each sits in.
-    const uint32_t stop =
-        static_cast<uint32_t>(std::min<size_t>(end_[root], root + kMaxEntryScan));
-    std::vector<uint32_t> links;     // link items
-    std::vector<uint32_t> actions;   // every item
+    const uint32_t stop = static_cast<uint32_t>(
+        std::min<size_t>(end_[root], root + kMaxEntryScan));
+    std::vector<uint32_t> links;    // link items
+    std::vector<uint32_t> actions;  // every item
     std::vector<uint32_t> headings;
     std::vector<Run> runs;
     // Per position in [root, stop): the link, heading and control around.
@@ -1110,16 +1108,15 @@ class Builder {
       }
     }
     if (entry.title.empty() && !runs.empty()) {
-      entry.title = SpeechSafeText(NodeAt(runs.front().pos).name,
-                                   kMaxEntryTitleChars);
+      entry.title =
+          SpeechSafeText(NodeAt(runs.front().pos).name, kMaxEntryTitleChars);
     }
 
     // The channel: a link to a channel, author or user page, else another
     // short link to somewhere else, else the site named in the main link.
-    const std::string primary_url =
-        primary != kNoPos && item_of_[primary] >= 0
-            ? map_.items[item_of_[primary]].url
-            : std::string();
+    const std::string primary_url = primary != kNoPos && item_of_[primary] >= 0
+                                        ? map_.items[item_of_[primary]].url
+                                        : std::string();
     // (Another link is a channel only when the main link holds no heading:
     // a search result's other links are site links, not its source.)
     uint32_t channel_link = kNoPos;
@@ -1127,8 +1124,7 @@ class Builder {
     for (int pass = 0; pass < passes && channel_link == kNoPos; ++pass) {
       // Links with visible text first ("Queen Official"), then by their
       // name alone (an avatar's "Go to channel ...").
-      for (int visible = 1; visible >= 0 && channel_link == kNoPos;
-           --visible) {
+      for (int visible = 1; visible >= 0 && channel_link == kNoPos; --visible) {
         for (uint32_t link : links) {
           if (link == primary) {
             continue;
@@ -1140,8 +1136,7 @@ class Builder {
           if (pass == 0 && !LooksLikeChannelUrl(item.url)) {
             continue;
           }
-          std::string text =
-              RunsText(runs, link, kNoPos, kMaxEntryFieldChars);
+          std::string text = RunsText(runs, link, kNoPos, kMaxEntryFieldChars);
           if (!visible && text.empty()) {
             text = SpeechSafeText(item.label, kMaxEntryFieldChars);
           }
@@ -1164,7 +1159,8 @@ class Builder {
       seen.push_back(FoldForCompare(entry.channel));
     }
     for (const Run& run : runs) {
-      if (run.in_control || (channel_link != kNoPos && run.link == channel_link)) {
+      if (run.in_control ||
+          (channel_link != kNoPos && run.link == channel_link)) {
         continue;
       }
       if ((primary != kNoPos && run.link == primary &&

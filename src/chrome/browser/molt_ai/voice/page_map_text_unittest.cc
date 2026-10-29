@@ -21,8 +21,12 @@ TEST(PageMapTextTest, KeepsPlainText) {
 TEST(PageMapTextTest, CollapsesSpacesAndLineBreaks) {
   EXPECT_EQ(SpeechSafeText("  a \t\n b\r\n\fc  ", 100), "a b c");
   // NBSP, ideographic space, narrow NBSP, line and paragraph separators.
-  EXPECT_EQ(SpeechSafeText("a\xC2\xA0" "b\xE3\x80\x80" "c\xE2\x80\xAF"
-                           "d\xE2\x80\xA8" "e\xE2\x80\xA9" "f",
+  EXPECT_EQ(SpeechSafeText("a\xC2\xA0"
+                           "b\xE3\x80\x80"
+                           "c\xE2\x80\xAF"
+                           "d\xE2\x80\xA8"
+                           "e\xE2\x80\xA9"
+                           "f",
                            100),
             "a b c d e f");
 }
@@ -36,7 +40,12 @@ TEST(PageMapTextTest, DropsControlBidiAndInvisibleCharacters) {
             "paypal");
   EXPECT_EQ(SpeechSafeText("ok\xF3\xA0\x81\x81\xF3\xA0\x81\x82", 100), "ok");
   // C0 and C1 controls and DEL.
-  EXPECT_EQ(SpeechSafeText("a\x01" "b\x7F" "c\xC2\x85" "d", 100), "abcd");
+  EXPECT_EQ(SpeechSafeText("a\x01"
+                           "b\x7F"
+                           "c\xC2\x85"
+                           "d",
+                           100),
+            "abcd");
   // Private-use (icon font) characters, noncharacters, U+FFFC, U+FFFD.
   EXPECT_EQ(SpeechSafeText("\xEE\x80\x80Play\xEF\xBF\xBC\xEF\xBF\xBD"
                            "\xEF\xB7\x90",
@@ -48,10 +57,19 @@ TEST(PageMapTextTest, DropsControlBidiAndInvisibleCharacters) {
 
 TEST(PageMapTextTest, InvalidUtf8ReadsAsASpace) {
   EXPECT_EQ(SpeechSafeText("ad\xFFmin", 100), "ad min");
-  EXPECT_EQ(SpeechSafeText("a\xC0\xAF" "b", 100), "a b");          // overlong
-  EXPECT_EQ(SpeechSafeText("a\xED\xA0\x80" "b", 100), "a b");      // surrogate
-  EXPECT_EQ(SpeechSafeText("a\xF4\x90\x80\x80" "b", 100), "a b");  // > 10FFFF
-  EXPECT_EQ(SpeechSafeText("end\xE2\x80", 100), "end");            // cut short
+  EXPECT_EQ(SpeechSafeText("a\xC0\xAF"
+                           "b",
+                           100),
+            "a b");  // overlong
+  EXPECT_EQ(SpeechSafeText("a\xED\xA0\x80"
+                           "b",
+                           100),
+            "a b");  // surrogate
+  EXPECT_EQ(SpeechSafeText("a\xF4\x90\x80\x80"
+                           "b",
+                           100),
+            "a b");                                      // > 10FFFF
+  EXPECT_EQ(SpeechSafeText("end\xE2\x80", 100), "end");  // cut short
 }
 
 TEST(PageMapTextTest, CapsLengthAtAWordBoundary) {
@@ -82,7 +100,11 @@ TEST(PageMapTextTest, CleansTypedText) {
   EXPECT_EQ(TypedText("one\xE2\x80\xA9two", true, 100), "one\ntwo");
   // Controls, bidi and invisible characters and invalid bytes go; spaces
   // are kept as said.
-  EXPECT_EQ(TypedText("a\tb\x01" "c\xE2\x80\xAE" "d\xFF" "e  f", false, 100),
+  EXPECT_EQ(TypedText("a\tb\x01"
+                      "c\xE2\x80\xAE"
+                      "d\xFF"
+                      "e  f",
+                      false, 100),
             "a bcde  f");
   EXPECT_EQ(TypedText("caf\xC3\xA9", false, 100), "caf\xC3\xA9");
   EXPECT_EQ(TypedText("", false, 100), "");
@@ -106,9 +128,8 @@ TEST(PageMapTextTest, ParsesDurations) {
 
   for (const char* not_one :
        {"", "6", "6:7", "6:60", ":07", "6:07:", "1:2:3:4", "12345:00",
-        "6 apples", "7 seconds 6 minutes", "6 minutes 6 minutes", "PT",
-        "PT6X", "PTM", "Bohemian Rhapsody", "6:07 Bohemian", "-6:07",
-        "1001:00:00"}) {
+        "6 apples", "7 seconds 6 minutes", "6 minutes 6 minutes", "PT", "PT6X",
+        "PTM", "Bohemian Rhapsody", "6:07 Bohemian", "-6:07", "1001:00:00"}) {
     EXPECT_FALSE(ParseDuration(not_one).has_value()) << not_one;
   }
 }
@@ -152,12 +173,26 @@ TEST(PageMapTextTest, ParsesCounts) {
 }
 
 TEST(PageMapTextTest, RecognizesDates) {
-  for (const char* date :
-       {"15 years ago", "1 year ago", "an hour ago", "3 weeks ago",
-        "Streamed 2 years ago", "Premiered 5 days ago", "yesterday", "Today",
-        "last week", "Jan 5, 2024", "January 5, 2024", "5 January 2024",
-        "Sept. 9, 1975", "March 2024", "Oct 31", "31st October 1975",
-        "2024-01-05", "1/5/2024", "2024/1/5", "Updated on Jan 5, 2024"}) {
+  for (const char* date : {"15 years ago",
+                           "1 year ago",
+                           "an hour ago",
+                           "3 weeks ago",
+                           "Streamed 2 years ago",
+                           "Premiered 5 days ago",
+                           "yesterday",
+                           "Today",
+                           "last week",
+                           "Jan 5, 2024",
+                           "January 5, 2024",
+                           "5 January 2024",
+                           "Sept. 9, 1975",
+                           "March 2024",
+                           "Oct 31",
+                           "31st October 1975",
+                           "2024-01-05",
+                           "1/5/2024",
+                           "2024/1/5",
+                           "Updated on Jan 5, 2024"}) {
     EXPECT_TRUE(LooksLikeDate(date)) << date;
   }
   for (const char* not_one :

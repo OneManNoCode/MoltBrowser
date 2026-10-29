@@ -30,26 +30,25 @@ CredentialKind FromFieldKind(agent_safety::FieldKind kind) {
 }
 
 TEST(PageMapAgentSafetyTest, CredentialFieldsMatchAgentSafety) {
-  const char* const kTypes[] = {"",         "text",     "password", "PASSWORD",
+  const char* const kTypes[] = {"",           "text",  "password", "PASSWORD",
                                 " password ", "email", "tel",      "search",
-                                "number",   "hidden"};
-  const char* const kAutocompletes[] = {
-      "",
-      "username",
-      "current-password",
-      "new-password",
-      "NEW-PASSWORD",
-      "cc-number",
-      "billing cc-csc",
-      "section-a shipping cc-exp",
-      "one-time-code",
-      "one-time-code cc-number",
-      "cc-name current-password",
-      "email",
-      "off",
-      "password",
-      "ccnumber",
-      "\tcc-number\n"};
+                                "number",     "hidden"};
+  const char* const kAutocompletes[] = {"",
+                                        "username",
+                                        "current-password",
+                                        "new-password",
+                                        "NEW-PASSWORD",
+                                        "cc-number",
+                                        "billing cc-csc",
+                                        "section-a shipping cc-exp",
+                                        "one-time-code",
+                                        "one-time-code cc-number",
+                                        "cc-name current-password",
+                                        "email",
+                                        "off",
+                                        "password",
+                                        "ccnumber",
+                                        "\tcc-number\n"};
   for (const char* type : kTypes) {
     for (const char* autocomplete : kAutocompletes) {
       SCOPED_TRACE(std::string(type) + " / " + autocomplete);

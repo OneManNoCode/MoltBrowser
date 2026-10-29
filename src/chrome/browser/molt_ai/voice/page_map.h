@@ -62,23 +62,23 @@ struct PageNodeHandle {
 // The roles the map tells apart; ax_page_source.h maps Chromium's roles to
 // these (everything else is kGeneric).
 enum class PageRole : uint8_t {
-  kGeneric,  // containers, custom elements, anything else
+  kGeneric,      // containers, custom elements, anything else
   kRootWebArea,  // a document: the page, or a frame's
   kStaticText,
   kImage,
   kLink,
-  kButton,       // also toggle, menu and pop-up buttons
-  kTextField,    // single-line text fields and editable roots
+  kButton,     // also toggle, menu and pop-up buttons
+  kTextField,  // single-line text fields and editable roots
   kSearchBox,
-  kTextArea,     // multi-line text fields
-  kComboBox,     // an editable combo box
-  kSelect,       // a <select> (collapsed) or a list box button
+  kTextArea,  // multi-line text fields
+  kComboBox,  // an editable combo box
+  kSelect,    // a <select> (collapsed) or a list box button
   kCheckBox,
   kRadio,
   kSwitch,
-  kSlider,       // also spin buttons
-  kOption,       // list box and select options
-  kMenuItem,     // also menu item check boxes and radios
+  kSlider,    // also spin buttons
+  kOption,    // list box and select options
+  kMenuItem,  // also menu item check boxes and radios
   kTab,
   kTreeItem,
   kListBox,
