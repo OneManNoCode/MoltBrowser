@@ -792,7 +792,15 @@ class Planner {
         attempts.push_back(std::move(main));
       }
     }
-    if (s.list != ListContext::kItems && s.list != ListContext::kTabs) {
+    // Every item, after the list: for a description ("the search box"), for
+    // a number shown on screen, or when no list was read. A position or a
+    // number the browser read out stays within its list.
+    const bool items_too =
+        s.list == ListContext::kNone ||
+        ref.kind == ChoiceRef::Kind::kDescription ||
+        (ref.kind == ChoiceRef::Kind::kNumber && s.numbers_shown);
+    if (items_too && s.list != ListContext::kItems &&
+        s.list != ListContext::kTabs) {
       Attempt items;
       items.set = CandidatesFromItems(map_);
       items.context = ListContext::kItems;
