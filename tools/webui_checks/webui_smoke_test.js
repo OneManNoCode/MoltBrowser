@@ -2008,6 +2008,7 @@ async function runPage(page, hooks = {}) {
     ael.call(window, type, () => { activation = true; }, true);
   }
   const unclicked = [];
+  let closed = false;
   window.__clickConsumed = [];
   window.chrome = {send(method, args) {
     sent.push(method);
@@ -2026,6 +2027,9 @@ async function runPage(page, hooks = {}) {
     if (typeof r === 'function') r = r(args);
     if (r === NO_REPLY) return;  // a request the browser never answers
     setTimeout(() => {
+      // A page closed under a pending request gets no answer (it would
+      // run against a torn-down document and fail the next page).
+      if (closed) return;
       if (window.cr && typeof window.cr.webUIResponse === 'function') {
         window.cr.webUIResponse(id, true, r === undefined ? {} : r);
       }
@@ -2088,6 +2092,7 @@ async function runPage(page, hooks = {}) {
   for (const m of unclicked) errors.push(`${m} sent without a click of its own`);
   const problems = errors.concat(violations, rejections.map((r) => 'unhandled rejection: ' + r));
   window.__ttOff = true;  // jsdom's own teardown clears the body
+  closed = true;
   window.close();
   return {problems, sent};
 }
