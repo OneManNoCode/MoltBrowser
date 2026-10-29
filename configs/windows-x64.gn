@@ -15,8 +15,15 @@ target_cpu = "x64"
 # PGO/LTO the compile drops ~30-40% to ~4 hours. Trade-off: the Windows
 # binary is larger and slightly slower at runtime than the macOS/Linux
 # versions — acceptable for a v0.2.1 preview release.
+# Windows builds now run on a self-hosted runner without that cap: move to
+# an official build when the runner returns (docs/BUILD_MACHINE_CHECKLIST.md
+# §3.3). A non-official build keeps Chromium's debugging-only checks.
 is_official_build = false
 is_debug = false
+# Release builds without DCHECKs, which a non-official build otherwise turns
+# on (build/config/dcheck_always_on.gni): faster, and no crash on a state
+# only a debugging build stops for.
+dcheck_always_on = false
 
 # De-Google: Remove Google API dependencies
 google_api_key = ""

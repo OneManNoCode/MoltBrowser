@@ -1157,6 +1157,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   contrast script ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md)).
 
 ### Engineering
+- **Windows release builds without DCHECKs** (`configs/windows-x64.gn`):
+  its non-official build had turned Chromium's debugging-only checks on.
+  Moving Windows to an official build is on the build machine's list
+  (`docs/BUILD_MACHINE_CHECKLIST.md` §3.3).
 - **Touchless browsing, first part: the page map** (not switched on yet;
   `docs/design/TOUCHLESS_BROWSING.md` §6.3, §6.5). The browser can read any
   page through Chromium's accessibility tree, as screen readers do, as a

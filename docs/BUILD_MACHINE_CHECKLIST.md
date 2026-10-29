@@ -497,6 +497,16 @@ ai-finish, its test plan in §9), Windows signing (§11). Once a runner exists a
 `.env`, wipe its workspace once (the workflow's steps were reordered), and
 dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
 
+- [ ] **An official Windows build.** `configs/windows-x64.gn` still has
+  `is_official_build = false`, from when builds had to fit GitHub's 6-hour
+  job cap; a self-hosted runner has no such cap. A non-official build keeps
+  Chromium's debugging-only checks (for example accessibility's fail-fast
+  checks in `ui/accessibility/ax_common.h`), which an official build leaves
+  out. Set `is_official_build = true` and remove `dcheck_always_on = false`
+  (implied). If the runner's RAM can't take the ThinLTO link, try
+  `use_thin_lto = false` first and record what `gn gen` says, then the link
+  time and peak memory here.
+
 ## 4. Compile-risk hot spots
 
 When the build fails, find the file here; the PR tag says which change to
