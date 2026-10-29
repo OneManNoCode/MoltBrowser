@@ -719,6 +719,12 @@
       1280
      ]
     },
+    "video.camera_color_space": {
+     "fullRange": false,
+     "matrix": "smpte170m",
+     "primaries": "smpte170m",
+     "transfer": "smpte170m"
+    },
     "video.camera_device_capabilities": [
      {
       "aspectRatio": [
@@ -756,6 +762,23 @@
       720
      ]
     },
+    "video.camera_frame_callbacks": {
+     "capture_time_follows": true,
+     "keys": [
+      "captureTime",
+      "expectedDisplayTime",
+      "height",
+      "mediaTime",
+      "presentationTime",
+      "presentedFrames",
+      "width"
+     ],
+     "media_time_on_grid": true,
+     "size": [
+      640,
+      480
+     ]
+    },
     "video.camera_hd_frame": {
      "codedHeight": 720,
      "codedWidth": 1280,
@@ -776,6 +799,43 @@
      "resizeMode": "none",
      "width": 1280
     },
+    "video.camera_image_capture": {
+     "grab_frame": {
+      "height": 480,
+      "width": 640
+     },
+     "photo": {
+      "height": 480,
+      "type": "image/jpeg",
+      "width": 640
+     },
+     "photo_capabilities": {
+      "fillLightMode": null,
+      "imageHeight": [
+       480,
+       480,
+       0
+      ],
+      "imageWidth": [
+       640,
+       640,
+       0
+      ],
+      "redEyeReduction": "never"
+     },
+     "photo_settings": {
+      "imageHeight": 480,
+      "imageWidth": 640
+     },
+     "required_zoom": {
+      "constraint": "zoom",
+      "name": "OverconstrainedError"
+     },
+     "track_members": {
+      "capabilities": [],
+      "settings": []
+     }
+    },
     "video.camera_overconstrained": {
      "constraint": "width",
      "name": "OverconstrainedError"
@@ -786,7 +846,15 @@
      "height": 480,
      "resizeMode": "none",
      "width": 640
-    }
+    },
+    "video.camera_stats": {
+     "dropped": 0,
+     "half_discarded": true
+    },
+    "video.camera_timing_on_grid": false,
+    "video.camera_timing_steps": [
+     1
+    ]
    },
    "window": null,
    "zoom_requested": 100

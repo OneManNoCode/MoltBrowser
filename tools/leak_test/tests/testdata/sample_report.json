@@ -163,6 +163,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_timing_on_grid",
+   "status": "FAIL",
+   "title": "video.camera_timing_on_grid is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
    "evidence": [
     "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1401, expected a multiple of 200, at most 1400"
@@ -2181,12 +2192,34 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
    "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"fullRange\": false, \"matrix\": \"smpte170m\", \"primaries\": \"smpte170m\", \"transfer\": \"smpte170m\"}, expected {\"fullRange\": false, \"matrix\": \"smpte170m\", \"primaries\": \"smpte170m\", \"transfer\": \"smpte170m\"}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_color_space",
+   "status": "PASS",
+   "title": "video.camera_color_space is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
     "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual [{\"aspectRatio\": [0.001388888888888889, 1280], \"frameRate\": [1, 30], \"height\": [1, 720], \"resizeMode\": [\"crop-and-scale\", \"none\"], \"width\": [1, 1280]}], expected [{\"aspectRatio\": [0.001388888888888889, 1280], \"frameRate\": [1, 30], \"height\": [1, 720], \"resizeMode\": [\"crop-and-scale\""
    ],
    "group": "uniformity",
    "id": "uniform.video.camera_device_capabilities",
    "status": "PASS",
    "title": "video.camera_device_capabilities is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"capture_time_follows\": true, \"keys\": [\"captureTime\", \"expectedDisplayTime\", \"height\", \"mediaTime\", \"presentationTime\", \"presentedFrames\", \"width\"], \"media_tim, expected {\"capture_time_follows\": true, \"keys\": [\"captureTime\", \"expectedDisplayTime\", \"height\", \"mediaTime\", \"presentationTime\","
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_frame_callbacks",
+   "status": "PASS",
+   "title": "video.camera_frame_callbacks is uniform"
   },
   {
    "details": null,
@@ -2214,6 +2247,17 @@
    "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
    "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"grab_frame\": {\"height\": 480, \"width\": 640}, \"photo\": {\"height\": 480, \"type\": \"image/jpeg\", \"width\": 640}, \"photo_capabilities\": {\"fillLightMode\": null, \"image, expected {\"grab_frame\": {\"height\": 480, \"width\": 640}, \"photo\": {\"height\": 480, \"type\": \"image/jpeg\", \"width\": 640}, \"photo_capab"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_image_capture",
+   "status": "PASS",
+   "title": "video.camera_image_capture is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
     "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"constraint\": \"width\", \"name\": \"OverconstrainedError\"}, expected {\"constraint\": \"width\", \"name\": \"OverconstrainedError\"}"
    ],
    "group": "uniformity",
@@ -2231,6 +2275,28 @@
    "id": "uniform.video.camera_settings",
    "status": "PASS",
    "title": "video.camera_settings is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"dropped\": 0, \"half_discarded\": true}, expected {\"dropped\": 0, \"half_discarded\": true}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_stats",
+   "status": "PASS",
+   "title": "video.camera_stats is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: cameras, microphones and outputs\"",
+   "evidence": [
+    "mic|dsf=1.0|window=initial|zoom=100|moltnet: actual [1], expected [[1], [1, 2]]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.video.camera_timing_steps",
+   "status": "PASS",
+   "title": "video.camera_timing_steps is uniform"
   },
   {
    "details": null,
@@ -3408,9 +3474,9 @@
  ],
  "counts": {
   "ERROR": 0,
-  "FAIL": 15,
+  "FAIL": 16,
   "INFO": 2,
-  "PASS": 197,
+  "PASS": 202,
   "SKIP": 85
  },
  "fingerprints": [
@@ -4118,6 +4184,12 @@
       1280
      ]
     },
+    "video.camera_color_space": {
+     "fullRange": false,
+     "matrix": "smpte170m",
+     "primaries": "smpte170m",
+     "transfer": "smpte170m"
+    },
     "video.camera_device_capabilities": [
      {
       "aspectRatio": [
@@ -4155,6 +4227,23 @@
       720
      ]
     },
+    "video.camera_frame_callbacks": {
+     "capture_time_follows": true,
+     "keys": [
+      "captureTime",
+      "expectedDisplayTime",
+      "height",
+      "mediaTime",
+      "presentationTime",
+      "presentedFrames",
+      "width"
+     ],
+     "media_time_on_grid": true,
+     "size": [
+      640,
+      480
+     ]
+    },
     "video.camera_hd_frame": {
      "codedHeight": 720,
      "codedWidth": 1280,
@@ -4175,6 +4264,43 @@
      "resizeMode": "none",
      "width": 1280
     },
+    "video.camera_image_capture": {
+     "grab_frame": {
+      "height": 480,
+      "width": 640
+     },
+     "photo": {
+      "height": 480,
+      "type": "image/jpeg",
+      "width": 640
+     },
+     "photo_capabilities": {
+      "fillLightMode": null,
+      "imageHeight": [
+       480,
+       480,
+       0
+      ],
+      "imageWidth": [
+       640,
+       640,
+       0
+      ],
+      "redEyeReduction": "never"
+     },
+     "photo_settings": {
+      "imageHeight": 480,
+      "imageWidth": 640
+     },
+     "required_zoom": {
+      "constraint": "zoom",
+      "name": "OverconstrainedError"
+     },
+     "track_members": {
+      "capabilities": [],
+      "settings": []
+     }
+    },
     "video.camera_overconstrained": {
      "constraint": "width",
      "name": "OverconstrainedError"
@@ -4185,7 +4311,15 @@
      "height": 480,
      "resizeMode": "none",
      "width": 640
-    }
+    },
+    "video.camera_stats": {
+     "dropped": 0,
+     "half_discarded": true
+    },
+    "video.camera_timing_on_grid": false,
+    "video.camera_timing_steps": [
+     1
+    ]
    },
    "window": null,
    "zoom_requested": 100
