@@ -124,7 +124,7 @@ class Report:
             lines += ["- " + line for line in info["sysctl"].splitlines()]
         lines.append("- %s, Python %s, %s logical CPUs, %s" % (
             info.get("platform"), info.get("python"), info.get("cpu_count"),
-            info.get("meminfo", "")))
+            " ".join(info.get("meminfo", "").split())))
         lines.append("- driver: `%s`" % info.get("driver", ""))
         return "\n".join(lines)
 
