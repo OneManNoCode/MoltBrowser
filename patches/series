@@ -149,6 +149,8 @@ chrome/browser/ui/views/frame/BUILD.gn.patch
 chrome/browser/ui/views/frame/browser_frame_view_mac.mm.patch
 chrome/browser/ui/views/frame/browser_view.cc.patch
 chrome/browser/ui/views/frame/browser_widget.cc.patch
+chrome/browser/ui/views/frame/contents_container_view.cc.patch
+chrome/browser/ui/views/frame/contents_container_view.h.patch
 chrome/browser/ui/views/frame/contents_web_view.cc.patch
 chrome/browser/ui/views/frame/contents_web_view.h.patch
 chrome/browser/ui/views/location_bar/location_bar_view.cc.patch

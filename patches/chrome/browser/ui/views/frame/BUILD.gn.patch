@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/frame/BUILD.gn b/chrome/browser/ui/views/frame/BUILD.gn
-index d1973034eed485334dad8980883d3647be2e4759..a44fbff1b4e0d59240701b2ca944c25570f3504a 100644
+index d1973034eed485334dad8980883d3647be2e4759..a0878a5b9e19856bdbb5d38d009196d7c45da149 100644
 --- a/chrome/browser/ui/views/frame/BUILD.gn
 +++ b/chrome/browser/ui/views/frame/BUILD.gn
 @@ -1020,6 +1020,9 @@ source_set("contents_web_view") {
@@ -18,3 +18,13 @@ index d1973034eed485334dad8980883d3647be2e4759..a44fbff1b4e0d59240701b2ca944c255
      ":safe_invoke",
      ":web_contents_close_handler",
      "//chrome/browser/ui/color:color_headers",
+@@ -2583,6 +2586,9 @@ source_set("contents_container_view_impl") {
+     "//chrome/browser:browser_public_dependencies",
+   ]
+   deps = [
++    # MoltBrowser: voice mode's numbers over the page and caption bar.
++    "//chrome/browser/ui/views/molt_ai/voice:views",
++
+     ":browser_view_header",
+     ":contents_capture_border_view",
+     ":contents_container_outline",

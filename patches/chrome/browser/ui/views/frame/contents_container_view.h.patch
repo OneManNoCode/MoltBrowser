@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/ui/views/frame/contents_container_view.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/chrome/browser/ui/views/frame/contents_container_view.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/frame/contents_container_view.h b/chrome/browser/ui/views/frame/contents_container_view.h
+index e3ae9d104db2d7e03712a6f0dbc3c4c2f34af0d8..c65f6c73005be5d0ab0ea07db349fb1d1dfc7d91 100644
+--- a/chrome/browser/ui/views/frame/contents_container_view.h
++++ b/chrome/browser/ui/views/frame/contents_container_view.h
+@@ -229,6 +229,11 @@ class ContentsContainerView : public views::View,
+   // area it wants to float.
+   raw_ptr<views::View> indigo_overlay_view_ = nullptr;
+ 
++  // MoltBrowser: voice mode's numbers over the page and its caption bar
++  // under it (chrome/browser/ui/views/molt_ai/voice/voice_overlay_views.h).
++  raw_ptr<views::View> molt_voice_numbers_view_ = nullptr;
++  raw_ptr<views::View> molt_voice_caption_bar_ = nullptr;
++
+   // See `SetTargetContentSize()`.
+   std::optional<gfx::Outsets> target_content_bounds_;
+ 
