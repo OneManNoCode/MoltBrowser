@@ -98,6 +98,18 @@ bool IsInvisibleFormat(uint32_t cp) {
          (cp >= 0xE0100 && cp <= 0xE01EF);
 }
 
+// Characters that text shown or passed on never keeps, besides the
+// invisible ones: what SpeechSafeText() (page_map_text.h) also drops, so
+// what was heard is as clean as page text. Hangul fillers (blank glyphs),
+// private-use characters (icon fonts), noncharacters, the interlinear
+// annotation, object replacement and replacement characters.
+bool IsNeverShown(uint32_t cp) {
+  return cp == 0x115F || cp == 0x1160 || cp == 0x3164 || cp == 0xFFA0 ||
+         (cp >= 0xE000 && cp <= 0xF8FF) || cp >= 0xF0000 ||
+         (cp >= 0xFDD0 && cp <= 0xFDEF) || (cp & 0xFFFE) == 0xFFFE ||
+         (cp >= 0xFFF9 && cp <= 0xFFFD);
+}
+
 bool IsSpace(uint32_t cp) {
   return cp == ' ' || (cp >= 0x09 && cp <= 0x0D) || cp == 0x85 || cp == 0xA0 ||
          cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 ||
@@ -480,7 +492,7 @@ std::string CleanSpokenText(std::string_view text, size_t max_bytes) {
       continue;
     }
     if (cp < 0x20 || cp == 0x7F || (cp >= 0x80 && cp <= 0x9F) ||
-        IsInvisibleFormat(cp)) {
+        IsInvisibleFormat(cp) || IsNeverShown(cp)) {
       continue;
     }
     std::string encoded;

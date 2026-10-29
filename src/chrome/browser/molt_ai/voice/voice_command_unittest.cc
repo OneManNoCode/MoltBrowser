@@ -739,6 +739,17 @@ TEST(VoiceCommandTest, Heard) {
   EXPECT_EQ(command.site_words, "the New York Times");
   command = ParseVoiceCommand("hey molt", context);
   EXPECT_EQ(command.heard, "");
+  // Characters page text loses before it is spoken (private use, the
+  // object replacement character, a Hangul filler) never reach what was
+  // heard or the words a command carries.
+  command = ParseVoiceCommand(
+      "search for cats\xEE\x80\x80 and\xEF\xBF\xBC dogs\xE3\x85\xA4", context);
+  EXPECT_EQ(command.kind, VoiceCommandKind::kSearch);
+  EXPECT_EQ(command.heard, "search for cats and dogs");
+  EXPECT_EQ(command.text, "cats and dogs");
+  command = ParseVoiceCommand("\xEE\x80\x80\xEF\xBF\xBC", context);
+  EXPECT_EQ(command.kind, VoiceCommandKind::kUnknown);
+  EXPECT_EQ(command.heard, "");
 }
 
 TEST(VoiceCommandTest, CustomWakePhrase) {

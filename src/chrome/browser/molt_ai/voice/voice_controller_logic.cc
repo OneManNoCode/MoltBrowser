@@ -139,18 +139,22 @@ const PageList* FindList(const PageMap& map,
   return MainList(map);
 }
 
-// The item whose label (folded) has |word| as a word.
+// The item whose label (folded) has one of |phrases| as words: the
+// top-level document's first, then a frame's (an embedded player's), so a
+// frame the page embeds (an ad) can't answer for the page.
 const PageItem* ItemSaying(const PageMap& map,
                            ItemKind kind,
                            std::initializer_list<std::string_view> phrases) {
-  for (const PageItem& item : map.items) {
-    if (item.kind != kind) {
-      continue;
-    }
-    const std::string folded = " " + FoldForComparison(item.label) + " ";
-    for (std::string_view phrase : phrases) {
-      if (folded.find(" " + std::string(phrase) + " ") != std::string::npos) {
-        return &item;
+  for (const bool in_page : {true, false}) {
+    for (const PageItem& item : map.items) {
+      if (item.kind != kind || map.InPage(item.handle) != in_page) {
+        continue;
+      }
+      const std::string folded = " " + FoldForComparison(item.label) + " ";
+      for (std::string_view phrase : phrases) {
+        if (folded.find(" " + std::string(phrase) + " ") != std::string::npos) {
+          return &item;
+        }
       }
     }
   }
@@ -770,6 +774,16 @@ class Planner {
     std::vector<Attempt> attempts;
     if (s.list != ListContext::kNone) {
       CandidateSet base = ContextSet();
+      if (!s.offered.empty() && !OfferStillHolds(base)) {
+        // What was read out names other things now (the page, or a frame
+        // in it, changed since): an answer to it would choose one the
+        // user didn't hear.
+        s.offered.clear();
+        s.offered_handles.clear();
+        s.expecting_choice = false;
+        Say("The page changed since I asked. Say it again.");
+        return;
+      }
       if (!s.offered.empty()) {
         Attempt subset;
         subset.set = SubsetOf(base, s.offered);
@@ -863,6 +877,33 @@ class Planner {
     Act(attempt.set.targets[index], attempt.set.candidates[index], verb);
   }
 
+  // Whether each choice offered is still at its place in |set|.
+  bool OfferStillHolds(const CandidateSet& set) {
+    const ConversationState& s = state();
+    if (s.offered_handles.size() != s.offered.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < s.offered.size(); ++i) {
+      if (s.offered[i] >= set.size() ||
+          !(set.targets[s.offered[i]].handle == s.offered_handles[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // The nodes |indices| of |set| name, to tell later whether they moved.
+  static std::vector<PageNodeHandle> HandlesOf(
+      const CandidateSet& set,
+      const std::vector<size_t>& indices) {
+    std::vector<PageNodeHandle> handles;
+    for (size_t i : indices) {
+      handles.push_back(i < set.size() ? set.targets[i].handle
+                                       : PageNodeHandle());
+    }
+    return handles;
+  }
+
   void Offer(const Attempt& attempt,
              const std::vector<size_t>& close,
              ChoiceVerb verb) {
@@ -875,9 +916,10 @@ class Planner {
         (attempt.list && !(attempt.list->container == s.list_container))) {
       SetListContext(attempt.context, attempt.list);
     }
-    CandidateSet subset = SubsetOf(attempt.base.empty() ? attempt.set
-                                                        : ContextSet(),
-                                   base);
+    const CandidateSet context_set =
+        attempt.base.empty() ? attempt.set : ContextSet();
+    CandidateSet subset = SubsetOf(context_set, base);
+    s.offered_handles = HandlesOf(context_set, base);
     s.offered = std::move(base);
     s.offered_verb = verb;
     s.expecting_choice = true;
@@ -1203,6 +1245,7 @@ class Planner {
       state().list = ListContext::kTabs;
       state().list_page_id = env_.page_id;
       state().offered = match.close;
+      state().offered_handles = HandlesOf(tabs, match.close);
       state().offered_verb = ChoiceVerb::kSelect;
       state().expecting_choice = true;
       Say(OfferSpeech(SubsetOf(tabs, match.close)));
@@ -1928,8 +1971,10 @@ bool NeedsConfirmation(std::string_view label,
 const PageItem* FindSearchField(const PageMap& map) {
   const PageItem* found = nullptr;
   for (const PageItem& item : map.items) {
+    // Never a frame's: what the user searches for isn't typed into a box
+    // another site (an ad, a widget) put on the page.
     if (item.kind != ItemKind::kTextField || !item.writable ||
-        !item.search_field) {
+        !item.search_field || !map.InPage(item.handle)) {
       continue;
     }
     if (item.on_screen) {

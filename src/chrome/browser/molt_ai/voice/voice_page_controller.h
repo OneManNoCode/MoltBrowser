@@ -13,7 +13,9 @@
 //     from AccessibilityEventReceived(), in the browser process as platform
 //     accessibility does. The updates come from renderers and are
 //     untrusted: an update a tree can't take drops that tree (counted), and
-//     a few resets per page ask the renderers for their trees again.
+//     a few resets per page ask the renderers for their trees again. The
+//     top-level document's tree is always kept; the child frames' trees are
+//     capped in number and in nodes together.
 //   - Map: BuildMap() joins the frames' trees (ax_page_source.h) and maps
 //     them (page_map.h). A PageNodeHandle names a frame by an index this
 //     controller gives each tree once per voice session, never reused, and
@@ -85,6 +87,9 @@ class VoicePageController
   // Caps on what the controller keeps.
   static constexpr size_t kMaxTrees = 64;
   static constexpr size_t kMaxTreeNodes = 200000;
+  // The nodes of the child frames' trees together (the top-level document's
+  // tree has kMaxTreeNodes of its own).
+  static constexpr size_t kMaxFrameTreeNodes = 200000;
   static constexpr int kMaxResetsPerPage = 3;
   // Text written by SetText(), in bytes.
   static constexpr size_t kMaxSetTextBytes = 8192;
@@ -181,6 +186,8 @@ class VoicePageController
 
   // Runs |callback| after each batch of tree updates that changed a tree.
   void SetTreesUpdatedCallbackForTesting(base::RepeatingClosure callback);
+  // Lower caps than kMaxTrees and kMaxFrameTreeNodes.
+  void SetTreeCapsForTesting(size_t max_trees, size_t max_frame_tree_nodes);
 
  private:
   friend class content::WebContentsUserData<VoicePageController>;
@@ -224,6 +231,8 @@ class VoicePageController
 
   // This tab's frame of the primary page with |tree_id|, or null.
   content::RenderFrameHost* FrameFor(const ui::AXTreeID& tree_id);
+  // The nodes held of the child frames' trees, together.
+  size_t FrameTreeNodes();
   void DropTree(const ui::AXTreeID& tree_id);
   void DropTreesNotInPrimaryPage();
   std::optional<Target> Resolve(const PageNodeHandle& handle,
@@ -241,6 +250,8 @@ class VoicePageController
   std::map<int32_t, ui::AXTreeID> tree_ids_;
   int32_t next_tree_index_ = 0;
   int resets_this_page_ = 0;
+  size_t max_trees_ = kMaxTrees;
+  size_t max_frame_tree_nodes_ = kMaxFrameTreeNodes;
   Stats stats_;
   std::optional<PendingSubmit> pending_submit_;
   base::OneShotTimer submit_timer_;

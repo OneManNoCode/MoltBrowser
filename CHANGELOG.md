@@ -465,6 +465,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   folder is now tested against a hard link to a file outside it, besides
   deleting, renaming and symbolic links, so the folder stays the only place
   a helper's writes can reach.
+- Hardening (security review of PR #80, `docs/SECURITY_REVIEWS.md`): voice
+  mode (preview) reads a page before the frames it embeds, so an ad or
+  another site's widget can't take the page's place in the numbers, "the
+  results", "play" or "next page", and "search for ..." types only into
+  the page's own search box; a frame's accessibility tree joins only under
+  its own parent; a page's tree data or offset containers can't stall or
+  stop the map; an answer to "Which one?" counts only while the choices
+  read out still name the same items; and what was heard is cleaned as
+  page text is.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

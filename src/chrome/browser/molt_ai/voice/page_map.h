@@ -408,10 +408,18 @@ struct PageMap {
   PageMap& operator=(PageMap&&);
 
   std::string title;
+  // The top-level document's tree (PageNodeHandle::tree of the root); -1
+  // for a map BuildPageMap() didn't build. Anything else on the map is in a
+  // frame the page embeds (an ad, a widget), which may be another site's.
+  int32_t page_tree = -1;
   std::vector<PageItem> items;  // items[i].number == i + 1
-  std::vector<PageList> lists;  // most prominent first
+  // The top-level document's lists first, then the frames'; each most
+  // prominent first.
+  std::vector<PageList> lists;
   std::vector<PageHeading> headings;
   std::vector<PageLandmark> landmarks;
+  // The top-level document's media first, then the frames', each in reading
+  // order.
   std::vector<PageMedia> media;
   // The focused item's number, 0 if the focus isn't on an item.
   int focused_item = 0;
@@ -423,6 +431,11 @@ struct PageMap {
   const PageItem* ItemByNumber(int number) const;
   // The item for |handle|, or null.
   const PageItem* ItemForHandle(const PageNodeHandle& handle) const;
+  // Whether |handle| is in the top-level document (not in a frame it
+  // embeds).
+  bool InPage(const PageNodeHandle& handle) const {
+    return handle.valid() && handle.tree == page_tree;
+  }
 };
 
 // Caps on the work BuildPageMap() does and on what it outputs.
@@ -433,6 +446,9 @@ struct PageMapLimits {
   // reading an entry, labelling an item or comparing siblings.
   size_t max_work = 1000000;
   size_t max_items = 2000;
+  // Of those, the items in frames the page embeds, in all, so they can't
+  // leave the page's own items without numbers.
+  size_t max_frame_items = 800;
   size_t max_lists = 32;
   size_t max_entries_per_list = 200;
   size_t max_headings = 200;
@@ -471,7 +487,10 @@ inline constexpr size_t kMaxLinkUrlBytes = 2048;
 // Lists are ranked by prominence: more and larger entries, entries with a
 // title, fields and a heading, inside the main landmark, count for a list;
 // being in navigation, a banner, footer, aside or menu, or entries that each
-// hold many actions (a list of sections) count against it.
+// hold many actions (a list of sections) count against it. The top-level
+// document's lists come before those of the frames it embeds, whatever
+// their prominence, and are looked for first, so a frame (an ad, a widget,
+// another site's) can't take the place of the page's own results.
 PageMap BuildPageMap(const PageTree& tree,
                      const PageMapLimits& limits = PageMapLimits());
 

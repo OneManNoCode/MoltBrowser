@@ -287,6 +287,9 @@ class Builder {
       : tree_(&tree), limits_(limits) {}
 
   PageMap Build() {
+    if (!tree_->nodes.empty()) {
+      map_.page_tree = tree_->nodes[0].handle.tree;
+    }
     Walk();
     if (order_.empty()) {
       map_.title = SpeechSafeText(tree_->title, kMaxPageTitleChars);
@@ -316,6 +319,11 @@ class Builder {
   }
 
   bool OutOfWork() const { return work_ > limits_.max_work; }
+
+  // In the top-level document, not in a frame it embeds.
+  bool InPage(uint32_t pos) const {
+    return NodeAt(pos).handle.tree == map_.page_tree;
+  }
 
   // Visible: shown on the page (ignored nodes are kept for structure, but
   // are not items, headings or entries themselves).
@@ -489,6 +497,7 @@ class Builder {
     action_below_ = std::move(below);
 
     item_of_.assign(n, -1);
+    size_t frame_items = 0;
     for (uint32_t p = 0; p < n; ++p) {
       if (kind_[p] < 0) {
         continue;
@@ -499,6 +508,14 @@ class Builder {
       }
       if (OutOfWork()) {
         break;
+      }
+      // A frame the page embeds numbers only its share.
+      if (!InPage(p)) {
+        if (frame_items >= limits_.max_frame_items) {
+          map_.stats.item_cap = true;
+          continue;
+        }
+        ++frame_items;
       }
       item_of_[p] = static_cast<int32_t>(map_.items.size());
       map_.items.push_back(MakeItem(p, static_cast<ItemKind>(kind_[p])));
@@ -569,6 +586,7 @@ class Builder {
   // ---- Headings, landmarks, media ----------------------------------------
 
   void MakeHeadingsLandmarksMedia() {
+    std::vector<PageMedia> frame_media;
     for (uint32_t p = 0; p < order_.size(); ++p) {
       if (OutOfWork()) {
         break;
@@ -598,9 +616,12 @@ class Builder {
         landmark.handle = node.handle;
         map_.landmarks.push_back(std::move(landmark));
       }
+      // The page's own media first: "play" never starts a frame's (an
+      // ad's) while the page has a player of its own.
+      std::vector<PageMedia>& media_list = InPage(p) ? map_.media : frame_media;
       if (item_of_[p] >= 0 &&
           map_.items[item_of_[p]].kind == ItemKind::kMedia &&
-          map_.media.size() < limits_.max_media) {
+          media_list.size() < limits_.max_media) {
         const PageItem& item = map_.items[item_of_[p]];
         PageMedia media;
         media.video = node.role == PageRole::kVideo;
@@ -609,8 +630,14 @@ class Builder {
         media.number = item.number;
         media.bounds = item.bounds;
         media.on_screen = item.on_screen;
-        map_.media.push_back(std::move(media));
+        media_list.push_back(std::move(media));
       }
+    }
+    for (PageMedia& media : frame_media) {
+      if (map_.media.size() >= limits_.max_media) {
+        break;
+      }
+      map_.media.push_back(std::move(media));
     }
   }
 
@@ -623,28 +650,32 @@ class Builder {
   };
 
   void MakeLists() {
+    // The top-level document's lists are looked for (and read) first, so
+    // that the frames it embeds can't spend the work budget before them.
     std::vector<Candidate> candidates;
-    for (uint32_t p = 0; p < order_.size() && !OutOfWork(); ++p) {
-      const PageNode& node = NodeAt(p);
-      if (node.Has(kStateInvisible)) {
-        continue;
-      }
-      if (IsListContainer(node.role)) {
-        Candidate c;
-        c.container = p;
-        c.kind =
-            node.role == PageRole::kFeed
-                ? ListKind::kFeed
-                : (node.role == PageRole::kTable || node.role == PageRole::kGrid
-                       ? ListKind::kTable
-                       : ListKind::kList);
-        c.entries = SemanticEntries(p);
-        if (c.entries.size() >= limits_.min_semantic_entries) {
-          candidates.push_back(std::move(c));
+    for (const bool page_pass : {true, false}) {
+      for (uint32_t p = 0; p < order_.size() && !OutOfWork(); ++p) {
+        const PageNode& node = NodeAt(p);
+        if (InPage(p) != page_pass || node.Has(kStateInvisible)) {
+          continue;
         }
-        continue;
+        if (IsListContainer(node.role)) {
+          Candidate c;
+          c.container = p;
+          c.kind = node.role == PageRole::kFeed
+                       ? ListKind::kFeed
+                       : (node.role == PageRole::kTable ||
+                                  node.role == PageRole::kGrid
+                              ? ListKind::kTable
+                              : ListKind::kList);
+          c.entries = SemanticEntries(p);
+          if (c.entries.size() >= limits_.min_semantic_entries) {
+            candidates.push_back(std::move(c));
+          }
+          continue;
+        }
+        FindRepeated(p, &candidates);
       }
-      FindRepeated(p, &candidates);
     }
 
     for (const Candidate& c : candidates) {
@@ -653,9 +684,16 @@ class Builder {
       }
       map_.lists.push_back(MakeList(c));
     }
-    // Most prominent first; ties in document order (candidates are).
+    // The top-level document's lists first, then the frames'; each most
+    // prominent first, ties in document order (candidates are).
+    const int32_t page_tree = map_.page_tree;
     std::stable_sort(map_.lists.begin(), map_.lists.end(),
-                     [](const PageList& a, const PageList& b) {
+                     [page_tree](const PageList& a, const PageList& b) {
+                       const bool a_page = a.container.tree == page_tree;
+                       const bool b_page = b.container.tree == page_tree;
+                       if (a_page != b_page) {
+                         return a_page;
+                       }
                        return a.prominence > b.prominence;
                      });
     if (map_.lists.size() > limits_.max_lists) {

@@ -205,6 +205,12 @@ base::CallbackListSubscription VoicePageController::AddTreesUpdatedCallback(
   return trees_updated_.Add(std::move(callback));
 }
 
+void VoicePageController::SetTreeCapsForTesting(size_t max_trees,
+                                                size_t max_frame_tree_nodes) {
+  max_trees_ = max_trees;
+  max_frame_tree_nodes_ = max_frame_tree_nodes;
+}
+
 void VoicePageController::SetTreesUpdatedCallbackForTesting(
     base::RepeatingClosure callback) {
   trees_updated_for_testing_ = std::move(callback);
@@ -223,6 +229,18 @@ content::RenderFrameHost* VoicePageController::FrameFor(
     return nullptr;
   }
   return frame;
+}
+
+size_t VoicePageController::FrameTreeNodes() {
+  const ui::AXTreeID main_id =
+      web_contents()->GetPrimaryMainFrame()->GetAXTreeID();
+  size_t nodes = 0;
+  for (const auto& [tree_id, held] : trees_) {
+    if (tree_id != main_id) {
+      nodes += static_cast<size_t>(held.tree->size());
+    }
+  }
+  return nodes;
 }
 
 void VoicePageController::DropTree(const ui::AXTreeID& tree_id) {
@@ -256,12 +274,16 @@ void VoicePageController::AccessibilityEventReceived(
     return;
   }
   const ui::AXTreeID& tree_id = details.ax_tree_id;
-  if (!FrameFor(tree_id)) {
+  content::RenderFrameHost* frame = FrameFor(tree_id);
+  if (!frame) {
     return;  // another page (a cached or prerendered one) or a gone frame
   }
+  // The top-level document's tree is always kept: the frames it embeds
+  // can't take its place.
+  const bool main_frame = frame->IsInPrimaryMainFrame();
   auto it = trees_.find(tree_id);
   if (it == trees_.end()) {
-    if (trees_.size() >= kMaxTrees) {
+    if (trees_.size() >= max_trees_ && !main_frame) {
       ++stats_.trees_over_cap;
       return;
     }
@@ -281,15 +303,14 @@ void VoicePageController::AccessibilityEventReceived(
     // HandleAXEvents()). What a tree can't take here is skipped before
     // Unserialize() sees it: in builds that fail fast on accessibility
     // errors (DCHECK or not official, ax_common.h) it would crash the
-    // browser. An empty tree needs a whole tree (its root first) or tree
-    // data alone; tree data must name this tree.
-    const bool whole_tree = update.root_id != ui::kInvalidAXNodeID &&
-                            !update.nodes.empty() &&
-                            update.nodes[0].id == update.root_id;
-    const bool data_only = update.nodes.empty() && update.has_tree_data;
-    if (!tree.root() && !whole_tree && !data_only) {
-      ++stats_.dropped_updates;
-      need_reset = true;  // ask for a whole tree
+    // browser. An empty tree needs a whole tree (its root first); tree data
+    // alone waits for it (the browser sends some when the focus moves, as
+    // when this tab becomes active again); tree data must name this tree.
+    if (!TreeCanTakeUpdate(tree, update)) {
+      if (!update.nodes.empty()) {
+        ++stats_.dropped_updates;
+        need_reset = true;  // ask for a whole tree
+      }
       continue;
     }
     if (update.has_tree_data && update.tree_data.tree_id != tree_id) {
@@ -301,6 +322,14 @@ void VoicePageController::AccessibilityEventReceived(
       ++stats_.unserialize_failures;
       DropTree(tree_id);
       need_reset = true;
+      changed = false;
+      break;
+    }
+    // The frames' trees together are capped too, so a page that embeds
+    // many large frames can't make the browser hold more.
+    if (!main_frame && FrameTreeNodes() > max_frame_tree_nodes_) {
+      ++stats_.trees_over_cap;
+      DropTree(tree_id);
       changed = false;
       break;
     }

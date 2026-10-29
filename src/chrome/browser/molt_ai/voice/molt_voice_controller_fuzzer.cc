@@ -398,6 +398,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                               size - 2);
 
   Page page;
+  // Every node here is the page's own (tree 0), not a frame's.
+  page.map.page_tree = 0;
   VoiceEnvironment env;
   std::vector<std::string_view> utterances;
   size_t lines = 0;

@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -17,6 +19,7 @@
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_data.h"
 #include "ui/accessibility/ax_tree_id.h"
+#include "ui/accessibility/ax_tree_update.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
@@ -52,6 +55,64 @@ float Finite(float v) {
 
 constexpr uint32_t kNoParent = 0xFFFFFFFFu;
 
+// AXTree::GetTreeBounds() measures a node from its offset container, that
+// container from its own, and so on (the root stands in for an id that
+// names no node) until a node is its own container
+// (AXTree::RelativeToTreeBoundsInternal()). The ids come from the renderer,
+// and the tree takes them as they are: containers that lead back to each
+// other would keep that walk going forever, and a very long chain would
+// make every node's bounds slow. A node is measured only when its chain
+// ends within |max_hops| (Blink's containers are the node's ancestors, so a
+// node of the walk has no longer one); each node's chain is followed once.
+class OffsetChains {
+ public:
+  OffsetChains(const ui::AXTree& tree, size_t max_hops)
+      : tree_(&tree), max_hops_(max_hops) {}
+  OffsetChains(const OffsetChains&) = delete;
+  OffsetChains& operator=(const OffsetChains&) = delete;
+
+  bool Ends(const ui::AXNode& start) {
+    std::vector<const ui::AXNode*> path;
+    const ui::AXNode* node = &start;
+    // The hops from the node after the path's last to the chain's end;
+    // kLoops if the chain loops. -1: the path's last node ends it.
+    int64_t after = -1;
+    while (true) {
+      auto [it, added] = state_.try_emplace(node->id(), kWalking);
+      if (!added) {
+        // Back to a node of this walk (a loop), or one already known.
+        after = it->second == kWalking ? kLoops : it->second;
+        break;
+      }
+      path.push_back(node);
+      const ui::AXNode* next =
+          tree_->GetFromId(node->data().relative_bounds.offset_container_id);
+      if (!next) {
+        next = tree_->root();
+      }
+      if (!next || next == node) {
+        break;
+      }
+      node = next;
+    }
+    for (size_t i = path.size(); i-- > 0;) {
+      after = after == kLoops ? kLoops : after + 1;
+      state_[path[i]->id()] = after;
+    }
+    const int64_t hops = state_[start.id()];
+    return hops >= 0 && static_cast<size_t>(hops) <= max_hops_;
+  }
+
+ private:
+  static constexpr int64_t kWalking = -2;
+  static constexpr int64_t kLoops = -3;
+
+  raw_ptr<const ui::AXTree> tree_;
+  const size_t max_hops_;
+  // Per node: kWalking, kLoops, or the hops from it to the chain's end.
+  std::unordered_map<ui::AXNodeID, int64_t> state_;
+};
+
 // One level of the walk: a node, the frame it is in, and how far its
 // children have been taken.
 struct Frame {
@@ -62,11 +123,22 @@ struct Frame {
   uint32_t depth = 0;
   gfx::Vector2dF offset;  // the frame's position in the page
   bool frame_offscreen = false;
+  // The nearest ancestor (in the node's own tree) with a width or a height:
+  // where GetTreeBounds() takes a node's size from when it has none.
+  raw_ptr<const ui::AXNode> sized_ancestor = nullptr;
   size_t next_child = 0;
   bool child_tree_done = false;
 };
 
 }  // namespace
+
+bool TreeCanTakeUpdate(const ui::AXTree& tree, const ui::AXTreeUpdate& update) {
+  if (tree.root()) {
+    return true;
+  }
+  return update.root_id != ui::kInvalidAXNodeID && !update.nodes.empty() &&
+         update.nodes[0].id == update.root_id;
+}
 
 PageRole PageRoleFor(const ui::AXNodeData& data) {
   if (data.GetBoolAttribute(
@@ -275,6 +347,28 @@ PageTree BuildPageTree(const AXFrameTree& main,
   }
   const ui::AXNodeID focus_id = focus_frame.tree->data().focus_id;
 
+  // Each tree's offset containers, checked as its nodes are measured.
+  std::map<int32_t, OffsetChains> chains;
+  // Whether GetTreeBounds(|ax_node|) ends: it follows the node's chain of
+  // offset containers; when the node has no size, its children's too; and
+  // when what it found has none, its nearest ancestor with a size's.
+  auto measurable = [&](const ui::AXNode* ax_node, const Frame& where) {
+    OffsetChains& tree_chains =
+        chains.try_emplace(where.tree_index, *where.tree, limits.max_depth + 2)
+            .first->second;
+    if (!tree_chains.Ends(*ax_node)) {
+      return false;
+    }
+    if (ax_node->data().relative_bounds.bounds.IsEmpty()) {
+      for (const auto& child : ax_node->children()) {
+        if (!tree_chains.Ends(*child)) {
+          return false;
+        }
+      }
+    }
+    return !where.sized_ancestor || tree_chains.Ends(*where.sized_ancestor);
+  };
+
   // Adds |ax_node| under |parent| (kNoParent for the root); returns its
   // index in |page|.
   auto add = [&](const ui::AXNode* ax_node, const Frame& where,
@@ -283,11 +377,15 @@ PageTree BuildPageTree(const AXFrameTree& main,
     PageNode node =
         PageNodeFromData(data, where.tree_index, limits.max_string_bytes);
     bool offscreen = false;
-    gfx::RectF bounds =
-        where.tree->GetTreeBounds(ax_node, &offscreen, /*clip_bounds=*/false);
-    bounds.Offset(where.offset);
-    node.bounds = {Finite(bounds.x()), Finite(bounds.y()),
-                   Finite(bounds.width()), Finite(bounds.height())};
+    if (measurable(ax_node, where)) {
+      gfx::RectF bounds = where.tree->GetTreeBounds(ax_node, &offscreen,
+                                                    /*clip_bounds=*/false);
+      bounds.Offset(where.offset);
+      node.bounds = {Finite(bounds.x()), Finite(bounds.y()),
+                     Finite(bounds.width()), Finite(bounds.height())};
+    } else {
+      offscreen = true;  // nowhere to show it: no bounds
+    }
     if (offscreen || where.frame_offscreen) {
       node.states |= kStateOffscreen;
     }
@@ -305,8 +403,10 @@ PageTree BuildPageTree(const AXFrameTree& main,
 
   // A pre-order walk with one stack entry per level (each walks its
   // children lazily), so the stack never holds more than max_depth
-  // entries, and the nodes taken are exactly the first max_nodes.
+  // entries, and the nodes taken are exactly the first max_nodes, of which
+  // at most max_frame_nodes in child frames.
   std::vector<int32_t> trees_seen = {main.index};
+  size_t frame_nodes = 0;
   std::vector<Frame> stack;
   Frame root;
   root.node = main.tree->root();
@@ -316,7 +416,9 @@ PageTree BuildPageTree(const AXFrameTree& main,
   stack.push_back(root);
   while (!stack.empty() && page.nodes.size() < limits.max_nodes) {
     Frame& top = stack.back();
-    if (top.depth >= limits.max_depth) {
+    const bool in_frame = top.tree_index != main.index;
+    if (top.depth >= limits.max_depth ||
+        (in_frame && frame_nodes >= limits.max_frame_nodes)) {
       stack.pop_back();
       continue;
     }
@@ -327,19 +429,27 @@ PageTree BuildPageTree(const AXFrameTree& main,
       child.depth = top.depth + 1;
       child.next_child = 0;
       child.child_tree_done = false;
+      const gfx::RectF& parent_bounds = top.node->data().relative_bounds.bounds;
+      if (parent_bounds.width() > 0 || parent_bounds.height() > 0) {
+        child.sized_ancestor = top.node;
+      }
       child.page_index = add(child.node, child, top.page_index);
+      frame_nodes += in_frame ? 1 : 0;
       stack.push_back(child);
       continue;
     }
     // After a host's own children (Blink gives an iframe none), the frame
-    // it hosts, at the host's position.
+    // it hosts, at the host's position: only a frame whose parent, as the
+    // browser records it, is the host's frame.
     if (!top.child_tree_done) {
       top.child_tree_done = true;
       std::optional<ui::AXTreeID> child_tree =
           top.node->data().GetChildTreeID();
-      if (child_tree && trees_seen.size() < limits.max_trees) {
+      if (child_tree && trees_seen.size() < limits.max_trees &&
+          frame_nodes < limits.max_frame_nodes) {
         const AXFrameTree frame = lookup(*child_tree);
         if (frame.tree && frame.tree->root() &&
+            frame.tree->data().parent_tree_id == top.tree->GetAXTreeID() &&
             std::find(trees_seen.begin(), trees_seen.end(), frame.index) ==
                 trees_seen.end()) {
           trees_seen.push_back(frame.index);
@@ -353,6 +463,7 @@ PageTree BuildPageTree(const AXFrameTree& main,
           inner.frame_offscreen = host.Has(kStateOffscreen);
           const uint32_t host_index = top.page_index;
           inner.page_index = add(inner.node, inner, host_index);
+          ++frame_nodes;
           stack.push_back(inner);
           continue;
         }
