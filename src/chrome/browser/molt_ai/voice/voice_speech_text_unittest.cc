@@ -88,8 +88,7 @@ TEST(VoiceSpeechTextTest, ReadsTheResultsAtEachVerbosity) {
             std::string::npos);
   EXPECT_NE(normal.find("5: "), std::string::npos);
   EXPECT_EQ(normal.find("6: "), std::string::npos);
-  EXPECT_EQ(normal.substr(normal.size() - 24), "Say a number or a name.")
-      << normal;
+  EXPECT_TRUE(normal.ends_with(" Say a number or a name.")) << normal;
   // Views and ages only at full verbosity.
   EXPECT_EQ(normal.find("views"), std::string::npos);
 

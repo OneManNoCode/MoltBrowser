@@ -282,6 +282,10 @@ void VoiceController::StopActivity() {
   SetStatus("Stopped");
 }
 
+void VoiceController::SetNumbersShown(bool shown) {
+  state_.numbers_shown = shown;
+}
+
 void VoiceController::CancelRun() {
   ++run_;
   run_weak_factory_.InvalidateWeakPtrs();

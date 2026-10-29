@@ -142,6 +142,11 @@ class VoiceController {
   // Stops the speech and whatever runs, as "stop" does, staying on.
   void StopActivity();
 
+  // The numbers overlay shows numbers without "show numbers" being said
+  // (on by default in voice mode, §5.3): lists are then read, and numbers
+  // chosen, as they are shown.
+  void SetNumbersShown(bool shown);
+
   void SetPlannerHook(PlannerHook hook);
 
   void AddObserver(Observer* observer);
