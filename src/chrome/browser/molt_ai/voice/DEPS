@@ -13,8 +13,11 @@ specific_include_rules = {
   r"voice_speech\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
-  # The browser test installs a fake TTS platform to hear what is said.
+  # The browser tests install a fake TTS platform to hear what is said.
   r"voice_controller_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  r"voice_session_browsertest\.cc": [
     "+content/public/browser/tts_controller.h",
   ],
 }

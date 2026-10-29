@@ -6,20 +6,52 @@ lists the commands the browser understands directly, without its AI model:
 they work in a moment, even on a slow machine. Anything else you say goes to
 the on-device AI, which works out what you mean from the page.
 
-Voice mode is being built: the browser can't hear you yet. You can try the
-commands by typing them:
+Voice mode is a preview, behind a flag.
+
+## Turning voice mode on
 
 1. Turn on `chrome://flags/#molt-voice-mode` and restart the browser.
-2. Open Agent mode (the toolbar's "Agent mode" button, or
-   `molt://ai-agent`). Under "Voice commands (preview)", type what you would
-   say in "Type what you would say" and press Enter.
-3. The browser does it in the tab you are on and says the answer aloud with
-   your system's voices. The panel also shows what it heard, what it is
-   doing and what it said.
+2. Then, any of these turns listening on in a window:
+   - the **Voice** button in the toolbar (it has a violet ring while the
+     window listens; press it again to stop);
+   - **Settings** (`molt://ai-settings`), "Voice mode": the switch listens
+     in that window now, and **whenever MoltBrowser starts**, so a person
+     who uses only their voice never needs to touch the computer after it
+     is set up once. "Always listening" there makes every sentence a
+     command, without "Hey Molt";
+   - typing **"turn on voice mode"** in Agent mode's "Type what you would
+     say" field.
+3. The first time, your system may ask whether MoltBrowser may use the
+   microphone: allow it. If it is refused, the browser says so aloud and
+   on screen; allow it in the system's privacy settings, then turn voice
+   mode on again.
+4. You hear "Voice mode is on. Say Hey Molt, then what you want." A bar
+   under the page shows what voice mode is doing (waiting for "Hey Molt",
+   listening, thinking, speaking), what it heard as you speak, and what it
+   is doing.
+
+To stop listening, say **"turn off voice mode"** (the browser asks first,
+because afterwards only the Voice button or settings turn it back on), or
+press the Voice button. One window listens at a time: turning it on in
+another window stops the first. Voice mode never listens in MoltNet
+windows, and never opens the microphone for them.
+
+Speech is recognized on this device by MoltBrowser's own speech engine,
+sandboxed; nothing is recorded or sent anywhere. While you speak a command,
+videos and music in your tabs are turned down. The browser cancels its own
+sound (videos, pages) from the microphone, so a video saying "Hey Molt"
+doesn't command it; while the browser itself is speaking, only "Hey Molt"
+and "stop" are heard. Each state has a short sound: a rising tone when it
+heard "Hey Molt", a tick when it took a command, a falling tone when it
+goes back to waiting for "Hey Molt".
+
+You can also type the commands, without the microphone, in Agent mode's
+"Type what you would say": the browser does it in the tab you are on and
+says the answer aloud with your system's voices.
 
 On Linux, spoken answers need speech-dispatcher, and the browser started
 with `--enable-speech-dispatcher`; without them it answers in the panel
-only. Voice mode stays off in MoltNet windows.
+and the bar only.
 
 ## What it does
 
@@ -554,8 +586,15 @@ said.
   YouTube". A spoken address on its own ("example dot com") does.
 - **A routine's name on its own** ("my news") is looked up among your
   routines before the AI is asked; "run my news" always runs it.
-- **Still to come in voice mode:** hearing you (the speech service), the
-  on-device AI for anything these commands don't cover, routines, setting
-  the volume to a level, the playback speed, reading the page's text and
-  the selection, undo, and questions about the page. Until then the browser
-  says so when you ask for them.
+- **Choosing your own wake phrase**, and a wake phrase tuned to your voice:
+  "Hey Molt" for now. If the browser keeps missing your "Hey Molt", turn on
+  "Always listening" in settings.
+- **Interrupting the browser mid-sentence with a new command** works with
+  "Hey Molt" (or "stop"); a command without "Hey Molt" while it speaks is
+  not heard, because the system voices it speaks with can't be cancelled
+  from the microphone yet.
+- **Still to come in voice mode:** the on-device AI for anything these
+  commands don't cover, routines, setting the volume to a level, the
+  playback speed, reading the page's text and the selection, undo, and
+  questions about the page. Until then the browser says so when you ask
+  for them.

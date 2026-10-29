@@ -46,11 +46,13 @@
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/molt_ai/voice/voice_session_settings.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_gpu_inference_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_voice_settings_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/render_frame_host.h"
@@ -74,9 +76,11 @@ const char kSettingsFileName[] = "settings.json";
 
 // Keys the form below doesn't manage, which Save and Reset keep: the switch
 // for the built-in AI APIs has its own section ("Sites using on-device AI")
-// and applies at once.
+// and applies at once, as do voice mode's ("Voice mode").
 const char* const kKeysKeptOnSaveAndReset[] = {
-    molt_ai::web_ai::kWebAIApisSettingsKey};
+    molt_ai::web_ai::kWebAIApisSettingsKey,
+    molt_ai::voice::kVoiceModeSettingsKey,
+    molt_ai::voice::kVoiceAlwaysListeningSettingsKey};
 
 base::FilePath GetSettingsFilePath() {
   base::FilePath home_dir;
@@ -2419,7 +2423,7 @@ class MoltAISettingsDataSource : public content::URLDataSource {
           std::string(molt_webui::kMoltTrustedHtmlJs) +
           molt_webui::kMoltActionsJs + kSettingsPageJs +
           molt_ai::shield::kMoltShieldSettingsJs + kWebAISitesSettingsJs +
-          kGpuInferenceSettingsJs));
+          kGpuInferenceSettingsJs + kVoiceSettingsJs));
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
@@ -2691,6 +2695,29 @@ h2[tabindex="-1"]:focus{outline:none !important}
     </div>
   </div>
 
+  <div class="section" id="voiceSection" hidden>
+    <h2><span class="icon" aria-hidden="true">&#127908;</span> Voice mode</h2>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="voiceEnabled" data-on-change="voiceSetEnabled">
+        <span class="track"></span>
+        <span class="label">Voice mode: listen for &ldquo;Hey Molt&rdquo;</span>
+      </label>
+      <div class="desc">Listens in this window now, and whenever MoltBrowser starts. Say &ldquo;Hey Molt&rdquo;, then what you want: &ldquo;open YouTube&rdquo;, &ldquo;search for &hellip;&rdquo;, &ldquo;the fourth one&rdquo;. Speech is recognized on this device; nothing is recorded or sent anywhere. The Voice button in the toolbar turns listening on and off in a window, and so does saying &ldquo;turn off voice mode&rdquo;. Never in MoltNet windows.</div>
+    </div>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="voiceAlwaysListening" data-on-change="voiceSetAlwaysListening">
+        <span class="track"></span>
+        <span class="label">Always listening: no wake phrase</span>
+      </label>
+      <div class="desc">Every sentence you say is a command, without &ldquo;Hey Molt&rdquo;. For when you are alone: anyone, or anything, speaking near the microphone can command the browser too.</div>
+    </div>
+    <div class="field">
+      <span class="desc" id="voiceStatus" role="status"></span>
+    </div>
+  </div>
+
   <div class="section" id="providersSection">
     <h2><span class="icon" aria-hidden="true">&#9729;</span> Connect AI Providers</h2>
     <div class="field">
@@ -2859,6 +2886,9 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
   // "Use the GPU for on-device AI" (id="gpuSection"; shown only in builds
   // with GPU inference).
   web_ui->AddMessageHandler(std::make_unique<MoltGpuInferenceHandler>());
+  // "Voice mode" (id="voiceSection"; shown only with
+  // chrome://flags/#molt-voice-mode).
+  web_ui->AddMessageHandler(std::make_unique<MoltVoiceSettingsHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;

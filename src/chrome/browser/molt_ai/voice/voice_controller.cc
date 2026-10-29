@@ -28,6 +28,8 @@
 #include "chrome/browser/ui/tabs/tab_muted_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_overlay.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_overlay_layout.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/media_session.h"
@@ -52,6 +54,12 @@ using ActionResult = VoicePageController::ActionResult;
 // Tab titles the browser reads, in code points, and tabs listed.
 constexpr size_t kMaxTabTitleChars = 160;
 constexpr size_t kMaxTabsListed = 200;
+// A notice the listening side says, in code points.
+constexpr size_t kMaxNoticeChars = 400;
+// After a navigation hid the numbers: how often, and how many times, to
+// look for the new page's tree to number.
+constexpr base::TimeDelta kNumbersRefreshDelay = base::Milliseconds(700);
+constexpr int kMaxNumbersRefreshAttempts = 10;
 
 std::optional<StepFailure> FailureFor(ActionResult result) {
   switch (result) {
@@ -260,6 +268,8 @@ bool VoiceController::Start() {
 
 void VoiceController::Stop() {
   CancelRun();
+  stop_when_quiet_ = false;
+  refresh_numbers_timer_.Stop();
   DetachFromTab();
   active_ = false;
   // The user's preferences stay; the conversation doesn't.
@@ -281,6 +291,32 @@ void VoiceController::Stop() {
 void VoiceController::StopActivity() {
   CancelRun();
   SetStatus("Stopped");
+}
+
+void VoiceController::StopSpeaking() {
+  if (speech_) {
+    speech_->Stop();
+  }
+}
+
+void VoiceController::SayNotice(const std::string& text) {
+  const std::string notice = SpeechSafeText(text, kMaxNoticeChars);
+  if (notice.empty() || !speech_) {
+    return;
+  }
+  for (Observer& observer : observers_) {
+    observer.OnVoiceSpeech(notice);
+  }
+  speech_->Speak(notice, state_.speech_rate, /*interrupt=*/true);
+  SetStatus(notice);
+}
+
+void VoiceController::SetListening(ListeningCaption caption) {
+  if (caption == listening_) {
+    return;
+  }
+  listening_ = std::move(caption);
+  NotifyCaption();
 }
 
 void VoiceController::SetNumbersShown(bool shown) {
@@ -314,11 +350,34 @@ void VoiceController::AttachToActiveTab() {
   VoicePageController::FromWebContents(contents)->Start();
   attached_ = contents->GetWeakPtr();
   watcher_ = std::make_unique<TabWatcher>(this, contents);
+  // The numbers and the ring follow the page; when they hide by
+  // themselves, they are shown again from a new map.
+  VoiceOverlay::CreateForWebContents(contents);
+  VoiceOverlay::FromWebContents(contents)->SetHiddenCallback(
+      base::BindRepeating(
+          [](base::WeakPtr<VoiceController> self, int run,
+             OverlayHidden reason) {
+            if (self) {
+              self->OnOverlayHidden(run, static_cast<int>(reason));
+            }
+          },
+          weak_factory_.GetWeakPtr(), ++tab_run_));
+  if (state_.numbers_shown) {
+    refresh_attempts_ = 0;
+    RefreshNumbers();
+  }
 }
 
 void VoiceController::DetachFromTab() {
   watcher_.reset();
+  refresh_numbers_timer_.Stop();
   if (attached_) {
+    if (VoiceOverlay* overlay =
+            VoiceOverlay::FromWebContents(attached_.get())) {
+      overlay->SetHiddenCallback(VoiceOverlay::HiddenCallback());
+      overlay->HideNumbers();
+      overlay->ClearCurrentItem();
+    }
     if (VoicePageController* page =
             VoicePageController::FromWebContents(attached_.get())) {
       page->Stop();
@@ -375,6 +434,35 @@ void VoiceController::NotifyCaption() {
   for (Observer& observer : observers_) {
     observer.OnVoiceCaption(now, heard_, status_);
   }
+  if (!browser_) {
+    return;
+  }
+  // The caption bar: up for as long as voice mode is on.
+  if (!active_) {
+    VoiceOverlay::HideCaptionForWindow(browser_);
+    return;
+  }
+  VoiceState state = VoiceState::kListening;
+  switch (now) {
+    case VoiceActivity::kThinking:
+      state = VoiceState::kThinking;
+      break;
+    case VoiceActivity::kSpeaking:
+      state = VoiceState::kSpeaking;
+      break;
+    case VoiceActivity::kOff:
+    case VoiceActivity::kListening:
+      state = listening_.waiting || listening_.starting ? VoiceState::kWaiting
+                                                         : VoiceState::kListening;
+      break;
+  }
+  const std::string& heard =
+      listening_.heard_live.empty() ? heard_ : listening_.heard_live;
+  const std::string& status =
+      now == VoiceActivity::kListening && !listening_.problem.empty()
+          ? listening_.problem
+          : status_;
+  VoiceOverlay::SetCaptionForWindow(browser_, state, heard, status);
 }
 
 void VoiceController::SetStatus(std::string status) {
@@ -384,6 +472,85 @@ void VoiceController::SetStatus(std::string status) {
 
 void VoiceController::OnSpeakingChanged(bool speaking) {
   NotifyCaption();
+  MaybeStopWhenQuiet();
+}
+
+void VoiceController::MaybeStopWhenQuiet() {
+  if (stop_when_quiet_ && !busy() && !(speech_ && speech_->speaking())) {
+    Stop();
+  }
+}
+
+// ---- The overlay ------------------------------------------------------------
+
+void VoiceController::ShowNumbersOnPage(bool shown) {
+  content::WebContents* contents = active_ ? ActiveContents() : nullptr;
+  if (!contents) {
+    return;
+  }
+  VoiceOverlay::CreateForWebContents(contents);
+  VoiceOverlay* overlay = VoiceOverlay::FromWebContents(contents);
+  if (shown) {
+    overlay->ShowNumbers(CurrentMap());
+  } else {
+    overlay->HideNumbers();
+  }
+}
+
+void VoiceController::SetCurrentItemOnPage(int number) {
+  content::WebContents* contents = active_ ? ActiveContents() : nullptr;
+  if (!contents) {
+    return;
+  }
+  VoiceOverlay::CreateForWebContents(contents);
+  VoiceOverlay* overlay = VoiceOverlay::FromWebContents(contents);
+  if (number <= 0) {
+    overlay->ClearCurrentItem();
+  } else {
+    overlay->SetCurrentItem(CurrentMap(), number);
+  }
+}
+
+void VoiceController::OnOverlayHidden(int run_of_tab, int reason) {
+  if (run_of_tab != tab_run_ || !active_ || !state_.numbers_shown) {
+    return;
+  }
+  switch (static_cast<OverlayHidden>(reason)) {
+    case OverlayHidden::kPageChanged:
+      // The numbering moved: number the page again now (in this task, so
+      // nothing flickers).
+      ShowNumbersOnPage(true);
+      return;
+    case OverlayHidden::kNavigated:
+      // Another page: number it once its tree has come.
+      refresh_attempts_ = 0;
+      refresh_numbers_timer_.Start(
+          FROM_HERE, kNumbersRefreshDelay,
+          base::BindOnce(&VoiceController::RefreshNumbers,
+                         base::Unretained(this)));
+      return;
+    case OverlayHidden::kTabHidden:
+      // The newly active tab gets them (AttachToActiveTab()).
+      return;
+  }
+}
+
+void VoiceController::RefreshNumbers() {
+  if (!active_ || !state_.numbers_shown) {
+    return;
+  }
+  VoicePageController* page = ActivePage();
+  content::WebContents* contents = ActiveContents();
+  const bool ready = page && page->HasPageTree() && contents &&
+                     !contents->IsLoading();
+  if (!ready && ++refresh_attempts_ < kMaxNumbersRefreshAttempts) {
+    refresh_numbers_timer_.Start(
+        FROM_HERE, kNumbersRefreshDelay,
+        base::BindOnce(&VoiceController::RefreshNumbers,
+                       base::Unretained(this)));
+    return;
+  }
+  ShowNumbersOnPage(true);
 }
 
 // ---- Context --------------------------------------------------------------
@@ -399,6 +566,7 @@ PageMap VoiceController::CurrentMap() {
 VoiceEnvironment VoiceController::Environment() {
   VoiceEnvironment env;
   env.moltnet = IsMoltNet();
+  env.listening = listening_.listening;
   env.page_id = page_id_;
   env.now_ms = (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
   if (!browser_) {
@@ -467,6 +635,9 @@ void VoiceController::HandleUtterance(const std::string& text) {
   // Longer than the grammar takes: it refuses it without reading it all.
   const std::string utterance = text.substr(0, kMaxUtteranceInputBytes);
   const PageMap map = CurrentMap();
+  for (Observer& observer : observers_) {
+    observer.OnVoicePageMapped(map);
+  }
   VoiceTurn turn = PlanUtterance(utterance, map, Environment(), state_);
   heard_ = turn.heard;
   status_ = turn.status;
@@ -507,8 +678,12 @@ void VoiceController::RunSteps() {
 
 void VoiceController::Idle() {
   NotifyCaption();
+  base::WeakPtr<VoiceController> self = weak_factory_.GetWeakPtr();
   if (!busy() && idle_for_testing_) {
     idle_for_testing_.Run();
+  }
+  if (self) {
+    MaybeStopWhenQuiet();
   }
 }
 
@@ -751,18 +926,23 @@ bool VoiceController::RunStep(const VoiceStep& step) {
     }
 
     case VoiceStepKind::kShowNumbers:
+      ShowNumbersOnPage(step.flag);
       for (Observer& observer : observers_) {
         observer.OnVoiceNumbers(step.flag);
       }
       return true;
 
     case VoiceStepKind::kSetCurrentItem:
+      SetCurrentItemOnPage(step.index);
       for (Observer& observer : observers_) {
         observer.OnVoiceCurrentItem(step.index);
       }
       return true;
 
     case VoiceStepKind::kSetVoiceMode:
+      // Off: the microphone closes now (the listening side); voice mode
+      // itself once it has said so.
+      stop_when_quiet_ = !step.flag;
       for (Observer& observer : observers_) {
         observer.OnVoiceModeRequested(step.flag);
       }
@@ -947,6 +1127,9 @@ void VoiceController::OnAutoplayWaitOver() {
 
 void VoiceController::PlanFollowUpNow(const VoiceStep& step) {
   const PageMap map = CurrentMap();
+  for (Observer& observer : observers_) {
+    observer.OnVoicePageMapped(map);
+  }
   RunTurn(PlanFollowUp(step, map, Environment(), state_));
 }
 

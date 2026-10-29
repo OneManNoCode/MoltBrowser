@@ -245,6 +245,9 @@ source_set("browser_tests") {
 
     # The voice loop's own browser test (below).
     ":voice_loop_browser_tests",
+
+    # Listening: a stand-in helper under the real sandbox, fake audio.
+    ":voice_session_browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",
@@ -323,6 +326,11 @@ source_set("voice_controller") {
 
     # Every URL is checked before it loads.
     "//chrome/browser/molt_ai/security:agent_safety",
+
+    # The numbers, the ring and the caption bar (voice_overlay.h; no views
+    # code).
+    "//chrome/browser/ui/views/molt_ai/voice:layout",
+    "//chrome/browser/ui/views/molt_ai/voice:overlay",
 
     # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): voice
     # mode stays off in MoltNet windows.
@@ -452,6 +460,60 @@ fuzzer_test("molt_voice_listener_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# Voice mode listening in a window: the speech helper started confined and
+# watched (voice_listener), the microphone with echo cancellation and the
+# earcons through the audio service (voice_audio), and the session that
+# joins them to the voice loop (voice_session), with its settings.
+source_set("voice_session") {
+  sources = [
+    "voice_audio.cc",
+    "voice_audio.h",
+    "voice_listener.cc",
+    "voice_listener.h",
+    "voice_session.cc",
+    "voice_session.h",
+    "voice_session_settings.cc",
+    "voice_session_settings.h",
+  ]
+
+  public_deps = [
+    ":voice_controller",
+    ":voice_listening",
+    "//base",
+    "//media",
+    "//ui/base/unowned_user_data",
+  ]
+
+  deps = [
+    ":features",
+
+    # The helper: the bundled copy only, under the resident sandbox.
+    "//chrome/browser/molt_ai/common:helper_binary",
+    "//chrome/browser/molt_ai/common:helper_resident",
+
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): never
+    # in MoltNet windows.
+    "//chrome/browser/profiles:profile",
+
+    # The OS's microphone permission.
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+
+    # The microphone and the earcons through the audio service.
+    "//media/mojo/common",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
+    "//services/audio/public/cpp",
+
+    # Windows' loader's start failures (helper_sandbox_win_policy.h, pure
+    # C++, built everywhere).
+    "//chrome/browser/molt_ai/common:helper_sandbox_win_policy",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("voice_listening_unit_tests") {
   testonly = true
@@ -470,4 +532,44 @@ source_set("voice_listening_unit_tests") {
     ":voice_loop",
     "//testing/gtest",
   ]
+}
+
+# A stand-in for the speech helper in the session's browser tests: it plays
+# a script of protocol events timed by the audio it receives
+# (voice_session_fake_helper.cc). Plain C++, no //base.
+executable("molt_fake_speech_helper") {
+  testonly = true
+  sources = [ "voice_session_fake_helper.cc" ]
+}
+
+# Listening end to end but for the recognizer: Chromium's fake audio
+# capture, the real listener and resident sandbox, the stand-in helper.
+# Picked up by :browser_tests.
+source_set("voice_session_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_session_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_listening",
+    ":voice_session",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/content_settings/core/common",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//testing/gtest",
+  ]
+
+  data_deps = [ ":molt_fake_speech_helper" ]
 }

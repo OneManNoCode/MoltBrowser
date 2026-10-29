@@ -1,9 +1,10 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// The macOS confinement for short-lived helper programs (tesseract,
-// whisper-cli): the helper runs under /usr/bin/sandbox-exec with the
-// Seatbelt profile below (helper_sandbox.h is the front end callers use).
+// The macOS confinement for helper programs: short-lived ones (tesseract,
+// whisper-cli; helper_sandbox.h is their front end) and resident ones (the
+// speech helper; helper_resident.h). The helper runs under
+// /usr/bin/sandbox-exec with the Seatbelt profile below.
 //
 // The profile text is fixed: it depends only on how many read-only paths
 // there are, never on the paths themselves. Paths are passed as
@@ -28,7 +29,9 @@
 //     there; not deleting or renaming them, making directories or symbolic
 //     links, or changing modes, flags, owners, times or extended
 //     attributes, so all it writes stays where the launcher measures it
-//     (helper_limits.h); not replacing SCRATCH itself.
+//     (helper_limits.h); not replacing SCRATCH itself. A resident helper
+//     has no SCRATCH: it may write nothing but /dev/null (and the pipes it
+//     was started with).
 // No network, no Mach service lookups, no IOKit (so no GPU): a helper that
 // wants any of those fails rather than reaching them.
 //
@@ -58,6 +61,8 @@ std::string ReadOnlyParam(size_t index);
 
 // The profile for a run with |read_only_count| read-only paths.
 std::string BuildProfile(size_t read_only_count);
+// The same without a scratch directory, for a resident helper.
+std::string BuildResidentProfile(size_t read_only_count);
 
 // The full command line:
 //   sandbox-exec -p <profile> -D HELPER=<helper> -D HELPER_DIR=<its dir>
@@ -70,6 +75,12 @@ std::vector<std::string> BuildSandboxExecArgv(
     const std::vector<std::string>& helper_args,
     const std::vector<std::string>& read_only,
     const std::string& scratch);
+
+// A resident helper's command line: the same without SCRATCH.
+std::vector<std::string> BuildResidentSandboxExecArgv(
+    const std::string& helper,
+    const std::vector<std::string>& helper_args,
+    const std::vector<std::string>& read_only);
 
 // True when a run's exit status and output say sandbox-exec itself failed
 // (bad profile, sandbox refused, or exec of the helper denied): it prints

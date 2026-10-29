@@ -265,6 +265,60 @@ TEST(HelperSandboxWinPolicyTest, StartFailures) {
   }
 }
 
+TEST(HelperSandboxWinPolicyTest, ResidentLaunchPlan) {
+  const std::string sid = AppContainerSid({1, 2, 3, 4, 5, 6, 7});
+  const std::optional<LaunchPlan> plan =
+      PlanResidentLaunch(sid, uint64_t{1} << 30, 2.0, 8);
+  ASSERT_TRUE(plan);
+  // As confined as a short-lived helper.
+  const std::optional<LaunchPlan> short_lived = PlanLaunch(sid);
+  ASSERT_TRUE(short_lived);
+  EXPECT_EQ(plan->package_sid, short_lived->package_sid);
+  EXPECT_EQ(plan->capability_sids, short_lived->capability_sids);
+  EXPECT_TRUE(plan->low_privilege_app_container);
+  EXPECT_TRUE(plan->restrict_child_processes);
+  EXPECT_TRUE(plan->assign_job);
+  EXPECT_EQ(plan->mitigations, kMitigations);
+  EXPECT_EQ(plan->active_process_limit, 1u);
+  // Its own memory limit, stdin from the browser, a CPU cap: two of eight
+  // processors are 25% of the machine.
+  EXPECT_EQ(plan->process_memory_limit, uint64_t{1} << 30);
+  EXPECT_TRUE(plan->stdin_pipe);
+  EXPECT_EQ(plan->cpu_rate, 2500u);
+  EXPECT_FALSE(short_lived->stdin_pipe);
+  EXPECT_EQ(short_lived->cpu_rate, 0u);
+
+  EXPECT_EQ(PlanResidentLaunch(sid, 1, 2.0, 1)->cpu_rate, 10000u);
+  EXPECT_EQ(PlanResidentLaunch(sid, 1, 2.0, 3)->cpu_rate, 6667u);
+  EXPECT_EQ(PlanResidentLaunch(sid, 1, 0.0001, 64)->cpu_rate, 1u);
+  EXPECT_FALSE(PlanResidentLaunch("S-1-5-21-1", 1, 2.0, 8));
+  EXPECT_FALSE(PlanResidentLaunch(sid, 0, 2.0, 8));
+  EXPECT_FALSE(PlanResidentLaunch(sid, 1, 2.0, 0));
+  EXPECT_FALSE(PlanResidentLaunch(sid, 1, 0, 8));
+}
+
+TEST(HelperSandboxWinPolicyTest, ResidentAccessChecksAndEnvironment) {
+  const std::vector<AccessCheck> checks = PlanResidentAccessChecks(2);
+  ASSERT_EQ(checks.size(), 3u);
+  EXPECT_EQ(checks[0].target, AccessTarget::kProgram);
+  EXPECT_EQ(checks[1].target, AccessTarget::kReadOnlyPath);
+  EXPECT_EQ(checks[2].target, AccessTarget::kReadOnlyPath);
+  EXPECT_EQ(checks[2].index, 1u);
+  for (const AccessCheck& check : checks) {
+    EXPECT_NE(check.target, AccessTarget::kScratchDirectory);
+  }
+
+  const EnvironmentVariables environment =
+      ResidentHelperEnvironment(L"C:\\Windows");
+  const EnvironmentVariables expected = {
+      {L"Path", L"C:\\Windows\\System32;C:\\Windows"},
+      {L"SystemDrive", L"C:"},
+      {L"SystemRoot", L"C:\\Windows"},
+      {L"windir", L"C:\\Windows"},
+  };
+  EXPECT_EQ(environment, expected);
+}
+
 }  // namespace
 }  // namespace helper_sandbox_win
 }  // namespace molt_ai

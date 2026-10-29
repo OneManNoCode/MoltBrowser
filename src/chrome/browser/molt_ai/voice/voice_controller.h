@@ -31,9 +31,23 @@
 //     page controller finds again (and refuses when the page changed).
 //
 // The window owns nothing of it: the controller is created on first use
-// and deletes itself when the window closes. The overlay (numbers, the
-// focus ring, the caption bar) and the agent side panel's voice field
-// listen through Observer.
+// and deletes itself when the window closes. The agent side panel's voice
+// field and the window's listening (voice_session.h) listen through
+// Observer.
+//
+// The overlay (chrome/browser/ui/views/molt_ai/voice/voice_overlay.h,
+// TOUCHLESS_BROWSING.md §5.3, §5.5, §6.6) is driven from here:
+//   - the caption bar is up for as long as voice mode is on, with the state
+//     (the listening side's waiting or listening, else thinking or
+//     speaking), what was heard (live while it is being said) and what is
+//     happening;
+//   - "show numbers" and "hide numbers" show and hide the numbers on the
+//     active tab, and each step that acts on or reads an item rings it
+//     (kSetCurrentItem);
+//   - when the numbers hide by themselves (the hidden callback), they are
+//     shown again from a new map: at once when the page's numbering
+//     changed, once the new page's tree has come after a navigation, and on
+//     the newly active tab after a tab switch.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_VOICE_CONTROLLER_H_
@@ -98,6 +112,9 @@ class VoiceController {
     // "Turn on voice mode" / "turn off voice mode" (after its "yes"): the
     // window's listening (voice_session.h) starts or stops.
     virtual void OnVoiceModeRequested(bool on) {}
+    // The page map an utterance or a follow-up was planned on (hotwords for
+    // the recognizer, voice_session.h).
+    virtual void OnVoicePageMapped(const PageMap& map) {}
     // The window is closing: stop observing |controller|.
     virtual void OnVoiceControllerDestroying(VoiceController* controller) {}
   };
@@ -108,6 +125,22 @@ class VoiceController {
   using PlannerHook =
       base::RepeatingCallback<void(const std::string& heard,
                                    const PageMap& map)>;
+
+  // What the listening side (voice_session.h) shows in the caption bar.
+  struct ListeningCaption {
+    // The microphone is on (or starting).
+    bool listening = false;
+    // Only the wake phrase counts now ("Waiting"), or it is getting ready.
+    bool waiting = false;
+    bool starting = false;
+    // What is being said, live (the recognizer's partial text).
+    std::string heard_live;
+    // Why it can't listen ("Microphone access is off"), shown while idle.
+    std::string problem;
+
+    friend bool operator==(const ListeningCaption&,
+                           const ListeningCaption&) = default;
+  };
 
   // How long a wait for a page lasts at most, how quiet its tree must be,
   // how long it waits for a navigation to start, and for a site's autoplay.
@@ -144,6 +177,17 @@ class VoiceController {
 
   // Stops the speech and whatever runs, as "stop" does, staying on.
   void StopActivity();
+
+  // Stops the speech only (barge-in: the user started to speak).
+  void StopSpeaking();
+
+  // Says |text| (what the listening side has to tell: "Voice mode is on",
+  // "I can't use the microphone") and shows it as the status.
+  void SayNotice(const std::string& text);
+
+  // The listening side's part of the caption, and whether it listens
+  // (VoiceEnvironment::listening).
+  void SetListening(ListeningCaption caption);
 
   // The numbers overlay shows numbers without "show numbers" being said
   // (on by default in voice mode, §5.3): lists are then read, and numbers
@@ -218,6 +262,15 @@ class VoiceController {
   void OnTabGone();
 
   void OnSpeakingChanged(bool speaking);
+
+  // The overlay (voice_overlay.h).
+  void ShowNumbersOnPage(bool shown);
+  void SetCurrentItemOnPage(int number);
+  void OnOverlayHidden(int run_of_tab, int reason);
+  void RefreshNumbers();
+  // Voice mode turned itself off ("turn off voice mode"): once it has said
+  // so.
+  void MaybeStopWhenQuiet();
   // Cancels the steps still to run, a wait, a submit and the speech.
   void CancelRun();
   void Idle();
@@ -258,6 +311,14 @@ class VoiceController {
 
   std::string heard_;
   std::string status_;
+  ListeningCaption listening_;
+  bool stop_when_quiet_ = false;
+  // Changes with every tab voice mode attaches to: the hidden callback of
+  // an earlier tab's overlay is dropped.
+  int tab_run_ = 0;
+  // Showing the numbers again once a new page's tree has come.
+  base::OneShotTimer refresh_numbers_timer_;
+  int refresh_attempts_ = 0;
   PlannerHook planner_hook_;
   base::ObserverList<Observer> observers_;
   base::RepeatingClosure idle_for_testing_;
