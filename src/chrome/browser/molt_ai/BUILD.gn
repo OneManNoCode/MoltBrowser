@@ -374,6 +374,9 @@ group("core_hooks") {
   public_deps = [
     ":molt_ai_runtime",
     "agents:features",
+
+    # chrome://flags/#molt-voice-mode (about_flags.cc).
+    "voice:features",
     "fingerprinting",
     "fingerprinting:audio_capture",
     "fingerprinting:device",

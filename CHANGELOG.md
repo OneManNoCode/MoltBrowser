@@ -1121,6 +1121,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   one by Queen" means, sound-alikes included, asking when two items fit.
   Both run on the device in a few milliseconds; not yet connected to a
   microphone. What you can say: `docs/VOICE_COMMANDS.md`.
+- **Touchless browsing: voice commands do what you meant, and answer
+  aloud** (preview, off by default: `chrome://flags/#molt-voice-mode`).
+  Typed in Agent mode's new "Type a voice command" field until the browser
+  can hear, "open YouTube", "search for Bohemian Rhapsody", "play the
+  fourth one" or "the live one by Queen", "pause" and "go back" are done
+  on the page, and the browser says what happened through your system's
+  voices: the results with their channels and lengths, then "Say a number
+  or a name"; which one you meant when two fit. A site it doesn't know is
+  searched for, never guessed. Buying, paying, deleting, sending, posting,
+  subscribing, signing out and sending a form wait for a spoken "yes";
+  password, card and code fields are never typed into or read out, and
+  page text is only ever read, never obeyed. Voice mode stays off in
+  MoltNet windows.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

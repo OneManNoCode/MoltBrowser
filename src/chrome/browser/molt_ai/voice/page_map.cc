@@ -53,6 +53,35 @@ struct Visit {
   uint8_t context = 0;
 };
 
+// Whether |text| has the word "search" (any case) in its first bytes:
+// "Search", "Search YouTube", "search…".
+bool SaysSearch(std::string_view text) {
+  constexpr std::string_view kWord = "search";
+  constexpr size_t kMaxScan = 256;
+  const std::string_view head = text.substr(0, kMaxScan);
+  auto lower = [](char c) {
+    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+  };
+  auto letter = [&](char c) {
+    const char l = lower(c);
+    return l >= 'a' && l <= 'z';
+  };
+  for (size_t i = 0; i + kWord.size() <= head.size(); ++i) {
+    if (i > 0 && letter(head[i - 1])) {
+      continue;
+    }
+    size_t k = 0;
+    while (k < kWord.size() && lower(head[i + k]) == kWord[k]) {
+      ++k;
+    }
+    if (k == kWord.size() &&
+        (i + k == head.size() || !letter(head[i + k]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // The kind of item a node is by its role alone; nullopt for roles that
 // are items only through a default action (kClickable).
 std::optional<ItemKind> RoleItemKind(PageRole role) {
@@ -518,6 +547,11 @@ class Builder {
       item.writable = node.Has(kStateEditable) && !node.Has(kStateReadOnly) &&
                       !node.Has(kStateDisabled) &&
                       item.credential == CredentialKind::kNone;
+      item.search_field = item.credential == CredentialKind::kNone &&
+                          (node.role == PageRole::kSearchBox ||
+                           FoldForCompare(node.input_type) == "search" ||
+                           SaysSearch(node.name) ||
+                           SaysSearch(node.placeholder));
     }
     // A protected node's value is never kept, whatever its role.
     if (item.credential == CredentialKind::kNone &&

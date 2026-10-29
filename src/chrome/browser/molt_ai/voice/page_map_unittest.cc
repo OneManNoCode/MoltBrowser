@@ -128,6 +128,37 @@ TEST(PageMapTest, TheFourthResultIsTheLiveAidVideo) {
   EXPECT_FALSE(item->on_screen);
 }
 
+TEST(PageMapTest, MarksSearchFields) {
+  EXPECT_TRUE(Map(test::YouTubeLikeResults()).items[2].search_field);
+  const PageMap sign_in = Map(test::PasswordForm());
+  for (const PageItem& item : sign_in.items) {
+    EXPECT_FALSE(item.search_field) << item.label;
+  }
+
+  TreeBuilder b("Fields");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Fields", 0);
+  const uint32_t states = kStateFocusable | kStateEditable;
+  b.Add(root, PageRole::kSearchBox, "Find", states);
+  const uint32_t typed = b.Add(root, PageRole::kTextField, "", states);
+  b.node(typed).input_type = "SEARCH";
+  const uint32_t placeholder = b.Add(root, PageRole::kTextField, "", states);
+  b.node(placeholder).placeholder = "Search products\xE2\x80\xA6";
+  b.Add(root, PageRole::kTextField, "Research notes", states);
+  b.Add(root, PageRole::kTextField, "Searches saved", states);
+  b.Add(root, PageRole::kTextField, "Email", states);
+  const uint32_t password =
+      b.Add(root, PageRole::kTextField, "Search", states | kStateProtected);
+  b.node(password).input_type = "password";
+  b.Add(root, PageRole::kButton, "Search", kStateFocusable);
+  const PageMap map = Map(b.Take());
+  ASSERT_EQ(map.items.size(), 8u);
+  const bool expected[] = {true, true, true, false, false, false, false, false};
+  for (size_t i = 0; i < map.items.size(); ++i) {
+    EXPECT_EQ(map.items[i].search_field, expected[i]) << i;
+  }
+}
+
 TEST(PageMapTest, NumbersYouTubesControlsInReadingOrder) {
   const PageMap map = Map(test::YouTubeLikeResults());
   ASSERT_GE(map.items.size(), 8u);

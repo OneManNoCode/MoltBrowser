@@ -6,8 +6,51 @@ lists the commands the browser understands directly, without its AI model:
 they work in a moment, even on a slow machine. Anything else you say goes to
 the on-device AI, which works out what you mean from the page.
 
-Voice mode is being built: these commands are the first part, and a release
-that can hear you is still to come.
+Voice mode is being built: the browser can't hear you yet. You can try the
+commands by typing them:
+
+1. Turn on `chrome://flags/#molt-voice-mode` and restart the browser.
+2. Open Agent mode (the toolbar's "Agent mode" button, or
+   `molt://ai-agent`). Under "Voice commands (preview)", type what you would
+   say in "Type what you would say" and press Enter.
+3. The browser does it in the tab you are on and says the answer aloud with
+   your system's voices. The panel also shows what it heard, what it is
+   doing and what it said.
+
+On Linux, spoken answers need speech-dispatcher, and the browser started
+with `--enable-speech-dispatcher`; without them it answers in the panel
+only. Voice mode stays off in MoltNet windows.
+
+## What it does
+
+- **"Open YouTube"** opens the site. Six sites are known by name: YouTube,
+  Google, DuckDuckGo, Wikipedia, Brave Search and Bing. A spoken address
+  ("example dot com") opens that address. Any other name is searched for
+  with your default search engine, and the browser tells you so: it never
+  guesses a web address.
+- **"Search for ..."** types into the page's own search box and submits it;
+  on a page without one, it uses the site's search page, or your default
+  search engine. Then it reads the results: how many, the first five with
+  their channel or site and length, and "Say a number or a name". "Be brief"
+  reads only how many; "tell me everything" reads all of them.
+- **Choosing:** "the fourth one", "number four", "four" right after a list,
+  "the live one by Queen". If several fit, the browser reads them back
+  numbered ("Did you mean 1: ..., 2: ...?") and you answer with a number or
+  a name. "Play" or "open" a video opens it and plays it with sound.
+- **Before anything that can't be undone,** such as buying, paying,
+  deleting, sending, posting, subscribing, signing out or sending a form,
+  the browser asks "Say yes to press ..." and does it only if your next
+  words are "yes".
+- **Typing:** choose a field ("click the search box"), then "type ...",
+  "delete the last word", "clear the field", "read it back", "submit".
+  Password, card and code fields are never typed into or read out.
+- **Media:** "play", "pause", "resume", "louder" and "quieter" (with the
+  player's volume control), "mute", "skip ahead one minute", "full screen",
+  "turn on captions".
+- **Reading:** the title, the headings, the links, the results, "next
+  heading", "next link", "next item", "where am I", "what's on the screen".
+- **"Stop"** stops the browser speaking and whatever it was doing; a new
+  command does too. "Repeat" says the last answer again.
 
 ## How to talk to it
 
@@ -493,3 +536,8 @@ said.
   YouTube". A spoken address on its own ("example dot com") does.
 - **A routine's name on its own** ("my news") is looked up among your
   routines before the AI is asked; "run my news" always runs it.
+- **Still to come in voice mode:** hearing you (the speech service), the
+  on-device AI for anything these commands don't cover, routines, setting
+  the volume to a level, the playback speed, reading the page's text and
+  the selection, undo, and questions about the page. Until then the browser
+  says so when you ask for them.
