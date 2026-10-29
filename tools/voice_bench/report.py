@@ -524,6 +524,58 @@ class Report:
         return table(["lexicon", "text", "words", "skipped (not in lexicon)",
                       "most frequent skipped words"], rows)
 
+    def whisper_cpp(self):
+        """whisper-bench timings (median of runs) and, with real models,
+        whisper-cli per request."""
+        base = os.path.join(self.results, "whispercpp-bench")
+        if not os.path.isdir(base):
+            return ""
+        rows, out = [], {}
+        for model in ("tiny.en", "base.en", "small.en"):
+            for t in (1, 2, 4):
+                runs = []
+                for rep in range(3):
+                    p = os.path.join(base, model, "t%d.r%d.json" % (t, rep))
+                    if os.path.exists(p):
+                        with open(p) as f:
+                            runs.append(json.load(f))
+                runs = [r for r in runs if r.get("returncode") == 0 and r.get("timings")]
+                if not runs:
+                    continue
+
+                def med(key, field="per_run_ms"):
+                    return vbl.median([r["timings"].get(key, {}).get(field) for r in runs])
+                enc, dec, bat, load = med("encode"), med("decode"), med("batchd"), med("load",
+                                                                                     "total_ms")
+                # One short command: a 30 s encoder window, then about 12
+                # decoder steps of a 5-wide beam (whisper-cli's default).
+                est = None if enc is None or bat is None else (load or 0) + enc + 12 * bat
+                out.setdefault(model, {})[t] = {"encode_ms": enc, "decode_token_ms": dec,
+                                                "beam5_step_ms": bat, "load_ms": load,
+                                                "weights": runs[0].get("weights"),
+                                                "estimate_per_request_ms": est}
+                rows.append(("whisper.cpp %s" % model, runs[0].get("weights"), t, fmt_ms(load),
+                             fmt_ms(enc), fmt_f(dec, 1), fmt_f(bat, 1), fmt_ms(est)))
+        self.summary["whisper_cpp"] = out
+        text = table(["engine", "weights", "threads", "load ms", "encode ms (30 s window)",
+                      "decode ms/token", "5-beam step ms",
+                      "≈ per request ms (load + encode + 12 steps)"], rows)
+        tr = []
+        for model in ("tiny.en", "base.en", "small.en"):
+            for s in ("asr-clean-a", "asr-pink10-a", "real-sc"):
+                recs = self.jsonl("whispercpp", model, s + ".jsonl")
+                if not recs:
+                    continue
+                sc = self.score_file(recs, self.set_refs(s))
+                a = vbl.aggregate(sc)
+                ms = vbl.median([r.get("process_ms") for r in recs if r.get("event") == "utt"])
+                tr.append(("whisper-cli %s" % model, s, a["n"], fmt_pct(a["wer"]),
+                           fmt_pct(a["command_acc"]), fmt_ms(ms)))
+        if tr:
+            text += "\n\n" + table(["engine", "set", "clips", "WER", "command acc.",
+                                    "median ms per request (new process)"], tr)
+        return text
+
     def licences(self):
         rows = []
         for a in fetch.load_manifest():
@@ -562,6 +614,7 @@ def main(argv=None):
         "## Wake phrase", "", rep.kws(), "",
         "## Voices", "", rep.tts(), "",
         "### Words the voices skip", "", rep.lexicon_coverage(), "",
+        "## whisper.cpp, as MoltBrowser ships it", "", rep.whisper_cpp(), "",
         "## Size on disk", "", rt, "", models, "",
         "## Licences", "", rep.licences(), "",
     ]

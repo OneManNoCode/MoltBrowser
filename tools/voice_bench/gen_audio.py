@@ -64,7 +64,7 @@ READOUT_STARTS = (0, 10)  # which five results each browser readout reads
 WORK = ""  # set by main(): <data>/work or --work
 TRAIL_S = 1.3
 SC_WORDS = ["yes", "no", "stop", "go", "up", "down", "left", "right", "on", "off"]
-SC_PER_WORD = 40
+SC_PER_WORD = 20
 SC_DIGITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
 

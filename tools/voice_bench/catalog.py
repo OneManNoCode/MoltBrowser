@@ -45,7 +45,7 @@ OFFLINE = {
         "artifact": "whisper-tiny-en", "kind": "whisper",
         "files": {"--encoder": "tiny.en-encoder.onnx",
                   "--decoder": "tiny.en-decoder.onnx", "--tokens": "tiny.en-tokens.txt"},
-        "label": "Whisper tiny.en (ONNX fp32)", "tier": 2},
+        "label": "Whisper tiny.en (ONNX fp32)", "tier": 3},
     "whisper-base.en": {
         "artifact": "whisper-base-en", "kind": "whisper",
         "files": {"--encoder": "base.en-encoder.int8.onnx",

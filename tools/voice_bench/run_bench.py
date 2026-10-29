@@ -65,7 +65,7 @@ ASR_SETS_TIER = {
     1: ASR_SETS_FULL,
     2: ["asr-clean-a", "asr-clean-b", "asr-pink10-a", "asr-pink5-a", "asr-babble10-a",
         "asr-music10-a", "asr-echo0-a", "real-sc", "real-ls"],
-    3: ["asr-clean-a", "asr-pink10-a", "asr-music10-a", "asr-echo0-a", "real-sc", "real-ls"],
+    3: ["asr-clean-a", "asr-pink10-a", "real-sc", "real-ls"],
 }
 TIMING_CLIPS = 40
 THREADS = [1, 2, 4]
@@ -331,7 +331,8 @@ class Bench:
             vocab = self.bpe_vocab(mid, e)
             base = flags + ["--decoding", "modified_beam_search", "--modeling-unit", "bpe",
                             "--bpe-vocab", vocab] + self.vad_flags()
-            for s in sets:
+            # The 0.6B model is slow under beam search: clean speech only.
+            for s in (sets if e["tier"] == 1 else sets[:1]):
                 rows = self.set_rows(s)
                 plain = [(r[0], r[2], r[3], r[4]) for r in rows]
                 self.run_driver(self.out_path("bias", mid, s + ".beam.jsonl"), "stream", plain,
@@ -407,7 +408,9 @@ class Bench:
                 continue
             for phrase in catalog.WAKE_PHRASES:
                 tag = phrase.replace(" ", "_")
-                for th in thresholds:
+                # The threshold sweep for the default phrase; the
+                # alternatives at the middle setting.
+                for th in (thresholds if phrase == catalog.WAKE_PHRASES[0] else [0.25]):
                     kw, line = self.keywords_file(kid, e, phrase, th)
                     kf = flags + ["--keywords", kw]
                     for c in conds:
@@ -457,7 +460,7 @@ class Bench:
                                     "listen", rows, flags + ["--listen-engine", "kws",
                                                              "--keywords", kw] +
                                     self.vad_flags() + extra, t)
-        for mid in ("zipformer-en-20m", "zipformer-en-2023-06-26"):
+        for mid in ("zipformer-en-2023-06-26", "fastconformer-80ms"):
             e = catalog.STREAM[mid]
             flags = self.model_flags(e)
             if not flags or not self.want(mid):
@@ -559,7 +562,7 @@ class Bench:
                         stem = os.path.join(tmpd, "out")
                         t0 = time.perf_counter()
                         p = subprocess.run([cli, "-m", mpath, "-t", str(self.threads), "-nt",
-                                            "-np", "-ng", "-l", "en", "-otxt", "-of", stem,
+                                            "-np", "-ng", "-l", "auto", "-otxt", "-of", stem,
                                             "-f", r[2]], capture_output=True, text=True)
                         ms = (time.perf_counter() - t0) * 1000
                         text = ""
