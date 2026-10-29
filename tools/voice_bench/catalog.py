@@ -112,7 +112,7 @@ KWS = {
                   "--decoder": "decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
                   "--joiner": "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
                   "--tokens": "tokens.txt"},
-        "unit": "bpe", "bpe_model": "bpe.model", "label": "Zipformer KWS 3.3M (GigaSpeech, BPE)"},
+        "unit": "bpe", "bpe_model": "bpe.model", "label": "Zipformer KWS 3.3M (GigaSpeech, word pieces)"},
     "kws-zh-en-3m": {
         "artifact": "kws-zh-en-3m",
         "files": {"--encoder": "encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx",
