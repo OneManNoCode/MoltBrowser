@@ -488,7 +488,10 @@ TEST(PageMapTest, NumbersAFramesItemsWithThePage) {
 // A frame the page embeds (an ad, another site's widget) can't take the
 // page's place: its lists come after the page's however prominent, its
 // media after the page's, and it numbers only its share of the items.
-TEST(PageMapTest, AFrameCantTakeThePagesPlace) {
+// A shop page whose ad frame comes first in reading order, with a longer,
+// larger list ("Results", 60 entries) and a video, before the page's own
+// list ("Products", 3 entries) and video.
+PageTree ShopWithAnAdFrame() {
   TreeBuilder b("Shop");
   const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
   const uint32_t iframe = b.Add(root, PageRole::kIframe, "Ad");
@@ -516,8 +519,11 @@ TEST(PageMapTest, AFrameCantTakeThePagesPlace) {
            "https://shop.example/" + std::to_string(i));
   }
   b.Add(main, PageRole::kVideo, "Product video");
-  const PageTree tree = b.Take();
+  return b.Take();
+}
 
+TEST(PageMapTest, AFrameCantTakeThePagesPlace) {
+  const PageTree tree = ShopWithAnAdFrame();
   const PageMap map = Map(tree);
   EXPECT_EQ(map.page_tree, 0);
   ASSERT_GE(map.lists.size(), 2u);
@@ -555,6 +561,31 @@ TEST(PageMapTest, AFrameCantTakeThePagesPlace) {
   EXPECT_EQ(in_frame, 10u);
   EXPECT_EQ(products_numbered, 3u);
   EXPECT_TRUE(capped.stats.item_cap);
+}
+
+// The page's lists are looked for and read before the frames', so when the
+// work budget runs out, it isn't the frame's list that is left.
+TEST(PageMapTest, ThePagesListsBeforeAFramesSpendTheWork) {
+  const PageTree tree = ShopWithAnAdFrame();
+  size_t tight = 0;
+  for (size_t max_work = 500; max_work <= 30000; max_work += 100) {
+    PageMapLimits limits;
+    limits.max_work = max_work;
+    const PageMap map = BuildPageMap(tree, limits);
+    if (map.stats.nodes_visited < tree.nodes.size()) {
+      continue;  // the walk itself was cut short
+    }
+    bool page_list = false;
+    bool frame_list = false;
+    for (const PageList& list : map.lists) {
+      page_list |= list.label == "Products";
+      frame_list |= list.label == "Results";
+    }
+    EXPECT_TRUE(page_list || !frame_list) << "max_work " << max_work;
+    tight += page_list && map.stats.work_cap ? 1 : 0;
+  }
+  // Some budgets ran out after the page's list and before the frame's.
+  EXPECT_GT(tight, 0u);
 }
 
 TEST(PageMapTest, NumbersOnlyWhatCanBeActedOn) {
