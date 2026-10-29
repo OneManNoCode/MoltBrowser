@@ -20,6 +20,8 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/thread_annotations.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
@@ -387,6 +389,8 @@ class VoiceEarcons::Player : public media::AudioRendererSink::RenderCallback {
 
   void Play(EarconKind kind) {
     std::vector<int16_t> samples = MakeEarcon(kind);
+    const base::TimeDelta length = base::Milliseconds(
+        static_cast<int64_t>(samples.size()) * 1000 / kEarconSampleRate);
     {
       base::AutoLock lock(lock_);
       samples_ = std::move(samples);
@@ -401,6 +405,10 @@ class VoiceEarcons::Player : public media::AudioRendererSink::RenderCallback {
           this, media::AudioDeviceDescription::kDefaultDeviceId);
     }
     device_->Play();
+    // Paused once it has played (the stream stays open for the next one).
+    pause_timer_.Start(FROM_HERE, length + kEarconTail,
+                       base::BindOnce(&audio::OutputDevice::Pause,
+                                      base::Unretained(device_.get())));
   }
 
   // media::AudioRendererSink::RenderCallback (the audio thread):
@@ -422,10 +430,17 @@ class VoiceEarcons::Player : public media::AudioRendererSink::RenderCallback {
   void OnRenderError() override {}
 
  private:
-  std::unique_ptr<audio::OutputDevice> device_;
+  // Silence after an earcon before the stream is paused.
+  static constexpr base::TimeDelta kEarconTail = base::Milliseconds(300);
+
+  // What Render() reads; destroyed after the device (whose audio thread
+  // calls Render() until it goes).
   base::Lock lock_;
   std::vector<int16_t> samples_ GUARDED_BY(lock_);
   size_t position_ GUARDED_BY(lock_) = 0;
+  std::unique_ptr<audio::OutputDevice> device_;
+  // Destroyed first: it holds the device.
+  base::OneShotTimer pause_timer_;
 };
 
 VoiceEarcons::VoiceEarcons()
