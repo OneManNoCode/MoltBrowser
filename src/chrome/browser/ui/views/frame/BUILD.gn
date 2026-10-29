@@ -2586,6 +2586,9 @@ source_set("contents_container_view_impl") {
     "//chrome/browser:browser_public_dependencies",
   ]
   deps = [
+    # MoltBrowser: voice mode's numbers over the page and caption bar.
+    "//chrome/browser/ui/views/molt_ai/voice:views",
+
     ":browser_view_header",
     ":contents_capture_border_view",
     ":contents_container_outline",

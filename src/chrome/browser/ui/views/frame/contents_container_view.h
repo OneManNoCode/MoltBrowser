@@ -229,6 +229,11 @@ class ContentsContainerView : public views::View,
   // area it wants to float.
   raw_ptr<views::View> indigo_overlay_view_ = nullptr;
 
+  // MoltBrowser: voice mode's numbers over the page and its caption bar
+  // under it (chrome/browser/ui/views/molt_ai/voice/voice_overlay_views.h).
+  raw_ptr<views::View> molt_voice_numbers_view_ = nullptr;
+  raw_ptr<views::View> molt_voice_caption_bar_ = nullptr;
+
   // See `SetTargetContentSize()`.
   std::optional<gfx::Outsets> target_content_bounds_;
 

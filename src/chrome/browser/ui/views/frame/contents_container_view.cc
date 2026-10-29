@@ -30,6 +30,7 @@
 #include "chrome/browser/ui/views/frame/tab_modal_dialog_host.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/indigo/indigo_toolbar.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_overlay_views.h"  // MoltBrowser
 #include "chrome/browser/ui/views/new_tab_footer/footer_web_view.h"
 #include "chrome/common/chrome_features.h"
 #include "components/search/ntp_features.h"
@@ -106,6 +107,11 @@ ContentsContainerView::ContentsContainerView(BrowserView* browser_view)
       AddChildView(std::make_unique<
                    enterprise_data_protection::DataProtectionOverlayView>());
 
+  // MoltBrowser: voice mode's numbers over the page: above the watermark,
+  // under everything else drawn over a page.
+  molt_voice_numbers_view_ =
+      AddChildView(molt_ai::voice::CreateVoiceNumbersView(contents_view_));
+
   if (base::FeatureList::IsEnabled(features::kIndigo)) {
     indigo_overlay_view_ = AddChildView(indigo::CreateIndigoOverlayView());
     indigo_overlay_view_->InsertBeforeInFocusList(contents_view_);
@@ -130,6 +136,11 @@ ContentsContainerView::ContentsContainerView(BrowserView* browser_view)
   contents_scrim_view_ = AddChildView(std::make_unique<ScrimView>());
   contents_scrim_view_->layer()->SetName(
       "ContentsContainerView:ContentsScrimView");
+
+  // MoltBrowser: voice mode's caption bar under the page, readable over the
+  // scrim.
+  molt_voice_caption_bar_ = AddChildView(molt_ai::voice::CreateVoiceCaptionBar(
+      browser_view->browser(), contents_view_));
 
   if (base::FeatureList::IsEnabled(features::kGlicActorUi) &&
       features::kGlicActorUiOverlay.Get()) {
@@ -274,7 +285,10 @@ void ContentsContainerView::SetBorderRoundedCornersFrom(
       devtools_in_lower_right ? 0 : corner_radii.lower_right(),
       devtools_in_lower_left ? 0 : corner_radii.lower_left()};
 
-  auto radii = new_tab_footer_view_ && new_tab_footer_view_->GetVisible()
+  // MoltBrowser: voice mode's caption bar takes the lower corners too.
+  auto radii = (new_tab_footer_view_ && new_tab_footer_view_->GetVisible()) ||
+                       molt_ai::voice::IsVoiceCaptionBarUp(
+                           molt_voice_caption_bar_)
                    ? content_upper_rounded_corners
                    : content_rounded_corners;
 
@@ -286,6 +300,9 @@ void ContentsContainerView::SetBorderRoundedCornersFrom(
     new_tab_footer_view_->holder()->SetNativeViewCornerRadii(
         content_lower_rounded_corners);
   }
+  // MoltBrowser: voice mode's caption bar.
+  molt_ai::voice::SetVoiceCaptionBarCorners(molt_voice_caption_bar_,
+                                            content_lower_rounded_corners);
 
   if (actor_overlay_web_view_) {
     // ActorOverlayWebView should use the same radii as the contents view since
@@ -313,7 +330,8 @@ void ContentsContainerView::UpdateBorderRoundedCorners() {
 }
 
 void ContentsContainerView::ChildVisibilityChanged(View* child) {
-  if ((child == new_tab_footer_view_ || child == devtools_web_view_) &&
+  if ((child == new_tab_footer_view_ || child == devtools_web_view_ ||
+       child == molt_voice_caption_bar_ /* MoltBrowser */) &&
       !rounded_corner_radii_.IsEmpty()) {
     UpdateBorderRoundedCorners();
   }
@@ -424,6 +442,11 @@ gfx::Rect ContentsContainerView::GetContentsViewBounds() const {
                                     new_tab_footer_view_->height() +
                                     new_tab_footer_view_separator_->height());
   }
+  // MoltBrowser: voice mode's caption bar under the page counts as page
+  // area, as the footer does.
+  contents_view_bounds.set_height(
+      contents_view_bounds.height() +
+      molt_ai::voice::VoiceCaptionBarHeight(molt_voice_caption_bar_));
 
   return contents_view_bounds;
 }
@@ -487,6 +510,10 @@ views::ProposedLayout ContentsContainerView::CalculateProposedLayout(
   ApplyDevToolsContentsResizingStrategy(strategy_, full_contents_bounds,
                                         &devtools_bounds,
                                         &non_devtools_contents_bounds);
+  // MoltBrowser: voice mode's caption bar takes the bottom of the page area
+  // (laid out first, as GetContentsViewBounds() reads it).
+  molt_ai::voice::LayOutVoiceCaptionBar(*this, molt_voice_caption_bar_,
+                                        non_devtools_contents_bounds, layouts);
   gfx::Rect contents_view_bounds = non_devtools_contents_bounds;
 
   // DevTools cares about the specific position, so we have to compensate RTL
@@ -530,6 +557,10 @@ views::ProposedLayout ContentsContainerView::CalculateProposedLayout(
   layouts.child_layouts.emplace_back(
       toast_anchor_view_.get(), toast_anchor_view_->GetVisible(),
       gfx::BoundingRect(contents_rect.origin(), contents_rect.top_right()));
+
+  // MoltBrowser: voice mode's numbers over the page.
+  molt_ai::voice::LayOutVoiceNumbers(molt_voice_numbers_view_, contents_rect,
+                                     layouts);
 
   if (glic_border_) {
     // |glic_border_| should not be seen over devtools.
