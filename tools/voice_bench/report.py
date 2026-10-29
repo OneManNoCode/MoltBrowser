@@ -399,7 +399,11 @@ class Report:
         labels = {"kws": "wake phrase (Zipformer KWS 3.3M) + VAD"}
         for mid, e in catalog.STREAM.items():
             labels[mid] = e["label"] + " + VAD"
-        for eng in sorted(os.listdir(base)):
+        present = os.listdir(base)
+        order = ["kws"] + [m for m in catalog.STREAM if m in present]
+        order += sorted(e for e in present if e not in order)
+        shown = {"t1": "1", "t2": "2", "t2-nospin": "2, spinning off"}
+        for eng in [e for e in order if e in present]:
             for variant in ("t1", "t2", "t2-nospin"):
                 vals, late = [], []
                 for rep in range(3):
@@ -410,7 +414,7 @@ class Report:
                             late.append(r["max_late_ms"])
                 if vals:
                     out.setdefault(eng, {})[variant] = vbl.median(vals)
-                    rows.append((labels.get(eng, eng), variant, fmt_f(vbl.median(vals), 1),
+                    rows.append((labels.get(eng, eng), shown[variant], fmt_f(vbl.median(vals), 1),
                                  fmt_ms(vbl.median(late))))
         self.summary["listen"] = out
         return table(["listening", "threads", "CPU, % of one core (median)",

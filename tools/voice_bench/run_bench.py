@@ -485,7 +485,7 @@ class Bench:
                                     "listen", rows, flags + ["--listen-engine", "kws",
                                                              "--keywords", kw] +
                                     self.vad_flags() + extra, t)
-        for mid in ("zipformer-en-2023-06-26", "fastconformer-80ms"):
+        for mid in ("zipformer-en-2023-06-26", "kroko-en", "fastconformer-80ms"):
             e = catalog.STREAM[mid]
             flags = self.model_flags(e)
             if not flags or not self.want(mid):
