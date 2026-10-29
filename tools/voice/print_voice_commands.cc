@@ -78,7 +78,8 @@ int main() {
                 static_cast<int>(info.summary.size()), info.summary.data(),
                 static_cast<int>(info.example.size()), info.example.data());
     for (const CommandPattern& pattern : patterns) {
-      if (pattern.kind != info.kind) continue;
+      if (pattern.kind != info.kind)
+        continue;
       const std::string readable = Readable(pattern.pattern);
       const std::string_view note = ContextNote(pattern.context);
       std::printf("- `%s`%.*s\n", readable.c_str(),
