@@ -6,6 +6,7 @@
     "test": "node markdown_renderer_test.js && node webui_smoke_test.js && node agent_scripts_test.js && node agent_tools_test.js && node automation_locators_test.js && node agent_vision_test.js && node page_translate_test.js"
   },
   "devDependencies": {
+    "axe-core": "4.14.0",
     "jsdom": "25.0.1",
     "parse5": "7.1.2"
   }

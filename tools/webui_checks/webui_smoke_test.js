@@ -1937,7 +1937,7 @@ function makeTrustedTypes(window, mode, violations) {
   window.document.write = function(v) { return write.call(this, guard('document.write', v)); };
 }
 
-async function runPage(page) {
+async function runPage(page, hooks = {}) {
   const src = read(page.file);
   const raw = rawStrings(src);
   const htmlEntry = raw.list.find((r) => r.kind === 'HTML');
@@ -1973,6 +1973,8 @@ async function runPage(page) {
     listened.get(this).add(type);
     return ael.call(this, type, fn, opts);
   };
+  // The event types something listens for on |el| (webui_a11y_test.js).
+  window.__listenedTypes = (el) => listened.get(el) || new Set();
   window.confirm = () => false;
   window.alert = () => {};
   window.prompt = () => null;
@@ -2058,9 +2060,11 @@ async function runPage(page) {
     const types = listened.get(el);
     if (!types || !types.has(type)) errors.push(`${sel} has no ${type} listener`);
   }
-  if (page.after) {
+  if (hooks.loaded) await hooks.loaded(window, errors);
+  if (page.after && !hooks.skipAfter) {
     try { await page.after(window); } catch (e) { errors.push('after(): ' + (e.stack || e)); }
   }
+  if (hooks.done) await hooks.done(window, errors);
   // Click every clickable control in the initial DOM; nothing may throw.
   if (!page.skipClickAll) {
     // Everything that has a click listener (direct or via moltActions).
@@ -2082,7 +2086,7 @@ async function runPage(page) {
   return {problems, sent};
 }
 
-(async () => {
+async function main() {
   let failed = 0;
   for (const page of PAGES) {
     const {problems, sent} = await runPage(page);
@@ -2095,4 +2099,7 @@ async function runPage(page) {
   }
   if (failed) process.exit(1);
   console.log(`webui smoke test: ${PAGES.length} pages load under strict CSP + Trusted Types`);
-})();
+}
+
+module.exports = {PAGES, runPage};
+if (require.main === module) main();
