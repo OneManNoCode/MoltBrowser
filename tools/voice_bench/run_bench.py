@@ -21,8 +21,9 @@ Steps (--steps, comma-separated; default: all but whisper-cpp):
                speech and page audio
   tts          voices: load time, time to first audio, real-time factor,
                peak memory at 1, 2 and 4 threads (3 runs each)
-  whisper-cpp  MoltBrowser's shipped path (whisper-cli, one process per
-               request) when --whisper-cli and --ggml-dir are given
+  whisper-cpp  MoltBrowser's shipped engine, whisper.cpp at the pinned tag
+               (build_whisper_cpp.sh first): whisper-bench timings, and with
+               --ggml-dir also whisper-cli per request as the browser runs it
 
 Every driver run takes the lock file given with --lock (POSIX flock), so
 on a shared machine one measurement runs at a time.
@@ -38,6 +39,7 @@ import contextlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -426,11 +428,54 @@ class Bench:
                                     rows, flags, t)
 
     def step_whisper_cpp(self):
-        """MoltBrowser's shipped speech path: whisper-cli, one process per
-        request, as voice_service.cc runs it (-nt -np -ng, CPU only)."""
-        cli, ggml = self.args.whisper_cli, self.args.ggml_dir
-        if not cli or not ggml:
-            print("whisper-cpp: pass --whisper-cli and --ggml-dir")
+        """MoltBrowser's shipped speech path, whisper.cpp at the pinned tag
+        (build_whisper_cpp.sh). whisper-bench times the encoder (one 30 s
+        window) and the decoder per token, on real ggml models from
+        --ggml-dir or else on whisper.cpp's vocabulary-only test models
+        (same shapes, F16, no weights: the time is the same, the text is
+        not). With real models, whisper-cli also transcribes the clips one
+        process per request, as voice_service.cc runs it (-nt -np -ng)."""
+        wdir = self.args.whisper_dir or os.path.join(self.data, "whisper.cpp")
+        exe = ".exe" if os.name == "nt" else ""
+        bench = os.path.join(wdir, "build", "bin", "whisper-bench" + exe)
+        cli = self.args.whisper_cli or os.path.join(wdir, "build", "bin", "whisper-cli" + exe)
+        ggml = self.args.ggml_dir
+        if not os.path.exists(bench):
+            print("whisper-cpp: run build_whisper_cpp.sh first")
+            return
+        for model in ("tiny.en", "base.en", "small.en"):
+            real = ggml and os.path.exists(os.path.join(ggml, "ggml-%s.bin" % model))
+            mpath = os.path.join(ggml, "ggml-%s.bin" % model) if real else \
+                os.path.join(wdir, "models", "for-tests-ggml-%s.bin" % model)
+            for t in THREADS:
+                for rep in range(self.repeats):
+                    out = self.out_path("whispercpp-bench", model, "t%d.r%d.json" % (t, rep))
+                    if os.path.exists(out):
+                        continue
+                    with heavy_lock(self.lock):
+                        t0 = time.perf_counter()
+                        p = subprocess.run([bench, "-m", mpath, "-t", str(t), "-w", "0", "-ng"],
+                                           capture_output=True, text=True)
+                        wall = time.perf_counter() - t0
+                    timings = {}
+                    for line in p.stderr.splitlines():
+                        m = re.search(r"(load|mel|encode|decode|batchd|prompt|total) time = +"
+                                      r"([0-9.]+) ms(?: / +(\d+) runs \( *([0-9.]+) ms per run\))?",
+                                      line)
+                        if m:
+                            timings[m.group(1)] = {"total_ms": float(m.group(2)),
+                                                   "per_run_ms": float(m.group(4) or m.group(2)),
+                                                   "runs": int(m.group(3) or 1)}
+                    with open(out, "w") as f:
+                        json.dump({"model": model, "weights": "real" if real else "test-shapes",
+                                   "threads": t, "wall_s": round(wall, 2),
+                                   "returncode": p.returncode, "timings": timings,
+                                   "system_info": next((x for x in p.stderr.splitlines()
+                                                        if "system_info" in x), "")}, f, indent=1)
+                    print("  whispercpp-bench/%s t%d r%d: encode %s ms" % (
+                        model, t, rep, timings.get("encode", {}).get("per_run_ms")), flush=True)
+        if not ggml:
+            print("whisper-cpp: no --ggml-dir, so no transcription runs")
             return
         sets = ["asr-clean-a", "asr-pink10-a", "real-sc"] if not self.quick else ["asr-clean-a"]
         for model in ("tiny.en", "base.en", "small.en"):
@@ -480,8 +525,10 @@ def main(argv=None):
     p.add_argument("--threads", type=int, default=4, help="threads for accuracy runs")
     p.add_argument("--repeats", type=int, default=3)
     p.add_argument("--lock", default="", help="flock this file around every measurement")
-    p.add_argument("--whisper-cli", default="")
-    p.add_argument("--ggml-dir", default="")
+    p.add_argument("--whisper-dir", default="", help="build_whisper_cpp.sh checkout "
+                   "(default <dir>/whisper.cpp)")
+    p.add_argument("--whisper-cli", default="", help="default: the one in --whisper-dir")
+    p.add_argument("--ggml-dir", default="", help="real ggml-{tiny,base,small}.en.bin")
     args = p.parse_args(argv)
     b = Bench(args)
     if args.build:

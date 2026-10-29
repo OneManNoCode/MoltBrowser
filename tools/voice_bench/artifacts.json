@@ -138,8 +138,8 @@
    "extract": true,
    "platform": "linux-aarch64",
    "license": "Apache-2.0 + MIT",
-   "upstream_checksum": "none",
-   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)"
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
   },
   {
    "id": "vad-silero",
@@ -414,7 +414,7 @@
    "sha256": "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4",
    "kind": "tts",
    "sets": [
-    "extra"
+    "tts"
    ],
    "extract": true,
    "license": "Apache-2.0",

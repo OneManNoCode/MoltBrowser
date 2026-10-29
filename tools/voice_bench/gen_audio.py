@@ -60,6 +60,7 @@ import voice_bench_lib as vbl  # noqa: E402
 CONDITIONS = ["pink20", "pink10", "pink5", "babble10", "music10", "echo0", "echo0-aec"]
 WAKE_CONDITIONS = ["clean", "pink10", "babble10", "music10"]
 LEAD_S = (0.4, 0.8)
+READOUT_STARTS = (0, 10)  # which five results each browser readout reads
 WORK = ""  # set by main(): <data>/work or --work
 TRAIL_S = 1.3
 SC_WORDS = ["yes", "no", "stop", "go", "up", "down", "left", "right", "on", "off"]
@@ -350,7 +351,7 @@ def main(argv=None):
 
     # Every text the TTS will read.
     texts = [u["text"] for u in utts] + [ph for ph in catalog.WAKE_PHRASES] + prose
-    texts += [page_readout(pg, s) for pg in pages.values() for s in (0, 5, 10, 15)]
+    texts += [page_readout(pg, s) for pg in pages.values() for s in READOUT_STARTS]
     texts += [t for pg in pages.values() for it in pg["items"] for t in it]
     miss = prepare_lexicons(data, texts)
     print("lexicons: %(needed_words)d words, %(kokoro_converted)d converted for Kokoro" % miss)
@@ -387,7 +388,7 @@ def main(argv=None):
     browser = catalog.BROWSER_VOICE[0]
     readouts = []
     for pid, pg in pages.items():
-        for s in (0, 5, 10, 15):
+        for s in READOUT_STARTS:
             name = "readout-%s-%d" % (pid, s)
             readouts.append(name)
             jobs.append((browser, name, page_readout(pg, s), False))

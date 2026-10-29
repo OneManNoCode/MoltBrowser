@@ -129,11 +129,11 @@ TTS = {
         "artifact": "tts-kokoro-v1_0-int8", "kind": "kokoro", "lexicon": "kokoro",
         "files": {"--model": "model.int8.onnx", "--voices": "voices.bin",
                   "--tokens": "tokens.txt"},
-        "extra": ["--lang", "en-us"], "label": "Kokoro 82M v1.0 (int8)", "ship_ok": True},
+        "label": "Kokoro 82M v1.0 (int8)", "ship_ok": True},
     "kokoro-v1.0": {
         "artifact": "tts-kokoro-v1_0", "kind": "kokoro", "lexicon": "kokoro",
         "files": {"--model": "model.onnx", "--voices": "voices.bin", "--tokens": "tokens.txt"},
-        "extra": ["--lang", "en-us"], "label": "Kokoro 82M v1.0 (fp32)", "ship_ok": True},
+        "label": "Kokoro 82M v1.0 (fp32)", "ship_ok": True},
     "piper-ljspeech-medium": {
         "artifact": "tts-piper-en_US-ljspeech-medium", "kind": "vits", "lexicon": "vits",
         "files": {"--model": "en_US-ljspeech-medium.onnx", "--tokens": "tokens.txt"},
@@ -165,12 +165,12 @@ TTS = {
 # Speed > 1 is faster. A pitch shift resamples and the TTS speed
 # compensates, so the final speed is as given.
 VOICES = [
-    ("kokoro-af_heart", "kokoro-v1.0-int8", 3, 1.0, 0.0),
-    ("kokoro-am_michael", "kokoro-v1.0-int8", 16, 0.9, 0.0),
-    ("kokoro-bf_emma", "kokoro-v1.0-int8", 21, 1.05, 0.0),
-    ("kokoro-bm_george", "kokoro-v1.0-int8", 26, 1.1, -1.5),
-    ("kokoro-af_nicole-slow", "kokoro-v1.0-int8", 6, 0.75, 0.0),
-    ("kokoro-am_puck", "kokoro-v1.0-int8", 18, 1.0, 1.0),
+    ("kokoro-af_heart", "kokoro-v1.0", 3, 1.0, 0.0),
+    ("kokoro-am_michael", "kokoro-v1.0", 16, 0.9, 0.0),
+    ("kokoro-bf_emma", "kokoro-v1.0", 21, 1.05, 0.0),
+    ("kokoro-bm_george", "kokoro-v1.0", 26, 1.1, -1.5),
+    ("kokoro-af_nicole-slow", "kokoro-v1.0", 6, 0.75, 0.0),
+    ("kokoro-am_puck", "kokoro-v1.0", 18, 1.0, 1.0),
     ("piper-libritts-30", "piper-libritts_r-medium", 30, 1.0, 2.0),
     ("piper-libritts-300", "piper-libritts_r-medium", 300, 0.85, 0.0),
     ("piper-libritts-700-slow", "piper-libritts_r-medium", 700, 0.75, -2.0),
@@ -182,4 +182,4 @@ VOICES = [
 ]
 
 # The browser's own voice in the "echo" conditions.
-BROWSER_VOICE = ("kokoro-bf_isabella", "kokoro-v1.0-int8", 22, 1.0, 0.0)
+BROWSER_VOICE = ("kokoro-bf_isabella", "kokoro-v1.0", 22, 1.0, 0.0)
