@@ -50,7 +50,8 @@ std::string ChoiceText(const ChoiceRef& ref) {
       for (size_t i = 0; i < ref.words.size(); ++i) {
         out += (i ? "|" : "") + ref.words[i];
       }
-      if (ref.ordinal) out += "#" + std::to_string(ref.ordinal);
+      if (ref.ordinal)
+        out += "#" + std::to_string(ref.ordinal);
       if (!ref.by_words.empty()) {
         out += ",by:";
         for (size_t i = 0; i < ref.by_words.size(); ++i) {
@@ -73,45 +74,57 @@ std::string ChoiceText(const ChoiceRef& ref) {
 std::map<std::string, std::string> Fields(const VoiceCommand& c) {
   std::map<std::string, std::string> f;
   f["kind"] = std::string(VoiceCommandKindName(c.kind));
-  if (!c.text.empty()) f["text"] = c.text;
-  if (!c.site.empty()) f["site"] = c.site;
-  if (c.site_is_address) f["address"] = "1";
-  if (c.new_tab) f["new_tab"] = "1";
+  if (!c.text.empty())
+    f["text"] = c.text;
+  if (!c.site.empty())
+    f["site"] = c.site;
+  if (c.site_is_address)
+    f["address"] = "1";
+  if (c.new_tab)
+    f["new_tab"] = "1";
   if (c.kind == VoiceCommandKind::kSearch) {
     static constexpr std::string_view kScopes[] = {"auto", "current_site",
                                                    "default_engine", "named"};
     f["scope"] = std::string(kScopes[static_cast<int>(c.scope)]);
   }
-  if (!c.whole_query.empty()) f["whole_query"] = c.whole_query;
+  if (!c.whole_query.empty())
+    f["whole_query"] = c.whole_query;
   if (c.kind == VoiceCommandKind::kChoose) {
     static constexpr std::string_view kVerbs[] = {
         "default", "open", "play", "click", "select", "read", "describe"};
     f["verb"] = std::string(kVerbs[static_cast<int>(c.verb)]);
   }
   const std::string choice = ChoiceText(c.choice);
-  if (!choice.empty()) f["choice"] = choice;
-  if (c.choice.roles) f["roles"] = std::to_string(c.choice.roles);
-  if (c.seconds) f["seconds"] = std::to_string(c.seconds);
+  if (!choice.empty())
+    f["choice"] = choice;
+  if (c.choice.roles)
+    f["roles"] = std::to_string(c.choice.roles);
+  if (c.seconds)
+    f["seconds"] = std::to_string(c.seconds);
   if (c.kind == VoiceCommandKind::kSetVolume) {
     f["level"] = std::to_string(c.level);
   }
   if (c.scroll != ScrollAmount::kDefault) {
     f["scroll"] = c.scroll == ScrollAmount::kPage ? "page" : "half";
   }
-  if (c.count != 1) f["count"] = std::to_string(c.count);
+  if (c.count != 1)
+    f["count"] = std::to_string(c.count);
   if (c.kind == VoiceCommandKind::kVerbosity) {
     static constexpr std::string_view kLevels[] = {"brief", "normal", "full",
                                                    "more", "less"};
     f["verbosity"] = std::string(kLevels[static_cast<int>(c.verbosity)]);
   }
-  if (c.refusal == RefusalReason::kTooLong) f["refusal"] = "too_long";
-  if (c.refusal == RefusalReason::kInvalidUtf8) f["refusal"] = "utf8";
+  if (c.refusal == RefusalReason::kTooLong)
+    f["refusal"] = "too_long";
+  if (c.refusal == RefusalReason::kInvalidUtf8)
+    f["refusal"] = "utf8";
   return f;
 }
 
 std::string Show(const std::map<std::string, std::string>& fields) {
   std::string out;
-  for (const auto& [key, value] : fields) out += key + "=" + value + "; ";
+  for (const auto& [key, value] : fields)
+    out += key + "=" + value + "; ";
   return out;
 }
 
@@ -144,7 +157,8 @@ void Check(const std::vector<Case>& cases) {
       } else {
         EXPECT_EQ(found->second, value) << key;
       }
-      if (semi == std::string_view::npos) break;
+      if (semi == std::string_view::npos)
+        break;
       expect.remove_prefix(semi + 1);
     }
   }
@@ -160,8 +174,7 @@ TEST(VoiceCommandTest, OpenSites) {
       {"go to example.com", "open_site", "site=example.com;address=1"},
       {"example dot com", "open_site", "site=example.com;address=1"},
       {"take me to the new york times", "open_site", "site=newyorktimes"},
-      {"visit w w w dot bbc dot co dot uk", "open_site",
-       "site=www.bbc.co.uk"},
+      {"visit w w w dot bbc dot co dot uk", "open_site", "site=www.bbc.co.uk"},
       {"open b b c dot com", "open_site", "site=bbc.com"},
       {"navigate to wikipedia", "open_site", "site=wikipedia"},
       {"open the youtube website", "open_site", "site=youtube"},
@@ -175,8 +188,7 @@ TEST(VoiceCommandTest, OpenSites) {
       {"launch spotify", "open_site", "site=spotify"},
       {"open the guardian", "open_site", "site=guardian"},
       {"go to youtube.com/feed", "open_site", "site=youtube.com/feed"},
-      {"open example dot com slash news", "open_site",
-       "site=example.com/news"},
+      {"open example dot com slash news", "open_site", "site=example.com/news"},
       {"OPEN YOUTUBE", "open_site", "site=youtube"},
       {"Open YouTube!", "open_site", "site=youtube"},
       {"open you tube", "open_site", "site=youtube"},
@@ -186,10 +198,18 @@ TEST(VoiceCommandTest, OpenSites) {
       {"open bohemian rhapsody", "open_site", "site=bohemianrhapsody"},
       {"pull up the weather channel", "open_site", "site=weatherchannel"},
       {"bring up example dot org", "open_site", "site=example.org"},
-      {"open news.ycombinator.com", "open_site",
-       "site=news.ycombinator.com"},
+      {"open news.ycombinator.com", "open_site", "site=news.ycombinator.com"},
       {"go to example underscore site dot com", "open_site",
        "site=example_site.com"},
+      // Not hosts: an e-mail address, a port, words around a dot.
+      {"go to user@example.com", "choose", "verb=open"},
+      {"open localhost:8080", "choose", "verb=open"},
+      {"open example dot", "choose", "verb=open"},
+      {"example dot dot com", "unknown"},
+      // A spoken mark next to a written one is two marks in a row (found by
+      // molt_voice_command_fuzzer).
+      {"go to example slash.com", "choose", "verb=open"},
+      {"oe..slash.y", "unknown"},
   });
 }
 
@@ -224,8 +244,7 @@ TEST(VoiceCommandTest, Search) {
       {"search for apocalypse now", "search", "text=apocalypse now"},
       {"search for AC/DC", "search", "text=AC/DC"},
       {"search for node.js tutorials", "search", "text=node.js tutorials"},
-      {"search for um bohemian rhapsody", "search",
-       "text=bohemian rhapsody"},
+      {"search for um bohemian rhapsody", "search", "text=bohemian rhapsody"},
       {"can you search for cheap flights please", "search",
        "text=cheap flights"},
       {"search for rock & roll", "search", "text=rock & roll"},
@@ -234,12 +253,10 @@ TEST(VoiceCommandTest, Search) {
       {"search for Beyonc\xC3\xA9", "search", "text=Beyonc\xC3\xA9"},
       {"search the internet for how to tie a tie", "search",
        "scope=default_engine;text=how to tie a tie"},
-      {"find opening hours on this page", "find_in_page",
-       "text=opening hours"},
+      {"find opening hours on this page", "find_in_page", "text=opening hours"},
       {"find on page refund", "find_in_page", "text=refund"},
       {"search this page for price", "find_in_page", "text=price"},
-      {"find the word shipping on the page", "find_in_page",
-       "text=shipping"},
+      {"find the word shipping on the page", "find_in_page", "text=shipping"},
   });
 }
 
@@ -502,8 +519,7 @@ TEST(VoiceCommandTest, Choosing) {
       {"choose number 12", "choose", "verb=select;choice=num:12"},
       {"read the third result", "choose", "verb=read;choice=pos:3"},
       {"describe the second one", "choose", "verb=describe;choice=pos:2"},
-      {"tell me about the first video", "choose",
-       "verb=describe;choice=pos:1"},
+      {"tell me about the first video", "choose", "verb=describe;choice=pos:1"},
       {"what is the fourth one", "choose", "verb=describe;choice=pos:4"},
       {"the fourth one", "choose", "verb=default;choice=pos:4"},
       {"the last one", "choose", "choice=pos:-1"},
@@ -642,8 +658,7 @@ TEST(VoiceCommandTest, Routines) {
       {"remember this as a routine called daily news", "remember_routine",
        "text=daily news"},
       {"forget my news", "forget_routine", "text=my news"},
-      {"delete the routine called my news", "forget_routine",
-       "text=my news"},
+      {"delete the routine called my news", "forget_routine", "text=my news"},
       {"run my news", "run_routine", "text=my news"},
       {"run the routine called morning", "run_routine", "text=morning"},
       {"Hey Molt, run my news.", "run_routine", "text=my news"},
@@ -683,8 +698,7 @@ TEST(VoiceCommandTest, RecognizerForms) {
       {"Play the fourth one?", "choose", "choice=pos:4"},
       {"play the 4TH one", "choose", "choice=pos:4"},
       {"play the fourth one now", "choose", "choice=pos:4"},
-      {"could you play the fourth one for me please", "choose",
-       "choice=pos:4"},
+      {"could you play the fourth one for me please", "choose", "choice=pos:4"},
       {"um play the uh fourth one", "choose", "choice=pos:4"},
       {"hey molt um play the fourth one", "choose", "choice=pos:4"},
       {"Hey, Molt! Play the fourth one.", "choose", "choice=pos:4"},
@@ -717,8 +731,8 @@ TEST(VoiceCommandTest, Heard) {
   VoiceCommand command = ParseVoiceCommand("Hey Molt, open YouTube.", context);
   EXPECT_EQ(command.heard, "open YouTube");
   EXPECT_EQ(command.site_words, "YouTube");
-  command = ParseVoiceCommand("open\x01 the\xE2\x80\x8F New York Times",
-                              context);
+  command =
+      ParseVoiceCommand("open\x01 the\xE2\x80\x8F New York Times", context);
   EXPECT_EQ(command.heard, "open the New York Times");
   EXPECT_EQ(command.site_words, "the New York Times");
   command = ParseVoiceCommand("hey molt", context);
@@ -739,7 +753,8 @@ TEST(VoiceCommandTest, CustomWakePhrase) {
 
 TEST(VoiceCommandTest, RefusesRatherThanTruncates) {
   std::string long_text = "search for ";
-  while (long_text.size() <= kMaxUtteranceBytes) long_text += "cats ";
+  while (long_text.size() <= kMaxUtteranceBytes)
+    long_text += "cats ";
   VoiceCommand command = ParseVoiceCommand(long_text, ParseContext());
   EXPECT_EQ(command.kind, VoiceCommandKind::kRefused);
   EXPECT_EQ(command.refusal, RefusalReason::kTooLong);
@@ -753,7 +768,8 @@ TEST(VoiceCommandTest, RefusesRatherThanTruncates) {
 
   // A query over the cap is the planner's, whole.
   std::string query = "search for ";
-  while (query.size() <= kMaxCommandTextBytes + 20) query += "word ";
+  while (query.size() <= kMaxCommandTextBytes + 20)
+    query += "word ";
   command = ParseVoiceCommand(query, ParseContext());
   EXPECT_EQ(command.kind, VoiceCommandKind::kUnknown);
   EXPECT_FALSE(command.heard.empty());
@@ -768,15 +784,18 @@ TEST(VoiceCommandTest, RefusesRatherThanTruncates) {
 TEST(VoiceCommandTest, LongInputIsQuick) {
   // The worst case the cap allows: every word a pattern word.
   std::string text;
-  while (text.size() + 6 < kMaxUtteranceBytes) text += "go to ";
+  while (text.size() + 6 < kMaxUtteranceBytes)
+    text += "go to ";
   const auto start = std::chrono::steady_clock::now();
-  for (int i = 0; i < 20; ++i) ParseVoiceCommand(text, ParseContext());
+  for (int i = 0; i < 20; ++i)
+    ParseVoiceCommand(text, ParseContext());
   const std::chrono::duration<double, std::milli> elapsed =
       std::chrono::steady_clock::now() - start;
   EXPECT_LT(elapsed.count() / 20, 200.0);
 }
 
-// --- The tables ---------------------------------------------------------------
+// --- The tables
+// ---------------------------------------------------------------
 
 TEST(VoiceCommandPhrasesTest, EveryPatternIsWellFormed) {
   for (const CommandPattern& pattern : CommandPatterns(Language::kEnglish)) {
@@ -829,8 +848,7 @@ TEST(VoiceCommandPhrasesTest, KindNamesAreUnique) {
     EXPECT_TRUE(names.insert(name).second) << name;
   }
   EXPECT_EQ(VoiceCommandKindName(VoiceCommandKind::kOpenSite), "open_site");
-  EXPECT_EQ(VoiceCommandKindName(VoiceCommandKind::kRunRoutine),
-            "run_routine");
+  EXPECT_EQ(VoiceCommandKindName(VoiceCommandKind::kRunRoutine), "run_routine");
 }
 
 }  // namespace

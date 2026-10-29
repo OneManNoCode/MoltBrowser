@@ -3,6 +3,8 @@
 #
 # Voice mode: local speech-to-text via bundled whisper.cpp.
 
+import("//testing/libfuzzer/fuzzer_test.gni")
+
 # The chat page's recording, checked and rewritten as a canonical WAV
 # before whisper-cli reads it. Std-only: the unit tests, a standalone
 # harness and molt_recorded_wav_fuzzer build the same code.
@@ -38,6 +40,86 @@ source_set("unit_tests") {
   sources = [ "recorded_wav_unittest.cc" ]
   deps = [
     ":recorded_wav",
+    ":voice_intent_unit_tests",
     "//testing/gtest",
   ]
+}
+
+# --- Voice intent -------------------------------------------------------------
+# What a recognized utterance asks for, without a language model
+# (docs/design/TOUCHLESS_BROWSING.md sections 6.2 and 6.4,
+# docs/VOICE_COMMANDS.md). Std-only (no //base): the unit tests, a standalone
+# harness, the fuzzers and tools/voice/voice_commands_doc.py build the same
+# code.
+
+# The spoken-choice matcher: which item on screen "the fourth one", "number
+# 12" or "the live one by Queen" means. The page map fills its
+# ChoiceCandidates. With it, the text, number and sound-alike readers the
+# grammar shares, and the per-language word tables.
+source_set("spoken_choice") {
+  sources = [
+    "phonetic_key.cc",
+    "phonetic_key.h",
+    "spoken_choice.cc",
+    "spoken_choice.h",
+    "spoken_numbers.cc",
+    "spoken_numbers.h",
+    "spoken_phrases.cc",
+    "spoken_phrases.h",
+    "spoken_phrases_en.cc",
+    "spoken_text.cc",
+    "spoken_text.h",
+  ]
+}
+
+# The direct-command grammar and its per-language patterns.
+source_set("voice_command") {
+  sources = [
+    "voice_command.cc",
+    "voice_command.h",
+    "voice_command_phrases.h",
+    "voice_command_phrases_en.cc",
+  ]
+  public_deps = [ ":spoken_choice" ]
+}
+
+source_set("voice_intent_unit_tests") {
+  testonly = true
+  sources = [
+    "phonetic_key_unittest.cc",
+    "spoken_choice_unittest.cc",
+    "spoken_numbers_unittest.cc",
+    "spoken_text_unittest.cc",
+    "voice_command_unittest.cc",
+  ]
+  deps = [
+    ":spoken_choice",
+    ":voice_command",
+    "//testing/gtest",
+  ]
+}
+
+# Utterances as a recognizer (or anyone who can make the browser hear
+# something) writes them. See docs/FUZZING.md.
+fuzzer_test("molt_voice_command_fuzzer") {
+  sources = [ "molt_voice_command_fuzzer.cc" ]
+  deps = [
+    ":voice_command",
+    "//base",
+  ]
+  dict = "dicts/voice_command.dict"
+  seed_corpus = "corpus/molt_voice_command_fuzzer"
+  libfuzzer_options = [ "max_len=2048" ]
+}
+
+# Items a page shows (page text) and what the user said about them.
+fuzzer_test("molt_spoken_choice_fuzzer") {
+  sources = [ "molt_spoken_choice_fuzzer.cc" ]
+  deps = [
+    ":spoken_choice",
+    "//base",
+  ]
+  dict = "dicts/voice_command.dict"
+  seed_corpus = "corpus/molt_spoken_choice_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
 }

@@ -36,9 +36,11 @@ size_t PhraseLengthAt(std::string_view phrase,
   while (!phrase.empty()) {
     const size_t space = phrase.find(' ');
     const std::string_view word = phrase.substr(0, space);
-    if (at + count >= words.size() || words[at + count] != word) return 0;
+    if (at + count >= words.size() || words[at + count] != word)
+      return 0;
     ++count;
-    if (space == std::string_view::npos) break;
+    if (space == std::string_view::npos)
+      break;
     phrase.remove_prefix(space + 1);
   }
   return count;
@@ -66,9 +68,11 @@ bool InSortedList(const std::vector<std::string_view>& sorted,
 
 const NumberWord* FindNumberWord(const LanguagePhrases& phrases,
                                  std::string_view word) {
-  const auto it = std::lower_bound(
-      phrases.numbers.begin(), phrases.numbers.end(), word,
-      [](const NumberWord& entry, std::string_view w) { return entry.word < w; });
+  const auto it =
+      std::lower_bound(phrases.numbers.begin(), phrases.numbers.end(), word,
+                       [](const NumberWord& entry, std::string_view w) {
+                         return entry.word < w;
+                       });
   return (it != phrases.numbers.end() && it->word == word) ? &*it : nullptr;
 }
 

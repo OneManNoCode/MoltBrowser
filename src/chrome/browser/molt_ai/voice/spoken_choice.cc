@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -61,6 +63,9 @@ constexpr double kExactWord = 1.0;
 constexpr double kPluralWord = 0.95;
 // Words shorter than this only match exactly: short keys collide too much.
 constexpr size_t kMinSoundAlikeLetters = 3;
+// A reference word shorter than this is not compared with two item words
+// joined: a merge of two words is at least two short words long ("signin").
+constexpr size_t kMinMergedLetters = 5;
 // With an ordinal ("the second live one"), the items the description
 // matches are those within this much of the best.
 constexpr double kOrdinalBand = 0.25;
@@ -80,36 +85,73 @@ enum SegmentKind : uint8_t {
   kOtherSegment = 4,
 };
 
-uint32_t SoundMask(std::string_view key) {
-  uint32_t mask = 0;
-  for (char c : key) {
-    switch (c) {
-      case 'a': mask |= 1u << 0; break;
-      case 'P': mask |= 1u << 1; break;
-      case 'T': mask |= 1u << 2; break;
-      case 'K': mask |= 1u << 3; break;
-      case 'S': mask |= 1u << 4; break;
-      case 'X': mask |= 1u << 5; break;
-      case 'M': mask |= 1u << 6; break;
-      case 'N': mask |= 1u << 7; break;
-      case 'L': mask |= 1u << 8; break;
-      case 'R': mask |= 1u << 9; break;
-      case 'W': mask |= 1u << 10; break;
-      case 'Y': mask |= 1u << 11; break;
-      case 'H': mask |= 1u << 12; break;
-      default: break;
-    }
+// How many of each sound class a key has (phonetic_key.h's 13 classes).
+using SoundCounts = std::array<uint8_t, 13>;
+
+int SoundClass(char c) {
+  switch (c) {
+    case 'a':
+      return 0;
+    case 'P':
+      return 1;
+    case 'T':
+      return 2;
+    case 'K':
+      return 3;
+    case 'S':
+      return 4;
+    case 'X':
+      return 5;
+    case 'M':
+      return 6;
+    case 'N':
+      return 7;
+    case 'L':
+      return 8;
+    case 'R':
+      return 9;
+    case 'W':
+      return 10;
+    case 'Y':
+      return 11;
+    case 'H':
+      return 12;
+    default:
+      return -1;
   }
-  return mask;
 }
 
-int PopCount(uint32_t x) {
-  int n = 0;
-  while (x) {
-    x &= x - 1;
-    ++n;
+SoundCounts CountSounds(std::string_view key) {
+  SoundCounts counts{};
+  for (char c : key) {
+    const int k = SoundClass(c);
+    if (k >= 0 && counts[static_cast<size_t>(k)] < 255) {
+      ++counts[static_cast<size_t>(k)];
+    }
   }
-  return n;
+  return counts;
+}
+
+// A lower bound on PhoneticDistance(): every half-edit changes at most two
+// class counts (a close substitution, at cost 1, moves a count from one
+// class to another; an insertion or deletion costs at least 1 and changes
+// one). So the distance is at least half the counts' L1 difference.
+// |b_extra| is added to |b| (two words joined); class |b_seam| loses the
+// sound the join collapsed (-1 for none).
+int SoundsLowerBound(const SoundCounts& a,
+                     const SoundCounts& b,
+                     const SoundCounts* b_extra,
+                     int b_seam) {
+  int difference = 0;
+  for (size_t k = 0; k < a.size(); ++k) {
+    int other = b[k];
+    if (b_extra)
+      other += (*b_extra)[k];
+    if (static_cast<int>(k) == b_seam)
+      --other;
+    difference += std::abs(static_cast<int>(a[k]) - other);
+  }
+  return (difference + 1) / 2;
 }
 
 // A word or joined words with what the comparisons need.
@@ -118,17 +160,17 @@ struct Sound {
   std::string key;
   // A number word's digits ("eight" -> "8"); "" otherwise.
   std::string digits;
-  uint32_t mask = 0;
+  SoundCounts counts{};
   bool numeric = false;
   bool sound_alike = false;  // long enough, and has a key
 
   static Sound Of(std::string text) {
     Sound s;
-    s.numeric = !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
-      return c >= '0' && c <= '9';
-    });
+    s.numeric = !text.empty() &&
+                std::all_of(text.begin(), text.end(),
+                            [](char c) { return c >= '0' && c <= '9'; });
     s.key = s.numeric ? std::string() : PhoneticKey(text);
-    s.mask = SoundMask(s.key);
+    s.counts = CountSounds(s.key);
     s.sound_alike = !s.key.empty() && text.size() >= kMinSoundAlikeLetters;
     s.text = std::move(text);
     return s;
@@ -137,58 +179,73 @@ struct Sound {
 
 bool PluralOf(std::string_view a, std::string_view b) {
   // |a| is |b| plus "s" or "es".
-  if (b.size() < 3 || a.size() <= b.size()) return false;
-  if (a.substr(0, b.size()) != b) return false;
+  if (b.size() < 3 || a.size() <= b.size())
+    return false;
+  if (a.substr(0, b.size()) != b)
+    return false;
   const std::string_view tail = a.substr(b.size());
   return tail == "s" || tail == "es";
 }
 
 // Spelling, then sound.
 double Similarity(const Sound& ref, const Sound& word) {
-  if (ref.text == word.text) return kExactWord;
+  if (ref.text == word.text)
+    return kExactWord;
   if (word.numeric && !ref.digits.empty() && ref.digits == word.text) {
     return kExactWord;
   }
-  if (ref.numeric || word.numeric) return 0;
+  if (ref.numeric || word.numeric)
+    return 0;
   if (PluralOf(ref.text, word.text) || PluralOf(word.text, ref.text)) {
     return kPluralWord;
   }
-  if (!ref.sound_alike || !word.sound_alike) return 0;
+  if (!ref.sound_alike || !word.sound_alike)
+    return 0;
   // Cheap bounds before the edit distance: each length difference needs
-  // an insertion or deletion, each sound class only one side has needs an
-  // edit (a close substitution settles two).
+  // an insertion or deletion, and the sound counts must be close.
   const size_t longer = std::max(ref.key.size(), word.key.size());
   const int bound = PhoneticBound(longer);
   const size_t shorter = std::min(ref.key.size(), word.key.size());
-  if (static_cast<int>(longer - shorter) > bound) return 0;
-  const int missing = PopCount(ref.mask ^ word.mask);
-  if ((missing + 1) / 2 > bound) return 0;
+  if (static_cast<int>(longer - shorter) > bound)
+    return 0;
+  if (SoundsLowerBound(ref.counts, word.counts, nullptr, -1) > bound)
+    return 0;
   return PhoneticSimilarity(ref.key, word.key);
 }
 
 // A reference word against two adjacent item words read as one ("signin"
 // for "Sign in", "rhapsody" for a title's "Rap City"). Filters on length
 // and sound classes first; builds the joined key on the stack.
-double JoinedSimilarity(const Sound& ref, const Sound& left, const Sound& right) {
+double JoinedSimilarity(const Sound& ref,
+                        const Sound& left,
+                        const Sound& right) {
   const size_t text_size = left.text.size() + right.text.size();
   if (ref.text.size() == text_size &&
       ref.text.compare(0, left.text.size(), left.text) == 0 &&
       ref.text.compare(left.text.size(), std::string::npos, right.text) == 0) {
     return kExactWord;
   }
-  if (!ref.sound_alike || !left.sound_alike || !right.sound_alike) return 0;
+  if (!ref.sound_alike || !left.sound_alike || !right.sound_alike)
+    return 0;
+  // A word a recognizer split or merged keeps its first sound.
+  if (!SameOrCloseSounds(ref.key.front(), left.key.front()))
+    return 0;
   const bool seam = left.key.back() == right.key.front();
-  const size_t joined_size = left.key.size() + right.key.size() - (seam ? 1 : 0);
+  const size_t joined_size =
+      left.key.size() + right.key.size() - (seam ? 1 : 0);
   const size_t key_size = ref.key.size();
   const int bound = PhoneticBound(std::max(joined_size, key_size));
   const size_t gap =
       joined_size > key_size ? joined_size - key_size : key_size - joined_size;
-  if (static_cast<int>(gap) > bound) return 0;
-  if ((PopCount(ref.mask ^ (left.mask | right.mask)) + 1) / 2 > bound) {
+  if (static_cast<int>(gap) > bound)
+    return 0;
+  if (SoundsLowerBound(ref.counts, left.counts, &right.counts,
+                       seam ? SoundClass(right.key.front()) : -1) > bound) {
     return 0;
   }
   std::array<char, 2 * kMaxPhoneticWordBytes + 8> joined;
-  if (joined_size > joined.size()) return 0;
+  if (joined_size > joined.size())
+    return 0;
   std::copy(left.key.begin(), left.key.end(), joined.begin());
   std::copy(right.key.begin() + (seam ? 1 : 0), right.key.end(),
             joined.begin() + static_cast<std::ptrdiff_t>(left.key.size()));
@@ -211,7 +268,8 @@ std::vector<std::string> DescriptionWords(const WordList& all_words,
                                           const LanguagePhrases& phrases,
                                           ChoiceRoleMask* roles) {
   std::vector<std::string> out;
-  if (begin >= end) return out;
+  if (begin >= end)
+    return out;
   // The part on its own, so numbers can't read into the next part.
   const WordList words(all_words.begin() + static_cast<std::ptrdiff_t>(begin),
                        all_words.begin() + static_cast<std::ptrdiff_t>(end));
@@ -221,8 +279,10 @@ std::vector<std::string> DescriptionWords(const WordList& all_words,
     const std::string_view w = words[i];
     if (IsSingleLetter(w)) {
       std::string letters;
-      while (i < end && IsSingleLetter(words[i])) letters.append(words[i++]);
-      if (letters.size() > 1 || !InSortedList(phrases.choice_stopwords, letters)) {
+      while (i < end && IsSingleLetter(words[i]))
+        letters.append(words[i++]);
+      if (letters.size() > 1 ||
+          !InSortedList(phrases.choice_stopwords, letters)) {
         out.push_back(std::move(letters));
       }
       continue;
@@ -269,10 +329,13 @@ bool RoleTail(const WordList& words,
               size_t at,
               const LanguagePhrases& phrases,
               ChoiceRoleMask* roles) {
-  if (at == words.size()) return true;
-  if (at + 1 != words.size()) return false;
+  if (at == words.size())
+    return true;
+  if (at + 1 != words.size())
+    return false;
   const RoleWord* role = FindRoleWord(phrases, words[at]);
-  if (!role) return false;
+  if (!role)
+    return false;
   *roles |= role->roles;
   return true;
 }
@@ -314,29 +377,33 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
                                              bool bare_numbers) {
   const LanguagePhrases& phrases = PhrasesFor(language);
   WordList words = all_words;
-  if (words.empty()) return std::nullopt;
+  if (words.empty())
+    return std::nullopt;
   ChoiceRef ref;
 
   // "this one", "the next one", "the one above": the whole reference.
   const auto whole = [&](const std::vector<std::string_view>& list) {
     for (std::string_view phrase : list) {
-      if (PhraseLengthAt(phrase, words, 0) == words.size()) return true;
+      if (PhraseLengthAt(phrase, words, 0) == words.size())
+        return true;
     }
     return false;
   };
   if (whole(phrases.current_phrases) || whole(phrases.next_phrases) ||
       whole(phrases.previous_phrases)) {
     ref.kind = ChoiceRef::Kind::kRelative;
-    ref.relative = whole(phrases.current_phrases)
-                       ? ChoiceRef::Relative::kCurrent
-                   : whole(phrases.next_phrases) ? ChoiceRef::Relative::kNext
-                                                 : ChoiceRef::Relative::kPrevious;
+    ref.relative =
+        whole(phrases.current_phrases) ? ChoiceRef::Relative::kCurrent
+        : whole(phrases.next_phrases)  ? ChoiceRef::Relative::kNext
+                                       : ChoiceRef::Relative::kPrevious;
     return ref;
   }
 
   size_t i = 0;
-  while (i < words.size() && HasPhrase(phrases.articles, words[i])) ++i;
-  if (i == words.size()) return std::nullopt;
+  while (i < words.size() && HasPhrase(phrases.articles, words[i]))
+    ++i;
+  if (i == words.size())
+    return std::nullopt;
 
   // A position: "the fourth one", "the last video", "the second live one".
   if (const std::optional<SpokenPosition> position =
@@ -420,7 +487,8 @@ std::optional<ChoiceRef> ParseChoiceRefWords(const WordList& all_words,
   size_t budget = kMaxChoiceRefWords;
   for (std::vector<std::string>* list :
        {&ref.words, &ref.by_words, &ref.from_words}) {
-    if (list->size() > budget) list->resize(budget);
+    if (list->size() > budget)
+      list->resize(budget);
     budget -= list->size();
   }
   ref.roles = roles;
@@ -443,7 +511,8 @@ std::optional<ChoiceRef> ParseChoiceRef(std::string_view spoken,
   const NormalizedText text = NormalizeSpokenText(spoken, options);
   WordList words;
   words.reserve(text.words.size());
-  for (size_t i = 0; i < text.words.size(); ++i) words.push_back(text.Word(i));
+  for (size_t i = 0; i < text.words.size(); ++i)
+    words.push_back(text.Word(i));
   return ParseChoiceRefWords(words, language, bare_numbers);
 }
 
@@ -468,7 +537,8 @@ class Vocabulary {
 
   uint32_t Intern(std::string_view word) {
     const auto found = ids_.find(word);
-    if (found != ids_.end()) return found->second;
+    if (found != ids_.end())
+      return found->second;
     if (sounds_.size() >= kMaxVocabulary ||
         arena_.size() + word.size() > arena_.capacity()) {
       return kNoWord;
@@ -477,7 +547,8 @@ class Vocabulary {
     // stay valid as keys.
     const size_t at = arena_.size();
     arena_.append(word);
-    const std::string_view stored = std::string_view(arena_).substr(at, word.size());
+    const std::string_view stored =
+        std::string_view(arena_).substr(at, word.size());
     const uint32_t id = static_cast<uint32_t>(sounds_.size());
     ids_.emplace(stored, id);
     sounds_.push_back(Sound::Of(std::string(word)));
@@ -493,9 +564,11 @@ class Vocabulary {
 };
 
 std::string_view CutAtWord(std::string_view text, size_t cap) {
-  if (text.size() <= cap) return text;
+  if (text.size() <= cap)
+    return text;
   size_t cut = cap;
-  while (cut > 0 && text[cut] != ' ') --cut;
+  while (cut > 0 && text[cut] != ' ')
+    --cut;
   return text.substr(0, cut ? cut : cap);
 }
 
@@ -516,7 +589,8 @@ void AddSegment(std::string_view text,
     prepared.words.push_back(vocabulary.Intern(normalized.Word(i)));
   }
   segment.size = static_cast<uint32_t>(prepared.words.size()) - segment.begin;
-  if (segment.size) prepared.segments.push_back(segment);
+  if (segment.size)
+    prepared.segments.push_back(segment);
 }
 
 // One unit of the reference: a word, or two or three adjacent words of
@@ -547,7 +621,8 @@ std::vector<RefUnit> MakeUnits(const std::vector<std::string>& words,
           unit.sound.digits = std::to_string(number->value);
         }
       }
-      if (count > 1 && unit.sound.key.empty()) break;
+      if (count > 1 && unit.sound.key.empty())
+        break;
       unit.group = group;
       unit.first = first;
       unit.count = count;
@@ -566,7 +641,8 @@ struct Scored {
 void Rank(std::vector<Scored>& scored) {
   std::stable_sort(scored.begin(), scored.end(),
                    [](const Scored& a, const Scored& b) {
-                     if (a.score != b.score) return a.score > b.score;
+                     if (a.score != b.score)
+                       return a.score > b.score;
                      return a.position < b.position;
                    });
 }
@@ -575,7 +651,8 @@ void FillRanked(const std::vector<Scored>& scored,
                 const MatchOptions& options,
                 ChoiceMatch& result) {
   for (const Scored& s : scored) {
-    if (result.ranked.size() >= options.max_ranked || s.score <= 0) break;
+    if (result.ranked.size() >= options.max_ranked || s.score <= 0)
+      break;
     result.ranked.push_back(RankedChoice{s.index, s.score});
   }
 }
@@ -602,6 +679,13 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   std::vector<std::string> words = ref.words;
   std::vector<std::string> by_words = ref.by_words;
   std::vector<std::string> from_words = ref.from_words;
+  // A reference built by hand may be longer than a parsed one.
+  size_t budget = kMaxChoiceRefWords;
+  for (std::vector<std::string>* list : {&words, &by_words, &from_words}) {
+    if (list->size() > budget)
+      list->resize(budget);
+    budget -= list->size();
+  }
 
   // Read every item into the shared vocabulary.
   size_t bytes = 0;
@@ -610,7 +694,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     bytes += std::min(c.title.size(), kMaxChoiceTitleBytes);
     size_t fields = 0;
     for (const ChoiceField& field : c.fields) {
-      if (++fields > kMaxChoiceFields) break;
+      if (++fields > kMaxChoiceFields)
+        break;
       bytes += std::min(field.text.size(), kMaxChoiceFieldBytes);
     }
   }
@@ -622,7 +707,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
                vocabulary, prepared[e]);
     size_t fields = 0;
     for (const ChoiceField& field : c.fields) {
-      if (++fields > kMaxChoiceFields) break;
+      if (++fields > kMaxChoiceFields)
+        break;
       const bool author = field.kind == ChoiceFieldKind::kAuthor ||
                           field.kind == ChoiceFieldKind::kSource;
       AddSegment(field.text, kMaxChoiceFieldBytes, kMaxFieldWords,
@@ -640,54 +726,71 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   const auto word_matches = [&](const std::vector<std::string>& group_words,
                                 Group group, uint8_t kinds,
                                 double title_factor) {
-    std::vector<std::vector<double>> best(
-        group_words.size(), std::vector<double>(n, 0.0));
-    if (group_words.empty()) return best;
+    std::vector<std::vector<double>> best(group_words.size(),
+                                          std::vector<double>(n, 0.0));
+    if (group_words.empty())
+      return best;
     const std::vector<RefUnit> units = MakeUnits(group_words, group, phrases);
+    // Single words long enough to be two words merged ("signin").
     std::vector<size_t> single_units;
     for (size_t u = 0; u < units.size(); ++u) {
-      if (units[u].count == 1) single_units.push_back(u);
+      if (units[u].count == 1 &&
+          units[u].sound.text.size() >= kMinMergedLetters) {
+        single_units.push_back(u);
+      }
     }
-    // Each unit against each distinct word, once.
+    // Each unit against each distinct word, once; |hits| says which units
+    // a word matches at all (most match none), so items skip the rest.
+    // At most 12 words make at most 33 units.
+    static_assert(3 * kMaxChoiceRefWords <= 64);
     std::vector<uint8_t> table(units.size() * sounds.size(), 0);
+    std::vector<uint64_t> hits(sounds.size(), 0);
     for (size_t u = 0; u < units.size(); ++u) {
       for (size_t v = 0; v < sounds.size(); ++v) {
         double s = Similarity(units[u].sound, sounds[v]);
-        if (units[u].count > 1) s *= kJoinedWords;
-        table[u * sounds.size() + v] =
-            static_cast<uint8_t>(std::lround(s * 250));
+        if (units[u].count > 1)
+          s *= kJoinedWords;
+        const auto q = static_cast<uint8_t>(std::lround(s * 250));
+        table[u * sounds.size() + v] = q;
+        if (q)
+          hits[v] |= uint64_t{1} << u;
       }
     }
     for (size_t e = 0; e < n; ++e) {
       const Prepared& item = prepared[e];
       for (const Segment& segment : item.segments) {
         const bool in_kinds = (segment.kind & kinds) != 0;
-        const bool title_only = !in_kinds && segment.kind == kTitleSegment &&
-                                title_factor > 0;
-        if (!in_kinds && !title_only) continue;
+        const bool title_only =
+            !in_kinds && segment.kind == kTitleSegment && title_factor > 0;
+        if (!in_kinds && !title_only)
+          continue;
         const double factor = in_kinds ? 1.0 : title_factor;
         for (uint32_t k = 0; k < segment.size; ++k) {
           const uint32_t id = item.words[segment.begin + k];
-          if (id == kNoWord) continue;
-          for (size_t u = 0; u < units.size(); ++u) {
+          if (id == kNoWord)
+            continue;
+          for (uint64_t m = hits[id]; m; m &= m - 1) {
+            const auto u = static_cast<size_t>(std::countr_zero(m));
             const uint8_t q = table[u * sounds.size() + id];
-            if (!q) continue;
             const double s = factor * q / 250.0;
-            for (size_t w = units[u].first;
-                 w < units[u].first + units[u].count; ++w) {
+            for (size_t w = units[u].first; w < units[u].first + units[u].count;
+                 ++w) {
               best[w][e] = std::max(best[w][e], s);
             }
           }
           // A reference word against two adjacent item words joined
           // ("signin" / "Sign in"), when it hasn't matched well yet.
-          if (k + 1 >= segment.size) continue;
+          if (k + 1 >= segment.size)
+            continue;
           const uint32_t next = item.words[segment.begin + k + 1];
-          if (next == kNoWord) continue;
+          if (next == kNoWord)
+            continue;
           const Sound& left = sounds[id];
           const Sound& right = sounds[next];
           for (size_t u : single_units) {
             const RefUnit& unit = units[u];
-            if (best[unit.first][e] >= kGoodMatch) continue;
+            if (best[unit.first][e] >= kGoodMatch)
+              continue;
             const double s = JoinedSimilarity(unit.sound, left, right);
             if (s > 0) {
               best[unit.first][e] =
@@ -698,12 +801,13 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
       }
     }
     for (std::vector<double>& row : best) {
-      const bool spelled = std::any_of(row.begin(), row.end(), [](double s) {
-        return s >= kSpelledMatch;
-      });
-      if (!spelled) continue;
+      const bool spelled = std::any_of(
+          row.begin(), row.end(), [](double s) { return s >= kSpelledMatch; });
+      if (!spelled)
+        continue;
       for (double& s : row) {
-        if (s < kSpelledMatch) s *= kSoundAlikeWhenSpelled;
+        if (s < kSpelledMatch)
+          s *= kSoundAlikeWhenSpelled;
       }
     }
     return best;
@@ -716,7 +820,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   if (!by_words.empty()) {
     bool any = false;
     for (const std::vector<double>& row : by_best) {
-      for (double s : row) any = any || s >= kGoodMatch;
+      for (double s : row)
+        any = any || s >= kGoodMatch;
     }
     if (!any) {
       words.insert(words.end(), by_words.begin(), by_words.end());
@@ -739,21 +844,23 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     for (size_t w = 0; w < best.size(); ++w) {
       const std::vector<double>& row = best[w];
       size_t df = 0;
-      for (double s : row) df += s >= kGoodMatch ? 1 : 0;
+      for (double s : row)
+        df += s >= kGoodMatch ? 1 : 0;
       // A particle no item has says nothing ("the one with the guitar").
-      double weight =
-          InSortedList(phrases.choice_particles, group_words[w])
-              ? 0.0
-              : kUnmatchedWordWeight;
+      double weight = InSortedList(phrases.choice_particles, group_words[w])
+                          ? 0.0
+                          : kUnmatchedWordWeight;
       if (df > 0) {
-        const double idf =
-            std::log((static_cast<double>(n) + 1.0) / (static_cast<double>(df) + 1.0)) /
-            log_n;
+        const double idf = std::log((static_cast<double>(n) + 1.0) /
+                                    (static_cast<double>(df) + 1.0)) /
+                           log_n;
         weight = kSharedWordWeight + (1.0 - kSharedWordWeight) * idf;
-        if (by_cue) weight = std::max(weight, kByCueWeight);
+        if (by_cue)
+          weight = std::max(weight, kByCueWeight);
       }
       total_weight += weight;
-      for (size_t e = 0; e < n; ++e) scores[e] += weight * row[e];
+      for (size_t e = 0; e < n; ++e)
+        scores[e] += weight * row[e];
     }
   };
   add(word_best, words, false);
@@ -765,8 +872,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     scored[e].index = eligible[e];
     scored[e].position = candidates[eligible[e]].position;
     // Only a role ("the search box"): every item with it matches fully.
-    scored[e].score = total_weight > 0 ? scores[e] / total_weight
-                                       : (ref.roles ? 1.0 : 0.0);
+    scored[e].score =
+        total_weight > 0 ? scores[e] / total_weight : (ref.roles ? 1.0 : 0.0);
   }
   Rank(scored);
 
@@ -795,8 +902,7 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
       result.reason = NoMatchReason::kOutOfRange;
       return result;
     }
-    const Scored& chosen =
-        matching[ref.from_end ? matching.size() - k : k - 1];
+    const Scored& chosen = matching[ref.from_end ? matching.size() - k : k - 1];
     result.outcome = ChoiceOutcome::kUnique;
     result.index = chosen.index;
     return result;
@@ -810,7 +916,8 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
   }
   result.outcome = ChoiceOutcome::kAmbiguous;
   for (const Scored& s : scored) {
-    if (result.close.size() >= kMaxCloseChoices || top - s.score >= options.margin) {
+    if (result.close.size() >= kMaxCloseChoices ||
+        top - s.score >= options.margin) {
       break;
     }
     result.close.push_back(s.index);
@@ -824,7 +931,8 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
                               const std::vector<ChoiceCandidate>& candidates,
                               const MatchOptions& options) {
   const size_t count = std::min(candidates.size(), kMaxChoiceCandidates);
-  if (count == 0) return NoMatch(NoMatchReason::kNoCandidates);
+  if (count == 0)
+    return NoMatch(NoMatchReason::kNoCandidates);
   if (ref.kind == ChoiceRef::Kind::kNone) {
     return NoMatch(NoMatchReason::kEmptyReference);
   }
@@ -833,11 +941,13 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
   std::vector<size_t> eligible;
   if (ref.roles) {
     for (size_t i = 0; i < count; ++i) {
-      if (RoleBit(candidates[i].role) & ref.roles) eligible.push_back(i);
+      if (RoleBit(candidates[i].role) & ref.roles)
+        eligible.push_back(i);
     }
   }
   if (eligible.empty()) {
-    for (size_t i = 0; i < count; ++i) eligible.push_back(i);
+    for (size_t i = 0; i < count; ++i)
+      eligible.push_back(i);
   }
   // In list order.
   std::stable_sort(eligible.begin(), eligible.end(), [&](size_t a, size_t b) {
@@ -869,23 +979,28 @@ ChoiceMatch MatchSpokenChoice(const ChoiceRef& ref,
     }
     case ChoiceRef::Kind::kRelative: {
       const int current = options.current_position;
-      if (current <= 0) return NoMatch(NoMatchReason::kNoCurrentItem);
+      if (current <= 0)
+        return NoMatch(NoMatchReason::kNoCurrentItem);
       std::optional<size_t> found;
       for (size_t index : eligible) {
         const int position = candidates[index].position;
         switch (ref.relative) {
           case ChoiceRef::Relative::kCurrent:
-            if (position == current) found = index;
+            if (position == current)
+              found = index;
             break;
           case ChoiceRef::Relative::kNext:
-            if (position > current && !found) found = index;
+            if (position > current && !found)
+              found = index;
             break;
           case ChoiceRef::Relative::kPrevious:
-            if (position < current) found = index;
+            if (position < current)
+              found = index;
             break;
         }
       }
-      if (!found) return NoMatch(NoMatchReason::kOutOfRange);
+      if (!found)
+        return NoMatch(NoMatchReason::kOutOfRange);
       return Unique(*found);
     }
     case ChoiceRef::Kind::kDescription:

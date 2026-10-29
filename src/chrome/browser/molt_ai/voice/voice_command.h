@@ -66,21 +66,21 @@ enum class VoiceCommandKind : uint8_t {
   kRefused,
 
   // --- Navigation ---------------------------------------------------------
-  kOpenSite,     // |site|, |site_is_address|, |new_tab|
-  kSearch,       // |text| (the query), |scope|, |site| for kNamedSite
-  kFindInPage,   // |text|
+  kOpenSite,    // |site|, |site_is_address|, |new_tab|
+  kSearch,      // |text| (the query), |scope|, |site| for kNamedSite
+  kFindInPage,  // |text|
   kBack,
   kForward,
   kReload,
   kStopLoading,
   kHome,
-  kNextPage,     // a result list's next page (or the next screenful)
+  kNextPage,  // a result list's next page (or the next screenful)
   kNewTab,
-  kCloseTab,     // |choice| names the tab; kNone for the current one
-  kSwitchTab,    // |choice|
+  kCloseTab,   // |choice| names the tab; kNone for the current one
+  kSwitchTab,  // |choice|
 
   // --- Viewing ------------------------------------------------------------
-  kScrollDown,   // |scroll|, |count|
+  kScrollDown,  // |scroll|, |count|
   kScrollUp,
   kScrollLeft,
   kScrollRight,
@@ -96,11 +96,11 @@ enum class VoiceCommandKind : uint8_t {
   kResume,
   kVolumeUp,
   kVolumeDown,
-  kSetVolume,     // |level|: 0..100
+  kSetVolume,  // |level|: 0..100
   kMute,
   kUnmute,
-  kSkipForward,   // |seconds|; 0 for the player's default step
-  kSkipBack,      // |seconds|; 0 for the player's default step
+  kSkipForward,  // |seconds|; 0 for the player's default step
+  kSkipBack,     // |seconds|; 0 for the player's default step
   kRestart,
   kNextTrack,
   kPreviousTrack,
@@ -132,12 +132,12 @@ enum class VoiceCommandKind : uint8_t {
   kPreviousItem,
 
   // --- Choosing -----------------------------------------------------------
-  kChoose,        // |verb|, |choice|
+  kChoose,  // |verb|, |choice|
   kShowNumbers,
   kHideNumbers,
 
   // --- Dictation (in a focused text field) ------------------------------
-  kType,          // |text|
+  kType,  // |text|
   kNewLine,
   kDeleteLastWord,
   kClearField,
@@ -145,10 +145,10 @@ enum class VoiceCommandKind : uint8_t {
   kSubmit,
 
   // --- Conversation -------------------------------------------------------
-  kYes,           // only when ParseContext::expecting_yes_no
-  kNo,            // only when ParseContext::expecting_yes_no
+  kYes,  // only when ParseContext::expecting_yes_no
+  kNo,   // only when ParseContext::expecting_yes_no
   kCancel,
-  kStop,          // stop speaking and whatever is running
+  kStop,  // stop speaking and whatever is running
   kStopSpeaking,
   kUndo,
   kRepeat,
@@ -156,8 +156,8 @@ enum class VoiceCommandKind : uint8_t {
   kWhereAmI,
   kSpeakFaster,
   kSpeakSlower,
-  kVerbosity,     // |verbosity|
-  kCorrection,    // |text|: what the user meant, to parse again
+  kVerbosity,   // |verbosity|
+  kCorrection,  // |text|: what the user meant, to parse again
 
   // --- Learning (section 6.8) ---------------------------------------------
   kRememberRoutine,  // |text|: the name
@@ -193,9 +193,9 @@ enum class ChoiceVerb : uint8_t {
 };
 
 enum class ScrollAmount : uint8_t {
-  kDefault,  // the browser's step
-  kPage,     // |count| pages
-  kHalfPage, // "a bit", "half a page"
+  kDefault,   // the browser's step
+  kPage,      // |count| pages
+  kHalfPage,  // "a bit", "half a page"
 };
 
 enum class Verbosity : uint8_t {
@@ -222,8 +222,10 @@ struct ParseContext {
   // "read it back", "submit") apply to it.
   bool text_field_focused = false;
   Language language = Language::kEnglish;
-  // The wake phrase the user chose (folded as spoken_text.h folds); empty
-  // for the language's default ("hey molt").
+  // The wake phrase the user chose ("Hey Molt", "computer"; folded here);
+  // empty for the language's default ("hey molt"). Removed from the start
+  // of an utterance, with sound-alikes of its name, when the recognizer
+  // wrote it.
   std::string_view wake_phrase;
 };
 

@@ -29,10 +29,14 @@
 //     compared joined across two or three words on either side, so a
 //     recognizer that split or merged words still matches ("Bohemian rap
 //     city" -> "Bohemian Rhapsody", "signin" -> "Sign in").
+//   - When some item has a word exactly as spelled, other items' sound-
+//     alikes of it count less: the recognizer is biased toward the words
+//     on screen, so "AirPods" means the AirPods, not the earbuds.
 //   - Words that set items apart weigh more than words they share. A word
 //     every item has ("official" on every result) counts little; one that
 //     matches nothing counts a fixed, moderate amount, so a stray word
-//     lowers confidence without ruling anything out.
+//     lowers confidence without ruling anything out. Short particles ("in",
+//     "with") count only when an item has them ("Log in" / "Log out").
 //   - "by X" is matched against the author fields (channel, artist,
 //     seller), and against the title at a discount; "from X" against the
 //     source, date and other fields and the title. A cue nothing matches

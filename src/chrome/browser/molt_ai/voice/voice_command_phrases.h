@@ -63,10 +63,10 @@ enum class PatternContext : uint8_t {
 // What a pattern sets beyond its kind.
 enum class PatternVariant : uint8_t {
   kNone,
-  kNewTab,        // kOpenSite in a new tab
-  kNextTab,       // kSwitchTab to the next tab
-  kPreviousTab,   // kSwitchTab to the previous tab
-  kPageStep,      // kScrollDown / kScrollUp by a page ("page down")
+  kNewTab,       // kOpenSite in a new tab
+  kNextTab,      // kSwitchTab to the next tab
+  kPreviousTab,  // kSwitchTab to the previous tab
+  kPageStep,     // kScrollDown / kScrollUp by a page ("page down")
   // kChoose's verb.
   kVerbOpen,
   kVerbPlay,

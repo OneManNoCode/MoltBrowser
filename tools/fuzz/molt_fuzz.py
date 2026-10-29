@@ -57,6 +57,15 @@ MOLT_AI = "src/chrome/browser/molt_ai"
 DOCUMENT_PARSER = "src/chrome/services/molt_ai/document_parser"
 FINGERPRINTING = "src/third_party/blink/renderer/core/molt_fingerprinting"
 LLAMA = "src/third_party/llama_cpp"
+VOICE = f"{MOLT_AI}/voice"
+# The std-only voice intent code (voice/BUILD.gn: spoken_choice,
+# voice_command).
+VOICE_INTENT_SOURCES = [
+    f"{VOICE}/{name}.cc" for name in (
+        "phonetic_key", "spoken_choice", "spoken_numbers", "spoken_phrases",
+        "spoken_phrases_en", "spoken_text", "voice_command",
+        "voice_command_phrases_en")
+]
 
 # name -> where the fuzzer lives (its .cc, BUILD.gn and corpus/<name>/), the
 # product sources it links, its tier, the libFuzzer options it runs with
@@ -274,6 +283,23 @@ FUZZERS = {
         dict="dicts/wav.dict",
         max_len=65536,
         smoke_runs=1000000,
+    ),
+    # --- The browser: voice intent (what a recognizer writes, page text) --
+    "molt_voice_command_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES,
+        tier="std",
+        dict="dicts/voice_command.dict",
+        max_len=2048,
+        smoke_runs=60000,
+    ),
+    "molt_spoken_choice_fuzzer": dict(
+        dir=VOICE,
+        sources=VOICE_INTENT_SOURCES,
+        tier="std",
+        dict="dicts/voice_command.dict",
+        max_len=16384,
+        smoke_runs=20000,
     ),
     # --- The browser: agents and workflows (//base stand-ins) -------------
     "molt_agent_actions_fuzzer": dict(

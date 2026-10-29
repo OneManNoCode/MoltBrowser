@@ -36,22 +36,29 @@ size_t DecodeAt(std::string_view text, size_t at, uint32_t* cp) {
     length = 2;
   } else if (b0 >= 0xE0 && b0 <= 0xEF) {
     length = 3;
-    if (b0 == 0xE0) lo = 0xA0;  // no overlong forms
-    if (b0 == 0xED) hi = 0x9F;  // no surrogates
+    if (b0 == 0xE0)
+      lo = 0xA0;  // no overlong forms
+    if (b0 == 0xED)
+      hi = 0x9F;  // no surrogates
   } else if (b0 >= 0xF0 && b0 <= 0xF4) {
     length = 4;
-    if (b0 == 0xF0) lo = 0x90;  // no overlong forms
-    if (b0 == 0xF4) hi = 0x8F;  // nothing past U+10FFFF
+    if (b0 == 0xF0)
+      lo = 0x90;  // no overlong forms
+    if (b0 == 0xF4)
+      hi = 0x8F;  // nothing past U+10FFFF
   } else {
     return 0;
   }
-  if (text.size() - at < length) return 0;
+  if (text.size() - at < length)
+    return 0;
   const uint32_t b1 = byte(at + 1);
-  if (b1 < lo || b1 > hi) return 0;
+  if (b1 < lo || b1 > hi)
+    return 0;
   uint32_t value = (b0 & (0x7F >> length)) << 6 | (b1 & 0x3F);
   for (size_t i = 2; i < length; ++i) {
     const uint32_t b = byte(at + i);
-    if (b < 0x80 || b > 0xBF) return 0;
+    if (b < 0x80 || b > 0xBF)
+      return 0;
     value = value << 6 | (b & 0x3F);
   }
   *cp = value;
@@ -92,10 +99,9 @@ bool IsInvisibleFormat(uint32_t cp) {
 }
 
 bool IsSpace(uint32_t cp) {
-  return cp == ' ' || (cp >= 0x09 && cp <= 0x0D) || cp == 0x85 ||
-         cp == 0xA0 || cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200A) ||
-         cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x205F ||
-         cp == 0x3000;
+  return cp == ' ' || (cp >= 0x09 && cp <= 0x0D) || cp == 0x85 || cp == 0xA0 ||
+         cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 ||
+         cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000;
 }
 
 enum class CharClass {
@@ -107,62 +113,83 @@ enum class CharClass {
 
 CharClass Classify(uint32_t cp) {
   if (cp < 0x80) {
-    if (IsAsciiAlnum(cp)) return CharClass::kWord;
+    if (IsAsciiAlnum(cp))
+      return CharClass::kWord;
     return cp == '\'' ? CharClass::kApostrophe : CharClass::kBreak;
   }
-  if (IsInvisibleFormat(cp)) return CharClass::kIgnorable;
-  if (cp <= 0x9F) return CharClass::kBreak;  // C1 controls
+  if (IsInvisibleFormat(cp))
+    return CharClass::kIgnorable;
+  if (cp <= 0x9F)
+    return CharClass::kBreak;  // C1 controls
   if (cp < 0xC0) {
     // Latin-1 punctuation and symbols, but for the ordinal indicators and
     // the micro sign.
     return (cp == 0xAA || cp == 0xB5 || cp == 0xBA) ? CharClass::kWord
                                                     : CharClass::kBreak;
   }
-  if (cp == 0xD7 || cp == 0xF7) return CharClass::kBreak;  // x and divide
-  if (cp <= 0x2AF) return CharClass::kWord;  // Latin extended, IPA
-  if (cp == 0x2BC) return CharClass::kApostrophe;
-  if (cp < 0x300) return CharClass::kBreak;  // spacing modifiers
-  if (cp <= 0x36F) return CharClass::kIgnorable;  // combining accents
-  if (cp == 0x37E || cp == 0x387) return CharClass::kBreak;  // Greek ; and .
-  if (cp >= 0x483 && cp <= 0x489) return CharClass::kIgnorable;
-  if (cp == 0x589 || cp == 0x5BE || cp == 0x5C0 || cp == 0x5C3 ||
-      cp == 0x5F3 || cp == 0x5F4 || cp == 0x60C || cp == 0x60D ||
-      cp == 0x61B || cp == 0x61F || cp == 0x66A || cp == 0x66B ||
-      cp == 0x66C || cp == 0x6D4 || cp == 0x964 || cp == 0x965) {
+  if (cp == 0xD7 || cp == 0xF7)
+    return CharClass::kBreak;  // x and divide
+  if (cp <= 0x2AF)
+    return CharClass::kWord;  // Latin extended, IPA
+  if (cp == 0x2BC)
+    return CharClass::kApostrophe;
+  if (cp < 0x300)
+    return CharClass::kBreak;  // spacing modifiers
+  if (cp <= 0x36F)
+    return CharClass::kIgnorable;  // combining accents
+  if (cp == 0x37E || cp == 0x387)
+    return CharClass::kBreak;  // Greek ; and .
+  if (cp >= 0x483 && cp <= 0x489)
+    return CharClass::kIgnorable;
+  if (cp == 0x589 || cp == 0x5BE || cp == 0x5C0 || cp == 0x5C3 || cp == 0x5F3 ||
+      cp == 0x5F4 || cp == 0x60C || cp == 0x60D || cp == 0x61B || cp == 0x61F ||
+      cp == 0x66A || cp == 0x66B || cp == 0x66C || cp == 0x6D4 || cp == 0x964 ||
+      cp == 0x965) {
     return CharClass::kBreak;  // Armenian, Hebrew, Arabic, Devanagari marks
   }
-  if (cp == 0x640) return CharClass::kIgnorable;  // Arabic tatweel
+  if (cp == 0x640)
+    return CharClass::kIgnorable;  // Arabic tatweel
   if (cp >= 0x2000 && cp <= 0x206F) {
     return (cp == 0x2018 || cp == 0x2019) ? CharClass::kApostrophe
                                           : CharClass::kBreak;
   }
-  if (cp >= 0x2070 && cp <= 0x2BFF) return CharClass::kBreak;  // symbols
-  if (cp >= 0x2E00 && cp <= 0x2E7F) return CharClass::kBreak;
-  if (cp >= 0x3000 && cp <= 0x303F) return CharClass::kBreak;  // CJK marks
-  if (cp >= 0xD800 && cp <= 0xDFFF) return CharClass::kBreak;
-  if (cp >= 0xE000 && cp <= 0xF8FF) return CharClass::kBreak;  // private use
-  if (cp >= 0xFE10 && cp <= 0xFE6F) return CharClass::kBreak;
+  if (cp >= 0x2070 && cp <= 0x2BFF)
+    return CharClass::kBreak;  // symbols
+  if (cp >= 0x2E00 && cp <= 0x2E7F)
+    return CharClass::kBreak;
+  if (cp >= 0x3000 && cp <= 0x303F)
+    return CharClass::kBreak;  // CJK marks
+  if (cp >= 0xD800 && cp <= 0xDFFF)
+    return CharClass::kBreak;
+  if (cp >= 0xE000 && cp <= 0xF8FF)
+    return CharClass::kBreak;  // private use
+  if (cp >= 0xFE10 && cp <= 0xFE6F)
+    return CharClass::kBreak;
   if (cp >= 0xFF00 && cp <= 0xFFEF) {
-    if (cp == 0xFF07) return CharClass::kApostrophe;
+    if (cp == 0xFF07)
+      return CharClass::kApostrophe;
     if ((cp >= 0xFF10 && cp <= 0xFF19) || (cp >= 0xFF21 && cp <= 0xFF3A) ||
         (cp >= 0xFF41 && cp <= 0xFF5A) || (cp >= 0xFF66 && cp <= 0xFFDC)) {
       return CharClass::kWord;
     }
     return CharClass::kBreak;
   }
-  if (cp >= 0xFFF0 && cp <= 0xFFFF) return CharClass::kBreak;  // specials
-  if (cp >= 0x1F000 && cp <= 0x1FAFF) return CharClass::kBreak;  // emoji
-  if (cp >= 0xF0000) return CharClass::kBreak;  // private use planes
+  if (cp >= 0xFFF0 && cp <= 0xFFFF)
+    return CharClass::kBreak;  // specials
+  if (cp >= 0x1F000 && cp <= 0x1FAFF)
+    return CharClass::kBreak;  // emoji
+  if (cp >= 0xF0000)
+    return CharClass::kBreak;  // private use planes
   return CharClass::kWord;
 }
 
 // U+00C0..U+00FF folded. "" for the two symbols in the block.
 constexpr std::string_view kLatin1Fold[64] = {
-    "a", "a", "a", "a", "a", "a", "ae", "c", "e", "e", "e",  "e", "i",
-    "i", "i", "i", "d", "n", "o", "o",  "o", "o", "o", "",   "o", "u",
-    "u", "u", "u", "y", "th", "ss", "a", "a", "a", "a", "a", "a", "ae",
-    "c", "e", "e", "e", "e", "i", "i",  "i", "i", "d", "n", "o", "o",
-    "o", "o", "o", "",  "o", "u", "u", "u", "u", "y", "th", "y"};
+    "a", "a", "a", "a", "a",  "a",  "ae", "c", "e", "e", "e",  "e", "i",
+    "i", "i", "i", "d", "n",  "o",  "o",  "o", "o", "o", "",   "o", "u",
+    "u", "u", "u", "y", "th", "ss", "a",  "a", "a", "a", "a",  "a", "ae",
+    "c", "e", "e", "e", "e",  "i",  "i",  "i", "i", "d", "n",  "o", "o",
+    "o", "o", "o", "",  "o",  "u",  "u",  "u", "u", "y", "th", "y"};
 
 // U+0100..U+017F folded, one base letter each; '1' is "ij", '2' is "oe".
 constexpr std::string_view kLatinExtendedAFold =
@@ -197,13 +224,16 @@ static_assert(kPinyinFold.size() == 0x1DD - 0x1CD - 2);
 // Appends the folded form of word character |cp| to |out|.
 void Fold(uint32_t cp, std::string* out) {
   if (cp < 0x80) {
-    out->push_back(static_cast<char>(
-        (cp >= 'A' && cp <= 'Z') ? cp - 'A' + 'a' : cp));
+    out->push_back(
+        static_cast<char>((cp >= 'A' && cp <= 'Z') ? cp - 'A' + 'a' : cp));
     return;
   }
-  if (cp == 0xAA) return out->push_back('a');
-  if (cp == 0xB5) return out->push_back('u');
-  if (cp == 0xBA) return out->push_back('o');
+  if (cp == 0xAA)
+    return out->push_back('a');
+  if (cp == 0xB5)
+    return out->push_back('u');
+  if (cp == 0xBA)
+    return out->push_back('o');
   if (cp >= 0xC0 && cp <= 0xFF) {
     out->append(kLatin1Fold[cp - 0xC0]);
     return;
@@ -223,15 +253,24 @@ void Fold(uint32_t cp, std::string* out) {
     out->push_back(kPinyinFold[cp - 0x1CD]);
     return;
   }
-  if (cp == 0x218 || cp == 0x219) return out->push_back('s');  // Romanian
-  if (cp == 0x21A || cp == 0x21B) return out->push_back('t');
-  if (cp >= 0x391 && cp <= 0x3A9 && cp != 0x3A2) return AppendUtf8(cp + 0x20, out);
-  if (cp == 0x3C2) return AppendUtf8(0x3C3, out);  // final sigma
-  if (cp >= 0x410 && cp <= 0x42F) return AppendUtf8(cp + 0x20, out);
-  if (cp >= 0x400 && cp <= 0x40F) return AppendUtf8(cp + 0x50, out);
-  if (cp >= 0xFF10 && cp <= 0xFF19) return out->push_back(static_cast<char>('0' + cp - 0xFF10));
-  if (cp >= 0xFF21 && cp <= 0xFF3A) return out->push_back(static_cast<char>('a' + cp - 0xFF21));
-  if (cp >= 0xFF41 && cp <= 0xFF5A) return out->push_back(static_cast<char>('a' + cp - 0xFF41));
+  if (cp == 0x218 || cp == 0x219)
+    return out->push_back('s');  // Romanian
+  if (cp == 0x21A || cp == 0x21B)
+    return out->push_back('t');
+  if (cp >= 0x391 && cp <= 0x3A9 && cp != 0x3A2)
+    return AppendUtf8(cp + 0x20, out);
+  if (cp == 0x3C2)
+    return AppendUtf8(0x3C3, out);  // final sigma
+  if (cp >= 0x410 && cp <= 0x42F)
+    return AppendUtf8(cp + 0x20, out);
+  if (cp >= 0x400 && cp <= 0x40F)
+    return AppendUtf8(cp + 0x50, out);
+  if (cp >= 0xFF10 && cp <= 0xFF19)
+    return out->push_back(static_cast<char>('0' + cp - 0xFF10));
+  if (cp >= 0xFF21 && cp <= 0xFF3A)
+    return out->push_back(static_cast<char>('a' + cp - 0xFF21));
+  if (cp >= 0xFF41 && cp <= 0xFF5A)
+    return out->push_back(static_cast<char>('a' + cp - 0xFF41));
   AppendUtf8(cp, out);
 }
 
@@ -260,11 +299,14 @@ NormalizedText& NormalizedText::operator=(NormalizedText&&) = default;
 std::optional<Language> LanguageFromTag(std::string_view tag) {
   std::string primary;
   for (char c : tag) {
-    if (c == '-' || c == '_') break;
-    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    if (c == '-' || c == '_')
+      break;
+    if (c >= 'A' && c <= 'Z')
+      c = static_cast<char>(c - 'A' + 'a');
     primary.push_back(c);
   }
-  if (primary == "en") return Language::kEnglish;
+  if (primary == "en")
+    return Language::kEnglish;
   return std::nullopt;
 }
 
@@ -273,7 +315,8 @@ bool IsValidUtf8(std::string_view text) {
   while (i < text.size()) {
     uint32_t cp = 0;
     const size_t length = DecodeAt(text, i, &cp);
-    if (!length) return false;
+    if (!length)
+      return false;
     i += length;
   }
   return true;
@@ -284,16 +327,20 @@ NormalizedText NormalizeSpokenText(std::string_view text,
   NormalizedText out;
   // Offsets are 32-bit; anything longer is read up to 1 GiB, far past any
   // cap voice mode applies first.
-  if (text.size() > (1u << 30)) text = text.substr(0, 1u << 30);
+  if (text.size() > (1u << 30))
+    text = text.substr(0, 1u << 30);
   out.folded.reserve(text.size() + 16);
+  out.words.reserve(std::min(options.max_words, text.size() / 2 + 1));
 
   bool in_word = false;
   SpokenWord word;
   const auto finish_word = [&] {
-    if (!in_word) return;
+    if (!in_word)
+      return;
     in_word = false;
     word.size = static_cast<uint32_t>(out.folded.size()) - word.begin;
-    if (word.size == 0) return;  // only invisible characters
+    if (word.size == 0)
+      return;  // only invisible characters
     const std::string_view folded =
         std::string_view(out.folded).substr(word.begin, word.size);
     word.numeric = std::all_of(folded.begin(), folded.end(), IsAsciiDigit);
@@ -330,6 +377,18 @@ NormalizedText NormalizeSpokenText(std::string_view text,
 
   size_t i = 0;
   while (i < text.size() && !out.truncated) {
+    // Most text is ASCII letters and digits: fold them without decoding.
+    const char c = text[i];
+    if (in_word && ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) {
+      out.folded.push_back(c);
+      word.source_end = static_cast<uint32_t>(++i);
+      continue;
+    }
+    if (in_word && c >= 'A' && c <= 'Z') {
+      out.folded.push_back(static_cast<char>(c - 'A' + 'a'));
+      word.source_end = static_cast<uint32_t>(++i);
+      continue;
+    }
     uint32_t cp = 0;
     size_t length = DecodeAt(text, i, &cp);
     if (!length) {
@@ -362,7 +421,8 @@ NormalizedText NormalizeSpokenText(std::string_view text,
     // An apostrophe between two word characters is dropped ("what's").
     if (kind == CharClass::kApostrophe && in_word && i + length < text.size()) {
       uint32_t next = 0;
-      if (DecodeAt(text, i + length, &next) && Classify(next) == CharClass::kWord) {
+      if (DecodeAt(text, i + length, &next) &&
+          Classify(next) == CharClass::kWord) {
         i += length;
         continue;
       }
@@ -379,7 +439,8 @@ NormalizedText NormalizeSpokenText(std::string_view text,
     if (options.marks) {
       if (cp == '%' && !out.words.empty() && out.words.back().numeric) {
         add_made_up_word("percent", i, i + 1);
-      } else if (cp == '#' && i + 1 < text.size() && IsAsciiDigit(text[i + 1])) {
+      } else if (cp == '#' && i + 1 < text.size() &&
+                 IsAsciiDigit(text[i + 1])) {
         add_made_up_word("number", i, i + 1);
       }
     }
@@ -423,9 +484,11 @@ std::string CleanSpokenText(std::string_view text, size_t max_bytes) {
       continue;
     }
     std::string encoded;
-    if (pending_space) encoded.push_back(' ');
+    if (pending_space)
+      encoded.push_back(' ');
     AppendUtf8(cp, &encoded);
-    if (out.size() + encoded.size() > max_bytes) break;
+    if (out.size() + encoded.size() > max_bytes)
+      break;
     out.append(encoded);
     pending_space = false;
   }
@@ -438,15 +501,19 @@ std::string SourceText(std::string_view source,
                        size_t last,
                        const std::vector<size_t>& skip) {
   std::string joined;
-  if (first > last || last >= text.words.size()) return joined;
+  if (first > last || last >= text.words.size())
+    return joined;
   size_t skip_at = 0;
   bool any = false;
   size_t previous = 0;
   for (size_t w = first; w <= last; ++w) {
-    while (skip_at < skip.size() && skip[skip_at] < w) ++skip_at;
-    if (skip_at < skip.size() && skip[skip_at] == w) continue;
+    while (skip_at < skip.size() && skip[skip_at] < w)
+      ++skip_at;
+    if (skip_at < skip.size() && skip[skip_at] == w)
+      continue;
     const SpokenWord& word = text.words[w];
-    if (word.source_end > source.size() || word.source_begin > word.source_end) {
+    if (word.source_end > source.size() ||
+        word.source_begin > word.source_end) {
       continue;
     }
     if (any) {
@@ -458,8 +525,8 @@ std::string SourceText(std::string_view source,
         joined.push_back(' ');
       }
     }
-    joined.append(source.substr(word.source_begin,
-                                word.source_end - word.source_begin));
+    joined.append(
+        source.substr(word.source_begin, word.source_end - word.source_begin));
     any = true;
     previous = w;
   }
@@ -470,7 +537,8 @@ std::string FoldForComparison(std::string_view text) {
   const NormalizedText normalized = NormalizeSpokenText(text, {});
   std::string out;
   for (size_t i = 0; i < normalized.words.size(); ++i) {
-    if (i) out.push_back(' ');
+    if (i)
+      out.push_back(' ');
     out.append(normalized.Word(i));
   }
   return out;

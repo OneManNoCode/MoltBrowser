@@ -79,8 +79,8 @@ std::vector<ChoiceCandidate> SongResults() {
            "12M views"},
           {"Queen \xE2\x80\x93 Bohemian Rhapsody (Official Lyric Video)",
            "Queen Official", "6:00", "15M views"},
-          {"Bohemian Rhapsody (2018) - Live Aid Scene",
-           "20th Century Studios", "3:44", "50M views"},
+          {"Bohemian Rhapsody (2018) - Live Aid Scene", "20th Century Studios",
+           "3:44", "50M views"},
           {"Bohemian Rhapsody | Official Trailer [HD] | 20th Century FOX",
            "20th Century Studios", "2:31", "40M views"},
           {"Bohemian Rhapsody (Remastered 2011)", "Queen - Topic", "5:55",
@@ -93,8 +93,8 @@ std::vector<ChoiceCandidate> SongResults() {
            "20M views"},
           {"How to Play Bohemian Rhapsody - Easy Guitar Tutorial",
            "Marty Music", "18:22", "4M views"},
-          {"Bohemian Rhapsody - Live in Montreal 1981", "Queen Archive",
-           "6:10", "8M views"},
+          {"Bohemian Rhapsody - Live in Montreal 1981", "Queen Archive", "6:10",
+           "8M views"},
           {"\"Weird Al\" Yankovic - Bohemian Polka", "weird al yankovic",
            "3:39", "10M views"},
           {"First Time Hearing Queen - Bohemian Rhapsody | REACTION",
@@ -147,8 +147,8 @@ std::vector<ChoiceCandidate> ProductResults() {
            "4.4 out of 5 stars"},
           {"JBL Tune 510BT Wireless On-Ear Headphones", "JBL", "$29.95",
            "4.5 out of 5 stars"},
-          {"Sennheiser Momentum 4 Wireless Headphones", "Sennheiser",
-           "$299.95", "4.3 out of 5 stars"},
+          {"Sennheiser Momentum 4 Wireless Headphones", "Sennheiser", "$299.95",
+           "4.3 out of 5 stars"},
       },
       ChoiceRole::kProduct, F::kAuthor, F::kPrice, F::kCount);
 }
@@ -170,7 +170,8 @@ ChoiceMatch Match(std::string_view spoken,
 std::vector<int> ClosePositions(const ChoiceMatch& match,
                                 const std::vector<ChoiceCandidate>& list) {
   std::vector<int> positions;
-  for (size_t index : match.close) positions.push_back(list[index].position);
+  for (size_t index : match.close)
+    positions.push_back(list[index].position);
   std::sort(positions.begin(), positions.end());
   return positions;
 }
@@ -230,14 +231,14 @@ TEST(SpokenChoiceRefTest, Numbers) {
     bool bare;
     int number;
   } cases[] = {
-      {"number 12", false, 12},     {"number twelve", false, 12},
-      {"No. 4", false, 4},          {"no.4", false, 4},
-      {"#7", false, 7},             {"number for", false, 4},
-      {"number won", false, 1},     {"num 3", false, 3},
-      {"video 3", false, 3},        {"link twenty two", false, 22},
-      {"4", true, 4},               {"four", true, 4},
-      {"twenty", true, 20},         {"two hundred and five", true, 205},
-      {"too", true, 2},             {"7 link", true, 7},
+      {"number 12", false, 12}, {"number twelve", false, 12},
+      {"No. 4", false, 4},      {"no.4", false, 4},
+      {"#7", false, 7},         {"number for", false, 4},
+      {"number won", false, 1}, {"num 3", false, 3},
+      {"video 3", false, 3},    {"link twenty two", false, 22},
+      {"4", true, 4},           {"four", true, 4},
+      {"twenty", true, 20},     {"two hundred and five", true, 205},
+      {"too", true, 2},         {"7 link", true, 7},
   };
   for (const Case& c : cases) {
     const ChoiceRef ref = Ref(c.spoken, c.bare);
@@ -318,7 +319,8 @@ TEST(SpokenChoiceRefTest, Descriptions) {
 
   // Words capped.
   std::string many = "the";
-  for (int i = 0; i < 40; ++i) many += " word" + std::to_string(i);
+  for (int i = 0; i < 40; ++i)
+    many += " word" + std::to_string(i);
   ref = Ref(many);
   EXPECT_EQ(ref.words.size(), kMaxChoiceRefWords);
 }
@@ -384,7 +386,8 @@ TEST(SpokenChoiceMatchTest, ByNumber) {
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(list[m.index].position, 7);
   // With numbers on screen, it is the number shown.
-  for (ChoiceCandidate& c : list) c.screen_number = c.position + 100;
+  for (ChoiceCandidate& c : list)
+    c.screen_number = c.position + 100;
   m = MatchSpokenChoice(Ref("number 107"), list, {});
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(list[m.index].position, 7);
@@ -482,82 +485,77 @@ TEST(SpokenChoiceMatchTest, SongResults) {
 }
 
 TEST(SpokenChoiceMatchTest, SongResultsMisheard) {
-  ExpectDescriptions(
-      SongResults(),
-      {
-          // Split and merged words, sound-alikes.
-          {"Bohemian rap city karaoke", {6}},
-          {"bohemian rap city the karate version", {6}},
-          {"the life one by Queen", {2, 7, 18}},
-          {"the live eight one by Queen", {2}},
-          {"the mon trail one", {18}},
-          {"the a cappella one", {16}},
-          {"the pen tatonix one", {8}},
-          {"the wembly one", {7}},
-          {"the muppet show one", {3}},
-          {"the piano covers", {9}},
-          {"the remaster one", {1, 13}},
-          {"the trailor", {12}},
-          {"wanes world", {14}},
-          {"the one by panic at the disco", {5}},
-      });
+  ExpectDescriptions(SongResults(),
+                     {
+                         // Split and merged words, sound-alikes.
+                         {"Bohemian rap city karaoke", {6}},
+                         {"bohemian rap city the karate version", {6}},
+                         {"the life one by Queen", {2, 7, 18}},
+                         {"the live eight one by Queen", {2}},
+                         {"the mon trail one", {18}},
+                         {"the a cappella one", {16}},
+                         {"the pen tatonix one", {8}},
+                         {"the wembly one", {7}},
+                         {"the muppet show one", {3}},
+                         {"the piano covers", {9}},
+                         {"the remaster one", {1, 13}},
+                         {"the trailor", {12}},
+                         {"wanes world", {14}},
+                         {"the one by panic at the disco", {5}},
+                     });
 }
 
 TEST(SpokenChoiceMatchTest, NewsResults) {
-  ExpectDescriptions(
-      NewsResults(),
-      {
-          {"the storm one", {2}},
-          {"the one about storm kieran", {2}},
-          {"the one from the BBC", {2, 8}},
-          {"the one about interest rates from the BBC", {8}},
-          {"the interest rates one by Reuters", {1}},
-          {"the octopus story", {5}},
-          {"the MacBook one", {3}},
-          {"the mac book one", {3}},
-          {"the champions league one", {4}},
-          {"the Real Madrid game", {4}},
-          {"the election", {7}},
-          {"the fed one", {1, 8, 9}},
-          {"the Reuters one", {1}},
-          {"the Guardian article", {6}},
-          {"the weather", {10}},
-          {"the one about the dow", {9}},
-          {"the sports one", {}},
-      });
+  ExpectDescriptions(NewsResults(),
+                     {
+                         {"the storm one", {2}},
+                         {"the one about storm kieran", {2}},
+                         {"the one from the BBC", {2, 8}},
+                         {"the one about interest rates from the BBC", {8}},
+                         {"the interest rates one by Reuters", {1}},
+                         {"the octopus story", {5}},
+                         {"the MacBook one", {3}},
+                         {"the mac book one", {3}},
+                         {"the champions league one", {4}},
+                         {"the Real Madrid game", {4}},
+                         {"the election", {7}},
+                         {"the fed one", {1, 8, 9}},
+                         {"the Reuters one", {1}},
+                         {"the Guardian article", {6}},
+                         {"the weather", {10}},
+                         {"the one about the dow", {9}},
+                         {"the sports one", {}},
+                     });
   const auto list = NewsResults();
   const ChoiceMatch m = Match("the third story", list);
   EXPECT_EQ(list[m.index].position, 3);
 }
 
 TEST(SpokenChoiceMatchTest, ProductResults) {
-  ExpectDescriptions(
-      ProductResults(),
-      {
-          {"the Bose ones", {3}},
-          {"the Sony earbuds", {5}},
-          {"the Sony headphones", {1}},
-          {"the Sony ones", {1, 5}},
-          {"the Anker one", {4}},
-          {"the anchor one", {4}},
-          {"the ones by Apple", {2}},
-          {"the AirPods", {2}},
-          {"the air pods", {2}},
-          {"the J B L ones", {7}},
-          {"Momentum four", {8}},
-          {"the beats", {6}},
-          {"the ones by Beats", {6}},
-          {"the cheapest one", {}},
-          {"the best rated one", {}},
-      });
+  ExpectDescriptions(ProductResults(), {
+                                           {"the Bose ones", {3}},
+                                           {"the Sony earbuds", {5}},
+                                           {"the Sony headphones", {1}},
+                                           {"the Sony ones", {1, 5}},
+                                           {"the Anker one", {4}},
+                                           {"the anchor one", {4}},
+                                           {"the ones by Apple", {2}},
+                                           {"the AirPods", {2}},
+                                           {"the air pods", {2}},
+                                           {"the J B L ones", {7}},
+                                           {"Momentum four", {8}},
+                                           {"the beats", {6}},
+                                           {"the ones by Beats", {6}},
+                                           {"the cheapest one", {}},
+                                           {"the best rated one", {}},
+                                       });
 }
 
 // Each threshold, on its own.
 TEST(SpokenChoiceMatchTest, Thresholds) {
-  const auto list = MakeList({{"Alpha Bravo", ""},
-                              {"Alpha Charlie", ""},
-                              {"Delta Echo", ""}},
-                             ChoiceRole::kListItem);
+  const auto list =
+      MakeList({{"Alpha Bravo", ""}, {"Alpha Charlie", ""}, {"Delta Echo", ""}},
+               ChoiceRole::kListItem);
   // One distinguishing word, exact: unique by a wide margin.
   ChoiceMatch m = Match("bravo", list);
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
@@ -663,10 +661,12 @@ TEST(SpokenChoiceMatchTest, Diacritics) {
 TEST(SpokenChoiceMatchTest, HugeTitlesAndFields) {
   auto list = SongResults();
   std::string huge;
-  for (int i = 0; i < 20000; ++i) huge += "live ";
+  for (int i = 0; i < 20000; ++i)
+    huge += "live ";
   list[0].title = huge;
   list[0].fields.emplace_back(F::kDetail, huge);
-  for (int i = 0; i < 100; ++i) list[1].fields.emplace_back(F::kDetail, huge);
+  for (int i = 0; i < 100; ++i)
+    list[1].fields.emplace_back(F::kDetail, huge);
   const ChoiceMatch m = Match("the wembley one", list);
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(list[m.index].position, 7);
@@ -698,7 +698,8 @@ TEST(SpokenChoiceMatchTest, ManyCandidates) {
 TEST(SpokenChoiceMatchTest, ControlBidiAndInvalidUtf8) {
   auto list = SongResults();
   list[6].title =
-      "Queen\x07 - \xE2\x80\xAE" "Bohemian\xE2\x80\x8B Rhapsody\xE2\x80\xAC "
+      "Queen\x07 - \xE2\x80\xAE"
+      "Bohemian\xE2\x80\x8B Rhapsody\xE2\x80\xAC "
       "(Live at \xFF\xFEWembley\xC3 Stadium)";
   list[6].fields[0].text = "\x01Queen\x1B[31m Official\xED\xA0\x80";
   ChoiceMatch m = Match("the wembley one", list);
@@ -739,7 +740,8 @@ TEST(SpokenChoiceMatchTest, EmptyAndOdd) {
   EXPECT_EQ(list[Match("the next one", list, options).index].position, 18);
 }
 
-// --- Speed --------------------------------------------------------------------
+// --- Speed
+// --------------------------------------------------------------------
 
 // 500 items of about 300 bytes each, words drawn from a 3000-word
 // vocabulary: matched in under 5 ms in an optimized build (the best of a
@@ -752,12 +754,13 @@ TEST(SpokenChoiceMatchTest, FiveHundredCandidatesQuickly) {
   };
   std::vector<std::string> vocabulary;
   static constexpr std::string_view kSyllables[] = {
-      "ba", "ko", "ri", "ten", "mor", "lis", "qua", "zen", "do", "fe",
+      "ba",  "ko", "ri", "ten", "mor", "lis", "qua", "zen", "do", "fe",
       "gra", "hu", "jo", "pel", "sto", "vin", "wex", "yal", "ru", "nix"};
   for (int i = 0; i < 3000; ++i) {
     std::string word;
     const int parts = 2 + static_cast<int>(next() % 3);
-    for (int p = 0; p < parts; ++p) word += kSyllables[next() % 20];
+    for (int p = 0; p < parts; ++p)
+      word += kSyllables[next() % 20];
     vocabulary.push_back(word);
   }
   std::vector<ChoiceCandidate> list;
@@ -765,12 +768,15 @@ TEST(SpokenChoiceMatchTest, FiveHundredCandidatesQuickly) {
     ChoiceCandidate c;
     c.position = i;
     c.role = ChoiceRole::kVideo;
-    while (c.title.size() < 200) c.title += vocabulary[next() % 3000] + " ";
+    while (c.title.size() < 200)
+      c.title += vocabulary[next() % 3000] + " ";
     std::string author;
-    while (author.size() < 40) author += vocabulary[next() % 3000] + " ";
+    while (author.size() < 40)
+      author += vocabulary[next() % 3000] + " ";
     c.fields.emplace_back(F::kAuthor, author);
     std::string detail;
-    while (detail.size() < 60) detail += vocabulary[next() % 3000] + " ";
+    while (detail.size() < 60)
+      detail += vocabulary[next() % 3000] + " ";
     c.fields.emplace_back(F::kDetail, detail);
     list.push_back(std::move(c));
   }
@@ -789,8 +795,8 @@ TEST(SpokenChoiceMatchTest, FiveHundredCandidatesQuickly) {
   ASSERT_EQ(m.outcome, ChoiceOutcome::kUnique);
   EXPECT_EQ(m.index, 321u);
   printf("[ timing ] 500 candidates x ~300 bytes: %.3f ms\n", best_ms);
-#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__) && \
-    !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) &&   \
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__) &&         \
+    !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && \
     !defined(THREAD_SANITIZER) && !defined(UNDEFINED_SANITIZER)
   EXPECT_LT(best_ms, 5.0);
 #else

@@ -91,7 +91,7 @@ constexpr NumberWord kNumbers[] = {
 };
 
 constexpr TimeUnitWord kTimeUnits[] = {
-    {"second", 1}, {"seconds", 1}, {"sec", 1},     {"secs", 1},
+    {"second", 1}, {"seconds", 1}, {"sec", 1},      {"secs", 1},
     {"s", 1},      {"minute", 60}, {"minutes", 60}, {"min", 60},
     {"mins", 60},  {"hour", 3600}, {"hours", 3600}, {"hr", 3600},
     {"hrs", 3600},
@@ -137,10 +137,10 @@ constexpr RoleWord kRoleWords[] = {
 };
 
 constexpr std::string_view kChoiceStopwords[] = {
-    "a",     "about",   "an",       "and",   "called", "is",    "it",
-    "its",   "named",   "or",       "says",  "said",   "that",  "the",
-    "this",  "titled",  "which",    "labeled", "labelled", "thats",
-    "whats", "where",   "one",      "ones",  "there",  "those", "these",
+    "a",     "about",  "an",    "and",     "called",   "is",    "it",
+    "its",   "named",  "or",    "says",    "said",     "that",  "the",
+    "this",  "titled", "which", "labeled", "labelled", "thats", "whats",
+    "where", "one",    "ones",  "there",   "those",    "these",
 };
 
 // Kept when an item has them ("Log in" / "Log out", "Live at Wembley"),
@@ -156,10 +156,9 @@ LanguagePhrases MakeEnglishPhrases() {
   p.language = Language::kEnglish;
 
   p.numbers.assign(std::begin(kNumbers), std::end(kNumbers));
-  std::sort(p.numbers.begin(), p.numbers.end(),
-            [](const NumberWord& a, const NumberWord& b) {
-              return a.word < b.word;
-            });
+  std::sort(
+      p.numbers.begin(), p.numbers.end(),
+      [](const NumberWord& a, const NumberWord& b) { return a.word < b.word; });
   p.number_and = {"and"};
   p.number_article = {"a", "an"};
   p.ordinal_suffixes = {"st", "nd", "rd", "th"};
@@ -169,33 +168,50 @@ LanguagePhrases MakeEnglishPhrases() {
   p.last_words = {"last", "final", "bottom"};
   p.from_end_links = {"to", "from"};
   p.end_phrases = {"from the end", "from the bottom", "from the last"};
-  p.second_to_last_phrases = {"next to last", "penultimate", "last but one",
-                              "one before last", "one before the last",
-                              "second to last", "second last"};
+  p.second_to_last_phrases = {"next to last",        "penultimate",
+                              "last but one",        "one before last",
+                              "one before the last", "second to last",
+                              "second last"};
   p.position_intensifiers = {"very"};
 
   p.time_units.assign(std::begin(kTimeUnits), std::end(kTimeUnits));
   p.half_words = {"half"};
 
   p.articles = {"the", "a", "an"};
-  p.current_phrases = {"this one",     "that one",  "this",
-                       "that",         "it",        "the same one",
-                       "same one",     "the current one", "current one",
-                       "the selected one", "the one i chose",
-                       "the one selected", "this item", "that item"};
-  p.next_phrases = {"next one",          "the next one",
-                    "the one below",     "one below",
-                    "the one after",     "the one after this",
+  p.current_phrases = {"this one",
+                       "that one",
+                       "this",
+                       "that",
+                       "it",
+                       "the same one",
+                       "same one",
+                       "the current one",
+                       "current one",
+                       "the selected one",
+                       "the one i chose",
+                       "the one selected",
+                       "this item",
+                       "that item"};
+  p.next_phrases = {"next one",           "the next one",
+                    "the one below",      "one below",
+                    "the one after",      "the one after this",
                     "the one after that", "the following one",
                     "the one underneath", "the next item"};
-  p.previous_phrases = {"previous one",       "the previous one",
-                        "the one above",      "one above",
-                        "the one before",     "the one before this",
-                        "the one before that", "the preceding one",
-                        "the previous item"};
-  p.by_cues = {"by",          "uploaded by", "posted by",    "written by",
-               "sung by",     "performed by", "made by",     "sold by",
-               "from the channel", "on the channel", "from channel"};
+  p.previous_phrases = {
+      "previous one",        "the previous one",  "the one above",
+      "one above",           "the one before",    "the one before this",
+      "the one before that", "the preceding one", "the previous item"};
+  p.by_cues = {"by",
+               "uploaded by",
+               "posted by",
+               "written by",
+               "sung by",
+               "performed by",
+               "made by",
+               "sold by",
+               "from the channel",
+               "on the channel",
+               "from channel"};
   p.from_cues = {"from", "published by", "published in", "released in"};
   p.choice_stopwords.assign(std::begin(kChoiceStopwords),
                             std::end(kChoiceStopwords));
@@ -207,11 +223,12 @@ LanguagePhrases MakeEnglishPhrases() {
                             std::end(kChoiceParticles));
   std::sort(p.choice_particles.begin(), p.choice_particles.end());
   p.role_words.assign(std::begin(kRoleWords), std::end(kRoleWords));
-  std::sort(p.role_words.begin(), p.role_words.end(),
-            [](const RoleWord& a, const RoleWord& b) { return a.word < b.word; });
+  std::sort(
+      p.role_words.begin(), p.role_words.end(),
+      [](const RoleWord& a, const RoleWord& b) { return a.word < b.word; });
 
-  p.fillers = {"um", "uh", "uhm", "umm", "uhh", "er", "erm", "hmm", "mm",
-               "mhm", "ah", "eh"};
+  p.fillers = {"um",  "uh",  "uhm", "umm", "uhh", "er",
+               "erm", "hmm", "mm",  "mhm", "ah",  "eh"};
   p.leading_phrases = {"please",
                        "kindly",
                        "can you",
@@ -238,32 +255,32 @@ LanguagePhrases MakeEnglishPhrases() {
                        "then",
                        "and then",
                        "so"};
-  p.trailing_phrases = {"please", "thanks", "thank you",
-                        "thank you very much"};
+  p.trailing_phrases = {"please", "thanks", "thank you", "thank you very much"};
   p.trailing_if_command = {"now", "right now", "for me"};
-  p.leading_if_more = {"ok", "okay", "alright", "all right", "right",
-                       "hey", "oh"};
+  p.leading_if_more = {"ok",    "okay", "alright", "all right",
+                       "right", "hey",  "oh"};
   p.wake_greetings = {"hey", "hi", "ok", "okay", "hello", "a", "hay"};
   p.default_wake_phrase = "hey molt";
 
-  p.volume_words = {{"half", 50},        {"halfway", 50},  {"max", 100},
-                    {"maximum", 100},    {"full", 100},    {"min", 0},
-                    {"minimum", 0},      {"all the way up", 100},
-                    {"all the way down", 0}, {"loudest", 100}};
+  p.volume_words = {
+      {"half", 50},     {"halfway", 50},         {"max", 100},
+      {"maximum", 100}, {"full", 100},           {"min", 0},
+      {"minimum", 0},   {"all the way up", 100}, {"all the way down", 0},
+      {"loudest", 100}};
   p.percent_words = {"percent", "per cent", "pc"};
   p.out_of_ten = {"out of ten", "out of 10"};
   p.page_words = {"page", "pages", "screen", "screens", "screenful"};
-  p.scroll_half = {"half a page", "half page", "half a screen", "a bit",
-                   "a little", "a little bit", "slightly", "a tad"};
-  p.scroll_page = {"a page", "one page", "a screen", "one screen",
-                   "a screenful", "page"};
+  p.scroll_half = {"half a page", "half page",    "half a screen", "a bit",
+                   "a little",    "a little bit", "slightly",      "a tad"};
+  p.scroll_page = {"a page",     "one page",    "a screen",
+                   "one screen", "a screenful", "page"};
 
   // Not "point" ("PowerPoint") or "dash" alone in a name: only words no
   // site name is made of.
-  p.address_words = {{"dot", '.'},   {"slash", '/'},   {"hyphen", '-'},
-                     {"underscore", '_'}};
-  p.site_suffixes = {"website", "web site", "site", "homepage", "home page",
-                     "page", "app", "web page", "webpage"};
+  p.address_words = {
+      {"dot", '.'}, {"slash", '/'}, {"hyphen", '-'}, {"underscore", '_'}};
+  p.site_suffixes = {"website", "web site", "site",     "homepage", "home page",
+                     "page",    "app",      "web page", "webpage"};
   p.site_prefixes = {"the"};
   return p;
 }

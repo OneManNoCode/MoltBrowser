@@ -180,7 +180,8 @@ LanguagePhrases MakeEnglishPhrases();
 
 // The number of words of |phrase| (single spaces) if they are
 // |words[at...]|, else 0.
-size_t PhraseLengthAt(std::string_view phrase, const WordList& words,
+size_t PhraseLengthAt(std::string_view phrase,
+                      const WordList& words,
                       size_t at);
 // The longest of |phrases| at |words[at]|, in words; 0 if none.
 size_t LongestPhraseAt(const std::vector<std::string_view>& phrases,

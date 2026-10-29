@@ -26,33 +26,87 @@ namespace voice {
 namespace {
 
 constexpr std::array<std::string_view, kVoiceCommandKindCount> kKindNames = {
-    "unknown",          "refused",          "open_site",
-    "search",           "find_in_page",     "back",
-    "forward",          "reload",           "stop_loading",
-    "home",             "next_page",        "new_tab",
-    "close_tab",        "switch_tab",       "scroll_down",
-    "scroll_up",        "scroll_left",      "scroll_right",
-    "scroll_to_top",    "scroll_to_bottom", "zoom_in",
-    "zoom_out",         "zoom_reset",       "play",
-    "pause",            "resume",           "volume_up",
-    "volume_down",      "set_volume",       "mute",
-    "unmute",           "skip_forward",     "skip_back",
-    "restart",          "next_track",       "previous_track",
-    "full_screen",      "exit_full_screen", "captions_on",
-    "captions_off",     "speed_up",         "slow_down",
-    "normal_speed",     "read_page",        "read_from_here",
-    "read_headings",    "read_links",       "read_results",
-    "read_title",       "read_selection",   "describe_screen",
-    "next_heading",     "previous_heading", "next_link",
-    "previous_link",    "next_item",        "previous_item",
-    "choose",           "show_numbers",     "hide_numbers",
-    "type",             "new_line",         "delete_last_word",
-    "clear_field",      "read_back",        "submit",
-    "yes",              "no",               "cancel",
-    "stop",             "stop_speaking",    "undo",
-    "repeat",           "help",             "where_am_i",
-    "speak_faster",     "speak_slower",     "verbosity",
-    "correction",       "remember_routine", "forget_routine",
+    "unknown",
+    "refused",
+    "open_site",
+    "search",
+    "find_in_page",
+    "back",
+    "forward",
+    "reload",
+    "stop_loading",
+    "home",
+    "next_page",
+    "new_tab",
+    "close_tab",
+    "switch_tab",
+    "scroll_down",
+    "scroll_up",
+    "scroll_left",
+    "scroll_right",
+    "scroll_to_top",
+    "scroll_to_bottom",
+    "zoom_in",
+    "zoom_out",
+    "zoom_reset",
+    "play",
+    "pause",
+    "resume",
+    "volume_up",
+    "volume_down",
+    "set_volume",
+    "mute",
+    "unmute",
+    "skip_forward",
+    "skip_back",
+    "restart",
+    "next_track",
+    "previous_track",
+    "full_screen",
+    "exit_full_screen",
+    "captions_on",
+    "captions_off",
+    "speed_up",
+    "slow_down",
+    "normal_speed",
+    "read_page",
+    "read_from_here",
+    "read_headings",
+    "read_links",
+    "read_results",
+    "read_title",
+    "read_selection",
+    "describe_screen",
+    "next_heading",
+    "previous_heading",
+    "next_link",
+    "previous_link",
+    "next_item",
+    "previous_item",
+    "choose",
+    "show_numbers",
+    "hide_numbers",
+    "type",
+    "new_line",
+    "delete_last_word",
+    "clear_field",
+    "read_back",
+    "submit",
+    "yes",
+    "no",
+    "cancel",
+    "stop",
+    "stop_speaking",
+    "undo",
+    "repeat",
+    "help",
+    "where_am_i",
+    "speak_faster",
+    "speak_slower",
+    "verbosity",
+    "correction",
+    "remember_routine",
+    "forget_routine",
     "run_routine",
 };
 
@@ -136,7 +190,8 @@ class PatternCompiler {
         at_ != text_.size()) {
       return std::nullopt;
     }
-    if (nodes.empty()) return std::nullopt;
+    if (nodes.empty())
+      return std::nullopt;
     // A rest slot ends the pattern or is followed by a required word.
     for (size_t i = 0; i < nodes.size(); ++i) {
       if (nodes[i].type != Node::Type::kSlot || IsFixedSlot(nodes[i].slot)) {
@@ -152,7 +207,8 @@ class PatternCompiler {
 
  private:
   void SkipSpaces() {
-    while (at_ < text_.size() && text_[at_] == ' ') ++at_;
+    while (at_ < text_.size() && text_[at_] == ' ')
+      ++at_;
   }
 
   static bool IsWordChar(char c) {
@@ -167,7 +223,8 @@ class PatternCompiler {
       Node node;
       const char c = text_[at_];
       if (c == '(' || c == '[') {
-        if (depth >= kMaxGroupDepth) return false;
+        if (depth >= kMaxGroupDepth)
+          return false;
         const char close = c == '(' ? ')' : ']';
         ++at_;
         node.type = Node::Type::kGroup;
@@ -179,19 +236,23 @@ class PatternCompiler {
             return false;
           }
           node.alternatives.push_back(std::move(alternative));
-          if (at_ >= text_.size()) return false;
+          if (at_ >= text_.size())
+            return false;
           if (text_[at_] == '|') {
             ++at_;
             continue;
           }
-          if (text_[at_] != close) return false;
+          if (text_[at_] != close)
+            return false;
           ++at_;
           break;
         }
       } else if (c == '{') {
-        if (!allow_slots) return false;
+        if (!allow_slots)
+          return false;
         const size_t end = text_.find('}', at_);
-        if (end == std::string_view::npos) return false;
+        if (end == std::string_view::npos)
+          return false;
         std::string_view name = text_.substr(at_ + 1, end - at_ - 1);
         at_ = end + 1;
         node.type = Node::Type::kSlot;
@@ -211,7 +272,8 @@ class PatternCompiler {
         }
       } else if (IsWordChar(c)) {
         const size_t begin = at_;
-        while (at_ < text_.size() && IsWordChar(text_[at_])) ++at_;
+        while (at_ < text_.size() && IsWordChar(text_[at_]))
+          ++at_;
         node.type = Node::Type::kWord;
         node.word = text_.substr(begin, at_ - begin);
       } else {
@@ -234,7 +296,8 @@ const std::vector<CompiledPattern>& CompiledPatterns(Language language) {
       std::optional<std::vector<Node>> nodes =
           PatternCompiler(pattern.pattern).Compile();
       // A malformed pattern never matches (the unit tests reject it).
-      if (!nodes) continue;
+      if (!nodes)
+        continue;
       CompiledPattern c;
       c.kind = pattern.kind;
       c.context = pattern.context;
@@ -266,7 +329,8 @@ int MatchSequence(const std::vector<Node>& sequence,
   for (const Node& node : sequence) {
     int taken = MatchNode(node, words, pos);
     if (taken < 0) {
-      if (!node.optional) return -1;
+      if (!node.optional)
+        return -1;
       taken = 0;
     }
     pos += static_cast<size_t>(taken);
@@ -291,7 +355,8 @@ int MatchNode(const Node& node, const WordList& words, size_t at) {
   return -1;
 }
 
-// --- Slots --------------------------------------------------------------------
+// --- Slots
+// --------------------------------------------------------------------
 
 struct Captures {
   std::optional<int> seconds;
@@ -318,20 +383,25 @@ std::optional<std::pair<int, size_t>> ReadLevel(const WordList& words,
       best_value = entry.value;
     }
   }
-  if (best_length) return std::make_pair(best_value, best_length);
+  if (best_length)
+    return std::make_pair(best_value, best_length);
   NumberOptions options;
   options.ordinals = false;
   options.homophones = true;
   const std::optional<SpokenNumber> number = ReadNumber(words, at, p, options);
-  if (!number) return std::nullopt;
+  if (!number)
+    return std::nullopt;
   size_t length = number->words;
   int64_t value = number->value;
   if (const size_t n = LongestPhraseAt(p.percent_words, words, at + length)) {
     length += n;
-    if (value > 100) return std::nullopt;
-  } else if (const size_t m = LongestPhraseAt(p.out_of_ten, words, at + length)) {
+    if (value > 100)
+      return std::nullopt;
+  } else if (const size_t m =
+                 LongestPhraseAt(p.out_of_ten, words, at + length)) {
     length += m;
-    if (value > 10) return std::nullopt;
+    if (value > 10)
+      return std::nullopt;
     value *= 10;
   } else if (value <= 10) {
     value *= 10;  // "volume 5": a scale of ten
@@ -352,13 +422,16 @@ std::optional<Pages> ReadPages(const WordList& words,
                                const LanguagePhrases& p) {
   const size_t half = LongestPhraseAt(p.scroll_half, words, at);
   const size_t page = LongestPhraseAt(p.scroll_page, words, at);
-  if (half && half >= page) return Pages{ScrollAmount::kHalfPage, 1, half};
-  if (page) return Pages{ScrollAmount::kPage, 1, page};
+  if (half && half >= page)
+    return Pages{ScrollAmount::kHalfPage, 1, half};
+  if (page)
+    return Pages{ScrollAmount::kPage, 1, page};
   NumberOptions options;
   options.ordinals = false;
   options.homophones = true;
   const std::optional<SpokenNumber> number = ReadNumber(words, at, p, options);
-  if (!number || number->value < 1 || number->value > 50) return std::nullopt;
+  if (!number || number->value < 1 || number->value > 50)
+    return std::nullopt;
   if (at + number->words >= words.size() ||
       !HasPhrase(p.page_words, words[at + number->words])) {
     return std::nullopt;
@@ -376,11 +449,9 @@ struct Site {
 struct Utterance {
   std::string_view source;
   NormalizedText normalized;
-  WordList words;             // cleaned words
-  std::vector<size_t> index;  // cleaned word -> normalized word
+  WordList words;               // cleaned words
+  std::vector<size_t> index;    // cleaned word -> normalized word
   std::vector<size_t> fillers;  // normalized indices dropped as fillers
-  size_t first = 0;  // normalized index of the first word after the wake
-                     // phrase
 };
 
 std::optional<Site> ReadSite(const Utterance& u,
@@ -388,16 +459,24 @@ std::optional<Site> ReadSite(const Utterance& u,
                              size_t end,
                              bool address_only,
                              const LanguagePhrases& p) {
-  if (begin >= end) return std::nullopt;
+  if (begin >= end)
+    return std::nullopt;
   // A dot, spoken or written, makes it an address.
   bool address = false;
   for (size_t i = begin; i < end; ++i) {
     const SpokenWord& word = u.normalized.words[u.index[i]];
-    if (u.words[i] == "dot" || (i > begin && word.joiner == '.')) {
-      address = true;
+    const bool glued = i > begin && u.index[i] == u.index[i - 1] + 1;
+    // "user@example.com", "host:8080": not a site name or host.
+    if (glued && (word.joiner == '@' || word.joiner == ':')) {
+      return std::nullopt;
+    }
+    if (glued && word.joiner == '.') address = true;
+    for (const AddressWord& entry : p.address_words) {
+      if (entry.mark == '.' && entry.word == u.words[i]) address = true;
     }
   }
-  if (address_only && !address) return std::nullopt;
+  if (address_only && !address)
+    return std::nullopt;
   if (address) {
     // An address is one run: each word glued to the one before ("node.js"),
     // after a spoken mark ("dot com"), or a spelled letter after another
@@ -419,7 +498,8 @@ std::optional<Site> ReadSite(const Utterance& u,
   }
   if (!address) {
     // "the New York Times website" -> "new york times".
-    if (end - begin > 1 && HasPhrase(p.site_prefixes, u.words[begin])) ++begin;
+    if (end - begin > 1 && HasPhrase(p.site_prefixes, u.words[begin]))
+      ++begin;
     for (std::string_view suffix : p.site_suffixes) {
       const size_t n = static_cast<size_t>(
           std::count(suffix.begin(), suffix.end(), ' ') + 1);
@@ -430,11 +510,14 @@ std::optional<Site> ReadSite(const Utterance& u,
     }
     // A name is a few words, and not a reference to something on screen
     // ("the live one", "the third result").
-    if (end - begin > 5) return std::nullopt;
+    if (end - begin > 5)
+      return std::nullopt;
     for (size_t i = begin; i < end; ++i) {
-      if (FindRoleWord(p, u.words[i])) return std::nullopt;
+      if (FindRoleWord(p, u.words[i]))
+        return std::nullopt;
     }
-    if (ReadPosition(u.words, begin, p, false)) return std::nullopt;
+    if (ReadPosition(u.words, begin, p, false))
+      return std::nullopt;
   }
   Site site;
   site.address = address;
@@ -445,11 +528,13 @@ std::optional<Site> ReadSite(const Utterance& u,
     char spoken_mark = 0;
     if (address) {
       for (const AddressWord& entry : p.address_words) {
-        if (entry.word == w) spoken_mark = entry.mark;
+        if (entry.word == w)
+          spoken_mark = entry.mark;
       }
     }
     if (spoken_mark) {
-      if (site.host.empty() || pending_mark) return std::nullopt;
+      if (site.host.empty() || pending_mark)
+        return std::nullopt;
       pending_mark = true;
       mark = spoken_mark;
       continue;
@@ -457,9 +542,13 @@ std::optional<Site> ReadSite(const Utterance& u,
     const SpokenWord& word = u.normalized.words[u.index[i]];
     const bool glued = i > begin && u.index[i] == u.index[i - 1] + 1;
     if (pending_mark) {
+      // A spoken mark and a written one together ("slash.") are two marks
+      // in a row: not an address.
+      if (glued && word.joiner)
+        return std::nullopt;
       site.host.push_back(mark);
       pending_mark = false;
-    } else if (glued && word.joiner && word.joiner != ':' && word.joiner != '@') {
+    } else if (glued && word.joiner) {
       site.host.push_back(word.joiner);
     }
     site.host.append(w);
@@ -475,7 +564,8 @@ std::optional<Site> ReadSite(const Utterance& u,
     return std::nullopt;
   }
   for (size_t i = 1; i < site.host.size(); ++i) {
-    if (is_mark(site.host[i]) && is_mark(site.host[i - 1])) return std::nullopt;
+    if (is_mark(site.host[i]) && is_mark(site.host[i - 1]))
+      return std::nullopt;
   }
   return site;
 }
@@ -489,9 +579,11 @@ std::optional<ChoiceRef> ReadChoice(const Utterance& u,
                       u.words.begin() + static_cast<std::ptrdiff_t>(end));
   const bool bare = type != SlotType::kPosition;
   std::optional<ChoiceRef> ref = ParseChoiceRefWords(span, language, bare);
-  if (!ref) return std::nullopt;
+  if (!ref)
+    return std::nullopt;
   if (type == SlotType::kPosition || type == SlotType::kNumber) {
-    if (ref->kind == ChoiceRef::Kind::kDescription) return std::nullopt;
+    if (ref->kind == ChoiceRef::Kind::kDescription)
+      return std::nullopt;
   }
   if (type == SlotType::kPick && ref->kind == ChoiceRef::Kind::kDescription &&
       ref->words.size() + ref->by_words.size() + ref->from_words.size() > 6) {
@@ -500,7 +592,8 @@ std::optional<ChoiceRef> ReadChoice(const Utterance& u,
   return ref;
 }
 
-// --- Matching a pattern -------------------------------------------------------
+// --- Matching a pattern
+// -------------------------------------------------------
 
 // |u.words| holds the words a pattern must take, all of them.
 bool MatchPattern(const CompiledPattern& pattern,
@@ -516,7 +609,8 @@ bool MatchPattern(const CompiledPattern& pattern,
     if (node.type != Node::Type::kSlot) {
       int taken = MatchNode(node, words, pos);
       if (taken < 0) {
-        if (!node.optional) return false;
+        if (!node.optional)
+          return false;
         taken = 0;
       }
       pos += static_cast<size_t>(taken);
@@ -544,7 +638,8 @@ bool MatchPattern(const CompiledPattern& pattern,
         taken = pages->words;
         ok = true;
       }
-      if (!ok && !node.optional) return false;
+      if (!ok && !node.optional)
+        return false;
       pos += taken;
       continue;
     }
@@ -556,13 +651,16 @@ bool MatchPattern(const CompiledPattern& pattern,
       for (size_t at = pos + 1; at < end; ++at) {
         if (MatchNode(next, words, at) > 0) {
           found = at;
-          if (!IsGreedySlot(node.slot)) break;
+          if (!IsGreedySlot(node.slot))
+            break;
         }
       }
-      if (!found) return false;
+      if (!found)
+        return false;
       slot_end = *found;
     }
-    if (slot_end <= pos) return false;
+    if (slot_end <= pos)
+      return false;
     switch (node.slot) {
       case SlotType::kPosition:
       case SlotType::kNumber:
@@ -571,7 +669,8 @@ bool MatchPattern(const CompiledPattern& pattern,
       case SlotType::kTab: {
         std::optional<ChoiceRef> ref =
             ReadChoice(u, pos, slot_end, node.slot, language);
-        if (!ref) return false;
+        if (!ref)
+          return false;
         captures.choice = std::move(ref);
         break;
       }
@@ -615,14 +714,17 @@ bool ContextAllows(PatternContext context, const ParseContext& parse) {
 
 // Normalized indices [first, last] of cleaned words [begin, end).
 std::string SpanText(const Utterance& u, size_t begin, size_t end) {
-  if (begin >= end) return std::string();
+  if (begin >= end)
+    return std::string();
   return SourceText(u.source, u.normalized, u.index[begin], u.index[end - 1],
                     u.fillers);
 }
 
 bool SoundsAlike(std::string_view a, std::string_view b) {
-  if (a == b) return true;
-  if (a.size() < 3 || b.size() < 3) return false;
+  if (a == b)
+    return true;
+  if (a.size() < 3 || b.size() < 3)
+    return false;
   const std::string key = PhoneticKey(a);
   return !key.empty() && key == PhoneticKey(b);
 }
@@ -637,18 +739,23 @@ size_t WakePhraseLength(const WordList& words,
   WordList name;
   for (size_t i = 0; i < wake.words.size(); ++i) {
     const std::string_view w = wake.Word(i);
-    if (name.empty() && HasPhrase(p.wake_greetings, w)) continue;
+    if (name.empty() && HasPhrase(p.wake_greetings, w))
+      continue;
     name.push_back(w);
   }
-  if (name.empty() || name.size() > 6) return 0;
+  if (name.empty() || name.size() > 6)
+    return 0;
   size_t at = 0;
   // Up to two greetings ("ok hey molt").
-  while (at < 2 && at < words.size() && HasPhrase(p.wake_greetings, words[at])) {
+  while (at < 2 && at < words.size() &&
+         HasPhrase(p.wake_greetings, words[at])) {
     ++at;
   }
-  if (at + name.size() > words.size()) return 0;
+  if (at + name.size() > words.size())
+    return 0;
   for (size_t i = 0; i < name.size(); ++i) {
-    if (!SoundsAlike(words[at + i], name[i])) return 0;
+    if (!SoundsAlike(words[at + i], name[i]))
+      return 0;
   }
   return at + name.size();
 }
@@ -719,7 +826,6 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     all.push_back(u.normalized.Word(i));
   }
   const size_t wake = WakePhraseLength(all, context.wake_phrase, p);
-  u.first = wake;
   for (size_t i = wake; i < all.size(); ++i) {
     if (HasPhrase(p.fillers, all[i])) {
       u.fillers.push_back(i);
@@ -781,13 +887,15 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     end = strip_end(end, p.trailing_if_command);
     end = strip_end(end, p.trailing_phrases);
   }
-  if (end == 0) return command;  // nothing but the wake phrase or fillers
+  if (end == 0)
+    return command;  // nothing but the wake phrase or fillers
   // Patterns take exactly the words up to |end|; |u.index| keeps the rest
   // for free text that ends the utterance.
   u.words.resize(end);
 
   for (const CompiledPattern& pattern : CompiledPatterns(context.language)) {
-    if (!ContextAllows(pattern.context, context)) continue;
+    if (!ContextAllows(pattern.context, context))
+      continue;
     Captures captures;
     if (!MatchPattern(pattern, u, context.language, p, captures)) {
       continue;
@@ -796,7 +904,8 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
     if (captures.text) {
       size_t text_end = captures.text->second;
       // Free text that ends the utterance keeps "now", "for me".
-      if (captures.text_ends_pattern) text_end = soft_end;
+      if (captures.text_ends_pattern)
+        text_end = soft_end;
       command.text = SpanText(u, captures.text->first, text_end);
       const size_t cap = (pattern.kind == VoiceCommandKind::kRememberRoutine ||
                           pattern.kind == VoiceCommandKind::kForgetRoutine ||
@@ -827,9 +936,12 @@ VoiceCommand ParseVoiceCommand(std::string_view utterance,
             SpanText(u, captures.text->first, captures.site->second);
       }
     }
-    if (captures.choice) command.choice = std::move(*captures.choice);
-    if (captures.seconds) command.seconds = *captures.seconds;
-    if (captures.level) command.level = *captures.level;
+    if (captures.choice)
+      command.choice = std::move(*captures.choice);
+    if (captures.seconds)
+      command.seconds = *captures.seconds;
+    if (captures.level)
+      command.level = *captures.level;
     command.scroll = captures.scroll;
     command.count = captures.count;
     switch (pattern.variant) {

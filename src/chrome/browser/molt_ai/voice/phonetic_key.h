@@ -57,6 +57,9 @@ inline constexpr int kMaxPhoneticBand = 8;
 // The key of |word|; "" when it has none (see 1. above).
 std::string PhoneticKey(std::string_view word);
 
+// Whether two sound classes are the same or close (see above).
+bool SameOrCloseSounds(char a, char b);
+
 // |a| followed by |b|, with a repeat at the seam collapsed.
 std::string JoinPhoneticKeys(std::string_view a, std::string_view b);
 

@@ -20,13 +20,15 @@ bool IsDigit(char c) {
 // The digits at the start of |word| and what follows them.
 size_t LeadingDigits(std::string_view word) {
   size_t n = 0;
-  while (n < word.size() && IsDigit(word[n])) ++n;
+  while (n < word.size() && IsDigit(word[n]))
+    ++n;
   return n;
 }
 
 int64_t DigitsValue(std::string_view digits) {
   int64_t value = 0;
-  for (char c : digits) value = value * 10 + (c - '0');
+  for (char c : digits)
+    value = value * 10 + (c - '0');
   return value;
 }
 
@@ -39,7 +41,8 @@ const NumberWord* WordAt(const WordList& words,
 const TimeUnitWord* FindTimeUnit(const LanguagePhrases& phrases,
                                  std::string_view word) {
   for (const TimeUnitWord& unit : phrases.time_units) {
-    if (unit.word == word) return &unit;
+    if (unit.word == word)
+      return &unit;
   }
   return nullptr;
 }
@@ -71,10 +74,12 @@ struct DurationPart {
 std::optional<DurationPart> ReadDurationPart(const WordList& words,
                                              size_t at,
                                              const LanguagePhrases& phrases) {
-  if (at >= words.size()) return std::nullopt;
+  if (at >= words.size())
+    return std::nullopt;
   // "half a minute"
   if (IsWordAt(phrases.half_words, words, at) &&
-      IsWordAt(phrases.number_article, words, at + 1) && at + 2 < words.size()) {
+      IsWordAt(phrases.number_article, words, at + 1) &&
+      at + 2 < words.size()) {
     if (const TimeUnitWord* unit = FindTimeUnit(phrases, words[at + 2])) {
       return DurationPart{unit->seconds, unit->seconds, 3};
     }
@@ -83,10 +88,11 @@ std::optional<DurationPart> ReadDurationPart(const WordList& words,
   const size_t digits = LeadingDigits(words[at]);
   if (digits > 0 && digits < words[at].size() && digits <= 6) {
     const TimeUnitWord* unit = FindTimeUnit(phrases, words[at].substr(digits));
-    if (!unit) return std::nullopt;
-    return DurationPart{2 * DigitsValue(words[at].substr(0, digits)) *
-                            unit->seconds,
-                        unit->seconds, 1};
+    if (!unit)
+      return std::nullopt;
+    return DurationPart{
+        2 * DigitsValue(words[at].substr(0, digits)) * unit->seconds,
+        unit->seconds, 1};
   }
   int64_t halves = 0;
   size_t i = at;
@@ -100,7 +106,8 @@ std::optional<DurationPart> ReadDurationPart(const WordList& words,
     options.homophones = true;
     const std::optional<SpokenNumber> number =
         ReadNumber(words, i, phrases, options);
-    if (!number) return std::nullopt;
+    if (!number)
+      return std::nullopt;
     halves = 2 * number->value;
     i += number->words;
     if (const size_t n = AndAHalfAt(words, i, phrases)) {
@@ -108,9 +115,11 @@ std::optional<DurationPart> ReadDurationPart(const WordList& words,
       i += n;
     }
   }
-  if (i >= words.size()) return std::nullopt;
+  if (i >= words.size())
+    return std::nullopt;
   const TimeUnitWord* unit = FindTimeUnit(phrases, words[i]);
-  if (!unit) return std::nullopt;
+  if (!unit)
+    return std::nullopt;
   ++i;
   if (halves % 2 == 0) {
     if (const size_t n = AndAHalfAt(words, i, phrases)) {
@@ -127,16 +136,19 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
                                        size_t at,
                                        const LanguagePhrases& phrases,
                                        const NumberOptions& options) {
-  if (at >= words.size() || words[at].empty()) return std::nullopt;
+  if (at >= words.size() || words[at].empty())
+    return std::nullopt;
 
   // Digits, perhaps with an ordinal suffix: "4", "1000", "4th".
   const std::string_view first = words[at];
   const size_t digits = LeadingDigits(first);
   if (digits > 0) {
-    if (digits > 9) return std::nullopt;
+    if (digits > 9)
+      return std::nullopt;
     const int64_t value = DigitsValue(first.substr(0, digits));
     if (digits == first.size()) {
-      if (!options.cardinals) return std::nullopt;
+      if (!options.cardinals)
+        return std::nullopt;
       return SpokenNumber{value, 1, false};
     }
     if (options.ordinals &&
@@ -150,7 +162,16 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
   // hundred and thousand multiplying what came before. "and" may follow a
   // multiplier; "a" may stand for "one" before one. An ordinal word ends
   // the number.
-  enum class Last { kNone, kArticle, kUnit, kTeen, kTens, kHundred, kThousand, kAnd };
+  enum class Last {
+    kNone,
+    kArticle,
+    kUnit,
+    kTeen,
+    kTens,
+    kHundred,
+    kThousand,
+    kAnd
+  };
   int64_t total = 0;
   int64_t current = 0;
   Last last = Last::kNone;
@@ -182,9 +203,10 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
       continue;
     }
     const NumberWord* word = FindNumberWord(phrases, w);
-    if (!usable(word)) break;
-    const bool after_multiplier = last == Last::kHundred ||
-                                  last == Last::kThousand || last == Last::kAnd;
+    if (!usable(word))
+      break;
+    const bool after_multiplier =
+        last == Last::kHundred || last == Last::kThousand || last == Last::kAnd;
     bool fits = false;
     Last now = last;
     switch (word->kind) {
@@ -231,13 +253,16 @@ std::optional<SpokenNumber> ReadNumber(const WordList& words,
         now = Last::kThousand;
         break;
     }
-    if (!fits) break;
+    if (!fits)
+      break;
     last = now;
     if (word->ordinal) {
       return SpokenNumber{total + current, i - at + 1, true};
     }
-    if (options.cardinals) best = SpokenNumber{total + current, i - at + 1, false};
-    if (word->kind == NumberWordKind::kUnit && word->value == 0) break;
+    if (options.cardinals)
+      best = SpokenNumber{total + current, i - at + 1, false};
+    if (word->kind == NumberWordKind::kUnit && word->value == 0)
+      break;
   }
   return best;
 }
@@ -248,7 +273,8 @@ std::optional<SpokenPosition> ReadPosition(const WordList& words,
                                            bool homophones) {
   size_t i = at;
   i += LongestPhraseAt(phrases.position_intensifiers, words, i);
-  if (const size_t n = LongestPhraseAt(phrases.second_to_last_phrases, words, i)) {
+  if (const size_t n =
+          LongestPhraseAt(phrases.second_to_last_phrases, words, i)) {
     return SpokenPosition{2, true, i + n - at};
   }
   if (const size_t n = LongestPhraseAt(phrases.last_words, words, i)) {
@@ -289,13 +315,16 @@ std::optional<SpokenDuration> ReadDuration(const WordList& words,
     const std::optional<DurationPart> part =
         ReadDurationPart(words, i + joiner, phrases);
     // Units only get smaller: "1 minute 30 seconds".
-    if (!part || (last_unit && part->unit >= last_unit)) break;
+    if (!part || (last_unit && part->unit >= last_unit))
+      break;
     half_seconds += part->half_seconds;
-    if (half_seconds > 2 * int64_t{kMaxSpokenSeconds}) return std::nullopt;
+    if (half_seconds > 2 * int64_t{kMaxSpokenSeconds})
+      return std::nullopt;
     last_unit = part->unit;
     i += joiner + part->words;
   }
-  if (!last_unit) return std::nullopt;
+  if (!last_unit)
+    return std::nullopt;
   return SpokenDuration{static_cast<int>(half_seconds / 2), i - at};
 }
 
@@ -321,11 +350,13 @@ std::optional<SpokenNumber> ReadYear(const WordList& words,
     return std::nullopt;
   }
   const NumberWord* low = plain(at + 1);
-  if (!low) return std::nullopt;
+  if (!low)
+    return std::nullopt;
   if (low->kind == NumberWordKind::kTeen) {
     return SpokenNumber{century + low->value, 2, false};
   }
-  if (low->kind != NumberWordKind::kTens) return std::nullopt;
+  if (low->kind != NumberWordKind::kTens)
+    return std::nullopt;
   const NumberWord* unit = plain(at + 2);
   if (unit && unit->kind == NumberWordKind::kUnit && unit->value > 0) {
     return SpokenNumber{century + low->value + unit->value, 3, false};

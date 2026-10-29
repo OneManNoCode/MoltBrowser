@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -28,15 +29,18 @@ bool IsVowelLetter(char c) {
 // starts the word before a vowel ("yes").
 bool SoundsVowel(std::string_view word, size_t i) {
   const char c = word[i];
-  if (IsVowelLetter(c)) return true;
-  if (c != 'y') return false;
+  if (IsVowelLetter(c))
+    return true;
+  if (c != 'y')
+    return false;
   return !(i == 0 && i + 1 < word.size() && IsVowelLetter(word[i + 1]));
 }
 
 class KeyWriter {
  public:
   void Emit(char sound) {
-    if (key_.empty() || key_.back() != sound) key_.push_back(sound);
+    if (key_.empty() || key_.back() != sound)
+      key_.push_back(sound);
   }
   bool HasVowel() const { return key_.find('a') != std::string::npos; }
   std::string Take() { return std::move(key_); }
@@ -45,32 +49,76 @@ class KeyWriter {
   std::string key_;
 };
 
-int IndelCost(char sound) {
-  return (sound == 'a' || sound == 'W' || sound == 'Y' || sound == 'H') ? 1
-                                                                        : 2;
+// The sound classes, in a fixed order; index 13 is anything else.
+constexpr std::string_view kClasses = "aPTKSXMNLRWYH";
+constexpr size_t kOtherClass = 13;
+
+constexpr std::array<uint8_t, 128> MakeClassIndex() {
+  std::array<uint8_t, 128> index{};
+  for (auto& entry : index)
+    entry = kOtherClass;
+  for (size_t k = 0; k < kClasses.size(); ++k) {
+    index[static_cast<uint8_t>(kClasses[k])] = static_cast<uint8_t>(k);
+  }
+  return index;
+}
+constexpr std::array<uint8_t, 128> kClassIndex = MakeClassIndex();
+
+uint8_t ClassOf(char c) {
+  const auto u = static_cast<unsigned char>(c);
+  return u < 128 ? kClassIndex[u] : static_cast<uint8_t>(kOtherClass);
 }
 
-bool CloseSounds(char x, char y) {
-  if (x > y) std::swap(x, y);
+constexpr bool CloseClasses(char x, char y) {
+  if (x > y) {
+    const char t = x;
+    x = y;
+    y = t;
+  }
   return (x == 'M' && y == 'N') || (x == 'L' && y == 'R') ||
          (x == 'S' && y == 'X') || (x == 'K' && y == 'X') ||
-         (x == 'K' && y == 'S') ||
-         (x == 'S' && y == 'T') || (x == 'P' && y == 'W');
+         (x == 'K' && y == 'S') || (x == 'S' && y == 'T') ||
+         (x == 'P' && y == 'W');
 }
 
-// A far substitution costs more than one edit: a recognizer that heard
-// the word at all rarely swaps a sound for an unrelated one.
-int SubstitutionCost(char x, char y) {
-  if (x == y) return 0;
-  return CloseSounds(x, y) ? 1 : 3;
+// Substitution costs between classes: 0 for the same, 1 for close ones, 3
+// otherwise (a recognizer that heard the word at all rarely swaps a sound
+// for an unrelated one).
+constexpr std::array<std::array<uint8_t, 14>, 14> MakeSubstitutionCosts() {
+  std::array<std::array<uint8_t, 14>, 14> costs{};
+  for (size_t i = 0; i < 14; ++i) {
+    for (size_t j = 0; j < 14; ++j) {
+      if (i == j) {
+        costs[i][j] = 0;
+      } else if (i < kClasses.size() && j < kClasses.size() &&
+                 CloseClasses(kClasses[i], kClasses[j])) {
+        costs[i][j] = 1;
+      } else {
+        costs[i][j] = 3;
+      }
+    }
+  }
+  return costs;
 }
+constexpr std::array<std::array<uint8_t, 14>, 14> kSubstitutionCost =
+    MakeSubstitutionCosts();
+
+// Inserting or deleting a vowel or W, Y, H costs 1, anything else 2.
+constexpr std::array<uint8_t, 14> kIndelCost = {1, 2, 2, 2, 2, 2, 2,
+                                                2, 2, 2, 1, 1, 1, 2};
 
 }  // namespace
 
+bool SameOrCloseSounds(char a, char b) {
+  return a == b || CloseClasses(a, b);
+}
+
 std::string PhoneticKey(std::string_view w) {
-  if (w.empty() || w.size() > kMaxPhoneticWordBytes) return std::string();
+  if (w.empty() || w.size() > kMaxPhoneticWordBytes)
+    return std::string();
   for (char c : w) {
-    if (c < 'a' || c > 'z') return std::string();
+    if (c < 'a' || c > 'z')
+      return std::string();
   }
   const size_t n = w.size();
   const auto at = [&](size_t i) -> char { return i < n ? w[i] : '\0'; };
@@ -118,7 +166,8 @@ std::string PhoneticKey(std::string_view w) {
         ++i;
         break;
       case 'b':
-        if (!(i + 1 == n && i > 0 && w[i - 1] == 'm')) key.Emit('P');  // climb
+        if (!(i + 1 == n && i > 0 && w[i - 1] == 'm'))
+          key.Emit('P');  // climb
         ++i;
         break;
       case 'p':
@@ -184,7 +233,8 @@ std::string PhoneticKey(std::string_view w) {
         break;
       case 'g':
         if (next == 'h') {
-          if (i == 0) key.Emit('K');  // "ghost"; silent inside ("night")
+          if (i == 0)
+            key.Emit('K');  // "ghost"; silent inside ("night")
           i += 2;
         } else if (next == 'n' && i + 2 == n) {
           ++i;  // "sign"
@@ -237,7 +287,8 @@ std::string PhoneticKey(std::string_view w) {
         break;
       case 'w':
         // A consonant before a vowel; part of the vowel otherwise ("cow").
-        if (IsVowelLetter(next) || next == 'y') key.Emit('W');
+        if (IsVowelLetter(next) || next == 'y')
+          key.Emit('W');
         ++i;
         break;
       case 'l':
@@ -274,69 +325,90 @@ std::string JoinPhoneticKeys(std::string_view a, std::string_view b) {
 }
 
 int PhoneticDistance(std::string_view a, std::string_view b, int bound) {
-  if (bound < 0) bound = 0;
+  if (bound < 0)
+    bound = 0;
   bound = std::min(bound, 2 * kMaxPhoneticBand);
   const int too_far = bound + 1;
-  if (a == b) return 0;
-  if (a.size() > kMaxComparedKey || b.size() > kMaxComparedKey) return too_far;
+  if (a == b)
+    return 0;
+  if (a.size() > kMaxComparedKey || b.size() > kMaxComparedKey)
+    return too_far;
   const int n = static_cast<int>(a.size());
   const int m = static_cast<int>(b.size());
   // Every insertion or deletion costs at least 1, so cells further than
   // |bound| from the diagonal cost more than the bound.
   const int band = std::min(bound, kMaxPhoneticBand);
-  if (std::abs(n - m) > band) return too_far;
+  if (std::abs(n - m) > band)
+    return too_far;
 
-  std::array<int, kMaxComparedKey + 2> previous;
-  std::array<int, kMaxComparedKey + 2> current;
-  previous.fill(too_far);
-  current.fill(too_far);
+  // This runs for many word pairs: classes are looked up once, only the
+  // cells a row can read are set (m + 2 of them), and rows swap by index.
+  std::array<uint8_t, kMaxComparedKey> class_b;
+  for (int j = 0; j < m; ++j)
+    class_b[static_cast<size_t>(j)] = ClassOf(b[j]);
+  std::array<std::array<int, kMaxComparedKey + 2>, 2> rows;
+  int* previous = rows[0].data();
+  int* current = rows[1].data();
+  std::fill(previous, previous + m + 2, too_far);
+  std::fill(current, current + m + 2, too_far);
   previous[0] = 0;
   for (int j = 1; j <= std::min(m, band); ++j) {
-    previous[j] = std::min(too_far, previous[j - 1] + IndelCost(b[j - 1]));
+    previous[j] =
+        std::min(too_far, previous[j - 1] +
+                              kIndelCost[class_b[static_cast<size_t>(j - 1)]]);
   }
   for (int i = 1; i <= n; ++i) {
+    const size_t class_a = ClassOf(a[i - 1]);
+    const int delete_a = kIndelCost[class_a];
+    const std::array<uint8_t, 14>& substitute = kSubstitutionCost[class_a];
     const int lo = std::max(0, i - band);
     const int hi = std::min(m, i + band);
     int row_best = too_far;
     if (lo == 0) {
-      current[0] = std::min(too_far, previous[0] + IndelCost(a[i - 1]));
+      current[0] = std::min(too_far, previous[0] + delete_a);
       row_best = current[0];
     } else {
       current[lo - 1] = too_far;
     }
     for (int j = std::max(1, lo); j <= hi; ++j) {
-      int cost = previous[j - 1] + SubstitutionCost(a[i - 1], b[j - 1]);
-      cost = std::min(cost, previous[j] + IndelCost(a[i - 1]));
-      cost = std::min(cost, current[j - 1] + IndelCost(b[j - 1]));
+      const size_t cb = class_b[static_cast<size_t>(j - 1)];
+      int cost = previous[j - 1] + substitute[cb];
+      cost = std::min(cost, previous[j] + delete_a);
+      cost = std::min(cost, current[j - 1] + kIndelCost[cb]);
       current[j] = std::min(cost, too_far);
       row_best = std::min(row_best, current[j]);
     }
-    if (hi + 1 <= m) current[hi + 1] = too_far;
-    if (row_best >= too_far) return too_far;
+    if (hi + 1 <= m)
+      current[hi + 1] = too_far;
+    if (row_best >= too_far)
+      return too_far;
     std::swap(previous, current);
   }
   return std::min(previous[m], too_far);
 }
 
 int PhoneticBound(size_t longer_key_size) {
-  if (longer_key_size <= 2) return 0;
+  if (longer_key_size <= 2)
+    return 0;
   return static_cast<int>(std::min<size_t>(5, longer_key_size / 2));
 }
 
 double PhoneticSimilarity(std::string_view a, std::string_view b) {
-  if (a.empty() || b.empty()) return 0;
+  if (a.empty() || b.empty())
+    return 0;
   const size_t longer = std::max(a.size(), b.size());
   const int bound = PhoneticBound(longer);
   const int distance = PhoneticDistance(a, b, bound);
-  if (distance > bound) return 0;
+  if (distance > bound)
+    return 0;
   // Short keys collide more ("live", "life" and "love" are all "LaP"), so
   // they are worth less even when equal.
   const double cap = longer <= 3 ? 0.7 : longer == 4 ? 0.8 : 0.9;
   // One half-edit in a key of L letters costs 1/L: a close sound in a
   // seven-letter key keeps 6/7 of the cap (0.77), a whole consonant edit
   // 5/7 (0.64).
-  return cap * (1.0 - static_cast<double>(distance) /
-                          static_cast<double>(longer));
+  return cap *
+         (1.0 - static_cast<double>(distance) / static_cast<double>(longer));
 }
 
 }  // namespace voice
