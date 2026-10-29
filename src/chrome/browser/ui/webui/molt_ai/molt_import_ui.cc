@@ -410,7 +410,7 @@ class MoltImportDataSource : public content::URLDataSource {
   :root{
     --text:#f4f5fa;
     --muted:rgba(233,236,247,0.64);
-    --faint:rgba(233,236,247,0.42);
+    --faint:rgba(233,236,247,0.56);
     --accent:#ff5257;
     --accent-deep:#e0353b;
     --ok:#5fe3a1;
@@ -501,7 +501,7 @@ class MoltImportDataSource : public content::URLDataSource {
     font-size:.6875rem;font-weight:600;background:rgba(255,255,255,.05);
     border:1px solid var(--edge);color:var(--muted);transition:.15s;white-space:nowrap}
   .act:hover{background:rgba(255,255,255,.11);border-color:var(--edge-hi);color:var(--text)}
-  .act.primary{flex:2;background:linear-gradient(180deg,#ff676c,var(--accent-deep));
+  .act.primary{flex:2;background:linear-gradient(180deg,#d0383e,#b8282e);
     border-color:transparent;color:#fff}
   .act.primary:hover{filter:brightness(1.06);color:#fff}
 

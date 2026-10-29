@@ -116,7 +116,7 @@ function renderMarkdown(text) {
   var s = esc(text);
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
     var id = 'cb-' + (++codeBlockId);
-    var langLabel = lang ? '<span style="position:absolute;top:6px;left:10px;font-size:.625rem;color:#666;text-transform:uppercase">' + lang + '</span>' : '';
+    var langLabel = lang ? '<span style="position:absolute;top:6px;left:10px;font-size:.625rem;color:#8f8f99;text-transform:uppercase">' + lang + '</span>' : '';
     return '<div class="code-wrap">' + langLabel +
       '<button class="code-copy" aria-label="Copy code" data-on-click="copyCode" data-copy-target="' + id + '">Copy</button>' +
       '<pre id="' + id + '" style="background:#1a1a2e;padding:' + (lang ? '26px 12px 12px' : '12px') + ';border-radius:8px;overflow-x:auto;font-size:.8125rem;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre></div>';
@@ -499,7 +499,7 @@ function renderModelChipDropdown() {
   var dd = document.getElementById('modelChipDropdown');
   if (!dd) return;
   if (allModels.length === 0) {
-    dd.innerHTML = moltHTML('<div style="padding:14px;color:#666;font-size:.75rem;text-align:center">Loading models...</div>');
+    dd.innerHTML = moltHTML('<div style="padding:14px;color:#8f8f99;font-size:.75rem;text-align:center">Loading models...</div>');
     sendWithPromise('getModelStatus').then(function(r) {
       allModels = r.models || [];
       renderModelChipDropdown();
@@ -1117,26 +1117,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .status-dot.offline{background:#888}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .status-text{color:#888;transition:color 0.3s}
-.hw-info{color:#555;font-size:.6875rem;display:flex;gap:10px}
+.hw-info{color:#8a8a94;font-size:.6875rem;display:flex;gap:10px}
 .top-actions{display:flex;gap:8px;align-items:center}
 .top-btn{padding:6px 14px;border-radius:14px;border:1px solid var(--glass-border);background:var(--glass-bg);color:#cfcfcf;font-size:.75rem;cursor:pointer;transition:all 0.2s;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
 .top-btn:hover{border-color:var(--glass-border-hi);background:var(--glass-bg-hi);color:#fff;transform:translateY(-1px)}
-.context-info{font-size:.6875rem;color:#444}
+.context-info{font-size:.6875rem;color:#8a8a94}
 .chat-container{width:100%;max-width:720px;flex:1;display:flex;flex-direction:column}
 .messages{flex:1;overflow-y:auto;padding:20px 0}
 .message{margin-bottom:20px;padding:16px 20px;border-radius:12px;line-height:1.6;font-size:.9375rem;max-width:90%}
 .message.user{background:rgba(167,139,250,0.10);border:1px solid rgba(167,139,250,0.22);margin-left:auto;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30)}
 .message.ai{background:rgba(255,255,255,0.085);border:1px solid rgba(255,255,255,0.12);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30)}
-.message .label{font-size:.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;color:#6366f1}
-.message.user .label{color:#8b5cf6}
-.model-badge{display:inline-block;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#8b5cf6;font-size:.6875rem;margin-bottom:8px}
+.message .label{font-size:.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;color:#8b8df5}
+.message.user .label{color:#a385f8}
+.model-badge{display:inline-block;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#a385f8;font-size:.6875rem;margin-bottom:8px}
 .message .text{white-space:pre-wrap;word-wrap:break-word}
 .message .text .cursor{display:inline-block;width:2px;height:16px;background:#6366f1;animation:blink 0.8s infinite;vertical-align:text-bottom;margin-left:1px}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .input-area{display:flex;gap:12px;padding:20px 0;border-top:1px solid rgba(255,255,255,0.08)}
 .input-area input{flex:1;padding:14px 20px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.085);color:#e0e0e0;font-size:.9375rem;outline:none;transition:border-color 0.2s,background 0.2s;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30)}
 .input-area input:focus{border-color:var(--accent,#e5484d);background:rgba(255,255,255,0.07)}
-.input-area button.send{padding:14px 28px;border-radius:16px;border:1px solid rgba(255,255,255,0.18);background:linear-gradient(135deg,var(--accent),var(--accent-hi));color:white;font-size:.9375rem;font-weight:600;cursor:pointer;transition:opacity 0.2s,transform 0.15s;box-shadow:0 12px 30px -12px rgba(229,72,77,0.7),inset 0 1px 0 rgba(255,255,255,0.25)}
+.input-area button.send{padding:14px 28px;border-radius:16px;border:1px solid rgba(255,255,255,0.18);background:linear-gradient(135deg,#d0383e,#b8282e);color:white;font-size:.9375rem;font-weight:600;cursor:pointer;transition:opacity 0.2s,transform 0.15s;box-shadow:0 12px 30px -12px rgba(229,72,77,0.7),inset 0 1px 0 rgba(255,255,255,0.25)}
 .input-area button.send:hover{opacity:0.92;transform:translateY(-1px)}
 .input-area button.send:disabled{opacity:0.4;cursor:not-allowed}
 .input-area button.cancel{padding:14px 16px;border-radius:12px;border:1px solid #f87171;background:transparent;color:#f87171;font-size:.9375rem;cursor:pointer;display:none}
@@ -1149,8 +1149,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card{padding:14px;border:1px solid var(--glass-border);border-radius:14px;margin-bottom:10px;background:rgba(255,255,255,0.04);transition:transform 0.15s,border-color 0.2s,background 0.2s;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10)}
 .model-card:hover{transform:translateY(-1px);border-color:var(--glass-border-hi);background:rgba(255,255,255,0.06)}
 .model-card .name{font-size:.875rem;font-weight:600;color:#e0e0e0}
-.model-card .meta{font-size:.75rem;color:#666;margin-top:2px}
-.model-card .mlicense{font-size:.75rem;color:#666;margin-top:2px}
+.model-card .meta{font-size:.75rem;color:#8f8f99;margin-top:2px}
+.model-card .mlicense{font-size:.75rem;color:#8f8f99;margin-top:2px}
 .model-card .mlicense-link{padding:0;border:0;background:none;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
 .brandtile{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;border-radius:9px;flex:0 0 auto;overflow:hidden}
 .model-card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -1160,18 +1160,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card .btn{padding:6px 16px;border-radius:10px;font-size:.75rem;cursor:pointer;border:1px solid var(--glass-border);background:var(--glass-bg);color:#cfcfcf;transition:all 0.2s}
 .model-card .btn:hover{border-color:var(--glass-border-hi);color:#fff;background:var(--glass-bg-hi)}
 .model-card .btn:disabled{opacity:0.4;cursor:not-allowed}
-.model-card .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-hi));border-color:rgba(255,255,255,0.18);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,0.22)}
+.model-card .btn.primary{background:linear-gradient(135deg,#d0383e,#b8282e);border-color:rgba(255,255,255,0.18);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,0.22)}
 .model-card .btn.primary:hover{opacity:0.92}
 .model-card .btn.danger{border-color:#f87171;color:#f87171}
 .model-card .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.6875rem;font-weight:600}
 .model-card .badge.active{background:#1a2e1a;color:#4ade80}
-.model-card .badge.downloaded{background:#1a1a2e;color:#6366f1}
-.model-card .badge.unavailable{background:#1a1a1a;color:#666}
+.model-card .badge.downloaded{background:#1a1a2e;color:#8b8df5}
+.model-card .badge.unavailable{background:#1a1a1a;color:#8f8f99}
 .model-card .progress-wrap{margin-top:8px;display:none}
 .model-card .progress-wrap.active{display:block}
 .model-card .progress-bar{height:6px;border-radius:3px;background:#222;overflow:hidden}
 .model-card .progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
-.model-card .progress-text{font-size:.6875rem;color:#888;margin-top:4px}
+.model-card .progress-text{font-size:.6875rem;color:#a0a0aa;margin-top:4px}
 /* Model chip — always-visible model selector at top of AI page */
 .model-chip-wrap{position:relative;display:inline-block}
 .model-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:20px;background:var(--glass-bg);border:1px solid var(--glass-border);color:#e0e0e0;font-size:.8125rem;font-weight:500;cursor:pointer;transition:all 0.2s;min-width:200px;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16)}
@@ -1197,16 +1197,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-chip-item:hover{background:rgba(255,255,255,0.08)}
 .model-chip-item.active{background:rgba(74,222,128,0.14)}
 .model-chip-item .mname{font-size:.8125rem;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.model-chip-item .msize{font-size:.6875rem;color:#666}
-.model-chip-item .mlic{display:block;max-width:100%;padding:0;border:0;background:none;font:inherit;font-size:.6875rem;color:#666;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-chip-item .msize{font-size:.6875rem;color:#8f8f99}
+.model-chip-item .mlic{display:block;max-width:100%;padding:0;border:0;background:none;font:inherit;font-size:.6875rem;color:#8f8f99;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .model-chip-item button.mlic{cursor:pointer;text-decoration:underline}
 .model-chip-item .mco{font-size:.59375rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
 .model-chip-item .mstatus{font-size:.625rem;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
 .model-chip-item .mstatus.active{background:#1a3a1a;color:#4ade80}
-.model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#8b5cf6}
-.model-chip-item .mstatus.available{background:#1a1a1a;color:#666}
+.model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#a385f8}
+.model-chip-item .mstatus.available{background:#1a1a1a;color:#8f8f99}
 .model-chip-item .mstatus.downloading{background:#3a2e1a;color:#fbbf24}
-.mcd-header{padding:9px 12px 4px;font-size:.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#777}
+.mcd-header{padding:9px 12px 4px;font-size:.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94949e}
 .mcd-footer{padding:10px 12px;font-size:.75rem;color:var(--violet);cursor:pointer;border-top:1px solid rgba(255,255,255,0.08);text-align:center}
 .mcd-footer:hover{background:rgba(167,139,250,0.10)}
 /* Cloud connect CTA — the top, most-prominent picker option. Violet accent (cloud/AI touch) on a translucent glass tile. */
@@ -1225,11 +1225,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .welcome-feat{text-align:left;padding:12px 16px;background:#111;border:1px solid #222;border-radius:10px}
 .welcome-feat .fi{font-size:1.125rem;margin-bottom:4px}
 .welcome-feat .ft{font-size:.8125rem;font-weight:600;color:#e0e0e0}
-.welcome-feat .fd{font-size:.6875rem;color:#666;margin-top:2px}
-.welcome-btn{padding:14px 40px;border-radius:12px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;font-size:1rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-bottom:10px}
+.welcome-feat .fd{font-size:.6875rem;color:#8f8f99;margin-top:2px}
+.welcome-btn{padding:14px 40px;border-radius:12px;border:none;background:linear-gradient(135deg,#5558e6,#7c4ddb);color:white;font-size:1rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-bottom:10px}
 .welcome-btn:hover{opacity:0.85}
 .welcome-btn:disabled{opacity:0.5;cursor:not-allowed}
-.welcome-skip{color:#666;font-size:.75rem;cursor:pointer;border:none;background:none;padding:6px}
+.welcome-skip{color:#8f8f99;font-size:.75rem;cursor:pointer;border:none;background:none;padding:6px}
 .welcome-skip:hover{color:#aaa}
 .welcome-progress{width:100%;max-width:400px;margin-top:16px;display:none}
 .welcome-progress.active{display:block}
@@ -1239,14 +1239,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 /* Code block copy button */
 .code-wrap{position:relative;margin:10px 0}
 .code-wrap pre{margin:0}
-.code-copy{position:absolute;top:6px;right:6px;padding:3px 10px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:.6875rem;cursor:pointer;opacity:0;transition:opacity 0.2s}
+.code-copy{position:absolute;top:6px;right:6px;padding:3px 10px;border-radius:6px;border:1px solid #444;background:#222;color:#a0a0aa;font-size:.6875rem;cursor:pointer;opacity:0;transition:opacity 0.2s}
 .code-wrap:hover .code-copy,.code-wrap:focus-within .code-copy{opacity:1}
 .code-copy:hover{color:#e0e0e0;border-color:var(--accent)}
 .code-copy.copied{color:#4ade80;border-color:#4ade80}
 /* Message actions */
 .msg-actions{display:flex;gap:6px;margin-top:8px;opacity:0;transition:opacity 0.2s}
 .message:hover .msg-actions,.message:focus-within .msg-actions{opacity:1}
-.msg-action{padding:3px 10px;border-radius:6px;border:1px solid #333;background:none;color:#666;font-size:.6875rem;cursor:pointer}
+.msg-action{padding:3px 10px;border-radius:6px;border:1px solid #333;background:none;color:#8f8f99;font-size:.6875rem;cursor:pointer}
 .msg-action:hover{color:#e0e0e0;border-color:var(--accent)}
 /* Search bar */
 .search-bar{padding:8px 0;width:100%;max-width:720px;display:none}
@@ -1279,6 +1279,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   :focus-visible{outline-color:Highlight!important}
 }
 @media (prefers-color-scheme: light){:root{--focus:#1d4ed8}}
+/* Text colours for the light ground (4.5:1 and more). */
+@media (prefers-color-scheme: light){
+  .hw-info,.context-info,.model-card .meta,.model-card .mlicense,.model-card .progress-text,.model-chip .chevron,
+  .model-chip-item .msize,.model-chip-item .mlic,.mcd-header,.msg-action,.code-copy,
+  .search-bar .search-count,.search-bar .search-close,.model-chip-item .mstatus.available{color:#5a5a64}
+  .message .label{color:#4f46e5}
+  .message.user .label{color:#6d28d9}
+  .model-chip-progress .pct{color:#7c3aed}
+  .mcd-footer,.mcd-cloud-cta .mcc-arrow{color:#5d3fc4}
+  .input-area button.cancel,.model-card .btn.danger{color:#b91c1c;border-color:#b91c1c}
+  .code-copy:hover,.msg-action:hover{color:#1c1c22}
+  .code-copy.copied{color:#15803d}
+}
 /* Light theme — the page has no data-theme toggle here, so honour the OS light preference: no ambient, light frosted surfaces (rgba(255,255,255,0.65)+blur), dark borders, dark text. Glass tokens are re-tuned so the same rules render correctly on light. */
 @media (prefers-color-scheme: light){
   :root{--glass-bg:rgba(255,255,255,0.65);--glass-bg-hi:rgba(255,255,255,0.82);--glass-border:rgba(0,0,0,0.10);--glass-border-hi:rgba(0,0,0,0.18);--glass-shadow:0 18px 44px -18px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.85)}
@@ -1299,12 +1312,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   .model-card .btn{color:#3a3a44}
   .model-card .btn:hover{color:#111}
   .model-chip-item:hover{background:rgba(0,0,0,0.05)}
-  .model-chip-item .mstatus.available{background:rgba(0,0,0,0.06);color:#777}
+  .model-chip-item .mstatus.available{background:rgba(0,0,0,0.06);color:#5a5a64}
   .search-bar input{color:#1c1c22;box-shadow:inset 0 1px 0 rgba(255,255,255,0.7)}
   .mcd-cloud-cta{background:rgba(167,139,250,0.14);border-color:rgba(124,92,214,0.28)}
   .mcd-cloud-cta .mcc-text{color:#3a2a66}
   .mcd-cloud-cta .mcc-sub{color:#6b5a99}
-  .code-copy{background:rgba(255,255,255,0.7);border-color:rgba(0,0,0,0.12);color:#555}
+  .code-copy{background:rgba(255,255,255,0.7);border-color:rgba(0,0,0,0.12);color:#5a5a64}
   .model-overlay{background:rgba(0,0,0,0.28)}
 }
 </style>

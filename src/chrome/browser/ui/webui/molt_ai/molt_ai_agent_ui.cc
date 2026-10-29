@@ -2479,8 +2479,8 @@ class MoltAIAgentDataSource : public content::URLDataSource {
   --surface3:rgba(255,255,255,0.11);
   --text:#f4f5fa;
   --muted:rgba(233,236,247,0.64);
-  --faint:rgba(233,236,247,0.40);
-  --dim:rgba(233,236,247,0.26);
+  --faint:rgba(233,236,247,0.56);
+  --dim:rgba(233,236,247,0.56);
   --border:rgba(255,255,255,0.11);
   --border-hi:rgba(255,255,255,0.22);
   --edge-soft:rgba(255,255,255,0.06);
@@ -2577,10 +2577,10 @@ button,input,textarea,select{font-family:inherit}
 .btn:active{transform:translateY(1px)}
 .btn.ghost{background:none;border-color:transparent;color:var(--muted)}
 .btn.ghost:hover{background:var(--surface2);color:var(--text)}
-.btn.primary{background:linear-gradient(180deg,var(--accent-2),var(--accent-deep));border-color:transparent;color:#fff;
+.btn.primary{background:linear-gradient(180deg,#d0383e,#b8282e);border-color:transparent;color:#fff;
   box-shadow:0 10px 24px -10px rgba(255,82,87,0.6),inset 0 1px 0 rgba(255,255,255,0.25)}
 .btn.primary:hover{filter:brightness(1.06)}
-.btn.violet{background:linear-gradient(180deg,#b79bff,#7c5cff);border-color:transparent;color:#fff;
+.btn.violet{background:linear-gradient(180deg,#7c4ddb,#5d3fc4);border-color:transparent;color:#fff;
   box-shadow:0 10px 24px -10px rgba(124,92,255,0.6),inset 0 1px 0 rgba(255,255,255,0.25)}
 .btn.ok{background:linear-gradient(180deg,#67e7ab,var(--ok-deep));border-color:transparent;color:#062117;
   box-shadow:0 10px 24px -10px rgba(95,227,161,0.55)}

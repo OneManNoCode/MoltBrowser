@@ -1120,7 +1120,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .hit-title a:hover{color:#a78bfa;}
 .hit-url{font-size:.75rem;color:#6b8f71;margin-bottom:4px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;}
-.hit-meta{font-size:.6875rem;color:#666;margin-bottom:6px;
+.hit-meta{font-size:.6875rem;color:#8f8f99;margin-bottom:6px;
   font-family:monospace;}
 .hit-meta .score{color:#a78bfa;font-weight:600;}
 .hit-delete{color:#a0a0b0;margin-left:8px;background:none;border:none;
@@ -1138,8 +1138,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .header nav{display:flex;gap:16px;}
 .header nav a{color:#a0a0b0;text-decoration:none;font-size:.8125rem;}
 .header nav a:hover{color:#fff;text-decoration:underline;}
-.empty{color:#555;padding:32px;text-align:center;font-style:italic;}
-.timing{font-size:.6875rem;color:#666;margin-top:6px;font-family:monospace;}
+.empty{color:#8a8a94;padding:32px;text-align:center;font-style:italic;}
+.timing{font-size:.6875rem;color:#8f8f99;margin-top:6px;font-family:monospace;}
 .timing b{color:#a78bfa;}
 .controls{margin-top:30px;padding-top:20px;
   border-top:1px solid #1a1a2a;}

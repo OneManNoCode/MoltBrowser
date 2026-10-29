@@ -1828,7 +1828,7 @@ function updateMoltNetUI(data) {
     circuit.innerHTML = moltHTML(html);
   } else {
     circuit.innerHTML =
-        moltHTML('<span style="color:#555">Not connected</span>');
+        moltHTML('<span style="color:#8a8a94">Not connected</span>');
   }
 }
 
@@ -2444,11 +2444,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 @keyframes lgDrift{from{transform:translate3d(-2%,-1%,0) scale(1.02)}to{transform:translate3d(2%,2%,0) scale(1.08)}}
 .container{max-width:640px;margin:0 auto;position:relative;z-index:1}
 .logo-area{display:flex;align-items:center;gap:10px;margin-bottom:4px}.logo-img{width:44px;height:44px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.5)}.logo-text{margin:0;font-size:1.625rem;font-weight:700;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.back-btn{display:none;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #333;border-radius:8px;color:#6366f1;text-decoration:none;font-size:1rem;line-height:1;cursor:pointer;transition:all 0.2s;flex-shrink:0}
+.back-btn{display:none;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #333;border-radius:8px;color:#8b8df5;text-decoration:none;font-size:1rem;line-height:1;cursor:pointer;transition:all 0.2s;flex-shrink:0}
 .back-btn:hover{border-color:#6366f1;background:#111}
 .subtitle{color:#888;margin-bottom:24px;font-size:.875rem}
 .nav{display:flex;gap:12px;margin-bottom:24px}
-.nav a{color:#6366f1;text-decoration:none;font-size:.8125rem;padding:6px 12px;border:1px solid #333;border-radius:8px;transition:all 0.2s}
+.nav a{color:#8b8df5;text-decoration:none;font-size:.8125rem;padding:6px 12px;border:1px solid #333;border-radius:8px;transition:all 0.2s}
 .nav a:hover{border-color:#6366f1;background:#111}
 .section{background:rgba(255,255,255,0.085);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30);transition:border-color 0.2s,transform 0.2s}
 .section:hover{transform:translateY(-1px);border-color:rgba(255,255,255,0.20)}
@@ -2457,14 +2457,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .field{margin-bottom:16px}
 .field:last-child{margin-bottom:0}
 .field label,.field .lbl{display:block;font-size:.8125rem;font-weight:600;color:#aaa;margin-bottom:6px}
-.field .desc{font-size:.6875rem;color:#666;margin-bottom:6px}
+.field .desc{font-size:.6875rem;color:#8f8f99;margin-bottom:6px}
 .field input[type="number"],.field input[type="text"],.field textarea{width:100%;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.25);color:#e0e0e0;font-size:.8125rem;outline:none;transition:border-color 0.2s;font-family:inherit}
 .field input:focus,.field textarea:focus{border-color:#6366f1}
 .field textarea{resize:vertical;min-height:80px}
 .field select{padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.25);color:#e0e0e0;font-size:.8125rem;outline:none;width:100%;cursor:pointer}
 .field .range-wrap{display:flex;align-items:center;gap:12px}
 .field input[type="range"]{flex:1;accent-color:#6366f1}
-.field .range-val{font-size:.8125rem;color:#6366f1;min-width:40px;text-align:right;font-weight:600}
+.field .range-val{font-size:.8125rem;color:#8b8df5;min-width:40px;text-align:right;font-weight:600}
 .field label.toggle,.toggle{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:normal;color:inherit;margin-bottom:0}
 /* The real checkbox stays focusable and in the accessibility tree (it
    used to be display:none, out of reach of the keyboard); the track draws
@@ -2480,10 +2480,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .toggle.disabled{opacity:0.5;cursor:not-allowed}
 .browser-row.not-installed{opacity:0.45}
 .browser-logo{flex:0 0 auto;width:22px;height:22px;display:inline-block;vertical-align:middle}
-.not-installed-label{margin-left:auto;font-size:.75rem;color:#777;font-style:italic}
+.not-installed-label{margin-left:auto;font-size:.75rem;color:#94949e;font-style:italic}
 .actions{display:flex;gap:10px;margin-top:20px}
 .btn{padding:10px 24px;border-radius:10px;border:none;font-size:.875rem;font-weight:600;cursor:pointer;transition:all 0.2s}
-.btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;box-shadow:0 8px 22px -8px rgba(99,102,241,0.6),inset 0 1px 0 rgba(255,255,255,0.25)}
+.btn.primary{background:linear-gradient(135deg,#5558e6,#7c4ddb);color:white;box-shadow:0 8px 22px -8px rgba(99,102,241,0.6),inset 0 1px 0 rgba(255,255,255,0.25)}
 .btn.primary:hover{opacity:0.9;transform:translateY(-1px)}
 .btn.secondary{background:rgba(255,255,255,0.085);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);border:1px solid rgba(255,255,255,0.12);color:#cfcfe0;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
 .btn.secondary:hover{border-color:#6366f1;color:#e0e0e0;transform:translateY(-1px)}
@@ -2503,7 +2503,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .provider-form input{width:100%;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.10);background:rgba(0,0,0,0.28);color:#e0e0e0;font-size:.8125rem;outline:none;box-sizing:border-box}
 .provider-form input:focus{border-color:#6366f1}
 .provider-form .row{display:flex;gap:8px}
-.provider-hint{font-size:.6875rem;color:#666;line-height:1.5}
+.provider-hint{font-size:.6875rem;color:#8f8f99;line-height:1.5}
 .provider-err{font-size:.75rem;color:#f87171}
 .bridge-hint{font-size:.75rem;color:#fbbf24;line-height:1.5;margin-top:8px}
 .model-scroll{max-height:220px;overflow-y:auto;margin-top:6px}
@@ -2745,7 +2745,7 @@ h2[tabindex="-1"]:focus{outline:none !important}
       <div class="field">
         <h3 class="lbl">Circuit (Relay Chain)</h3>
         <div id="circuitDisplay" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:.875rem">
-          <span style="color:#555">Not connected</span>
+          <span style="color:#8a8a94">Not connected</span>
         </div>
       </div>
       <div class="field" style="display:flex;gap:10px">

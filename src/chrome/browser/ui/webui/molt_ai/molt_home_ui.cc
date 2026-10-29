@@ -94,9 +94,10 @@ class MoltHomeDataSource : public content::URLDataSource {
     --ground:#06070c;
     --text:#f4f5fa;
     --muted:rgba(233,236,247,0.60);
-    --faint:rgba(233,236,247,0.40);
+    --faint:rgba(233,236,247,0.56);
     --brand:#ff5257;
     --brand-deep:#e0353b;
+    --brand-fill:#d0383e;--brand-fill-deep:#b8282e; /* white text on it: 4.8:1 */
     --cloud:#a78bfa;
     --glass:rgba(255,255,255,0.055);
     --glass-hi:rgba(255,255,255,0.10);
@@ -149,7 +150,7 @@ class MoltHomeDataSource : public content::URLDataSource {
   .search input::placeholder{color:var(--faint)}
   .search .go{flex:0 0 auto;width:44px;height:44px;border-radius:14px;border:none;cursor:pointer;
     display:grid;place-items:center;color:#fff;font-size:1.1875rem;
-    background:linear-gradient(180deg,var(--brand),var(--brand-deep));
+    background:linear-gradient(180deg,var(--brand-fill),var(--brand-fill-deep));
     box-shadow:0 10px 24px -8px rgba(255,82,87,.6);transition:transform .15s,opacity .15s}
   .search .go:hover{transform:translateY(-1px)}
 

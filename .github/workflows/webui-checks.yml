@@ -12,7 +12,8 @@ name: WebUI checks
 #     Trusted Types emulated, and its controls are wired
 #   * every page passes axe-core and the accessibility checks axe doesn't
 #     make (keyboard reach, names, dialogs, live regions, focus ring,
-#     reduced motion, forced colours) in its main states
+#     reduced motion, forced colours) in its main states, and the colours
+#     in every page's CSS meet WCAG AA contrast in every theme
 #     (docs/ACCESSIBILITY.md)
 #   * MoltShield's page scripts behave: the procedural cosmetic filter
 #     engine (renderer) and the consent killer, in jsdom

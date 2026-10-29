@@ -277,7 +277,7 @@ class MoltNetDataSource : public content::URLDataSource {
   :root{
     --text:#f4f5fa;
     --muted:rgba(233,236,247,0.64);
-    --faint:rgba(233,236,247,0.42);
+    --faint:rgba(233,236,247,0.56);
     --accent:#ff5257;
     --accent-deep:#e0353b;
     --ok:#5fe3a1;

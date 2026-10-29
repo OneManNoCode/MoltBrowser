@@ -201,12 +201,16 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --border:rgba(255,255,255,0.14);
   --text:#f4f5fa;
   --muted:rgba(233,236,247,0.62);
-  --faint:rgba(233,236,247,0.40);
+  --faint:rgba(233,236,247,0.56);
   --accent:#ff5257;        /* MoltBrowser brand red */
   --accent-hover:#ff676c;
   --ok:#5fe3a1;
   --warn:#e0b454;
   --err:#f07070;
+  /* Fills under white text (4.6:1 and more). */
+  --accent-fill:#d0383e;
+  --accent-fill-deep:#b8282e;
+  --err-fill:#b04848;
   /* ---- Liquid Glass tokens (dark themes) ----
      Floating panels read as frosted glass over the ambient orbs.
      Light theme overrides these below with opaque-leaning values.
@@ -240,7 +244,7 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --border:rgba(255,255,255,0.13);
   --text:#f4f5fa;
   --muted:rgba(233,236,247,0.58);
-  --faint:rgba(233,236,247,0.36);
+  --faint:rgba(233,236,247,0.54);
   /* Pure-black ground: keep glass frosted-dark and let the orbs
      glow so panels never read as flat black rectangles. */
   --glass-bg:rgba(18,20,30,0.46);
@@ -263,12 +267,15 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --border:rgba(0,0,0,0.10);
   --text:#111111;
   --muted:#5a5a63;
-  --faint:#8a8a93;
+  --faint:#696970;
   --accent:#d63638;
   --accent-hover:#b32d2e;
-  --ok:#1a8a45;
-  --warn:#9a6700;
+  --ok:#157a3b;
+  --warn:#805600;
   --err:#c62828;
+  --accent-fill:#d63638;
+  --accent-fill-deep:#b32d2e;
+  --err-fill:#c62828;
   /* Light theme: clean, no ambient orbs. Glass = frosted white so
      panels still float and refract, but surfaces stay bright and text
      keeps AA contrast. Ambient opacity 0 disables the orb layer. */
@@ -445,7 +452,7 @@ button{font-family:inherit}
 /* User bubble: molt-red gradient, right-aligned, white text, small
    bottom-right radius + soft red glow, per the mockup's .msg.u. No
    backdrop-filter (scrolling row, per the perf rule). */
-.message.user .text{background:linear-gradient(180deg,rgba(255,82,87,0.9),rgba(224,53,59,0.85));border:1px solid rgba(255,82,87,0.5);border-radius:15px;border-bottom-right-radius:5px;padding:9px 13px;max-width:85%;color:#fff;box-shadow:0 8px 20px -8px rgba(255,82,87,0.5),inset 0 1px 0 rgba(255,255,255,0.2)}
+.message.user .text{background:linear-gradient(180deg,var(--accent-fill),var(--accent-fill-deep));border:1px solid rgba(255,82,87,0.5);border-radius:15px;border-bottom-right-radius:5px;padding:9px 13px;max-width:85%;color:#fff;box-shadow:0 8px 20px -8px rgba(255,82,87,0.5),inset 0 1px 0 rgba(255,255,255,0.2)}
 /* ---- Inline edit of user messages (Claude-style) ---- */
 .msg-edit{background:none;border:none;color:var(--faint);font-size:.75rem;cursor:pointer;opacity:0;padding:2px 6px;border-radius:6px;transition:opacity 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
 .message.user:hover .msg-edit,.message.user:focus-within .msg-edit{opacity:1}
@@ -455,8 +462,8 @@ button{font-family:inherit}
 .msg-edit-area textarea:focus{border-color:var(--faint)}
 .msg-edit-btns{display:flex;gap:6px;justify-content:flex-end}
 .msg-edit-btns button{padding:4px 12px;border-radius:8px;font-size:.6875rem;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted)}
-.msg-edit-btns .save{background:var(--accent);border-color:var(--accent);color:#fff}
-.msg-edit-btns .save:hover{background:var(--accent-hover)}
+.msg-edit-btns .save{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
+.msg-edit-btns .save:hover{background:var(--accent-fill-deep)}
 .msg-edit-btns .cancel-edit:hover{color:var(--text);border-color:var(--faint)}
 .attached-note{font-size:.625rem;color:var(--muted);margin-top:4px;font-style:italic}
 .welcome-hint{color:var(--muted);font-size:.6875rem;margin-top:6px}
@@ -490,7 +497,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .molt-action-confirm .ac-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Menlo,monospace}
 .molt-action-confirm .ac-buttons{display:flex;gap:6px;flex-shrink:0}
 .molt-action-confirm button{padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:.6875rem;cursor:pointer;font-family:inherit}
-.molt-action-confirm .ac-allow{background:var(--accent);border-color:var(--accent);color:#fff}
+.molt-action-confirm .ac-allow{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
 .molt-action-confirm .ac-allow:hover{background:var(--accent-hover)}
 .molt-action-confirm .ac-deny:hover{border-color:var(--err);color:var(--err)}
 /* ---- Real-time navigate chip ---- */
@@ -555,14 +562,14 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .mode-item .om-check{margin-left:4px;padding-top:1px}
 .composer-row .mic{width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--muted);font-size:.875rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,color 0.15s;flex:0 0 auto}
 .composer-row .mic:hover{background:var(--surface2);color:var(--text)}
-.composer-row .mic.recording{background:var(--err);color:#fff;animation:mic-pulse 1.2s ease-in-out infinite}
+.composer-row .mic.recording{background:var(--err-fill);color:#fff;animation:mic-pulse 1.2s ease-in-out infinite}
 .composer-row .mic.transcribing{background:var(--surface2);color:var(--warn)}
 @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(240,112,112,0.5)}50%{box-shadow:0 0 0 6px rgba(240,112,112,0)}}
 .composer-row .cancel{padding:5px 11px;border-radius:999px;border:1px solid var(--err);background:transparent;color:var(--err);font-size:.71875rem;cursor:pointer;display:none;flex:0 0 auto}
 .composer-row .cancel.active{display:block}
 /* Round red send button with a soft red glow, per the mockup's .send. */
-.composer-row .send{width:32px;height:32px;border-radius:50%;border:none;background:linear-gradient(180deg,var(--accent),#e0353b);color:#fff;font-size:.9375rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,opacity 0.15s,box-shadow 0.15s,transform 0.15s;flex:0 0 auto;box-shadow:0 6px 16px -5px rgba(255,82,87,0.6),inset 0 1px 0 rgba(255,255,255,0.3)}
-.composer-row .send:hover{background:linear-gradient(180deg,var(--accent-hover),#e0353b);box-shadow:0 8px 20px -5px rgba(255,82,87,0.7),inset 0 1px 0 rgba(255,255,255,0.35);transform:translateY(-1px)}
+.composer-row .send{width:32px;height:32px;border-radius:50%;border:none;background:linear-gradient(180deg,var(--accent-fill),var(--accent-fill-deep));color:#fff;font-size:.9375rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,opacity 0.15s,box-shadow 0.15s,transform 0.15s;flex:0 0 auto;box-shadow:0 6px 16px -5px rgba(255,82,87,0.6),inset 0 1px 0 rgba(255,255,255,0.3)}
+.composer-row .send:hover{background:linear-gradient(180deg,var(--accent-fill-deep),var(--accent-fill-deep));box-shadow:0 8px 20px -5px rgba(255,82,87,0.7),inset 0 1px 0 rgba(255,255,255,0.35);transform:translateY(-1px)}
 .composer-row .send:disabled{opacity:0.35;cursor:not-allowed;box-shadow:none;transform:none}
 /* ---- Model picker pill + pop-up dropdown ---- */
 .model-chip-wrap{position:relative;display:flex;align-items:center;min-width:0;flex-shrink:1}
@@ -654,8 +661,8 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-card .btn{padding:4px 12px;border-radius:7px;font-size:.6875rem;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:border-color 0.15s,color 0.15s}
 .model-card .btn:hover{border-color:var(--faint);color:var(--text)}
 .model-card .btn:disabled{opacity:0.4;cursor:not-allowed}
-.model-card .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.model-card .btn.primary:hover{background:var(--accent-hover)}
+.model-card .btn.primary{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
+.model-card .btn.primary:hover{background:var(--accent-fill-deep)}
 .model-card .btn.danger{border-color:var(--err);color:var(--err);background:transparent}
 .model-card .btn.danger:hover{background:rgba(240,112,112,0.12)}
 .model-card .badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:.625rem;font-weight:600}
@@ -680,7 +687,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .welcome-features{text-align:left;max-width:280px;margin-bottom:20px}
 .welcome-features div{padding:6px 0;font-size:.75rem;color:var(--muted);display:flex;align-items:center;gap:8px}
 .welcome-features .feat-icon{color:var(--accent);font-size:.875rem}
-.welcome-btn{padding:12px 32px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:.875rem;font-weight:600;cursor:pointer;transition:background 0.15s;margin-bottom:8px}
+.welcome-btn{padding:12px 32px;border-radius:12px;border:none;background:var(--accent-fill);color:#fff;font-size:.875rem;font-weight:600;cursor:pointer;transition:background 0.15s;margin-bottom:8px}
 .welcome-btn:hover{background:var(--accent-hover)}
 .welcome-btn:disabled{opacity:0.6;cursor:default}
 .welcome-skip{color:var(--faint);font-size:.6875rem;cursor:pointer;border:none;background:none;padding:4px}
@@ -699,7 +706,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .profile-row input{flex:1;padding:4px 8px;font-size:.75rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px}
 .profile-row input:focus{outline:none;border-color:var(--faint)}
 .profile-actions{display:flex;gap:6px;margin-top:6px}
-.profile-actions button{padding:4px 12px;font-size:.75rem;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer}
+.profile-actions button{padding:4px 12px;font-size:.75rem;border-radius:6px;background:var(--accent-fill);color:#fff;border:none;cursor:pointer}
 .profile-actions button:hover{background:var(--accent-hover)}
 .profile-actions .profile-cancel{background:var(--surface2);color:var(--muted)}
 .profile-actions .profile-cancel:hover{color:var(--text)}
