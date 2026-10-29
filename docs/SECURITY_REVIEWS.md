@@ -47,8 +47,7 @@ pinned revision: `RenderFrameHostImpl::HandleAXEvents()` and
 `GetAXTreeData()` (the tree data the browser sets: tree, parent and
 focused tree ids), `AXTree::Unserialize()` and
 `RelativeToTreeBoundsInternal()`, `AXTreeManager`'s and
-`BrowserAccessibility`'s own check of a child tree's parent,
-`ax_common.h`'s fail-fast builds, `TtsControllerImpl`'s queue, and the
+`BrowserAccessibility`'s own check of a child tree's parent, and the
 contents area's layout. Page maps were built from hand-made trees of pages
 that embed a frame larger and more prominent than their own content. Fixes
 tested with the std-only unit tests built standalone (system gtest, ASan
