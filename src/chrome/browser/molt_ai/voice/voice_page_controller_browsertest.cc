@@ -32,6 +32,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
@@ -40,6 +41,8 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/ax_mode.h"
+#include "ui/accessibility/ax_tree_update.h"
+#include "ui/accessibility/ax_updates_and_events.h"
 
 namespace molt_ai {
 namespace voice {
@@ -382,6 +385,70 @@ IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
   EXPECT_EQ(frame->GetLastCommittedOrigin().host(), "b.test");
   EXPECT_EQ(controller()->Press(like->handle), ActionResult::kDone);
   EXPECT_TRUE(WaitForJs(frame, "window.likes === 1"));
+}
+
+// The frames a page embeds can't take the page's place: with no room left
+// for frames' trees (in number, or in nodes), the page's own tree is still
+// kept, whichever arrives first, and the frame's items are left out.
+IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
+                       KeepsThePagesTreeWhenFramesFillTheCaps) {
+  const GURL widget = Url("b.test", "/molt_voice/frame_widget.html");
+  const GURL host =
+      Url("a.test", "/molt_voice/frame_host.html?frame=" + widget.spec());
+  for (const bool by_nodes : {false, true}) {
+    SCOPED_TRACE(by_nodes ? "nodes" : "trees");
+    controller()->Stop();
+    if (by_nodes) {
+      controller()->SetTreeCapsForTesting(VoicePageController::kMaxTrees, 1);
+    } else {
+      controller()->SetTreeCapsForTesting(0, 1000);
+    }
+    controller()->Start();
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), host));
+    content::RenderFrameHost* frame =
+        content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0);
+    ASSERT_TRUE(frame);
+    ASSERT_TRUE(WaitForJs(frame, "window.likes === 0"));
+    const PageMap map = WaitForMap([](const PageMap& map) {
+      return FindItem(map, ItemKind::kButton, "After frame") != nullptr;
+    });
+    EXPECT_TRUE(controller()->HasPageTree());
+    EXPECT_TRUE(FindItem(map, ItemKind::kLink, "Home"));
+    EXPECT_FALSE(FindItem(map, ItemKind::kButton, "Like"));
+  }
+}
+
+// Tree data alone (the browser sends some when the focus moves, as when a
+// tab becomes active again) waits for the tree it describes instead of
+// failing on the empty tree voice mode starts with; the whole tree still
+// comes and maps.
+IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
+                       TreeDataAloneWaitsForItsTree) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), Url("signin.test", "/molt_voice/sign_in.html")));
+  WaitForMap([](const PageMap& map) { return !map.items.empty(); });
+  const VoicePageController::Stats before = controller()->stats();
+
+  controller()->Stop();
+  controller()->Start();
+  ui::AXUpdatesAndEvents details;
+  details.ax_tree_id = web_contents()->GetPrimaryMainFrame()->GetAXTreeID();
+  ui::AXTreeUpdate data_only;
+  data_only.has_tree_data = true;
+  data_only.tree_data.tree_id = details.ax_tree_id;
+  details.updates.push_back(data_only);
+  static_cast<content::WebContentsObserver*>(controller())
+      ->AccessibilityEventReceived(details);
+  EXPECT_EQ(controller()->stats().unserialize_failures,
+            before.unserialize_failures);
+  EXPECT_EQ(controller()->stats().resets, before.resets);
+  EXPECT_FALSE(controller()->HasPageTree());
+
+  const PageMap map =
+      WaitForMap([](const PageMap& map) { return !map.items.empty(); });
+  EXPECT_FALSE(map.items.empty());
+  EXPECT_EQ(controller()->stats().unserialize_failures,
+            before.unserialize_failures);
 }
 
 IN_PROC_BROWSER_TEST_F(VoicePageControllerBrowserTest,
