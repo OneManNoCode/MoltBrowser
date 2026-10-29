@@ -305,7 +305,7 @@ struct VoiceTurn {
 
   // What was understood (the parsed command; kUnknown for a follow-up).
   VoiceCommandKind kind = VoiceCommandKind::kUnknown;
-  // What was heard, cleaned (the caption's "Heard: ...").
+  // What was heard, cleaned and capped (the caption's "Heard: ...").
   std::string heard;
   // What the browser is doing, for the caption ("Opening YouTube").
   std::string status;

@@ -306,6 +306,7 @@ void CheckTurn(const VoiceTurn& turn,
                const Page& page,
                const VoiceEnvironment& env) {
   CheckSpeakable(turn.status, kMaxStatusChars);
+  CheckSpeakable(turn.heard, kMaxStatusChars);
   const int tabs = static_cast<int>(env.tabs.size());
   for (const VoiceStep& step : turn.steps) {
     if (env.moltnet) {

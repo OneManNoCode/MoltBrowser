@@ -260,7 +260,7 @@ class Planner {
 
   void Plan(const VoiceCommand& command, int depth) {
     turn_.kind = command.kind;
-    turn_.heard = command.heard;
+    turn_.heard = SpeechSafeText(command.heard, kMaxStatusChars);
     if (env_.moltnet) {
       Status("Voice mode is off in MoltNet windows");
       Say("Voice mode is off in MoltNet windows.");
