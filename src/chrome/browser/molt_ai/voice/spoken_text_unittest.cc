@@ -119,8 +119,19 @@ TEST(SpokenTextTest, CleanAndSourceText) {
   EXPECT_EQ(CleanSpokenText("a\xFF"
                             "b",
                             100),
-            "a\xEF\xBF\xBD"
-            "b");
+            "ab");
+  // What page text loses before it is spoken or shown goes here too:
+  // private-use characters (U+E000, U+F0000), noncharacters (U+FDD0,
+  // U+FFFF), the object replacement and replacement characters, and the
+  // Hangul fillers (U+3164, U+115F).
+  EXPECT_EQ(CleanSpokenText("open\xEE\x80\x80 you\xF3\xB0\x80\x80tube "
+                            "\xEF\xB7\x90\xEF\xBF\xBF\xEF\xBF\xBC\xEF\xBF\xBD"
+                            "now \xE3\x85\xA4\xE1\x85\x9F!",
+                            100),
+            "open youtube now !");
+  // Letters of other scripts stay.
+  EXPECT_EQ(CleanSpokenText("\xED\x95\x9C \xCE\xB1", 100),
+            "\xED\x95\x9C \xCE\xB1");
   // Never cut inside a character.
   EXPECT_EQ(CleanSpokenText("ab\xC3\xA9", 3), "ab");
   const std::string source = "search for um AC/DC, node.js";
