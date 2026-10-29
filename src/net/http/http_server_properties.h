@@ -280,8 +280,9 @@ class NET_EXPORT HttpServerProperties
   // site's least recently used one, never another site's, or isn't kept;
   // but a server's demand for HTTP/1.1 is always kept, past the total for a
   // site holding none or two fewer than the site holding the most in the
-  // place of that site's least recently used one. Called by MoltNet's network context, which keeps
-  // its properties in memory only, before its first request.
+  // place of that site's least recently used one. Called by MoltNet's
+  // network context, which keeps its properties in memory only, before its
+  // first request.
   void MoltKeepPerSiteShares();
 
   // Returns true if `server`, in the context of `network_anonymization_key`,

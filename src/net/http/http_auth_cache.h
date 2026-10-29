@@ -230,10 +230,10 @@ class NET_EXPORT HttpAuthCache {
   // of its own site's least recently used one; past the total, for a site
   // holding none or two fewer than the site that holds the most, the place
   // of that site's least recently used entry, so that what the user signs in
-  // with is kept (otherwise Add() would return null). Proxy entries, the browser's own
-  // and keyed by no site, are kept as they come. Called by MoltNet's network
-  // context, whose server entries are keyed by site, before its first
-  // request.
+  // with is kept (otherwise Add() would return null). Proxy entries, the
+  // browser's own and keyed by no site, are kept as they come. Called by
+  // MoltNet's network context, whose server entries are keyed by site,
+  // before its first request.
   void MoltKeepPerSiteShares();
 
   // Updates a stale digest entry on server |scheme_host_port| for realm |realm|
