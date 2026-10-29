@@ -198,8 +198,9 @@ class Report:
             acc[mid] = {s: vbl.aggregate(v) for s, v in per.items()}
             clean = per.get("asr-clean-a", []) + per.get("asr-clean-b", [])
             # The per-voice table compares recognizers on the same clips:
-            # only those that ran both clean sets.
-            if "asr-clean-a" in per and "asr-clean-b" in per:
+            # the per-utterance ones that ran both clean sets (the streaming
+            # models differ too much to say much about the voices).
+            if kind == "offline" and "asr-clean-a" in per and "asr-clean-b" in per:
                 clean_by_model[e["label"]] = clean
             synth = [x for k2, v in per.items() if k2.startswith("asr-") for x in v]
             loops = sum(1 for x in synth if self._runaway(x["hyp"]))
@@ -295,10 +296,10 @@ class Report:
                 ok_any[x["clip"]] = ok_any.get(x["clip"], False) or x["command_ok"]
         none = sum(1 for v in ok_any.values() if not v)
         self.summary["clips_no_model_right"] = none
-        return (table(["test voice", "clips", "median WER over recognizers", "best", "worst"],
-                      rows) +
-                "\n\n%d of %d clean clips were transcribed exactly by no recognizer." %
-                (none, len(ok_any)))
+        return (table(["test voice", "clips", "median WER over per-utterance recognizers",
+                       "best", "worst"], rows) +
+                "\n\n%d of %d clean clips were transcribed exactly by no per-utterance "
+                "recognizer." % (none, len(ok_any)))
 
     def offline_timing(self):
         rows = []
