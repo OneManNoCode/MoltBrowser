@@ -755,6 +755,56 @@ function gpuInference(args) {
   return gpuState;
 }
 
+// "Voice mode" (script: kVoiceSettingsJs).
+const voiceCalls = [];
+let voiceState = {available: true, enabled: false, alwaysListening: false,
+                  listening: false, moltnet: false};
+function voiceSettings(args) {
+  voiceCalls.push([args[0].replace(/_\d+$/, '')].concat(args.slice(1)));
+  return voiceState;
+}
+
+async function checkVoiceSection(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const section = doc.getElementById('voiceSection');
+  assert(section, 'voice section present');
+  assert.strictEqual(section.hidden, false, 'shown with #molt-voice-mode');
+  assert(!doc.getElementById('voiceEnabled').checked);
+  // On: the value goes to the browser, which answers with what it did.
+  voiceState = Object.assign({}, voiceState, {enabled: true, listening: true});
+  doc.getElementById('voiceEnabled').click();
+  await tick();
+  assert.deepStrictEqual(voiceCalls.pop(), ['voiceSettingsSetEnabled', true]);
+  assert(doc.getElementById('voiceEnabled').checked);
+  assert.strictEqual(doc.getElementById('voiceStatus').textContent,
+                     'Listening in this window.');
+  // A refused change: the answer's value and its error, as text.
+  voiceState = Object.assign({}, voiceState,
+                             {error: '<b>Click the setting to change it.</b>'});
+  doc.getElementById('voiceAlwaysListening').click();
+  await tick();
+  assert.deepStrictEqual(voiceCalls.pop(),
+                         ['voiceSettingsSetAlwaysListening', true]);
+  assert(!doc.getElementById('voiceAlwaysListening').checked,
+         'shows the saved value');
+  assert.strictEqual(doc.getElementById('voiceStatus').textContent,
+                     '<b>Click the setting to change it.</b>');
+  assert.strictEqual(section.querySelectorAll('b').length, 0);
+  // A MoltNet window's settings page says it never listens there.
+  voiceState = {available: true, enabled: true, alwaysListening: false,
+                listening: false, moltnet: true};
+  doc.getElementById('voiceEnabled').click();
+  await tick();
+  assert(/never listens in MoltNet/.test(
+      doc.getElementById('voiceStatus').textContent));
+  // Without the flag the section hides.
+  voiceState = {available: false};
+  doc.getElementById('voiceEnabled').click();
+  await tick();
+  assert.strictEqual(section.hidden, true, 'hidden without #molt-voice-mode');
+}
+
 async function checkGpuSection(window) {
   const doc = window.document;
   const tick = () => new Promise((r) => setTimeout(r, 15));
@@ -1198,7 +1248,8 @@ const PAGES = [
    // MoltNet on/off, exit country and bridges (MoltAISettingsHandler) and
    // the GPU setting (MoltGpuInferenceHandler) each take a real click.
    clickGated: ['moltnetConnect', 'moltnetDisconnect', 'moltnetSetExitCountry',
-                'setMoltnetBridges', 'gpuInferenceSetMode', 'gpuInferenceRetry'],
+                'setMoltnetBridges', 'gpuInferenceSetMode', 'gpuInferenceRetry',
+                'voiceSettingsSetEnabled', 'voiceSettingsSetAlwaysListening'],
    responses: {
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
@@ -1247,15 +1298,21 @@ const PAGES = [
      gpuInferenceGetState: gpuInference,
      gpuInferenceSetMode: gpuInference,
      gpuInferenceRetry: gpuInference,
+     // "Voice mode" (script: kVoiceSettingsJs).
+     voiceSettingsGetState: voiceSettings,
+     voiceSettingsSetEnabled: voiceSettings,
+     voiceSettingsSetAlwaysListening: voiceSettings,
    },
    extraFiles: ['molt_webui_csp.h',
                 '../../../molt_ai/shield/molt_shield_settings_handler.cc',
                 'molt_web_ai_sites_handler.cc',
-                'molt_gpu_inference_handler.cc'],
+                'molt_gpu_inference_handler.cc',
+                'molt_voice_settings_handler.cc'],
    listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click',
                     '#shieldUpdateBtn:click', '#webAiClearBtn:click',
                     '#webAiEnabled:change', '#gpuModeAuto:change',
-                    '#gpuModeOff:change', '#gpuRetryBtn:click'],
+                    '#gpuModeOff:change', '#gpuRetryBtn:click',
+                    '#voiceEnabled:change', '#voiceAlwaysListening:change'],
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 10));
@@ -1265,6 +1322,7 @@ const PAGES = [
      assert.strictEqual(doc.getElementById('exitCountry').value, 'de', 'exit pin shown');
      await checkWebAISites(window);
      await checkGpuSection(window);
+     await checkVoiceSection(window);
      // MoltShield: hostile list/tab metadata renders as text, never markup.
      assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));

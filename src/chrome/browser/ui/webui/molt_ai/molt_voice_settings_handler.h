@@ -8,7 +8,8 @@
 // voice_session.h).
 //
 // Messages (validated with HasCallbackArgs() and BoolArg(); nothing from
-// the page reaches a CHECK):
+// the page reaches a CHECK; the two that change a setting count only with
+// the click itself, molt_user_click.h):
 //   voiceSettingsGetState(cb)
 //   voiceSettingsSetEnabled(cb, bool)
 //   voiceSettingsSetAlwaysListening(cb, bool)

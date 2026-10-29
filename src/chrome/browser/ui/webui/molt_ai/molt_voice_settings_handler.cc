@@ -10,6 +10,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/thread_pool.h"
+#include "chrome/browser/molt_ai/common/molt_user_click.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/voice/voice_controller_features.h"
 #include "chrome/browser/molt_ai/voice/voice_session.h"
@@ -26,6 +27,8 @@ using molt_ai::chat_handler_helpers::BoolArg;
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 using molt_ai::voice::VoiceModeSettings;
 using molt_ai::voice::VoiceSession;
+
+constexpr char kClickToChange[] = "Click the setting to change it.";
 
 constexpr base::TaskTraits kFileTraits = {
     base::MayBlock(), base::TaskPriority::USER_VISIBLE,
@@ -126,6 +129,12 @@ void MoltVoiceSettingsHandler::HandleSetEnabled(const base::ListValue& args) {
     ResolveWithState(args[0].GetString(), std::nullopt);
     return;
   }
+  // The microphone: only with the click itself (molt_user_click.h). OS
+  // voice control's clicks count; a page's script can't make one up.
+  if (!molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost())) {
+    ResolveWithState(args[0].GetString(), kClickToChange);
+    return;
+  }
   Change(args[0].GetString(), /*enabled_changed=*/true, *enabled);
 }
 
@@ -138,6 +147,10 @@ void MoltVoiceSettingsHandler::HandleSetAlwaysListening(
   const std::optional<bool> always = BoolArg(args, 1);
   if (!always || !molt_ai::voice::VoiceModeEnabled()) {
     ResolveWithState(args[0].GetString(), std::nullopt);
+    return;
+  }
+  if (!molt_ai::ConsumeUserClick(true, web_ui()->GetRenderFrameHost())) {
+    ResolveWithState(args[0].GetString(), kClickToChange);
     return;
   }
   Change(args[0].GetString(), /*enabled_changed=*/false, *always);
