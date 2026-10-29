@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 5aa5b0447d68508bd5224b84ec040617c9a136ac..5057851bd0aa4467daf4bdb16e7d5ca39c572204 100644
+index 5aa5b0447d68508bd5224b84ec040617c9a136ac..b25bcb5b527ee8dfcdd36679d30113ffbff62e1b 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
 @@ -985,6 +985,9 @@ source_set("core") {
@@ -30,3 +30,13 @@ index 5aa5b0447d68508bd5224b84ec040617c9a136ac..5057851bd0aa4467daf4bdb16e7d5ca3
      "//chrome/browser/autocomplete",
      "//chrome/browser/autocomplete:impl",
      "//chrome/browser/autofill",
+@@ -4407,6 +4415,9 @@ if (!is_android) {
+       "//ui/shell_dialogs:test_support",
+     ]
+ 
++    # MoltBrowser: touchless browsing's page map and actions.
++    deps += [ "//chrome/browser/molt_ai/voice:browser_tests" ]
++
+     if (is_win || is_linux || is_chromeos) {
+       sources += [ "process_singleton_browsertest.cc" ]
+     }
