@@ -41,7 +41,12 @@ sandboxed; nothing is recorded or sent anywhere. While you speak a command,
 videos and music in your tabs are turned down. The browser cancels its own
 sound (videos, pages) from the microphone, so a video saying "Hey Molt"
 doesn't command it; while the browser itself is speaking, only "Hey Molt"
-and "stop" are heard. Each state has a short sound: a rising tone when it
+and "stop" are heard. A page reading aloud with the system's voices is
+another matter: the browser can't cancel that voice, so while a page reads
+aloud (and a second after) only "stop", "cancel" and "turn off voice mode"
+are heard. Voice mode never cuts a page's reading short: its own answer
+waits until the page has finished, and "stop" stops only voice mode's
+speech. Each state has a short sound: a rising tone when it
 heard "Hey Molt", a tick when it took a command, a falling tone when it
 goes back to waiting for "Hey Molt".
 
