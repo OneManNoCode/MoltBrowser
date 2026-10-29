@@ -83,18 +83,41 @@ TTS_TEXTS = [
 # ------------------------------------------------------------------ plumbing
 
 
-@contextlib.contextmanager
-def heavy_lock(path):
-    if not path or os.name == "nt":
+class HeavyLock:
+    """The --lock file (POSIX flock). A measurement takes it only when it
+    has to run, and keeps it for the next one of the same group (the same
+    results directory: one model's sets, one model's timing runs), so a
+    model's runs go together; it is let go when the group changes, between
+    steps and at the end. Nothing is locked when a result already exists."""
+
+    def __init__(self, path):
+        self.path = path if path and os.name != "nt" else ""
+        self.f = None
+        self.key = None
+
+    def hold(self, key):
+        if not self.path:
+            return
+        if self.f is not None and key != self.key:
+            self.release()
+        if self.f is None:
+            import fcntl
+            self.f = open(self.path, "a")
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+        self.key = key
+
+    def release(self):
+        if self.f is not None:
+            import fcntl
+            fcntl.flock(self.f, fcntl.LOCK_UN)
+            self.f.close()
+            self.f = None
+            self.key = None
+
+    @contextlib.contextmanager
+    def held(self, key):
+        self.hold(key)
         yield
-        return
-    import fcntl
-    with open(path, "a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 class Bench:
@@ -102,7 +125,7 @@ class Bench:
         self.data = os.path.abspath(args.dir)
         self.work = os.path.abspath(args.work or os.path.join(self.data, "work"))
         self.results = os.path.abspath(args.results or os.path.join(self.data, "results"))
-        self.lock = args.lock
+        self.lock = HeavyLock(args.lock)
         self.quick = args.suite == "quick"
         self.repeats = args.repeats
         self.threads = args.threads
@@ -148,7 +171,7 @@ class Bench:
                 f.write("\t".join(r) + "\n")
         cmd = [self.driver, mode, "--list", lst, "--threads", str(threads)] + flags
         t0 = time.time()
-        with heavy_lock(self.lock):
+        with self.lock.held(os.path.dirname(out)):
             p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                                errors="replace")
         meta = {"event": "run", "mode": mode, "threads": threads, "tag": tag,
@@ -518,7 +541,7 @@ class Bench:
                     out = self.out_path("whispercpp-bench", model, "t%d.r%d.json" % (t, rep))
                     if os.path.exists(out):
                         continue
-                    with heavy_lock(self.lock):
+                    with self.lock.held(os.path.dirname(out)):
                         t0 = time.perf_counter()
                         p = subprocess.run([bench, "-m", mpath, "-t", str(t), "-w", "0", "-ng"],
                                            capture_output=True, text=True)
@@ -557,7 +580,7 @@ class Bench:
                 os.makedirs(tmpd, exist_ok=True)
                 lines = [json.dumps({"event": "run", "mode": "whisper-cli", "model": model,
                                      "threads": self.threads})]
-                with heavy_lock(self.lock):
+                with self.lock.held(os.path.dirname(out)):
                     for r in rows:
                         stem = os.path.join(tmpd, "out")
                         t0 = time.perf_counter()
@@ -608,7 +631,10 @@ def main(argv=None):
         raise SystemExit("driver missing: run with --build first")
     for s in steps:
         print("== %s" % s, flush=True)
-        getattr(b, "step_" + s.replace("-", "_"))()
+        try:
+            getattr(b, "step_" + s.replace("-", "_"))()
+        finally:
+            b.lock.release()
     return 0
 
 
