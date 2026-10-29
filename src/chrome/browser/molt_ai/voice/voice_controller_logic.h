@@ -262,8 +262,11 @@ struct ConversationState {
   std::string list_label;
   int64_t list_page_id = -1;
   // After an unclear choice: the close candidates read back (indices into
-  // the list's candidates, in the order read), and the verb to apply.
+  // the list's candidates, in the order read), the nodes they named then
+  // (an answer counts only while they still name them), and the verb to
+  // apply.
   std::vector<size_t> offered;
+  std::vector<PageNodeHandle> offered_handles;
   ChoiceVerb offered_verb = ChoiceVerb::kDefault;
   // The list's entry last chosen or read (1-based), for "the next one".
   int current_position = 0;
@@ -351,8 +354,9 @@ bool NeedsConfirmation(std::string_view label,
                        std::string_view url,
                        const PageMap& map);
 
-// The page's search field: a writable text field the map marks as a
-// search field, on screen first; null if there is none.
+// The page's search field: a writable text field of the top-level document
+// (never of a frame it embeds) the map marks as a search field, on screen
+// first; null if there is none.
 const PageItem* FindSearchField(const PageMap& map);
 
 }  // namespace voice

@@ -496,6 +496,110 @@ TEST(VoiceControllerLogicTest, FindsTheSearchField) {
   EXPECT_TRUE(FindSearchField(BuildPageMap(test::GoogleLikeResults())));
 }
 
+// A page with a frame from another site (an ad) before its own content:
+// the frame has a search box, a "Next" link, a volume slider and a video;
+// the page a "Next" link and a video of its own, and no search box.
+PageTree PageWithAnAd() {
+  TreeBuilder b("Article");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Article", 0);
+  const uint32_t iframe = b.Add(root, PageRole::kIframe, "Ad", 0);
+  b.SetTree(1);
+  const uint32_t ad =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Ad", 0);
+  const uint32_t field = b.Add(ad, PageRole::kSearchBox, "Search", kField);
+  b.node(field).placeholder = "Search";
+  b.Link(ad, "Next", "https://ad.example/next");
+  b.Add(ad, PageRole::kSlider, "Volume", kStateFocusable);
+  b.Add(ad, PageRole::kVideo, "Ad video",
+        kStateFocusable | kStateHasDefaultAction);
+  b.SetTree(0);
+  b.AppendChild(iframe, ad);
+  const uint32_t main = b.Add(root, PageRole::kMain, "", 0);
+  b.Heading(main, 1, "Article");
+  b.Add(main, PageRole::kVideo, "Article video",
+        kStateFocusable | kStateHasDefaultAction);
+  b.Link(main, "Next", "https://news.example/page/2");
+  return b.Take();
+}
+
+TEST(VoiceControllerLogicTest, AFrameDoesntAnswerForThePage) {
+  Conversation c(BuildPageMap(PageWithAnAd()), Env());
+  c.env().host = "news.example";
+  // What the user searches for isn't typed into the frame's search box.
+  EXPECT_FALSE(FindSearchField(c.map()));
+  VoiceTurn turn = c.Say("search for cats");
+  EXPECT_EQ(Actions(turn),
+            (std::vector<VoiceStepKind>{K::kSearchWeb, K::kWaitForPage}));
+  EXPECT_FALSE(Find(turn, K::kSetText));
+
+  // "Next page" presses the page's own link.
+  turn = c.Say("next page");
+  const VoiceStep* press = Find(turn, K::kPress);
+  ASSERT_TRUE(press);
+  const PageItem* next = c.map().ItemForHandle(press->target);
+  ASSERT_TRUE(next);
+  EXPECT_EQ(next->url, "https://news.example/page/2");
+
+  // "Play" starts the page's video, not the frame's.
+  turn = c.Say("play");
+  const VoiceStep* play = Find(turn, K::kPlayMedia);
+  ASSERT_TRUE(play);
+  EXPECT_TRUE(c.map().InPage(play->target));
+
+  // An embedded player still answers when the page has none of its own:
+  // the frame's volume slider is the only one.
+  turn = c.Say("louder");
+  const VoiceStep* louder = Find(turn, K::kIncrement);
+  ASSERT_TRUE(louder);
+  EXPECT_FALSE(c.map().InPage(louder->target));
+}
+
+// Two items called "Sign in"; with |ad|, a frame before them with a link
+// of its own (a rotating ad that just added one).
+PageTree SignInTwice(bool ad) {
+  TreeBuilder b("Welcome");
+  const uint32_t root =
+      b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Welcome", 0);
+  if (ad) {
+    const uint32_t iframe = b.Add(root, PageRole::kIframe, "Ad", 0);
+    b.SetTree(1);
+    const uint32_t frame =
+        b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea, "Ad", 0);
+    b.Link(frame, "Win a prize", "https://ad.example/prize");
+    b.SetTree(0);
+    b.AppendChild(iframe, frame);
+  }
+  b.Button(root, "Sign in");
+  b.Link(root, "Help", "https://site.example/help");
+  b.Link(root, "Sign in", "https://site.example/signin");
+  return b.Take();
+}
+
+TEST(VoiceControllerLogicTest, AnOfferHoldsOnlyWhileItNamesTheSameItems) {
+  Conversation c(BuildPageMap(SignInTwice(false)), Env());
+  VoiceTurn turn = c.Say("click sign in");
+  ASSERT_EQ(c.state().offered.size(), 2u);
+  EXPECT_FALSE(Find(turn, K::kPress));
+
+  // Nothing moved: "two" is the second one read out, the link.
+  Conversation same = c;
+  turn = same.Say("two");
+  const VoiceStep* press = Find(turn, K::kPress);
+  ASSERT_TRUE(press);
+  const PageItem* link = ItemLabelled(same.map(), ItemKind::kLink, "Sign in");
+  ASSERT_TRUE(link);
+  EXPECT_EQ(press->target, link->handle);
+
+  // A frame before them added a link: the places read out name other
+  // items now, so the answer is refused rather than pressing one of them.
+  c.map() = BuildPageMap(SignInTwice(true));
+  turn = c.Say("two");
+  EXPECT_FALSE(Find(turn, K::kPress));
+  EXPECT_EQ(Said(turn), "The page changed since I asked. Say it again.");
+  EXPECT_TRUE(c.state().offered.empty());
+}
+
 // ---------------------------------------------------------------------------
 // Confirmations
 // ---------------------------------------------------------------------------
