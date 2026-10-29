@@ -454,6 +454,7 @@ const char kMoltShieldSettingsJs[] = R"JS(
         call('shieldSetTabShields', t.key, v);
       }));
       var report = el('button', 'btn secondary', 'Report broken site');
+      report.setAttribute('aria-label', 'Report broken site: ' + t.site);
       report.style.cssText = 'font-size:.75rem;padding:6px 14px';
       report.addEventListener('click', function() {
         sendWithPromise('shieldReportBreakage', t.key).then(function(r) {
@@ -489,6 +490,7 @@ const char kMoltShieldSettingsJs[] = R"JS(
       row.style.cssText = 'display:flex;gap:10px;align-items:center';
       row.appendChild(el('span', null, pattern));
       var b = el('button', 'btn secondary', 'Shields up');
+      b.setAttribute('aria-label', 'Shields up on ' + pattern);
       b.style.cssText = 'font-size:.75rem;padding:4px 12px';
       b.addEventListener('click', function() {
         call('shieldRemoveException', pattern);
