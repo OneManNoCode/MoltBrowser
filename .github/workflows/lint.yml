@@ -40,6 +40,10 @@ name: Lint
 #     recorded sample run, its servers and DevTools pipe client; shellcheck
 #     on its scripts (blocking; the kit itself needs a built browser and
 #     root, see docs/LEAK_TESTING.md)
+#   * the voice bench kit (tools/voice_bench/): test set rules, scoring,
+#     hotword and SentencePiece/ONNX readers, safe unpacking and the pinned
+#     manifest; shellcheck on its script (blocking; the measurements
+#     themselves download engines, see docs/VOICE_BENCH.md)
 #   * fuzz smoke: the libFuzzer targets that need no //base (std, zlib and
 #     llama tiers) built with clang + ASan/UBSan and run over their seed
 #     corpora with a fixed seed and run count (tools/fuzz/molt_fuzz.py;
@@ -237,6 +241,20 @@ jobs:
           shellcheck tools/leak_test/*.sh tools/leak_test/leakkit/*.sh
       - name: tools/leak_test unit tests (no root, no browser)
         run: python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test -v
+
+  voice-bench-kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck tools/voice_bench
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck tools/voice_bench/*.sh
+      - name: tools/voice_bench tests (no downloads, no engines)
+        run: python3 -I tools/voice_bench/voice_bench_test.py -v
 
   fuzz-smoke:
     runs-on: ubuntu-latest
