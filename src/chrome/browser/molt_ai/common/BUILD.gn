@@ -133,9 +133,40 @@ source_set("helper_sandbox") {
   }
 }
 
+# ResidentHelper: a helper that runs while a feature is on (the speech
+# helper while voice mode listens), confined like the others but with no
+# deadline and nothing writable, its memory and CPU bounded, talking over
+# its stdin and stdout (helper_resident.h).
+source_set("helper_resident") {
+  sources = [ "helper_resident.h" ]
+  if (is_posix) {
+    sources += [ "helper_resident_posix.cc" ]
+  }
+  if (is_win) {
+    sources += [ "helper_resident_win.cc" ]
+  }
+  public_deps = [
+    ":helper_limits",
+    "//base",
+  ]
+  deps = [
+    ":helper_sandbox_linux",
+    ":seatbelt_profile",
+  ]
+  if (is_win) {
+    # The same AppContainer, job and attribute-list pieces as
+    # helper_sandbox_win.cc.
+    deps += [
+      ":helper_sandbox_win_policy",
+      "//sandbox/win:sandbox",
+    ]
+  }
+}
+
 # A stand-in helper for the sandbox tests: one action per command line
 # (print, read, write, make files, delete, connect, start a process,
-# allocate, spin), reporting what the sandbox and the limits let it do.
+# allocate, spin, copy stdin to stdout), reporting what the sandbox and the
+# limits let it do.
 # Only system libraries.
 if (is_win || is_linux || is_mac) {
   executable("molt_helper_sandbox_test_helper") {
@@ -155,6 +186,7 @@ source_set("unit_tests") {
   sources = [
     "helper_limits_unittest.cc",
     "helper_output_unittest.cc",
+    "helper_resident_unittest.cc",
     "helper_sandbox_unittest.cc",
     "helper_sandbox_win_policy_unittest.cc",
     "molt_user_click_unittest.cc",
@@ -163,6 +195,7 @@ source_set("unit_tests") {
     ":common",
     ":helper_limits",
     ":helper_output",
+    ":helper_resident",
     ":helper_sandbox",
     ":helper_sandbox_linux",
     ":helper_sandbox_win_policy",

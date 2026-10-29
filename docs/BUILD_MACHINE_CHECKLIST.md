@@ -770,6 +770,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
 | `voice/voice_controller.cc`, `voice/voice_speech.cc`, `voice/voice_page_controller.cc` (new `Increment()`, `Decrement()`, `ScrollPage()`), `ui/webui/molt_ai/molt_ai_agent_voice_handler.cc`, `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-voice-mode`) | type-checked against 156's headers here; what only the build shows: `DEFINE_USER_DATA` and `ui::ScopedUnownedUserData` on the window, `TtsUtterance::SetEventDelegate(std::unique_ptr)`, `MediaSession::GetMediaSessionInfoSync()` and `SeekTo()`, `TemplateURLRef::ReplaceSearchTerms()`, `SetTabAudioMuted()`, the new GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to `//chrome/browser/search_engines`, `//chrome/browser/ui:browser_commands`, `//chrome/browser/ui/tabs:utils` and `//services/media_session/public/mojom` | voice-loop |
+| `molt_ai/voice/voice_audio.cc` (its own `media::AudioInputIPC` passing a `media::mojom::AudioProcessingConfig` to `AudioStreamFactory::CreateInputStream`, under `media::AudioInputDevice`; `audio::OutputDevice` for the earcons; `system_permission_settings::IsDenied/CanPrompt/Request`), `voice_listener.cc` (dedicated `ThreadPool` single-thread runners, `ReleaseSoon`), `voice_session.cc` (`content::MediaSession::StartDucking()`, `GetAllBrowserWindowInterfaces()`), `voice_speech.cc` (`TtsController::RemoveUtteranceEventDelegate()` and `IsSpeaking()`; utterances that never clear the queue), `common/helper_resident_{posix,win}.cc` (Windows: `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION`, `StartupInformationHelper` with a stdin handle), `ui/views/molt_ai/voice/voice_toolbar_button.cc`, the `toolbar_view.cc` hook, `molt_voice_settings_handler.cc` | type-checked against 156's headers here; what only the build shows: the audio service accepting a processing config from the browser process for a 16 kHz mono 10 ms stream, the GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to the overlay (`//chrome/browser/ui/views/molt_ai/voice:overlay`) and from the toolbar to `:voice_session` | speech-session |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -1091,6 +1092,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
   | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
   | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
+  | `VoiceListenerProtocolTest.*` (frames, CONFIG, the helper's lines refused or taken, hotwords), `VoiceSessionLogicTest.*` and `VoiceSessionCommandsTest.*` (wake phrase, follow-up window, always listening, barge-in, "stop", the browser's own voice, a page's speech, crashes), `VoiceAudioSamplesTest.*` (frames, earcons), `CpuUsageWindowTest.*`, `ProcStatTest.*`, `ResidentHelperTest.*` (the resident sandbox with the stand-in helper: reads only its model directory, writes nothing, no network, no process, its limits, its pipes, dies with the browser; Linux and macOS) and `HelperSandboxWinPolicyTest.Resident*`; all built standalone here, `ResidentHelperTest.*` against this machine's kernel | speech-session |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1237,6 +1239,40 @@ extension enablement and `MediaRouterEnabled()`).
   If one fails, send the log: the page waits (load, quiet tree, the
   autoplay grace) are timed for a desktop; a wait that runs out shows as a
   missing or early reading. A failure in what is said prints both texts.
+- [ ] Voice mode listening's browser tests (speech-session): Chromium's
+  fake audio capture feeds the real microphone path (Chrome-wide echo
+  cancellation) and the real listener starts the stand-in helper
+  `molt_fake_speech_helper` (built next to `browser_tests`) under the real
+  resident sandbox. In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceSessionBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/speech-session-browser-tests.log
+  ```
+  *Expected:* all 7 pass on Linux and macOS (`NeverListensInMoltNetWindows`
+  only on Windows):
+  - `TheWakePhraseThenACommand`: wake, a partial, then "open a new tab"
+    opens one; "Voice mode is on. Say Hey Molt, then what you want." is
+    said once the helper is ready.
+  - `WhatIsHeardWhileTheBrowserSpeaksDoesntCommandIt`: while the browser
+    speaks, "open a new tab" without the wake phrase does nothing, and
+    "stop" stops the speech.
+  - `APagesSpeechIsNeverCutShort`: a page's utterance queued after voice
+    mode's, and one voice mode's answer waits behind, both end by
+    themselves when voice mode is stopped (no `INTERRUPTED` or
+    `CANCELLED`).
+  - `WhatAPageSaysDoesntCommandIt`: in the follow-up window, "open a new
+    tab" heard while a page speaks through `speechSynthesis` does nothing.
+  - `RestartsAfterACrash`: the helper exits; the session shows starting,
+    then waiting again once a new one is ready.
+  - `GivesUpAfterCrashesInARow`: a helper that writes what isn't the
+    protocol is ended three times, then voice mode stops listening and
+    says "Speech recognition stopped working: ...".
+  - `NeverListensInMoltNetWindows`: no helper looked for, no microphone,
+    "Voice mode is off in MoltNet windows.".
+
+  If one fails, send the log, with the lines `[MoltVoice]` and
+  `[MoltHelperSandbox]`: they say which echo canceller the microphone got
+  and what confinement the helper got.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -2176,6 +2212,76 @@ open Agent mode and type in "Type what you would say":
   windows." and `chrome://accessibility` shows no mode on its tabs.
 - [ ] With VoiceOver or Orca running, the panel's "Heard: ..." line is
   announced once per change and the browser's own speech isn't cut by it.
+
+**Voice mode listening** (from speech-session; `docs/VOICE_COMMANDS.md`
+"Turning voice mode on", TOUCHLESS_BROWSING.md §5.1, §6.1). With the
+bundled `molt-speech` (speech-helper's checklist items) and
+`chrome://flags/#molt-voice-mode` on, on macOS and Linux (Windows deferred),
+each with a real microphone: a laptop's built-in one and a USB headset.
+
+- [ ] The first time (speech-session): press the toolbar's Voice button.
+  *Expected:* macOS asks for the microphone (allow it); then "Voice mode is
+  on. Say Hey Molt, then what you want." and the bar under the page shows
+  "Waiting". The log has `[MoltVoice] microphone on, echo cancellation:
+  Chrome-wide` and `[MoltVoice] speech helper ready` with the helper's
+  confinement (Linux: Landlock and seccomp-bpf). Deny it instead (System
+  Settings, Privacy, Microphone) and press the button: the browser says "I
+  can't use the microphone: ..." aloud and in the bar.
+- [ ] The owner's scenario spoken aloud (speech-session), in a quiet room:
+  "Hey Molt, open YouTube"; "search for Bohemian Rhapsody" within 8 s of
+  its answer, without "Hey Molt"; "the fourth one"; "Hey Molt, pause";
+  "Hey Molt, play the live one by Queen" and the answer to its question.
+  *Expected:* a rising tone on "Hey Molt", a tick when it takes the command;
+  the bar shows what you say as you say it; each step works as when typed;
+  a falling tone 8 s after an answer (back to waiting). Note each step
+  misheard, missed or slow, with the words you said.
+- [ ] With music playing (speech-session): the same with a YouTube music
+  video playing at a normal volume through the speakers, not headphones.
+  *Expected:* the video's sound turns down from "Hey Molt" to the end of
+  the command, then back; the commands work; the song's lyrics, and a
+  video that says "Hey Molt, open settings", command nothing. Count the
+  misses and anything done that you didn't say.
+- [ ] The browser's own voice (speech-session): "Hey Molt, read the
+  headings" on a long Wikipedia article, through speakers. *Expected:*
+  nothing it reads is taken as a command; "stop" (without "Hey Molt") stops
+  it; "Hey Molt, go back" interrupts it and goes back.
+- [ ] Always listening (speech-session): settings, "Always listening" on.
+  *Expected:* the bar shows "Listening"; "open a new tab" works without
+  "Hey Molt"; a TV or a second person talking near the microphone is heard
+  as commands too (as the setting's text says).
+- [ ] Turning it off by voice (speech-session): "Hey Molt, turn off voice
+  mode". *Expected:* it asks first; "yes": "Voice mode is off.", the bar
+  goes, the Voice button loses its ring, and the microphone indicator (macOS
+  menu bar) goes out.
+- [ ] With the browser (speech-session): settings, "Voice mode" on; quit
+  and start MoltBrowser. *Expected:* it listens in the first window without
+  a click.
+- [ ] A crash (speech-session): `kill -9` the `molt-speech` process.
+  *Expected:* the bar says "Speech recognition is restarting", and it
+  listens again within a few seconds; three kills within a minute make it
+  stop and say so.
+- [ ] Its sandbox and limits (speech-session): while it listens, the
+  helper's process shows about 5-15% of one core and under 300 MB; Linux
+  `/proc/<pid>/status` shows `NoNewPrivs: 1` and `Seccomp: 2`; it has no
+  open network sockets (`lsof -p <pid> -i`) and no file open for writing
+  but its pipes. Close the browser's window: the helper is gone.
+- [ ] A page that speaks (speech-session): open a page that reads a long
+  text aloud with `speechSynthesis` (any "text to speech" demo page), then
+  say "Hey Molt, what time is it" and "Hey Molt, stop" while it reads.
+  *Expected:* the page's reading is never cut off or restarted (voice mode's
+  answer waits until it finishes); the commands spoken over the page's
+  voice are not taken (only "stop", which stops voice mode's own speech).
+  Then a page that says "Hey Molt, open a new tab" with `speechSynthesis`:
+  nothing happens.
+- [ ] Numbers that move (speech-session): "Hey Molt, show numbers" on a
+  page whose content shifts (a news site loading ads), then say a number
+  just as it shifts. *Expected:* either the item you saw that number on is
+  pressed, or "The page changed, so its numbers moved..." and new numbers;
+  never another item.
+- [ ] MoltNet (speech-session): in a MoltNet window the Voice button says
+  "Voice mode is off in MoltNet windows." and the microphone indicator
+  stays off; while a regular window listens, a MoltNet tab's video isn't
+  turned down when you speak.
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 

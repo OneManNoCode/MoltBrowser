@@ -37,6 +37,8 @@
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/update/update_manager.h"
+#include "chrome/browser/molt_ai/voice/voice_controller_features.h"
+#include "chrome/browser/molt_ai/voice/voice_session.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "chrome/browser/command_updater.h"
@@ -108,6 +110,7 @@
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
 #include "chrome/browser/ui/views/intent_picker_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/webui_location_bar.h"
+#include "chrome/browser/ui/views/molt_ai/voice/voice_toolbar_button.h"
 #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
 #include "chrome/browser/ui/views/page_action/page_action_view.h"
 #include "chrome/browser/ui/views/page_action/page_action_view_interface.h"
@@ -1097,6 +1100,16 @@ void ToolbarView::Init() {
         u"Toggle Agent mode — record, edit, run & schedule web automations");
     agent_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     agent_mode_button_ = AddChildView(std::move(agent_button));
+  }
+
+  // MoltBrowser: the Voice button, behind chrome://flags/#molt-voice-mode:
+  // listening on and off for this window; and voice mode's "start with the
+  // browser" setting (molt_ai/voice/voice_session.h).
+  if (molt_ai::voice::VoiceModeEnabled() && browser_ &&
+      browser_->GetType() == BrowserWindowInterface::TYPE_NORMAL) {
+    AddChildView(
+        std::make_unique<molt_ai::voice::VoiceToolbarButton>(browser_));
+    molt_ai::voice::VoiceSession::OnWindowReady(browser_);
   }
 
   // MoltBrowser: attach the side-panel-entry observers that swap the violet

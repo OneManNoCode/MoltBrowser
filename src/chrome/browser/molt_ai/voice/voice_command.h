@@ -163,11 +163,15 @@ enum class VoiceCommandKind : uint8_t {
   kRememberRoutine,  // |text|: the name
   kForgetRoutine,    // |text|: the name
   kRunRoutine,       // |text|: the name; the browser decides if it exists
+
+  // --- Voice mode (listening) ----------------------------------------------
+  kVoiceModeOn,   // start listening (typed, or said while voice mode is on)
+  kVoiceModeOff,  // stop listening (after a spoken "yes")
 };
 
 // The number of kinds, for tables and tests.
 inline constexpr size_t kVoiceCommandKindCount =
-    static_cast<size_t>(VoiceCommandKind::kRunRoutine) + 1;
+    static_cast<size_t>(VoiceCommandKind::kVoiceModeOff) + 1;
 
 // A stable name ("kOpenSite" -> "open_site"), for logs and the docs.
 std::string_view VoiceCommandKindName(VoiceCommandKind kind);

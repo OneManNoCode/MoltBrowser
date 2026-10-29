@@ -1143,6 +1143,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   password, card and code fields are never typed into or read out, and
   page text is only ever read, never obeyed. Voice mode stays off in
   MoltNet windows.
+- **Touchless browsing: the browser listens** (preview, behind
+  `chrome://flags/#molt-voice-mode`). "Hey Molt, open YouTube" is done as if
+  typed: the microphone, with the browser's own sound cancelled from it,
+  feeds MoltBrowser's on-device speech engine in a sandboxed helper that
+  can't write files, reach the network or start programs; for 8 s after an
+  answer, or while it waits for a yes or a choice, no "Hey Molt" is
+  needed; "stop" always works; videos are turned down while you speak; a
+  bar under the page shows what it hears as you say it, with a short sound
+  for each state. Turned on with the toolbar's Voice button, in settings
+  (also at every start, and an "Always listening" mode), or by voice. A
+  page reading aloud is never cut off by voice mode, and what it says
+  isn't taken as a command. It never listens in MoltNet windows. How:
+  `docs/VOICE_COMMANDS.md`.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an

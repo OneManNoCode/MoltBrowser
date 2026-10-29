@@ -1,9 +1,10 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// The Linux confinement for short-lived helper programs (tesseract,
-// whisper-cli): Landlock and a seccomp-bpf filter, applied in the child
-// between fork() and exec() (helper_sandbox.h is the front end callers use).
+// The Linux confinement for helper programs: short-lived ones (tesseract,
+// whisper-cli; helper_sandbox.h is their front end) and resident ones (the
+// speech helper; helper_resident.h): Landlock and a seccomp-bpf filter,
+// applied in the child between fork() and exec().
 //
 // Pure POSIX/Linux code without //base, so the exact code that ships is also
 // exercised by a standalone harness against the real kernel, besides the
@@ -20,9 +21,10 @@
 //   - Landlock: read (and execute) beneath the policy's read-only paths and
 //     the system locations a dynamically linked helper needs, read, create
 //     and write files beneath one scratch directory (not delete or rename
-//     them, nor make directories), nothing else. ABI >= 4: no TCP bind
-//     or connect. ABI >= 6: no connecting to abstract UNIX sockets or
-//     signalling processes outside the sandbox.
+//     them, nor make directories), nothing else. A resident helper has no
+//     scratch directory: it writes no file at all (RLIMIT_FSIZE 0 too).
+//     ABI >= 4: no TCP bind or connect. ABI >= 6: no connecting to abstract
+//     UNIX sockets or signalling processes outside the sandbox.
 //   - seccomp-bpf (x86_64 and aarch64): an allow-by-default filter with a
 //     short deny list (BuildSeccompProgram()). socket() for anything but
 //     AF_UNIX and connect() fail with EACCES, so libraries that probe for
@@ -97,9 +99,22 @@ struct Policy {
   std::vector<std::string> read_only;
   // Read and execute beneath these: the helper's own directory.
   std::vector<std::string> read_execute;
-  // Read and write beneath this directory (it must exist).
+  // Read and write beneath this directory (it must exist). Empty, and only
+  // empty, for a resident helper.
   std::string writable;
+  // A resident helper (helper_resident.h): no writable directory, no file
+  // written anywhere (RLIMIT_FSIZE 0), its memory capped at
+  // |max_data_bytes| instead of kMaxHelperDataBytes, and the CPU topology
+  // ONNX Runtime's cpuinfo reads (kResidentSystemPaths) readable.
+  bool resident = false;
+  uint64_t max_data_bytes = 0;
 };
+
+// What a resident helper may read besides its own directory and its
+// policy's paths: ONNX Runtime's CPU detection (pytorch/cpuinfo) reads
+// /proc/cpuinfo on arm64 (the CPU topology under /sys/devices/system/cpu is
+// readable for every helper). VOICE_BENCH.md §5.3.
+inline constexpr const char* kResidentSystemPaths[] = {"/proc/cpuinfo"};
 
 struct PathRule {
   std::string path;
@@ -111,10 +126,12 @@ struct PathRule {
 // The Landlock rules for |policy|: the system locations every dynamically
 // linked helper needs (/usr, /lib, /lib64 read+execute; /etc and
 // /sys/devices/system/cpu read; /dev/null read+write; /dev/zero,
-// /dev/random, /dev/urandom read), then the policy's own paths. /proc/self
-// (read) is added in the child, where it names the child: the helper
-// process itself, not processes it starts. Access bits are masked to what
-// the kernel handles when the ruleset is built.
+// /dev/random, /dev/urandom read), a resident helper's
+// kResidentSystemPaths (read), then the policy's own paths (no writable
+// one for a resident helper). /proc/self (read) is added in the child,
+// where it names the child: the helper process itself, not processes it
+// starts. Access bits are masked to what the kernel handles when the
+// ruleset is built.
 std::vector<PathRule> BuildPathRules(const Policy& policy);
 
 // The Landlock ABI version of the running kernel, or 0 without Landlock.
@@ -199,6 +216,11 @@ struct Prepared {
 
   // 0 when the kernel has no Landlock.
   int landlock_abi = 0;
+  // RLIMIT_FSIZE and RLIMIT_DATA in the child: kMaxHelperFileBytes and
+  // kMaxHelperDataBytes, or for a resident helper 0 and its policy's
+  // |max_data_bytes|.
+  uint64_t file_size_limit = kMaxHelperFileBytes;
+  uint64_t data_limit = kMaxHelperDataBytes;
   // The Landlock ruleset (parent's descriptor), or -1.
   int ruleset_fd = -1;
   uint64_t handled_fs = 0;
@@ -210,12 +232,13 @@ struct Prepared {
 // Parent side: builds the Landlock ruleset (opening every path) and the
 // seccomp program. Returns false with |error| set when a layer the kernel
 // offers can't be set up, or the policy is unusable (relative path, missing
-// scratch directory): the caller must not run the helper. Blocking.
+// scratch directory; a resident policy with a writable directory or no
+// memory cap): the caller must not run the helper. Blocking.
 bool Prepare(const Policy& policy, Prepared* prepared, std::string* error);
 
 // Child side, after fork() and before exec(), with the ruleset at
-// kChildRulesetFd: new session, the resource limits (kMaxHelperFileBytes,
-// no core dump, kMaxHelperDataBytes, kMaxHelperOpenFiles; each soft and
+// kChildRulesetFd: new session, the resource limits (the prepared file
+// size and data limits, no core dump, kMaxHelperOpenFiles; each soft and
 // hard, never above the hard limit the browser already has),
 // no_new_privs, Landlock (adding /proc/self), seccomp. Async-signal-safe:
 // raw system calls only, no allocation. If a step fails it writes

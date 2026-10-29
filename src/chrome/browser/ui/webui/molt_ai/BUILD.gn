@@ -41,6 +41,8 @@ source_set("molt_ai") {
     "molt_net_ui.h",
     "molt_vault_handler.cc",
     "molt_vault_handler.h",
+    "molt_voice_settings_handler.cc",
+    "molt_voice_settings_handler.h",
     "molt_web_ai_sites_handler.cc",
     "molt_web_ai_sites_handler.h",
     "molt_webui_csp.h",
@@ -100,6 +102,12 @@ source_set("molt_ai") {
     # The agent panel's "Type a voice command" field (#molt-voice-mode).
     "//chrome/browser/molt_ai/voice:features",
     "//chrome/browser/molt_ai/voice:voice_controller",
+
+    # "Voice mode" on molt://ai-settings: its settings and the window's
+    # listening.
+    "//chrome/browser/molt_ai/voice:voice_session",
+    "//chrome/browser/ui/browser_window",
+    "//components/tabs:public",
 
     # "Sites using on-device AI" on molt://ai-settings.
     "//chrome/browser/molt_ai/web_ai",

@@ -1,12 +1,21 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// The Windows confinement for short-lived helper programs (tesseract,
-// whisper-cli), as data: everything helper_sandbox_win.cc decides, kept
-// here as plain C++ without <windows.h> or //base so it compiles and is
-// unit-tested on every platform. The Windows file applies it with thin
-// calls and checks these values against the SDK's and the sandbox
-// library's with static_asserts.
+// The Windows confinement for helper programs, short-lived (tesseract,
+// whisper-cli) and resident (the speech helper), as data: everything
+// helper_sandbox_win.cc and helper_resident_win.cc decide, kept here as
+// plain C++ without <windows.h> or //base so it compiles and is unit-tested
+// on every platform. The Windows files apply it with thin calls and check
+// these values against the SDK's and the sandbox library's with
+// static_asserts.
+//
+// A resident helper (PlanResidentLaunch()) runs the same way, with these
+// differences: no scratch directory (its package SID, random per start,
+// grants it nothing at all: it can write nowhere), its stdin is a pipe from
+// the browser too (in the handle list), its job's memory limit is the
+// resident one, and the job's CPU rate is hard-capped
+// (helper_limits::kResidentCpuHardCapCores); its environment has no TEMP or
+// TMP (ResidentHelperEnvironment()).
 //
 // A helper runs as a less-privileged AppContainer (LPAC) process:
 //   - with a package SID of its own for each run (AppContainerSid()), which
@@ -141,11 +150,27 @@ struct LaunchPlan {
   // The job's limits.
   uint32_t active_process_limit = 0;
   uint64_t process_memory_limit = 0;
+  // A resident helper: its stdin is a pipe from the browser (also in the
+  // handle list), and the job's CPU rate is capped at |cpu_rate| (in
+  // hundredths of a percent of all processors, 1..10000; 0: no cap).
+  bool stdin_pipe = false;
+  uint32_t cpu_rate = 0;
 };
 
 // The plan for a run with package SID |package_sid|; nullopt unless it is
 // an AppContainer SID (IsAppContainerSid()).
 std::optional<LaunchPlan> PlanLaunch(std::string_view package_sid);
+
+// The plan for a resident helper with package SID |package_sid|, at most
+// |memory_limit| bytes of committed memory, and |cpu_cores| cores' worth of
+// CPU on a machine of |processors| (JOBOBJECT_CPU_RATE_CONTROL_INFORMATION's
+// rate: |cpu_cores| / |processors| of all of them, at least 0.01%, at most
+// all). Nullopt for a SID that isn't an AppContainer's, no memory limit or
+// no processors.
+std::optional<LaunchPlan> PlanResidentLaunch(std::string_view package_sid,
+                                             uint64_t memory_limit,
+                                             double cpu_cores,
+                                             uint32_t processors);
 
 // "S-1-15-2-" and seven 32-bit words: a package SID, as
 // DeriveAppContainerSidFromAppContainerName() makes one from a name. Each
@@ -229,6 +254,9 @@ inline constexpr uint32_t kReadOnlyPathAccess = kGenericRead;
 inline constexpr uint32_t kScratchDirectoryAccess =
     kFileListDirectory | kFileAddFile | kFileTraverse;
 std::vector<AccessCheck> PlanAccessChecks(size_t read_only_count);
+// A resident helper has no scratch directory: the program and the
+// read-only paths.
+std::vector<AccessCheck> PlanResidentAccessChecks(size_t read_only_count);
 
 // Why the helper didn't start when a check failed for |path| (UTF-8).
 std::string DescribeAccessFailure(AccessTarget target, std::string_view path);
@@ -240,6 +268,10 @@ std::string DescribeAccessFailure(AccessTarget target, std::string_view path);
 using EnvironmentVariables = std::vector<std::pair<std::wstring, std::wstring>>;
 EnvironmentVariables HelperEnvironment(const std::wstring& system_root,
                                        const std::wstring& scratch);
+
+// A resident helper's: SystemDrive, SystemRoot, windir and Path (no TEMP
+// or TMP: it has nowhere to write).
+EnvironmentVariables ResidentHelperEnvironment(const std::wstring& system_root);
 
 // The environment block CreateProcess takes with
 // CREATE_UNICODE_ENVIRONMENT: "NAME=value\0" for each variable, sorted by

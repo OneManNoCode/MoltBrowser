@@ -253,6 +253,12 @@ source_set("impl") {
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai:molt_update",
+
+    # The Voice button and starting voice mode with the browser
+    # (#molt-voice-mode).
+    "//chrome/browser/molt_ai/voice:features",
+    "//chrome/browser/molt_ai/voice:voice_session",
+    "//chrome/browser/ui/views/molt_ai/voice:toolbar_button",
     "//chrome/browser/performance_manager/public/user_tuning",
     "//chrome/browser/prefs",
     "//chrome/browser/preloading",

@@ -112,6 +112,22 @@ std::optional<LaunchPlan> PlanLaunch(std::string_view package_sid) {
   return plan;
 }
 
+std::optional<LaunchPlan> PlanResidentLaunch(std::string_view package_sid,
+                                             uint64_t memory_limit,
+                                             double cpu_cores,
+                                             uint32_t processors) {
+  std::optional<LaunchPlan> plan = PlanLaunch(package_sid);
+  if (!plan || memory_limit == 0 || processors == 0 || !(cpu_cores > 0)) {
+    return std::nullopt;
+  }
+  plan->process_memory_limit = memory_limit;
+  plan->stdin_pipe = true;
+  const double rate = cpu_cores * 10000.0 / processors;
+  plan->cpu_rate =
+      rate >= 10000 ? 10000u : std::max(1u, static_cast<uint32_t>(rate + 0.5));
+  return plan;
+}
+
 std::string AppContainerSid(const std::array<uint32_t, 7>& words) {
   std::string sid = "S-1-15-2";
   for (uint32_t word : words) {
@@ -180,6 +196,12 @@ std::vector<AccessCheck> PlanAccessChecks(size_t read_only_count) {
   return checks;
 }
 
+std::vector<AccessCheck> PlanResidentAccessChecks(size_t read_only_count) {
+  std::vector<AccessCheck> checks = PlanAccessChecks(read_only_count);
+  checks.pop_back();  // the scratch directory
+  return checks;
+}
+
 std::string DescribeAccessFailure(AccessTarget target, std::string_view path) {
   switch (target) {
     case AccessTarget::kProgram:
@@ -213,6 +235,15 @@ EnvironmentVariables HelperEnvironment(const std::wstring& system_root,
             [](const auto& a, const auto& b) {
               return LessIgnoringAsciiCase(a.first, b.first);
             });
+  return variables;
+}
+
+EnvironmentVariables ResidentHelperEnvironment(
+    const std::wstring& system_root) {
+  EnvironmentVariables variables = HelperEnvironment(system_root, L"");
+  std::erase_if(variables, [](const auto& variable) {
+    return variable.first == L"TEMP" || variable.first == L"TMP";
+  });
   return variables;
 }
 

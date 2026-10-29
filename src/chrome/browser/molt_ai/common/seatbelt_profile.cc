@@ -50,7 +50,10 @@ constexpr std::string_view kProfileHead = R"sb((version 1)
   (literal "/dev/random")
   (literal "/dev/urandom"))
 (allow file-write-data (literal "/dev/null"))
+)sb";
 
+// A short-lived helper's scratch directory.
+constexpr std::string_view kScratchRules = R"sb(
 ; The scratch directory: list it; read beneath it; create and write
 ; regular files there. Not the directory itself, so it can't be replaced
 ; by a symlink. Nothing else: no deleting or renaming (a file deleted
@@ -70,18 +73,38 @@ std::string ReadOnlyParam(size_t index) {
   return "READ_" + std::to_string(index);
 }
 
-std::string BuildProfile(size_t read_only_count) {
-  std::string profile(kProfileHead);
+namespace {
+
+void AppendReadOnlyRules(size_t read_only_count, std::string* profile) {
   if (read_only_count == 0) {
-    return profile;
+    return;
   }
-  profile +=
+  *profile +=
       "\n; Read-only inputs: model or tessdata directory, the input file.\n"
       "(allow file-read*";
   for (size_t i = 0; i < read_only_count; ++i) {
-    profile += "\n  (subpath (param \"" + ReadOnlyParam(i) + "\"))";
+    *profile += "\n  (subpath (param \"" + ReadOnlyParam(i) + "\"))";
   }
-  profile += ")\n";
+  *profile += ")\n";
+}
+
+std::string HelperDir(const std::string& helper) {
+  std::string helper_dir = helper.substr(0, helper.find_last_of('/'));
+  return helper_dir.empty() ? std::string("/") : helper_dir;
+}
+
+}  // namespace
+
+std::string BuildProfile(size_t read_only_count) {
+  std::string profile(kProfileHead);
+  profile += kScratchRules;
+  AppendReadOnlyRules(read_only_count, &profile);
+  return profile;
+}
+
+std::string BuildResidentProfile(size_t read_only_count) {
+  std::string profile(kProfileHead);
+  AppendReadOnlyRules(read_only_count, &profile);
   return profile;
 }
 
@@ -90,10 +113,6 @@ std::vector<std::string> BuildSandboxExecArgv(
     const std::vector<std::string>& helper_args,
     const std::vector<std::string>& read_only,
     const std::string& scratch) {
-  std::string helper_dir = helper.substr(0, helper.find_last_of('/'));
-  if (helper_dir.empty()) {
-    helper_dir = "/";
-  }
   std::vector<std::string> argv = {
       kSandboxExecPath,
       "-p",
@@ -101,7 +120,7 @@ std::vector<std::string> BuildSandboxExecArgv(
       "-D",
       std::string(kHelperParam) + "=" + helper,
       "-D",
-      std::string(kHelperDirParam) + "=" + helper_dir,
+      std::string(kHelperDirParam) + "=" + HelperDir(helper),
   };
   for (size_t i = 0; i < read_only.size(); ++i) {
     argv.push_back("-D");
@@ -109,6 +128,28 @@ std::vector<std::string> BuildSandboxExecArgv(
   }
   argv.push_back("-D");
   argv.push_back(std::string(kScratchParam) + "=" + scratch);
+  argv.push_back(helper);
+  argv.insert(argv.end(), helper_args.begin(), helper_args.end());
+  return argv;
+}
+
+std::vector<std::string> BuildResidentSandboxExecArgv(
+    const std::string& helper,
+    const std::vector<std::string>& helper_args,
+    const std::vector<std::string>& read_only) {
+  std::vector<std::string> argv = {
+      kSandboxExecPath,
+      "-p",
+      BuildResidentProfile(read_only.size()),
+      "-D",
+      std::string(kHelperParam) + "=" + helper,
+      "-D",
+      std::string(kHelperDirParam) + "=" + HelperDir(helper),
+  };
+  for (size_t i = 0; i < read_only.size(); ++i) {
+    argv.push_back("-D");
+    argv.push_back(ReadOnlyParam(i) + "=" + read_only[i]);
+  }
   argv.push_back(helper);
   argv.insert(argv.end(), helper_args.begin(), helper_args.end());
   return argv;

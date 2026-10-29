@@ -43,7 +43,11 @@
 
 #include <stdint.h>
 
+#include <deque>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 
 namespace molt_ai {
 namespace helper_limits {
@@ -117,6 +121,59 @@ std::string DescribeScratchVerdict(ScratchVerdict verdict);
 
 // "it used more than 4 GiB of memory".
 std::string DescribeMemoryLimit();
+
+// ---------------------------------------------------------------------------
+// Resident helpers (helper_resident.h): a helper that runs as long as a
+// feature is on (the speech helper while voice mode listens), with no
+// deadline and nothing to write. Its memory and CPU are bounded instead.
+// ---------------------------------------------------------------------------
+
+// The most memory a resident helper may use, by default (Linux
+// RLIMIT_DATA, Windows its job's limit, macOS its footprint, checked). The
+// speech helper (three small ONNX models) peaks under 300 MiB.
+inline constexpr uint64_t kMaxResidentMemoryBytes = 1ULL << 30;
+// The most CPU it may use: on average no more than this many cores over
+// the last kResidentCpuWindowMs. Listening costs a few percent of one core
+// (VOICE_BENCH.md §3.6); a helper stuck in a loop is stopped.
+inline constexpr double kMaxResidentCpuCores = 0.75;
+inline constexpr int64_t kResidentCpuWindowMs = 30000;
+// Windows also caps its job at this many cores' worth of CPU, so even a
+// burst can't take the machine.
+inline constexpr double kResidentCpuHardCapCores = 2.0;
+// How often the launcher checks a resident helper's memory and CPU.
+inline constexpr int64_t kResidentCheckIntervalMs = 1000;
+
+// Judges a process's CPU use from samples of its cumulative CPU time: past
+// the limit once it has used more than |max_cores| x |window_ms| of CPU
+// within the last |window_ms| (so a burst on many cores is caught before
+// the window has passed, and a steady load just above the average after
+// it).
+class CpuUsageWindow {
+ public:
+  CpuUsageWindow(double max_cores, int64_t window_ms);
+  ~CpuUsageWindow();
+  CpuUsageWindow(const CpuUsageWindow&) = delete;
+  CpuUsageWindow& operator=(const CpuUsageWindow&) = delete;
+
+  // The process had used |cpu_ms| of CPU in all at |now_ms| (both
+  // monotonic). False once it is past the limit; it stays past it.
+  bool Add(int64_t now_ms, int64_t cpu_ms);
+
+  // "it used more than 0.75 of a CPU core for 30 s".
+  std::string Describe() const;
+
+ private:
+  const double max_cores_;
+  const int64_t window_ms_;
+  std::deque<std::pair<int64_t, int64_t>> samples_;
+  bool past_ = false;
+};
+
+// Linux: a process's user and system CPU time, in clock ticks, from the
+// contents of /proc/<pid>/stat (its 14th and 15th fields, after the command
+// name in parentheses, which may hold anything); nullopt if it doesn't
+// read as one.
+std::optional<uint64_t> ParseProcStatCpuTicks(std::string_view stat);
 
 }  // namespace helper_limits
 }  // namespace molt_ai

@@ -617,6 +617,38 @@ class Planner {
       case K::kRunRoutine:
         Say("Routines come later.");
         break;
+
+      // Voice mode itself.
+      case K::kVoiceModeOn: {
+        if (env_.listening) {
+          Say("I'm already listening.");
+          break;
+        }
+        Status("Turning on voice mode");
+        VoiceStep on = Step(VoiceStepKind::kSetVoiceMode);
+        on.flag = true;
+        Add(std::move(on));
+        break;
+      }
+      case K::kVoiceModeOff: {
+        if (!env_.listening) {
+          Say("I'm not listening now.");
+          break;
+        }
+        // A user who has only their voice can't turn it back on by voice:
+        // ask first.
+        VoiceStep said = Step(VoiceStepKind::kSpeak);
+        said.text = "Voice mode is off.";
+        VoiceStep off = Step(VoiceStepKind::kSetVoiceMode);
+        off.flag = false;
+        std::vector<VoiceStep> steps;
+        steps.push_back(std::move(said));
+        steps.push_back(std::move(off));
+        Say("After this I won't hear you until voice mode is turned on "
+            "again with the Voice button in the toolbar, or in settings.");
+        AskToConfirm(std::move(steps), "turn off voice mode");
+        break;
+      }
     }
   }
 

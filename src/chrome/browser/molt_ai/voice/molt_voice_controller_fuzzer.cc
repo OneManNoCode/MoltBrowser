@@ -360,7 +360,8 @@ void CheckTurn(const VoiceTurn& turn,
   for (const VoiceStep& held : state.confirm_steps) {
     CHECK(IsPageAction(held.kind) || held.kind == VoiceStepKind::kSpeak ||
           held.kind == VoiceStepKind::kWaitForPage ||
-          held.kind == VoiceStepKind::kSetCurrentItem);
+          held.kind == VoiceStepKind::kSetCurrentItem ||
+          (held.kind == VoiceStepKind::kSetVoiceMode && !held.flag));
   }
   size_t remembered = 0;
   for (const std::string& text : state.last_spoken) {
