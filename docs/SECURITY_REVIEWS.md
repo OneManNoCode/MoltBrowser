@@ -4,6 +4,90 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-29: PR #78 (October 2026)
+
+**Scope.** The code merged in pull request #78 (round 34), which only its
+authors had reviewed, in this order of priority:
+
+1. MoltNet's per-site shares of the fixed-size network caches: the
+   containers (`MoltSiteShares`, `MoltSiteLRU`, the site a network key
+   counts against) and their use in the TLS session cache, the HTTP
+   authentication cache, the server properties, the CORS preflight cache
+   and the in-memory compression dictionaries; each site's record on every
+   way an entry leaves (erased, cleared, swapped, shrunk, under memory
+   pressure, dropped with a nonce); whether a site, or a group of sites,
+   can evict, keep out or observe another site's entries or grow memory
+   without bound, and whether any of it runs in a regular profile; and
+   every caller at Chromium 156 of `HttpAuthCache::Add()`, which may now
+   return null, and of `ServerInfoMap::GetOrPut()`, which may now return
+   `end()`.
+2. The totals of partitioned-cookie partitions without a nonce (their
+   limits and purge, the counts on every insertion and deletion); a
+   network context made again refusing its partition's nonces from the
+   start (`molt_refused_nonces`: who fills it, and whether a page can
+   reach it); MoltNet's context without QUIC.
+3. Clear-Site-Data in the request's partition: the storage key it names
+   for requests of frames, workers, keepalive requests after their page
+   went, redirects and sandboxed top-level pages.
+4. MoltNet's cameras: the menu that stands in for a device's modes,
+   `VideoTrackAdapter`'s conversion (sizes, crops, frames the CPU can't
+   read, odd sizes, rotation, frame rates), `applyConstraints()` and a
+   second `getUserMedia()`, what a page can learn of the device's own
+   modes, and sizes or formats the conversion doesn't expect.
+5. The browser's decision on the CPU-independent processing of a
+   renderer's microphone streams: every path a processing config takes to
+   the audio service, a renderer that sends none, other profiles.
+6. Microphone channels and down-mixing: the layouts and channel counts a
+   renderer or a device brings to the processing, and the checks they
+   could reach.
+7. IIRFilterNode's floor, `setSinkId()` with a device MoltNet doesn't list,
+   the OCR run slots, the Linux helpers' file-size and core-dump limits,
+   and the leak kit's `--out` group check and its test fixtures.
+
+**Method.** Each candidate traced from its attacker (a web page, the sites
+a page moves its tab through, a third party it embeds, a site's server, a
+compromised renderer, a device's reported layout, another account in the
+user's group) through MoltBrowser's code and the upstream Chromium 156 code
+at the pinned revision: HTTP authentication (`HttpAuthController`, the
+login prompt's `AddAuthCacheEntry()` and reload, Blink's rule for
+credentials in subresource URLs), `HttpNetworkTransaction`'s retry when a
+server requires HTTP/1.1 and `SpdySession`'s record of it, the audio
+service's `InputController` and `AudioProcessor`, media's `ChannelMixer`,
+`StorageKey` and `CookiePartitionKey`, the camera's capture and
+`VideoTrackAdapter`. Fixes tested with standalone harnesses (g++
+ASan/UBSan, clang `-fno-exceptions`; each pasted hook block checked against
+the tree): the HTTP authentication cache's and the HTTP/1.1 records' hooks
+at round 34 and now, past a total that sixteen sites filled; the down-mix
+of every layout it takes with Chromium 156's `ChannelMixer`; the shares'
+std-only unit tests (15) and 10 mutants of the new rule, each caught but
+one equivalent. The leak kit's test suite passes as root, as an
+unprivileged account, and as one whose primary group is `users` or
+`daemon`; the tools' own test suites and `molt_fuzz.py check` pass; the
+changed C++ was compiled against Chromium 156's headers.
+
+**Findings.** 12: 3 low, 9 informational. Fixed: two of the low, and two
+informational.
+
+**Fixed.**
+
+- MoltNet's per-site shares of the fixed-size network caches: what the
+  user signs in to a site with (an HTTP authentication entry) and a
+  server's demand for HTTP/1.1 are kept also once other sites fill the
+  cache's total between them. Such an entry of a site holding none takes
+  the place of the least recently used entry of the site that holds the
+  most, so the sign-in prompt doesn't come back on every request, and a
+  request to a server that requires HTTP/1.1 is sent over HTTP/1.1; a
+  site holding fewer entries than another keeps its own
+  (`net/base/molt_site_share_policy.h`, `molt_site_lru_cache.h`,
+  `net/http/http_auth_cache.cc`, `http_server_properties.cc`).
+- The CPU-independent processing down-mixes only layouts media's
+  `ChannelMixer` takes: a microphone that reported the deprecated
+  `STEREO_AND_KEYBOARD_MIC` layout fails its processed streams, as at
+  Chromium 156 (`media/base/molt_portable_downmix.cc`).
+- The leak kit's `--out` group tests use fake groups whose ids no real
+  user's group has, so they pass for a user whose primary group is `users`
+  or `daemon` (`tools/leak_test/tests/test_rundir.py`).
+
 ## 2026-10-28: PR #77 (October 2026)
 
 **Scope.** The code merged in pull request #77 (round 33), which only its

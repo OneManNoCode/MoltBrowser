@@ -440,6 +440,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   accepts a group-writable `--out` directory only when no other account
   can be in its group (`docs/MOLTNET_COMPLIANCE.md`,
   `docs/LEAK_TESTING.md`).
+- Hardening (security review of PR #78, `docs/SECURITY_REVIEWS.md`): in
+  MoltNet, what you sign in to a site with (HTTP authentication) and a
+  server's demand for HTTP/1.1 are kept even once other sites have filled
+  the shared network caches, in the place of an entry of the site that
+  holds the most, so the sign-in prompt doesn't come back on every
+  request; a microphone of the deprecated `STEREO_AND_KEYBOARD_MIC` layout
+  is refused for a processed stream, as in Chromium, instead of being
+  down-mixed; and the leak test kit's tests pass for a user whose primary
+  group is `users`.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
