@@ -1143,8 +1143,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   needed; "stop" always works; videos are turned down while you speak; a
   bar under the page shows what it hears as you say it, with a short sound
   for each state. Turned on with the toolbar's Voice button, in settings
-  (also at every start, and an "Always listening" mode), or by voice. It
-  never listens in MoltNet windows. How: `docs/VOICE_COMMANDS.md`.
+  (also at every start, and an "Always listening" mode), or by voice. A
+  page reading aloud is never cut off by voice mode, and what it says
+  isn't taken as a command. It never listens in MoltNet windows. How:
+  `docs/VOICE_COMMANDS.md`.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an
