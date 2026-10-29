@@ -67,7 +67,8 @@ py -3 -I tools\voice_bench\report.py --out report.md
 
 Useful options: `--suite quick` (a fifth of the utterances, fewer conditions,
 one text per voice), `--steps offline,stream`, `--models moonshine-tiny,...`,
-`--lock /path/file` (one measurement at a time on a shared machine),
+`--lock /path/file` (on a shared machine: each timed run takes this flock, one
+run at a time; accuracy runs don't),
 `--threads N` for accuracy runs (timings always run 1, 2 and 4 threads).
 Every step skips work whose results already exist, so an interrupted run
 continues where it stopped; delete a results file to redo it.

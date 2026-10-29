@@ -28,8 +28,9 @@ Steps (--steps, comma-separated; default: all but whisper-cpp):
                (build_whisper_cpp.sh first): whisper-bench timings, and with
                --ggml-dir also whisper-cli per request as the browser runs it
 
-Every driver run takes the lock file given with --lock (POSIX flock), so
-on a shared machine one measurement runs at a time.
+On a shared machine, each run whose timings are reported takes the lock
+file given with --lock (POSIX flock), one run at a time, so other heavy
+jobs get the machine between runs; accuracy runs don't take it.
 
 Usage:
   python3 -I tools/voice_bench/run_bench.py --dir DATA --build
@@ -71,6 +72,8 @@ TIMING_CLIPS = 40
 THREADS = [1, 2, 4]
 STREAM_THREADS = [1, 2]
 KWS_THRESHOLDS = [0.15, 0.25, 0.35]
+# Steps whose timings the report uses: their runs take the --lock file.
+TIMED_STEPS = {"timing", "stimes", "tts", "listen"}
 TTS_TEXTS = [
     ("short", "YouTube is open."),
     ("result", "Two: Bohemian Rhapsody, live at Live Aid, Queen, five minutes."),
@@ -84,40 +87,27 @@ TTS_TEXTS = [
 
 
 class HeavyLock:
-    """The --lock file (POSIX flock). A measurement takes it only when it
-    has to run, and keeps it for the next one of the same group (the same
-    results directory: one model's sets, one model's timing runs), so a
-    model's runs go together; it is let go when the group changes, between
-    steps and at the end. Nothing is locked when a result already exists."""
+    """The --lock file (POSIX flock), shared with other heavy jobs on the
+    machine. Only measurements whose timings are reported take it, one run
+    at a time (a minute or so), so a queued job gets the machine between
+    runs; accuracy runs don't take it. Nothing is locked when a result
+    already exists."""
 
     def __init__(self, path):
         self.path = path if path and os.name != "nt" else ""
-        self.f = None
-        self.key = None
-
-    def hold(self, key):
-        if not self.path:
-            return
-        if self.f is not None and key != self.key:
-            self.release()
-        if self.f is None:
-            import fcntl
-            self.f = open(self.path, "a")
-            fcntl.flock(self.f, fcntl.LOCK_EX)
-        self.key = key
-
-    def release(self):
-        if self.f is not None:
-            import fcntl
-            fcntl.flock(self.f, fcntl.LOCK_UN)
-            self.f.close()
-            self.f = None
-            self.key = None
 
     @contextlib.contextmanager
-    def held(self, key):
-        self.hold(key)
-        yield
+    def held(self):
+        if not self.path:
+            yield
+            return
+        import fcntl
+        with open(self.path, "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
 
 class Bench:
@@ -159,7 +149,7 @@ class Bench:
         return p
 
     def run_driver(self, out, mode, list_rows, flags, threads, tag=None, extra_meta=None):
-        """Runs the driver once (under the lock); writes its JSON lines to
+        """Runs the driver once (under the lock if timed); writes its JSON lines to
         out, preceded by a header. Skips if out exists and is complete."""
         if os.path.exists(out):
             with open(out, encoding="utf-8") as f:
@@ -170,8 +160,9 @@ class Bench:
             for r in list_rows:
                 f.write("\t".join(r) + "\n")
         cmd = [self.driver, mode, "--list", lst, "--threads", str(threads)] + flags
+        timed = os.path.relpath(out, self.results).split(os.sep)[0] in TIMED_STEPS
         t0 = time.time()
-        with self.lock.held(os.path.dirname(out)):
+        with self.lock.held() if timed else contextlib.nullcontext():
             p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                                errors="replace")
         meta = {"event": "run", "mode": mode, "threads": threads, "tag": tag,
@@ -547,7 +538,7 @@ class Bench:
                     out = self.out_path("whispercpp-bench", model, "t%d.r%d.json" % (t, rep))
                     if os.path.exists(out):
                         continue
-                    with self.lock.held(os.path.dirname(out)):
+                    with self.lock.held():
                         t0 = time.perf_counter()
                         p = subprocess.run([bench, "-m", mpath, "-t", str(t), "-w", "0", "-ng"],
                                            capture_output=True, text=True)
@@ -586,9 +577,9 @@ class Bench:
                 os.makedirs(tmpd, exist_ok=True)
                 lines = [json.dumps({"event": "run", "mode": "whisper-cli", "model": model,
                                      "threads": self.threads})]
-                with self.lock.held(os.path.dirname(out)):
-                    for r in rows:
-                        stem = os.path.join(tmpd, "out")
+                for r in rows:
+                    stem = os.path.join(tmpd, "out")
+                    with self.lock.held():
                         t0 = time.perf_counter()
                         p = subprocess.run([cli, "-m", mpath, "-t", str(self.threads), "-nt",
                                             "-np", "-ng", "-l", "auto", "-otxt", "-of", stem,
@@ -619,7 +610,7 @@ def main(argv=None):
     p.add_argument("--suite", choices=["full", "quick"], default="full")
     p.add_argument("--threads", type=int, default=4, help="threads for accuracy runs")
     p.add_argument("--repeats", type=int, default=3)
-    p.add_argument("--lock", default="", help="flock this file around every measurement")
+    p.add_argument("--lock", default="", help="flock this file around each timed run")
     p.add_argument("--whisper-dir", default="", help="build_whisper_cpp.sh checkout "
                    "(default <dir>/whisper.cpp)")
     p.add_argument("--whisper-cli", default="", help="default: the one in --whisper-dir")
@@ -637,10 +628,7 @@ def main(argv=None):
         raise SystemExit("driver missing: run with --build first")
     for s in steps:
         print("== %s" % s, flush=True)
-        try:
-            getattr(b, "step_" + s.replace("-", "_"))()
-        finally:
-            b.lock.release()
+        getattr(b, "step_" + s.replace("-", "_"))()
     return 0
 
 
