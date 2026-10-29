@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!-- A shop's cart: a button that can be undone ("Add to cart") and one
+     that can't ("Buy now"). The page counts the clicks each gets, for the
+     voice loop's browser test: the second is pressed only after a spoken
+     "yes". -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Your cart - Shop</title>
+</head>
+<body>
+<main>
+  <h1>Your cart</h1>
+  <p>One pair of socks.</p>
+  <button id="add" type="button">Add to cart</button>
+  <button id="buy" type="button">Buy now</button>
+</main>
+<script>
+  window.added = 0;
+  window.bought = 0;
+  window.buyTrusted = false;
+  document.getElementById('add').addEventListener('click', () => {
+    window.added++;
+  });
+  document.getElementById('buy').addEventListener('click', (e) => {
+    window.bought++;
+    window.buyTrusted = e.isTrusted;
+  });
+</script>
+</body>
+</html>

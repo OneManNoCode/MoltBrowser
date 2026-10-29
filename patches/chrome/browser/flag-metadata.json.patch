@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
-index d2d12fc34ae92aa4092096bc602f2f7c63376d10..20dd76a7ae352aa11ac9405cf0ef1cd946557453 100644
+index d2d12fc34ae92aa4092096bc602f2f7c63376d10..dbb9c49d66b6dfdde0a482c175095bfa774cb83d 100644
 --- a/chrome/browser/flag-metadata.json
 +++ b/chrome/browser/flag-metadata.json
-@@ -7132,6 +7132,67 @@
+@@ -7132,6 +7132,74 @@
      ],
      "expiry_milestone": 160
    },
@@ -70,6 +70,13 @@ index d2d12fc34ae92aa4092096bc602f2f7c63376d10..20dd76a7ae352aa11ac9405cf0ef1cd9
 +  },
 +  {
 +    "name": "molt-shield-websocket",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    // MoltBrowser: voice mode (typed commands while the browser can't
++    // hear yet); kept until voice mode ships on by default.
++    "name": "molt-voice-mode",
 +    "owners": [ "moltbrowser" ],
 +    "expiry_milestone": -1
 +  },

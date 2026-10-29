@@ -54,6 +54,7 @@
 #include "chrome/browser/molt_ai/agents/agent_about_flags.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_about_flags.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/shield/molt_shield_about_flags.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/voice/voice_controller_features.h"  // MoltBrowser
 #include "chrome/browser/navigation_predictor/navigation_predictor_features.h"
 #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
 #include "chrome/browser/net/stub_resolver_config_reader.h"
@@ -14277,6 +14278,9 @@ const FeatureEntry kFeatureEntries[] = {
     // MoltBrowser: the web agent's screenshots, site tools and planner
     // (#molt-agent-screenshots, #molt-agent-site-tools, #molt-agent-planner).
     MOLT_AGENT_FEATURE_ENTRIES,
+
+    // MoltBrowser: voice mode (#molt-voice-mode).
+    MOLT_VOICE_FEATURE_ENTRIES,
 
     // Add new entries above this line.
     // NOTE: Adding a new flag requires adding a corresponding entry to enum

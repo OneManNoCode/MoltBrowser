@@ -33,8 +33,9 @@ const renderMarkdown = new Function('esc',
 
 const ALLOWED = {
   a: ['href', 'class', 'data-molt-link'],
-  button: ['class', 'data-on-click', 'data-copy-target'],
-  pre: ['id', 'style'], code: ['style'], span: ['style'], div: ['style', 'class'],
+  button: ['class', 'data-on-click', 'data-copy-target', 'aria-label'],
+  pre: ['id', 'style'], code: ['style'], span: ['style', 'aria-hidden'],
+  div: ['style', 'class', 'role', 'aria-level'],
   strong: ['style'], em: [], br: [],
 };
 function violations(html, allowedTags) {
@@ -50,6 +51,11 @@ function violations(html, allowedTags) {
         if (at.name === 'data-on-click' && at.value !== 'copyCode') bad.push('data-on-click ' + at.value);
         if (at.name === 'data-copy-target' && !/^cb-\d+$/.test(at.value)) bad.push('data-copy-target ' + at.value);
         if (at.name === 'class' && !/^(code-wrap|code-copy|chat-link)$/.test(at.value)) bad.push('class ' + at.value);
+        // Accessibility attributes: the renderer's own constants only.
+        if (at.name === 'role' && at.value !== 'heading') bad.push('role ' + at.value);
+        if (at.name === 'aria-level' && !/^[345]$/.test(at.value)) bad.push('aria-level ' + at.value);
+        if (at.name === 'aria-hidden' && at.value !== 'true') bad.push('aria-hidden ' + at.value);
+        if (at.name === 'aria-label' && at.value !== 'Copy code') bad.push('aria-label ' + at.value);
       }
     }
     (n.childNodes || []).forEach(walk);

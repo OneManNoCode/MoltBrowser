@@ -181,6 +181,20 @@ fuzzer_test("molt_recorded_wav_fuzzer") {
   libfuzzer_options = [ "max_len=65536" ]
 }
 
+# The page map voice mode reads pages through: a page's accessibility tree
+# (through a renderer that may be compromised) as numbered items and lists.
+fuzzer_test("molt_page_map_fuzzer") {
+  sources = [ "molt_page_map_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+    "//chrome/browser/molt_ai/voice:page_map",
+  ]
+  dict = "dicts/page_map.dict"
+  seed_corpus = "corpus/molt_page_map_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 # --- Agents and workflows ------------------------------------------------------
 
 fuzzer_test("molt_agent_actions_fuzzer") {
@@ -414,6 +428,7 @@ group("fuzzers") {
     ":molt_memory_query_fuzzer",
     ":molt_memory_snippet_fuzzer",
     ":molt_ocr_image_fuzzer",
+    ":molt_page_map_fuzzer",
     ":molt_http_cache_site_fuzzer",
     ":molt_onion_location_fuzzer",
     ":molt_page_translate_fuzzer",
@@ -437,6 +452,9 @@ group("molt_fuzzers") {
   deps = [
     ":fuzzers",
     "//chrome/services/molt_ai/document_parser/fuzzers",
+    "//chrome/browser/molt_ai/voice:molt_spoken_choice_fuzzer",
+    "//chrome/browser/molt_ai/voice:molt_voice_command_fuzzer",
+    "//chrome/browser/molt_ai/voice:molt_voice_controller_fuzzer",
     "//chrome/services/molt_ai/inference/fuzzers",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_farbling_fuzzer",
     "//third_party/blink/renderer/core/molt_fingerprinting:molt_moltnet_font_set_fuzzer",

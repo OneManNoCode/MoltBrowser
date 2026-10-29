@@ -497,6 +497,16 @@ ai-finish, its test plan in §9), Windows signing (§11). Once a runner exists a
 `.env`, wipe its workspace once (the workflow's steps were reordered), and
 dispatch it from the tag with `--ref vX.Y.Z -f tag=vX.Y.Z` (from #43).
 
+- [ ] **An official Windows build.** `configs/windows-x64.gn` still has
+  `is_official_build = false`, from when builds had to fit GitHub's 6-hour
+  job cap; a self-hosted runner has no such cap. A non-official build keeps
+  Chromium's debugging-only checks (for example accessibility's fail-fast
+  checks in `ui/accessibility/ax_common.h`), which an official build leaves
+  out. Set `is_official_build = true` and remove `dcheck_always_on = false`
+  (implied). If the runner's RAM can't take the ThinLTO link, try
+  `use_thin_lto = false` first and record what `gn gen` says, then the link
+  time and peak memory here.
+
 ## 4. Compile-risk hot spots
 
 When the build fails, find the file here; the PR tag says which change to
@@ -755,7 +765,11 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `update/update_manager.cc`, `vault/vault_store.cc` (`base::saturated_cast`) | | #41 |
 | every fuzzer target's `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
 | `agents/frame_tool_permissions.*` (a `ProfileKeyedServiceFactory`, `RegisterListPref`), `agents/site_tool_host.cc` (`RenderFrameHost::IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::kTools)`), `automation/automation_runner.cc` (fallback locators, the run's questions, CALL_TOOL steps), the new GN targets (`agents:frame_tools` → `automation:agent_run_draft`; `automation:locators`, `:tool_steps`, `:run_questions`; `automation` → `molt_ai_agents`), and the one-line hooks in `chrome_browser_main_extra_parts_profiles.cc`, `chrome_browsing_data_remover_delegate.cc` and `profile_resetter.cc` | type-checked against 156's headers only | agent-replay |
+| `ui/views/toolbar/toolbar_view.cc` (the AI mode, Agent mode, MoltNet and import buttons' names and roles: `AdjustAccessibleName` and `UpdateAccessibleCheckedState` overrides, `GetViewAccessibility().SetRole(kToggleButton)`, `SetCheckedState`, `SetHasPopup`), `molt_net_bubble.cc` and `molt_import_bubble.cc` (`SetAccessibleTitle`, `SetInitiallyFocusedView`), every `molt_*_ui.cc`, `molt_ai_chat_ui_js.h` and `molt_webui_csp.h` (`kMoltA11yJs`; the pages' raw strings) | type-checked against 156's headers in round 36 (Linux; Windows too, except `toolbar_view.cc`, which the check models for Linux only); the toolbar's names, roles and pressed state need §7.3's look in a built browser | a11y-webui |
+| `ui/views/frame/contents_container_view.{h,cc}` (imported in round 37: two members, the views made in the constructor, the caption bar taken off the page area in `CalculateProposedLayout`, `GetContentsViewBounds`, the rounded corners), `ui/views/molt_ai/voice/*` (`VoiceNumbersView`, `VoiceCaptionBar`: `SetLiveRegionContainer`, `views::AsViewClass`, `ProposedLayout`, `WebView::AddWebContentsAttachedCallback`, `RegisterActiveTabDidChange`, `WebContents::GetOrCreateWebPreferences`), `molt_ai/voice/voice_page_controller.{h,cc}` (`AccessibilityLocationChangesReceived`, `AXNode::SetLocation`/`SetScrollInfo`) | type-checked against 156's headers only; the overlay needs §5.1's browser tests and §7.3's look | voice-overlay |
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
+
+| `voice/voice_controller.cc`, `voice/voice_speech.cc`, `voice/voice_page_controller.cc` (new `Increment()`, `Decrement()`, `ScrollPage()`), `ui/webui/molt_ai/molt_ai_agent_voice_handler.cc`, `about_flags.cc`, `flag-metadata.json`, `flag-never-expire-list.json` (`#molt-voice-mode`) | type-checked against 156's headers here; what only the build shows: `DEFINE_USER_DATA` and `ui::ScopedUnownedUserData` on the window, `TtsUtterance::SetEventDelegate(std::unique_ptr)`, `MediaSession::GetMediaSessionInfoSync()` and `SeekTo()`, `TemplateURLRef::ReplaceSearchTerms()`, `SetTabAudioMuted()`, the new GN edges from `//chrome/browser/molt_ai/voice:voice_controller` to `//chrome/browser/search_engines`, `//chrome/browser/ui:browser_commands`, `//chrome/browser/ui/tabs:utils` and `//services/media_session/public/mojom` | voice-loop |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -784,7 +798,8 @@ toolchains, a third-party library's own `include_dirs`).
   cd chromium/src
   for p in '//chrome/browser/molt_ai/*' '//chrome/services/molt_ai/*' \
            '//chrome/common/molt_ai/*' '//chrome/renderer/molt_ai/*' \
-           '//chrome/browser/ui/webui/molt_ai/*' '//third_party/llama_cpp/*' \
+           '//chrome/browser/ui/webui/molt_ai/*' '//chrome/browser/ui/views/molt_ai/*' \
+           '//third_party/llama_cpp/*' \
            '//third_party/blink/renderer/core/molt_fingerprinting/*' \
            '//components/omnibox/browser/*' '//content/utility/on_device_model/*' \
            '//chrome/browser/client_hints/*' '//chrome/utility/*'; do
@@ -803,7 +818,8 @@ toolchains, a third-party library's own `include_dirs`).
   ```bash
   cd chromium/src
   for d in chrome/browser/molt_ai chrome/services/molt_ai chrome/common/molt_ai \
-           chrome/renderer/molt_ai third_party/blink/renderer/core/molt_fingerprinting chrome/utility; do
+           chrome/renderer/molt_ai third_party/blink/renderer/core/molt_fingerprinting chrome/utility \
+           chrome/browser/ui/views/molt_ai; do
     python3 buildtools/checkdeps/checkdeps.py "$d" || echo "CHECKDEPS FAILED: $d"
   done
   python3 buildtools/checkdeps/checkdeps.py 2>&1 | tee ~/molt-v0.3.0/checkdeps.log   # the whole tree
@@ -1072,6 +1088,9 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltPortableSubnormalsTest.*` (media's `SincResampler` and WebRTC's processing in CPU-independent mode over signals that reach every range the flush modes treat differently: golden digests the same on every processor and OS, also from a thread left in a flush mode), `MoltCpuIndependentProcessingTest.ConversionGoldenDigests` and `OneOutputFormatForEveryDevice` (a MoltNet stream's one format, converted from 44.1 kHz mono, 96 kHz stereo, 16 kHz mono and 48 kHz stereo devices with every effect off: golden digests), and the processing's earlier golden digests (`MoltCpuIndependentProcessingTest.GoldenDigests`, `MoltCpuIndependentEchoReferenceTest.*`), which changed with the processing's noise floor. A golden digest that differs: send what the failure prints, the processor and the OS | fp-mic3 |
   | `MoltNetCameraValuesTest.*` (new cases: `EveryCameraShowsEveryEntry`, `FormatInUseShowsTheSameEntries`, `GridTicks`, `GridIgnoresTheCamerasTiming`, `GridSkipsTicksItMissed`, `GridStopsAndResumes`; built standalone here) | fp-camera2 |
   | `MoltNetCameraValuesTest.*` (the cameras' menu, the entries a camera shows and the mode it opens in), `MoltNetAudioCaptureTest.*` (the browser's decision on the CPU-independent processing replaces the renderer's), `MoltCpuIndependentProcessingTest.DownmixesOtherLayouts` (a QUAD and a 5.1 microphone: opened in their layout, processed as their down-mix) and the setSinkId case of `MoltNetMediaValuesTest.*` | fp-media4 |
+  | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
+  | `VoiceOverlayLayoutTest.*` (built standalone here: page to screen coordinates, badge placement without overlaps on the page map's fixture trees, following the page, sizes, the caption's text and height, colours and contrast) | voice-overlay |
+  | `VoiceSitesTest.*`, `VoiceSitesAgentSafetyTest.*`, `VoiceCandidatesTest.*`, `VoiceSpeechTextTest.*`, `VoiceControllerLogicTest.*` (the voice loop's decisions on hand-built pages: the owner's scenario, every command kind, sites and addresses, choosing, confirmations, dictation, hostile page text), and `PageMapTest.MarksSearchFields` (new); all built standalone here | voice-loop |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1111,6 +1130,113 @@ extension enablement and `MediaRouterEnabled()`).
   pages' flood. Close other heavy work first; if it fails, rerun once and
   report both logs.
 
+- [ ] The page map's browser tests (page-map): MoltBrowser's first
+  in-process browser tests, in `browser_tests` through
+  `//chrome/browser:core_browser_tests` (desktop only). Build them in the
+  test out dir (DCHECKs on):
+  ```bash
+  autoninja -C chromium/src/out/MoltTests browser_tests
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoicePageControllerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-page-browser-tests.log
+  ```
+  *Expected:* all 5 pass, on macOS and Linux:
+  - `SearchesAVideoSiteAndPlaysTheFourthResult`: Phase 0's exit
+    criterion without speech, driven only through `VoicePageController`.
+    It writes the query into the video site's search box (the page sees
+    trusted `input` and `change` events), submits it with Enter, finds the
+    20 results with their titles, channels, durations, views and dates,
+    presses the fourth, and plays its `<video>` by its default action.
+    The page must then report a trusted click with user activation, and
+    the video playing and not muted, under the
+    `document-user-activation-required` autoplay policy. Media session
+    pause and resume follow.
+  - `MapsSearchResults`: a Google-like results page's 10 results and sites.
+  - `NeverWritesAPasswordField`: set text is refused for the password and
+    one-time code fields, and their values stay empty.
+  - `MapsAndPressesACrossSiteFramesItems`: a b.test frame's button is on
+    the map between the host's items, and pressing it reaches the frame.
+  - `RefusesStaleTargetsAndStops`.
+
+  If one fails, send the log: these tests check the page map against real
+  Blink accessibility trees for the first time (the unit tests use
+  hand-built trees). A list or title mismatch there means Blink's tree
+  differs from the fixtures' (ignored wrappers, names from `aria-label`),
+  and the test prints the map it got. With
+  `AX_FAIL_FAST_BUILD()` on (DCHECK builds), an accessibility tree error
+  crashes the test instead of failing it: send the crash too.
+- [ ] The voice overlay's browser tests (voice-overlay), in the same
+  `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceOverlay*BrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-overlay-browser-tests.log
+  ```
+  *Expected:* all 12 pass, on macOS and Linux (`DISABLED_ManualLook` is
+  §7.3's look, not a test):
+  - `BadgesSitOnTheItems`, `BadgesSitOnTheItemsAt200Zoom` and
+    `VoiceOverlayHighDpiBrowserTest.BadgesSitOnTheItems` (a 2x screen):
+    the video site's result titles, filter chips and guide links have
+    their badges where the page lays them out (`getBoundingClientRect()`,
+    within 2 DIPs), none off screen, none overlapping; at 200% the badges
+    keep their size.
+  - `NumbersFollowScrolling`: after `scrollTo(0, 700)` the badges move
+    with the results under the same numbers (this also checks the page
+    controller now takes Blink's location and scroll changes).
+  - `NumbersHideOnNavigation` (a jump to a fragment keeps them),
+    `NumbersHideOnTabSwitch`, `NumbersHideWhenTheyMove` (a link appended
+    keeps the numbers, one prepended hides them).
+  - `TheCurrentItemHasARing`, `NumbersStayOutOfThePagesWay` (no events,
+    no focus, invisible to assistive technology, its own layer).
+  - `TheCaptionBarSitsUnderThePage` (the page area shrinks by the bar's
+    height once, the page's `innerHeight` with it, and not again when
+    the text changes), `TheCaptionBarIsALiveRegion` (role status, name
+    "Voice mode", live status polite, the state as description, page text
+    cleaned), `TheCaptionStaysWithTheWindowAcrossTabs`.
+
+  If a badge is a few DIPs off on the zoomed or 2x page, send the log (it
+  prints both rects): Blink's accessibility bounds round differently
+  there. A badge off by an iframe's border on a page with frames is known
+  (frames are offset by their host's border box).
+- [ ] What voice mode's accessibility mode costs a page (page-map). Voice
+  mode has no switch yet, but `chrome://accessibility` sets the same mode:
+  only "Web accessibility" and "Extended properties" on (not native API
+  support, inline text boxes, screen reader support or HTML). In a release
+  build, on two pages (YouTube search results scrolled to about 100
+  videos, and a long Wikipedia article), note with the mode off and on:
+  the renderer's and the browser process's memory footprint (the browser's
+  task manager) once the page is idle; the renderer's CPU while scrolling
+  and while more results load; and, from a DevTools Performance recording
+  of the same scroll, the main thread's time in accessibility work. Send
+  the numbers: the code suggests a few hundred bytes to about 1 KB per
+  node in each process, and serialization work after every change to the
+  page.
+- [ ] The voice loop's browser tests (voice-loop): Phase 0's exit
+  criterion through the whole loop, with the spoken answers captured from
+  a fake TTS platform. In the same `browser_tests`:
+  ```bash
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoiceControllerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-loop-browser-tests.log
+  ```
+  *Expected:* all 4 pass, on macOS and Linux:
+  - `TheOwnersScenario`: typed utterances open the fixture video site by
+    name ("open VideoSite"), search it through its own search box, hear
+    "20 results. 1: Queen – Bohemian Rhapsody (Official Video
+    Remastered), Queen Official, 6 minutes. ...", play the fourth one
+    (the page must report a trusted click with user activation, and the
+    video playing and not muted), pause it, go back ("Bohemian Rhapsody -
+    VideoSite. 20 items. ..."), hear the three live videos offered for
+    "play the live one by Queen" and play "the Live Aid one".
+  - `BuysOnlyAfterASpokenYes`: "Add to cart" is pressed at once; "Buy now"
+    only on the "yes" that follows its question, never after a "no" or
+    another command.
+  - `StaysOffInMoltNetWindows`: a MoltNet window only says "Voice mode is
+    off in MoltNet windows.", navigates nowhere and takes no
+    accessibility mode.
+  - `SearchesForASiteItDoesntKnow`: "open Netflix" goes to the default
+    search engine (a fixture), says so, and reads its 10 results.
+
+  If one fails, send the log: the page waits (load, quiet tree, the
+  autoplay grace) are timed for a desktop; a wait that runs out shows as a
+  missing or early reading. A failure in what is said prints both texts.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -1659,6 +1785,7 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   `molt_automation_tool_steps_fuzzer` and `molt_frame_tools_fuzzer`)
   (fonts adds `molt_moltnet_font_set_fuzzer`)
   (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
+  (page-map adds `molt_page_map_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
@@ -1946,6 +2073,109 @@ WEB_AI_APIS.md §12):
 - [ ] "This page" commands (`/tldr`, `/translate`) use the tab shown now,
   after switching tabs; a command that finishes at once leaves the chat
   ready for the next message (from #9, #12).
+
+**Accessibility of MoltBrowser's pages and toolbar** (from a11y-webui;
+[ACCESSIBILITY.md](ACCESSIBILITY.md) §3, §4). The jsdom checks in CI cover
+everything that needs no layout; these need the built browser. macOS and
+Linux now, Windows when its builds resume:
+
+- [ ] axe's layout rules on every molt:// page (the side-panel pages and
+  popovers opened as tabs), dark and light theme, in each page's main
+  states (a dialog open, an error shown): `color-contrast`, `target-size`,
+  `link-in-text-block`, `scrollable-region-focusable`,
+  `label-content-name-mismatch`, `css-orientation-lock`; or Lighthouse's
+  accessibility audit (from a11y-webui; ACCESSIBILITY.md §4 has the
+  console command, verify it). *Expected:* no violations; send back any
+  with its page and selector.
+- [ ] 200% zoom and a 24 px default font: no clipped or overlapping text,
+  the side panels usable at their default width; forced colours
+  (DevTools, Rendering: `forced-colors: active`) and `prefers-reduced-motion`
+  (the home page's background stops) (from a11y-webui).
+- [ ] Keyboard only, every page: focus visible and in order, no traps,
+  hidden views and the closed chats drawer never take focus, Escape closes
+  every dialog, sheet and menu and focus returns to its opener
+  (from a11y-webui).
+- [ ] Toolbar (`chrome://accessibility`, Accessibility Inspector on macOS,
+  Accerciser on Linux): "AI mode" and "Agent mode" are toggle buttons,
+  pressed only while their side panel is open, with no emoji in the name;
+  MoltNet reads "MoltNet", "Tor", "Tor, exit country …" or "Tor, warning"
+  and has a dialog popup; "Bookmarks and import" has a dialog popup. The
+  two popovers open as dialogs named "MoltNet" and "Bookmarks and import"
+  with focus in their page; Escape closes them and focus returns to the
+  button (from a11y-webui).
+- [ ] VoiceOver (macOS) and Orca (Linux) on the AI chat (side panel and
+  `molt://ai`), the agent studio, automations, settings and the MoltNet
+  popover: names, headings and landmarks; a streamed answer read once
+  when complete, not word by word; agent steps and errors read; macOS
+  Voice Control's "Show names" and "Click AI mode" work (from a11y-webui).
+- [ ] *Deferred (Windows):* NVDA, JAWS, Narrator, Voice Access and the
+  contrast themes, the same list (from a11y-webui).
+
+**Voice mode's overlay** (from voice-overlay;
+[ACCESSIBILITY.md](ACCESSIBILITY.md) §5). Until voice mode can be turned
+on, a disabled browser test shows it for a person to look at, until the
+window is closed (verify the flags: they let it render and wait):
+```bash
+chromium/src/out/MoltTests/browser_tests --gtest_also_run_disabled_tests \
+  --gtest_filter='VoiceOverlayBrowserTest.DISABLED_ManualLook' \
+  --enable-pixel-output-in-tests --single-process-tests \
+  --ui-test-action-max-timeout=3600000 --test-launcher-timeout=3600000
+```
+Scroll, zoom (Ctrl/Cmd +), resize, open a new tab and navigate in it: the
+active tab gets numbers again within a second.
+
+- [ ] macOS: the numbers sit on each link, button and chip, readable at
+  arm's length; close items' badges move aside or shrink but never cover
+  each other; the yellow ring around the third item is visible; the
+  caption bar under the page reads "Speaking", "Heard: show numbers" and
+  the count. With **Zoom** (Accessibility, Zoom: full screen and split
+  screen), **Increase contrast** and **VoiceOver** (the bar reads as
+  "Voice mode", status; its text is announced when it changes; the
+  numbers aren't in VoiceOver's rotor; VO focus never lands on them).
+  *Expected:* all as described; send a screenshot of anything else.
+- [ ] Linux (GNOME): the same with the **Zoom** magnifier, **High
+  Contrast** and **Large Text** (Accessibility settings; with Large Text
+  the badges and the caption are larger), and **Orca**.
+- [ ] Both: Settings, Appearance, Font size "Very large": the badges and
+  the caption are 1.5 times larger; DevTools, Rendering, "Emulate CSS
+  media feature forced-colors: active": the badges, ring and caption use
+  the system colours. Scrolling moves the badges with the items (within
+  about a tenth of a second); navigating hides them until the page is
+  mapped again.
+- [ ] *Deferred (Windows):* the same with **Magnifier** (full screen,
+  docked, lens), a **contrast theme** (badges in Highlight colours),
+  **Text size** at 150% (larger badges and caption), **Narrator** and
+  **NVDA** (the caption announced as it changes), and **Voice Access**
+  ("Show numbers" numbers the page, never the overlay).
+
+**Voice mode** (from voice-loop; `docs/VOICE_COMMANDS.md`,
+TOUCHLESS_BROWSING.md §2). Turn on `chrome://flags/#molt-voice-mode`,
+open Agent mode and type in "Type what you would say":
+
+- [ ] The owner's scenario on real YouTube, with each OS's own voices
+  (macOS: the system voice; Linux: speech-dispatcher installed and the
+  browser started with `--enable-speech-dispatcher`; Windows deferred): "open
+  YouTube", "search for Bohemian Rhapsody", listen to the results, "play
+  the fourth one", "pause", "resume", "louder", "skip ahead one minute",
+  "full screen", "exit full screen", "go back", "play the live one by
+  Queen" (and the answer to its question). *Expected:* each is done and
+  answered aloud within about a second of the page settling; the video
+  plays with sound and is not paused by the browser's click (YouTube plays
+  what it opens: the browser waits 1.5 s for it); the results read are
+  YouTube's own titles, channels and lengths. Note any step that fails, is
+  slow or says something wrong, with the YouTube page's language and
+  layout, and send them: YouTube's pages change and the page map reads
+  them as they are.
+- [ ] The same on google.com ("open Google", "search for ...", "open the
+  second one") and Wikipedia ("search Wikipedia for Queen", "read the
+  headings", "next heading").
+- [ ] "Click buy now" (or any "Buy" button on a test shop) asks "Say yes
+  to press ..." and does nothing until "yes"; "open" a name the browser
+  doesn't know searches for it with the default engine and says so.
+- [ ] A MoltNet window: a command says "Voice mode is off in MoltNet
+  windows." and `chrome://accessibility` shows no mode on its tabs.
+- [ ] With VoiceOver or Orca running, the panel's "Heard: ..." line is
+  announced once per change and the browser's own speech isn't cut by it.
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 

@@ -10,6 +10,11 @@ name: WebUI checks
 #     (security regression test, fuzzed with an HTML5 parser)
 #   * every converted page loads in jsdom under the strict CSP with
 #     Trusted Types emulated, and its controls are wired
+#   * every page passes axe-core and the accessibility checks axe doesn't
+#     make (keyboard reach, names, dialogs, live regions, focus ring,
+#     reduced motion, forced colours) in its main states, and the colours
+#     in every page's CSS meet WCAG AA contrast in every theme
+#     (docs/ACCESSIBILITY.md)
 #   * MoltShield's page scripts behave: the procedural cosmetic filter
 #     engine (renderer) and the consent killer, in jsdom
 
@@ -53,7 +58,7 @@ jobs:
         run: python3 tools/webui_checks/check_embedded_js.py .
       - name: No inline handlers / scripts in molt WebUI pages
         run: python3 tools/webui_checks/check_no_inline_handlers.py .
-      - name: Markdown renderers emit only safe markup; pages load under strict CSP
+      - name: Markdown renderers emit only safe markup; pages load under strict CSP; accessibility
         working-directory: tools/webui_checks
         run: |
           npm ci --no-audit --no-fund

@@ -61,33 +61,51 @@ function fontsText(){
   if(STATE.fonts==='damaged') return 'MoltBrowser\'s bundled fonts are damaged, so MoltNet pages show no text. Reinstall MoltBrowser to repair them.';
   return '';
 }
+// #st and #err are live regions: write them only when the words change,
+// so a re-render doesn't read the same status or error out again.
+function setText(el,t){ if(el.textContent!==t) el.textContent=t; }
+// Read out once by screen readers (copy and verify results).
+function say(t){ var a=document.getElementById('announce'); a.textContent='';
+  setTimeout(function(){ a.textContent=t; },60); }
 function render(){
   var d=document.getElementById('dot'), st=document.getElementById('st'),
       sub=document.getElementById('sub');
   var bad=(STATE.routing==='blocked'||STATE.routing==='overridden');
   d.className='dot'+((STATE.busy||STATE.starting||bad)?' busy':(STATE.routing==='tor'?' on':''));
-  st.textContent=statusText();
-  sub.textContent=STATE.selected?flag(STATE.selected)+' '+STATE.selected.toUpperCase():'🌐 AUTO';
+  setText(st,statusText());
+  // The flag is a picture of the code next to it: screen readers get
+  // "Exit country: DE".
+  var subLabel=document.createElement('span'); subLabel.className='sr-only';
+  subLabel.textContent='Exit country: ';
+  var subFlag=document.createElement('span'); subFlag.setAttribute('aria-hidden','true');
+  subFlag.textContent=STATE.selected?flag(STATE.selected):'🌐';
+  sub.replaceChildren(subLabel,subFlag,' '+(STATE.selected?STATE.selected.toUpperCase():'AUTO'));
   document.getElementById('where').textContent=whereText();
-  document.getElementById('err').textContent=STATE.error||'';
+  setText(document.getElementById('err'),STATE.error||'');
   document.getElementById('fonts').textContent=fontsText();
   var on=STATE.running||STATE.starting||STATE.busy;
   var modes=document.getElementById('modes').children;
   for(var i=0;i<modes.length;i++){
     var m=modes[i].getAttribute('data-mode');
-    modes[i].className='mode'+(((m==='direct')!==on)?' active':'');
+    var active=((m==='direct')!==on);
+    modes[i].className='mode'+(active?' active':'');
+    modes[i].setAttribute('aria-pressed',active?'true':'false');
   }
   var list=document.getElementById('list'); list.textContent='';
   list.appendChild(rowEl('','🌐','Auto (recommended)'));
   STATE.countries.forEach(function(c){ list.appendChild(rowEl(c.code,flag(c.code),c.name)); });
 }
 function rowEl(code,fl,name){
-  var r=document.createElement('div');
-  r.className='row'+((STATE.selected||'')===code?' active':'');
+  var r=document.createElement('button'); r.type='button';
+  var on=(STATE.selected||'')===code;
+  r.className='row'+(on?' active':'');
+  r.setAttribute('aria-pressed',on?'true':'false');
   r.onclick=function(){ setCountry(code); };
   var f=document.createElement('span'); f.className='flag'; f.textContent=fl;
+  f.setAttribute('aria-hidden','true');
   var n=document.createElement('span'); n.className='name'; n.textContent=name;
   var c=document.createElement('span'); c.className='chk'; c.textContent='✓';
+  c.setAttribute('aria-hidden','true');
   r.appendChild(f); r.appendChild(n); r.appendChild(c); return r;
 }
 function apply(s){ if(!s) return;
@@ -118,15 +136,18 @@ function countryLabel(cc){ if(!cc) return ''; cc=cc.toUpperCase();
   for(var i=0;i<STATE.countries.length;i++){ if(STATE.countries[i].code.toUpperCase()===cc) return STATE.countries[i].name; }
   return cc; }
 function hopNode(fl,role,ipText,cls,btnLabel){
-  var d=document.createElement('div'); d.className='hop'+(cls?' '+cls:'');
+  var d=document.createElement('li'); d.className='hop'+(cls?' '+cls:'');
   var f=document.createElement('span'); f.className='hflag'; f.textContent=fl;
+  f.setAttribute('aria-hidden','true');
   var m=document.createElement('div'); m.className='hmain';
   var r=document.createElement('div'); r.className='hrole'; r.textContent=role;
   var ip=document.createElement('div'); ip.className='hip'; ip.textContent=ipText;
   m.appendChild(r); m.appendChild(ip);
   d.appendChild(f); d.appendChild(m);
   var btn=null;
-  if(btnLabel){ btn=document.createElement('div'); btn.className='hbtn'; btn.textContent=btnLabel; d.appendChild(btn); }
+  if(btnLabel){ btn=document.createElement('button'); btn.type='button'; btn.className='hbtn';
+    btn.textContent=btnLabel; btn.setAttribute('aria-label',btnLabel+' the exit relay');
+    d.appendChild(btn); }
   return {node:d, ipEl:ip, btn:btn};
 }
 function renderRoute(){
@@ -135,11 +156,13 @@ function renderRoute(){
   sendWithPromise('moltnet.getCircuit').then(function(r){
     if(!r||!r.connected){ wrap.textContent=''; return; }
     wrap.textContent='';
-    var sec=document.createElement('div'); sec.className='sec'; sec.textContent='Current Tor route'; wrap.appendChild(sec);
-    var route=document.createElement('div'); route.className='route';
+    var sec=document.createElement('h2'); sec.className='sec'; sec.textContent='Current Tor route'; wrap.appendChild(sec);
+    var route=document.createElement('ol'); route.className='route';
+    route.setAttribute('aria-label','Tor relays, from you to the website');
     var hops=r.hops||[];
     hops.forEach(function(h,i){
-      if(i>0){ var line=document.createElement('div'); line.className='hline'; route.appendChild(line); }
+      if(i>0){ var line=document.createElement('li'); line.className='hline';
+        line.setAttribute('aria-hidden','true'); route.appendChild(line); }
       var role=h.role==='guard'?'Guard':(h.role==='exit'?'Exit':'Middle');
       var isExit=h.role==='exit';
       var ipText=(h.ip||'—')+(isExit?' · websites see this IP':'');
@@ -154,7 +177,7 @@ function renderRoute(){
     var note=document.createElement('div'); note.className='note';
     note.textContent='No single relay sees both who you are and the site you visit. Sites can see they are being visited over Tor.';
     wrap.appendChild(note);
-    var ev=document.createElement('div'); ev.className='note evlink';
+    var ev=document.createElement('button'); ev.type='button'; ev.className='note evlink';
     ev.textContent='⧉ Copy route evidence';
     ev.onclick=function(){ copyEvidence(r, ev); };
     wrap.appendChild(ev);
@@ -176,7 +199,8 @@ function copyEvidence(r, el){
      '  https://onionoo.torproject.org/details?lookup=<fingerprint>\n'+
      'From a MoltNet window, confirm the exit IP websites see + that traffic is on Tor:\n'+
      '  https://check.torproject.org/api/ip\n';
-  var done=function(){ var o=el.textContent; el.textContent='✓ Copied — paste anywhere'; setTimeout(function(){el.textContent=o;},1800); };
+  var done=function(){ var o=el.textContent; el.textContent='✓ Copied — paste anywhere';
+    say('Route evidence copied'); setTimeout(function(){el.textContent=o;},1800); };
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done, done); }
   else { done(); }
 }
@@ -186,8 +210,9 @@ function verifyExit(hn){
     if(r&&r.ok){
       hn.ipEl.textContent=(r.ip||'?')+(r.is_tor?' · Tor confirmed ✓':' · NOT Tor');
       hn.ipEl.className=r.is_tor?'hip reveal':'hip';
+      say(r.is_tor?'Exit IP '+(r.ip||'')+': Tor confirmed':'Exit IP '+(r.ip||'')+': NOT Tor');
       if(hn.btn) hn.btn.remove();
-    } else if(hn.btn){ hn.btn.textContent='Verify'; }
+    } else if(hn.btn){ hn.btn.textContent='Verify'; say('Couldn\'t verify the exit relay'); }
   });
 }
 
@@ -243,7 +268,7 @@ class MoltNetDataSource : public content::URLDataSource {
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -252,7 +277,7 @@ class MoltNetDataSource : public content::URLDataSource {
   :root{
     --text:#f4f5fa;
     --muted:rgba(233,236,247,0.64);
-    --faint:rgba(233,236,247,0.42);
+    --faint:rgba(233,236,247,0.56);
     --accent:#ff5257;
     --accent-deep:#e0353b;
     --ok:#5fe3a1;
@@ -262,6 +287,7 @@ class MoltNetDataSource : public content::URLDataSource {
     --specular:rgba(255,255,255,0.26);
     --blur:blur(30px) saturate(175%);
     --font:-apple-system,"SF Pro Text",BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    --focus:#9ecbff;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%;background:transparent}
@@ -294,13 +320,13 @@ class MoltNetDataSource : public content::URLDataSource {
   .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);transition:.25s}
   .dot.on{background:var(--ok);box-shadow:0 0 10px 1px rgba(95,227,161,.6)}
   .dot.busy{background:var(--accent);box-shadow:0 0 10px 1px rgba(255,82,87,.5)}
-  .title{font-size:14px;font-weight:700;letter-spacing:-.01em}
-  .st{font-size:11px;color:var(--muted);margin-top:1px}
-  .brand{margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--faint)}
+  .title{margin:0;font-size:.875rem;font-weight:700;letter-spacing:-.01em}
+  .st{font-size:.6875rem;color:var(--muted);margin-top:1px}
+  .brand{margin-left:auto;font-size:.625rem;font-weight:700;letter-spacing:.14em;color:var(--faint)}
 
   .toggle-row{padding:2px 18px 14px;display:flex;align-items:center;gap:12px;flex:0 0 auto}
-  .toggle-row .lbl{font-size:12.5px;color:var(--muted)}
-  .toggle-row .sub{font-size:11px;color:var(--faint);margin-top:1px}
+  .toggle-row .lbl{font-size:.78125rem;color:var(--muted)}
+  .toggle-row .sub{font-size:.6875rem;color:var(--faint);margin-top:1px}
   .sw{margin-left:auto;width:44px;height:25px;border-radius:13px;background:rgba(255,255,255,.12);
     border:1px solid var(--edge);cursor:pointer;position:relative;transition:.2s;flex:0 0 auto}
   .sw.on{background:linear-gradient(180deg,#ff676c,var(--accent-deep));border-color:transparent}
@@ -311,30 +337,33 @@ class MoltNetDataSource : public content::URLDataSource {
   /* Routing-mode segmented control */
   .modes{display:flex;gap:6px;padding:2px 14px 8px;flex:0 0 auto}
   .mode{flex:1;padding:8px 4px 7px;border-radius:11px;cursor:pointer;text-align:center;
-    background:rgba(255,255,255,.05);border:1px solid var(--edge);transition:.15s}
+    background:rgba(255,255,255,.05);border:1px solid var(--edge);transition:.15s;
+    font:inherit;color:inherit}
+  .mode .mname,.mode .mdesc{display:block}
   .mode:hover{background:rgba(255,255,255,.10);border-color:var(--edge-hi)}
   .mode.active{background:linear-gradient(180deg,rgba(255,103,108,.30),rgba(224,53,59,.20));
     border-color:rgba(255,82,87,.55);box-shadow:0 0 0 1px rgba(255,82,87,.18) inset}
-  .mode .mname{font-size:11.5px;font-weight:650;color:var(--text)}
-  .mode .mdesc{font-size:9px;letter-spacing:.02em;color:var(--faint);margin-top:2px;text-transform:uppercase}
+  .mode .mname{font-size:.71875rem;font-weight:650;color:var(--text)}
+  .mode .mdesc{font-size:.5625rem;letter-spacing:.02em;color:var(--faint);margin-top:2px;text-transform:uppercase}
 
   .divider{height:1px;background:var(--edge);margin:0 14px;flex:0 0 auto}
-  .sec{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+  .sec{margin:0;font-weight:400;font-size:.625rem;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
     padding:13px 18px 6px;flex:0 0 auto}
 
   .list{padding:0}
   .row{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:11px;cursor:pointer;
-    border:1px solid transparent;transition:background .14s,border-color .14s}
+    border:1px solid transparent;transition:background .14s,border-color .14s;
+    width:100%;background:none;color:inherit;font:inherit;text-align:left}
   .row:hover{background:rgba(255,255,255,.06);border-color:var(--edge)}
-  .row .flag{font-size:17px;width:22px;text-align:center;flex:0 0 auto}
-  .row .name{font-size:13px;flex:1}
-  .row .chk{color:var(--ok);font-size:14px;opacity:0;flex:0 0 auto;transition:opacity .14s}
+  .row .flag{font-size:1.0625rem;width:22px;text-align:center;flex:0 0 auto}
+  .row .name{font-size:.8125rem;flex:1}
+  .row .chk{color:var(--ok);font-size:.875rem;opacity:0;flex:0 0 auto;transition:opacity .14s}
   .row.active{background:rgba(95,227,161,.10);border-color:rgba(95,227,161,.30)}
   .row.active .chk{opacity:1}
 
   .foot{flex:0 0 auto;display:flex;gap:8px;padding:10px 14px 14px}
-  .act{flex:1;padding:9px 4px;border-radius:11px;cursor:pointer;text-align:center;
-    font-size:11px;font-weight:600;background:rgba(255,255,255,.05);
+  .act{flex:1;padding:9px 4px;border-radius:11px;cursor:pointer;text-align:center;font-family:inherit;
+    font-size:.6875rem;font-weight:600;background:rgba(255,255,255,.05);
     border:1px solid var(--edge);color:var(--muted);transition:.15s;white-space:nowrap}
   .act:hover{background:rgba(255,255,255,.11);border-color:var(--edge-hi);color:var(--text)}
 
@@ -342,62 +371,80 @@ class MoltNetDataSource : public content::URLDataSource {
   .scroll{flex:1 1 auto;overflow-y:auto;padding:0 8px 4px}
   .scroll::-webkit-scrollbar{width:8px}
   .scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px;border:2px solid transparent;background-clip:content-box}
-  .route{padding:2px 4px 6px}
+  .route{padding:2px 4px 6px;margin:0;list-style:none}
   .hop{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:11px;border:1px solid transparent}
   .hop.dev{background:rgba(255,255,255,.04);border-color:var(--edge)}
   .hop.exit{background:rgba(255,82,87,.09);border-color:rgba(255,82,87,.24)}
-  .hop .hflag{font-size:16px;width:20px;text-align:center;flex:0 0 auto}
+  .hop .hflag{font-size:1rem;width:20px;text-align:center;flex:0 0 auto}
   .hop .hmain{flex:1;min-width:0}
-  .hop .hrole{font-size:12.5px;color:var(--text);font-weight:600}
-  .hop .hip{font-size:10.5px;color:var(--faint);font-family:var(--mono,ui-monospace,monospace);margin-top:1px;overflow-wrap:anywhere;word-break:normal}
+  .hop .hrole{font-size:.78125rem;color:var(--text);font-weight:600}
+  .hop .hip{font-size:.65625rem;color:var(--faint);font-family:var(--mono,ui-monospace,monospace);margin-top:1px;overflow-wrap:anywhere;word-break:normal}
   .hop .hip.reveal{color:var(--ok)}
-  .hop .hbtn{font-size:10.5px;padding:3px 10px;border-radius:8px;border:1px solid var(--edge-hi);background:transparent;color:var(--text);cursor:pointer;flex:0 0 auto;white-space:nowrap}
+  .hop .hbtn{font-family:inherit;font-size:.65625rem;padding:3px 10px;border-radius:8px;border:1px solid var(--edge-hi);background:transparent;color:var(--text);cursor:pointer;flex:0 0 auto;white-space:nowrap}
   .hop .hbtn:hover{background:rgba(255,255,255,.10)}
   .hline{width:2px;height:9px;background:rgba(255,255,255,.22);margin-left:19px}
-  .note{font-size:9.5px;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
+  .note{font-size:.59375rem;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
   .note.warn{color:#ffb4b4;padding-top:0}
   .note.warn:empty{display:none}
-  .note.fonts{padding:0 18px 8px;font-size:10px;color:var(--muted)}
+  .note.fonts{padding:0 18px 8px;font-size:.625rem;color:var(--muted)}
   .note.fonts:empty{display:none}
-  #where{padding:0 18px 8px;font-size:10.5px}
-  .evlink{cursor:pointer;color:var(--muted)}
+  #where{padding:0 18px 8px;font-size:.65625rem}
+  .evlink{cursor:pointer;color:var(--muted);display:block;width:100%;text-align:left;
+    background:none;border:none;font-family:inherit}
+  .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
+    overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
   .evlink:hover{color:var(--text)}
-  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+  :focus-visible{outline:3px solid var(--focus)!important;outline-offset:-2px}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+  /* High contrast: the glass is gone, so controls keep system-coloured
+     edges, and the chosen mode and country stay marked. */
+  @media (forced-colors: active){
+    .env{display:none}
+    .mode,.row,.act,.hop .hbtn{border:1px solid ButtonText}
+    .mode.active,.row.active{border-color:Highlight;outline:2px solid Highlight}
+    .hop.exit{border-color:CanvasText}
+    .hline{forced-color-adjust:none;background:CanvasText}
+    .dot{forced-color-adjust:none;background:CanvasText}
+    :focus-visible{outline-color:Highlight!important}
+  }
 </style>
 </head>
 <body>
-<div class="panel">
-  <div class="env"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+<main class="panel">
+  <div class="env" aria-hidden="true"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
   <div class="frost">
     <div class="hdr">
-      <span class="dot" id="dot"></span>
-      <div><div class="title">MoltNet</div><div class="st" id="st">Checking&hellip;</div></div>
+      <span class="dot" id="dot" aria-hidden="true"></span>
+      <div><h1 class="title">MoltNet</h1><div class="st" id="st" role="status">Checking&hellip;</div></div>
       <span class="brand" id="sub"></span>
     </div>
-    <div class="sec">Tor routing</div>
-    <div class="modes" id="modes">
-      <div class="mode" data-mode="direct" data-on-click="modeOff">
-        <div class="mname">Off</div><div class="mdesc">Tor stopped</div></div>
-      <div class="mode" data-mode="multi_hop" data-on-click="modeOn">
-        <div class="mname">On</div><div class="mdesc">Tor&nbsp;&middot;&nbsp;own&nbsp;window</div></div>
+    <h2 class="sec" id="modes-label">Tor routing</h2>
+    <div class="modes" id="modes" role="group" aria-labelledby="modes-label">
+      <button class="mode" type="button" data-mode="direct" data-on-click="modeOff" aria-pressed="false">
+        <span class="mname">Off</span><span class="mdesc">Tor stopped</span></button>
+      <button class="mode" type="button" data-mode="multi_hop" data-on-click="modeOn" aria-pressed="false">
+        <span class="mname">On</span><span class="mdesc">Tor&nbsp;&middot;&nbsp;own&nbsp;window</span></button>
     </div>
     <div class="note" id="where"></div>
-    <div class="note warn" id="err"></div>
+    <div class="note warn" id="err" role="alert"></div>
     <div class="note fonts" id="fonts" role="note"></div>
     <div class="divider"></div>
     <div class="scroll">
       <div id="routeWrap"></div>
-      <div class="sec">Exit country</div>
-      <div class="note">Pinning a country shrinks the set of exits you blend in with, which reduces anonymity. The choice resets when MoltBrowser restarts.</div>
-      <div class="list" id="list"></div>
+      <h2 class="sec" id="exit-label">Exit country</h2>
+      <div class="note" id="exit-note">Pinning a country shrinks the set of exits you blend in with, which reduces anonymity. The choice resets when MoltBrowser restarts.</div>
+      <div class="list" id="list" role="group" aria-labelledby="exit-label" aria-describedby="exit-note"></div>
     </div>
     <div class="foot">
-      <div class="act" id="openWindowBtn" data-on-click="openWindow">&#129477; New&nbsp;Tor&nbsp;window</div>
-      <div class="act" id="newIdentityBtn" data-on-click="newIdentity">&#128260; New&nbsp;identity</div>
-      <div class="act" id="settingsBtn" data-on-click="openSettings">&#9881;&#65039; Settings</div>
+      <button class="act" id="openWindowBtn" type="button" data-on-click="openWindow"><span aria-hidden="true">&#129477;</span> New&nbsp;Tor&nbsp;window</button>
+      <button class="act" id="newIdentityBtn" type="button" data-on-click="newIdentity"><span aria-hidden="true">&#128260;</span> New&nbsp;identity</button>
+      <button class="act" id="settingsBtn" type="button" data-on-click="openSettings"><span aria-hidden="true">&#9881;&#65039;</span> Settings</button>
     </div>
   </div>
-</div>
+  <div class="sr-only" id="announce" role="status"></div>
+</main>
 <script src="app.js"></script>
 </body>
 </html>)HTML";

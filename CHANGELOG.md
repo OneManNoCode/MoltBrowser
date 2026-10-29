@@ -460,6 +460,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   is refused for a processed stream, as in Chromium, instead of being
   down-mixed; and the leak test kit's tests pass for a user whose primary
   group is `users`.
+- Hardening (security review of PR #79, `docs/SECURITY_REVIEWS.md`): the
+  rule that an OCR or voice helper may write only inside its own scratch
+  folder is now tested against a hard link to a file outside it, besides
+  deleting, renaming and symbolic links, so the folder stays the only place
+  a helper's writes can reach.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -1108,6 +1113,27 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   tools to the agent only after you allow that site on that page (for this
   session, or always, removable in Agent mode); every call to one asks you
   and names both sites, and MoltNet windows never use them.
+- **Touchless browsing, first part: understanding what was said.** A
+  direct-command grammar turns a recognized utterance into a command
+  without the AI model (open a site, search, tabs, scrolling, zoom, media,
+  reading, choosing, typing, "no, I said ...", routines), and a matcher
+  finds the item on screen that "the fourth one", "number 12" or "the live
+  one by Queen" means, sound-alikes included, asking when two items fit.
+  Both run on the device in a few milliseconds; not yet connected to a
+  microphone. What you can say: `docs/VOICE_COMMANDS.md`.
+- **Touchless browsing: voice commands do what you meant, and answer
+  aloud** (preview, off by default: `chrome://flags/#molt-voice-mode`).
+  Typed in Agent mode's new "Type a voice command" field until the browser
+  can hear, "open YouTube", "search for Bohemian Rhapsody", "play the
+  fourth one" or "the live one by Queen", "pause" and "go back" are done
+  on the page, and the browser says what happened through your system's
+  voices: the results with their channels and lengths, then "Say a number
+  or a name"; which one you meant when two fit. A site it doesn't know is
+  searched for, never guessed. Buying, paying, deleting, sending, posting,
+  subscribing, signing out and sending a form wait for a spoken "yes";
+  password, card and code fields are never typed into or read out, and
+  page text is only ever read, never obeyed. Voice mode stays off in
+  MoltNet windows.
 
 ### Fixed
 - **A Windows clock set before 1970 no longer ends the browser** when an
@@ -1134,8 +1160,61 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **Typing into multi-line text boxes works.** The agent's and the chat's
   page actions failed on a `<textarea>` (a message or address box) and
   only filled single-line fields.
+- **MoltBrowser's own pages work with screen readers, the keyboard alone
+  and voice control.** The AI chats, the agent studio, automations,
+  settings, the MoltNet and import popovers, New Tab, memory and update
+  pages have names on every control, headings and landmarks, real buttons,
+  a visible focus ring, dialogs that take and return focus and close on
+  Escape, and no hidden control in the tab order. A finished AI answer,
+  agent steps and status are read out once; errors at once. Animations stop
+  for reduced motion, high-contrast mode is supported, text sizes follow
+  the user's font size, and every text colour meets WCAG AA contrast (some
+  button fills are a shade darker). The toolbar's AI mode and Agent mode
+  are toggle buttons that say whether their panel is open, and MoltNet
+  says its state in words. CI checks every page with axe-core and a
+  contrast script ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md)).
 
 ### Engineering
+- **Windows release builds without DCHECKs** (`configs/windows-x64.gn`):
+  its non-official build had turned Chromium's debugging-only checks on.
+  Moving Windows to an official build is on the build machine's list
+  (`docs/BUILD_MACHINE_CHECKLIST.md` §3.3).
+- **Touchless browsing, first part: the page map** (not switched on yet;
+  `docs/design/TOUCHLESS_BROWSING.md` §6.3, §6.5). The browser can read any
+  page through Chromium's accessibility tree, as screen readers do, as a
+  numbered list of what can be acted on (in reading order, numbers stable
+  while the page is unchanged) and the lists to choose from (search
+  results, videos, rows), each entry with its title, channel or site,
+  duration, counts and date, ranked so "the results" is the main list. It
+  acts as assistive technology does (press, focus, scroll, set text,
+  submit, play and pause), never writes a password, card or one-time code
+  field, and refuses a target that is no longer on the page. Hand-built
+  YouTube-, Google- and Wikipedia-like pages test it, a new fuzzer covers
+  hostile trees, and the first browser tests drive a video site from search
+  to sound by these actions alone.
+- **Touchless browsing: numbers and a caption bar on screen** (not switched
+  on yet; `docs/design/TOUCHLESS_BROWSING.md` §5.3, §5.5). For people with
+  partial sight, the browser can draw a large, high-contrast number on
+  everything on screen that can be acted on, a thick ring around the item
+  it reads or acts on, and a large-type caption bar under the page with
+  what it heard and what it is doing. The browser draws all of it above and
+  below the page, never in it: pages can't read or fake it, it takes no
+  focus, and the page's size changes only when the bar appears or goes.
+  Numbers never cover each other, follow scrolling and go away when the
+  page changes; the caption bar is a live region for screen readers; sizes
+  and colours follow the user's text size and contrast settings
+  ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md) §5). The page map now keeps
+  items' positions current as a page scrolls.
+- **Voice bench** (`tools/voice_bench/`, `docs/VOICE_BENCH.md`): a
+  reproducible kit that measures open-source, on-device speech engines for
+  touchless browsing (wake phrase, end of speech, streaming and
+  per-utterance recognition, biasing toward the names on screen, voices)
+  on a 300-command test set rendered with several voices under noise,
+  music and the browser's own speech, plus real speech. Every download is
+  pinned by SHA-256 with its licence; it runs on Linux, macOS and Windows.
+  The first results keep sherpa-onnx as the proposed speech engine, with
+  Kroko EN for streaming recognition, and show that echo cancellation and
+  a text front end for the voices are required.
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):
   one command runs a built browser's MoltNet window in a network namespace
   where only Tor's traffic may leave. It captures every packet and every

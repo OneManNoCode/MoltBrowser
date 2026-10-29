@@ -1,0 +1,313 @@
+# MoltBrowser voice bench: spoken-command test set (TOUCHLESS_BROWSING.md 2, 5.2, 12).
+# Columns (TAB-separated):
+#   id        unique id; the prefix is the category
+#   category  nav | search | choice | media | read | dictation | chatter
+#   text      what the speaker says, and the reference transcript
+#   alts      other transcripts that count as correct, separated by |
+#             (numbers, "ok"/"okay", spacing and punctuation are normalized
+#             anyway: see voice_bench_lib.normalize)
+#   entities  names that must come out exactly right, separated by ;
+#             written Name or Name=alternative|alternative
+#   page      the screen the speaker is looking at (pages.json); the
+#             recognizer is biased toward its titles and channels
+# Lines starting with # are comments. Titles and names only, no lyrics.
+nav-01	nav	open YouTube		YouTube=you tube	news_home
+nav-02	nav	go to Wikipedia		Wikipedia	news_home
+nav-03	nav	take me to the BBC News website	take me to the bbc news web site	BBC News	news_home
+nav-04	nav	open Gmail		Gmail=g mail	news_home
+nav-05	nav	go to google dot com	go to google com	google dot com=google com	news_home
+nav-06	nav	open Netflix		Netflix	news_home
+nav-07	nav	go to Amazon		Amazon	news_home
+nav-08	nav	show me the weather forecast			news_home
+nav-09	nav	take me to Spotify		Spotify	news_home
+nav-10	nav	go to the Guardian website	go to the guardian web site	Guardian	news_home
+nav-11	nav	open Reddit		Reddit	news_home
+nav-12	nav	go to Facebook		Facebook	news_home
+nav-13	nav	open my email	open my e mail		news_home
+nav-14	nav	go to DuckDuckGo		DuckDuckGo=duck duck go	news_home
+nav-15	nav	open Instagram		Instagram	news_home
+nav-16	nav	go to the Met Office website	go to the met office web site	Met Office	news_home
+nav-17	nav	go back			news_home
+nav-18	nav	go forward			news_home
+nav-19	nav	reload the page	reload page		news_home
+nav-20	nav	refresh			news_home
+nav-21	nav	open a new tab	open new tab		news_home
+nav-22	nav	close this tab			news_home
+nav-23	nav	switch to the next tab	switch to next tab		news_home
+nav-24	nav	go to the previous tab	go to previous tab		news_home
+nav-25	nav	switch to tab three			news_home
+nav-26	nav	close all the other tabs	close all other tabs		news_home
+nav-27	nav	scroll down			news_home
+nav-28	nav	scroll up a bit			news_home
+nav-29	nav	page down			news_home
+nav-30	nav	go to the top of the page			news_home
+nav-31	nav	zoom in			news_home
+nav-32	nav	zoom out			news_home
+nav-33	nav	make the text bigger			news_home
+nav-34	nav	reset the zoom			news_home
+nav-35	nav	open my downloads			news_home
+nav-36	nav	show my history			news_home
+nav-37	nav	bookmark this page			news_home
+nav-38	nav	open settings			news_home
+nav-39	nav	find the word price on this page			shop_headphones
+nav-40	nav	go to the home page	go to the homepage		news_home
+nav-41	nav	open the BBC weather page		BBC	news_home
+nav-42	nav	go to Wikipedia and search for Freddie Mercury		Wikipedia;Freddie Mercury	news_home
+nav-43	nav	open the Queen page on Wikipedia		Queen;Wikipedia	yt_bohemian
+nav-44	nav	search Google for train times to Manchester		Google;Manchester	news_home
+nav-45	nav	open YouTube Music		YouTube Music=you tube music	news_home
+search-01	search	search for Bohemian Rhapsody		Bohemian Rhapsody	news_home
+search-02	search	search YouTube for Hotel California by the Eagles		YouTube=you tube;Hotel California;Eagles	yt_bohemian
+search-03	search	search for Billie Eilish live		Billie Eilish	yt_bohemian
+search-04	search	look up Shape of You by Ed Sheeran		Shape of You;Ed Sheeran	yt_adele
+search-05	search	find Blinding Lights by The Weeknd	find blinding lights by the weekend	Blinding Lights;The Weeknd=the weekend	yt_adele
+search-06	search	search for Someone Like You by Adele		Someone Like You;Adele	yt_bohemian
+search-07	search	search for Stairway to Heaven		Stairway to Heaven	yt_bohemian
+search-08	search	search for Smells Like Teen Spirit by Nirvana		Smells Like Teen Spirit;Nirvana	yt_bohemian
+search-09	search	play Imagine by John Lennon		Imagine;John Lennon	music_chart
+search-10	search	search for Taylor Swift Anti-Hero	search for taylor swift antihero	Taylor Swift;Anti-Hero=antihero	yt_billie
+search-11	search	search for Dua Lipa Levitating		Dua Lipa;Levitating	yt_billie
+search-12	search	search YouTube for lofi beats to study to	search youtube for lo fi beats to study to	YouTube=you tube;lofi=lo fi	yt_cooking
+search-13	search	find videos about how to make sourdough bread	find videos about how to make sour dough bread	sourdough=sour dough	yt_lofi
+search-14	search	search for Gordon Ramsay scrambled eggs		Gordon Ramsay	yt_lofi
+search-15	search	search for Coldplay Viva la Vida		Coldplay=cold play;Viva la Vida	yt_adele
+search-16	search	search for Beyonce Halo		Beyonce;Halo	yt_adele
+search-17	search	search for Bob Marley Three Little Birds		Bob Marley;Three Little Birds	music_chart
+search-18	search	search for Fleetwood Mac Dreams		Fleetwood Mac;Dreams	music_chart
+search-19	search	search for ABBA Dancing Queen		ABBA;Dancing Queen	music_chart
+search-20	search	search for Michael Jackson Billie Jean		Michael Jackson;Billie Jean	music_chart
+search-21	search	search for Queen live at Wembley		Queen;Wembley	wiki_queen
+search-22	search	search for Bohemian Rhapsody piano tutorial		Bohemian Rhapsody	yt_bohemian
+search-23	search	search for the Beatles Let It Be		Beatles;Let It Be	yt_beatles
+search-24	search	search for Hey Jude		Hey Jude	yt_beatles
+search-25	search	search for Wonderwall by Oasis	search for wonder wall by oasis	Wonderwall=wonder wall;Oasis	yt_beatles
+search-26	search	search for Rolling in the Deep		Rolling in the Deep	yt_adele
+search-27	search	search for Elton John Rocket Man	search for elton john rocketman	Elton John;Rocket Man=rocketman	music_chart
+search-28	search	search for David Bowie Space Oddity		David Bowie;Space Oddity	music_chart
+search-29	search	search for Pentatonix Hallelujah		Pentatonix;Hallelujah	yt_bohemian
+search-30	search	search for the weather in London		London	news_home
+search-31	search	search for Arctic Monkeys		Arctic Monkeys	music_chart
+search-32	search	search for Ed Sheeran Perfect		Ed Sheeran;Perfect	music_chart
+search-33	search	search for Whitney Houston I Will Always Love You		Whitney Houston;I Will Always Love You	music_chart
+search-34	search	search for Frank Sinatra My Way		Frank Sinatra;My Way	music_chart
+search-35	search	search for Mozart piano sonatas		Mozart	yt_lofi
+search-36	search	search for Beethoven Moonlight Sonata		Beethoven;Moonlight Sonata	yt_lofi
+search-37	search	search for relaxing rain sounds			yt_lofi
+search-38	search	search for funny cat videos			yt_cooking
+search-39	search	search for the Lion King trailer		Lion King	yt_cooking
+search-40	search	search for Harry Styles As It Was		Harry Styles;As It Was	music_chart
+search-41	search	search for Bruno Mars Uptown Funk		Bruno Mars;Uptown Funk	music_chart
+search-42	search	search for Rihanna Diamonds		Rihanna;Diamonds	music_chart
+search-43	search	search for Lady Gaga Shallow		Lady Gaga;Shallow	music_chart
+search-44	search	search for Olivia Rodrigo drivers license	search for olivia rodrigo driver's license|search for olivia rodrigo drivers licence	Olivia Rodrigo;drivers license=driver's license|drivers licence|driver's licence	music_chart
+search-45	search	search for Kendrick Lamar		Kendrick Lamar	music_chart
+search-46	search	search for Bad Bunny		Bad Bunny	music_chart
+search-47	search	search for Lewis Capaldi Someone You Loved		Lewis Capaldi;Someone You Loved	music_chart
+search-48	search	search for Ludovico Einaudi Experience		Ludovico Einaudi;Experience	yt_lofi
+search-49	search	search for Norah Jones Don't Know Why	search for norah jones do not know why	Norah Jones;Don't Know Why	yt_lofi
+search-50	search	search for Amy Winehouse Back to Black		Amy Winehouse;Back to Black	yt_adele
+search-51	search	search for Johnny Cash Hurt		Johnny Cash;Hurt	yt_adele
+search-52	search	search for Dolly Parton Jolene		Dolly Parton;Jolene	yt_adele
+search-53	search	search for Simon and Garfunkel The Sound of Silence		Simon and Garfunkel;Sound of Silence	yt_beatles
+search-54	search	search for Led Zeppelin		Led Zeppelin	yt_beatles
+search-55	search	search for Pink Floyd Wish You Were Here		Pink Floyd;Wish You Were Here	yt_beatles
+search-56	search	search for Eminem Lose Yourself	search for eminem lose yourself	Eminem;Lose Yourself	music_chart
+search-57	search	search for Shakira Hips Don't Lie	search for shakira hips do not lie	Shakira;Hips Don't Lie	music_chart
+search-58	search	show me videos of Ed Sheeran Thinking Out Loud		Ed Sheeran;Thinking Out Loud	music_chart
+search-59	search	search for Sam Smith Stay With Me		Sam Smith;Stay With Me	music_chart
+search-60	search	search for Freddie Mercury interview		Freddie Mercury	yt_bohemian
+choice-01	choice	play the fourth one			yt_bohemian
+choice-02	choice	number twelve			yt_bohemian
+choice-03	choice	play the live one by Queen		Queen	yt_bohemian
+choice-04	choice	the first one			yt_bohemian
+choice-05	choice	play number two			yt_bohemian
+choice-06	choice	click seven			yt_bohemian
+choice-07	choice	open the third result			yt_bohemian
+choice-08	choice	the last one			yt_bohemian
+choice-09	choice	play the one by Pentatonix		Pentatonix	yt_bohemian
+choice-10	choice	play the official video			yt_bohemian
+choice-11	choice	the Live Aid one		Live Aid	yt_bohemian
+choice-12	choice	the one with the Muppets		Muppets	yt_bohemian
+choice-13	choice	play the piano version			yt_bohemian
+choice-14	choice	number nineteen			yt_bohemian
+choice-15	choice	play the one from Wayne's World	play the one from waynes world	Wayne's World=waynes world	yt_bohemian
+choice-16	choice	play Easy On Me		Easy On Me	yt_adele
+choice-17	choice	play the live one at the BRIT Awards		BRIT Awards=brits awards	yt_adele
+choice-18	choice	the second one			yt_adele
+choice-19	choice	play Hello		Hello	yt_adele
+choice-20	choice	the one below that			yt_adele
+choice-21	choice	number five			yt_adele
+choice-22	choice	play Rolling in the Deep		Rolling in the Deep	yt_adele
+choice-23	choice	play the sixth video			yt_adele
+choice-24	choice	open number eleven			yt_adele
+choice-25	choice	play Someone Like You live		Someone Like You	yt_adele
+choice-26	choice	play the Lofi Girl stream	play the lo fi girl stream	Lofi Girl=lo fi girl	yt_lofi
+choice-27	choice	the one that says jazz		jazz	yt_lofi
+choice-28	choice	number three			yt_lofi
+choice-29	choice	play the rainy day one		rainy day	yt_lofi
+choice-30	choice	the eighth one			yt_lofi
+choice-31	choice	open the carbonara one		carbonara	yt_cooking
+choice-32	choice	the one by Gordon Ramsay		Gordon Ramsay	yt_cooking
+choice-33	choice	number fourteen			yt_cooking
+choice-34	choice	the next one			yt_cooking
+choice-35	choice	play the Jamie Oliver video		Jamie Oliver	yt_cooking
+choice-36	choice	play Blinding Lights		Blinding Lights	music_chart
+choice-37	choice	play the one by Billie Eilish		Billie Eilish	music_chart
+choice-38	choice	play song number nine			music_chart
+choice-39	choice	play Anti-Hero by Taylor Swift	play antihero by taylor swift	Anti-Hero=antihero;Taylor Swift	music_chart
+choice-40	choice	the tenth one			music_chart
+choice-41	choice	play Flowers by Miley Cyrus		Flowers;Miley Cyrus	music_chart
+choice-42	choice	play the Harry Styles song		Harry Styles	music_chart
+choice-43	choice	number twenty			music_chart
+choice-44	choice	open the article about the storm		storm	news_home
+choice-45	choice	read the third headline			news_home
+choice-46	choice	open the one about the train timetable		train timetable	news_home
+choice-47	choice	the one above			news_home
+choice-48	choice	open number six			news_home
+choice-49	choice	open the one about Brian May		Brian May	wiki_queen
+choice-50	choice	open Queen the band		Queen	wiki_queen
+choice-51	choice	the one about A Night at the Opera		Night at the Opera	wiki_queen
+choice-52	choice	open the second link			wiki_queen
+choice-53	choice	open the Sony headphones		Sony	shop_headphones
+choice-54	choice	the previous one			shop_headphones
+choice-55	choice	number four			shop_headphones
+choice-56	choice	open the Bose ones		Bose	shop_headphones
+choice-57	choice	open the email from Ana		Ana=anna	mail_inbox
+choice-58	choice	open the third message			mail_inbox
+choice-59	choice	the one about the meeting on Friday		Friday	mail_inbox
+choice-60	choice	play the latest episode			podcasts
+media-01	media	pause			yt_bohemian
+media-02	media	play			yt_bohemian
+media-03	media	resume			yt_bohemian
+media-04	media	stop			yt_bohemian
+media-05	media	louder			yt_bohemian
+media-06	media	turn it up			yt_bohemian
+media-07	media	quieter			yt_bohemian
+media-08	media	turn the volume down a bit			yt_bohemian
+media-09	media	mute			yt_bohemian
+media-10	media	unmute			yt_bohemian
+media-11	media	skip ahead one minute			yt_bohemian
+media-12	media	go back ten seconds			yt_adele
+media-13	media	skip forward thirty seconds			yt_adele
+media-14	media	full screen	fullscreen		yt_adele
+media-15	media	exit full screen	exit fullscreen		yt_adele
+media-16	media	turn on captions			yt_adele
+media-17	media	turn off the subtitles	turn off the sub titles		yt_adele
+media-18	media	play it faster			yt_cooking
+media-19	media	normal speed			yt_cooking
+media-20	media	next video			yt_cooking
+media-21	media	previous video			yt_cooking
+media-22	media	play it again			music_chart
+media-23	media	skip this ad			music_chart
+media-24	media	like this video			music_chart
+media-25	media	restart the video			music_chart
+media-26	media	set the volume to fifty percent			music_chart
+media-27	media	jump to two minutes thirty			podcasts
+media-28	media	repeat this song			podcasts
+media-29	media	shuffle the playlist			podcasts
+media-30	media	what song is this			podcasts
+read-01	read	read the page			news_home
+read-02	read	read this article			news_home
+read-03	read	stop reading			news_home
+read-04	read	read the headings			news_home
+read-05	read	next heading			news_home
+read-06	read	previous heading			news_home
+read-07	read	read the links			news_home
+read-08	read	next link			news_home
+read-09	read	what's on the screen	what is on the screen		news_home
+read-10	read	where am I			news_home
+read-11	read	what can I say			news_home
+read-12	read	summarize this page	summarise this page		news_home
+read-13	read	read the first paragraph			news_home
+read-14	read	read it slower			news_home
+read-15	read	speak faster			news_home
+read-16	read	read the results again			yt_bohemian
+read-17	read	show numbers			yt_bohemian
+read-18	read	hide the numbers			yt_bohemian
+read-19	read	help			yt_bohemian
+read-20	read	read the comments			yt_bohemian
+read-21	read	what's the title of this page	what is the title of this page		wiki_queen
+read-22	read	read the next one			wiki_queen
+read-23	read	go back to the results			wiki_queen
+read-24	read	start over			wiki_queen
+read-25	read	read from here			wiki_queen
+dict-01	dictation	yes	yeah		mail_inbox
+dict-02	dictation	no			mail_inbox
+dict-03	dictation	yes please			mail_inbox
+dict-04	dictation	no thanks	no thank you		mail_inbox
+dict-05	dictation	cancel			mail_inbox
+dict-06	dictation	undo			mail_inbox
+dict-07	dictation	okay			mail_inbox
+dict-08	dictation	that's right	that is right		mail_inbox
+dict-09	dictation	not that one			mail_inbox
+dict-10	dictation	no I said Queen		Queen	yt_bohemian
+dict-11	dictation	no I meant the live one			yt_bohemian
+dict-12	dictation	type I'll be home at six	type i will be home at six		mail_inbox
+dict-13	dictation	type thank you very much			mail_inbox
+dict-14	dictation	type see you tomorrow			mail_inbox
+dict-15	dictation	new line	newline		mail_inbox
+dict-16	dictation	delete the last word			mail_inbox
+dict-17	dictation	delete that			mail_inbox
+dict-18	dictation	read it back			mail_inbox
+dict-19	dictation	submit			mail_inbox
+dict-20	dictation	send it			mail_inbox
+dict-21	dictation	type my name is Maria		Maria	mail_inbox
+dict-22	dictation	type the meeting is on Tuesday at ten		Tuesday	mail_inbox
+dict-23	dictation	type happy birthday Ana		Ana=anna	mail_inbox
+dict-24	dictation	select all			mail_inbox
+dict-25	dictation	clear the field			mail_inbox
+dict-26	dictation	type question mark			mail_inbox
+dict-27	dictation	capitalize that	capitalise that		mail_inbox
+dict-28	dictation	type London		London	mail_inbox
+dict-29	dictation	no I said Bohemian Rhapsody		Bohemian Rhapsody	yt_bohemian
+dict-30	dictation	search for that instead			yt_bohemian
+dict-31	dictation	yes do it			mail_inbox
+dict-32	dictation	no stop			mail_inbox
+dict-33	dictation	confirm			mail_inbox
+dict-34	dictation	go ahead			mail_inbox
+dict-35	dictation	never mind	nevermind		mail_inbox
+dict-36	dictation	sure			mail_inbox
+dict-37	dictation	nope			mail_inbox
+dict-38	dictation	yes that one			mail_inbox
+dict-39	dictation	correct			mail_inbox
+dict-40	dictation	wrong one			mail_inbox
+dict-41	dictation	type I'm running ten minutes late	type i am running ten minutes late		mail_inbox
+dict-42	dictation	type please call me back			mail_inbox
+dict-43	dictation	type the address is twenty two Baker Street		Baker Street	mail_inbox
+dict-44	dictation	use my saved password			mail_inbox
+dict-45	dictation	sign me in			mail_inbox
+chat-01	chatter	I think it's going to rain later	i think it is going to rain later		news_home
+chat-02	chatter	can you pass me the salt please			news_home
+chat-03	chatter	did you watch the game last night			news_home
+chat-04	chatter	I'll make us some tea in a minute	i will make us some tea in a minute		news_home
+chat-05	chatter	the cat is asleep on the sofa again			news_home
+chat-06	chatter	my sister is coming over on Sunday		Sunday	news_home
+chat-07	chatter	hey Walt are you coming with us		Walt	news_home
+chat-08	chatter	hey Matt can you hold this for a second		Matt	news_home
+chat-09	chatter	snakes molt their skin a few times a year			news_home
+chat-10	chatter	the birds start to molt in late summer			news_home
+chat-11	chatter	hey the mold is back in the bathroom			news_home
+chat-12	chatter	hello Mo how was your day		Mo=moe	news_home
+chat-13	chatter	I melted the butter for the cake			news_home
+chat-14	chatter	that bolt needs tightening			news_home
+chat-15	chatter	hey mom I'm home	hey mom i am home|hey mum i'm home|hey mum i am home		news_home
+chat-16	chatter	holy moly that's a big dog	holy moly that is a big dog		news_home
+chat-17	chatter	we need more milk and bread			news_home
+chat-18	chatter	the bus was late again this morning			news_home
+chat-19	chatter	have you seen my glasses anywhere			news_home
+chat-20	chatter	I'm not sure what time the shop closes	i am not sure what time the shop closes		news_home
+chat-21	chatter	let's go for a walk after lunch	let us go for a walk after lunch		news_home
+chat-22	chatter	the doctor's appointment is on Thursday	the doctors appointment is on thursday	Thursday	news_home
+chat-23	chatter	this music is lovely			yt_lofi
+chat-24	chatter	turn left at the next corner			yt_lofi
+chat-25	chatter	the volume on the television is too loud			yt_lofi
+chat-26	chatter	I said I would call her back			yt_lofi
+chat-27	chatter	the kids are playing in the garden			yt_lofi
+chat-28	chatter	hello is anyone there			yt_lofi
+chat-29	chatter	hey what's up	hey what is up		yt_lofi
+chat-30	chatter	okay see you later			yt_lofi
+chat-31	chatter	a molten chocolate cake sounds great			yt_lofi
+chat-32	chatter	hey Molly nice to see you		Molly	yt_lofi
+chat-33	chatter	old habits die hard			yt_lofi
+chat-34	chatter	the moulting season is nearly over	the molting season is nearly over		yt_lofi
+chat-35	chatter	the film starts at eight			yt_lofi

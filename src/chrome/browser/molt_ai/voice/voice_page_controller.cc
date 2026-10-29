@@ -1,0 +1,748 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+#include "chrome/browser/molt_ai/voice/voice_page_controller.h"
+
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "base/functional/bind.h"
+#include "base/location.h"
+#include "base/time/time.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
+#include "chrome/browser/molt_ai/voice/ax_page_source.h"
+#include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "components/input/native_web_keyboard_event.h"
+#include "content/public/browser/browser_accessibility_state.h"
+#include "content/public/browser/media_session.h"
+#include "content/public/browser/page.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/scoped_accessibility_mode.h"
+#include "content/public/browser/web_contents.h"
+#include "third_party/blink/public/common/input/web_input_event.h"
+#include "ui/accessibility/ax_action_data.h"
+#include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_location_and_scroll_updates.h"
+#include "ui/accessibility/ax_node.h"
+#include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_tree.h"
+#include "ui/accessibility/ax_tree_data.h"
+#include "ui/accessibility/ax_tree_update.h"
+#include "ui/accessibility/ax_updates_and_events.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/dom_key.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/geometry/point.h"
+#include "url/gurl.h"
+
+// Why this accessibility mode (AccessibilityMode()), from Blink at 156
+// (third_party/blink/renderer/modules/accessibility/ax_object.cc):
+//   - kWebContents builds the tree: role, name, description, value,
+//     states (focusable, editable, invisible, protected, expanded, required),
+//     bounds, link targets and input types (AXObject::Serialize() and
+//     SerializeUnignoredAttributes()).
+//   - kExtendedProperties adds what the map needs on top: the checked state
+//     (SerializeScreenReaderAttributes()), placeholders
+//     (SerializeNameAndDescriptionAttributes()), heading levels and list
+//     positions (SerializeUnignoredAttributes()), HTML tags
+//     (SerializeHTMLTagAndClass()), autocomplete and the default action
+//     (SerializeOtherScreenReaderAttributes()).
+// Left out:
+//   - kNativeAPIs: no BrowserAccessibilityManager or platform objects are
+//     made (RenderFrameHostImpl::GetOrCreateBrowserAccessibilityManager()),
+//     so voice mode costs no browser-side platform tree and doesn't present
+//     the page to OS assistive technology as if one were running.
+//   - kInlineTextBoxes: a node per line of text, for caret navigation; much
+//     of the tree's size and its serialization cost.
+//   - kHTML: every HTML attribute copied into the tree.
+//   - kScreenReader: keeps content-visibility-hidden subtrees (unlaid out)
+//     in the tree (AXObjectCacheImpl's DetermineAXObjectType()); without it
+//     they are pruned, as the map wants (off screen, not rendered).
+//   - kLabelImages, kHTMLMetadata, kPDFPrinting, kAnnotateMainNode.
+
+namespace molt_ai {
+namespace voice {
+
+namespace {
+
+// How long Submit() waits for the field to report the focus.
+constexpr base::TimeDelta kSubmitFocusTimeout = base::Seconds(3);
+// How far Submit() looks for the form and its submit input.
+constexpr int kMaxFormAncestors = 64;
+constexpr size_t kMaxFormNodes = 5000;
+
+bool IsTextFieldRole(PageRole role) {
+  return role == PageRole::kTextField || role == PageRole::kSearchBox ||
+         role == PageRole::kTextArea || role == PageRole::kComboBox;
+}
+
+std::string LowerAscii(const std::string& s) {
+  std::string out = s.substr(0, 16);
+  for (char& c : out) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return out;
+}
+
+// The submit input (<input type=submit> or type=image) of |field|'s form,
+// shown and enabled; null if the field is in no form or the form has none.
+// A <button> doesn't say its type in the tree, so it is never taken for
+// one: Enter submits through the form's own default button instead.
+const ui::AXNode* FindSubmitInput(const ui::AXNode& field) {
+  const ui::AXNode* form = field.parent();
+  for (int i = 0; form && i < kMaxFormAncestors; ++i, form = form->parent()) {
+    if (form->GetRole() == ax::mojom::Role::kForm) {
+      break;
+    }
+  }
+  if (!form || form->GetRole() != ax::mojom::Role::kForm) {
+    return nullptr;
+  }
+  std::vector<const ui::AXNode*> stack = {form};
+  size_t visited = 0;
+  while (!stack.empty() && visited++ < kMaxFormNodes) {
+    const ui::AXNode* node = stack.back();
+    stack.pop_back();
+    const ui::AXNodeData& data = node->data();
+    const std::string type = LowerAscii(
+        data.GetStringAttribute(ax::mojom::StringAttribute::kInputType));
+    if ((type == "submit" || type == "image") &&
+        !data.HasState(ax::mojom::State::kInvisible) &&
+        data.GetRestriction() != ax::mojom::Restriction::kDisabled) {
+      return node;
+    }
+    const auto& children = node->children();
+    for (size_t k = children.size(); k-- > 0;) {
+      stack.push_back(children[k].get());
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(VoicePageController);
+
+VoicePageController::HeldTree::HeldTree() = default;
+VoicePageController::HeldTree::HeldTree(HeldTree&&) = default;
+VoicePageController::HeldTree& VoicePageController::HeldTree::operator=(
+    HeldTree&&) = default;
+VoicePageController::HeldTree::~HeldTree() = default;
+
+VoicePageController::VoicePageController(content::WebContents* web_contents)
+    : content::WebContentsObserver(web_contents),
+      content::WebContentsUserData<VoicePageController>(*web_contents) {}
+
+VoicePageController::~VoicePageController() = default;
+
+// static
+ui::AXMode VoicePageController::AccessibilityMode() {
+  return ui::AXMode(ui::AXMode::kWebContents | ui::AXMode::kExtendedProperties);
+}
+
+// static
+std::string_view VoicePageController::ActionResultName(ActionResult result) {
+  switch (result) {
+    case ActionResult::kDone:
+      return "done";
+    case ActionResult::kNotActive:
+      return "not active";
+    case ActionResult::kStale:
+      return "stale";
+    case ActionResult::kNotAllowed:
+      return "not allowed";
+    case ActionResult::kDisabled:
+      return "disabled";
+    case ActionResult::kNotEditable:
+      return "not editable";
+    case ActionResult::kCredentialField:
+      return "credential field";
+    case ActionResult::kTooLong:
+      return "too long";
+    case ActionResult::kNotMedia:
+      return "not media";
+    case ActionResult::kNoMediaSession:
+      return "no media session";
+    case ActionResult::kFocusNotConfirmed:
+      return "focus not confirmed";
+    case ActionResult::kCancelled:
+      return "cancelled";
+  }
+  return "unknown";
+}
+
+void VoicePageController::Start() {
+  if (active() || !web_contents()) {
+    return;
+  }
+  // If another client already asked for the trees, the renderers are
+  // mid-stream: ask them for whole trees again, as Reading Mode does.
+  const bool had_trees =
+      web_contents()->GetAccessibilityMode().has_mode(ui::AXMode::kWebContents);
+  mode_ =
+      content::BrowserAccessibilityState::GetInstance()
+          ->CreateScopedModeForWebContents(web_contents(), AccessibilityMode());
+  resets_this_page_ = 0;
+  if (had_trees) {
+    web_contents()->ResetAccessibility();
+  }
+}
+
+void VoicePageController::Stop() {
+  FinishSubmit(ActionResult::kCancelled);
+  mode_.reset();
+  trees_.clear();
+  tree_ids_.clear();
+}
+
+base::CallbackListSubscription VoicePageController::AddTreesUpdatedCallback(
+    base::RepeatingClosure callback) {
+  return trees_updated_.Add(std::move(callback));
+}
+
+void VoicePageController::SetTreesUpdatedCallbackForTesting(
+    base::RepeatingClosure callback) {
+  trees_updated_for_testing_ = std::move(callback);
+}
+
+content::RenderFrameHost* VoicePageController::FrameFor(
+    const ui::AXTreeID& tree_id) {
+  if (tree_id == ui::AXTreeIDUnknown()) {
+    return nullptr;
+  }
+  content::RenderFrameHost* frame =
+      content::RenderFrameHost::FromAXTreeID(tree_id);
+  if (!frame ||
+      content::WebContents::FromRenderFrameHost(frame) != web_contents() ||
+      !frame->IsActive() || !frame->GetPage().IsPrimary()) {
+    return nullptr;
+  }
+  return frame;
+}
+
+void VoicePageController::DropTree(const ui::AXTreeID& tree_id) {
+  auto it = trees_.find(tree_id);
+  if (it == trees_.end()) {
+    return;
+  }
+  const int32_t index = it->second.index;
+  tree_ids_.erase(index);
+  trees_.erase(it);
+  if (pending_submit_ && pending_submit_->field.tree == index) {
+    FinishSubmit(ActionResult::kStale);
+  }
+}
+
+void VoicePageController::DropTreesNotInPrimaryPage() {
+  std::vector<ui::AXTreeID> gone;
+  for (const auto& [tree_id, held] : trees_) {
+    if (!FrameFor(tree_id)) {
+      gone.push_back(tree_id);
+    }
+  }
+  for (const ui::AXTreeID& tree_id : gone) {
+    DropTree(tree_id);
+  }
+}
+
+void VoicePageController::AccessibilityEventReceived(
+    const ui::AXUpdatesAndEvents& details) {
+  if (!active()) {
+    return;
+  }
+  const ui::AXTreeID& tree_id = details.ax_tree_id;
+  if (!FrameFor(tree_id)) {
+    return;  // another page (a cached or prerendered one) or a gone frame
+  }
+  auto it = trees_.find(tree_id);
+  if (it == trees_.end()) {
+    if (trees_.size() >= kMaxTrees) {
+      ++stats_.trees_over_cap;
+      return;
+    }
+    HeldTree held;
+    held.index = next_tree_index_++;
+    held.tree = std::make_unique<ui::AXTree>();
+    it = trees_.emplace(tree_id, std::move(held)).first;
+    tree_ids_[it->second.index] = tree_id;
+    ++stats_.trees;
+  }
+
+  bool changed = false;
+  bool need_reset = false;
+  for (const ui::AXTreeUpdate& update : details.updates) {
+    ui::AXTree& tree = *it->second.tree;
+    // The renderer validated the node ids (RenderFrameHostImpl::
+    // HandleAXEvents()). What a tree can't take here is skipped before
+    // Unserialize() sees it: in builds that fail fast on accessibility
+    // errors (DCHECK or not official, ax_common.h) it would crash the
+    // browser. An empty tree needs a whole tree (its root first) or tree
+    // data alone; tree data must name this tree.
+    const bool whole_tree = update.root_id != ui::kInvalidAXNodeID &&
+                            !update.nodes.empty() &&
+                            update.nodes[0].id == update.root_id;
+    const bool data_only = update.nodes.empty() && update.has_tree_data;
+    if (!tree.root() && !whole_tree && !data_only) {
+      ++stats_.dropped_updates;
+      need_reset = true;  // ask for a whole tree
+      continue;
+    }
+    if (update.has_tree_data && update.tree_data.tree_id != tree_id) {
+      ++stats_.dropped_updates;
+      continue;
+    }
+    if (!tree.Unserialize(update) ||
+        static_cast<size_t>(tree.size()) > kMaxTreeNodes) {
+      ++stats_.unserialize_failures;
+      DropTree(tree_id);
+      need_reset = true;
+      changed = false;
+      break;
+    }
+    changed = true;
+  }
+  if (need_reset && resets_this_page_ < kMaxResetsPerPage) {
+    ++resets_this_page_;
+    ++stats_.resets;
+    web_contents()->ResetAccessibility();
+  }
+  if (changed) {
+    MaybeSendPendingEnter();
+    if (trees_updated_for_testing_) {
+      trees_updated_for_testing_.Run();
+    }
+    trees_updated_.Notify();
+  }
+}
+
+// Blink sends where nodes moved, and scroll offsets, apart from the tree
+// updates (AXObjectCacheImpl::SerializeLocationChanges()); without them a
+// node's bounds would stay where the page was before it scrolled. Applied
+// as BrowserAccessibilityManager::OnLocationChanges() does; node ids the
+// tree doesn't have are skipped (content checked the ids are valid ones).
+void VoicePageController::AccessibilityLocationChangesReceived(
+    const ui::AXTreeID& tree_id,
+    ui::AXLocationAndScrollUpdates& details) {
+  if (!active() || !FrameFor(tree_id)) {
+    return;
+  }
+  auto it = trees_.find(tree_id);
+  if (it == trees_.end() || !it->second.tree->root()) {
+    return;
+  }
+  ui::AXTree& tree = *it->second.tree;
+  bool changed = false;
+  for (const ui::AXScrollChange& change : details.scroll_changes) {
+    if (ui::AXNode* node = tree.GetFromId(change.id)) {
+      node->SetScrollInfo(change.scroll_x, change.scroll_y);
+      changed = true;
+    }
+  }
+  for (const ui::AXLocationChange& change : details.location_changes) {
+    if (ui::AXNode* node = tree.GetFromId(change.id)) {
+      node->SetLocation(change.new_location.offset_container_id,
+                        change.new_location.bounds,
+                        change.new_location.transform.get());
+      changed = true;
+    }
+  }
+  if (changed) {
+    trees_updated_.Notify();
+  }
+}
+
+void VoicePageController::RenderFrameDeleted(
+    content::RenderFrameHost* render_frame_host) {
+  DropTree(render_frame_host->GetAXTreeID());
+}
+
+void VoicePageController::PrimaryPageChanged(content::Page& page) {
+  DropTreesNotInPrimaryPage();
+  resets_this_page_ = 0;
+}
+
+void VoicePageController::WebContentsDestroyed() {
+  Stop();
+}
+
+bool VoicePageController::HasPageTree() {
+  if (!active()) {
+    return false;
+  }
+  DropTreesNotInPrimaryPage();
+  auto it = trees_.find(web_contents()->GetPrimaryMainFrame()->GetAXTreeID());
+  return it != trees_.end() && it->second.tree->root();
+}
+
+PageMap VoicePageController::BuildMap(const PageMapLimits& limits) {
+  if (!HasPageTree()) {
+    return PageMap();
+  }
+  const HeldTree& main =
+      trees_.find(web_contents()->GetPrimaryMainFrame()->GetAXTreeID())->second;
+  AXPageSourceLimits source_limits;
+  source_limits.max_nodes = limits.max_nodes;
+  source_limits.max_depth = limits.max_depth;
+  source_limits.max_trees = kMaxTrees;
+  // Only this tab's primary page's frames are here (the line above dropped
+  // the rest), so a child tree id can only join a frame of this page.
+  const PageTree page = BuildPageTree(
+      AXFrameTree{main.index, main.tree.get()},
+      [this](const ui::AXTreeID& tree_id) {
+        auto it = trees_.find(tree_id);
+        return it == trees_.end()
+                   ? AXFrameTree()
+                   : AXFrameTree{it->second.index, it->second.tree.get()};
+      },
+      source_limits);
+  return BuildPageMap(page, limits);
+}
+
+std::optional<VoicePageController::Target> VoicePageController::Resolve(
+    const PageNodeHandle& handle,
+    ActionResult* error) {
+  if (!active()) {
+    *error = ActionResult::kNotActive;
+    return std::nullopt;
+  }
+  *error = ActionResult::kStale;
+  auto id = tree_ids_.find(handle.tree);
+  if (id == tree_ids_.end()) {
+    return std::nullopt;
+  }
+  auto held = trees_.find(id->second);
+  if (held == trees_.end()) {
+    return std::nullopt;
+  }
+  content::RenderFrameHost* frame = FrameFor(id->second);
+  if (!frame) {
+    return std::nullopt;
+  }
+  const ui::AXNode* node = held->second.tree->GetFromId(handle.node);
+  if (!node) {
+    return std::nullopt;
+  }
+  // Only http(s) documents, as the agents act on (agent_safety.h).
+  if (!agent_safety::IsAllowedNavigationURL(frame->GetLastCommittedURL())) {
+    *error = ActionResult::kNotAllowed;
+    return std::nullopt;
+  }
+  Target target;
+  target.frame = frame;
+  target.tree = held->second.tree.get();
+  target.node = node;
+  target.tree_id = id->second;
+  target.tree_index = handle.tree;
+  *error = ActionResult::kDone;
+  return target;
+}
+
+VoicePageController::ActionResult VoicePageController::Perform(
+    const Target& target,
+    ui::AXActionData data) {
+  data.target_tree_id = target.tree_id;
+  data.target_node_id = target.node->id();
+  target.frame->AccessibilityPerformAction(data);
+  return ActionResult::kDone;
+}
+
+VoicePageController::ActionResult VoicePageController::Press(
+    const PageNodeHandle& target) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(target, &error);
+  if (!found) {
+    return error;
+  }
+  if (found->node->data().GetRestriction() ==
+      ax::mojom::Restriction::kDisabled) {
+    return ActionResult::kDisabled;
+  }
+  // Blink's AXObject::OnNativeClickAction(): user activation, then the
+  // element's click (pointer and mouse events and click), as for OS
+  // assistive technology.
+  ui::AXActionData data;
+  data.action = ax::mojom::Action::kDoDefault;
+  return Perform(*found, data);
+}
+
+VoicePageController::ActionResult VoicePageController::Focus(
+    const PageNodeHandle& target) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(target, &error);
+  if (!found) {
+    return error;
+  }
+  ui::AXActionData data;
+  data.action = ax::mojom::Action::kFocus;
+  return Perform(*found, data);
+}
+
+VoicePageController::ActionResult VoicePageController::ScrollIntoView(
+    const PageNodeHandle& target) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(target, &error);
+  if (!found) {
+    return error;
+  }
+  ui::AXActionData data;
+  data.action = ax::mojom::Action::kScrollToMakeVisible;
+  data.horizontal_scroll_alignment =
+      ax::mojom::ScrollAlignment::kScrollAlignmentCenter;
+  data.vertical_scroll_alignment =
+      ax::mojom::ScrollAlignment::kScrollAlignmentCenter;
+  data.scroll_behavior = ax::mojom::ScrollBehavior::kDoNotScrollIfVisible;
+  return Perform(*found, data);
+}
+
+VoicePageController::ActionResult VoicePageController::SetText(
+    const PageNodeHandle& field,
+    std::string_view text) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(field, &error);
+  if (!found) {
+    return error;
+  }
+  // The field as it is now, not as the map saw it.
+  const PageNode node = PageNodeFromData(found->node->data(), field.tree,
+                                         AXPageSourceLimits().max_string_bytes);
+  if (node.Has(kStateProtected) ||
+      ClassifyCredential(node) != CredentialKind::kNone) {
+    return ActionResult::kCredentialField;
+  }
+  if (!IsTextFieldRole(node.role) || !node.Has(kStateEditable) ||
+      node.Has(kStateReadOnly) || node.Has(kStateDisabled)) {
+    return ActionResult::kNotEditable;
+  }
+  std::optional<std::string> typed =
+      TypedText(text, node.role == PageRole::kTextArea, kMaxSetTextBytes);
+  if (!typed) {
+    return ActionResult::kTooLong;
+  }
+  // Blink's AXNodeObject::OnNativeSetValueAction(): the value, then the
+  // input and change events a page listens to.
+  ui::AXActionData data;
+  data.action = ax::mojom::Action::kSetValue;
+  data.value = std::move(*typed);
+  return Perform(*found, data);
+}
+
+void VoicePageController::Submit(const PageNodeHandle& field,
+                                 SubmitCallback done) {
+  FinishSubmit(ActionResult::kCancelled);  // one at a time
+  ActionResult error;
+  std::optional<Target> found = Resolve(field, &error);
+  if (!found) {
+    std::move(done).Run(error);
+    return;
+  }
+  const PageRole role = PageRoleFor(found->node->data());
+  if (role == PageRole::kButton) {
+    std::move(done).Run(Press(field));
+    return;
+  }
+  if (!IsTextFieldRole(role)) {
+    std::move(done).Run(ActionResult::kNotEditable);
+    return;
+  }
+  if (const ui::AXNode* submit = FindSubmitInput(*found->node)) {
+    std::move(done).Run(Press(PageNodeHandle{field.tree, submit->id()}));
+    return;
+  }
+  // Enter, as the keyboard sends it, to the focused field. The key events
+  // travel to the renderer apart from accessibility actions, so the field
+  // must report the focus first.
+  pending_submit_ = PendingSubmit{field, std::move(done)};
+  if (found->tree->data().focus_id != found->node->id()) {
+    const ActionResult focus = Focus(field);
+    if (focus != ActionResult::kDone) {
+      FinishSubmit(focus);
+      return;
+    }
+    submit_timer_.Start(FROM_HERE, kSubmitFocusTimeout,
+                        base::BindOnce(&VoicePageController::OnSubmitTimeout,
+                                       weak_factory_.GetWeakPtr()));
+    return;
+  }
+  MaybeSendPendingEnter();
+}
+
+void VoicePageController::MaybeSendPendingEnter() {
+  if (!pending_submit_) {
+    return;
+  }
+  ActionResult error;
+  std::optional<Target> found = Resolve(pending_submit_->field, &error);
+  if (!found) {
+    FinishSubmit(error);
+    return;
+  }
+  if (found->tree->data().focus_id != found->node->id()) {
+    return;  // not yet
+  }
+  SendEnter(found->frame);
+  FinishSubmit(ActionResult::kDone);
+}
+
+void VoicePageController::OnSubmitTimeout() {
+  FinishSubmit(ActionResult::kFocusNotConfirmed);
+}
+
+void VoicePageController::FinishSubmit(ActionResult result) {
+  submit_timer_.Stop();
+  if (!pending_submit_) {
+    return;
+  }
+  SubmitCallback done = std::move(pending_submit_->done);
+  pending_submit_.reset();
+  std::move(done).Run(result);
+}
+
+void VoicePageController::SendEnter(content::RenderFrameHost* frame) {
+  content::RenderWidgetHost* widget = frame->GetRenderWidgetHost();
+  if (!widget) {
+    return;
+  }
+  for (blink::WebInputEvent::Type type :
+       {blink::WebInputEvent::Type::kRawKeyDown,
+        blink::WebInputEvent::Type::kChar,
+        blink::WebInputEvent::Type::kKeyUp}) {
+    input::NativeWebKeyboardEvent event(
+        type, blink::WebInputEvent::kNoModifiers, base::TimeTicks::Now());
+    event.dom_key = ui::DomKey::ENTER;
+    event.dom_code = static_cast<int>(ui::DomCode::ENTER);
+    event.native_key_code =
+        ui::KeycodeConverter::DomCodeToNativeKeycode(ui::DomCode::ENTER);
+    event.windows_key_code = ui::VKEY_RETURN;
+    event.is_system_key = false;
+    if (type != blink::WebInputEvent::Type::kKeyUp) {
+      event.text[0] = ui::VKEY_RETURN;
+      event.unmodified_text[0] = ui::VKEY_RETURN;
+    }
+    widget->ForwardKeyboardEvent(event);
+  }
+}
+
+VoicePageController::ActionResult VoicePageController::PlayMedia(
+    const PageNodeHandle& media) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(media, &error);
+  if (!found) {
+    return error;
+  }
+  const PageRole role = PageRoleFor(found->node->data());
+  if (role != PageRole::kVideo && role != PageRole::kAudio) {
+    return ActionResult::kNotMedia;
+  }
+  ui::AXActionData data;
+  data.action = ax::mojom::Action::kDoDefault;
+  return Perform(*found, data);
+}
+
+VoicePageController::ActionResult VoicePageController::PauseMedia() {
+  if (!active()) {
+    return ActionResult::kNotActive;
+  }
+  content::MediaSession* session =
+      content::MediaSession::GetIfExists(web_contents());
+  if (!session) {
+    return ActionResult::kNoMediaSession;
+  }
+  session->Suspend(content::MediaSession::SuspendType::kUI);
+  return ActionResult::kDone;
+}
+
+VoicePageController::ActionResult VoicePageController::ResumeMedia() {
+  if (!active()) {
+    return ActionResult::kNotActive;
+  }
+  content::MediaSession* session =
+      content::MediaSession::GetIfExists(web_contents());
+  if (!session) {
+    return ActionResult::kNoMediaSession;
+  }
+  // MediaSessionImpl::Resume(kUI) asks each player to play as triggered
+  // by the user (HTMLMediaElement::RequestPlay()): with sound, without the
+  // autoplay check. Players join the session once they have played.
+  session->Resume(content::MediaSession::SuspendType::kUI);
+  return ActionResult::kDone;
+}
+
+VoicePageController::ActionResult VoicePageController::Increment(
+    const PageNodeHandle& target) {
+  return Step(target, ax::mojom::Action::kIncrement);
+}
+
+VoicePageController::ActionResult VoicePageController::Decrement(
+    const PageNodeHandle& target) {
+  return Step(target, ax::mojom::Action::kDecrement);
+}
+
+VoicePageController::ActionResult VoicePageController::Step(
+    const PageNodeHandle& target,
+    ax::mojom::Action action) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(target, &error);
+  if (!found) {
+    return error;
+  }
+  if (found->node->data().GetRestriction() ==
+      ax::mojom::Restriction::kDisabled) {
+    return ActionResult::kDisabled;
+  }
+  const PageRole role = PageRoleFor(found->node->data());
+  if (role != PageRole::kSlider) {
+    return ActionResult::kNotEditable;
+  }
+  ui::AXActionData data;
+  data.action = action;
+  return Perform(*found, data);
+}
+
+VoicePageController::ActionResult VoicePageController::ScrollPage(
+    PageScrollAction action) {
+  if (!HasPageTree()) {
+    return active() ? ActionResult::kStale : ActionResult::kNotActive;
+  }
+  const HeldTree& main =
+      trees_.find(web_contents()->GetPrimaryMainFrame()->GetAXTreeID())->second;
+  ActionResult error;
+  std::optional<Target> found =
+      Resolve(PageNodeHandle{main.index, main.tree->root()->id()}, &error);
+  if (!found) {
+    return error;
+  }
+  ui::AXActionData data;
+  // Far enough past any page's end; Blink clamps it to the scroller's.
+  constexpr int kFarEnd = 100000000;
+  switch (action) {
+    case PageScrollAction::kDown:
+      data.action = ax::mojom::Action::kScrollDown;
+      break;
+    case PageScrollAction::kUp:
+      data.action = ax::mojom::Action::kScrollUp;
+      break;
+    case PageScrollAction::kLeft:
+      data.action = ax::mojom::Action::kScrollLeft;
+      break;
+    case PageScrollAction::kRight:
+      data.action = ax::mojom::Action::kScrollRight;
+      break;
+    case PageScrollAction::kTop:
+      data.action = ax::mojom::Action::kSetScrollOffset;
+      data.target_point = gfx::Point(0, 0);
+      break;
+    case PageScrollAction::kBottom:
+      data.action = ax::mojom::Action::kSetScrollOffset;
+      data.target_point = gfx::Point(0, kFarEnd);
+      break;
+  }
+  return Perform(*found, data);
+}
+
+}  // namespace voice
+}  // namespace molt_ai

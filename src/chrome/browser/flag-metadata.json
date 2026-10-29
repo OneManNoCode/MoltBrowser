@@ -7194,6 +7194,13 @@
     "expiry_milestone": -1
   },
   {
+    // MoltBrowser: voice mode (typed commands while the browser can't
+    // hear yet); kept until voice mode ships on by default.
+    "name": "molt-voice-mode",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     "name": "most-visited-tiles-customization",
     "owners": [ "clank-start@google.com", "huangs@google.com" ],
     "expiry_milestone": 145

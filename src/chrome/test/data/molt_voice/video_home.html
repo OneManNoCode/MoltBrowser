@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!-- A video site's home page, built like YouTube's: a masthead with a
+     search box (an ARIA combobox, as YouTube's is) and a search button.
+     Enter in the box or the button opens video_results.html. The page logs
+     the events it sees in window.moltEvents. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>VideoSite</title>
+<style>
+  ytd-app, ytd-masthead, ytd-searchbox { display: block; }
+  #masthead { height: 56px; }
+</style>
+</head>
+<body>
+<ytd-app>
+  <div id="masthead">
+    <ytd-masthead>
+      <button id="guide-button" aria-label="Guide">&#9776;</button>
+      <a id="logo" href="video_home.html" aria-label="VideoSite Home">VideoSite</a>
+      <ytd-searchbox>
+        <form id="search-form" action="video_results.html">
+          <input id="search" name="search_query" role="combobox"
+                 aria-label="Search" placeholder="Search" autocomplete="off">
+          <button id="search-button" aria-label="Search">&#128269;</button>
+        </form>
+      </ytd-searchbox>
+    </ytd-masthead>
+  </div>
+</ytd-app>
+<script>
+  window.moltEvents = [];
+  const box = document.getElementById('search');
+  for (const type of ['input', 'change', 'keydown', 'focus']) {
+    box.addEventListener(type, (e) => {
+      window.moltEvents.push(type + (e.isTrusted ? ':trusted' : ':untrusted'));
+    });
+  }
+  function go(e) {
+    e.preventDefault();
+    location.href = 'video_results.html?search_query=' +
+                    encodeURIComponent(box.value);
+  }
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      go(e);
+    }
+  });
+  document.getElementById('search-form').addEventListener('submit', go);
+</script>
+</body>
+</html>

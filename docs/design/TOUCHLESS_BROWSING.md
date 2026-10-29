@@ -1,6 +1,6 @@
 # Touchless browsing: MoltBrowser by voice alone
 
-Status: **proposal**, October 2026. Nothing here is built yet; §11 lists the owner's decisions that come before Phase 1.
+Status: **proposal**, October 2026. Phase 0 is built, behind `chrome://flags/#molt-voice-mode`, and waits for the build machine (§10); §11 lists the owner's decisions that come before Phase 1.
 
 The goal: a person who can't use a keyboard, mouse, touch screen or any other pointing device can use the whole browser with their voice. They hear what matters read back to them. If they have some sight, they see it large on screen.
 
@@ -98,9 +98,27 @@ Five layers, tried in this order:
 
 "What can I say?" lists what fits the current page.
 
+**Implementation note (Phase 0, round 37): the voice loop.** `molt_ai/voice/voice_controller_logic.h` decides, `voice_controller.h` does it in a window (§6.2, §6.5, §6.6). What each layer does today:
+1. **Direct commands** become steps: browser commands (back, forward, reload, home, zoom, full screen, tabs), the media session (pause, resume, seek, next), the tab's mute, accessibility actions on the page (press, focus, set text, submit, scroll, a volume slider's increment and decrement). A command that needs something the page lacks says so and what to say instead ("I can't find a volume control on this page. Say mute or unmute.").
+   - **Sites** (`voice_sites.h`): a small built-in table (YouTube, Google, DuckDuckGo, Wikipedia, Brave Search, Bing) with search pages for "search YouTube for ...". A spoken address becomes `https://` and the address, only when it reads as a host name. Any other name is searched for with the default search engine, and the browser says so: it never makes up a domain. Every URL passes `agent_safety::IsAllowedNavigationURL()` before it loads.
+   - **"Search for X"** types into the page's own search field (a search box, `type=search`, or a field whose name says "search") and submits it; without one, the known site's search page, else the default engine.
+2. **Choosing** (`voice_candidates.h`): from the list the browser read last, else the page's main list, else every numbered item. "The fourth one" is a position; a number is the position the browser read out, or, while numbers are shown, the number on screen (the list is then read with those numbers, so what is heard is what is seen). When two or more fit, the close ones are read back, numbered 1, 2, 3, and the answer picks among them ("the Live Aid one", "two"), or from the whole list if it names another.
+3. **Dictation** goes to the field the user chose (or the focused one, or the page's only one): "type" adds to its text, "delete the last word", "clear", "read it back", "submit" (a search field submits at once; any other form asks first). Never in a password, card or code field.
+4. **Tasks** and anything else the grammar leaves `kUnknown` reach a planner hook (`VoiceController::SetPlannerHook()`), empty until the planner comes; the browser says it can't do that yet. Routines say they come later.
+5. **Questions about the page:** not yet.
+
+"What can I say?" reads examples from the grammar's own table (`CommandInfos()`) that fit the page: choosing when there is a list, media when there is a player, dictation in a field, yes and no while a question waits.
+
 ### 5.3 Numbers on everything
 
 "Show numbers" (or on by default in voice mode) puts a large number on every link, button, field, result and video, as Windows Voice Access and macOS Voice Control do. The browser also groups the page's repeated items: search results, videos, products, emails, comments. It reads them as one numbered list, each item with its title and the parts that tell them apart (channel, author, duration, price, date).
+
+**Implementation note (round 37, built; not switched on yet):** `chrome/browser/ui/views/molt_ai/voice/`. The voice controller calls `VoiceOverlay` (`voice_overlay.h`, one per tab): `ShowNumbers(map)`, `HideNumbers()`, `SetCurrentItem(map, number)`, and a callback when the numbers hide by themselves.
+- **Where they are drawn:** a view laid over the page's view in each contents area (`ContentsContainerView`, the split-view slot, which already lays the enterprise watermark, the capture border and the Glic overlays over the page; small hooks marked `MoltBrowser:`). It paints to its own layer, takes no events or focus, and is invisible to assistive technology. A child widget, as the find bar uses, would add a window to activate and an accessibility root for nothing: the overlay is never interactive.
+- **Coordinates:** the page map's bounds are Blink's physical pixels relative to the page's viewport, zoom and frame offsets included; they become DIPs by the screen's scale factor, from the page view's origin. On macOS the trees leave out pinch zoom, so no numbers are drawn while a page is pinch-zoomed there.
+- **Placing badges** (`voice_overlay_layout.h`, pure and unit-tested): a badge goes on the item's top-left corner, else beside it (left, above, the other corners, right, below, centred), clamped inside the viewport and next to its item, never over another badge. Where none fits, it shrinks in two steps to a floor (14 DIPs of text at the default size). If that leaves items without a badge, the badges are placed again with the items closer together than a badge starting smaller, and the plan that numbers more items is kept. An item with no room even then gets no badge, and the plan counts it, so the controller can suggest zooming in. The current item is placed first. At most 500 badges.
+- **Following the page:** the page controller applies Blink's location and scroll changes to its trees, so bounds stay current as the page scrolls, and tells subscribers about every change. While numbers are shown, the overlay maps the page again at most ten times a second; if every number still names the same item (items added after the last are fine), the badges move with them, else they hide and the callback says the page changed. They also hide on navigation (a jump to a fragment aside) and when the tab is hidden.
+- **Readability:** black on yellow badges with a black border, at least 7:1; a thick yellow ring between black lines around the current item; the OS's colours in forced-colours mode; sizes from the user's text settings (`docs/ACCESSIBILITY.md` §5).
 
 ### 5.4 Speaking back
 
@@ -122,6 +140,13 @@ Five layers, tried in this order:
 - **Magnification** that follows the item being read or acted on: "zoom in", "zoom out", "bigger text".
 - **High-contrast and dark themes**, and Chromium's forced colours.
 - **Reading mode:** the article alone, in large text, read aloud with the sentence highlighted.
+
+**Implementation note (round 37, built; not switched on yet):** `VoiceOverlay::SetCaption(state, heard, status)` and `HideCaption()` (or the same for a window), `voice_caption_bar.h`.
+- **Where:** a bar under the page in each contents area; the window's caption shows in the area with the active tab and stays across tab switches. It takes its height from the page area, as the new tab page's footer does, so it covers nothing; a tab-modal dialog's scrim doesn't cover it.
+- **Fixed height:** two lines (the state with what was heard; what is happening), whatever they say. The page is resized only when the bar is shown or hidden, never per utterance, so a page (in MoltNet too) sees no resize tied to what the user says. It takes at most a third of the page area; its text shrinks to fit, down to a floor.
+- **Text:** what was heard and the status pass `SpeechSafeText()` and are capped at 200 characters; long lines end with an ellipsis.
+- **Assistive technology:** a polite live region named "Voice mode" (role status) with the state as its description; never focused, so the OS magnifier stays with the page.
+- **Not yet:** magnification that follows the item being read, and reading mode.
 
 ### 5.6 When things go wrong
 
@@ -173,6 +198,21 @@ Five layers, tried in this order:
 3. **Everything else goes to the planner:** the existing on-device model with constrained JSON output, given the page map and the conversation so far. It returns one action or a short plan, which is spoken and shown before it runs.
 4. **Context:** the last list the browser read, the last item chosen, and the current field. This lets "the next one", "play it again" and "read it back" work.
 
+**Implementation note (Phase 0, built):** `molt_ai/voice/voice_command.h`, `ParseVoiceCommand(utterance, ParseContext)`, std-only and unit-tested.
+- **Patterns, per language:** `voice_command_phrases_en.cc` holds ordered patterns (words, alternatives, optional groups and typed slots: a number, a length of time, a volume, a site, a choice, free text). They are matched left to right without backtracking, and the first that takes the whole utterance wins. `spoken_phrases_en.cc` holds the words: numbers, fillers, politeness, wake greetings, address words. A new language adds two files with the same tables. `docs/VOICE_COMMANDS.md` is generated from these tables, and its examples are checked to parse.
+- **Clean-up:** the wake phrase (with sound-alikes), fillers ("um") and politeness are dropped. "No. 4", "#4" and "50%" become words. Over 1,000 bytes, or invalid UTF-8, is refused, never cut down.
+- **Context:** "yes" and "no" count only after a yes/no question, the dictation edits only in a focused field, and a bare number or short description only right after a list. Everything else goes to the planner as `kUnknown`, with the text as heard.
+- **Trust stays with the browser:** a site comes out as host-like text ("youtube", "example.com"), never a URL. The browser resolves it and checks it with `agent_safety`. A choice is resolved by the matcher (§6.4), and an action still passes §7's confirmations.
+- **Not yet:** spoken punctuation in dictation, a site's name on its own ("YouTube" alone), and other languages.
+
+**Implementation note (round 37): from command to action.** `PlanUtterance(text, map, environment, state)` in `voice_controller_logic.h` is std-only and unit-tested on hand-built pages; it returns the steps to run, the words to say and the next conversation state.
+- **Context** (`ContextFor()`): a yes/no question is pending only on the page it was asked on and for 30 s; a list holds only on its page (the controller changes the page id at every committed navigation and every tab switch); a field is being typed into only on its page.
+- **The conversation state:** the last list read (which list, to find again in a newer map of the same page), the choices offered after an unclear one and the verb to apply, the current entry for "the next one", a pending confirmation and the steps it holds, the field typed into, the heading and link cursors, numbers shown, verbosity and speech rate, and what was said last for "repeat".
+- **Steps after a page loads:** a navigation or submit is followed by a wait; the controller resumes when the navigation has committed, the page has stopped loading and its accessibility tree has been quiet for 0.5 s (a page whose tree never rests is read 4 s after the commit; at most 15 s in all), then plans the follow-up: "YouTube is open", the results read, the page's title and its list, or the video of a page opened to play. A site that plays what it opens (YouTube does) gets 1.5 s to start before the browser clicks the video, which would pause it.
+- **Confirmations:** pressing anything whose name says buy, purchase, pay, order, checkout, delete, remove, send, post, publish, reply, comment, submit, confirm, subscribe, unsubscribe, donate, transfer, sign out or log out, a link to a sign-out address, anything on a page with a payment-card field (agent_safety treats card fields as sensitive), and submitting a form that isn't a search. The browser says "Say yes to press Buy now, or no to cancel." and runs the held steps only on a "yes" in that context; any other command drops the question.
+- **Page text is read, never obeyed:** it reaches only the spoken words and the matcher, after `SpeechSafeText()`. The steps come from the grammar's command and the map's structure; a page's "say yes to buy" is read as the entry it is.
+- **MoltNet:** voice mode doesn't start in a MoltNet window (§7.4): no accessibility mode is taken, and a command only hears "Voice mode is off in MoltNet windows."
+
 ### 6.3 Page map
 
 - **Source:** `WebContents::RequestAXTreeSnapshot()` gives the page's accessibility tree: roles, names, states, values, headings, landmarks, links and media, across frames and shadow DOM. This is the same structure screen readers use.
@@ -180,6 +220,19 @@ Five layers, tried in this order:
 - **The browser UI too:** the views have accessibility trees, so the browser's own bubbles, prompts, menus and settings get numbers and names.
 - **Fallback:** where the accessibility tree is poor (canvas apps, unlabeled controls), the vision model describes the screenshot (masked as today), and the existing element snapshot fills gaps.
 - **Shared with the agent:** this replaces its 40-element snapshot with a richer, more robust one.
+
+**Implementation (round 36, Phase 0).** In `chrome/browser/molt_ai/voice/`:
+- **Source:** live trees rather than snapshots. `VoicePageController` (`voice_page_controller.*`, one per tab) holds a scoped accessibility mode on its tab while voice mode is on, and keeps each frame's `ui::AXTree` from `AccessibilityEventReceived()` and, since round 37, the location and scroll changes Blink sends apart (`AccessibilityLocationChangesReceived()`), in the browser process. Actions need the renderer's accessibility to stay on anyway, and a snapshot's node ids would not be the live ones. The mode is `kWebContents | kExtendedProperties`: the second adds checked states, placeholders, heading levels, list positions, HTML tags, autocomplete and default actions. It has no `kNativeAPIs` (no platform tree), `kInlineTextBoxes`, `kHTML` or `kScreenReader`. The reasons are in the controller's `.cc`.
+- **Joining frames:** `ax_page_source.*` walks the top-level tree and joins each frame's tree under its host (child tree ids), each tree at most once. Only the tab's own primary-page frames are looked up.
+- **The map:** `page_map.*` is std-only, over a flat node list.
+  - **Items:** everything that can be acted on and isn't hidden is numbered in reading order, on screen or not, so scrolling never changes a number. Off-screen items are marked; the overlay will number only the visible ones.
+  - **Lists:** semantic lists, feeds, list boxes and table rows, and repeated structures. A repeated structure is a container whose children (at least 3, not inline text, each holding an action) have similar shapes: the roles and depths of their content, ignoring wrapper divs and custom elements, and how many links, headings and buttons they hold.
+  - **Entries:** each has a primary action (the link in or around its heading), a title (that link's visible text, not a long `aria-label`), a channel or site, and typed fields: duration, counts and date (`page_map_text.*`, English for now).
+  - **Ranking:** lists are ranked by prominence (entries, their size, titles, fields and headings, the main landmark; navigation counts against), so "the results" is `lists[0]`.
+  - **Text and secrets:** all text is cleaned for speech (no control, bidi or invisible characters, capped). Credential fields are marked (agent_safety's classification plus their labels), and their values are never kept.
+  - **Bounds:** the work is capped (20,000 nodes, depth 256, a work budget).
+  - **Tests:** unit tests with hand-built YouTube-, Google- and Wikipedia-like trees; `molt_page_map_fuzzer`.
+- **Not yet:** the browser UI's own tree, speech, and the agent acting through `PageNodeHandle`s instead of its isolated-world scripts. The numbers overlay (round 37) draws `PageItem::bounds` (§5.3).
 
 ### 6.4 Matching what was said to what is on screen
 
@@ -192,6 +245,12 @@ Five layers, tried in this order:
 - **Thresholds:** below a confidence threshold, or when two items are close, the browser asks.
 - **Tests:** every scorer is a pure function with tests built from real result lists and real recognition errors.
 
+**Implementation note (Phase 0, built):** `molt_ai/voice/spoken_choice.h`, `MatchSpokenChoice(ChoiceRef, candidates, MatchOptions)`, std-only and unit-tested. The page map fills `ChoiceCandidate`s: position, on-screen number, a coarse role, the title and typed fields (author, source, date, duration, counts, price, details). The header documents the role mapping from the accessibility tree.
+- **References:** a position ("the fourth one", "the second to last video"), a number ("number 12": the number shown on screen, else the position), a relation to the current item ("the next one"), or a description with "by" and "from" cues ("the live one by Queen"). A description can also carry an ordinal ("the second live one"). Role words narrow the items only when some item has that role.
+- **Scoring:** words are folded (case, punctuation, Latin accents) and compared exactly (1.0), as plurals (0.95), or by sound with MoltBrowser's own phonetic key (`phonetic_key.h`: 13 sound classes, a banded edit distance weighted for close sounds, at most 0.9). Words are also joined across two or three words on either side, for a recognizer's splits and merges ("rap city" / "rhapsody"). Each word is weighed by how few items it matches: a word every item shares counts 0.25, one no item has 0.5, and a "by" word at least 0.6. A sound-alike counts 0.6 of its score when another item has the word as spelled, because the recognizer is biased toward on-screen words (§6.1).
+- **Outcome:** below 0.5 nothing matches. A lead of 0.15 over the next item is unique. Otherwise the items within 0.15 are ambiguous (at most five, read back to the user). The ranked items and their scores always come with the outcome. Descriptions about what items don't say ("the shortest one") score low or tie, and go to the user or the planner.
+- **Bounds:** at most 1,000 items, 12 fields, a 1 KiB title and 256-byte fields, and 12 description words. 500 items of about 300 bytes are matched in about 4.4 ms on one desktop x86-64 core (target: 5 ms); a page of 20 results takes well under a millisecond. Non-Latin text only matches exactly.
+
 ### 6.5 Actions
 
 - **On pages:** accessibility actions (default action/click, focus, set value, scroll into view, increment and decrement). Blink treats these as user interaction, as for OS assistive technology, so media starts with sound, full screen works, and pages see a trusted click.
@@ -199,13 +258,33 @@ Five layers, tried in this order:
 - **Browser commands:** Chromium's command IDs (back, reload, new tab, zoom, find) and the media session for playback control.
 - **Safety:** every action still passes `agent_safety` (http(s) only, credential fields, untrusted-text fencing) and §7's confirmations.
 
+**Implementation (round 36, Phase 0).** `VoicePageController` acts on the map's `PageNodeHandle`s through `RenderFrameHost::AccessibilityPerformAction()`:
+- **Press:** `kDoDefault`. Blink's `AXObject::OnNativeClickAction()` notifies user activation, then dispatches the element's pointer, mouse and click events. The browser accepts the activation, so unmuted media and full screen are allowed afterwards.
+- **Focus** and **scroll into view:** `kFocus` and `kScrollToMakeVisible`.
+- **Set text:** `kSetValue` (`AXNodeObject::OnNativeSetValueAction()`), which fires the `input` and `change` events forms listen to. It is refused for protected and credential fields, read-only, disabled and non-text fields. The text is cleaned first (`TypedText()`).
+- **Submit:** presses the form's submit input when there is one. Otherwise it focuses the field, waits until its frame reports the focus there (key events travel apart from accessibility actions), and sends Enter to the frame's widget, as the keyboard does.
+- **Media:**
+  - **Play:** the element's default action. The page's player starts with sound: the click carries user activation. The click goes to the `<video>` itself, so this works where the site's player plays on a click (YouTube's does). A bare `<video controls>` doesn't play from it, because Blink's controls see only clicks on their own buttons: press the controls' play button, which is on the map as a button inside the video. Chromium's accessibility media actions (`kResumeMedia`, `kSuspendMedia`) do nothing in web pages.
+  - **Pause and resume:** the tab's media session, as the media keys do. Resume plays as triggered by the user, so the sound stays on.
+- **Stale targets:** before each action the handle is found again. Its frame must be this tab's, active, in the primary page and an http(s) document, and the node must be in that frame's current tree. A handle from an earlier document is refused.
+- **Turning it off:** `Stop()` releases the mode and drops the trees.
+- **Tests:** the browser tests (`voice_page_controller_browsertest.cc`, pages in `chrome/test/data/molt_voice/`) drive a video site from search to sound, a search engine's results, a sign-in form and a cross-site frame through the controller alone. They run on the build machine.
+
 ### 6.6 Speaking and showing
 
 - **Voices:**
   - Phase 1 uses `content::TtsController` with the platform's voices (Windows SAPI/OneCore, macOS, speech-dispatcher on Linux).
   - Phase 2 adds a bundled neural voice in the speech service, registered through `TtsEngineDelegate`, so it sounds the same on every OS.
   - In MoltNet the voice list pages see through `speechSynthesis.getVoices()` is then the same everywhere, which closes a fingerprinting surface.
-- **The overlay:** a MoltBrowser view above the page holds the caption bar, the numbers and the focus ring. It is drawn by the browser, so pages can't read or fake it.
+- **The overlay:** MoltBrowser views above the page (the numbers and the focus ring) and below it (the caption bar). They are drawn by the browser, so pages can't read or fake them (§5.3, §5.5).
+
+**Implementation note (Phase 0, round 37): spoken answers.** `molt_ai/voice/voice_speech.h` speaks through `content::TtsController` with the platform's voices, at the user's rate ("speak faster" and "slower" step it by 1.25, from 0.5 to 2.5).
+- **Interruptible:** a new command or "stop" silences voice mode's speech, current and queued (it leaves a page's own speech alone when voice mode isn't speaking); each answer interrupts whatever was being said.
+- **Utterances belong to the profile**, not the tab, so a navigation doesn't cut "YouTube is open" short. Long readings are spoken in chunks of at most 1,200 characters, so stopping is quick.
+- **Verbosity:** brief reads a list's count, normal the first five results (ten headings or links), full all of them with their dates, views and details.
+- **Platforms:** Windows and macOS need nothing. On Linux, Chromium's speech needs speech-dispatcher (`libspeechd.so.2`) and the `--enable-speech-dispatcher` switch; without them voice mode is silent and only the caption shows what it says. Whether MoltBrowser's Linux launcher should pass the switch is the owner's call: it also gives pages `speechSynthesis` voices, a fingerprinting surface in MoltNet (see Voices above).
+- **Showing:** `VoiceController::Observer` gives the overlay the caption (state, what was heard, what is happening), what is said, "show numbers" and the item acted on; the agent panel's voice field shows the same as text.
+- **Typed commands until the speech service:** with `chrome://flags/#molt-voice-mode` on, the Agent mode panel (`chrome://molt-ai-agent`) has a "Type a voice command" field for keyboard users and the build machine. It sends what was typed to its window's controller (at most 1,000 bytes, checked in the handler); the answer is spoken and listed as text.
 
 ### 6.7 Site skills
 
@@ -254,9 +333,9 @@ In voice mode, the browser gives them a **voice gesture** instead. It is a one-t
 The design and threat model get their own security review before they ship (Phase 3).
 
 ### 7.4 MoltNet
-- **On-device:** voice mode works in MoltNet windows, and all speech stays local.
-- **Pages don't hear the user:** they never receive the user's voice through voice mode. They only see the text the browser types and the clicks it makes, as with a keyboard.
-- **Not detectable:** pages can't tell voice mode is on. The overlay isn't part of the page, and accessibility actions look like ordinary clicks.
+- **On-device:** all speech stays local.
+- **Pages don't hear the user:** they never receive the user's voice through voice mode. They only see the text the browser types and the clicks it makes.
+- **Assistive technology can be noticed:** the overlay isn't part of the page, but a page can sometimes tell that assistive technology is acting, as with a screen reader in any browser. Accessibility actions differ in small ways from a mouse and keyboard, and keeping the accessibility tree costs measurable time. Voice-mode users would stand out from other MoltNet users. So voice mode is off in MoltNet windows by default, and turning it on there says so; making its actions indistinguishable is a Phase 3 item.
 
 ## 8. Privacy
 
@@ -268,15 +347,15 @@ The design and threat model get their own security review before they ship (Phas
 
 | Need | Option | License | Notes |
 |---|---|---|---|
-| Wake phrase | sherpa-onnx keyword spotting (open vocabulary: the phrase is text, no training) | Apache-2.0 (library); models per model card | Any phrase the user chooses; English and Chinese models today. |
+| Wake phrase | sherpa-onnx keyword spotting (open vocabulary: the phrase is text, no training) | Apache-2.0 (library); models per model card | Any phrase the user chooses; English and Chinese models today. Measured: misses 7–15% of clean wake phrases and more in noise, mostly for particular voices, so the threshold adapts per user. |
 | | openWakeWord | Apache-2.0 code, **non-commercial** pre-trained models (CC BY-NC-SA 4.0) | Not usable as is. |
 | Voice activity | Silero VAD (through sherpa-onnx, or in whisper.cpp) | MIT | Small; handles slow speech with tuning. |
-| Streaming recognition | sherpa-onnx streaming Zipformer transducers | Apache-2.0 | True streaming with partial results, real time on one CPU core for small models; multilingual models exist. |
+| Streaming recognition | sherpa-onnx streaming transducers: Kroko EN (a Zipformer), or NeMo FastConformer | Apache-2.0 (library); Kroko CC BY-SA 4.0, FastConformer CC BY 4.0 | True streaming with partial results; multilingual models exist. Measured: Kroko is as accurate on commands as anything but Whisper small.en, at 4–6% of a core; the Zipformers trained on audiobooks only miss modern names. |
 | | whisper.cpp (already bundled) | MIT | Accurate, but not streaming. Keep it for long dictation and for languages the streaming models lack. |
 | Speaker verification | sherpa-onnx speaker embeddings | Apache-2.0 | Optional. |
 | Voices | Platform voices through `TtsController` | — | Phase 1: no download; the voices differ per OS. |
-| | Kokoro-82M (through sherpa-onnx) | Apache-2.0 | 54 voices, 8 languages, 24 kHz; natural; small enough for a CPU. |
-| | Piper | GPL-3.0 (since its move to OHF-Voice; compatible with MoltBrowser's GPLv3); voices per model card | Very fast and light; many languages. |
+| | Kokoro-82M (through sherpa-onnx) | Apache-2.0 | 54 voices, 8 languages, 24 kHz; natural. Measured: 0.7–1.5 s to the first sound on a fast CPU, so for fast machines only. |
+| | Piper | GPL-3.0 (since its move to OHF-Voice; compatible with MoltBrowser's GPLv3); voices per model card | Very fast and light (first sound in under 0.15 s, measured); many languages. |
 
 Models and open-source agents for acting on pages (checked October 2026):
 
@@ -293,7 +372,10 @@ No maintained open-source voice-first browser exists: the voice tools for disabl
 
 **Recommendation:** sherpa-onnx in the speech service, for the wake phrase, voice activity, streaming recognition, speaker verification and the bundled neural voice. It is one Apache-2.0 library that also runs on Android and iOS. Keep whisper.cpp for long-form dictation.
 - **What it costs:** ONNX Runtime (MIT) as a new vendored dependency, sandboxed like llama.cpp.
-- **Next step:** a measurement spike (Phase 0) confirms latency, accuracy, CPU use and binary size against whisper.cpp on the minimum hardware before the choice is final.
+- **Measured (Phase 0):** [VOICE_BENCH.md](../VOICE_BENCH.md) has latency, accuracy, CPU use, memory and size against whisper.cpp, from a server VM; the build machine re-runs the kit on the minimum hardware before the choice is final. The numbers keep sherpa-onnx and change two model choices:
+  - **Kroko EN for streaming,** not the LibriSpeech Zipformers: those were trained on audiobooks and miss modern names ("you tube" for YouTube), while Kroko gets 70% of the spoken commands exactly right (Whisper small.en 78%, the bundled Whisper tiny.en 68%).
+  - **A Piper voice for the bundled neural voice on modest hardware,** Kokoro only on fast machines. sherpa-onnx 2.x reads English through a lexicon only and skips unknown words, so either needs MoltBrowser's own text normalization in front of it.
+  - Echo cancellation with the browser's output as the reference is a requirement: without it, recognizers transcribe the browser's own voice.
 - **Downloads:** model files come from the projects' GitHub releases with pinned hashes, as for the other models.
 
 ## 10. Phases
@@ -309,6 +391,11 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **The test harness of §12.**
 
 **Exit:** a scripted run (text in, no microphone yet) opens YouTube, searches, reads the results and plays the fourth by number and by name.
+
+**Status (round 37): built; the exit run waits for the build machine.**
+- **Done:** the page map and accessibility actions (round 36, §6.3, §6.5); the grammar and the matcher (round 36, §6.2, §6.4); the accessibility audit of MoltBrowser's pages (round 36, `docs/ACCESSIBILITY.md`); spoken output through `TtsController` and the voice loop that joins them (round 37, §5.2, §6.2, §6.6); the numbers overlay and caption bar (round 37's overlay workstream, §5.3, §5.5).
+- **The exit criterion** is `VoiceControllerBrowserTest.TheOwnersScenario` (`chrome/browser/molt_ai/voice/voice_controller_browsertest.cc`): typed utterances open the fixture video site by name, search it, hear the 20 results (captured from a fake TTS platform), play the fourth with sound, pause, go back, and play "the live one by Queen" after the browser asks which of three. It runs on the build machine (`docs/BUILD_MACHINE_CHECKLIST.md` §5.1), then by hand on real YouTube with each OS's voices (§7.3).
+- **Still open:** the engine measurements (`tools/voice_bench/`, finishing); the browser UI's own tree in the page map; the §12 synthetic speech set (Phase 1, with the speech service).
 
 ### Phase 1: Voice mode (about 3 to 4 rounds)
 - **Voice:** the speech service with echo cancellation, voice activity, the wake phrase and streaming recognition.
@@ -339,6 +426,7 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **Speaker verification.**
 - **The defenses** against page audio and replay, with measurements.
 - **Every browser prompt and dialog operable by voice:** permissions, downloads, saved passwords, MoltNet.
+- **Voice mode in MoltNet windows:** actions that look like a mouse and keyboard, and an accessibility tree that costs a page nothing it can measure; until then, off there by default (§7.4).
 - **A security review** (red team) of the voice channel.
 
 **Exit:** no page audio or replay in the test set triggers an action, and every browser prompt is answerable by voice.

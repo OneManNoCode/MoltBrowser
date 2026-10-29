@@ -342,7 +342,7 @@ def plugin_flags(platform, root, dev=False):
 #
 # DEFINES and CFLAGS above are Linux x64's (C++). The other platforms'
 # lists below are read off the same BUILD.gn files under their own args
-# (configs/windows-x64.gn: not an official build, so DCHECKs are on;
+# (configs/windows-x64.gn: not an official build, with DCHECKs turned off;
 # configs/macos-arm64.gn: official). C files get -std=c11 and no C++-only
 # flags; Objective-C++ gets ARC, as every Mac target does.
 
@@ -354,8 +354,9 @@ _LIB_DEFINES = [d for d in DEFINES if d.startswith((
     "_LIBCPP_", "_LIBCXXABI_", "CR_LIBCXX"))]
 
 WIN_DEFINES = [
-    # build/config/BUILD.gn:feature_flags + release (not official: DCHECKs
-    # on, build/config/dcheck_always_on.gni)
+    # build/config/BUILD.gn:feature_flags + release. DCHECK_ALWAYS_ON stays
+    # although windows-x64.gn turns DCHECKs off, so code under DCHECK_IS_ON()
+    # is type-checked too.
     "NDEBUG", "NVALGRIND", "DYNAMIC_ANNOTATIONS_ENABLED=0",
     "DCHECK_ALWAYS_ON=1", "USE_AURA=1",
     # build/config/win:runtime_library, :winver, :unicode, :lean_and_mean,

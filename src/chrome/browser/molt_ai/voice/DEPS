@@ -1,0 +1,20 @@
+include_rules = [
+  # MOLT_RAW_PTR_EXCLUSION, on the page map builder's pointer to its input
+  # (page_map.cc is std-only).
+  "+chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h",
+]
+
+specific_include_rules = {
+  # Voice mode speaks through the platform's voices (TtsController, as
+  # docs/design/TOUCHLESS_BROWSING.md §6.6 chose): SpeakOrEnqueue() with
+  # profile-owned utterances, and Stop() only while voice mode speaks.
+  # chrome/browser/DEPS asks for content/browser/speech's review before
+  # this is allowed elsewhere; it is allowed here only, for these files.
+  r"voice_speech\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+  # The browser test installs a fake TTS platform to hear what is said.
+  r"voice_controller_browsertest\.cc": [
+    "+content/public/browser/tts_controller.h",
+  ],
+}
