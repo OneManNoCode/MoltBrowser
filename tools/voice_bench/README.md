@@ -24,6 +24,7 @@ the repository, never from inside the data directory.
 | `testset/utterances.tsv` | 300 spoken commands in seven categories, with accepted alternatives and the names that must come out right. |
 | `testset/pages.json` | 12 simulated screens of 20 results each (titles and channels), for biasing and choosing. |
 | `testset/lexicon-extra.txt` | Pronunciations the TTS lexicons lack for the test set's words. |
+| `testset/page_prose.txt` | 400 sentences of MoltBrowser's own docs, read over music as "page audio" for the false wake-up test. |
 | `gen_audio.py`, `audio.py` | Renders the test audio: 14 voices (speeds 0.75–1.1, pitch shifts), noise, babble, music and the browser's own speech; wake-phrase clips; page audio; real speech sets. |
 | `catalog.py` | The engines and models measured, and the test voices. |
 | `run_bench.py` | Builds the driver and runs every measurement, one at a time under an optional lock file, three runs for timings. |

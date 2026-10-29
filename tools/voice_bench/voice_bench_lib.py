@@ -285,6 +285,82 @@ def hotwords_arg(phrases, case="upper"):
     return "/".join(out)
 
 
+# ------------------------------------------------------------------ TTS lexicons
+
+_ESPEAK_TO_MISAKI = [("e ɪ", "A"), ("a ɪ", "I"), ("o ʊ", "O"), ("a ʊ", "W"),
+                     ("ɔ ɪ", "Y"), ("d ʒ", "ʤ"), ("t ʃ", "ʧ")]
+
+
+def espeak_to_misaki(phones):
+    """Converts an espeak-style US entry ("vˈ ɪ d ɪ o ʊ z") to Kokoro's
+    misaki phone set ("v ˈ ɪ d ɪ O z"). Approximate, for test audio."""
+    chars = [c for c in phones.replace(" ", "") if not unicode_combining(c)]
+    s = " ".join(chars)
+    s = s.replace("ː", "").replace("ɐ", "ə").replace("ᵻ", "ɪ").replace("ɚ", "ə ɹ")
+    s = re.sub(r"\s+", " ", s).strip()
+    for a, b in _ESPEAK_TO_MISAKI:
+        s = re.sub(r"(?<!\S)%s(?!\S)" % re.escape(a), b, s)
+        # Stress marks may sit inside a diphthong in espeak's output.
+        s = s.replace(a.replace(" ", " ˈ "), "ˈ " + b).replace(a.replace(" ", " ˌ "), "ˌ " + b)
+    s = re.sub(r"ɜ(?! ɹ)", "ɜ ɹ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def unicode_combining(c):
+    return unicodedata.combining(c) != 0
+
+
+def read_new_lexicon(path):
+    out = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or "||" not in line:
+                continue
+            w, _, p = line.partition("||")
+            w, p = w.strip(), p.strip()
+            if w and p and w not in out:
+                out[w] = p
+    return out
+
+
+def read_old_lexicon(path):
+    out = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip("\n").split(" ", 1)
+            if len(parts) == 2 and parts[0] and parts[0] not in out:
+                out[parts[0]] = parts[1].strip()
+    return out
+
+
+def tts_words(text):
+    return [w.lower() for w in re.findall(r"[A-Za-z][A-Za-z']*", text)]
+
+
+def extract_doc_sentences(paths, limit):
+    """Plain sentences (6 to 30 words) from Markdown files, without any
+    that name a wake phrase. How testset/page_prose.txt was made."""
+    out = []
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        text = re.sub(r"```.*?```", " ", text, flags=re.S)
+        text = re.sub(r"`[^`]*`|\[([^\]]*)\]\([^)]*\)|[#*>|_]", lambda m: m.group(1) or " ", text)
+        for s in re.split(r"(?<=[.!?])\s+", text):
+            s = " ".join(s.split())
+            words = tts_words(s)
+            if 6 <= len(words) <= 30 and not re.search(r"\b(hey|hello) molt", s, re.I):
+                out.append(s)
+    return out[:limit]
+
+
+def docs_sentences(limit):
+    """The page-audio prose (testset/page_prose.txt), at most limit lines."""
+    with open(os.path.join(TESTSET_DIR, "page_prose.txt"), encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    return lines[:limit]
+
+
 # ------------------------------------------------------------------ protobuf
 
 

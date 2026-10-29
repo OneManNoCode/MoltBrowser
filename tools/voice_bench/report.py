@@ -494,26 +494,25 @@ class Report:
     def lexicon_coverage(self):
         """How many words of real page text each TTS lexicon lacks: since
         sherpa-onnx 2.0 those words are skipped (not spelled, not guessed)."""
-        import gen_audio
         lexicons = {}
         p = os.path.join(self.data, "a", "tts-lexicon-en-us", "lexicon-en-us.txt")
         if os.path.exists(p):
-            lexicons["lexicon-en-us.txt (Piper/VITS, Matcha)"] = set(gen_audio.read_new_lexicon(p))
+            lexicons["lexicon-en-us.txt (Piper/VITS, Matcha)"] = set(vbl.read_new_lexicon(p))
         p = os.path.join(self.data, "a", "tts-kokoro-v1_0-int8", "lexicon-us-en.txt")
         if os.path.exists(p):
-            lexicons["lexicon-us-en.txt (Kokoro v1.0)"] = set(gen_audio.read_old_lexicon(p))
+            lexicons["lexicon-us-en.txt (Kokoro v1.0)"] = set(vbl.read_old_lexicon(p))
         if not lexicons:
             return ""
         corpora = {
             "test-set commands": [u["text"] for u in self.utts.values()],
             "result titles and channels": [t for pg in self.pages.values()
                                            for it in pg["items"] for t in it],
-            "docs prose (400 sentences)": gen_audio.docs_sentences(400),
+            "docs prose (400 sentences)": vbl.docs_sentences(400),
         }
         rows, out = [], {}
         for lname, lex in lexicons.items():
             for cname, texts in corpora.items():
-                words = [w for t in texts for w in gen_audio.tts_words(t)]
+                words = [w for t in texts for w in vbl.tts_words(t)]
                 miss = [w for w in words if w not in lex]
                 examples = sorted(set(miss), key=lambda w: -miss.count(w))[:8]
                 out.setdefault(lname, {})[cname] = {"words": len(words), "missing": len(miss)}

@@ -85,57 +85,6 @@ def default_driver(data):
 
 # ------------------------------------------------------------------ lexicons
 
-_ESPEAK_TO_MISAKI = [("e ɪ", "A"), ("a ɪ", "I"), ("o ʊ", "O"), ("a ʊ", "W"),
-                     ("ɔ ɪ", "Y"), ("d ʒ", "ʤ"), ("t ʃ", "ʧ")]
-
-
-def espeak_to_misaki(phones):
-    """Converts an espeak-style US entry ("vˈ ɪ d ɪ o ʊ z") to Kokoro's
-    misaki phone set ("v ˈ ɪ d ɪ O z"). Approximate, for test audio."""
-    chars = [c for c in phones.replace(" ", "") if not unicode_combining(c)]
-    s = " ".join(chars)
-    s = s.replace("ː", "").replace("ɐ", "ə").replace("ᵻ", "ɪ").replace("ɚ", "ə ɹ")
-    s = re.sub(r"\s+", " ", s).strip()
-    for a, b in _ESPEAK_TO_MISAKI:
-        s = re.sub(r"(?<!\S)%s(?!\S)" % re.escape(a), b, s)
-        # Stress marks may sit inside a diphthong in espeak's output.
-        s = s.replace(a.replace(" ", " ˈ "), "ˈ " + b).replace(a.replace(" ", " ˌ "), "ˌ " + b)
-    s = re.sub(r"ɜ(?! ɹ)", "ɜ ɹ", s)
-    return re.sub(r"\s+", " ", s).strip()
-
-
-def unicode_combining(c):
-    import unicodedata
-    return unicodedata.combining(c) != 0
-
-
-def read_new_lexicon(path):
-    out = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#") or "||" not in line:
-                continue
-            w, _, p = line.partition("||")
-            w, p = w.strip(), p.strip()
-            if w and p and w not in out:
-                out[w] = p
-    return out
-
-
-def read_old_lexicon(path):
-    out = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            parts = line.rstrip("\n").split(" ", 1)
-            if len(parts) == 2 and parts[0] and parts[0] not in out:
-                out[parts[0]] = parts[1].strip()
-    return out
-
-
-def tts_words(text):
-    return [w.lower() for w in re.findall(r"[A-Za-z][A-Za-z']*", text)]
-
-
 def tts_text(text):
     """What the TTS reads: hyphens as spaces, a full stop at the end."""
     t = text.replace("-", " ").strip()
@@ -150,10 +99,10 @@ def prepare_lexicons(data, texts):
     lex_dir = os.path.join(WORK, "lex")
     os.makedirs(lex_dir, exist_ok=True)
     base_path = os.path.join(art_dir(data, "tts-lexicon-en-us"), "lexicon-en-us.txt")
-    base = read_new_lexicon(base_path)
-    extra = read_new_lexicon(os.path.join(HERE, "testset", "lexicon-extra.txt"))
-    kok = read_old_lexicon(os.path.join(art_dir(data, "tts-kokoro-v1_0-int8"), "lexicon-us-en.txt"))
-    needed = sorted({w for t in texts for w in tts_words(t)})
+    base = vbl.read_new_lexicon(base_path)
+    extra = vbl.read_new_lexicon(os.path.join(HERE, "testset", "lexicon-extra.txt"))
+    kok = vbl.read_old_lexicon(os.path.join(art_dir(data, "tts-kokoro-v1_0-int8"), "lexicon-us-en.txt"))
+    needed = sorted({w for t in texts for w in vbl.tts_words(t)})
     merged_new = dict(base)
     merged_new.update(extra)
     with open(base_path, encoding="utf-8") as f, \
@@ -165,7 +114,7 @@ def prepare_lexicons(data, texts):
     added = {}
     for w in needed:
         if w not in kok and w in merged_new:
-            added[w] = espeak_to_misaki(merged_new[w])
+            added[w] = vbl.espeak_to_misaki(merged_new[w])
     with open(os.path.join(lex_dir, "kokoro.txt"), "w", encoding="utf-8") as out:
         for w, p in kok.items():
             out.write("%s %s\n" % (w, p))
@@ -305,28 +254,6 @@ def page_readout(page, start=0, count=5):
     return " ".join(parts)
 
 
-def docs_sentences(limit):
-    """Plain sentences from the repository's own docs, for long page
-    audio. Sentences naming a wake phrase are left out."""
-    root = os.path.dirname(os.path.dirname(HERE))
-    out = []
-    for rel in ("docs/design/TOUCHLESS_BROWSING.md", "docs/design/SANDBOXED_INFERENCE.md",
-                "docs/design/AGENT_ACTIONS.md", "docs/FINGERPRINTING.md"):
-        path = os.path.join(root, rel)
-        if not os.path.exists(path):
-            continue
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        text = re.sub(r"```.*?```", " ", text, flags=re.S)
-        text = re.sub(r"`[^`]*`|\[([^\]]*)\]\([^)]*\)|[#*>|_]", lambda m: m.group(1) or " ", text)
-        for s in re.split(r"(?<=[.!?])\s+", text):
-            s = " ".join(s.split())
-            words = tts_words(s)
-            if 6 <= len(words) <= 30 and not re.search(r"\b(hey|hello) molt", s, re.I):
-                out.append(s)
-    return out[:limit]
-
-
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--dir", default=fetch.default_dir())
@@ -347,7 +274,7 @@ def main(argv=None):
     ncmd = 100 if not args.quick else 20
     voices = [v[0] for v in catalog.VOICES]
     cmd_utts = [u for u in utts if u["category"] not in ("chatter",)][::2][:ncmd]
-    prose = docs_sentences(400 if not args.quick else 40)
+    prose = vbl.docs_sentences(400 if not args.quick else 40)
 
     # Every text the TTS will read.
     texts = [u["text"] for u in utts] + [ph for ph in catalog.WAKE_PHRASES] + prose
@@ -358,7 +285,7 @@ def main(argv=None):
     # Page titles and docs prose are only page audio: their unknown words
     # are allowed (the TTS skips them, as it would on a real page); the
     # test utterances and wake phrases must be complete.
-    strict = {w for t in [u["text"] for u in utts] + catalog.WAKE_PHRASES for w in tts_words(t)}
+    strict = {w for t in [u["text"] for u in utts] + catalog.WAKE_PHRASES for w in vbl.tts_words(t)}
     for lex in ("vits", "kokoro"):
         bad = [w for w in miss[lex] if w in strict]
         if bad:

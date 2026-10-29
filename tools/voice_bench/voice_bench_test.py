@@ -275,12 +275,10 @@ class FetchTest(unittest.TestCase):
 
 class LexiconTest(unittest.TestCase):
     def test_espeak_to_misaki(self):
-        sys.path.insert(0, HERE)
-        import gen_audio
-        self.assertEqual(gen_audio.espeak_to_misaki("vˈ ɪ d ɪ o ʊ z"), "v ˈ ɪ d ɪ O z")
-        self.assertEqual(gen_audio.espeak_to_misaki("d ʒ ˈ iː m e ɪ l"), "ʤ ˈ i m A l")
-        self.assertEqual(gen_audio.espeak_to_misaki("bˈ ɜː d"), "b ˈ ɜ ɹ d")
-        self.assertEqual(gen_audio.espeak_to_misaki("bˈ ʌ ɾ ɚ"), "b ˈ ʌ ɾ ə ɹ")
+        self.assertEqual(vbl.espeak_to_misaki("vˈ ɪ d ɪ o ʊ z"), "v ˈ ɪ d ɪ O z")
+        self.assertEqual(vbl.espeak_to_misaki("d ʒ ˈ iː m e ɪ l"), "ʤ ˈ i m A l")
+        self.assertEqual(vbl.espeak_to_misaki("bˈ ɜː d"), "b ˈ ɜ ɹ d")
+        self.assertEqual(vbl.espeak_to_misaki("bˈ ʌ ɾ ɚ"), "b ˈ ʌ ɾ ə ɹ")
 
     def test_extra_lexicon_format(self):
         path = os.path.join(HERE, "testset", "lexicon-extra.txt")
