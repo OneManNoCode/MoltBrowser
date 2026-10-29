@@ -907,7 +907,13 @@ const memoryUrlSearches = [];
 
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
-   listeners: ['#searchForm:submit', '.card.ai:click', '.card.net:click']},
+   listeners: ['#searchForm:submit'],
+   after(window) {
+     // The cards are plain links (keyboard and screen readers get them
+     // for free).
+     const cards = window.document.querySelectorAll('nav a.card[href^="molt://"]');
+     assert.strictEqual(cards.length, 3, 'three card links');
+   }},
   {name: 'molt://memory', file: 'molt_ai_memory_ui.cc',
    listeners: ['#search-btn:click', '#forget-domain-btn:click',
                '#wipe-btn:click', '#q:keydown', '#mem-enabled:change',
