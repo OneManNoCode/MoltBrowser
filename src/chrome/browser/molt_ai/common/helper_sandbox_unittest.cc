@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/common/helper_limits.h"
 #include "chrome/browser/molt_ai/common/helper_sandbox_win_policy.h"
 #include "chrome/browser/molt_ai/common/seatbelt_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -27,13 +29,16 @@
 #include <unistd.h>
 #endif
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+#include "base/path_service.h"
+#endif
+
 #if BUILDFLAG(IS_WIN)
 // winsock2.h before windows.h, which would otherwise bring in winsock.h.
 #include <winsock2.h>
 
 #include <windows.h>
 
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/security_descriptor.h"
@@ -43,10 +48,12 @@
 
 #if BUILDFLAG(IS_LINUX)
 #include <errno.h>
+#include <fcntl.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <signal.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 
@@ -104,18 +111,27 @@ TEST(SeatbeltProfileTest, DeniesByDefault) {
   EXPECT_EQ(profile.find("(allow mach-lookup"), std::string::npos);
   EXPECT_EQ(profile.find("(allow iokit"), std::string::npos);
   EXPECT_EQ(profile.find("(allow default"), std::string::npos);
-  // Writes: /dev/null and beneath the scratch directory, nothing else.
-  EXPECT_EQ(CountOf(profile, "file-write"), 2u);
+  // Writes: /dev/null, and creating and writing regular files beneath the
+  // scratch directory, nothing else (no unlink, rename, xattr, mode or
+  // flags: all it writes stays where the launcher measures it).
+  EXPECT_EQ(CountOf(profile, "file-write"), 3u);
+  EXPECT_EQ(profile.find("file-write*"), std::string::npos);
   EXPECT_NE(profile.find("(allow file-write-data (literal \"/dev/null\"))"),
             std::string::npos);
-  EXPECT_NE(profile.find("(allow file-read* file-write*\n"
-                         "  (prefix (string-append (param \"SCRATCH\") "
-                         "\"/\")))"),
+  EXPECT_NE(profile.find("(allow file-write-create file-write-data\n"
+                         "  (require-all\n"
+                         "    (prefix (string-append (param \"SCRATCH\") "
+                         "\"/\"))\n"
+                         "    (vnode-type REGULAR-FILE)))"),
             std::string::npos);
-  // Exec of the helper only.
+  EXPECT_NE(profile.find("(allow file-read* (prefix (string-append (param "
+                         "\"SCRATCH\") \"/\")))"),
+            std::string::npos);
+  // Exec of the helper only, and no other process.
   EXPECT_EQ(CountOf(profile, "process-exec"), 1u);
   EXPECT_NE(profile.find("(allow process-exec (literal (param \"HELPER\")))"),
             std::string::npos);
+  EXPECT_EQ(profile.find("process-fork"), std::string::npos);
 }
 
 TEST(SeatbeltProfileTest, IsWellFormed) {
@@ -203,6 +219,16 @@ TEST(HelperSandboxTest, DescribesEachFailure) {
   run.error = "timed out after 120 s";
   EXPECT_EQ(DescribeHelperRunFailure(run, "tesseract", "x"),
             "tesseract timed out after 120 s");
+
+  // Past a limit, whatever it exited with.
+  run = HelperRunResult();
+  run.launched = true;
+  run.limit_exceeded = true;
+  run.exit_code = 0;
+  run.error = "it wrote 64 MiB or more to its scratch directory";
+  EXPECT_EQ(DescribeHelperRunFailure(run, "whisper", "x"),
+            "whisper was stopped: it wrote 64 MiB or more to its scratch "
+            "directory");
 
   run = HelperRunResult();
   run.launched = true;
@@ -315,6 +341,7 @@ namespace hsl = helper_sandbox_linux;
 // Enough of a classic BPF interpreter for what BuildSeccompProgram() emits.
 uint32_t RunFilter(const std::vector<sock_filter>& program,
                    const seccomp_data& data) {
+  constexpr uint32_t kArgs = offsetof(seccomp_data, args);
   uint32_t a = 0;
   size_t pc = 0;
   while (pc < program.size()) {
@@ -325,12 +352,19 @@ uint32_t RunFilter(const std::vector<sock_filter>& program,
           a = static_cast<uint32_t>(data.nr);
         } else if (insn.k == offsetof(seccomp_data, arch)) {
           a = data.arch;
-        } else if (insn.k == offsetof(seccomp_data, args)) {
-          a = static_cast<uint32_t>(data.args[0]);
+        } else if (insn.k >= kArgs && insn.k < kArgs + 6 * 8 &&
+                   (insn.k - kArgs) % 8 == 0) {
+          // The low half of an argument.
+          a = static_cast<uint32_t>(
+              std::to_array(data.args).at((insn.k - kArgs) / 8));
         } else {
           ADD_FAILURE() << "unexpected load at offset " << insn.k;
           return 0;
         }
+        ++pc;
+        break;
+      case BPF_ALU | BPF_AND | BPF_K:
+        a &= insn.k;
         ++pc;
         break;
       case BPF_JMP | BPF_JEQ | BPF_K:
@@ -368,6 +402,25 @@ seccomp_data Call(int nr, uint64_t arg0 = 0) {
   data.nr = nr;
   data.arch = NativeArch();
   data.args[0] = arg0;
+  return data;
+}
+
+// A call with |value| as argument |index| (1 to 3).
+seccomp_data CallWithArg(int nr, size_t index, uint64_t value) {
+  seccomp_data data = Call(nr);
+  switch (index) {
+    case 1:
+      data.args[1] = value;
+      break;
+    case 2:
+      data.args[2] = value;
+      break;
+    case 3:
+      data.args[3] = value;
+      break;
+    default:
+      ADD_FAILURE() << "argument " << index;
+  }
   return data;
 }
 
@@ -412,10 +465,18 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
   EXPECT_EQ(RunFilter(program, Call(__NR_write)), SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_mmap)), SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_execve)), SECCOMP_RET_ALLOW);
-  // Threads (pthread_create) and processes (fork) still work.
+  // Threads (pthread_create) still work; processes don't (fork, posix_spawn
+  // and vfork).
   EXPECT_EQ(RunFilter(program, Call(__NR_clone, 0x003d0f00)),
             SECCOMP_RET_ALLOW);
-  EXPECT_EQ(RunFilter(program, Call(__NR_clone, SIGCHLD)), SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, Call(__NR_clone, SIGCHLD)), Errno(EPERM));
+  EXPECT_EQ(
+      RunFilter(program, Call(__NR_clone, CLONE_VM | CLONE_VFORK | SIGCHLD)),
+      Errno(EPERM));
+#if defined(__NR_fork)
+  EXPECT_EQ(RunFilter(program, Call(__NR_fork)), Errno(EPERM));
+  EXPECT_EQ(RunFilter(program, Call(__NR_vfork)), Errno(EPERM));
+#endif
 
   // Network: only AF_UNIX sockets, and no connect().
   EXPECT_EQ(RunFilter(program, Call(__NR_socket, AF_UNIX)), SECCOMP_RET_ALLOW);
@@ -473,6 +534,68 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
 #endif
 }
 
+TEST(HelperSandboxLinuxTest, SeccompKeepsWritesAndMemoryCounted) {
+  const std::vector<sock_filter> program = hsl::BuildSeccompProgram();
+  if (program.empty()) {
+    GTEST_SKIP() << "no seccomp filter for this architecture";
+  }
+  // Space reserved without writing it, past RLIMIT_FSIZE.
+  EXPECT_EQ(RunFilter(program, Call(__NR_fallocate)), Errno(EOPNOTSUPP));
+  // Files: opened and created as usual, but not in no directory.
+  for (uint64_t flags : {uint64_t{O_RDONLY}, uint64_t{O_WRONLY | O_CREAT},
+                         uint64_t{O_RDWR | O_TRUNC | O_CLOEXEC},
+                         uint64_t{O_RDONLY | O_DIRECTORY}}) {
+    EXPECT_EQ(RunFilter(program, CallWithArg(__NR_openat, 2, flags)),
+              SECCOMP_RET_ALLOW)
+        << flags;
+#if defined(__NR_open)
+    EXPECT_EQ(RunFilter(program, CallWithArg(__NR_open, 1, flags)),
+              SECCOMP_RET_ALLOW)
+        << flags;
+#endif
+  }
+  EXPECT_EQ(RunFilter(program, CallWithArg(__NR_openat, 2, O_TMPFILE | O_RDWR)),
+            Errno(EOPNOTSUPP));
+#if defined(__NR_open)
+  EXPECT_EQ(RunFilter(program, CallWithArg(__NR_open, 1, O_TMPFILE | O_RDWR)),
+            Errno(EOPNOTSUPP));
+#endif
+  EXPECT_EQ(RunFilter(program, Call(437)), Errno(ENOSYS));  // openat2
+  for (int nr : {__NR_setxattr, __NR_lsetxattr, __NR_fsetxattr, 463}) {
+    EXPECT_EQ(RunFilter(program, Call(nr)), Errno(EOPNOTSUPP)) << nr;
+  }
+  // Reading extended attributes still works.
+  EXPECT_EQ(RunFilter(program, Call(__NR_getxattr)), SECCOMP_RET_ALLOW);
+
+  // Private memory and file mappings, as malloc() and the loader make them.
+  for (uint64_t flags :
+       {uint64_t{MAP_PRIVATE | MAP_ANONYMOUS},
+        uint64_t{MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_STACK},
+        uint64_t{MAP_PRIVATE}, uint64_t{MAP_PRIVATE | MAP_FIXED},
+        uint64_t{MAP_SHARED}}) {
+    EXPECT_EQ(RunFilter(program, CallWithArg(__NR_mmap, 3, flags)),
+              SECCOMP_RET_ALLOW)
+        << flags;
+  }
+  // Shared anonymous memory, which RLIMIT_DATA doesn't count.
+  for (uint64_t flags : {uint64_t{MAP_SHARED | MAP_ANONYMOUS},
+                         uint64_t{MAP_SHARED_VALIDATE | MAP_ANONYMOUS},
+                         uint64_t{MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED}}) {
+    EXPECT_EQ(RunFilter(program, CallWithArg(__NR_mmap, 3, flags)),
+              Errno(EPERM))
+        << flags;
+  }
+  EXPECT_EQ(RunFilter(program, Call(__NR_memfd_create)), Errno(ENOSYS));
+  EXPECT_EQ(RunFilter(program, Call(447)), Errno(ENOSYS));  // memfd_secret
+  for (int nr : {__NR_shmget, __NR_shmat, __NR_shmctl, __NR_shmdt, __NR_msgget,
+                 __NR_msgsnd, __NR_msgrcv, __NR_msgctl, __NR_semget, __NR_semop,
+                 __NR_semtimedop, __NR_semctl}) {
+    EXPECT_EQ(RunFilter(program, Call(nr)), Errno(EPERM)) << nr;
+  }
+  EXPECT_EQ(RunFilter(program, Call(__NR_munmap)), SECCOMP_RET_ALLOW);
+  EXPECT_EQ(RunFilter(program, Call(__NR_mremap)), SECCOMP_RET_ALLOW);
+}
+
 TEST(HelperSandboxLinuxTest, PathRules) {
   hsl::Policy policy;
   policy.read_execute = {"/opt/molt/ocr"};
@@ -507,10 +630,17 @@ TEST(HelperSandboxLinuxTest, PathRules) {
   EXPECT_EQ(access_of("/tmp/molt_ocr.x/input.png"), hsl::kReadAccess);
   const uint64_t scratch = access_of("/tmp/molt_ocr.x");
   EXPECT_EQ(scratch, hsl::kScratchAccess);
+  // Files are read, made, written and truncated there.
+  EXPECT_EQ(scratch, hsl::kFsReadFile | hsl::kFsReadDir | hsl::kFsWriteFile |
+                         hsl::kFsMakeReg | hsl::kFsTruncate);
   // Nothing written to the scratch directory can be run, and it can't hold
-  // links out of it, sockets, FIFOs or devices.
+  // links out of it, sockets, FIFOs, devices or directories. Nothing in it
+  // is deleted or renamed, so all the helper writes stays where the
+  // launcher measures it (helper_limits.h).
   EXPECT_EQ(scratch & (hsl::kFsExecute | hsl::kFsMakeSym | hsl::kFsMakeSock |
-                       hsl::kFsMakeFifo | hsl::kFsMakeChar | hsl::kFsMakeBlock),
+                       hsl::kFsMakeFifo | hsl::kFsMakeChar | hsl::kFsMakeBlock |
+                       hsl::kFsMakeDir | hsl::kFsRemoveFile |
+                       hsl::kFsRemoveDir | hsl::kFsRefer),
             0u);
 
   for (const hsl::PathRule& rule : rules) {
@@ -581,10 +711,10 @@ TEST(HelperSandboxLinuxTest, KillsAtTheDeadline) {
   HelperSandboxPolicy policy;
   policy.writable_dir = scratch.GetPath();
   const base::TimeTicks start = base::TimeTicks::Now();
-  // Also closes its output early, and leaves a child behind in its group.
+  // Also closes its output early. (A shell's builtins only: the sandbox
+  // lets the helper start no process.)
   const HelperRunResult run =
-      RunSandboxedHelper(Shell("exec >/dev/null 2>&1; (while :; do :; done) & "
-                               "while :; do :; done"),
+      RunSandboxedHelper(Shell("exec >/dev/null 2>&1; while :; do :; done"),
                          policy, base::Milliseconds(300), 4096);
   EXPECT_TRUE(run.launched);
   EXPECT_TRUE(run.timed_out);
@@ -625,10 +755,17 @@ TEST(HelperSandboxLinuxTest, WritesNoFileLargerThanTheLimit) {
   EXPECT_FALSE(run.timed_out);
   // SIGXFSZ ended the shell, or its write failed (EFBIG): never "done".
   EXPECT_EQ(run.output.find("done"), std::string::npos);
+  // Never larger than the limit. (It is the limit unless the launcher's
+  // check, which also counts space the file system reserved, ended it
+  // first.)
   const std::optional<int64_t> size =
       base::GetFileSize(scratch.GetPath().AppendASCII("big"));
   ASSERT_TRUE(size.has_value());
-  EXPECT_EQ(static_cast<uint64_t>(*size), hsl::kMaxHelperFileBytes);
+  EXPECT_LE(static_cast<uint64_t>(*size), hsl::kMaxHelperFileBytes);
+  EXPECT_GT(static_cast<uint64_t>(*size), hsl::kMaxHelperFileBytes / 2);
+  // And the run says so.
+  EXPECT_TRUE(run.limit_exceeded);
+  EXPECT_EQ(run.error, "it wrote 64 MiB or more to its scratch directory");
 }
 
 TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {
@@ -637,10 +774,11 @@ TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {
   ASSERT_TRUE(scratch.Create("molt_test"));
   ASSERT_TRUE(elsewhere.CreateUniqueTempDir());
   const base::FilePath secret = elsewhere.GetPath().AppendASCII("secret");
-  ASSERT_TRUE(base::WriteFile(secret, "secret"));
+  // A whole line, which the shell's read builtin reads.
+  ASSERT_TRUE(base::WriteFile(secret, "secret\n"));
   const HelperSandboxPolicy policy = scratch.MakePolicy();
   const HelperRunResult run =
-      RunSandboxedHelper(Shell("cat '" + secret.value() +
+      RunSandboxedHelper(Shell("read line < '" + secret.value() +
                                "' && echo READ; "
                                "echo x > '" +
                                elsewhere.GetPath().value() +
@@ -656,6 +794,222 @@ TEST(HelperSandboxLinuxTest, ConfinesWhenTheKernelCan) {
   }
 }
 #endif  // BUILDFLAG(IS_LINUX)
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+// The confinement and the limits (helper_limits.h) with a stand-in helper
+// (helper_sandbox_test_helper_posix.cc) under the real sandbox.
+class HelperSandboxLimitsTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    base::FilePath exe_dir;
+    ASSERT_TRUE(base::PathService::Get(base::DIR_EXE, &exe_dir));
+    helper_ = exe_dir.AppendASCII("molt_helper_sandbox_test_helper");
+    ASSERT_TRUE(base::PathExists(helper_)) << helper_;
+    ASSERT_TRUE(scratch_.Create("molt_test"));
+  }
+
+  HelperRunResult Run(const std::vector<std::string>& args,
+                      base::TimeDelta timeout = base::Seconds(30)) {
+    base::CommandLine cmd(helper_);
+    for (const std::string& arg : args) {
+      cmd.AppendArg(arg);
+    }
+    return RunSandboxedHelper(cmd, scratch_.MakePolicy(), timeout, 4096);
+  }
+
+  // What a run within the limits printed.
+  std::string Output(const std::vector<std::string>& args) {
+    const HelperRunResult run = Run(args);
+    EXPECT_TRUE(run.launched) << run.error;
+    EXPECT_FALSE(run.limit_exceeded) << run.error;
+    return run.output;
+  }
+
+  // A run that is stopped past a limit, and why.
+  std::string Stopped(const std::vector<std::string>& args) {
+    const HelperRunResult run = Run(args);
+    EXPECT_TRUE(run.launched) << run.error;
+    EXPECT_FALSE(run.timed_out);
+    EXPECT_TRUE(run.limit_exceeded) << run.output;
+    return run.error;
+  }
+
+  std::string In(std::string_view name) const {
+    return scratch_.path().AppendASCII(name).value();
+  }
+
+  helper_limits::ScratchUsage Usage() const {
+    return helper_limits::MeasureScratch(scratch_.path().value(), 10000);
+  }
+
+  base::FilePath helper_;
+  HelperScratchDir scratch_;
+};
+
+TEST_F(HelperSandboxLimitsTest, RunsAndCapturesOutput) {
+  const HelperRunResult run = Run({"echo", "hello"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_FALSE(run.limit_exceeded);
+  EXPECT_EQ(run.exit_code, 3);
+  EXPECT_EQ(run.output, "hello\nhello\n");
+}
+
+TEST_F(HelperSandboxLimitsTest, WritesFilesAndNothingElse) {
+#if BUILDFLAG(IS_LINUX)
+  if (hsl::LandlockAbi() == 0) {
+    GTEST_SKIP() << "no Landlock: files are not confined";
+  }
+#endif
+  EXPECT_EQ(Output({"write", In("out.txt"), "1"}), "WROTE\n");
+  std::string text;
+  EXPECT_TRUE(
+      ReadHelperOutputFile(scratch_.path().AppendASCII("out.txt"), 16, &text));
+  EXPECT_EQ(text, std::string(16, 'x'));
+  // What it wrote stays: not deleted, renamed or moved into a directory.
+  for (const std::vector<std::string>& args :
+       std::vector<std::vector<std::string>>{
+           {"delete", In("out.txt")},
+           {"rename", In("out.txt"), In("moved.txt")},
+           {"mkdir", In("dir")},
+           {"symlink", "/etc/hosts", In("link")},
+           {"xattr", In("out.txt")}}) {
+    const std::string output = Output(args);
+    EXPECT_TRUE(output.starts_with("DENIED")) << args[0] << ": " << output;
+  }
+  EXPECT_TRUE(base::PathExists(scratch_.path().AppendASCII("out.txt")));
+  EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("moved.txt")));
+  EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("dir")));
+}
+
+TEST_F(HelperSandboxLimitsTest, StopsAHelperThatWritesTooMuch) {
+  // 16 MiB files (each below Linux's file size limit) up to 128 MiB.
+  const helper_limits::ScratchUsage before = Usage();
+  EXPECT_EQ(Stopped({"spread", scratch_.path().value(), "8", "16"}),
+            "it wrote 64 MiB or more to its scratch directory");
+  // Stopped soon after: well below the 128 MiB it would have written.
+  const helper_limits::ScratchUsage after = Usage();
+  EXPECT_GE(after.bytes, before.bytes + helper_limits::kMaxHelperWriteBytes);
+  EXPECT_LT(after.bytes,
+            before.bytes + 2 * helper_limits::kMaxHelperWriteBytes - 1);
+}
+
+TEST_F(HelperSandboxLimitsTest, StopsAHelperThatMakesTooManyFiles) {
+  EXPECT_EQ(Stopped({"files", scratch_.path().value(), "100"}),
+            "it made more than 64 files in its scratch directory");
+}
+
+TEST_F(HelperSandboxLimitsTest, CountsWhatItLeftWhenItExited) {
+  // Written at once, and it exits: if the run's checks missed it, the one
+  // after it exited doesn't.
+  const HelperRunResult run =
+      Run({"spread", scratch_.path().value(), "2", "40"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_TRUE(run.limit_exceeded);
+  EXPECT_EQ(DescribeHelperRunFailure(run, "test", "x"),
+            "test was stopped: it wrote 64 MiB or more to its scratch "
+            "directory");
+}
+
+TEST_F(HelperSandboxLimitsTest, StartsNoOtherProcess) {
+  // A child would be a process the launcher doesn't count or kill.
+  const std::string output = Output({"fork"});
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+}
+
+TEST_F(HelperSandboxLimitsTest, AnInputDoesntCount) {
+  // A 100 MiB input the browser wrote, and a small output.
+  ASSERT_TRUE(base::WriteFile(scratch_.path().AppendASCII("input.pnm"),
+                              std::string(100 << 20, 'p')));
+  EXPECT_EQ(Output({"write", In("out.txt"), "8"}), "WROTE\n");
+}
+
+#if BUILDFLAG(IS_LINUX)
+TEST_F(HelperSandboxLimitsTest, ResourceLimits) {
+  const std::string output = Output({"limits"});
+  EXPECT_NE(output.find("FSIZE 67108864 67108864\n"), std::string::npos)
+      << output;
+  EXPECT_NE(output.find("CORE 0 0\n"), std::string::npos) << output;
+  EXPECT_NE(output.find("DATA 4294967296 4294967296\n"), std::string::npos)
+      << output;
+  EXPECT_NE(output.find("NOFILE 256 256\n"), std::string::npos) << output;
+}
+
+TEST_F(HelperSandboxLimitsTest, MemoryLimit) {
+  EXPECT_EQ(Output({"alloc", "256"}), "ALLOCATED\n");
+  // Past RLIMIT_DATA (refused when mapped, not when touched).
+  EXPECT_EQ(Output({"reserve", "3072"}), "RESERVED\n");
+  EXPECT_TRUE(Output({"reserve", "5120"}).starts_with("FAILED"));
+  // Memory RLIMIT_DATA wouldn't count is refused.
+  for (const std::vector<std::string>& args :
+       std::vector<std::vector<std::string>>{
+           {"shared", "64"}, {"memfd"}, {"shm", "64"}}) {
+    const std::string output = Output(args);
+    EXPECT_TRUE(output.starts_with("DENIED")) << args[0] << ": " << output;
+  }
+}
+
+TEST(HelperSandboxLinuxLimitsTest, AScratchDirectoryItLockedIsStillDeleted) {
+  base::FilePath exe_dir;
+  ASSERT_TRUE(base::PathService::Get(base::DIR_EXE, &exe_dir));
+  base::FilePath path;
+  {
+    HelperScratchDir scratch;
+    ASSERT_TRUE(scratch.Create("molt_test"));
+    path = scratch.path();
+    // Landlock doesn't cover chmod: the helper can take the browser's own
+    // access away.
+    base::CommandLine cmd(
+        exe_dir.AppendASCII("molt_helper_sandbox_test_helper"));
+    cmd.AppendArg("lock");
+    cmd.AppendArg(path.value());
+    const HelperRunResult run =
+        RunSandboxedHelper(cmd, scratch.MakePolicy(), base::Seconds(30), 4096);
+    ASSERT_TRUE(run.launched) << run.error;
+    if (geteuid() != 0) {
+      // What it wrote can't be measured any more: it is stopped.
+      EXPECT_TRUE(run.limit_exceeded);
+      EXPECT_EQ(run.error,
+                "what it wrote to its scratch directory couldn't be measured");
+    }
+  }
+  EXPECT_FALSE(base::PathExists(path));
+}
+
+TEST_F(HelperSandboxLimitsTest, NothingHiddenFromTheCheck) {
+  if (hsl::BuildSeccompProgram().empty()) {
+    GTEST_SKIP() << "no seccomp filter for this architecture";
+  }
+  // Space reserved without writing it, a file in no directory.
+  std::string output = Output({"preallocate", In("big"), "1024"});
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+  EXPECT_LT(Usage().bytes, 1u << 20);
+  output = Output({"tmpfile", scratch_.path().value()});
+  EXPECT_TRUE(output.starts_with("DENIED")) << output;
+}
+#endif  // BUILDFLAG(IS_LINUX)
+
+#if BUILDFLAG(IS_MAC)
+TEST_F(HelperSandboxLimitsTest, StopsAHelperThatReservesSpace) {
+  // F_PREALLOCATE reserves space without writing it; the next check sees it.
+  EXPECT_EQ(Stopped({"preallocate", In("big"), "1024"}),
+            "it wrote 64 MiB or more to its scratch directory");
+}
+
+TEST_F(HelperSandboxLimitsTest, CountsAResourceFork) {
+  EXPECT_EQ(Output({"write", In("out.txt"), "1"}), "WROTE\n");
+  const HelperRunResult run = Run({"rsrc", In("out.txt"), "100"});
+  ASSERT_TRUE(run.launched) << run.error;
+  // Either the sandbox refused it, or the check stopped it.
+  EXPECT_TRUE(run.limit_exceeded || run.output.starts_with("FAILED"))
+      << run.output;
+}
+
+TEST_F(HelperSandboxLimitsTest, StopsAHelperThatUsesTooMuchMemory) {
+  EXPECT_EQ(Output({"alloc", "256"}), "ALLOCATED\n");
+  EXPECT_EQ(Stopped({"alloc", "6144"}), "it used more than 4 GiB of memory");
+}
+#endif  // BUILDFLAG(IS_MAC)
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_WIN)
 namespace hsw = helper_sandbox_win;
@@ -758,6 +1112,63 @@ TEST_F(HelperSandboxWinTest, WritesItsScratchDirectoryOnly) {
     EXPECT_TRUE(output.starts_with("DENIED")) << path << ": " << output;
     EXPECT_FALSE(base::PathExists(path)) << path;
   }
+}
+
+TEST_F(HelperSandboxWinTest, WritesFilesAndNothingElse) {
+  const base::FilePath out = scratch_.path().AppendASCII("out.txt");
+  EXPECT_EQ(Output({L"write", out.value()}), "WROTE\n");
+  // What it wrote stays: not deleted, renamed or moved into a directory.
+  for (const std::vector<std::wstring>& args :
+       std::vector<std::vector<std::wstring>>{
+           {L"delete", out.value()},
+           {L"rename", out.value(),
+            scratch_.path().AppendASCII("moved.txt").value()},
+           {L"mkdir", scratch_.path().AppendASCII("dir").value()}}) {
+    const std::string output = Output(args);
+    EXPECT_TRUE(output.starts_with("DENIED")) << args[0] << ": " << output;
+  }
+  EXPECT_TRUE(base::PathExists(out));
+  EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("moved.txt")));
+  EXPECT_FALSE(base::PathExists(scratch_.path().AppendASCII("dir")));
+}
+
+TEST_F(HelperSandboxWinTest, StopsAHelperThatWritesTooMuch) {
+  // 16 MiB files up to 128 MiB.
+  const HelperRunResult run =
+      Run({L"spread", scratch_.path().value(), L"8", L"16"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_FALSE(run.timed_out);
+  EXPECT_TRUE(run.limit_exceeded) << run.output;
+  EXPECT_EQ(run.error, "it wrote 64 MiB or more to its scratch directory");
+  // Stopped soon after: well below the 128 MiB it would have written.
+  EXPECT_LT(helper_limits::MeasureScratch(scratch_.path().value(), 10000).bytes,
+            2 * helper_limits::kMaxHelperWriteBytes - 1);
+}
+
+TEST_F(HelperSandboxWinTest, StopsAHelperThatMakesTooManyFiles) {
+  const HelperRunResult run = Run({L"files", scratch_.path().value(), L"100"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_TRUE(run.limit_exceeded) << run.output;
+  EXPECT_EQ(run.error, "it made more than 64 files in its scratch directory");
+}
+
+TEST_F(HelperSandboxWinTest, CountsAStream) {
+  const base::FilePath out = scratch_.path().AppendASCII("out.txt");
+  EXPECT_EQ(Output({L"write", out.value()}), "WROTE\n");
+  const HelperRunResult run = Run({L"stream", out.value(), L"100"});
+  ASSERT_TRUE(run.launched) << run.error;
+  // Either the sandbox refused the stream, or the check stopped it.
+  EXPECT_TRUE(run.limit_exceeded || run.output.starts_with("FAILED"))
+      << run.output;
+}
+
+TEST_F(HelperSandboxWinTest, StopsAHelperThatReservesSpace) {
+  // SetEndOfFile() gives a file space without writing it.
+  const HelperRunResult run =
+      Run({L"extend", scratch_.path().AppendASCII("big").value(), L"1024"});
+  ASSERT_TRUE(run.launched) << run.error;
+  EXPECT_TRUE(run.limit_exceeded) << run.output;
+  EXPECT_EQ(run.error, "it wrote 64 MiB or more to its scratch directory");
 }
 
 TEST_F(HelperSandboxWinTest, CantConnect) {
