@@ -38,6 +38,10 @@ VoiceSession* g_listening = nullptr;
 // the owner chooses).
 constexpr char kWakePhrase[] = "hey molt";
 
+// How often the session looks at the tabs' sound and the speech engine
+// (well within kOtherSpeechTailMs).
+constexpr base::TimeDelta kPollInterval = base::Milliseconds(250);
+
 ListeningSettings ToListening(const VoiceModeSettings& settings) {
   ListeningSettings listening;
   listening.always_listening = settings.always_listening;
@@ -277,7 +281,7 @@ void VoiceSession::OnHelperFound(std::optional<VoiceListener::Paths> paths,
   audio_ = std::make_unique<VoiceAudio>(this, listener_->audio_sink());
   audio_->Start();
   poll_timer_.Start(
-      FROM_HERE, base::Seconds(1),
+      FROM_HERE, kPollInterval,
       base::BindRepeating(&VoiceSession::OnPoll, base::Unretained(this)));
 }
 
@@ -374,6 +378,12 @@ void VoiceSession::OnListenerReady(const HelperEvent& ready) {
 
 void VoiceSession::OnListenerEvent(const HelperEvent& event) {
   const int64_t now = NowMs();
+  // What the helper heard may be another source's speech: look now too,
+  // not only at the next poll.
+  if (event.type != HelperEventType::kError &&
+      event.type != HelperEventType::kReady) {
+    Apply(logic_.OnOtherSpeech(OthersSpeaking(), now));
+  }
   switch (event.type) {
     case HelperEventType::kWake:
       Apply(logic_.OnWake(now));
@@ -600,7 +610,12 @@ void VoiceSession::OnTick() {
   Apply(logic_.OnTick(NowMs()));
 }
 
+bool VoiceSession::OthersSpeaking() const {
+  return controller_ && controller_->OthersSpeaking();
+}
+
 void VoiceSession::OnPoll() {
+  Apply(logic_.OnOtherSpeech(OthersSpeaking(), NowMs()));
   bool audible = false;
   for (BrowserWindowInterface* window : GetAllBrowserWindowInterfaces()) {
     TabStripModel* tabs = window->GetTabStripModel();

@@ -153,6 +153,7 @@ VoiceSessionLogic::Utterance VoiceSessionLogic::NewUtterance(
       !woke && (settings_.always_listening || FollowUpOpen(now_ms));
   utterance.during_speech = SpeakingOrTail(now_ms);
   utterance.started_ms = now_ms;
+  utterance.begun_ms = now_ms;
   return utterance;
 }
 
@@ -162,8 +163,9 @@ SessionActions VoiceSessionLogic::OnWake(int64_t now_ms) {
     return actions;
   }
   // The browser's own voice saying the wake phrase (a page's title read
-  // out): not the user.
-  if (SpeakingOrTail(now_ms) && SaidWakePhrase(now_ms)) {
+  // out), or another source's speech (a page saying it): not the user.
+  if ((SpeakingOrTail(now_ms) && SaidWakePhrase(now_ms)) ||
+      OtherSpeechSince(now_ms)) {
     actions.reset_helper = true;
     return Finish(std::move(actions), now_ms);
   }
@@ -228,7 +230,12 @@ SessionActions VoiceSessionLogic::OnFinal(std::string_view text,
   wake_until_ms_ = 0;
   bool take = false;
   if (!text.empty()) {
-    if (IsAlwaysHeardCommand(text) || utterance.woke) {
+    if (IsAlwaysHeardCommand(text)) {
+      take = true;
+    } else if (OtherSpeechSince(utterance.begun_ms)) {
+      // Another source spoke while this was said: it may be what was heard.
+      take = false;
+    } else if (utterance.woke) {
       take = true;
     } else if (utterance.open && !utterance.during_speech) {
       take = !page_audible_ || confidence >= kMinConfidenceWithoutWake;
@@ -304,6 +311,15 @@ SessionActions VoiceSessionLogic::OnAwaitingAnswer(bool awaiting,
 
 SessionActions VoiceSessionLogic::OnPageAudible(bool audible, int64_t now_ms) {
   page_audible_ = audible;
+  return Finish(SessionActions(), now_ms);
+}
+
+SessionActions VoiceSessionLogic::OnOtherSpeech(bool speaking, int64_t now_ms) {
+  // When it stops, the last time it was seen speaking is now.
+  if (speaking || other_speaking_) {
+    other_speech_ms_ = now_ms;
+  }
+  other_speaking_ = speaking;
   return Finish(SessionActions(), now_ms);
 }
 
@@ -386,6 +402,11 @@ bool VoiceSessionLogic::FollowUpOpen(int64_t now_ms) const {
 bool VoiceSessionLogic::SpeakingOrTail(int64_t now_ms) const {
   return activity_ == BrowserActivity::kSpeaking ||
          (speaking_ended_ms_ >= 0 && now_ms - speaking_ended_ms_ < kEchoTailMs);
+}
+
+bool VoiceSessionLogic::OtherSpeechSince(int64_t since_ms) const {
+  return other_speaking_ || (other_speech_ms_ >= 0 &&
+                             other_speech_ms_ + kOtherSpeechTailMs >= since_ms);
 }
 
 bool VoiceSessionLogic::Counts(const Utterance& utterance) const {

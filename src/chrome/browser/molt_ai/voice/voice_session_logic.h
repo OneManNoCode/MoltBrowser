@@ -29,6 +29,12 @@
 //     them and a recognizer transcribes the browser's own voice
 //     (VOICE_BENCH.md §3.2): what it hears then may be the browser itself.
 //     A wake phrase while the browser's own words held one is ignored too.
+//   - While the speech engine speaks for someone else (a page's
+//     speechSynthesis; OnOtherSpeech()), and kOtherSpeechTailMs after,
+//     only the commands that always count do: no wake phrase, no command
+//     after one, nothing in the follow-up window or in always-listening
+//     mode. That voice plays outside Chromium's audio service too, and a
+//     page chooses what it says ("Hey Molt, ...").
 //
 // Barge-in: the wake phrase (and "stop") while the browser speaks stops its
 // speech at once; the command follows.
@@ -73,6 +79,10 @@ inline constexpr int64_t kSpokenMemoryMs = 20000;
 inline constexpr size_t kMaxSpokenTexts = 32;
 // An utterance without the wake phrase while a page plays sound.
 inline constexpr double kMinConfidenceWithoutWake = 0.5;
+// After another source's speech was last seen, how long what is heard may
+// still be it (the room, the spotter's and the recognizer's lag, and the
+// time between two looks at the speech engine).
+inline constexpr int64_t kOtherSpeechTailMs = 1000;
 
 enum class SessionState : uint8_t {
   kOff,
@@ -172,6 +182,10 @@ class VoiceSessionLogic {
   SessionActions OnBrowserSaid(std::string_view text, int64_t now_ms);
   SessionActions OnAwaitingAnswer(bool awaiting, int64_t now_ms);
   SessionActions OnPageAudible(bool audible, int64_t now_ms);
+  // Whether the speech engine is speaking for someone else (a page's
+  // speechSynthesis, an extension): looked at often, and at each of the
+  // helper's events.
+  SessionActions OnOtherSpeech(bool speaking, int64_t now_ms);
   SessionActions OnSettingsChanged(ListeningSettings settings, int64_t now_ms);
 
   // Timers: call at NextDeadline() (or any time).
@@ -194,6 +208,8 @@ class VoiceSessionLogic {
     bool during_speech = false;
     bool started = false;
     int64_t started_ms = 0;
+    // Its first event (the wake phrase, or the start of speech).
+    int64_t begun_ms = 0;
     int64_t ended_ms = -1;
     bool partial_shown = false;
   };
@@ -201,6 +217,9 @@ class VoiceSessionLogic {
   bool Listening() const { return running_ && ready_; }
   bool FollowUpOpen(int64_t now_ms) const;
   bool SpeakingOrTail(int64_t now_ms) const;
+  // Whether another source's speech was heard since |since_ms| (or
+  // kOtherSpeechTailMs before).
+  bool OtherSpeechSince(int64_t since_ms) const;
   bool Counts(const Utterance& utterance) const;
   // Whether what the browser said lately holds a wake phrase.
   bool SaidWakePhrase(int64_t now_ms) const;
@@ -220,6 +239,9 @@ class VoiceSessionLogic {
   int64_t follow_up_until_ms_ = 0;
   bool awaiting_answer_ = false;
   bool page_audible_ = false;
+  bool other_speaking_ = false;
+  // When another source's speech was last seen; -1 never.
+  int64_t other_speech_ms_ = -1;
   std::optional<Utterance> utterance_;
   // After the wake phrase, until speech starts.
   int64_t wake_until_ms_ = 0;

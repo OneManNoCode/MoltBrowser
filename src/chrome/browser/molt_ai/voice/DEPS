@@ -7,7 +7,8 @@ include_rules = [
 specific_include_rules = {
   # Voice mode speaks through the platform's voices (TtsController, as
   # docs/design/TOUCHLESS_BROWSING.md §6.6 chose): SpeakOrEnqueue() with
-  # profile-owned utterances, and Stop() only while voice mode speaks.
+  # profile-owned utterances, never clearing the queue, and
+  # RemoveUtteranceEventDelegate() to stop only voice mode's own; IsSpeaking().
   # chrome/browser/DEPS asks for content/browser/speech's review before
   # this is allowed elsewhere; it is allowed here only, for these files.
   r"voice_speech\.cc": [

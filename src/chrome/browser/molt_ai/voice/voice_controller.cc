@@ -299,6 +299,10 @@ void VoiceController::StopSpeaking() {
   }
 }
 
+bool VoiceController::OthersSpeaking() const {
+  return speech_ && speech_->OthersSpeaking();
+}
+
 void VoiceController::SayNotice(const std::string& text) {
   const std::string notice = SpeechSafeText(text, kMaxNoticeChars);
   if (notice.empty() || !speech_) {

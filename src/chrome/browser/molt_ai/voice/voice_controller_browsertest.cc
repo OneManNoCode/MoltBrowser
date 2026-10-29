@@ -91,12 +91,16 @@ class FakeTtsPlatform : public content::TtsPlatform {
              base::OnceCallback<void(bool)> did_start_speaking) override {
     spoken_.push_back(utterance);
     std::move(did_start_speaking).Run(true);
+    // Started, then over, as the platforms report them.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
                        [](int id, int length) {
-                         content::TtsController::GetInstance()->OnTtsEvent(
-                             id, content::TTS_EVENT_END, length, 0,
-                             std::string());
+                         content::TtsController* tts =
+                             content::TtsController::GetInstance();
+                         tts->OnTtsEvent(id, content::TTS_EVENT_START, 0, -1,
+                                         std::string());
+                         tts->OnTtsEvent(id, content::TTS_EVENT_END, length, 0,
+                                         std::string());
                        },
                        utterance_id, static_cast<int>(utterance.size())));
   }

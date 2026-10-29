@@ -16,6 +16,12 @@
 //     barge-in, "stop", ducking: VoiceSessionLogic decides; this carries it
 //     out (earcons through VoiceEarcons, ducking through every tab's media
 //     session, barge-in through VoiceController::StopSpeaking()).
+//   - Barge-in and "stop" stop voice mode's own speech only, never a page's
+//     (voice_speech.h). A page's speech (speechSynthesis, which plays
+//     outside the echo canceller's reach) is looked for every
+//     kPollInterval and at each of the helper's events: while it plays,
+//     and shortly after, only "stop", "cancel" and "turn off voice mode"
+//     count (VoiceSessionLogic::OnOtherSpeech()).
 //   - The caption bar shows the state, and what is being said as it is said
 //     (VoiceController::SetListening()).
 //   - Hotwords: the page map each utterance was planned on gives the
@@ -160,10 +166,13 @@ class VoiceSession : public VoiceController::Observer,
   void UpdateCaption();
   void ScheduleTick();
   void OnTick();
-  // Every second while listening: whether a tab plays sound.
+  // Every kPollInterval while listening: whether a tab plays sound, and
+  // whether the speech engine speaks for someone else.
   void OnPoll();
   int64_t NowMs() const;
   BrowserActivity ControllerActivity() const;
+  // Whether the speech engine speaks for someone else (voice_speech.h).
+  bool OthersSpeaking() const;
 
   raw_ptr<BrowserWindowInterface> browser_;
   ui::ScopedUnownedUserData<VoiceSession> scoped_data_holder_;

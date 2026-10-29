@@ -178,8 +178,13 @@ class VoiceController {
   // Stops the speech and whatever runs, as "stop" does, staying on.
   void StopActivity();
 
-  // Stops the speech only (barge-in: the user started to speak).
+  // Stops voice mode's speech only (barge-in: the user started to speak).
+  // A page's speech is left alone (voice_speech.h).
   void StopSpeaking();
+
+  // Whether the speech engine is speaking for someone else (a page's
+  // speechSynthesis): the microphone may hear it (voice_speech.h).
+  bool OthersSpeaking() const;
 
   // Says |text| (what the listening side has to tell: "Voice mode is on",
   // "I can't use the microphone") and shows it as the status.

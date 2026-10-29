@@ -17,7 +17,8 @@
 //      CONFIG's JSON (EncodeConfigJson()) holds it without escapes;
 //   2  the bytes are a session: helper events and browser changes in any
 //      order and at any time; the session never hands over an utterance
-//      while it isn't listening, nor one the rules don't let count.
+//      while it isn't listening, nor one the rules don't let count (while
+//      another source speaks, only the commands that always count).
 
 #include <cstddef>
 #include <cstdint>
@@ -203,6 +204,7 @@ void FuzzSession(std::string_view data) {
     pos += size;
     return out;
   };
+  bool other_speaking = false;
   while (pos < data.size()) {
     const uint8_t op = next();
     now += next() * 37;
@@ -260,6 +262,10 @@ void FuzzSession(std::string_view data) {
         actions = logic.OnSettingsChanged(changed, now);
         break;
       }
+      case 14:
+        other_speaking = next() & 1;
+        actions = logic.OnOtherSpeech(other_speaking, now);
+        break;
       default:
         actions = logic.OnTick(now);
         break;
@@ -269,6 +275,9 @@ void FuzzSession(std::string_view data) {
       CHECK(listening_before);
       CHECK_EQ(*actions.utterance, said);
       CHECK(!said.empty());
+      if (other_speaking) {
+        CHECK(IsAlwaysHeardCommand(said));
+      }
     }
     if (actions.state) {
       CHECK(*actions.state == logic.state());

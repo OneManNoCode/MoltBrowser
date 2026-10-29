@@ -569,6 +569,7 @@ source_set("voice_session_browser_tests") {
     "//content/test:test_support",
     "//media",
     "//testing/gtest",
+    "//url",
   ]
 
   data_deps = [ ":molt_fake_speech_helper" ]

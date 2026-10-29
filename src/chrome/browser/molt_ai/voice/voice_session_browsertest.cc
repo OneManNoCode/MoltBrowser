@@ -9,14 +9,17 @@
 // stand-in plays a script of protocol events timed by the audio it
 // receives. Checked: the wake phrase, then a command that reaches the voice
 // loop; what is heard while the browser speaks doesn't command it, but
-// "stop" does; a crash and the restart; giving up after crashes in a row;
-// and MoltNet windows, where the microphone is never opened.
+// "stop" does; a page's speech (speechSynthesis) is never cut short by
+// voice mode, and what a page says doesn't command it; a crash and the
+// restart; giving up after crashes in a row; and MoltNet windows, where
+// the microphone is never opened.
 //
 // Linux and macOS: on Windows the helper's AppContainer reads only the
 // folders MoltBrowser's installer grants, which a test binary's isn't.
 
 #include "chrome/browser/molt_ai/voice/voice_session.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -28,6 +31,8 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/run_until.h"
@@ -47,16 +52,19 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/tts_controller.h"
 #include "content/public/browser/tts_platform.h"
+#include "content/public/browser/tts_utterance.h"
 #include "content/public/test/browser_test.h"
 #include "media/base/media_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace molt_ai {
 namespace voice {
 namespace {
 
 // A TTS platform whose utterances last |duration| (a voice reading aloud),
-// and that records what it said and when it was told to stop.
+// and that records what it said, and how often it was told to stop while
+// it spoke.
 class SlowTtsPlatform : public content::TtsPlatform {
  public:
   SlowTtsPlatform() = default;
@@ -86,19 +94,25 @@ class SlowTtsPlatform : public content::TtsPlatform {
              const content::UtteranceContinuousParameters& params,
              base::OnceCallback<void(bool)> did_start_speaking) override {
     spoken_.push_back(utterance);
+    speaking_id_ = utterance_id;
     std::move(did_start_speaking).Run(true);
+    // Started, then over after |duration_|, as the platforms report them.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&SlowTtsPlatform::Report, weak_factory_.GetWeakPtr(),
+                       utterance_id, content::TTS_EVENT_START, 0));
     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
-        base::BindOnce(
-            [](int id, int length) {
-              content::TtsController::GetInstance()->OnTtsEvent(
-                  id, content::TTS_EVENT_END, length, 0, std::string());
-            },
-            utterance_id, static_cast<int>(utterance.size())),
+        base::BindOnce(&SlowTtsPlatform::Report, weak_factory_.GetWeakPtr(),
+                       utterance_id, content::TTS_EVENT_END,
+                       static_cast<int>(utterance.size())),
         duration_);
   }
   bool StopSpeaking() override {
-    ++stops_;
+    if (speaking_id_ >= 0) {
+      ++stops_;
+      speaking_id_ = -1;
+    }
     return true;
   }
   bool IsSpeaking() override { return false; }
@@ -123,10 +137,67 @@ class SlowTtsPlatform : public content::TtsPlatform {
   void RefreshVoices() override {}
 
  private:
+  void Report(int id, content::TtsEventType type, int char_index) {
+    if (type == content::TTS_EVENT_END) {
+      if (id != speaking_id_) {
+        return;  // stopped before
+      }
+      speaking_id_ = -1;
+    }
+    content::TtsController::GetInstance()->OnTtsEvent(id, type, char_index, -1,
+                                                      std::string());
+  }
+
   base::TimeDelta duration_;
   std::vector<std::string> spoken_;
   int stops_ = 0;
+  // The utterance being spoken, -1 when none.
+  int speaking_id_ = -1;
+  base::WeakPtrFactory<SlowTtsPlatform> weak_factory_{this};
 };
+
+// A page's utterance (what speechSynthesis.speak() hands TtsController),
+// and what happened to it.
+class PageSpeech : public content::UtteranceEventDelegate {
+ public:
+  PageSpeech() = default;
+  PageSpeech(const PageSpeech&) = delete;
+  PageSpeech& operator=(const PageSpeech&) = delete;
+  ~PageSpeech() override = default;
+
+  // Owned by the utterance it is given to; |events| outlives it.
+  static void Speak(content::BrowserContext* context,
+                    const std::string& text,
+                    std::vector<content::TtsEventType>* events) {
+    std::unique_ptr<content::TtsUtterance> utterance =
+        content::TtsUtterance::Create(context);
+    utterance->SetText(text);
+    utterance->SetLang("en-US");
+    utterance->SetSrcUrl(GURL("https://page.test/"));
+    // As speechSynthesis.speak(): after what is being said.
+    utterance->SetShouldClearQueue(false);
+    auto delegate = std::make_unique<PageSpeech>();
+    delegate->events_ = events;
+    utterance->SetEventDelegate(std::move(delegate));
+    content::TtsController::GetInstance()->SpeakOrEnqueue(std::move(utterance));
+  }
+
+  void OnTtsEvent(content::TtsUtterance* utterance,
+                  content::TtsEventType event_type,
+                  int char_index,
+                  int length,
+                  const std::string& error_message) override {
+    events_->push_back(event_type);
+  }
+
+ private:
+  raw_ptr<std::vector<content::TtsEventType>> events_ = nullptr;
+};
+
+bool Has(const std::vector<content::TtsEventType>& events,
+         content::TtsEventType type) {
+  return std::find(events.begin(), events.end(), type) != events.end();
+}
 
 class VoiceSessionBrowserTest : public InProcessBrowserTest {
  public:
@@ -231,9 +302,78 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
       "1900 speech_end\n"
       "2000 final 0.95 stop\n");
   ASSERT_TRUE(session()->Start());
+  // "Stop" cut the browser's speech short.
   ASSERT_TRUE(base::test::RunUntil([&]() { return tts_.stops() > 0; }));
   Wait(base::Seconds(2));
   EXPECT_EQ(tabs(), 1);
+}
+
+IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, APagesSpeechIsNeverCutShort) {
+  tts_.set_duration(base::Milliseconds(1500));
+  VoiceController* voice = VoiceController::GetOrCreateForBrowser(browser());
+  ASSERT_TRUE(voice);
+  ASSERT_TRUE(voice->Start());
+
+  // Voice mode speaks; a page speaks after it; barge-in stops voice mode.
+  std::vector<content::TtsEventType> page;
+  voice->SayNotice("Voice mode is on.");
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return !tts_.spoken().empty() &&
+           tts_.spoken().back() == "Voice mode is on.";
+  }));
+  Wait(base::Milliseconds(100));  // its start reported
+  const int stops = tts_.stops();
+  PageSpeech::Speak(GetProfile(), "The page speaking.", &page);
+  voice->StopSpeaking();
+  EXPECT_EQ(tts_.stops(), stops + 1);
+  // The page's speech starts after it, and ends by itself.
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return Has(page, content::TTS_EVENT_END); }));
+  EXPECT_FALSE(Has(page, content::TTS_EVENT_INTERRUPTED));
+  EXPECT_FALSE(Has(page, content::TTS_EVENT_CANCELLED));
+  EXPECT_EQ(tts_.spoken().back(), "The page speaking.");
+
+  // A page speaks; voice mode's answer waits behind it, then is stopped
+  // before it is heard; the page's speech isn't touched.
+  page.clear();
+  PageSpeech::Speak(GetProfile(), "The page again.", &page);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return Has(page, content::TTS_EVENT_START); }));
+  EXPECT_TRUE(voice->OthersSpeaking());
+  voice->SayNotice("An answer.");
+  voice->StopSpeaking();
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return Has(page, content::TTS_EVENT_END); }));
+  EXPECT_FALSE(Has(page, content::TTS_EVENT_INTERRUPTED));
+  EXPECT_FALSE(Has(page, content::TTS_EVENT_CANCELLED));
+  Wait(base::Milliseconds(300));
+  EXPECT_FALSE(voice->OthersSpeaking());
+}
+
+IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, WhatAPageSaysDoesntCommandIt) {
+  // In the follow-up window after voice mode's greeting, what is said
+  // counts without the wake phrase. A page says "Open a new tab" through
+  // speechSynthesis, which the echo canceller can't remove: the helper
+  // hears it, and it doesn't count.
+  tts_.set_duration(base::Milliseconds(1500));
+  Script(
+      "ready\n"
+      "3500 speech_start\n"
+      "4200 speech_end\n"
+      "4300 final 0.95 open a new tab\n");
+  ASSERT_TRUE(session()->Start());
+  // The greeting, said and over: the follow-up window is open.
+  ASSERT_TRUE(WaitForState(SessionState::kSpeaking));
+  ASSERT_TRUE(WaitForState(SessionState::kListening));
+  Wait(base::Milliseconds(800));
+  tts_.set_duration(base::Seconds(3));
+  std::vector<content::TtsEventType> page;
+  PageSpeech::Speak(GetProfile(), "Open a new tab.", &page);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return Has(page, content::TTS_EVENT_END); }));
+  Wait(base::Milliseconds(500));
+  EXPECT_EQ(tabs(), 1);
+  EXPECT_TRUE(session()->listening());
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, RestartsAfterACrash) {
