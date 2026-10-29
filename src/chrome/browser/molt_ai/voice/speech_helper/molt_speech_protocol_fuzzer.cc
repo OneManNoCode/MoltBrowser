@@ -102,8 +102,9 @@ void CheckLine(const std::string& line) {
 Vocabularies FuzzVocabularies() {
   Vocabularies v;
   std::string error;
-  std::string kws = WS " -4\n" WS "HE -7.9\nY -6.6\n" WS "MO -9.1\n";
-  std::string kws_tokens = WS " 1\n" WS "HE 2\nY 3\n" WS "MO 4\n";
+  // Single letters come from the loop below.
+  std::string kws = WS " -4\n" WS "HE -7.9\n" WS "MO -9.1\n";
+  std::string kws_tokens = WS " 1\n" WS "HE 2\n" WS "MO 4\n";
   std::string asr = WS " -2\n" WS "the -1.8\n";
   std::string asr_tokens = WS " 0\n" WS "the 1\n";
   int id = 10;
