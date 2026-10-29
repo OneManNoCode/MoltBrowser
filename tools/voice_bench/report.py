@@ -95,6 +95,7 @@ class Report:
             if r.get("event") != "utt" or r["id"] not in refs:
                 continue
             s = vbl.score_utterance(refs[r["id"]], r.get("text", ""))
+            s["clip"] = r["id"]
             s["category"] = refs[r["id"]]["category"]
             s["utt"] = refs[r["id"]]
             scores.append(s)
@@ -135,15 +136,28 @@ class Report:
             sz = json.load(f)
         self.summary["sizes"] = sz
         rows = []
-        for rid, libs in sorted(sz["runtimes"].items()):
-            core = {k: v for k, v in libs.items() if "cxx-api" not in k
-                    and not k.endswith((".lib",)) and "providers_shared" not in k}
+        labels = {
+            "sizes-linux-x64-shared-lib": "Linux x64, shared libraries",
+            "sizes-linux-x64-no-tts": "Linux x64, shared, without TTS",
+            "sizes-linux-aarch64-shared-lib": "Linux arm64, shared libraries",
+            "sizes-osx-arm64-shared-lib": "macOS arm64, shared libraries",
+            "sizes-win-x64-shared-lib": "Windows x64, DLLs",
+            "sizes-linux-x64-static-lib": "Linux x64, static archives (before linking)",
+        }
+        for rid, label in labels.items():
+            libs = sz["runtimes"].get(rid)
+            if not libs:
+                continue
+            # The C API library and ONNX Runtime; not the C++ wrapper, import
+            # libraries, or ORT's shared-provider bridge (Windows, unused on CPU).
+            core = {k: v for k, v in libs.items() if k.startswith("lib/") and
+                    "cxx-api" not in k and not k.endswith(".lib") and
+                    "providers_shared" not in k and "portaudio" not in k}
             ort = sum(v for k, v in core.items() if "onnxruntime" in k)
-            sh = sum(v for k, v in core.items() if "sherpa-onnx" in k or "kaldi" in k
-                     or "ssentencepiece" in k or "utf8proc" in k or "kissfft" in k
-                     or "fst" in k)
-            rows.append((rid, fmt_mb(ort), fmt_mb(sh), fmt_mb(ort + sh)))
-        rt = table(["release archive", "ONNX Runtime (MB)", "sherpa-onnx (MB)", "total (MB)"],
+            sh = sum(v for k, v in core.items() if "onnxruntime" not in k)
+            rows.append((label, fmt_mb(ort), fmt_mb(sh), fmt_mb(ort + sh)))
+        rt = table(["sherpa-onnx v2.0.1 release", "ONNX Runtime (MB)", "sherpa-onnx (MB)",
+                    "total (MB)"],
                    rows)
         mrows = []
         for mid, m in sorted(sz["models"].items(), key=lambda kv: (kv[1]["group"], kv[0])):
@@ -168,6 +182,8 @@ class Report:
         stream = [(m, "stream", e) for m, e in catalog.STREAM.items()]
         rows_clean, rows_cond_wer, rows_cond_cmd, rows_real, rows_cat = [], [], [], [], []
         acc = {}
+        clean_by_model = {}
+        voice_of = self._voice_of()
         for mid, kind, e in offline + stream:
             per = {}
             for s in ["asr-clean-a", "asr-clean-b"] + ["asr-%s-a" % c for c in CONDS[1:]] + \
@@ -181,9 +197,14 @@ class Report:
             acc[mid] = {s: vbl.aggregate(v) for s, v in per.items()}
             clean = per.get("asr-clean-a", []) + per.get("asr-clean-b", [])
             if clean:
+                clean_by_model[e["label"]] = clean
                 a = vbl.aggregate(clean)
+                k = vbl.aggregate([x for x in clean
+                                   if voice_of.get(x["clip"], "").startswith("kokoro")])
                 rows_clean.append((e["label"], kind, a["n"], fmt_pct(a["wer"]),
-                                   fmt_pct(a["command_acc"]), fmt_pct(a["entity_acc"])))
+                                   fmt_pct(a["command_acc"]), fmt_pct(a["entity_acc"]),
+                                   fmt_pct(k["wer"]), fmt_pct(k["command_acc"]),
+                                   fmt_pct(k["entity_acc"])))
                 cats = []
                 for c in vbl.CATEGORIES:
                     sc = [x for x in clean if x["category"] == c]
@@ -204,14 +225,58 @@ class Report:
                               fmt_pct(ls["wer"]) if ls else "–"))
         self.summary["accuracy"] = acc
         return {
-            "clean": table(["model", "kind", "clips", "WER", "command acc.", "entity acc."],
-                           rows_clean),
+            "voices": self._by_voice(clean_by_model),
+            "clean": table(["model", "kind", "clips", "WER", "command acc.", "entity acc.",
+                            "WER, Kokoro voices", "command", "entity"], rows_clean),
             "cats": table(["model"] + list(vbl.CATEGORIES), rows_cat),
             "cond_wer": table(["model"] + CONDS, rows_cond_wer),
             "cond_cmd": table(["model"] + CONDS, rows_cond_cmd),
             "real": table(["model", "Speech Commands words", "word correct",
                            "LibriSpeech + JFK WER (4 clips)"], rows_real),
         }
+
+    def _voice_of(self):
+        voice_of = {}
+        for s in ("asr-clean-a", "asr-clean-b"):
+            path = os.path.join(self.work, "sets", s + ".tsv")
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    for line in f:
+                        r = line.rstrip("\n").split("\t")
+                        if len(r) >= 6:
+                            voice_of[r[0]] = r[5]
+        return voice_of
+
+    def _by_voice(self, clean_by_model):
+        """WER of each test voice over all recognizers, and the clips no
+        recognizer got right (most likely a poor rendering, not a hard
+        command)."""
+        voice_of = self._voice_of()
+        if not clean_by_model:
+            return ""
+        rows = []
+        voices = sorted(set(voice_of.values()))
+        for v in voices:
+            wers = []
+            n = 0
+            for label, sc in clean_by_model.items():
+                sv = [x for x in sc if voice_of.get(x["clip"]) == v]
+                if sv:
+                    wers.append(vbl.aggregate(sv)["wer"])
+                    n = len(sv)
+            if wers:
+                rows.append((v, n, fmt_pct(vbl.median(wers)), fmt_pct(min(wers)),
+                             fmt_pct(max(wers))))
+        ok_any = {}
+        for sc in clean_by_model.values():
+            for x in sc:
+                ok_any[x["clip"]] = ok_any.get(x["clip"], False) or x["command_ok"]
+        none = sum(1 for v in ok_any.values() if not v)
+        self.summary["clips_no_model_right"] = none
+        return (table(["test voice", "clips", "median WER over recognizers", "best", "worst"],
+                      rows) +
+                "\n\n%d of %d clean clips were transcribed exactly by no recognizer." %
+                (none, len(ok_any)))
 
     def offline_timing(self):
         rows = []
@@ -601,6 +666,7 @@ def main(argv=None):
         "## Recognition accuracy, synthetic speech (clean, two voices per utterance)", "",
         acc["clean"], "",
         "### Command accuracy by category (clean)", "", acc["cats"], "",
+        "### By test voice (clean)", "", acc["voices"], "",
         "### WER by condition (the 'a' voices)", "", acc["cond_wer"], "",
         "### Command accuracy by condition", "", acc["cond_cmd"], "",
         "## Real speech", "", acc["real"], "",
