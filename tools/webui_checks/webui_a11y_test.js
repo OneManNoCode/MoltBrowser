@@ -166,8 +166,9 @@ function checkDom(window, page, state) {
   }
 
   // Open dialogs: modal, named, focus inside, the rest of the page inert.
+  // A dialog under another one is inert itself: only the top one counts.
   for (const d of doc.querySelectorAll('[role=dialog], [role=alertdialog], dialog')) {
-    if (!shown(d)) continue;
+    if (!shown(d) || d.closest('[inert]')) continue;
     if (d.getAttribute('aria-modal') !== 'true') problems.push(`dialog: not aria-modal: ${describe(d)}`);
     if (!d.getAttribute('aria-label') && !d.getAttribute('aria-labelledby')) {
       problems.push(`dialog: no label: ${describe(d)}`);
@@ -255,10 +256,17 @@ function checkCss(page) {
   if (!/@media\s*\(forced-colors:\s*active\)/.test(css)) {
     problems.push('css: no forced-colors (high contrast) rules');
   }
-  const px = Array.from(css.matchAll(/font(?:-size)?\s*:[^;}]*?\b(\d+(?:\.\d+)?)px/g));
-  if (px.length) {
-    problems.push(`css: ${px.length} font sizes in px (use rem): ` +
-                  px.slice(0, 5).map((m) => m[0].trim()).join('; '));
+  // Text sizes in rem, in the page's CSS and in every style its scripts
+  // write (the page file and the script files it is served with).
+  const files = [page.file].concat((page.extraFiles || []).filter((f) => f !== 'molt_webui_csp.h'));
+  for (const f of files) {
+    const text = Array.from(fs.readFileSync(path.join(WEBUI, f), 'utf8')
+        .matchAll(/R"(HTML|JS)\(([\s\S]*?)\)\1"/g), (m) => m[2]).join('\n');
+    const px = Array.from(text.matchAll(/font-size\s*:\s*[^;}"'\n]*?\b\d+(?:\.\d+)?px/g));
+    if (px.length) {
+      problems.push(`css: ${px.length} font sizes in px in ${f} (use rem): ` +
+                    px.slice(0, 5).map((m) => m[0].trim()).join('; '));
+    }
   }
   return problems;
 }
@@ -286,6 +294,115 @@ function recordAnnouncements(window) {
 }
 
 const A11Y = {
+  'molt://ai-chat': {
+    pointerOnly: [
+      '#drawerScrim',  // the drawer's backdrop; Escape closes it too
+      '#messages',     // routes clicks on its links to a tab (they are links)
+      '.conv-item'],   // the row opens the chat for a pointer; its title is the button
+    states: [
+      {name: 'answer streamed', async run(window) {
+        await tick(40);
+        window.__said = recordAnnouncements(window);
+        window.startAiMessage();
+        for (const t of ['# Plan\n', 'Step ', 'one.']) window.appendToken(t);
+        window.__midway = window.__said.length;
+        window.finishAiMessage();
+        await tick(100);
+      }, check(window) {
+        assert.strictEqual(window.__midway, 0, 'nothing is read while it streams');
+        assert.deepStrictEqual(window.__said.map((s) => s[0]),
+            ['AI Assistant: Plan Step one.'], 'the answer is read once');
+        const h = window.document.querySelector('#messages .message.ai:last-child [role=heading]');
+        assert(h && h.getAttribute('aria-level') === '3', 'a heading in the answer is a heading');
+      }},
+      {name: 'chats drawer by keyboard', async run(window) {
+        const doc = window.document;
+        await tick(40);
+        const btn = doc.getElementById('drawerBtn');
+        btn.focus();
+        btn.click();
+        await tick(40);
+      }, check(window) {
+        const doc = window.document;
+        const btn = doc.getElementById('drawerBtn');
+        assert.strictEqual(btn.getAttribute('aria-expanded'), 'true');
+        assert.strictEqual(doc.getElementById('drawer').getAttribute('aria-label'), 'Chats');
+        const del = doc.querySelector('#convList .conv-del');
+        assert(/^Delete chat: /.test(del.getAttribute('aria-label')));
+        keydown(window, doc.activeElement, 'Escape');
+        assert(!doc.getElementById('drawer').classList.contains('open'), 'Escape closes');
+        assert.strictEqual(doc.activeElement, btn, 'focus back on the Chats button');
+        assert.strictEqual(btn.getAttribute('aria-expanded'), 'false');
+      }},
+      {name: 'more-options menu by keyboard', async run(window) {
+        const doc = window.document;
+        await tick(40);
+        const btn = doc.getElementById('overflowBtn');
+        btn.focus();
+        btn.click();
+        doc.querySelector('#overflowMenu [data-arg=light]').focus();
+      }, check(window) {
+        const doc = window.document;
+        const btn = doc.getElementById('overflowBtn');
+        assert.strictEqual(btn.getAttribute('aria-expanded'), 'true');
+        assert.strictEqual(doc.querySelector('#overflowMenu [data-arg=gray]').getAttribute('aria-pressed'), 'true');
+        keydown(window, doc.activeElement, 'Escape');
+        assert(!doc.getElementById('overflowMenu').classList.contains('open'));
+        assert.strictEqual(doc.activeElement, btn, 'focus back on the menu button');
+      }},
+      {name: 'page action proposed', async run(window) {
+        await tick(40);
+        window.__said = recordAnnouncements(window);
+        window._renderConfirmChip('AI proposes a page action', 'Click button "Buy"',
+                                  () => {}, () => {});
+      }, check(window) {
+        const chip = window.document.querySelector('#messages .molt-action-confirm');
+        assert.strictEqual(chip.getAttribute('role'), 'group');
+        assert(window.__said.some(([t, assertive]) => assertive && /Click button "Buy"/.test(t)),
+               'the proposal is read out at once');
+        assert.notStrictEqual(window.document.activeElement.className, 'ac-allow',
+                              'focus never jumps to Allow');
+      }},
+      {name: 'error shown', async run(window) {
+        await tick(40);
+        window.addErrorMessage('Could not load conversation.');
+      }, check(window) {
+        const err = window.document.querySelector('#messages .message.error');
+        assert.strictEqual(err.getAttribute('role'), 'alert');
+      }},
+      {name: 'agent run', async run(window) {
+        await tick(40);
+        window.__said = recordAnnouncements(window);
+        window.startWebAgent('Find the cheapest flight');
+        const fire = (e, d) => window.cr.webUIListenerCallback(e, d);
+        fire('agent-step', {number: 1, action: 'NAVIGATE', target: 'flights.example', success: true});
+        fire('agent-plan', {steps: [{goal: 'Open the site', done_when: 'it loads'},
+                                    {goal: 'Search', done_when: 'results show'}], current: 2});
+        fire('agent-confirm', {id: 3, action: 'CLICK', message: 'Click "Book" on flights.example?'});
+        await tick(40);
+      }, check(window) {
+        const said = window.__said.map((s) => s[0]);
+        assert(said.includes('Step 1: NAVIGATE flights.example'), said.join(' | '));
+        assert(said.includes('Plan step 2 of 2: Search'), said.join(' | '));
+        assert(window.__said.some(([t, a]) => a && /Agent needs your OK/.test(t)));
+        const bar = window.document.getElementById('agentBar');
+        assert.strictEqual(bar.getAttribute('role'), 'region');
+      }},
+      {name: 'first-run welcome', responses: {
+        initChat: {model_loaded: false, is_first_run: true, total_ram_gb: 16, cpu_cores: 8, models: []}},
+      async run(window) {
+        await tick(60);
+      }, check(window) {
+        const doc = window.document;
+        const wo = doc.getElementById('welcomeOverlay');
+        assert.strictEqual(wo.getAttribute('role'), 'dialog');
+        assert(wo.contains(doc.activeElement), 'focus in the welcome');
+        keydown(window, doc.activeElement, 'Escape');
+        assert(!wo.classList.contains('open'), 'Escape skips');
+        assert.strictEqual(doc.activeElement.id, 'chatInput');
+      }},
+    ],
+  },
   'molt://ai': {
     pointerOnly: ['#modelOverlay'],  // the dialog's backdrop; Escape too
     states: [
@@ -621,10 +738,12 @@ function statesFor(page) {
 async function main() {
   const only = process.argv[2];
   let failed = 0;
+  let checkedStates = 0;
   for (const page of PAGES) {
     if (only && page.name !== only) continue;
     const pageProblems = checkCss(page);
     for (const state of statesFor(page)) {
+      checkedStates++;
       const problems = [];
       const {problems: loadProblems} = await runPage(state.page, {
         async done(window) {
@@ -648,7 +767,9 @@ async function main() {
     }
   }
   if (failed) process.exit(1);
-  console.log(`webui a11y test: ${PAGES.length} pages pass axe-core and the a11y checks`);
+  const n = only ? 1 : PAGES.length;
+  console.log(`webui a11y test: ${n} page${n === 1 ? '' : 's'} pass axe-core and the a11y checks ` +
+              `in ${checkedStates} states`);
 }
 
 main();
