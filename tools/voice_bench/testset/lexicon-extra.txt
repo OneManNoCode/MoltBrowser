@@ -1,0 +1,27 @@
+# Pronunciations the TTS lexicons lack, for the test set's own words.
+# Format of sherpa-onnx's lexicon-en-us.txt: word || phones (espeak-style
+# IPA, a stress mark before the stressed vowel). gen_audio.py adds these to
+# the VITS/Matcha lexicon and converts them for Kokoro. Since sherpa-onnx
+# 2.0 an English word missing from the lexicon is skipped, not spelled.
+coldplay || kˈ o ʊ l d p l e ɪ
+doctor's || dˈ ɑː k t ɚ z
+dua || dˈ uː ə
+duckduckgo || dˈ ʌ k d ʌ k ɡ ˈ o ʊ
+eilish || ˈ a ɪ l ɪ ʃ
+einaudi || a ɪ n ˈ a ʊ d i
+gmail || d ʒ ˈ iː m e ɪ l
+her || h ˈ ɜː
+instagram || ˈ ɪ n s t ə ɡ ɹ æ m
+lofi || lˈ o ʊ f a ɪ
+ludovico || l uː d ə v ˈ iː k o ʊ
+moulting || mˈ o ʊ l t ɪ ŋ
+netflix || nˈ ɛ t f l ɪ k s
+pentatonix || p ɛ n t ə tˈ ɑː n ɪ k s
+playlist || p lˈ e ɪ l ɪ s t
+sourdough || sˈ a ʊ ɚ d o ʊ
+spotify || s pˈ ɑː ɾ ɪ f a ɪ
+unmute || ʌ n m jˈ uː t
+wayne's || wˈ e ɪ n z
+weeknd || wˈ iː k ɛ n d
+winehouse || wˈ a ɪ n h a ʊ s
+wonderwall || wˈ ʌ n d ɚ w ɔː l
