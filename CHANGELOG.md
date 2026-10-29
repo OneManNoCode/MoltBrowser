@@ -1106,6 +1106,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   only filled single-line fields.
 
 ### Engineering
+- **Touchless browsing, first part: the page map** (not switched on yet;
+  `docs/design/TOUCHLESS_BROWSING.md` §6.3, §6.5). The browser can read any
+  page through Chromium's accessibility tree, as screen readers do, as a
+  numbered list of what can be acted on (in reading order, numbers stable
+  while the page is unchanged) and the lists to choose from (search
+  results, videos, rows), each entry with its title, channel or site,
+  duration, counts and date, ranked so "the results" is the main list. It
+  acts as assistive technology does (press, focus, scroll, set text,
+  submit, play and pause), never writes a password, card or one-time code
+  field, and refuses a target that is no longer on the page. Hand-built
+  YouTube-, Google- and Wikipedia-like pages test it, a new fuzzer covers
+  hostile trees, and the first browser tests drive a video site from search
+  to sound by these actions alone.
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):
   one command runs a built browser's MoltNet window in a network namespace
   where only Tor's traffic may leave. It captures every packet and every

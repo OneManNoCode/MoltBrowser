@@ -181,6 +181,19 @@ Five layers, tried in this order:
 - **Fallback:** where the accessibility tree is poor (canvas apps, unlabeled controls), the vision model describes the screenshot (masked as today), and the existing element snapshot fills gaps.
 - **Shared with the agent:** this replaces its 40-element snapshot with a richer, more robust one.
 
+**Implementation (round 36, Phase 0).** In `chrome/browser/molt_ai/voice/`:
+- **Source:** live trees rather than snapshots. `VoicePageController` (`voice_page_controller.*`, one per tab) holds a scoped accessibility mode on its tab while voice mode is on, and keeps each frame's `ui::AXTree` from `AccessibilityEventReceived()`, in the browser process. Actions need the renderer's accessibility to stay on anyway, and a snapshot's node ids would not be the live ones. The mode is `kWebContents | kExtendedProperties`: the second adds checked states, placeholders, heading levels, list positions, HTML tags, autocomplete and default actions. It has no `kNativeAPIs` (no platform tree), `kInlineTextBoxes`, `kHTML` or `kScreenReader`. The reasons are in the controller's `.cc`.
+- **Joining frames:** `ax_page_source.*` walks the top-level tree and joins each frame's tree under its host (child tree ids), each tree at most once. Only the tab's own primary-page frames are looked up.
+- **The map:** `page_map.*` is std-only, over a flat node list.
+  - **Items:** everything that can be acted on and isn't hidden is numbered in reading order, on screen or not, so scrolling never changes a number. Off-screen items are marked; the overlay will number only the visible ones.
+  - **Lists:** semantic lists, feeds, list boxes and table rows, and repeated structures. A repeated structure is a container whose children (at least 3, not inline text, each holding an action) have similar shapes: the roles and depths of their content, ignoring wrapper divs and custom elements, and how many links, headings and buttons they hold.
+  - **Entries:** each has a primary action (the link in or around its heading), a title (that link's visible text, not a long `aria-label`), a channel or site, and typed fields: duration, counts and date (`page_map_text.*`, English for now).
+  - **Ranking:** lists are ranked by prominence (entries, their size, titles, fields and headings, the main landmark; navigation counts against), so "the results" is `lists[0]`.
+  - **Text and secrets:** all text is cleaned for speech (no control, bidi or invisible characters, capped). Credential fields are marked (agent_safety's classification plus their labels), and their values are never kept.
+  - **Bounds:** the work is capped (20,000 nodes, depth 256, a work budget).
+  - **Tests:** unit tests with hand-built YouTube-, Google- and Wikipedia-like trees; `molt_page_map_fuzzer`.
+- **Not yet:** the browser UI's own tree, the numbers overlay (it will draw `PageItem::bounds`), speech, and the agent acting through `PageNodeHandle`s instead of its isolated-world scripts.
+
 ### 6.4 Matching what was said to what is on screen
 
 - **Ordinals and numbers first:** "fourth", "number four", "4", "the last".
@@ -198,6 +211,18 @@ Five layers, tried in this order:
 - **Text entry:** set-value or the input method path, with the page's input events.
 - **Browser commands:** Chromium's command IDs (back, reload, new tab, zoom, find) and the media session for playback control.
 - **Safety:** every action still passes `agent_safety` (http(s) only, credential fields, untrusted-text fencing) and §7's confirmations.
+
+**Implementation (round 36, Phase 0).** `VoicePageController` acts on the map's `PageNodeHandle`s through `RenderFrameHost::AccessibilityPerformAction()`:
+- **Press:** `kDoDefault`. Blink's `AXObject::OnNativeClickAction()` notifies user activation, then dispatches the element's pointer, mouse and click events. The browser accepts the activation, so unmuted media and full screen are allowed afterwards.
+- **Focus** and **scroll into view:** `kFocus` and `kScrollToMakeVisible`.
+- **Set text:** `kSetValue` (`AXNodeObject::OnNativeSetValueAction()`), which fires the `input` and `change` events forms listen to. It is refused for protected and credential fields, read-only, disabled and non-text fields. The text is cleaned first (`TypedText()`).
+- **Submit:** presses the form's submit input when there is one. Otherwise it focuses the field, waits until its frame reports the focus there (key events travel apart from accessibility actions), and sends Enter to the frame's widget, as the keyboard does.
+- **Media:**
+  - **Play:** the element's default action. The page's player starts with sound: the click carries user activation.
+  - **Pause and resume:** the tab's media session, as the media keys do. Resume plays as triggered by the user, so the sound stays on.
+- **Stale targets:** before each action the handle is found again. Its frame must be this tab's, active, in the primary page and an http(s) document, and the node must be in that frame's current tree. A handle from an earlier document is refused.
+- **Turning it off:** `Stop()` releases the mode and drops the trees.
+- **Tests:** the browser tests (`voice_page_controller_browsertest.cc`, pages in `chrome/test/data/molt_voice/`) drive a video site from search to sound, a search engine's results, a sign-in form and a cross-site frame through the controller alone. They run on the build machine.
 
 ### 6.6 Speaking and showing
 
