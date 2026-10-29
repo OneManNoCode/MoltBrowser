@@ -176,9 +176,9 @@ void ApplyConstraintsProcessor::ProcessVideoDeviceRequest() {
     return;
   }
 
-  // MoltBrowser: a MoltNet camera opened in a mode that reaches every format
-  // it shows, so its track is reconfigured on the running source
-  // (moltnet_camera.h).
+  // MoltBrowser: a MoltNet camera opened in a mode its every format is
+  // cropped and scaled from, so its track is reconfigured on the running
+  // source (moltnet_camera.h).
   if (molt_fingerprinting::UsesUniformCamera(video_source_->device().type)) {
     FinalizeVideoRequest();
     return;
@@ -409,7 +409,7 @@ ApplyConstraintsProcessor::SelectVideoDeviceSettings(
           ? static_cast<mojom::blink::FacingMode>(
                 GetCurrentVideoSource()->device().video_facing)
           : mojom::blink::FacingMode::kNone;
-  // MoltBrowser: a MoltNet camera's formats are the menu entries it reaches
+  // MoltBrowser: a MoltNet camera's formats are the menu's entries
   // (moltnet_camera.h).
   device_capabilities.formats = molt_fingerprinting::UniformCameraFormats(
       formats, GetCurrentVideoSource()

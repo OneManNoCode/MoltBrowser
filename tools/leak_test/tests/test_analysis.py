@@ -166,13 +166,20 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['uniform.audio.mic_remote_only'], 'FAIL')
         self.assertEqual(status['uniform.audio.mic_remote_only_settings'],
                          'PASS')
-        # The camera's menu formats, and a frame of the device's own size.
+        # The camera's menu formats, and a frame of the device's own size;
+        # its ImageCapture and frame timing, with timestamps of the device's
+        # own rate.
         for key in ('video.camera_settings', 'video.camera_capabilities',
                     'video.camera_hd_settings', 'video.camera_hd_frame',
                     'video.camera_device_capabilities',
-                    'video.camera_overconstrained'):
+                    'video.camera_overconstrained',
+                    'video.camera_image_capture', 'video.camera_timing_steps',
+                    'video.camera_color_space',
+                    'video.camera_frame_callbacks', 'video.camera_stats'):
             self.assertEqual(status['uniform.' + key], 'PASS', key)
         self.assertEqual(status['uniform.video.camera_frame'], 'FAIL')
+        self.assertEqual(status['uniform.video.camera_timing_on_grid'],
+                         'FAIL')
         self.assertEqual(rep['arch'], 'x86_64')
 
     def test_report_rebuilds_into_another_directory(self):
@@ -957,7 +964,16 @@ class Uniformity(unittest.TestCase):
                    'video.camera_device_capabilities': [
                        dict(c) for c in ex.CAMERA_DEVICE_CAPABILITIES],
                    'video.camera_overconstrained': dict(
-                       ex.CAMERA_OVERCONSTRAINED)}}
+                       ex.CAMERA_OVERCONSTRAINED),
+                   # Its ImageCapture and frame timing.
+                   'video.camera_image_capture': dict(
+                       ex.CAMERA_IMAGE_CAPTURE),
+                   'video.camera_timing_on_grid': True,
+                   'video.camera_timing_steps': [1, 2],
+                   'video.camera_color_space': dict(ex.CAMERA_COLOR_SPACE),
+                   'video.camera_frame_callbacks': dict(
+                       ex.CAMERA_FRAME_CALLBACKS),
+                   'video.camera_stats': dict(ex.CAMERA_STATS)}}
         res = uniformity.check_record(rec, 'Linux', 'x86_64')
         self.assertEqual(sorted(r['key'] for r in res),
                          sorted(r[0] for r in ex.MIC_RULES))
@@ -996,6 +1012,22 @@ class Uniformity(unittest.TestCase):
         values['video.camera_hd_frame']['codedWidth'] = 1920
         values['video.camera_device_capabilities'][0]['frameRate'] = [1, 20]
         values['video.camera_overconstrained'] = 'granted'
+        # The device's controls and photos, its own rate and colours, its
+        # own drops.
+        values['video.camera_image_capture'] = dict(
+            ex.CAMERA_IMAGE_CAPTURE,
+            track_members={'capabilities': ['focusMode', 'zoom'],
+                           'settings': ['focusMode', 'zoom']},
+            photo={'type': 'image/png', 'width': 1280, 'height': 720})
+        values['video.camera_timing_on_grid'] = False
+        values['video.camera_timing_steps'] = [1, 3]
+        values['video.camera_color_space'] = dict(
+            ex.CAMERA_COLOR_SPACE, primaries='bt709', transfer='bt709',
+            matrix='bt709')
+        values['video.camera_frame_callbacks'] = dict(
+            ex.CAMERA_FRAME_CALLBACKS, media_time_on_grid=False)
+        values['video.camera_stats'] = {'dropped': 2,
+                                        'half_discarded': False}
         res = {r['key']: r['status'] for r in uniformity.check_record(
             rec, 'Linux')}
         for key in ('audio.mic_settings', 'audio.mic_system_aec',
@@ -1006,7 +1038,11 @@ class Uniformity(unittest.TestCase):
                     'video.camera_capabilities', 'video.camera_frame',
                     'video.camera_hd_settings', 'video.camera_hd_frame',
                     'video.camera_device_capabilities',
-                    'video.camera_overconstrained'):
+                    'video.camera_overconstrained',
+                    'video.camera_image_capture',
+                    'video.camera_timing_on_grid',
+                    'video.camera_timing_steps', 'video.camera_color_space',
+                    'video.camera_frame_callbacks', 'video.camera_stats'):
             self.assertEqual(res[key], 'FAIL', key)
         self.assertEqual(res['audio.mic_system_aec_settings'], 'PASS')
         # A case whose getUserMedia() failed is reported, not compared.
@@ -1042,7 +1078,7 @@ class Uniformity(unittest.TestCase):
         # The camera's values, every one a rule.
         camera_keys = [r[0] for r in ex.MIC_RULES
                        if r[0].startswith('video.camera_')]
-        self.assertEqual(len(camera_keys), 7)
+        self.assertEqual(len(camera_keys), 13)
         for key in camera_keys:
             self.assertIn("'%s'" % key, camera, key)
         for key in ('audio.stretched', 'pixels.jxl', 'cpu.float16_nan',

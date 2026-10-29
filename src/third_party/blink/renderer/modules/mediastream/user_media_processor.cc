@@ -1029,8 +1029,12 @@ void UserMediaProcessor::SetupVideoInput() {
   StreamControls* const stream_controls =
       current_request_info_->stream_controls();
 
+  // MoltBrowser: never for a MoltNet camera, which has no pan, tilt or zoom
+  // (moltnet_camera.h).
   stream_controls->request_pan_tilt_zoom_permission =
-      IsPanTiltZoomPermissionRequested(request->VideoConstraints());
+      IsPanTiltZoomPermissionRequested(request->VideoConstraints()) &&
+      molt_fingerprinting::RequestsPanTiltZoomPermission(
+          request->VideoConstraints(), video_controls.stream_type);
 
   stream_controls->request_all_screens =
       request->MediaRequestType() == UserMediaRequestType::kAllScreensMedia;
@@ -1842,7 +1846,7 @@ MediaStreamSource* UserMediaProcessor::InitializeVideoSourceObject(
       // TODO(crbug.com/704136): Change ComputeCapabilitiesForVideoSource to
       // operate over Vector.
       String::FromUtf8(device.id),
-      // MoltBrowser: a MoltNet camera's from the menu formats it reaches
+      // MoltBrowser: a MoltNet camera's from the menu's formats
       // (moltnet_camera.h).
       molt_fingerprinting::UniformCameraFormats(
           ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
@@ -2080,8 +2084,8 @@ UserMediaProcessor::CreateVideoSource(
   return std::make_unique<blink::MediaStreamVideoCapturerSource>(
       frame_->GetTaskRunner(TaskType::kInternalMediaRealTime), frame_,
       std::move(stop_callback), device,
-      // MoltBrowser: a MoltNet camera opens in its mode that reaches every
-      // format it shows (moltnet_camera.h).
+      // MoltBrowser: a MoltNet camera opens in its mode that reaches the
+      // menu's larger format, or its largest (moltnet_camera.h).
       molt_fingerprinting::UniformCameraCaptureParams(
           current_request_info_->video_capture_settings().capture_params(),
           *current_request_info_->GetNativeVideoFormats(

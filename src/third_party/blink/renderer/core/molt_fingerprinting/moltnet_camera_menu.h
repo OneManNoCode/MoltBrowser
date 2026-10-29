@@ -18,8 +18,8 @@
 namespace blink::molt_fingerprinting {
 
 // The menu entries a camera with `modes` shows, smallest first
-// (moltnet::ReachableUniformCameraModes()). Empty only when `modes` has no
-// mode of a positive size.
+// (moltnet::ShownUniformCameraModes(): all of them). Empty only when `modes`
+// has no mode of a positive size.
 CORE_EXPORT Vector<moltnet::CameraMode> UniformCameraMenu(
     const Vector<moltnet::CameraMode>& modes);
 

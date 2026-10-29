@@ -6,8 +6,10 @@
 #include <algorithm>
 #include <utility>
 
+#include "media/base/molt_portable_media.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_converter.h"
+#include "media/base/video_frame_metadata.h"
 #include "media/base/video_frame_pool.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
@@ -18,6 +20,7 @@
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_constraints_util_video_device.h"
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"
+#include "third_party/blink/renderer/platform/webrtc/webrtc_video_frame_adapter.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace blink::molt_fingerprinting {
@@ -46,15 +49,6 @@ Formats MenuFormats(const Formats& formats) {
         media::PIXEL_FORMAT_I420));
   }
   return menu;
-}
-
-// A camera has no captured surface: the size and scale a screen capture's
-// frames carry for getSettings() and getCapabilities() (the Captured Surface
-// Resolution API), which Chromium's fake camera sets to its own mode, aren't
-// kept.
-void DropCapturedSurface(media::VideoFrame& frame) {
-  frame.metadata().source_size.reset();
-  frame.metadata().device_scale_factor.reset();
 }
 
 // The largest centred part of `bounds` with the aspect ratio of `size`, with
@@ -91,18 +85,32 @@ media::VideoCaptureFormats UniformCameraFormats(
 }
 
 void UseUniformCameraFormats(VideoDeviceCaptureCapabilities& capabilities) {
+  if (!UsesUniformCamera(mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE)) {
+    return;
+  }
   for (VideoInputDeviceCapabilities& device :
        capabilities.device_capabilities) {
     device.formats = UniformCameraFormats(
         device.formats, mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+    device.control_support = media::VideoCaptureControlSupport();
   }
 }
 
 void UseUniformCameraFormats(
     mojom::blink::VideoInputDeviceCapabilities& capabilities) {
+  if (!UsesUniformCamera(mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE)) {
+    return;
+  }
   capabilities.formats =
       UniformCameraFormats(capabilities.formats,
                            mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+  capabilities.control_support = media::VideoCaptureControlSupport();
+}
+
+bool RequestsPanTiltZoomPermission(const MediaConstraints& video,
+                                   mojom::blink::MediaStreamType type) {
+  return IsPanTiltZoomConstraintPresentAndNotFalse(video) &&
+         !UsesUniformCamera(type);
 }
 
 VideoCaptureSettings UniformCameraSettings(const VideoCaptureSettings& settings,
@@ -171,15 +179,13 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
     return base::unexpected(
         DropReason::kResolutionAdapterCannotCreateConvertFrame);
   }
-  // Already a frame of exactly `size`, I420, in memory: as it is.
+  // Already a frame of exactly `size`, I420, in memory, in the cameras'
+  // encoding: its samples as they are.
   if (!frame->HasSharedImage() && frame->HasDirectCpuAccess() &&
       frame->format() == media::PIXEL_FORMAT_I420 &&
       frame->coded_size() == size && frame->visible_rect() == gfx::Rect(size) &&
-      frame->natural_size() == size) {
-    if (!frame->metadata().source_size &&
-        !frame->metadata().device_scale_factor) {
-      return frame;
-    }
+      frame->natural_size() == size &&
+      media::HasPortableCameraEncoding(*frame)) {
     scoped_refptr<media::VideoFrame> wrapped =
         media::VideoFrame::WrapVideoFrame(frame, frame->format(),
                                           frame->visible_rect(),
@@ -188,11 +194,12 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
       return base::unexpected(
           DropReason::kResolutionAdapterWrappingFrameForCroppingFailed);
     }
-    DropCapturedSurface(*wrapped);
+    wrapped->set_metadata(UniformCameraFrameMetadata(frame->metadata()));
+    media::SetPortableCameraColorSpace(*wrapped);
     return wrapped;
   }
   if (frame->HasSharedImage()) {
-    if (!frame->HasMappableSharedImage()) {
+    if (NeedsUniformCameraReadback(*frame)) {
       return base::unexpected(DropReason::kResolutionAdapterFrameIsNotMappable);
     }
     frame = media::ConvertToMemoryMappedFrame(std::move(frame));
@@ -223,14 +230,147 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
     return base::unexpected(
         DropReason::kResolutionAdapterCannotCreateConvertFrame);
   }
-  uniform->metadata().MergeMetadataFrom(frame->metadata());
-  uniform->metadata().ClearTextureFrameMetadata();
-  DropCapturedSurface(*uniform);
+  uniform->set_metadata(UniformCameraFrameMetadata(frame->metadata()));
   if (!converter.ConvertAndScale(*cropped, *uniform).is_ok()) {
     return base::unexpected(
         DropReason::kResolutionAdapterConvertAndScaleFailed);
   }
+  // The converter leaves the samples in the camera's encoding (YUV) or in the
+  // one it gives the frame (RGB), and says which in the frame's colour space:
+  // converted to the cameras' one, with integer arithmetic, the same on every
+  // CPU.
+  if (!media::UsePortableCameraColor(*uniform)) {
+    return base::unexpected(
+        DropReason::kResolutionAdapterConvertAndScaleFailed);
+  }
   return uniform;
+}
+
+media::VideoFrameMetadata UniformCameraFrameMetadata(
+    const media::VideoFrameMetadata& metadata) {
+  media::VideoFrameMetadata uniform;
+  uniform.capture_version = metadata.capture_version;
+  uniform.transformation = metadata.transformation;
+  return uniform;
+}
+
+bool NeedsUniformCameraReadback(const media::VideoFrame& frame) {
+  return frame.HasSharedImage() && !frame.HasMappableSharedImage();
+}
+
+namespace {
+
+// Reads through the GPU context of the renderer's media work, with the
+// helper Chromium's WebRTC encoders read such frames with.
+class MediaContextFrameReader final : public UniformCameraFrameReader {
+ public:
+  MediaContextFrameReader()
+      : resources_(WebRtcVideoFrameAdapter::SharedResources::Create(
+            /*gpu_factories=*/nullptr)) {}
+
+  scoped_refptr<media::VideoFrame> Read(
+      scoped_refptr<media::VideoFrame> frame) override {
+    if (!frame || !NeedsUniformCameraReadback(*frame)) {
+      return nullptr;
+    }
+    return resources_->ConstructVideoFrameFromTexture(std::move(frame));
+  }
+
+ private:
+  ~MediaContextFrameReader() override = default;
+
+  const scoped_refptr<WebRtcVideoFrameAdapter::SharedResources> resources_;
+};
+
+}  // namespace
+
+scoped_refptr<UniformCameraFrameReader> UniformCameraFrameReader::Create() {
+  return base::MakeRefCounted<MediaContextFrameReader>();
+}
+
+scoped_refptr<media::VideoFrame> UniformCameraUnreadableFrame(
+    const gfx::Size& size,
+    const media::CaptureVersion& capture_version) {
+  if (size.IsEmpty()) {
+    return nullptr;
+  }
+  // Black at limited range: Y 16, Cb and Cr 128.
+  scoped_refptr<media::VideoFrame> frame = media::VideoFrame::CreateColorFrame(
+      size, /*y=*/16, /*u=*/128, /*v=*/128, base::TimeDelta());
+  if (!frame) {
+    return nullptr;
+  }
+  media::VideoFrameMetadata metadata;
+  metadata.capture_version = capture_version;
+  frame->set_metadata(metadata);
+  media::SetPortableCameraColorSpace(*frame);
+  return frame;
+}
+
+namespace {
+
+int64_t Microseconds(base::TimeTicks time) {
+  return (time - base::TimeTicks()).InMicroseconds();
+}
+
+base::TimeTicks TimeTicksOf(int64_t microseconds) {
+  return base::TimeTicks() + base::Microseconds(microseconds);
+}
+
+}  // namespace
+
+UniformCameraClock::UniformCameraClock() = default;
+UniformCameraClock::~UniformCameraClock() = default;
+
+std::optional<base::TimeTicks> UniformCameraClock::OnSourceFrame(
+    base::TimeTicks now) {
+  // Tests' ticks run on the grid's time: a frame arrives just before the
+  // pending tick.
+  if (manual_ticks_for_testing_ && grid_.origin()) {
+    now = NextTickDue();
+  }
+  const std::optional<int64_t> due = grid_.OnSourceFrame(Microseconds(now));
+  if (!due) {
+    return std::nullopt;
+  }
+  return TimeTicksOf(*due);
+}
+
+std::optional<UniformCameraClock::Tick> UniformCameraClock::OnTick(
+    base::TimeTicks now) {
+  // Tests' ticks run when due.
+  if (manual_ticks_for_testing_) {
+    now = NextTickDue();
+  }
+  const std::optional<int64_t> tick = grid_.OnTick(Microseconds(now));
+  if (!tick || !grid_.origin()) {
+    return std::nullopt;
+  }
+  const int64_t since_first = moltnet::UniformCameraTickMicroseconds(*tick);
+  return Tick{base::Microseconds(since_first),
+              TimeTicksOf(*grid_.origin() + since_first)};
+}
+
+base::TimeTicks UniformCameraClock::NextTickDue() const {
+  return TimeTicksOf(grid_.NextTickDue());
+}
+
+scoped_refptr<media::VideoFrame> UniformCameraTickFrame(
+    const scoped_refptr<media::VideoFrame>& held,
+    const UniformCameraClock::Tick& tick) {
+  scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapVideoFrame(
+      held, held->format(), held->visible_rect(), held->natural_size());
+  if (!frame) {
+    return nullptr;
+  }
+  frame->set_timestamp(tick.timestamp);
+  media::VideoFrameMetadata metadata =
+      UniformCameraFrameMetadata(held->metadata());
+  metadata.capture_begin_time = tick.time;
+  metadata.reference_time = tick.time;
+  metadata.frame_rate = moltnet::kUniformCameraFrameRate;
+  frame->set_metadata(metadata);
+  return frame;
 }
 
 void UseUniformCameraTrackSettings(const VideoTrackAdapterSettings& adapter,

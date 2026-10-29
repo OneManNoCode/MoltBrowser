@@ -20,7 +20,7 @@ namespace {
 // The sizes of the entries a camera with `modes` shows.
 std::vector<std::pair<int, int>> Shown(const std::vector<CameraMode>& modes) {
   std::vector<std::pair<int, int>> sizes;
-  for (const CameraMode& entry : ReachableUniformCameraModes(modes)) {
+  for (const CameraMode& entry : ShownUniformCameraModes(modes)) {
     EXPECT_EQ(entry.frame_rate, kUniformCameraFrameRate);
     sizes.emplace_back(entry.width, entry.height);
   }
@@ -28,7 +28,6 @@ std::vector<std::pair<int, int>> Shown(const std::vector<CameraMode>& modes) {
 }
 
 const std::vector<std::pair<int, int>> kBoth = {{640, 480}, {1280, 720}};
-const std::vector<std::pair<int, int>> kVga = {{640, 480}};
 
 // The mode the camera opens in, as width, height and rate.
 std::optional<CameraMode> Opened(const std::vector<CameraMode>& modes) {
@@ -84,44 +83,85 @@ TEST(MoltNetCameraValuesTest, HdCamera) {
   ExpectOpens({{1600, 1200, 30.0f}, {640, 480, 30.0f}}, 1600, 1200, 30.0f);
 }
 
-// A camera whose largest mode is 640x480 shows 640x480 alone, never its own
-// smaller modes; one between the entries too.
+// A camera whose largest mode is 640x480 shows both entries too, never its
+// own smaller modes: its frames are scaled up to 1280x720. So does one
+// between the entries. It opens in its largest mode, the one the larger
+// entry is scaled up from.
 TEST(MoltNetCameraValuesTest, VgaCamera) {
   const std::vector<CameraMode> vga = {
       {160, 120, 30.0f}, {320, 240, 30.0f}, {640, 480, 30.0f}};
-  EXPECT_EQ(Shown(vga), kVga);
+  EXPECT_EQ(Shown(vga), kBoth);
   ExpectOpens(vga, 640, 480, 30.0f);
 
   const std::vector<CameraMode> svga = {{800, 600, 30.0f}, {1024, 768, 30.0f}};
-  EXPECT_EQ(Shown(svga), kVga);
-  ExpectOpens(svga, 800, 600, 30.0f);
+  EXPECT_EQ(Shown(svga), kBoth);
+  ExpectOpens(svga, 1024, 768, 30.0f);
 
-  // 1280x800 is wide and tall enough; 1280x700 isn't tall enough for 720.
+  // 1280x800 is wide and tall enough for 1280x720; 1280x700 isn't tall
+  // enough, and shows both entries all the same.
   EXPECT_EQ(Shown({{1280, 800, 30.0f}}), kBoth);
-  EXPECT_EQ(Shown({{1280, 700, 30.0f}}), kVga);
+  EXPECT_EQ(Shown({{1280, 700, 30.0f}}), kBoth);
+  ExpectOpens({{1280, 800, 30.0f}, {1280, 700, 30.0f}, {640, 480, 30.0f}},
+              1280, 800, 30.0f);
 }
 
-// A camera that reaches no entry still shows the smallest, to which its
-// frames are scaled up, and opens in its largest mode.
+// A camera that reaches no entry shows both, to which its frames are scaled
+// up, and opens in its largest mode.
 TEST(MoltNetCameraValuesTest, CameraBelowTheMenu) {
   const std::vector<CameraMode> modes = {
       {176, 144, 30.0f}, {352, 288, 30.0f}, {320, 240, 30.0f}};
-  EXPECT_EQ(Shown(modes), kVga);
+  EXPECT_EQ(Shown(modes), kBoth);
   ExpectOpens(modes, 352, 288, 30.0f);
 
   // Wide but not tall enough for any entry.
-  EXPECT_EQ(Shown({{1920, 400, 30.0f}}), kVga);
+  EXPECT_EQ(Shown({{1920, 400, 30.0f}}), kBoth);
   ExpectOpens({{1920, 400, 30.0f}, {640, 360, 30.0f}}, 1920, 400, 30.0f);
 }
 
-// The entries count at the menu's rate: a camera's slow modes don't reach an
-// entry while it has a fast mode, so an HD size it only has at 10 fps isn't
-// shown. A camera without any fast mode goes by all its modes.
+// Every camera with a mode shows the same entries: whatever its sizes, rates
+// and orientation, a page can't tell cameras apart by them.
+TEST(MoltNetCameraValuesTest, EveryCameraShowsEveryEntry) {
+  const std::vector<std::vector<CameraMode>> cameras = {
+      {{3840, 2160, 30.0f}, {1920, 1080, 60.0f}},
+      {{1280, 720, 30.0f}},
+      {{1280, 720, 10.0f}, {640, 480, 30.0f}},
+      {{640, 480, 30.0f}},
+      {{640, 480, 15.0f}},
+      {{320, 240, 30.0f}},
+      {{160, 120, 5.0f}},
+      {{720, 1280, 30.0f}},
+      {{1, 1, 30.0f}},
+  };
+  for (const std::vector<CameraMode>& modes : cameras) {
+    EXPECT_EQ(Shown(modes), kBoth);
+    EXPECT_TRUE(Opened(modes).has_value());
+  }
+}
+
+// A camera another window already has open: the browser reports the one mode
+// it runs in (its format in use) instead of the camera's own modes. What the
+// camera shows doesn't depend on that mode, so a page sees the same entries
+// as when the camera is free.
+TEST(MoltNetCameraValuesTest, FormatInUseShowsTheSameEntries) {
+  const std::vector<CameraMode> own = {{1920, 1080, 30.0f},
+                                       {1280, 720, 30.0f},
+                                       {640, 480, 30.0f},
+                                       {320, 240, 15.0f}};
+  for (const CameraMode& in_use : own) {
+    EXPECT_EQ(Shown({in_use}), Shown(own));
+  }
+  EXPECT_EQ(Shown({{352, 288, 7.5f}}), Shown(own));
+}
+
+// The mode a camera opens in runs at the menu's rate where it can: a
+// camera's slow modes don't count while it has a fast mode, so one that has
+// HD only at 10 fps opens in its fast 640x480 and scales 1280x720 up from it.
+// A camera without any fast mode goes by all its modes.
 TEST(MoltNetCameraValuesTest, FrameRates) {
   const std::vector<CameraMode> slow_hd = {{1280, 720, 10.0f},
                                            {1920, 1080, 5.0f},
                                            {640, 480, 30.0f}};
-  EXPECT_EQ(Shown(slow_hd), kVga);
+  EXPECT_EQ(Shown(slow_hd), kBoth);
   ExpectOpens(slow_hd, 640, 480, 30.0f);
 
   const std::vector<CameraMode> all_slow = {{640, 480, 15.0f},
@@ -151,10 +191,12 @@ TEST(MoltNetCameraValuesTest, FrameRates) {
   ExpectOpens(fake, 1280, 720, 20.0f);
 }
 
-// A rotated (portrait) mode reaches what its width and height reach.
+// A rotated (portrait) mode reaches what its width and height reach: 720x1280
+// isn't wide enough for 1280x720, so the camera opens in its largest mode.
 TEST(MoltNetCameraValuesTest, PortraitModes) {
-  EXPECT_EQ(Shown({{720, 1280, 30.0f}}), kVga);
+  EXPECT_EQ(Shown({{720, 1280, 30.0f}}), kBoth);
   ExpectOpens({{720, 1280, 30.0f}, {480, 640, 30.0f}}, 720, 1280, 30.0f);
+  ExpectOpens({{720, 1280, 30.0f}, {1280, 720, 30.0f}}, 1280, 720, 30.0f);
 }
 
 // What the camera shows and opens in depends on its set of modes, not on the
@@ -190,7 +232,7 @@ TEST(MoltNetCameraValuesTest, UnusableModes) {
 
   const float nan = std::numeric_limits<float>::quiet_NaN();
   // A NaN rate is slow: with a fast mode it doesn't count.
-  EXPECT_EQ(Shown({{1920, 1080, nan}, {640, 480, 30.0f}}), kVga);
+  EXPECT_EQ(Shown({{1920, 1080, nan}, {640, 480, 30.0f}}), kBoth);
   ExpectOpens({{1920, 1080, nan}, {640, 480, 30.0f}, {0, 0, 30.0f}}, 640, 480,
               30.0f);
   // Without one, every mode counts.
@@ -202,9 +244,8 @@ TEST(MoltNetCameraValuesTest, UnusableModes) {
             30.0f);
 }
 
-// The mode a camera opens in reaches every entry it shows, so a camera that
-// is already open shows, from that one mode, what it showed before it
-// opened (a second getUserMedia(), applyConstraints()).
+// A camera that is already open shows, from the one mode it opened in, what
+// it showed before it opened (a second getUserMedia(), applyConstraints()).
 TEST(MoltNetCameraValuesTest, OpenModeShowsTheSameEntries) {
   const std::vector<std::vector<CameraMode>> cameras = {
       {{1920, 1080, 30.0f}, {1280, 720, 30.0f}, {640, 480, 30.0f}},
@@ -220,6 +261,110 @@ TEST(MoltNetCameraValuesTest, OpenModeShowsTheSameEntries) {
     ASSERT_TRUE(opened.has_value());
     EXPECT_EQ(Shown({*opened}), Shown(modes));
   }
+}
+
+// The grid's ticks: 30 a second in whole microseconds, rounded down, and the
+// first tick at or after a time.
+TEST(MoltNetCameraValuesTest, GridTicks) {
+  EXPECT_EQ(UniformCameraTickMicroseconds(0), 0);
+  EXPECT_EQ(UniformCameraTickMicroseconds(1), 33333);
+  EXPECT_EQ(UniformCameraTickMicroseconds(2), 66666);
+  EXPECT_EQ(UniformCameraTickMicroseconds(3), 100000);
+  EXPECT_EQ(UniformCameraTickMicroseconds(30), 1000000);
+  EXPECT_EQ(UniformCameraTickMicroseconds(108000), 3600000000);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(-5), 0);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(0), 0);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(1), 1);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(33333), 1);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(33334), 2);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(1000000), 30);
+  for (int64_t elapsed = 1; elapsed < 400000; elapsed += 7) {
+    const int64_t tick = UniformCameraTickAtOrAfter(elapsed);
+    ASSERT_GE(UniformCameraTickMicroseconds(tick), elapsed);
+    ASSERT_LT(UniformCameraTickMicroseconds(tick - 1), elapsed);
+  }
+  // The intervals: 33333, 33333 and 33334 microseconds, a second every 30.
+  for (int64_t tick = 1; tick < 3000; ++tick) {
+    const int64_t interval = UniformCameraTickMicroseconds(tick) -
+                             UniformCameraTickMicroseconds(tick - 1);
+    ASSERT_TRUE(interval == 33333 || interval == 33334) << tick;
+  }
+}
+
+// A camera's frames at its own rate and jitter reach the grid's ticks: one
+// tick after another, whatever the frames' times; the first frame starts the
+// grid at once.
+TEST(MoltNetCameraValuesTest, GridIgnoresTheCamerasTiming) {
+  constexpr int64_t kStart = 5'000'000'000;
+  for (const int64_t interval : {66'667, 33'333, 41'000, 16'667}) {
+    UniformCameraGrid grid;
+    EXPECT_FALSE(grid.OnTick(kStart).has_value());
+    EXPECT_EQ(grid.OnSourceFrame(kStart), kStart);
+    std::vector<int64_t> ticks;
+    int64_t next_frame = kStart + interval;
+    uint32_t jitter = 1;
+    for (int i = 0; i < 90; ++i) {
+      const int64_t due = grid.NextTickDue();
+      // Frames that arrive before the tick is due.
+      while (next_frame <= due) {
+        EXPECT_FALSE(grid.OnSourceFrame(next_frame).has_value());
+        jitter = jitter * 1664525u + 1013904223u;
+        next_frame += interval + static_cast<int64_t>(jitter >> 28) * 300;
+      }
+      const std::optional<int64_t> tick = grid.OnTick(due);
+      ASSERT_TRUE(tick.has_value());
+      ticks.push_back(*tick);
+    }
+    for (size_t i = 0; i < ticks.size(); ++i) {
+      EXPECT_EQ(ticks[i], static_cast<int64_t>(i));
+    }
+    EXPECT_EQ(grid.NextTickDue(), kStart + UniformCameraTickMicroseconds(90));
+  }
+}
+
+// A tick that runs late skips the ticks it missed; one that runs on time
+// doesn't.
+TEST(MoltNetCameraValuesTest, GridSkipsTicksItMissed) {
+  UniformCameraGrid grid;
+  ASSERT_EQ(grid.OnSourceFrame(0), 0);
+  EXPECT_EQ(grid.OnTick(0), 0);
+  EXPECT_EQ(grid.NextTickDue(), 33333);
+  grid.OnSourceFrame(30000);
+  // Tick 1 runs 100 ms late, after ticks 2 to 4 were due.
+  EXPECT_EQ(grid.OnTick(140000), 1);
+  EXPECT_EQ(grid.NextTickDue(), UniformCameraTickMicroseconds(5));
+  EXPECT_EQ(grid.OnTick(UniformCameraTickMicroseconds(5)), 5);
+  EXPECT_EQ(grid.NextTickDue(), UniformCameraTickMicroseconds(6));
+}
+
+// Without a frame for a second the grid stops; the next frame resumes it at
+// the first tick at or after its arrival, on the same grid.
+TEST(MoltNetCameraValuesTest, GridStopsAndResumes) {
+  UniformCameraGrid grid;
+  ASSERT_EQ(grid.OnSourceFrame(1000), 1000);
+  int64_t tick = 0;
+  for (; grid.ticking(); ++tick) {
+    const std::optional<int64_t> ran = grid.OnTick(grid.NextTickDue());
+    if (!ran) {
+      break;
+    }
+    EXPECT_EQ(*ran, tick);
+  }
+  // The last tick within a second of the frame was the 30th.
+  EXPECT_EQ(tick, 31);
+  EXPECT_FALSE(grid.ticking());
+  EXPECT_FALSE(grid.OnTick(5'000'000).has_value());
+  // A frame 4 s after the first: tick 120 is 4 s after tick 0.
+  EXPECT_EQ(grid.OnSourceFrame(1000 + 4'000'000), 1000 + 4'000'000);
+  EXPECT_EQ(grid.OnTick(1000 + 4'000'000), 120);
+  // A frame between ticks resumes at the next one.
+  UniformCameraGrid other;
+  other.OnSourceFrame(0);
+  other.OnTick(0);
+  EXPECT_FALSE(other.OnTick(2'000'000).has_value());
+  EXPECT_EQ(other.OnSourceFrame(2'000'001),
+            UniformCameraTickMicroseconds(61));
+  EXPECT_EQ(other.origin(), 0);
 }
 
 }  // namespace
