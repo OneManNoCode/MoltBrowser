@@ -182,6 +182,195 @@ var moltHTML = (function() {
 })();
 )JS";
 
+// Accessibility helpers shared by the pages that need them
+// (docs/ACCESSIBILITY.md). The page never writes HTML here.
+//
+//   moltA11y.announce(text)           read out politely by screen readers
+//   moltA11y.announce(text, {assertive: true})   read out at once (errors)
+//   moltA11y.openDialog(el, {labelledBy, label, focus, onEscape})
+//       |el| becomes a modal dialog: role, aria-modal and a name; focus
+//       moves into it and everything else on the page is inert (unreachable
+//       by Tab, pointer and screen reader) until
+//   moltA11y.closeDialog(el)          which puts focus back where it was.
+//   moltA11y.reducedMotion()          the user asked for less motion
+//   moltA11y.scrollBehavior()         'smooth', or 'auto' for less motion
+//
+// Enter and Space activate an element that isn't a native control but has
+// an activatable role (role="button" and the like) and a tabindex, as they
+// do a <button>. Pages use real buttons and links wherever they can; this
+// is for the rare control that can't be one.
+//
+// The live regions (role=status, role=alert) exist from the start: screen
+// readers ignore a region that appears together with its text. They carry
+// data-molt-live and are never made inert, so a message is heard while a
+// dialog is open too.
+inline constexpr char kMoltA11yJs[] = R"JS(
+var moltA11y = (function() {
+  'use strict';
+  var HIDDEN_STYLE = 'position:absolute;width:1px;height:1px;margin:-1px;' +
+      'padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);' +
+      'clip-path:inset(50%);white-space:nowrap';
+  var regions = {};
+  function region(role) {
+    var r = regions[role];
+    if (r && r.isConnected) return r;
+    r = document.createElement('div');
+    r.setAttribute('role', role);
+    r.setAttribute('aria-atomic', 'true');
+    r.setAttribute('data-molt-live', role);
+    r.style.cssText = HIDDEN_STYLE;
+    (document.body || document.documentElement).appendChild(r);
+    regions[role] = r;
+    return r;
+  }
+  var timers = {};
+  // The text is set a moment after the region is emptied, so the same
+  // message twice in a row is read twice.
+  function announce(text, opts) {
+    var role = opts && opts.assertive ? 'alert' : 'status';
+    var r = region(role);
+    var msg = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    r.textContent = '';
+    clearTimeout(timers[role]);
+    if (!msg) return;
+    timers[role] = setTimeout(function() { r.textContent = msg; }, 60);
+  }
+
+  var FOCUSABLE = 'a[href],area[href],button,input,select,textarea,iframe,' +
+      'summary,[tabindex],[contenteditable="true"],[contenteditable=""]';
+  function canFocus(el) {
+    if (el.disabled || el.type === 'hidden' ||
+        el.getAttribute('tabindex') === '-1') {
+      return false;
+    }
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      if (n.hidden || n.hasAttribute('inert')) return false;
+      var cs = window.getComputedStyle(n);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    }
+    return true;
+  }
+  function firstFocusable(root) {
+    var all = root.querySelectorAll(FOCUSABLE);
+    for (var i = 0; i < all.length; i++) {
+      if (canFocus(all[i])) return all[i];
+    }
+    return null;
+  }
+
+  var open = [];
+  function entryFor(el) {
+    for (var i = open.length - 1; i >= 0; i--) {
+      if (open[i].el === el) return i;
+    }
+    return -1;
+  }
+  function openDialog(el, opts) {
+    opts = opts || {};
+    if (entryFor(el) >= 0) closeDialog(el, {keepFocus: true});
+    var role = el.getAttribute('role');
+    if (role !== 'dialog' && role !== 'alertdialog') {
+      el.setAttribute('role', 'dialog');
+    }
+    el.setAttribute('aria-modal', 'true');
+    if (opts.labelledBy) el.setAttribute('aria-labelledby', opts.labelledBy);
+    if (opts.label) el.setAttribute('aria-label', opts.label);
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+    var d = {el: el, opener: document.activeElement, onEscape: opts.onEscape,
+             made: [], lifted: []};
+    // A dialog opened over another one: its own ancestors come back out
+    // of the first one's inert set while it is open.
+    for (var a = el; a && a.nodeType === 1; a = a.parentElement) {
+      if (!a.hasAttribute('inert')) continue;
+      for (var k = 0; k < open.length; k++) {
+        if (open[k].made.indexOf(a) >= 0) {
+          a.removeAttribute('inert');
+          d.lifted.push(a);
+          break;
+        }
+      }
+    }
+    for (var n = el; n.parentElement && n !== document.body;
+         n = n.parentElement) {
+      var sibs = n.parentElement.children;
+      for (var i = 0; i < sibs.length; i++) {
+        var s = sibs[i];
+        if (s === n || s.hasAttribute('inert') ||
+            s.hasAttribute('data-molt-live') ||
+            s.tagName === 'SCRIPT' || s.tagName === 'STYLE') {
+          continue;
+        }
+        s.setAttribute('inert', '');
+        d.made.push(s);
+      }
+    }
+    open.push(d);
+    var target = opts.focus || el.querySelector('[autofocus]') ||
+                 firstFocusable(el) || el;
+    target.focus();
+  }
+  function closeDialog(el, opts) {
+    var i = entryFor(el);
+    if (i < 0) return false;
+    var d = open.splice(i, 1)[0];
+    d.made.forEach(function(s) { s.removeAttribute('inert'); });
+    d.lifted.forEach(function(s) { s.setAttribute('inert', ''); });
+    if (opts && opts.keepFocus) return true;
+    var back = d.opener;
+    if (back && back.isConnected && back.focus && canFocus(back)) {
+      back.focus();
+    } else if (opts && opts.fallback) {
+      opts.fallback.focus();
+    }
+    return true;
+  }
+  function isOpen(el) { return entryFor(el) >= 0; }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.defaultPrevented) return;
+    if (e.key === 'Escape' && open.length) {
+      var top = open[open.length - 1];
+      if (top.onEscape) {
+        e.preventDefault();
+        top.onEscape(e);
+      }
+      return;
+    }
+    if ((e.key !== 'Enter' && e.key !== ' ') ||
+        e.altKey || e.ctrlKey || e.metaKey) {
+      return;
+    }
+    var t = e.target;
+    if (!t || t.nodeType !== 1 || t.isContentEditable) return;
+    if (/^(BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY)$/.test(t.tagName)) return;
+    if (t.tagName === 'A' && t.hasAttribute('href')) return;
+    var role = t.getAttribute('role');
+    if (!/^(button|link|menuitem|menuitemcheckbox|menuitemradio|tab|option|switch|checkbox|radio|treeitem)$/.test(role || '')) {
+      return;
+    }
+    if (role === 'link' && e.key === ' ') return;
+    e.preventDefault();
+    t.click();
+  });
+
+  function reducedMotion() {
+    return !!(window.matchMedia &&
+              window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  region('status');
+  region('alert');
+  return {
+    announce: announce,
+    openDialog: openDialog,
+    closeDialog: closeDialog,
+    isOpen: isOpen,
+    reducedMotion: reducedMotion,
+    scrollBehavior: function() { return reducedMotion() ? 'auto' : 'smooth'; },
+  };
+})();
+)JS";
+
 }  // namespace molt_webui
 
 #endif  // CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_WEBUI_CSP_H_

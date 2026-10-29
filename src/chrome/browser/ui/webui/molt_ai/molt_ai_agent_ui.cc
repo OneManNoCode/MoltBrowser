@@ -991,6 +991,13 @@ function h(tag,attrs,kids){
   return e;
 }
 function clear(el){while(el.firstChild)el.removeChild(el.firstChild);}
+/* A label for a field, tied to it by id (screen readers and voice
+   control name the field after it). */
+var fieldSeq=0;
+function fieldLabelFor(text,input){
+  if(!input.id)input.id='fld'+(++fieldSeq);
+  return h('label',{'for':input.id},text);
+}
 
 /* ---- trust (who may submit forms) ----
    A workflow's trust level gates form submits, Enter-in-a-form and saved-
@@ -1019,7 +1026,7 @@ function answerQuestion(id,q,allowed){
 function questionNode(id,q,after){
   if(!q||typeof q.text!=='string')return null;
   var label=QUESTION_LABELS.hasOwnProperty(q.kind)?QUESTION_LABELS[q.kind]:'Allow';
-  var box=h('div',{'class':'run-q'},[
+  var box=h('div',{'class':'run-q',role:'group','aria-label':'The run needs your OK'},[
     h('div',{'class':'rq-h'},'Needs your OK'+(typeof q.step==='number'?(' — step '+(q.step+1)):'')),
     h('div',{'class':'rq-m'},q.text.slice(0,600))
   ]);
@@ -1068,7 +1075,7 @@ function toolArgsNode(s){
     var shown=typeof v==='string'?('“'+v.slice(0,120)+'”'):JSON.stringify(v);
     parts.push(String(k).slice(0,64)+' = '+String(shown).slice(0,160));
   });
-  var kids=[h('label',{},'What it gives the tool'),
+  var kids=[h('div',{'class':'lbl'},'What it gives the tool'),
             h('div',{'class':'tool-args'},parts.length?parts.join('; '):'nothing')];
   if(t.frame&&typeof t.frame.origin==='string'){
     kids.push(h('div',{'class':'loc-note'},'In the page’s frame from '+t.frame.origin.slice(0,120)));
@@ -1204,8 +1211,11 @@ function formatNext(ts){
 }
 
 var toastTimer=null;
+/* The toast is a live region (an alert for errors); it stays out of a
+   dialog's inert background (data-molt-live) so it is heard then too. */
 function toast(msg,kind){
-  var t=$('toast');t.textContent=msg;t.className='toast show'+(kind?(' '+kind):'');
+  var t=$('toast');t.setAttribute('role',kind==='err'?'alert':'status');
+  t.textContent=msg;t.className='toast show'+(kind?(' '+kind):'');
   clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.className='toast';},2200);
 }
 
@@ -1229,6 +1239,11 @@ function showView(v){
   $('topbar').classList.toggle('sub',sub);
   $('topSub').textContent = v==='recording'?'Recording your task…' : v==='editor'?'Editing workflow' : v==='runs'?'Run history' : 'Record, run & schedule web tasks';
   closeCardMenu();closeAddMenu();
+  // The control that switched views is gone with the old view: focus
+  // goes to the new view's heading (the name field in the editor), so
+  // keyboard and screen reader users carry on from there.
+  var target=v==='editor'?$('edName'):$('view-'+v).querySelector('h2');
+  if(target)target.focus();
 }
 $('backBtn').addEventListener('click',function(){
   if(view==='editor'){showView('library');loadLibrary();}
@@ -1254,12 +1269,13 @@ function loadFrameTools(){
 function renderFrameTools(pairs){
   var old=$('frameTools'); if(old&&old.parentNode) old.parentNode.removeChild(old);
   if(!pairs.length) return;
-  var box=h('div',{'class':'frame-tools',id:'frameTools'},[
-    h('div',{'class':'ft-h'},'Other sites\u2019 tools you allowed'),
+  var box=h('section',{'class':'frame-tools',id:'frameTools','aria-labelledby':'frameToolsH'},[
+    h('h3',{'class':'ft-h',id:'frameToolsH'},'Other sites\u2019 tools you allowed'),
     h('div',{'class':'ft-s'},'Frames of these sites may offer their tools to the agent on these pages. Every call still asks you first.')
   ]);
   pairs.forEach(function(p){
-    var forget=h('button',{'class':'btn ghost ft-forget'},'Forget');
+    var forget=h('button',{'class':'btn ghost ft-forget',
+      'aria-label':'Forget '+String(p.frame||'')+' on '+String(p.main||'')},'Forget');
     forget.addEventListener('click',function(){
       sendWithPromise('forgetFrameTools',String(p.main),String(p.frame))
         .then(loadFrameTools,loadFrameTools);
@@ -1283,7 +1299,7 @@ function renderLibrary(list){
     : 'Teach the browser to do a task once — then let it repeat.';
   if(!list.length){
     box.appendChild(h('div',{'class':'empty'},[
-      h('div',{'class':'ico'},'\u{1F916}'),
+      h('div',{'class':'ico','aria-hidden':'true'},'\u{1F916}'),
       h('div',{'class':'eh'},'No workflows yet'),
       h('div',{'class':'ep'},'Hit “Record a workflow” and do a task on the page — the browser will remember every step and can replay it any time.')
     ]));
@@ -1301,7 +1317,7 @@ function siteChip(wf){
   var url = wf.startUrl || ('https://'+wf.host+'/');
   var letter = (wf.host.replace(/^www\./,'')[0]||'?').toUpperCase();
   var hue = 0; for(var k=0;k<wf.host.length;k++){hue=(hue*31+wf.host.charCodeAt(k))%360;}
-  var mono = h('span',{'class':'site-mono',style:'background:hsl('+hue+',44%,42%)'},letter);
+  var mono = h('span',{'class':'site-mono','aria-hidden':'true',style:'background:hsl('+hue+',44%,42%)'},letter);
   var fav = h('img',{'class':'site-fav',alt:'',
     src:'chrome://favicon2/?size=32&scaleFactor=2x&pageUrl='+encodeURIComponent(url)+'&allowGoogleServerFallback=0'});
   fav.addEventListener('load',function(){ if(fav.naturalWidth>1) mono.style.display='none'; });
@@ -1331,15 +1347,16 @@ function buildCard(wf){
 
   var card=h('div',{'class':'card'});
   card.setAttribute('data-wf-id',wf.id);
+  var wfName=wf.name||'Untitled workflow';
   card.appendChild(h('div',{'class':'card-head'},[
-    h('div',{'class':'cname'},wf.name||'Untitled workflow'),
+    h('h3',{'class':'cname'},wfName),
     siteChip(wf)
   ]));
   card.appendChild(sub);
 
   if(wf.schedule){
     card.appendChild(h('div',{'class':'chip'},[
-      h('span',{'class':'cg'},'⏰'),
+      h('span',{'class':'cg','aria-hidden':'true'},'⏰'),
       wf.schedule.label + (wf.schedule.nextFire?('  ·  next '+formatNext(wf.schedule.nextFire)):'')
     ]));
   }
@@ -1357,13 +1374,14 @@ function buildCard(wf){
   if(wf.draft){
     // A draft from an AI agent run: reviewed (and its sites confirmed)
     // before it can run or be scheduled.
-    actions.appendChild(h('button',{'class':'mini run grow',onClick:function(){openEditor(wf.id);}},['\u{1F50D}',' Review']));
+    actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Review '+wfName,onClick:function(){openEditor(wf.id);}},['\u{1F50D}',' Review']));
   }else{
-    actions.appendChild(h('button',{'class':'mini run grow',onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
-    actions.appendChild(h('button',{'class':'mini',onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
-    actions.appendChild(h('button',{'class':'mini',onClick:function(){openScheduleSheet(wf.id,wf.name);}},['⏰',' Schedule']));
+    actions.appendChild(h('button',{'class':'mini run grow','aria-label':'Run '+wfName,onClick:function(){runWorkflowFlow(wf.id);}},['▶',' Run']));
+    actions.appendChild(h('button',{'class':'mini','aria-label':'Edit '+wfName,onClick:function(){openEditor(wf.id);}},['✎',' Edit']));
+    actions.appendChild(h('button',{'class':'mini','aria-label':'Schedule '+wfName,onClick:function(){openScheduleSheet(wf.id,wf.name);}},['⏰',' Schedule']));
   }
-  actions.appendChild(h('button',{'class':'mini kebab',title:'More',onClick:function(e){e.stopPropagation();toggleCardMenu(card,wf);}},'⋯'));
+  actions.appendChild(h('button',{'class':'mini kebab',title:'More','aria-label':'More actions for '+wfName,
+    'aria-expanded':'false',onClick:function(e){e.stopPropagation();toggleCardMenu(card,wf);}},'⋯'));
   card.appendChild(actions);
 
   libraryCards[wf.id]=card;
@@ -1376,22 +1394,26 @@ function toggleCardMenu(card,wf){
   if(wf.draft){
     // Trusted only once its sites are confirmed, in the editor.
   }else if(!isTrusted(wf.trust)){
-    trustItem=h('div',{'class':'menu-item',title:TRUST_EXPLAIN,onClick:function(){
+    trustItem=h('button',{'class':'menu-item',type:'button',title:TRUST_EXPLAIN,onClick:function(){
       closeCardMenu();setTrust(wf.id,'approved').then(function(ok){if(ok)loadLibrary();});
     }},['\u{1F6E1}️',' '+trustLabel(wf.host)]);
   }else if(wf.trust==='approved'){
-    trustItem=h('div',{'class':'menu-item',onClick:function(){
+    trustItem=h('button',{'class':'menu-item',type:'button',onClick:function(){
       closeCardMenu();setTrust(wf.id,'casual').then(function(ok){if(ok)loadLibrary();});
     }},['\u{1F6E1}️',' Stop trusting it']);
   }
-  var menu=h('div',{'class':'card-menu open'},[
+  var menu=h('div',{'class':'card-menu open',role:'group','aria-label':'More actions for '+(wf.name||'Untitled workflow')},[
     trustItem,
-    h('div',{'class':'menu-item',onClick:function(){closeCardMenu();openRuns(wf.id,wf.name);}},['\u{1F553}',' View runs']),
-    h('div',{'class':'menu-item',onClick:function(){closeCardMenu();askDuplicate(wf);}},['⧉',' Duplicate']),
-    h('div',{'class':'menu-item',onClick:function(){closeCardMenu();askRename(wf);}},['✎',' Rename']),
-    h('div',{'class':'menu-item danger',onClick:function(){closeCardMenu();askDelete(wf);}},['\u{1F5D1}',' Delete'])
+    h('button',{'class':'menu-item',type:'button',onClick:function(){closeCardMenu();openRuns(wf.id,wf.name);}},['\u{1F553}',' View runs']),
+    h('button',{'class':'menu-item',type:'button',onClick:function(){closeCardMenu();askDuplicate(wf);}},['⧉',' Duplicate']),
+    h('button',{'class':'menu-item',type:'button',onClick:function(){closeCardMenu();askRename(wf);}},['✎',' Rename']),
+    h('button',{'class':'menu-item danger',type:'button',onClick:function(){closeCardMenu();askDelete(wf);}},['\u{1F5D1}',' Delete'])
   ]);
   card.appendChild(menu);
+  var kebab=card.querySelector('.kebab');
+  if(kebab)kebab.setAttribute('aria-expanded','true');
+  var first=menu.querySelector('.menu-item');
+  if(first)first.focus();
   // Lift this card above the following cards so the dropdown isn't clipped
   // behind the next workflow; if it's near the bottom, open the menu upward.
   card.style.zIndex='60';
@@ -1399,7 +1421,13 @@ function toggleCardMenu(card,wf){
   if(cr.bottom+150>window.innerHeight){menu.style.top='auto';menu.style.bottom='38px';}
   openCardMenu={card:card,menu:menu};
 }
-function closeCardMenu(){if(openCardMenu){if(openCardMenu.card)openCardMenu.card.style.zIndex='';if(openCardMenu.menu.parentNode)openCardMenu.menu.parentNode.removeChild(openCardMenu.menu);openCardMenu=null;}}
+function closeCardMenu(){if(openCardMenu){
+  var kebab=openCardMenu.card?openCardMenu.card.querySelector('.kebab'):null;
+  // Focus inside the menu goes back to its button, not to the page.
+  var hadFocus=openCardMenu.menu.contains(document.activeElement);
+  if(openCardMenu.card)openCardMenu.card.style.zIndex='';if(openCardMenu.menu.parentNode)openCardMenu.menu.parentNode.removeChild(openCardMenu.menu);openCardMenu=null;
+  if(kebab){kebab.setAttribute('aria-expanded','false');if(hadFocus)kebab.focus();}
+}}
 document.addEventListener('click',function(e){
   if(openCardMenu&&!openCardMenu.menu.contains(e.target))closeCardMenu();
   if(addMenuOpen&&!$('addMenu').contains(e.target)&&e.target!==$('addStepBtn'))closeAddMenu();
@@ -1461,13 +1489,13 @@ function renderRuns(sid,runs){
   runs.forEach(function(run,ri){
     var ok=!!run.ok;
     var failedAt=(!ok&&typeof run.failedStepIndex==='number'&&run.failedStepIndex>=0)?(' · step '+(run.failedStepIndex+1)):'';
-    var head=h('div',{'class':'run-hd'},[
-      h('span',{'class':'run-badge '+(ok?'ok':'fail')},ok?'✓':'✗'),
+    var head=h('button',{'class':'run-hd',type:'button','aria-expanded':ri===0?'true':'false'},[
+      h('span',{'class':'run-badge '+(ok?'ok':'fail'),'aria-hidden':'true'},ok?'✓':'✗'),
       h('div',{'class':'run-hmeta'},[
         h('div',{'class':'run-htitle'},(ok?'Success':'Failed'+failedAt)),
         h('div',{'class':'run-hsub'},[timeAgo(run.ts),' · ',fmtDur(run.durationMs),' · ',(run.stepsExecuted||0)+'/'+(run.totalSteps||0)+' steps'])
       ]),
-      h('span',{'class':'run-caret'},'▾')
+      h('span',{'class':'run-caret','aria-hidden':'true'},'▾')
     ]);
     var body=h('div',{'class':'run-steps'});
     var steps=run.steps||[];
@@ -1478,9 +1506,10 @@ function renderRuns(sid,runs){
       var row=h('div',{'class':'rnstep '+(st.ok?'ok':'fail')});
       row.appendChild(h('div',{'class':'rnstep-main'},[
         h('span',{'class':'rnstep-n'},(st.index+1)),
-        h('span',{'class':'rnstep-emoji'},emojiFor(st.type)),
+        h('span',{'class':'rnstep-emoji','aria-hidden':'true'},emojiFor(st.type)),
         h('span',{'class':'rnstep-desc'},st.description||labelFor(st.type)),
-        h('span',{'class':'rnstep-badge '+(st.ok?'ok':'fail')},st.ok?'✓':'✗')
+        h('span',{'class':'rnstep-badge '+(st.ok?'ok':'fail'),'aria-hidden':'true'},st.ok?'✓':'✗'),
+        h('span',{'class':'sr-only'},st.ok?'succeeded':'failed')
       ]));
       if(st.note){row.appendChild(h('div',{'class':'rnstep-note'},st.note));}
       if(typeof st.foundBy==='string'&&st.foundBy){
@@ -1488,13 +1517,20 @@ function renderRuns(sid,runs){
       }
       if(st.shot){
         var img=h('img',{'class':'rnshot',loading:'lazy',src:shotUrl(sid,st.shot),alt:'Screenshot after step '+(st.index+1)});
-        img.addEventListener('click',function(){img.classList.toggle('big');});
-        row.appendChild(img);
+        // The screenshot enlarges in place: a button around it.
+        var zoom=h('button',{'class':'rnshot-btn',type:'button','aria-pressed':'false',
+          'aria-label':'Enlarge the screenshot after step '+(st.index+1)},img);
+        zoom.addEventListener('click',function(){
+          zoom.setAttribute('aria-pressed',img.classList.toggle('big')?'true':'false');
+        });
+        row.appendChild(zoom);
       }
       body.appendChild(row);
     });
     var card=h('div',{'class':'run-card'+(ri===0?' open':'')},[head,body]);
-    head.addEventListener('click',function(){card.classList.toggle('open');});
+    head.addEventListener('click',function(){
+      head.setAttribute('aria-expanded',card.classList.toggle('open')?'true':'false');
+    });
     box.appendChild(card);
   });
 }
@@ -1516,7 +1552,7 @@ function renderRecList(){
   var shown=recordedSteps.filter(function(s){return !droppedIdx[s.index];});
   if(!shown.length){
     box.appendChild(h('div',{'class':'rec-idle'},[
-      h('div',{'class':'waves'},[h('i'),h('i'),h('i')]),
+      h('div',{'class':'waves','aria-hidden':'true'},[h('i'),h('i'),h('i')]),
       h('div',{},'Waiting for your first move…')
     ]));
     return;
@@ -1526,12 +1562,13 @@ function renderRecList(){
     n++;
     box.appendChild(h('div',{'class':'rstep'},[
       h('div',{'class':'num'},n),
-      h('div',{'class':'em'},s.icon||emojiFor(s.type)),
+      h('div',{'class':'em','aria-hidden':'true'},s.icon||emojiFor(s.type)),
       h('div',{'class':'rc'},[
         h('div',{'class':'rt'},s.title||stepTitle(s)),
         s.detail?h('div',{'class':'rd'},s.detail):null
       ]),
-      h('button',{'class':'drop',title:'Remove this step',onClick:function(){dropStep(s.index);}},'✕')
+      h('button',{'class':'drop',title:'Remove this step','aria-label':'Remove step '+n,
+        onClick:function(){dropStep(s.index);}},'✕')
     ]));
   });
 }
@@ -1541,6 +1578,8 @@ cr.addWebUIListener('recorder-step',function(d){
   if(!d)return;
   recordedSteps.push({index:d.index,type:d.type,icon:d.icon,title:d.title,detail:d.detail,value:d.value});
   renderRecList();updateRecCount(liveCount());
+  var last=recordedSteps[recordedSteps.length-1];
+  moltA11y.announce('Step '+liveCount()+' recorded: '+(last.title||stepTitle(last)));
 });
 cr.addWebUIListener('recorder-state',function(d){
   if(!d)return;recording=!!d.recording;
@@ -1707,7 +1746,7 @@ function renderEditorSteps(){
   var box=$('edSteps');clear(box);
   if(!editorState.steps.length){
     box.appendChild(h('div',{'class':'empty',style:'padding:26px 18px'},[
-      h('div',{'class':'ico'},'\u{1F4DD}'),
+      h('div',{'class':'ico','aria-hidden':'true'},'\u{1F4DD}'),
       h('div',{'class':'eh'},'No steps yet'),
       h('div',{'class':'ep'},'Add a step below, or record one from a live page.')
     ]));
@@ -1721,17 +1760,17 @@ function buildEditorStep(s,i){
   var pval=s[pf]||'';
   var varName=wholeVar(pval);
 
-  var card=h('div',{'class':'estep'});
+  var card=h('div',{'class':'estep',role:'group','aria-label':'Step '+(i+1)+': '+labelFor(s.type)});
 
   // head
   var ctrls=h('div',{'class':'ectrls'},[
-    h('button',{'class':'iconbtn',title:'Move up',disabled:(i===0),onClick:function(){moveStep(i,-1);}},'↑'),
-    h('button',{'class':'iconbtn',title:'Move down',disabled:(i===editorState.steps.length-1),onClick:function(){moveStep(i,1);}},'↓'),
-    h('button',{'class':'iconbtn del',title:'Delete step',onClick:function(){deleteStep(i);}},'\u{1F5D1}')
+    h('button',{'class':'iconbtn',title:'Move up','aria-label':'Move step '+(i+1)+' up',disabled:(i===0),onClick:function(){moveStep(i,-1);}},'↑'),
+    h('button',{'class':'iconbtn',title:'Move down','aria-label':'Move step '+(i+1)+' down',disabled:(i===editorState.steps.length-1),onClick:function(){moveStep(i,1);}},'↓'),
+    h('button',{'class':'iconbtn del',title:'Delete step','aria-label':'Delete step '+(i+1),onClick:function(){deleteStep(i);}},'\u{1F5D1}')
   ]);
   card.appendChild(h('div',{'class':'ehead'},[
-    h('div',{'class':'en'},i+1),
-    h('div',{'class':'eem'},emojiFor(s.type)),
+    h('div',{'class':'en','aria-hidden':'true'},i+1),
+    h('div',{'class':'eem','aria-hidden':'true'},emojiFor(s.type)),
     h('div',{'class':'etype'},[labelFor(s.type),h('small',{},stepTitle(s))]),
     ctrls
   ]));
@@ -1751,7 +1790,7 @@ function buildEditorStep(s,i){
 
   // The step's fallback locators (what kind only).
   var loc=locatorSummary(s);
-  if(loc){card.appendChild(h('div',{'class':'loc-note'},['\u{1F9ED} ',loc]));}
+  if(loc){card.appendChild(h('div',{'class':'loc-note'},[h('span',{'aria-hidden':'true'},'\u{1F9ED} '),loc]));}
 
   // Record-time reference: a thumbnail of exactly what was clicked when this
   // step was recorded, so it's obvious which element the step targets.
@@ -1759,7 +1798,7 @@ function buildEditorStep(s,i){
     var refImg=h('img',{'class':'eref-img',src:s.extra.ref_shot,alt:'What was clicked when recorded',loading:'lazy'});
     refImg.addEventListener('error',function(){refImg.style.display='none';});
     card.appendChild(h('div',{'class':'eref'},[
-      h('div',{'class':'eref-lbl'},'\u{1F4F7} Recorded target'),
+      h('div',{'class':'eref-lbl'},[h('span',{'aria-hidden':'true'},'\u{1F4F7} '),'Recorded target']),
       refImg
     ]));
   }
@@ -1771,46 +1810,38 @@ function buildEditorStep(s,i){
       value:pval,placeholder:fieldPlaceholder(s.type),spellcheck:'false',
       onInput:function(){s[pf]=this.value;updateHeadTitle(card,s);}});
     if(s.type==='wait'){inp.setAttribute('type','number');inp.setAttribute('min','0');}
-    var fld=h('div',{'class':'efield'},[h('label',{},fieldLabel(s.type)),inp]);
+    var fld=h('div',{'class':'efield'},[fieldLabelFor(fieldLabel(s.type),inp),inp]);
     card.appendChild(fld);
     card.appendChild(h('div',{'class':'varrow'},[
-      h('button',{'class':'vartog',onClick:function(){makeVariable(i);}},['✨',' Ask me this each run'])
+      h('button',{'class':'vartog','aria-pressed':'false',onClick:function(){makeVariable(i);}},['✨',' Ask me this each run'])
     ]));
   }else{
     // variable UI
     card.appendChild(h('div',{'class':'varrow'},[
       h('span',{'class':'varpill'},['{ }',varName]),
-      h('button',{'class':'vartog on',onClick:function(){unmakeVariable(i);}},['✓',' Asked each run'])
+      h('button',{'class':'vartog on','aria-pressed':'true',onClick:function(){unmakeVariable(i);}},['✓',' Asked each run'])
     ]));
+    var askAs=h('input',{'class':'inp mono',value:varName,spellcheck:'false',
+          onChange:function(){renameVariable(i,varName,this.value);}});
+    var dflt=h('input',{'class':'inp',value:(editorState.variables[varName]||''),placeholder:fieldPlaceholder(s.type),
+          onInput:function(){editorState.variables[varName]=this.value;}});
     card.appendChild(h('div',{'class':'varedit'},[
-      h('div',{'class':'efield'},[
-        h('label',{},'Ask as'),
-        h('input',{'class':'inp mono',value:varName,spellcheck:'false',
-          onChange:function(){renameVariable(i,varName,this.value);}})
-      ]),
-      h('div',{'class':'efield'},[
-        h('label',{},'Default'),
-        h('input',{'class':'inp',value:(editorState.variables[varName]||''),placeholder:fieldPlaceholder(s.type),
-          onInput:function(){editorState.variables[varName]=this.value;}})
-      ])
+      h('div',{'class':'efield'},[fieldLabelFor('Ask as',askAs),askAs]),
+      h('div',{'class':'efield'},[fieldLabelFor('Default',dflt),dflt])
     ]));
   }
 
   // store_as for extract / ai_extract / ai_decide
   if(hasStore(s.type)){
-    card.appendChild(h('div',{'class':'efield'},[
-      h('label',{},'Save answer as'),
-      h('input',{'class':'inp mono',value:(s.store_as||''),placeholder:'e.g. price',spellcheck:'false',
-        onInput:function(){s.store_as=this.value;}})
-    ]));
+    var store=h('input',{'class':'inp mono',value:(s.store_as||''),placeholder:'e.g. price',spellcheck:'false',
+        onInput:function(){s.store_as=this.value;}});
+    card.appendChild(h('div',{'class':'efield'},[fieldLabelFor('Save answer as',store),store]));
   }
 
   // secondary context: selector target when the primary field is the value
   if(pf==='value'&&(s.type==='click'||s.type==='type'||s.type==='extract')&&s.target){
-    card.appendChild(h('div',{'class':'efield'},[
-      h('label',{},'On element (advanced)'),
-      h('input',{'class':'inp mono',value:s.target,spellcheck:'false',onInput:function(){s.target=this.value;}})
-    ]));
+    var onEl=h('input',{'class':'inp mono',value:s.target,spellcheck:'false',onInput:function(){s.target=this.value;}});
+    card.appendChild(h('div',{'class':'efield'},[fieldLabelFor('On element (advanced)',onEl),onEl]));
   }
   return card;
 }
@@ -1892,14 +1923,23 @@ function openAddMenu(){
   var menu=$('addMenu');clear(menu);
   ADD_ITEMS.forEach(function(it){
     if(it.grp){menu.appendChild(h('div',{'class':'grp'},it.grp));return;}
-    menu.appendChild(h('div',{'class':'menu-item',onClick:function(){addStep(it.t);}},[
-      h('span',{'class':'em'},emojiFor(it.t)),
+    menu.appendChild(h('button',{'class':'menu-item',type:'button',onClick:function(){addStep(it.t);}},[
+      h('span',{'class':'em','aria-hidden':'true'},emojiFor(it.t)),
       h('span',{},[it.label, it.desc?h('small',{style:'color:var(--faint);font-weight:400;margin-left:6px'},it.desc):null])
     ]));
   });
   menu.classList.add('open');addMenuOpen=true;
+  $('addStepBtn').setAttribute('aria-expanded','true');
+  var first=menu.querySelector('.menu-item');
+  if(first)first.focus();
 }
-function closeAddMenu(){$('addMenu').classList.remove('open');addMenuOpen=false;}
+function closeAddMenu(){
+  var menu=$('addMenu');
+  var hadFocus=menu.contains(document.activeElement);
+  menu.classList.remove('open');addMenuOpen=false;
+  $('addStepBtn').setAttribute('aria-expanded','false');
+  if(hadFocus)$('addStepBtn').focus();
+}
 $('addStepBtn').addEventListener('click',function(e){e.stopPropagation();addMenuOpen?closeAddMenu():openAddMenu();});
 function defaultStep(t){
   var base={type:t,target:'',value:'',description:''};
@@ -1916,7 +1956,10 @@ function addStep(t){
   closeAddMenu();
   editorState.steps.push(defaultStep(t));
   renderEditorSteps();renderEditorMeta();
-  var box=$('edSteps');box.lastChild.scrollIntoView({behavior:'smooth',block:'center'});
+  var box=$('edSteps');box.lastChild.scrollIntoView({behavior:moltA11y.scrollBehavior(),block:'center'});
+  // Carry on in the new step: its first field.
+  var f=box.lastChild.querySelector('input,textarea,button');
+  if(f)f.focus();
 }
 
 /* editor bottom bar */
@@ -1982,18 +2025,30 @@ function doRun(id,values,mode){
     activeRun={id:id,done:true,ok:false,message:'Failed to start'};paintRun();
   });
 }
+/* Each step is read out once as the run reaches it (not every progress
+   update), a question at once, and the result at the end. */
+var lastSpokenStep='';
 cr.addWebUIListener('run-progress',function(d){
   if(!d)return;
   if(!activeRun||activeRun.id!==d.id)activeRun={id:d.id};
   activeRun.stepIndex=d.stepIndex;activeRun.total=d.total;activeRun.ok=d.ok;
   activeRun.message=d.message||('Step '+(d.stepIndex+1)+' of '+d.total);activeRun.done=false;
   paintRun();
+  var key=d.id+':'+d.stepIndex;
+  if(key!==lastSpokenStep){
+    lastSpokenStep=key;
+    moltA11y.announce('Step '+(d.stepIndex+1)+(d.total?' of '+d.total:'')+
+                      (d.message?': '+d.message:''));
+  }
 });
 cr.addWebUIListener('run-question',function(d){
   if(!d||!d.question||typeof d.question.text!=='string')return;
   if(!activeRun||activeRun.id!==d.id)activeRun={id:d.id,stepIndex:0,total:0,message:'Running…'};
   activeRun.question=d.question;activeRun.done=false;
   paintRun();
+  moltA11y.announce('The run needs your OK'+
+      (typeof d.question.step==='number'?' at step '+(d.question.step+1):'')+': '+
+      d.question.text.slice(0,300),{assertive:true});
 });
 cr.addWebUIListener('run-complete',function(d){
   if(!d)return;
@@ -2007,6 +2062,8 @@ cr.addWebUIListener('run-complete',function(d){
     needsTrust:!d.ok&&!!d.needsTrust,
     stepIndex:activeRun?activeRun.stepIndex:0,total:activeRun?activeRun.total:0};
   paintRun();
+  lastSpokenStep='';
+  moltA11y.announce((d.ok?'Run finished: ':'Run stopped: ')+msg,{assertive:!d.ok});
   // Keep failures visible longer so the user can read which step died; a
   // trust block stays until the user acts on it (or starts another run).
   if(activeRun.needsTrust)return;
@@ -2042,8 +2099,10 @@ function tickerNode(){
       ]);
     }
     return h('div',{},[
-      h('div',{'class':'run-done '+(ar.ok?'ok':'fail')},[(ar.ok?'✓':'✗'),' ',ar.message]),
-      h('div',{'class':'pbar'},h('i',{style:'width:100%;background:'+(ar.ok?'var(--ok)':'var(--err)')})),
+      h('div',{'class':'run-done '+(ar.ok?'ok':'fail')},[h('span',{'aria-hidden':'true'},(ar.ok?'✓':'✗')),' ',ar.message]),
+      h('div',{'class':'pbar',role:'progressbar','aria-label':'Run progress','aria-valuemin':'0',
+               'aria-valuemax':'100','aria-valuenow':'100'},
+        h('i',{style:'width:100%;background:'+(ar.ok?'var(--ok)':'var(--err)')})),
       trustAct
     ]);
   }
@@ -2057,12 +2116,13 @@ function tickerNode(){
   }
   return h('div',{},[
     h('div',{'class':'ticker'},[
-      h('span',{'class':'spin'}),
+      h('span',{'class':'spin','aria-hidden':'true'}),
       h('span',{'class':'tmsg'},ar.message),
-      ar.total?h('span',{'class':'tct'},(Math.min(ar.stepIndex+1,ar.total))+'/'+ar.total):null,
-      h('button',{'class':'tstop',title:'Stop this run',onClick:function(e){e.stopPropagation();cancelActiveRun();}},'■ Stop')
+      ar.total?h('span',{'class':'tct','aria-label':'step '+(Math.min(ar.stepIndex+1,ar.total))+' of '+ar.total},(Math.min(ar.stepIndex+1,ar.total))+'/'+ar.total):null,
+      h('button',{'class':'tstop',title:'Stop this run','aria-label':'Stop this run',onClick:function(e){e.stopPropagation();cancelActiveRun();}},'■ Stop')
     ]),
-    h('div',{'class':'pbar'},h('i',{style:'width:'+pct+'%'}))
+    h('div',{'class':'pbar',role:'progressbar','aria-label':'Run progress','aria-valuemin':'0',
+             'aria-valuemax':'100','aria-valuenow':String(pct)},h('i',{style:'width:'+pct+'%'}))
   ]);
 }
 function cancelActiveRun(){
@@ -2097,27 +2157,33 @@ function openRunSheet(id,name,vars){
   $('runSubT').textContent='Choose how to run it, then go.';
   var body=$('runBody');clear(body);
   // Run-mode chooser: Watch (visible) vs Auto (background).
+  // The two ways to run are toggle buttons in a named group: the chosen
+  // one is pressed.
   function modeCard(m,emoji,title,sub){
-    return h('div',{'class':'rmode'+(runSheet.mode===m?' sel':''),'data-mode':m,onClick:function(){
+    return h('button',{'class':'rmode'+(runSheet.mode===m?' sel':''),type:'button','data-mode':m,
+      'aria-pressed':runSheet.mode===m?'true':'false',onClick:function(){
       runSheet.mode=m;
       Array.prototype.forEach.call(body.querySelectorAll('.rmode'),function(el){
-        el.classList.toggle('sel',el.getAttribute('data-mode')===m);
+        var on=el.getAttribute('data-mode')===m;
+        el.classList.toggle('sel',on);
+        el.setAttribute('aria-pressed',on?'true':'false');
       });
     }},[
-      h('span',{'class':'rmode-emoji'},emoji),
-      h('div',{'class':'rmode-tx'},[h('div',{'class':'rmode-t'},title),h('div',{'class':'rmode-s'},sub)]),
-      h('span',{'class':'rmode-tick'},'✓')
+      h('span',{'class':'rmode-emoji','aria-hidden':'true'},emoji),
+      h('span',{'class':'rmode-tx'},[h('span',{'class':'rmode-t'},title),h('span',{'class':'rmode-s'},sub)]),
+      h('span',{'class':'rmode-tick','aria-hidden':'true'},'✓')
     ]);
   }
-  body.appendChild(h('div',{'class':'rmode-lbl'},'How should it run?'));
-  body.appendChild(modeCard('watch','\u{1F441}️','Watch it run','A window opens so you can see each step happen live.'));
-  body.appendChild(modeCard('auto','\u{1F319}','Run in background','Runs minimized and out of your way.'));
+  body.appendChild(h('div',{'class':'rmode-lbl',id:'runModeLbl'},'How should it run?'));
+  body.appendChild(h('div',{role:'group','aria-labelledby':'runModeLbl'},[
+    modeCard('watch','\u{1F441}️','Watch it run','A window opens so you can see each step happen live.'),
+    modeCard('auto','\u{1F319}','Run in background','Runs minimized and out of your way.')]));
   var keys=Object.keys(vars);
   if(keys.length){
     body.appendChild(h('div',{'class':'rmode-lbl'},'Fill in what changes for this run'));
     keys.forEach(function(k){
       body.appendChild(h('div',{'class':'vfield'},[
-        h('label',{},[k.replace(/_/g,' '),h('span',{'class':'vp'},k)]),
+        h('label',{'for':'rv_'+k},[k.replace(/_/g,' '),h('span',{'class':'vp'},k)]),
         h('input',{'class':'inp',id:'rv_'+k,value:(vars[k]||''),placeholder:'Value for '+k,spellcheck:'false'})
       ]));
     });
@@ -2150,29 +2216,38 @@ function openScheduleSheet(id,name,trigger){
 
   var body=$('schedBody');clear(body);
 
+  // Each option has a real radio button (arrow keys move between them);
+  // its title is the radio's label. A click anywhere on the option picks
+  // it too, as before.
   function opt(mode,title,sub,inlineEls){
-    var o=h('div',{'class':'opt'+(scheduleCtx.mode===mode?' sel':''),'data-mode':mode,onClick:function(){pickMode(mode);}},[
-      h('div',{'class':'radio'}),
-      h('div',{'class':'ob'},[h('div',{'class':'ot'},title),h('div',{'class':'os'},sub),inlineEls||null])
+    var rid='schedOpt-'+mode;
+    var radio=h('input',{type:'radio',name:'schedMode','class':'opt-radio',id:rid,value:mode,
+      'aria-describedby':rid+'-s',onChange:function(){if(this.checked)pickMode(mode);}});
+    radio.checked=scheduleCtx.mode===mode;
+    var o=h('div',{'class':'opt'+(scheduleCtx.mode===mode?' sel':''),'data-mode':mode,onClick:function(e){
+      if(e.target!==radio)pickMode(mode);}},[
+      radio,
+      h('div',{'class':'radio','aria-hidden':'true'}),
+      h('div',{'class':'ob'},[h('label',{'class':'ot','for':rid},title),h('div',{'class':'os',id:rid+'-s'},sub),inlineEls||null])
     ]);
     return o;
   }
 
   body.appendChild(opt('manual','Manual only','Runs only when you press Run.'));
 
-  var numI=h('input',{'class':'inp num',id:'ivNum',type:'number',min:'1',value:iv.n,onInput:updateNext,onFocus:function(){pickMode('interval');}});
-  var unitI=h('select',{'class':'inp',id:'ivUnit',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
+  var numI=h('input',{'class':'inp num',id:'ivNum',type:'number',min:'1',value:iv.n,'aria-label':'Every how many',onInput:updateNext,onFocus:function(){pickMode('interval');}});
+  var unitI=h('select',{'class':'inp',id:'ivUnit','aria-label':'Minutes or hours',onChange:updateNext,onFocus:function(){pickMode('interval');}},[
     h('option',{value:'m'},'minutes'),h('option',{value:'h'},'hours')
   ]);
   unitI.value=iv.unit;
   body.appendChild(opt('interval','Every so often','Repeat on a fixed timer.',
     h('div',{'class':'opt-inline'},['Every ',numI,unitI])));
 
-  var timeI=h('input',{'class':'inp tm',id:'dailyTime',type:'time',value:daily,onInput:updateNext,onFocus:function(){pickMode('daily');}});
+  var timeI=h('input',{'class':'inp tm',id:'dailyTime',type:'time',value:daily,'aria-label':'Time of day',onInput:updateNext,onFocus:function(){pickMode('daily');}});
   body.appendChild(opt('daily','Daily at a time','Once a day, on the clock.',
     h('div',{'class':'opt-inline'},['At ',timeI])));
 
-  var cronI=h('input',{'class':'inp mono',id:'cronExpr',value:cron,placeholder:'0 9 * * *',spellcheck:'false',onInput:updateNext,onFocus:function(){pickMode('cron');}});
+  var cronI=h('input',{'class':'inp mono',id:'cronExpr',value:cron,placeholder:'0 9 * * *',spellcheck:'false','aria-label':'Cron expression',onInput:updateNext,onFocus:function(){pickMode('cron');}});
   body.appendChild(opt('cron','Custom (cron)','For power users — e.g. 0 9 * * 1-5 = 9am weekdays.',
     h('div',{'class':'opt-inline'},[cronI])));
 
@@ -2184,7 +2259,11 @@ function openScheduleSheet(id,name,trigger){
 function pickMode(mode){
   scheduleCtx.mode=mode;
   var opts=$('schedBody').querySelectorAll('.opt');
-  for(var i=0;i<opts.length;i++)opts[i].classList.toggle('sel',opts[i].getAttribute('data-mode')===mode);
+  for(var i=0;i<opts.length;i++){
+    var on=opts[i].getAttribute('data-mode')===mode;
+    opts[i].classList.toggle('sel',on);
+    var rb=opts[i].querySelector('.opt-radio');if(rb)rb.checked=on;
+  }
   updateNext();
 }
 function parseInterval(expr){
@@ -2224,12 +2303,12 @@ function updateNext(){
   if(tr.type==='manual'){hint.style.display='none';return;}
   hint.style.display='flex';
   if(tr.type==='cron'){
-    hint.appendChild(h('span',{},'⏰'));
+    hint.appendChild(h('span',{'aria-hidden':'true'},'⏰'));
     hint.appendChild(h('span',{},[' Runs on your cron schedule ',h('b',{},tr.expression||'—')]));
     return;
   }
   var nf=previewNext(tr);
-  hint.appendChild(h('span',{},'⏰'));
+  hint.appendChild(h('span',{'aria-hidden':'true'},'⏰'));
   hint.appendChild(h('span',{},[' Next run ',h('b',{},nf?formatNext(nf):'—')]));
 }
 $('schedCancel').addEventListener('click',function(){closeScrim('schedScrim');});
@@ -2248,11 +2327,16 @@ $('schedSave').addEventListener('click',function(){
 /* ============================== MINI MODAL ============================== */
 function openMini(opts){
   var box=$('miniModal');clear(box);
-  box.appendChild(h('div',{'class':'mm-t'},opts.title));
-  if(opts.message)box.appendChild(h('div',{'class':'mm-s'},opts.message));
+  box.appendChild(h('h2',{'class':'mm-t',id:'miniTitle'},opts.title));
+  // A question that deletes something is an alert dialog.
+  box.setAttribute('role',opts.danger?'alertdialog':'dialog');
+  if(opts.message)box.appendChild(h('div',{'class':'mm-s',id:'miniMsg'},opts.message));
+  if(opts.message)box.setAttribute('aria-describedby','miniMsg');
+  else box.removeAttribute('aria-describedby');
   var input=null;
   if(opts.hasInput){
     input=h('input',{'class':'inp',value:(opts.value||''),placeholder:(opts.placeholder||''),spellcheck:'false',
+      'aria-labelledby':'miniTitle',
       onKeydown:function(e){if(e.key==='Enter'){e.preventDefault();confirm();}}});
     box.appendChild(input);
   }
@@ -2292,15 +2376,29 @@ function askDelete(wf){
 }
 
 /* ============================== scrims ============================== */
-function openScrim(id){$(id).classList.add('open');}
-function closeScrim(id){$(id).classList.remove('open');if(id==='runScrim')runSheet.open=false;}
+/* Each sheet is a modal dialog: named by its title, focus moves in, the
+   page behind is inert, Escape closes it and focus goes back to where it
+   was (moltA11y, molt_webui_csp.h). */
+var SCRIM_DIALOGS={runScrim:['runSheet','runTitle'],schedScrim:['schedSheet','schedTitle'],
+                   miniScrim:['miniModal','miniTitle']};
+function openScrim(id){
+  $(id).classList.add('open');
+  var d=SCRIM_DIALOGS[id];
+  moltA11y.openDialog($(d[0]),{labelledBy:d[1],onEscape:function(){closeScrim(id);}});
+}
+function closeScrim(id){
+  $(id).classList.remove('open');if(id==='runScrim')runSheet.open=false;
+  moltA11y.closeDialog($(SCRIM_DIALOGS[id][0]));
+}
 [['runScrim'],['schedScrim'],['miniScrim']].forEach(function(x){
   $(x[0]).addEventListener('click',function(e){if(e.target===this)closeScrim(x[0]);});
 });
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){
+    // An open dialog was closed by moltA11y (the top one only).
+    if(e.defaultPrevented)return;
     ['miniScrim','runScrim','schedScrim'].forEach(function(id){if($(id).classList.contains('open'))closeScrim(id);});
-    closeCardMenu();closeAddMenu();
+    closeCardMenu();if(addMenuOpen)closeAddMenu();
   }
 });
 
@@ -2354,12 +2452,12 @@ class MoltAIAgentDataSource : public content::URLDataSource {
     }
     if (molt_webui::IsAppJsRequest(url)) {
       std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
-          std::string(kAgentPageJs)));
+          std::string(molt_webui::kMoltA11yJs) + kAgentPageJs));
       return;
     }
     std::string html = R"HTML(
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2404,6 +2502,7 @@ class MoltAIAgentDataSource : public content::URLDataSource {
   --font:-apple-system,"SF Pro Text",BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
   --r:14px;
+  --focus:#9ecbff;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{
@@ -2462,8 +2561,9 @@ button,input,textarea,select{font-family:inherit}
 /* ---- viewport / views ---- */
 .viewport{flex:1 1 auto;position:relative;overflow:hidden}
 .view{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;
-  opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .2s,transform .2s}
-.view.active{opacity:1;pointer-events:auto;transform:none}
+  opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .2s,transform .2s,visibility 0s .2s;
+  visibility:hidden}
+.view.active{opacity:1;pointer-events:auto;transform:none;visibility:visible;transition-delay:0s}
 .scroll{flex:1 1 auto;overflow-y:auto;padding:14px 14px 20px}
 .scroll::-webkit-scrollbar{width:9px}
 .scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:5px;border:2px solid transparent;background-clip:content-box}
@@ -2523,7 +2623,8 @@ button,input,textarea,select{font-family:inherit}
   background:var(--glass-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
   border:1px solid var(--border-hi);border-radius:12px;padding:5px;box-shadow:var(--shadow);display:none;animation:rise .12s ease both}
 .card-menu.open{display:block}
-.menu-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:.78125rem;color:var(--text);cursor:pointer;transition:.12s}
+.menu-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:.78125rem;color:var(--text);cursor:pointer;transition:.12s;
+  width:100%;background:none;border:none;text-align:left}
 .menu-item:hover{background:var(--surface2)}
 .menu-item.danger{color:var(--err)}
 .menu-item.danger:hover{background:rgba(240,115,111,0.14)}
@@ -2634,7 +2735,7 @@ button,input,textarea,select{font-family:inherit}
 .iconbtn.del:hover{color:var(--err);background:rgba(240,115,111,0.12)}
 .iconbtn:disabled{opacity:.28;pointer-events:none}
 .efield{margin-top:9px}
-.efield label{display:block;font-size:.65625rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+.efield label,.efield .lbl{display:block;font-size:.65625rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
 .inp{width:100%;background:rgba(0,0,0,0.22);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text);
   font-size:.8125rem;outline:none;transition:border-color .15s}
 .inp:focus{border-color:var(--violet)}
@@ -2676,8 +2777,9 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 
 /* ---- SHEETS (bottom) ---- */
 .scrim{position:fixed;inset:0;z-index:40;background:rgba(4,5,10,0.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
-  opacity:0;pointer-events:none;transition:opacity .18s;display:flex;align-items:flex-end;justify-content:center}
-.scrim.open{opacity:1;pointer-events:auto}
+  opacity:0;pointer-events:none;transition:opacity .18s,visibility 0s .18s;display:flex;align-items:flex-end;justify-content:center;
+  visibility:hidden}
+.scrim.open{opacity:1;pointer-events:auto;visibility:visible;transition-delay:0s}
 .sheet{width:100%;max-height:88%;display:flex;flex-direction:column;
   background:var(--glass-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
   border-top:1px solid var(--border-hi);border-radius:22px 22px 0 0;box-shadow:0 -20px 60px -18px rgba(0,0,0,0.7),inset 0 1px 0 var(--specular);
@@ -2701,7 +2803,10 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 .novar{text-align:center;color:var(--muted);font-size:.8125rem;padding:6px 0 12px}
 
 /* schedule sheet */
-.opt{display:flex;align-items:flex-start;gap:12px;padding:13px;border-radius:13px;border:1px solid var(--border);
+.opt-radio{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.opt:has(.opt-radio:focus-visible){outline:3px solid var(--focus);outline-offset:2px}
+.opt .ot{display:block;cursor:pointer}
+.opt{position:relative;display:flex;align-items:flex-start;gap:12px;padding:13px;border-radius:13px;border:1px solid var(--border);
   background:var(--surface);margin-bottom:9px;cursor:pointer;transition:.15s}
 .opt:hover{border-color:var(--border-hi);background:var(--surface2)}
 .opt.sel{border-color:var(--violet);background:rgba(167,139,250,0.1);box-shadow:0 0 0 1px rgba(167,139,250,0.25)}
@@ -2759,7 +2864,9 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 /* ---- Run-mode chooser (Watch vs Auto) in the run sheet ---- */
 .rmode-lbl{font-size:.6875rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:4px 2px 8px}
 .rmode-lbl+.vfield,.rmode+.rmode-lbl{margin-top:14px}
-.rmode{display:flex;align-items:center;gap:11px;padding:12px;border-radius:13px;border:1px solid var(--border);cursor:pointer;margin-bottom:8px;transition:border-color .15s,background .15s}
+.rmode{display:flex;align-items:center;gap:11px;padding:12px;border-radius:13px;border:1px solid var(--border);cursor:pointer;margin-bottom:8px;transition:border-color .15s,background .15s;
+  width:100%;background:none;color:inherit;text-align:left}
+.rmode-t,.rmode-s{display:block}
 .rmode.sel{border-color:var(--violet);background:rgba(167,139,250,0.1);box-shadow:0 0 0 1px rgba(167,139,250,0.25)}
 .rmode-emoji{font-size:1.125rem;flex:0 0 auto;width:22px;text-align:center}
 .rmode-tx{flex:1 1 auto;min-width:0}
@@ -2777,7 +2884,8 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 .runs-empty .re-t{font-size:.875rem;font-weight:650;color:var(--text)}
 .runs-empty .re-sub{font-size:.75rem;margin-top:6px;line-height:1.5}
 .run-card{background:var(--glass);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden}
-.run-hd{display:flex;align-items:center;gap:11px;padding:12px 13px;cursor:pointer}
+.run-hd{display:flex;align-items:center;gap:11px;padding:12px 13px;cursor:pointer;
+  width:100%;background:none;border:none;color:inherit;text-align:left}
 .run-badge{flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800}
 .run-badge.ok{background:rgba(95,227,161,0.16);color:var(--ok)}
 .run-badge.fail{background:rgba(240,115,111,0.16);color:var(--err)}
@@ -2800,33 +2908,53 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 .rnstep-note{font-size:.6875rem;color:var(--muted);margin:3px 0 0 27px}
 .rnshot{display:block;margin:8px 0 2px 27px;width:calc(100% - 27px);max-width:180px;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;transition:max-width .2s}
 .rnshot.big{max-width:100%;cursor:zoom-out}
+.rnshot-btn{display:block;width:100%;padding:0;margin:0;background:none;border:none;text-align:left;cursor:zoom-in}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+:focus-visible{outline:3px solid var(--focus)!important;outline-offset:2px}
+h2[tabindex="-1"]:focus{outline:none!important}
 
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* High contrast: the glass is gone, so cards, sheets and controls keep
+   system-coloured edges, and the chosen options, progress and status
+   dots stay visible. */
+@media (forced-colors:active){
+  .ambient{display:none}
+  .btn,.mini,.iconbtn,.menu-item,.vartog,.addbtn,.tstop,.rstep .drop,.rmode,.opt,.run-hd{border:1px solid ButtonText}
+  .card,.sheet,.mini-modal,.estep,.run-card,.card-menu,.addmenu,.toast,.hint,.rec-banner,.trust-panel{border:1px solid CanvasText}
+  .rmode.sel,.opt.sel,.vartog.on{outline:2px solid Highlight}
+  .pbar{border:1px solid CanvasText}
+  .pbar i{forced-color-adjust:none;background:Highlight!important}
+  .opt .radio{forced-color-adjust:none;border-color:ButtonText}
+  .opt.sel .radio::after{background:Highlight}
+  .rec-banner .rdot,.ticker .spin{forced-color-adjust:none;background:Highlight}
+  :focus-visible,.opt:has(.opt-radio:focus-visible){outline-color:Highlight!important}
+}
 </style>
 </head>
 <body>
-<div class="ambient"><span class="o1"></span><span class="o2"></span><span class="o3"></span></div>
+<div class="ambient" aria-hidden="true"><span class="o1"></span><span class="o2"></span><span class="o3"></span></div>
 
 <div class="app">
-  <div class="topbar" id="topbar">
+  <header class="topbar" id="topbar">
     <button class="back" id="backBtn" title="Back" aria-label="Back">&#8592;</button>
-    <div class="brand-tile">&#129302;</div>
+    <div class="brand-tile" aria-hidden="true">&#129302;</div>
     <div class="brand-txt">
-      <div class="t">Agent mode</div>
+      <h1 class="t">Agent mode</h1>
       <div class="s" id="topSub">Record, run &amp; schedule web tasks</div>
     </div>
     <div class="topbar-actions" id="topActions"></div>
-  </div>
+  </header>
 
-  <div class="viewport">
+  <main class="viewport">
     <!-- 1. LIBRARY -->
     <section class="view active" id="view-library">
       <div class="lib-head">
-        <div class="lib-title">Your workflows</div>
+        <h2 class="lib-title" tabindex="-1">Your workflows</h2>
         <div class="lib-sub" id="libSub">Teach the browser to do a task once &mdash; then let it repeat.</div>
       </div>
       <div class="lib-actions">
-        <button class="btn primary lg block rec-btn" id="recordBtn"><span class="rd"></span> Record a workflow</button>
+        <button class="btn primary lg block rec-btn" id="recordBtn"><span class="rd" aria-hidden="true"></span> Record a workflow</button>
         <div class="row2">
           <button class="btn" id="newBlankBtn">&#43; New blank</button>
           <button class="btn" id="importBtn">&#8615; Import</button>
@@ -2838,9 +2966,9 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
     <!-- 2. RECORDING -->
     <section class="view" id="view-recording">
       <div class="rec-banner">
-        <span class="rdot"></span>
+        <span class="rdot" aria-hidden="true"></span>
         <div class="rl">
-          <div class="a">Recording</div>
+          <h2 class="a" tabindex="-1">Recording</h2>
           <div class="b">Captured <b id="recCount">0</b> step<span id="recPlural">s</span> so far</div>
         </div>
       </div>
@@ -2849,7 +2977,7 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
         <button class="btn ghost" id="discardBtn">Discard</button>
       </div>
       <div class="hint">
-        <span class="hi">&#128072;</span>
+        <span class="hi" aria-hidden="true">&#128072;</span>
         <div>Do your task on the page to the left &mdash; click, type, scroll, whatever you need. I&rsquo;ll write down every step for you.</div>
       </div>
       <div class="scroll" id="recList" style="padding-top:0"></div>
@@ -2859,14 +2987,15 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
     <section class="view" id="view-editor">
       <div class="ed-scroll">
         <div class="ed-name-wrap">
-          <input class="ed-name" id="edName" placeholder="Name this workflow" spellcheck="false">
+          <h2 class="sr-only">Edit workflow</h2>
+          <input class="ed-name" id="edName" placeholder="Name this workflow" aria-label="Workflow name" spellcheck="false">
           <div class="ed-meta" id="edMeta"></div>
           <div id="edTrust"></div>
         </div>
         <div id="edSteps"></div>
         <div class="addwrap">
-          <div class="addmenu" id="addMenu"></div>
-          <button class="addbtn" id="addStepBtn">&#43; Add step</button>
+          <div class="addmenu" id="addMenu" role="group" aria-label="Step types"></div>
+          <button class="addbtn" id="addStepBtn" aria-expanded="false" aria-controls="addMenu">&#43; Add step</button>
         </div>
       </div>
       <div class="ed-bar">
@@ -2879,19 +3008,19 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
     <!-- 4. RUNS (history / review) -->
     <section class="view" id="view-runs">
       <div class="runs-head">
-        <div class="runs-title" id="runsTitle">Runs</div>
+        <h2 class="runs-title" id="runsTitle" tabindex="-1">Runs</h2>
         <div class="runs-sub" id="runsSub">Every time this workflow ran &mdash; step by step.</div>
       </div>
       <div class="scroll" id="runsList"></div>
     </section>
-  </div>
+  </main>
 </div>
 
 <!-- RUN sheet -->
 <div class="scrim" id="runScrim">
   <div class="sheet" id="runSheet">
-    <div class="grab"></div>
-    <div class="sheet-head"><div class="sh-t" id="runTitle">Run workflow</div><div class="sh-s" id="runSubT">Fill in the details for this run.</div></div>
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2 class="sh-t" id="runTitle">Run workflow</h2><div class="sh-s" id="runSubT">Fill in the details for this run.</div></div>
     <div class="sheet-body" id="runBody"></div>
     <div class="sheet-foot" id="runFoot"></div>
   </div>
@@ -2900,8 +3029,8 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 <!-- SCHEDULE sheet -->
 <div class="scrim" id="schedScrim">
   <div class="sheet" id="schedSheet">
-    <div class="grab"></div>
-    <div class="sheet-head"><div class="sh-t">Schedule</div><div class="sh-s" id="schedSubT">Run this on its own, automatically.</div></div>
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2 class="sh-t" id="schedTitle">Schedule</h2><div class="sh-s" id="schedSubT">Run this on its own, automatically.</div></div>
     <div class="sheet-body" id="schedBody"></div>
     <div class="sheet-foot">
       <button class="btn ghost" id="schedCancel">Cancel</button>
@@ -2915,7 +3044,7 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
   <div class="mini-modal" id="miniModal"></div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-atomic="true" data-molt-live="toast"></div>
 
 <script src="app.js"></script>
 </body>
