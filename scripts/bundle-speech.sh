@@ -217,9 +217,9 @@ model_files() {
 # verify_models DIR: every file of MODEL_FILES under DIR/models matches its
 # pin, and nothing else is there.
 verify_models() {
-  local dir="$1" entry path sha rest actual count=0 present
+  local dir="$1" path sha _rest actual count=0 present
   [[ -d "$dir/models" ]] || { echo "[bundle-speech] $dir/models is missing"; return 1; }
-  while IFS='|' read -r path sha rest; do
+  while IFS='|' read -r path sha _rest; do
     [[ -f "$dir/models/$path" && ! -L "$dir/models/$path" ]] || {
       echo "[bundle-speech] missing: models/$path"; return 1; }
     actual="$(sha256_of "$dir/models/$path")"
@@ -236,7 +236,6 @@ verify_models() {
     echo "[bundle-speech] models/ holds $present files; expected exactly $count"
     return 1
   fi
-  : "$rest" "$entry"
   echo "[bundle-speech] OK: $count model files match their pins"
 }
 
@@ -351,8 +350,14 @@ ORT_SRC="$WORK/src/$ORT_PREFIX"
 ORT_BUILD="$WORK/ort-build"
 ORT_OUT="$WORK/ort"
 ORT_STAMP="$ORT_OUT/.stamp"
-if [[ ! -f "$ORT_STAMP" || "$(cat "$ORT_STAMP")" != "$(sha256_of "$DL/$ORT_PREFIX.tar.gz")" ]]; then
+ORT_SHA="$(sha256_of "$DL/$ORT_PREFIX.tar.gz")"
+# A build directory configured from this tarball (and this script's ORT
+# flags) is reused, so an interrupted build continues.
+sed -n '/^  ort_flags=(/,/^  )/p' "$0" > "$WORK/ort-flags.txt"
+ORT_CONFIG_KEY="$ORT_SHA $(sha256_of "$WORK/ort-flags.txt")"
+if [[ ! -f "$ORT_STAMP" || "$(cat "$ORT_STAMP")" != "$ORT_SHA" ]]; then
   log "building ONNX Runtime (CPU, static; about an hour at -j2)"
+  if [[ ! -f "$ORT_BUILD/.configured" || "$(cat "$ORT_BUILD/.configured")" != "$ORT_CONFIG_KEY" ]]; then
   fresh_extract "$DL/$ORT_PREFIX.tar.gz" "$WORK/src"
   # Point every dependency the build needs at its pinned local tarball.
   deps_txt="$ORT_SRC/cmake/deps.txt"
@@ -419,8 +424,17 @@ EOF
   if grep -E "^-- Fetch [A-Za-z0-9_]+ from https?://" "$WORK/ort-configure.log"; then
     die "ONNX Runtime's configure fetched from the network (see above)"
   fi
-  cmake --build "$ORT_BUILD" --config Release --parallel "$JOBS" > "$WORK/ort-build.log" 2>&1 ||
-    { grep -E "error|Error" "$WORK/ort-build.log" | head -30; die "ONNX Runtime build failed ($WORK/ort-build.log)"; }
+  echo "$ORT_CONFIG_KEY" > "$ORT_BUILD/.configured"
+  fi
+  # Its libraries, and re2, which they use but nothing in "all" builds
+  # without the shared library.
+  for target in "" re2; do
+    target_args=()
+    [[ -n "$target" ]] && target_args=(--target "$target")
+    cmake --build "$ORT_BUILD" --config Release --parallel "$JOBS" "${target_args[@]}" \
+        >> "$WORK/ort-build.log" 2>&1 ||
+      { grep -E "error|Error" "$WORK/ort-build.log" | head -30; die "ONNX Runtime build failed ($WORK/ort-build.log)"; }
+  done
   # One static library of everything it built (but protoc's and the
   # full protobuf, which only the build tools use), and the C/C++ API headers.
   rm -rf "$ORT_OUT"
@@ -449,7 +463,7 @@ EOF
     fi
   fi
   log "ONNX Runtime: $(wc -l < "$WORK/ort-libs.txt" | tr -d ' ') static libraries combined"
-  sha256_of "$DL/$ORT_PREFIX.tar.gz" > "$ORT_STAMP"
+  echo "$ORT_SHA" > "$ORT_STAMP"
 fi
 
 # ---------------------------------------------------------------- sherpa-onnx

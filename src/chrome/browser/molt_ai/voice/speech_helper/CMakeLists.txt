@@ -82,6 +82,7 @@ add_executable(molt-speech
 )
 target_include_directories(molt-speech PRIVATE
   "${MOLT_SRC_ROOT}" "${MOLT_SPEECH_SHERPA_PREFIX}/include")
+target_link_libraries(molt-speech PRIVATE molt_speech_core)
 
 # sherpa-onnx's static libraries (its sherpa-onnx-static-no-tts.pc), then
 # ONNX Runtime's.
