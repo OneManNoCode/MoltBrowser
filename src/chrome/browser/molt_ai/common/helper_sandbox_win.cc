@@ -116,8 +116,7 @@ static_assert((hsw::kScratchDirectoryRights &
 // sandbox::JobLevel::kLockdown allows one process.
 static_assert(hsw::kActiveProcessLimit == 1);
 // The job's memory limit is every OS's (helper_limits.h).
-static_assert(hsw::kProcessMemoryLimit ==
-              helper_limits::kMaxHelperMemoryBytes);
+static_assert(hsw::kProcessMemoryLimit == helper_limits::kMaxHelperMemoryBytes);
 
 namespace {
 
@@ -277,12 +276,11 @@ ReadEnd ReadOutput(HANDLE pipe,
       if (!(deadline - now).is_positive()) {
         return ReadEnd::kDeadline;
       }
-      exited =
-          ::WaitForSingleObject(
-              process,
-              std::min(base::saturated_cast<DWORD>(
-                           pause.InMillisecondsRoundedUp()),
-                       WaitMsBefore(deadline, *watch, now))) == WAIT_OBJECT_0;
+      exited = ::WaitForSingleObject(
+                   process, std::min(base::saturated_cast<DWORD>(
+                                         pause.InMillisecondsRoundedUp()),
+                                     WaitMsBefore(deadline, *watch, now))) ==
+               WAIT_OBJECT_0;
       pause = std::min(pause * 2, base::Milliseconds(50));
       continue;
     }

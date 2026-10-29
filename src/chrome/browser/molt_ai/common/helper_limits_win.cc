@@ -136,8 +136,7 @@ bool BytesOf(HANDLE handle, bool is_directory, uint64_t* bytes) {
     const uint32_t name_length =
         base::U32FromNativeEndian(rest.subspan<4, 4>());
     const int64_t size = base::I64FromNativeEndian(rest.subspan<8, 8>());
-    const int64_t allocated =
-        base::I64FromNativeEndian(rest.subspan<16, 8>());
+    const int64_t allocated = base::I64FromNativeEndian(rest.subspan<16, 8>());
     if (name_length > rest.size() - kFixedPart) {
       return false;
     }
@@ -226,7 +225,8 @@ void WalkDirectory(const std::wstring& dir, int depth, Walk* walk) {
       break;
     }
   } while (::FindNextFileW(find, &found));
-  if (walk->usage.gap == Gap::kNone && ::GetLastError() != ERROR_NO_MORE_FILES) {
+  if (walk->usage.gap == Gap::kNone &&
+      ::GetLastError() != ERROR_NO_MORE_FILES) {
     walk->usage.gap = Gap::kUnreadable;
   }
   ::FindClose(find);

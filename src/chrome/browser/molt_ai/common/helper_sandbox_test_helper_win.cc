@@ -159,8 +159,8 @@ int Env() {
 // Creates |path| and writes |mib| MiB to it. False (with the error printed)
 // if it can't.
 bool WriteMiB(const wchar_t* path, unsigned long mib) {
-  HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0,
-                            nullptr);
+  HANDLE file =
+      CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     PrintError("FAILED");
     return false;
@@ -195,8 +195,8 @@ int Files(const wchar_t* dir, unsigned long count) {
   wchar_t path[MAX_PATH];
   for (unsigned long i = 0; i < count; ++i) {
     swprintf(path, MAX_PATH, L"%ls\\file%lu", dir, i);
-    HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0,
-                              nullptr);
+    HANDLE file =
+        CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
       PrintError("FAILED");
       return 0;
@@ -229,8 +229,8 @@ int Stream(const wchar_t* path, unsigned long mib) {
 }
 
 int Extend(const wchar_t* path, unsigned long mib) {
-  HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0,
-                            nullptr);
+  HANDLE file =
+      CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
   LARGE_INTEGER size = {};
   size.QuadPart = static_cast<LONGLONG>(mib) * 1024 * 1024;
   if (file == INVALID_HANDLE_VALUE ||

@@ -33,9 +33,10 @@
 //     between fork and exec (helper_sandbox_linux.h), and resource limits:
 //     no file larger than 64 MiB, no core dump, at most 4 GiB of private
 //     memory (RLIMIT_DATA; seccomp refuses the shared memory it doesn't
-//     count, and other processes) and 256 open files. A layer the kernel lacks is skipped and
-//     logged once (e.g. Landlock before Linux 5.13: then files are not
-//     confined); one the kernel has but that can't be set up fails the run.
+//     count, and other processes) and 256 open files. A layer the kernel lacks
+//     is skipped and logged once (e.g. Landlock before Linux 5.13: then files
+//     are not confined); one the kernel has but that can't be set up fails the
+//     run.
 //   macOS: /usr/bin/sandbox-exec with a deny-by-default Seatbelt profile
 //     (seatbelt_profile.h); the helper starts no other process.
 //     base::LaunchProcess() has no hook before exec here, so no resource

@@ -174,8 +174,8 @@ constexpr uint32_t kCloneThread = CLONE_THREAD;
 constexpr uint32_t kOpenTmpfileBit = 020000000;
 
 // mmap() flags (the same on x86_64 and aarch64).
-constexpr uint32_t kMapTypeMask = 0x0f;  // MAP_TYPE
-constexpr uint32_t kMapPrivate = 0x02;   // MAP_PRIVATE
+constexpr uint32_t kMapTypeMask = 0x0f;   // MAP_TYPE
+constexpr uint32_t kMapPrivate = 0x02;    // MAP_PRIVATE
 constexpr uint32_t kMapAnonymous = 0x20;  // MAP_ANONYMOUS
 
 // BPF instructions.
@@ -481,9 +481,9 @@ std::vector<sock_filter> BuildSeccompProgram() {
             &program);
   Deny(__NR_memfd_create, ENOSYS, &program);
   Deny(__NR_memfd_secret, ENOSYS, &program);
-  for (long nr : {__NR_shmget, __NR_shmat, __NR_shmctl, __NR_shmdt,
-                  __NR_msgget, __NR_msgsnd, __NR_msgrcv, __NR_msgctl,
-                  __NR_semget, __NR_semop, __NR_semtimedop, __NR_semctl}) {
+  for (long nr : {__NR_shmget, __NR_shmat, __NR_shmctl, __NR_shmdt, __NR_msgget,
+                  __NR_msgsnd, __NR_msgrcv, __NR_msgctl, __NR_semget,
+                  __NR_semop, __NR_semtimedop, __NR_semctl}) {
     Deny(nr, EPERM, &program);
   }
 

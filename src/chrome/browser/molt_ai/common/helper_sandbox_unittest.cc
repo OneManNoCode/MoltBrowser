@@ -470,9 +470,9 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
   EXPECT_EQ(RunFilter(program, Call(__NR_clone, 0x003d0f00)),
             SECCOMP_RET_ALLOW);
   EXPECT_EQ(RunFilter(program, Call(__NR_clone, SIGCHLD)), Errno(EPERM));
-  EXPECT_EQ(RunFilter(program,
-                      Call(__NR_clone, CLONE_VM | CLONE_VFORK | SIGCHLD)),
-            Errno(EPERM));
+  EXPECT_EQ(
+      RunFilter(program, Call(__NR_clone, CLONE_VM | CLONE_VFORK | SIGCHLD)),
+      Errno(EPERM));
 #if defined(__NR_fork)
   EXPECT_EQ(RunFilter(program, Call(__NR_fork)), Errno(EPERM));
   EXPECT_EQ(RunFilter(program, Call(__NR_vfork)), Errno(EPERM));
@@ -588,8 +588,8 @@ TEST(HelperSandboxLinuxTest, SeccompKeepsWritesAndMemoryCounted) {
   EXPECT_EQ(RunFilter(program, Call(__NR_memfd_create)), Errno(ENOSYS));
   EXPECT_EQ(RunFilter(program, Call(447)), Errno(ENOSYS));  // memfd_secret
   for (int nr : {__NR_shmget, __NR_shmat, __NR_shmctl, __NR_shmdt, __NR_msgget,
-                 __NR_msgsnd, __NR_msgrcv, __NR_msgctl, __NR_semget,
-                 __NR_semop, __NR_semtimedop, __NR_semctl}) {
+                 __NR_msgsnd, __NR_msgrcv, __NR_msgctl, __NR_semget, __NR_semop,
+                 __NR_semtimedop, __NR_semctl}) {
     EXPECT_EQ(RunFilter(program, Call(nr)), Errno(EPERM)) << nr;
   }
   EXPECT_EQ(RunFilter(program, Call(__NR_munmap)), SECCOMP_RET_ALLOW);
@@ -862,8 +862,8 @@ TEST_F(HelperSandboxLimitsTest, WritesFilesAndNothingElse) {
 #endif
   EXPECT_EQ(Output({"write", In("out.txt"), "1"}), "WROTE\n");
   std::string text;
-  EXPECT_TRUE(ReadHelperOutputFile(scratch_.path().AppendASCII("out.txt"),
-                                   16, &text));
+  EXPECT_TRUE(
+      ReadHelperOutputFile(scratch_.path().AppendASCII("out.txt"), 16, &text));
   EXPECT_EQ(text, std::string(16, 'x'));
   // What it wrote stays: not deleted, renamed or moved into a directory.
   for (const std::vector<std::string>& args :
@@ -901,7 +901,8 @@ TEST_F(HelperSandboxLimitsTest, StopsAHelperThatMakesTooManyFiles) {
 TEST_F(HelperSandboxLimitsTest, CountsWhatItLeftWhenItExited) {
   // Written at once, and it exits: if the run's checks missed it, the one
   // after it exited doesn't.
-  const HelperRunResult run = Run({"spread", scratch_.path().value(), "2", "40"});
+  const HelperRunResult run =
+      Run({"spread", scratch_.path().value(), "2", "40"});
   ASSERT_TRUE(run.launched) << run.error;
   EXPECT_TRUE(run.limit_exceeded);
   EXPECT_EQ(DescribeHelperRunFailure(run, "test", "x"),
@@ -940,9 +941,8 @@ TEST_F(HelperSandboxLimitsTest, MemoryLimit) {
   EXPECT_TRUE(Output({"reserve", "5120"}).starts_with("FAILED"));
   // Memory RLIMIT_DATA wouldn't count is refused.
   for (const std::vector<std::string>& args :
-       std::vector<std::vector<std::string>>{{"shared", "64"},
-                                             {"memfd"},
-                                             {"shm", "64"}}) {
+       std::vector<std::vector<std::string>>{
+           {"shared", "64"}, {"memfd"}, {"shm", "64"}}) {
     const std::string output = Output(args);
     EXPECT_TRUE(output.starts_with("DENIED")) << args[0] << ": " << output;
   }
@@ -958,7 +958,8 @@ TEST(HelperSandboxLinuxLimitsTest, AScratchDirectoryItLockedIsStillDeleted) {
     path = scratch.path();
     // Landlock doesn't cover chmod: the helper can take the browser's own
     // access away.
-    base::CommandLine cmd(exe_dir.AppendASCII("molt_helper_sandbox_test_helper"));
+    base::CommandLine cmd(
+        exe_dir.AppendASCII("molt_helper_sandbox_test_helper"));
     cmd.AppendArg("lock");
     cmd.AppendArg(path.value());
     const HelperRunResult run =
@@ -1145,8 +1146,7 @@ TEST_F(HelperSandboxWinTest, StopsAHelperThatWritesTooMuch) {
 }
 
 TEST_F(HelperSandboxWinTest, StopsAHelperThatMakesTooManyFiles) {
-  const HelperRunResult run =
-      Run({L"files", scratch_.path().value(), L"100"});
+  const HelperRunResult run = Run({L"files", scratch_.path().value(), L"100"});
   ASSERT_TRUE(run.launched) << run.error;
   EXPECT_TRUE(run.limit_exceeded) << run.output;
   EXPECT_EQ(run.error, "it made more than 64 files in its scratch directory");

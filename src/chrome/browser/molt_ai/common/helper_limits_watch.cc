@@ -77,8 +77,8 @@ bool HelperLimitsWatch::Check(base::TimeTicks now, bool force) {
     error_ = CheckMemory(pid_);
   }
 #endif
-  next_check_ = base::TimeTicks::Now() +
-                base::Milliseconds(hl::kScratchCheckIntervalMs);
+  next_check_ =
+      base::TimeTicks::Now() + base::Milliseconds(hl::kScratchCheckIntervalMs);
   return error_.empty();
 }
 

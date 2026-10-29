@@ -115,10 +115,10 @@ ReadEnd ReadOutput(int fd,
     struct pollfd poll_fd = {};
     poll_fd.fd = fd;
     poll_fd.events = POLLIN;
-    const int ready = poll(&poll_fd, 1,
-                           base::saturated_cast<int>(
-                               WaitBefore(deadline, watch, now)
-                                   .InMillisecondsRoundedUp()));
+    const int ready =
+        poll(&poll_fd, 1,
+             base::saturated_cast<int>(
+                 WaitBefore(deadline, watch, now).InMillisecondsRoundedUp()));
     if (ready < 0) {
       if (errno == EINTR) {
         continue;  // The loop recomputes the time left.

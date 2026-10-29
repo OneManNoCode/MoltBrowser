@@ -49,10 +49,9 @@ uint64_t BytesOf(const struct stat& info) {
       info.st_size > 0 ? static_cast<uint64_t>(info.st_size) : 0;
   const uint64_t blocks =
       info.st_blocks > 0 ? static_cast<uint64_t>(info.st_blocks) : 0;
-  const uint64_t allocated =
-      blocks > std::numeric_limits<uint64_t>::max() / 512
-          ? std::numeric_limits<uint64_t>::max()
-          : blocks * 512;
+  const uint64_t allocated = blocks > std::numeric_limits<uint64_t>::max() / 512
+                                 ? std::numeric_limits<uint64_t>::max()
+                                 : blocks * 512;
   return std::max(size, allocated);
 }
 

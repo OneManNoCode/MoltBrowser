@@ -192,11 +192,11 @@ int Preallocate(const char* path, unsigned long mib) {
 int Xattr(const char* path) {
   static const char value[1024] = {};
 #if defined(__APPLE__)
-  const int rv = setxattr(path, "org.moltbrowser.test", value, sizeof(value),
-                          0, XATTR_NOFOLLOW);
+  const int rv = setxattr(path, "org.moltbrowser.test", value, sizeof(value), 0,
+                          XATTR_NOFOLLOW);
 #else
-  const int rv = setxattr(path, "user.moltbrowser.test", value, sizeof(value),
-                          0);
+  const int rv =
+      setxattr(path, "user.moltbrowser.test", value, sizeof(value), 0);
 #endif
   return Result(rv, "SET\n");
 }
@@ -358,8 +358,9 @@ int main(int argc, char* argv[]) {
     for (volatile unsigned counter = 0;; counter = counter + 1) {
     }
   }
-  Print("usage: echo|write|spread|files|delete|rename|link|symlink|mkdir|"
-        "fork|preallocate|xattr|tmpfile|memfd|shm|shared|alloc|reserve|rsrc|"
-        "lock|limits|spin ...\n");
+  Print(
+      "usage: echo|write|spread|files|delete|rename|link|symlink|mkdir|"
+      "fork|preallocate|xattr|tmpfile|memfd|shm|shared|alloc|reserve|rsrc|"
+      "lock|limits|spin ...\n");
   return 2;
 }
