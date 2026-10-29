@@ -137,6 +137,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   decoder can't read, are refused with a message); whisper reads only a WAV
   the browser builds from the recording's checked 16 kHz mono samples,
   within the same size limit.
+- **OCR and voice: limits on what the helpers write and use.** On every
+  platform a tesseract or whisper run may add less than 64 MiB and at most
+  64 files to its private scratch folder, and use at most 4 GiB of memory.
+  The browser checks the folder every 10 ms while the helper runs, and once
+  more when it ends; past a limit the helper is stopped, and OCR or voice
+  says which limit. The helpers may only create and write files there (not
+  delete or rename them, or make folders), so all they write is counted;
+  on Linux each file also stops at 64 MiB and no core dump is written. A
+  helper that a malicious file takes over is stopped as soon as it passes
+  a limit, instead of writing until its deadline.
 - **macOS: OCR ships with its own libraries.** The bundled tesseract still
   pointed at the build machine's Homebrew libraries, so on other Macs it
   couldn't start (and the sandbox wouldn't let it load them anyway). The

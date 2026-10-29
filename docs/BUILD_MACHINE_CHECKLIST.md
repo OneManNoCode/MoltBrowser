@@ -698,6 +698,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | document parser PDF rendering | PDFium config `version = 4`, `gfx::PNGCodec::Encode` with BGRA, spans and `base::U32FromBigEndian` | #18 |
 | `molt_ai/common/helper_sandbox_*` (Landlock and seccomp, Seatbelt, job object) | type-checked against 156's headers on Linux and Windows (clang-cl), the POSIX part for the Mac too, on Apple framework stand-ins (round 28) | #16 |
 | `molt_ai/common/helper_sandbox_win.cc` (the helpers' LPAC launch), `helper_sandbox_test_helper_win.cc` (a test `executable`), `ocr/ocr_service.cc` (the data decoder, Skia) | new deps: `//sandbox/win:sandbox` (its `AppContainerBase`, `StartupInformationHelper`, `Job`) from `chrome/browser`, `//services/data_decoder/public/cpp` and `//skia` from `molt_ai/ocr`; type-checked with clang-cl and for Linux and the Mac (round 33); `-Wunsafe-buffer-usage` isn't modelled by the compile check | helpers-win |
+| `molt_ai/common/helper_limits.cc`, `helper_limits_posix.cc`, `helper_limits_win.cc`, `helper_limits_watch.cc` (measuring a helper's scratch directory every 10 ms), `helper_sandbox_test_helper_posix.cc` (a test `executable`, now also on Linux and the Mac) | the Mac branches: `getattrlistat()` with `ATTR_FILE_TOTALSIZE \| ATTR_FILE_ALLOCSIZE` (`<sys/attr.h>`), `proc_pid_rusage(RUSAGE_INFO_V2)` (`<libproc.h>`), `F_PREALLOCATE`; Windows: `GetFileInformationByHandleEx(FileStreamInfo / FileStandardInfo / FileBasicInfo)`, `FindFirstFileExW(FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH)`, `base::byte_span_from_ref(...).first(n).copy_from()`; the Linux seccomp program's new `BPF_ALU \| BPF_AND` rule and the syscall numbers past the sysroot (`openat2` 437, `memfd_secret` 447, `setxattrat` 463); type-checked on all three (round 35); `-Wunsafe-buffer-usage` isn't modelled by the compile check (the harness built the POSIX code with it) | helpers-limits |
 | `third_party/llama_cpp:mtmd` (exception and CFI configs), `:llama_guard` (a TU built with exceptions), `:constrained_decoding` deps | | #30, #38, #52 |
 | `runtime/model_image_prep.cc` (real Skia, the data decoder), `molt_model_impl.cc`, `molt_inference_service.cc` (syntax-checked only) | | #38 |
 | `embedding_process_host`, `runtime:embedding_host`, `models:download` | | #28 |
@@ -932,6 +933,14 @@ Still worth knowing from earlier rounds:
   and its `BUILD.gn` `moltnet_camera_values.{h,cc}` in `:farbling` (its
   test in `:unit_tests`); `media/base/BUILD.gn` lists
   `molt_portable_downmix.cc`.
+- helpers-limits: `//chrome/browser/molt_ai/common:helper_limits` (new
+  source_set: `helper_limits.{h,cc}`, `helper_limits_posix.cc`, and on
+  Windows `helper_limits_win.cc` with a dep on `//base`), a public dep of
+  `:helper_sandbox_linux` and a dep of `:helper_sandbox` (which lists
+  `helper_limits_watch.{h,cc}`) and `:unit_tests` (which lists
+  `helper_limits_unittest.cc`); `:molt_helper_sandbox_test_helper` now
+  builds on Linux and the Mac too (`helper_sandbox_test_helper_posix.cc`),
+  a `data_deps` of `:unit_tests` there as on Windows.
 
 ### 4.10 MoltNet's Incognito protections (`molt_net_incognito_parity.h`)
 
@@ -1004,6 +1013,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `InferenceProcessHostTest` (crash mid-stream, hang, flood, bad UTF-8, the projector handle, GPU fallback, `kBackendFailed` off the GPU) | #15, #38, #52, #53 |
   | `HelperSandboxTest`, `HelperSandboxLinuxTest`, `SeatbeltProfileTest` | #16 |
   | `HelperSandboxWinPolicyTest` (every platform: the capability SID from its name, the SDDL, the attribute list, the mitigations), `HelperScratchDirTest`, `RecordedWavTest`, `OcrImageTest`, `OcrImageFileTest` (a fake data decoder service over real Mojo pipes, since the binary doesn't start Blink: the decode's limits, a hung or crashed decoder; the PNM written from a decoded bitmap), and `OcrRenderedPagesTest`, `RenderAndOcrPdfTest` (now asynchronous); on Windows (deferred) `HelperSandboxWinTest`, `HelperSandboxWinOutputTest` (§7.5) | helpers-win |
+  | `HelperLimitsTest`, `HelperLimitsWatchTest` (every platform: measuring a scratch directory, links never followed, the limits; the Mac: a resource fork counts; Windows: every stream, a file still open for writing, paths past `MAX_PATH`), `HelperSandboxLimitsTest` (Linux and the Mac, with `molt_helper_sandbox_test_helper` next to the binary: a helper writing too much or making too many files is stopped and the run says which limit; it can't delete, rename, make directories, symlinks or extended attributes; Linux: its rlimits, `RLIMIT_DATA`, and no shared memory, `fallocate()` or `O_TMPFILE`; the Mac: no `fork()`, `F_PREALLOCATE` and a resource fork are counted, and a helper past 4 GiB of memory is stopped, which touches up to 4 GiB once), `HelperSandboxLinuxTest.AScratchDirectoryItLockedIsStillDeleted`, `SeccompKeepsWritesAndMemoryCounted`, the new `HelperSandboxWinTest` cases (§7.5) | helpers-limits |
   | `OcrRenderedPagesTest`, `RenderAndOcrPdfTest`, `PdfPageImageSizeTest` | #18 |
   | `MoltNetContentSettingsTest` (real `HostContentSettingsMap`), `MoltNetPrefServiceTest`, `MoltNetIsolationTest` | #21 |
   | `MoltNetWebRtcBindersTest` (real mojo), `MoltNetRefusingP2PSocketManagerTest` | #22 |
@@ -2558,6 +2568,46 @@ writes; on Windows both run as a less-privileged AppContainer per run
   OCR and voice need MoltBrowser's installer, …" and no tesseract process;
   after `icacls <unpacked>\ocr /grant "*S-1-15-3-1024-3499754957-…:(OI)(CI)(RX)"`
   OCR works.
+
+The limits on what a helper writes and uses (`helper_limits.h`): its
+scratch directory may grow by less than 64 MiB and gain at most 64 entries,
+checked every 10 ms and when it exits; at most 4 GiB of memory; it may only
+create and write files there. On the Mac the Seatbelt profile no longer
+allows `process-fork` or any file write but creating and writing regular
+files (helpers-limits):
+
+- [ ] The Mac, OCR and voice under the new profile (helpers-limits): the
+  three checks at the top of this section (attachments including the 33 MP
+  scan, a scanned PDF, voice) with the bundled tesseract and whisper-cli.
+  *Expected:* as before. If OCR or voice fails, or Console shows a
+  `Sandbox: tesseract(…) deny(1) file-write-…` or `process-fork` line for a
+  helper, report the operation: the helpers were checked here (Linux,
+  `strace`) to start no process and write only their `.txt`.
+- [ ] The Mac, no core dump outside the scratch directory (helpers-limits):
+  start the browser from a shell after `ulimit -c unlimited`, run OCR on
+  the 33 MP scan and, while tesseract runs, `kill -SEGV <its pid>`.
+  *Expected:* OCR fails with "tesseract exit=-1", and no new
+  `/cores/core.*` file appears (the profile lets the helper write nowhere
+  else; hardened-runtime helpers without `get-task-allow` don't dump core).
+  If a core file appears, report it: then the helpers need `RLIMIT_CORE`
+  set before `sandbox-exec`, which `base::LaunchProcess()` can't do on the
+  Mac.
+- [ ] Linux, the largest inputs under `RLIMIT_DATA` (helpers-limits): OCR of
+  the 33 MP scan and voice of a 3-minute recording, with the distribution's
+  tesseract and with a bundled build, ideally on a machine with many cores
+  (a tesseract built with OpenMP starts a thread, and an 8 MiB stack, per
+  core). *Expected:* the text, as before. A failure that names memory
+  (`Cannot allocate memory`, `std::bad_alloc`) means 4 GiB is too little
+  there: report the core count and the helper.
+- [ ] Every OS, the sandbox tests (helpers-limits; Windows deferred):
+  `molt_ai_unittests --gtest_filter='HelperLimits*:HelperSandboxLimits*:HelperSandboxWin*:HelperSandboxLinux*'`
+  with `molt_helper_sandbox_test_helper` next to it. *Expected:* all pass:
+  a helper that writes 128 MiB in 16 MiB files is stopped below 128 MiB
+  ("was stopped: it wrote 64 MiB or more to its scratch directory"), one
+  that makes 100 files is stopped, one that reserves 1 GiB without writing
+  it (`F_PREALLOCATE`, `SetEndOfFile()`) is stopped, and on Windows it
+  can't delete, rename or make a directory, and a stream it writes is
+  counted.
 
 ## 8. Leak kit and traffic capture
 
