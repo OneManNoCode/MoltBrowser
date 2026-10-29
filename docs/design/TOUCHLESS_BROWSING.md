@@ -292,9 +292,9 @@ In voice mode, the browser gives them a **voice gesture** instead. It is a one-t
 The design and threat model get their own security review before they ship (Phase 3).
 
 ### 7.4 MoltNet
-- **On-device:** voice mode works in MoltNet windows, and all speech stays local.
-- **Pages don't hear the user:** they never receive the user's voice through voice mode. They only see the text the browser types and the clicks it makes, as with a keyboard.
-- **Not detectable:** pages can't tell voice mode is on. The overlay isn't part of the page, and accessibility actions look like ordinary clicks.
+- **On-device:** all speech stays local.
+- **Pages don't hear the user:** they never receive the user's voice through voice mode. They only see the text the browser types and the clicks it makes.
+- **Assistive technology can be noticed:** the overlay isn't part of the page, but a page can sometimes tell that assistive technology is acting, as with a screen reader in any browser. Accessibility actions differ in small ways from a mouse and keyboard, and keeping the accessibility tree costs measurable time. Voice-mode users would stand out from other MoltNet users. So voice mode is off in MoltNet windows by default, and turning it on there says so; making its actions indistinguishable is a Phase 3 item.
 
 ## 8. Privacy
 
@@ -377,6 +377,7 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **Speaker verification.**
 - **The defenses** against page audio and replay, with measurements.
 - **Every browser prompt and dialog operable by voice:** permissions, downloads, saved passwords, MoltNet.
+- **Voice mode in MoltNet windows:** actions that look like a mouse and keyboard, and an accessibility tree that costs a page nothing it can measure; until then, off there by default (§7.4).
 - **A security review** (red team) of the voice channel.
 
 **Exit:** no page audio or replay in the test set triggers an action, and every browser prompt is answerable by voice.
