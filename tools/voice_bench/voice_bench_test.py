@@ -166,15 +166,30 @@ class ProtoTest(unittest.TestCase):
             inner = _field(1, 2, p.encode()) + _field(2, 5, struct.pack("<f", s)) + \
                 _field(3, 0, _varint(t))
             blob += _field(1, 2, inner)
-        blob += _field(2, 2, b"\x08\x01")  # trainer spec, ignored
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "bpe.model")
             with open(path, "wb") as f:
-                f.write(blob)
+                f.write(blob + _field(2, 2, _field(3, 0, _varint(2))))  # model_type BPE
             got = vbl.read_sentencepiece(path)
+            self.assertEqual(vbl.sentencepiece_type(path), "bpe")
+            with open(path, "wb") as f:
+                f.write(blob)
+            self.assertEqual(vbl.sentencepiece_type(path), "unigram")  # the default
         self.assertEqual([g[0] for g in got], [p for p, _, _ in pieces])
         self.assertAlmostEqual(got[5][1], -5.0)
         self.assertEqual(vbl.bpe_encode("HEY MOLT", got), ["▁HEY", "▁M", "O", "LT"])
+        self.assertEqual(vbl.sp_encode("HEY MOLT", got, "bpe"), ["▁HEY", "▁M", "O", "LT"])
+
+    def test_unigram(self):
+        # Viterbi: the split with the highest total score, even through
+        # pieces BPE merges could never reach ("▁UP" without "▁U" or "UP").
+        pieces = [("▁", -3.0, 1), ("L", -2.0, 1), ("I", -2.0, 1), ("G", -2.0, 1),
+                  ("H", -2.0, 1), ("T", -2.0, 1), ("U", -2.0, 1), ("P", -2.0, 1),
+                  ("IGHT", -3.5, 1), ("▁LI", -3.0, 1), ("▁UP", -4.0, 1)]
+        self.assertEqual(vbl.sp_encode("LIGHT UP", pieces), ["▁", "L", "IGHT", "▁UP"])
+        self.assertEqual(vbl.bpe_encode("UP", pieces), ["▁", "U", "P"])
+        with self.assertRaises(ValueError):
+            vbl.sp_encode("LIGHTZ", pieces)
 
     def test_vocab_from_tokens(self):
         with tempfile.TemporaryDirectory() as d:

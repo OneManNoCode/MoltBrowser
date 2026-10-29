@@ -404,8 +404,12 @@ class Bench:
     def keywords_file(self, kid, e, phrase, threshold):
         d = self.art(e["artifact"])
         if e["unit"] == "bpe":
-            pieces = vbl.read_sentencepiece(os.path.join(d, e["bpe_model"]))
-            toks = vbl.bpe_encode(phrase.upper(), pieces)
+            # Cut the phrase as the model's SentencePiece model does (icefall
+            # trains unigram models, not BPE merges, despite "bpe.model"): a
+            # keyword split any other way is never spotted.
+            sp = os.path.join(d, e["bpe_model"])
+            toks = vbl.sp_encode(phrase.upper(), vbl.read_sentencepiece(sp),
+                                 vbl.sentencepiece_type(sp))
         else:
             lex = {}
             with open(os.path.join(d, e["lexicon"]), encoding="utf-8") as f:

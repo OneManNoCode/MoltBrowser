@@ -466,6 +466,60 @@ def bpe_encode(text, pieces):
     return out
 
 
+def sentencepiece_type(path):
+    """The model type in a SentencePiece ModelProto's trainer spec:
+    "unigram" (SentencePiece's default, and icefall's), "bpe", "word" or
+    "char"."""
+    with open(path, "rb") as f:
+        buf = memoryview(f.read())
+    for field, wt, val in iter_fields(buf):
+        if field == 2 and wt == 2:
+            for f2, w2, v2 in iter_fields(val):
+                if f2 == 3 and w2 == 0:
+                    return {1: "unigram", 2: "bpe", 3: "word", 4: "char"}.get(v2, "unigram")
+    return "unigram"
+
+
+def unigram_encode_word(word, scores):
+    """SentencePiece unigram segmentation of one word (with the leading
+    U+2581): the split into pieces with the highest total score (Viterbi).
+    None if the vocabulary can't spell it."""
+    s = "▁" + word
+    longest = max((len(p) for p in scores), default=1)
+    best = [None] * (len(s) + 1)
+    best[0] = (0.0, 0)
+    for i in range(1, len(s) + 1):
+        for j in range(max(0, i - longest), i):
+            sc = scores.get(s[j:i])
+            if best[j] is None or sc is None:
+                continue
+            total = best[j][0] + sc
+            if best[i] is None or total > best[i][0]:
+                best[i] = (total, j)
+    if best[-1] is None:
+        return None
+    out, i = [], len(s)
+    while i > 0:
+        j = best[i][1]
+        out.append(s[j:i])
+        i = j
+    return out[::-1]
+
+
+def sp_encode(text, pieces, model_type="unigram"):
+    """Pieces for text as the model's SentencePiece model would cut it, for
+    keyword files. Raises ValueError for a word the vocabulary can't spell."""
+    scores = {p: s for p, s, t in pieces if t in (1, 4)}  # NORMAL, USER_DEFINED
+    out = []
+    for w in text.split():
+        toks = (bpe_encode_word(w, scores) if model_type == "bpe"
+                else unigram_encode_word(w, scores))
+        if not toks or any(t not in scores for t in toks):
+            raise ValueError("the vocabulary can't spell %r" % w)
+        out.extend(toks)
+    return out
+
+
 # ------------------------------------------------------------------ ONNX
 
 
