@@ -58,10 +58,10 @@ outside its scratch directory into it (the link is refused `EXDEV`), so it
 gains no write handle out of the one place it may write. The leak kit's
 Python suites and `molt_fuzz.py check` pass.
 
-**Findings.** A handful, all low or informational; most were by design or
-already correct. One platform-specific item is tracked privately.
+**Findings.** 4: 1 low, tracked privately, and 3 informational (by design
+or already correct).
 
-**Fixed.**
+**Tests added.**
 
 - The helper sandbox's write-confinement test now also checks that a helper
   can't hard-link a file from outside its scratch directory into it,
