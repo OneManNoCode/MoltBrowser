@@ -39,9 +39,9 @@ std::string Prefix(const std::string& s, size_t max_bytes) {
   return s.substr(0, end);
 }
 
-std::string StringAttribute(const ui::AXNodeData& data,
-                            ax::mojom::StringAttribute attribute,
-                            size_t max_bytes) {
+std::string CappedString(const ui::AXNodeData& data,
+                         ax::mojom::StringAttribute attribute,
+                         size_t max_bytes) {
   return Prefix(data.GetStringAttribute(attribute), max_bytes);
 }
 
@@ -231,19 +231,19 @@ PageNode PageNodeFromData(const ui::AXNodeData& data,
       kStateHasDefaultAction);
   node.states = states;
 
-  node.name = StringAttribute(data, StringAttribute::kName, max_string_bytes);
-  node.value = StringAttribute(data, StringAttribute::kValue, max_string_bytes);
+  node.name = CappedString(data, StringAttribute::kName, max_string_bytes);
+  node.value = CappedString(data, StringAttribute::kValue, max_string_bytes);
   node.description =
-      StringAttribute(data, StringAttribute::kDescription, max_string_bytes);
+      CappedString(data, StringAttribute::kDescription, max_string_bytes);
   node.placeholder =
-      StringAttribute(data, StringAttribute::kPlaceholder, max_string_bytes);
-  node.url = StringAttribute(data, StringAttribute::kUrl, max_string_bytes);
+      CappedString(data, StringAttribute::kPlaceholder, max_string_bytes);
+  node.url = CappedString(data, StringAttribute::kUrl, max_string_bytes);
   node.html_tag =
-      StringAttribute(data, StringAttribute::kHtmlTag, max_string_bytes);
+      CappedString(data, StringAttribute::kHtmlTag, max_string_bytes);
   node.input_type =
-      StringAttribute(data, StringAttribute::kInputType, max_string_bytes);
+      CappedString(data, StringAttribute::kInputType, max_string_bytes);
   node.autocomplete =
-      StringAttribute(data, StringAttribute::kAutoComplete, max_string_bytes);
+      CappedString(data, StringAttribute::kAutoComplete, max_string_bytes);
   if (node.role == PageRole::kHeading) {
     node.heading_level =
         data.GetIntAttribute(ax::mojom::IntAttribute::kHierarchicalLevel);

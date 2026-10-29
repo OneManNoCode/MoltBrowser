@@ -21,7 +21,6 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/scoped_accessibility_mode.h"
 #include "content/public/browser/web_contents.h"
-#include "services/media_session/public/mojom/media_session.mojom.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -609,7 +608,7 @@ VoicePageController::ActionResult VoicePageController::PauseMedia() {
   if (!session) {
     return ActionResult::kNoMediaSession;
   }
-  session->Suspend(media_session::mojom::SuspendType::kUI);
+  session->Suspend(content::MediaSession::SuspendType::kUI);
   return ActionResult::kDone;
 }
 
@@ -625,7 +624,7 @@ VoicePageController::ActionResult VoicePageController::ResumeMedia() {
   // MediaSessionImpl::Resume(kUI) asks each player to play as triggered
   // by the user (HTMLMediaElement::RequestPlay()): with sound, without the
   // autoplay check. Players join the session once they have played.
-  session->Resume(media_session::mojom::SuspendType::kUI);
+  session->Resume(content::MediaSession::SuspendType::kUI);
   return ActionResult::kDone;
 }
 

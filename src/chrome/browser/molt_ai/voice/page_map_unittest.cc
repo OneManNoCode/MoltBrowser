@@ -629,6 +629,27 @@ TEST(PageMapTest, CapsAHugeRepeatedList) {
   EXPECT_EQ(map.lists[0].entries[199].date, "3 days ago");
 }
 
+TEST(PageMapTest, BoundsTheWorkOnEntriesFullOfLinks) {
+  // 150 entries of 200 links and 200 texts each: every entry is read
+  // within its own caps, and the whole map within the work budget.
+  TreeBuilder b("t");
+  const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);
+  const uint32_t list = b.Wrapper(root);
+  for (int e = 0; e < 150; ++e) {
+    const uint32_t card = b.Wrapper(list);
+    for (int k = 0; k < 200; ++k) {
+      b.Link(card, "Link " + std::to_string(k),
+             "/@channel" + std::to_string(k));
+      b.Text(card, std::to_string(k) + " views");
+    }
+  }
+  const PageMap map = Map(b.Take());
+  EXPECT_TRUE(map.stats.node_cap || map.stats.work_cap || map.stats.item_cap);
+  ASSERT_FALSE(map.lists.empty());
+  EXPECT_GE(map.lists[0].entries.size(), 3u);
+  EXPECT_FALSE(map.lists[0].entries[0].title.empty());
+}
+
 TEST(PageMapTest, SemanticListsFeedsAndListBoxes) {
   TreeBuilder b("t");
   const uint32_t root = b.Add(TreeBuilder::kRoot, PageRole::kRootWebArea);

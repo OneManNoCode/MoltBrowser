@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 
 namespace molt_ai {
 namespace voice {
@@ -27,6 +28,8 @@ enum Context : uint8_t {
 // How much of a subtree one look reads (nodes), and how deep below its root.
 constexpr size_t kMaxLabelScan = 64;
 constexpr size_t kMaxEntryScan = 400;
+// An entry's fields come from at most this many of its text runs.
+constexpr size_t kMaxFieldRuns = 48;
 constexpr size_t kMaxSignatureScan = 64;
 constexpr uint32_t kMaxSignatureDepth = 8;
 // An action is an entry by itself only when its subtree has at least this
@@ -252,12 +255,12 @@ bool IsFieldLike(std::string_view text) {
 class Builder {
  public:
   Builder(const PageTree& tree, const PageMapLimits& limits)
-      : tree_(tree), limits_(limits) {}
+      : tree_(&tree), limits_(limits) {}
 
   PageMap Build() {
     Walk();
     if (order_.empty()) {
-      map_.title = SpeechSafeText(tree_.title, kMaxPageTitleChars);
+      map_.title = SpeechSafeText(tree_->title, kMaxPageTitleChars);
       return std::move(map_);
     }
     IndexSubtrees();
@@ -270,7 +273,7 @@ class Builder {
 
  private:
   const PageNode& NodeAt(uint32_t pos) const {
-    return tree_.nodes[order_[pos].node];
+    return tree_->nodes[order_[pos].node];
   }
 
   // Spends |units| of the work budget; false once it is used up.
@@ -294,7 +297,7 @@ class Builder {
   // A pre-order walk of the tree from nodes[0], bounded in nodes, depth and
   // work; each node at most once.
   void Walk() {
-    const std::vector<PageNode>& nodes = tree_.nodes;
+    const std::vector<PageNode>& nodes = tree_->nodes;
     if (nodes.empty()) {
       return;
     }
@@ -487,7 +490,7 @@ class Builder {
     item.bounds = node.bounds;
     item.on_screen = !node.Has(kStateOffscreen);
     item.focused = node.Has(kStateFocused) ||
-                   (tree_.focus.valid() && tree_.focus == node.handle);
+                   (tree_->focus.valid() && tree_->focus == node.handle);
     item.disabled = node.Has(kStateDisabled);
     item.checked = node.Has(kStateChecked);
     item.expanded = node.Has(kStateExpanded);
@@ -828,11 +831,11 @@ class Builder {
       if (parent == kNoPos) {
         break;
       }
-      // Siblings before |at|, nearest first.
-      size_t index = 0;
-      while (index < ChildCount(parent) && Child(parent, index) != at) {
-        ++index;
-      }
+      // Siblings before |at|, nearest first (children are in order).
+      const auto first = child_list_.begin() + child_start_[parent];
+      const auto last = child_list_.begin() + child_start_[parent + 1];
+      const size_t index =
+          static_cast<size_t>(std::lower_bound(first, last, at) - first);
       for (size_t back = 0; back < kMaxLabelSiblings && back < index; ++back) {
         const uint32_t sibling = Child(parent, index - 1 - back);
         if (NodeAt(sibling).role == PageRole::kHeading && Shown(sibling)) {
@@ -909,34 +912,6 @@ class Builder {
     uint32_t heading;  // the nearest heading around it, or kNoPos
     bool in_control;   // inside a button, field or other non-link control
   };
-
-  // Text runs of a link's subtree (positions in |runs| order).
-  std::string RunsText(const std::vector<Run>& runs,
-                       uint32_t link,
-                       uint32_t within_heading,
-                       size_t max_chars) const {
-    std::string raw;
-    for (const Run& run : runs) {
-      if (run.link != link) {
-        continue;
-      }
-      if (within_heading != kNoPos && run.heading != within_heading) {
-        continue;
-      }
-      const std::string& name = NodeAt(run.pos).name;
-      if (name.empty()) {
-        continue;
-      }
-      if (!raw.empty()) {
-        raw.push_back(' ');
-      }
-      raw.append(name, 0, std::min<size_t>(name.size(), kMaxSpeechScanBytes));
-      if (raw.size() > max_chars * kGatherBytesPerChar) {
-        break;
-      }
-    }
-    return SpeechSafeText(raw, max_chars);
-  }
 
   // Text runs inside |heading|, whatever link they are in.
   std::string HeadingRunsText(const std::vector<Run>& runs,
@@ -1021,16 +996,30 @@ class Builder {
     }
     *has_heading = !headings.empty();
 
-    auto contains = [&](uint32_t outer, uint32_t inner) {
-      return inner >= outer && inner < end_[outer];
+    // Each link's (or clickable's) visible text, from one pass over the
+    // runs; and the first heading inside a link (headings are in order).
+    std::vector<std::string> owner_text(stop - root);
+    for (const Run& run : runs) {
+      if (run.link == kNoPos) {
+        continue;
+      }
+      std::string& raw = owner_text[run.link - root];
+      if (raw.size() > kMaxEntryTitleChars * kGatherBytesPerChar) {
+        continue;
+      }
+      const std::string& name = NodeAt(run.pos).name;
+      if (!raw.empty()) {
+        raw.push_back(' ');
+      }
+      raw.append(name, 0, std::min<size_t>(name.size(), kMaxSpeechScanBytes));
+    }
+    Spend(runs.size() + links.size());
+    auto visible_text = [&](uint32_t owner, size_t max_chars) {
+      return SpeechSafeText(owner_text[owner - root], max_chars);
     };
     auto heading_in = [&](uint32_t link) -> uint32_t {
-      for (uint32_t h : headings) {
-        if (contains(link, h)) {
-          return h;
-        }
-      }
-      return kNoPos;
+      auto it = std::lower_bound(headings.begin(), headings.end(), link);
+      return it != headings.end() && *it < end_[link] ? *it : kNoPos;
     };
 
     // The primary action: the link in or around a heading, else the link
@@ -1053,8 +1042,7 @@ class Builder {
     if (primary == kNoPos) {
       size_t best = 0;
       for (uint32_t link : links) {
-        const std::string text =
-            RunsText(runs, link, kNoPos, kMaxEntryTitleChars);
+        const std::string text = visible_text(link, kMaxEntryTitleChars);
         const std::string& shown =
             text.empty() ? map_.items[item_of_[link]].label : text;
         const size_t length = CountCodePoints(shown);
@@ -1101,7 +1089,7 @@ class Builder {
       }
     }
     if (entry.title.empty() && primary != kNoPos) {
-      entry.title = RunsText(runs, primary, kNoPos, kMaxEntryTitleChars);
+      entry.title = visible_text(primary, kMaxEntryTitleChars);
       if (entry.title.empty()) {
         entry.title = SpeechSafeText(map_.items[item_of_[primary]].label,
                                      kMaxEntryTitleChars);
@@ -1136,7 +1124,7 @@ class Builder {
           if (pass == 0 && !LooksLikeChannelUrl(item.url)) {
             continue;
           }
-          std::string text = RunsText(runs, link, kNoPos, kMaxEntryFieldChars);
+          std::string text = visible_text(link, kMaxEntryFieldChars);
           if (!visible && text.empty()) {
             text = SpeechSafeText(item.label, kMaxEntryFieldChars);
           }
@@ -1158,7 +1146,11 @@ class Builder {
     if (!entry.channel.empty()) {
       seen.push_back(FoldForCompare(entry.channel));
     }
+    size_t considered = 0;
     for (const Run& run : runs) {
+      if (++considered > kMaxFieldRuns || !Spend(1)) {
+        break;
+      }
       if (run.in_control ||
           (channel_link != kNoPos && run.link == channel_link)) {
         continue;
@@ -1220,7 +1212,7 @@ class Builder {
   // ---- The rest ----------------------------------------------------------
 
   void Finish() {
-    map_.title = SpeechSafeText(tree_.title, kMaxPageTitleChars);
+    map_.title = SpeechSafeText(tree_->title, kMaxPageTitleChars);
     if (map_.title.empty()) {
       map_.title = SpeechSafeText(NodeAt(0).name, kMaxPageTitleChars);
     }
@@ -1232,7 +1224,8 @@ class Builder {
     }
   }
 
-  const PageTree& tree_;
+  // The input outlives the builder (BuildPageMap() makes it on the stack).
+  MOLT_RAW_PTR_EXCLUSION const PageTree* const tree_;
   const PageMapLimits limits_;
   PageMap map_;
   size_t work_ = 0;

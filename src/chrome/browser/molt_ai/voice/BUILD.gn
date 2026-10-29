@@ -57,7 +57,12 @@ source_set("page_map") {
     "page_map_text.h",
   ]
 
-  deps = [ "//chrome/browser/molt_ai/agents:hidden_chars" ]
+  deps = [
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+
+    # MOLT_RAW_PTR_EXCLUSION (header-only).
+    "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion",
+  ]
 }
 
 # Hand-built page trees for the page map's tests (std-only).
@@ -113,7 +118,6 @@ source_set("voice_page") {
 
     # Submit's Enter key, sent as the keyboard sends it.
     "//components/input",
-    "//services/media_session/public/mojom",
     "//third_party/blink/public/common:headers",
     "//ui/events:dom_keycode_converter",
     "//ui/events:events_base",

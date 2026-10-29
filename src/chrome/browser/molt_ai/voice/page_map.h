@@ -296,8 +296,9 @@ struct PageListEntry {
   PageListEntry& operator=(PageListEntry&&);
 
   int position = 0;  // 1-based, in the list
-  // The entry's primary action (its main link): its item number (0 if the
-  // entry has none), kind and node.
+  // The entry's primary action (its main link): its item number, kind and
+  // node. An entry with nothing to act on (a table row of text) has number
+  // 0, and then |kind| and |handle| mean nothing.
   int number = 0;
   ItemKind kind = ItemKind::kLink;
   PageNodeHandle handle;

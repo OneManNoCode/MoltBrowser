@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/check_op.h"
 #include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "chrome/browser/molt_ai/voice/page_map_text.h"
