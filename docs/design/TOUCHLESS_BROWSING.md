@@ -162,6 +162,7 @@ Five layers, tried in this order:
   5. streaming recognition with partial results (shown live in the caption bar);
   6. final text with per-word confidence.
 - **Speaker verification** (optional): an on-device voice embedding enrolled from about 30 s of speech, which rejects other voices.
+- **Recognition biased toward the screen:** the names in the current page map (titles, channels, button labels) and the personal vocabulary (§6.8) are passed to the recognizer as context words. That way "Bohemian Rhapsody" is recognized as written when it is on screen.
 - **Engine:** see §9 for the choice. Model files reach the service as read-only handles, like the inference service's.
 - **A possible bonus:** the same recognizer could answer the Web Speech API (`SpeechRecognition`) for web pages locally. Today that API is unavailable or Google-backed. In MoltNet it would first need its own fingerprinting review, since a page could time the recognizer or compare its results.
 
@@ -211,6 +212,16 @@ Five layers, tried in this order:
 - **Built in:** for the sites people use most (YouTube and other video sites, the major search engines, Wikipedia, webmail, news, maps), declarative "skills" name the search box, the result list, the player and the next page, so these flows don't depend on guessing.
 - **WebMCP:** where a site offers WebMCP tools, they are used as the agent already does.
 - **When a site changes:** skills are data, versioned and tested against stored copies of the pages. A broken skill falls back to the generic page map.
+
+### 6.8 Learning from use
+The navigator gets better for each user from what they say and what worked, all on the device:
+- **Routines taught by voice.** After a task succeeds, "remember this as *my news*" saves it as a workflow in the automation engine's format, under its trust policy. "Hey Molt, my news" then replays it without the language model. The agent can already save a run as a draft workflow; voice mode adds naming and starting it by voice.
+- **Experience as examples.** For a new request, the planner is shown the most similar saved routines for the site as worked examples. This follows the published Agent Workflow Memory method, which reports large gains on web-task benchmarks.
+- **Personal words.** Names the user says often (artists, contacts, sites) and their corrections ("no, I said ...") are kept as a personal vocabulary. The recognizer is biased toward them, and toward the names on the current page (§6.1).
+- **Site hints.** When the generic page map works on a site, the parts it used (search box, result list, player) are remembered for that site. A hint that fails is dropped.
+- **The user's own voice** (Phase 4): adaptation to impaired or atypical speech from samples the user chooses to record.
+
+Everything learned is listed in settings, can be deleted by voice, and stays on the device. Nothing is learned in MoltNet windows.
 
 ## 7. Trust and safety for voice
 
@@ -267,6 +278,19 @@ The design and threat model get their own security review before they ship (Phas
 | | Kokoro-82M (through sherpa-onnx) | Apache-2.0 | 54 voices, 8 languages, 24 kHz; natural; small enough for a CPU. |
 | | Piper | GPL-3.0 (since its move to OHF-Voice; compatible with MoltBrowser's GPLv3); voices per model card | Very fast and light; many languages. |
 
+Models and open-source agents for acting on pages (checked October 2026):
+
+| Role | Option | License | Notes |
+|---|---|---|---|
+| Planner over the page map (text) | Qwen3.5-4B, Gemma 4 E4B (already in MoltBrowser's model list) | Apache-2.0 | Fast enough on a CPU with constrained JSON; the page map gives them numbered items, as browser-use does. |
+| Screenshot navigator (fallback for pages with poor accessibility) | MolmoWeb 4B and 8B (Ai2, March 2026) | Reported Apache-2.0; confirm on the model card | Strongest open web-agent model reported; open training data; screenshots only. llama.cpp support for its architecture (Molmo2) is unconfirmed. |
+| | Fara-7B (Microsoft) | MIT | Built on Qwen2.5-VL, which llama.cpp runs; reported 73.5% on WebVoyager. |
+| | UI-TARS-1.5-7B (ByteDance) | Apache-2.0 | Built on Qwen2.5-VL. |
+| Agent designs to learn from | browser-use (Python), Stagehand (TypeScript) | MIT | Numbered interactive elements; cached actions. Ideas only: neither runs inside a browser process. |
+| | BrowserOS (a Chromium fork with an agent) | AGPL-3.0 | Closest open product; not voice-first; its agent runs as a separate server and uses local model servers. Ideas only. |
+
+No maintained open-source voice-first browser exists: the voice tools for disabled users are closed (Windows Voice Access, macOS Voice Control, Talon, commercial extensions) or research prototypes. MoltBrowser's navigator is built natively: the accessibility page map, the existing agent and its safety checks, the sandboxed models, and learning from use (§6.8). The screenshot navigators are compared on the §12 task set in Phase 2.
+
 **Recommendation:** sherpa-onnx in the speech service, for the wake phrase, voice activity, streaming recognition, speaker verification and the bundled neural voice. It is one Apache-2.0 library that also runs on Android and iOS. Keep whisper.cpp for long-form dictation.
 - **What it costs:** ONNX Runtime (MIT) as a new vendored dependency, sandboxed like llama.cpp.
 - **Next step:** a measurement spike (Phase 0) confirms latency, accuracy, CPU use and binary size against whisper.cpp on the minimum hardware before the choice is final.
@@ -304,6 +328,7 @@ Rounds are this project's working rounds. Each phase ends with its exit criteria
 - **Questions:** summaries and questions about pages.
 - **More site skills:** webmail, news, shopping, maps.
 - **A bundled neural voice.**
+- **Learning (§6.8):** routines saved and started by voice, personal vocabulary and corrections, site hints. A comparison of the screenshot navigators on the task set.
 
 **Exit:**
 - 30 multi-step tasks (mail, shopping cart up to the confirmation, a form) succeed without a hand.
