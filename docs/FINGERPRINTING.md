@@ -3954,7 +3954,11 @@ matrix for the layout, its multiply-adds in their plain C versions
 (`ScopedPortableSubnormals`): the same samples on every processor. The
 processing then runs on the down-mixed samples as on a mono or stereo
 device's. It costs 0.5 to 1.8 ns per frame on one core of a 2.1 GHz Xeon
-(against 0.3 to 0.6 ns with media's vector code).
+(against 0.3 to 0.6 ns with media's vector code). Every layout it takes is
+one `ChannelMixer` takes (31 of them, each down-mixed to one and two
+channels in a harness with Chromium 156's mixer); the deprecated
+`STEREO_AND_KEYBOARD_MIC`, which the mixer refuses, fails the stream as at
+156 (`MoltPortableMediaTest.EveryLayoutDownmixedIsOneTheMixerTakes`).
 
 **What the input is.** The processing's inputs are the microphone's signal
 and, for echo cancellation, what the browser plays on that output device,
