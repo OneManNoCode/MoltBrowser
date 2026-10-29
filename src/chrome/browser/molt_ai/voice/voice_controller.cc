@@ -452,8 +452,9 @@ void VoiceController::NotifyCaption() {
       break;
     case VoiceActivity::kOff:
     case VoiceActivity::kListening:
-      state = listening_.waiting || listening_.starting ? VoiceState::kWaiting
-                                                         : VoiceState::kListening;
+      state = listening_.waiting || listening_.starting
+                  ? VoiceState::kWaiting
+                  : VoiceState::kListening;
       break;
   }
   const std::string& heard =
@@ -541,8 +542,8 @@ void VoiceController::RefreshNumbers() {
   }
   VoicePageController* page = ActivePage();
   content::WebContents* contents = ActiveContents();
-  const bool ready = page && page->HasPageTree() && contents &&
-                     !contents->IsLoading();
+  const bool ready =
+      page && page->HasPageTree() && contents && !contents->IsLoading();
   if (!ready && ++refresh_attempts_ < kMaxNumbersRefreshAttempts) {
     refresh_numbers_timer_.Start(
         FROM_HERE, kNumbersRefreshDelay,

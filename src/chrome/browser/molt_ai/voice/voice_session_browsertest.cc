@@ -162,8 +162,8 @@ class VoiceSessionBrowserTest : public InProcessBrowserTest {
  protected:
   void Script(std::string_view script) {
     base::ScopedAllowBlockingForTesting allow_blocking;
-    ASSERT_TRUE(base::WriteFile(models_.GetPath().AppendASCII("fake_script.txt"),
-                                script));
+    ASSERT_TRUE(base::WriteFile(
+        models_.GetPath().AppendASCII("fake_script.txt"), script));
   }
 
   VoiceSession* session() {
@@ -256,8 +256,7 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, GivesUpAfterCrashesInARow) {
       "ready\n"
       "200 line {\"type\":\"command\",\"text\":\"rm -rf\"}\n");
   ASSERT_TRUE(session()->Start());
-  ASSERT_TRUE(base::test::RunUntil(
-      [&]() { return !session()->listening(); }));
+  ASSERT_TRUE(base::test::RunUntil([&]() { return !session()->listening(); }));
   EXPECT_NE(tts_.AllSpoken().find("Speech recognition stopped working"),
             std::string::npos)
       << tts_.AllSpoken();

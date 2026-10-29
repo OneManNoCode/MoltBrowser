@@ -292,8 +292,8 @@ void VoiceAudio::OnDeviceParameters(
     delegate_->OnMicrophoneProblem(Problem::kNoMicrophone);
     return;
   }
-  Open(ChooseEchoCancellation(/*chrome_wide_enabled=*/false,
-                              params->effects()));
+  Open(
+      ChooseEchoCancellation(/*chrome_wide_enabled=*/false, params->effects()));
 }
 
 void VoiceAudio::Open(EchoCancellation echo) {
@@ -373,7 +373,8 @@ void VoiceAudio::OnCaptureMuted(bool is_muted) {
   // silence; the helper hears nothing.
 }
 
-// ---- Earcons -----------------------------------------------------------------
+// ---- Earcons
+// -----------------------------------------------------------------
 
 // Plays one earcon at a time through an audio::OutputDevice. Its own
 // sequence; Render() runs on the audio thread.

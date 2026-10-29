@@ -24,8 +24,7 @@ class BrowserWindowInterface;
 namespace molt_ai {
 namespace voice {
 
-class VoiceToolbarButton : public ToolbarButton,
-                           public VoiceSession::Observer {
+class VoiceToolbarButton : public ToolbarButton, public VoiceSession::Observer {
   METADATA_HEADER(VoiceToolbarButton, ToolbarButton)
 
  public:

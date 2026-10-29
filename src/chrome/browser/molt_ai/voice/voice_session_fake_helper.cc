@@ -76,8 +76,9 @@ bool Play(const Event& event) {
   } else if (event.kind == "final") {
     const size_t space = event.rest.find(' ');
     const std::string confidence = event.rest.substr(0, space);
-    const std::string text =
-        space == std::string::npos ? std::string() : event.rest.substr(space + 1);
+    const std::string text = space == std::string::npos
+                                 ? std::string()
+                                 : event.rest.substr(space + 1);
     Emit("{\"type\":\"final\",\"text\":\"" + Escaped(text) +
          "\",\"confidence\":" + confidence + "}");
   } else if (event.kind == "line") {
@@ -135,8 +136,9 @@ int main(int argc, char* argv[]) {
     events.push_back(event);
   }
   if (ready) {
-    Emit("{\"type\":\"ready\",\"engine\":\"fake\",\"models\":[\"script\"],"
-         "\"protocol\":1}");
+    Emit(
+        "{\"type\":\"ready\",\"engine\":\"fake\",\"models\":[\"script\"],"
+        "\"protocol\":1}");
   }
 
   size_t next = 0;

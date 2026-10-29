@@ -158,8 +158,7 @@ void MoltVoiceSettingsHandler::Change(std::string callback_id,
                               result.first, result.second);
             }
           },
-          weak_factory_.GetWeakPtr(), std::move(callback_id),
-          enabled_changed));
+          weak_factory_.GetWeakPtr(), std::move(callback_id), enabled_changed));
 }
 
 void MoltVoiceSettingsHandler::OnWritten(std::string callback_id,

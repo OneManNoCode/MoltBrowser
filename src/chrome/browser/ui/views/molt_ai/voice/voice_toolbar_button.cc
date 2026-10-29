@@ -29,8 +29,7 @@ VoiceToolbarButton::VoiceToolbarButton(BrowserWindowInterface* browser)
       browser_(browser) {
   GetViewAccessibility().SetRole(ax::mojom::Role::kToggleButton);
   GetViewAccessibility().SetCheckedState(ax::mojom::CheckedState::kFalse);
-  SetTooltipText(
-      u"Voice mode — listen for “Hey Molt” in this window");
+  SetTooltipText(u"Voice mode — listen for “Hey Molt” in this window");
   SetHorizontalAlignment(gfx::ALIGN_CENTER);
   session_ = VoiceSession::GetOrCreateForBrowser(browser);
   if (session_) {
@@ -91,9 +90,9 @@ void VoiceToolbarButton::Update() {
       listening ? std::optional<SkColor>(SkColorSetRGB(0xA7, 0x8B, 0xFA))
                 : std::nullopt;
   SetHighlight(kLabel, violet);
-  GetViewAccessibility().SetCheckedState(
-      listening ? ax::mojom::CheckedState::kTrue
-                : ax::mojom::CheckedState::kFalse);
+  GetViewAccessibility().SetCheckedState(listening
+                                             ? ax::mojom::CheckedState::kTrue
+                                             : ax::mojom::CheckedState::kFalse);
 }
 
 BEGIN_METADATA(VoiceToolbarButton)

@@ -142,8 +142,8 @@ void VoiceSession::OnSettingsChanged(const VoiceModeSettings& settings) {
     }
     session->settings_ = settings;
     if (session->listening()) {
-      session->Apply(session->logic_.OnSettingsChanged(
-          ToListening(settings), session->NowMs()));
+      session->Apply(session->logic_.OnSettingsChanged(ToListening(settings),
+                                                       session->NowMs()));
     }
   }
 }
@@ -276,9 +276,9 @@ void VoiceSession::OnHelperFound(std::optional<VoiceListener::Paths> paths,
   // Frames reach the helper once it is ready.
   audio_ = std::make_unique<VoiceAudio>(this, listener_->audio_sink());
   audio_->Start();
-  poll_timer_.Start(FROM_HERE, base::Seconds(1),
-                    base::BindRepeating(&VoiceSession::OnPoll,
-                                        base::Unretained(this)));
+  poll_timer_.Start(
+      FROM_HERE, base::Seconds(1),
+      base::BindRepeating(&VoiceSession::OnPoll, base::Unretained(this)));
 }
 
 void VoiceSession::Stop() {
@@ -405,7 +405,7 @@ void VoiceSession::OnMicrophoneStarted(EchoCancellation echo) {
   LOG(INFO) << "[MoltVoice] microphone on, echo cancellation: "
             << (echo == EchoCancellation::kChromeWide ? "Chrome-wide"
                 : echo == EchoCancellation::kPlatform ? "the platform's"
-                                                       : "none");
+                                                      : "none");
 }
 
 void VoiceSession::OnMicrophoneProblem(VoiceAudio::Problem problem) {
@@ -423,8 +423,8 @@ void VoiceSession::OnVoiceCaption(VoiceActivity activity,
   const int64_t now = NowMs();
   Apply(logic_.OnBrowserActivity(ToBrowserActivity(activity), now));
   const ConversationState& state = controller_->state();
-  Apply(logic_.OnAwaitingAnswer(state.confirming || state.expecting_choice,
-                                now));
+  Apply(
+      logic_.OnAwaitingAnswer(state.confirming || state.expecting_choice, now));
 }
 
 void VoiceSession::OnVoiceSpeech(const std::string& text) {
@@ -577,9 +577,9 @@ void VoiceSession::ScheduleTick() {
   }
   const base::TimeDelta delay =
       base::Milliseconds(std::max<int64_t>(*next - NowMs(), 0));
-  tick_timer_.Start(FROM_HERE, delay,
-                    base::BindOnce(&VoiceSession::OnTick,
-                                   base::Unretained(this)));
+  tick_timer_.Start(
+      FROM_HERE, delay,
+      base::BindOnce(&VoiceSession::OnTick, base::Unretained(this)));
 }
 
 void VoiceSession::OnTick() {

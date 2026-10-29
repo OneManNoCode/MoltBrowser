@@ -35,8 +35,7 @@ class MoltVoiceSettingsHandler : public content::WebUIMessageHandler {
  public:
   MoltVoiceSettingsHandler();
   MoltVoiceSettingsHandler(const MoltVoiceSettingsHandler&) = delete;
-  MoltVoiceSettingsHandler& operator=(const MoltVoiceSettingsHandler&) =
-      delete;
+  MoltVoiceSettingsHandler& operator=(const MoltVoiceSettingsHandler&) = delete;
   ~MoltVoiceSettingsHandler() override;
 
   // content::WebUIMessageHandler:
