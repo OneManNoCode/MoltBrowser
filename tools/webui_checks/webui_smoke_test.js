@@ -88,6 +88,9 @@ const DRAFT_WORKFLOW = {
 };
 const draftConfirmCalls = [];
 
+// The Agent studio's voice commands (#molt-voice-mode): what was typed.
+const voiceCommands = [];
+
 // The Agent studio's "Forget" on an allowed frame ([main, frame] each).
 const frameToolForgets = [];
 // The Agent studio's run questions (answerRunQuestion [id, qid, allowed]).
@@ -1435,12 +1438,47 @@ const PAGES = [
        draftConfirmCalls.push(JSON.stringify(args.slice(1)));
        return {ok: true, trust: 'casual'};
      },
+     voiceStatus: {enabled: true, moltnet: false},
+     voiceCommand: (args) => {
+       voiceCommands.push(args[1]);
+       return args[1] === 'too long' ? {ok: false, error: 'That’s too long.'}
+                                     : {ok: true};
+     },
    },
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 15));
      assert.strictEqual(doc.querySelectorAll('#libList img[onerror]').length, 0,
                         'workflow names are text');
+     // Voice commands: a labelled field; what the browser heard, does and
+     // says is shown as text.
+     const voiceIn = doc.querySelector('#voiceBox input');
+     assert(voiceIn, 'the voice command field is shown');
+     assert.strictEqual(doc.querySelector(`label[for="${voiceIn.id}"]`).textContent,
+                        'Type what you would say');
+     const voiceForm = doc.querySelector('#voiceBox form');
+     voiceIn.value = '  open YouTube ';
+     voiceForm.dispatchEvent(new window.Event('submit', {cancelable: true}));
+     await tick();
+     assert.strictEqual(voiceCommands.pop(), 'open YouTube');
+     assert.strictEqual(voiceIn.value, '', 'cleared once sent');
+     voiceIn.value = 'too long';
+     voiceForm.dispatchEvent(new window.Event('submit', {cancelable: true}));
+     await tick();
+     const voiceStatus = doc.querySelector('#voiceBox [role=status]');
+     assert.strictEqual(voiceStatus.textContent, 'That’s too long.');
+     window.cr.webUIListenerCallback('voice-caption', {
+       state: 'thinking', heard: '<img src=x onerror=alert(1)>', status: 'Opening <b>YouTube</b>'});
+     assert.strictEqual(voiceStatus.textContent,
+                        'Heard: <img src=x onerror=alert(1)> \u2014 Opening <b>YouTube</b>');
+     for (let i = 0; i < 12; ++i) {
+       window.cr.webUIListenerCallback('voice-speech', {text: '<img src=x onerror=alert(1)> ' + i});
+     }
+     window.cr.webUIListenerCallback('voice-speech', {text: 42});
+     const said = doc.querySelectorAll('#voiceBox li');
+     assert.strictEqual(said.length, 8, 'the last few lines only');
+     assert.strictEqual(said[7].textContent, '<img src=x onerror=alert(1)> 11');
+     assert.strictEqual(doc.querySelectorAll('#voiceBox img, #voiceBox b').length, 0);
      // Trust level on the card; the card menu offers the trust action.
      const card = doc.querySelector('#libList .card');
      assert(/not trusted/.test(card.querySelector('.csub').textContent), 'trust shown on the card');

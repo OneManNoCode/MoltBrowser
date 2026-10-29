@@ -48,6 +48,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_voice_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/browser_context.h"
@@ -2404,9 +2405,57 @@ document.addEventListener('keydown',function(e){
   }
 });
 
+/* ======================= voice commands (preview) =======================
+   With chrome://flags/#molt-voice-mode on: a field to type what you would
+   say ("open YouTube", "search for ...", "play the fourth one"). The
+   browser does it in this window's active tab and says the answer aloud
+   (molt_ai/voice/voice_controller.h). The box shows what it heard, what it
+   is doing and what it said, as text only. */
+var VOICE_SAID_MAX=8;
+var voiceUi=null;
+function initVoiceBox(){
+  sendWithPromise('voiceStatus').then(function(r){
+    var box=$('voiceBox');
+    if(!box||!r||!r.enabled)return;
+    clear(box);
+    var input=h('input',{type:'text','class':'inp',maxlength:'1000',autocomplete:'off',spellcheck:'false',placeholder:'open YouTube'});
+    var status=h('div',{'class':'voice-status',role:'status','aria-live':'polite'});
+    var said=h('ul',{'class':'voice-said','aria-label':'What the browser said'});
+    var form=h('form',{'class':'voice-form',onSubmit:function(e){
+      e.preventDefault();
+      var text=input.value.trim();
+      if(!text){status.textContent='Type a command first.';return;}
+      sendWithPromise('voiceCommand',text).then(function(res){
+        if(res&&res.ok){input.value='';}
+        else{status.textContent=(res&&res.error)||'That didn’t work.';}
+      }).catch(function(){});
+    }},[input,h('button',{type:'submit','class':'btn violet'},'Say it')]);
+    box.appendChild(h('div',{'class':'voice-card'},[
+      h('h3',{'class':'voice-t'},'Voice commands (preview)'),
+      fieldLabelFor('Type what you would say',input),
+      form,
+      r.moltnet?h('div',{'class':'voice-status'},'Voice mode is off in MoltNet windows.'):null,
+      status,
+      said]));
+    voiceUi={status:status,said:said};
+  }).catch(function(){});
+}
+cr.addWebUIListener('voice-caption',function(d){
+  if(!voiceUi||!d)return;
+  var parts=[];
+  if(typeof d.heard==='string'&&d.heard)parts.push('Heard: '+d.heard);
+  if(typeof d.status==='string'&&d.status)parts.push(d.status);
+  voiceUi.status.textContent=parts.join(' — ');
+});
+cr.addWebUIListener('voice-speech',function(d){
+  if(!voiceUi||!d||typeof d.text!=='string')return;
+  voiceUi.said.appendChild(h('li',{text:d.text}));
+  while(voiceUi.said.childNodes.length>VOICE_SAID_MAX)voiceUi.said.removeChild(voiceUi.said.firstChild);
+});
+
 /* ================================ boot ================================ */
-document.addEventListener('DOMContentLoaded',function(){loadLibrary();});
-if(document.readyState!=='loading')loadLibrary();
+document.addEventListener('DOMContentLoaded',function(){loadLibrary();initVoiceBox();});
+if(document.readyState!=='loading'){loadLibrary();initVoiceBox();}
 )JS";
 
 class MoltAIAgentDataSource : public content::URLDataSource {
@@ -2911,6 +2960,15 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 .rnshot{display:block;margin:8px 0 2px 27px;width:calc(100% - 27px);max-width:180px;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;transition:max-width .2s}
 .rnshot.big{max-width:100%;cursor:zoom-out}
 .rnshot-btn{display:block;width:100%;padding:0;margin:0;background:none;border:none;text-align:left;cursor:zoom-in}
+/* Voice commands (preview, #molt-voice-mode). */
+.voice-card{margin:6px 14px 0;padding:12px 14px;border-radius:14px;background:var(--surface);border:1px solid var(--border)}
+.voice-card .voice-t{font-size:.875rem;font-weight:600;margin-bottom:6px}
+.voice-card label{display:block;font-size:.78125rem;color:var(--muted);margin-bottom:6px}
+.voice-form{display:flex;gap:8px;align-items:center}
+.voice-form .inp{flex:1}
+.voice-status{font-size:.78125rem;color:var(--muted);margin-top:8px;min-height:1em}
+.voice-said{list-style:none;margin-top:6px;font-size:.8125rem;max-height:9.5em;overflow:auto}
+.voice-said li{padding:3px 0;border-top:1px solid var(--edge-soft)}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;
   clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 :focus-visible{outline:3px solid var(--focus)!important;outline-offset:2px}
@@ -2962,6 +3020,7 @@ h2[tabindex="-1"]:focus{outline:none!important}
           <button class="btn" id="importBtn">&#8615; Import</button>
         </div>
       </div>
+      <div id="voiceBox"></div>
       <div class="scroll" id="libList"><div id="libCards"></div><div id="frameToolsBox"></div></div>
     </section>
 
@@ -3125,6 +3184,8 @@ MoltAIAgentUI::MoltAIAgentUI(content::WebUI* web_ui)
       web_ui->GetWebContents()->GetBrowserContext(),
       std::make_unique<MoltAIAgentDataSource>());
   web_ui->AddMessageHandler(std::make_unique<AgentStudioHandler>());
+  // The "Type a voice command" field (#molt-voice-mode).
+  web_ui->AddMessageHandler(std::make_unique<MoltAIAgentVoiceHandler>());
 }
 
 MoltAIAgentUI::~MoltAIAgentUI() = default;
