@@ -317,6 +317,9 @@ var moltA11y = (function() {
     d.lifted.forEach(function(s) { s.setAttribute('inert', ''); });
     if (opts && opts.keepFocus) return true;
     var back = d.opener;
+    if (back === document.body || back === document.documentElement) {
+      back = null;  // opened on load: nothing had focus
+    }
     if (back && back.isConnected && back.focus && canFocus(back)) {
       back.focus();
     } else if (opts && opts.fallback) {

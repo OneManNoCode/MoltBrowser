@@ -277,7 +277,73 @@ const announced = (window, role = 'status') => {
 const keydown = (window, el, key, opts = {}) => el.dispatchEvent(
     new window.KeyboardEvent('keydown', Object.assign({key, bubbles: true, cancelable: true}, opts)));
 
+// Records what moltA11y.announce() is asked to say.
+function recordAnnouncements(window) {
+  const said = [];
+  const say = window.moltA11y.announce;
+  window.moltA11y.announce = (t, o) => { said.push([t, !!(o && o.assertive)]); say(t, o); };
+  return said;
+}
+
 const A11Y = {
+  'molt://ai': {
+    pointerOnly: ['#modelOverlay'],  // the dialog's backdrop; Escape too
+    states: [
+      {name: 'answer streamed', async run(window) {
+        await tick(40);
+        window.__said = recordAnnouncements(window);
+        window.startAiMsg();
+        for (const t of ['The ', 'answer ', 'is ', '**42**.']) window.appendTok(t);
+        window.__midway = window.__said.length;
+        window.finishAiMsg();
+        await tick(100);
+      }, check(window) {
+        assert.deepStrictEqual(window.__said.map((s) => s[0]),
+            ['MoltBrowser AI is answering', 'MoltBrowser AI: The answer is 42.'],
+            'one notice when it starts, the answer once when it is done');
+        assert.strictEqual(window.__midway, 1, 'nothing per token');
+        assert.strictEqual(announced(window), 'MoltBrowser AI: The answer is 42.');
+        assert(!window.document.querySelector('#messages [aria-busy]'), 'not busy any more');
+      }},
+      {name: 'first-run welcome', responses: {
+        initChat: {model_loaded: false, is_first_run: true, total_ram_gb: 16, cpu_cores: 8, models: []}},
+      async run(window) {
+        await tick(40);
+      }, check(window) {
+        const doc = window.document;
+        const wo = doc.getElementById('welcomeOverlay');
+        assert.strictEqual(wo.getAttribute('role'), 'dialog');
+        assert(wo.contains(doc.activeElement), 'focus in the welcome');
+        keydown(window, doc.activeElement, 'Escape');
+        assert(!wo.classList.contains('open'), 'Escape skips the set-up');
+        assert.strictEqual(doc.activeElement.id, 'prompt', 'focus goes to the message field');
+      }},
+      {name: 'model menu by keyboard', async run(window) {
+        const doc = window.document;
+        await tick(40);
+        const chip = doc.getElementById('modelChip');
+        chip.focus();
+        chip.click();
+        await tick(40);
+      }, check(window) {
+        const doc = window.document;
+        const chip = doc.getElementById('modelChip');
+        assert.strictEqual(chip.getAttribute('aria-expanded'), 'true');
+        const picks = doc.querySelectorAll('#modelChipDropdown button.mpick');
+        assert(picks.length >= 2, 'each model is a button');
+        picks[0].focus();
+        keydown(window, picks[0], 'Escape');
+        assert.strictEqual(chip.getAttribute('aria-expanded'), 'false');
+        assert.strictEqual(doc.activeElement, chip, 'focus back on the model button');
+      }},
+      {name: 'error shown', async run(window) {
+        await tick(40);
+        window.addErr('The model could not be loaded.');
+      }, check(window) {
+        const err = window.document.querySelector('#messages [role=alert]');
+        assert(err && /could not be loaded/.test(err.textContent));
+      }},
+    ]},
   'molt://ai-settings': {states: [
     {name: 'provider key form opened by keyboard', async run(window) {
       const doc = window.document;
@@ -546,7 +612,8 @@ function statesFor(page) {
   ];
   for (const s of (A11Y[page.name] || {}).states || []) {
     states.push({name: s.name, page: Object.assign({}, page, {
-      after: s.run, check: s.check, skipClickAll: true})});
+      after: s.run, check: s.check, skipClickAll: true,
+      responses: Object.assign({}, page.responses, s.responses || {})})});
   }
   return states;
 }
