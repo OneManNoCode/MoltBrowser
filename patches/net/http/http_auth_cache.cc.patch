@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_auth_cache.cc b/net/http/http_auth_cache.cc
-index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..e2bc5c89eb685c0b24a7b1d98a48918d90c0d1a5 100644
+index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..3068c3dd73cc2b2d6caa34b5bdc9f7fdc6eb2a58 100644
 --- a/net/http/http_auth_cache.cc
 +++ b/net/http/http_auth_cache.cc
 @@ -12,6 +12,8 @@
@@ -17,13 +17,15 @@ index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..e2bc5c89eb685c0b24a7b1d98a48918d
  #include "url/gurl.h"
  #include "url/scheme_host_port.h"
  #include "url/url_constants.h"
-@@ -175,6 +177,17 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
+@@ -175,6 +177,19 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
    HttpAuthCache::Entry* entry = Lookup(scheme_host_port, target, realm, scheme,
                                         network_anonymization_key);
    if (!entry) {
 +    // MoltBrowser: with per-site shares, room is made inside the new entry's
-+    // own site, or it isn't kept (net/base/molt_site_share_policy.h); the
-+    // eviction below, of any site's entry, isn't made.
++    // own site, or past the total, for a site holding none or two fewer than
++    // the site holding the most, in the place of that site's least recently
++    // used entry (net/base/molt_site_share_policy.h); the eviction below, of
++    // any site's entry, isn't made.
 +    if (molt_per_site_shares_ &&
 +        !MoltMakeRoomFor(
 +            target, target == HttpAuth::AUTH_SERVER &&
@@ -35,7 +37,7 @@ index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..e2bc5c89eb685c0b24a7b1d98a48918d
      // Failsafe to prevent unbounded memory growth of the cache.
      //
      // Data was collected in June of 2019, before entries were keyed on either
-@@ -183,7 +196,7 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
+@@ -183,7 +198,7 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
      // entries in the cache exceed kMaxNumRealmEntries. The evicted entry is
      // roughly half an hour old (median), and it's been around 25 minutes since
      // its last use (median).
@@ -44,7 +46,7 @@ index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..e2bc5c89eb685c0b24a7b1d98a48918d
        DLOG(WARNING) << "Num auth cache entries reached limit -- evicting";
        EvictLeastRecentlyUsedEntry();
      }
-@@ -332,6 +345,57 @@ bool HttpAuthCache::ClearAllEntries() {
+@@ -332,6 +347,87 @@ bool HttpAuthCache::ClearAllEntries() {
    return true;
  }
  
@@ -64,7 +66,12 @@ index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..e2bc5c89eb685c0b24a7b1d98a48918d
 +// MoltBrowser: see the header. The cache holds at most
 +// kMoltHttpAuthShares.total server entries (and the browser's few proxy
 +// ones), and an entry is added only once a server's challenge is answered,
-+// so a pass over them is cheap next to the round trip before it.
++// so a pass over them is cheap next to the round trip before it. A server
++// entry is one the cache must keep (what the user signed in with: without
++// it the sign-in prompt comes back on every request), so past the total an
++// entry of a site holding none, or two fewer than the site that holds the
++// most, takes the place of that site's least recently used entry
++// (MoltSiteShareTakesFromLargest()).
 +bool HttpAuthCache::MoltMakeRoomFor(
 +    HttpAuth::Target target,
 +    const NetworkAnonymizationKey& entry_key_nak) {
@@ -73,36 +80,61 @@ index a597e47a637b872b35b9ddb6348e47b3ef7bb7a8..e2bc5c89eb685c0b24a7b1d98a48918d
 +  }
 +  const MoltSiteShareLimits limits = kMoltHttpAuthShares;
 +  const MoltNetworkKeySite site = MoltSiteOfNetworkKey(entry_key_nak);
++  // A site's server entries: how many, and its least recently used.
++  struct Held {
++    size_t count = 0;
++    EntryMap::iterator oldest;
++  };
 +  while (true) {
-+    size_t site_holds = 0;
++    std::map<MoltNetworkKeySite, Held> held;
 +    size_t all_hold = 0;
-+    EntryMap::iterator oldest = entries_.end();
 +    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
 +      if (it->first.target != HttpAuth::AUTH_SERVER) {
 +        continue;
 +      }
 +      ++all_hold;
-+      if (MoltSiteOfNetworkKey(it->first.network_anonymization_key) != site) {
++      Held& of_site =
++          held[MoltSiteOfNetworkKey(it->first.network_anonymization_key)];
++      if (of_site.count++ == 0 || it->second.last_use_time_ticks_ <
++                                      of_site.oldest->second
++                                          .last_use_time_ticks_) {
++        of_site.oldest = it;
++      }
++    }
++    auto own = held.find(site);
++    const size_t site_holds = own == held.end() ? 0 : own->second.count;
++    // The other site that holds the most; of sites holding as many, the one
++    // whose least recently used entry is the oldest.
++    const Held* largest = nullptr;
++    for (auto it = held.begin(); it != held.end(); ++it) {
++      if (it == own) {
 +        continue;
 +      }
-+      ++site_holds;
-+      if (oldest == entries_.end() ||
-+          it->second.last_use_time_ticks_ <
-+              oldest->second.last_use_time_ticks_) {
-+        oldest = it;
++      const Held& of_site = it->second;
++      if (!largest || of_site.count > largest->count ||
++          (of_site.count == largest->count &&
++           of_site.oldest->second.last_use_time_ticks_ <
++               largest->oldest->second.last_use_time_ticks_)) {
++        largest = &of_site;
 +      }
 +    }
-+    if (!MoltSiteShareEvictsOwn(limits, site_holds, all_hold)) {
-+      return MoltSiteShareHasRoom(limits, site_holds, all_hold);
++    if (largest && MoltSiteShareTakesFromLargest(limits, site_holds,
++                                                 largest->count, all_hold)) {
++      entries_.erase(largest->oldest);
++      continue;
 +    }
-+    entries_.erase(oldest);
++    if (MoltSiteShareEvictsOwn(limits, site_holds, all_hold)) {
++      entries_.erase(own->second.oldest);
++      continue;
++    }
++    return MoltSiteShareHasRoom(limits, site_holds, all_hold);
 +  }
 +}
 +
  bool HttpAuthCache::UpdateStaleChallenge(
      const url::SchemeHostPort& scheme_host_port,
      HttpAuth::Target target,
-@@ -365,6 +429,11 @@ void HttpAuthCache::CopyProxyEntriesFrom(const HttpAuthCache& other) {
+@@ -365,6 +461,11 @@ void HttpAuthCache::CopyProxyEntriesFrom(const HttpAuthCache& other) {
      Entry* entry = Add(e.scheme_host_port(), it->first.target, e.realm(),
                         e.scheme(), it->first.network_anonymization_key,
                         e.auth_challenge(), e.credentials(), e.paths_.back());

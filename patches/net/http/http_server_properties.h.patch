@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_server_properties.h b/net/http/http_server_properties.h
-index 22e445c9b0643fff57de2348a58c135d43034807..d06040b20dc9ac2dc8923af2e7a710c68281f4a5 100644
+index 22e445c9b0643fff57de2348a58c135d43034807..03ec8edeb7faaf10d171c1580fe7deb4312a33f4 100644
 --- a/net/http/http_server_properties.h
 +++ b/net/http/http_server_properties.h
 @@ -24,9 +24,12 @@
@@ -53,7 +53,7 @@ index 22e445c9b0643fff57de2348a58c135d43034807..d06040b20dc9ac2dc8923af2e7a710c6
      iterator GetOrPut(const ServerInfoMapKey& key);
  
      // Erases the ServerInfo identified by |server_info_it| if no fields have
-@@ -247,6 +264,24 @@ class NET_EXPORT HttpServerProperties
+@@ -247,6 +264,27 @@ class NET_EXPORT HttpServerProperties
    // disk.
    void Clear(base::OnceClosure callback);
  
@@ -70,15 +70,18 @@ index 22e445c9b0643fff57de2348a58c135d43034807..d06040b20dc9ac2dc8923af2e7a710c6
 +  // their alternative services) and of those that required HTTP/1.1
 +  // (net/base/molt_site_share_policy.h: kMoltServerInfoShares,
 +  // kMoltHttp11RequiredShares): a new entry takes the place of its own
-+  // site's least recently used one, never another site's, or isn't kept.
-+  // Called by MoltNet's network context, which keeps its properties in
-+  // memory only, before its first request.
++  // site's least recently used one, never another site's, or isn't kept;
++  // but a server's demand for HTTP/1.1 is always kept, past the total for a
++  // site holding none or two fewer than the site holding the most in the
++  // place of that site's least recently used one. Called by MoltNet's
++  // network context, which keeps its properties in memory only, before its
++  // first request.
 +  void MoltKeepPerSiteShares();
 +
    // Returns true if `server`, in the context of `network_anonymization_key`,
    // has previously supported a network protocol which honors request
    // prioritization. `server` must have either http:// or https:// schemes.
-@@ -692,8 +727,10 @@ class NET_EXPORT HttpServerProperties
+@@ -692,8 +730,10 @@ class NET_EXPORT HttpServerProperties
    // separate from ServerInfoMap because it's generally empty, and has to be
    // checked on every network request, rather than only when establishing
    // connections.

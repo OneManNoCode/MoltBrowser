@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/http/http_server_properties.cc b/net/http/http_server_properties.cc
-index 6804ce1e0a2d64ee1f826d3a7b19e9a3daad5b17..3979b9c69ad3fca5560fd71ebec8b47d9d7eae17 100644
+index 6804ce1e0a2d64ee1f826d3a7b19e9a3daad5b17..2b8b33ca99723e2d84d9b20f827b95e6b108d8af 100644
 --- a/net/http/http_server_properties.cc
 +++ b/net/http/http_server_properties.cc
 @@ -8,6 +8,7 @@
@@ -113,24 +113,29 @@ index 6804ce1e0a2d64ee1f826d3a7b19e9a3daad5b17..3979b9c69ad3fca5560fd71ebec8b47d
    // If value is already the same as `supports_spdy`, or value is unset and
    // `supports_spdy` is false, don't queue a write.
    bool queue_write =
-@@ -813,8 +875,14 @@ void HttpServerProperties::SetHTTP11RequiredInternal(
+@@ -813,8 +875,19 @@ void HttpServerProperties::SetHTTP11RequiredInternal(
    if (server.host().empty())
      return;
  
 -  servers_requiring_http_11_.Put(
 -      CreateServerInfoKey(std::move(server), network_anonymization_key));
 +  // MoltBrowser: with per-site shares, room is made inside the key's own
-+  // site, or the entry isn't kept (net/base/molt_site_share_policy.h).
++  // site, or, past the total for a site holding none or two fewer than the
++  // site holding the most, in the place of that site's least recently used
++  // entry: the entry is always kept, as the request that met the demand is
++  // sent again over HTTP/1.1 only through it
++  // (HttpNetworkTransaction::HandleHttp11Required())
++  // (net/base/molt_site_share_policy.h).
 +  ServerInfoMapKey molt_key =
 +      CreateServerInfoKey(std::move(server), network_anonymization_key);
-+  if (!servers_requiring_http_11_.MoltMakeRoomFor(molt_key)) {
++  if (!servers_requiring_http_11_.MoltMakeRoomToKeep(molt_key)) {
 +    return;
 +  }
 +  servers_requiring_http_11_.Put(std::move(molt_key));
    // No need to call MaybeQueueWriteProperties(), as this information is not
    // persisted to preferences.
  }
-@@ -988,6 +1056,10 @@ void HttpServerProperties::SetAlternativeServicesInternal(
+@@ -988,6 +1061,10 @@ void HttpServerProperties::SetAlternativeServicesInternal(
  
    auto it = server_info_map_.GetOrPut(
        CreateServerInfoKey(origin, network_anonymization_key));
@@ -141,7 +146,7 @@ index 6804ce1e0a2d64ee1f826d3a7b19e9a3daad5b17..3979b9c69ad3fca5560fd71ebec8b47d
    bool need_update_pref = true;
    if (it->second.alternative_services.has_value()) {
      DCHECK(!it->second.empty());
-@@ -1065,6 +1137,10 @@ void HttpServerProperties::SetServerNetworkStatsInternal(
+@@ -1065,6 +1142,10 @@ void HttpServerProperties::SetServerNetworkStatsInternal(
  
    auto server_info = server_info_map_.GetOrPut(
        CreateServerInfoKey(std::move(server), network_anonymization_key));
