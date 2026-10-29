@@ -46,7 +46,8 @@
 //   SessionConfig.session.intra_op.allow_spinning=0).
 //
 // Memory: "rss_after_load_kb" is the resident set right after the model is
-// created, "peak_rss_kb" the process peak at exit.
+// created, "peak_rss_kb" the process peak at exit (VmHWM on Linux, the peak
+// working set on Windows, ru_maxrss on macOS).
 
 #include <stdint.h>
 #include <stdio.h>
@@ -113,6 +114,24 @@ static long PeakRssKb(void) {
     return (long)(pmc.PeakWorkingSetSize / 1024);
   return -1;
 #else
+#if !defined(__APPLE__)
+  // Linux: VmHWM is this program's own peak. getrusage's ru_maxrss can
+  // include the high-water mark of the process that started the driver, so
+  // a big parent would hide the driver's own peak.
+  FILE *f = fopen("/proc/self/status", "r");
+  if (f) {
+    char line[256];
+    long kb = -1;
+    while (fgets(line, sizeof(line), f)) {
+      if (!strncmp(line, "VmHWM:", 6)) {
+        kb = atol(line + 6);
+        break;
+      }
+    }
+    fclose(f);
+    if (kb >= 0) return kb;
+  }
+#endif
   struct rusage ru;
   if (getrusage(RUSAGE_SELF, &ru) != 0) return -1;
 #if defined(__APPLE__)

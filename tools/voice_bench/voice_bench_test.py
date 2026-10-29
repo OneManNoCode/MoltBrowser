@@ -197,6 +197,26 @@ class ProtoTest(unittest.TestCase):
                 f.write(blob)
             self.assertEqual(vbl.onnx_metadata(path), {"model_type": "zipformer", "n": "4"})
 
+    def test_onnx_op_types(self):
+        def node(op, domain=b""):
+            return _field(1, 2, _field(4, 2, op) + (_field(7, 2, domain) if domain else b""))
+        # Nodes around a big initializer (field 5), which is skipped unread.
+        graph = node(b"Conv") + _field(5, 2, b"\x01" * 200000) + \
+            node(b"Relu", b"com.microsoft") + node(b"Conv") + _field(2, 2, b"main")
+        blob = _field(1, 0, _varint(9)) + _field(7, 2, graph) + \
+            _field(14, 2, _field(1, 2, b"k") + _field(2, 2, b"v"))
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.onnx")
+            with open(path, "wb") as f:
+                f.write(blob)
+            self.assertEqual(vbl.onnx_op_types(path),
+                             {("", "Conv"): 2, ("com.microsoft", "Relu"): 1})
+            with open(path, "wb") as f:
+                f.write(blob[:-10])
+            with self.assertRaises(ValueError):
+                vbl.onnx_op_types(path)
+        self.assertIsNone(vbl.onnx_op_types("m.ort"))
+
 
 class FetchTest(unittest.TestCase):
     def test_manifest(self):

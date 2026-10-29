@@ -511,27 +511,61 @@ def onnx_metadata(path, max_bytes=1 << 31):
     return meta
 
 
+def _file_fields(f, start, end):
+    """Yields (field_number, wire_type, value) of the protobuf message in
+    bytes [start, end) of an open file, seeking over length-delimited
+    values instead of reading them: those come as (offset, length)."""
+    pos = start
+    while pos < end:
+        f.seek(pos)
+        head = f.read(20)
+        if not head:
+            return
+        key, p = _varint(head, 0)
+        field, wt = key >> 3, key & 7
+        if wt == 0:
+            val, p = _varint(head, p)
+        elif wt == 1:
+            val, p = None, p + 8
+        elif wt == 2:
+            n, p = _varint(head, p)
+            if pos + p + n > end:
+                raise ValueError("truncated field %d" % field)
+            val, p = (pos + p, n), p + n
+        elif wt == 5:
+            val, p = None, p + 4
+        else:
+            raise ValueError("unsupported wire type %d" % wt)
+        pos += p
+        yield field, wt, val
+
+
 def onnx_op_types(path):
     """{(domain, op_type): count} of an ONNX model's main graph (subgraphs
-    of If/Loop are not walked). For ORT-format (.ort) files returns None."""
+    of If/Loop are not walked). For ORT-format (.ort) files returns None.
+    Only the nodes are read: the weights are skipped, so memory stays small
+    (the timing runs' peak memory must not include a big parent process)."""
     if path.endswith(".ort"):
         return None
-    with open(path, "rb") as f:
-        buf = memoryview(f.read())
     ops = {}
-    for field, wt, val in iter_fields(buf):
-        if field != 7 or wt != 2:
-            continue
-        for f2, w2, node in iter_fields(val):
-            if f2 != 1 or w2 != 2:
+    with open(path, "rb") as f:
+        size = os.fstat(f.fileno()).st_size
+        for field, wt, val in _file_fields(f, 0, size):
+            if field != 7 or wt != 2:
                 continue
-            op, domain = "", ""
-            for f3, w3, v3 in iter_fields(node):
-                if f3 == 4 and w3 == 2:
-                    op = bytes(v3).decode("utf-8", "replace")
-                elif f3 == 7 and w3 == 2:
-                    domain = bytes(v3).decode("utf-8", "replace")
-            ops[(domain, op)] = ops.get((domain, op), 0) + 1
+            g_start, g_len = val
+            for f2, w2, v2 in _file_fields(f, g_start, g_start + g_len):
+                if f2 != 1 or w2 != 2:
+                    continue
+                f.seek(v2[0])
+                node = memoryview(f.read(v2[1]))
+                op, domain = "", ""
+                for f3, w3, v3 in iter_fields(node):
+                    if f3 == 4 and w3 == 2:
+                        op = bytes(v3).decode("utf-8", "replace")
+                    elif f3 == 7 and w3 == 2:
+                        domain = bytes(v3).decode("utf-8", "replace")
+                ops[(domain, op)] = ops.get((domain, op), 0) + 1
     return ops
 
 
