@@ -24,6 +24,7 @@
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_location_and_scroll_updates.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree.h"
@@ -198,6 +199,11 @@ void VoicePageController::Stop() {
   tree_ids_.clear();
 }
 
+base::CallbackListSubscription VoicePageController::AddTreesUpdatedCallback(
+    base::RepeatingClosure callback) {
+  return trees_updated_.Add(std::move(callback));
+}
+
 void VoicePageController::SetTreesUpdatedCallbackForTesting(
     base::RepeatingClosure callback) {
   trees_updated_for_testing_ = std::move(callback);
@@ -309,6 +315,43 @@ void VoicePageController::AccessibilityEventReceived(
     if (trees_updated_for_testing_) {
       trees_updated_for_testing_.Run();
     }
+    trees_updated_.Notify();
+  }
+}
+
+// Blink sends where nodes moved, and scroll offsets, apart from the tree
+// updates (AXObjectCacheImpl::SerializeLocationChanges()); without them a
+// node's bounds would stay where the page was before it scrolled. Applied
+// as BrowserAccessibilityManager::OnLocationChanges() does; node ids the
+// tree doesn't have are skipped (content checked the ids are valid ones).
+void VoicePageController::AccessibilityLocationChangesReceived(
+    const ui::AXTreeID& tree_id,
+    ui::AXLocationAndScrollUpdates& details) {
+  if (!active() || !FrameFor(tree_id)) {
+    return;
+  }
+  auto it = trees_.find(tree_id);
+  if (it == trees_.end() || !it->second.tree->root()) {
+    return;
+  }
+  ui::AXTree& tree = *it->second.tree;
+  bool changed = false;
+  for (const ui::AXScrollChange& change : details.scroll_changes) {
+    if (ui::AXNode* node = tree.GetFromId(change.id)) {
+      node->SetScrollInfo(change.scroll_x, change.scroll_y);
+      changed = true;
+    }
+  }
+  for (const ui::AXLocationChange& change : details.location_changes) {
+    if (ui::AXNode* node = tree.GetFromId(change.id)) {
+      node->SetLocation(change.new_location.offset_container_id,
+                        change.new_location.bounds,
+                        change.new_location.transform.get());
+      changed = true;
+    }
+  }
+  if (changed) {
+    trees_updated_.Notify();
   }
 }
 
