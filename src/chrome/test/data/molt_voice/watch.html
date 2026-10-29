@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- A video site's watch page: a <video> (not muted) that a click on it
+     plays or pauses, as YouTube's player does. It records what the click
+     looked like and how play() ended, for the browser test to read. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Watch - VideoSite</title>
+</head>
+<body>
+<h1 id="title">Video</h1>
+<video id="player" src="/media/bigbuck.webm" preload="auto" width="640"
+       height="360" aria-label="Video player"></video>
+<script>
+  const player = document.getElementById('player');
+  const v = new URLSearchParams(location.search).get('v');
+  if (v) {
+    document.getElementById('title').textContent = 'Watching ' + v;
+  }
+  window.clickInfo = null;
+  window.playResult = 'none';
+  player.addEventListener('click', (e) => {
+    window.clickInfo = {
+      trusted: e.isTrusted,
+      active: navigator.userActivation.isActive,
+    };
+    if (player.paused) {
+      player.play().then(() => { window.playResult = 'playing'; },
+                         (error) => { window.playResult = error.name; });
+    } else {
+      player.pause();
+    }
+  });
+  // Resolves once the video plays (or fails to): for the test to wait on.
+  window.whenPlaying = () => new Promise((resolve) => {
+    const check = () => {
+      if (window.playResult !== 'none') {
+        resolve(window.playResult);
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    check();
+  });
+</script>
+</body>
+</html>

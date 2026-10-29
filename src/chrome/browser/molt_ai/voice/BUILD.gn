@@ -71,21 +71,100 @@ source_set("page_map_test_support") {
   public_deps = [ ":page_map" ]
 }
 
+# Chromium's accessibility trees (one per frame, joined) as the page map's
+# input.
+source_set("ax_page_source") {
+  sources = [
+    "ax_page_source.cc",
+    "ax_page_source.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    "//base",
+  ]
+
+  deps = [
+    "//ui/accessibility",
+    "//ui/gfx/geometry",
+  ]
+}
+
+# Voice mode's hold on a tab: the scoped accessibility mode, the frames'
+# trees, the page map on request, and accessibility actions.
+source_set("voice_page") {
+  sources = [
+    "voice_page_controller.cc",
+    "voice_page_controller.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    "//base",
+    "//content/public/browser",
+    "//ui/accessibility",
+  ]
+
+  deps = [
+    ":ax_page_source",
+
+    # Actions only in http(s) documents.
+    "//chrome/browser/molt_ai/security:agent_safety",
+
+    # Submit's Enter key, sent as the keyboard sends it.
+    "//components/input",
+    "//services/media_session/public/mojom",
+    "//third_party/blink/public/common:headers",
+    "//ui/events:dom_keycode_converter",
+    "//ui/events:events_base",
+    "//url",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("page_map_unit_tests") {
   testonly = true
   sources = [
+    "ax_page_source_unittest.cc",
     "page_map_agent_safety_unittest.cc",
     "page_map_text_unittest.cc",
     "page_map_unittest.cc",
   ]
 
   deps = [
+    ":ax_page_source",
     ":page_map",
     ":page_map_test_support",
 
     # The page map marks credential fields as agent_safety does.
     "//chrome/browser/molt_ai/security:agent_safety",
+    "//testing/gtest",
+    "//ui/accessibility",
+    "//ui/gfx/geometry",
+  ]
+}
+
+# Phase 0's exit criterion without speech: the controller alone drives
+# fixture pages (chrome/test/data/molt_voice/) like YouTube's, Google's, a
+# sign-in form and a cross-site frame. Picked up by browser_tests
+# (//chrome/browser:core_browser_tests).
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_page_controller_browsertest.cc" ]
+
+  deps = [
+    ":page_map",
+    ":voice_page",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/ui",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media:media_buildflags",
+    "//net:test_support",
     "//testing/gtest",
   ]
 }

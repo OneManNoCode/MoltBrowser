@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<!-- A page with a frame from another site: the test loads it from a.test
+     and points the frame at b.test (?frame=URL). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Host page</title>
+</head>
+<body>
+<h1>Embedded content</h1>
+<a href="frame_host.html">Home</a>
+<iframe id="widget" title="Widget" width="400" height="200"></iframe>
+<button type="button">After frame</button>
+<script>
+  const frame = new URLSearchParams(location.search).get('frame');
+  if (frame) {
+    document.getElementById('widget').src = frame;
+  }
+</script>
+</body>
+</html>

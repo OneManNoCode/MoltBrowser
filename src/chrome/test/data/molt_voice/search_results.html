@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<!-- A search engine's results, built like Google's: the search form, the
+     filter links, then in the main landmark ten results (a link holding
+     the h3 title, the site's name and the breadcrumb address; an "About
+     this result" button; a snippet, some with a date) and a "People also
+     ask" block. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>bohemian rhapsody - Search</title>
+<style>
+  .g { margin: 16px 0; }
+</style>
+</head>
+<body>
+<div role="search">
+  <form action="search_results.html">
+    <textarea name="q" aria-label="Search">bohemian rhapsody</textarea>
+    <div role="button" tabindex="0" aria-label="Clear">&times;</div>
+    <div role="button" tabindex="0" aria-label="Search by voice">&#127908;</div>
+    <input type="submit" name="btnK" value="Search">
+  </form>
+</div>
+<div role="navigation" aria-label="Filters and topics">
+  <div><a href="?tbm=all">All</a></div>
+  <div><a href="?tbm=isch">Images</a></div>
+  <div><a href="?tbm=vid">Videos</a></div>
+  <div><a href="?tbm=nws">News</a></div>
+  <div><a href="?tbm=shop">Shopping</a></div>
+</div>
+<div role="main" id="rcnt">
+  <h1 style="position: absolute; left: -9999px">Search Results</h1>
+  <div><div id="rso"></div></div>
+</div>
+<script>
+  const RESULTS = [
+    ['Bohemian Rhapsody', 'Wikipedia',
+     'https://en.wikipedia.org/wiki/Bohemian_Rhapsody',
+     '"Bohemian Rhapsody" is a song by the British rock band Queen.', null],
+    ['Queen - Bohemian Rhapsody (Official Video Remastered)', 'YouTube',
+     'https://www.youtube.com/watch?v=video1',
+     'Taken from A Night At The Opera, 1975.', 'Aug 1, 2008'],
+    ['Bohemian Rhapsody (film)', 'Wikipedia',
+     'https://en.wikipedia.org/wiki/Bohemian_Rhapsody_(film)',
+     'A 2018 biographical film about Queen.', null],
+    ['Bohemian Rhapsody Lyrics', 'Genius',
+     'https://genius.com/Queen-bohemian-rhapsody-lyrics',
+     'Is this the real life? Is this just fantasy?', null],
+    ['The story behind Bohemian Rhapsody', 'BBC',
+     'https://www.bbc.co.uk/music/bohemian-rhapsody',
+     'How Freddie Mercury wrote the six-minute epic.', 'Oct 31, 2015'],
+    ['Bohemian Rhapsody - Queen | Song Info', 'AllMusic',
+     'https://www.allmusic.com/song/bohemian-rhapsody',
+     'Song review and credits.', null],
+    ['Queen\'s Bohemian Rhapsody: the making of a classic', 'The Guardian',
+     'https://www.theguardian.com/music/bohemian-rhapsody',
+     'Fifty years on, a look back.', 'Oct 30, 2025'],
+    ['Bohemian Rhapsody chords', 'Ultimate Guitar',
+     'https://tabs.ultimate-guitar.com/tab/queen/bohemian-rhapsody',
+     'Chords and tabs.', null],
+    ['Bohemian Rhapsody on Spotify', 'Spotify',
+     'https://open.spotify.com/track/bohemian-rhapsody',
+     'Queen · Song · 1975', null],
+    ['Bohemian Rhapsody | Queen Official', 'Queen Online',
+     'https://www.queenonline.com/bohemian-rhapsody', 'The official site.',
+     null],
+  ];
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [name, value] of Object.entries(attrs || {})) {
+      node.setAttribute(name, value);
+    }
+    for (const child of children) {
+      node.append(child);
+    }
+    return node;
+  }
+  const rso = document.getElementById('rso');
+  RESULTS.forEach(([title, site, url, snippet, date], i) => {
+    const host = new URL(url).host;
+    const snippetBox = el('div', {class: 'snippet'});
+    if (date) {
+      snippetBox.append(el('span', {}, date), el('span', {}, ' — '));
+    }
+    snippetBox.append(el('span', {}, snippet));
+    rso.append(el('div', {class: 'MjjYud'}, el('div', {class: 'g'},
+        el('div', {},
+           el('a', {href: url},
+              el('h3', {}, title),
+              el('div', {class: 'source'},
+                 el('img', {alt: '', width: '16', height: '16'}),
+                 el('div', {}, el('span', {}, site)),
+                 el('div', {}, el('cite', {}, 'https://' + host + ' › music')))),
+           el('div', {role: 'button', tabindex: '0',
+                      'aria-label': 'About this result'}, '⋮')),
+        snippetBox)));
+    if (i === 2) {
+      const questions = el('div', {class: 'questions'});
+      for (const q of ['What is the true meaning of Bohemian Rhapsody?',
+                       'Who wrote Bohemian Rhapsody?',
+                       'How long is Bohemian Rhapsody?',
+                       'Why is Bohemian Rhapsody so famous?']) {
+        questions.append(el('div', {class: 'question'},
+            el('div', {role: 'button', tabindex: '0', 'aria-expanded': 'false'},
+               q)));
+      }
+      rso.append(el('div', {class: 'paa'}, el('h2', {}, 'People also ask'),
+                    questions));
+    }
+  });
+</script>
+</body>
+</html>

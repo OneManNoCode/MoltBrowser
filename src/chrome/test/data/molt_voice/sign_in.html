@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!-- A sign-in form: an email field, a password field and a submit button.
+     The page logs the input events its fields see in window.moltEvents. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sign in</title>
+</head>
+<body>
+<main>
+  <form aria-label="Sign in" onsubmit="return false">
+    <label>Email <input id="email" type="email" autocomplete="username"></label>
+    <label>Password <input id="password" type="password"
+                           autocomplete="current-password"></label>
+    <label>Code <input id="code" type="text"
+                       autocomplete="one-time-code"></label>
+    <button type="submit">Sign in</button>
+  </form>
+</main>
+<script>
+  window.moltEvents = [];
+  for (const id of ['email', 'password', 'code']) {
+    document.getElementById(id).addEventListener('input', (e) => {
+      window.moltEvents.push(id + ':' + e.isTrusted);
+    });
+  }
+</script>
+</body>
+</html>

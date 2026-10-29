@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<!-- The frame frame_host.html embeds from another site: a button that
+     counts its trusted clicks in window.likes. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Widget</title>
+</head>
+<body>
+<button id="like" type="button">Like</button>
+<a href="frame_widget.html?share=1">Share</a>
+<script>
+  window.likes = 0;
+  document.getElementById('like').addEventListener('click', (e) => {
+    if (e.isTrusted) {
+      ++window.likes;
+    }
+  });
+</script>
+</body>
+</html>
