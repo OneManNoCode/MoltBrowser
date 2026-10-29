@@ -25,6 +25,14 @@
 //                                              -> UniformCameraFrameSize
 //                     VideoFrameResolutionAdapter::AdaptFrameResolution
 //                                              -> AdaptUniformCameraFrame
+//   the grid          VideoTrackAdapter::DeliverFrameOnVideoTaskRunner,
+//                     MoltCameraTickOnVideoTaskRunner
+//                                              -> UniformCameraClock
+//                     VideoFrameResolutionAdapter::DeliverFrame (holds the
+//                       newest frame), DeliverUniformCameraTick
+//                                              -> UniformCameraTickFrame
+//                     VideoFrameResolutionAdapter::OnFrameDropped (the
+//                       camera's own drops aren't the tracks')
 //   getSettings()     MediaStreamVideoTrack::GetSettings
 //                                              -> UseUniformCameraTrackSettings
 //   enumerateDevices() MediaDevices::DevicesEnumerated (InputDeviceInfo.
@@ -40,7 +48,13 @@
 // (which a VideoFrame from MediaStreamTrackProcessor shows as codedWidth and
 // visibleRect) and would never scale up. A track whose page asked for
 // resizeMode "none" gets the entry's own size and getSettings() reports
-// "none". The device opens in the mode UniformCameraOpenMode() picks, the
+// "none". The frames reach the tracks on a fixed grid of 30 a second
+// (moltnet::UniformCameraGrid): each resolution adapter keeps the newest
+// frame it converted, and each tick hands it on, again if the camera sent
+// none since, with the tick's timestamp and capture time, so frame
+// timestamps, requestVideoFrameCallback()'s captureTime, the track's
+// statistics and what WebRTC measures follow the grid, not the camera's rate
+// and jitter. The device opens in the mode UniformCameraOpenMode() picks, the
 // smallest that reaches the larger entry (or the largest it has, from which
 // the entries it doesn't reach are scaled up), and applyConstraints()
 // reconfigures the track on the running source instead of reopening the
@@ -52,10 +66,12 @@
 #include <optional>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/time/time.h"
 #include "base/types/expected.h"
 #include "media/capture/video_capture_types.h"
 #include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom-blink-forward.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_camera_menu.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_track_platform.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -146,6 +162,57 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
                         const gfx::Size& size,
                         media::VideoFramePool& pool,
                         media::VideoFrameConverter& converter);
+
+// The grid a MoltNet camera's frames reach its tracks on
+// (moltnet::UniformCameraGrid) on base::TimeTicks. VideoTrackAdapter keeps
+// one per video source, on its video task runner, and runs each tick when it
+// is due; its resolution adapters of MoltNet camera tracks hold their newest
+// frame until then.
+class MODULES_EXPORT UniformCameraClock {
+ public:
+  struct Tick {
+    // The frames' timestamp: the tick's time after tick 0.
+    base::TimeDelta timestamp;
+    // When the tick was due: the frames' capture and reference time.
+    base::TimeTicks time;
+  };
+
+  UniformCameraClock();
+  ~UniformCameraClock();
+  UniformCameraClock(const UniformCameraClock&) = delete;
+  UniformCameraClock& operator=(const UniformCameraClock&) = delete;
+
+  // A frame of the source arrived at `now`: when the pending tick is due if
+  // the grid starts or resumes, nullopt while one is pending.
+  std::optional<base::TimeTicks> OnSourceFrame(base::TimeTicks now);
+  // Runs the pending tick at `now`: the tick to hand on, after which the
+  // next is pending; nullopt when none is, or the grid stopped (no frame for
+  // a second).
+  std::optional<Tick> OnTick(base::TimeTicks now);
+  // When the pending tick is due.
+  base::TimeTicks NextTickDue() const;
+
+  // Tests run the ticks themselves (VideoTrackAdapter::
+  // MoltCameraTickForTesting()), on the grid's own time: each tick runs when
+  // due, and a frame arrives just before the pending tick.
+  void set_manual_ticks_for_testing() { manual_ticks_for_testing_ = true; }
+  bool manual_ticks_for_testing() const { return manual_ticks_for_testing_; }
+
+ private:
+  moltnet::UniformCameraGrid grid_;
+  bool manual_ticks_for_testing_ = false;
+};
+
+// The frame a MoltNet camera track gets at a tick of the grid from `held`,
+// the newest frame AdaptUniformCameraFrame() gave its resolution adapter: a
+// wrapper of it with the tick's timestamp, the tick's time as its capture
+// begin time (requestVideoFrameCallback()'s captureTime) and reference time
+// (WebRTC's capture time), the menu's frame rate, and of the camera's own
+// metadata only the capture version and the orientation: none of its times,
+// rate, effects or capture details. nullptr if `held` can't be wrapped.
+MODULES_EXPORT scoped_refptr<media::VideoFrame> UniformCameraTickFrame(
+    const scoped_refptr<media::VideoFrame>& held,
+    const UniformCameraClock::Tick& tick);
 
 // getSettings() of a track with `adapter` settings: a MoltNet camera
 // track's frame rate is the menu's, or the lower one it asked for, and its

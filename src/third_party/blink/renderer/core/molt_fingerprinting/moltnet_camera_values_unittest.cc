@@ -263,5 +263,109 @@ TEST(MoltNetCameraValuesTest, OpenModeShowsTheSameEntries) {
   }
 }
 
+// The grid's ticks: 30 a second in whole microseconds, rounded down, and the
+// first tick at or after a time.
+TEST(MoltNetCameraValuesTest, GridTicks) {
+  EXPECT_EQ(UniformCameraTickMicroseconds(0), 0);
+  EXPECT_EQ(UniformCameraTickMicroseconds(1), 33333);
+  EXPECT_EQ(UniformCameraTickMicroseconds(2), 66666);
+  EXPECT_EQ(UniformCameraTickMicroseconds(3), 100000);
+  EXPECT_EQ(UniformCameraTickMicroseconds(30), 1000000);
+  EXPECT_EQ(UniformCameraTickMicroseconds(108000), 3600000000);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(-5), 0);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(0), 0);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(1), 1);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(33333), 1);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(33334), 2);
+  EXPECT_EQ(UniformCameraTickAtOrAfter(1000000), 30);
+  for (int64_t elapsed = 1; elapsed < 400000; elapsed += 7) {
+    const int64_t tick = UniformCameraTickAtOrAfter(elapsed);
+    ASSERT_GE(UniformCameraTickMicroseconds(tick), elapsed);
+    ASSERT_LT(UniformCameraTickMicroseconds(tick - 1), elapsed);
+  }
+  // The intervals: 33333, 33333 and 33334 microseconds, a second every 30.
+  for (int64_t tick = 1; tick < 3000; ++tick) {
+    const int64_t interval = UniformCameraTickMicroseconds(tick) -
+                             UniformCameraTickMicroseconds(tick - 1);
+    ASSERT_TRUE(interval == 33333 || interval == 33334) << tick;
+  }
+}
+
+// A camera's frames at its own rate and jitter reach the grid's ticks: one
+// tick after another, whatever the frames' times; the first frame starts the
+// grid at once.
+TEST(MoltNetCameraValuesTest, GridIgnoresTheCamerasTiming) {
+  constexpr int64_t kStart = 5'000'000'000;
+  for (const int64_t interval : {66'667, 33'333, 41'000, 16'667}) {
+    UniformCameraGrid grid;
+    EXPECT_FALSE(grid.OnTick(kStart).has_value());
+    EXPECT_EQ(grid.OnSourceFrame(kStart), kStart);
+    std::vector<int64_t> ticks;
+    int64_t next_frame = kStart + interval;
+    uint32_t jitter = 1;
+    for (int i = 0; i < 90; ++i) {
+      const int64_t due = grid.NextTickDue();
+      // Frames that arrive before the tick is due.
+      while (next_frame <= due) {
+        EXPECT_FALSE(grid.OnSourceFrame(next_frame).has_value());
+        jitter = jitter * 1664525u + 1013904223u;
+        next_frame += interval + static_cast<int64_t>(jitter >> 28) * 300;
+      }
+      const std::optional<int64_t> tick = grid.OnTick(due);
+      ASSERT_TRUE(tick.has_value());
+      ticks.push_back(*tick);
+    }
+    for (size_t i = 0; i < ticks.size(); ++i) {
+      EXPECT_EQ(ticks[i], static_cast<int64_t>(i));
+    }
+    EXPECT_EQ(grid.NextTickDue(), kStart + UniformCameraTickMicroseconds(90));
+  }
+}
+
+// A tick that runs late skips the ticks it missed; one that runs on time
+// doesn't.
+TEST(MoltNetCameraValuesTest, GridSkipsTicksItMissed) {
+  UniformCameraGrid grid;
+  ASSERT_EQ(grid.OnSourceFrame(0), 0);
+  EXPECT_EQ(grid.OnTick(0), 0);
+  EXPECT_EQ(grid.NextTickDue(), 33333);
+  grid.OnSourceFrame(30000);
+  // Tick 1 runs 100 ms late, after ticks 2 to 4 were due.
+  EXPECT_EQ(grid.OnTick(140000), 1);
+  EXPECT_EQ(grid.NextTickDue(), UniformCameraTickMicroseconds(5));
+  EXPECT_EQ(grid.OnTick(UniformCameraTickMicroseconds(5)), 5);
+  EXPECT_EQ(grid.NextTickDue(), UniformCameraTickMicroseconds(6));
+}
+
+// Without a frame for a second the grid stops; the next frame resumes it at
+// the first tick at or after its arrival, on the same grid.
+TEST(MoltNetCameraValuesTest, GridStopsAndResumes) {
+  UniformCameraGrid grid;
+  ASSERT_EQ(grid.OnSourceFrame(1000), 1000);
+  int64_t tick = 0;
+  for (; grid.ticking(); ++tick) {
+    const std::optional<int64_t> ran = grid.OnTick(grid.NextTickDue());
+    if (!ran) {
+      break;
+    }
+    EXPECT_EQ(*ran, tick);
+  }
+  // The last tick within a second of the frame was the 30th.
+  EXPECT_EQ(tick, 31);
+  EXPECT_FALSE(grid.ticking());
+  EXPECT_FALSE(grid.OnTick(5'000'000).has_value());
+  // A frame 4 s after the first: tick 120 is 4 s after tick 0.
+  EXPECT_EQ(grid.OnSourceFrame(1000 + 4'000'000), 1000 + 4'000'000);
+  EXPECT_EQ(grid.OnTick(1000 + 4'000'000), 120);
+  // A frame between ticks resumes at the next one.
+  UniformCameraGrid other;
+  other.OnSourceFrame(0);
+  other.OnTick(0);
+  EXPECT_FALSE(other.OnTick(2'000'000).has_value());
+  EXPECT_EQ(other.OnSourceFrame(2'000'001),
+            UniformCameraTickMicroseconds(61));
+  EXPECT_EQ(other.origin(), 0);
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting::moltnet

@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <memory>  // MoltBrowser
 #include <optional>
 
 #include "base/feature_list.h"
@@ -31,6 +32,9 @@
 namespace blink {
 
 class VideoTrackAdapterSettings;
+namespace molt_fingerprinting {
+class UniformCameraClock;  // MoltBrowser
+}  // namespace molt_fingerprinting
 
 MODULES_EXPORT BASE_DECLARE_FEATURE(kScaleFrameForGetDisplayMedia);
 MODULES_EXPORT BASE_DECLARE_FEATURE(kMediaStreamTrackEmptyVideoFrameMonitor);
@@ -139,6 +143,11 @@ class MODULES_EXPORT VideoTrackAdapter
     return source_frame_size_;
   }
 
+  // MoltBrowser: tests run the ticks of a MoltNet camera's grid
+  // (moltnet_camera.h) themselves, on the video task runner.
+  void SetMoltCameraManualTicksForTesting();
+  void MoltCameraTickForTesting();
+
  private:
   virtual ~VideoTrackAdapter();
   friend class ThreadSafeRefCounted<VideoTrackAdapter>;
@@ -198,6 +207,11 @@ class MODULES_EXPORT VideoTrackAdapter
   // and inform of the situation (muted, not muted) via |on_muted_callback_|.
   void CheckFramesReceivedOnVideoTaskRunner();
 
+  // MoltBrowser: a tick of the grid a MoltNet camera's tracks get their
+  // frames on (moltnet_camera.h), and its scheduling.
+  void MoltCameraTickOnVideoTaskRunner();
+  void ScheduleMoltCameraTick(base::TimeTicks due);
+
   // |thread_checker_| is bound to the main render thread.
   SEQUENCE_CHECKER(sequence_checker_);
 
@@ -241,6 +255,10 @@ class MODULES_EXPORT VideoTrackAdapter
   // the video task runner.
   base::TimeDelta last_frame_timestamp_;
   base::TimeTicks last_frame_arrival_time_;
+
+  // MoltBrowser: that grid, accessed on the video task runner.
+  const std::unique_ptr<molt_fingerprinting::UniformCameraClock>
+      molt_camera_clock_;
 };
 
 }  // namespace blink

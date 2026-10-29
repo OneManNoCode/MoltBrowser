@@ -9,6 +9,7 @@
 #include "media/base/molt_portable_media.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_converter.h"
+#include "media/base/video_frame_metadata.h"
 #include "media/base/video_frame_pool.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
@@ -239,6 +240,73 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
         DropReason::kResolutionAdapterConvertAndScaleFailed);
   }
   return uniform;
+}
+
+namespace {
+
+int64_t Microseconds(base::TimeTicks time) {
+  return (time - base::TimeTicks()).InMicroseconds();
+}
+
+base::TimeTicks TimeTicksOf(int64_t microseconds) {
+  return base::TimeTicks() + base::Microseconds(microseconds);
+}
+
+}  // namespace
+
+UniformCameraClock::UniformCameraClock() = default;
+UniformCameraClock::~UniformCameraClock() = default;
+
+std::optional<base::TimeTicks> UniformCameraClock::OnSourceFrame(
+    base::TimeTicks now) {
+  // Tests' ticks run on the grid's time: a frame arrives just before the
+  // pending tick.
+  if (manual_ticks_for_testing_ && grid_.origin()) {
+    now = NextTickDue();
+  }
+  const std::optional<int64_t> due = grid_.OnSourceFrame(Microseconds(now));
+  if (!due) {
+    return std::nullopt;
+  }
+  return TimeTicksOf(*due);
+}
+
+std::optional<UniformCameraClock::Tick> UniformCameraClock::OnTick(
+    base::TimeTicks now) {
+  // Tests' ticks run when due.
+  if (manual_ticks_for_testing_) {
+    now = NextTickDue();
+  }
+  const std::optional<int64_t> tick = grid_.OnTick(Microseconds(now));
+  if (!tick || !grid_.origin()) {
+    return std::nullopt;
+  }
+  const int64_t since_first = moltnet::UniformCameraTickMicroseconds(*tick);
+  return Tick{base::Microseconds(since_first),
+              TimeTicksOf(*grid_.origin() + since_first)};
+}
+
+base::TimeTicks UniformCameraClock::NextTickDue() const {
+  return TimeTicksOf(grid_.NextTickDue());
+}
+
+scoped_refptr<media::VideoFrame> UniformCameraTickFrame(
+    const scoped_refptr<media::VideoFrame>& held,
+    const UniformCameraClock::Tick& tick) {
+  scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapVideoFrame(
+      held, held->format(), held->visible_rect(), held->natural_size());
+  if (!frame) {
+    return nullptr;
+  }
+  frame->set_timestamp(tick.timestamp);
+  media::VideoFrameMetadata metadata;
+  metadata.capture_version = held->metadata().capture_version;
+  metadata.transformation = held->metadata().transformation;
+  metadata.capture_begin_time = tick.time;
+  metadata.reference_time = tick.time;
+  metadata.frame_rate = moltnet::kUniformCameraFrameRate;
+  frame->set_metadata(metadata);
+  return frame;
 }
 
 void UseUniformCameraTrackSettings(const VideoTrackAdapterSettings& adapter,

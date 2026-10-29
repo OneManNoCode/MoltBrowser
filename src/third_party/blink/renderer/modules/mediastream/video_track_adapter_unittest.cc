@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/numerics/ranges.h"
 #include "base/run_loop.h"
+#include "base/synchronization/lock.h"  // MoltBrowser
 #include "base/synchronization/waitable_event.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
@@ -486,6 +487,68 @@ class VideoTrackAdapterFixtureTest : public ::testing::Test {
         };
     SetFrameValidationCallback(base::BindLambdaForTesting(check_settings));
     DeliverAndValidateFrame(frame, base::TimeTicks());
+  }
+
+  // MoltBrowser: a MoltNet camera's tracks get their frames at the ticks of a
+  // grid (moltnet_camera.h). These helpers run the ticks by hand, on the
+  // grid's own time (tick n's timestamp is n/30 s).
+  void UseManualMoltCameraTicks() {
+    base::WaitableEvent done;
+    platform_support_->GetIOTaskRunner()->PostTask(
+        FROM_HERE, base::BindLambdaForTesting([&] {
+          adapter_->SetMoltCameraManualTicksForTesting();
+          done.Signal();
+        }));
+    done.Wait();
+  }
+
+  // Hands `frame` to the adapter, which holds it for the next tick.
+  void DeliverMoltCameraFrame(scoped_refptr<media::VideoFrame> frame) {
+    base::WaitableEvent done;
+    // Bounced off |testing_render_thread_| like DeliverAndValidateFrame().
+    testing_render_thread_.task_runner()->PostTask(
+        FROM_HERE, base::BindLambdaForTesting([&] {
+          platform_support_->GetIOTaskRunner()->PostTask(
+              FROM_HERE, base::BindLambdaForTesting([&] {
+                adapter_->DeliverFrameOnVideoTaskRunner(frame,
+                                                        base::TimeTicks());
+                done.Signal();
+              }));
+        }));
+    done.Wait();
+  }
+
+  // Runs a tick and waits until it ran.
+  void MoltCameraTick() {
+    base::WaitableEvent done;
+    platform_support_->GetIOTaskRunner()->PostTask(
+        FROM_HERE, base::BindLambdaForTesting([&] {
+          adapter_->MoltCameraTickForTesting();
+          done.Signal();
+        }));
+    done.Wait();
+  }
+
+  // Runs a tick and waits for what it hands the track: a frame or a drop.
+  void MoltCameraTickAndWait() {
+    frame_processed_.Reset();
+    platform_support_->GetIOTaskRunner()->PostTask(
+        FROM_HERE, base::BindLambdaForTesting(
+                       [&] { adapter_->MoltCameraTickForTesting(); }));
+    frame_processed_.Wait();
+  }
+
+  // A MoltNet camera track of `size` at `frame_rate`, on an adapter whose
+  // ticks the test runs.
+  void SetUpMoltCameraTrack(const gfx::Size& size, double frame_rate) {
+    CreateAdapter(media::VideoCaptureFormat(gfx::Size(1280, 720), 30.0,
+                                            media::PIXEL_FORMAT_I420));
+    UseManualMoltCameraTicks();
+    VideoTrackAdapterSettings settings(size, 0.0,
+                                       std::numeric_limits<double>::max(),
+                                       frame_rate);
+    settings.set_molt_uniform_camera(/*reports_no_resize=*/true);
+    ConfigureTrack(settings);
   }
 
   MOCK_METHOD2(OnEncodedVideoFrameDelivered,
@@ -1634,6 +1697,12 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
   const double kFrameRate = 30.0;
   CreateAdapter(media::VideoCaptureFormat(gfx::Size(1280, 720), kFrameRate,
                                           media::PIXEL_FORMAT_NV12));
+  UseManualMoltCameraTicks();
+  // Each frame below reaches the track at the next tick.
+  auto deliver = [&](scoped_refptr<media::VideoFrame> frame) {
+    DeliverMoltCameraFrame(std::move(frame));
+    MoltCameraTickAndWait();
+  };
   const gfx::Size kSize(640, 480);
   VideoTrackAdapterSettings settings(kSize, 0.0, kNoMaxAspectRatio,
                                      kFrameRate);
@@ -1667,28 +1736,28 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
       gfx::Size(1280, 960), gfx::Rect(0, 120, 1280, 720), gfx::Size(1280, 720),
       media::VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE,
       media::PIXEL_FORMAT_NV12, next_timestamp(), test_sii_.get());
-  DeliverAndValidateFrame(shared_image_frame, base::TimeTicks());
+  deliver(shared_image_frame);
   expect_track_size();
   EXPECT_EQ(delivered->storage_type(),
             media::VideoFrame::STORAGE_OWNED_MEMORY);
-  EXPECT_EQ(delivered->timestamp(), shared_image_frame->timestamp());
+  // The grid's first tick, not the camera's timestamp.
+  EXPECT_EQ(delivered->timestamp(), base::TimeDelta());
 
   // A small camera's I420 frame, scaled up.
-  DeliverAndValidateFrame(
-      CreateTestFrame(gfx::Size(320, 240), gfx::Rect(320, 240),
-                      gfx::Size(320, 240),
-                      media::VideoFrame::STORAGE_OWNED_MEMORY,
-                      media::PIXEL_FORMAT_I420, next_timestamp(),
-                      test_sii_.get()),
-      base::TimeTicks());
+  deliver(CreateTestFrame(gfx::Size(320, 240), gfx::Rect(320, 240),
+                          gfx::Size(320, 240),
+                          media::VideoFrame::STORAGE_OWNED_MEMORY,
+                          media::PIXEL_FORMAT_I420, next_timestamp(),
+                          test_sii_.get()));
   expect_track_size();
+  EXPECT_EQ(delivered->timestamp(), base::Microseconds(33333));
 
   // A frame that already is one, its samples as they are.
   auto exact = CreateTestFrame(kSize, gfx::Rect(kSize), kSize,
                                media::VideoFrame::STORAGE_OWNED_MEMORY,
                                media::PIXEL_FORMAT_I420, next_timestamp(),
                                test_sii_.get());
-  DeliverAndValidateFrame(exact, base::TimeTicks());
+  deliver(exact);
   expect_track_size();
   EXPECT_EQ(delivered->visible_data(0), exact->visible_data(0));
 
@@ -1701,7 +1770,7 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
         next_timestamp(), test_sii_.get());
     fake_camera_frame->metadata().source_size = camera_size;
     fake_camera_frame->metadata().device_scale_factor = 1.0;
-    DeliverAndValidateFrame(fake_camera_frame, base::TimeTicks());
+    deliver(fake_camera_frame);
     expect_track_size();
     EXPECT_FALSE(delivered->metadata().source_size.has_value());
     EXPECT_FALSE(delivered->metadata().device_scale_factor.has_value());
@@ -1728,7 +1797,7 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
       }
     }
   }
-  DeliverAndValidateFrame(pillarboxed, base::TimeTicks());
+  deliver(pillarboxed);
   expect_track_size();
   {
     base::span<const uint8_t> luma = delivered->GetVisiblePlaneData(0);
@@ -1746,13 +1815,11 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
   VideoTrackAdapterSettings hd(kHd, 0.0, kNoMaxAspectRatio, kFrameRate);
   hd.set_molt_uniform_camera(/*reports_no_resize=*/true);
   ConfigureTrack(hd);
-  DeliverAndValidateFrame(
-      CreateTestFrame(gfx::Size(640, 480), gfx::Rect(640, 480),
-                      gfx::Size(640, 480),
-                      media::VideoFrame::STORAGE_OWNED_MEMORY,
-                      media::PIXEL_FORMAT_I420, next_timestamp(),
-                      test_sii_.get()),
-      base::TimeTicks());
+  deliver(CreateTestFrame(gfx::Size(640, 480), gfx::Rect(640, 480),
+                          gfx::Size(640, 480),
+                          media::VideoFrame::STORAGE_OWNED_MEMORY,
+                          media::PIXEL_FORMAT_I420, next_timestamp(),
+                          test_sii_.get()));
   ASSERT_TRUE(delivered);
   EXPECT_EQ(delivered->coded_size(), kHd);
   EXPECT_EQ(delivered->visible_rect(), gfx::Rect(kHd));
@@ -1864,32 +1931,262 @@ TEST(VideoTrackAdapterTest, MoltNetCameraFramesHaveOneColorSpace) {
 }
 
 // MoltBrowser: a frame a MoltNet camera track can't read (a texture that
-// can't be mapped) is dropped, never handed on in the camera's own size.
+// can't be mapped) never reaches the track, in the camera's own size or
+// otherwise; the grid's ticks hand on the newest frame it could read.
 TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraDropsFramesItCannotRead) {
-  const double kFrameRate = 30.0;
-  CreateAdapter(media::VideoCaptureFormat(gfx::Size(1280, 720), kFrameRate,
-                                          media::PIXEL_FORMAT_NV12));
-  VideoTrackAdapterSettings settings(gfx::Size(640, 480), 0.0,
-                                     kNoMaxAspectRatio, kFrameRate);
-  settings.set_molt_uniform_camera(/*reports_no_resize=*/false);
-  ConfigureTrack(settings);
-
-  std::optional<media::VideoCaptureFrameDropReason> dropped;
+  SetUpMoltCameraTrack(gfx::Size(640, 480), 30.0);
+  std::vector<scoped_refptr<media::VideoFrame>> delivered;
   SetFrameValidationCallback(base::BindLambdaForTesting(
-      [](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
-        ADD_FAILURE() << "Delivered " << frame->AsHumanReadableString();
+      [&](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
+        delivered.push_back(std::move(frame));
+      }));
+  SetFrameDroppedCallback(
+      base::BindLambdaForTesting([](media::VideoCaptureFrameDropReason reason) {
+        ADD_FAILURE() << "Dropped, reason " << static_cast<int>(reason);
+      }));
+  auto unreadable = [&] {
+    return CreateTestFrame(gfx::Size(1280, 720), gfx::Rect(1280, 720),
+                           gfx::Size(1280, 720),
+                           media::VideoFrame::STORAGE_OPAQUE,
+                           media::PIXEL_FORMAT_NV12, base::Milliseconds(100),
+                           test_sii_.get());
+  };
+  // Nothing readable yet: the tick hands on nothing.
+  DeliverMoltCameraFrame(unreadable());
+  MoltCameraTick();
+  EXPECT_TRUE(delivered.empty());
+
+  scoped_refptr<media::VideoFrame> readable = CreateTestFrame(
+      gfx::Size(640, 480), gfx::Rect(640, 480), gfx::Size(640, 480),
+      media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
+      base::Milliseconds(133), test_sii_.get());
+  DeliverMoltCameraFrame(readable);
+  MoltCameraTickAndWait();
+  ASSERT_EQ(delivered.size(), 1u);
+  // Another unreadable frame leaves the readable one.
+  DeliverMoltCameraFrame(unreadable());
+  MoltCameraTickAndWait();
+  ASSERT_EQ(delivered.size(), 2u);
+  EXPECT_EQ(delivered[1]->visible_data(0), readable->visible_data(0));
+  EXPECT_EQ(delivered[1]->coded_size(), gfx::Size(640, 480));
+}
+
+// MoltBrowser: a MoltNet camera's frames reach its tracks on a fixed grid:
+// whatever the camera's own timestamps, rate and jitter, the track's frames
+// are stamped n/30 s after the first, with that time as their capture and
+// reference time and the estimated capture time, the grid's rate, and none
+// of the camera's own times, rate or effects.
+TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesReachTheGrid) {
+  SetUpMoltCameraTrack(gfx::Size(640, 480), 30.0);
+  struct Delivered {
+    scoped_refptr<media::VideoFrame> frame;
+    base::TimeTicks estimated_capture_time;
+  };
+  std::vector<Delivered> delivered;
+  SetFrameValidationCallback(base::BindLambdaForTesting(
+      [&](scoped_refptr<media::VideoFrame> frame, base::TimeTicks time) {
+        delivered.push_back({std::move(frame), time});
+      }));
+  // A camera's jittery timestamps, with times and details of its own.
+  const base::TimeDelta camera_timestamps[] = {
+      base::Milliseconds(5000), base::Milliseconds(5047),
+      base::Milliseconds(5051), base::Milliseconds(5130)};
+  for (const base::TimeDelta& timestamp : camera_timestamps) {
+    scoped_refptr<media::VideoFrame> frame = CreateTestFrame(
+        gfx::Size(1280, 720), gfx::Rect(1280, 720), gfx::Size(1280, 720),
+        media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
+        timestamp, test_sii_.get());
+    const base::TimeTicks camera_time =
+        base::TimeTicks() + base::Seconds(100) + timestamp;
+    frame->metadata().capture_begin_time = camera_time;
+    frame->metadata().capture_end_time = camera_time;
+    frame->metadata().reference_time = camera_time;
+    frame->metadata().receive_time = camera_time;
+    frame->metadata().rtp_timestamp = 12345.0;
+    frame->metadata().frame_rate = 24.0;
+    frame->metadata().background_blur = media::EffectInfo{.enabled = true};
+    DeliverMoltCameraFrame(frame);
+    MoltCameraTickAndWait();
+  }
+  ASSERT_EQ(delivered.size(), 4u);
+  const base::TimeTicks first = delivered[0].estimated_capture_time;
+  for (size_t i = 0; i < delivered.size(); ++i) {
+    const media::VideoFrame& frame = *delivered[i].frame;
+    const base::TimeDelta grid = base::Microseconds(
+        molt_fingerprinting::moltnet::UniformCameraTickMicroseconds(
+            static_cast<int64_t>(i)));
+    EXPECT_EQ(frame.timestamp(), grid) << i;
+    EXPECT_EQ(delivered[i].estimated_capture_time, first + grid) << i;
+    EXPECT_EQ(frame.metadata().capture_begin_time,
+              delivered[i].estimated_capture_time);
+    EXPECT_EQ(frame.metadata().reference_time,
+              delivered[i].estimated_capture_time);
+    EXPECT_EQ(frame.metadata().frame_rate, 30.0);
+    EXPECT_FALSE(frame.metadata().capture_end_time.has_value());
+    EXPECT_FALSE(frame.metadata().receive_time.has_value());
+    EXPECT_FALSE(frame.metadata().rtp_timestamp.has_value());
+    EXPECT_FALSE(frame.metadata().background_blur.has_value());
+    EXPECT_EQ(frame.coded_size(), gfx::Size(640, 480));
+  }
+}
+
+// MoltBrowser: without a new frame a tick hands the track the newest one
+// again, as a new frame on the grid; after a second without one the grid
+// stops, and the next frame resumes it.
+TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraRepeatsTheNewestFrame) {
+  SetUpMoltCameraTrack(gfx::Size(640, 480), 30.0);
+  std::vector<scoped_refptr<media::VideoFrame>> delivered;
+  SetFrameValidationCallback(base::BindLambdaForTesting(
+      [&](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
+        delivered.push_back(std::move(frame));
+      }));
+  scoped_refptr<media::VideoFrame> frame = CreateTestFrame(
+      gfx::Size(640, 480), gfx::Rect(640, 480), gfx::Size(640, 480),
+      media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
+      base::Milliseconds(70), test_sii_.get());
+  DeliverMoltCameraFrame(frame);
+  // Ticks 0 to 30, within a second of the frame: the same pixels each time.
+  for (int i = 0; i <= 30; ++i) {
+    MoltCameraTickAndWait();
+  }
+  ASSERT_EQ(delivered.size(), 31u);
+  for (size_t i = 0; i < delivered.size(); ++i) {
+    EXPECT_EQ(delivered[i]->visible_data(0), frame->visible_data(0));
+    EXPECT_EQ(delivered[i]->timestamp(),
+              base::Microseconds(
+                  molt_fingerprinting::moltnet::UniformCameraTickMicroseconds(
+                      static_cast<int64_t>(i))));
+  }
+  // Tick 31 is more than a second after the frame: the grid stops.
+  MoltCameraTick();
+  MoltCameraTick();
+  EXPECT_EQ(delivered.size(), 31u);
+  // The next frame resumes it, on the same grid.
+  DeliverMoltCameraFrame(frame);
+  MoltCameraTickAndWait();
+  ASSERT_EQ(delivered.size(), 32u);
+  EXPECT_EQ(delivered.back()->timestamp(),
+            base::Microseconds(
+                molt_fingerprinting::moltnet::UniformCameraTickMicroseconds(
+                    31)));
+}
+
+// MoltBrowser: a track that asked for a lower rate keeps the ticks it would
+// keep of a camera at the grid's rate, and the others count as discarded
+// (MediaStreamTrack.stats), the same on every machine.
+TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraLowerRateKeepsGridTicks) {
+  SetUpMoltCameraTrack(gfx::Size(640, 480), 15.0);
+  std::vector<base::TimeDelta> delivered;
+  std::vector<media::VideoCaptureFrameDropReason> dropped;
+  SetFrameValidationCallback(base::BindLambdaForTesting(
+      [&](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
+        delivered.push_back(frame->timestamp());
       }));
   SetFrameDroppedCallback(base::BindLambdaForTesting(
-      [&](media::VideoCaptureFrameDropReason reason) { dropped = reason; }));
-  DeliverAndValidateFrame(
-      CreateTestFrame(gfx::Size(1280, 720), gfx::Rect(1280, 720),
-                      gfx::Size(1280, 720), media::VideoFrame::STORAGE_OPAQUE,
-                      media::PIXEL_FORMAT_NV12, base::Milliseconds(100),
-                      test_sii_.get()),
-      base::TimeTicks());
-  EXPECT_EQ(dropped,
+      [&](media::VideoCaptureFrameDropReason reason) {
+        dropped.push_back(reason);
+      }));
+  for (int i = 0; i < 6; ++i) {
+    DeliverMoltCameraFrame(CreateTestFrame(
+        gfx::Size(640, 480), gfx::Rect(640, 480), gfx::Size(640, 480),
+        media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
+        base::Milliseconds(29 * i), test_sii_.get()));
+    MoltCameraTickAndWait();
+  }
+  EXPECT_EQ(delivered,
+            (std::vector<base::TimeDelta>{base::Microseconds(0),
+                                          base::Microseconds(66666),
+                                          base::Microseconds(133333)}));
+  ASSERT_EQ(dropped.size(), 3u);
+  for (media::VideoCaptureFrameDropReason reason : dropped) {
+    EXPECT_EQ(reason, media::VideoCaptureFrameDropReason::
+                          kResolutionAdapterFrameRateIsHigherThanRequested);
+  }
+}
+
+// MoltBrowser: the camera's own drops (a full buffer pool, a busy machine)
+// don't reach a MoltNet camera's tracks: the grid hands them the newest
+// frame instead.
+TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraHidesTheCamerasDrops) {
+  SetUpMoltCameraTrack(gfx::Size(640, 480), 30.0);
+  int delivered = 0;
+  SetFrameValidationCallback(base::BindLambdaForTesting(
+      [&](scoped_refptr<media::VideoFrame>, base::TimeTicks) {
+        ++delivered;
+      }));
+  SetFrameDroppedCallback(
+      base::BindLambdaForTesting([](media::VideoCaptureFrameDropReason reason) {
+        ADD_FAILURE() << "Dropped, reason " << static_cast<int>(reason);
+      }));
+  DeliverMoltCameraFrame(CreateTestFrame(
+      gfx::Size(640, 480), gfx::Rect(640, 480), gfx::Size(640, 480),
+      media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
+      base::TimeDelta(), test_sii_.get()));
+  MoltCameraTickAndWait();
+  base::WaitableEvent done;
+  platform_support_->GetIOTaskRunner()->PostTask(
+      FROM_HERE, base::BindLambdaForTesting([&] {
+        adapter_->OnFrameDroppedOnVideoTaskRunner(
             media::VideoCaptureFrameDropReason::
-                kResolutionAdapterFrameIsNotMappable);
+                kBufferPoolMaxBufferCountExceeded);
+        done.Signal();
+      }));
+  done.Wait();
+  MoltCameraTickAndWait();
+  EXPECT_EQ(delivered, 2);
+}
+
+// MoltBrowser: on its own the grid ticks on time: one frame from the camera,
+// and the track gets it again and again, at the grid's timestamps (a tick
+// that runs late skips the ones it missed).
+TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraGridTicksOnItsOwn) {
+  CreateAdapter(media::VideoCaptureFormat(gfx::Size(640, 480), 30.0,
+                                          media::PIXEL_FORMAT_I420));
+  VideoTrackAdapterSettings settings(gfx::Size(640, 480), 0.0,
+                                     kNoMaxAspectRatio, 30.0);
+  settings.set_molt_uniform_camera(/*reports_no_resize=*/true);
+  ConfigureTrack(settings);
+  base::Lock lock;
+  std::vector<base::TimeDelta> timestamps;
+  base::WaitableEvent three;
+  SetFrameValidationCallback(base::BindLambdaForTesting(
+      [&](scoped_refptr<media::VideoFrame> frame, base::TimeTicks) {
+        base::AutoLock locked(lock);
+        timestamps.push_back(frame->timestamp());
+        if (timestamps.size() == 3) {
+          three.Signal();
+        }
+      }));
+  DeliverMoltCameraFrame(CreateTestFrame(
+      gfx::Size(640, 480), gfx::Rect(640, 480), gfx::Size(640, 480),
+      media::VideoFrame::STORAGE_OWNED_MEMORY, media::PIXEL_FORMAT_I420,
+      base::Milliseconds(12345), test_sii_.get()));
+  three.Wait();
+  std::vector<base::TimeDelta> first_three;
+  {
+    base::AutoLock locked(lock);
+    first_three.assign(timestamps.begin(), timestamps.begin() + 3);
+  }
+  EXPECT_EQ(first_three[0], base::TimeDelta());
+  for (size_t i = 1; i < first_three.size(); ++i) {
+    const int64_t us = first_three[i].InMicroseconds();
+    const int64_t tick =
+        molt_fingerprinting::moltnet::UniformCameraTickAtOrAfter(us);
+    EXPECT_EQ(molt_fingerprinting::moltnet::UniformCameraTickMicroseconds(tick),
+              us);
+    EXPECT_GT(first_three[i], first_three[i - 1]);
+  }
+  // The ticks run on: remove the track before the test's locals go.
+  base::WaitableEvent removed;
+  testing_render_thread_.task_runner()->PostTask(
+      FROM_HERE, base::BindLambdaForTesting([&] {
+        adapter_->RemoveTrack(null_track_.get());
+        platform_support_->GetIOTaskRunner()->PostTask(
+            FROM_HERE,
+            base::BindLambdaForTesting([&] { removed.Signal(); }));
+      }));
+  removed.Wait();
+  track_added_ = false;
 }
 
 }  // namespace blink

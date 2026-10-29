@@ -322,6 +322,15 @@ class VideoTrackAdapter::VideoFrameResolutionAdapter
   void NewCaptureVersionOnVideoTaskRunner(
       media::CaptureVersion capture_version);
 
+  // MoltBrowser: whether this adapter's tracks are a MoltNet camera's, which
+  // get their frames on the grid (moltnet_camera.h): DeliverFrame() holds
+  // the newest, a tick hands it on.
+  bool HoldsUniformCameraFrames() const {
+    return settings_.molt_uniform_camera();
+  }
+  void DeliverUniformCameraTick(
+      const molt_fingerprinting::UniformCameraClock::Tick& tick);
+
   // Returns true if all arguments match with the output of this adapter.
   bool SettingsMatch(const VideoTrackAdapterSettings& settings) const;
 
@@ -394,6 +403,10 @@ class VideoTrackAdapter::VideoFrameResolutionAdapter
 
   base::flat_map<const MediaStreamVideoTrack*, VideoTrackParameters>
       track_parameters_;
+
+  // MoltBrowser: a MoltNet camera's newest frame, cropped and scaled for this
+  // adapter's tracks, until the grid's next tick (HoldsUniformCameraFrames()).
+  scoped_refptr<media::VideoFrame> molt_held_frame_;
 };
 
 VideoTrackAdapter::VideoFrameResolutionAdapter::VideoFrameResolutionAdapter(
@@ -617,6 +630,18 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverFrame(
     return;
   }
 
+  // MoltBrowser: a MoltNet camera's tracks get the newest frame, cropped and
+  // scaled, at the grid's next tick (DeliverUniformCameraTick()). A frame
+  // that can't be converted leaves the one before.
+  if (HoldsUniformCameraFrames()) {
+    auto adapted =
+        AdaptFrameResolution(std::move(video_frame), is_device_rotated);
+    if (adapted.has_value() && adapted.value()) {
+      molt_held_frame_ = std::move(adapted.value());
+    }
+    return;
+  }
+
   ComputeFrameRate(video_frame->timestamp(),
                    &source_format_settings_.frame_rate,
                    &source_format_settings_.prev_frame_timestamp);
@@ -689,6 +714,38 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverFrame(
   }
 }
 
+void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverUniformCameraTick(
+    const molt_fingerprinting::UniformCameraClock::Tick& tick) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(video_sequence_checker_);
+  if (!HoldsUniformCameraFrames() || !molt_held_frame_ ||
+      track_parameters_.empty()) {
+    return;
+  }
+  scoped_refptr<media::VideoFrame> frame =
+      molt_fingerprinting::UniformCameraTickFrame(molt_held_frame_, tick);
+  if (!frame) {
+    return;
+  }
+  ComputeFrameRate(frame->timestamp(), &source_format_settings_.frame_rate,
+                   &source_format_settings_.prev_frame_timestamp);
+  MaybeUpdateTracksFormat(*frame);
+  // A track that asked for a lower rate keeps the ticks it would keep of a
+  // camera at the grid's rate.
+  auto frame_drop_reason = media::VideoCaptureFrameDropReason::kNone;
+  if (MaybeDropFrame(*frame,
+                     molt_fingerprinting::moltnet::kUniformCameraFrameRate,
+                     &frame_drop_reason)) {
+    for (const auto& [track, track_params] : track_parameters_) {
+      track_params.callbacks.notify_frame_dropped_callback.Run(
+          frame_drop_reason);
+    }
+    return;
+  }
+  for (auto& [track, track_params] : track_parameters_) {
+    DeliverFrameToTrack(track_params, frame, tick.time);
+  }
+}
+
 void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverEncodedVideoFrame(
     scoped_refptr<EncodedVideoFrame> frame,
     base::TimeTicks estimated_capture_time) {
@@ -731,6 +788,11 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverFrameToTrack(
 void VideoTrackAdapter::VideoFrameResolutionAdapter::OnFrameDropped(
     media::VideoCaptureFrameDropReason reason) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(video_sequence_checker_);
+  // MoltBrowser: a MoltNet camera's tracks don't see the camera's own drops:
+  // the grid hands them the frame before (moltnet_camera.h).
+  if (HoldsUniformCameraFrames()) {
+    return;
+  }
   // Notify callbacks, such as
   // MediaStreamVideoTrack::FrameDeliverer::NotifyFrameDroppedOnVideoTaskRunner.
   for (const auto& [track, track_params] : track_parameters_) {
@@ -846,7 +908,10 @@ VideoTrackAdapter::VideoTrackAdapter(
       muted_state_(false),
       frame_counter_(0),
       old_frame_counter_snapshot_(0),
-      source_frame_rate_(0.0f) {
+      source_frame_rate_(0.0f),
+      // MoltBrowser: see molt_camera_clock_.
+      molt_camera_clock_(
+          std::make_unique<molt_fingerprinting::UniformCameraClock>()) {
   DCHECK(video_task_runner);
 }
 
@@ -1155,6 +1220,16 @@ void VideoTrackAdapter::DeliverFrameOnVideoTaskRunner(
     adapter->DeliverFrame(video_frame, estimated_capture_time,
                           is_device_rotated);
   }
+  // MoltBrowser: a MoltNet camera's tracks get their frames on a fixed grid
+  // (moltnet_camera.h): the adapters above hold the frame for its next tick.
+  if (std::ranges::any_of(adapters_, [](const auto& adapter) {
+        return adapter->HoldsUniformCameraFrames();
+      })) {
+    if (std::optional<base::TimeTicks> due =
+            molt_camera_clock_->OnSourceFrame(base::TimeTicks::Now())) {
+      ScheduleMoltCameraTick(*due);
+    }
+  }
 }
 
 void VideoTrackAdapter::DeliverBlackFrameOnVideoTaskRunner(
@@ -1244,6 +1319,40 @@ void VideoTrackAdapter::CheckFramesReceivedOnVideoTaskRunner() {
   old_frame_counter_snapshot_ = frame_counter_;
   monitoring_frame_rate_timer_->StartOneShot(
       base::Seconds(kNormalFrameTimeoutInFrameIntervals / source_frame_rate_));
+}
+
+void VideoTrackAdapter::MoltCameraTickOnVideoTaskRunner() {
+  DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
+  const std::optional<molt_fingerprinting::UniformCameraClock::Tick> tick =
+      molt_camera_clock_->OnTick(base::TimeTicks::Now());
+  if (!tick) {
+    return;
+  }
+  for (const auto& adapter : adapters_) {
+    adapter->DeliverUniformCameraTick(*tick);
+  }
+  ScheduleMoltCameraTick(molt_camera_clock_->NextTickDue());
+}
+
+void VideoTrackAdapter::ScheduleMoltCameraTick(base::TimeTicks due) {
+  DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
+  if (molt_camera_clock_->manual_ticks_for_testing()) {
+    return;
+  }
+  PostDelayedCrossThreadTask(
+      *video_task_runner_, FROM_HERE,
+      CrossThreadBindOnce(&VideoTrackAdapter::MoltCameraTickOnVideoTaskRunner,
+                          WrapRefCounted(this)),
+      std::max(base::TimeDelta(), due - base::TimeTicks::Now()));
+}
+
+void VideoTrackAdapter::SetMoltCameraManualTicksForTesting() {
+  DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
+  molt_camera_clock_->set_manual_ticks_for_testing();
+}
+
+void VideoTrackAdapter::MoltCameraTickForTesting() {
+  MoltCameraTickOnVideoTaskRunner();
 }
 
 }  // namespace blink
