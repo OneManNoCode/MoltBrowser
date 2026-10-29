@@ -1,0 +1,552 @@
+{
+ "comment": "Pinned inputs of tools/voice_bench (fetch.py). Sizes and SHA-256 of the files as downloaded on 2026-10-29; upstream_checksum says whether sherpa-onnx's own checksum.txt for that release tag agrees.",
+ "artifacts": [
+  {
+   "id": "sherpa-onnx-linux-x64",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared.tar.bz2",
+   "size": 28003506,
+   "sha256": "2e823376987c3b6960d50726b6560155e2ad92da0b8b3886325773225ec6bdec",
+   "kind": "runtime",
+   "sets": [
+    "runtime-linux-x64"
+   ],
+   "extract": true,
+   "platform": "linux-x64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sherpa-onnx-osx-arm64",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-osx-arm64-shared.tar.bz2",
+   "size": 20348241,
+   "sha256": "5e874d3c9b3d6b8c71f7c09e3a9fb9ae846c3009129d302b398d1f7aedb69f84",
+   "kind": "runtime",
+   "sets": [
+    "runtime-osx-arm64"
+   ],
+   "extract": true,
+   "platform": "osx-arm64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sherpa-onnx-win-x64",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-x64-shared-MD-Release.tar.bz2",
+   "size": 21921136,
+   "sha256": "ce987d5bfca42c74b54f7b3bbaaa8c1febe3c5cd0fea8f94be80ea30e72f1f61",
+   "kind": "runtime",
+   "sets": [
+    "runtime-win-x64"
+   ],
+   "extract": true,
+   "platform": "win-x64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sizes-linux-x64-shared-lib",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared-lib.tar.bz2",
+   "size": 9710131,
+   "sha256": "532c45bbd41036d83cd70606797529aa8086c2053395a58967736c727625b120",
+   "kind": "runtime-size",
+   "sets": [
+    "sizes"
+   ],
+   "extract": true,
+   "platform": "linux-x64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sizes-linux-x64-no-tts",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared-no-tts.tar.bz2",
+   "size": 25289904,
+   "sha256": "b3b095f619059d54914027ff38f8a0a132ea3bbc5df32a212a9743a8bd1467b2",
+   "kind": "runtime-size",
+   "sets": [
+    "sizes"
+   ],
+   "extract": true,
+   "members": [
+    "lib/*",
+    "include/*"
+   ],
+   "platform": "linux-x64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sizes-linux-x64-static-lib",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-static-lib.tar.bz2",
+   "size": 22694241,
+   "sha256": "55cfadf65ba50d0afc1a802b7a337942819e51c94a5b5a384def1978f7c70871",
+   "kind": "runtime-size",
+   "sets": [
+    "sizes"
+   ],
+   "extract": true,
+   "platform": "linux-x64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sizes-osx-arm64-shared-lib",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-osx-arm64-shared-lib.tar.bz2",
+   "size": 8730600,
+   "sha256": "e2d57ad9c83803d6c48f259caa66e44879bd4c4724c61f0d51a277b411bffb1d",
+   "kind": "runtime-size",
+   "sets": [
+    "sizes"
+   ],
+   "extract": true,
+   "platform": "osx-arm64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sizes-win-x64-shared-lib",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-x64-shared-MD-Release-lib.tar.bz2",
+   "size": 7289630,
+   "sha256": "c3c78220db8bebf97d5f932496165bb3897b163410427d7c021013439c80f183",
+   "kind": "runtime-size",
+   "sets": [
+    "runtime-win-x64",
+    "sizes"
+   ],
+   "extract": true,
+   "platform": "win-x64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "sizes-linux-aarch64-shared-lib",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-aarch64-shared-cpu-lib.tar.bz2",
+   "size": 12500491,
+   "sha256": "15bd737eae467da32ec97e3740a329a535fd21e33caca4f327b0081451d11533",
+   "kind": "runtime-size",
+   "sets": [
+    "sizes"
+   ],
+   "extract": true,
+   "platform": "linux-aarch64",
+   "license": "Apache-2.0 + MIT",
+   "license_note": "Apache-2.0 (sherpa-onnx) with MIT (ONNX Runtime); also bundles kaldi-native-fbank, kaldi-decoder, OpenFst, simple-sentencepiece (Apache-2.0), utf8proc, nlohmann/json (MIT), Eigen (MPL-2.0), kissfft (BSD-3-Clause); the CLI tools add PortAudio (MIT)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "vad-silero",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+   "size": 643854,
+   "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+   "kind": "vad",
+   "sets": [
+    "asr"
+   ],
+   "extract": false,
+   "license": "MIT",
+   "license_note": "Silero VAD v4, per the file's own metadata (snakers4/silero-vad)",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "kws-gigaspeech-3.3m",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2",
+   "size": 17626723,
+   "sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+   "kind": "kws",
+   "sets": [
+    "kws"
+   ],
+   "extract": true,
+   "license": "Apache-2.0",
+   "license_note": "README.md in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "kws-zh-en-3m",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
+   "size": 32885699,
+   "sha256": "68447f4fbc67e70eee3a93961f36e81e98f47aef73ce7e7ca00885c6cd3616a6",
+   "kind": "kws",
+   "sets": [
+    "kws"
+   ],
+   "extract": true,
+   "license": "unstated",
+   "license_note": "No licence file in the archive; a k2-fsa (icefall) model like the Apache-2.0 ones. Confirm before shipping.",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "stream-zipformer-en-20m",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2",
+   "size": 127887156,
+   "sha256": "9c559283e8498d3fe95913c79ca1cb454bb26281ac2b102b41306c7d752765d9",
+   "kind": "asr-streaming",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "Apache-2.0",
+   "license_note": "README.md in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "stream-zipformer-en-2023-06-26",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2",
+   "size": 310414022,
+   "sha256": "639e25b578e9e997131402199419c13a941f8e4e198e2da1ce57dbf5cf401282",
+   "kind": "asr-streaming",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "Apache-2.0",
+   "license_note": "README.md in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "stream-zipformer-en-kroko",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2",
+   "size": 57267600,
+   "sha256": "c8676e5ff9ac2a85296e53ee0fd4d5fb1db6770e7a7647166eeafe349ade6834",
+   "kind": "asr-streaming",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "CC-BY-SA-4.0",
+   "license_note": "Kroko ASR community model; licence per kroko-ai/kroko-onnx's README (the archive only links it)",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "stream-fastconformer-en-80ms-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms-int8.tar.bz2",
+   "size": 102813625,
+   "sha256": "7bd33a914e93370a1ba9c2066d9e841bdcad8613fa2a00537c1ae15d851a14d8",
+   "kind": "asr-streaming",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "CC-BY-4.0",
+   "license_note": "NVIDIA's model card for stt_en_fastconformer_hybrid_large_streaming_80ms; no licence file in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "stream-nemotron-en-0.6b-560ms-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25.tar.bz2",
+   "size": 463945051,
+   "sha256": "78e2b79fcf7271553a74402a76b771b09ea40117a39566a79f52235b23db6358",
+   "kind": "asr-streaming",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "NVIDIA Open Model License",
+   "license_note": "per the model card of nvidia/nemotron-speech-streaming-en-0.6b (linked from the archive; not reachable here). Allows commercial use; confirm the current terms.",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "moonshine-tiny-en-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2",
+   "size": 107600538,
+   "sha256": "d5fe6ec4334fef36255b2a4010412cad4c007e33103fec62fb5d17cad88086f2",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "MIT",
+   "license_note": "LICENSE in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "moonshine-base-en-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-int8.tar.bz2",
+   "size": 250807309,
+   "sha256": "21870cecaa2e44e4e2bf63e02d1072bed183ccd10284871353bd9d24dad14e5e",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "MIT",
+   "license_note": "LICENSE in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "moonshine2-tiny-en",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27.tar.bz2",
+   "size": 29858559,
+   "sha256": "9ec31b342d8fa3240c3b81b8f82e1cf7e3ac467c93ca5a999b741d5887164f8d",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "MIT",
+   "license_note": "LICENSE in the archive: English models MIT (other languages are under the non-commercial Moonshine Community License)",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "moonshine2-base-en",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2",
+   "size": 111266225,
+   "sha256": "43232c1d13013d37317163baec3135bd771a186a4356f28c889bab453bb0e891",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "MIT",
+   "license_note": "LICENSE in the archive: English models MIT (other languages are under the non-commercial Moonshine Community License)",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "parakeet-tdt-0.6b-v2-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2",
+   "size": 482468385,
+   "sha256": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "CC-BY-4.0",
+   "license_note": "model card of nvidia/parakeet-tdt-0.6b-v2; no licence file in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "whisper-tiny-en",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2",
+   "size": 118071777,
+   "sha256": "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "license": "MIT",
+   "license_note": "OpenAI Whisper weights; no licence file in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "whisper-base-en",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.en.tar.bz2",
+   "size": 208576005,
+   "sha256": "475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "members": [
+    "*int8*",
+    "*tokens*",
+    "test_wavs/*",
+    "README*",
+    "LICENSE*"
+   ],
+   "license": "MIT",
+   "license_note": "OpenAI Whisper weights; no licence file in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "whisper-small-en",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.en.tar.bz2",
+   "size": 635693775,
+   "sha256": "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a",
+   "kind": "asr-offline",
+   "sets": [
+    "asr"
+   ],
+   "extract": true,
+   "members": [
+    "*int8*",
+    "*tokens*",
+    "test_wavs/*",
+    "README*",
+    "LICENSE*"
+   ],
+   "license": "MIT",
+   "license_note": "OpenAI Whisper weights; no licence file in the archive",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "tts-lexicon-en-us",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt",
+   "size": 6305773,
+   "sha256": "8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a",
+   "kind": "tts-lexicon",
+   "sets": [
+    "tts"
+   ],
+   "extract": false,
+   "license": "unstated (GPL-3.0-or-later inputs)",
+   "license_note": "Its header says it is built from CMUdict (BSD-2-Clause) and espeak-ng's en_list (GPL-3.0-or-later)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "tts-kokoro-v1_0-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+   "size": 132353410,
+   "sha256": "72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "Apache-2.0",
+   "license_note": "LICENSE in the archive (Kokoro-82M)",
+   "upstream_checksum": "differs"
+  },
+  {
+   "id": "tts-kokoro-v1_0",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
+   "size": 349886476,
+   "sha256": "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "Apache-2.0",
+   "license_note": "LICENSE in the archive (Kokoro-82M)",
+   "upstream_checksum": "differs"
+  },
+  {
+   "id": "tts-piper-en_US-libritts_r-medium",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2",
+   "size": 82038311,
+   "sha256": "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "not cleared",
+   "license_note": "MODEL_CARD: LibriTTS-R data (CC-BY-4.0) but fine-tuned from the lessac voice, whose dataset licence restricts use. Test audio only.",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "tts-piper-en_US-libritts_r-medium-int8",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium-int8.tar.bz2",
+   "size": 23398348,
+   "sha256": "7e4552e239988f4896872822b56e99e0e9e00958164e3f6bdf5ee14391fbe829",
+   "kind": "tts",
+   "sets": [
+    "extra"
+   ],
+   "extract": true,
+   "license": "not cleared",
+   "license_note": "MODEL_CARD: LibriTTS-R data (CC-BY-4.0) but fine-tuned from the lessac voice, whose dataset licence restricts use. Test audio only.",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "tts-piper-en_GB-vctk-medium",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-vctk-medium.tar.bz2",
+   "size": 80488085,
+   "sha256": "abafd35bdab0a72a3c6b947228ae3cccdf3624db83313c77d1abb5cbc75e1f64",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "not cleared",
+   "license_note": "MODEL_CARD: VCTK data (CC-BY-4.0) but fine-tuned from the lessac voice. Test audio only.",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "tts-piper-en_US-arctic-medium",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-arctic-medium.tar.bz2",
+   "size": 80255511,
+   "sha256": "caf83305b2fecc84491e9581f31ef2c81d4e1dacb8b76a4e481ad3fb6d4bf25c",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "not cleared",
+   "license_note": "MODEL_CARD: CMU ARCTIC data but fine-tuned from the lessac voice. Test audio only.",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "tts-piper-en_US-ljspeech-medium",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium.tar.bz2",
+   "size": 67169893,
+   "sha256": "3dfb4b759d8be032a4903a9538d128b0fda2a06ab1de6cbc2d93a97e2dd83dba",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "public-domain data",
+   "license_note": "MODEL_CARD: LJ Speech (public domain), trained from scratch",
+   "upstream_checksum": "match"
+  },
+  {
+   "id": "tts-matcha-en_US-ljspeech",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-en_US-ljspeech.tar.bz2",
+   "size": 76757969,
+   "sha256": "c2c7e2abb085603aa348065a86be886407c601f666bd47a31333755779eca653",
+   "kind": "tts",
+   "sets": [
+    "tts"
+   ],
+   "extract": true,
+   "license": "Apache-2.0 + public-domain data",
+   "license_note": "README.md: icefall recipe, LJ Speech data",
+   "upstream_checksum": "differs"
+  },
+  {
+   "id": "tts-vocoder-vocos-22khz",
+   "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx",
+   "size": 53884024,
+   "sha256": "0574a135aa1db2de6e181050db2ec528496cacd4a4701fc5d7faf9f9804c0081",
+   "kind": "tts-vocoder",
+   "sets": [
+    "tts"
+   ],
+   "extract": false,
+   "license": "MIT (code) / weights per BSC-LT",
+   "license_note": "Vocos (gemelo-ai, MIT); weights from BSC-LT/vocos-mel-22khz (model card not reachable here; confirm)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "real-speech-commands-test",
+   "url": "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz",
+   "size": 112563277,
+   "sha256": "cc2a00c1147c2254e9be3fa0f779d8c17421dc349b86366567a8edfa9acd51df",
+   "kind": "dataset",
+   "sets": [
+    "real"
+   ],
+   "extract": true,
+   "strip": 0,
+   "license": "CC-BY-4.0",
+   "license_note": "LICENSE in the archive (Speech Commands v0.02)",
+   "upstream_checksum": "none"
+  },
+  {
+   "id": "real-jfk",
+   "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/51c6961c7b64b406833f4b6a4a20e67142f69225/samples/jfk.wav",
+   "size": 352078,
+   "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+   "kind": "dataset",
+   "sets": [
+    "real"
+   ],
+   "extract": false,
+   "license": "public domain",
+   "license_note": "whisper.cpp's sample: a 1961 US government recording",
+   "upstream_checksum": "none"
+  }
+ ]
+}
