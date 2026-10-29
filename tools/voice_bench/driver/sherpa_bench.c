@@ -6,13 +6,18 @@
 //
 //   sherpa_bench info
 //   sherpa_bench offline --list L --threads N <model flags>
+//                        [--vad silero_vad.onnx]  (decode only what the VAD
+//                         finds, plus 0.25 s each side, as deployed)
 //   sherpa_bench stream  --list L --threads N <model flags>
 //                        [--vad silero_vad.onnx] [--vad-silence 0.5]
 //                        [--chunk-ms 100] [--decoding greedy_search|
 //                         modified_beam_search] [--hotwords-score 1.5]
 //   sherpa_bench kws     --list L --threads N <model flags> --keywords F
 //                        [--kws-threshold 0.25] [--kws-score 1.0]
-//   sherpa_bench tts     --list L --threads N <tts flags> [--out-dir D]
+//   sherpa_bench tts     --list L --threads N <tts flags>
+//   sherpa_bench listen  --list L --threads N --listen-engine kws|stream
+//                        <model flags> [--vad F] [--keywords F]
+//                        (real time, with sleeps: CPU used while listening)
 //
 // List files are UTF-8, one item per line, fields separated by TABs:
 //   offline, kws:  id  wav
@@ -34,7 +39,10 @@
 // --kind (offline): transducer | nemo_transducer | moonshine | moonshine2 |
 //   whisper
 // TTS flags: --kind kokoro|vits|matcha --model --voices --tokens --lexicon
-//   --vocoder --lang
+//   --vocoder
+// --provider-config FILE passes ONNX Runtime session settings through
+//   sherpa-onnx's "cpu:FILE" provider string (e.g.
+//   SessionConfig.session.intra_op.allow_spinning=0).
 //
 // Memory: "rss_after_load_kb" is the resident set right after the model is
 // created, "peak_rss_kb" the process peak at exit.
@@ -114,6 +122,38 @@ static long PeakRssKb(void) {
 #endif
 }
 
+static double CpuSeconds(void) {
+#if defined(_WIN32)
+  FILETIME c, e, k, u;
+  if (!GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u)) return -1;
+  ULARGE_INTEGER kk, uu;
+  kk.LowPart = k.dwLowDateTime;
+  kk.HighPart = k.dwHighDateTime;
+  uu.LowPart = u.dwLowDateTime;
+  uu.HighPart = u.dwHighDateTime;
+  return (double)(kk.QuadPart + uu.QuadPart) / 1e7;
+#else
+  struct rusage ru;
+  if (getrusage(RUSAGE_SELF, &ru) != 0) return -1;
+  return (double)ru.ru_utime.tv_sec + ru.ru_utime.tv_usec / 1e6 +
+         (double)ru.ru_stime.tv_sec + ru.ru_stime.tv_usec / 1e6;
+#endif
+}
+
+static void SleepUntilMs(double t) {
+  double now = NowMs();
+  if (t <= now) return;
+#if defined(_WIN32)
+  Sleep((DWORD)(t - now));
+#else
+  struct timespec ts;
+  double d = (t - now) / 1000.0;
+  ts.tv_sec = (time_t)d;
+  ts.tv_nsec = (long)((d - (double)ts.tv_sec) * 1e9);
+  nanosleep(&ts, NULL);
+#endif
+}
+
 static void PrintJsonString(const char *s) {
   putchar('"');
   for (const unsigned char *p = (const unsigned char *)(s ? s : ""); *p; ++p) {
@@ -157,9 +197,10 @@ typedef struct Options {
   const char *keywords;
   float kws_threshold, kws_score;
   int kws_trailing_blanks;
-  const char *model, *voices, *lexicon, *vocoder, *lang;
-  const char *out_dir;
+  const char *model, *voices, *lexicon, *vocoder;
   int tokens_from_buffer;
+  const char *provider;
+  const char *listen_engine;
 } Options;
 
 static const char *Need(int argc, char **argv, int *i) {
@@ -178,7 +219,9 @@ static void ParseOptions(int argc, char **argv, Options *o) {
   o->kws_threshold = 0.25f;
   o->kws_score = 1.0f;
   o->kws_trailing_blanks = 1;
-  if (argc < 2) Die("usage: sherpa_bench info|offline|stream|kws|tts ...", 0);
+  o->provider = "cpu";
+  if (argc < 2)
+    Die("usage: sherpa_bench info|offline|stream|kws|tts|listen ...", 0);
   o->mode = argv[1];
   for (int i = 2; i < argc; ++i) {
     const char *a = argv[i];
@@ -203,8 +246,15 @@ static void ParseOptions(int argc, char **argv, Options *o) {
     FLT("--kws-threshold", kws_threshold) FLT("--kws-score", kws_score)
     INT("--kws-trailing-blanks", kws_trailing_blanks)
     STR("--model", model) STR("--voices", voices) STR("--lexicon", lexicon)
-    STR("--vocoder", vocoder) STR("--lang", lang) STR("--out-dir", out_dir)
+    STR("--vocoder", vocoder)
     INT("--tokens-from-buffer", tokens_from_buffer)
+    STR("--listen-engine", listen_engine)
+    if (!strcmp(a, "--provider-config")) {
+      static char provider[4096];
+      snprintf(provider, sizeof(provider), "cpu:%s", Need(argc, argv, &i));
+      o->provider = provider;
+      continue;
+    }
 #undef STR
 #undef FLT
 #undef INT
@@ -294,6 +344,26 @@ static void PrintEnd(int items, double total_ms) {
   fflush(stdout);
 }
 
+// Silero VAD as the speech service would configure it: 0.5 threshold,
+// --vad-silence of trailing silence closes a segment.
+static const SherpaOnnxVoiceActivityDetector *CreateVad(const Options *o) {
+  SherpaOnnxVadModelConfig vc;
+  memset(&vc, 0, sizeof(vc));
+  vc.silero_vad.model = o->vad;
+  vc.silero_vad.threshold = o->vad_threshold;
+  vc.silero_vad.min_silence_duration = o->vad_silence;
+  vc.silero_vad.min_speech_duration = 0.1f;
+  vc.silero_vad.max_speech_duration = 20.0f;
+  vc.silero_vad.window_size = 512;
+  vc.sample_rate = 16000;
+  vc.num_threads = 1;
+  vc.provider = "cpu";
+  const SherpaOnnxVoiceActivityDetector *vad =
+      SherpaOnnxCreateVoiceActivityDetector(&vc, 60.0f);
+  if (!vad) Die("cannot create the VAD", o->vad);
+  return vad;
+}
+
 // ---------------------------------------------------------------- offline
 
 static int RunOffline(const Options *o) {
@@ -303,7 +373,7 @@ static int RunOffline(const Options *o) {
   c.feat_config.feature_dim = 80;
   c.model_config.tokens = o->tokens;
   c.model_config.num_threads = o->threads;
-  c.model_config.provider = "cpu";
+  c.model_config.provider = o->provider;
   c.decoding_method = o->decoding;
   c.max_active_paths = 4;
   const char *kind = o->kind ? o->kind : "transducer";
@@ -339,6 +409,12 @@ static int RunOffline(const Options *o) {
   const SherpaOnnxOfflineRecognizer *rec = SherpaOnnxCreateOfflineRecognizer(&c);
   double load_ms = NowMs() - t0;
   if (!rec) Die("cannot create the offline recognizer", kind);
+  const SherpaOnnxVoiceActivityDetector *vad = NULL;
+  if (o->vad) {
+    double v0 = NowMs();
+    vad = CreateVad(o);
+    load_ms += NowMs() - v0;
+  }
   PrintLoad(kind, load_ms);
 
   double start = NowMs();
@@ -346,26 +422,67 @@ static int RunOffline(const Options *o) {
     if (l.items[i].n < 2) Die("bad list line", l.items[i].fields[0]);
     const SherpaOnnxWave *w = SherpaOnnxReadWave(l.items[i].fields[1]);
     if (!w) Die("cannot read wav", l.items[i].fields[1]);
+    // As deployed, a per-utterance recognizer gets what the VAD found:
+    // from the first speech segment's start to the last one's end, with
+    // 0.25 s of the audio around it (the service keeps a short pre-roll).
+    int32_t from = 0, to = w->num_samples;
+    double vad_ms = 0;
+    int segments = -1;
+    if (vad) {
+      double v = NowMs();
+      SherpaOnnxVoiceActivityDetectorReset(vad);
+      for (int32_t p = 0; p + 512 <= w->num_samples; p += 512)
+        SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, w->samples + p, 512);
+      SherpaOnnxVoiceActivityDetectorFlush(vad);
+      int64_t lo = -1, hi = -1;
+      segments = 0;
+      while (!SherpaOnnxVoiceActivityDetectorEmpty(vad)) {
+        const SherpaOnnxSpeechSegment *seg = SherpaOnnxVoiceActivityDetectorFront(vad);
+        if (seg) {
+          if (lo < 0 || seg->start < lo) lo = seg->start;
+          if (seg->start + seg->n > hi) hi = seg->start + seg->n;
+          segments++;
+          SherpaOnnxDestroySpeechSegment(seg);
+        }
+        SherpaOnnxVoiceActivityDetectorPop(vad);
+      }
+      vad_ms = NowMs() - v;
+      if (segments == 0) {
+        from = to = 0;
+      } else {
+        from = (int32_t)(lo - 4000 > 0 ? lo - 4000 : 0);
+        to = (int32_t)(hi + 4000 < w->num_samples ? hi + 4000 : w->num_samples);
+      }
+    }
+    const char *text = "";
+    const SherpaOnnxOfflineRecognizerResult *r = NULL;
+    const SherpaOnnxOfflineStream *s = NULL;
     double a = NowMs();
-    const SherpaOnnxOfflineStream *s = SherpaOnnxCreateOfflineStream(rec);
-    SherpaOnnxAcceptWaveformOffline(s, w->sample_rate, w->samples,
-                                    w->num_samples);
-    SherpaOnnxDecodeOfflineStream(rec, s);
-    const SherpaOnnxOfflineRecognizerResult *r =
-        SherpaOnnxGetOfflineStreamResult(s);
+    if (to > from) {
+      s = SherpaOnnxCreateOfflineStream(rec);
+      SherpaOnnxAcceptWaveformOffline(s, w->sample_rate, w->samples + from,
+                                      to - from);
+      SherpaOnnxDecodeOfflineStream(rec, s);
+      r = SherpaOnnxGetOfflineStreamResult(s);
+      if (r && r->text) text = r->text;
+    }
     double decode_ms = NowMs() - a;
     printf("{\"event\":\"utt\",\"id\":");
     PrintJsonString(l.items[i].fields[0]);
-    printf(",\"audio_s\":%.3f,\"decode_ms\":%.2f,\"text\":",
-           (double)w->num_samples / w->sample_rate, decode_ms);
-    PrintJsonString(r ? r->text : "");
+    printf(",\"audio_s\":%.3f,\"decoded_s\":%.3f,\"decode_ms\":%.2f",
+           (double)w->num_samples / w->sample_rate,
+           (double)(to - from) / w->sample_rate, decode_ms);
+    if (vad) printf(",\"vad_ms\":%.2f,\"vad_segments\":%d", vad_ms, segments);
+    printf(",\"text\":");
+    PrintJsonString(text);
     printf("}\n");
     fflush(stdout);
-    SherpaOnnxDestroyOfflineRecognizerResult(r);
-    SherpaOnnxDestroyOfflineStream(s);
+    if (r) SherpaOnnxDestroyOfflineRecognizerResult(r);
+    if (s) SherpaOnnxDestroyOfflineStream(s);
     SherpaOnnxFreeWave(w);
   }
   PrintEnd(l.n, NowMs() - start);
+  if (vad) SherpaOnnxDestroyVoiceActivityDetector(vad);
   SherpaOnnxDestroyOfflineRecognizer(rec);
   return 0;
 }
@@ -378,7 +495,7 @@ static void FillOnlineModel(const Options *o, SherpaOnnxOnlineModelConfig *m,
   m->transducer.decoder = o->decoder;
   m->transducer.joiner = o->joiner;
   m->num_threads = o->threads;
-  m->provider = "cpu";
+  m->provider = o->provider;
   if (o->model_type) m->model_type = o->model_type;
   if (o->modeling_unit) m->modeling_unit = o->modeling_unit;
   if (o->bpe_vocab) m->bpe_vocab = o->bpe_vocab;
@@ -417,22 +534,10 @@ static int RunStream(const Options *o) {
   if (!rec) Die("cannot create the streaming recognizer", o->encoder);
 
   const SherpaOnnxVoiceActivityDetector *vad = NULL;
-  SherpaOnnxVadModelConfig vc;
-  memset(&vc, 0, sizeof(vc));
   if (o->vad) {
-    vc.silero_vad.model = o->vad;
-    vc.silero_vad.threshold = o->vad_threshold;
-    vc.silero_vad.min_silence_duration = o->vad_silence;
-    vc.silero_vad.min_speech_duration = 0.1f;
-    vc.silero_vad.max_speech_duration = 20.0f;
-    vc.silero_vad.window_size = 512;
-    vc.sample_rate = 16000;
-    vc.num_threads = 1;
-    vc.provider = "cpu";
     double v0 = NowMs();
-    vad = SherpaOnnxCreateVoiceActivityDetector(&vc, 30.0f);
+    vad = CreateVad(o);
     load_ms += NowMs() - v0;
-    if (!vad) Die("cannot create the VAD", o->vad);
   }
   PrintLoad("stream", load_ms);
 
@@ -673,7 +778,7 @@ static int RunTts(const Options *o) {
   SherpaOnnxOfflineTtsConfig c;
   memset(&c, 0, sizeof(c));
   c.model.num_threads = o->threads;
-  c.model.provider = "cpu";
+  c.model.provider = o->provider;
   c.max_num_sentences = 1;
   const char *kind = o->kind ? o->kind : "";
   if (!strcmp(kind, "kokoro")) {
@@ -681,7 +786,6 @@ static int RunTts(const Options *o) {
     c.model.kokoro.voices = o->voices;
     c.model.kokoro.tokens = o->tokens;
     c.model.kokoro.lexicon = o->lexicon;
-    c.model.kokoro.lang = o->lang;
     c.model.kokoro.length_scale = 1.0f;
   } else if (!strcmp(kind, "vits")) {
     c.model.vits.model = o->model;
@@ -741,6 +845,120 @@ static int RunTts(const Options *o) {
   return 0;
 }
 
+// ---------------------------------------------------------------- listen
+
+// Always-on listening in real time: the audio is fed at the speed a
+// microphone delivers it (the process sleeps in between), and the CPU time
+// the process uses is compared with the wall time. "kws": the wake-phrase
+// spotter (and the VAD, if given) waiting for the phrase; "stream": a
+// streaming recognizer (and the VAD) transcribing everything, as in the
+// follow-up window or always-listening mode.
+static int RunListen(const Options *o) {
+  const char *engine = o->listen_engine ? o->listen_engine : "kws";
+  char *tokens_buf = NULL;
+  const SherpaOnnxKeywordSpotter *kws = NULL;
+  const SherpaOnnxOnlineRecognizer *rec = NULL;
+  double t0 = NowMs();
+  if (!strcmp(engine, "kws")) {
+    SherpaOnnxKeywordSpotterConfig c;
+    memset(&c, 0, sizeof(c));
+    c.feat_config.sample_rate = 16000;
+    c.feat_config.feature_dim = 80;
+    FillOnlineModel(o, &c.model_config, &tokens_buf);
+    c.max_active_paths = 4;
+    c.num_trailing_blanks = o->kws_trailing_blanks;
+    c.keywords_score = o->kws_score;
+    c.keywords_threshold = o->kws_threshold;
+    if (!o->keywords) Die("listen kws needs --keywords", 0);
+    c.keywords_file = o->keywords;
+    kws = SherpaOnnxCreateKeywordSpotter(&c);
+    if (!kws) Die("cannot create the keyword spotter", o->keywords);
+  } else if (!strcmp(engine, "stream")) {
+    SherpaOnnxOnlineRecognizerConfig c;
+    memset(&c, 0, sizeof(c));
+    c.feat_config.sample_rate = 16000;
+    c.feat_config.feature_dim = 80;
+    FillOnlineModel(o, &c.model_config, &tokens_buf);
+    c.decoding_method = o->decoding;
+    c.max_active_paths = 4;
+    c.enable_endpoint = 1;
+    c.rule1_min_trailing_silence = 2.4f;
+    c.rule2_min_trailing_silence = 1.2f;
+    c.rule3_min_utterance_length = 20.0f;
+    rec = SherpaOnnxCreateOnlineRecognizer(&c);
+    if (!rec) Die("cannot create the streaming recognizer", o->encoder);
+  } else {
+    Die("unknown --listen-engine", engine);
+  }
+  const SherpaOnnxVoiceActivityDetector *vad = o->vad ? CreateVad(o) : NULL;
+  PrintLoad(engine, NowMs() - t0);
+
+  List l = ReadList(o->list);
+  const int chunk = 16000 * o->chunk_ms / 1000;
+  for (int i = 0; i < l.n; ++i) {
+    const SherpaOnnxWave *w = SherpaOnnxReadWave(l.items[i].fields[1]);
+    if (!w || w->sample_rate != 16000) Die("need a 16 kHz wav", l.items[i].fields[1]);
+    const SherpaOnnxOnlineStream *s =
+        kws ? SherpaOnnxCreateKeywordStream(kws) : SherpaOnnxCreateOnlineStream(rec);
+    int events = 0;
+    int vad_pos = 0;
+    double late_ms = 0;
+    double cpu0 = CpuSeconds();
+    double start = NowMs();
+    for (int32_t pos = 0; pos < w->num_samples; pos += chunk) {
+      int32_t m = w->num_samples - pos < chunk ? w->num_samples - pos : chunk;
+      double due = start + (double)(pos + m) * 1000.0 / 16000.0;
+      SleepUntilMs(due);
+      double behind = NowMs() - due;
+      if (behind > late_ms) late_ms = behind;
+      SherpaOnnxOnlineStreamAcceptWaveform(s, 16000, w->samples + pos, m);
+      if (vad) {
+        while (vad_pos + 512 <= pos + m) {
+          SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, w->samples + vad_pos, 512);
+          vad_pos += 512;
+        }
+        while (!SherpaOnnxVoiceActivityDetectorEmpty(vad))
+          SherpaOnnxVoiceActivityDetectorPop(vad);
+      }
+      if (kws) {
+        while (SherpaOnnxIsKeywordStreamReady(kws, s)) {
+          SherpaOnnxDecodeKeywordStream(kws, s);
+          const SherpaOnnxKeywordResult *r = SherpaOnnxGetKeywordResult(kws, s);
+          if (r && r->keyword && r->keyword[0]) {
+            events++;
+            SherpaOnnxResetKeywordStream(kws, s);
+          }
+          SherpaOnnxDestroyKeywordResult(r);
+        }
+      } else {
+        while (SherpaOnnxIsOnlineStreamReady(rec, s))
+          SherpaOnnxDecodeOnlineStream(rec, s);
+        if (SherpaOnnxOnlineStreamIsEndpoint(rec, s)) {
+          events++;
+          SherpaOnnxOnlineStreamReset(rec, s);
+        }
+      }
+    }
+    double wall = (NowMs() - start) / 1000.0;
+    double cpu = CpuSeconds() - cpu0;
+    printf("{\"event\":\"listen\",\"id\":");
+    PrintJsonString(l.items[i].fields[0]);
+    printf(",\"engine\":\"%s\",\"audio_s\":%.2f,\"wall_s\":%.2f,\"cpu_s\":%.3f,"
+           "\"cpu_pct_of_one_core\":%.2f,\"max_late_ms\":%.1f,\"events\":%d}\n",
+           engine, (double)w->num_samples / 16000.0, wall, cpu, 100.0 * cpu / wall,
+           late_ms, events);
+    fflush(stdout);
+    SherpaOnnxDestroyOnlineStream(s);
+    SherpaOnnxFreeWave(w);
+  }
+  PrintEnd(l.n, 0);
+  free(tokens_buf);
+  if (vad) SherpaOnnxDestroyVoiceActivityDetector(vad);
+  if (kws) SherpaOnnxDestroyKeywordSpotter(kws);
+  if (rec) SherpaOnnxDestroyOnlineRecognizer(rec);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   Options o;
   ParseOptions(argc, argv, &o);
@@ -759,6 +977,7 @@ int main(int argc, char **argv) {
   if (!strcmp(o.mode, "stream")) return RunStream(&o);
   if (!strcmp(o.mode, "kws")) return RunKws(&o);
   if (!strcmp(o.mode, "tts")) return RunTts(&o);
+  if (!strcmp(o.mode, "listen")) return RunListen(&o);
   Die("unknown mode", o.mode);
   return 2;
 }

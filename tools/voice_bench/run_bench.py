@@ -17,6 +17,9 @@ Steps (--steps, comma-separated; default: all but whisper-cpp):
   timing       per-utterance decode time and real-time factor at 1, 2 and
                4 threads, load time, peak memory (3 runs each)
   stimes       streaming latency at 1 and 2 threads (3 runs each)
+  listen       CPU used while listening in real time (wake phrase + VAD,
+               streaming recognizer + VAD), with and without ONNX Runtime's
+               spin-waiting
   kws          wake phrases: detections on wake sets and on non-wake
                speech and page audio
   tts          voices: load time, time to first audio, real-time factor,
@@ -52,7 +55,7 @@ import catalog  # noqa: E402
 import fetch  # noqa: E402
 import voice_bench_lib as vbl  # noqa: E402
 
-ALL_STEPS = ["build", "system", "sizes", "offline", "stream", "bias", "timing", "stimes",
+ALL_STEPS = ["build", "system", "sizes", "offline", "stream", "bias", "timing", "stimes", "listen",
              "kws", "tts"]
 ASR_SETS_FULL = ["asr-clean-a", "asr-clean-b", "asr-pink20-a", "asr-pink10-a", "asr-pink5-a",
                  "asr-babble10-a", "asr-music10-a", "asr-echo0-a", "asr-echo0-aec-a",
@@ -245,13 +248,25 @@ class Bench:
                 files = [os.path.join(d, v) for v in e["files"].values()]
                 if "vocoder" in e and self.art(e["vocoder"][0]):
                     files.append(os.path.join(self.art(e["vocoder"][0]), e["vocoder"][1]))
+                ops = set()
+                ort_format = False
+                for fpath in files:
+                    if fpath.endswith(".ort"):
+                        ort_format = True
+                    elif fpath.endswith(".onnx") and os.path.isfile(fpath):
+                        ops |= {"%s:%s" % (dm or "ai.onnx", op)
+                                for dm, op in vbl.onnx_op_types(fpath)}
                 out["models"][mid] = {"group": group, "bytes": du(files),
                                       "files": {os.path.basename(f): os.path.getsize(f)
-                                                for f in files if os.path.isfile(f)}}
+                                                for f in files if os.path.isfile(f)},
+                                      "onnx_ops": sorted(ops), "ort_format": ort_format}
         vad = self.art(catalog.VAD["artifact"])
         if vad:
-            out["models"]["silero-vad"] = {"group": "VAD", "bytes": du(
-                [os.path.join(vad, catalog.VAD["file"])])}
+            vf = os.path.join(vad, catalog.VAD["file"])
+            out["models"]["silero-vad"] = {
+                "group": "VAD", "bytes": du([vf]),
+                "onnx_ops": sorted("%s:%s" % (dm or "ai.onnx", op)
+                                   for dm, op in vbl.onnx_op_types(vf))}
         lex = os.path.join(self.work, "lex")
         if os.path.isdir(lex):
             out["lexicons"] = {f: os.path.getsize(os.path.join(lex, f)) for f in os.listdir(lex)}
@@ -273,8 +288,10 @@ class Bench:
             for s in self.asr_sets(e["tier"]):
                 rows = [(r[0], r[2]) for r in self.set_rows(s)]
                 if rows:
+                    # As deployed: Silero VAD finds the speech, the
+                    # recognizer gets that span (plus 0.25 s each side).
                     self.run_driver(self.out_path("offline", mid, s + ".jsonl"), "offline",
-                                    rows, flags, self.threads)
+                                    rows, flags + self.vad_flags(), self.threads)
 
     def vad_flags(self, silence=0.5):
         vad = self.art(catalog.VAD["artifact"])
@@ -343,7 +360,8 @@ class Bench:
             for t in THREADS:
                 for rep in range(self.repeats):
                     self.run_driver(self.out_path("timing", mid, "t%d.r%d.jsonl" % (t, rep)),
-                                    "offline", [(r[0], r[2]) for r in rows], flags, t)
+                                    "offline", [(r[0], r[2]) for r in rows],
+                                    flags + self.vad_flags(), t)
 
     def step_stimes(self):
         rows = self.timing_rows()
@@ -404,6 +422,51 @@ class Bench:
                             self.run_driver(
                                 self.out_path("kws", kid, tag, "%.2f" % th, s + ".jsonl"), "kws",
                                 rows, kf, 1, extra_meta={"keywords": line})
+
+    def step_listen(self):
+        """CPU cost of listening all the time, in real time (30 s of page
+        audio): the wake-phrase spotter with the VAD, and a streaming
+        recognizer with the VAD; 1 and 2 threads, and 2 threads with ONNX
+        Runtime's spin-waiting off."""
+        import wave
+        src = [r[2] for r in self.set_rows("fa-page")]
+        if not src:
+            return
+        clip = os.path.join(self.work, "listen-30s.wav")
+        if not os.path.exists(clip):
+            with wave.open(src[0], "rb") as w:
+                frames = w.readframes(30 * w.getframerate())
+                params = w.getparams()
+            with wave.open(clip, "wb") as o:
+                o.setparams(params)
+                o.writeframes(frames)
+        nospin = os.path.join(self.work, "ort-nospin.cfg")
+        with open(nospin, "w") as f:
+            f.write("SessionConfig.session.intra_op.allow_spinning=0\n"
+                    "SessionConfig.session.inter_op.allow_spinning=0\n")
+        rows = [("listen-30s", clip)]
+        variants = [("t1", 1, []), ("t2", 2, []), ("t2-nospin", 2, ["--provider-config", nospin])]
+        kid = "kws-gigaspeech-3.3m"
+        e = catalog.KWS[kid]
+        flags = self.model_flags(e)
+        if flags and self.want(kid):
+            kw, _ = self.keywords_file(kid, e, catalog.WAKE_PHRASES[0], 0.25)
+            for name, t, extra in variants:
+                for rep in range(self.repeats):
+                    self.run_driver(self.out_path("listen", "kws", "%s.r%d.jsonl" % (name, rep)),
+                                    "listen", rows, flags + ["--listen-engine", "kws",
+                                                             "--keywords", kw] +
+                                    self.vad_flags() + extra, t)
+        for mid in ("zipformer-en-20m", "zipformer-en-2023-06-26"):
+            e = catalog.STREAM[mid]
+            flags = self.model_flags(e)
+            if not flags or not self.want(mid):
+                continue
+            for name, t, extra in variants:
+                for rep in range(self.repeats):
+                    self.run_driver(self.out_path("listen", mid, "%s.r%d.jsonl" % (name, rep)),
+                                    "listen", rows, flags + ["--listen-engine", "stream"] +
+                                    self.vad_flags() + extra, t)
 
     def step_tts(self):
         lex = os.path.join(self.work, "lex")

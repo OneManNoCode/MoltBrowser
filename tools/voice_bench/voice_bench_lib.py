@@ -435,6 +435,30 @@ def onnx_metadata(path, max_bytes=1 << 31):
     return meta
 
 
+def onnx_op_types(path):
+    """{(domain, op_type): count} of an ONNX model's main graph (subgraphs
+    of If/Loop are not walked). For ORT-format (.ort) files returns None."""
+    if path.endswith(".ort"):
+        return None
+    with open(path, "rb") as f:
+        buf = memoryview(f.read())
+    ops = {}
+    for field, wt, val in iter_fields(buf):
+        if field != 7 or wt != 2:
+            continue
+        for f2, w2, node in iter_fields(val):
+            if f2 != 1 or w2 != 2:
+                continue
+            op, domain = "", ""
+            for f3, w3, v3 in iter_fields(node):
+                if f3 == 4 and w3 == 2:
+                    op = bytes(v3).decode("utf-8", "replace")
+                elif f3 == 7 and w3 == 2:
+                    domain = bytes(v3).decode("utf-8", "replace")
+            ops[(domain, op)] = ops.get((domain, op), 0) + 1
+    return ops
+
+
 # ------------------------------------------------------------------ WAV
 
 

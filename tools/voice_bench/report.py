@@ -147,8 +147,21 @@ class Report:
                    rows)
         mrows = []
         for mid, m in sorted(sz["models"].items(), key=lambda kv: (kv[1]["group"], kv[0])):
-            mrows.append((m["group"].lower(), mid, fmt_mb(m["bytes"])))
-        return rt, table(["kind", "model", "files used (MB)"], mrows)
+            ops = m.get("onnx_ops") or []
+            mrows.append((m["group"].lower(), mid, fmt_mb(m["bytes"]),
+                          "ORT format" if m.get("ort_format") else len(ops)))
+        # The operators a reduced ONNX Runtime build would need for one
+        # plausible bundle: wake phrase, VAD, a streaming recognizer, a voice.
+        bundle = ["kws-gigaspeech-3.3m", "silero-vad", "zipformer-en-2023-06-26",
+                  "piper-ljspeech-medium"]
+        union = set()
+        for b in bundle:
+            union |= set(sz["models"].get(b, {}).get("onnx_ops") or [])
+        self.summary["bundle_ops"] = {"models": bundle, "ops": sorted(union)}
+        note = ("Distinct ONNX operators used by %s together: %d (%s)." %
+                (", ".join(bundle), len(union), ", ".join(o.split(":")[1] for o in sorted(union))))
+        return rt, table(["kind", "model", "files used (MB)", "distinct ONNX ops"],
+                         mrows) + "\n\n" + note
 
     def accuracy(self):
         offline = [(m, "offline", e) for m, e in catalog.OFFLINE.items()]
@@ -289,6 +302,31 @@ class Report:
         return table(["model", "threads", "first partial ms", "p90", "VAD end ms",
                       "final text ms", "p90", "built-in endpoint ms", "RTF", "load ms",
                       "peak RSS MB"], rows)
+
+    def listen(self):
+        rows, out = [], {}
+        base = os.path.join(self.results, "listen")
+        if not os.path.isdir(base):
+            return ""
+        labels = {"kws": "wake phrase (Zipformer KWS 3.3M) + VAD"}
+        for mid, e in catalog.STREAM.items():
+            labels[mid] = e["label"] + " + VAD"
+        for eng in sorted(os.listdir(base)):
+            for variant in ("t1", "t2", "t2-nospin"):
+                vals, late = [], []
+                for rep in range(3):
+                    recs = self.jsonl("listen", eng, "%s.r%d.jsonl" % (variant, rep))
+                    for r in recs or []:
+                        if r.get("event") == "listen":
+                            vals.append(r["cpu_pct_of_one_core"])
+                            late.append(r["max_late_ms"])
+                if vals:
+                    out.setdefault(eng, {})[variant] = vbl.median(vals)
+                    rows.append((labels.get(eng, eng), variant, fmt_f(vbl.median(vals), 1),
+                                 fmt_ms(vbl.median(late))))
+        self.summary["listen"] = out
+        return table(["listening", "threads", "CPU, % of one core (median)",
+                      "worst lag behind real time, ms"], rows)
 
     def bias(self):
         rows = []
@@ -519,6 +557,7 @@ def main(argv=None):
         rep.offline_timing(), "",
         "## Streaming recognizers with Silero VAD (0.5 s), simulated real time", "",
         rep.stream_timing(), "",
+        "## Listening all the time (real time, 30 s of page audio)", "", rep.listen(), "",
         "## Biasing toward the page's names", "", rep.bias(), "",
         "## Wake phrase", "", rep.kws(), "",
         "## Voices", "", rep.tts(), "",
