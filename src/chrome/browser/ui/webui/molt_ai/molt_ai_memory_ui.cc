@@ -601,8 +601,10 @@ cr.webUIResponse = function(id, ok, resp) {
   if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
 };
 
+// The toast is a live region: an error is an alert, the rest polite.
 function showToast(m, isErr) {
   var t = document.getElementById('toast');
+  t.setAttribute('role', isErr ? 'alert' : 'status');
   t.textContent = m;
   t.className = 'toast show' + (isErr ? ' error' : '');
   setTimeout(function(){ t.className = 'toast' + (isErr ? ' error' : ''); }, 2200);
@@ -793,6 +795,7 @@ function renderSemantic(s) {
   var total = Number(m.total || m.size_bytes) || 0;
   var pct = total > 0 ? Math.min(100, 100 * (Number(m.received) || 0) / total) : 0;
   document.getElementById('model-progress-bar').style.width = pct.toFixed(1) + '%';
+  progress.setAttribute('aria-valuenow', String(Math.round(pct)));
   setButton('model-download-btn', state === 'not_installed',
             'Download (' + fmtBytes(m.size_bytes) + ')');
   setButton('model-cancel-btn', state === 'downloading');
@@ -878,8 +881,10 @@ function renderRecents(docs) {
     var meta = el('div', 'hit-meta',
         fmtHost(d.url) + ' · ' + fmtDate(d.visited_at) + ' · ' +
         (Number(d.word_count) || 0) + ' words ');
-    var del = el('a', 'hit-delete', 'delete');
-    del.href = '#';
+    var del = el('button', 'hit-delete', 'delete');
+    del.type = 'button';
+    del.setAttribute('aria-label',
+                     'delete ' + String(d.title || fmtHost(d.url) || 'this page'));
     del.setAttribute('data-on-click', 'deleteDoc');
     del.setAttribute('data-doc-id', String(Number(d.doc_id) || 0));
     meta.appendChild(del);
@@ -895,15 +900,19 @@ function renderHits(r, query, ms) {
   timing.replaceChildren((r.model ? 'by meaning' : 'by matching words') +
                          ' in ', el('b', null, ms.toFixed(0) + ' ms'));
   var results = document.getElementById('results');
+  var said = document.getElementById('results-status');
   if (r.ok === false) {
     showEmpty(results, 'The search model is busy or couldn’t start. ' +
                        'Try again in a moment.');
+    said.textContent = results.textContent;
     return;
   }
   if (!hits.length) {
     showEmpty(results, 'No matches yet.');
+    said.textContent = 'No matches yet.';
     return;
   }
+  said.textContent = hits.length === 1 ? '1 result' : hits.length + ' results';
   results.replaceChildren.apply(results, hits.map(function(h){
     var hit = el('div', 'hit');
     hit.appendChild(titleRow(h.url, h.title));
@@ -1055,7 +1064,7 @@ class MoltAIMemoryDataSource : public content::URLDataSource {
     }
     std::string html = R"HTML(
 <!DOCTYPE html>
-<html><head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <title>MoltBrowser Memory</title>
 <style>
@@ -1065,9 +1074,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .header{background:linear-gradient(135deg,#1a1a2e,#16213e);
   padding:18px 28px;display:flex;align-items:center;gap:18px;
   border-bottom:1px solid rgba(255,255,255,0.08);}
-.header h1{font-size:22px;font-weight:600;}
+.header h1{font-size:1.375rem;font-weight:600;}
 .header h1 span{color:#a78bfa;font-weight:700;}
-.badge{background:#a78bfa;color:#0a0a0f;font-size:10px;padding:2px 8px;
+.badge{background:#a78bfa;color:#0a0a0f;font-size:.625rem;padding:2px 8px;
   border-radius:10px;font-weight:700;text-transform:uppercase;}
 .bar{flex:1;}
 .container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
@@ -1077,11 +1086,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   font-family:monospace;color:#a78bfa;}
 .searchbar{display:flex;gap:8px;margin-bottom:8px;}
 .searchbar input{flex:1;background:#0d0d14;border:1px solid #2a2a3a;
-  color:#fff;padding:14px 18px;border-radius:10px;font-size:15px;}
-.searchbar input:focus{outline:none;border-color:#a78bfa;}
-.engine{font-size:12px;color:#888;margin-bottom:14px;line-height:1.5;}
+  color:#fff;padding:14px 18px;border-radius:10px;font-size:.9375rem;}
+.searchbar input:focus{border-color:#a78bfa;}
+.engine{font-size:.75rem;color:#888;margin-bottom:14px;line-height:1.5;}
 .btn{background:#a78bfa;border:none;color:#0a0a0f;padding:10px 20px;
-  border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;}
+  border-radius:8px;font-weight:700;cursor:pointer;font-size:.875rem;}
 .btn:hover{background:#c4b5fd;}
 .btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;
   font-weight:500;}
@@ -1089,82 +1098,105 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .btn.red{background:#3a1a1a;color:#f87171;border:1px solid #4a2a2a;}
 .btn.red:hover{background:#4a2a2a;}
 .model{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
-  padding:14px 18px;margin-bottom:18px;font-size:13px;color:#ccc;
+  padding:14px 18px;margin-bottom:18px;font-size:.8125rem;color:#ccc;
   line-height:1.5;}
 .model-head{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;}
 .model-head b{color:#fff;}
-.model-license{font-size:12px;color:#888;}
+.model-license{font-size:.75rem;color:#888;}
 .model-license a{color:#a78bfa;}
-.model-note{font-size:12px;color:#888;margin-top:4px;}
+.model-note{font-size:.75rem;color:#888;margin-top:4px;}
 .model .row{margin-top:10px;display:flex;gap:8px;}
-.model .btn{padding:7px 14px;font-size:13px;}
+.model .btn{padding:7px 14px;font-size:.8125rem;}
 .progress{height:6px;background:#1a1a2a;border-radius:3px;margin-top:8px;
   overflow:hidden;}
 .progress-bar{height:100%;width:0;background:#a78bfa;transition:width 0.3s;}
-.stats{display:flex;gap:24px;margin-bottom:24px;color:#888;font-size:13px;}
+.stats{display:flex;gap:24px;margin-bottom:24px;color:#888;font-size:.8125rem;}
 .stats b{color:#ddd;}
 .hit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
   padding:14px 18px;margin-bottom:10px;}
 .hit:hover{border-color:#a78bfa;}
-.hit-title{font-size:15px;font-weight:600;margin-bottom:2px;}
+.hit-title{font-size:.9375rem;font-weight:600;margin-bottom:2px;}
 .hit-title a{color:#e0e0e8;text-decoration:none;}
 .hit-title a:hover{color:#a78bfa;}
-.hit-url{font-size:12px;color:#6b8f71;margin-bottom:4px;white-space:nowrap;
+.hit-url{font-size:.75rem;color:#6b8f71;margin-bottom:4px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;}
-.hit-meta{font-size:11px;color:#666;margin-bottom:6px;
+.hit-meta{font-size:.6875rem;color:#8f8f99;margin-bottom:6px;
   font-family:monospace;}
 .hit-meta .score{color:#a78bfa;font-weight:600;}
-.hit-delete{color:#666;margin-left:8px;}
-.hit-snippet{color:#aaa;font-size:13px;line-height:1.5;
+.hit-delete{color:#a0a0b0;margin-left:8px;background:none;border:none;
+  padding:0;font:inherit;text-decoration:underline;cursor:pointer;}
+.hit-snippet{color:#aaa;font-size:.8125rem;line-height:1.5;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
   overflow:hidden;}
 .hit-snippet mark{background:rgba(167,139,250,0.25);color:#fff;
   padding:0 2px;border-radius:2px;}
-.section-title{font-size:13px;color:#888;text-transform:uppercase;
-  letter-spacing:1px;margin:24px 0 10px;}
-.empty{color:#555;padding:32px;text-align:center;font-style:italic;}
-.timing{font-size:11px;color:#666;margin-top:6px;font-family:monospace;}
+.section-title{font-size:.8125rem;color:#888;text-transform:uppercase;
+  letter-spacing:1px;margin:24px 0 10px;font-weight:400;}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  border:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);
+  white-space:nowrap;}
+.header nav{display:flex;gap:16px;}
+.header nav a{color:#a0a0b0;text-decoration:none;font-size:.8125rem;}
+.header nav a:hover{color:#fff;text-decoration:underline;}
+.empty{color:#8a8a94;padding:32px;text-align:center;font-style:italic;}
+.timing{font-size:.6875rem;color:#8f8f99;margin-top:6px;font-family:monospace;}
 .timing b{color:#a78bfa;}
 .controls{margin-top:30px;padding-top:20px;
   border-top:1px solid #1a1a2a;}
 .danger{display:flex;gap:8px;flex-wrap:wrap;}
 .danger input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:8px 12px;border-radius:6px;font-size:12px;}
+  padding:8px 12px;border-radius:6px;font-size:.75rem;}
 .toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
   color:#4ade80;padding:12px 18px;border-radius:10px;
-  border:1px solid #2a4a2a;font-size:13px;font-weight:600;
+  border:1px solid #2a4a2a;font-size:.8125rem;font-weight:600;
   transform:translateY(120px);opacity:0;transition:all 0.25s;
   z-index:1000;}
 .toast.show{transform:translateY(0);opacity:1;}
 .toast.error{background:#3a1a1a;color:#f87171;border-color:#4a2a2a;}
 .notice{background:#1a1730;border:1px solid #4c3d8a;border-radius:10px;
   padding:14px 18px;margin-bottom:20px;color:#ddd;line-height:1.5;
-  font-size:13px;}
+  font-size:.8125rem;}
 .notice b{color:#fff;}
 .notice .row{margin-top:10px;display:flex;gap:8px;}
 .settings{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
   padding:14px 18px;margin-bottom:24px;display:flex;flex-wrap:wrap;
-  gap:18px;align-items:center;font-size:13px;color:#ccc;}
+  gap:18px;align-items:center;font-size:.8125rem;color:#ccc;}
 .settings label{display:flex;align-items:center;gap:8px;cursor:pointer;}
 .settings select{background:#0a0a0f;border:1px solid #2a2a3a;color:#fff;
-  padding:6px 8px;border-radius:6px;font-size:12px;}
-.settings .state{margin-left:auto;font-size:12px;color:#888;}
+  padding:6px 8px;border-radius:6px;font-size:.75rem;}
+.settings .state{margin-left:auto;font-size:.75rem;color:#888;}
 .settings .state.on{color:#4ade80;}
 [hidden]{display:none !important;}
+:focus-visible{outline:3px solid #9ecbff !important;outline-offset:2px;}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important;}
+}
+/* High contrast: buttons, fields and cards keep their edges; the
+   progress bar and search-word marks stay visible. */
+@media (forced-colors: active){
+  .btn,.hit-delete{border:1px solid ButtonText;}
+  .progress{border:1px solid CanvasText;}
+  .progress-bar{forced-color-adjust:none;background:Highlight;}
+  .hit-snippet mark{forced-color-adjust:none;background:Mark;color:MarkText;}
+  .toast{border:1px solid CanvasText;}
+  :focus-visible{outline-color:Highlight !important;}
+}
 </style>
 </head>
 <body>
 
-<div class="header">
+<header class="header">
   <h1><span>Molt</span>Memory</h1>
   <span class="badge">Local</span>
   <div class="bar"></div>
-  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
-  <a href="molt://ai-automation/" style="color:#888;text-decoration:none;font-size:13px;">Automation</a>
-  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
-</div>
+  <nav aria-label="MoltBrowser AI">
+    <a href="molt://ai/">AI Chat</a>
+    <a href="molt://ai-automation/">Automation</a>
+    <a href="molt://ai-settings/">Settings</a>
+  </nav>
+</header>
 
-<div class="container">
+<main class="container">
   <div class="notice" id="optin-notice" hidden>
     <b>Memory is now opt-in.</b> MoltBrowser no longer records the pages
     you read unless you turn Memory on below. Pages captured earlier are
@@ -1205,10 +1237,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <code>flight to bali deal</code>.
   </p>
 
-  <div class="section-title">Search by meaning</div>
-  <div class="searchbar">
+  <h2 class="section-title" id="search-heading">Search by meaning</h2>
+  <div class="searchbar" role="search">
     <input type="text" id="q" maxlength="500" autocomplete="off"
            placeholder="Describe what you remember reading..."
+           aria-labelledby="search-heading"
            data-on-keydown="searchKey">
     <button class="btn" id="search-btn" data-on-click="search">Search</button>
   </div>
@@ -1225,7 +1258,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       (size and SHA-256) before it is used. It runs in a sandbox on this
       device and only reads what Memory already stores.
     </div>
-    <div class="progress" id="model-progress" hidden>
+    <div class="progress" id="model-progress" role="progressbar"
+         aria-label="Search model download" aria-valuemin="0"
+         aria-valuemax="100" hidden>
       <div class="progress-bar" id="model-progress-bar"></div>
     </div>
     <div class="row">
@@ -1242,20 +1277,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <span id="timing"></span>
   </div>
 
-  <div class="section-title" id="results-title">Recent pages</div>
+  <h2 class="section-title" id="results-title">Recent pages</h2>
+  <div id="results-status" class="sr-only" role="status"></div>
   <div id="results"></div>
 
-  <div class="controls">
-    <div class="section-title">Privacy controls</div>
+  <section class="controls" aria-labelledby="privacy-heading">
+    <h2 class="section-title" id="privacy-heading">Privacy controls</h2>
     <div class="danger">
-      <input type="text" id="dom-del" placeholder="domain to forget (e.g. example.com)">
+      <input type="text" id="dom-del" aria-label="Domain to forget"
+             placeholder="domain to forget (e.g. example.com)">
       <button class="btn red" id="forget-domain-btn" data-on-click="forgetDomain">Forget domain</button>
       <button class="btn red" id="wipe-btn" data-on-click="wipe">Wipe all memory</button>
     </div>
-  </div>
-</div>
+  </section>
+</main>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-atomic="true"></div>
 
 <script src="app.js"></script>
 </body></html>

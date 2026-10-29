@@ -267,8 +267,9 @@ const char kWebAISitesSettingsJs[] = R"JS(
     var sites = Array.isArray(s.sites) ? s.sites : [];
     var toggle = document.getElementById('webAiEnabled');
     toggle.checked = s.enabled !== false;
-    document.getElementById('webAiStatus').textContent =
-        s.error ? String(s.error) : '';
+    var status = document.getElementById('webAiStatus');
+    var said = s.error ? String(s.error) : '';
+    if (status.textContent !== said) status.textContent = said;
     document.getElementById('webAiMemoryNote').style.display =
         s.available !== false && s.persistent === false ? '' : 'none';
     LISTS.forEach(function(list) {
@@ -296,7 +297,7 @@ const char kWebAISitesSettingsJs[] = R"JS(
         }
         var remove = el('button', 'btn secondary', 'Remove');
         remove.type = 'button';
-        remove.style.cssText = 'font-size:12px;padding:4px 12px;' +
+        remove.style.cssText = 'font-size:.75rem;padding:4px 12px;' +
                                'margin-left:auto';
         remove.setAttribute('data-site', r.site);
         remove.setAttribute('aria-label', 'Remove ' + name);

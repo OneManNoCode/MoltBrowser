@@ -534,8 +534,10 @@ cr.webUIResponse = function(id, ok, resp) {
   if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
 };
 
+// The toast is a live region: an error is an alert, the rest polite.
 function showToast(msg, isError) {
   var t = document.getElementById('toast');
+  t.setAttribute('role', isError ? 'alert' : 'status');
   t.textContent = msg;
   t.className = 'toast show' + (isError ? ' error' : '');
   setTimeout(function(){ t.className = 'toast' + (isError ? ' error' : ''); }, 2400);
@@ -615,6 +617,7 @@ function buildSparklineHTML(s) {
   var maxBars = 30;
   if (rows.length > maxBars) rows = rows.slice(rows.length - maxBars);
 
+  var okRuns = rows.filter(function(r){ return r.ok; }).length;
   var bars = rows.map(function(r){
     var pct = Math.max(8, Math.round(((r.dur_ms || 0) / maxDur) * 100));
     var when = new Date((r.ts || 0) * 1000).toLocaleString();
@@ -631,7 +634,11 @@ function buildSparklineHTML(s) {
     rows.reduce(function(s,r){ return s + (r.dur_ms||0); }, 0) / rows.length);
   var totTok = rows.reduce(function(s,r){ return s + (r.ai_tokens||0); }, 0);
 
-  return '<div class="sparkline">' + bars + '</div>' +
+  // One picture to a screen reader: what the bars add up to.
+  var said = rows.length + ' recent runs: ' + okRuns + ' succeeded, ' +
+             (rows.length - okRuns) + ' failed';
+  return '<div class="sparkline" role="img" aria-label="' + esc(said) + '">' +
+         bars + '</div>' +
     '<div class="spark-legend">' +
       '<span><b>' + rows.length + '</b> recent runs</span>' +
       '<span>avg <b>' + esc(avgDur) + 'ms</b></span>' +
@@ -649,7 +656,7 @@ function buildScheduleHTML(s) {
            esc(label) + '</option>';
   }
 
-  var typeSelect = '<select data-sched="type">' +
+  var typeSelect = '<select data-sched="type" aria-label="Schedule">' +
     opt('manual','Manual (only when I click Run)', t) +
     opt('cron','Cron expression', t) +
     opt('interval','Every N seconds', t) +
@@ -666,8 +673,9 @@ function buildScheduleHTML(s) {
   var cronBlock = '<div data-sched-pane="cron"' +
       (t==='cron'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
-      '<label>Cron</label>' +
-      '<input type="text" data-sched="expr-cron" placeholder="m h dom mon dow"' +
+      '<span class="lbl">Cron</span>' +
+      '<input type="text" data-sched="expr-cron" aria-label="Cron expression"' +
+        ' placeholder="m h dom mon dow"' +
         ' value="' + esc(t==='cron'?expr:'') + '" style="min-width:240px;">' +
       presets +
     '</div>' +
@@ -678,10 +686,10 @@ function buildScheduleHTML(s) {
   var intervalBlock = '<div data-sched-pane="interval"' +
       (t==='interval'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
-      '<label>Run every</label>' +
-      '<input type="number" min="10" data-sched="expr-interval-num"' +
+      '<span class="lbl">Run every</span>' +
+      '<input type="number" min="10" data-sched="expr-interval-num" aria-label="Run every"' +
         ' value="' + intervalSecs + '" style="width:90px;">' +
-      '<select data-sched="expr-interval-unit">' +
+      '<select data-sched="expr-interval-unit" aria-label="Unit">' +
         '<option value="1">seconds</option>' +
         '<option value="60">minutes</option>' +
         '<option value="3600" selected>hours</option>' +
@@ -694,8 +702,9 @@ function buildScheduleHTML(s) {
   var atBlock = '<div data-sched-pane="at"' +
       (t==='at'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
-      '<label>Fire at</label>' +
-      '<input type="datetime-local" data-sched="expr-at" value="' + esc(atVal) + '">' +
+      '<span class="lbl">Fire at</span>' +
+      '<input type="datetime-local" data-sched="expr-at" aria-label="Fire at"' +
+        ' value="' + esc(atVal) + '">' +
     '</div>' +
     '</div>';
 
@@ -715,7 +724,7 @@ function buildScheduleHTML(s) {
     nextLine = '<div class="next-fire disabled">No upcoming fire</div>';
   }
 
-  var enabledHTML = '<label style="font-size:12px;color:#aaa;">' +
+  var enabledHTML = '<label style="font-size:.75rem;color:#aaa;">' +
     '<input type="checkbox" data-sched="enabled"' +
     (s.enabled === false ? '' : ' checked') + ' style="margin-right:6px;">' +
     'Enabled (untick to pause without losing schedule)</label>';
@@ -741,18 +750,26 @@ function buildStepEditor(s) {
       return '<option value="' + t + '"' +
              (step.type === t ? ' selected' : '') + '>' + t + '</option>';
     }).join('');
+    var n = i + 1;
     html +=
-      '<div class="step-edit-row" data-step="' + i + '">' +
-        '<span class="step-num">' + (i + 1) + '.</span>' +
-        '<select data-field="type">' + typeOpts + '</select>' +
+      '<div class="step-edit-row" data-step="' + i + '" role="group"' +
+          ' aria-label="Step ' + n + '">' +
+        '<span class="step-num" aria-hidden="true">' + n + '.</span>' +
+        '<select data-field="type" aria-label="Step ' + n + ' type">' +
+          typeOpts + '</select>' +
         '<input data-field="target" placeholder="selector / url"' +
+          ' aria-label="Step ' + n + ' target: selector or URL"' +
           ' value="' + esc(step.target || '') + '">' +
         '<input data-field="value" placeholder="value / prompt"' +
+          ' aria-label="Step ' + n + ' value or prompt"' +
           ' value="' + esc(step.value || '') + '">' +
         '<div class="step-ctrls">' +
-          '<button data-step-act="up" title="Move up">&uarr;</button>' +
-          '<button data-step-act="down" title="Move down">&darr;</button>' +
-          '<button data-step-act="del" title="Delete">&times;</button>' +
+          '<button data-step-act="up" title="Move up"' +
+            ' aria-label="Move step ' + n + ' up">&uarr;</button>' +
+          '<button data-step-act="down" title="Move down"' +
+            ' aria-label="Move step ' + n + ' down">&darr;</button>' +
+          '<button data-step-act="del" title="Delete"' +
+            ' aria-label="Delete step ' + n + '">&times;</button>' +
         '</div>' +
       '</div>';
   });
@@ -764,7 +781,7 @@ function buildStepEditor(s) {
 function buildTrustPanel(s) {
   var trust = (s.security && s.security.trust) || 'casual';
   var levels = ['casual','approved','trusted','admin'];
-  var dropdown = '<select data-trust="select">' +
+  var dropdown = '<select data-trust="select" aria-label="Trust level">' +
     levels.map(function(l){
       return '<option value="' + l + '"' +
              (l===trust?' selected':'') + '>' +
@@ -811,8 +828,9 @@ function buildDetailHTML(s) {
     ? '<div class="var-empty">No {{variables}} used in this script.</div>'
     : '<div class="var-grid">' + vars.map(function(name){
         var val = dv[name] || '';
-        return '<label>{{' + esc(name) + '}}</label>' +
+        return '<span class="lbl">{{' + esc(name) + '}}</span>' +
                '<input type="text" data-var="' + esc(name) + '"' +
+               ' aria-label="{{' + esc(name) + '}}"' +
                ' value="' + esc(val) + '" placeholder="value...">';
       }).join('') + '</div>';
 
@@ -856,7 +874,7 @@ function buildDetailHTML(s) {
     + '<div class="detail-section">'
     +   '<h4>Stats</h4>'
     +   buildSparklineHTML(s)
-    +   '<div style="font-size:12px;color:#aaa;line-height:1.7;margin-top:6px;">'
+    +   '<div style="font-size:.75rem;color:#aaa;line-height:1.7;margin-top:6px;">'
     +     'Runs: ' + esc(runs) + ' &middot; Successes: ' + esc(ok)
     +     ' &middot; Last run: ' + esc(lastRun)
     +     (s.stats && s.stats.ai_tokens_total
@@ -888,6 +906,59 @@ function collectVars(card) {
   return vars;
 }
 
+// The list is rebuilt after every change and every 30 s. Keyboard and
+// screen reader users would lose their place each time, so the open
+// cards stay open and focus goes back to the same control.
+var FOCUS_ATTRS = ['data-act', 'data-sched', 'data-field', 'data-var',
+                   'data-trust', 'data-step-act', 'data-cron'];
+function listPlace(list) {
+  var place = {open: {}, focus: null};
+  list.querySelectorAll('.script-card.open').forEach(function(c){
+    place.open[c.getAttribute('data-script-id')] = true;
+  });
+  var a = document.activeElement;
+  var card = a && list.contains(a) ? a.closest('.script-card') : null;
+  if (!card) return place;
+  var row = a.closest('.step-edit-row');
+  place.focus = {id: card.getAttribute('data-script-id'),
+                 step: row ? row.getAttribute('data-step') : null,
+                 attr: null, value: null};
+  if (a.classList.contains('name-btn')) {
+    place.focus.attr = 'class';
+    place.focus.value = 'name-btn';
+  }
+  for (var i = 0; i < FOCUS_ATTRS.length && !place.focus.attr; i++) {
+    if (a.hasAttribute(FOCUS_ATTRS[i])) {
+      place.focus.attr = FOCUS_ATTRS[i];
+      place.focus.value = a.getAttribute(FOCUS_ATTRS[i]);
+    }
+  }
+  return place;
+}
+function restorePlace(list, place) {
+  var f = place.focus;
+  if (!f || !f.attr) return;
+  var cards = list.querySelectorAll('.script-card');
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].getAttribute('data-script-id') !== f.id) continue;
+    var scope = cards[i];
+    if (f.step !== null) {
+      scope = cards[i].querySelector('.step-edit-row[data-step="' +
+                                     Number(f.step) + '"]');
+      if (!scope) return;
+    }
+    var els = scope.querySelectorAll(
+        f.attr === 'class' ? '.name-btn' : '[' + f.attr + ']');
+    for (var j = 0; j < els.length; j++) {
+      if (f.attr === 'class' || els[j].getAttribute(f.attr) === f.value) {
+        els[j].focus();
+        return;
+      }
+    }
+  }
+}
+var detailSeq = 0;
+
 function renderScripts(scripts) {
   allScripts = scripts;
   var query = (document.getElementById('search').value || '').toLowerCase();
@@ -899,6 +970,7 @@ function renderScripts(scripts) {
 
   var list = document.getElementById('list');
   var empty = document.getElementById('empty');
+  var place = listPlace(list);
   document.getElementById('count').textContent = scripts.length;
   list.textContent = '';
   if (!filtered.length) {
@@ -915,18 +987,28 @@ function renderScripts(scripts) {
   filtered.forEach(function(s) {
     var card = document.createElement('div');
     card.className = 'script-card';
+    card.setAttribute('data-script-id', String(s.id));
     if (s.id === newId) card.classList.add('flash', 'open', 'highlight');
+    if (place.open[String(s.id)]) card.classList.add('open');
+    var detailId = 'script-detail-' + (++detailSeq);
+    var isOpen = card.classList.contains('open');
     var lastRun = s.stats && s.stats.last_run_unix
         ? new Date(s.stats.last_run_unix * 1000).toLocaleString()
         : 'never';
     var trust = (s.security && s.security.trust) || 'casual';
     card.innerHTML = moltHTML(
       '<div class="script-summary">' +
-        '<span class="dot ' + dotClass(s) + '"></span>' +
+        (s.stats && s.stats.runs > 0
+          ? '<span class="dot ' + dotClass(s) + '" role="img" aria-label="' +
+            'Success rate ' + esc(Math.round(Number(s.success_rate) || 0)) +
+            '%"></span>'
+          : '<span class="dot" aria-hidden="true"></span>') +
         '<div class="info">' +
-          '<div class="name">' + esc(s.name) +
+          '<h3 class="name"><button type="button" class="name-btn"' +
+            ' aria-expanded="' + (isOpen ? 'true' : 'false') + '"' +
+            ' aria-controls="' + detailId + '">' + esc(s.name) + '</button>' +
             ' <span class="trust-badge trust-' + esc(trust) + '">' +
-            esc(trust) + '</span></div>' +
+            esc(trust) + '</span></h3>' +
           '<div class="meta">' + esc(triggerLabel(s)) +
           ' &middot; ' + (s.steps ? s.steps.length : 0) + ' steps' +
           ' &middot; last run: ' + esc(lastRun) +
@@ -935,17 +1017,25 @@ function renderScripts(scripts) {
           '</div>' +
         '</div>' +
         '<div class="actions">' +
-          '<button class="btn"        data-act="run">&#9654; Run</button>' +
-          '<button class="btn ghost"  data-act="del">Delete</button>' +
+          '<button class="btn"        data-act="run"' +
+            ' aria-label="Run ' + esc(s.name) + '">&#9654; Run</button>' +
+          '<button class="btn ghost"  data-act="del"' +
+            ' aria-label="Delete ' + esc(s.name) + '">Delete</button>' +
         '</div>' +
-        '<span class="chev">&#10095;</span>' +
+        '<span class="chev" aria-hidden="true">&#10095;</span>' +
       '</div>' +
-      '<div class="script-detail">' + buildDetailHTML(s) + '</div>');
+      '<div class="script-detail" id="' + detailId + '">' +
+        buildDetailHTML(s) + '</div>');
 
+    // The name is the disclosure button (keyboard, screen readers, voice
+    // control); a click anywhere else on the row does the same.
     var summary = card.querySelector('.script-summary');
     summary.onclick = function(e) {
-      if (e.target.tagName === 'BUTTON') return;
+      var b = e.target.closest('button');
+      if (b && !b.classList.contains('name-btn')) return;
       card.classList.toggle('open');
+      card.querySelector('.name-btn').setAttribute(
+          'aria-expanded', card.classList.contains('open') ? 'true' : 'false');
     };
     card.querySelector('[data-act="run"]').onclick = function(e) {
       e.stopPropagation();
@@ -1067,8 +1157,8 @@ function renderScripts(scripts) {
       loadedTimeline = true;
       loadTimelineFor(card, s.id);
     });
-    if (s.id === newId) {
-      // Card opens automatically on flash — load immediately.
+    if (isOpen) {
+      // Card opens automatically on flash (or stayed open) — load now.
       loadedTimeline = true;
       loadTimelineFor(card, s.id);
     }
@@ -1091,13 +1181,20 @@ function renderScripts(scripts) {
 
     list.appendChild(card);
   });
+  restorePlace(list, place);
 
   // Scroll the highlighted card into view if we just got here from
   // the toolbar Stop action.
   if (newId) {
     var hl = list.querySelector('.script-card.highlight');
-    if (hl) hl.scrollIntoView({behavior:'smooth', block:'center'});
+    if (hl) hl.scrollIntoView({behavior: reducedMotion() ? 'auto' : 'smooth',
+                               block: 'center'});
   }
+}
+
+function reducedMotion() {
+  return !!(window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 function refresh() {
@@ -1317,6 +1414,12 @@ function closeModalIfBg(e) {
 function closeModal() {
   document.getElementById('modal-bg').classList.remove('show');
 }
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' &&
+      document.getElementById('modal-bg').classList.contains('show')) {
+    closeModal();
+  }
+});
 
 // Static controls: wired here because the page CSP runs no inline
 // handlers.
@@ -1340,8 +1443,16 @@ document.getElementById('modal-bg').addEventListener('click',
                                                      closeModalIfBg);
 
 refresh();
-// Auto-refresh every 30s so next-fire countdowns stay live.
-setInterval(refresh, 30000);
+// Auto-refresh every 30s so next-fire countdowns stay live — but not
+// under someone editing a card: a rebuild would drop what they typed.
+setInterval(function() {
+  var list = document.getElementById('list');
+  if (list.contains(document.activeElement) ||
+      list.querySelector('.script-card.open')) {
+    return;
+  }
+  refresh();
+}, 30000);
 )JS";
 
 // ---- Data source ----
@@ -1378,7 +1489,7 @@ class MoltAIAutomationDataSource : public content::URLDataSource {
     }
     std::string html = R"HTML(
 <!DOCTYPE html>
-<html><head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <title>MoltBrowser Automations</title>
 <style>
@@ -1388,30 +1499,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .header{background:linear-gradient(135deg,#1a1a2e,#16213e);
   padding:18px 28px;display:flex;align-items:center;gap:18px;
   border-bottom:1px solid rgba(255,255,255,0.08);}
-.header h1{font-size:22px;font-weight:600;}
+.header h1{font-size:1.375rem;font-weight:600;}
 .header h1 span{color:#ff4444;font-weight:700;}
-.badge{background:#ff4444;color:#fff;font-size:10px;padding:2px 8px;
+.badge{background:#d63939;color:#fff;font-size:.625rem;padding:2px 8px;
   border-radius:10px;font-weight:600;text-transform:uppercase;}
 .bar{flex:1}
-.btn{background:#ff4444;border:none;color:#fff;padding:8px 16px;
-  border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;}
-.btn:hover{background:#ff5555;}
+.btn{background:#d63939;border:none;color:#fff;padding:8px 16px;
+  border-radius:8px;font-weight:600;cursor:pointer;font-size:.8125rem;}
+.btn:hover{background:#c02f2f;}
 .btn:disabled{opacity:0.5;cursor:not-allowed;}
 .btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;}
 .btn.ghost:hover{border-color:#ff4444;color:#fff;}
 .btn.green{background:#16a34a;}
 .btn.green:hover{background:#22c55e;}
-.btn.small{padding:5px 10px;font-size:11px;border-radius:6px;}
+.btn.small{padding:5px 10px;font-size:.6875rem;border-radius:6px;}
 .container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
 .intro{color:#888;margin-bottom:24px;line-height:1.5;}
 .intro b{color:#ddd;}
 .toolbar-row{display:flex;gap:10px;margin-bottom:24px;align-items:center;}
 .toolbar-row .grow{flex:1;}
 .search-input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:8px 14px;border-radius:8px;font-size:13px;width:240px;}
-.search-input:focus{outline:none;border-color:#ff4444;}
+  padding:8px 14px;border-radius:8px;font-size:.8125rem;width:240px;}
+.search-input:focus{border-color:#ff4444;}
 .script-list{display:flex;flex-direction:column;gap:12px;}
-.empty{padding:48px;text-align:center;color:#555;background:#0d0d14;
+.empty{padding:48px;text-align:center;color:#8a8a94;background:#0d0d14;
   border:1px dashed #1a1a2a;border-radius:12px;}
 .script-card{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
   overflow:hidden;transition:border-color 0.2s,box-shadow 0.2s;}
@@ -1421,31 +1532,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   cursor:pointer;user-select:none;}
 .script-summary:hover{background:rgba(255,255,255,0.02);}
 .script-summary .info{flex:1;min-width:0;}
-.script-summary .name{font-size:15px;font-weight:600;margin-bottom:4px;
+.script-summary .name{font-size:.9375rem;font-weight:600;margin-bottom:4px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.script-summary .meta{font-size:12px;color:#888;}
+.name-btn{background:none;border:none;padding:0;margin:0;color:inherit;
+  font:inherit;cursor:pointer;text-align:left;}
+.script-summary .meta{font-size:.75rem;color:#888;}
 .script-summary .actions{display:flex;gap:8px;flex-shrink:0;}
-.script-summary .chev{color:#555;font-size:14px;transition:transform 0.2s;
+.script-summary .chev{color:#8a8a94;font-size:.875rem;transition:transform 0.2s;
   margin-left:4px;}
 .script-card.open .chev{transform:rotate(90deg);}
 .script-detail{display:none;padding:0 22px 18px;border-top:1px solid #1a1a2a;
   background:#08080d;}
 .script-card.open .script-detail{display:block;}
 .detail-section{margin-top:16px;}
-.detail-section h4{font-size:11px;text-transform:uppercase;
+.detail-section h4{font-size:.6875rem;text-transform:uppercase;
   letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;}
 .var-grid{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;
   align-items:center;}
-.var-grid label{font-size:12px;color:#aaa;font-family:monospace;}
+.var-grid label,.var-grid .lbl{font-size:.75rem;color:#aaa;font-family:monospace;}
 .var-grid input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:6px 10px;border-radius:6px;font-size:12px;width:100%;
+  padding:6px 10px;border-radius:6px;font-size:.75rem;width:100%;
   font-family:monospace;}
-.var-grid input:focus{outline:none;border-color:#ff4444;}
-.var-empty{color:#555;font-size:12px;font-style:italic;padding:6px 0;}
-.steps-list{font-family:monospace;font-size:11px;line-height:1.7;}
+.var-grid input:focus{border-color:#ff4444;}
+.var-empty{color:#8a8a94;font-size:.75rem;font-style:italic;padding:6px 0;}
+.steps-list{font-family:monospace;font-size:.6875rem;line-height:1.7;}
 .step-row{display:flex;gap:8px;padding:4px 8px;border-radius:4px;}
 .step-row:hover{background:rgba(255,255,255,0.03);}
-.step-num{color:#444;width:24px;text-align:right;}
+.step-num{color:#8a8a94;width:24px;text-align:right;}
 .step-type{color:#ff7799;font-weight:600;width:90px;}
 .step-target{color:#74e0a0;}
 .step-value{color:#888;}
@@ -1454,17 +1567,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .dot.green{background:#4ade80;}
 .dot.yellow{background:#fbbf24;}
 .dot.red{background:#f87171;}
-.section-title{font-size:13px;color:#888;text-transform:uppercase;
+.section-title{font-size:.8125rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;margin:24px 0 10px;display:flex;align-items:center;
-  gap:10px;}
-.section-title .count{background:#1a1a2a;color:#aaa;font-size:11px;
+  gap:10px;font-weight:400;}
+.header nav{display:flex;gap:16px;}
+.header nav a{color:#a0a0b0;text-decoration:none;font-size:.8125rem;}
+.header nav a:hover{color:#fff;text-decoration:underline;}
+.section-title .count{background:#1a1a2a;color:#aaa;font-size:.6875rem;
   padding:2px 8px;border-radius:10px;}
 .audit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
-  padding:14px 18px;font-family:monospace;font-size:11px;color:#bbb;
+  padding:14px 18px;font-family:monospace;font-size:.6875rem;color:#bbb;
   max-height:240px;overflow-y:auto;line-height:1.6;}
 .toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
   color:#4ade80;padding:12px 18px;border-radius:10px;
-  border:1px solid #2a4a2a;font-size:13px;font-weight:600;
+  border:1px solid #2a4a2a;font-size:.8125rem;font-weight:600;
   transform:translateY(120px);opacity:0;transition:all 0.25s;
   z-index:1000;}
 .toast.show{transform:translateY(0);opacity:1;}
@@ -1478,18 +1594,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 /* Day 3: schedule editor */
 .sched-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;
   flex-wrap:wrap;}
-.sched-row label{font-size:11px;color:#888;text-transform:uppercase;
+.sched-row label,.sched-row .lbl{font-size:.6875rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;}
 .sched-row select,.sched-row input{background:#0d0d14;border:1px solid #2a2a3a;
-  color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;
+  color:#fff;padding:6px 10px;border-radius:6px;font-size:.75rem;
   font-family:inherit;}
-.sched-row select:focus,.sched-row input:focus{outline:none;border-color:#ff4444;}
-.sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:11px;
+.sched-row select:focus,.sched-row input:focus{border-color:#ff4444;}
+.sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:.6875rem;
   padding:4px 10px;border-radius:14px;cursor:pointer;}
-.sched-row .preset:hover{background:#ff4444;color:#fff;}
-.sched-help{font-size:11px;color:#666;margin-top:4px;font-family:monospace;}
-.next-fire{font-size:12px;color:#fbbf24;margin-top:6px;}
-.next-fire.disabled{color:#555;}
+.sched-row .preset:hover{background:#d63939;color:#fff;}
+.sched-help{font-size:.6875rem;color:#8f8f99;margin-top:4px;font-family:monospace;}
+.next-fire{font-size:.75rem;color:#fbbf24;margin-top:6px;}
+.next-fire.disabled{color:#8a8a94;}
 
 /* Day 4: step editor */
 .step-edit-row{display:grid;
@@ -1497,33 +1613,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   gap:6px;align-items:center;margin-bottom:6px;}
 .step-edit-row select,.step-edit-row input{background:#0d0d14;
   border:1px solid #2a2a3a;color:#fff;padding:5px 8px;border-radius:5px;
-  font-size:11px;font-family:monospace;}
-.step-edit-row .step-num{font-family:monospace;color:#666;text-align:right;}
+  font-size:.6875rem;font-family:monospace;}
+.step-edit-row .step-num{font-family:monospace;color:#8f8f99;text-align:right;}
 .step-edit-row .step-ctrls{display:flex;gap:3px;}
 .step-edit-row .step-ctrls button{background:#1a1a2a;border:none;color:#aaa;
-  width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;
+  width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:.6875rem;
   display:flex;align-items:center;justify-content:center;}
-.step-edit-row .step-ctrls button:hover{background:#ff4444;color:#fff;}
+.step-edit-row .step-ctrls button:hover{background:#d63939;color:#fff;}
 .add-step-btn{background:transparent;border:1px dashed #2a2a3a;color:#888;
-  padding:8px;border-radius:6px;cursor:pointer;width:100%;font-size:12px;
+  padding:8px;border-radius:6px;cursor:pointer;width:100%;font-size:.75rem;
   font-family:inherit;margin-top:6px;}
 .add-step-btn:hover{border-color:#ff4444;color:#fff;}
 
 /* Day 5: trust badge */
-.trust-badge{font-size:10px;font-weight:600;text-transform:uppercase;
+.trust-badge{font-size:.625rem;font-weight:600;text-transform:uppercase;
   padding:2px 8px;border-radius:10px;letter-spacing:0.5px;}
 .trust-casual{background:#3a2a2a;color:#f87171;}
 .trust-approved{background:#3a3a1a;color:#fbbf24;}
 .trust-trusted{background:#1a3a2a;color:#4ade80;}
 .trust-admin{background:#2a2a3a;color:#a78bfa;}
-.promote-banner{background:linear-gradient(90deg,#16a34a,#22c55e);
-  color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;
+.promote-banner{background:linear-gradient(90deg,#15803d,#166534);
+  color:#fff;padding:10px 14px;border-radius:8px;font-size:.8125rem;
   margin-top:12px;display:flex;align-items:center;gap:12px;
   box-shadow:0 0 0 1px rgba(74,222,128,0.3);}
 .promote-banner .grow{flex:1;}
 .promote-banner button{background:rgba(255,255,255,0.15);border:none;
   color:#fff;padding:6px 12px;border-radius:5px;font-weight:600;
-  cursor:pointer;font-size:12px;}
+  cursor:pointer;font-size:.75rem;}
 .promote-banner button:hover{background:rgba(255,255,255,0.25);}
 .promote-banner button.dismiss{background:transparent;}
 
@@ -1536,30 +1652,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .sparkline .bar.ok{background:#4ade80;}
 .sparkline .bar.fail{background:#f87171;}
 .sparkline .bar:hover{filter:brightness(1.4);}
-.spark-legend{display:flex;gap:14px;font-size:11px;color:#888;
+.spark-legend{display:flex;gap:14px;font-size:.6875rem;color:#888;
   margin-top:6px;align-items:center;}
 .spark-legend b{color:#ddd;font-weight:500;}
-.timeline{margin-top:10px;font-family:monospace;font-size:11px;
+.timeline{margin-top:10px;font-family:monospace;font-size:.6875rem;
   max-height:280px;overflow-y:auto;background:#08080d;
   border:1px solid #1a1a2a;border-radius:6px;padding:6px 10px;}
 .timeline-row{display:flex;gap:10px;padding:3px 4px;border-radius:3px;
   align-items:center;}
 .timeline-row:hover{background:rgba(255,255,255,0.03);}
-.timeline-ts{color:#555;flex-shrink:0;min-width:140px;}
+.timeline-ts{color:#8a8a94;flex-shrink:0;min-width:140px;}
 .timeline-ev{flex-shrink:0;min-width:140px;font-weight:600;}
 .timeline-ev.ok{color:#4ade80;}
 .timeline-ev.fail{color:#f87171;}
 .timeline-ev.run{color:#fbbf24;}
 .timeline-ev.audit{color:#aaa;}
-.timeline-extra{color:#777;flex:1;overflow:hidden;
+.timeline-extra{color:#94949e;flex:1;overflow:hidden;
   white-space:nowrap;text-overflow:ellipsis;}
 .retry-bar{background:#3a2a1a;color:#fbbf24;padding:8px 12px;
-  border-radius:6px;font-size:12px;margin-top:10px;
+  border-radius:6px;font-size:.75rem;margin-top:10px;
   display:flex;align-items:center;gap:10px;border:1px solid #4a3a1a;}
 .retry-bar .grow{flex:1;}
 .retry-bar button{background:#fbbf24;color:#0a0a0f;border:none;
   padding:5px 10px;border-radius:5px;font-weight:600;cursor:pointer;
-  font-size:11px;}
+  font-size:.6875rem;}
 .retry-bar button:hover{background:#fdd95e;}
 
 /* Day 5: confirmation modal */
@@ -1568,23 +1684,39 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .modal-bg.show{display:flex;}
 .modal{background:#0d0d14;border:1px solid #2a2a3a;border-radius:12px;
   padding:24px;max-width:480px;width:90%;}
-.modal h3{font-size:16px;margin-bottom:10px;}
-.modal p{color:#aaa;font-size:13px;line-height:1.6;margin-bottom:16px;}
+.modal h3{font-size:1rem;margin-bottom:10px;}
+.modal p{color:#aaa;font-size:.8125rem;line-height:1.6;margin-bottom:16px;}
 .modal .actions{display:flex;gap:10px;justify-content:flex-end;}
+:focus-visible{outline:3px solid #9ecbff !important;outline-offset:2px;}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important;}
+}
+/* High contrast: buttons keep an edge, and the status dots, run bars
+   and trust badges stay visible. */
+@media (forced-colors: active){
+  .btn,.preset,.step-ctrls button,.promote-banner button,.retry-bar button{
+    border:1px solid ButtonText !important;}
+  .script-card,.toast,.trust-badge{border:1px solid CanvasText;}
+  .script-card.highlight{border-color:Highlight;}
+  .dot,.sparkline .bar{forced-color-adjust:none;border:1px solid CanvasText;}
+  :focus-visible{outline-color:Highlight !important;}
+}
 </style>
 </head>
 <body>
 
-<div class="header">
+<header class="header">
   <h1><span>Molt</span>Automation</h1>
   <span class="badge">Beta</span>
   <div class="bar"></div>
-  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
-  <a href="molt://ai-agent/" style="color:#888;text-decoration:none;font-size:13px;">Agent</a>
-  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
-</div>
+  <nav aria-label="MoltBrowser AI">
+    <a href="molt://ai/">AI Chat</a>
+    <a href="molt://ai-agent/">Agent</a>
+    <a href="molt://ai-settings/">Settings</a>
+  </nav>
+</header>
 
-<div class="container">
+<main class="container">
 
   <p class="intro">
     Record any web workflow, save it, and replay it on a schedule.
@@ -1607,16 +1739,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <button class="btn ghost"  id="refresh-btn">&#x21bb; Refresh</button>
     <div class="grow"></div>
     <input type="text" class="search-input" id="search"
+           aria-label="Search automations by name"
            placeholder="Search by name...">
     <button class="btn ghost" id="audit-btn">
       Audit log
     </button>
   </div>
 
-  <div class="section-title">
+  <h2 class="section-title">
     Saved automations
     <span class="count" id="count">0</span>
-  </div>
+  </h2>
   <div class="script-list" id="list">
     <div class="empty" id="empty">
       No automations yet. Click <b>+ Sample script</b> to create one,
@@ -1625,18 +1758,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     </div>
   </div>
 
-  <div id="audit-block" style="display:none;">
-    <div class="section-title">Audit log (most recent first)</div>
-    <pre class="audit" id="audit"></pre>
-  </div>
+  <section id="audit-block" style="display:none;" aria-labelledby="audit-title">
+    <h2 class="section-title" id="audit-title">Audit log (most recent first)</h2>
+    <pre class="audit" id="audit" tabindex="0"></pre>
+  </section>
 
-</div>
+</main>
 
 <div class="modal-bg" id="modal-bg">
-  <div class="modal" id="modal-content"></div>
+  <div class="modal" id="modal-content" role="dialog" aria-modal="true"
+       aria-label="Confirm"></div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-atomic="true"></div>
 
 <script src="app.js"></script>
 </body></html>

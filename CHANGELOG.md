@@ -1134,6 +1134,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **Typing into multi-line text boxes works.** The agent's and the chat's
   page actions failed on a `<textarea>` (a message or address box) and
   only filled single-line fields.
+- **MoltBrowser's own pages work with screen readers, the keyboard alone
+  and voice control.** The AI chats, the agent studio, automations,
+  settings, the MoltNet and import popovers, New Tab, memory and update
+  pages have names on every control, headings and landmarks, real buttons,
+  a visible focus ring, dialogs that take and return focus and close on
+  Escape, and no hidden control in the tab order. A finished AI answer,
+  agent steps and status are read out once; errors at once. Animations stop
+  for reduced motion, high-contrast mode is supported, text sizes follow
+  the user's font size, and every text colour meets WCAG AA contrast (some
+  button fills are a shade darker). The toolbar's AI mode and Agent mode
+  are toggle buttons that say whether their panel is open, and MoltNet
+  says its state in words. CI checks every page with axe-core and a
+  contrast script ([ACCESSIBILITY.md](docs/ACCESSIBILITY.md)).
 
 ### Engineering
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):

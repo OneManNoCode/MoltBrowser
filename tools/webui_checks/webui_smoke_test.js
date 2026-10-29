@@ -390,7 +390,8 @@ async function checkChatFormFill(window) {
   await waitFor(() => /saved profile is empty/.test(doc.getElementById('messages').textContent),
                 'the failure note');
   const rows = doc.querySelectorAll('#messages .molt-action-result.fail');
-  assert(/^✗ Nothing filled \(Your saved profile is empty/.test(
+  // "Failed: " is the row's words for screen readers (the ✗ is hidden).
+  assert(/^✗ (Failed: )?Nothing filled \(Your saved profile is empty/.test(
              rows[rows.length - 1].textContent),
          'headed as a form fill: ' + rows[rows.length - 1].textContent);
 
@@ -907,7 +908,13 @@ const memoryUrlSearches = [];
 
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
-   listeners: ['#searchForm:submit', '.card.ai:click', '.card.net:click']},
+   listeners: ['#searchForm:submit'],
+   after(window) {
+     // The cards are plain links (keyboard and screen readers get them
+     // for free).
+     const cards = window.document.querySelectorAll('nav a.card[href^="molt://"]');
+     assert.strictEqual(cards.length, 3, 'three card links');
+   }},
   {name: 'molt://memory', file: 'molt_ai_memory_ui.cc',
    listeners: ['#search-btn:click', '#forget-domain-btn:click',
                '#wipe-btn:click', '#q:keydown', '#mem-enabled:change',
@@ -1937,7 +1944,7 @@ function makeTrustedTypes(window, mode, violations) {
   window.document.write = function(v) { return write.call(this, guard('document.write', v)); };
 }
 
-async function runPage(page) {
+async function runPage(page, hooks = {}) {
   const src = read(page.file);
   const raw = rawStrings(src);
   const htmlEntry = raw.list.find((r) => r.kind === 'HTML');
@@ -1973,6 +1980,8 @@ async function runPage(page) {
     listened.get(this).add(type);
     return ael.call(this, type, fn, opts);
   };
+  // The event types something listens for on |el| (webui_a11y_test.js).
+  window.__listenedTypes = (el) => listened.get(el) || new Set();
   window.confirm = () => false;
   window.alert = () => {};
   window.prompt = () => null;
@@ -2000,6 +2009,7 @@ async function runPage(page) {
     ael.call(window, type, () => { activation = true; }, true);
   }
   const unclicked = [];
+  let closed = false;
   window.__clickConsumed = [];
   window.chrome = {send(method, args) {
     sent.push(method);
@@ -2018,6 +2028,9 @@ async function runPage(page) {
     if (typeof r === 'function') r = r(args);
     if (r === NO_REPLY) return;  // a request the browser never answers
     setTimeout(() => {
+      // A page closed under a pending request gets no answer (it would
+      // run against a torn-down document and fail the next page).
+      if (closed) return;
       if (window.cr && typeof window.cr.webUIResponse === 'function') {
         window.cr.webUIResponse(id, true, r === undefined ? {} : r);
       }
@@ -2058,9 +2071,11 @@ async function runPage(page) {
     const types = listened.get(el);
     if (!types || !types.has(type)) errors.push(`${sel} has no ${type} listener`);
   }
-  if (page.after) {
+  if (hooks.loaded) await hooks.loaded(window, errors);
+  if (page.after && !hooks.skipAfter) {
     try { await page.after(window); } catch (e) { errors.push('after(): ' + (e.stack || e)); }
   }
+  if (hooks.done) await hooks.done(window, errors);
   // Click every clickable control in the initial DOM; nothing may throw.
   if (!page.skipClickAll) {
     // Everything that has a click listener (direct or via moltActions).
@@ -2078,11 +2093,12 @@ async function runPage(page) {
   for (const m of unclicked) errors.push(`${m} sent without a click of its own`);
   const problems = errors.concat(violations, rejections.map((r) => 'unhandled rejection: ' + r));
   window.__ttOff = true;  // jsdom's own teardown clears the body
+  closed = true;
   window.close();
   return {problems, sent};
 }
 
-(async () => {
+async function main() {
   let failed = 0;
   for (const page of PAGES) {
     const {problems, sent} = await runPage(page);
@@ -2095,4 +2111,7 @@ async function runPage(page) {
   }
   if (failed) process.exit(1);
   console.log(`webui smoke test: ${PAGES.length} pages load under strict CSP + Trusted Types`);
-})();
+}
+
+module.exports = {PAGES, runPage};
+if (require.main === module) main();

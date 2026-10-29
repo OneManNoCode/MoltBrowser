@@ -100,14 +100,31 @@ function setStatus(t){el('status').textContent=t||'';}
 
 // Pure client-side show/hide between the Bookmarks and Import panes, plus the
 // shared header (dot + title + subline) which reflects the active tab.
+// The switch is an ARIA tab list: the selected tab is the one in the Tab
+// order, and the arrow keys, Home and End move between the tabs.
 function setTab(t){
   STATE.tab=t;
-  el('tab-bm').className='tab'+(t==='bookmarks'?' on':'');
-  el('tab-im').className='tab'+(t==='import'?' on':'');
+  [['tab-bm','bookmarks'],['tab-im','import']].forEach(function(x){
+    var on=(t===x[1]),b=el(x[0]);
+    b.className='tab'+(on?' on':'');
+    b.setAttribute('aria-selected',on?'true':'false');
+    b.tabIndex=on?0:-1;
+  });
   el('view-bm').hidden=(t!=='bookmarks');
   el('view-im').hidden=(t!=='import');
   updateHeader();
   if(t==='bookmarks') setTimeout(focusSearch,0);
+}
+function tabKey(e){
+  var next=null;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    next=STATE.tab==='bookmarks'?'import':'bookmarks';
+  }else if(e.key==='Home'){next='bookmarks';}
+  else if(e.key==='End'){next='import';}
+  if(!next) return;
+  e.preventDefault();
+  setTab(next);
+  el(next==='bookmarks'?'tab-bm':'tab-im').focus();
 }
 
 function updateHeader(){
@@ -127,6 +144,7 @@ function updateHeader(){
 
 function render(){
   el('sw').className='sw'+(STATE.includePasswords?' on':'');
+  el('sw').setAttribute('aria-checked',STATE.includePasswords?'true':'false');
   el('go').textContent=STATE.includePasswords?'Import bookmarks & passwords':'Import bookmarks';
   var list=el('implist');list.replaceChildren();
   if(!STATE.browsers.length){
@@ -142,7 +160,7 @@ function render(){
 // ---- Bookmarks pane (the user's own saved bookmarks) ----
 
 function bmRowEl(b){
-  var r=document.createElement('div');r.className='row';
+  var r=document.createElement('button');r.className='row';r.type='button';
   r.onclick=function(){openBookmark(b.url);};
   var f=document.createElement('span');f.className='flag';
   f.innerHTML=moltHTML(LOGO.globe);  // globe fallback until the favicon loads
@@ -154,10 +172,10 @@ function bmRowEl(b){
     img.src='chrome://favicon2/?size=32&scaleFactor=2x&pageUrl='+
             encodeURIComponent(b.url)+'&allowGoogleServerFallback=0';
   }
-  var m=document.createElement('div');m.className='meta';
-  var n=document.createElement('div');n.className='name';
+  var m=document.createElement('span');m.className='meta';
+  var n=document.createElement('span');n.className='name';
   n.textContent=b.title||b.host||b.url||'';
-  var s=document.createElement('div');s.className='sub';
+  var s=document.createElement('span');s.className='sub';
   s.textContent=b.host||'';
   m.appendChild(n);m.appendChild(s);
   r.appendChild(f);r.appendChild(m);return r;
@@ -169,13 +187,14 @@ function bmRecency(b){
   return Math.max(lc, b.used||0, b.added||0);
 }
 function seclabel(text){
-  var d=document.createElement('div');d.className='seclabel';d.textContent=text;return d;
+  var d=document.createElement('h2');d.className='seclabel';d.textContent=text;return d;
 }
 function renderBookmarks(){
   var list=el('bmlist');list.replaceChildren();
   if(!STATE.bookmarks.length){
     var e=document.createElement('div');e.className='empty';
-    var lnk=document.createElement('span');lnk.className='lnk';lnk.id='toimport';
+    var lnk=document.createElement('button');lnk.className='lnk';lnk.id='toimport';
+    lnk.type='button';
     lnk.textContent='import some \u2192';
     lnk.addEventListener('click',function(){setTab('import');});
     e.append('No bookmarks yet \u2014 ',lnk);
@@ -235,13 +254,19 @@ function loadBookmarks(){
 
 function rowEl(b){
   var installed=isInstalled(b);
-  var r=document.createElement('div');
+  var r=document.createElement('button');r.type='button';
   r.className='row'+(installed?'':' dim')+((STATE.selected===b.id&&installed)?' active':'');
   if(installed){r.onclick=function(){selectAndImport(b.id);};}
+  else{r.disabled=true;}
+  // Named for what a click does; the visible name stays part of it.
+  r.setAttribute('aria-label',(installed?'Import from ':'')+String(b.display_name||'')+
+                 (installed?'':' (not installed)'));
+  if(STATE.selected===b.id&&installed) r.setAttribute('aria-current','true');
   var f=document.createElement('span');f.className='flag';
   f.innerHTML=moltHTML(LOGO[b.id]||LOGO.globe);  // constant strings only
   var n=document.createElement('span');n.className='name';n.textContent=b.display_name;
   var c=document.createElement('span');c.className='chk';c.textContent='→';
+  c.setAttribute('aria-hidden','true');
   r.appendChild(f);r.appendChild(n);r.appendChild(c);return r;
 }
 
@@ -312,6 +337,8 @@ cr.addWebUIListener('import-progress',onImportProgress);
 // Static controls (no inline handlers under the page CSP).
 el('tab-bm').addEventListener('click',function(){setTab('bookmarks');});
 el('tab-im').addEventListener('click',function(){setTab('import');});
+el('tab-bm').addEventListener('keydown',tabKey);
+el('tab-im').addEventListener('keydown',tabKey);
 el('sw').addEventListener('click',togglePw);
 el('go').addEventListener('click',importPrimary);
 el('manage').addEventListener('click',function(){
@@ -374,16 +401,16 @@ class MoltImportDataSource : public content::URLDataSource {
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Import</title>
+<title>Bookmarks and import</title>
 <style>
   :root{
     --text:#f4f5fa;
     --muted:rgba(233,236,247,0.64);
-    --faint:rgba(233,236,247,0.42);
+    --faint:rgba(233,236,247,0.56);
     --accent:#ff5257;
     --accent-deep:#e0353b;
     --ok:#5fe3a1;
@@ -393,6 +420,7 @@ class MoltImportDataSource : public content::URLDataSource {
     --specular:rgba(255,255,255,0.26);
     --blur:blur(30px) saturate(175%);
     --font:-apple-system,"SF Pro Text",BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    --focus:#9ecbff;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%;background:transparent}
@@ -425,62 +453,64 @@ class MoltImportDataSource : public content::URLDataSource {
   .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);transition:.25s}
   .dot.on{background:var(--ok);box-shadow:0 0 10px 1px rgba(95,227,161,.6)}
   .dot.busy{background:var(--accent);box-shadow:0 0 10px 1px rgba(255,82,87,.5)}
-  .title{font-size:14px;font-weight:700;letter-spacing:-.01em}
-  .st{font-size:11px;color:var(--muted);margin-top:1px}
+  .title{margin:0;font-size:.875rem;font-weight:700;letter-spacing:-.01em}
+  .st{font-size:.6875rem;color:var(--muted);margin-top:1px}
 
-  .sec{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+  .sec{margin:0;font-weight:400;font-size:.625rem;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
     padding:10px 18px 6px;flex:0 0 auto}
 
   .list{flex:1 1 auto;overflow-y:auto;padding:0 8px 4px}
   .list::-webkit-scrollbar{width:8px}
   .list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px;border:2px solid transparent;background-clip:content-box}
   .row{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:11px;cursor:pointer;
-    border:1px solid transparent;transition:background .14s,border-color .14s}
+    border:1px solid transparent;transition:background .14s,border-color .14s;
+    width:100%;background:none;color:inherit;font:inherit;text-align:left}
   .row:hover{background:rgba(255,255,255,.06);border-color:var(--edge)}
   .row .flag{width:22px;height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
   .row .flag img.fav{width:16px;height:16px;border-radius:4px;display:block}
-  .seclabel{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  .seclabel{margin:0;font-size:.625rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
             color:var(--faint);padding:10px 12px 4px;user-select:none}
   .row .flag svg{width:20px;height:20px;display:block}
-  .row .name{font-size:13px;flex:1}
-  .row .chk{color:var(--faint);font-size:15px;opacity:0;flex:0 0 auto;transition:opacity .14s}
+  .row .name{font-size:.8125rem;flex:1}
+  .row .chk{color:var(--faint);font-size:.9375rem;opacity:0;flex:0 0 auto;transition:opacity .14s}
   .row:hover .chk{opacity:.8}
   .row.active{background:rgba(95,227,161,.10);border-color:rgba(95,227,161,.30)}
   .row.active .chk{opacity:1;color:var(--ok)}
   .row.dim{opacity:.4;cursor:default}
   .row.dim:hover{background:transparent;border-color:transparent}
   .row.dim:hover .chk{opacity:0}
-  .empty{font-size:12px;color:var(--faint);text-align:center;padding:22px 16px}
+  .empty{font-size:.75rem;color:var(--faint);text-align:center;padding:22px 16px}
 
   .divider{height:1px;background:var(--edge);margin:0 14px;flex:0 0 auto}
 
   .toggle-row{padding:12px 18px 8px;display:flex;align-items:center;gap:12px;flex:0 0 auto}
-  .toggle-row .lbl{font-size:12.5px;color:var(--muted)}
-  .toggle-row .sub{font-size:11px;color:var(--faint);margin-top:1px}
+  .toggle-row .lbl{font-size:.78125rem;color:var(--muted)}
+  .toggle-row .sub{font-size:.6875rem;color:var(--faint);margin-top:1px}
   .sw{margin-left:auto;width:44px;height:25px;border-radius:13px;background:rgba(255,255,255,.12);
-    border:1px solid var(--edge);cursor:pointer;position:relative;transition:.2s;flex:0 0 auto}
+    border:1px solid var(--edge);cursor:pointer;position:relative;transition:.2s;flex:0 0 auto;padding:0}
   .sw.on{background:linear-gradient(180deg,#ff676c,var(--accent-deep));border-color:transparent}
   .sw .knob{position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;
     background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
   .sw.on .knob{transform:translateX(19px)}
 
-  .status{flex:0 0 auto;min-height:16px;padding:2px 18px 4px;font-size:11px;
+  .status{flex:0 0 auto;min-height:16px;padding:2px 18px 4px;font-size:.6875rem;
     color:var(--muted);text-align:center;line-height:1.35}
 
   .foot{flex:0 0 auto;display:flex;gap:8px;padding:8px 14px 14px}
-  .act{flex:1;padding:9px 4px;border-radius:11px;cursor:pointer;text-align:center;
-    font-size:11px;font-weight:600;background:rgba(255,255,255,.05);
+  .act{flex:1;padding:9px 4px;border-radius:11px;cursor:pointer;text-align:center;font-family:inherit;
+    font-size:.6875rem;font-weight:600;background:rgba(255,255,255,.05);
     border:1px solid var(--edge);color:var(--muted);transition:.15s;white-space:nowrap}
   .act:hover{background:rgba(255,255,255,.11);border-color:var(--edge-hi);color:var(--text)}
-  .act.primary{flex:2;background:linear-gradient(180deg,#ff676c,var(--accent-deep));
+  .act.primary{flex:2;background:linear-gradient(180deg,#d0383e,#b8282e);
     border-color:transparent;color:#fff}
   .act.primary:hover{filter:brightness(1.06);color:#fff}
 
   /* Segmented [ Bookmarks | Import ] switch under the header. */
   .tabs{display:flex;gap:4px;margin:0 14px 4px;padding:3px;border-radius:12px;
     background:rgba(255,255,255,.05);border:1px solid var(--edge);flex:0 0 auto}
-  .tab{flex:1;text-align:center;font-size:12px;font-weight:600;padding:7px 4px;
-    border-radius:9px;cursor:pointer;color:var(--muted);transition:.15s;user-select:none}
+  .tab{flex:1;text-align:center;font-size:.75rem;font-weight:600;padding:7px 4px;
+    border-radius:9px;cursor:pointer;color:var(--muted);transition:.15s;user-select:none;
+    border:none;background:none;font-family:inherit}
   .tab:hover{color:var(--text)}
   .tab.on{background:rgba(255,255,255,.12);color:var(--text);
     box-shadow:inset 0 1px 0 var(--specular)}
@@ -490,7 +520,7 @@ class MoltImportDataSource : public content::URLDataSource {
   .view[hidden]{display:none}
 
   .search{margin:2px 14px 8px;flex:0 0 auto}
-  .search input{width:100%;padding:8px 11px;border-radius:10px;font-size:12.5px;
+  .search input{width:100%;padding:8px 11px;border-radius:10px;font-size:.78125rem;
     color:var(--text);background:rgba(255,255,255,.06);border:1px solid var(--edge);
     outline:none;font-family:var(--font)}
   .search input::placeholder{color:var(--faint)}
@@ -499,51 +529,72 @@ class MoltImportDataSource : public content::URLDataSource {
   /* Two-line bookmark rows: title over a dim host. */
   .row .meta{flex:1;min-width:0;display:flex;flex-direction:column}
   .row .meta .name{flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .row .meta .sub{font-size:11px;color:var(--faint);white-space:nowrap;
+  .row .meta .sub{font-size:.6875rem;color:var(--faint);white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 
-  .empty .lnk{color:var(--accent);cursor:pointer;font-weight:600}
+  .empty .lnk{color:var(--accent);cursor:pointer;font-weight:600;
+    background:none;border:none;padding:0;font:inherit}
   .empty .lnk:hover{text-decoration:underline}
 
-  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+  :focus-visible{outline:3px solid var(--focus)!important;outline-offset:-2px}
+  .search input:focus-visible{outline-offset:1px}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+  /* High contrast: the glass is gone, so controls keep system-coloured
+     edges and the switch and the selected tab and row stay visible. */
+  @media (forced-colors: active){
+    .env{display:none}
+    .row,.act,.tab,.tabs{border:1px solid ButtonText}
+    .tab.on,.row.active{border-color:Highlight;outline:2px solid Highlight}
+    .sw{forced-color-adjust:none;background:Canvas;border:1px solid ButtonText}
+    .sw .knob{background:ButtonText;box-shadow:none}
+    .sw.on{background:Highlight;border-color:Highlight}
+    .sw.on .knob{background:HighlightText}
+    .dot{forced-color-adjust:none;background:CanvasText}
+    :focus-visible{outline-color:Highlight!important}
+  }
 </style>
 </head>
 <body>
-<div class="panel">
-  <div class="env"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+<main class="panel">
+  <div class="env" aria-hidden="true"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
   <div class="frost">
     <div class="hdr">
-      <span class="dot" id="dot"></span>
-      <div><div class="title" id="title">Bookmarks</div><div class="st" id="st">&nbsp;</div></div>
+      <span class="dot" id="dot" aria-hidden="true"></span>
+      <div><h1 class="title" id="title">Bookmarks</h1><div class="st" id="st">&nbsp;</div></div>
     </div>
-    <div class="tabs">
-      <div class="tab on" id="tab-bm">Bookmarks</div>
-      <div class="tab" id="tab-im">Import</div>
+    <div class="tabs" role="tablist" aria-label="Bookmarks or import">
+      <button class="tab on" id="tab-bm" type="button" role="tab" aria-selected="true"
+              aria-controls="view-bm">Bookmarks</button>
+      <button class="tab" id="tab-im" type="button" role="tab" aria-selected="false"
+              aria-controls="view-im" tabindex="-1">Import</button>
     </div>
 
     <!-- DEFAULT view: the user's own saved bookmarks. -->
-    <div class="view" id="view-bm">
-      <div class="search"><input id="bmsearch" type="text" placeholder="Search bookmarks&hellip;" autocomplete="off" spellcheck="false" autofocus></div>
+    <div class="view" id="view-bm" role="tabpanel" aria-labelledby="tab-bm">
+      <div class="search" role="search"><input id="bmsearch" type="text" placeholder="Search bookmarks&hellip;" aria-label="Search bookmarks" autocomplete="off" spellcheck="false" autofocus></div>
       <div class="list" id="bmlist"></div>
     </div>
 
     <!-- SECOND view: migrate bookmarks/passwords from another browser. -->
-    <div class="view" id="view-im" hidden>
-      <div class="sec">Import from</div>
+    <div class="view" id="view-im" role="tabpanel" aria-labelledby="tab-im" hidden>
+      <h2 class="sec">Import from</h2>
       <div class="list" id="implist"></div>
       <div class="divider"></div>
       <div class="toggle-row">
-        <div><div class="lbl">Include saved passwords</div><div class="sub">Off by default &middot; may prompt for Keychain</div></div>
-        <div class="sw" id="sw"><div class="knob"></div></div>
+        <div><div class="lbl" id="sw-label">Include saved passwords</div><div class="sub" id="sw-sub">Off by default &middot; may prompt for Keychain</div></div>
+        <button class="sw" id="sw" type="button" role="switch" aria-checked="false"
+                aria-labelledby="sw-label" aria-describedby="sw-sub"><span class="knob"></span></button>
       </div>
-      <div class="status" id="status"></div>
+      <div class="status" id="status" role="status"></div>
       <div class="foot">
-        <div class="act primary" id="go">Import bookmarks</div>
-        <div class="act" id="manage">Manage</div>
+        <button class="act primary" id="go" type="button">Import bookmarks</button>
+        <button class="act" id="manage" type="button">Manage</button>
       </div>
     </div>
   </div>
-</div>
+</main>
 <script src="app.js"></script>
 </body>
 </html>)HTML";

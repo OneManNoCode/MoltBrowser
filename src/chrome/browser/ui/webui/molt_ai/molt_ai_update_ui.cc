@@ -162,7 +162,7 @@ class MoltAIUpdateHandler : public content::WebUIMessageHandler,
 // ---- Page resources ----
 // Static markup; all behaviour lives in app.js below.
 constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>MoltBrowser Updates</title>
@@ -172,20 +172,20 @@ constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
          color:#e8e8ea; margin:0; padding:40px; display:flex;
          justify-content:center; }
   .card { width:100%; max-width:620px; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:#8a8a92; font-size:13px; margin-bottom:28px; }
+  h1 { font-size:1.375rem; margin:0 0 4px; }
+  .sub { color:#8a8a92; font-size:.8125rem; margin-bottom:28px; }
   .panel { background:#16161a; border:1px solid #26262c; border-radius:14px;
            padding:24px; margin-bottom:18px; }
   .row { display:flex; align-items:center; justify-content:space-between;
          gap:16px; }
-  .vlabel { color:#8a8a92; font-size:12px; text-transform:uppercase;
+  .vlabel { color:#8a8a92; font-size:.75rem; text-transform:uppercase;
             letter-spacing:.05em; }
-  .vnum { font-size:18px; font-weight:600; }
+  .vnum { font-size:1.125rem; font-weight:600; }
   #badge { display:inline-block; padding:6px 12px; border-radius:999px;
-           font-size:13px; font-weight:600; background:#1f2430; color:#9aa4b2; }
-  #status { font-size:15px; margin:18px 0 6px; }
+           font-size:.8125rem; font-weight:600; background:#1f2430; color:#9aa4b2; }
+  #status { font-size:.9375rem; margin:18px 0 6px; }
   #notes { white-space:pre-wrap; background:#0f0f12; border:1px solid #26262c;
-           border-radius:10px; padding:14px; font-size:13px; color:#c2c2c8;
+           border-radius:10px; padding:14px; font-size:.8125rem; color:#c2c2c8;
            max-height:220px; overflow:auto; margin-top:14px; display:none; }
   .bar { height:8px; background:#26262c; border-radius:999px; overflow:hidden;
          margin:14px 0 4px; display:none; }
@@ -196,15 +196,28 @@ constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
   .primary { background:#6d5cff; color:#fff; }
   .primary:disabled { background:#34343c; color:#7a7a82; cursor:default; }
   .ghost { background:#26262c; color:#e8e8ea; }
-  .toggle { display:flex; align-items:center; gap:10px; font-size:14px; }
+  .toggle { display:flex; align-items:center; gap:10px; font-size:.875rem; }
   .toggle input { width:18px; height:18px; accent-color:#6d5cff; }
   a { color:#9a8cff; }
-  .muted { color:#8a8a92; font-size:12px; margin-top:10px; }
-  .ok { color:#4ade80; font-size:13px; margin-top:10px; display:none; }
+  .muted { color:#8a8a92; font-size:.75rem; margin-top:10px; }
+  .ok { color:#4ade80; font-size:.8125rem; margin-top:10px; display:none; }
+  :focus-visible { outline:3px solid #9ecbff; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+  /* High contrast: buttons keep an edge and the progress bar stays
+     visible. */
+  @media (forced-colors: active) {
+    button { border:1px solid ButtonText; }
+    #badge, .panel, #notes { border:1px solid CanvasText; }
+    .bar { border:1px solid CanvasText; }
+    .bar > div { forced-color-adjust:none; background:Highlight; }
+    :focus-visible { outline-color:Highlight; }
+  }
 </style>
 </head>
 <body>
-<div class="card">
+<main class="card">
   <h1>Software Update</h1>
   <div class="sub">MoltBrowser keeps itself up to date automatically.</div>
 
@@ -221,10 +234,11 @@ constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
       </div>
     </div>
 
-    <div id="status">Checking for updates&hellip;</div>
-    <div class="bar" id="bar"><div id="barfill"></div></div>
+    <div id="status" role="status">Checking for updates&hellip;</div>
+    <div class="bar" id="bar" role="progressbar" aria-label="Download progress"
+         aria-valuemin="0" aria-valuemax="100"><div id="barfill"></div></div>
     <div class="ok" id="verified">&#10003; Signature verified: this update is signed by MoltBrowser&rsquo;s release key.</div>
-    <div id="notes"></div>
+    <div id="notes" role="region" aria-label="Release notes"></div>
 
     <div class="btns">
       <button class="ghost" id="checkBtn">Check for updates</button>
@@ -241,7 +255,7 @@ constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
     <div class="muted">When on, MoltBrowser downloads new versions in the
       background and installs them on restart.</div>
   </div>
-</div>
+</main>
 
 <script src="app.js"></script>
 </body>
@@ -304,6 +318,14 @@ function setReleaseLink(url) {
   }
 }
 
+// #status is a live region: write it only when the words change, so a
+// progress update isn't read out again, and make a failure an alert.
+function setStatus(el, text, isError) {
+  var role = isError ? 'alert' : 'status';
+  if (el.getAttribute('role') !== role) el.setAttribute('role', role);
+  if (el.textContent !== text) el.textContent = text;
+}
+
 function render(s) {
   lastState = s.state;
   canAutoInstall = s.can_auto_install !== false;
@@ -320,43 +342,50 @@ function render(s) {
   action.disabled = true;
   checkBtn.disabled = false;
   var bg = '#1f2430', fg = '#9aa4b2', label = 'Idle';
+  var statusText = null;
 
   if (s.state === 'checking') {
-    label = 'Checking'; status.textContent = 'Checking for updates…';
+    label = 'Checking'; statusText = 'Checking for updates…';
     checkBtn.disabled = true;
   } else if (s.state === 'uptodate') {
     bg = '#15301f'; fg = '#4ade80'; label = 'Up to date';
-    status.textContent = 'You’re running the latest version.';
+    statusText = 'You’re running the latest version.';
   } else if (s.state === 'available') {
     bg = '#2a2410'; fg = '#fbbf24'; label = 'Update available';
-    status.textContent = s.error ||
+    statusText = s.error ||
       ('Version ' + s.latest_version + ' is available.');
     action.textContent = canAutoInstall ? 'Download & install' : 'Open release page';
     action.disabled = !canAutoInstall && !s.release_url;
   } else if (s.state === 'downloading') {
     bg = '#1a2233'; fg = '#7aa2ff'; label = 'Downloading';
-    status.textContent = 'Downloading version ' + s.latest_version + '…';
+    statusText = 'Downloading version ' + s.latest_version + '…';
     bar.style.display = 'block';
     fill.style.width = (s.percent >= 0 ? s.percent : 30) + '%';
   } else if (s.state === 'verifying') {
     bg = '#1a2233'; fg = '#7aa2ff'; label = 'Verifying';
-    status.textContent = 'Checking the download against MoltBrowser’s signed release manifest…';
+    statusText = 'Checking the download against MoltBrowser’s signed release manifest…';
   } else if (s.state === 'downloaded') {
     bg = '#15301f'; fg = '#4ade80'; label = 'Ready to install';
-    status.textContent = 'Version ' + s.latest_version +
+    statusText = 'Version ' + s.latest_version +
       ' is ready. Restart to finish updating.';
     action.textContent = 'Restart to update'; action.disabled = false;
   } else if (s.state === 'installing') {
-    label = 'Installing'; status.textContent = 'Restarting to apply update…';
+    label = 'Installing'; statusText = 'Restarting to apply update…';
     checkBtn.disabled = true;
   } else if (s.state === 'checkfailed') {
     // Soft state: the version CHECK didn't complete (offline / rate limit).
     bg = '#2a2410'; fg = '#fbbf24'; label = "Couldn't check";
-    status.textContent = s.error ||
+    statusText = s.error ||
       "Couldn't check for updates — we'll retry automatically.";
   } else if (s.state === 'error') {
     bg = '#311616'; fg = '#f87171'; label = 'Error';
-    status.textContent = s.error || 'Update failed.';
+    statusText = s.error || 'Update failed.';
+  }
+  if (statusText !== null) setStatus(status, statusText, s.state === 'error');
+  if (s.state === 'downloading' && s.percent >= 0) {
+    bar.setAttribute('aria-valuenow', String(s.percent));
+  } else {
+    bar.removeAttribute('aria-valuenow');  // not known yet
   }
   if (s.signature_verified && (s.state === 'downloaded' || s.state === 'installing')) {
     verified.style.display = 'block';

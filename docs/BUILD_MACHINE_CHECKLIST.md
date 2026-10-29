@@ -755,6 +755,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `update/update_manager.cc`, `vault/vault_store.cc` (`base::saturated_cast`) | | #41 |
 | every fuzzer target's `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
 | `agents/frame_tool_permissions.*` (a `ProfileKeyedServiceFactory`, `RegisterListPref`), `agents/site_tool_host.cc` (`RenderFrameHost::IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::kTools)`), `automation/automation_runner.cc` (fallback locators, the run's questions, CALL_TOOL steps), the new GN targets (`agents:frame_tools` → `automation:agent_run_draft`; `automation:locators`, `:tool_steps`, `:run_questions`; `automation` → `molt_ai_agents`), and the one-line hooks in `chrome_browser_main_extra_parts_profiles.cc`, `chrome_browsing_data_remover_delegate.cc` and `profile_resetter.cc` | type-checked against 156's headers only | agent-replay |
+| `ui/views/toolbar/toolbar_view.cc` (the AI mode, Agent mode, MoltNet and import buttons' names and roles: `AdjustAccessibleName` and `UpdateAccessibleCheckedState` overrides, `GetViewAccessibility().SetRole(kToggleButton)`, `SetCheckedState`, `SetHasPopup`), `molt_net_bubble.cc` and `molt_import_bubble.cc` (`SetAccessibleTitle`, `SetInitiallyFocusedView`), every `molt_*_ui.cc`, `molt_ai_chat_ui_js.h` and `molt_webui_csp.h` (`kMoltA11yJs`; the pages' raw strings) | type-checked against 156's headers in round 36 (Linux; Windows too, except `toolbar_view.cc`, which the check models for Linux only); the toolbar's names, roles and pressed state need §7.3's look in a built browser | a11y-webui |
 | `ui/webui/molt_ai/molt_net_handler.cc`, `molt_net_ui.cc`, `fingerprinting/molt_net_fonts.{h,cc}` | the status gains `fonts` (`GetMoltNetFontsStatus()`, `std::optional<MoltNetFontsStatus>`; the handler calls `StartLoadingMoltNetFonts()`); the panel's note is a `<div role="note">` filled by `textContent`; `//chrome/browser/ui/webui/molt_ai` now depends on `//chrome/browser/molt_ai/fingerprinting:net_fonts` | moltnet-shared4 |
 
 ### 4.9 GN targets and DEPS edges
@@ -1946,6 +1947,43 @@ WEB_AI_APIS.md §12):
 - [ ] "This page" commands (`/tldr`, `/translate`) use the tab shown now,
   after switching tabs; a command that finishes at once leaves the chat
   ready for the next message (from #9, #12).
+
+**Accessibility of MoltBrowser's pages and toolbar** (from a11y-webui;
+[ACCESSIBILITY.md](ACCESSIBILITY.md) §3, §4). The jsdom checks in CI cover
+everything that needs no layout; these need the built browser. macOS and
+Linux now, Windows when its builds resume:
+
+- [ ] axe's layout rules on every molt:// page (the side-panel pages and
+  popovers opened as tabs), dark and light theme, in each page's main
+  states (a dialog open, an error shown): `color-contrast`, `target-size`,
+  `link-in-text-block`, `scrollable-region-focusable`,
+  `label-content-name-mismatch`, `css-orientation-lock`; or Lighthouse's
+  accessibility audit (from a11y-webui; ACCESSIBILITY.md §4 has the
+  console command, verify it). *Expected:* no violations; send back any
+  with its page and selector.
+- [ ] 200% zoom and a 24 px default font: no clipped or overlapping text,
+  the side panels usable at their default width; forced colours
+  (DevTools, Rendering: `forced-colors: active`) and `prefers-reduced-motion`
+  (the home page's background stops) (from a11y-webui).
+- [ ] Keyboard only, every page: focus visible and in order, no traps,
+  hidden views and the closed chats drawer never take focus, Escape closes
+  every dialog, sheet and menu and focus returns to its opener
+  (from a11y-webui).
+- [ ] Toolbar (`chrome://accessibility`, Accessibility Inspector on macOS,
+  Accerciser on Linux): "AI mode" and "Agent mode" are toggle buttons,
+  pressed only while their side panel is open, with no emoji in the name;
+  MoltNet reads "MoltNet", "Tor", "Tor, exit country …" or "Tor, warning"
+  and has a dialog popup; "Bookmarks and import" has a dialog popup. The
+  two popovers open as dialogs named "MoltNet" and "Bookmarks and import"
+  with focus in their page; Escape closes them and focus returns to the
+  button (from a11y-webui).
+- [ ] VoiceOver (macOS) and Orca (Linux) on the AI chat (side panel and
+  `molt://ai`), the agent studio, automations, settings and the MoltNet
+  popover: names, headings and landmarks; a streamed answer read once
+  when complete, not word by word; agent steps and errors read; macOS
+  Voice Control's "Show names" and "Click AI mode" work (from a11y-webui).
+- [ ] *Deferred (Windows):* NVDA, JAWS, Narrator, Voice Access and the
+  contrast themes, the same list (from a11y-webui).
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
