@@ -181,6 +181,7 @@ class Report:
         offline = [(m, "offline", e) for m, e in catalog.OFFLINE.items()]
         stream = [(m, "stream", e) for m, e in catalog.STREAM.items()]
         rows_clean, rows_cond_wer, rows_cond_cmd, rows_real, rows_cat = [], [], [], [], []
+        rows_loops = []
         acc = {}
         clean_by_model = {}
         voice_of = self._voice_of()
@@ -196,8 +197,15 @@ class Report:
                 continue
             acc[mid] = {s: vbl.aggregate(v) for s, v in per.items()}
             clean = per.get("asr-clean-a", []) + per.get("asr-clean-b", [])
-            if clean:
+            # The per-voice table compares recognizers on the same clips:
+            # only those that ran both clean sets.
+            if "asr-clean-a" in per and "asr-clean-b" in per:
                 clean_by_model[e["label"]] = clean
+            synth = [x for k2, v in per.items() if k2.startswith("asr-") for x in v]
+            loops = sum(1 for x in synth if self._runaway(x["hyp"]))
+            rows_loops.append((e["label"], len(synth), loops,
+                               fmt_pct(loops / len(synth) if synth else None, 2)))
+            if clean:
                 a = vbl.aggregate(clean)
                 k = vbl.aggregate([x for x in clean
                                    if voice_of.get(x["clip"], "").startswith("kokoro")])
@@ -226,6 +234,8 @@ class Report:
         self.summary["accuracy"] = acc
         return {
             "voices": self._by_voice(clean_by_model),
+            "loops": table(["model", "synthetic clips", "runaway repeats", "share"],
+                           rows_loops),
             "clean": table(["model", "kind", "clips", "WER", "command acc.", "entity acc.",
                             "WER, Kokoro voices", "command", "entity"], rows_clean),
             "cats": table(["model"] + list(vbl.CATEGORIES), rows_cat),
@@ -234,6 +244,18 @@ class Report:
             "real": table(["model", "Speech Commands words", "word correct",
                            "LibriSpeech + JFK WER (4 clips)"], rows_real),
         }
+
+    @staticmethod
+    def _runaway(hyp):
+        """A word said four or more times in a row: a decoder stuck in a
+        loop ("search search search ...")."""
+        w = hyp.split()
+        run = 1
+        for i in range(1, len(w)):
+            run = run + 1 if w[i] == w[i - 1] else 1
+            if run >= 4:
+                return True
+        return False
 
     def _voice_of(self):
         voice_of = {}
@@ -667,6 +689,7 @@ def main(argv=None):
         acc["clean"], "",
         "### Command accuracy by category (clean)", "", acc["cats"], "",
         "### By test voice (clean)", "", acc["voices"], "",
+        "### Transcripts stuck in a loop", "", acc["loops"], "",
         "### WER by condition (the 'a' voices)", "", acc["cond_wer"], "",
         "### Command accuracy by condition", "", acc["cond_cmd"], "",
         "## Real speech", "", acc["real"], "",
