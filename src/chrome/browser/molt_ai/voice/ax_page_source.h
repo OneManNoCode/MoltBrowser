@@ -16,8 +16,9 @@
 // sets), so a frame can't claim another frame's tree as its child. Child
 // frames' nodes share a part of the node budget, so the frames a page embeds
 // (ads, widgets) can't push the page's own content out of the map. A node
-// whose bounds would be measured through a loop of offset containers gets
-// none. voice_page_controller.h keeps the trees; this file only reads them.
+// whose bounds would be measured through a loop of offset containers, or a
+// chain of them longer than the walk is deep, gets none.
+// voice_page_controller.h keeps the trees; this file only reads them.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VOICE_AX_PAGE_SOURCE_H_
 #define CHROME_BROWSER_MOLT_AI_VOICE_AX_PAGE_SOURCE_H_
@@ -69,8 +70,8 @@ struct AXPageSourceLimits {
 // keeps its real position, so the map's prominence doesn't depend on
 // scrolling); kStateOffscreen marks a node outside its frame's viewport or
 // in a frame that is, and a node whose bounds can't be measured (its offset
-// containers loop), which has none. The focus is the focused frame's
-// focused node.
+// containers loop, or chain further than max_depth), which has none. The
+// focus is the focused frame's focused node.
 PageTree BuildPageTree(const AXFrameTree& main,
                        AXTreeLookup lookup,
                        const AXPageSourceLimits& limits = AXPageSourceLimits());

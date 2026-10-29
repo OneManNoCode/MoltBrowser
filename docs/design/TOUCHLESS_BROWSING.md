@@ -231,7 +231,7 @@ Five layers, tried in this order:
   - **Entries:** each has a primary action (the link in or around its heading), a title (that link's visible text, not a long `aria-label`), a channel or site, and typed fields: duration, counts and date (`page_map_text.*`, English for now).
   - **Ranking:** lists are ranked by prominence (entries, their size, titles, fields and headings, the main landmark; navigation counts against), so "the results" is `lists[0]`.
   - **Text and secrets:** all text is cleaned for speech (no control, bidi or invisible characters, capped). Credential fields are marked (agent_safety's classification plus their labels), and their values are never kept.
-  - **Bounds:** the work is capped (20,000 nodes, depth 256, a work budget). A node whose bounds would be measured through offset containers that lead back to each other (a renderer's data) gets none.
+  - **Bounds:** the work is capped (20,000 nodes, depth 256, a work budget). A node whose bounds would be measured through offset containers that lead back to each other, or through a chain of them longer than the walk is deep (a renderer's data), gets none.
   - **Tests:** unit tests with hand-built YouTube-, Google- and Wikipedia-like trees; `molt_page_map_fuzzer`.
 - **Not yet:** the browser UI's own tree, speech, and the agent acting through `PageNodeHandle`s instead of its isolated-world scripts. The numbers overlay (round 37) draws `PageItem::bounds` (§5.3).
 

@@ -353,6 +353,33 @@ TEST(AXPageSourceTest, OffsetContainersThatLoopGiveNoBounds) {
   EXPECT_TRUE(other.nodes[1].bounds.empty());
 }
 
+TEST(AXPageSourceTest, AVeryLongChainOfContainersGivesNoBounds) {
+  Frames frames;
+  const ui::AXTreeID main_id = ui::AXTreeID::CreateNewAXTreeID();
+  // 400 siblings, each measured from the one before: node k is k - 1 hops
+  // from the root. Blink's containers are a node's ancestors, so a chain
+  // longer than the walk is deep isn't followed.
+  std::vector<ui::AXNodeData> nodes = {Node(1, Role::kRootWebArea)};
+  for (int k = 2; k <= 401; ++k) {
+    ui::AXNodeData button = Node(k, Role::kButton, "B");
+    if (k > 2) {
+      button.relative_bounds.offset_container_id = k - 1;
+    }
+    nodes.push_back(button);
+    nodes[0].child_ids.push_back(k);
+  }
+  frames.Add(0, main_id, std::move(nodes));
+
+  const PageTree page = frames.Build(main_id);
+  ASSERT_EQ(page.nodes.size(), 401u);
+  const size_t max_hops = AXPageSourceLimits().max_depth + 2;
+  for (const PageNode& node : page.nodes) {
+    SCOPED_TRACE(node.handle.node);
+    const size_t hops = static_cast<size_t>(node.handle.node - 1);
+    EXPECT_EQ(node.bounds.empty(), hops > max_hops);
+  }
+}
+
 TEST(AXPageSourceTest, ChildFramesShareTheNodeBudget) {
   Frames frames;
   const ui::AXTreeID main_id = ui::AXTreeID::CreateNewAXTreeID();

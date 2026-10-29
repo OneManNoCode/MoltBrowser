@@ -60,23 +60,28 @@ constexpr uint32_t kNoParent = 0xFFFFFFFFu;
 // names no node) until a node is its own container
 // (AXTree::RelativeToTreeBoundsInternal()). The ids come from the renderer,
 // and the tree takes them as they are: containers that lead back to each
-// other would keep that walk going forever. Whether a node's chain ends,
-// found once per node of one tree.
+// other would keep that walk going forever, and a very long chain would
+// make every node's bounds slow. A node is measured only when its chain
+// ends within |max_hops| (Blink's containers are the node's ancestors, so a
+// node of the walk has no longer one); each node's chain is followed once.
 class OffsetChains {
  public:
-  explicit OffsetChains(const ui::AXTree& tree) : tree_(&tree) {}
+  OffsetChains(const ui::AXTree& tree, size_t max_hops)
+      : tree_(&tree), max_hops_(max_hops) {}
   OffsetChains(const OffsetChains&) = delete;
   OffsetChains& operator=(const OffsetChains&) = delete;
 
   bool Ends(const ui::AXNode& start) {
     std::vector<const ui::AXNode*> path;
     const ui::AXNode* node = &start;
-    bool ends = true;
+    // The hops from the node after the path's last to the chain's end;
+    // kLoops if the chain loops. -1: the path's last node ends it.
+    int64_t after = -1;
     while (true) {
-      auto [it, added] = state_.try_emplace(node->id(), State::kWalking);
+      auto [it, added] = state_.try_emplace(node->id(), kWalking);
       if (!added) {
         // Back to a node of this walk (a loop), or one already known.
-        ends = it->second == State::kEnds;
+        after = it->second == kWalking ? kLoops : it->second;
         break;
       }
       path.push_back(node);
@@ -90,17 +95,22 @@ class OffsetChains {
       }
       node = next;
     }
-    for (const ui::AXNode* walked : path) {
-      state_[walked->id()] = ends ? State::kEnds : State::kLoops;
+    for (size_t i = path.size(); i-- > 0;) {
+      after = after == kLoops ? kLoops : after + 1;
+      state_[path[i]->id()] = after;
     }
-    return ends;
+    const int64_t hops = state_[start.id()];
+    return hops >= 0 && static_cast<size_t>(hops) <= max_hops_;
   }
 
  private:
-  enum class State : uint8_t { kWalking, kEnds, kLoops };
+  static constexpr int64_t kWalking = -2;
+  static constexpr int64_t kLoops = -3;
 
   raw_ptr<const ui::AXTree> tree_;
-  std::unordered_map<ui::AXNodeID, State> state_;
+  const size_t max_hops_;
+  // Per node: kWalking, kLoops, or the hops from it to the chain's end.
+  std::unordered_map<ui::AXNodeID, int64_t> state_;
 };
 
 // One level of the walk: a node, the frame it is in, and how far its
@@ -344,7 +354,8 @@ PageTree BuildPageTree(const AXFrameTree& main,
   // when what it found has none, its nearest ancestor with a size's.
   auto measurable = [&](const ui::AXNode* ax_node, const Frame& where) {
     OffsetChains& tree_chains =
-        chains.try_emplace(where.tree_index, *where.tree).first->second;
+        chains.try_emplace(where.tree_index, *where.tree, limits.max_depth + 2)
+            .first->second;
     if (!tree_chains.Ends(*ax_node)) {
       return false;
     }
