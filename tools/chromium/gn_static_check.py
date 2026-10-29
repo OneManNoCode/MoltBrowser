@@ -1313,7 +1313,10 @@ def check_target_deps(graph, t, new_edges, new_circular, dot, findings):
 OWN_EXCLUDE = ("third_party/rust/", "third_party/llama_cpp/src/",
                "third_party/llama_cpp/ggml/", "third_party/llama_cpp/common/",
                "third_party/llama_cpp/tools/", "third_party/llama_cpp/include/",
-               "third_party/llama_cpp/vendor/", "third_party/skia/", "v8/")
+               "third_party/llama_cpp/vendor/", "third_party/skia/", "v8/",
+               # molt-speech's engines and main: CMake only
+               # (scripts/bundle-speech.sh), they link sherpa-onnx.
+               "chrome/browser/molt_ai/voice/speech_helper/standalone/")
 # Files no desktop platform builds.
 OTHER_PLATFORM = re.compile(
     r"(^|/)(android|ios|chromeos|fuchsia)/|_(android|ios|chromeos|fuchsia)"

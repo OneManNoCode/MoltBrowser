@@ -1,0 +1,6 @@
+include_rules = [
+  # sherpa-onnx's C API: molt-speech is built outside GN
+  # (scripts/bundle-speech.sh), against sherpa-onnx built from pinned
+  # sources.
+  "+sherpa-onnx/c-api/c-api.h",
+]
