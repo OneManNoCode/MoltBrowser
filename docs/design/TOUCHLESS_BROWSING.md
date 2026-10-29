@@ -268,15 +268,15 @@ The design and threat model get their own security review before they ship (Phas
 
 | Need | Option | License | Notes |
 |---|---|---|---|
-| Wake phrase | sherpa-onnx keyword spotting (open vocabulary: the phrase is text, no training) | Apache-2.0 (library); models per model card | Any phrase the user chooses; English and Chinese models today. |
+| Wake phrase | sherpa-onnx keyword spotting (open vocabulary: the phrase is text, no training) | Apache-2.0 (library); models per model card | Any phrase the user chooses; English and Chinese models today. Measured: misses 7–15% of clean wake phrases and more in noise, mostly for particular voices, so the threshold adapts per user. |
 | | openWakeWord | Apache-2.0 code, **non-commercial** pre-trained models (CC BY-NC-SA 4.0) | Not usable as is. |
 | Voice activity | Silero VAD (through sherpa-onnx, or in whisper.cpp) | MIT | Small; handles slow speech with tuning. |
-| Streaming recognition | sherpa-onnx streaming Zipformer transducers | Apache-2.0 | True streaming with partial results, real time on one CPU core for small models; multilingual models exist. |
+| Streaming recognition | sherpa-onnx streaming transducers: Kroko EN (a Zipformer), or NeMo FastConformer | Apache-2.0 (library); Kroko CC BY-SA 4.0, FastConformer CC BY 4.0 | True streaming with partial results; multilingual models exist. Measured: Kroko is as accurate on commands as anything but Whisper small.en, at 4–6% of a core; the Zipformers trained on audiobooks only miss modern names. |
 | | whisper.cpp (already bundled) | MIT | Accurate, but not streaming. Keep it for long dictation and for languages the streaming models lack. |
 | Speaker verification | sherpa-onnx speaker embeddings | Apache-2.0 | Optional. |
 | Voices | Platform voices through `TtsController` | — | Phase 1: no download; the voices differ per OS. |
-| | Kokoro-82M (through sherpa-onnx) | Apache-2.0 | 54 voices, 8 languages, 24 kHz; natural; small enough for a CPU. |
-| | Piper | GPL-3.0 (since its move to OHF-Voice; compatible with MoltBrowser's GPLv3); voices per model card | Very fast and light; many languages. |
+| | Kokoro-82M (through sherpa-onnx) | Apache-2.0 | 54 voices, 8 languages, 24 kHz; natural. Measured: 0.7–1.5 s to the first sound on a fast CPU, so for fast machines only. |
+| | Piper | GPL-3.0 (since its move to OHF-Voice; compatible with MoltBrowser's GPLv3); voices per model card | Very fast and light (first sound in under 0.15 s, measured); many languages. |
 
 Models and open-source agents for acting on pages (checked October 2026):
 
@@ -293,7 +293,10 @@ No maintained open-source voice-first browser exists: the voice tools for disabl
 
 **Recommendation:** sherpa-onnx in the speech service, for the wake phrase, voice activity, streaming recognition, speaker verification and the bundled neural voice. It is one Apache-2.0 library that also runs on Android and iOS. Keep whisper.cpp for long-form dictation.
 - **What it costs:** ONNX Runtime (MIT) as a new vendored dependency, sandboxed like llama.cpp.
-- **Next step:** a measurement spike (Phase 0) confirms latency, accuracy, CPU use and binary size against whisper.cpp on the minimum hardware before the choice is final.
+- **Measured (Phase 0):** [VOICE_BENCH.md](../VOICE_BENCH.md) has latency, accuracy, CPU use, memory and size against whisper.cpp, from a server VM; the build machine re-runs the kit on the minimum hardware before the choice is final. The numbers keep sherpa-onnx and change two model choices:
+  - **Kroko EN for streaming,** not the LibriSpeech Zipformers: those were trained on audiobooks and miss modern names ("you tube" for YouTube), while Kroko gets 70% of the spoken commands exactly right (Whisper small.en 78%, the bundled Whisper tiny.en 68%).
+  - **A Piper voice for the bundled neural voice on modest hardware,** Kokoro only on fast machines. sherpa-onnx 2.x reads English through a lexicon only and skips unknown words, so either needs MoltBrowser's own text normalization in front of it.
+  - Echo cancellation with the browser's output as the reference is a requirement: without it, recognizers transcribe the browser's own voice.
 - **Downloads:** model files come from the projects' GitHub releases with pinned hashes, as for the other models.
 
 ## 10. Phases

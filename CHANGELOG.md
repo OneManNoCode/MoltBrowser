@@ -1106,6 +1106,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   only filled single-line fields.
 
 ### Engineering
+- **Voice bench** (`tools/voice_bench/`, `docs/VOICE_BENCH.md`): a
+  reproducible kit that measures open-source, on-device speech engines for
+  touchless browsing (wake phrase, end of speech, streaming and
+  per-utterance recognition, biasing toward the names on screen, voices)
+  on a 300-command test set rendered with several voices under noise,
+  music and the browser's own speech, plus real speech. Every download is
+  pinned by SHA-256 with its licence; it runs on Linux, macOS and Windows.
+  The first results keep sherpa-onnx as the proposed speech engine, with
+  Kroko EN for streaming recognition, and show that echo cancellation and
+  a text front end for the voices are required.
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):
   one command runs a built browser's MoltNet window in a network namespace
   where only Tor's traffic may leave. It captures every packet and every
