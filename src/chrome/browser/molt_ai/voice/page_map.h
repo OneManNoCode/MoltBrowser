@@ -268,6 +268,10 @@ struct PageItem {
   // A text field with a value, for credential fields whose value is left
   // out ("password field, filled").
   bool filled = false;
+  // A text field for searching: a search box, an <input type=search>, or a
+  // field whose name or placeholder says "search" (for "search for ..." on
+  // the page's own search box).
+  bool search_field = false;
   // A link's target (raw page data: check it with agent_safety before
   // navigating to it).
   std::string url;

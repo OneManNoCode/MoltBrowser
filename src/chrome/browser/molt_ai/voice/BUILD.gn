@@ -242,6 +242,9 @@ source_set("browser_tests") {
   deps = [
     ":page_map",
     ":voice_page",
+
+    # The voice loop's own browser test (below).
+    ":voice_loop_browser_tests",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/ui",
@@ -252,5 +255,143 @@ source_set("browser_tests") {
     "//media:media_buildflags",
     "//net:test_support",
     "//testing/gtest",
+  ]
+}
+
+# --- Touchless browsing: the voice loop (docs/design/TOUCHLESS_BROWSING.md
+# §2, §5, §6.2, §6.5, §6.6) ---------------------------------------------------
+
+# What the user said, the page map and the conversation so far become the
+# steps to run and the words to say: known sites and spoken addresses, the
+# page map's lists as the matcher's candidates, what the browser says, and
+# the loop's decisions (confirmations, dictation, media, reading). Std-only:
+# molt_ai_unittests and a standalone harness build the same code.
+source_set("voice_loop") {
+  sources = [
+    "voice_candidates.cc",
+    "voice_candidates.h",
+    "voice_controller_logic.cc",
+    "voice_controller_logic.h",
+    "voice_sites.cc",
+    "voice_sites.h",
+    "voice_speech_text.cc",
+    "voice_speech_text.h",
+  ]
+
+  public_deps = [
+    ":page_map",
+    ":spoken_choice",
+    ":voice_command",
+  ]
+}
+
+# chrome://flags/#molt-voice-mode (about_flags.cc includes
+# voice_controller_features.h).
+source_set("features") {
+  sources = [
+    "voice_controller_features.cc",
+    "voice_controller_features.h",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Voice mode in a browser window: runs the loop's steps on the active tab
+# (VoicePageController), the browser's commands, the media session and the
+# tab's mute, and speaks through TtsController.
+source_set("voice_controller") {
+  sources = [
+    "voice_controller.cc",
+    "voice_controller.h",
+    "voice_speech.cc",
+    "voice_speech.h",
+  ]
+
+  public_deps = [
+    ":voice_loop",
+    "//base",
+    "//ui/base/unowned_user_data",
+  ]
+
+  deps = [
+    ":features",
+    ":voice_page",
+    "//chrome/app:command_ids",
+
+    # Every URL is checked before it loads.
+    "//chrome/browser/molt_ai/security:agent_safety",
+
+    # Also molt_net_profile_id.h (header-only IsMoltNetProfile()): voice
+    # mode stays off in MoltNet windows.
+    "//chrome/browser/profiles:profile",
+
+    # The default search engine, for names the browser doesn't know.
+    "//chrome/browser/search_engines",
+    "//chrome/browser/ui:browser_commands",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_enums",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/tabs:utils",
+    "//components/search_engines",
+    "//content/public/browser",
+    "//services/media_session/public/mojom",
+    "//ui/accessibility",
+    "//ui/base",
+    "//url",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("voice_loop_unit_tests") {
+  testonly = true
+  sources = [
+    "voice_candidates_unittest.cc",
+    "voice_controller_logic_unittest.cc",
+    "voice_sites_agent_safety_unittest.cc",
+    "voice_sites_unittest.cc",
+    "voice_speech_text_unittest.cc",
+  ]
+
+  deps = [
+    ":page_map_test_support",
+    ":voice_loop",
+
+    # Every URL the loop builds passes agent_safety's navigation check.
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+# Phase 0's exit criterion through the whole loop: typed utterances drive
+# the fixture video site (chrome/test/data/molt_voice/) from "open" to the
+# video playing with sound, with the spoken answers captured from a fake
+# TTS platform. Picked up by :browser_tests.
+source_set("voice_loop_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_controller_browsertest.cc" ]
+
+  deps = [
+    ":features",
+    ":voice_controller",
+    ":voice_loop",
+    ":voice_page",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/search_engines",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/search_engines",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media:media_buildflags",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
   ]
 }

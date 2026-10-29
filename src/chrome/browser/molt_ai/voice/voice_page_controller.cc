@@ -34,6 +34,7 @@
 #include "ui/events/keycodes/dom/dom_key.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/geometry/point.h"
 #include "url/gurl.h"
 
 // Why this accessibility mode (AccessibilityMode()), from Blink at 156
@@ -626,6 +627,78 @@ VoicePageController::ActionResult VoicePageController::ResumeMedia() {
   // autoplay check. Players join the session once they have played.
   session->Resume(content::MediaSession::SuspendType::kUI);
   return ActionResult::kDone;
+}
+
+VoicePageController::ActionResult VoicePageController::Increment(
+    const PageNodeHandle& target) {
+  return Step(target, ax::mojom::Action::kIncrement);
+}
+
+VoicePageController::ActionResult VoicePageController::Decrement(
+    const PageNodeHandle& target) {
+  return Step(target, ax::mojom::Action::kDecrement);
+}
+
+VoicePageController::ActionResult VoicePageController::Step(
+    const PageNodeHandle& target,
+    ax::mojom::Action action) {
+  ActionResult error;
+  std::optional<Target> found = Resolve(target, &error);
+  if (!found) {
+    return error;
+  }
+  if (found->node->data().GetRestriction() ==
+      ax::mojom::Restriction::kDisabled) {
+    return ActionResult::kDisabled;
+  }
+  const PageRole role = PageRoleFor(found->node->data());
+  if (role != PageRole::kSlider) {
+    return ActionResult::kNotEditable;
+  }
+  ui::AXActionData data;
+  data.action = action;
+  return Perform(*found, data);
+}
+
+VoicePageController::ActionResult VoicePageController::ScrollPage(
+    PageScrollAction action) {
+  if (!HasPageTree()) {
+    return active() ? ActionResult::kStale : ActionResult::kNotActive;
+  }
+  const HeldTree& main =
+      trees_.find(web_contents()->GetPrimaryMainFrame()->GetAXTreeID())->second;
+  ActionResult error;
+  std::optional<Target> found =
+      Resolve(PageNodeHandle{main.index, main.tree->root()->id()}, &error);
+  if (!found) {
+    return error;
+  }
+  ui::AXActionData data;
+  // Far enough past any page's end; Blink clamps it to the scroller's.
+  constexpr int kFarEnd = 100000000;
+  switch (action) {
+    case PageScrollAction::kDown:
+      data.action = ax::mojom::Action::kScrollDown;
+      break;
+    case PageScrollAction::kUp:
+      data.action = ax::mojom::Action::kScrollUp;
+      break;
+    case PageScrollAction::kLeft:
+      data.action = ax::mojom::Action::kScrollLeft;
+      break;
+    case PageScrollAction::kRight:
+      data.action = ax::mojom::Action::kScrollRight;
+      break;
+    case PageScrollAction::kTop:
+      data.action = ax::mojom::Action::kSetScrollOffset;
+      data.target_point = gfx::Point(0, 0);
+      break;
+    case PageScrollAction::kBottom:
+      data.action = ax::mojom::Action::kSetScrollOffset;
+      data.target_point = gfx::Point(0, kFarEnd);
+      break;
+  }
+  return Perform(*found, data);
 }
 
 }  // namespace voice

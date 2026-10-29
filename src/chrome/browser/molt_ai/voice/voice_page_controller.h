@@ -48,6 +48,7 @@
 #include "chrome/browser/molt_ai/voice/page_map.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "ui/accessibility/ax_enums.mojom-forward.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/accessibility/ax_tree_id.h"
 
@@ -153,6 +154,20 @@ class VoicePageController
   ActionResult PauseMedia();
   ActionResult ResumeMedia();
 
+  // Steps a slider or spin button up or down: Blink's increment and
+  // decrement actions (AXNodeObject::OnNativeIncrementAction()), which
+  // give the page user activation, step a native range input, and send an
+  // ARIA slider the arrow key its script listens to.
+  ActionResult Increment(const PageNodeHandle& target);
+  ActionResult Decrement(const PageNodeHandle& target);
+
+  // Scrolls the top-level document as assistive technology does: kDown,
+  // kUp, kLeft and kRight by Blink's step for them (AXObject::Scroll():
+  // four fifths of the viewport), kTop and kBottom to either end
+  // (kSetScrollOffset, clamped by the page's scroller).
+  enum class PageScrollAction { kDown, kUp, kLeft, kRight, kTop, kBottom };
+  ActionResult ScrollPage(PageScrollAction action);
+
   const Stats& stats() const { return stats_; }
 
   // Runs |callback| after each batch of tree updates that changed a tree.
@@ -202,6 +217,8 @@ class VoicePageController
   std::optional<Target> Resolve(const PageNodeHandle& handle,
                                 ActionResult* error);
   ActionResult Perform(const Target& target, ui::AXActionData data);
+  // Increment() and Decrement().
+  ActionResult Step(const PageNodeHandle& target, ax::mojom::Action action);
   void FinishSubmit(ActionResult result);
   void MaybeSendPendingEnter();
   void OnSubmitTimeout();
