@@ -534,8 +534,10 @@ cr.webUIResponse = function(id, ok, resp) {
   if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
 };
 
+// The toast is a live region: an error is an alert, the rest polite.
 function showToast(msg, isError) {
   var t = document.getElementById('toast');
+  t.setAttribute('role', isError ? 'alert' : 'status');
   t.textContent = msg;
   t.className = 'toast show' + (isError ? ' error' : '');
   setTimeout(function(){ t.className = 'toast' + (isError ? ' error' : ''); }, 2400);
@@ -615,6 +617,7 @@ function buildSparklineHTML(s) {
   var maxBars = 30;
   if (rows.length > maxBars) rows = rows.slice(rows.length - maxBars);
 
+  var okRuns = rows.filter(function(r){ return r.ok; }).length;
   var bars = rows.map(function(r){
     var pct = Math.max(8, Math.round(((r.dur_ms || 0) / maxDur) * 100));
     var when = new Date((r.ts || 0) * 1000).toLocaleString();
@@ -631,7 +634,11 @@ function buildSparklineHTML(s) {
     rows.reduce(function(s,r){ return s + (r.dur_ms||0); }, 0) / rows.length);
   var totTok = rows.reduce(function(s,r){ return s + (r.ai_tokens||0); }, 0);
 
-  return '<div class="sparkline">' + bars + '</div>' +
+  // One picture to a screen reader: what the bars add up to.
+  var said = rows.length + ' recent runs: ' + okRuns + ' succeeded, ' +
+             (rows.length - okRuns) + ' failed';
+  return '<div class="sparkline" role="img" aria-label="' + esc(said) + '">' +
+         bars + '</div>' +
     '<div class="spark-legend">' +
       '<span><b>' + rows.length + '</b> recent runs</span>' +
       '<span>avg <b>' + esc(avgDur) + 'ms</b></span>' +
@@ -649,7 +656,7 @@ function buildScheduleHTML(s) {
            esc(label) + '</option>';
   }
 
-  var typeSelect = '<select data-sched="type">' +
+  var typeSelect = '<select data-sched="type" aria-label="Schedule">' +
     opt('manual','Manual (only when I click Run)', t) +
     opt('cron','Cron expression', t) +
     opt('interval','Every N seconds', t) +
@@ -666,8 +673,9 @@ function buildScheduleHTML(s) {
   var cronBlock = '<div data-sched-pane="cron"' +
       (t==='cron'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
-      '<label>Cron</label>' +
-      '<input type="text" data-sched="expr-cron" placeholder="m h dom mon dow"' +
+      '<span class="lbl">Cron</span>' +
+      '<input type="text" data-sched="expr-cron" aria-label="Cron expression"' +
+        ' placeholder="m h dom mon dow"' +
         ' value="' + esc(t==='cron'?expr:'') + '" style="min-width:240px;">' +
       presets +
     '</div>' +
@@ -678,10 +686,10 @@ function buildScheduleHTML(s) {
   var intervalBlock = '<div data-sched-pane="interval"' +
       (t==='interval'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
-      '<label>Run every</label>' +
-      '<input type="number" min="10" data-sched="expr-interval-num"' +
+      '<span class="lbl">Run every</span>' +
+      '<input type="number" min="10" data-sched="expr-interval-num" aria-label="Run every"' +
         ' value="' + intervalSecs + '" style="width:90px;">' +
-      '<select data-sched="expr-interval-unit">' +
+      '<select data-sched="expr-interval-unit" aria-label="Unit">' +
         '<option value="1">seconds</option>' +
         '<option value="60">minutes</option>' +
         '<option value="3600" selected>hours</option>' +
@@ -694,8 +702,9 @@ function buildScheduleHTML(s) {
   var atBlock = '<div data-sched-pane="at"' +
       (t==='at'?'':' style="display:none"') + '>' +
     '<div class="sched-row">' +
-      '<label>Fire at</label>' +
-      '<input type="datetime-local" data-sched="expr-at" value="' + esc(atVal) + '">' +
+      '<span class="lbl">Fire at</span>' +
+      '<input type="datetime-local" data-sched="expr-at" aria-label="Fire at"' +
+        ' value="' + esc(atVal) + '">' +
     '</div>' +
     '</div>';
 
@@ -741,18 +750,26 @@ function buildStepEditor(s) {
       return '<option value="' + t + '"' +
              (step.type === t ? ' selected' : '') + '>' + t + '</option>';
     }).join('');
+    var n = i + 1;
     html +=
-      '<div class="step-edit-row" data-step="' + i + '">' +
-        '<span class="step-num">' + (i + 1) + '.</span>' +
-        '<select data-field="type">' + typeOpts + '</select>' +
+      '<div class="step-edit-row" data-step="' + i + '" role="group"' +
+          ' aria-label="Step ' + n + '">' +
+        '<span class="step-num" aria-hidden="true">' + n + '.</span>' +
+        '<select data-field="type" aria-label="Step ' + n + ' type">' +
+          typeOpts + '</select>' +
         '<input data-field="target" placeholder="selector / url"' +
+          ' aria-label="Step ' + n + ' target: selector or URL"' +
           ' value="' + esc(step.target || '') + '">' +
         '<input data-field="value" placeholder="value / prompt"' +
+          ' aria-label="Step ' + n + ' value or prompt"' +
           ' value="' + esc(step.value || '') + '">' +
         '<div class="step-ctrls">' +
-          '<button data-step-act="up" title="Move up">&uarr;</button>' +
-          '<button data-step-act="down" title="Move down">&darr;</button>' +
-          '<button data-step-act="del" title="Delete">&times;</button>' +
+          '<button data-step-act="up" title="Move up"' +
+            ' aria-label="Move step ' + n + ' up">&uarr;</button>' +
+          '<button data-step-act="down" title="Move down"' +
+            ' aria-label="Move step ' + n + ' down">&darr;</button>' +
+          '<button data-step-act="del" title="Delete"' +
+            ' aria-label="Delete step ' + n + '">&times;</button>' +
         '</div>' +
       '</div>';
   });
@@ -764,7 +781,7 @@ function buildStepEditor(s) {
 function buildTrustPanel(s) {
   var trust = (s.security && s.security.trust) || 'casual';
   var levels = ['casual','approved','trusted','admin'];
-  var dropdown = '<select data-trust="select">' +
+  var dropdown = '<select data-trust="select" aria-label="Trust level">' +
     levels.map(function(l){
       return '<option value="' + l + '"' +
              (l===trust?' selected':'') + '>' +
@@ -811,8 +828,9 @@ function buildDetailHTML(s) {
     ? '<div class="var-empty">No {{variables}} used in this script.</div>'
     : '<div class="var-grid">' + vars.map(function(name){
         var val = dv[name] || '';
-        return '<label>{{' + esc(name) + '}}</label>' +
+        return '<span class="lbl">{{' + esc(name) + '}}</span>' +
                '<input type="text" data-var="' + esc(name) + '"' +
+               ' aria-label="{{' + esc(name) + '}}"' +
                ' value="' + esc(val) + '" placeholder="value...">';
       }).join('') + '</div>';
 
@@ -888,6 +906,59 @@ function collectVars(card) {
   return vars;
 }
 
+// The list is rebuilt after every change and every 30 s. Keyboard and
+// screen reader users would lose their place each time, so the open
+// cards stay open and focus goes back to the same control.
+var FOCUS_ATTRS = ['data-act', 'data-sched', 'data-field', 'data-var',
+                   'data-trust', 'data-step-act', 'data-cron'];
+function listPlace(list) {
+  var place = {open: {}, focus: null};
+  list.querySelectorAll('.script-card.open').forEach(function(c){
+    place.open[c.getAttribute('data-script-id')] = true;
+  });
+  var a = document.activeElement;
+  var card = a && list.contains(a) ? a.closest('.script-card') : null;
+  if (!card) return place;
+  var row = a.closest('.step-edit-row');
+  place.focus = {id: card.getAttribute('data-script-id'),
+                 step: row ? row.getAttribute('data-step') : null,
+                 attr: null, value: null};
+  if (a.classList.contains('name-btn')) {
+    place.focus.attr = 'class';
+    place.focus.value = 'name-btn';
+  }
+  for (var i = 0; i < FOCUS_ATTRS.length && !place.focus.attr; i++) {
+    if (a.hasAttribute(FOCUS_ATTRS[i])) {
+      place.focus.attr = FOCUS_ATTRS[i];
+      place.focus.value = a.getAttribute(FOCUS_ATTRS[i]);
+    }
+  }
+  return place;
+}
+function restorePlace(list, place) {
+  var f = place.focus;
+  if (!f || !f.attr) return;
+  var cards = list.querySelectorAll('.script-card');
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].getAttribute('data-script-id') !== f.id) continue;
+    var scope = cards[i];
+    if (f.step !== null) {
+      scope = cards[i].querySelector('.step-edit-row[data-step="' +
+                                     Number(f.step) + '"]');
+      if (!scope) return;
+    }
+    var els = scope.querySelectorAll(
+        f.attr === 'class' ? '.name-btn' : '[' + f.attr + ']');
+    for (var j = 0; j < els.length; j++) {
+      if (f.attr === 'class' || els[j].getAttribute(f.attr) === f.value) {
+        els[j].focus();
+        return;
+      }
+    }
+  }
+}
+var detailSeq = 0;
+
 function renderScripts(scripts) {
   allScripts = scripts;
   var query = (document.getElementById('search').value || '').toLowerCase();
@@ -899,6 +970,7 @@ function renderScripts(scripts) {
 
   var list = document.getElementById('list');
   var empty = document.getElementById('empty');
+  var place = listPlace(list);
   document.getElementById('count').textContent = scripts.length;
   list.textContent = '';
   if (!filtered.length) {
@@ -915,18 +987,28 @@ function renderScripts(scripts) {
   filtered.forEach(function(s) {
     var card = document.createElement('div');
     card.className = 'script-card';
+    card.setAttribute('data-script-id', String(s.id));
     if (s.id === newId) card.classList.add('flash', 'open', 'highlight');
+    if (place.open[String(s.id)]) card.classList.add('open');
+    var detailId = 'script-detail-' + (++detailSeq);
+    var isOpen = card.classList.contains('open');
     var lastRun = s.stats && s.stats.last_run_unix
         ? new Date(s.stats.last_run_unix * 1000).toLocaleString()
         : 'never';
     var trust = (s.security && s.security.trust) || 'casual';
     card.innerHTML = moltHTML(
       '<div class="script-summary">' +
-        '<span class="dot ' + dotClass(s) + '"></span>' +
+        (s.stats && s.stats.runs > 0
+          ? '<span class="dot ' + dotClass(s) + '" role="img" aria-label="' +
+            'Success rate ' + esc(Math.round(Number(s.success_rate) || 0)) +
+            '%"></span>'
+          : '<span class="dot" aria-hidden="true"></span>') +
         '<div class="info">' +
-          '<div class="name">' + esc(s.name) +
+          '<h3 class="name"><button type="button" class="name-btn"' +
+            ' aria-expanded="' + (isOpen ? 'true' : 'false') + '"' +
+            ' aria-controls="' + detailId + '">' + esc(s.name) + '</button>' +
             ' <span class="trust-badge trust-' + esc(trust) + '">' +
-            esc(trust) + '</span></div>' +
+            esc(trust) + '</span></h3>' +
           '<div class="meta">' + esc(triggerLabel(s)) +
           ' &middot; ' + (s.steps ? s.steps.length : 0) + ' steps' +
           ' &middot; last run: ' + esc(lastRun) +
@@ -935,17 +1017,25 @@ function renderScripts(scripts) {
           '</div>' +
         '</div>' +
         '<div class="actions">' +
-          '<button class="btn"        data-act="run">&#9654; Run</button>' +
-          '<button class="btn ghost"  data-act="del">Delete</button>' +
+          '<button class="btn"        data-act="run"' +
+            ' aria-label="Run ' + esc(s.name) + '">&#9654; Run</button>' +
+          '<button class="btn ghost"  data-act="del"' +
+            ' aria-label="Delete ' + esc(s.name) + '">Delete</button>' +
         '</div>' +
-        '<span class="chev">&#10095;</span>' +
+        '<span class="chev" aria-hidden="true">&#10095;</span>' +
       '</div>' +
-      '<div class="script-detail">' + buildDetailHTML(s) + '</div>');
+      '<div class="script-detail" id="' + detailId + '">' +
+        buildDetailHTML(s) + '</div>');
 
+    // The name is the disclosure button (keyboard, screen readers, voice
+    // control); a click anywhere else on the row does the same.
     var summary = card.querySelector('.script-summary');
     summary.onclick = function(e) {
-      if (e.target.tagName === 'BUTTON') return;
+      var b = e.target.closest('button');
+      if (b && !b.classList.contains('name-btn')) return;
       card.classList.toggle('open');
+      card.querySelector('.name-btn').setAttribute(
+          'aria-expanded', card.classList.contains('open') ? 'true' : 'false');
     };
     card.querySelector('[data-act="run"]').onclick = function(e) {
       e.stopPropagation();
@@ -1067,8 +1157,8 @@ function renderScripts(scripts) {
       loadedTimeline = true;
       loadTimelineFor(card, s.id);
     });
-    if (s.id === newId) {
-      // Card opens automatically on flash — load immediately.
+    if (isOpen) {
+      // Card opens automatically on flash (or stayed open) — load now.
       loadedTimeline = true;
       loadTimelineFor(card, s.id);
     }
@@ -1091,13 +1181,20 @@ function renderScripts(scripts) {
 
     list.appendChild(card);
   });
+  restorePlace(list, place);
 
   // Scroll the highlighted card into view if we just got here from
   // the toolbar Stop action.
   if (newId) {
     var hl = list.querySelector('.script-card.highlight');
-    if (hl) hl.scrollIntoView({behavior:'smooth', block:'center'});
+    if (hl) hl.scrollIntoView({behavior: reducedMotion() ? 'auto' : 'smooth',
+                               block: 'center'});
   }
+}
+
+function reducedMotion() {
+  return !!(window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 function refresh() {
@@ -1317,6 +1414,12 @@ function closeModalIfBg(e) {
 function closeModal() {
   document.getElementById('modal-bg').classList.remove('show');
 }
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' &&
+      document.getElementById('modal-bg').classList.contains('show')) {
+    closeModal();
+  }
+});
 
 // Static controls: wired here because the page CSP runs no inline
 // handlers.
@@ -1340,8 +1443,16 @@ document.getElementById('modal-bg').addEventListener('click',
                                                      closeModalIfBg);
 
 refresh();
-// Auto-refresh every 30s so next-fire countdowns stay live.
-setInterval(refresh, 30000);
+// Auto-refresh every 30s so next-fire countdowns stay live — but not
+// under someone editing a card: a rebuild would drop what they typed.
+setInterval(function() {
+  var list = document.getElementById('list');
+  if (list.contains(document.activeElement) ||
+      list.querySelector('.script-card.open')) {
+    return;
+  }
+  refresh();
+}, 30000);
 )JS";
 
 // ---- Data source ----
@@ -1378,7 +1489,7 @@ class MoltAIAutomationDataSource : public content::URLDataSource {
     }
     std::string html = R"HTML(
 <!DOCTYPE html>
-<html><head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <title>MoltBrowser Automations</title>
 <style>
@@ -1409,7 +1520,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .toolbar-row .grow{flex:1;}
 .search-input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
   padding:8px 14px;border-radius:8px;font-size:.8125rem;width:240px;}
-.search-input:focus{outline:none;border-color:#ff4444;}
+.search-input:focus{border-color:#ff4444;}
 .script-list{display:flex;flex-direction:column;gap:12px;}
 .empty{padding:48px;text-align:center;color:#555;background:#0d0d14;
   border:1px dashed #1a1a2a;border-radius:12px;}
@@ -1423,6 +1534,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .script-summary .info{flex:1;min-width:0;}
 .script-summary .name{font-size:.9375rem;font-weight:600;margin-bottom:4px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.name-btn{background:none;border:none;padding:0;margin:0;color:inherit;
+  font:inherit;cursor:pointer;text-align:left;}
 .script-summary .meta{font-size:.75rem;color:#888;}
 .script-summary .actions{display:flex;gap:8px;flex-shrink:0;}
 .script-summary .chev{color:#555;font-size:.875rem;transition:transform 0.2s;
@@ -1436,11 +1549,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;}
 .var-grid{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;
   align-items:center;}
-.var-grid label{font-size:.75rem;color:#aaa;font-family:monospace;}
+.var-grid label,.var-grid .lbl{font-size:.75rem;color:#aaa;font-family:monospace;}
 .var-grid input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
   padding:6px 10px;border-radius:6px;font-size:.75rem;width:100%;
   font-family:monospace;}
-.var-grid input:focus{outline:none;border-color:#ff4444;}
+.var-grid input:focus{border-color:#ff4444;}
 .var-empty{color:#555;font-size:.75rem;font-style:italic;padding:6px 0;}
 .steps-list{font-family:monospace;font-size:.6875rem;line-height:1.7;}
 .step-row{display:flex;gap:8px;padding:4px 8px;border-radius:4px;}
@@ -1456,7 +1569,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .dot.red{background:#f87171;}
 .section-title{font-size:.8125rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;margin:24px 0 10px;display:flex;align-items:center;
-  gap:10px;}
+  gap:10px;font-weight:400;}
+.header nav{display:flex;gap:16px;}
+.header nav a{color:#a0a0b0;text-decoration:none;font-size:.8125rem;}
+.header nav a:hover{color:#fff;text-decoration:underline;}
 .section-title .count{background:#1a1a2a;color:#aaa;font-size:.6875rem;
   padding:2px 8px;border-radius:10px;}
 .audit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
@@ -1478,12 +1594,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 /* Day 3: schedule editor */
 .sched-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;
   flex-wrap:wrap;}
-.sched-row label{font-size:.6875rem;color:#888;text-transform:uppercase;
+.sched-row label,.sched-row .lbl{font-size:.6875rem;color:#888;text-transform:uppercase;
   letter-spacing:1px;}
 .sched-row select,.sched-row input{background:#0d0d14;border:1px solid #2a2a3a;
   color:#fff;padding:6px 10px;border-radius:6px;font-size:.75rem;
   font-family:inherit;}
-.sched-row select:focus,.sched-row input:focus{outline:none;border-color:#ff4444;}
+.sched-row select:focus,.sched-row input:focus{border-color:#ff4444;}
 .sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:.6875rem;
   padding:4px 10px;border-radius:14px;cursor:pointer;}
 .sched-row .preset:hover{background:#ff4444;color:#fff;}
@@ -1571,20 +1687,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .modal h3{font-size:1rem;margin-bottom:10px;}
 .modal p{color:#aaa;font-size:.8125rem;line-height:1.6;margin-bottom:16px;}
 .modal .actions{display:flex;gap:10px;justify-content:flex-end;}
+:focus-visible{outline:3px solid #9ecbff !important;outline-offset:2px;}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important;}
+}
+/* High contrast: buttons keep an edge, and the status dots, run bars
+   and trust badges stay visible. */
+@media (forced-colors: active){
+  .btn,.preset,.step-ctrls button,.promote-banner button,.retry-bar button{
+    border:1px solid ButtonText !important;}
+  .script-card,.toast,.trust-badge{border:1px solid CanvasText;}
+  .script-card.highlight{border-color:Highlight;}
+  .dot,.sparkline .bar{forced-color-adjust:none;border:1px solid CanvasText;}
+  :focus-visible{outline-color:Highlight !important;}
+}
 </style>
 </head>
 <body>
 
-<div class="header">
+<header class="header">
   <h1><span>Molt</span>Automation</h1>
   <span class="badge">Beta</span>
   <div class="bar"></div>
-  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:.8125rem;">AI Chat</a>
-  <a href="molt://ai-agent/" style="color:#888;text-decoration:none;font-size:.8125rem;">Agent</a>
-  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:.8125rem;">Settings</a>
-</div>
+  <nav aria-label="MoltBrowser AI">
+    <a href="molt://ai/">AI Chat</a>
+    <a href="molt://ai-agent/">Agent</a>
+    <a href="molt://ai-settings/">Settings</a>
+  </nav>
+</header>
 
-<div class="container">
+<main class="container">
 
   <p class="intro">
     Record any web workflow, save it, and replay it on a schedule.
@@ -1607,16 +1739,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <button class="btn ghost"  id="refresh-btn">&#x21bb; Refresh</button>
     <div class="grow"></div>
     <input type="text" class="search-input" id="search"
+           aria-label="Search automations by name"
            placeholder="Search by name...">
     <button class="btn ghost" id="audit-btn">
       Audit log
     </button>
   </div>
 
-  <div class="section-title">
+  <h2 class="section-title">
     Saved automations
     <span class="count" id="count">0</span>
-  </div>
+  </h2>
   <div class="script-list" id="list">
     <div class="empty" id="empty">
       No automations yet. Click <b>+ Sample script</b> to create one,
@@ -1625,18 +1758,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     </div>
   </div>
 
-  <div id="audit-block" style="display:none;">
-    <div class="section-title">Audit log (most recent first)</div>
-    <pre class="audit" id="audit"></pre>
-  </div>
+  <section id="audit-block" style="display:none;" aria-labelledby="audit-title">
+    <h2 class="section-title" id="audit-title">Audit log (most recent first)</h2>
+    <pre class="audit" id="audit" tabindex="0"></pre>
+  </section>
 
-</div>
+</main>
 
 <div class="modal-bg" id="modal-bg">
-  <div class="modal" id="modal-content"></div>
+  <div class="modal" id="modal-content" role="dialog" aria-modal="true"
+       aria-label="Confirm"></div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-atomic="true"></div>
 
 <script src="app.js"></script>
 </body></html>
