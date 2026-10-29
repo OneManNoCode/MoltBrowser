@@ -450,6 +450,51 @@ std::string SpeechSafeText(std::string_view text, size_t max_chars) {
   return out;
 }
 
+std::optional<std::string> TypedText(std::string_view text,
+                                     bool multiline,
+                                     size_t max_bytes) {
+  std::string out;
+  size_t i = 0;
+  while (i < text.size()) {
+    if (out.size() > max_bytes) {
+      return std::nullopt;
+    }
+    const unsigned char b = static_cast<unsigned char>(text[i]);
+    if (b == '\r' || b == '\n') {
+      out.push_back(multiline ? '\n' : ' ');
+      i += (b == '\r' && i + 1 < text.size() && text[i + 1] == '\n') ? 2 : 1;
+      continue;
+    }
+    if (const size_t hidden = hidden_chars::HiddenCharAt(text, i)) {
+      // U+2028 and U+2029 are line breaks.
+      if (hidden == 3 && b == 0xE2 &&
+          static_cast<unsigned char>(text[i + 1]) == 0x80 &&
+          (static_cast<unsigned char>(text[i + 2]) == 0xA8 ||
+           static_cast<unsigned char>(text[i + 2]) == 0xA9)) {
+        out.push_back(multiline ? '\n' : ' ');
+      }
+      i += hidden;
+      continue;
+    }
+    uint32_t cp = 0;
+    const size_t n = DecodeUtf8(text, i, &cp);
+    if (n == 0) {
+      ++i;
+      continue;
+    }
+    if (cp == '\t') {
+      out.push_back(' ');
+    } else if (!(cp < 0x20 || cp == 0x7F)) {
+      out.append(text.substr(i, n));
+    }
+    i += n;
+  }
+  if (out.size() > max_bytes) {
+    return std::nullopt;
+  }
+  return out;
+}
+
 std::optional<int> ParseDuration(std::string_view text) {
   const std::string t = LowerField(text);
   if (t.empty() || text.size() > kMaxFieldScanBytes) {

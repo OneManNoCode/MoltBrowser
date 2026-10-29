@@ -72,6 +72,25 @@ TEST(PageMapTextTest, ReadsOnlyAPrefix) {
   EXPECT_EQ(out.find("TAIL"), std::string::npos);
 }
 
+TEST(PageMapTextTest, CleansTypedText) {
+  EXPECT_EQ(TypedText("Bohemian Rhapsody", false, 100), "Bohemian Rhapsody");
+  // Line breaks stay only in a multi-line field.
+  EXPECT_EQ(TypedText("one\r\ntwo\nthree\rfour", true, 100),
+            "one\ntwo\nthree\nfour");
+  EXPECT_EQ(TypedText("one\r\ntwo\xE2\x80\xA8three", false, 100),
+            "one two three");
+  EXPECT_EQ(TypedText("one\xE2\x80\xA9two", true, 100), "one\ntwo");
+  // Controls, bidi and invisible characters and invalid bytes go; spaces
+  // are kept as said.
+  EXPECT_EQ(TypedText("a\tb\x01" "c\xE2\x80\xAE" "d\xFF" "e  f", false, 100),
+            "a bcde  f");
+  EXPECT_EQ(TypedText("caf\xC3\xA9", false, 100), "caf\xC3\xA9");
+  EXPECT_EQ(TypedText("", false, 100), "");
+  EXPECT_EQ(TypedText("abcd", false, 4), "abcd");
+  EXPECT_FALSE(TypedText("abcde", false, 4).has_value());
+  EXPECT_FALSE(TypedText(std::string(100000, 'x'), false, 4096).has_value());
+}
+
 TEST(PageMapTextTest, ParsesDurations) {
   EXPECT_EQ(ParseDuration("6:07"), 367);
   EXPECT_EQ(ParseDuration(" 0:59 "), 59);

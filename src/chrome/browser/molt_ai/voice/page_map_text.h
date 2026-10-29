@@ -41,6 +41,16 @@ inline constexpr size_t kMaxSpeechScanBytes = 8192;
 // Only the first kMaxSpeechScanBytes bytes are read.
 std::string SpeechSafeText(std::string_view text, size_t max_chars);
 
+// The user's text (dictation) as it may be written into a page's field:
+// valid UTF-8 (an invalid byte is dropped), with no control character,
+// DEL or character hidden_chars::HiddenCharAt() names; a line break (CR,
+// LF, CRLF, U+2028, U+2029) stays as "\n" in a |multiline| field and is a
+// space otherwise; tabs are spaces. Nullopt if the result would be longer
+// than |max_bytes| bytes.
+std::optional<std::string> TypedText(std::string_view text,
+                                     bool multiline,
+                                     size_t max_bytes);
+
 // The number of code points in |utf8| (each byte that doesn't continue a
 // character counts once).
 size_t CountCodePoints(std::string_view utf8);

@@ -275,6 +275,17 @@ FUZZERS = {
         max_len=65536,
         smoke_runs=1000000,
     ),
+    # --- The browser: the page map (voice mode) ----------------------------
+    "molt_page_map_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/voice/page_map.cc",
+                 f"{MOLT_AI}/voice/page_map_text.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc"],
+        tier="std",
+        dict="dicts/page_map.dict",
+        max_len=65536,
+        smoke_runs=5000,
+    ),
     # --- The browser: agents and workflows (//base stand-ins) -------------
     "molt_agent_actions_fuzzer": dict(
         dir=BROWSER,

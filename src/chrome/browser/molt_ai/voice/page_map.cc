@@ -518,7 +518,9 @@ class Builder {
                       !node.Has(kStateDisabled) &&
                       item.credential == CredentialKind::kNone;
     }
+    // A protected node's value is never kept, whatever its role.
     if (item.credential == CredentialKind::kNone &&
+        !node.Has(kStateProtected) &&
         (text_field || kind == ItemKind::kSelect ||
          kind == ItemKind::kSlider || kind == ItemKind::kOption)) {
       item.value = SpeechSafeText(node.value, kMaxItemValueChars);
