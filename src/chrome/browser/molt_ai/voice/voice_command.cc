@@ -156,10 +156,6 @@ bool IsGreedySlot(SlotType type) {
          type == SlotType::kName;
 }
 
-bool IsFreeTextSlot(SlotType type) {
-  return IsGreedySlot(type);
-}
-
 struct Node {
   enum class Type : uint8_t { kWord, kGroup, kSlot };
   Type type = Type::kWord;
