@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter.h"
 
+#include <array>  // MoltBrowser
 #include <limits>
 
 #include "base/functional/callback.h"
@@ -18,10 +19,13 @@
 #include "base/time/time.h"
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
 #include "media/base/limits.h"
+#include "media/base/video_frame_converter.h"  // MoltBrowser
+#include "media/base/video_frame_pool.h"  // MoltBrowser
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/web/web_heap.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_encoded_video_frame.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_media_stream_video_source.h"
+#include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/testing/io_task_runner_testing_platform_support.h"
@@ -1679,14 +1683,14 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
       base::TimeTicks());
   expect_track_size();
 
-  // A frame that already is one, as it is.
+  // A frame that already is one, its samples as they are.
   auto exact = CreateTestFrame(kSize, gfx::Rect(kSize), kSize,
                                media::VideoFrame::STORAGE_OWNED_MEMORY,
                                media::PIXEL_FORMAT_I420, next_timestamp(),
                                test_sii_.get());
   DeliverAndValidateFrame(exact, base::TimeTicks());
   expect_track_size();
-  EXPECT_EQ(delivered, exact);
+  EXPECT_EQ(delivered->visible_data(0), exact->visible_data(0));
 
   // The captured surface size and scale Chromium's fake camera puts on its
   // frames (its own mode) don't reach the track, converted or not.
@@ -1753,6 +1757,110 @@ TEST_F(VideoTrackAdapterFixtureTest, MoltNetCameraFramesHaveTheTrackSize) {
   EXPECT_EQ(delivered->coded_size(), kHd);
   EXPECT_EQ(delivered->visible_rect(), gfx::Rect(kHd));
   EXPECT_EQ(delivered->natural_size(), kHd);
+}
+
+// MoltBrowser: a MoltNet camera track's frames carry one colour space,
+// BT.601 at limited range (SMPTE 170M), whatever the camera's: samples of
+// another encoding are converted (media/base/molt_portable_color.h), those
+// already in it are kept.
+TEST(VideoTrackAdapterTest, MoltNetCameraFramesHaveOneColorSpace) {
+  test::TaskEnvironment task_environment;
+  media::VideoFramePool pool;
+  media::VideoFrameConverter converter;
+  const gfx::Size kSize(640, 480);
+
+  // A camera frame of one colour, in `color_space`.
+  auto camera_frame = [](media::VideoPixelFormat format, const gfx::Size& size,
+                         const gfx::ColorSpace& color_space,
+                         std::array<uint8_t, 4> samples) {
+    scoped_refptr<media::VideoFrame> frame = media::VideoFrame::CreateFrame(
+        format, size, gfx::Rect(size), size, base::TimeDelta());
+    CHECK(frame);
+    for (size_t plane = 0; plane < media::VideoFrame::NumPlanes(format);
+         ++plane) {
+      base::span<uint8_t> data = frame->writable_span(plane);
+      const size_t per_element = static_cast<size_t>(
+          media::VideoFrame::BytesPerElement(format, plane));
+      for (size_t i = 0; i < data.size(); ++i) {
+        // I420: one plane per sample; NV12: U and V interleaved in plane 1;
+        // ARGB: B, G, R, A in memory.
+        data[i] = per_element == 1 ? samples[plane]
+                                   : samples[plane + i % per_element];
+      }
+    }
+    frame->set_color_space(color_space);
+    return frame;
+  };
+  // Whether every visible sample of `plane` is `value`.
+  auto plane_is = [](const media::VideoFrame& frame, size_t plane,
+                     int value) {
+    base::span<const uint8_t> data = frame.GetVisiblePlaneData(plane);
+    for (int y = 0; y < frame.GetVisibleRows(plane); ++y) {
+      for (int x = 0; x < frame.GetVisibleRowBytes(plane); ++x) {
+        if (data[static_cast<size_t>(y) * frame.stride(plane) +
+                 static_cast<size_t>(x)] != value) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  // An HD camera's NV12 in BT.709 (macOS): red, 63, 102, 240 there, becomes
+  // 82, 90, 240 (BT.601's own red is 81.5, 90.2, 240).
+  auto result = molt_fingerprinting::AdaptUniformCameraFrame(
+      camera_frame(media::PIXEL_FORMAT_NV12, gfx::Size(1280, 720),
+                   gfx::ColorSpace::CreateREC709(), {63, 102, 240, 0}),
+      kSize, pool, converter);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ((*result)->format(), media::PIXEL_FORMAT_I420);
+  EXPECT_EQ((*result)->ColorSpace(), gfx::ColorSpace::CreateREC601());
+  EXPECT_TRUE(plane_is(**result, 0, 82));
+  EXPECT_TRUE(plane_is(**result, 1, 90));
+  EXPECT_TRUE(plane_is(**result, 2, 240));
+
+  // A webcam's MJPEG, decoded to full-range BT.601 (JPEG) of the track's very
+  // size: converted, white to 235, not handed on.
+  scoped_refptr<media::VideoFrame> jpeg =
+      camera_frame(media::PIXEL_FORMAT_I420, kSize,
+                   gfx::ColorSpace::CreateJpeg(), {255, 128, 128, 0});
+  result = molt_fingerprinting::AdaptUniformCameraFrame(jpeg, kSize, pool,
+                                                         converter);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_NE((*result)->visible_data(0), jpeg->visible_data(0));
+  EXPECT_EQ((*result)->ColorSpace(), gfx::ColorSpace::CreateREC601());
+  EXPECT_TRUE(plane_is(**result, 0, 235));
+  EXPECT_TRUE(plane_is(**result, 1, 128));
+  EXPECT_TRUE(plane_is(**result, 2, 128));
+
+  // Already BT.601 at limited range (or without a colour space, read as
+  // that), of the track's size: the same samples, relabelled.
+  for (const gfx::ColorSpace& color_space :
+       {gfx::ColorSpace::CreateREC601(), gfx::ColorSpace()}) {
+    scoped_refptr<media::VideoFrame> same = camera_frame(
+        media::PIXEL_FORMAT_I420, kSize, color_space, {50, 60, 70, 0});
+    result = molt_fingerprinting::AdaptUniformCameraFrame(same, kSize, pool,
+                                                           converter);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ((*result)->visible_data(0), same->visible_data(0));
+    EXPECT_EQ((*result)->ColorSpace(), gfx::ColorSpace::CreateREC601());
+    EXPECT_TRUE(plane_is(**result, 0, 50));
+  }
+
+  // An RGB camera's frame without a colour space: the converter makes it
+  // BT.709 YUV, then BT.601. Red again, to a sample.
+  result = molt_fingerprinting::AdaptUniformCameraFrame(
+      camera_frame(media::PIXEL_FORMAT_ARGB, gfx::Size(1280, 720),
+                   gfx::ColorSpace(), {0, 0, 255, 255}),
+      kSize, pool, converter);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ((*result)->ColorSpace(), gfx::ColorSpace::CreateREC601());
+  const uint8_t luma = (*result)->GetVisiblePlaneData(0)[0];
+  const uint8_t cb = (*result)->GetVisiblePlaneData(1)[0];
+  const uint8_t cr = (*result)->GetVisiblePlaneData(2)[0];
+  EXPECT_NEAR(luma, 81.5, 1.0);
+  EXPECT_NEAR(cb, 90.2, 1.0);
+  EXPECT_NEAR(cr, 240.0, 1.0);
 }
 
 // MoltBrowser: a frame a MoltNet camera track can't read (a texture that

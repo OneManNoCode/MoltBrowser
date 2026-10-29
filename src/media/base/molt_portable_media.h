@@ -60,7 +60,10 @@
 //     a process listens (ScopedPortableAudioThread below);
 //   * the portable audio code computes with the CPU's flush-to-zero modes off
 //     and keeps subnormal floats out of its loops in software, the same way on
-//     every CPU (ScopedPortableSubnormals, FlushTinyPortableSamples() below).
+//     every CPU (ScopedPortableSubnormals, FlushTinyPortableSamples() below);
+//   * a camera's frames carry one colour space, their samples converted to it
+//     with integer arithmetic (UsePortableCameraColor() below,
+//     molt_portable_color.h).
 //
 // libyuv's colour conversions and libvpx's encoders and decoders needed no
 // change: they give the same bytes on every SIMD level of x86 and Arm
@@ -296,6 +299,30 @@ class MEDIA_EXPORT PortableCaptureDownmix {
   std::unique_ptr<ChannelMixer> mixer_;
   std::unique_ptr<AudioBus> output_;
 };
+
+// A camera's colour.
+//
+// Every frame of a MoltNet camera track carries one colour space, BT.601 at
+// limited range (SMPTE 170M primaries, transfer and matrix), whatever the
+// camera's (third_party/blink/renderer/modules/mediastream/moltnet_camera.h).
+
+// Whether `frame`'s samples already are in that encoding as Chromium reads
+// them (gfx::ColorSpace::ToSkYUVColorSpace()): a BT.601 matrix (BT.470BG or
+// SMPTE 170M) at any range but full, or no YUV matrix at all (none, or one a
+// camera's YUV doesn't come in), which Chromium reads as BT.601 at limited
+// range.
+MEDIA_EXPORT bool HasPortableCameraEncoding(const VideoFrame& frame);
+
+// Gives `frame` that colour space (and no HDR metadata), its samples as they
+// are.
+MEDIA_EXPORT void SetPortableCameraColorSpace(VideoFrame& frame);
+
+// Converts the visible samples of an I420 `frame` in writable memory from the
+// encoding its colour space gives them (BT.709, full-range BT.601, ...) to
+// BT.601 at limited range in place, with molt_portable_color.h's integer
+// arithmetic, and gives it that colour space (SetPortableCameraColorSpace()).
+// Returns false, changing nothing, for another frame.
+MEDIA_EXPORT bool UsePortableCameraColor(VideoFrame& frame);
 
 // Scales every plane of `dest_frame` from the same plane of `src_frame` with
 // molt::PortableScalePlane() (molt_portable_scale.h): the visible regions,

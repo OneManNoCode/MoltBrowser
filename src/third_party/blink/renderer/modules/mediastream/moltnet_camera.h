@@ -133,9 +133,11 @@ MODULES_EXPORT std::optional<gfx::Size> UniformCameraFrameSize(
 // A MoltNet camera track's frame of `size` (UniformCameraFrameSize()) from
 // the camera's `frame`: cropped to the aspect ratio of `size` (the largest
 // centred part) and scaled to it, up or down, by `converter` into an I420
-// frame of `pool` that holds exactly that, with the camera frame's
+// frame of `pool` that holds exactly that, its samples converted to BT.601
+// at limited range (media/base/molt_portable_color.h) where the camera's
+// encoding differs, with that colour space (SMPTE 170M), the camera frame's
 // timestamp and metadata but for a captured surface's size and scale (which
-// Chromium's fake camera sets to its own mode); `frame` itself when it
+// Chromium's fake camera sets to its own mode); a wrapper of `frame` when it
 // already is one. An error for a frame the CPU can't read or the converter
 // can't take.
 MODULES_EXPORT base::expected<scoped_refptr<media::VideoFrame>,

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "media/base/molt_portable_media.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_converter.h"
 #include "media/base/video_frame_pool.h"
@@ -171,15 +172,13 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
     return base::unexpected(
         DropReason::kResolutionAdapterCannotCreateConvertFrame);
   }
-  // Already a frame of exactly `size`, I420, in memory: as it is.
+  // Already a frame of exactly `size`, I420, in memory, in the cameras'
+  // encoding: its samples as they are.
   if (!frame->HasSharedImage() && frame->HasDirectCpuAccess() &&
       frame->format() == media::PIXEL_FORMAT_I420 &&
       frame->coded_size() == size && frame->visible_rect() == gfx::Rect(size) &&
-      frame->natural_size() == size) {
-    if (!frame->metadata().source_size &&
-        !frame->metadata().device_scale_factor) {
-      return frame;
-    }
+      frame->natural_size() == size &&
+      media::HasPortableCameraEncoding(*frame)) {
     scoped_refptr<media::VideoFrame> wrapped =
         media::VideoFrame::WrapVideoFrame(frame, frame->format(),
                                           frame->visible_rect(),
@@ -189,6 +188,7 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
           DropReason::kResolutionAdapterWrappingFrameForCroppingFailed);
     }
     DropCapturedSurface(*wrapped);
+    media::SetPortableCameraColorSpace(*wrapped);
     return wrapped;
   }
   if (frame->HasSharedImage()) {
@@ -227,6 +227,14 @@ AdaptUniformCameraFrame(scoped_refptr<media::VideoFrame> frame,
   uniform->metadata().ClearTextureFrameMetadata();
   DropCapturedSurface(*uniform);
   if (!converter.ConvertAndScale(*cropped, *uniform).is_ok()) {
+    return base::unexpected(
+        DropReason::kResolutionAdapterConvertAndScaleFailed);
+  }
+  // The converter leaves the samples in the camera's encoding (YUV) or in the
+  // one it gives the frame (RGB), and says which in the frame's colour space:
+  // converted to the cameras' one, with integer arithmetic, the same on every
+  // CPU.
+  if (!media::UsePortableCameraColor(*uniform)) {
     return base::unexpected(
         DropReason::kResolutionAdapterConvertAndScaleFailed);
   }
