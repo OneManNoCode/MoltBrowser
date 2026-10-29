@@ -26,7 +26,7 @@ const char* const kQueries[] = {
     "@evil.example",
     "\\\\evil.example",
     "%00%2F..%2F",
-    "\xE2\x80\xAE" "gnp.exe",
+    "\xE2\x80\xAEgnp.exe",
     "Beyonc\xC3\xA9 / AC/DC",
 };
 

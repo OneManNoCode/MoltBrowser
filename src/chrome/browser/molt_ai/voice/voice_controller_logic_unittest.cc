@@ -220,7 +220,7 @@ TEST(VoiceControllerLogicTest, TheOwnersScenario) {
   // "Open YouTube."
   VoiceTurn turn = c.Say("Hey Molt, open YouTube.");
   EXPECT_EQ(turn.kind, VoiceCommandKind::kOpenSite);
-  EXPECT_EQ(turn.heard, "open YouTube.");
+  EXPECT_EQ(turn.heard, "open YouTube");
   ASSERT_EQ(Kinds(turn), (std::vector<VoiceStepKind>{K::kNavigate,
                                                      K::kWaitForPage}));
   EXPECT_EQ(turn.steps[0].url, "https://www.youtube.com/");

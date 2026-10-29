@@ -35,6 +35,8 @@
 #include <string_view>
 #include <vector>
 
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
+
 namespace molt_ai {
 namespace voice {
 
@@ -85,7 +87,8 @@ struct SiteTarget {
     kUnknown,    // nothing to open: search for |name| instead
   };
   Kind kind = Kind::kUnknown;
-  const KnownSite* site = nullptr;
+  // Points into KnownSites()' static table (or a test's site).
+  MOLT_RAW_PTR_EXCLUSION const KnownSite* site = nullptr;
   std::string url;
   // What to call it when speaking: the known site's name, the address, or
   // the words the user said.

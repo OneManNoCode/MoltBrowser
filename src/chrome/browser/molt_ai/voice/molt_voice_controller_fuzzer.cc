@@ -172,7 +172,8 @@ void AddLine(Page& page,
       return;
     case 'B':
       if (tabs.size() < 4) {
-        tabs.push_back({std::string(Part(parts, 0)), std::string(Part(parts, 1))});
+        tabs.push_back(
+            {std::string(Part(parts, 0)), std::string(Part(parts, 1))});
       }
       return;
     case 'H': {

@@ -256,7 +256,8 @@ std::string SiteSearchURL(const KnownSite& site, std::string_view query) {
 }
 
 std::optional<std::string> AddressURL(std::string_view address) {
-  if (address.empty() || address.size() > kMaxHostBytes + kMaxAddressPathBytes) {
+  if (address.empty() ||
+      address.size() > kMaxHostBytes + kMaxAddressPathBytes) {
     return std::nullopt;
   }
   const std::string lower = LowerAscii(address);

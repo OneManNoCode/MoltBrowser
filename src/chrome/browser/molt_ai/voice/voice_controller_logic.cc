@@ -13,6 +13,7 @@
 #include "chrome/browser/molt_ai/voice/voice_command_phrases.h"
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/molt_ai/voice/voice_speech_text.h"
+#include "chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h"
 
 namespace molt_ai {
 namespace voice {
@@ -754,7 +755,8 @@ class Planner {
   struct Attempt {
     CandidateSet set;
     ListContext context = ListContext::kNone;
-    const PageList* list = nullptr;
+    // Into |map_|, which outlives the planner.
+    MOLT_RAW_PTR_EXCLUSION const PageList* list = nullptr;
     // For a subset: the index in the context's set of each candidate.
     std::vector<size_t> base;
     bool uses_current = false;
@@ -1142,8 +1144,8 @@ class Planner {
   }
 
   void NextPage() {
-    const PageItem* next =
-        ItemSaying(map_, ItemKind::kLink, {"next", "next page", "more results"});
+    const PageItem* next = ItemSaying(map_, ItemKind::kLink,
+                                      {"next", "next page", "more results"});
     if (!next) {
       next = ItemSaying(map_, ItemKind::kButton,
                         {"next", "next page", "more results", "show more",
@@ -1610,8 +1612,8 @@ class Planner {
       Say("Choose a field first: say its name or its number.");
       return;
     }
-    const std::string name =
-        field->label.empty() ? std::string("The field") : PageText(field->label);
+    const std::string name = field->label.empty() ? std::string("The field")
+                                                   : PageText(field->label);
     if (field->credential != CredentialKind::kNone) {
       Say(name + " is a " +
           std::string(CredentialKindName(field->credential)) +
@@ -1776,8 +1778,9 @@ class Planner {
                         "The full list is in Voice commands, in the help."}));
   }
 
-  const PageMap& map_;
-  const VoiceEnvironment& env_;
+  // A planner lives on its Plan*() function's stack, inside its inputs' lives.
+  MOLT_RAW_PTR_EXCLUSION const PageMap& map_;
+  MOLT_RAW_PTR_EXCLUSION const VoiceEnvironment& env_;
   VoiceTurn turn_;
   std::vector<std::string> spoken_;
 };

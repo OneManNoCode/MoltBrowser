@@ -33,7 +33,7 @@
 #include "chrome/browser/molt_ai/voice/voice_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/search_test_utils.h"
@@ -171,7 +171,7 @@ class VoiceControllerBrowserTest : public InProcessBrowserTest {
 
  protected:
   content::WebContents* web_contents() {
-    return browser()->tab_strip_model()->GetActiveWebContents();
+    return browser()->GetTabStripModel()->GetActiveWebContents();
   }
 
   VoiceController* voice(BrowserWindowInterface* window = nullptr) {
@@ -199,7 +199,8 @@ class VoiceControllerBrowserTest : public InProcessBrowserTest {
     VoicePageController* page =
         VoicePageController::FromWebContents(web_contents());
     ASSERT_TRUE(page);
-    ASSERT_TRUE(base::test::RunUntil([&]() { return ready(page->BuildMap()); }));
+    ASSERT_TRUE(
+        base::test::RunUntil([&]() { return ready(page->BuildMap()); }));
   }
 
   bool WaitForJs(std::string_view expression) {
@@ -344,12 +345,13 @@ IN_PROC_BROWSER_TEST_F(VoiceControllerBrowserTest, BuysOnlyAfterASpokenYes) {
 }
 
 IN_PROC_BROWSER_TEST_F(VoiceControllerBrowserTest, StaysOffInMoltNetWindows) {
-  Profile* moltnet = browser()->profile()->GetOffTheRecordProfile(
+  Profile* moltnet = GetProfile()->GetOffTheRecordProfile(
       Profile::OTRProfileID::CreateUnique("MoltNet::Tor"),
       /*create_if_needed=*/true);
-  Browser* window = CreateBrowser(moltnet);
+  BrowserWindowInterface* window = CreateBrowser(moltnet);
   ASSERT_TRUE(window);
-  content::WebContents* tab = window->tab_strip_model()->GetActiveWebContents();
+  content::WebContents* tab =
+      window->GetTabStripModel()->GetActiveWebContents();
   const GURL before = tab->GetLastCommittedURL();
 
   VoiceController* controller = voice(window);
@@ -369,7 +371,7 @@ IN_PROC_BROWSER_TEST_F(VoiceControllerBrowserTest,
                        SearchesForASiteItDoesntKnow) {
   // The default search engine is the fixture search engine.
   TemplateURLService* service =
-      TemplateURLServiceFactory::GetForProfile(browser()->profile());
+      TemplateURLServiceFactory::GetForProfile(GetProfile());
   search_test_utils::WaitForTemplateURLServiceToLoad(service);
   TemplateURLData data;
   data.SetShortName(u"Fixture search");

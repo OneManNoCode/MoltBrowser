@@ -18,6 +18,8 @@
 
 namespace {
 
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
+using molt_ai::chat_handler_helpers::StringArg;
 using molt_ai::voice::VoiceActivity;
 using molt_ai::voice::VoiceController;
 

@@ -205,8 +205,9 @@ VoiceController* VoiceController::GetOrCreateForBrowser(
 VoiceController::VoiceController(BrowserWindowInterface* browser)
     : browser_(browser),
       scoped_data_holder_(browser->GetUnownedUserDataHost(), *this) {
-  did_close_subscription_ = browser->RegisterBrowserDidClose(base::BindRepeating(
-      &VoiceController::OnBrowserDidClose, base::Unretained(this)));
+  did_close_subscription_ =
+      browser->RegisterBrowserDidClose(base::BindRepeating(
+          &VoiceController::OnBrowserDidClose, base::Unretained(this)));
   active_tab_subscription_ =
       browser->RegisterActiveTabDidChange(base::BindRepeating(
           &VoiceController::OnActiveTabChanged, base::Unretained(this)));
@@ -738,13 +739,13 @@ bool VoiceController::RunStep(const VoiceStep& step) {
         return false;
       }
       if (step.kind == VoiceStepKind::kSelectTab) {
-        tabs->ActivateTabAt(step.index,
-                            TabStripUserGestureDetails(
-                                TabStripUserGestureDetails::GestureType::kOther));
+        tabs->ActivateTabAt(
+            step.index, TabStripUserGestureDetails(
+                            TabStripUserGestureDetails::GestureType::kOther));
       } else {
-        tabs->CloseWebContentsAt(step.index,
-                                 TabCloseTypes::CLOSE_USER_GESTURE |
-                                     TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
+        tabs->CloseWebContentsAt(
+            step.index, TabCloseTypes::CLOSE_USER_GESTURE |
+                            TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
       }
       return true;
     }

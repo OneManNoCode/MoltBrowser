@@ -283,6 +283,9 @@ source_set("voice_loop") {
     ":spoken_choice",
     ":voice_command",
   ]
+
+  # MOLT_RAW_PTR_EXCLUSION (header-only).
+  deps = [ "//chrome/services/molt_ai/inference/engine:raw_ptr_exclusion" ]
 }
 
 # chrome://flags/#molt-voice-mode (about_flags.cc includes

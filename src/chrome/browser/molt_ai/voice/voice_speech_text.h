@@ -91,7 +91,8 @@ std::string PageText(std::string_view text);
 
 // Chunks |sentences| (each one whole) into groups of at most
 // kMaxSpeechChunkChars; a sentence longer than that is cut.
-std::vector<std::string> ChunkSentences(const std::vector<std::string>& sentences);
+std::vector<std::string> ChunkSentences(
+    const std::vector<std::string>& sentences);
 
 }  // namespace voice
 }  // namespace molt_ai
