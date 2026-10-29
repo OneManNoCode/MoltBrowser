@@ -1,0 +1,132 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Voice mode on screen: a number on every item of the page map, a ring
+# around the current item and a caption bar, drawn by the browser above and
+# below the page (docs/design/TOUCHLESS_BROWSING.md sections 5.3, 5.5 and
+# 6.6, docs/ACCESSIBILITY.md section 5).
+
+# Where items land on screen, where their badges go, the caption's text and
+# height, the sizes and the colours. Std-only (with the std-only page map):
+# molt_ai_unittests and a standalone harness build the same code.
+source_set("layout") {
+  sources = [
+    "voice_overlay_layout.cc",
+    "voice_overlay_layout.h",
+  ]
+
+  public_deps = [ "//chrome/browser/molt_ai/voice:page_map" ]
+}
+
+# The API the voice controller calls: VoiceOverlay, per tab (numbers and the
+# ring) and per window (the caption). No views code.
+source_set("overlay") {
+  sources = [
+    "voice_overlay.cc",
+    "voice_overlay.h",
+  ]
+
+  public_deps = [
+    ":layout",
+    "//base",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//content/public/browser",
+  ]
+
+  deps = [
+    # The page's trees, followed while numbers are shown.
+    "//chrome/browser/molt_ai/voice:voice_page",
+    "//components/tabs:public",
+    "//url",
+  ]
+}
+
+# The views, one of each per contents area of a browser window, made and
+# laid out by ContentsContainerView's hooks
+# (chrome/browser/ui/views/frame/contents_container_view.{h,cc}).
+source_set("views") {
+  sources = [
+    "voice_caption_bar.cc",
+    "voice_caption_bar.h",
+    "voice_numbers_view.cc",
+    "voice_numbers_view.h",
+    "voice_overlay_style.cc",
+    "voice_overlay_style.h",
+    "voice_overlay_views.cc",
+    "voice_overlay_views.h",
+  ]
+
+  public_deps = [
+    ":layout",
+    ":overlay",
+    "//base",
+    "//ui/base/metadata",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//ui/views",
+  ]
+
+  deps = [
+    "//build:buildflag_header_h",
+    "//cc/paint",
+    "//chrome/browser/ui/browser_window",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//third_party/blink/public/common:headers",
+    "//ui/accessibility:ax_base",
+    "//ui/color",
+    "//ui/compositor",
+    "//ui/native_theme",
+    "//ui/views/controls/webview",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "voice_overlay_layout_unittest.cc" ]
+
+  deps = [
+    ":layout",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:page_map_test_support",
+    "//testing/gtest",
+  ]
+}
+
+# Badges at the fixture pages' items (chrome/test/data/molt_voice/) at 100%
+# and 200% zoom and on a 2x screen, following scrolling, hidden on
+# navigation and tab switches; the caption bar's place, size and
+# accessibility. Picked up by browser_tests
+# (//chrome/browser:core_browser_tests).
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "voice_overlay_browsertest.cc" ]
+
+  deps = [
+    ":layout",
+    ":overlay",
+    ":views",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/voice:page_map",
+    "//chrome/browser/molt_ai/voice:voice_page",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_ui",
+    "//components/zoom",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//third_party/blink/public/common:headers",
+    "//ui/accessibility:ax_base",
+    "//ui/display",
+    "//ui/gfx/geometry",
+    "//ui/views",
+    "//ui/views/controls/webview",
+  ]
+}

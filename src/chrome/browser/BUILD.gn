@@ -4418,6 +4418,9 @@ if (!is_android) {
     # MoltBrowser: touchless browsing's page map and actions.
     deps += [ "//chrome/browser/molt_ai/voice:browser_tests" ]
 
+    # MoltBrowser: touchless browsing's overlay (numbers, caption bar).
+    deps += [ "//chrome/browser/ui/views/molt_ai/voice:browser_tests" ]
+
     if (is_win || is_linux || is_chromeos) {
       sources += [ "process_singleton_browsertest.cc" ]
     }
