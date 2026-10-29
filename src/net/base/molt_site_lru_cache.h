@@ -17,8 +17,9 @@
 //  * the cache calls MoltMakeRoomFor(key) before it puts a new entry: the
 //    key's site's own least recently used entries go as the shares say, and
 //    it returns whether the new entry is kept (MoltMakeRoomToKeep() for an
-//    entry the cache must keep, which past the total takes the place of the
-//    least recently used entry of the site that holds the most);
+//    entry the cache must keep, which past the total, for a site holding
+//    none or two fewer than the site that holds the most, takes the place of
+//    that site's least recently used entry);
 //  * every Put(), Get(), Erase() and Clear() keeps the shares' record of
 //    each site's entries in order of use; Peek() changes nothing, as in the
 //    base.
@@ -77,8 +78,9 @@ class MoltSiteLRU : public Base {
     return MoltMakeRoom(key, /*must_keep=*/false);
   }
   // MoltBrowser: the same for an entry the cache must keep: past the total,
-  // a site holding none takes the place of the least recently used entry of
-  // the site that holds the most (MoltSiteShares::NextToEvictToKeep()).
+  // a site holding none, or two fewer than the site that holds the most,
+  // takes the place of that site's least recently used entry
+  // (MoltSiteShares::NextToEvictToKeep()).
   bool MoltMakeRoomToKeep(const key_type& key) {
     return MoltMakeRoom(key, /*must_keep=*/true);
   }

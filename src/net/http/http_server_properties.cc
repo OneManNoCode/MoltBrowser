@@ -876,9 +876,9 @@ void HttpServerProperties::SetHTTP11RequiredInternal(
     return;
 
   // MoltBrowser: with per-site shares, room is made inside the key's own
-  // site, or, past the total for a site holding none, in the place of the
-  // least recently used entry of the site holding the most: the entry is
-  // always kept, as the request that met the demand is sent again over
+  // site, or, past the total for a site holding none or two fewer than the
+  // site holding the most, in the place of that site's least recently used
+  // entry: the entry is always kept, as the request that met the demand is sent again over
   // HTTP/1.1 only through it (HttpNetworkTransaction::HandleHttp11Required())
   // (net/base/molt_site_share_policy.h).
   ServerInfoMapKey molt_key =

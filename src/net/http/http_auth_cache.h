@@ -228,9 +228,9 @@ class NET_EXPORT HttpAuthCache {
   // (net/base/molt_site_share_policy.h, kMoltHttpAuthShares) instead of the
   // kMaxNumRealmEntries all sites shared: a new server entry takes the place
   // of its own site's least recently used one; past the total, for a site
-  // holding none, the place of the least recently used entry of the site
-  // that holds the most, so that what the user signs in with is kept
-  // (otherwise Add() would return null). Proxy entries, the browser's own
+  // holding none or two fewer than the site that holds the most, the place
+  // of that site's least recently used entry, so that what the user signs in
+  // with is kept (otherwise Add() would return null). Proxy entries, the browser's own
   // and keyed by no site, are kept as they come. Called by MoltNet's network
   // context, whose server entries are keyed by site, before its first
   // request.
@@ -300,9 +300,9 @@ class NET_EXPORT HttpAuthCache {
 
   // MoltBrowser: with per-site shares, makes room for a new entry of
   // `target` under `entry_key_nak` (the key it will have) inside its own
-  // site, or, past the total for a site holding none, in the place of the
-  // least recently used entry of the site holding the most; returns whether
-  // it is kept.
+  // site, or, past the total for a site holding none or two fewer than the
+  // site holding the most, in the place of that site's least recently used
+  // entry; returns whether it is kept.
   bool MoltMakeRoomFor(HttpAuth::Target target,
                        const NetworkAnonymizationKey& entry_key_nak);
 

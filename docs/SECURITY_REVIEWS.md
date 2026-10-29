@@ -59,8 +59,7 @@ ASan/UBSan, clang `-fno-exceptions`; each pasted hook block checked against
 the tree): the HTTP authentication cache's and the HTTP/1.1 records' hooks
 at round 34 and now, past a total that sixteen sites filled; the down-mix
 of every layout it takes with Chromium 156's `ChannelMixer`; the shares'
-std-only unit tests (15) and 10 mutants of the new rule, each caught but
-one equivalent. The leak kit's test suite passes as root, as an
+std-only unit tests (16) and 13 mutants of the new rule, each caught. The leak kit's test suite passes as root, as an
 unprivileged account, and as one whose primary group is `users` or
 `daemon`; the tools' own test suites and `molt_fuzz.py check` pass; the
 changed C++ was compiled against Chromium 156's headers.
@@ -73,11 +72,13 @@ informational.
 - MoltNet's per-site shares of the fixed-size network caches: what the
   user signs in to a site with (an HTTP authentication entry) and a
   server's demand for HTTP/1.1 are kept also once other sites fill the
-  cache's total between them. Such an entry of a site holding none takes
-  the place of the least recently used entry of the site that holds the
-  most, so the sign-in prompt doesn't come back on every request, and a
-  request to a server that requires HTTP/1.1 is sent over HTTP/1.1; a
-  site holding fewer entries than another keeps its own
+  cache's total between them. Such an entry of a site holding none, or at
+  least two fewer than the site that holds the most, takes the place of
+  that site's least recently used entry, so the sign-in prompt doesn't
+  come back on every request, and a request to a server that requires
+  HTTP/1.1 is sent over HTTP/1.1; the sites that keep such entries end up
+  holding as many as each other, give or take one, and a site holding
+  fewer entries than another keeps its own
   (`net/base/molt_site_share_policy.h`, `molt_site_lru_cache.h`,
   `net/http/http_auth_cache.cc`, `http_server_properties.cc`).
 - The CPU-independent processing down-mixes only layouts media's

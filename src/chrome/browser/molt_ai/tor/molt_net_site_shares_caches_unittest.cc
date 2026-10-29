@@ -231,6 +231,12 @@ TEST(MoltNetSiteSharesAuthTest, AGreedySiteEvictsOnlyItsOwnEntries) {
         EXPECT_NE(sign_in(late, 0), nullptr);
         EXPECT_EQ(remembered(late, 1), 1);
       }
+      // A site that signs in to several servers keeps each, taking the
+      // places of the sites that hold more.
+      for (int i = 0; i < 3; ++i) {
+        EXPECT_NE(sign_in("intranet.test", i), nullptr);
+      }
+      EXPECT_EQ(remembered("intranet.test", 3), 3);
       EXPECT_EQ(remembered("polite.test", 2), 2);
       EXPECT_LE(cache.GetEntriesSizeForTesting(),
                 net::kMoltHttpAuthShares.total);
@@ -304,6 +310,15 @@ TEST_F(MoltNetSiteSharesServerPropertiesTest, AnHttp11DemandIsAlwaysKept) {
     const std::string late = "late" + base::NumberToString(i) + ".test";
     properties.SetHTTP11Required(ServerOf(late, 0), KeyOf(late));
     EXPECT_TRUE(properties.RequiresHTTP11(ServerOf(late, 0), KeyOf(late)));
+  }
+  // A site with several such servers keeps each.
+  for (int i = 0; i < 3; ++i) {
+    properties.SetHTTP11Required(ServerOf("intranet.test", i),
+                                 KeyOf("intranet.test"));
+  }
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_TRUE(properties.RequiresHTTP11(ServerOf("intranet.test", i),
+                                          KeyOf("intranet.test")));
   }
   for (int i = 0; i < 2; ++i) {
     EXPECT_TRUE(properties.RequiresHTTP11(ServerOf("polite.test", i),

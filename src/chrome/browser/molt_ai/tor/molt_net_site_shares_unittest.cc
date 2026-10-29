@@ -78,14 +78,20 @@ TEST(MoltNetSiteSharesTest, TheDecisions) {
   EXPECT_FALSE(MoltSiteShareHasRoom(limits, 0, 6));
   // A share of nothing keeps nothing.
   EXPECT_FALSE(MoltSiteShareHasRoom({0, 6}, 0, 0));
-  // But an entry the cache must keep, of a site holding none at (or past)
-  // the total, takes the place of the largest site's least recently used.
-  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 6));
-  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 7));
-  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 0, 5));
-  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 1, 6));
-  EXPECT_FALSE(MoltSiteShareTakesFromLargest({0, 6}, 0, 6));
-  EXPECT_FALSE(MoltSiteShareTakesFromLargest({3, 0}, 0, 0));
+  // But an entry the cache must keep, at (or past) the total, of a site
+  // holding none, or two fewer than the site holding the most of the
+  // others, takes the place of that site's least recently used entry.
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 3, 6));
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 1, 6));
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 0, 3, 7));
+  EXPECT_TRUE(MoltSiteShareTakesFromLargest(limits, 1, 3, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 1, 2, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 2, 3, 6));
+  // Not at its share, nor below the total, nor from no one.
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 3, 6, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 0, 3, 5));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest(limits, 0, 0, 6));
+  EXPECT_FALSE(MoltSiteShareTakesFromLargest({0, 6}, 0, 3, 6));
 }
 
 // A site at its share evicts its own least recently used entry; a use makes
@@ -189,8 +195,32 @@ TEST(MoltNetSiteSharesTest, AnEntryToKeepTakesTheLargestSitesPlace) {
   // A site holding the least keeps its own throughout, and the total holds.
   EXPECT_TRUE(shares.Holds("p1"));
   EXPECT_EQ(shares.total(), 8u);
-  // At the total a site holding some still makes room from its own.
+  // At the total a site holding some makes room from its own unless another
+  // holds two more: polite (1) and a (2), the most of the others, ...
   EXPECT_EQ(PutToKeep(shares, "polite", "p2"), "p1");
+  // ...and a (2) and the others (1 each).
+  EXPECT_EQ(PutToKeep(shares, "a", "a4"), "a2");
+  EXPECT_EQ(shares.total(), 8u);
+}
+
+// An entry the cache must keep: a site that needs several, while sites that
+// fill the total hold more, takes theirs until it holds as many as they do,
+// give or take one; then its own.
+TEST(MoltNetSiteSharesTest, ASiteKeepsUpToAFairShare) {
+  Shares shares({4, 8});
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(PutToKeep(shares, "a", "a" + std::to_string(i)), "");
+    ASSERT_EQ(PutToKeep(shares, "b", "b" + std::to_string(i)), "");
+  }
+  ASSERT_EQ(shares.total(), 8u);
+  EXPECT_EQ(PutToKeep(shares, "x", "x0"), "a0");  // a and b hold 4: a0 older
+  EXPECT_EQ(PutToKeep(shares, "x", "x1"), "b0");  // b holds 4, x 1
+  EXPECT_EQ(PutToKeep(shares, "x", "x2"), "x0");  // a and b hold 3, x 2
+  EXPECT_EQ(shares.HeldBy("x"), 2u);
+  EXPECT_EQ(shares.HeldBy("a"), 3u);
+  EXPECT_EQ(shares.HeldBy("b"), 3u);
+  // An ordinary entry of a site holding some only ever takes its own place.
+  EXPECT_EQ(Put(shares, "x", "x3"), "x1");
   EXPECT_EQ(shares.total(), 8u);
 }
 

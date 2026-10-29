@@ -279,8 +279,8 @@ class NET_EXPORT HttpServerProperties
   // kMoltHttp11RequiredShares): a new entry takes the place of its own
   // site's least recently used one, never another site's, or isn't kept;
   // but a server's demand for HTTP/1.1 is always kept, past the total for a
-  // site holding none in the place of the least recently used one of the
-  // site holding the most. Called by MoltNet's network context, which keeps
+  // site holding none or two fewer than the site holding the most in the
+  // place of that site's least recently used one. Called by MoltNet's network context, which keeps
   // its properties in memory only, before its first request.
   void MoltKeepPerSiteShares();
 
