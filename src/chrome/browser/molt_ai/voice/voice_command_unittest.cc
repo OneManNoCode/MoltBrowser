@@ -210,6 +210,8 @@ TEST(VoiceCommandTest, OpenSites) {
       // molt_voice_command_fuzzer).
       {"go to example slash.com", "choose", "verb=open"},
       {"oe..slash.y", "unknown"},
+      {"open example.slash news", "choose", "verb=open"},
+      {"oll.slash. dgw", "unknown"},
   });
 }
 

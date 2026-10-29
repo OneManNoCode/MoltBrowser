@@ -534,15 +534,17 @@ std::optional<Site> ReadSite(const Utterance& u,
           spoken_mark = entry.mark;
       }
     }
+    const SpokenWord& word = u.normalized.words[u.index[i]];
+    const bool glued = i > begin && u.index[i] == u.index[i - 1] + 1;
     if (spoken_mark) {
-      if (site.host.empty() || pending_mark)
+      // A spoken mark glued to the word before by a written one
+      // ("example.slash") is two marks in a row too.
+      if (site.host.empty() || pending_mark || (glued && word.joiner))
         return std::nullopt;
       pending_mark = true;
       mark = spoken_mark;
       continue;
     }
-    const SpokenWord& word = u.normalized.words[u.index[i]];
-    const bool glued = i > begin && u.index[i] == u.index[i - 1] + 1;
     if (pending_mark) {
       // A spoken mark and a written one together ("slash.") are two marks
       // in a row: not an address.
