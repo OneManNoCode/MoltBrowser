@@ -10,8 +10,9 @@
 // "-D KEY=VALUE" parameters and referenced as (param "KEY"), so no path can
 // inject profile syntax. The profile denies everything by default and
 // allows:
-//   - exec of the helper itself (HELPER), fork, signals to and information
-//     about itself, and sysctl reads;
+//   - exec of the helper itself (HELPER), but no other process (no fork:
+//     the launcher's kill and checks reach all of it), signals to and
+//     information about itself, and sysctl reads;
 //   - stat() anywhere (dyld and libc resolve paths), but no file contents
 //     outside the paths below (Chromium's common.sb grants the same to
 //     every sandboxed process);
@@ -23,8 +24,11 @@
 //     (also writing), /dev/random and /dev/urandom;
 //   - reading beneath each READ_<i> (the model or tessdata directory, the
 //     input file);
-//   - reading and writing beneath SCRATCH, but not replacing SCRATCH
-//     itself.
+//   - reading beneath SCRATCH, and creating and writing regular files
+//     there; not deleting, renaming or linking them, making directories or
+//     changing modes, flags, owners, times or extended attributes, so all
+//     it writes stays where the launcher measures it (helper_limits.h);
+//     not replacing SCRATCH itself.
 // No network, no Mach service lookups, no IOKit (so no GPU): a helper that
 // wants any of those fails rather than reaching them.
 //

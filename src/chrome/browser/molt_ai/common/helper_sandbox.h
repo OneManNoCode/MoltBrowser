@@ -13,21 +13,34 @@
 //
 // Policy: the helper may read beneath |read_only_paths| (its own directory
 // with its bundled libraries and data, the model or tessdata directory, the
-// input file) and the system's libraries, read and write beneath
+// input file) and the system's libraries, create and write files in
 // |writable_dir| (a fresh scratch directory per call, HelperScratchDir,
 // which also holds the input and output and is the working directory), and
-// nothing else. Never the network. Its environment is reduced to a few
+// nothing else: not delete, rename or link files there, nor make
+// directories. Never the network. Its environment is reduced to a few
 // variables naming the scratch directory and the system's (POSIX: HOME,
 // TMPDIR, PATH; Windows: TEMP, TMP, SystemRoot, SystemDrive, windir, Path).
 //
+// Limits, the same on every OS (helper_limits.h): the scratch directory may
+// grow by less than 64 MiB beyond what the browser put there, and gain at
+// most 64 entries. The launcher measures it every 10 ms while the helper
+// runs, and once more after it exits; past a limit it kills the helper and
+// the run fails, saying which limit (HelperRunResult::limit_exceeded). As
+// the helper can't delete what it wrote, nothing it writes leaves the
+// directory unmeasured. Memory: at most 4 GiB.
+//
 //   Linux: no_new_privs, a new session, Landlock and seccomp-bpf, applied
-//     between fork and exec (helper_sandbox_linux.h), and no file larger
-//     than 64 MiB or core dump. A layer the kernel
-//     lacks is skipped and logged once (e.g. Landlock before Linux 5.13:
-//     then files are not confined); one the kernel has but that can't be
-//     set up fails the run.
+//     between fork and exec (helper_sandbox_linux.h), and resource limits:
+//     no file larger than 64 MiB, no core dump, at most 4 GiB of private
+//     memory (RLIMIT_DATA; seccomp refuses the shared memory it doesn't
+//     count) and 256 open files. A layer the kernel lacks is skipped and
+//     logged once (e.g. Landlock before Linux 5.13: then files are not
+//     confined); one the kernel has but that can't be set up fails the run.
 //   macOS: /usr/bin/sandbox-exec with a deny-by-default Seatbelt profile
-//     (seatbelt_profile.h). Fail-closed: without sandbox-exec, or if it
+//     (seatbelt_profile.h); the helper starts no other process.
+//     base::LaunchProcess() has no hook before exec here, so no resource
+//     limits: the launcher checks the helper's memory footprint along with
+//     its scratch directory. Fail-closed: without sandbox-exec, or if it
 //     can't apply the profile, the helper does not run.
 //   Windows: a less-privileged AppContainer (LPAC) of its own per run, with
 //     no network capability, no child processes, a job (one process, a
@@ -43,9 +56,9 @@
 //     set up, the helper does not run and the error says why.
 //   Other platforms: fail-closed.
 //
-// The deadline kills the helper and its process group (Windows: its job).
-// Output (stdout and stderr together) is read up to |max_output_bytes|;
-// past that, reading stops and the pipe is closed.
+// The deadline, or a limit, kills the helper and its process group
+// (Windows: its job). Output (stdout and stderr together) is read up to
+// |max_output_bytes|; past that, reading stops and the pipe is closed.
 //
 // Not for tor: it is long-running and needs the network.
 
@@ -102,18 +115,23 @@ struct HelperRunResult {
   bool sandbox_failed = false;
   // Killed at the deadline.
   bool timed_out = false;
+  // Past a limit (helper_limits.h): killed when the launcher saw it, or
+  // when it exited. Its output and exit code don't count then.
+  bool limit_exceeded = false;
   // The exit code when the helper exited by itself; -1 if a signal ended it.
   int exit_code = -1;
   // stdout and stderr, at most |max_output_bytes|. Untrusted bytes.
   std::string output;
   bool output_truncated = false;
-  // Why it did not launch, the sandbox failed, or it timed out
-  // ("timed out after 120 s").
+  // Why it did not launch, the sandbox failed, it timed out ("timed out
+  // after 120 s") or which limit it passed ("it wrote 64 MiB or more to its
+  // scratch directory").
   std::string error;
 };
 
 // A fresh, private scratch directory for one helper run, in the temp
-// directory; deleted with what is in it when this goes. POSIX: mode 0700.
+// directory; deleted with what is in it when this goes. POSIX: mode 0700
+// (set again before it is deleted, as a helper on Linux can change it).
 // Windows: created with a security descriptor (never changed afterwards)
 // that gives the user full control and an AppContainer of its own the
 // rights a helper needs there, with a low integrity label so that
@@ -159,9 +177,11 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
                                    base::TimeDelta timeout,
                                    size_t max_output_bytes);
 
-// Empty if |run| succeeded (launched, exited by itself with 0). Otherwise:
+// Empty if |run| succeeded (launched, exited by itself with 0, within the
+// limits). Otherwise:
 //   sandbox failure:  "<name> sandbox unavailable: <why>"
 //   launch failure:   |launch_error|
+//   past a limit:     "<name> was stopped: <which limit>"
 //   deadline:         "<name> timed out after N s"
 //   non-zero exit:    "<name> exit=N: <its output, sanitized, 200 bytes>"
 std::string DescribeHelperRunFailure(const HelperRunResult& run,

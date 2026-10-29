@@ -51,6 +51,23 @@ source_set("helper_binary") {
   ]
 }
 
+# How much a helper may write and use, and how its scratch directory is
+# measured (helper_limits.h). The POSIX part is plain POSIX without //base,
+# so a standalone harness runs the same code against real file systems.
+source_set("helper_limits") {
+  sources = [
+    "helper_limits.cc",
+    "helper_limits.h",
+  ]
+  if (is_posix) {
+    sources += [ "helper_limits_posix.cc" ]
+  }
+  if (is_win) {
+    sources += [ "helper_limits_win.cc" ]
+    deps = [ "//base" ]
+  }
+}
+
 # The Linux confinement for OCR and voice helpers (Landlock + seccomp-bpf,
 # applied between fork and exec). Pure Linux code without //base, so a
 # standalone harness can run the same code against the kernel.
@@ -62,6 +79,7 @@ source_set("helper_sandbox_linux") {
       "helper_sandbox_linux.h",
     ]
   }
+  public_deps = [ ":helper_limits" ]
 }
 
 # The macOS Seatbelt profile and sandbox-exec command line. Pure C++,
@@ -84,10 +102,12 @@ source_set("helper_sandbox_win_policy") {
   ]
 }
 
-# RunSandboxedHelper(): tesseract and whisper-cli with OS-level confinement
-# and a deadline.
+# RunSandboxedHelper(): tesseract and whisper-cli with OS-level confinement,
+# a deadline and limits on what they write and use.
 source_set("helper_sandbox") {
   sources = [
+    "helper_limits_watch.cc",
+    "helper_limits_watch.h",
     "helper_sandbox.cc",
     "helper_sandbox.h",
   ]
@@ -96,6 +116,7 @@ source_set("helper_sandbox") {
   }
   public_deps = [ "//base" ]
   deps = [
+    ":helper_limits",
     ":helper_output",
     ":helper_sandbox_linux",
     ":seatbelt_profile",
@@ -112,14 +133,19 @@ source_set("helper_sandbox") {
   }
 }
 
-# A stand-in helper for the Windows tests: one action per command line
-# (print, read, write, connect, start a process, allocate, spin), reporting
-# what the sandbox let it do. Only system libraries.
-if (is_win) {
+# A stand-in helper for the sandbox tests: one action per command line
+# (print, read, write, make files, delete, connect, start a process,
+# allocate, spin), reporting what the sandbox and the limits let it do.
+# Only system libraries.
+if (is_win || is_linux || is_mac) {
   executable("molt_helper_sandbox_test_helper") {
     testonly = true
-    sources = [ "helper_sandbox_test_helper_win.cc" ]
-    libs = [ "ws2_32.lib" ]
+    if (is_win) {
+      sources = [ "helper_sandbox_test_helper_win.cc" ]
+      libs = [ "ws2_32.lib" ]
+    } else {
+      sources = [ "helper_sandbox_test_helper_posix.cc" ]
+    }
   }
 }
 
@@ -127,6 +153,7 @@ if (is_win) {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "helper_limits_unittest.cc",
     "helper_output_unittest.cc",
     "helper_sandbox_unittest.cc",
     "helper_sandbox_win_policy_unittest.cc",
@@ -134,6 +161,7 @@ source_set("unit_tests") {
   ]
   deps = [
     ":common",
+    ":helper_limits",
     ":helper_output",
     ":helper_sandbox",
     ":helper_sandbox_linux",
@@ -147,10 +175,12 @@ source_set("unit_tests") {
     sources += [ "trusted_binary_unittest.cc" ]
     deps += [ ":trusted_binary" ]
   }
-  if (is_win) {
-    # HelperSandboxWinTest runs it under the real confinement, and listens
-    # on loopback for it.
+  if (is_win || is_linux || is_mac) {
+    # The sandbox tests run it under the real confinement (on Windows they
+    # also listen on loopback for it).
     data_deps = [ ":molt_helper_sandbox_test_helper" ]
+  }
+  if (is_win) {
     libs = [ "ws2_32.lib" ]
   }
 }

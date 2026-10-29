@@ -2,8 +2,9 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // RunSandboxedHelper() on Linux (Landlock + seccomp-bpf in a pre-exec
-// delegate) and macOS (sandbox-exec), plus the deadline and output limit
-// both share. Other POSIX platforms fail closed.
+// delegate) and macOS (sandbox-exec), plus the deadline, the output limit
+// and the check of the limits in helper_limits.h (HelperLimitsWatch) both
+// share. Other POSIX platforms fail closed.
 
 #include <errno.h>
 #include <fcntl.h>
@@ -36,6 +37,7 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/common/helper_limits_watch.h"
 #include "chrome/browser/molt_ai/common/helper_sandbox.h"
 
 #if BUILDFLAG(IS_LINUX)
@@ -78,28 +80,45 @@ std::string DescribeTimeout(base::TimeDelta timeout) {
          " ms";
 }
 
-enum class ReadEnd { kEof, kLimit, kDeadline, kError };
+enum class ReadEnd { kEof, kLimit, kDeadline, kError, kPastLimit };
+
+// How long to wait at |now| before the deadline or the next check of
+// |watch| (if any), whichever comes first. Never negative.
+base::TimeDelta WaitBefore(base::TimeTicks deadline,
+                           const HelperLimitsWatch* watch,
+                           base::TimeTicks now) {
+  base::TimeDelta wait = deadline - now;
+  if (watch) {
+    wait = std::min(wait, watch->next_check() - now);
+  }
+  return std::max(wait, base::TimeDelta());
+}
 
 // Reads the helper's output from |fd| into |output| until end of file, the
-// deadline, or more than |max_bytes| (then |output| keeps |max_bytes| and
-// |*truncated| is set).
+// deadline, more than |max_bytes| (then |output| keeps |max_bytes| and
+// |*truncated| is set), or a check of |watch| finds it past a limit.
 ReadEnd ReadOutput(int fd,
                    base::TimeTicks deadline,
                    size_t max_bytes,
+                   HelperLimitsWatch* watch,
                    std::string* output,
                    bool* truncated) {
   std::array<char, 16384> buffer;
   for (;;) {
-    const base::TimeDelta remaining = deadline - base::TimeTicks::Now();
-    if (!remaining.is_positive()) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    if (!watch->Check(now)) {
+      return ReadEnd::kPastLimit;
+    }
+    if (!(deadline - now).is_positive()) {
       return ReadEnd::kDeadline;
     }
     struct pollfd poll_fd = {};
     poll_fd.fd = fd;
     poll_fd.events = POLLIN;
-    const int ready =
-        poll(&poll_fd, 1,
-             base::saturated_cast<int>(remaining.InMillisecondsRoundedUp()));
+    const int ready = poll(&poll_fd, 1,
+                           base::saturated_cast<int>(
+                               WaitBefore(deadline, watch, now)
+                                   .InMillisecondsRoundedUp()));
     if (ready < 0) {
       if (errno == EINTR) {
         continue;  // The loop recomputes the time left.
@@ -128,22 +147,30 @@ ReadEnd ReadOutput(int fd,
   }
 }
 
-// Waits for |process| to exit until |deadline|. Polls with a zero timeout:
+enum class WaitEnd { kExited, kDeadline, kPastLimit };
+
+// Waits for |process| to exit until |deadline|, or until a check of |watch|
+// (if any) finds it past a limit. Polls with a zero timeout:
 // Process::WaitForExitWithTimeout() with a real timeout needs base sync
 // primitives, which a plain MayBlock task doesn't have.
-bool WaitForExitUntil(const base::Process& process,
-                      base::TimeTicks deadline,
-                      int* exit_code) {
+WaitEnd WaitForExitUntil(const base::Process& process,
+                         base::TimeTicks deadline,
+                         HelperLimitsWatch* watch,
+                         int* exit_code) {
   base::TimeDelta pause = base::Milliseconds(1);
   for (;;) {
     if (process.WaitForExitWithTimeout(base::TimeDelta(), exit_code)) {
-      return true;
+      return WaitEnd::kExited;
     }
-    const base::TimeDelta remaining = deadline - base::TimeTicks::Now();
-    if (!remaining.is_positive()) {
-      return false;
+    const base::TimeTicks now = base::TimeTicks::Now();
+    if (watch && !watch->Check(now)) {
+      return WaitEnd::kPastLimit;
     }
-    base::PlatformThread::Sleep(std::min(pause, remaining));
+    if (!(deadline - now).is_positive()) {
+      return WaitEnd::kDeadline;
+    }
+    base::PlatformThread::Sleep(
+        std::min(pause, WaitBefore(deadline, watch, now)));
     pause = std::min(pause * 2, base::Milliseconds(50));
   }
 }
@@ -156,8 +183,8 @@ void KillHelper(base::Process process) {
   kill(-pid, SIGKILL);
   kill(pid, SIGKILL);
   int ignored = 0;
-  if (!WaitForExitUntil(process, base::TimeTicks::Now() + kReapTimeout,
-                        &ignored)) {
+  if (WaitForExitUntil(process, base::TimeTicks::Now() + kReapTimeout,
+                       /*watch=*/nullptr, &ignored) != WaitEnd::kExited) {
     base::EnsureProcessTerminated(std::move(process));
   }
 }
@@ -279,6 +306,16 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
     return result;
   }
 
+  // What the browser put in the scratch directory, which the helper's
+  // limits are counted from.
+  HelperLimitsWatch watch(policy.writable_dir);
+  if (!watch.Start()) {
+    result.sandbox_failed = true;
+    result.error = watch.error();
+    LOG(ERROR) << "[MoltHelperSandbox] " << result.error;
+    return result;
+  }
+
   base::LaunchOptions options;
   std::vector<std::string> argv = cmd.argv();
 #if BUILDFLAG(IS_LINUX)
@@ -330,21 +367,29 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
     return result;
   }
   result.launched = true;
+  watch.WatchMemoryOf(process.Pid());
 
-  const ReadEnd end = ReadOutput(read_end.get(), deadline, max_output_bytes,
-                                 &result.output, &result.output_truncated);
+  const ReadEnd end =
+      ReadOutput(read_end.get(), deadline, max_output_bytes, &watch,
+                 &result.output, &result.output_truncated);
   if (end != ReadEnd::kEof) {
     // Stop reading: the helper's next write gets EPIPE or SIGPIPE.
     read_end.reset();
   }
-  bool exited = false;
-  if (end == ReadEnd::kEof || end == ReadEnd::kLimit) {
-    exited = WaitForExitUntil(process, deadline, &result.exit_code);
+  WaitEnd wait = WaitEnd::kDeadline;
+  if (end == ReadEnd::kPastLimit) {
+    wait = WaitEnd::kPastLimit;
+  } else if (end == ReadEnd::kEof || end == ReadEnd::kLimit) {
+    wait = WaitForExitUntil(process, deadline, &watch, &result.exit_code);
   }
-  if (!exited) {
+  if (wait != WaitEnd::kExited) {
     KillHelper(std::move(process));
     result.exit_code = -1;
-    if (end == ReadEnd::kError) {
+    if (wait == WaitEnd::kPastLimit) {
+      result.limit_exceeded = true;
+      result.error = watch.error();
+      LOG(WARNING) << "[MoltHelperSandbox] stopped: " << result.error;
+    } else if (end == ReadEnd::kError) {
       result.error = "lost the helper's output";
     } else {
       result.timed_out = true;
@@ -354,9 +399,10 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
   }
 
   // Anything the helper left running in its process group goes too (on
-  // Linux seccomp keeps its children from leaving the group). While any
-  // member is alive the group keeps its id; an empty group's id could only
-  // be handed out again after the pid counter wraps around.
+  // Linux seccomp keeps its children from leaving the group; on macOS it
+  // can't start any). While any member is alive the group keeps its id; an
+  // empty group's id could only be handed out again after the pid counter
+  // wraps around.
   kill(-process.Pid(), SIGKILL);
 
   if (SandboxSetupFailed(result)) {
@@ -364,6 +410,13 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
     result.sandbox_failed = true;
     result.error = result.output.substr(0, result.output.find('\n'));
     LOG(ERROR) << "[MoltHelperSandbox] " << result.error;
+    return result;
+  }
+  // What it wrote just before it exited counts too.
+  if (!watch.Check(base::TimeTicks::Now(), /*force=*/true)) {
+    result.limit_exceeded = true;
+    result.error = watch.error();
+    LOG(WARNING) << "[MoltHelperSandbox] stopped: " << result.error;
   }
   return result;
 }

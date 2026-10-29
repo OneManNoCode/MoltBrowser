@@ -141,7 +141,6 @@ std::string ScratchDirectorySddl(std::string_view user_sid,
   }
   return "D:P" + OwnersAces(user_sid) +
          AllowAce("", Hex(kScratchDirectoryRights), package_sid) +
-         AllowAce("CIIO", Hex(kScratchSubdirectoryRights), package_sid) +
          AllowAce("OIIO", Hex(kScratchFileRights), package_sid) +
          "S:(ML;OICI;NW;;;LW)";
 }

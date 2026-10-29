@@ -61,6 +61,15 @@
 #ifndef __NR_mount_setattr
 #define __NR_mount_setattr 442
 #endif
+#ifndef __NR_openat2
+#define __NR_openat2 437
+#endif
+#ifndef __NR_memfd_secret
+#define __NR_memfd_secret 447
+#endif
+#ifndef __NR_setxattrat
+#define __NR_setxattrat 463
+#endif
 #ifndef SECCOMP_RET_KILL_PROCESS
 #define SECCOMP_RET_KILL_PROCESS 0x80000000U
 #endif
@@ -158,6 +167,15 @@ constexpr uint32_t kCloneNamespaceFlags =
     CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC |
     CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET;
 
+// open() flags: O_TMPFILE without O_DIRECTORY (the same on x86_64 and
+// aarch64), the bit that makes a file in no directory.
+constexpr uint32_t kOpenTmpfileBit = 020000000;
+
+// mmap() flags (the same on x86_64 and aarch64).
+constexpr uint32_t kMapTypeMask = 0x0f;  // MAP_TYPE
+constexpr uint32_t kMapPrivate = 0x02;   // MAP_PRIVATE
+constexpr uint32_t kMapAnonymous = 0x20;  // MAP_ANONYMOUS
+
 // BPF instructions.
 sock_filter Statement(uint16_t code, uint32_t k) {
   return {code, 0, 0, k};
@@ -206,6 +224,17 @@ void OnSyscall(long nr,
 void Deny(long nr, int error, std::vector<sock_filter>* program) {
   OnSyscall(nr, {Return(ReturnErrno(error))}, program);
 }
+
+// An open() or openat() with O_TMPFILE in its flags (argument
+// |flags_index|): EOPNOTSUPP.
+std::vector<sock_filter> NoTmpfile(uint32_t flags_index) {
+  return {
+      LoadWord(ArgLow(flags_index)),
+      Jump(BPF_JMP | BPF_JSET | BPF_K, kOpenTmpfileBit, 0, 1),
+      Return(ReturnErrno(EOPNOTSUPP)),
+      Return(SECCOMP_RET_ALLOW),
+  };
+}
 #endif  // defined(__x86_64__) || defined(__aarch64__)
 
 // Async-signal-safe output for ApplyInChild().
@@ -237,6 +266,22 @@ void WriteNumberToStderr(int value) {
   WriteNumberToStderr(error);
   WriteToStderr("\n");
   _exit(kSetupFailedExitCode);
+}
+
+// Sets both limits of |resource| to |value|, or to the hard limit already
+// in place if that is lower: a limit is never raised. Async-signal-safe.
+bool LowerLimit(int resource, uint64_t value) {
+  struct rlimit limit = {};
+  if (getrlimit(resource, &limit) != 0) {
+    return false;
+  }
+  const rlim_t target =
+      limit.rlim_max != RLIM_INFINITY && limit.rlim_max < value
+          ? limit.rlim_max
+          : static_cast<rlim_t>(value);
+  limit.rlim_cur = target;
+  limit.rlim_max = target;
+  return setrlimit(resource, &limit) == 0;
 }
 
 }  // namespace
@@ -391,6 +436,46 @@ std::vector<sock_filter> BuildSeccompProgram() {
   Deny(__NR_fspick, EPERM, &program);
   Deny(__NR_mount_setattr, EPERM, &program);
 
+  // What the helper writes stays in files the launcher measures
+  // (helper_limits.h). fallocate() reserves space without writing, which
+  // FALLOC_FL_KEEP_SIZE does past RLIMIT_FSIZE; posix_fallocate() writes
+  // instead when the system call is refused.
+  Deny(__NR_fallocate, EOPNOTSUPP, &program);
+  // An O_TMPFILE file is in no directory. openat2() passes its flags in
+  // memory BPF can't read; libc uses openat() without it.
+#if defined(__NR_open)
+  OnSyscall(__NR_open, NoTmpfile(1), &program);
+#endif
+  OnSyscall(__NR_openat, NoTmpfile(2), &program);
+  Deny(__NR_openat2, ENOSYS, &program);
+  // Extended attributes hold data that no file's size shows.
+  Deny(__NR_setxattr, EOPNOTSUPP, &program);
+  Deny(__NR_lsetxattr, EOPNOTSUPP, &program);
+  Deny(__NR_fsetxattr, EOPNOTSUPP, &program);
+  Deny(__NR_setxattrat, EOPNOTSUPP, &program);
+
+  // Its memory stays where RLIMIT_DATA counts it: no shared memory, which
+  // it doesn't count. That is a MAP_SHARED anonymous mapping, a memfd, and
+  // SysV IPC, whose objects also outlive the process (and other processes'
+  // are theirs).
+  OnSyscall(__NR_mmap,
+            {
+                LoadWord(ArgLow(3)),
+                Jump(BPF_JMP | BPF_JSET | BPF_K, kMapAnonymous, 0, 3),
+                Statement(BPF_ALU | BPF_AND | BPF_K, kMapTypeMask),
+                Jump(BPF_JMP | BPF_JEQ | BPF_K, kMapPrivate, 1, 0),
+                Return(ReturnErrno(EPERM)),
+                Return(SECCOMP_RET_ALLOW),
+            },
+            &program);
+  Deny(__NR_memfd_create, ENOSYS, &program);
+  Deny(__NR_memfd_secret, ENOSYS, &program);
+  for (long nr : {__NR_shmget, __NR_shmat, __NR_shmctl, __NR_shmdt,
+                  __NR_msgget, __NR_msgsnd, __NR_msgrcv, __NR_msgctl,
+                  __NR_semget, __NR_semop, __NR_semtimedop, __NR_semctl}) {
+    Deny(nr, EPERM, &program);
+  }
+
   program.push_back(Return(SECCOMP_RET_ALLOW));
   return program;
 #endif
@@ -510,14 +595,20 @@ void ApplyInChild(const Prepared& prepared) {
   setsid();
 
   // No file past kMaxHelperFileBytes and no core dump: a helper a hostile
-  // input took over can't fill the disk before its deadline.
-  const struct rlimit file_size = {kMaxHelperFileBytes, kMaxHelperFileBytes};
-  if (setrlimit(RLIMIT_FSIZE, &file_size) != 0) {
+  // input took over can't fill the disk before its deadline. At most
+  // kMaxHelperDataBytes of private memory and kMaxHelperOpenFiles open
+  // files. Only exec() follows, which RLIMIT_DATA doesn't hold back.
+  if (!LowerLimit(RLIMIT_FSIZE, kMaxHelperFileBytes)) {
     FailInChild("setrlimit(RLIMIT_FSIZE)");
   }
-  const struct rlimit no_core_dump = {0, 0};
-  if (setrlimit(RLIMIT_CORE, &no_core_dump) != 0) {
+  if (!LowerLimit(RLIMIT_CORE, 0)) {
     FailInChild("setrlimit(RLIMIT_CORE)");
+  }
+  if (!LowerLimit(RLIMIT_DATA, kMaxHelperDataBytes)) {
+    FailInChild("setrlimit(RLIMIT_DATA)");
+  }
+  if (!LowerLimit(RLIMIT_NOFILE, kMaxHelperOpenFiles)) {
+    FailInChild("setrlimit(RLIMIT_NOFILE)");
   }
 
   // base::LaunchProcess() sets this too; seccomp and Landlock require it.

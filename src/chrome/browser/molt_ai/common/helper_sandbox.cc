@@ -9,6 +9,7 @@
 #include "base/files/file_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 #include "chrome/browser/molt_ai/common/helper_output.h"
 
 namespace molt_ai {
@@ -27,9 +28,16 @@ HelperRunResult::~HelperRunResult() = default;
 HelperScratchDir::HelperScratchDir() = default;
 
 HelperScratchDir::~HelperScratchDir() {
-  if (!path_.empty()) {
-    base::DeletePathRecursively(path_);
+  if (path_.empty()) {
+    return;
   }
+#if BUILDFLAG(IS_POSIX)
+  // A helper on Linux may have taken away the browser's own access to it
+  // (Landlock doesn't cover chmod), which would keep it from being listed,
+  // so emptied. A helper makes no directories in it.
+  base::SetPosixFilePermissions(path_, base::FILE_PERMISSION_USER_MASK);
+#endif
+  base::DeletePathRecursively(path_);
 }
 
 HelperSandboxPolicy HelperScratchDir::MakePolicy() const {
@@ -48,6 +56,9 @@ std::string DescribeHelperRunFailure(const HelperRunResult& run,
   }
   if (!run.launched) {
     return std::string(launch_error);
+  }
+  if (run.limit_exceeded) {
+    return base::StrCat({name, " was stopped: ", run.error});
   }
   if (run.timed_out) {
     return base::StrCat({name, " ", run.error});

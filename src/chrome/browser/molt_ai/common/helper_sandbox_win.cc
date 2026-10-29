@@ -41,6 +41,8 @@
 #include "base/win/scoped_process_information.h"
 #include "base/win/security_descriptor.h"
 #include "base/win/sid.h"
+#include "chrome/browser/molt_ai/common/helper_limits.h"
+#include "chrome/browser/molt_ai/common/helper_limits_watch.h"
 #include "chrome/browser/molt_ai/common/helper_sandbox.h"
 #include "chrome/browser/molt_ai/common/helper_sandbox_win_policy.h"
 #include "sandbox/win/src/app_container.h"
@@ -105,11 +107,17 @@ static_assert(hsw::kDelete == DELETE);
 static_assert(hsw::kReadControl == READ_CONTROL);
 static_assert(hsw::kSynchronize == SYNCHRONIZE);
 static_assert(hsw::kFileGenericRead == FILE_GENERIC_READ);
-// A file in the scratch directory: read, write and delete, nothing more.
+// A file in the scratch directory: read and write, nothing more (not
+// delete or rename it). The directory: no subdirectories, nothing deleted.
 static_assert((hsw::kScratchFileRights &
-               ~(FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE)) == 0);
+               ~(FILE_GENERIC_READ | FILE_GENERIC_WRITE)) == 0);
+static_assert((hsw::kScratchDirectoryRights &
+               (FILE_ADD_SUBDIRECTORY | FILE_DELETE_CHILD | DELETE)) == 0);
 // sandbox::JobLevel::kLockdown allows one process.
 static_assert(hsw::kActiveProcessLimit == 1);
+// The job's memory limit is every OS's (helper_limits.h).
+static_assert(hsw::kProcessMemoryLimit ==
+              helper_limits::kMaxHelperMemoryBytes);
 
 namespace {
 
@@ -223,23 +231,37 @@ std::string CheckAccess(sandbox::AppContainerBase& container,
   return std::string();
 }
 
-enum class ReadEnd { kEof, kLimit, kDeadline, kError };
+enum class ReadEnd { kEof, kLimit, kDeadline, kError, kPastLimit };
+
+// How long to wait at |now| before the deadline or the next check of
+// |watch|, whichever comes first, in whole milliseconds. Never negative.
+DWORD WaitMsBefore(base::TimeTicks deadline,
+                   const HelperLimitsWatch& watch,
+                   base::TimeTicks now) {
+  const base::TimeDelta wait =
+      std::max(std::min(deadline, watch.next_check()) - now, base::TimeDelta());
+  return base::saturated_cast<DWORD>(wait.InMillisecondsRoundedUp());
+}
 
 // Reads the helper's output from |pipe| into |output| until it ends, the
-// deadline, or more than |max_bytes| (then |output| keeps |max_bytes| and
-// |*truncated| is set). An anonymous pipe has no overlapped reads, so this
-// peeks, and waits on |process| (which wakes it when the helper exits)
-// while nothing is there.
+// deadline, more than |max_bytes| (then |output| keeps |max_bytes| and
+// |*truncated| is set), or a check of |watch| finds it past a limit. An
+// anonymous pipe has no overlapped reads, so this peeks, and waits on
+// |process| (which wakes it when the helper exits) while nothing is there.
 ReadEnd ReadOutput(HANDLE pipe,
                    HANDLE process,
                    base::TimeTicks deadline,
                    size_t max_bytes,
+                   HelperLimitsWatch* watch,
                    std::string* output,
                    bool* truncated) {
   std::array<char, 16384> buffer;
   base::TimeDelta pause = base::Milliseconds(1);
   bool exited = false;
   for (;;) {
+    if (!watch->Check(base::TimeTicks::Now())) {
+      return ReadEnd::kPastLimit;
+    }
     DWORD available = 0;
     if (!::PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) {
       return ::GetLastError() == ERROR_BROKEN_PIPE ? ReadEnd::kEof
@@ -251,15 +273,16 @@ ReadEnd ReadOutput(HANDLE pipe,
       if (exited) {
         return ReadEnd::kEof;
       }
-      const base::TimeDelta remaining = deadline - base::TimeTicks::Now();
-      if (!remaining.is_positive()) {
+      const base::TimeTicks now = base::TimeTicks::Now();
+      if (!(deadline - now).is_positive()) {
         return ReadEnd::kDeadline;
       }
-      exited = ::WaitForSingleObject(
-                   process,
-                   base::saturated_cast<DWORD>(
-                       std::min(pause, remaining).InMillisecondsRoundedUp())) ==
-               WAIT_OBJECT_0;
+      exited =
+          ::WaitForSingleObject(
+              process,
+              std::min(base::saturated_cast<DWORD>(
+                           pause.InMillisecondsRoundedUp()),
+                       WaitMsBefore(deadline, *watch, now))) == WAIT_OBJECT_0;
       pause = std::min(pause * 2, base::Milliseconds(50));
       continue;
     }
@@ -282,13 +305,28 @@ ReadEnd ReadOutput(HANDLE pipe,
   }
 }
 
-bool WaitForExitUntil(HANDLE process, base::TimeTicks deadline) {
-  const base::TimeDelta remaining = deadline - base::TimeTicks::Now();
-  const DWORD wait_ms =
-      remaining.is_positive()
-          ? base::saturated_cast<DWORD>(remaining.InMillisecondsRoundedUp())
-          : 0;
-  return ::WaitForSingleObject(process, wait_ms) == WAIT_OBJECT_0;
+enum class WaitEnd { kExited, kDeadline, kPastLimit };
+
+// Waits for |process| to exit until |deadline|, or until a check of |watch|
+// finds it past a limit.
+WaitEnd WaitForExitUntil(HANDLE process,
+                         base::TimeTicks deadline,
+                         HelperLimitsWatch* watch) {
+  for (;;) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    if (!watch->Check(now)) {
+      return WaitEnd::kPastLimit;
+    }
+    const DWORD waited =
+        ::WaitForSingleObject(process, WaitMsBefore(deadline, *watch, now));
+    if (waited == WAIT_OBJECT_0) {
+      return WaitEnd::kExited;
+    }
+    if (waited != WAIT_TIMEOUT ||
+        !(deadline - base::TimeTicks::Now()).is_positive()) {
+      return WaitEnd::kDeadline;
+    }
+  }
 }
 
 }  // namespace
@@ -330,6 +368,12 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
   const std::string denied = CheckAccess(*container, program, policy);
   if (!denied.empty()) {
     return fail(denied);
+  }
+  // What the browser put in the scratch directory, which the helper's
+  // limits are counted from.
+  HelperLimitsWatch watch(policy.writable_dir);
+  if (!watch.Start()) {
+    return fail(watch.error());
   }
 
   // One process, a memory limit, killed when this returns (the job closes),
@@ -410,21 +454,27 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
   base::win::ScopedProcessInformation process(raw_info);
   result.launched = true;
 
-  const ReadEnd end =
-      ReadOutput(read_end.get(), process.process_handle(), deadline,
-                 max_output_bytes, &result.output, &result.output_truncated);
+  const ReadEnd end = ReadOutput(read_end.get(), process.process_handle(),
+                                 deadline, max_output_bytes, &watch,
+                                 &result.output, &result.output_truncated);
   if (end != ReadEnd::kEof) {
     // Stop reading: the helper's next write fails.
     read_end.Close();
   }
-  bool exited = false;
-  if (end == ReadEnd::kEof || end == ReadEnd::kLimit) {
-    exited = WaitForExitUntil(process.process_handle(), deadline);
+  WaitEnd wait = WaitEnd::kDeadline;
+  if (end == ReadEnd::kPastLimit) {
+    wait = WaitEnd::kPastLimit;
+  } else if (end == ReadEnd::kEof || end == ReadEnd::kLimit) {
+    wait = WaitForExitUntil(process.process_handle(), deadline, &watch);
   }
-  if (!exited) {
+  if (wait != WaitEnd::kExited) {
     ::TerminateJobObject(job.GetHandle(), base::win::kProcessKilledExitCode);
     ::WaitForSingleObject(process.process_handle(), kKillWaitMs);
-    if (end == ReadEnd::kError) {
+    if (wait == WaitEnd::kPastLimit) {
+      result.limit_exceeded = true;
+      result.error = watch.error();
+      LOG(WARNING) << "[MoltHelperSandbox] stopped: " << result.error;
+    } else if (end == ReadEnd::kError) {
       result.error = "lost the helper's output";
     } else {
       result.timed_out = true;
@@ -447,6 +497,12 @@ HelperRunResult RunSandboxedHelper(const base::CommandLine& cmd,
       result.launched = false;
       return fail("it couldn't start in its sandbox: " + start_failure);
     }
+  }
+  // What it wrote just before it exited counts too.
+  if (!watch.Check(base::TimeTicks::Now(), /*force=*/true)) {
+    result.limit_exceeded = true;
+    result.error = watch.error();
+    LOG(WARNING) << "[MoltHelperSandbox] stopped: " << result.error;
   }
   return result;
 }

@@ -12,17 +12,23 @@
 // multi-threaded process the child may not allocate or take locks.
 //
 // Layers, each used when the kernel has it:
-//   - no_new_privs (always; setuid binaries lose their privileges), and a
-//     new session, so the helper has no controlling terminal (no TIOCSTI).
+//   - no_new_privs (always; setuid binaries lose their privileges), a new
+//     session, so the helper has no controlling terminal (no TIOCSTI), and
+//     resource limits (always; helper_limits.h): no file past
+//     kMaxHelperFileBytes, no core dump, at most kMaxHelperDataBytes of
+//     private memory and kMaxHelperOpenFiles open files.
 //   - Landlock: read (and execute) beneath the policy's read-only paths and
-//     the system locations a dynamically linked helper needs, read and write
-//     beneath one scratch directory, nothing else. ABI >= 4: no TCP bind or
-//     connect. ABI >= 6: no connecting to abstract UNIX sockets or signalling
-//     processes outside the sandbox.
+//     the system locations a dynamically linked helper needs, read, create
+//     and write files beneath one scratch directory (not delete, rename or
+//     link them, nor make directories), nothing else. ABI >= 4: no TCP bind
+//     or connect. ABI >= 6: no connecting to abstract UNIX sockets or
+//     signalling processes outside the sandbox.
 //   - seccomp-bpf (x86_64 and aarch64): an allow-by-default filter with a
 //     short deny list (BuildSeccompProgram()). socket() for anything but
 //     AF_UNIX and connect() fail with EACCES, so libraries that probe for
-//     the network fail gracefully instead of being killed.
+//     the network fail gracefully instead of being killed. It also keeps
+//     what the helper writes in files the launcher can measure, and its
+//     memory where RLIMIT_DATA counts it.
 // A layer the kernel lacks (Landlock before 5.13, or disabled at boot) is
 // skipped and the front end logs it once. A layer the kernel offers but that
 // can't be set up fails the run: it never silently runs with less.
@@ -36,6 +42,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "chrome/browser/molt_ai/common/helper_limits.h"
 
 namespace molt_ai {
 namespace helper_sandbox_linux {
@@ -69,12 +77,13 @@ inline constexpr uint32_t kRestrictSelfLogNewExecOn = 1U << 1;
 // What the rules grant.
 inline constexpr uint64_t kReadAccess = kFsReadFile | kFsReadDir;
 inline constexpr uint64_t kReadExecuteAccess = kReadAccess | kFsExecute;
-// The scratch directory: read, write, create and delete files and
-// directories, rename within it. Not: execute what was written there, or
-// create symlinks, sockets, FIFOs or device nodes.
+// The scratch directory: read, create, write and truncate files. Not:
+// delete, rename or link them (a file deleted while the helper holds it
+// open would take space the launcher's measuring can't see), make
+// directories, execute what was written there, or create symlinks,
+// sockets, FIFOs or device nodes.
 inline constexpr uint64_t kScratchAccess =
-    kFsReadFile | kFsReadDir | kFsWriteFile | kFsRemoveDir | kFsRemoveFile |
-    kFsMakeDir | kFsMakeReg | kFsRefer | kFsTruncate;
+    kFsReadFile | kFsReadDir | kFsWriteFile | kFsMakeReg | kFsTruncate;
 
 // What one helper run may touch. Absolute paths.
 struct Policy {
@@ -128,6 +137,17 @@ uint64_t HandledFsAccess(int abi);
 //   unshare, setns, clone() with namespace flags, mount and the new mount
 //     API, umount2, pivot_root: EPERM; clone3: ENOSYS (its flags can't be
 //     inspected; libc falls back to clone()).
+// and keeps what the helper writes where the launcher measures it, and its
+// memory where RLIMIT_DATA counts it (helper_limits.h):
+//   fallocate: EOPNOTSUPP (it reserves space past RLIMIT_FSIZE with
+//     FALLOC_FL_KEEP_SIZE; posix_fallocate() writes instead);
+//   open() / openat() with O_TMPFILE: EOPNOTSUPP (a file in no directory);
+//     openat2: ENOSYS (its flags can't be inspected; libc uses openat());
+//   setxattr, lsetxattr, fsetxattr, setxattrat: EOPNOTSUPP (data no file's
+//     size shows);
+//   mmap() of shared anonymous memory: EPERM; memfd_create, memfd_secret:
+//     ENOSYS; SysV IPC (shm*, msg*, sem*): EPERM (memory RLIMIT_DATA
+//     doesn't count; SysV objects also outlive the process).
 // Everything else is allowed.
 std::vector<sock_filter> BuildSeccompProgram();
 
@@ -145,7 +165,15 @@ inline constexpr int kChildRulesetFd = 3;
 // (RLIMIT_CORE 0): a helper a hostile input took over can't fill the disk
 // before its deadline. tesseract and whisper-cli write a text file of at
 // most a few hundred KiB.
-inline constexpr uint64_t kMaxHelperFileBytes = 64ULL << 20;
+inline constexpr uint64_t kMaxHelperFileBytes =
+    helper_limits::kMaxHelperWriteBytes;
+// Its private memory (RLIMIT_DATA: heap, anonymous and thread stack
+// mappings, not the read-only mappings of its code or a model).
+inline constexpr uint64_t kMaxHelperDataBytes =
+    helper_limits::kMaxHelperMemoryBytes;
+// Its open files (RLIMIT_NOFILE), which bounds the kernel memory that
+// descriptors (sockets, pipes) can hold. The helpers use a few.
+inline constexpr uint64_t kMaxHelperOpenFiles = 256;
 
 // Exit status and stderr prefix of a child whose sandbox setup failed (the
 // helper never ran).
@@ -182,10 +210,12 @@ struct Prepared {
 bool Prepare(const Policy& policy, Prepared* prepared, std::string* error);
 
 // Child side, after fork() and before exec(), with the ruleset at
-// kChildRulesetFd: new session, the file size and core dump limits
-// (kMaxHelperFileBytes), no_new_privs, Landlock (adding /proc/self),
-// seccomp. Async-signal-safe: raw system calls only, no allocation. If a
-// step fails it writes kSetupFailedMarker + the step to stderr and calls
+// kChildRulesetFd: new session, the resource limits (kMaxHelperFileBytes,
+// no core dump, kMaxHelperDataBytes, kMaxHelperOpenFiles; each soft and
+// hard, never above the hard limit the browser already has),
+// no_new_privs, Landlock (adding /proc/self), seccomp. Async-signal-safe:
+// raw system calls only, no allocation. If a step fails it writes
+// kSetupFailedMarker + the step to stderr and calls
 // _exit(kSetupFailedExitCode).
 void ApplyInChild(const Prepared& prepared);
 

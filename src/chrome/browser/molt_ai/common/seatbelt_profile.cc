@@ -18,10 +18,10 @@ constexpr std::string_view kProfileHead = R"sb((version 1)
 (deny default)
 (deny network*)
 
-; The helper: exec of its own binary only, its threads and children,
-; signals to and information about itself, sysctl reads.
+; The helper: exec of its own binary only (no other process: what the
+; launcher kills or measures is all of it), signals to and information
+; about itself, sysctl reads.
 (allow process-exec (literal (param "HELPER")))
-(allow process-fork)
 (allow signal (target self))
 (allow process-info-pidinfo (target self))
 (allow sysctl-read)
@@ -51,11 +51,17 @@ constexpr std::string_view kProfileHead = R"sb((version 1)
   (literal "/dev/urandom"))
 (allow file-write-data (literal "/dev/null"))
 
-; The scratch directory: list it; read and write beneath it. Not the
-; directory itself, so it can't be replaced by a symlink.
+; The scratch directory: list it; read beneath it; create and write
+; regular files there. Not the directory itself, so it can't be replaced
+; by a symlink. Nothing else: no deleting, renaming or linking (a file
+; deleted while still open would take space no listing shows), no
+; directories, modes, flags, owners, times or extended attributes.
 (allow file-read* (literal (param "SCRATCH")))
-(allow file-read* file-write*
-  (prefix (string-append (param "SCRATCH") "/")))
+(allow file-read* (prefix (string-append (param "SCRATCH") "/")))
+(allow file-write-create file-write-data
+  (require-all
+    (prefix (string-append (param "SCRATCH") "/"))
+    (vnode-type REGULAR-FILE)))
 )sb";
 
 }  // namespace
