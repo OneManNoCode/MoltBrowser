@@ -41,3 +41,51 @@ source_set("unit_tests") {
     "//testing/gtest",
   ]
 }
+
+# --- Touchless browsing: the page map (docs/design/TOUCHLESS_BROWSING.md
+# §6.3, §6.5) -------------------------------------------------------------
+
+# The page map: any page as numbered items, lists to choose from, headings,
+# landmarks and media, from a tree of PageNodes; speech-safe text and field
+# types. Std-only (with hidden_chars), so molt_ai_unittests, a standalone
+# harness and molt_page_map_fuzzer build the same code.
+source_set("page_map") {
+  sources = [
+    "page_map.cc",
+    "page_map.h",
+    "page_map_text.cc",
+    "page_map_text.h",
+  ]
+
+  deps = [ "//chrome/browser/molt_ai/agents:hidden_chars" ]
+}
+
+# Hand-built page trees for the page map's tests (std-only).
+source_set("page_map_test_support") {
+  testonly = true
+  sources = [
+    "page_map_test_trees.cc",
+    "page_map_test_trees.h",
+  ]
+
+  public_deps = [ ":page_map" ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("page_map_unit_tests") {
+  testonly = true
+  sources = [
+    "page_map_agent_safety_unittest.cc",
+    "page_map_text_unittest.cc",
+    "page_map_unittest.cc",
+  ]
+
+  deps = [
+    ":page_map",
+    ":page_map_test_support",
+
+    # The page map marks credential fields as agent_safety does.
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//testing/gtest",
+  ]
+}
