@@ -33,7 +33,8 @@ namespace blink {
 
 class VideoTrackAdapterSettings;
 namespace molt_fingerprinting {
-class UniformCameraClock;  // MoltBrowser
+class UniformCameraClock;        // MoltBrowser
+class UniformCameraFrameReader;  // MoltBrowser
 }  // namespace molt_fingerprinting
 
 MODULES_EXPORT BASE_DECLARE_FEATURE(kScaleFrameForGetDisplayMedia);
@@ -144,9 +145,13 @@ class MODULES_EXPORT VideoTrackAdapter
   }
 
   // MoltBrowser: tests run the ticks of a MoltNet camera's grid
-  // (moltnet_camera.h) themselves, on the video task runner.
+  // (moltnet_camera.h) themselves, on the video task runner, and read the
+  // camera's frames the CPU can't read with `reader` on `task_runner`.
   void SetMoltCameraManualTicksForTesting();
   void MoltCameraTickForTesting();
+  void SetMoltCameraReaderForTesting(
+      scoped_refptr<molt_fingerprinting::UniformCameraFrameReader> reader,
+      scoped_refptr<base::SequencedTaskRunner> task_runner);
 
  private:
   virtual ~VideoTrackAdapter();
@@ -211,6 +216,14 @@ class MODULES_EXPORT VideoTrackAdapter
   // frames on (moltnet_camera.h), and its scheduling.
   void MoltCameraTickOnVideoTaskRunner();
   void ScheduleMoltCameraTick(base::TimeTicks due);
+  // MoltBrowser: a MoltNet camera's frame the CPU can't read, read back on a
+  // worker for the adapters of its tracks (moltnet_camera.h), one at a time.
+  void ReadBackMoltCameraFrame(scoped_refptr<media::VideoFrame> video_frame,
+                               base::TimeTicks estimated_capture_time,
+                               bool is_device_rotated);
+  void OnMoltCameraFrameReadBack(scoped_refptr<media::VideoFrame> read_frame,
+                                 base::TimeTicks estimated_capture_time,
+                                 bool is_device_rotated);
 
   // |thread_checker_| is bound to the main render thread.
   SEQUENCE_CHECKER(sequence_checker_);
@@ -259,6 +272,17 @@ class MODULES_EXPORT VideoTrackAdapter
   // MoltBrowser: that grid, accessed on the video task runner.
   const std::unique_ptr<molt_fingerprinting::UniformCameraClock>
       molt_camera_clock_;
+  // MoltBrowser: the reader of the camera's frames the CPU can't read and
+  // the worker it runs on (made on the first such frame), whether a read is
+  // under way, and the newest frame waiting for it; accessed on the video
+  // task runner.
+  scoped_refptr<molt_fingerprinting::UniformCameraFrameReader>
+      molt_camera_reader_;
+  scoped_refptr<base::SequencedTaskRunner> molt_camera_reader_task_runner_;
+  bool molt_camera_reading_ = false;
+  scoped_refptr<media::VideoFrame> molt_camera_frame_to_read_;
+  base::TimeTicks molt_camera_frame_to_read_capture_time_;
+  bool molt_camera_frame_to_read_rotated_ = false;
 };
 
 }  // namespace blink

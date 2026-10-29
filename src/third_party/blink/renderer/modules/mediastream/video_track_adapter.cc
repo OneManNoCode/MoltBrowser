@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/modules/mediastream/moltnet_camera.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_gfx.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_media.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -330,6 +331,9 @@ class VideoTrackAdapter::VideoFrameResolutionAdapter
   }
   void DeliverUniformCameraTick(
       const molt_fingerprinting::UniformCameraClock::Tick& tick);
+  // MoltBrowser: a frame of the camera's couldn't be read back for this
+  // adapter's tracks (VideoTrackAdapter::ReadBackMoltCameraFrame()).
+  void OnUniformCameraFrameUnreadable() { molt_frame_unreadable_ = true; }
 
   // Returns true if all arguments match with the output of this adapter.
   bool SettingsMatch(const VideoTrackAdapterSettings& settings) const;
@@ -407,6 +411,15 @@ class VideoTrackAdapter::VideoFrameResolutionAdapter
   // MoltBrowser: a MoltNet camera's newest frame, cropped and scaled for this
   // adapter's tracks, until the grid's next tick (HoldsUniformCameraFrames()).
   scoped_refptr<media::VideoFrame> molt_held_frame_;
+  // MoltBrowser: since the grid's last tick, whether a frame of the camera's
+  // was converted, and whether one couldn't be read or converted; the ticks
+  // since one was last converted while they couldn't be; the size and
+  // capture version of the camera's newest frame for this adapter.
+  bool molt_frame_converted_ = false;
+  bool molt_frame_unreadable_ = false;
+  int64_t molt_unreadable_ticks_ = 0;
+  gfx::Size molt_frame_size_;
+  media::CaptureVersion molt_capture_version_;
 };
 
 VideoTrackAdapter::VideoFrameResolutionAdapter::VideoFrameResolutionAdapter(
@@ -632,12 +645,24 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverFrame(
 
   // MoltBrowser: a MoltNet camera's tracks get the newest frame, cropped and
   // scaled, at the grid's next tick (DeliverUniformCameraTick()). A frame
-  // that can't be converted leaves the one before.
+  // the CPU can't read comes back once VideoTrackAdapter has read it back;
+  // one that can't be converted leaves the one before.
   if (HoldsUniformCameraFrames()) {
+    molt_frame_size_ =
+        molt_fingerprinting::UniformCameraFrameSize(is_device_rotated,
+                                                    settings_)
+            .value_or(gfx::Size());
+    molt_capture_version_ = video_frame->metadata().capture_version;
+    if (molt_fingerprinting::NeedsUniformCameraReadback(*video_frame)) {
+      return;
+    }
     auto adapted =
         AdaptFrameResolution(std::move(video_frame), is_device_rotated);
     if (adapted.has_value() && adapted.value()) {
       molt_held_frame_ = std::move(adapted.value());
+      molt_frame_converted_ = true;
+    } else {
+      molt_frame_unreadable_ = true;
     }
     return;
   }
@@ -717,8 +742,27 @@ void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverFrame(
 void VideoTrackAdapter::VideoFrameResolutionAdapter::DeliverUniformCameraTick(
     const molt_fingerprinting::UniformCameraClock::Tick& tick) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(video_sequence_checker_);
-  if (!HoldsUniformCameraFrames() || !molt_held_frame_ ||
-      track_parameters_.empty()) {
+  if (!HoldsUniformCameraFrames()) {
+    return;
+  }
+  // A second of the grid in which the camera's frames couldn't be read:
+  // black frames from now on, until one can, not the last picture.
+  if (molt_frame_converted_) {
+    molt_unreadable_ticks_ = 0;
+  } else if (molt_frame_unreadable_ || molt_unreadable_ticks_ > 0) {
+    ++molt_unreadable_ticks_;
+  }
+  molt_frame_converted_ = false;
+  molt_frame_unreadable_ = false;
+  if (molt_unreadable_ticks_ ==
+      molt_fingerprinting::moltnet::kUniformCameraTicksPerSecond) {
+    if (scoped_refptr<media::VideoFrame> black =
+            molt_fingerprinting::UniformCameraUnreadableFrame(
+                molt_frame_size_, molt_capture_version_)) {
+      molt_held_frame_ = std::move(black);
+    }
+  }
+  if (!molt_held_frame_ || track_parameters_.empty()) {
     return;
   }
   scoped_refptr<media::VideoFrame> frame =
@@ -1221,10 +1265,15 @@ void VideoTrackAdapter::DeliverFrameOnVideoTaskRunner(
                           is_device_rotated);
   }
   // MoltBrowser: a MoltNet camera's tracks get their frames on a fixed grid
-  // (moltnet_camera.h): the adapters above hold the frame for its next tick.
+  // (moltnet_camera.h): the adapters above hold the frame for its next tick,
+  // or get it once read back if the CPU can't read it as it is.
   if (std::ranges::any_of(adapters_, [](const auto& adapter) {
         return adapter->HoldsUniformCameraFrames();
       })) {
+    if (molt_fingerprinting::NeedsUniformCameraReadback(*video_frame)) {
+      ReadBackMoltCameraFrame(video_frame, estimated_capture_time,
+                              is_device_rotated);
+    }
     if (std::optional<base::TimeTicks> due =
             molt_camera_clock_->OnSourceFrame(base::TimeTicks::Now())) {
       ScheduleMoltCameraTick(*due);
@@ -1344,6 +1393,81 @@ void VideoTrackAdapter::ScheduleMoltCameraTick(base::TimeTicks due) {
       CrossThreadBindOnce(&VideoTrackAdapter::MoltCameraTickOnVideoTaskRunner,
                           WrapRefCounted(this)),
       std::max(base::TimeDelta(), due - base::TimeTicks::Now()));
+}
+
+void VideoTrackAdapter::ReadBackMoltCameraFrame(
+    scoped_refptr<media::VideoFrame> video_frame,
+    base::TimeTicks estimated_capture_time,
+    bool is_device_rotated) {
+  DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
+  // One read at a time; the newest frame waits for it.
+  if (molt_camera_reading_) {
+    molt_camera_frame_to_read_ = std::move(video_frame);
+    molt_camera_frame_to_read_capture_time_ = estimated_capture_time;
+    molt_camera_frame_to_read_rotated_ = is_device_rotated;
+    return;
+  }
+  if (!molt_camera_reader_) {
+    molt_camera_reader_ =
+        molt_fingerprinting::UniformCameraFrameReader::Create();
+    // The read blocks on the GPU process.
+    molt_camera_reader_task_runner_ = worker_pool::CreateSequencedTaskRunner(
+        {base::TaskPriority::USER_BLOCKING, base::MayBlock(),
+         base::WithBaseSyncPrimitives()});
+  }
+  molt_camera_reading_ = true;
+  PostCrossThreadTask(
+      *molt_camera_reader_task_runner_, FROM_HERE,
+      CrossThreadBindOnce(
+          [](scoped_refptr<molt_fingerprinting::UniformCameraFrameReader>
+                 reader,
+             scoped_refptr<media::VideoFrame> frame,
+             scoped_refptr<base::SequencedTaskRunner> video_task_runner,
+             scoped_refptr<VideoTrackAdapter> adapter,
+             base::TimeTicks estimated_capture_time, bool is_device_rotated) {
+            scoped_refptr<media::VideoFrame> read_frame =
+                reader->Read(std::move(frame));
+            PostCrossThreadTask(
+                *video_task_runner, FROM_HERE,
+                CrossThreadBindOnce(
+                    &VideoTrackAdapter::OnMoltCameraFrameReadBack,
+                    std::move(adapter), std::move(read_frame),
+                    estimated_capture_time, is_device_rotated));
+          },
+          molt_camera_reader_, std::move(video_frame), video_task_runner_,
+          WrapRefCounted(this), estimated_capture_time, is_device_rotated));
+}
+
+void VideoTrackAdapter::OnMoltCameraFrameReadBack(
+    scoped_refptr<media::VideoFrame> read_frame,
+    base::TimeTicks estimated_capture_time,
+    bool is_device_rotated) {
+  DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
+  molt_camera_reading_ = false;
+  for (const auto& adapter : adapters_) {
+    if (!adapter->HoldsUniformCameraFrames()) {
+      continue;
+    }
+    if (read_frame) {
+      adapter->DeliverFrame(read_frame, estimated_capture_time,
+                            is_device_rotated);
+    } else {
+      adapter->OnUniformCameraFrameUnreadable();
+    }
+  }
+  if (molt_camera_frame_to_read_) {
+    ReadBackMoltCameraFrame(std::move(molt_camera_frame_to_read_),
+                            molt_camera_frame_to_read_capture_time_,
+                            molt_camera_frame_to_read_rotated_);
+  }
+}
+
+void VideoTrackAdapter::SetMoltCameraReaderForTesting(
+    scoped_refptr<molt_fingerprinting::UniformCameraFrameReader> reader,
+    scoped_refptr<base::SequencedTaskRunner> task_runner) {
+  DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
+  molt_camera_reader_ = std::move(reader);
+  molt_camera_reader_task_runner_ = std::move(task_runner);
 }
 
 void VideoTrackAdapter::SetMoltCameraManualTicksForTesting() {
