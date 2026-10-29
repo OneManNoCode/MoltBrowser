@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/modules/imagecapture/image_capture_frame_grabber.h"
+#include "third_party/blink/renderer/modules/imagecapture/moltnet_image_capture.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
 #include "third_party/blink/renderer/modules/mediastream/overconstrained_error.h"
@@ -2148,14 +2149,32 @@ ImageCapture::ImageCapture(ExecutionContext* context,
   DCHECK(!service_.is_bound());
   DCHECK(!permission_service_.is_bound());
 
+  // MoltBrowser: a MoltNet camera track's ImageCapture answers as a camera
+  // without controls, from the renderer, and never has the pan-tilt-zoom
+  // permission (moltnet_image_capture.h).
+  const bool uniform_camera =
+      molt_fingerprinting::UsesUniformImageCapture(stream_track_);
+  if (uniform_camera) {
+    pan_tilt_zoom_allowed = false;
+    pan_tilt_zoom_permission_ = mojom::blink::PermissionStatus::ASK;
+  }
+
   // This object may be constructed over an ExecutionContext that has already
   // been detached. In this case the ImageCapture service will not be available.
   if (!DomWindow())
     return;
 
-  DomWindow()->GetBrowserInterfaceBroker().GetInterface(
-      service_.BindNewPipeAndPassReceiver(
-          context->GetTaskRunner(TaskType::kDOMManipulation)));
+  if (uniform_camera) {
+    molt_fingerprinting::BindUniformImageCapture(
+        stream_track_, context,
+        service_.BindNewPipeAndPassReceiver(
+            context->GetTaskRunner(TaskType::kDOMManipulation)),
+        context->GetTaskRunner(TaskType::kDOMManipulation));
+  } else {
+    DomWindow()->GetBrowserInterfaceBroker().GetInterface(
+        service_.BindNewPipeAndPassReceiver(
+            context->GetTaskRunner(TaskType::kDOMManipulation)));
+  }
 
   service_.set_disconnect_handler(BindOnce(
       &ImageCapture::OnServiceConnectionError, WrapWeakPersistent(this)));

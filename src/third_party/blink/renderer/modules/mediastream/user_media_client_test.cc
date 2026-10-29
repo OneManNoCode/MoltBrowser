@@ -3055,6 +3055,60 @@ TEST(MoltNetCameraTest, ConstraintsChooseAmongTheMenu) {
   }
 }
 
+// MoltBrowser: a MoltNet camera has no pan, tilt or zoom, whatever the
+// device: a required pan fails as on a camera without one, a bare one is
+// ignored, and no request asks for their permission. Normal windows go by the
+// device.
+TEST(MoltNetCameraTest, NoPanTiltZoom) {
+  test::TaskEnvironment task_environment;
+  ScopedMoltNetCameras moltnet;
+  media::VideoCaptureControlSupport ptz;
+  ptz.pan = true;
+  ptz.tilt = true;
+  ptz.zoom = true;
+  auto select = [&](const MediaConstraints& constraints) {
+    VideoDeviceCaptureCapabilities capabilities;
+    capabilities.device_capabilities.emplace_back(
+        "camera", "group", ptz, MoltNetHdCameraModes(),
+        mojom::blink::FacingMode::kNone);
+    capabilities.noise_reduction_capabilities = {std::optional<bool>()};
+    molt_fingerprinting::UseUniformCameraFormats(capabilities);
+    EXPECT_EQ(capabilities.device_capabilities[0].control_support.pan,
+              !molt_fingerprinting::UsesUniformCamera(
+                  mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE));
+    return SelectSettingsVideoDeviceCapture(
+        capabilities, constraints, MediaStreamVideoSource::kDefaultWidth,
+        MediaStreamVideoSource::kDefaultHeight,
+        MediaStreamVideoSource::kDefaultFrameRate);
+  };
+  MockConstraintFactory exact;
+  exact.basic().pan.SetExact(1.0);
+  MockConstraintFactory bare;
+  bare.basic().zoom.SetIsPresent(true);
+
+  VideoCaptureSettings settings = select(exact.CreateMediaConstraints());
+  EXPECT_FALSE(settings.HasValue());
+  EXPECT_STREQ(settings.failed_constraint_name(), "pan");
+  settings = select(bare.CreateMediaConstraints());
+  EXPECT_TRUE(settings.HasValue());
+  EXPECT_FALSE(molt_fingerprinting::RequestsPanTiltZoomPermission(
+      bare.CreateMediaConstraints(),
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE));
+  EXPECT_FALSE(molt_fingerprinting::RequestsPanTiltZoomPermission(
+      exact.CreateMediaConstraints(),
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE));
+
+  molt_fingerprinting::SetMoltNetMediaForTesting(false);
+  settings = select(exact.CreateMediaConstraints());
+  EXPECT_TRUE(settings.HasValue());
+  EXPECT_TRUE(molt_fingerprinting::RequestsPanTiltZoomPermission(
+      bare.CreateMediaConstraints(),
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE));
+  EXPECT_FALSE(molt_fingerprinting::RequestsPanTiltZoomPermission(
+      CreateDefaultConstraints(),
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE));
+}
+
 // MoltBrowser: a MoltNet camera opens in its smallest mode that reaches
 // the larger menu format (its largest if none does), at no more than 30 fps,
 // whatever entry the page's track takes (moltnet::UniformCameraOpenMode()).

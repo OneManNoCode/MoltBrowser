@@ -93,18 +93,32 @@ media::VideoCaptureFormats UniformCameraFormats(
 }
 
 void UseUniformCameraFormats(VideoDeviceCaptureCapabilities& capabilities) {
+  if (!UsesUniformCamera(mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE)) {
+    return;
+  }
   for (VideoInputDeviceCapabilities& device :
        capabilities.device_capabilities) {
     device.formats = UniformCameraFormats(
         device.formats, mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+    device.control_support = media::VideoCaptureControlSupport();
   }
 }
 
 void UseUniformCameraFormats(
     mojom::blink::VideoInputDeviceCapabilities& capabilities) {
+  if (!UsesUniformCamera(mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE)) {
+    return;
+  }
   capabilities.formats =
       UniformCameraFormats(capabilities.formats,
                            mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE);
+  capabilities.control_support = media::VideoCaptureControlSupport();
+}
+
+bool RequestsPanTiltZoomPermission(const MediaConstraints& video,
+                                   mojom::blink::MediaStreamType type) {
+  return IsPanTiltZoomConstraintPresentAndNotFalse(video) &&
+         !UsesUniformCamera(type);
 }
 
 VideoCaptureSettings UniformCameraSettings(const VideoCaptureSettings& settings,

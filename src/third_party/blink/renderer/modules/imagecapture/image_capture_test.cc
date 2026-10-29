@@ -5,10 +5,14 @@
 
 #include "third_party/blink/renderer/modules/imagecapture/image_capture.h"
 
+#include <limits>  // MoltBrowser
+
 #include "base/functional/callback_helpers.h"
+#include "base/run_loop.h"  // MoltBrowser
 #include "base/test/bind.h"
 #include "base/time/time.h"
 #include "media/base/video_frame.h"
+#include "mojo/public/cpp/bindings/remote.h"  // MoltBrowser
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
@@ -30,13 +34,16 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_constraindoublerange_double.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_constrainpoint2dparameters_point2dsequence.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_media.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/modules/imagecapture/image_capture.h"
+#include "third_party/blink/renderer/modules/imagecapture/moltnet_image_capture.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_capturer_source.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_media_stream_track.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_video_capturer_source.h"
+#include "third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
@@ -1686,6 +1693,201 @@ TEST_F(ImageCaptureTest, GrabFrameOfEndedTrackRejects) {
   ScriptPromiseTester tester(scope.GetScriptState(), result);
   tester.WaitUntilSettled();
   EXPECT_TRUE(tester.IsRejected());
+}
+
+// MoltBrowser: MoltNet's camera answers ImageCapture as a camera without
+// controls whose photos are its frames (moltnet_image_capture.h).
+TEST(MoltNetImageCaptureTest, PhotoStateIsACameraWithoutControls) {
+  test::TaskEnvironment task_environment;
+  media::mojom::blink::PhotoStatePtr state =
+      molt_fingerprinting::UniformPhotoState(gfx::Size(640, 480));
+  ASSERT_TRUE(state);
+  EXPECT_TRUE(state->supported_white_balance_modes.empty());
+  EXPECT_TRUE(state->supported_exposure_modes.empty());
+  EXPECT_TRUE(state->supported_focus_modes.empty());
+  EXPECT_TRUE(state->points_of_interest.empty());
+  for (const media::mojom::blink::RangePtr* range :
+       {&state->exposure_compensation, &state->exposure_time,
+        &state->color_temperature, &state->iso, &state->brightness,
+        &state->contrast, &state->saturation, &state->sharpness,
+        &state->focus_distance, &state->pan, &state->tilt, &state->zoom}) {
+    ASSERT_TRUE(*range);
+    EXPECT_EQ((*range)->min, 0.0);
+    EXPECT_EQ((*range)->max, 0.0);
+  }
+  EXPECT_FALSE(state->supports_torch);
+  EXPECT_FALSE(state->torch);
+  EXPECT_EQ(state->red_eye_reduction,
+            media::mojom::blink::RedEyeReduction::NEVER);
+  EXPECT_TRUE(state->fill_light_mode.empty());
+  EXPECT_TRUE(state->supported_background_blur_modes.empty());
+  EXPECT_TRUE(state->supported_face_framing_modes.empty());
+  EXPECT_TRUE(state->supported_eye_gaze_correction_modes.empty());
+  EXPECT_TRUE(state->supported_background_segmentation_mask_states.empty());
+  // Photos of the track's own size.
+  EXPECT_EQ(state->width->min, 640.0);
+  EXPECT_EQ(state->width->max, 640.0);
+  EXPECT_EQ(state->width->current, 640.0);
+  EXPECT_EQ(state->width->step, 0.0);
+  EXPECT_EQ(state->height->min, 480.0);
+  EXPECT_EQ(state->height->max, 480.0);
+  EXPECT_EQ(state->height->current, 480.0);
+  // Without a size, no photo size.
+  state = molt_fingerprinting::UniformPhotoState(gfx::Size());
+  EXPECT_EQ(state->width->max, 0.0);
+  EXPECT_EQ(state->height->max, 0.0);
+}
+
+// MoltBrowser: takePhoto()'s photo is a JPEG of the frame, of its size.
+TEST(MoltNetImageCaptureTest, PhotoIsAJpegOfTheFrame) {
+  test::TaskEnvironment task_environment;
+  scoped_refptr<media::VideoFrame> frame = media::VideoFrame::CreateFrame(
+      media::PIXEL_FORMAT_I420, gfx::Size(64, 48), gfx::Rect(64, 48),
+      gfx::Size(64, 48), base::TimeDelta());
+  ASSERT_TRUE(frame);
+  for (size_t plane = 0; plane < 3; ++plane) {
+    base::span<uint8_t> data = frame->writable_span(plane);
+    for (size_t i = 0; i < data.size(); ++i) {
+      data[i] = static_cast<uint8_t>(16 + (i * 7 + plane * 31) % 200);
+    }
+  }
+  const Vector<uint8_t> jpeg =
+      molt_fingerprinting::EncodeUniformCameraPhoto(*frame);
+  ASSERT_GT(jpeg.size(), 20u);
+  EXPECT_EQ(jpeg[0], 0xFF);
+  EXPECT_EQ(jpeg[1], 0xD8);
+  EXPECT_EQ(jpeg[jpeg.size() - 2], 0xFF);
+  EXPECT_EQ(jpeg[jpeg.size() - 1], 0xD9);
+  // The baseline frame header (SOF0) gives the frame's size.
+  bool found = false;
+  for (wtf_size_t i = 0; i + 8 < jpeg.size(); ++i) {
+    if (jpeg[i] == 0xFF && jpeg[i + 1] == 0xC0) {
+      EXPECT_EQ((jpeg[i + 5] << 8) | jpeg[i + 6], 48);
+      EXPECT_EQ((jpeg[i + 7] << 8) | jpeg[i + 8], 64);
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found);
+  // The same frame, the same bytes.
+  EXPECT_EQ(molt_fingerprinting::EncodeUniformCameraPhoto(*frame), jpeg);
+
+  // Not a MoltNet camera frame: nothing.
+  scoped_refptr<media::VideoFrame> nv12 = media::VideoFrame::CreateFrame(
+      media::PIXEL_FORMAT_NV12, gfx::Size(64, 48), gfx::Rect(64, 48),
+      gfx::Size(64, 48), base::TimeDelta());
+  EXPECT_TRUE(molt_fingerprinting::EncodeUniformCameraPhoto(*nv12).empty());
+}
+
+// MoltBrowser: a MoltNet camera track's ImageCapture service, in the
+// renderer: the photo state of a camera without controls and the track's
+// size, no pan, tilt or zoom to set, and takePhoto() a JPEG of the track's
+// next frame. Other tracks keep the browser's.
+TEST_F(ImageCaptureTest, MoltNetCameraImageCaptureService) {
+  V8TestingScope scope;
+  SetupTrackMocks(scope);
+  source_->SetDevice(MediaStreamDevice(
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE, "camera", "Camera"));
+  VideoTrackAdapterSettings adapter_settings(
+      gfx::Size(640, 480), 0.0, std::numeric_limits<double>::max(), 30.0);
+  adapter_settings.set_molt_uniform_camera(/*reports_no_resize=*/true);
+  platform_track_->SetTrackAdapterSettings(adapter_settings);
+  track_->SetReadyState(V8MediaStreamTrackState::Enum::kLive);
+  track_->setEnabled(true);
+  track_->SetMuted(false);
+
+  EXPECT_FALSE(molt_fingerprinting::UsesUniformImageCapture(track_));
+  molt_fingerprinting::SetMoltNetMediaForTesting(true);
+  struct ResetMoltNet {
+    ~ResetMoltNet() { molt_fingerprinting::SetMoltNetMediaForTesting(false); }
+  } reset_moltnet;
+  ASSERT_TRUE(molt_fingerprinting::UsesUniformImageCapture(track_));
+
+  mojo::Remote<media::mojom::blink::ImageCapture> service;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      scope.GetExecutionContext()->GetTaskRunner(TaskType::kDOMManipulation);
+  molt_fingerprinting::BindUniformImageCapture(
+      track_, scope.GetExecutionContext(),
+      service.BindNewPipeAndPassReceiver(task_runner), task_runner);
+
+  media::mojom::blink::PhotoStatePtr state;
+  {
+    base::RunLoop loop;
+    service->GetPhotoState(
+        "camera", base::BindLambdaForTesting(
+                      [&](media::mojom::blink::PhotoStatePtr photo_state) {
+                        state = std::move(photo_state);
+                        loop.Quit();
+                      }));
+    loop.Run();
+  }
+  ASSERT_TRUE(state);
+  EXPECT_EQ(state->width->current, 640.0);
+  EXPECT_EQ(state->height->current, 480.0);
+  EXPECT_EQ(state->zoom->max, 0.0);
+  EXPECT_TRUE(state->supported_focus_modes.empty());
+
+  {
+    auto zoom = media::mojom::blink::PhotoSettings::New();
+    zoom->has_zoom = true;
+    zoom->zoom = 2.0;
+    base::RunLoop loop;
+    bool accepted = true;
+    service->SetPhotoOptions("camera", std::move(zoom),
+                             base::BindLambdaForTesting([&](bool result) {
+                               accepted = result;
+                               loop.Quit();
+                             }));
+    loop.Run();
+    EXPECT_FALSE(accepted);
+  }
+
+  // The mock track hands a sink a frame as it connects.
+  media::mojom::blink::BlobPtr blob;
+  {
+    base::RunLoop loop;
+    service->TakePhoto(
+        "camera",
+        base::BindLambdaForTesting([&](media::mojom::blink::BlobPtr photo) {
+          blob = std::move(photo);
+          loop.Quit();
+        }));
+    loop.Run();
+  }
+  ASSERT_TRUE(blob);
+  EXPECT_EQ(blob->mime_type, "image/jpeg");
+  ASSERT_GT(blob->data.size(), 2u);
+  EXPECT_EQ(blob->data[0], 0xFF);
+  EXPECT_EQ(blob->data[1], 0xD8);
+  EXPECT_EQ(0u, platform_track_->CountSinks());
+
+  // Screen capture, for one, is the browser's.
+  source_->SetDevice(MediaStreamDevice(
+      mojom::blink::MediaStreamType::DISPLAY_VIDEO_CAPTURE, "screen",
+      "Screen"));
+  EXPECT_FALSE(molt_fingerprinting::UsesUniformImageCapture(track_));
+}
+
+// MoltBrowser: an ImageCapture of a MoltNet camera track never has the
+// pan-tilt-zoom permission, whatever the browser granted.
+TEST_F(ImageCaptureTest, MoltNetCameraHasNoPanTiltZoomPermission) {
+  V8TestingScope scope;
+  SetupTrackMocks(scope);
+  source_->SetDevice(MediaStreamDevice(
+      mojom::blink::MediaStreamType::DEVICE_VIDEO_CAPTURE, "camera", "Camera"));
+  molt_fingerprinting::SetMoltNetMediaForTesting(true);
+  struct ResetMoltNet {
+    ~ResetMoltNet() { molt_fingerprinting::SetMoltNetMediaForTesting(false); }
+  } reset_moltnet;
+  auto* image_capture = MakeGarbageCollected<ImageCapture>(
+      /*execution_context=*/nullptr, track_,
+      /*pan_tilt_zoom_allowed=*/true, base::DoNothing());
+  EXPECT_FALSE(image_capture->HasPanTiltZoomPermissionGranted());
+  molt_fingerprinting::SetMoltNetMediaForTesting(false);
+  image_capture = MakeGarbageCollected<ImageCapture>(
+      /*execution_context=*/nullptr, track_,
+      /*pan_tilt_zoom_allowed=*/true, base::DoNothing());
+  EXPECT_TRUE(image_capture->HasPanTiltZoomPermissionGranted());
 }
 
 TEST_F(ImageCaptureTest, GrabFrameOfDisabledTrackRejects) {

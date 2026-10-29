@@ -1029,8 +1029,12 @@ void UserMediaProcessor::SetupVideoInput() {
   StreamControls* const stream_controls =
       current_request_info_->stream_controls();
 
+  // MoltBrowser: never for a MoltNet camera, which has no pan, tilt or zoom
+  // (moltnet_camera.h).
   stream_controls->request_pan_tilt_zoom_permission =
-      IsPanTiltZoomPermissionRequested(request->VideoConstraints());
+      IsPanTiltZoomPermissionRequested(request->VideoConstraints()) &&
+      molt_fingerprinting::RequestsPanTiltZoomPermission(
+          request->VideoConstraints(), video_controls.stream_type);
 
   stream_controls->request_all_screens =
       request->MediaRequestType() == UserMediaRequestType::kAllScreensMedia;

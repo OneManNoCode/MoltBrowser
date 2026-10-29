@@ -10,6 +10,10 @@ blink_modules_sources("imagecapture") {
     "image_capture.h",
     "image_capture_frame_grabber.cc",
     "image_capture_frame_grabber.h",
+
+    # MoltBrowser: a MoltNet camera track's ImageCapture.
+    "moltnet_image_capture.cc",
+    "moltnet_image_capture.h",
   ]
 
   deps = [

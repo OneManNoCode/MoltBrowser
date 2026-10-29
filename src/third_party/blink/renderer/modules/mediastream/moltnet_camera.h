@@ -8,8 +8,11 @@
 //
 // Upstream hooks (each marked "MoltBrowser:"):
 //
-//   getUserMedia()    UserMediaProcessor::SelectVideoDeviceSettings: the
-//                       cameras' formats      -> UseUniformCameraFormats
+//   getUserMedia()    UserMediaProcessor::SetupVideoInput: no
+//                       pan-tilt-zoom permission -> RequestsPanTiltZoomPermission
+//                     UserMediaProcessor::SelectVideoDeviceSettings: the
+//                       cameras' formats, no pan, tilt or zoom
+//                                              -> UseUniformCameraFormats
 //                       the selected settings  -> UniformCameraSettings,
 //                                                 UseUniformCameraSettings
 //                     UserMediaProcessor::InitializeVideoSourceObject: the
@@ -85,6 +88,7 @@ class VideoFramePool;
 
 namespace blink {
 
+class MediaConstraints;
 class VideoCaptureSettings;
 class VideoTrackAdapterSettings;
 struct VideoDeviceCaptureCapabilities;
@@ -109,7 +113,9 @@ MODULES_EXPORT media::VideoCaptureFormats UniformCameraFormats(
     mojom::blink::MediaStreamType type);
 
 // getUserMedia()'s cameras, and an enumerateDevices() camera's
-// InputDeviceInfo.getCapabilities(), with the formats above.
+// InputDeviceInfo.getCapabilities(), with the formats above; a MoltNet camera
+// also has no pan, tilt or zoom (control_support), so constraints on them
+// are met or refused as for a camera without them.
 MODULES_EXPORT void UseUniformCameraFormats(
     VideoDeviceCaptureCapabilities& capabilities);
 MODULES_EXPORT void UseUniformCameraFormats(
@@ -128,6 +134,15 @@ UniformCameraSettings(const VideoCaptureSettings& settings,
 // camera, getUserMedia()'s deferred selection).
 MODULES_EXPORT void UseUniformCameraSettings(
     Vector<VideoCaptureSettings>& settings);
+
+// Whether a request with `video` constraints for a device of `type` asks the
+// browser for the pan-tilt-zoom permission (StreamControls::
+// request_pan_tilt_zoom_permission), whose prompt names a camera that moves:
+// as Chromium (pan, tilt or zoom present and not false), but never for a
+// MoltNet camera, which has none of them.
+MODULES_EXPORT bool RequestsPanTiltZoomPermission(
+    const MediaConstraints& video,
+    mojom::blink::MediaStreamType type);
 
 // The capture parameters a source of a device of `type` opens it with:
 // a MoltNet camera opens in its mode in `native_formats` that reaches the
