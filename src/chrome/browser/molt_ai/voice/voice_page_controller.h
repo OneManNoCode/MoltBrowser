@@ -140,7 +140,13 @@ class VoicePageController
 
   // Plays or pauses a <video> or <audio> through its default action: an
   // accessibility click, which gives the page user activation, so the
-  // page's player may start with sound.
+  // page's player may start with sound. The click goes to the element
+  // itself, so it plays what a site's player plays on a click (YouTube's
+  // does); a bare <video controls> doesn't play from it (Blink's controls
+  // see only clicks on their own buttons): press the controls' play
+  // button instead, a button inside the media on the map. Chromium's
+  // accessibility media actions (kResumeMedia, kSuspendMedia) do nothing
+  // in web pages (RenderAccessibilityImpl::PerformAction()).
   ActionResult PlayMedia(const PageNodeHandle& media);
   // Pauses or resumes what plays in the tab, as the media keys do (the
   // media session).

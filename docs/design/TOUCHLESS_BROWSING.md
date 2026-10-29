@@ -218,7 +218,7 @@ Five layers, tried in this order:
 - **Set text:** `kSetValue` (`AXNodeObject::OnNativeSetValueAction()`), which fires the `input` and `change` events forms listen to. It is refused for protected and credential fields, read-only, disabled and non-text fields. The text is cleaned first (`TypedText()`).
 - **Submit:** presses the form's submit input when there is one. Otherwise it focuses the field, waits until its frame reports the focus there (key events travel apart from accessibility actions), and sends Enter to the frame's widget, as the keyboard does.
 - **Media:**
-  - **Play:** the element's default action. The page's player starts with sound: the click carries user activation.
+  - **Play:** the element's default action. The page's player starts with sound: the click carries user activation. The click goes to the `<video>` itself, so this works where the site's player plays on a click (YouTube's does). A bare `<video controls>` doesn't play from it, because Blink's controls see only clicks on their own buttons: press the controls' play button, which is on the map as a button inside the video. Chromium's accessibility media actions (`kResumeMedia`, `kSuspendMedia`) do nothing in web pages.
   - **Pause and resume:** the tab's media session, as the media keys do. Resume plays as triggered by the user, so the sound stays on.
 - **Stale targets:** before each action the handle is found again. Its frame must be this tab's, active, in the primary page and an http(s) document, and the node must be in that frame's current tree. A handle from an earlier document is refused.
 - **Turning it off:** `Stop()` releases the mode and drops the trees.
