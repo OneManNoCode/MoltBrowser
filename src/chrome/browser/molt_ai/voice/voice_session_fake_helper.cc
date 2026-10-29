@@ -4,8 +4,8 @@
 // A stand-in for the speech helper (`molt-speech`) in voice mode's browser
 // tests (voice_session_browsertest.cc): it speaks protocol v1
 // (docs/design/SPEECH_HELPER_PROTOCOL.md) and plays a script instead of
-// recognizing speech. The browser starts it with its model directory as the
-// one argument, as it starts the real one; the script is
+// recognizing speech. The browser starts it as it starts the real one,
+// `--models <model directory>`; the script is
 // <model directory>/fake_script.txt, one event per line:
 //
 //   ready                       at once
@@ -19,7 +19,8 @@
 //
 // Times count the 16 kHz samples of AUDIO frames received. It checks every
 // frame as the real helper must: an unknown type or a frame over 65536
-// bytes is a protocol error (an `error` line, then exit 2). It exits 0 on
+// bytes is a protocol error (an `error` line with the code `protocol`, then
+// exit 2). It exits 0 on
 // SHUTDOWN or end of file. Plain C++, no //base.
 
 #ifdef UNSAFE_BUFFERS_BUILD
@@ -66,20 +67,24 @@ std::string Escaped(const std::string& text) {
   return out;
 }
 
-// Plays |event|; false when it ends the helper.
-bool Play(const Event& event) {
+// Plays |event|, stamped with |epoch| and its time as the real helper
+// stamps its events; false when it ends the helper.
+bool Play(const Event& event, long long epoch) {
+  const std::string stamp = ",\"epoch\":" + std::to_string(epoch) +
+                            ",\"audio_ms\":" + std::to_string(event.at_ms);
   if (event.kind == "wake" || event.kind == "speech_start" ||
       event.kind == "speech_end") {
-    Emit("{\"type\":\"" + event.kind + "\"}");
+    Emit("{\"type\":\"" + event.kind + "\"" + stamp + "}");
   } else if (event.kind == "partial") {
-    Emit("{\"type\":\"partial\",\"text\":\"" + Escaped(event.rest) + "\"}");
+    Emit("{\"type\":\"partial\"" + stamp + ",\"text\":\"" +
+         Escaped(event.rest) + "\"}");
   } else if (event.kind == "final") {
     const size_t space = event.rest.find(' ');
     const std::string confidence = event.rest.substr(0, space);
     const std::string text = space == std::string::npos
                                  ? std::string()
                                  : event.rest.substr(space + 1);
-    Emit("{\"type\":\"final\",\"text\":\"" + Escaped(text) +
+    Emit("{\"type\":\"final\"" + stamp + ",\"text\":\"" + Escaped(text) +
          "\",\"confidence\":" + confidence + "}");
   } else if (event.kind == "line") {
     Emit(event.rest);
@@ -107,12 +112,12 @@ int main(int argc, char* argv[]) {
   _setmode(_fileno(stdin), _O_BINARY);
   _setmode(_fileno(stdout), _O_BINARY);
 #endif
-  if (argc != 2) {
-    Emit("{\"type\":\"error\",\"code\":\"usage\"}");
+  if (argc != 3 || std::string(argv[1]) != "--models") {
+    Emit("{\"type\":\"error\",\"code\":\"args\"}");
     return 2;
   }
   std::vector<Event> events;
-  std::ifstream script(std::string(argv[1]) + "/fake_script.txt");
+  std::ifstream script(std::string(argv[2]) + "/fake_script.txt");
   bool ready = false;
   std::string text;
   while (std::getline(script, text)) {
@@ -143,6 +148,7 @@ int main(int argc, char* argv[]) {
 
   size_t next = 0;
   long long samples = 0;
+  long long epoch = 0;
   std::vector<unsigned char> payload;
   for (;;) {
     unsigned char header[8];
@@ -152,7 +158,7 @@ int main(int argc, char* argv[]) {
     const uint32_t type = LittleEndian32(header);
     const uint32_t length = LittleEndian32(header + 4);
     if (length > 65536 || type < 1 || type > 4) {
-      Emit("{\"type\":\"error\",\"code\":\"bad_frame\"}");
+      Emit("{\"type\":\"error\",\"code\":\"protocol\"}");
       return 2;
     }
     payload.resize(length);
@@ -162,13 +168,17 @@ int main(int argc, char* argv[]) {
     if (type == 4) {
       return 0;  // SHUTDOWN
     }
+    if (type == 3) {
+      ++epoch;  // RESET
+      continue;
+    }
     if (type != 1) {
-      continue;  // CONFIG, RESET
+      continue;  // CONFIG
     }
     samples += length / 2;
     const long long ms = samples * 1000 / 16000;
     while (next < events.size() && events[next].at_ms <= ms) {
-      Play(events[next++]);
+      Play(events[next++], epoch);
     }
   }
 }

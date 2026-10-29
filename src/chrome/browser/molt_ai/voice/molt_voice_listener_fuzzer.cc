@@ -9,8 +9,9 @@
 //      size: every line HelperLineReader gives is within the cap, every
 //      event ParseHelperLine() accepts has clean text within its caps and a
 //      confidence in 0..1, and a line is refused the same way twice;
-//   1  the bytes are page text: ReduceSpeechPhrase() gives only a-z, 0-9,
-//      apostrophes inside words and single spaces, within the caps, and
+//   1  the bytes are page text: ReduceSpeechPhrase() gives only ASCII
+//      letters and digits, apostrophes inside words and single spaces,
+//      within the caps, and
 //      CONFIG's JSON (EncodeConfigJson()) holds it without escapes;
 //   2  the bytes are a session: helper events and browser changes in any
 //      order and at any time; the session never hands over an utterance
@@ -102,6 +103,8 @@ void CheckEvent(const HelperEvent& event) {
     CheckClean(model, kMaxHelperNameBytes);
   }
   CHECK(event.confidence >= 0 && event.confidence <= 1);
+  CHECK_GE(event.epoch, -1);
+  CHECK_GE(event.audio_ms, -1);
   if (event.type != HelperEventType::kPartial &&
       event.type != HelperEventType::kFinal) {
     CHECK(event.text.empty());
@@ -148,8 +151,8 @@ void FuzzPhrase(std::string_view data) {
   size_t words = phrase.empty() ? 0 : 1;
   for (size_t i = 0; i < phrase.size(); ++i) {
     const char c = phrase[i];
-    CHECK((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '\'' ||
-          c == ' ');
+    CHECK((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') || c == '\'' || c == ' ');
     if (c == ' ') {
       ++words;
       CHECK(i > 0 && i + 1 < phrase.size() && phrase[i + 1] != ' ');

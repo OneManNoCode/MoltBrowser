@@ -236,6 +236,9 @@ TEST_F(ResidentHelperTest, DiesWithTheBrowser) {
         ResidentHelper::Start(cmd, policy_, &error);
     const pid_t pid = helper ? helper->pid() : -1;
     [[maybe_unused]] const ssize_t written = write(fds[1], &pid, sizeof(pid));
+    // Long enough for the helper to have set up its parent-death signal (a
+    // parent gone before that leaves it unset: the browser lives on).
+    usleep(500000);
     _exit(0);
   }
   close(fds[1]);

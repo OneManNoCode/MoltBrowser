@@ -404,12 +404,15 @@ void VoiceListener::Launch() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   ++generation_;
   ready_ = false;
+  resets_sent_ = 0;
   stalled_since_ = base::TimeTicks();
   connection_ = base::MakeRefCounted<Connection>();
   launched_at_ = base::TimeTicks::Now();
 
-  // The helper gets the path of its model directory, and nothing else.
+  // The helper gets the path of its model directory, and nothing else
+  // (SPEECH_HELPER_PROTOCOL.md §1).
   base::CommandLine cmd(paths_.helper);
+  cmd.AppendArg("--models");
   cmd.AppendArgPath(paths_.models);
   ResidentHelperPolicy policy;
   policy.read_only_paths = {paths_.models};
@@ -445,6 +448,11 @@ void VoiceListener::OnLine(int generation, HelperEvent event) {
     ready_at_ = base::TimeTicks::Now();
     sink_->Attach(connection_);
     delegate_->OnListenerReady(event);
+    return;
+  }
+  // What it wrote before it read our last RESET is about a dropped
+  // utterance.
+  if (event.epoch >= 0 && event.epoch < resets_sent_) {
     return;
   }
   // Before `ready` only an error makes sense (a model it couldn't load).
@@ -552,6 +560,10 @@ void VoiceListener::SendConfig(const HelperConfig& config) {
 }
 
 void VoiceListener::SendReset() {
+  if (!connection_) {
+    return;
+  }
+  ++resets_sent_;
   Send(EncodeHelperFrame(HelperFrameType::kReset, std::string_view()));
 }
 

@@ -8,6 +8,7 @@
 // writable, no network, its memory and CPU bounded), streams the
 // microphone's frames to it, and reads back what it heard.
 //
+//   - The helper is started as `molt-speech --models <model directory>`.
 //   - Untrusted output: every line passes HelperLineReader (at most
 //     kMaxHelperLineBytes), HelperLineBudget (no flood) and
 //     ParseHelperLine() (known types and fields only, valid UTF-8, capped,
@@ -175,6 +176,9 @@ class VoiceListener {
   bool ready_ = false;
   int generation_ = 0;
   int failures_ = 0;
+  // RESET frames sent to the current helper: its events from before the
+  // last one (a lower "epoch") are dropped.
+  int64_t resets_sent_ = 0;
   base::TimeTicks launched_at_;
   base::TimeTicks ready_at_;
   base::TimeTicks stalled_since_;

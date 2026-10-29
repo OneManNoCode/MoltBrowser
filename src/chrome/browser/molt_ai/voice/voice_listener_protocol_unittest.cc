@@ -64,8 +64,8 @@ TEST(VoiceListenerProtocolTest, ConfigJson) {
   config.hotwords = {"Bohemian Rhapsody", "Queen"};
   config.vad_silence_ms = 700;
   EXPECT_EQ(EncodeConfigJson(config),
-            "{\"wake_phrases\":[\"hey molt\"],\"wake_required\":true,"
-            "\"hotwords\":[\"bohemian rhapsody\",\"queen\"],"
+            "{\"wake_phrases\":[\"Hey Molt\"],\"wake_required\":true,"
+            "\"hotwords\":[\"Bohemian Rhapsody\",\"Queen\"],"
             "\"vad_silence_ms\":700}");
 }
 
@@ -119,28 +119,36 @@ TEST(VoiceListenerProtocolTest, NumberAsWords) {
 }
 
 TEST(VoiceListenerProtocolTest, ReduceSpeechPhrase) {
-  EXPECT_EQ(ReduceSpeechPhrase("Bohemian Rhapsody"), "bohemian rhapsody");
-  EXPECT_EQ(ReduceSpeechPhrase("  Beyoncé  —  Halo "), "beyonce halo");
+  // The case of ASCII words is kept: the recognizer's vocabulary is cased.
+  EXPECT_EQ(ReduceSpeechPhrase("Bohemian Rhapsody"), "Bohemian Rhapsody");
+  EXPECT_EQ(ReduceSpeechPhrase("  Beyonc\xC3\xA9  \xE2\x80\x94  Halo "),
+            "beyonce Halo");
   EXPECT_EQ(ReduceSpeechPhrase("Don\xE2\x80\x99t Stop Me Now"),
-            "don't stop me now");
+            "Don't Stop Me Now");
   EXPECT_EQ(ReduceSpeechPhrase("rock 'n' roll"), "rock n roll");
-  EXPECT_EQ(ReduceSpeechPhrase("AC/DC"), "ac dc");
+  EXPECT_EQ(ReduceSpeechPhrase("AC/DC"), "AC DC");
   EXPECT_EQ(ReduceSpeechPhrase("Live Aid 1985"),
-            "live aid nineteen eighty five");
-  EXPECT_EQ(ReduceSpeechPhrase("the 4th of July"), "the fourth of july");
-  EXPECT_EQ(ReduceSpeechPhrase("21st 2nd 3rd 12th 20th"),
-            "twenty first second third twelfth twentieth");
+            "Live Aid nineteen eighty five");
+  EXPECT_EQ(ReduceSpeechPhrase("the 4th of July"), "the fourth of July");
+  EXPECT_EQ(ReduceSpeechPhrase("21st 2nd 3rd 12th"),
+            "twenty first second third twelfth");
   EXPECT_EQ(ReduceSpeechPhrase("a:5/b#c@d:e"), "a five b c d e");
-  EXPECT_EQ(ReduceSpeechPhrase("Straße Łódź"), "strasse lodz");
+  EXPECT_EQ(ReduceSpeechPhrase("Stra\xC3\x9F"
+                               "e \xC5\x81\xC3\xB3"
+                               "d\xC5\xBA"),
+            "strasse lodz");
   // Scripts the model can't spell, and numbers too long to read, go.
-  EXPECT_EQ(ReduceSpeechPhrase("Привет мир"), "");
+  EXPECT_EQ(
+      ReduceSpeechPhrase("\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82 "
+                         "\xD0\xBC\xD0\xB8\xD1\x80"),
+      "");
   EXPECT_EQ(ReduceSpeechPhrase("call 0123456789012 now"), "call now");
   // Invisible characters don't break a word; controls do.
   EXPECT_EQ(ReduceSpeechPhrase("you\xE2\x80\x8Btube"), "youtube");
   EXPECT_EQ(ReduceSpeechPhrase("a\nb\tc"), "a b c");
   // Caps: whole words, at most kMaxPhraseWords and kMaxPhraseBytes.
-  EXPECT_EQ(ReduceSpeechPhrase("one two three four five six seven eight nine"),
-            "one two three four five six seven eight");
+  EXPECT_EQ(ReduceSpeechPhrase("one two three four five six seven eight"),
+            "one two three four five six");
   const std::string long_words =
       std::string(40, 'a') + " " + std::string(30, 'b') + " c";
   EXPECT_EQ(ReduceSpeechPhrase(long_words), std::string(40, 'a'));
@@ -174,12 +182,18 @@ TEST(VoiceListenerProtocolTest, HotwordsFromPageMap) {
   EXPECT_EQ(
       HotwordsFromPageMap(map),
       (std::vector<std::string>{
-          "queen", "bohemian rhapsody", "official video remastered",
-          "queen official", "live aid nineteen eighty five", "panic",
-          "at the disco", "panic at the disco", "hey ya", "outkast", "home"}));
+          "Queen", "Bohemian Rhapsody", "Official Video Remastered",
+          "Queen Official", "Live Aid nineteen eighty five", "Panic",
+          "At The Disco", "Panic At The Disco", "Hey ya", "OutKast", "Home"}));
   EXPECT_EQ(HotwordsFromPageMap(map, 3),
-            (std::vector<std::string>{"queen", "bohemian rhapsody",
-                                      "official video remastered"}));
+            (std::vector<std::string>{"Queen", "Bohemian Rhapsody",
+                                      "Official Video Remastered"}));
+  // The same words in another case are one hotword.
+  PageMap shouting;
+  PageList list;
+  list.entries.push_back(Entry("QUEEN", "queen"));
+  shouting.lists.push_back(list);
+  EXPECT_EQ(HotwordsFromPageMap(shouting), (std::vector<std::string>{"QUEEN"}));
   EXPECT_TRUE(HotwordsFromPageMap(PageMap()).empty());
 }
 
@@ -232,6 +246,30 @@ TEST(VoiceListenerProtocolTest, ParsesEveryType) {
   ASSERT_EQ(error.error, HelperLineError::kNone);
   EXPECT_EQ(error.event.code, "bad_frame");
   EXPECT_EQ(error.event.message, "unknown type 9");
+}
+
+TEST(VoiceListenerProtocolTest, EpochAndAudioTime) {
+  ParsedHelperLine wake = Parse(R"({"type":"wake","epoch":2,"audio_ms":1940})");
+  ASSERT_EQ(wake.error, HelperLineError::kNone);
+  EXPECT_EQ(wake.event.epoch, 2);
+  EXPECT_EQ(wake.event.audio_ms, 1940);
+  ParsedHelperLine bare = Parse(R"({"type":"speech_end"})");
+  ASSERT_EQ(bare.error, HelperLineError::kNone);
+  EXPECT_EQ(bare.event.epoch, -1);
+  EXPECT_EQ(bare.event.audio_ms, -1);
+  EXPECT_EQ(Parse(R"({"type":"final","epoch":9007199254740992,"text":"x",)"
+                  R"("confidence":1})")
+                .event.epoch,
+            9007199254740992);
+  for (std::string_view value :
+       {"-1", "1.5", "\"2\"", "true", "1e300", "9007199254740993e3"}) {
+    const std::string line =
+        std::string(R"({"type":"wake","epoch":)") + std::string(value) + "}";
+    EXPECT_EQ(Parse(line).error, HelperLineError::kBadField) << value;
+  }
+  // On ready and error they are other fields, left alone.
+  EXPECT_EQ(Parse(R"({"type":"ready","engine":"e","epoch":"x"})").error,
+            HelperLineError::kNone);
 }
 
 TEST(VoiceListenerProtocolTest, ConfidenceForms) {

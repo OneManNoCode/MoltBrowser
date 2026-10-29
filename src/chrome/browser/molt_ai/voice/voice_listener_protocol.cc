@@ -161,7 +161,7 @@ std::optional<std::string> AsciiWordWithApostrophes(std::string_view source) {
   while (i < source.size()) {
     const char c = source[i];
     if (IsAsciiLetter(c) || IsAsciiDigit(c)) {
-      out.push_back(ToLowerAscii(c));
+      out.push_back(c);
       ++i;
     } else if (c == '\'') {
       out.push_back('\'');
@@ -186,11 +186,20 @@ std::optional<std::string> AsciiWordWithApostrophes(std::string_view source) {
   return out;
 }
 
-// Whether |word| holds only what a phrase may: a-z, 0-9 and apostrophes.
+// Whether |word| holds only what a phrase may: ASCII letters, digits and
+// apostrophes.
 bool IsPhraseWord(std::string_view word) {
   return !word.empty() && std::all_of(word.begin(), word.end(), [](char c) {
-    return (c >= 'a' && c <= 'z') || IsAsciiDigit(c) || c == '\'';
+    return IsAsciiLetter(c) || IsAsciiDigit(c) || c == '\'';
   });
+}
+
+std::string LowerAscii(std::string_view text) {
+  std::string out(text);
+  for (char& c : out) {
+    c = ToLowerAscii(c);
+  }
+  return out;
 }
 
 // Appends |words| (space-separated) to |phrase| while it stays within the
@@ -701,6 +710,28 @@ std::optional<HelperEventType> EventTypeFromName(std::string_view name) {
   return std::nullopt;
 }
 
+// An optional whole number from 0 to 2^53 ("epoch", "audio_ms"); -1 when
+// it isn't there.
+HelperLineError ReadCount(
+    const std::vector<std::pair<std::string, JsonValue>>& members,
+    std::string_view key,
+    int64_t* out) {
+  *out = -1;
+  const JsonValue* value = FindMember(members, key);
+  if (!value) {
+    return HelperLineError::kNone;
+  }
+  constexpr double kMaxCount = 9007199254740992.0;  // 2^53
+  if (value->kind != JsonValue::Kind::kNumber || !(value->number >= 0) ||
+      value->number > kMaxCount ||
+      value->number !=
+          static_cast<double>(static_cast<int64_t>(value->number))) {
+    return HelperLineError::kBadField;
+  }
+  *out = static_cast<int64_t>(value->number);
+  return HelperLineError::kNone;
+}
+
 // A required or optional string field within |cap| bytes.
 HelperLineError ReadString(
     const std::vector<std::pair<std::string, JsonValue>>& members,
@@ -861,17 +892,18 @@ std::string ReduceSpeechPhrase(std::string_view text) {
 
 std::vector<std::string> HotwordsFromPageMap(const PageMap& map, size_t max) {
   std::vector<std::string> phrases;
-  std::vector<std::string> seen;
+  std::vector<std::string> seen;  // lower case
   auto add = [&](std::string_view text) {
     if (phrases.size() >= max) {
       return;
     }
     std::string phrase = ReduceSpeechPhrase(text);
+    std::string key = LowerAscii(phrase);
     if (phrase.empty() ||
-        std::find(seen.begin(), seen.end(), phrase) != seen.end()) {
+        std::find(seen.begin(), seen.end(), key) != seen.end()) {
       return;
     }
-    seen.push_back(phrase);
+    seen.push_back(std::move(key));
     phrases.push_back(std::move(phrase));
   };
   for (const PageList& list : map.lists) {
@@ -986,6 +1018,15 @@ ParsedHelperLine ParseHelperLine(std::string_view line) {
   }
   HelperEvent& event = result.event;
   event.type = *type;
+  if (*type != HelperEventType::kReady && *type != HelperEventType::kError) {
+    result.error = ReadCount(*members, "epoch", &event.epoch);
+    if (result.error == HelperLineError::kNone) {
+      result.error = ReadCount(*members, "audio_ms", &event.audio_ms);
+    }
+    if (result.error != HelperLineError::kNone) {
+      return result;
+    }
+  }
   switch (*type) {
     case HelperEventType::kReady: {
       result.error = ReadString(*members, "engine", kMaxHelperNameBytes,

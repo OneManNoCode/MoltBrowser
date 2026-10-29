@@ -202,8 +202,8 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest, TheWakePhraseThenACommand) {
       "300 wake\n"
       "500 speech_start\n"
       "800 partial open a new\n"
-      "1100 final 0.9 open a new tab\n"
-      "1200 speech_end\n");
+      "1100 speech_end\n"
+      "1200 final 0.9 Hey Molt, open a new tab.\n");
   ASSERT_EQ(tabs(), 1);
   ASSERT_TRUE(session()->Start());
   EXPECT_TRUE(session()->listening());
@@ -225,11 +225,11 @@ IN_PROC_BROWSER_TEST_F(VoiceSessionBrowserTest,
   Script(
       "ready\n"
       "400 speech_start\n"
-      "900 final 0.95 open a new tab\n"
-      "1000 speech_end\n"
+      "900 speech_end\n"
+      "1000 final 0.95 open a new tab\n"
       "1500 speech_start\n"
-      "1900 final 0.95 stop\n"
-      "2000 speech_end\n");
+      "1900 speech_end\n"
+      "2000 final 0.95 stop\n");
   ASSERT_TRUE(session()->Start());
   ASSERT_TRUE(base::test::RunUntil([&]() { return tts_.stops() > 0; }));
   Wait(base::Seconds(2));

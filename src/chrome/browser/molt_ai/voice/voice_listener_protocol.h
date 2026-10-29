@@ -104,7 +104,7 @@ struct HelperConfig {
 inline constexpr size_t kMaxWakePhrases = 4;
 inline constexpr size_t kMaxHotwords = 64;
 inline constexpr size_t kMaxPhraseBytes = 64;
-inline constexpr size_t kMaxPhraseWords = 8;
+inline constexpr size_t kMaxPhraseWords = 6;
 inline constexpr int kMinVadSilenceMs = 200;
 inline constexpr int kMaxVadSilenceMs = 3000;
 inline constexpr int kDefaultVadSilenceMs = 500;
@@ -115,12 +115,14 @@ inline constexpr int kDefaultVadSilenceMs = 500;
 // under kMaxFramePayloadBytes.
 std::string EncodeConfigJson(const HelperConfig& config);
 
-// |text| reduced to what a hotword or wake phrase may hold: lower-case
-// ASCII letters and digits, apostrophes inside words, single spaces.
-// Latin letters with accents are folded to their base letters ("Beyoncé"
-// -> "beyonce"); a run of digits becomes words ("1985" -> "nineteen eighty
-// five", "4" -> "four"); everything else separates words. At most
-// kMaxPhraseWords words and kMaxPhraseBytes bytes (whole words only).
+// |text| reduced to what a hotword or wake phrase may hold: ASCII letters
+// and digits, apostrophes inside words, single spaces. The case of ASCII
+// words is kept (Kroko's vocabulary is cased, as the screen is); Latin
+// letters with accents are folded to their lower-case base letters
+// ("Beyoncé" -> "beyonce"); a run of digits becomes words ("1985" ->
+// "nineteen eighty five", "4" -> "four"); everything else separates words.
+// At most kMaxPhraseWords words and kMaxPhraseBytes bytes (whole words
+// only).
 std::string ReduceSpeechPhrase(std::string_view text);
 
 // "4" -> "four", "1985" -> "nineteen eighty five", "2022" -> "twenty
@@ -130,8 +132,8 @@ std::string NumberAsWords(std::string_view digits);
 
 // Hotwords for the page in |map|: each list entry's title, split at its
 // separators (" - ", " | ", ": ", brackets, '!', ',', '?'), and its
-// channel, from the most prominent list down; reduced, de-duplicated, at
-// most |max| phrases.
+// channel, from the most prominent list down; reduced, de-duplicated
+// whatever their case, at most |max| phrases.
 std::vector<std::string> HotwordsFromPageMap(const PageMap& map,
                                              size_t max = kMaxHotwords);
 
@@ -175,9 +177,14 @@ struct HelperEvent {
   // kReady.
   std::string engine;
   std::vector<std::string> models;
-  // kError: a short code ("bad_frame") and a message, both made safe.
+  // kError: a short code ("protocol") and a message, both made safe.
   std::string code;
   std::string message;
+  // Every event but ready and error: how many RESET frames the helper had
+  // read when it wrote it, and how much audio it had (milliseconds); -1
+  // when the line has none.
+  int64_t epoch = -1;
+  int64_t audio_ms = -1;
 };
 
 // Why a line was refused.
@@ -218,6 +225,8 @@ struct ParsedHelperLine {
 //   partial      "text" (string, at most kMaxHelperTextBytes)
 //   final        "text", "confidence" (number in 0..1)
 //   error        "code" (string), optional "message" (string)
+// and, optional on every event but ready and error, "epoch" and "audio_ms"
+// (whole numbers from 0 to 2^53).
 // Other keys are ignored, as long as their values are of those kinds.
 // Linear in the line's length.
 ParsedHelperLine ParseHelperLine(std::string_view line);
