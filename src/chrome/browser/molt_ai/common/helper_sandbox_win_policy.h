@@ -179,27 +179,25 @@ inline constexpr uint32_t kFileGenericRead = kReadControl | kFileListDirectory |
                                              kSynchronize;
 
 // The scratch directory's rights for the run's package SID: on the
-// directory itself, list, create files and directories, delete what is in
-// it, traverse, read its attributes; not delete or rename it, and not
-// change its security. On directories made in it, the same and delete. On
-// files in it, read, write and delete, never execute.
+// directory itself, list, create files, traverse, read its attributes; not
+// make directories, delete or rename anything in it, delete or rename it,
+// or change its security. On files in it, read and write, never execute,
+// delete or rename. So everything the run writes stays in the directory,
+// where the launcher measures it (helper_limits.h): a file it deleted while
+// still holding it open would take space no listing shows.
 inline constexpr uint32_t kScratchDirectoryRights =
-    kFileListDirectory | kFileAddFile | kFileAddSubdirectory | kFileReadEa |
-    kFileTraverse | kFileDeleteChild | kFileReadAttributes | kReadControl |
-    kSynchronize;
-inline constexpr uint32_t kScratchSubdirectoryRights =
-    kScratchDirectoryRights | kDelete;
+    kFileListDirectory | kFileAddFile | kFileReadEa | kFileTraverse |
+    kFileReadAttributes | kReadControl | kSynchronize;
 inline constexpr uint32_t kScratchFileRights =
     kFileListDirectory /* FILE_READ_DATA */ | kFileAddFile /* WRITE_DATA */ |
     kFileAddSubdirectory /* APPEND_DATA */ | kFileReadEa | kFileWriteEa |
-    kFileReadAttributes | kFileWriteAttributes | kDelete | kReadControl |
-    kSynchronize;
+    kFileReadAttributes | kFileWriteAttributes | kReadControl | kSynchronize;
 
 // The security descriptor the scratch directory is created with (never
 // changed later): a protected DACL that gives SYSTEM, Administrators and
 // the user (|user_sid|, the browser's) full control, and the run's package
-// SID the rights above, inherited by what is created in it; and a low
-// mandatory label, inherited too, without which a low-integrity
+// SID the rights above, the files' inherited by the files created in it;
+// and a low mandatory label, inherited too, without which a low-integrity
 // AppContainer process can't write there. Empty if either SID isn't one.
 std::string ScratchDirectorySddl(std::string_view user_sid,
                                  std::string_view package_sid);

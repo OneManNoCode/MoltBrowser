@@ -451,6 +451,42 @@ CAMERA_HD_FRAME = {'codedWidth': 1280, 'codedHeight': 720,
                    'displayHeight': 720, 'format': 'I420'}
 CAMERA_OVERCONSTRAINED = {'name': 'OverconstrainedError',
                           'constraint': 'width'}
+# A camera's ImageCapture in MoltNet (modules/imagecapture/
+# moltnet_image_capture.h) answers as a camera without controls whose photos
+# are its frames, for a track with no constraints (640x480): no red-eye
+# reduction or fill light, photos of the track's size, none of the members
+# ImageCapture adds for a device's controls in the track's capabilities and
+# settings, a required zoom refused, takePhoto() a JPEG of the track's size
+# and grabFrame() its frame. (Chromium's fake device has controls: zoom,
+# focus, exposure and white balance among them.)
+CAMERA_IMAGE_CAPTURE = {
+    'photo_capabilities': {'redEyeReduction': 'never',
+                           'imageWidth': [640, 640, 0],
+                           'imageHeight': [480, 480, 0],
+                           'fillLightMode': None},
+    'photo_settings': {'imageWidth': 640, 'imageHeight': 480},
+    'track_members': {'capabilities': [], 'settings': []},
+    'required_zoom': {'name': 'OverconstrainedError', 'constraint': 'zoom'},
+    'photo': {'type': 'image/jpeg', 'width': 640, 'height': 480},
+    'grab_frame': {'width': 640, 'height': 480},
+}
+# A camera's frames reach a MoltNet page on a grid of 30 a second
+# (modules/mediastream/moltnet_camera.h): every timestamp n/30 s after the
+# source's first frame, in whole microseconds (Chromium's fake device runs
+# at 20 fps), the steps between the frames a page reads one tick, or two when
+# it reads late; one colour space, BT.601 at limited range (SMPTE 170M);
+# requestVideoFrameCallback()'s metadata with a captureTime that keeps the
+# grid's intervals and a mediaTime on it, and no receiveTime or rtpTimestamp;
+# and a 15 fps track discards every other frame, dropping none.
+CAMERA_TIMING_STEPS = [[1], [1, 2]]
+CAMERA_COLOR_SPACE = {'primaries': 'smpte170m', 'transfer': 'smpte170m',
+                      'matrix': 'smpte170m', 'fullRange': False}
+CAMERA_FRAME_CALLBACKS = {
+    'keys': ['captureTime', 'expectedDisplayTime', 'height', 'mediaTime',
+             'presentationTime', 'presentedFrames', 'width'],
+    'media_time_on_grid': True, 'capture_time_follows': True,
+    'size': [640, 480]}
+CAMERA_STATS = {'dropped': 0, 'half_discarded': True}
 
 # The mic_processing launch (kind "mic"): Chromium's fake capture device
 # plays the kit's WAV; the page reads the processed samples twice, each time
@@ -496,6 +532,13 @@ MIC_RULES = (
     ('video.camera_device_capabilities', 'eq', CAMERA_DEVICE_CAPABILITIES,
      S_MDEV),
     ('video.camera_overconstrained', 'eq', CAMERA_OVERCONSTRAINED, S_MDEV),
+    # Its ImageCapture and the timing of its frames, the same everywhere.
+    ('video.camera_image_capture', 'eq', CAMERA_IMAGE_CAPTURE, S_MDEV),
+    ('video.camera_timing_on_grid', 'eq', True, S_MDEV),
+    ('video.camera_timing_steps', 'in', CAMERA_TIMING_STEPS, S_MDEV),
+    ('video.camera_color_space', 'eq', CAMERA_COLOR_SPACE, S_MDEV),
+    ('video.camera_frame_callbacks', 'eq', CAMERA_FRAME_CALLBACKS, S_MDEV),
+    ('video.camera_stats', 'eq', CAMERA_STATS, S_MDEV),
 )
 
 # WebGL limit / precision rules are generated (they depend on whether the

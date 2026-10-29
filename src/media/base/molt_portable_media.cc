@@ -10,9 +10,12 @@
 #include "base/containers/span.h"
 #include "build/build_config.h"
 #include "media/base/audio_parameters.h"
+#include "media/base/molt_portable_color.h"
 #include "media/base/molt_portable_scale.h"
 #include "media/base/video_frame.h"
 #include "media/media_buildflags.h"
+#include "ui/gfx/color_space.h"
+#include "ui/gfx/hdr_metadata.h"
 
 #if BUILDFLAG(ENABLE_FFMPEG)
 extern "C" {
@@ -31,6 +34,36 @@ constinit std::atomic<bool> g_portable_media{false};
 
 // Whether this thread is inside a ScopedPortableAudioThread(true).
 constinit thread_local bool t_portable_audio = false;
+
+// The encoding of YUV samples in `color_space`, as Chromium reads them
+// (gfx::ColorSpace::ToSkYUVColorSpace()): its YUV matrix, at limited range
+// unless it says full; BT.601 at limited range without a YUV matrix.
+molt::YuvEncoding EncodingOf(const gfx::ColorSpace& color_space) {
+  molt::YuvMatrix matrix;
+  switch (color_space.GetMatrixID()) {
+    case gfx::ColorSpace::MatrixID::BT470BG:
+    case gfx::ColorSpace::MatrixID::SMPTE170M:
+      matrix = molt::YuvMatrix::kBt601;
+      break;
+    case gfx::ColorSpace::MatrixID::BT709:
+      matrix = molt::YuvMatrix::kBt709;
+      break;
+    case gfx::ColorSpace::MatrixID::FCC:
+      matrix = molt::YuvMatrix::kFcc;
+      break;
+    case gfx::ColorSpace::MatrixID::SMPTE240M:
+      matrix = molt::YuvMatrix::kSmpte240m;
+      break;
+    case gfx::ColorSpace::MatrixID::BT2020_NCL:
+      matrix = molt::YuvMatrix::kBt2020;
+      break;
+    default:
+      return molt::kPortableCameraEncoding;
+  }
+  return {matrix, color_space.GetRangeID() == gfx::ColorSpace::RangeID::FULL
+                      ? molt::YuvRange::kFull
+                      : molt::YuvRange::kLimited};
+}
 
 void SetPortable(bool portable) {
   g_portable_media.store(portable, std::memory_order_relaxed);
@@ -115,6 +148,33 @@ ScopedPortableAudioThread::~ScopedPortableAudioThread() {
 
 bool IsPortableAudioThread() {
   return t_portable_audio || IsPortableMediaProcess();
+}
+
+bool HasPortableCameraEncoding(const VideoFrame& frame) {
+  return EncodingOf(frame.ColorSpace()) == molt::kPortableCameraEncoding;
+}
+
+void SetPortableCameraColorSpace(VideoFrame& frame) {
+  frame.set_color_space(gfx::ColorSpace::CreateREC601());
+  frame.set_hdr_metadata(gfx::HDRMetadata());
+}
+
+bool UsePortableCameraColor(VideoFrame& frame) {
+  if (frame.format() != PIXEL_FORMAT_I420 || !frame.HasDirectCpuAccess() ||
+      frame.storage_type() == VideoFrame::STORAGE_SHMEM) {
+    return false;
+  }
+  using Plane = VideoFrame::Plane;
+  if (!molt::ConvertI420ToPortableCameraEncoding(
+          frame.GetWritableVisiblePlaneData(Plane::kY), frame.stride(Plane::kY),
+          frame.GetWritableVisiblePlaneData(Plane::kU), frame.stride(Plane::kU),
+          frame.GetWritableVisiblePlaneData(Plane::kV), frame.stride(Plane::kV),
+          frame.visible_rect().width(), frame.visible_rect().height(),
+          EncodingOf(frame.ColorSpace()))) {
+    return false;
+  }
+  SetPortableCameraColorSpace(frame);
+  return true;
 }
 
 bool PortableScaleFrame(const VideoFrame& src_frame, VideoFrame& dest_frame) {

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..bc85f9c6942d7001ac5e5dac87dd7843fb2ee0ec 100644
+index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..b7456f61d765c15fb734a49365a61f094aa2aa7e 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 @@ -51,9 +51,11 @@
@@ -60,8 +60,8 @@ index cbdf6f2c9b6b4161a9a62d584daa048b6f5aeaca..bc85f9c6942d7001ac5e5dac87dd7843
                  String::FromUtf8(device_info.group_id), device_type);
          if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
              !video_input_capabilities.empty()) {
-+          // MoltBrowser: a MoltNet page's cameras show the menu formats they
-+          // reach (moltnet_camera.h).
++          // MoltBrowser: a MoltNet page's cameras show the menu's formats
++          // (moltnet_camera.h).
 +          molt_fingerprinting::UseUniformCameraFormats(
 +              *video_input_capabilities[j]);
            input_device_info->SetVideoInputCapabilities(

@@ -3,6 +3,7 @@
 
 #include "media/base/molt_portable_media.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -188,6 +189,68 @@ TEST_F(MoltPortableMediaTest, PortableScaleFrameRefusesMismatchedPlanes) {
                                      base::TimeDelta());
   EXPECT_FALSE(PortableScaleFrame(*i420, *nv12));
   EXPECT_FALSE(PortableScaleFrame(*i420, *p10));
+}
+
+// A camera frame's colour: BT.601 YUV at limited range, or no YUV matrix,
+// is the cameras' encoding already; other matrices and full range aren't.
+TEST_F(MoltPortableMediaTest, PortableCameraEncoding) {
+  auto frame = Frame(PIXEL_FORMAT_I420, gfx::Size(16, 16), 1);
+  for (const gfx::ColorSpace& color_space :
+       {gfx::ColorSpace(), gfx::ColorSpace::CreateREC601(),
+        gfx::ColorSpace::CreateSRGB(),
+        gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
+                        gfx::ColorSpace::TransferID::BT709,
+                        gfx::ColorSpace::MatrixID::BT470BG,
+                        gfx::ColorSpace::RangeID::DERIVED)}) {
+    frame->set_color_space(color_space);
+    EXPECT_TRUE(HasPortableCameraEncoding(*frame)) << color_space.ToString();
+  }
+  for (const gfx::ColorSpace& color_space :
+       {gfx::ColorSpace::CreateREC709(), gfx::ColorSpace::CreateJpeg(),
+        gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT2020,
+                        gfx::ColorSpace::TransferID::BT709,
+                        gfx::ColorSpace::MatrixID::BT2020_NCL,
+                        gfx::ColorSpace::RangeID::LIMITED)}) {
+    frame->set_color_space(color_space);
+    EXPECT_FALSE(HasPortableCameraEncoding(*frame)) << color_space.ToString();
+  }
+}
+
+// UsePortableCameraColor() converts an I420 frame's samples in place and
+// gives it BT.601 at limited range; a frame already in it keeps its samples.
+TEST_F(MoltPortableMediaTest, UsePortableCameraColor) {
+  // Red in BT.709 at limited range: 63, 102, 240; BT.601's is 81.5, 90.2,
+  // 240.
+  auto red = VideoFrame::CreateFrame(PIXEL_FORMAT_I420, gfx::Size(8, 6),
+                                     gfx::Rect(8, 6), gfx::Size(8, 6),
+                                     base::TimeDelta());
+  const uint8_t samples[] = {63, 102, 240};
+  for (size_t plane = 0; plane < 3; ++plane) {
+    std::ranges::fill(red->writable_span(plane), samples[plane]);
+  }
+  red->set_color_space(gfx::ColorSpace::CreateREC709());
+  ASSERT_TRUE(UsePortableCameraColor(*red));
+  EXPECT_EQ(red->ColorSpace(), gfx::ColorSpace::CreateREC601());
+  const uint8_t want[] = {82, 90, 240};
+  for (size_t plane = 0; plane < 3; ++plane) {
+    for (uint8_t sample : VisiblePlane(*red, plane)) {
+      EXPECT_EQ(sample, want[plane]) << plane;
+    }
+  }
+
+  auto same = Frame(PIXEL_FORMAT_I420, gfx::Size(16, 16), 5);
+  const std::vector<uint8_t> luma = VisiblePlane(*same, 0);
+  ASSERT_TRUE(UsePortableCameraColor(*same));
+  EXPECT_EQ(VisiblePlane(*same, 0), luma);
+  EXPECT_EQ(same->ColorSpace(), gfx::ColorSpace::CreateREC601());
+
+  // Not I420: refused, unchanged.
+  auto nv12 = VideoFrame::CreateFrame(PIXEL_FORMAT_NV12, gfx::Size(16, 16),
+                                      gfx::Rect(16, 16), gfx::Size(16, 16),
+                                      base::TimeDelta());
+  nv12->set_color_space(gfx::ColorSpace::CreateJpeg());
+  EXPECT_FALSE(UsePortableCameraColor(*nv12));
+  EXPECT_EQ(nv12->ColorSpace(), gfx::ColorSpace::CreateJpeg());
 }
 
 TEST_F(MoltPortableMediaTest, ConverterScalesPortablyOnlyInPortableMode) {
@@ -735,6 +798,35 @@ TEST_F(MoltPortableMediaTest, PortableCaptureNeedsDownmix) {
   EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_7_1));
   EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_2_1));
   EXPECT_TRUE(PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_STEREO_DOWNMIX));
+  // Deprecated, and not one media's ChannelMixer takes.
+  EXPECT_FALSE(
+      PortableCaptureNeedsDownmix(CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC));
+}
+
+// Every layout the down-mix takes is one media's ChannelMixer takes, to one
+// channel and to two: a device of any layout a processed stream is opened in
+// is down-mixed (the others fail the stream, as at Chromium 156).
+TEST_F(MoltPortableMediaTest, EveryLayoutDownmixedIsOneTheMixerTakes) {
+  int layouts = 0;
+  for (int i = 0; i <= CHANNEL_LAYOUT_MAX; ++i) {
+    const ChannelLayout layout = static_cast<ChannelLayout>(i);
+    if (!PortableCaptureNeedsDownmix(layout)) {
+      continue;
+    }
+    ++layouts;
+    const AudioParameters device(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                 ChannelLayoutConfig::FromLayout(layout),
+                                 48000, 480);
+    for (const int channels : {1, 2}) {
+      PortableCaptureDownmix downmix(device, channels);
+      auto source = AudioBus::Create(device.channels(), 480);
+      source->Zero();
+      const AudioBus& mixed = downmix.Downmix(*source);
+      EXPECT_EQ(mixed.channels(), channels) << ChannelLayoutToString(layout);
+      EXPECT_EQ(mixed.frames(), 480) << ChannelLayoutToString(layout);
+    }
+  }
+  EXPECT_GT(layouts, 20);
 }
 
 // The down-mix computes the same samples on every CPU: from a thread outside

@@ -16,7 +16,10 @@
 //    ShrinkToSize() and UpdateMaxSize() do nothing;
 //  * the cache calls MoltMakeRoomFor(key) before it puts a new entry: the
 //    key's site's own least recently used entries go as the shares say, and
-//    it returns whether the new entry is kept;
+//    it returns whether the new entry is kept (MoltMakeRoomToKeep() for an
+//    entry the cache must keep, which past the total, for a site holding
+//    none or two fewer than the site that holds the most, takes the place of
+//    that site's least recently used entry);
 //  * every Put(), Get(), Erase() and Clear() keeps the shares' record of
 //    each site's entries in order of use; Peek() changes nothing, as in the
 //    base.
@@ -72,20 +75,14 @@ class MoltSiteLRU : public Base {
   // recently used entries as the shares say, and returns whether the new
   // entry is kept. True without shares, or for a key already held.
   bool MoltMakeRoomFor(const key_type& key) {
-    if (!shares_ || Base::Peek(key) != Base::end()) {
-      return true;
-    }
-    const Site site = SiteOfKey()(key);
-    while (std::optional<key_type> victim = shares_->NextToEvictFor(site)) {
-      auto it = Base::Peek(*victim);
-      if (it == Base::end()) {
-        // Never: the record holds only what the container holds.
-        shares_->Removed(*victim);
-        continue;
-      }
-      Erase(it);
-    }
-    return shares_->HasRoomFor(site);
+    return MoltMakeRoom(key, /*must_keep=*/false);
+  }
+  // MoltBrowser: the same for an entry the cache must keep: past the total,
+  // a site holding none, or two fewer than the site that holds the most,
+  // takes the place of that site's least recently used entry
+  // (MoltSiteShares::NextToEvictToKeep()).
+  bool MoltMakeRoomToKeep(const key_type& key) {
+    return MoltMakeRoom(key, /*must_keep=*/true);
   }
 
   const MoltSiteShares<Site, key_type>* molt_shares() const {
@@ -161,6 +158,25 @@ class MoltSiteLRU : public Base {
   }
 
  private:
+  bool MoltMakeRoom(const key_type& key, bool must_keep) {
+    if (!shares_ || Base::Peek(key) != Base::end()) {
+      return true;
+    }
+    const Site site = SiteOfKey()(key);
+    while (std::optional<key_type> victim =
+               must_keep ? shares_->NextToEvictToKeep(site)
+                         : shares_->NextToEvictFor(site)) {
+      auto it = Base::Peek(*victim);
+      if (it == Base::end()) {
+        // Never: the record holds only what the container holds.
+        shares_->Removed(*victim);
+        continue;
+      }
+      Erase(it);
+    }
+    return shares_->HasRoomFor(site);
+  }
+
   static const key_type& KeyOf(const value_type& value) {
     if constexpr (std::is_same_v<value_type, key_type>) {
       return value;

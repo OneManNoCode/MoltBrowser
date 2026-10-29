@@ -1,0 +1,87 @@
+MoltBrowser patch for third_party/blink/renderer/modules/mediastream/video_track_adapter.h
+Upstream base: chromium/src@d331de35ca8ab1358c7a17e4bd41627d55eaef51 (156.0.8078.74)
+Generated from src/third_party/blink/renderer/modules/mediastream/video_track_adapter.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/mediastream/video_track_adapter.h b/third_party/blink/renderer/modules/mediastream/video_track_adapter.h
+index 821e817647028fe6a29e59353c059c966bd61782..ed67fef350ae339c4fa8ba154a54100d7014b13e 100644
+--- a/third_party/blink/renderer/modules/mediastream/video_track_adapter.h
++++ b/third_party/blink/renderer/modules/mediastream/video_track_adapter.h
+@@ -7,6 +7,7 @@
+ 
+ #include <stdint.h>
+ 
++#include <memory>  // MoltBrowser
+ #include <optional>
+ 
+ #include "base/feature_list.h"
+@@ -31,6 +32,10 @@
+ namespace blink {
+ 
+ class VideoTrackAdapterSettings;
++namespace molt_fingerprinting {
++class UniformCameraClock;        // MoltBrowser
++class UniformCameraFrameReader;  // MoltBrowser
++}  // namespace molt_fingerprinting
+ 
+ MODULES_EXPORT BASE_DECLARE_FEATURE(kScaleFrameForGetDisplayMedia);
+ MODULES_EXPORT BASE_DECLARE_FEATURE(kMediaStreamTrackEmptyVideoFrameMonitor);
+@@ -139,6 +144,15 @@ class MODULES_EXPORT VideoTrackAdapter
+     return source_frame_size_;
+   }
+ 
++  // MoltBrowser: tests run the ticks of a MoltNet camera's grid
++  // (moltnet_camera.h) themselves, on the video task runner, and read the
++  // camera's frames the CPU can't read with `reader` on `task_runner`.
++  void SetMoltCameraManualTicksForTesting();
++  void MoltCameraTickForTesting();
++  void SetMoltCameraReaderForTesting(
++      scoped_refptr<molt_fingerprinting::UniformCameraFrameReader> reader,
++      scoped_refptr<base::SequencedTaskRunner> task_runner);
++
+  private:
+   virtual ~VideoTrackAdapter();
+   friend class ThreadSafeRefCounted<VideoTrackAdapter>;
+@@ -198,6 +212,19 @@ class MODULES_EXPORT VideoTrackAdapter
+   // and inform of the situation (muted, not muted) via |on_muted_callback_|.
+   void CheckFramesReceivedOnVideoTaskRunner();
+ 
++  // MoltBrowser: a tick of the grid a MoltNet camera's tracks get their
++  // frames on (moltnet_camera.h), and its scheduling.
++  void MoltCameraTickOnVideoTaskRunner();
++  void ScheduleMoltCameraTick(base::TimeTicks due);
++  // MoltBrowser: a MoltNet camera's frame the CPU can't read, read back on a
++  // worker for the adapters of its tracks (moltnet_camera.h), one at a time.
++  void ReadBackMoltCameraFrame(scoped_refptr<media::VideoFrame> video_frame,
++                               base::TimeTicks estimated_capture_time,
++                               bool is_device_rotated);
++  void OnMoltCameraFrameReadBack(scoped_refptr<media::VideoFrame> read_frame,
++                                 base::TimeTicks estimated_capture_time,
++                                 bool is_device_rotated);
++
+   // |thread_checker_| is bound to the main render thread.
+   SEQUENCE_CHECKER(sequence_checker_);
+ 
+@@ -241,6 +268,21 @@ class MODULES_EXPORT VideoTrackAdapter
+   // the video task runner.
+   base::TimeDelta last_frame_timestamp_;
+   base::TimeTicks last_frame_arrival_time_;
++
++  // MoltBrowser: that grid, accessed on the video task runner.
++  const std::unique_ptr<molt_fingerprinting::UniformCameraClock>
++      molt_camera_clock_;
++  // MoltBrowser: the reader of the camera's frames the CPU can't read and
++  // the worker it runs on (made on the first such frame), whether a read is
++  // under way, and the newest frame waiting for it; accessed on the video
++  // task runner.
++  scoped_refptr<molt_fingerprinting::UniformCameraFrameReader>
++      molt_camera_reader_;
++  scoped_refptr<base::SequencedTaskRunner> molt_camera_reader_task_runner_;
++  bool molt_camera_reading_ = false;
++  scoped_refptr<media::VideoFrame> molt_camera_frame_to_read_;
++  base::TimeTicks molt_camera_frame_to_read_capture_time_;
++  bool molt_camera_frame_to_read_rotated_ = false;
+ };
+ 
+ }  // namespace blink

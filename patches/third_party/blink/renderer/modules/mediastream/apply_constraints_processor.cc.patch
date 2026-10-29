@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/apply_constraints_processor.cc b/third_party/blink/renderer/modules/mediastream/apply_constraints_processor.cc
-index 3392b52fa7321bd89625c58f92689d7ea090679d..762ba1e34a9fbca4c0c063a01e591bf2eb047a6b 100644
+index 3392b52fa7321bd89625c58f92689d7ea090679d..87f91e82887d541e860cc2b6c64b8edfcf626746 100644
 --- a/third_party/blink/renderer/modules/mediastream/apply_constraints_processor.cc
 +++ b/third_party/blink/renderer/modules/mediastream/apply_constraints_processor.cc
 @@ -19,6 +19,7 @@
@@ -20,9 +20,9 @@ index 3392b52fa7321bd89625c58f92689d7ea090679d..762ba1e34a9fbca4c0c063a01e591bf2
      return;
    }
  
-+  // MoltBrowser: a MoltNet camera opened in a mode that reaches every format
-+  // it shows, so its track is reconfigured on the running source
-+  // (moltnet_camera.h).
++  // MoltBrowser: a MoltNet camera opened in a mode its every format is
++  // cropped and scaled from, so its track is reconfigured on the running
++  // source (moltnet_camera.h).
 +  if (molt_fingerprinting::UsesUniformCamera(video_source_->device().type)) {
 +    FinalizeVideoRequest();
 +    return;
@@ -36,7 +36,7 @@ index 3392b52fa7321bd89625c58f92689d7ea090679d..762ba1e34a9fbca4c0c063a01e591bf2
                  GetCurrentVideoSource()->device().video_facing)
            : mojom::blink::FacingMode::kNone;
 -  device_capabilities.formats = std::move(formats);
-+  // MoltBrowser: a MoltNet camera's formats are the menu entries it reaches
++  // MoltBrowser: a MoltNet camera's formats are the menu's entries
 +  // (moltnet_camera.h).
 +  device_capabilities.formats = molt_fingerprinting::UniformCameraFormats(
 +      formats, GetCurrentVideoSource()

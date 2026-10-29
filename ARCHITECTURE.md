@@ -88,7 +88,8 @@ MoltBrowser
  |    +-- WebUINavigationThrottle: web pages can't open chrome:// or molt://
  |    +-- trusted_binary / helper_binary: which tor/OCR/whisper may run
  |    +-- helper_sandbox: tesseract/whisper confined (Landlock + seccomp,
- |        Seatbelt, less-privileged AppContainer) with a deadline
+ |        Seatbelt, less-privileged AppContainer) with a deadline and
+ |        limits on what they write and use (helper_limits)
  |
  +-- OmniboxAI (@ai prefix; never sent to the search engine)
  |    +-- AiPromptProvider -> chrome://molt-ai/?q=...
@@ -253,6 +254,16 @@ repo/
   files it leaves are read back only if they are plain single-link files
   (no symlink or hard link out of the sandbox). Callers get `timed out` / `sandbox unavailable`
   errors in the same result structs and JSON as before.
+- Limits, the same on every OS (`helper_limits.h`, `helper_limits_watch.*`):
+  the scratch directory may grow by less than 64 MiB beyond what the
+  browser put there and gain at most 64 entries; the launcher measures it
+  (every entry's size or space taken, every fork or stream, links never
+  followed) every 10 ms while the helper runs and once more when it exits,
+  and past a limit kills it and fails the run (`was stopped: <which
+  limit>`). The helper may only create and write files there, so nothing it
+  writes leaves the directory unmeasured. Memory: 4 GiB (Linux
+  `RLIMIT_DATA`, the Windows job; on macOS the launcher checks its
+  footprint every 10 ms).
 - What the helpers read is written by the browser: an attached image (PNG,
   JPEG or WebP; a TIFF or anything else is refused with a reason) or a
   rendered page is decoded by Chromium's sandboxed data decoder, and
@@ -265,19 +276,26 @@ repo/
   `helper_sandbox_linux.*`, prepared in the parent): a new session (no
   controlling terminal), no_new_privs, Landlock (read+execute /usr, /lib,
   /lib64 and the helper's directory; read /etc, /sys/devices/system/cpu,
-  /proc/self and the policy's paths; read+write the scratch directory, which
-  can't hold symlinks or run what is written there; ABI 4+: no TCP; ABI 6+:
-  no abstract UNIX sockets, no signals out), then seccomp-bpf (x86_64,
-  aarch64; allow by default): socket() other than AF_UNIX and connect()
-  fail with EACCES; io_uring, leaving the process group (setsid/setpgid),
-  ptrace, process_vm_*, pidfd_getfd, bpf, perf_event_open, userfaultfd, the
-  keyring calls, namespaces and mounts are refused. Kernels without Landlock (before 5.13) keep the seccomp layer
-  only (files unconfined); the browser logs the layers once. A layer the
-  kernel has but that fails to apply stops the run.
+  /proc/self and the policy's paths; read the scratch directory and create,
+  write and truncate files there, nothing else (no deleting, renaming,
+  directories, symlinks or running what is written there); ABI 4+: no TCP;
+  ABI 6+: no abstract UNIX sockets, no signals out), then seccomp-bpf
+  (x86_64, aarch64; allow by default): socket() other than AF_UNIX and
+  connect() fail with EACCES; io_uring, leaving the process group
+  (setsid/setpgid), ptrace, process_vm_*, pidfd_getfd, bpf,
+  perf_event_open, userfaultfd, the keyring calls, namespaces and mounts
+  are refused, and so are other processes (threads only), fallocate(),
+  O_TMPFILE, setting extended attributes, shared anonymous memory, memfds
+  and SysV IPC; rlimits: 64 MiB per file, no core dump, 4 GiB
+  `RLIMIT_DATA`, 256 open files. Kernels
+  without Landlock (before 5.13) keep the seccomp layer only (files
+  unconfined); the browser logs the layers once. A layer the kernel has but
+  that fails to apply stops the run.
 - macOS: `/usr/bin/sandbox-exec` with a deny-by-default Seatbelt profile
   (`seatbelt_profile.*`; paths only as `-D` parameters): system libraries,
-  the helper's directory and inputs readable, scratch read-write, no
-  network, Mach lookups or IOKit. Fail-closed: without sandbox-exec, or if
+  the helper's directory and inputs readable, scratch readable and regular
+  files created and written there (no other file write), no other process,
+  no network, Mach lookups or IOKit. Fail-closed: without sandbox-exec, or if
   it can't apply the profile, the helper doesn't run.
 - Windows (`helper_sandbox_win.cc`; its decisions in the pure, tested
   `helper_sandbox_win_policy.*`): a less-privileged AppContainer per run
@@ -288,7 +306,8 @@ repo/
   4 GiB) assigned before its first instruction. It reads `ocr\` and
   `whisper\` through the capability `lpacMoltBrowserHelperFiles`, which the
   installer grants there only, and writes only its scratch directory,
-  created with a security descriptor for that run's package SID. An access
+  created with a security descriptor for that run's package SID (files
+  created and written, none deleted, no subdirectories). An access
   check simulating the AppContainer runs first: the portable ZIP has no
   installer grant, so there OCR and voice don't run and the error says
   why. Fail-closed like the others.

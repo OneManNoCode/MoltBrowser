@@ -14,6 +14,15 @@
 //   alloc MIB        commits MIB MiB: "ALLOCATED" or "FAILED <error>"
 //   env              its environment, one variable a line
 //   spin             loops until killed
+//   spread DIR N MIB writes MIB MiB to each of N files in DIR: "WROTE" or
+//                    "FAILED <error>"
+//   files DIR N      makes N empty files in DIR, then waits
+//   delete PATH      "DELETED" or "DENIED <error>"
+//   rename FROM TO   "RENAMED" or "DENIED <error>"
+//   mkdir PATH       "MADE" or "DENIED <error>"
+//   stream PATH MIB  writes MIB MiB to the stream PATH:hidden, then waits
+//   extend PATH MIB  makes PATH MIB MiB long without writing it
+//                    (SetEndOfFile), then waits
 //
 // Plain Win32 and Winsock, no //base, no user32: it loads only what the
 // helpers themselves need from Windows.
@@ -147,6 +156,94 @@ int Env() {
   return 0;
 }
 
+// Creates |path| and writes |mib| MiB to it. False (with the error printed)
+// if it can't.
+bool WriteMiB(const wchar_t* path, unsigned long mib) {
+  HANDLE file =
+      CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    PrintError("FAILED");
+    return false;
+  }
+  static char block[1024 * 1024];
+  memset(block, 'x', sizeof(block));
+  for (unsigned long i = 0; i < mib; ++i) {
+    DWORD written = 0;
+    if (!WriteFile(file, block, sizeof(block), &written, nullptr)) {
+      PrintError("FAILED");
+      CloseHandle(file);
+      return false;
+    }
+  }
+  CloseHandle(file);
+  return true;
+}
+
+int Spread(const wchar_t* dir, unsigned long count, unsigned long mib) {
+  wchar_t path[MAX_PATH];
+  for (unsigned long i = 0; i < count; ++i) {
+    swprintf(path, MAX_PATH, L"%ls\\spread%lu", dir, i);
+    if (!WriteMiB(path, mib)) {
+      return 0;
+    }
+  }
+  Print("WROTE\n");
+  return 0;
+}
+
+int Files(const wchar_t* dir, unsigned long count) {
+  wchar_t path[MAX_PATH];
+  for (unsigned long i = 0; i < count; ++i) {
+    swprintf(path, MAX_PATH, L"%ls\\file%lu", dir, i);
+    HANDLE file =
+        CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+      PrintError("FAILED");
+      return 0;
+    }
+    CloseHandle(file);
+  }
+  Print("MADE\n");
+  // Give the launcher time to look.
+  Sleep(5000);
+  return 0;
+}
+
+int Result(BOOL ok, const char* done) {
+  if (!ok) {
+    PrintError("DENIED");
+  } else {
+    Print(done);
+  }
+  return 0;
+}
+
+int Stream(const wchar_t* path, unsigned long mib) {
+  wchar_t stream[MAX_PATH];
+  swprintf(stream, MAX_PATH, L"%ls:hidden", path);
+  if (WriteMiB(stream, mib)) {
+    Print("WROTE\n");
+  }
+  Sleep(5000);
+  return 0;
+}
+
+int Extend(const wchar_t* path, unsigned long mib) {
+  HANDLE file =
+      CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+  LARGE_INTEGER size = {};
+  size.QuadPart = static_cast<LONGLONG>(mib) * 1024 * 1024;
+  if (file == INVALID_HANDLE_VALUE ||
+      !SetFilePointerEx(file, size, nullptr, FILE_BEGIN) ||
+      !SetEndOfFile(file)) {
+    PrintError("FAILED");
+  } else {
+    Print("EXTENDED\n");
+  }
+  Sleep(5000);
+  return 0;
+}
+
 }  // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -182,6 +279,30 @@ int wmain(int argc, wchar_t* argv[]) {
     for (volatile unsigned counter = 0;; counter = counter + 1) {
     }
   }
-  Print("usage: echo|read|write|connect|spawn|alloc|env|spin ...\n");
+  if (argc == 5 && wcscmp(argv[1], L"spread") == 0) {
+    return Spread(argv[2], wcstoul(argv[3], nullptr, 10),
+                  wcstoul(argv[4], nullptr, 10));
+  }
+  if (argc == 4 && wcscmp(argv[1], L"files") == 0) {
+    return Files(argv[2], wcstoul(argv[3], nullptr, 10));
+  }
+  if (argc == 3 && wcscmp(argv[1], L"delete") == 0) {
+    return Result(DeleteFileW(argv[2]), "DELETED\n");
+  }
+  if (argc == 4 && wcscmp(argv[1], L"rename") == 0) {
+    return Result(MoveFileW(argv[2], argv[3]), "RENAMED\n");
+  }
+  if (argc == 3 && wcscmp(argv[1], L"mkdir") == 0) {
+    return Result(CreateDirectoryW(argv[2], nullptr), "MADE\n");
+  }
+  if (argc == 4 && wcscmp(argv[1], L"stream") == 0) {
+    return Stream(argv[2], wcstoul(argv[3], nullptr, 10));
+  }
+  if (argc == 4 && wcscmp(argv[1], L"extend") == 0) {
+    return Extend(argv[2], wcstoul(argv[3], nullptr, 10));
+  }
+  Print(
+      "usage: echo|read|write|connect|spawn|alloc|env|spin|spread|files|"
+      "delete|rename|mkdir|stream|extend ...\n");
   return 2;
 }

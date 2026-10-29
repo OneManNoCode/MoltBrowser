@@ -24,6 +24,10 @@ bool PortableCaptureNeedsDownmix(ChannelLayout layout) {
     case CHANNEL_LAYOUT_STEREO:
     case CHANNEL_LAYOUT_DISCRETE:
     case CHANNEL_LAYOUT_BITSTREAM:
+    // Deprecated, and one media's ChannelMixer doesn't take: a device that
+    // still reported it would fail its processed streams, as at Chromium
+    // 156, rather than the process.
+    case CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC:
       return false;
     default:
       return ChannelLayoutToChannelCount(layout) > 0;

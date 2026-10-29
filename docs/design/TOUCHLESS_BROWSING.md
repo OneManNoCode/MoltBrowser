@@ -1,0 +1,392 @@
+# Touchless browsing: MoltBrowser by voice alone
+
+Status: **proposal**, October 2026. Nothing here is built yet; §11 lists the owner's decisions that come before Phase 1.
+
+The goal: a person who can't use a keyboard, mouse, touch screen or any other pointing device can use the whole browser with their voice. They hear what matters read back to them. If they have some sight, they see it large on screen.
+
+## 1. Who it is for
+
+**The person this is designed around:**
+- They have lost the use of their arms and hands, so voice is their only input.
+- They are partially sighted. Close to the screen they can read large text, and otherwise they rely on hearing.
+
+Output is therefore both:
+- **Speech:** what the browser heard, what it is doing, what it found, and the page itself when asked.
+- **A screen built for low vision:** large captions, large numbered markers on everything that can be acted on, high contrast and magnification.
+
+The same design serves many others:
+- people with ALS, spinal cord injury, cerebral palsy, multiple sclerosis, tremor or repetitive strain injury;
+- blind and low-vision people;
+- anyone whose hands are busy.
+
+Some of these users have **impaired or atypical speech**, so recognition has to adapt to them, not the other way round (§9, Phase 4).
+
+## 2. What "done" looks like
+
+The owner's example, end to end, with no hand anywhere:
+
+> **User:** "Hey Molt, open YouTube."
+> **Browser:** opens youtube.com. *"YouTube is open."*
+> **User:** "Search for Bohemian Rhapsody."
+> **Browser:** types into the site's search box and submits. *"20 results. 1: Bohemian Rhapsody, official video, Queen, 6 minutes. 2: Bohemian Rhapsody, live at Live Aid, Queen, 5 minutes. 3: ... Say a number or a name."* On screen, each result carries a large number.
+> **User:** "Play the live one by Queen." *(or "the fourth one")*
+> **Browser:** matches the words against the results' titles and channels and plays the video. *"Playing Bohemian Rhapsody, Live Aid 1985, by Queen."*
+> **User:** "Hey Molt, louder." / "Pause." / "Skip ahead one minute." / "Full screen." / "Go back."
+
+The same works when the user starts at google.com ("search Google for ..."), and on sites the browser has never seen before. On those it reads the page through the accessibility tree (§6.3).
+
+**Core tasks** each phase has to cover (§10):
+- **Go somewhere:** open a site, search, go back and forward, reload; open, close and switch tabs.
+- **Read:** read the page, read headings and links, "what's on the screen?", summarize, find text, read the selection or the item under focus.
+- **Choose:** by number, by name, by position ("the last one", "the next one"), with a readback when it's unclear.
+- **Act on a page:** press buttons, follow links, fill forms by dictation, check boxes, choose options, scroll, zoom.
+- **Media:** play, pause, volume, seek, speed, captions, full screen, next.
+- **Run the browser itself:** settings, permission prompts, downloads, dialogs, the AI chat, MoltNet windows.
+- **Recover:** "stop", "undo", "cancel", "what can I say?", "where am I?", "start over".
+
+## 3. Principles
+
+1. **Voice in; speech and screen out.** No step ever needs a pointer or a key. That includes the browser's own dialogs, permission prompts, error pages and first-run.
+2. **Every state can be left by voice.** "Stop", "cancel" and "go back" always work, and the browser never waits in silence. If it can't do something, it says why and what the user can say instead.
+3. **Fast for simple things.** Common commands are recognized by a small, fixed grammar without the language model, and start within about a second. Only open-ended requests go to the on-device planner (§6.2).
+4. **The user decides, the browser confirms.** Before anything irreversible (buying, sending, posting, deleting, sharing data), the browser reads back what it will do and waits for a spoken "yes".
+5. **Nothing leaves the device.** Wake phrase, recognition, voices and AI all run locally in sandboxed processes, like the rest of MoltBrowser's AI. No audio is stored unless the user asks.
+6. **Pages can't give commands.** Audio a page plays, or text a page shows, is never taken as the user's instruction (§7).
+7. **Works with the OS's assistive technology.** MoltBrowser's own UI stays fully accessible to screen readers and to OS voice control (Windows Voice Access, macOS Voice Control), for users who already rely on them.
+
+## 4. What MoltBrowser has today
+
+| Piece | Where | What it gives, and what's missing for touchless use |
+|---|---|---|
+| Speech to text | `molt_ai/voice/voice_service.*`: whisper.cpp's `whisper-cli` (bundled `ggml-tiny.en`), sandboxed (`helper_sandbox.h`) | Push-to-talk in the AI chat only, as one 30 s recording per request. No wake phrase, no streaming, English only. A process start per utterance is too slow for a conversation. |
+| On-device language model | `chrome/services/molt_ai/inference` (llama.cpp, sandboxed), constrained JSON decoding | Turns open-ended requests into structured actions. |
+| The web agent | `molt_ai/agents/`: element snapshot (40 labelled elements, `e1`...), actions (navigate, search, click, type, fill form, scroll, site tools), planner, vision (masked screenshots), site tools (WebMCP), `agent_safety` | The action vocabulary and its safety checks carry over. It acts through page scripts in an isolated world (`el.click()`), which don't count as a user gesture: a video won't start with sound, and full screen and some buttons refuse. |
+| Real-click gates | `molt_ai/common/molt_user_click.h` | Trust changes, the agent's Allow and MoltNet settings need a physical click. A voice user can't give one: these need a voice equivalent that is just as hard to forge (§7.3). |
+| MoltShield | `molt_ai/shield` | Removes consent banners, overlays and ads, so pages are simpler to read aloud and to choose from. |
+| Chromium 156 | `chrome/services/speech/` (`SpeechRecognitionServiceImpl`, `AudioSourceFetcherImpl`); `content::TtsController` with `TtsEngineDelegate`; `WebContents::RequestAXTreeSnapshot()`; Blink's accessibility actions | The speech recognition service is the right home for an open-source recognizer: today it runs Google's closed SODA engine, which MoltBrowser doesn't ship. Text-to-speech can take a built-in engine of ours. The accessibility tree exposes every page's structure. An accessibility "click" counts as user activation (`AXObject::OnNativeClickAction()` calls `NotifyUserActivation()`), as it does for OS assistive technology. |
+
+## 5. How it feels to use
+
+### 5.1 Listening
+
+- **States:** *off*, *waiting* (listening only for the wake phrase), *listening* (a command is being spoken), *thinking*, *speaking*. Each has a distinct sound (an "earcon") and a large on-screen indicator.
+- **Wake phrase** (default "Hey Molt"; the user can choose another). It works while a video plays: the browser removes its own sound from the microphone signal (echo cancellation with what the browser plays as the reference, §6.1), and ducks media volume while listening.
+- **Follow-up window:** after the browser answers, it keeps listening for about 8 s without the wake phrase, and as long as it is waiting for an answer to its own question. This makes "the fourth one" or "yes" natural.
+- **Always-listening mode**, for users alone at home: every utterance is a command. It is safer with speaker verification turned on (§7).
+- **Barge-in:** the user can interrupt the browser's speech ("stop", "next", or a new command).
+- **End of speech:** voice activity detection decides when the user has finished, adjusted for slower speakers.
+
+### 5.2 What the user can say
+
+Five layers, tried in this order:
+
+1. **Direct commands** in a fixed grammar, with no language model:
+   - go to, search, back, forward, reload;
+   - new, close and switch tabs;
+   - scroll, zoom;
+   - play, pause, louder, quieter, mute, skip, full screen;
+   - read, next heading, next link;
+   - stop, help, what can I say.
+   Many phrasings are accepted ("open", "go to", "take me to").
+2. **Choosing** from what is on screen:
+   - by number: "the fourth one", "number 12", "click 7";
+   - by name: "the live one by Queen", "the sign-in button";
+   - by position: "the first video", "the last link", "the one below".
+3. **Dictation** into the focused field: "type ...", "new line", "delete the last word", "read it back", "submit". Punctuation is spoken or automatic.
+4. **Tasks** in plain language, handled by the planner: "find a train from Paris to Lyon tomorrow morning", "reply to the last email from Ana saying I'll be late". Each step is spoken, with confirmation before anything irreversible.
+5. **Questions about the page:** "what does this page say about prices?", "summarize this article", "what's in this picture?" (the on-device vision model).
+
+"What can I say?" lists what fits the current page.
+
+### 5.3 Numbers on everything
+
+"Show numbers" (or on by default in voice mode) puts a large number on every link, button, field, result and video, as Windows Voice Access and macOS Voice Control do. The browser also groups the page's repeated items: search results, videos, products, emails, comments. It reads them as one numbered list, each item with its title and the parts that tell them apart (channel, author, duration, price, date).
+
+### 5.4 Speaking back
+
+- **Verbosity levels:**
+  - *brief*: confirmations and counts;
+  - *normal*: plus the top items of a list;
+  - *full*: the page read like a screen reader.
+- **Rate and voice** are adjustable by voice ("speak faster").
+- **Secrets are never read aloud:** passwords, one-time codes and card numbers ("password field, filled from your vault").
+- **Private content** (mail, messages) is read aloud only after asking whether others can hear, unless headphones are connected.
+
+### 5.5 The screen, for low vision
+
+- **A caption bar** in large type:
+  - what was heard ("Heard: play the live one by Queen");
+  - what is happening ("Playing: ...");
+  - the state.
+- **Large number markers**, and a thick focus ring around the current item.
+- **Magnification** that follows the item being read or acted on: "zoom in", "zoom out", "bigger text".
+- **High-contrast and dark themes**, and Chromium's forced colours.
+- **Reading mode:** the article alone, in large text, read aloud with the sentence highlighted.
+
+### 5.6 When things go wrong
+
+- **Unclear choices:** the browser asks ("Did you mean the official video or the live one?"), with the candidates numbered.
+- **Misheard words:** "no, I said ..." corrects the last request, and "undo" reverses the last action where the browser can.
+- **Failures:** something that fails is said plainly, with a next step ("The site wants you to prove you're human. I can switch to its audio challenge and play it; you say the answer.").
+- **Errors and crashes:** the browser reopens what was open and says so. In voice mode it never leaves the user in a silent state.
+
+## 6. Architecture
+
+```
+ microphone ──► Speech service (sandboxed utility process)
+                 echo cancellation (reference: what the browser plays)
+                 voice activity detection ─► wake phrase ─► streaming recognition
+                 [optional] speaker verification
+                       │ text + timing + confidence
+                       ▼
+ Browser process:  Voice controller
+                   ├─ Intent layer: direct-command grammar ──► action
+                   │                 └─ otherwise: on-device planner (constrained JSON)
+                   ├─ Page map: accessibility trees (page + browser UI) → numbered items
+                   ├─ Matcher: spoken reference → item (ordinal, text, sound-alike, model)
+                   ├─ Actions: accessibility actions (click, focus, set value, scroll),
+                   │           browser commands, media session
+                   ├─ Safety: agent_safety, confirmations, voice gesture (§7)
+                   └─ Output: TTS (TtsController + MoltBrowser voice) and the overlay
+```
+
+### 6.1 Speech service
+
+- **Process:** a sandboxed utility process.
+- **Chromium's speech service:** `chrome/services/speech/` already captures the microphone inside the service (`AudioSourceFetcherImpl`) and streams results over Mojo. MoltBrowser would add an open-source recognizer next to the SODA one, which it never ships.
+- **Pipeline:**
+  1. capture at 16 kHz;
+  2. echo cancellation (WebRTC's, already in MoltBrowser), with the browser's own output as the reference;
+  3. voice activity detection;
+  4. wake-phrase spotting;
+  5. streaming recognition with partial results (shown live in the caption bar);
+  6. final text with per-word confidence.
+- **Speaker verification** (optional): an on-device voice embedding enrolled from about 30 s of speech, which rejects other voices.
+- **Recognition biased toward the screen:** the names in the current page map (titles, channels, button labels) and the personal vocabulary (§6.8) are passed to the recognizer as context words. That way "Bohemian Rhapsody" is recognized as written when it is on screen.
+- **Engine:** see §9 for the choice. Model files reach the service as read-only handles, like the inference service's.
+- **A possible bonus:** the same recognizer could answer the Web Speech API (`SpeechRecognition`) for web pages locally. Today that API is unavailable or Google-backed. In MoltNet it would first need its own fingerprinting review, since a page could time the recognizer or compare its results.
+
+### 6.2 Intent layer
+
+1. **The direct-command grammar first:** a small parser, deterministic and unit-tested, with synonyms and number words. It handles most commands in milliseconds.
+2. **Choosing:** when the utterance is a choice, the matcher (§6.4) resolves it against the current page map.
+3. **Everything else goes to the planner:** the existing on-device model with constrained JSON output, given the page map and the conversation so far. It returns one action or a short plan, which is spoken and shown before it runs.
+4. **Context:** the last list the browser read, the last item chosen, and the current field. This lets "the next one", "play it again" and "read it back" work.
+
+### 6.3 Page map
+
+- **Source:** `WebContents::RequestAXTreeSnapshot()` gives the page's accessibility tree: roles, names, states, values, headings, landmarks, links and media, across frames and shadow DOM. This is the same structure screen readers use.
+- **Items:** the map numbers what can be acted on and detects repeated structures (lists of results, cards, rows) to read as one list with their distinguishing fields.
+- **The browser UI too:** the views have accessibility trees, so the browser's own bubbles, prompts, menus and settings get numbers and names.
+- **Fallback:** where the accessibility tree is poor (canvas apps, unlabeled controls), the vision model describes the screenshot (masked as today), and the existing element snapshot fills gaps.
+- **Shared with the agent:** this replaces its 40-element snapshot with a richer, more robust one.
+
+### 6.4 Matching what was said to what is on screen
+
+- **Ordinals and numbers first:** "fourth", "number four", "4", "the last".
+- **Then names:**
+  - normalized text matching of the words against each item's title and its distinguishing fields;
+  - a phonetic comparison, so recognition errors still match ("Bohemian rap city" → "Bohemian Rhapsody");
+  - artist or channel cues ("by Queen").
+- **The planner as last resort:** for descriptions ("the live one", "the shortest", "the one from 1985"), the on-device model ranks the candidates.
+- **Thresholds:** below a confidence threshold, or when two items are close, the browser asks.
+- **Tests:** every scorer is a pure function with tests built from real result lists and real recognition errors.
+
+### 6.5 Actions
+
+- **On pages:** accessibility actions (default action/click, focus, set value, scroll into view, increment and decrement). Blink treats these as user interaction, as for OS assistive technology, so media starts with sound, full screen works, and pages see a trusted click.
+- **Text entry:** set-value or the input method path, with the page's input events.
+- **Browser commands:** Chromium's command IDs (back, reload, new tab, zoom, find) and the media session for playback control.
+- **Safety:** every action still passes `agent_safety` (http(s) only, credential fields, untrusted-text fencing) and §7's confirmations.
+
+### 6.6 Speaking and showing
+
+- **Voices:**
+  - Phase 1 uses `content::TtsController` with the platform's voices (Windows SAPI/OneCore, macOS, speech-dispatcher on Linux).
+  - Phase 2 adds a bundled neural voice in the speech service, registered through `TtsEngineDelegate`, so it sounds the same on every OS.
+  - In MoltNet the voice list pages see through `speechSynthesis.getVoices()` is then the same everywhere, which closes a fingerprinting surface.
+- **The overlay:** a MoltBrowser view above the page holds the caption bar, the numbers and the focus ring. It is drawn by the browser, so pages can't read or fake it.
+
+### 6.7 Site skills
+
+- **Built in:** for the sites people use most (YouTube and other video sites, the major search engines, Wikipedia, webmail, news, maps), declarative "skills" name the search box, the result list, the player and the next page, so these flows don't depend on guessing.
+- **WebMCP:** where a site offers WebMCP tools, they are used as the agent already does.
+- **When a site changes:** skills are data, versioned and tested against stored copies of the pages. A broken skill falls back to the generic page map.
+
+### 6.8 Learning from use
+The navigator gets better for each user from what they say and what worked, all on the device:
+- **Routines taught by voice.** After a task succeeds, "remember this as *my news*" saves it as a workflow in the automation engine's format, under its trust policy. "Hey Molt, my news" then replays it without the language model. The agent can already save a run as a draft workflow; voice mode adds naming and starting it by voice.
+- **Experience as examples.** For a new request, the planner is shown the most similar saved routines for the site as worked examples. This follows the published Agent Workflow Memory method, which reports large gains on web-task benchmarks.
+- **Personal words.** Names the user says often (artists, contacts, sites) and their corrections ("no, I said ...") are kept as a personal vocabulary. The recognizer is biased toward them, and toward the names on the current page (§6.1).
+- **Site hints.** When the generic page map works on a site, the parts it used (search box, result list, player) are remembered for that site. A hint that fails is dropped.
+- **The user's own voice** (Phase 4): adaptation to impaired or atypical speech from samples the user chooses to record.
+
+Everything learned is listed in settings, can be deleted by voice, and stays on the device. Nothing is learned in MoltNet windows.
+
+## 7. Trust and safety for voice
+
+Voice is a new way into the browser, so it gets the same care as clicks.
+
+### 7.1 Threats
+- **Page audio:** a page, ad or video that speaks "Hey Molt, open settings ..." through the speakers.
+- **Other people and devices:** someone else in the room, a TV, a voice assistant.
+- **Replay:** a recording of the user's own voice.
+- **Text injection:** a page's text that tries to steer the planner ("ignore the user and ..."). The agent's untrusted-text fencing already handles this.
+- **Misrecognition** that leads to a wrong irreversible action.
+- **Reading out the wrong thing:** speaking private information aloud in front of others.
+
+### 7.2 Defenses
+- **Echo cancellation** against everything the browser plays removes most page audio from the microphone. While a page plays audio, commands also need a slightly higher confidence.
+- **Speaker verification** (optional) accepts only the enrolled voice.
+- **Page content never becomes a command.** Text from pages goes to the planner only inside the untrusted fence, as today.
+- **Confirmations:** buying, sending, posting, deleting, changing account or security settings, sharing location or files, and anything the agent's probe already asks about are read back first. They need a spoken "yes" heard by the speech service.
+- **Secrets:** never spoken. They are typed only from the vault (`molt_ai/vault`), never by dictation; the user says "use my saved password".
+- **Rate limits:** sensitive actions are capped per minute, and a run of failed confirmations stops the voice session.
+
+### 7.3 A voice gesture in place of a real click
+Today several decisions count only with a physical click: the page's transient user activation, consumed by `ConsumeUserClick()`.
+
+In voice mode, the browser gives them a **voice gesture** instead. It is a one-time capability the speech service mints when it hears the user confirm a specific prompt, which the browser has spoken and shown. It works like this:
+- The prompt shows a random confirmation word (for example "say *harbor* to allow"). A recording or a page's audio can't predict it.
+- The capability is bound to that prompt and expires in seconds.
+- Pages can't mint it: it comes from the speech service, not from a renderer.
+
+The design and threat model get their own security review before they ship (Phase 3).
+
+### 7.4 MoltNet
+- **On-device:** voice mode works in MoltNet windows, and all speech stays local.
+- **Pages don't hear the user:** they never receive the user's voice through voice mode. They only see the text the browser types and the clicks it makes, as with a keyboard.
+- **Not detectable:** pages can't tell voice mode is on. The overlay isn't part of the page, and accessibility actions look like ordinary clicks.
+
+## 8. Privacy
+
+- **Audio:** processed in memory and dropped. No recordings are kept.
+- **Transcripts:** a history of commands is off by default. If the user turns it on, it is kept locally like AI memory and can be deleted by voice.
+- **No new network traffic:** model files are downloaded like the others (pinned hashes), and nothing else.
+
+## 9. Engines and models
+
+| Need | Option | License | Notes |
+|---|---|---|---|
+| Wake phrase | sherpa-onnx keyword spotting (open vocabulary: the phrase is text, no training) | Apache-2.0 (library); models per model card | Any phrase the user chooses; English and Chinese models today. |
+| | openWakeWord | Apache-2.0 code, **non-commercial** pre-trained models (CC BY-NC-SA 4.0) | Not usable as is. |
+| Voice activity | Silero VAD (through sherpa-onnx, or in whisper.cpp) | MIT | Small; handles slow speech with tuning. |
+| Streaming recognition | sherpa-onnx streaming Zipformer transducers | Apache-2.0 | True streaming with partial results, real time on one CPU core for small models; multilingual models exist. |
+| | whisper.cpp (already bundled) | MIT | Accurate, but not streaming. Keep it for long dictation and for languages the streaming models lack. |
+| Speaker verification | sherpa-onnx speaker embeddings | Apache-2.0 | Optional. |
+| Voices | Platform voices through `TtsController` | — | Phase 1: no download; the voices differ per OS. |
+| | Kokoro-82M (through sherpa-onnx) | Apache-2.0 | 54 voices, 8 languages, 24 kHz; natural; small enough for a CPU. |
+| | Piper | GPL-3.0 (since its move to OHF-Voice; compatible with MoltBrowser's GPLv3); voices per model card | Very fast and light; many languages. |
+
+Models and open-source agents for acting on pages (checked October 2026):
+
+| Role | Option | License | Notes |
+|---|---|---|---|
+| Planner over the page map (text) | Qwen3.5-4B, Gemma 4 E4B (already in MoltBrowser's model list) | Apache-2.0 | Fast enough on a CPU with constrained JSON; the page map gives them numbered items, as browser-use does. |
+| Screenshot navigator (fallback for pages with poor accessibility) | MolmoWeb 4B and 8B (Ai2, March 2026) | Reported Apache-2.0; confirm on the model card | Strongest open web-agent model reported; open training data; screenshots only. llama.cpp support for its architecture (Molmo2) is unconfirmed. |
+| | Fara-7B (Microsoft) | MIT | Built on Qwen2.5-VL, which llama.cpp runs; reported 73.5% on WebVoyager. |
+| | UI-TARS-1.5-7B (ByteDance) | Apache-2.0 | Built on Qwen2.5-VL. |
+| Agent designs to learn from | browser-use (Python), Stagehand (TypeScript) | MIT | Numbered interactive elements; cached actions. Ideas only: neither runs inside a browser process. |
+| | BrowserOS (a Chromium fork with an agent) | AGPL-3.0 | Closest open product; not voice-first; its agent runs as a separate server and uses local model servers. Ideas only. |
+
+No maintained open-source voice-first browser exists: the voice tools for disabled users are closed (Windows Voice Access, macOS Voice Control, Talon, commercial extensions) or research prototypes. MoltBrowser's navigator is built natively: the accessibility page map, the existing agent and its safety checks, the sandboxed models, and learning from use (§6.8). The screenshot navigators are compared on the §12 task set in Phase 2.
+
+**Recommendation:** sherpa-onnx in the speech service, for the wake phrase, voice activity, streaming recognition, speaker verification and the bundled neural voice. It is one Apache-2.0 library that also runs on Android and iOS. Keep whisper.cpp for long-form dictation.
+- **What it costs:** ONNX Runtime (MIT) as a new vendored dependency, sandboxed like llama.cpp.
+- **Next step:** a measurement spike (Phase 0) confirms latency, accuracy, CPU use and binary size against whisper.cpp on the minimum hardware before the choice is final.
+- **Downloads:** model files come from the projects' GitHub releases with pinned hashes, as for the other models.
+
+## 10. Phases
+
+Rounds are this project's working rounds. Each phase ends with its exit criteria met on the build machine with real microphones, so the build machine is a prerequisite.
+
+### Phase 0: Foundations (about 2 rounds)
+- **Engine spike:** measurements of sherpa-onnx and whisper.cpp (latency, accuracy on a spoken-command test set, CPU, memory, size) on x86-64 and arm64. Recorded here, then the owner's choice (§11).
+- **Page map from the accessibility tree:** numbered items, repeated-structure detection, the browser UI's tree. Also used by the agent.
+- **Actions through accessibility actions,** including the check that media starts with sound and full screen works.
+- **Spoken output** through `TtsController`.
+- **An accessibility audit and fixes of MoltBrowser's own pages:** the chat, the agent studio, settings and the MoltNet panel.
+- **The test harness of §12.**
+
+**Exit:** a scripted run (text in, no microphone yet) opens YouTube, searches, reads the results and plays the fourth by number and by name.
+
+### Phase 1: Voice mode (about 3 to 4 rounds)
+- **Voice:** the speech service with echo cancellation, voice activity, the wake phrase and streaming recognition.
+- **Voice mode, by voice alone:** turned on and off by voice, and offered at first run. It can also start with the browser at login, so the user never needs to touch the machine after setup.
+- **Commands and choices:** the direct-command grammar, choosing by number and name, the numbers overlay, the caption bar, and the follow-up window.
+- **Media and reading:** media control, reading the page, headings and links.
+- **Sites:** skills for YouTube, Google, DuckDuckGo and Wikipedia.
+
+**Exit:**
+- The owner's song scenario and 50 scripted spoken tasks pass with at least 90% success, in a quiet room and with music playing.
+- A direct command starts acting within 1.5 s of the end of speech on the minimum hardware.
+
+### Phase 2: Conversation and tasks (about 4 to 6 rounds)
+- **Planning:** open-ended tasks through the planner, with spoken steps and confirmations.
+- **Dialog:** disambiguation, correction and undo.
+- **Forms:** dictation and form filling with the vault.
+- **Questions:** summaries and questions about pages.
+- **More site skills:** webmail, news, shopping, maps.
+- **A bundled neural voice.**
+- **Learning (§6.8):** routines saved and started by voice, personal vocabulary and corrections, site hints. A comparison of the screenshot navigators on the task set.
+
+**Exit:**
+- 30 multi-step tasks (mail, shopping cart up to the confirmation, a form) succeed without a hand.
+- Every irreversible step is confirmed.
+
+### Phase 3: Trust and the browser's own UI (about 2 to 3 rounds, partly alongside Phase 2)
+- **Voice gestures** in place of real clicks (§7.3).
+- **Speaker verification.**
+- **The defenses** against page audio and replay, with measurements.
+- **Every browser prompt and dialog operable by voice:** permissions, downloads, saved passwords, MoltNet.
+- **A security review** (red team) of the voice channel.
+
+**Exit:** no page audio or replay in the test set triggers an action, and every browser prompt is answerable by voice.
+
+### Phase 4: Low vision, languages and reach (ongoing)
+- **Low vision:** magnification that follows focus, reading mode with highlighting, contrast themes.
+- **Speech:** more languages, personal vocabulary and aliases, and adaptation for impaired speech (per-user fine-tuning or adaptation on the device).
+- **Android:** a voice-first MoltBrowser for Android, where hands-free use matters most. The same speech service and page map apply.
+
+## 11. Decisions for the owner
+
+1. **Engine:** sherpa-onnx as recommended (§9), after the Phase 0 measurements, or whisper.cpp only (no wake phrase or neural voice without more work).
+2. **The wake phrase:** "Hey Molt", or another, and whether users can change it.
+3. **Languages** for the first release (English only, or which others).
+4. **Minimum hardware** for voice mode, for example 4 cores and 8 GB of RAM, with the planner possibly slower on less.
+5. **Defaults:**
+   - Is voice mode offered at first run?
+   - Is always-listening allowed?
+   - Which verbosity is the default?
+6. **User research partners:** organizations of disabled people to co-design and test with, from Phase 1 on. This matters more than any technical choice.
+7. **Cloud services:** none, consistent with MoltBrowser's privacy promise (recommended), or an opt-in for languages the device can't do.
+
+## 12. Testing and measurement
+
+- **Synthetic speech set:**
+  - spoken commands rendered with several voices, speeds and accents;
+  - mixed with noise, music and the page's own audio at several levels;
+  - fed through Chromium's fake audio capture (`--use-file-for-fake-audio-capture`).
+  - Measured: recognition accuracy and command success.
+- **End-to-end runs** against stored copies of real result pages and players, and local fixture sites. Measured: success, latency from end of speech to action, and the time to complete each scenario.
+- **Unit tests:** the grammar, the matcher and the page-map heuristics, against real lists and real recognition errors.
+- **Security tests:** page audio that speaks commands, replayed confirmations, text injection, run on every change to the voice channel.
+- **Accessibility checks** (axe-core) on MoltBrowser's own pages in the WebUI test suite.
+- **Sessions with users with disabilities** each phase. Their success and their words decide what is next.
+
+## 13. Risks
+
+- **Latency on modest machines:** the planner is slow on a CPU, so the direct-command grammar has to cover the common cases.
+- **Recognition errors,** especially with atypical speech, accents and noise. Mitigations: confirmations, sound-alike matching, a personal vocabulary, and adaptation later on.
+- **Sites change.** Skills are data with tests, and the generic page map is the fallback.
+- **OS setup a touchless user can't do alone:** the first microphone permission, installing, and starting at login. It needs either one-time help or the OS's own voice control. MoltBrowser can then start at login with voice mode on and recover by itself after a crash.
+- **CAPTCHAs:** the browser may offer a site's audio challenge, but it doesn't solve challenges.
+- **Security:** a voice channel that acts with user activation is powerful. Phase 3's review comes before it is widely offered.
+- **Verification:** none of this can be verified without a Chromium build and real devices.
+
+## References (checked October 2026)
+- sherpa-onnx: https://github.com/k2-fsa/sherpa-onnx (keyword spotting: https://k2-fsa.github.io/sherpa/onnx/kws/)
+- Kokoro-82M: https://huggingface.co/hexgrad/Kokoro-82M
+- Piper: https://github.com/OHF-Voice/piper1-gpl
+- openWakeWord models' license: https://huggingface.co/davidscripka/openwakeword
+- whisper.cpp: https://github.com/ggml-org/whisper.cpp

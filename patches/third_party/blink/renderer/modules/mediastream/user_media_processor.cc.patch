@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
-index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b5258807d 100644
+index fea395bd22bade54c77a65bfec31e89b1d6d22a7..fe3f2723fee9747c1b92d6d43523a13b04e1f18f 100644
 --- a/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 +++ b/third_party/blink/renderer/modules/mediastream/user_media_processor.cc
 @@ -21,6 +21,7 @@
@@ -82,7 +82,21 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
      }
    }
  
-@@ -1118,6 +1140,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
+@@ -1007,8 +1029,12 @@ void UserMediaProcessor::SetupVideoInput() {
+   StreamControls* const stream_controls =
+       current_request_info_->stream_controls();
+ 
++  // MoltBrowser: never for a MoltNet camera, which has no pan, tilt or zoom
++  // (moltnet_camera.h).
+   stream_controls->request_pan_tilt_zoom_permission =
+-      IsPanTiltZoomPermissionRequested(request->VideoConstraints());
++      IsPanTiltZoomPermissionRequested(request->VideoConstraints()) &&
++      molt_fingerprinting::RequestsPanTiltZoomPermission(
++          request->VideoConstraints(), video_controls.stream_type);
+ 
+   stream_controls->request_all_screens =
+       request->MediaRequestType() == UserMediaRequestType::kAllScreensMedia;
+@@ -1118,6 +1144,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
      }
    }
  
@@ -93,7 +107,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    // Do constraints processing.
    if (ShouldDeferDeviceSettingsSelection(
            user_media_request->MediaRequestType(),
-@@ -1137,6 +1163,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
+@@ -1137,6 +1167,10 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
        return;
      }
  
@@ -104,7 +118,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
      std::vector<std::string> eligible_ids;
      eligible_ids.reserve(eligible_settings->size());
      for (const auto& settings : eligible_settings.value()) {
-@@ -1160,6 +1190,9 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
+@@ -1160,6 +1194,9 @@ void UserMediaProcessor::SelectVideoDeviceSettings(
        GetUserMediaRequestFailed(result, failed_constraint_name);
        return;
      }
@@ -114,7 +128,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
      current_request_info_->stream_controls()->video.device_ids = {
          settings.device_id()};
      current_request_info_->SetVideoCaptureSettings(
-@@ -1242,6 +1275,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
+@@ -1242,6 +1279,17 @@ void UserMediaProcessor::GenerateStreamForCurrentRequestInfo(
          *current_request_info_->request()->GetTransferId(), &result, &response);
      GotOpenDevice(current_request_info_->request_id(), result,
                    std::move(response));
@@ -132,7 +146,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    } else {
      // The browser replies to this request by invoking OnStreamsGenerated().
      GetMediaStreamDispatcherHost()->GenerateStreams(
-@@ -1384,6 +1428,18 @@ void UserMediaProcessor::OnStreamsGenerated(
+@@ -1384,6 +1432,18 @@ void UserMediaProcessor::OnStreamsGenerated(
    current_request_info_->set_state(RequestInfo::State::kGenerated);
    current_request_info_->set_pan_tilt_zoom_allowed(pan_tilt_zoom_allowed);
  
@@ -151,7 +165,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    for (const mojom::blink::StreamDevicesPtr& stream_devices :
         stream_devices_set->stream_devices) {
      MaybeLogStreamDevice(request_id, label, stream_devices->audio_device);
-@@ -1622,7 +1678,11 @@ void UserMediaProcessor::OnDeviceChanged(const MediaStreamDevice& old_device,
+@@ -1622,7 +1682,11 @@ void UserMediaProcessor::OnDeviceChanged(const MediaStreamDevice& old_device,
    }
  
    WebPlatformMediaStreamSource* const source_impl = source->GetPlatformSource();
@@ -164,12 +178,12 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    source = FindLocalSource(new_device);
    if (!source) {
      return;
-@@ -1782,7 +1842,11 @@ MediaStreamSource* UserMediaProcessor::InitializeVideoSourceObject(
+@@ -1782,7 +1846,11 @@ MediaStreamSource* UserMediaProcessor::InitializeVideoSourceObject(
        // TODO(crbug.com/704136): Change ComputeCapabilitiesForVideoSource to
        // operate over Vector.
        String::FromUtf8(device.id),
 -      ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
-+      // MoltBrowser: a MoltNet camera's from the menu formats it reaches
++      // MoltBrowser: a MoltNet camera's from the menu's formats
 +      // (moltnet_camera.h).
 +      molt_fingerprinting::UniformCameraFormats(
 +          ToStdVector(*current_request_info_->GetNativeVideoFormats(device_id)),
@@ -177,7 +191,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
        static_cast<mojom::blink::FacingMode>(device.video_facing),
        current_request_info_->is_video_device_capture(), device.group_id));
    local_sources_.push_back(source);
-@@ -1832,8 +1896,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+@@ -1832,8 +1900,14 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
            &UserMediaProcessor::OnAudioSourceStartedOnAudioThread, task_runner_,
            WrapCrossThreadWeakPersistent(this)));
  
@@ -193,7 +207,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    audio_source->SetStopCallback(BindOnce(
        &UserMediaProcessor::OnLocalSourceStopped, WrapWeakPersistent(this)));
  
-@@ -1863,7 +1933,11 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
+@@ -1863,7 +1937,11 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
  #endif  // DCHECK_IS_ON()
  
    MediaStreamSource::Capabilities capabilities;
@@ -206,13 +220,13 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    capabilities.echo_cancellation = GetSupportedEchoCancellationModes(
        device_parameters.effects(), device.type);
    capabilities.auto_gain_control = {true, false};
-@@ -2006,7 +2080,13 @@ UserMediaProcessor::CreateVideoSource(
+@@ -2006,7 +2084,13 @@ UserMediaProcessor::CreateVideoSource(
    return std::make_unique<blink::MediaStreamVideoCapturerSource>(
        frame_->GetTaskRunner(TaskType::kInternalMediaRealTime), frame_,
        std::move(stop_callback), device,
 -      current_request_info_->video_capture_settings().capture_params(),
-+      // MoltBrowser: a MoltNet camera opens in its mode that reaches every
-+      // format it shows (moltnet_camera.h).
++      // MoltBrowser: a MoltNet camera opens in its mode that reaches the
++      // menu's larger format, or its largest (moltnet_camera.h).
 +      molt_fingerprinting::UniformCameraCaptureParams(
 +          current_request_info_->video_capture_settings().capture_params(),
 +          *current_request_info_->GetNativeVideoFormats(
@@ -221,7 +235,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
        blink::BindRepeating(
            &blink::LocalVideoCapturerSource::Create,
            frame_->GetTaskRunner(blink::TaskType::kInternalMedia),
-@@ -2254,6 +2334,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
+@@ -2254,6 +2338,32 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
        "GetUserMediaRequestFailed({request_id=%d}, constraint_name=%s)",
        current_request_info_->request_id(), constraint_name.Ascii().c_str()));
  
@@ -254,7 +268,7 @@ index fea395bd22bade54c77a65bfec31e89b1d6d22a7..52699a3826ba355e08b3f8f700d65e4b
    // Completing the getUserMedia request can lead to that the RenderFrame and
    // the UserMediaClient/UserMediaProcessor are destroyed if the JavaScript
    // code request the frame to be destroyed within the scope of the callback.
-@@ -2310,10 +2416,12 @@ MediaStreamSource* UserMediaProcessor::InitializeSourceObject(
+@@ -2310,10 +2420,12 @@ MediaStreamSource* UserMediaProcessor::InitializeSourceObject(
                                             ? MediaStreamSource::kTypeAudio
                                             : MediaStreamSource::kTypeVideo;
  

@@ -137,6 +137,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   decoder can't read, are refused with a message); whisper reads only a WAV
   the browser builds from the recording's checked 16 kHz mono samples,
   within the same size limit.
+- **OCR and voice: limits on what the helpers write and use.** On every
+  platform a tesseract or whisper run may add less than 64 MiB and at most
+  64 files to its private scratch folder, and use at most 4 GiB of memory.
+  The browser checks the folder every 10 ms while the helper runs, and once
+  more when it ends; past a limit the helper is stopped, and OCR or voice
+  says which limit. The helpers may only create and write files there (not
+  delete or rename them, or make folders), so all they write is counted,
+  and start no other program on any platform; on Linux each file also
+  stops at 64 MiB and no core dump is written. A
+  helper that a malicious file takes over is stopped as soon as it passes
+  a limit, instead of writing until its deadline.
 - **macOS: OCR ships with its own libraries.** The bundled tesseract still
   pointed at the build machine's Homebrew libraries, so on other Macs it
   couldn't start (and the sandbox wouldn't let it load them anyway). The
@@ -440,6 +451,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   accepts a group-writable `--out` directory only when no other account
   can be in its group (`docs/MOLTNET_COMPLIANCE.md`,
   `docs/LEAK_TESTING.md`).
+- Hardening (security review of PR #78, `docs/SECURITY_REVIEWS.md`): in
+  MoltNet, what you sign in to a site with (HTTP authentication) and a
+  server's demand for HTTP/1.1 are kept even once other sites have filled
+  the shared network caches, in the place of an entry of the site that
+  holds the most, so the sign-in prompt doesn't come back on every
+  request; a microphone of the deprecated `STEREO_AND_KEYBOARD_MIC` layout
+  is refused for a processed stream, as in Chromium, instead of being
+  down-mixed; and the leak test kit's tests pass for a user whose primary
+  group is `users`.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
@@ -605,19 +625,29 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   microphones and outputs" and "MoltNet: subnormal floats"); regular and
   incognito windows are unchanged. The leak test kit checks these too.
 - **MoltNet's cameras show one menu of formats.** In MoltNet windows every
-  camera offers 640x480 and 1280x720 at 30 frames a second (or 640x480
-  alone, when it isn't an HD camera), never its own modes: its
-  capabilities, settings and frames are those of the menu, cropped and
-  scaled from the camera's picture. A microphone's channel count follows
-  the page's request alone, microphone arrays of four or six channels work
-  and are mixed down the same way on every processor, Web Audio's IIR
-  filters settle at zero like its other nodes, Windows' "communications"
-  output can't be selected with `setSinkId()`, and the browser, not the
-  page's process, decides when a microphone's processing runs in its
-  processor-independent mode (`docs/FINGERPRINTING.md`, "MoltNet:
-  cameras, microphones and outputs" and "MoltNet: the microphone's
-  processing"); regular and incognito windows are unchanged. The leak test
-  kit checks the camera.
+  camera offers 640x480 and 1280x720 at 30 frames a second, never its own
+  modes: its capabilities, settings and frames are those of the menu,
+  cropped and scaled from the camera's picture. A microphone's channel
+  count follows the page's request alone, microphone arrays of four or six
+  channels work and are mixed down the same way on every processor, Web
+  Audio's IIR filters settle at zero like its other nodes, Windows'
+  "communications" output can't be selected with `setSinkId()`, and the
+  browser, not the page's process, decides when a microphone's processing
+  runs in its processor-independent mode (`docs/FINGERPRINTING.md`,
+  "MoltNet: cameras, microphones and outputs" and "MoltNet: the
+  microphone's processing"); regular and incognito windows are unchanged.
+  The leak test kit checks the camera.
+- **MoltNet's cameras behave alike in every detail.** In MoltNet windows
+  a camera below 1280x720 offers both menu formats too (scaled up); a
+  camera's frames reach the page on a fixed grid of 30 a second, in one
+  colour space, so their timestamps, `requestVideoFrameCallback()` times
+  and the track's statistics follow the grid rather than the camera; they
+  carry none of the camera's own times or effect state, and frames a
+  camera delivers as GPU images are read back first; `ImageCapture`
+  answers as for a camera without controls whose photos are its frames,
+  and a page never asks to move the camera (`docs/FINGERPRINTING.md`, "A
+  camera's formats"); regular and incognito windows are unchanged. The
+  leak test kit checks the camera's `ImageCapture` and timing.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

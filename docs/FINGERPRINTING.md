@@ -2681,9 +2681,12 @@ formats of one menu, and every device a generic name:
 | A microphone track's `getSettings()`: `sampleRate`, `channelCount`, `latency` | the device's rate and buffer (48 kHz and 10 ms with processing on), one channel unless more are asked for and the device has them | **48 kHz, one channel or two when asked for, 10 ms**, whatever the device ([below](#a-microphones-format-and-names)) |
 | The `sampleRate`, `channelCount` and `latency` ranges of a microphone track's `getCapabilities()` and of `enumerateDevices()`' `InputDeviceInfo.getCapabilities()` | from the device's rate, channel count and buffer sizes | **48 kHz, one to two channels, 10 ms** for every microphone |
 | A microphone track's `channelCount` with every effect off, when the page asks for none | the device's channels (two on a stereo device) | **one**, as with processing; two when asked for |
-| A camera track's `getCapabilities()` and `enumerateDevices()`' `InputDeviceInfo.getCapabilities()`: `width`, `height`, `frameRate`, `aspectRatio` | from the device's modes: its largest size and fastest rate (a 4K webcam's 3840 by 2160, a 60 fps camera's 60) | **the menu: 640x480 and 1280x720 at 30 fps**, the entries the camera reaches ([below](#a-cameras-formats)) |
+| A camera track's `getCapabilities()` and `enumerateDevices()`' `InputDeviceInfo.getCapabilities()`: `width`, `height`, `frameRate`, `aspectRatio` | from the device's modes: its largest size and fastest rate (a 4K webcam's 3840 by 2160, a 60 fps camera's 60) | **the menu: 640x480 and 1280x720 at 30 fps**, both for every camera ([below](#a-cameras-formats)) |
 | A camera track's `getSettings()`: `width`, `height`, `frameRate`, `aspectRatio`, `resizeMode` | the device mode the constraints chose, at the device's rate | **a menu entry, or a size cropped and scaled from one**, at 30 fps or the lower rate asked for |
-| A camera track's frames (a `VideoFrame`'s `codedWidth`, `codedHeight`, `visibleRect`, `format`) | the device's own frame, with the part the track shows as its visible part | **new I420 frames of exactly the track's size** |
+| A camera track's frames (a `VideoFrame`'s `codedWidth`, `codedHeight`, `visibleRect`, `format`, `colorSpace`) | the device's own frame, with the part the track shows as its visible part, in the device's colour space | **new I420 frames of exactly the track's size**, in **BT.601 at limited range** |
+| A camera track's timing: frame timestamps, `requestVideoFrameCallback()`'s `captureTime`, the track's `stats` (`deliveredFrames`, `discardedFrames`, `totalFrames`), what WebRTC measures of its source | the camera's own rate and jitter, its own drops counted | **a grid of 30 frames a second**: timestamps n/30 s after the first, the newest frame again when the camera sent none, the camera's drops not counted |
+| A camera's `ImageCapture`: `getPhotoCapabilities()`, `getPhotoSettings()`, `takePhoto()`, and the controls it adds to a track's capabilities, settings and constraints (zoom, pan, tilt, focus, exposure, white balance, torch and the rest) | the device's controls with their ranges, its photo sizes, its own still | **a camera without controls**, photos of the track's size, `takePhoto()` a JPEG of the track's frame |
+| The pan-tilt-zoom permission prompt (`getUserMedia()` with `pan`, `tilt` or `zoom`) | shown for a camera that moves | **never** |
 | Labels once a page may see the devices (`enumerateDevices()`, a track's `label`) | the OS's names ("MacBook Pro Microphone", "Default - Headset Microphone (Jabra Evolve2 65)") | **"Default"**, or **"Microphone", "Camera" or "Speaker", a space and the device ID's first four characters** |
 | `groupId` (`enumerateDevices()`, a track's settings and capabilities) | shared by the devices of one product (a headset's microphone and earpieces) | **the device ID**: every device a group of its own |
 | Windows' `communications` device | listed with the microphones and outputs, selectable | **not listed**, not selectable; `setSinkId("communications")` is refused as for a device that isn't there |
@@ -2832,14 +2835,13 @@ asks for gives frames of its own size. In MoltNet a camera offers formats
 of one menu:
 
 * **The menu.** 640x480 and 1280x720, at 30 frames a second
-  (`moltnet::kUniformCameraMenu`). A camera shows the entries it reaches:
-  those one of its modes is at least as wide and as tall as, among its
-  modes at 30 fps (29.97 counts; all its modes when none is that fast).
-  An HD camera shows both. One whose largest mode is 640x480, or between
-  the two entries (800x600), shows 640x480 alone; one that reaches
-  neither (a 352x288 camera) shows 640x480 as well, to which its frames
-  are scaled up. What a camera shows comes from the menu alone, never
-  from its own modes.
+  (`moltnet::kUniformCameraMenu`). Every camera shows both entries,
+  whatever its modes (`moltnet::ShownUniformCameraModes()`): a camera
+  whose largest mode is 640x480, or anything below 1280x720, has its
+  frames scaled up for a 1280x720 track. What a camera shows comes from
+  the menu alone, never from its own modes, so neither from the one mode
+  another window has it open in (all the browser reports to
+  `getUserMedia()`'s selection while it is).
 * **Chromium's constraints algorithm on the menu.** `getUserMedia()` and
   `applyConstraints()` choose among the entries as among a camera's
   modes: no constraints give 640x480 at 30 fps; `{width: 1920, height:
@@ -2848,34 +2850,91 @@ of one menu:
   halves the rate; `{width: {min: 1281}}` and `{frameRate: {exact: 60}}`
   fail with `OverconstrainedError` on every camera. `getCapabilities()`
   gives width 1 to 1280, height 1 to 720, frame rate up to 30 and aspect
-  ratio 1/720 to 1280 for an HD camera, the same with 640 and 480 for the
-  others, and `InputDeviceInfo.getCapabilities()` the same ranges (its
-  frame rate from 1, as Chromium gives it).
-  `getSettings()` gives the track's size, from the start, the menu's rate
-  or the lower one asked for, and `resizeMode` "none" for an entry as it
-  is, else "crop-and-scale".
+  ratio 1/720 to 1280 for every camera, and
+  `InputDeviceInfo.getCapabilities()` the same ranges (its frame rate
+  from 1, as Chromium gives it). `getSettings()` gives the track's size,
+  from the start, the menu's rate or the lower one asked for, and
+  `resizeMode` "none" for an entry as it is, else "crop-and-scale".
 * **Frames of exactly that size.** The track adapter crops each camera
   frame to the track's aspect ratio (the largest centred part) and scales
   it, down or up, into a new I420 frame of exactly the track's size, with
   media's frame converter, whose scaler computes the same values on every
   processor in MoltNet ([pixels and encoded
   bytes](#moltnet-pixels-and-encoded-bytes)); tracks of one size share
-  the conversion. A frame that already is one goes on as it is. A frame
-  the CPU can't read (a texture that can't be mapped) is dropped. The
-  size and scale a screen capture's frames carry for the Captured Surface
-  Resolution API, which Chromium's fake camera sets to its own mode, are
-  dropped from a camera's frames.
-* **The device's own mode.** The device opens in its smallest mode that
-  reaches the largest entry the camera shows, at 30 fps or below
-  (`moltnet::UniformCameraOpenMode()`), whatever entry the track takes.
-  The adapter then only scales down (but for a camera below the menu); a
-  second `getUserMedia()` on the open camera, which Chromium answers from
-  the open mode, sees the same entries; and `applyConstraints()`
-  reconfigures the track on the running device instead of reopening it
-  in another mode.
-* **Unchanged.** `facingMode`, pan, tilt and zoom (behind their own
-  permission), the device IDs, and screen, window and tab capture
-  (refused in MoltNet).
+  the conversion. A frame that already is one, in the colour space below,
+  goes on as it is.
+* **One colour space.** Every frame carries BT.601 at limited range
+  (SMPTE 170M primaries, transfer and matrix, libyuv's I420), whatever
+  the camera's: the samples of another YUV encoding (full-range BT.601
+  from a webcam's MJPEG, BT.709 from an HD camera on macOS) are converted
+  after the crop and scale with fixed coefficients and integer arithmetic
+  (`media/base/molt_portable_color.h`), the same values on every
+  processor; a frame already in it, or without a matrix (which Chromium
+  reads as it), keeps its samples.
+* **Frames the CPU can't read.** Some cameras deliver their frames as GPU
+  images without a CPU mapping (Android's zero-copy capture, behind a
+  flag at 156; a texture virtual capture device), which Chromium hands on
+  as they are. The track adapter reads such a frame back into memory
+  first, on a worker, through the GPU context the renderer's media work
+  uses, with the helper Chromium's WebRTC encoders read such frames with
+  (`molt_fingerprinting::UniformCameraFrameReader`), one frame at a time
+  (the newest waits), then crops and scales it like any other. When a
+  camera's frames can't be read or converted at all for a second (no GPU
+  context, a read that fails, a format the converter can't take), its
+  tracks get black frames of their size until one can, rather than the
+  last picture.
+* **What a frame carries.** Of the camera frame's metadata, the capture
+  version (which orders a track's frames) and the orientation (the
+  device's rotation) only: none of the camera's times or rate, no effect
+  state (`VideoFrame.metadata()`'s `backgroundBlur`), and no size and
+  scale of a captured surface (the Captured Surface Resolution API's,
+  which Chromium's fake camera sets to its own mode).
+* **A grid of 30 frames a second.** The frames reach the tracks on a
+  grid from the source's first frame (`moltnet::UniformCameraGrid`): tick
+  n is n/30 s after it, in whole microseconds (floor(n x 10^6 / 30)).
+  Each track adapter keeps the newest frame it converted, and each tick
+  hands it on, again if the camera sent none since, with the tick's
+  timestamp, the tick's time as its capture time
+  (`requestVideoFrameCallback()`'s `captureTime`, the reference time
+  WebRTC measures) and the menu's rate. A track that asked for a lower rate keeps the ticks
+  Chromium's rate limiter keeps of a 30 fps camera and counts the others
+  as discarded; the camera's own drops don't reach the tracks, so
+  `deliveredFrames`, `discardedFrames` and `totalFrames` follow the grid.
+  A tick that runs late skips the ones it missed; after a second without
+  a camera frame the grid stops, and the next frame resumes it on the
+  same grid.
+* **The device's own mode.** The device opens in its smallest mode at 30
+  fps or below that reaches 1280x720, or in its largest such mode when
+  none does (`moltnet::UniformCameraOpenMode()`), whatever entry the
+  track takes. The adapter then only scales down (but for a camera below
+  1280x720 and the larger entry); a second `getUserMedia()` on the open
+  camera sees the same entries; and `applyConstraints()` reconfigures the
+  track on the running device instead of reopening it in another mode.
+* **`ImageCapture`.** A MoltNet camera's `ImageCapture` (a page's, and
+  the one each track keeps for its capabilities and settings) asks a
+  service in the renderer instead of the browser
+  (`modules/imagecapture/moltnet_image_capture.h`), which answers as a
+  camera without controls whose photos are its frames:
+  `getPhotoCapabilities()` gives `redEyeReduction` "never", no fill
+  light, and `imageWidth` and `imageHeight` of the track's size alone
+  (step 0, as Linux's V4L2 cameras report the stills they take from their
+  stream); `getPhotoSettings()` that size. The track's capabilities and
+  settings show none of `ImageCapture`'s members (zoom, pan, tilt, focus,
+  exposure, white balance, torch, background blur and the rest), and
+  constraints on them are refused when required (`OverconstrainedError`)
+  and ignored otherwise, as for a camera without them. `takePhoto()`
+  encodes the track's next frame (its size and colour space, on the grid)
+  as a JPEG of quality 90, off the main thread, and fails as for a
+  failing device when no frame comes within 2 s; `grabFrame()` returns
+  the track's frame, as before.
+* **No pan-tilt-zoom prompt.** A MoltNet request never asks for the
+  pan-tilt-zoom permission
+  (`molt_fingerprinting::RequestsPanTiltZoomPermission()`), whose prompt
+  names a camera that moves, and `getUserMedia()`'s selection sees every
+  MoltNet camera without pan, tilt or zoom: `{zoom: true}` gives a track like any other,
+  `{pan: {exact: 1}}` fails with `OverconstrainedError` (`pan`).
+* **Unchanged.** `facingMode`, the device IDs, and screen, window and tab
+  capture (refused in MoltNet).
 
 **Firefox.** With `privacy.resistFingerprinting` Firefox drops a
 request's constraints but the media source and the facing mode (as for a
@@ -2883,7 +2942,14 @@ microphone, above), so a camera opens in its mode closest to the default
 640x480 at 30 fps and reports it: `getSettings()` gives that mode's size
 and rate, and its facing mode as "user"; `getCapabilities()` gives the
 device's largest width, height and frame rate. MoltNet keeps the page's
-constraints, on the menu, and reports the menu.
+constraints, on the menu, and reports the menu. Firefox has no
+`ImageCapture` unless `dom.imagecapture.enabled` is set (it isn't by
+default, nor by `privacy.resistFingerprinting`), and then only the old
+`takePhoto()`, which encodes the track's frame as a JPEG when the camera
+has no photo support; nor does it know pan, tilt, zoom or the other
+camera controls as constraints. MoltNet keeps `ImageCapture`, which
+Chromium's pages expect, and gives it Firefox's answer: no controls, and
+the track's frame as the photo.
 
 **What it costs.** Chromium hands a camera's frame on without touching a
 pixel; MoltNet converts the frames of a track whose size differs from the
@@ -2893,27 +2959,42 @@ per frame from I420 (Linux's usual format; 6% of the core at 30 fps) and
 2.5 ms from NV12 (macOS's and Windows'; 7.5%); from 1920x1080, 3.6 to
 4.4 ms; a 1280x720 track from 1920x1080, 6.7 ms (20%); a frame of the
 track's size taken from NV12 or a larger buffer, 0.02 to 0.25 ms; a
-352x288 camera scaled up to 640x480, about 1 ms. An HD camera also runs
-at 1280x720 for a 640x480 track, which costs the capture its larger
-frames (an MJPEG camera's decoding).
+352x288 camera scaled up to 640x480, about 1 ms. A camera in another
+colour encoding adds 0.5 to 0.6 ms per 640x480 frame and 1.4 ms per
+1280x720 frame (2 to 4% of the core). An HD camera also runs at 1280x720
+for a 640x480 track, which costs the capture its larger frames (an MJPEG
+camera's decoding). A camera whose largest mode is 640x480 gives a
+640x480 track its own frames, and a 1280x720 track its 640x360 centre
+band (the 4:3 picture's top and bottom eighths cut) scaled up twice in
+each direction by linear interpolation: 2.8 ms per frame from I420 and
+3.3 ms from NV12 (8.5 to 10% of the core), for a picture with that band's
+detail, a quarter of an HD camera's pixels, and softer edges. Frames
+reach the tracks up to one tick (33 ms) after the camera delivers them,
+and a camera slower than 30 fps has frames repeated on the grid. A frame
+read back from the GPU costs that read, a blocking call to the GPU
+process per frame, on a worker. `ImageCapture` offers no zoom, focus or
+other control, so a page can't move a PTZ camera or set its focus, and
+`takePhoto()` gives the stream's frame, not the camera's own still.
 
 ### Which contexts
 
 Windows and their frames, the only contexts these APIs exist in, in the
 whole MoltNet renderer process. The format: every microphone stream such a
 renderer opens. The menu: every camera track `getUserMedia()` opens there,
-and its frames. The kill switch turns it off.
+its frames and its `ImageCapture`. The kill switch turns it off.
 
 ### Code
 
 | Where | What |
 |---|---|
 | `core/molt_fingerprinting/moltnet_media_values.{h,cc}` | the list rule (`ListsUniformDevice`), what a failed `getUserMedia()` reports after asking (`UserMediaFailureVerdict`), the labels and groups (`DeviceLabel`, `DeviceGroup`) and the communications device (`ListsAudioDevice`, `OutputDeviceIdToLookUp`); std-only (+ `moltnet_media_values_unittest.cc`) |
-| `core/molt_fingerprinting/moltnet_camera_values.{h,cc}` | the cameras' menu, the entries a camera shows (`ReachableUniformCameraModes`) and the mode it opens in (`UniformCameraOpenMode`); std-only (+ `moltnet_camera_values_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_camera_values.{h,cc}` | the cameras' menu, the entries a camera shows (`ShownUniformCameraModes`), the mode it opens in (`UniformCameraOpenMode`) and the grid (`UniformCameraGrid`, header-only); std-only (+ `moltnet_camera_values_unittest.cc`) |
 | `core/molt_fingerprinting/moltnet_camera_menu.{h,cc}` | those rules for Blink's modules, from the core component (`UniformCameraMenu`, `UniformCameraOpeningFor`) |
-| `modules/mediastream/moltnet_camera.{h,cc}` | the cameras' Blink glue: the formats constraints are checked against and capabilities come from (`UseUniformCameraFormats`, `UniformCameraFormats`), the track's settings and their mark in `VideoTrackAdapterSettings` (`UniformCameraSettings`), the mode the device opens in (`UniformCameraCaptureParams`), the frames (`UniformCameraFrameSize`, `AdaptUniformCameraFrame`) and `getSettings()` (`UseUniformCameraTrackSettings`) |
+| `modules/mediastream/moltnet_camera.{h,cc}` | the cameras' Blink glue: the formats constraints are checked against and capabilities come from, without pan, tilt or zoom (`UseUniformCameraFormats`, `UniformCameraFormats`), the pan-tilt-zoom permission (`RequestsPanTiltZoomPermission`), the track's settings and their mark in `VideoTrackAdapterSettings` (`UniformCameraSettings`), the mode the device opens in (`UniformCameraCaptureParams`), the frames (`UniformCameraFrameSize`, `AdaptUniformCameraFrame`, `UniformCameraFrameMetadata`), the frames the CPU can't read (`NeedsUniformCameraReadback`, `UniformCameraFrameReader`, `UniformCameraUnreadableFrame`), the grid (`UniformCameraClock`, `UniformCameraTickFrame`) and `getSettings()` (`UseUniformCameraTrackSettings`) |
+| `modules/imagecapture/moltnet_image_capture.{h,cc}` | a MoltNet camera's `ImageCapture` service: the photo state of a camera without controls, `SetPhotoOptions`, `TakePhoto` (the track's next frame as a JPEG) |
+| `media/base/molt_portable_color.{h,cc}` | the conversion to BT.601 at limited range: fixed Q14 coefficients, integer arithmetic; std-only (+ `molt_portable_color_unittest.cc`) |
 | `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` | the Blink glue: the added entries, `devicechange`, the permission request; the names and groups (`UseUniformNames`, `UniformName`, `UseUniformGroup`, `UniformGroupId`), the lists (`ListsMediaDevice`, `ListsCaptureDevice`) and `InputDeviceInfo`'s format (`UseUniformCapabilities`) (+ `moltnet_media_devices_test.cc`) |
-| `media/base/molt_portable_media.{h,cc}` | the one format: `PortableCaptureParameters()` (what pages read and constraints are checked against), `PortableCaptureOutputFormat()` (what a stream is delivered in) (+ cases in `molt_portable_media_unittest.cc`) |
+| `media/base/molt_portable_media.{h,cc}` | the one format: `PortableCaptureParameters()` (what pages read and constraints are checked against), `PortableCaptureOutputFormat()` (what a stream is delivered in); the cameras' colour space (`HasPortableCameraEncoding`, `SetPortableCameraColorSpace`, `UsePortableCameraColor`) (+ cases in `molt_portable_media_unittest.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`):
 `modules/mediastream/media_devices.cc` (`DevicesEnumerated`: an entry per
@@ -2949,6 +3030,19 @@ mark), `video_track_adapter.cc` (`CalculateDesiredSize`,
 `apply_constraints_processor.cc`, `video_track_adapter.cc`,
 `video_track_adapter_settings.{h,cc}`, `media_stream_video_track.cc`,
 `modules/mediastream/BUILD.gn` and `video_track_adapter_unittest.cc`.
+The grid, the colour and the frames the CPU can't read:
+`video_track_adapter.h` (the clock, the reader and its worker, test
+hooks; new in `src/`) and `video_track_adapter.cc`
+(`VideoFrameResolutionAdapter::DeliverFrame`, `OnFrameDropped` and the
+new `DeliverUniformCameraTick`; `DeliverFrameOnVideoTaskRunner` and the
+new `MoltCameraTickOnVideoTaskRunner`, `ReadBackMoltCameraFrame` and
+`OnMoltCameraFrameReadBack`);
+`media/base/BUILD.gn` (`molt_portable_color`). `ImageCapture` and pan,
+tilt, zoom: `modules/imagecapture/image_capture.cc` (the constructor binds
+the service), `modules/imagecapture/BUILD.gn` (the new files), and
+`user_media_processor.cc` (`SetupVideoInput`: the permission request); a
+test in `image_capture_test.cc`. New in `src/`: `image_capture.cc`,
+`modules/imagecapture/BUILD.gn`, `image_capture_test.cc`.
 
 ### Verification
 
@@ -2967,20 +3061,25 @@ those digests. Every changed C++ file, the tests included, compiles
 without errors against Chromium 156's real headers
 (`tools/compile_check`).
 
-The cameras: `moltnet_camera_values_unittest.cc` (9 tests: the menu,
-HD, VGA and smaller cameras, frame rates, portrait modes, the order of the
-modes, unusable modes, and the open mode showing the same entries)
-passes standalone with g++ (ASan/UBSan) and clang (UBSan trap,
-`-fno-exceptions`). A harness with 156's capability and frame code
+The cameras: `moltnet_camera_values_unittest.cc` (15 tests: the menu,
+HD, VGA and smaller cameras all showing both entries, a format in use
+showing the same, frame rates, portrait modes, the order of the modes,
+unusable modes, the open mode, and the grid's ticks, the camera's timing
+ignored, missed ticks, stop and resume) and
+`molt_portable_color_unittest.cc` (8 tests: the coefficients against the
+exact conversion, greys and colours of every encoding to a sample,
+blocks, strides, bad geometry, golden digests) pass standalone with g++
+(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions`). A harness with
+156's capability and frame code
 (`ComputeCapabilitiesForVideoSource`, `CalculateDesiredSize`,
 `ComputeLetterboxRect`) shows, for seven cameras (a 1080p webcam, 720p
 and 1080p laptops, a 4:3 1600x1200 camera, a VGA and a CIF camera,
 Chromium's fake device), the device's largest mode in the capabilities
 and, for a 640x480 track from a 16:9-only camera, frames with a coded
 size of 1280x720 and a visible part of 960x720; with MoltBrowser's code,
-the menu entries above and frames of 640x480. The cost above comes from a
-harness of the scaler (`media/base/molt_portable_scale.cc`) on the same
-frames.
+the menu entries above and frames of 640x480. The cost above comes from
+harnesses of the scaler (`media/base/molt_portable_scale.cc`) and the
+colour conversion on the same frames.
 
 **Needs the build machine:** `blink_unittests`
 (`MoltNetMediaDevicesTest.*`, which runs the permission request against a
@@ -2988,13 +3087,15 @@ fake permission service in a real window, `UserMediaClientTest.
 MoltNetMicrophoneHasUniformFormatAndNames`,
 `MoltNetChannelCountFollowsTheRequest`, `MoltNetCameraTrackReportsTheMenu`
 and `MoltNetApplyConstraintsKeepsTheCameraOpen`, `MoltNetCameraTest.*`,
-`MoltNetCameraValuesTest.*`, `VideoTrackAdapterTest.
-MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.
-MoltNetCamera*`, and the upstream `MediaDevices`, `UserMediaProcessor`,
+`MoltNetCameraValuesTest.*`, `VideoTrackAdapterTest.MoltNetCamera*`,
+`VideoTrackAdapterFixtureTest.MoltNetCamera*` (the grid, the frames read
+back from the GPU, black frames when none can be read, the metadata),
+`ImageCaptureTest.MoltNetCamera*`, `MoltNetImageCaptureTest.*`, and the
+upstream `ImageCapture`, `MediaDevices`, `UserMediaProcessor`,
 `UserMediaClient`, `ApplyConstraintsProcessor`, `VideoTrackAdapter`,
 `MediaStreamVideoTrack`, `MediaStreamConstraintsUtilAudio` and
 `MediaStreamConstraintsUtilVideoDevice` suites), `media_unittests`
-(`MoltPortableMediaTest.*`), `molt_ai_unittests`
+(`MoltPortableMediaTest.*`, `MoltPortableColorTest.*`), `molt_ai_unittests`
 (`MoltCpuIndependentProcessingTest.*`, `MoltNetCameraValuesTest.*`), and
 the checks in `docs/BUILD_MACHINE_CHECKLIST.md` tagged "fp-mediaclock"
 (machines with no camera or no microphone, the prompt and its three
@@ -3002,7 +3103,9 @@ answers, `devicechange`), "fp-mic3" (a real microphone of another rate, a
 mono one asked for stereo, a headset's names and groups, device selection
 by `deviceId`, Windows' communications device) and "fp-media4" (a real
 camera on each OS, a QUAD or 5.1 microphone array, `setSinkId
-("communications")` on Windows). **Automated** by
+("communications")` on Windows) and "fp-camera2" (a camera with pan,
+tilt and zoom, the frames' timing, colour and `ImageCapture` on each OS,
+frames held in GPU images). **Automated** by
 [`tools/leak_test`](LEAK_TESTING.md): the device kinds, their order and
 blank fields (`media.devices`, `media.device_order`, `media.device_blank`)
 and `getUserMedia()` before a permission, for a camera and microphone and
@@ -3016,7 +3119,13 @@ constraints and with Full HD asked for, its `InputDeviceInfo` ranges and
 a width beyond the menu (`video.camera_settings`,
 `video.camera_capabilities`, `video.camera_frame`,
 `video.camera_hd_settings`, `video.camera_hd_frame`,
-`video.camera_device_capabilities`, `video.camera_overconstrained`).
+`video.camera_device_capabilities`, `video.camera_overconstrained`), and
+for a track with no constraints its `ImageCapture`'s answers, its frames'
+timing and colour space over a second, `requestVideoFrameCallback()`'s
+metadata and a 15 fps clone's statistics (`video.camera_image_capture`,
+`video.camera_timing_on_grid`, `video.camera_timing_steps`,
+`video.camera_color_space`, `video.camera_frame_callbacks`,
+`video.camera_stats`).
 
 ## MoltNet: performance.memory
 
@@ -3954,7 +4063,11 @@ matrix for the layout, its multiply-adds in their plain C versions
 (`ScopedPortableSubnormals`): the same samples on every processor. The
 processing then runs on the down-mixed samples as on a mono or stereo
 device's. It costs 0.5 to 1.8 ns per frame on one core of a 2.1 GHz Xeon
-(against 0.3 to 0.6 ns with media's vector code).
+(against 0.3 to 0.6 ns with media's vector code). Every layout it takes is
+one `ChannelMixer` takes (31 of them, each down-mixed to one and two
+channels in a harness with Chromium 156's mixer); the deprecated
+`STEREO_AND_KEYBOARD_MIC`, which the mixer refuses, fails the stream as at
+156 (`MoltPortableMediaTest.EveryLayoutDownmixedIsOneTheMixerTakes`).
 
 **What the input is.** The processing's inputs are the microphone's signal
 and, for echo cancellation, what the browser plays on that output device,

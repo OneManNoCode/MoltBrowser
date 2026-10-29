@@ -453,7 +453,8 @@ def manifest():
             # "remote-only"'s samples while the page plays tones; the
             # camera's first frame is the device's own, with a smaller
             # visible part (Chromium's frames), where MoltNet's are exactly
-            # the track's size.
+            # the track's size; and its frames' timestamps are the device's
+            # (20 fps), not on MoltNet's grid of 30 a second.
             {'label': 'mic', 'phase': 'mic_processing', 'dsf': 1.0,
              'window': None, 'zoom_requested': 100, 'kind': 'mic',
              'target': 'moltnet',
@@ -506,7 +507,14 @@ def manifest():
                  'video.camera_device_capabilities': [
                      dict(c) for c in ex.CAMERA_DEVICE_CAPABILITIES],
                  'video.camera_overconstrained': dict(
-                     ex.CAMERA_OVERCONSTRAINED)}},
+                     ex.CAMERA_OVERCONSTRAINED),
+                 'video.camera_image_capture': dict(ex.CAMERA_IMAGE_CAPTURE),
+                 'video.camera_timing_on_grid': False,
+                 'video.camera_timing_steps': [1],
+                 'video.camera_color_space': dict(ex.CAMERA_COLOR_SPACE),
+                 'video.camera_frame_callbacks': dict(
+                     ex.CAMERA_FRAME_CALLBACKS),
+                 'video.camera_stats': dict(ex.CAMERA_STATS)}},
         ],
         'errors': [],
     }

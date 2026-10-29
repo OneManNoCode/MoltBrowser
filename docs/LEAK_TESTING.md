@@ -507,7 +507,19 @@ first frame has arrived), the first track's `getCapabilities()` ranges,
 the first frame each track hands `MediaStreamTrackProcessor` (its coded
 size, visible rectangle, display size and format), the distinct ranges of
 the cameras' `InputDeviceInfo.getCapabilities()`, and what a request for
-a width beyond the menu (`{width: {min: 1281}}`) gives.
+a width beyond the menu (`{width: {min: 1281}}`) gives. Then it opens a
+track with no constraints once more and reports its `ImageCapture`'s
+answers (`getPhotoCapabilities()` and `getPhotoSettings()`, which of
+`ImageCapture`'s members the track's capabilities and settings show, what
+a required zoom gives, and the type and size of `takePhoto()` and
+`grabFrame()`); its frames over about a second through
+`MediaStreamTrackProcessor` (whether every timestamp lies on MoltNet's
+grid of 30 a second, the steps between the frames read, in ticks, and the
+colour space); `requestVideoFrameCallback()`'s metadata for a clone in a
+`<video>` (its members, whether `mediaTime` lies on the grid and
+`captureTime` keeps its intervals to 0.25 ms, the size); and the
+statistics of a clone at 15 fps over a second (frames neither delivered
+nor discarded, and whether it discarded as many as it delivered).
 
 | Key | Must |
 |---|---|
@@ -530,6 +542,12 @@ a width beyond the menu (`{width: {min: 1281}}`) gives.
 | `video.camera_hd_frame` | be a 1280x720 I420 frame with nothing around it |
 | `video.camera_device_capabilities` | list one set of ranges for every camera, as `video.camera_capabilities` with the frame rate from 1 |
 | `video.camera_overconstrained` | be `OverconstrainedError` for `width` |
+| `video.camera_image_capture` | be a camera without controls: `redEyeReduction` `never`, no fill light, photos of 640 by 480 only (step 0), no `ImageCapture` member in the track's capabilities or settings, a required zoom refused (`OverconstrainedError` for `zoom`), `takePhoto()` a 640x480 JPEG and `grabFrame()` a 640x480 bitmap (the fake device has zoom, focus, exposure, white balance and more, and takes PNG photos) |
+| `video.camera_timing_on_grid` | be true: every timestamp n/30 s after the source's first frame, in whole microseconds (the fake device runs at 20 fps) |
+| `video.camera_timing_steps` | be one tick, or one and two (a page that reads late) |
+| `video.camera_color_space` | be BT.601 at limited range: `smpte170m` primaries, transfer and matrix, `fullRange` false |
+| `video.camera_frame_callbacks` | have the members `captureTime`, `expectedDisplayTime`, `height`, `mediaTime`, `presentationTime`, `presentedFrames` and `width` (no `receiveTime` or `rtpTimestamp`), `mediaTime` on the grid, `captureTime` keeping its intervals, and 640x480 |
+| `video.camera_stats` | drop no frame, and discard as many as it delivers at 15 fps (within two) |
 
 The default echo cancellation during the playback (`audio.mic_playback`)
 is recorded, not compared: its echo canceller adapts to the timing
@@ -547,7 +565,8 @@ reports `silent`. A regular window (`--target regular`) records the same
 values for comparison: there they differ between CPUs with and without AVX2,
 and the capabilities and `"all"`'s processing between OSes; its camera
 shows the fake device's own modes (3840x2160 at 20 fps, frames of the
-device mode's size) and grants the larger width.
+device mode's size) and grants the larger width, and its `ImageCapture`
+the fake device's controls and photos, with frames at the device's rate.
 The first run on the build machine is also the probe's first test.
 
 A regular-window fingerprint is recorded as a control. The report lists the

@@ -655,6 +655,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `net/base/molt_site_share_policy.h` (new, std-only, in `//net:molt_policies`), `net/base/molt_network_key_site.h`, `net/base/molt_site_lru_cache.h` (new, header-only, in `//net`'s `sources`), `net/socket/molt_connection_budget.h` | `MoltSiteLRU<Base, SiteOfKey>` derives from `base::LRUCache<K, V>` or `base::LRUCacheSet<K>` (`using Base::Base;`; `Base::NO_AUTO_EVICT`, `Base::Swap()`, `Peek()`, `rbegin()`/`rend()`) and hides `Get()` (a template, as the base's), `Put(value_type&&)`, `Put(K&&, V&&)`, `Erase(iterator)`, `Erase(reverse_iterator)`, `Clear()`, `Swap(Base&)`, `ShrinkToSize()`, `UpdateMaxSize()` and `max_size()`; without shares each calls the base's. `MoltSiteOfNetworkKey()` takes `NetworkAnonymizationKey` or `NetworkIsolationKey` (`GetTopFrameSite()`, `SchemefulSite::MoltGetTupleOrPrecursorTupleIfOpaque()`); `MoltBudgetSiteFor()` now calls it (`MoltBudgetSite` is the same `std::optional<SchemefulSite>`) | moltnet-shared11 |
 | `net/ssl/ssl_client_session_cache.{h,cc}`, `net/http/http_server_properties.{h,cc}`, `net/http/http_auth_cache.{h,cc}`, `services/network/cors/preflight_cache.{h,cc}`, `preflight_controller.{h,cc}`, `services/network/shared_dictionary/shared_dictionary_manager.{h,cc}`, `shared_dictionary_manager_in_memory.{h,cc}` (the dictionary files new upstream copies), `services/network/network_context.cc` | MoltNet's per-site shares: `SSLClientSessionCache::cache_` is a `MoltSiteLRU<base::LRUCache<Key, Entry>, MoltKeySite>` (`Insert()` returns early when `MoltMakeRoomFor()` refuses; `OnUpdateMemoryLimit()`/`OnReleaseMemory()` return early with shares); `ServerInfoMap` derives from `MoltServerInfoMapBase` (`GetOrPut()` may return `end()` with shares, and `SetSupportsSpdy()`, `SetAlternativeServicesInternal()` and `SetServerNetworkStatsInternal()` return on it) and `servers_requiring_http_11_` is a `MoltSiteLRU<base::LRUCacheSet<ServerInfoMapKey>, ...>` (`SetHTTP11RequiredInternal()` builds the key first); `HttpAuthCache::Add()` may return null with shares (`HttpAuthController` and `NetworkContext::AddAuthCacheEntry()` ignore the result; `CopyProxyEntriesFrom()` skips an entry not kept) and skips the global eviction; `PreflightCache` keeps a `std::unique_ptr<net::MoltSiteShares<...>>` updated in `AppendEntry()`, `CheckIfRequestCanSkipPreflight()`, `ClearCache()` and `MoltClearForNonce()` (its `std::erase_if` lambda now captures `this`), and `MayPurge()` returns early with it; `SharedDictionaryManager::cached_storages_` is a `MoltSiteLRU` keyed by `SharedDictionaryIsolationKey::top_frame_site()`, `GetStorage()` returns before the memory-limit branch with shares and `OnReleaseMemory()` returns early; `SharedDictionaryManagerInMemory::SetCacheMaxSize()`, `MaybeRunCacheEvictionPerSite()` (to the new private `MoltRunCacheEvictionForSite()`, which reuses the file's `DictionaryReference`, `LastUsedTimeLess` and `EvictionCandidate`) and `MaybeRunCacheEviction()` follow `MoltKeepsPerSiteShares()`. `NetworkContext`'s constructor calls `MoltKeepPerSiteShares()` on the dictionary manager (if any) and `cors_preflight_controller_`, and `MakeURLRequestContext()` on `GetSession()->ssl_client_context()->ssl_client_session_cache()`, `http_auth_cache()` and `http_server_properties()` (it now includes `net/http/http_auth_cache.h` and `net/ssl/ssl_client_session_cache.h`). `http_server_properties.h` and `ssl_client_session_cache.h` are widely included in `//net` | moltnet-shared11 |
 | `services/network/network_context.cc`, `net/http/broken_alternative_services.{h,cc}` (new upstream copies), `net/http/http_server_properties.cc` | `MakeURLRequestContext()` sets `is_quic_force_disabled` for `molt_no_quic` before `network_session_configurator::ParseCommandLineAndFieldTrials()`; `BrokenAlternativeServices::MoltClearForNonce()` (the list, the map, `RecentlyBrokenAlternativeServices::Erase(iterator)` and `std::erase_if` on the `std::set`; the header includes `base/unguessable_token.h`, the `.cc` `<set>`), called by `HttpServerProperties::MoltClearForNonce()` | moltnet-shared11 |
+| `net/base/molt_site_share_policy.h`, `net/base/molt_site_lru_cache.h`, `net/http/http_auth_cache.{h,cc}`, `net/http/http_server_properties.{h,cc}` | MoltNet's per-site shares, an entry a cache must keep: `MoltSiteShareTakesFromLargest(limits, site_holds, largest_holds, all_hold)` (`constexpr`, std-only); `MoltSiteShares` gains `NextToEvictToKeep()` (a pass over its `std::map` of sites) and a `uint64_t use` in each entry's `Place` with a counter `uses_` (`<cstdint>` was already included); `MoltSiteLRU` gains `MoltMakeRoomToKeep()` and a private `MoltMakeRoom(const key_type&, bool)` that `MoltMakeRoomFor()` now calls; `SetHTTP11RequiredInternal()` calls `MoltMakeRoomToKeep()`; `HttpAuthCache::MoltMakeRoomFor()` builds a `std::map<MoltNetworkKeySite, Held>` (`Held`: a local struct with a `size_t` and an `EntryMap::iterator`; `<map>` was already included), finds the other site holding the most (skipping its own iterator) and erases that site's least recently used entry when `MoltSiteShareTakesFromLargest()` (a `MoltSiteShareLimits` and three `size_t`) says so | redteam8 |
 
 ### 4.3 Translate (page translation on the device)
 
@@ -698,6 +699,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | document parser PDF rendering | PDFium config `version = 4`, `gfx::PNGCodec::Encode` with BGRA, spans and `base::U32FromBigEndian` | #18 |
 | `molt_ai/common/helper_sandbox_*` (Landlock and seccomp, Seatbelt, job object) | type-checked against 156's headers on Linux and Windows (clang-cl), the POSIX part for the Mac too, on Apple framework stand-ins (round 28) | #16 |
 | `molt_ai/common/helper_sandbox_win.cc` (the helpers' LPAC launch), `helper_sandbox_test_helper_win.cc` (a test `executable`), `ocr/ocr_service.cc` (the data decoder, Skia) | new deps: `//sandbox/win:sandbox` (its `AppContainerBase`, `StartupInformationHelper`, `Job`) from `chrome/browser`, `//services/data_decoder/public/cpp` and `//skia` from `molt_ai/ocr`; type-checked with clang-cl and for Linux and the Mac (round 33); `-Wunsafe-buffer-usage` isn't modelled by the compile check | helpers-win |
+| `molt_ai/common/helper_limits.cc`, `helper_limits_posix.cc`, `helper_limits_win.cc`, `helper_limits_watch.cc` (measuring a helper's scratch directory every 10 ms), `helper_sandbox_test_helper_posix.cc` (a test `executable`, now also on Linux and the Mac) | the Mac branches: `getattrlistat()` with `ATTR_FILE_TOTALSIZE \| ATTR_FILE_ALLOCSIZE` (`<sys/attr.h>`), `proc_pid_rusage(RUSAGE_INFO_V2)` (`<libproc.h>`), `F_PREALLOCATE`; Windows: `GetFileInformationByHandleEx(FileStreamInfo / FileStandardInfo / FileBasicInfo)`, `FindFirstFileExW(FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH)`, `base::byte_span_from_ref(...).first(n).copy_from()`; the Linux seccomp program's new `BPF_ALU \| BPF_AND` rule and the syscall numbers past the sysroot (`openat2` 437, `memfd_secret` 447, `setxattrat` 463); type-checked on all three (round 35); `-Wunsafe-buffer-usage` isn't modelled by the compile check (the harness built the POSIX code with it) | helpers-limits |
 | `third_party/llama_cpp:mtmd` (exception and CFI configs), `:llama_guard` (a TU built with exceptions), `:constrained_decoding` deps | | #30, #38, #52 |
 | `runtime/model_image_prep.cc` (real Skia, the data decoder), `molt_model_impl.cc`, `molt_inference_service.cc` (syntax-checked only) | | #38 |
 | `embedding_process_host`, `runtime:embedding_host`, `models:download` | | #28 |
@@ -737,6 +739,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | Blink's `platform/mediastream/media_stream_audio_processor_options.cc` (new upstream copy: `IsSystemWideAecAvailable`, `GetPreferredAec`, `GetSystemWideAec`), `modules/mediastream/user_media_processor.cc` (`SelectAudioDeviceSettings`, `InitializeAudioSourceObject`), `media_devices.cc` (`DevicesEnumerated`); `services/audio/reference_output.h`, `audio_processor_handler.{h,cc}`, `output_device_mixer_impl.{h,cc}`, `mixing_graph_impl.cc` (new upstream copies); `media/base/molt_portable_media.{h,cc}`, `vector_math.cc` (`FMAC`), `sinc_resampler.cc` (`Resample`, the kernel); `ui/gfx/geometry/molt_math.{h,cc}` (`PortableSin`, `PortableCos`) | Blink's `platform/mediastream` and `modules/mediastream` call `media::IsPortableMediaProcess()` and `media::PortableCaptureEffects()` (a new `MEDIA_EXPORT` function; `+media/base` is allowed in both); `media::ScopedPortableAudioThread` and `IsPortableAudioThread()` are `MEDIA_EXPORT` over a `constinit thread_local bool` in `molt_portable_media.cc` (media is a component); `ReferenceOutput::Listener::IsCpuIndependent()` is a new virtual with a default, so the services tests' mocks keep compiling (`AudioProcessorHandler` overrides it `final`); the default is defined out of line in `output_device_mixer_impl.cc` (`reference_output.h` has no `.cc`, and the style plugin refuses inline virtual bodies), which makes it `Listener`'s key function: its vtable is emitted there, and every `Listener` (all in the Chromium-wide echo cancellation sources and their tests) links with that file; `OutputDeviceMixerImpl` holds a `std::unique_ptr` to a nested class defined in the `.cc` (its destructor is out of line there) and a `std::atomic<int>`, and its output stream now plays through that class (`PortableMixing`, an `AudioSourceCallback`); `MixingGraphImpl::CreateConverter` opens a scope while the converter is built; `SincResampler::Resample` picks its `ConvolveProc` per call | fp-mic2 |
 | Subnormals: `media/base/molt_portable_subnormals.cc` (new, in `//media/base`), `molt_portable_media.h`, `sinc_resampler.cc`, `media/filters/audio_renderer_algorithm.cc`, `services/audio/sync_mixing_graph_input.cc` (new upstream copies), `output_device_mixer_impl.cc`, Blink's `platform/audio/denormal_disabler.h` and `platform/audio/DEPS`, `modules/webaudio/audio_handler.cc` (new upstream copies), `platform/image-decoders/avif/avif_image_decoder.cc`, WebRTC's `rtc_base/cpu_info.{h,cc}` and `modules/audio_processing/audio_processing_impl.{h,cc}`. The format and names: `media/base/audio_processing.h`, `media/webrtc/audio_processor.cc`, `modules/mediastream/media_stream_constraints_util_audio.cc` (new upstream copies), `user_media_processor.cc`, `media_devices.cc`, `user_media_client_test.cc`, `core/molt_fingerprinting/moltnet_media_devices.{h,cc}` and `moltnet_media_values.{h,cc}`, `core/molt_fingerprinting/DEPS`. The platform: `media/audio/pulse/pulse_input.cc`, `pulse.sigs`, `media/audio/BUILD.gn`, `media/audio/win/audio_low_latency_input_win.cc` (new upstream copies), `media/audio/pulse/molt_capture_source.{h,cc}` and `molt_pulse_capture.{h,cc}` (new) | `denormal_disabler.h` now includes `media/base/molt_portable_media.h` (`+media/base/molt_portable_media.h` in `platform/audio/DEPS`), so much of Blink's audio rebuilds; its MSVC branch (`_DN_SAVE` in MoltNet) compiles only with MSVC's own headers. `ScopedPortableSubnormals` reads and writes MXCSR (`_mm_getcsr`) on x86 and FPCR or FPSCR with inline `mrs`/`msr` (`vmrs`/`vmsr`) on Arm, a no-op elsewhere; `ScopedCpuIndependent` does the same inside WebRTC. `AudioProcessingImpl` has six new members guarded by its two mutexes. `pulse.sigs` gained `pa_context_get_source_output_info_list`: the stub generator (`libpulse_stubs`, `link_pulseaudio = false`) must take it, and `molt_pulse_capture.cc` includes `pulse_stubs.h` under `DLOPEN_PULSEAUDIO` as `pulse_util.cc` does; the two new Pulse files are in `media/audio:audio`'s `use_pulseaudio` sources, the test in `media/audio:unit_tests`. `audio_low_latency_input_win.cc` compiles on Windows only. `core/molt_fingerprinting/moltnet_media_devices.cc` includes `media/base/audio_parameters.h` (a file-specific DEPS rule) and the blink mojom `media_devices.mojom-blink.h`; `user_media_client_test.cc` includes the generated `v8_long_range.h` and `v8_double_range.h` | fp-mic3 |
 | Cameras: `modules/mediastream/moltnet_camera.{h,cc}` (new, listed in `modules/mediastream/BUILD.gn`, a new upstream copy), `core/molt_fingerprinting/moltnet_camera_values.{h,cc}` (new, in `:farbling`), `moltnet_camera_menu.{h,cc}` (new, in the core component's `build.gni`), and the new upstream copies `video_track_adapter_settings.{h,cc}`, `video_track_adapter.cc`, `media_stream_video_track.cc`, `apply_constraints_processor.cc` and `video_track_adapter_unittest.cc`; `user_media_processor.cc`, `media_devices.cc`, `user_media_client_test.cc`. The channel count: `media_stream_constraints_util_audio.cc`. Outputs: `modules/audio_output_devices/html_media_element_audio_output_device.cc`, `modules/webaudio/audio_context.cc`, `core/molt_fingerprinting/moltnet_media_{devices,values}.{h,cc}`. `IIRFilterNode`: `platform/audio/iir_filter.cc`. Other layouts: `media/base/molt_portable_downmix.cc` (new, in `//media/base`), `molt_portable_media.h`, `media/webrtc/audio_processor.cc` | `VideoTrackAdapterSettings` has two new `bool` members, compared in `operator==` (every adapter of every track rebuilds). `VideoTrackAdapter`'s `AdaptFrameResolution` returns `molt_fingerprinting::AdaptUniformCameraFrame()`'s `base::expected` and hands it the resolution adapter's own `frame_pool_` and `frame_converter_` (members of a class private to the `.cc`). `moltnet_camera.cc` uses `media::VideoFrameConverter`, `media::VideoFramePool`, `media::ConvertToMemoryMappedFrame` and `media::ComputeLetterboxRegion` (modules' `+media/base` rule), `WebMediaStreamTrack::kResizeModeNone`/`kResizeModeRescale` as `String`, and reaches `:farbling`'s camera functions only through `moltnet_camera_menu.h` (`CORE_EXPORT`; `:farbling` exports nothing from the core component), which passes them `std::span` over `WTF::Vector` storage. The `VideoCaptureSettings` it rebuilds keep the selection's (virtual) capture format, so the constructor's DCHECKs hold; the source gets the device mode in `CreateVideoSource` only. `iir_filter.cc` includes `media/base/molt_portable_media.h` (Blink platform's audio already does, `platform/audio/DEPS`). `audio_processor.cc`: `AudioProcessorCaptureFifo` takes a `std::unique_ptr<PortableCaptureDownmix>`; `molt_portable_media.h` now includes `channel_layout.h` and forward-declares `ChannelMixer` | fp-media4 |
+| Cameras, round 35: `modules/imagecapture/moltnet_image_capture.{h,cc}` (new, in `modules/imagecapture/BUILD.gn`, a new upstream copy), `media/base/molt_portable_color.{h,cc}` (new, in `//media/base`) and the new upstream copies `video_track_adapter.h`, `modules/imagecapture/image_capture.cc` and `image_capture_test.cc`; `moltnet_camera.{h,cc}`, `video_track_adapter.cc`, `user_media_processor.cc`, `apply_constraints_processor.cc`, `media_devices.cc`, `molt_portable_media.{h,cc}`, `moltnet_camera_values.{h,cc}`, the tests in `video_track_adapter_unittest.cc` and `user_media_client_test.cc` | `ImageCapture`'s constructor binds its `HeapMojoRemote` to a `mojo::MakeSelfOwnedReceiver` of the renderer's own `media::mojom::blink::ImageCapture` (`moltnet_image_capture.cc`), whose `TakePhoto` adds a `MediaStreamVideoSink` to the track and encodes on `worker_pool` with libyuv and `ImageEncoder` (Skia's JPEG encoder); `modules/imagecapture:imagecapture` lists the new files and depends on libyuv. `VideoTrackAdapter` owns a `UniformCameraClock` (a `std::unique_ptr` of a type forward-declared in the header) and a `scoped_refptr` to a `UniformCameraFrameReader` (a `ThreadSafeRefCounted` with a virtual destructor), posts delayed ticks to its video task runner with `PostDelayedCrossThreadTask` and reads frames back on a `worker_pool::CreateSequencedTaskRunner` with `base::MayBlock()` and `base::WithBaseSyncPrimitives()`; the reader calls `WebRtcVideoFrameAdapter::SharedResources::Create(nullptr)` and `ConstructVideoFrameFromTexture()` (`platform/webrtc`, exported). `VideoFrameResolutionAdapter` (private to the `.cc`) gains members and `DeliverUniformCameraTick`. `molt_portable_color.cc` is std-only; the colour glue in `molt_portable_media.cc` uses `gfx::ColorSpace` (`ToSkYUVColorSpace`'s mapping) and writes the frame's planes (`GetWritableVisiblePlaneData`). The tests use `base::TestSimpleTaskRunner`, `gpu::ClientSharedImage::CreateForTesting` (through `CreateTestFrame`) and gmock's `ElementsAre` | fp-camera2 |
 
 ### 4.8 WebUI handlers and the agents
 
@@ -932,6 +935,14 @@ Still worth knowing from earlier rounds:
   and its `BUILD.gn` `moltnet_camera_values.{h,cc}` in `:farbling` (its
   test in `:unit_tests`); `media/base/BUILD.gn` lists
   `molt_portable_downmix.cc`.
+- helpers-limits: `//chrome/browser/molt_ai/common:helper_limits` (new
+  source_set: `helper_limits.{h,cc}`, `helper_limits_posix.cc`, and on
+  Windows `helper_limits_win.cc` with a dep on `//base`), a public dep of
+  `:helper_sandbox_linux` and a dep of `:helper_sandbox` (which lists
+  `helper_limits_watch.{h,cc}`) and `:unit_tests` (which lists
+  `helper_limits_unittest.cc`); `:molt_helper_sandbox_test_helper` now
+  builds on Linux and the Mac too (`helper_sandbox_test_helper_posix.cc`),
+  a `data_deps` of `:unit_tests` there as on Windows.
 
 ### 4.10 MoltNet's Incognito protections (`molt_net_incognito_parity.h`)
 
@@ -1004,6 +1015,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `InferenceProcessHostTest` (crash mid-stream, hang, flood, bad UTF-8, the projector handle, GPU fallback, `kBackendFailed` off the GPU) | #15, #38, #52, #53 |
   | `HelperSandboxTest`, `HelperSandboxLinuxTest`, `SeatbeltProfileTest` | #16 |
   | `HelperSandboxWinPolicyTest` (every platform: the capability SID from its name, the SDDL, the attribute list, the mitigations), `HelperScratchDirTest`, `RecordedWavTest`, `OcrImageTest`, `OcrImageFileTest` (a fake data decoder service over real Mojo pipes, since the binary doesn't start Blink: the decode's limits, a hung or crashed decoder; the PNM written from a decoded bitmap), and `OcrRenderedPagesTest`, `RenderAndOcrPdfTest` (now asynchronous); on Windows (deferred) `HelperSandboxWinTest`, `HelperSandboxWinOutputTest` (§7.5) | helpers-win |
+  | `HelperLimitsTest`, `HelperLimitsWatchTest` (every platform: measuring a scratch directory, links never followed, the limits; the Mac: a resource fork counts; Windows: every stream, a file still open for writing, paths past `MAX_PATH`), `HelperSandboxLimitsTest` (Linux and the Mac, with `molt_helper_sandbox_test_helper` next to the binary: a helper writing too much or making too many files is stopped and the run says which limit; it can't delete, rename, make directories, symlinks or extended attributes, or `fork()`; Linux: its rlimits, `RLIMIT_DATA`, and no shared memory, `fallocate()` or `O_TMPFILE`, and a scratch directory it locked (chmod 000) is still deleted; the Mac: `F_PREALLOCATE` and a resource fork are counted, and a helper past 4 GiB of memory is stopped, which touches up to 4 GiB once), `HelperSandboxLinuxLimitsTest`, `HelperSandboxLinuxTest.SeccompKeepsWritesAndMemoryCounted` and its threads-only `clone()` verdicts, the new `HelperSandboxWinTest` cases (§7.5) | helpers-limits |
   | `OcrRenderedPagesTest`, `RenderAndOcrPdfTest`, `PdfPageImageSizeTest` | #18 |
   | `MoltNetContentSettingsTest` (real `HostContentSettingsMap`), `MoltNetPrefServiceTest`, `MoltNetIsolationTest` | #21 |
   | `MoltNetWebRtcBindersTest` (real mojo), `MoltNetRefusingP2PSocketManagerTest` | #22 |
@@ -1052,10 +1064,13 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltNetNonceCookiePolicyTest` (new, 7: the limits, a partition's and a nonce's totals, a refused nonce, no room left by the other partitions, records gone when empty), `MoltNetNonceDropPolicyTest` (new, 3), `MoltNetNonceStoragePolicyTest` (new cases: `AGroupsKeysAreBounded`, `AGroupClosedPastItsOwnBound`, `ANonceSharedBySuccessivePages`), `MoltNetOneKeyDeletionTest` (new cases: `ATimeRangeReadsItsOwnKeysBuckets`, `AResponseWithNoDocumentNamesItsOwnKey`; `OtherDeletionsReadTheWholePartition` changed), `MoltNetNetworkContextPolicyTest` (`molt_nonce_limits` for MoltNet only); the policy suites built standalone here, `MoltNetNetworkContextPolicyTest` (real mojom parameters) needs the build | moltnet-shared10 |
   | `MoltNetOneKeyDeletionTest` (new case: `AnotherSitesRequestNamesItsPartition`; `AResponseWithNoDocumentNamesItsOwnKey` changed; built standalone here). In `media_unittests` on Linux (§5.2, fp-mic3's row) `MoltPulseCaptureSourceTest` has new cases `NeverGuessesAnotherDevice` and `RecordsVirtualMicrophonesAsAsked` and a changed `LoopsEnd` | redteam7 |
   | `MoltNetSiteSharesTest` (new, 13: the limits and decisions, a site evicting its own least recently used, a greedy site never evicting another's, the record, records gone with the last entry, the dictionaries' check, and `MoltSiteLRU` over `base::LRUCache` and `base::LRUCacheSet`: the base's behaviour without shares, each site's share with them, no eviction of its own, the record through `Erase()`, `Clear()` and `Swap()`), `MoltNetNonceCookiePolicyTest` (new cases: a partition without a nonce's totals and purge, cookies held before the limits), `MoltNetNonceStoragePolicyTest` (new: `RefusalsForAContextMadeAgain`, `RefusalsFollowTheSteps`), `MoltNetNetworkContextPolicyTest` (`molt_per_site_network_caches` and `molt_no_quic` for MoltNet only, no `molt_refused_nonces` without the browser's record); all but the last built standalone here (`MoltSiteLRU` against Chromium 156's `lru_cache.h`, the memory coordinator stood in); needing the build: `MoltNetSiteSharesTlsTest.*`, `MoltNetSiteSharesAuthTest.*`, `MoltNetSiteSharesServerPropertiesTest.*`, `MoltNetSiteSharesPreflightTest.*` (Chromium's real `SSLClientSessionCache`, also under `base::TestMemoryConsumerRegistry`'s memory pressure, `HttpAuthCache`, `HttpServerProperties` with a nonce's broken marks, and `PreflightCache`, each with and without shares; the preflight case without shares expects Chromium's random purge to reach one of five entries, which fails by chance with a probability of about 1e-12) | moltnet-shared11 |
+  | `MoltNetSiteSharesTest` (new cases: `AnEntryToKeepTakesTheLargestSitesPlace`, `ASiteKeepsUpToAFairShare`, `TheContainerKeepsAnEntryItMustKeep`; `TheDecisions` changed; built standalone here, 16 pass); needing the build: `MoltNetSiteSharesAuthTest.AGreedySiteEvictsOnlyItsOwnEntries` (changed: past the total, later sites' sign-ins are kept, a site keeps three of its own, and the polite site keeps its own), `MoltNetSiteSharesServerPropertiesTest.AnHttp11DemandIsAlwaysKept` (new) | redteam8 |
+  | In `media_unittests`: `MoltPortableMediaTest.EveryLayoutDownmixedIsOneTheMixerTakes` (new: each of the 31 layouts the down-mix takes made into a `ChannelMixer` and down-mixed to one and two channels) and `PortableCaptureNeedsDownmix` (changed: not the deprecated `STEREO_AND_KEYBOARD_MIC`); built here with Chromium 156's mixer in a harness | redteam8 |
   | `MoltNetCpuPolicyTest.*` (the requirement on x86-64, arm64 and other architectures, the sentence), `MoltNetCpuErrorTest.*` (what `base::CPU` reports; on a build machine with SSE4.1, and on every arm64 one, the sentence is empty, so a failure there means MoltNet would refuse to open) | fp-arch |
   | `MoltCpuIndependentProcessingTest.*` (WebRTC's audio processing in CPU-independent mode through `CreateWebRtcAudioProcessingModule()`: the golden digests of a talker with a far end's echo and of the talker alone, the same on every processor and OS; the setting fixed when the module is built; a CPU-independent module and one with the processor's code in turn on one thread each give what they give alone). A golden digest that differs on the build machine means the module computes otherwise there: send the digest the failure prints, the processor (`lscpu`, or the Mac's chip) and the OS | fp-probes2 |
   | `MoltCpuIndependentEchoReferenceTest.*` (the echo reference as the audio service mixes it while a MoltNet stream listens: a 44.1 kHz stream resampled by media's `SincResampler` and a 48 kHz one added with `vector_math::FMAC` in a `ScopedPortableAudioThread`, and WebRTC's processing in CPU-independent mode with that mix as the far end; golden digests the same on every processor and OS), `MoltMathTest.PortableEntryPointsIgnoreTheSwitch`. A golden digest that differs: send what the failure prints, the processor and the OS, as above | fp-mic2 |
   | `MoltPortableSubnormalsTest.*` (media's `SincResampler` and WebRTC's processing in CPU-independent mode over signals that reach every range the flush modes treat differently: golden digests the same on every processor and OS, also from a thread left in a flush mode), `MoltCpuIndependentProcessingTest.ConversionGoldenDigests` and `OneOutputFormatForEveryDevice` (a MoltNet stream's one format, converted from 44.1 kHz mono, 96 kHz stereo, 16 kHz mono and 48 kHz stereo devices with every effect off: golden digests), and the processing's earlier golden digests (`MoltCpuIndependentProcessingTest.GoldenDigests`, `MoltCpuIndependentEchoReferenceTest.*`), which changed with the processing's noise floor. A golden digest that differs: send what the failure prints, the processor and the OS | fp-mic3 |
+  | `MoltNetCameraValuesTest.*` (new cases: `EveryCameraShowsEveryEntry`, `FormatInUseShowsTheSameEntries`, `GridTicks`, `GridIgnoresTheCamerasTiming`, `GridSkipsTicksItMissed`, `GridStopsAndResumes`; built standalone here) | fp-camera2 |
   | `MoltNetCameraValuesTest.*` (the cameras' menu, the entries a camera shows and the mode it opens in), `MoltNetAudioCaptureTest.*` (the browser's decision on the CPU-independent processing replaces the renderer's), `MoltCpuIndependentProcessingTest.DownmixesOtherLayouts` (a QUAD and a 5.1 microphone: opened in their layout, processed as their down-mix) and the setSinkId case of `MoltNetMediaValuesTest.*` | fp-media4 |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
@@ -1232,7 +1247,8 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `UserMediaClientTest.*:*EchoCancellationMode*:MediaStreamAudioProcessingLayout*:MediaStreamConstraintsUtilAudioTest.*:MediaStreamConstraintsRemoteAPMTest.*:MediaDevicesTest.*`; `AudioServiceAudioProcessorProxyTest.*:MediaStreamAudioTest.*`; `MoltPortableMediaTest.*:SincResampler*:VectorMath*:AudioConverter*`; `OutputDeviceMixerImplTest*:OutputDeviceMixerManagerTest.*:MixingGraphImpl.*:MixingGraphInputTest.*:AudioProcessorHandlerTest.*` (outside MoltNet the effects, the echo canceller's choice and the mixing are as before; the new cases are `UserMediaClientTest.MoltNetMicrophoneHasNoPlatformEffects`, `EchoCancellationModeTest.MoltNetUsesWebRtcEchoCancellation`, `MoltPortableMediaTest.NoCaptureEffectsInPortableMode`, `PortableAudioThreadScope`, `PortableAudioThreadMixesWithTheCCode` and `OutputDeviceMixerImplTest.MixesPortablyWhileCpuIndependentListens`) | fp-mic2 |
 | `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `services_unittests` | `MoltNetSubnormalsTest.*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:UserMediaClientTest.*:MediaDevicesTest.*:MediaStreamConstraintsUtilAudioTest.*:*WebAudio*:*AudioWorklet*:*Biquad*:*DynamicsCompressor*:*AVIF*`; `DenormalDisablerTest.*`; `MoltPortableMediaTest.*:MoltPulseCaptureSourceTest.*:SincResampler*:AudioRendererAlgorithm*:AudioProcessorTest*:*Pulse*`; `MixingGraphImpl.*:MixingGraphInputTest.*:OutputDeviceMixerImplTest*:AudioProcessorHandlerTest.*:InputController*` (outside MoltNet the flush modes, the format, the names and the device a stream opens are as before; the new cases are `MoltNetSubnormalsTest.*`, `MoltNetMediaDevicesTest.TracksGetTheSameNames` and `GenericNamesAndGroups`, `UserMediaClientTest.MoltNetMicrophoneHasUniformFormatAndNames`, `MoltPortableMediaTest.FlushTinyPortableSamplesKeepsTheFloor`, `ScopedPortableSubnormalsComputesSubnormals`, `PortableResamplerFlushesItsKernelAndInput`, `PortableCaptureParametersAreTheSameForAll`, `CommunicationsCategoryOnlyWithRawMode`, `PortableCaptureStreamEffects`, `PortableCaptureOutputFormat` and `MoltPulseCaptureSourceTest.*`, the last on Linux) | fp-mic3 |
 
-| `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `content_unittests` | `MoltNetCameraValuesTest.*:MoltNetCameraTest.*:UserMediaClientTest.*:VideoTrackAdapter*:MediaStreamVideoTrack*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaStreamVideoSource*:MediaDevicesTest.*:InputDeviceInfo*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:MoltNetSubnormalsTest.*:*IIRFilter*:*AudioContext*:*HTMLMediaElementAudioOutputDevice*:MediaStreamConstraintsUtilAudio*`; `*IIR*`; `MoltPortableMediaTest.*:ChannelMixer*:AudioProcessor*`; `RenderFrameAudioInputStreamFactory*:ForwardingAudioStreamFactory*:AudioInputStreamBroker*` (outside MoltNet cameras, channels, outputs, `IIRFilterNode`, a device's layout and a stream's processing are as before; the new cases are `MoltNetCameraTest.*`, `UserMediaClientTest.MoltNetCameraTrackReportsTheMenu`, `MoltNetApplyConstraintsKeepsTheCameraOpen` and `MoltNetChannelCountFollowsTheRequest`, `VideoTrackAdapterTest.MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesHaveTheTrackSize` and `MoltNetCameraDropsFramesItCannotRead`, `MoltNetMediaDevicesTest.CommunicationsOutputIsRefused`, `MoltNetSubnormalsTest.MoltNetFloorsTheIirFiltersHistory` and `IirTailTimeKeepsItsValue`, `MoltPortableMediaTest.FlushTinyPortableSampleFloorsDoubles`, `PortableCaptureNeedsDownmix` and `DownmixGoldenDigests`) | fp-media4 |
+| `blink_unittests`, `blink_platform_unittests`, `media_unittests`, `content_unittests` | `MoltNetCameraValuesTest.*:MoltNetCameraTest.*:UserMediaClientTest.*:VideoTrackAdapter*:MediaStreamVideoTrack*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaStreamVideoSource*:MediaDevicesTest.*:InputDeviceInfo*:MoltNetMediaDevicesTest.*:MoltNetMediaValuesTest.*:MoltNetSubnormalsTest.*:*IIRFilter*:*AudioContext*:*HTMLMediaElementAudioOutputDevice*:MediaStreamConstraintsUtilAudio*`; `*IIR*`; `MoltPortableMediaTest.*:ChannelMixer*:AudioProcessor*`; `RenderFrameAudioInputStreamFactory*:ForwardingAudioStreamFactory*:AudioInputStreamBroker*` (outside MoltNet cameras, channels, outputs, `IIRFilterNode`, a device's layout and a stream's processing are as before; the new cases are `MoltNetCameraTest.*`, `UserMediaClientTest.MoltNetCameraTrackReportsTheMenu`, `MoltNetApplyConstraintsKeepsTheCameraOpen` and `MoltNetChannelCountFollowsTheRequest`, `VideoTrackAdapterTest.MoltNetCameraDesiredSizeIsTheTarget`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesHaveTheTrackSize` and `MoltNetCameraDropsFramesItCannotRead` (since fp-camera2 `MoltNetCameraReadsBackFramesItCannotRead`), `MoltNetMediaDevicesTest.CommunicationsOutputIsRefused`, `MoltNetSubnormalsTest.MoltNetFloorsTheIirFiltersHistory` and `IirTailTimeKeepsItsValue`, `MoltPortableMediaTest.FlushTinyPortableSampleFloorsDoubles`, `PortableCaptureNeedsDownmix` and `DownmixGoldenDigests`) | fp-media4 |
+| `blink_unittests`, `media_unittests` | `MoltNetCameraTest.*:MoltNetCameraValuesTest.*:UserMediaClientTest.*:VideoTrackAdapter*:ImageCapture*:MoltNetImageCaptureTest.*:MediaStreamVideoTrack*:MediaStreamVideoSource*:ApplyConstraintsProcessor*:MediaStreamConstraintsUtilVideoDevice*:MediaDevicesTest.*:InputDeviceInfo*`; `MoltPortableColorTest.*:MoltPortableMediaTest.*:VideoFrameConverter*` (outside MoltNet a camera's frames, timing, colour, `ImageCapture` and pan-tilt-zoom permission are as before; the new cases are `MoltNetCameraTest.NoPanTiltZoom`, `ImageCaptureTest.MoltNetCameraImageCaptureService` and `MoltNetCameraHasNoPanTiltZoomPermission`, `MoltNetImageCaptureTest.*`, `VideoTrackAdapterTest.MoltNetCameraFramesHaveOneColorSpace` and `MoltNetCameraFramesKeepOnlyTheMenusMetadata`, `VideoTrackAdapterFixtureTest.MoltNetCameraFramesReachTheGrid`, `MoltNetCameraRepeatsTheNewestFrame`, `MoltNetCameraLowerRateKeepsGridTicks`, `MoltNetCameraHidesTheCamerasDrops`, `MoltNetCameraGridTicksOnItsOwn`, `MoltNetCameraReadsBackFramesItCannotRead`, `MoltNetCameraReadsBackTheNewestFrame` and `MoltNetCameraTurnsBlackWhenItCannotRead`, `MoltPortableColorTest.*`, `MoltPortableMediaTest.PortableCameraEncoding` and `UsePortableCameraColor`; the earlier MoltNet camera cases now run on the grid's ticks, which the tests run by hand) | fp-camera2 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
@@ -1424,9 +1440,9 @@ pass except where the table below says otherwise (verify the filters).
   process in MoltNet against the normal window (FINGERPRINTING.md "A
   camera's formats" measured the conversion at 2.1 to 2.5 ms per frame on
   a 2.1 GHz Xeon). Windows only: note whether `chrome://media-internals`
-  shows the camera's frames as GPU textures; a MoltNet track whose
-  frames all drop (a black `<video>`) means frames the CPU can't map:
-  send the log.
+  shows the camera's frames as GPU textures; a MoltNet track that turns
+  black after a second means frames that couldn't be read (fp-camera2's
+  GPU frame check below): send the log.
 - [ ] A microphone of another layout (fp-media4), where you have one: a
   Windows microphone array that reports QUAD or 5.1 (Sound settings or
   `chrome://media-internals` show its channel count and layout), or on
@@ -1444,6 +1460,89 @@ pass except where the table below says otherwise (verify the filters).
   AudioContext({sinkId: 'communications'})` and `ctx.setSinkId
   ('communications')` fail as for an unknown ID. In a normal window both
   select the communications device.
+- [ ] A camera with pan, tilt and zoom (fp-camera2), if one is available
+  (a Logitech PTZ Pro or Rally, an OBSBOT or Insta360 webcam, or any UVC
+  camera whose `chrome://media-internals` capabilities list pan, tilt or
+  zoom). In a MoltNet window and in a normal one, on an https page, in the
+  DevTools console:
+  ```js
+  const s = await navigator.mediaDevices.getUserMedia(
+      {video: {pan: true, tilt: true, zoom: true}});
+  const t = s.getVideoTracks()[0];
+  const ic = new ImageCapture(t);
+  const pc = await ic.getPhotoCapabilities();
+  const ps = await ic.getPhotoSettings();
+  const photo = await ic.takePhoto();
+  const bm = await createImageBitmap(photo);
+  JSON.stringify([t.getCapabilities(), t.getSettings(), pc, ps,
+      photo.type, bm.width, bm.height]);
+  ```
+  then `await t.applyConstraints({advanced: [{zoom: 2}]})`, `await
+  t.applyConstraints({zoom: {exact: 2}})` and `await
+  navigator.mediaDevices.getUserMedia({video: {pan: {exact: 1}}})`.
+  *Expected* in MoltNet: the camera prompt only, never the one asking to
+  let the site move the camera (in the normal window both, or the
+  combined one); no `pan`, `tilt`, `zoom`, `focusMode`, `exposureMode`,
+  `whiteBalanceMode`, `torch` or other `ImageCapture` member in the
+  capabilities or settings; `redEyeReduction` `"never"`, no
+  `fillLightMode`, `imageWidth` and `imageHeight` 640 to 640 and 480 to
+  480 (step 0), settings 640x480; a JPEG photo of 640x480; the advanced
+  zoom ignored, the exact zoom and the exact pan refused with
+  `OverconstrainedError`; the camera doesn't move. In the normal window
+  the device's controls, and the zoom applies (the picture zooms). Send
+  both outputs.
+- [ ] A camera's timing, colour and `ImageCapture` on each OS
+  (fp-camera2): macOS, Windows and Linux with a built-in or USB camera
+  (and, if you have one, a camera slower than 30 fps in low light or one
+  whose largest mode is 640x480). In a MoltNet window and in a normal one:
+  ```js
+  const s = await navigator.mediaDevices.getUserMedia({video: true});
+  const t = s.getVideoTracks()[0];
+  const r = new MediaStreamTrackProcessor({track: t}).readable.getReader();
+  const ts = []; let cs;
+  for (let i = 0; i < 60; i++) {
+    const f = (await r.read()).value;
+    ts.push(f.timestamp); cs = cs || f.colorSpace.toJSON(); f.close();
+  }
+  const v = document.createElement('video');
+  v.muted = true; v.srcObject = new MediaStream([t.clone()]);
+  document.body.append(v); await v.play();
+  const m = await new Promise((ok) => v.requestVideoFrameCallback(
+      (now, md) => ok(md)));
+  const ic = new ImageCapture(t);
+  const p = await createImageBitmap(await ic.takePhoto());
+  JSON.stringify([ts, cs, Object.keys(m),
+      t.stats.toJSON(), [p.width, p.height],
+      await ic.getPhotoCapabilities()]);
+  ```
+  *Expected* in MoltNet, the same on every OS: every timestamp is
+  floor(n x 10^6 / 30) µs for a whole n, consecutive ones mostly one tick
+  (33333 or 33334 µs) apart; the colour space `smpte170m` primaries,
+  transfer and matrix, `fullRange` false; the callback's keys without
+  `receiveTime` or `rtpTimestamp`; `totalFrames` equal to
+  `deliveredFrames` plus `discardedFrames`; a 640x480 photo; the photo
+  capabilities of a camera without controls (above). In the normal window the camera's own rate
+  and colour space (BT.709 on a Mac's camera, often none or JPEG on
+  Linux). Also `{video: {width: 1280, height: 720}}` on the 640x480
+  camera: 1280x720 frames (scaled up) and the CPU use of the renderer in
+  `chrome://system` or the OS's monitor against the normal window
+  (FINGERPRINTING.md "A camera's formats" measured 2.8 to 3.3 ms per frame
+  on a 2.1 GHz Xeon). Watch the `<video>` for 30 s: smooth, no
+  stutter beyond the camera's own.
+- [ ] Camera frames held in GPU images, on each OS (fp-camera2). On
+  Android, with `chrome://flags/#zero-copy-video-capture` enabled (the
+  camera's frames then arrive as GPU images the CPU can't read), and on
+  macOS, Windows, Linux (and ChromeOS, if built) with the default flags:
+  open a MoltNet page with the camera in a `<video>` and read frames as in
+  the check above. *Expected:* live video at the track's size on every
+  OS, not black and not frozen. In `chrome://tracing` (category `webrtc`)
+  a `ConstructVideoFrameFromTexture` event per frame shows the frames were
+  read back from the GPU: expected on Android with the flag, and note on
+  which other OS it appears. Then, on Android with the flag, kill the GPU
+  process (`chrome://gpucrash`): the picture may freeze or turn black for
+  about a second at most, then come back. A track that stays black means
+  the frames couldn't be read back: send `chrome://media-internals`' log
+  and the trace.
 - [ ] Subnormal floats on real arm64 hardware (fp-mic3): the leak kit's
   `audio.subnormal_graph` and `audio.subnormal_resampled` (§8) on an
   Apple silicon Mac (paste `ml.js` and `fp.js` into a MoltNet window's
@@ -2559,6 +2658,49 @@ writes; on Windows both run as a less-privileged AppContainer per run
   after `icacls <unpacked>\ocr /grant "*S-1-15-3-1024-3499754957-…:(OI)(CI)(RX)"`
   OCR works.
 
+The limits on what a helper writes and uses (`helper_limits.h`): its
+scratch directory may grow by less than 64 MiB and gain at most 64 entries,
+checked every 10 ms and when it exits; at most 4 GiB of memory; it may only
+create and write files there. On the Mac the Seatbelt profile no longer
+allows `process-fork` or any file write but creating and writing regular
+files (helpers-limits):
+
+- [ ] The Mac, OCR and voice under the new profile (helpers-limits): the
+  three checks at the top of this section (attachments including the 33 MP
+  scan, a scanned PDF, voice) with the bundled tesseract and whisper-cli.
+  *Expected:* as before. If OCR or voice fails, or Console shows a
+  `Sandbox: tesseract(…) deny(1) file-write-…` or `process-fork` line for a
+  helper, report the operation: the helpers were checked here (Linux,
+  `strace`) to start no process and write only their `.txt`.
+- [ ] The Mac, no core dump outside the scratch directory (helpers-limits):
+  start the browser from a shell after `ulimit -c unlimited`, run OCR on
+  the 33 MP scan and, while tesseract runs, `kill -SEGV <its pid>`.
+  *Expected:* OCR fails with "tesseract exit=-1", and no new
+  `/cores/core.*` file appears (the profile lets the helper write nowhere
+  else; hardened-runtime helpers without `get-task-allow` don't dump core).
+  If a core file appears, report it: then the helpers need `RLIMIT_CORE`
+  set before `sandbox-exec`, which `base::LaunchProcess()` can't do on the
+  Mac.
+- [ ] Linux, the largest inputs under `RLIMIT_DATA` (helpers-limits): OCR of
+  the 33 MP scan and voice of a 3-minute recording, with the distribution's
+  tesseract and with a bundled build, ideally on a machine with many cores
+  (a tesseract built with OpenMP starts a thread, and an 8 MiB stack, per
+  core). *Expected:* the text, as before. A failure that names memory
+  (`Cannot allocate memory`, `std::bad_alloc`) means 4 GiB is too little
+  there: report the core count and the helper. The helpers may start no
+  process now (seccomp allows threads only): a failure with "Operation
+  not permitted" from `fork` or `posix_spawn` means a distribution build
+  does; report which.
+- [ ] Every OS, the sandbox tests (helpers-limits; Windows deferred):
+  `molt_ai_unittests --gtest_filter='HelperLimits*:HelperSandboxLimits*:HelperSandboxWin*:HelperSandboxLinux*'`
+  with `molt_helper_sandbox_test_helper` next to it. *Expected:* all pass:
+  a helper that writes 128 MiB in 16 MiB files is stopped below 128 MiB
+  ("was stopped: it wrote 64 MiB or more to its scratch directory"), one
+  that makes 100 files is stopped, one that reserves 1 GiB without writing
+  it (`F_PREALLOCATE`, `SetEndOfFile()`) is stopped, and on Windows it
+  can't delete, rename or make a directory, and a stream it writes is
+  counted.
+
 ## 8. Leak kit and traffic capture
 
 ### 8.1 The MoltNet leak kit (Linux)
@@ -2683,6 +2825,25 @@ Mac; use a real Linux host.
     regular` the camera shows the fake device's own modes (3840x2160 at
     20 fps) and the larger width is granted. A real camera on each OS is
     §5.2's fp-media4 check.
+  - The camera's `ImageCapture` and timing (fp-camera2):
+    `uniform.video.camera_image_capture`,
+    `uniform.video.camera_timing_on_grid`,
+    `uniform.video.camera_timing_steps`,
+    `uniform.video.camera_color_space`,
+    `uniform.video.camera_frame_callbacks` and
+    `uniform.video.camera_stats` pass (a camera without controls, a
+    640x480 JPEG photo and frame; timestamps on the grid of 30 a second,
+    one or two ticks apart; BT.601 at limited range;
+    `requestVideoFrameCallback()` with a `captureTime` on the grid and no
+    `receiveTime` or `rtpTimestamp`; a 15 fps clone that discards every
+    other frame and drops none), and `diff` between the three machines
+    above, and between OSes, shows no difference in them. First-run
+    questions: a `video.camera_timing_steps` with 3 or more (a page that
+    read late on a loaded machine: rerun, and send the value if it stays),
+    a `video.camera_frame_callbacks` whose `capture_time_follows` is false
+    (send the value), and a `video.camera_stats` with `dropped` above 0.
+    With `--target regular` the fake device's controls (zoom, focus,
+    exposure and more), its PNG photo, and timestamps 50 ms apart.
   - `identity.background_fetch_circuits` passes (moltnet-shared): each
     Background Fetch test's request went to Tor with its page's site's
     SOCKS username. First-run question: whether the fetch starts at all in

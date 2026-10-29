@@ -494,6 +494,9 @@ third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.
 third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc.patch
 third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc.patch
 third_party/blink/renderer/modules/font_access/font_access.cc.patch
+third_party/blink/renderer/modules/imagecapture/BUILD.gn.patch
+third_party/blink/renderer/modules/imagecapture/image_capture.cc.patch
+third_party/blink/renderer/modules/imagecapture/image_capture_test.cc.patch
 third_party/blink/renderer/modules/media/audio/audio_device_factory.cc.patch
 third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc.patch
 third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.cc.patch
@@ -508,6 +511,7 @@ third_party/blink/renderer/modules/mediastream/media_stream_video_track.cc.patch
 third_party/blink/renderer/modules/mediastream/user_media_client_test.cc.patch
 third_party/blink/renderer/modules/mediastream/user_media_processor.cc.patch
 third_party/blink/renderer/modules/mediastream/video_track_adapter.cc.patch
+third_party/blink/renderer/modules/mediastream/video_track_adapter.h.patch
 third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.cc.patch
 third_party/blink/renderer/modules/mediastream/video_track_adapter_settings.h.patch
 third_party/blink/renderer/modules/mediastream/video_track_adapter_unittest.cc.patch

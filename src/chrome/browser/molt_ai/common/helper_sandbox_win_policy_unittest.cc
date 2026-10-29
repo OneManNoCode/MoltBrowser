@@ -136,9 +136,8 @@ TEST(HelperSandboxWinPolicyTest, ScratchDirectorySecurityDescriptor) {
   const std::string sddl = ScratchDirectorySddl(kUserSid, kPackageSid);
   const std::string pkg = kPackageSid;
   EXPECT_EQ(sddl, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" +
-                      std::string(kUserSid) + ")(A;;0x1200ef;;;" + pkg +
-                      ")(A;CIIO;0x1300ef;;;" + pkg + ")(A;OIIO;0x13019f;;;" +
-                      pkg + ")S:(ML;OICI;NW;;;LW)");
+                      std::string(kUserSid) + ")(A;;0x1200ab;;;" + pkg +
+                      ")(A;OIIO;0x12019f;;;" + pkg + ")S:(ML;OICI;NW;;;LW)");
   // Nothing for everyone, any app package, the helpers' capability or
   // another run.
   for (const char* other :
@@ -148,13 +147,21 @@ TEST(HelperSandboxWinPolicyTest, ScratchDirectorySecurityDescriptor) {
   // The run may not run what it wrote, change security, or remove or
   // rename the directory itself.
   EXPECT_EQ(kScratchFileRights & kFileTraverse, 0u);
-  for (uint32_t rights : {kScratchDirectoryRights, kScratchSubdirectoryRights,
-                          kScratchFileRights}) {
+  for (uint32_t rights : {kScratchDirectoryRights, kScratchFileRights}) {
     EXPECT_EQ(rights & 0x000C0000u, 0u);  // WRITE_DAC, WRITE_OWNER
     EXPECT_EQ(rights & 0xF0000000u, 0u);  // generic rights
+    // Nothing it wrote can leave the directory (helper_limits.h).
+    EXPECT_EQ(rights & kDelete, 0u);
   }
-  EXPECT_EQ(kScratchDirectoryRights & kDelete, 0u);
-  EXPECT_EQ(kScratchSubdirectoryRights & kDelete, kDelete);
+  // No subdirectories, and nothing in it deleted.
+  EXPECT_EQ(kScratchDirectoryRights & (kFileAddSubdirectory | kFileDeleteChild),
+            0u);
+  // CreateFile(GENERIC_READ | GENERIC_WRITE) of a file it made works.
+  constexpr uint32_t kFileGenericWrite =
+      kReadControl | kFileAddFile /* WRITE_DATA */ | kFileWriteAttributes |
+      kFileWriteEa | kFileAddSubdirectory /* APPEND_DATA */ | kSynchronize;
+  EXPECT_EQ(kScratchFileRights & (kFileGenericRead | kFileGenericWrite),
+            kFileGenericRead | kFileGenericWrite);
 
   EXPECT_EQ(ScratchDirectorySddl("", kPackageSid), "");
   EXPECT_EQ(ScratchDirectorySddl(kUserSid, kUserSid), "");
