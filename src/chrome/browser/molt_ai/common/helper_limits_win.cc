@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/containers/span.h"
+#include "base/numerics/byte_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/browser/molt_ai/common/helper_limits.h"
 
@@ -47,9 +48,14 @@ void AddBytes(uint64_t bytes, ScratchUsage* usage) {
                      : usage->bytes + bytes;
 }
 
-uint64_t Larger(LARGE_INTEGER a, LARGE_INTEGER b) {
-  const LONGLONG larger = std::max(a.QuadPart, b.QuadPart);
+uint64_t Larger(int64_t a, int64_t b) {
+  const int64_t larger = std::max(a, b);
   return larger > 0 ? static_cast<uint64_t>(larger) : 0;
+}
+
+uint64_t Larger(LARGE_INTEGER a, LARGE_INTEGER b) {
+  return Larger(static_cast<int64_t>(a.QuadPart),
+                static_cast<int64_t>(b.QuadPart));
 }
 
 // "\\?\" before a drive-letter path, so that an entry's path may be longer
@@ -110,7 +116,14 @@ bool BytesOf(HANDLE handle, bool is_directory, uint64_t* bytes) {
     }
     list.resize(list.size() * 4);
   }
+  // FILE_STREAM_INFO: NextEntryOffset and StreamNameLength (DWORDs),
+  // StreamSize and StreamAllocationSize (LARGE_INTEGERs), then the name.
+  static_assert(offsetof(FILE_STREAM_INFO, NextEntryOffset) == 0);
+  static_assert(offsetof(FILE_STREAM_INFO, StreamNameLength) == 4);
+  static_assert(offsetof(FILE_STREAM_INFO, StreamSize) == 8);
+  static_assert(offsetof(FILE_STREAM_INFO, StreamAllocationSize) == 16);
   constexpr size_t kFixedPart = offsetof(FILE_STREAM_INFO, StreamName);
+  static_assert(kFixedPart == 24);
   const base::span<const uint8_t> data_stream_name =
       base::as_byte_span(kDataStream);
   uint64_t named = 0;
@@ -119,16 +132,18 @@ bool BytesOf(HANDLE handle, bool is_directory, uint64_t* bytes) {
     if (rest.size() < kFixedPart) {
       return false;
     }
-    FILE_STREAM_INFO entry = {};
-    base::byte_span_from_ref(entry).first(kFixedPart).copy_from(
-        rest.first(kFixedPart));
-    if (entry.StreamNameLength > rest.size() - kFixedPart) {
+    const uint32_t next = base::U32FromNativeEndian(rest.subspan<0, 4>());
+    const uint32_t name_length =
+        base::U32FromNativeEndian(rest.subspan<4, 4>());
+    const int64_t size = base::I64FromNativeEndian(rest.subspan<8, 8>());
+    const int64_t allocated =
+        base::I64FromNativeEndian(rest.subspan<16, 8>());
+    if (name_length > rest.size() - kFixedPart) {
       return false;
     }
     const base::span<const uint8_t> name =
-        rest.subspan(kFixedPart, entry.StreamNameLength);
-    const uint64_t stream =
-        Larger(entry.StreamSize, entry.StreamAllocationSize);
+        rest.subspan(kFixedPart, name_length);
+    const uint64_t stream = Larger(size, allocated);
     if (std::ranges::equal(name, data_stream_name)) {
       data = std::max(data, stream);
     } else {
@@ -136,13 +151,13 @@ bool BytesOf(HANDLE handle, bool is_directory, uint64_t* bytes) {
                   ? std::numeric_limits<uint64_t>::max()
                   : named + stream;
     }
-    if (entry.NextEntryOffset == 0) {
+    if (next == 0) {
       break;
     }
-    if (entry.NextEntryOffset > rest.size()) {
+    if (next > rest.size()) {
       return false;
     }
-    rest = rest.subspan(entry.NextEntryOffset);
+    rest = rest.subspan(next);
   }
   *bytes = data > std::numeric_limits<uint64_t>::max() - named
                ? std::numeric_limits<uint64_t>::max()
