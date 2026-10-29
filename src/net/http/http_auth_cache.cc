@@ -178,8 +178,9 @@ HttpAuthCache::Entry* HttpAuthCache::Add(
                                        network_anonymization_key);
   if (!entry) {
     // MoltBrowser: with per-site shares, room is made inside the new entry's
-    // own site, or it isn't kept (net/base/molt_site_share_policy.h); the
-    // eviction below, of any site's entry, isn't made.
+    // own site, or past the total in the place of the least recently used
+    // entry of the site holding the most (net/base/molt_site_share_policy.h);
+    // the eviction below, of any site's entry, isn't made.
     if (molt_per_site_shares_ &&
         !MoltMakeRoomFor(
             target, target == HttpAuth::AUTH_SERVER &&
@@ -361,7 +362,11 @@ void HttpAuthCache::MoltKeepPerSiteShares() {
 // MoltBrowser: see the header. The cache holds at most
 // kMoltHttpAuthShares.total server entries (and the browser's few proxy
 // ones), and an entry is added only once a server's challenge is answered,
-// so a pass over them is cheap next to the round trip before it.
+// so a pass over them is cheap next to the round trip before it. A server
+// entry is one the cache must keep (what the user signed in with: without
+// it the sign-in prompt comes back on every request), so past the total a
+// site holding none takes the place of the least recently used entry of the
+// site that holds the most (MoltSiteShareTakesFromLargest()).
 bool HttpAuthCache::MoltMakeRoomFor(
     HttpAuth::Target target,
     const NetworkAnonymizationKey& entry_key_nak) {
@@ -370,29 +375,52 @@ bool HttpAuthCache::MoltMakeRoomFor(
   }
   const MoltSiteShareLimits limits = kMoltHttpAuthShares;
   const MoltNetworkKeySite site = MoltSiteOfNetworkKey(entry_key_nak);
+  // A site's server entries: how many, and its least recently used.
+  struct Held {
+    size_t count = 0;
+    EntryMap::iterator oldest;
+  };
   while (true) {
-    size_t site_holds = 0;
+    std::map<MoltNetworkKeySite, Held> held;
     size_t all_hold = 0;
-    EntryMap::iterator oldest = entries_.end();
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
       if (it->first.target != HttpAuth::AUTH_SERVER) {
         continue;
       }
       ++all_hold;
-      if (MoltSiteOfNetworkKey(it->first.network_anonymization_key) != site) {
-        continue;
-      }
-      ++site_holds;
-      if (oldest == entries_.end() ||
-          it->second.last_use_time_ticks_ <
-              oldest->second.last_use_time_ticks_) {
-        oldest = it;
+      Held& of_site =
+          held[MoltSiteOfNetworkKey(it->first.network_anonymization_key)];
+      if (of_site.count++ == 0 || it->second.last_use_time_ticks_ <
+                                      of_site.oldest->second
+                                          .last_use_time_ticks_) {
+        of_site.oldest = it;
       }
     }
-    if (!MoltSiteShareEvictsOwn(limits, site_holds, all_hold)) {
-      return MoltSiteShareHasRoom(limits, site_holds, all_hold);
+    auto own = held.find(site);
+    const size_t site_holds = own == held.end() ? 0 : own->second.count;
+    if (MoltSiteShareEvictsOwn(limits, site_holds, all_hold)) {
+      entries_.erase(own->second.oldest);
+      continue;
     }
-    entries_.erase(oldest);
+    if (MoltSiteShareTakesFromLargest(limits, site_holds, all_hold)) {
+      // The site that holds the most; of sites holding as many, the one
+      // whose least recently used entry is the oldest.
+      const Held* largest = nullptr;
+      for (const auto& [other_site, of_site] : held) {
+        if (!largest || of_site.count > largest->count ||
+            (of_site.count == largest->count &&
+             of_site.oldest->second.last_use_time_ticks_ <
+                 largest->oldest->second.last_use_time_ticks_)) {
+          largest = &of_site;
+        }
+      }
+      if (!largest) {
+        return false;  // Never: some site holds the entries counted.
+      }
+      entries_.erase(largest->oldest);
+      continue;
+    }
+    return MoltSiteShareHasRoom(limits, site_holds, all_hold);
   }
 }
 

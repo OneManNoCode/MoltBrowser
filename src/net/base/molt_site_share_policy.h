@@ -36,17 +36,30 @@
 //    share takes the place of that site's own least recently used entry;
 //  * all sites together hold at most `total` entries: past it, a new entry
 //    takes the place of its own site's least recently used entry, or, if
-//    its site holds none, is not kept. No entry of another site is ever
-//    evicted, and the container evicts nothing on its own, nor for memory
-//    pressure.
+//    its site holds none, is not kept. No entry of another site is evicted
+//    for it, and the container evicts nothing on its own, nor for memory
+//    pressure;
+//  * but an entry a cache must keep, of a site that holds none while all
+//    sites together hold the total, takes the place of the least recently
+//    used entry of the site that holds the most (of sites holding as many,
+//    the one whose least recently used entry is the oldest): an HTTP
+//    authentication entry (what the user signed in with, which the next
+//    request needs, or the sign-in prompt comes back on every request) and a
+//    server's demand for HTTP/1.1 (which the request that met it is sent
+//    again by, over HTTP/1.1 only if it is kept). Sites that fill the total
+//    between them can't keep another site from signing in, and a site's
+//    entry goes for another site's only while it holds the most
+//    (MoltSiteShareTakesFromLargest(), MoltSiteShares::NextToEvictToKeep()).
 // Finding a site's least recently used entry costs what the site's own
 // record costs (a list of its entries in order of use, beside the cache's
-// own order), never a walk past other sites' entries. A site's record goes
-// with its last entry.
+// own order), never a walk past other sites' entries; finding the site that
+// holds the most, for an entry a cache must keep past the total, a pass over
+// the sites' records. A site's record goes with its last entry.
 //
-// What a page can still observe: its own site's share; and, once other
-// sites hold the whole total between them (16 sites at their full shares),
-// that a new entry of a site that holds none isn't kept.
+// What a page can still observe: its own site's share; once other sites
+// hold the whole total between them (16 sites at their full shares), that a
+// new entry of a site that holds none isn't kept; and, for the entries a
+// cache must keep, that one of its own went while it held the most.
 //
 // Std-only, so molt_ai_unittests tests it. Not thread-safe: each cache uses
 // it on its own sequence.
@@ -149,6 +162,17 @@ constexpr bool MoltSiteShareHasRoom(MoltSiteShareLimits limits,
   return site_holds < limits.per_site && all_hold < limits.total;
 }
 
+// But for an entry the cache must keep (see the file comment): while this is
+// true (the cache is at its total, and the entry's site holds nothing to
+// make room with), the least recently used entry of the site that holds the
+// most goes instead, so that the entry is kept.
+constexpr bool MoltSiteShareTakesFromLargest(MoltSiteShareLimits limits,
+                                             size_t site_holds,
+                                             size_t all_hold) {
+  return limits.per_site > 0 && site_holds == 0 && all_hold > 0 &&
+         all_hold >= limits.total;
+}
+
 // The entries of a cache, by site, each site's in order of use. `Site` and
 // `Key` are ordered (std::map); a key is held once, its site's list pointing
 // at the copy in the index.
@@ -175,6 +199,40 @@ class MoltSiteShares {
     return *it->second.back();
   }
 
+  // Making room for a new entry of `site` that the cache must keep (see the
+  // file comment): as NextToEvictFor(), then, while the cache is at its
+  // total and `site` holds nothing (MoltSiteShareTakesFromLargest()), the
+  // least recently used entry of the site that holds the most (of sites
+  // holding as many, the one whose least recently used entry is the oldest);
+  // nullopt once the entry fits. A pass over the sites' records.
+  std::optional<Key> NextToEvictToKeep(const Site& site) const {
+    if (std::optional<Key> own = NextToEvictFor(site)) {
+      return own;
+    }
+    if (!MoltSiteShareTakesFromLargest(limits_, HeldBy(site), total_)) {
+      return std::nullopt;
+    }
+    const Key* victim = nullptr;
+    size_t most = 0;
+    uint64_t oldest_use = 0;
+    for (const auto& [other_site, order] : sites_) {
+      if (order.empty()) {
+        continue;  // Never: a record goes with its site's last entry.
+      }
+      const Key* least_recent = order.back();
+      const uint64_t use = where_.find(*least_recent)->second.use;
+      if (order.size() > most || (order.size() == most && use < oldest_use)) {
+        victim = least_recent;
+        most = order.size();
+        oldest_use = use;
+      }
+    }
+    if (!victim) {
+      return std::nullopt;
+    }
+    return *victim;
+  }
+
   // Then: whether a new entry of `site` is kept (MoltSiteShareHasRoom()).
   bool HasRoomFor(const Site& site) const {
     return MoltSiteShareHasRoom(limits_, HeldBy(site), total_);
@@ -192,6 +250,7 @@ class MoltSiteShares {
     site_it->second.push_front(&where_it->first);
     where_it->second.site = site_it;
     where_it->second.position = site_it->second.begin();
+    where_it->second.use = ++uses_;
     ++total_;
   }
 
@@ -203,6 +262,7 @@ class MoltSiteShares {
     }
     Order& order = it->second.site->second;
     order.splice(order.begin(), order, it->second.position);
+    it->second.use = ++uses_;
   }
 
   // `key` left the cache.
@@ -241,12 +301,15 @@ class MoltSiteShares {
   struct Place {
     typename Sites::iterator site;
     typename Order::iterator position;
+    // When the entry was last stored or used (uses_ then), across all sites.
+    uint64_t use = 0;
   };
 
   const MoltSiteShareLimits limits_;
   Sites sites_;
   std::map<Key, Place> where_;
   size_t total_ = 0;
+  uint64_t uses_ = 0;
 };
 
 }  // namespace net
