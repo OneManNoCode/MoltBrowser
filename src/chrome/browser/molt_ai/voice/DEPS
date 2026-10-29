@@ -1,0 +1,5 @@
+include_rules = [
+  # MOLT_RAW_PTR_EXCLUSION, on the page map builder's pointer to its input
+  # (page_map.cc is std-only).
+  "+chrome/services/molt_ai/inference/engine/raw_ptr_exclusion.h",
+]

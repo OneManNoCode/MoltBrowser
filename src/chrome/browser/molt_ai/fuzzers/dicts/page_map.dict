@@ -1,0 +1,33 @@
+# Page text the page map reads as fields, labels and secrets (libFuzzer
+# dictionary for molt_page_map_fuzzer).
+"6:07"
+"1:02:03"
+" minutes, "
+" seconds"
+"PT6M7S"
+"2.1B views"
+"1,234 subscribers"
+"No views"
+" years ago"
+"Streamed "
+"Jan 5, 2024"
+"2024-01-05"
+"https://"
+" \xe2\x80\xba "
+"/@"
+"/channel/"
+"password"
+"current-password"
+"cc-number"
+"one-time-code"
+"PIN"
+# Bidi overrides, zero-width space, BOM, tag characters, NBSP.
+"\xe2\x80\xae"
+"\xe2\x80\x8b"
+"\xef\xbb\xbf"
+"\xf3\xa0\x81\x81"
+"\xc2\xa0"
+# A repeated string: 255, then a count of 0x4000.
+"\xff\x00\x40"
+# A child link record to node 0.
+"\x01\x00\x00\x00\x00"

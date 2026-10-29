@@ -1073,6 +1073,7 @@ extension enablement and `MediaRouterEnabled()`).
   | `MoltPortableSubnormalsTest.*` (media's `SincResampler` and WebRTC's processing in CPU-independent mode over signals that reach every range the flush modes treat differently: golden digests the same on every processor and OS, also from a thread left in a flush mode), `MoltCpuIndependentProcessingTest.ConversionGoldenDigests` and `OneOutputFormatForEveryDevice` (a MoltNet stream's one format, converted from 44.1 kHz mono, 96 kHz stereo, 16 kHz mono and 48 kHz stereo devices with every effect off: golden digests), and the processing's earlier golden digests (`MoltCpuIndependentProcessingTest.GoldenDigests`, `MoltCpuIndependentEchoReferenceTest.*`), which changed with the processing's noise floor. A golden digest that differs: send what the failure prints, the processor and the OS | fp-mic3 |
   | `MoltNetCameraValuesTest.*` (new cases: `EveryCameraShowsEveryEntry`, `FormatInUseShowsTheSameEntries`, `GridTicks`, `GridIgnoresTheCamerasTiming`, `GridSkipsTicksItMissed`, `GridStopsAndResumes`; built standalone here) | fp-camera2 |
   | `MoltNetCameraValuesTest.*` (the cameras' menu, the entries a camera shows and the mode it opens in), `MoltNetAudioCaptureTest.*` (the browser's decision on the CPU-independent processing replaces the renderer's), `MoltCpuIndependentProcessingTest.DownmixesOtherLayouts` (a QUAD and a 5.1 microphone: opened in their layout, processed as their down-mix) and the setSinkId case of `MoltNetMediaValuesTest.*` | fp-media4 |
+  | `PageMapTest.*`, `PageMapTextTest.*`, `PageMapAgentSafetyTest.*` (built standalone here), `AXPageSourceTest.*` (needs the build: real `ui::AXTree`s from `AXTreeUpdate`s, frames joined through child tree ids, the caps, the focused frame) | page-map |
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AudioInputTest`, `ModelAudioTest`, `MoltGpuDriverWarmupTest` (not on Android or iOS), `VulkanShaderPackTest` (only with `molt_llama_vulkan`), and the audio cases of `MoltAIManagerTest`, `WebAIPolicyTest`, `WebAIConversationTest`, `InferenceProcessHostTest`, `PageTranslationJobTest` | ai-finish |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
@@ -1112,6 +1113,53 @@ extension enablement and `MediaRouterEnabled()`).
   pages' flood. Close other heavy work first; if it fails, rerun once and
   report both logs.
 
+- [ ] The page map's browser tests (page-map): MoltBrowser's first
+  in-process browser tests, in `browser_tests` through
+  `//chrome/browser:core_browser_tests` (desktop only). Build them in the
+  test out dir (DCHECKs on):
+  ```bash
+  autoninja -C chromium/src/out/MoltTests browser_tests
+  chromium/src/out/MoltTests/browser_tests \
+    --gtest_filter='VoicePageControllerBrowserTest.*' 2>&1 | tee ~/molt-v0.3.0/voice-page-browser-tests.log
+  ```
+  *Expected:* all 5 pass, on macOS and Linux:
+  - `SearchesAVideoSiteAndPlaysTheFourthResult`: Phase 0's exit
+    criterion without speech, driven only through `VoicePageController`.
+    It writes the query into the video site's search box (the page sees
+    trusted `input` and `change` events), submits it with Enter, finds the
+    20 results with their titles, channels, durations, views and dates,
+    presses the fourth, and plays its `<video>` by its default action.
+    The page must then report a trusted click with user activation, and
+    the video playing and not muted, under the
+    `document-user-activation-required` autoplay policy. Media session
+    pause and resume follow.
+  - `MapsSearchResults`: a Google-like results page's 10 results and sites.
+  - `NeverWritesAPasswordField`: set text is refused for the password and
+    one-time code fields, and their values stay empty.
+  - `MapsAndPressesACrossSiteFramesItems`: a b.test frame's button is on
+    the map between the host's items, and pressing it reaches the frame.
+  - `RefusesStaleTargetsAndStops`.
+
+  If one fails, send the log: these tests check the page map against real
+  Blink accessibility trees for the first time (the unit tests use
+  hand-built trees). A list or title mismatch there means Blink's tree
+  differs from the fixtures' (ignored wrappers, names from `aria-label`),
+  and the test prints the map it got. With
+  `AX_FAIL_FAST_BUILD()` on (DCHECK builds), an accessibility tree error
+  crashes the test instead of failing it: send the crash too.
+- [ ] What voice mode's accessibility mode costs a page (page-map). Voice
+  mode has no switch yet, but `chrome://accessibility` sets the same mode:
+  only "Web accessibility" and "Extended properties" on (not native API
+  support, inline text boxes, screen reader support or HTML). In a release
+  build, on two pages (YouTube search results scrolled to about 100
+  videos, and a long Wikipedia article), note with the mode off and on:
+  the renderer's and the browser process's memory footprint (the browser's
+  task manager) once the page is idle; the renderer's CPU while scrolling
+  and while more results load; and, from a DevTools Performance recording
+  of the same scroll, the main thread's time in accessibility work. Send
+  the numbers: the code suggests a few hundred bytes to about 1 KB per
+  node in each process, and serialization work after every change to the
+  page.
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
   autoninja -C chromium/src/out/MoltTests blink_unittests
@@ -1660,6 +1708,7 @@ clang with libFuzzer (Apple's has none), so it is easiest on Linux
   `molt_automation_tool_steps_fuzzer` and `molt_frame_tools_fuzzer`)
   (fonts adds `molt_moltnet_font_set_fuzzer`)
   (helpers-win adds `molt_ocr_image_fuzzer` and `molt_recorded_wav_fuzzer`)
+  (page-map adds `molt_page_map_fuzzer`)
   (verify the command):
   ```bash
   cd chromium/src
