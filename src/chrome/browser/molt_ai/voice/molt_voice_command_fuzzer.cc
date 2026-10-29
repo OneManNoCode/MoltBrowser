@@ -23,6 +23,7 @@
 #include <string_view>
 
 #include "base/check.h"
+#include "base/check_op.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 #include "chrome/browser/molt_ai/voice/spoken_numbers.h"
 #include "chrome/browser/molt_ai/voice/spoken_text.h"

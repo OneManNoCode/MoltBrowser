@@ -110,7 +110,7 @@ constexpr std::array<uint8_t, 14> kIndelCost = {1, 2, 2, 2, 2, 2, 2,
 }  // namespace
 
 bool SameOrCloseSounds(char a, char b) {
-  return a == b || CloseClasses(a, b);
+  return kSubstitutionCost[ClassOf(a)][ClassOf(b)] <= 1;
 }
 
 std::string PhoneticKey(std::string_view w) {

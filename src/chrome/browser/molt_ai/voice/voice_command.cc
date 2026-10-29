@@ -470,9 +470,11 @@ std::optional<Site> ReadSite(const Utterance& u,
     if (glued && (word.joiner == '@' || word.joiner == ':')) {
       return std::nullopt;
     }
-    if (glued && word.joiner == '.') address = true;
+    if (glued && word.joiner == '.')
+      address = true;
     for (const AddressWord& entry : p.address_words) {
-      if (entry.mark == '.' && entry.word == u.words[i]) address = true;
+      if (entry.mark == '.' && entry.word == u.words[i])
+        address = true;
     }
   }
   if (address_only && !address)

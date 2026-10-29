@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/check_op.h"
 #include "chrome/browser/molt_ai/voice/spoken_choice.h"
 
 namespace {

@@ -747,9 +747,19 @@ ChoiceMatch MatchDescription(const ChoiceRef& ref,
     std::vector<uint64_t> hits(sounds.size(), 0);
     for (size_t u = 0; u < units.size(); ++u) {
       for (size_t v = 0; v < sounds.size(); ++v) {
-        double s = Similarity(units[u].sound, sounds[v]);
-        if (units[u].count > 1)
-          s *= kJoinedWords;
+        const Sound& unit = units[u].sound;
+        const Sound& word = sounds[v];
+        double s = 0;
+        if (units[u].count == 1) {
+          s = Similarity(unit, word);
+        } else if (unit.text == word.text) {
+          s = kJoinedWords * kExactWord;  // "mac book" / "MacBook"
+        } else if (unit.sound_alike && word.sound_alike &&
+                   SameOrCloseSounds(unit.key.front(), word.key.front())) {
+          // Words a recognizer split keep their first sound ("rap city" /
+          // "rhapsody"), as JoinedSimilarity() assumes for merges.
+          s = kJoinedWords * Similarity(unit, word);
+        }
         const auto q = static_cast<uint8_t>(std::lround(s * 250));
         table[u * sounds.size() + v] = q;
         if (q)
