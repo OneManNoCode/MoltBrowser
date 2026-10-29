@@ -664,7 +664,8 @@ here with its CPU back end (AVX-512, AMX, OpenMP), timed with
 `whisper-bench`. Its ggml weights are only on Hugging Face, so the timings
 use whisper.cpp's own test models: the real tensor shapes in F16 without
 trained values, which compute in the same time (the load times are not
-representative, and there is no transcript to score). Median of three runs.
+representative, and there is no transcript to score). Median of three runs
+(one for small.en at four threads).
 
 - **Whisper encodes a 30 s window however short the command,** and
   whisper.cpp's F16 encoder takes 0.6–1.5 s for tiny.en here, 1.1–3.7 s for
